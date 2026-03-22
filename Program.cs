@@ -32,19 +32,19 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog();
 
 // ── DATABASE (MySQL) ──────────────────────────────────────────
-var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
-if (string.IsNullOrWhiteSpace(connStr))
+var connStr = builder.Configuration.GetConnectionString("DefaultConnection") 
+    ?? builder.Configuration["ConnectionStrings__DefaultConnection"]
+    ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection is missing or empty.");if (string.IsNullOrWhiteSpace(connStr))
     throw new InvalidOperationException(
         "ConnectionStrings:DefaultConnection is missing or empty. Set it in appsettings / appsettings.Development.json, " +
         "or clear a blank ConnectionStrings__DefaultConnection environment variable if one is set.");
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    options.UseMySql(connStr, new MySqlServerVersion(new Version(8, 0, 0)), mySql =>
-        mySql.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(15),
-            errorNumbersToAdd: null));
+    var connStr = Environment.GetEnvironmentVariable("DATABASE_URL")
+        ?? builder.Configuration.GetConnectionString("DefaultConnection")
+        ?? "Server=srv1787.hstgr.io;Port=3306;Database=u282618987_sportiveApi;User=u282618987_sportive;Password=CHANGE_ME;";
+    options.UseMySql(connStr, new MySqlServerVersion(new Version(8, 0, 0)));
 });
 
 // ── IDENTITY ─────────────────────────────────────────────────
