@@ -32,8 +32,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog();
 
 // ── DATABASE (MySQL) ──────────────────────────────────────────
-var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
-if (string.IsNullOrWhiteSpace(connStr))
+var connStr = builder.Configuration.GetConnectionString("DefaultConnection") 
+    ?? builder.Configuration["ConnectionStrings__DefaultConnection"]
+    ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection is missing or empty.");if (string.IsNullOrWhiteSpace(connStr))
     throw new InvalidOperationException(
         "ConnectionStrings:DefaultConnection is missing or empty. Set it in appsettings / appsettings.Development.json, " +
         "or clear a blank ConnectionStrings__DefaultConnection environment variable if one is set.");
