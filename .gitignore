@@ -1,0 +1,35 @@
+## .NET
+bin/
+obj/
+out/
+*.user
+*.suo
+.vs/
+logs/
+*.log
+
+## Migrations - Railway هيعملها هو
+Migrations/
+
+## Secrets - لا ترفعهم أبداً
+appsettings.Development.json
+appsettings.Production.json
+*.pfx
+*.p12
+
+## OS
+.DS_Store
+Thumbs.db
+
+node_modules/
+obj/
+bin/
+out/
+Migrations/
+*.Development.json
+
+wwwroot/uploads/**/*.jpg
+wwwroot/uploads/**/*.png
+wwwroot/uploads/**/*.webp
+wwwroot/uploads/**/*.jpeg
+appsettings.json

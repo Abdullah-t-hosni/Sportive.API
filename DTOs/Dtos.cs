@@ -1,0 +1,317 @@
+using Sportive.API.Models;
+
+namespace Sportive.API.DTOs;
+
+// ========== AUTH ==========
+public record RegisterDto(
+    string FirstName,
+    string LastName,
+    string Email,
+    string Password,
+    string? Phone
+);
+
+public record LoginDto(string Email, string Password);
+
+public record AuthResponseDto(
+    string Token,
+    string RefreshToken,
+    string Email,
+    string FullName,
+    IList<string> Roles,
+    DateTime ExpiresAt,
+    int? CustomerId
+);
+
+public record ChangePasswordDto(string CurrentPassword, string NewPassword);
+
+// ========== CATEGORY ==========
+public record CategoryDto(
+    int Id,
+    string NameAr,
+    string NameEn,
+    string? DescriptionAr,
+    string? DescriptionEn,
+    string Type,
+    string? ImageUrl,
+    bool IsActive,
+    int ProductCount
+);
+
+public record CreateCategoryDto(
+    string NameAr,
+    string NameEn,
+    string? DescriptionAr,
+    string? DescriptionEn,
+    CategoryType Type,
+    string? ImageUrl
+);
+
+// ========== PRODUCT ==========
+public record ProductSummaryDto(
+    int Id,
+    string NameAr,
+    string NameEn,
+    decimal Price,
+    decimal? DiscountPrice,
+    string? MainImageUrl,
+    string CategoryNameAr,
+    string CategoryNameEn,
+    string? Brand,
+    string Status,
+    double? AverageRating,
+    int ReviewCount
+);
+
+public record ProductDetailDto(
+    int Id,
+    string NameAr,
+    string NameEn,
+    string? DescriptionAr,
+    string? DescriptionEn,
+    decimal Price,
+    decimal? DiscountPrice,
+    string SKU,
+    string? Brand,
+    string Status,
+    bool IsFeatured,
+    int CategoryId,
+    string CategoryNameAr,
+    string CategoryNameEn,
+    List<ProductVariantDto> Variants,
+    List<ProductImageDto> Images,
+    double? AverageRating,
+    int ReviewCount
+);
+
+public record ProductVariantDto(
+    int Id,
+    string? Size,
+    string? Color,
+    string? ColorAr,
+    int StockQuantity,
+    decimal? PriceAdjustment,
+    string? ImageUrl
+);
+
+public record ProductImageDto(int Id, string ImageUrl, bool IsMain, int SortOrder);
+
+public record CreateProductDto(
+    string NameAr,
+    string NameEn,
+    string? DescriptionAr,
+    string? DescriptionEn,
+    decimal Price,
+    decimal? DiscountPrice,
+    string SKU,
+    string? Brand,
+    int CategoryId,
+    bool IsFeatured,
+    List<CreateVariantDto>? Variants
+);
+
+public record UpdateProductDto(
+    string NameAr,
+    string NameEn,
+    string? DescriptionAr,
+    string? DescriptionEn,
+    decimal Price,
+    decimal? DiscountPrice,
+    string? Brand,
+    int CategoryId,
+    bool IsFeatured,
+    ProductStatus Status
+);
+
+public record CreateVariantDto(
+    string? Size,
+    string? Color,
+    string? ColorAr,
+    int StockQuantity,
+    decimal? PriceAdjustment
+);
+
+// ========== CART ==========
+public record CartItemDto(
+    int Id,
+    int ProductId,
+    string ProductNameAr,
+    string ProductNameEn,
+    string? MainImageUrl,
+    string? Size,
+    string? Color,
+    string? ColorAr,
+    int Quantity,
+    decimal UnitPrice,
+    decimal TotalPrice
+);
+
+public record AddToCartDto(int ProductId, int? ProductVariantId, int Quantity);
+public record UpdateCartItemDto(int Quantity);
+
+public record CartSummaryDto(
+    List<CartItemDto> Items,
+    decimal SubTotal,
+    decimal DeliveryFee,
+    decimal Total,
+    int ItemCount
+);
+
+// ========== ORDER ==========
+public record CreateOrderDto(
+    FulfillmentType FulfillmentType,
+    PaymentMethod PaymentMethod,
+    int? DeliveryAddressId,
+    DateTime? PickupScheduledAt,
+    string? CustomerNotes,
+    string? CouponCode
+);
+
+public record OrderSummaryDto(
+    int Id,
+    string OrderNumber,
+    string CustomerName,
+    string CustomerPhone,
+    string Status,
+    string FulfillmentType,
+    decimal TotalAmount,
+    DateTime CreatedAt,
+    int ItemCount
+);
+
+public record OrderDetailDto(
+    int Id,
+    string OrderNumber,
+    CustomerBasicDto Customer,
+    string Status,
+    string FulfillmentType,
+    string PaymentMethod,
+    string PaymentStatus,
+    AddressDto? DeliveryAddress,
+    DateTime? PickupScheduledAt,
+    decimal SubTotal,
+    decimal DiscountAmount,
+    decimal DeliveryFee,
+    decimal TotalAmount,
+    string? CustomerNotes,
+    string? AdminNotes,
+    DateTime CreatedAt,
+    List<OrderItemDto> Items,
+    List<OrderStatusHistoryDto> StatusHistory
+);
+
+public record OrderItemDto(
+    int Id,
+    string ProductNameAr,
+    string ProductNameEn,
+    string? ProductImage,
+    string? Size,
+    string? Color,
+    int Quantity,
+    decimal UnitPrice,
+    decimal TotalPrice
+);
+
+public record OrderStatusHistoryDto(
+    string Status,
+    string? Note,
+    DateTime CreatedAt
+);
+
+public record UpdateOrderStatusDto(OrderStatus Status, string? Note);
+
+// ========== CUSTOMER ==========
+public record CustomerBasicDto(
+    int Id,
+    string FullName,
+    string Email,
+    string? Phone
+);
+
+public record CustomerDetailDto(
+    int Id,
+    string FirstName,
+    string LastName,
+    string Email,
+    string? Phone,
+    int TotalOrders,
+    decimal TotalSpent,
+    DateTime CreatedAt,
+    List<AddressDto> Addresses
+);
+
+public record AddressDto(
+    int Id,
+    string TitleAr,
+    string TitleEn,
+    string Street,
+    string City,
+    string? District,
+    string? BuildingNo,
+    string? Floor,
+    string? ApartmentNo,
+    bool IsDefault
+);
+
+public record CreateAddressDto(
+    string TitleAr,
+    string TitleEn,
+    string Street,
+    string City,
+    string? District,
+    string? BuildingNo,
+    string? Floor,
+    string? ApartmentNo,
+    string? AdditionalInfo,
+    double? Latitude,
+    double? Longitude
+);
+
+// ========== DASHBOARD ==========
+public record DashboardStatsDto(
+    decimal TodaySales,
+    decimal ThisMonthSales,
+    decimal TotalRevenue,
+    int TotalOrders,
+    int PendingOrders,
+    int TodayOrders,
+    int TotalCustomers,
+    int TotalProducts,
+    int LowStockProducts
+);
+
+public record SalesChartDto(string Period, decimal Amount, int OrderCount);
+
+public record TopProductDto(
+    int ProductId,
+    string NameAr,
+    string NameEn,
+    string? ImageUrl,
+    int TotalSold,
+    decimal TotalRevenue
+);
+
+public record OrderStatusStatsDto(string Status, int Count, decimal Percentage);
+
+// ========== PAGINATION ==========
+public record PaginatedResult<T>(
+    List<T> Items,
+    int TotalCount,
+    int Page,
+    int PageSize,
+    int TotalPages
+);
+
+public record ProductFilterDto(
+    int? CategoryId,
+    string? Search,
+    decimal? MinPrice,
+    decimal? MaxPrice,
+    string? Brand,
+    string? Size,
+    bool? IsFeatured,
+    string SortBy = "createdAt",
+    string SortDir = "desc",
+    int Page = 1,
+    int PageSize = 12
+);

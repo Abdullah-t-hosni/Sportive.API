@@ -1,0 +1,252 @@
+using System.Text;
+using System.Text.Json;
+using FluentValidation;
+using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
+using Serilog;
+using Serilog.Events;
+using Sportive.API.Data;
+using Sportive.API.Interfaces;
+using Sportive.API.Middleware;
+using Sportive.API.Models;
+using Sportive.API.Services;
+using Sportive.API.Validators;
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", LogEventLevel.Information)
+    .Enrich.FromLogContext()
+    .Enrich.WithEnvironmentName()
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .WriteTo.File("logs/sportive-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 30)
+    .CreateLogger();
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseSerilog();
+
+// ── DATABASE (MySQL) ──────────────────────────────────────────
+var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(connStr))
+    throw new InvalidOperationException(
+        "ConnectionStrings:DefaultConnection is missing or empty. Set it in appsettings / appsettings.Development.json, " +
+        "or clear a blank ConnectionStrings__DefaultConnection environment variable if one is set.");
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+{
+    options.UseMySql(connStr, new MySqlServerVersion(new Version(8, 0, 0)), mySql =>
+        mySql.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(15),
+            errorNumbersToAdd: null));
+});
+
+// ── IDENTITY ─────────────────────────────────────────────────
+builder.Services.AddIdentity<AppUser, IdentityRole>(options =>
+{
+    options.Password.RequireDigit           = true;
+    options.Password.RequiredLength         = 8;
+    options.Password.RequireNonAlphanumeric = false;
+    options.Password.RequireUppercase       = true;
+    options.User.RequireUniqueEmail         = true;
+    options.Lockout.MaxFailedAccessAttempts = 5;
+    options.Lockout.DefaultLockoutTimeSpan  = TimeSpan.FromMinutes(15);
+})
+.AddEntityFrameworkStores<AppDbContext>()
+.AddDefaultTokenProviders();
+
+// ── JWT ───────────────────────────────────────────────────────
+var jwtSecret = builder.Configuration["JWT:Secret"]
+    ?? throw new InvalidOperationException("JWT:Secret is not configured");
+
+builder.Services.AddAuthentication(opt =>
+{
+    opt.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    opt.DefaultChallengeScheme    = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(opt =>
+{
+    opt.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey         = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+        ValidateIssuer           = true,
+        ValidIssuer              = builder.Configuration["JWT:Issuer"],
+        ValidateAudience         = true,
+        ValidAudience            = builder.Configuration["JWT:Audience"],
+        ValidateLifetime         = true,
+        ClockSkew                = TimeSpan.Zero
+    };
+});
+
+builder.Services.AddAuthorization();
+
+// ── CORS ──────────────────────────────────────────────────────
+builder.Services.AddCors(options =>
+    options.AddPolicy("AllowReactApp", policy =>
+    {
+        var origins = new List<string>
+        {
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://localhost:5174"
+        };
+        var extra = builder.Configuration["AllowedOrigins"];
+        if (!string.IsNullOrWhiteSpace(extra))
+            origins.AddRange(extra.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        policy.WithOrigins(origins.Distinct(StringComparer.OrdinalIgnoreCase).ToArray())
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    }));
+
+// ── CACHE ─────────────────────────────────────────────────────
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpContextAccessor();
+var redisConn = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrEmpty(redisConn))
+{
+    builder.Services.AddStackExchangeRedisCache(opt => opt.Configuration = redisConn);
+    builder.Services.AddScoped<ICacheService, RedisCacheService>();
+}
+else
+{
+    builder.Services.AddScoped<ICacheService, MemoryCacheService>();
+}
+
+// ── VALIDATION ────────────────────────────────────────────────
+builder.Services.AddFluentValidationAutoValidation();
+builder.Services.AddValidatorsFromAssemblyContaining<RegisterValidator>();
+
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var errors = context.ModelState
+            .Where(e => e.Value?.Errors.Count > 0)
+            .ToDictionary(
+                e => e.Key,
+                e => e.Value!.Errors.Select(x => string.IsNullOrEmpty(x.ErrorMessage) ? x.Exception?.Message : x.ErrorMessage)
+                    .Where(m => !string.IsNullOrEmpty(m))
+                    .ToArray());
+        return new BadRequestObjectResult(new
+        {
+            message = "Validation failed",
+            errors
+        });
+    };
+});
+
+// ── SERVICES ──────────────────────────────────────────────────
+builder.Services.AddScoped<IAuthService,      AuthService>();
+builder.Services.AddScoped<IProductService,   ProductService>();
+builder.Services.AddScoped<ICategoryService,  CategoryService>();
+builder.Services.AddScoped<IOrderService,     OrderService>();
+builder.Services.AddScoped<ICartService,      CartService>();
+builder.Services.AddScoped<ICustomerService,  CustomerService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<ICouponService,    CouponService>();
+builder.Services.AddScoped<IImageService,     CloudinaryImageService>();
+builder.Services.AddScoped<IPaymobService,    PaymobService>();
+builder.Services.AddHttpClient("Paymob");
+
+// ── SWAGGER ───────────────────────────────────────────────────
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Sportive API", Version = "v1" });
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization", Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer", BearerFormat = "JWT",
+        In = ParameterLocation.Header, Description = "Enter: Bearer {token}"
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {{
+        new OpenApiSecurityScheme
+        {
+            Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+        },
+        Array.Empty<string>()
+    }});
+});
+
+builder.Services.AddControllers()
+    .AddJsonOptions(x =>
+    {
+        x.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+        x.JsonSerializerOptions.DictionaryKeyPolicy   = JsonNamingPolicy.CamelCase;
+        x.JsonSerializerOptions.Converters.Add(
+            new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
+
+// ── BUILD ─────────────────────────────────────────────────────
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Sportive API v1");
+        c.RoutePrefix = string.Empty;
+    });
+}
+
+app.UseSerilogRequestLogging();
+app.UseMiddleware<ExceptionMiddleware>();
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+app.UseCors("AllowReactApp");
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+
+await SeedAsync(app);
+app.Run();
+
+// ── SEED ──────────────────────────────────────────────────────
+static async Task SeedAsync(WebApplication app)
+{
+    using var scope = app.Services.CreateScope();
+    var db          = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
+
+    try
+    {
+        await db.Database.MigrateAsync();
+    }
+    catch (Exception ex)
+    {
+        Log.Fatal(ex,
+            "Cannot reach MySQL. Start MySQL locally (port 3306) and set the correct User/Password in appsettings.Development.json, " +
+            "or use your remote host connection string (e.g. Hostinger). For local MySQL 8, SslMode=None and AllowPublicKeyRetrieval=true often help — see README.");
+        throw;
+    }
+
+    foreach (var role in new[] { "Admin", "Customer", "Staff" })
+        if (!await roleManager.RoleExistsAsync(role))
+            await roleManager.CreateAsync(new IdentityRole(role));
+
+    const string adminEmail = "admin@sportive.com";
+    if (await userManager.FindByEmailAsync(adminEmail) == null)
+    {
+        var admin = new AppUser
+        {
+            UserName  = adminEmail,
+            Email     = adminEmail,
+            FirstName = "Sport",
+            LastName  = "Zone",
+            IsActive  = true
+        };
+        await userManager.CreateAsync(admin, "Admin@123456");
+        await userManager.AddToRoleAsync(admin, "Admin");
+    }
+}
