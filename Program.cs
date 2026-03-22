@@ -32,8 +32,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog();
 
 // ── DATABASE (MySQL) ──────────────────────────────────────────
-var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
-if (string.IsNullOrWhiteSpace(connStr))
+var connStr = builder.Configuration.GetConnectionString("DefaultConnection") 
+    ?? builder.Configuration["ConnectionStrings__DefaultConnection"]
+    ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection is missing or empty.");if (string.IsNullOrWhiteSpace(connStr))
     throw new InvalidOperationException(
         "ConnectionStrings:DefaultConnection is missing or empty. Set it in appsettings / appsettings.Development.json, " +
         "or clear a blank ConnectionStrings__DefaultConnection environment variable if one is set.");
@@ -48,16 +49,13 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 });
 
 // ── IDENTITY ─────────────────────────────────────────────────
-builder.Services.AddIdentity<AppUser, IdentityRole>(options =>
+builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    options.Password.RequireDigit           = true;
-    options.Password.RequiredLength         = 8;
-    options.Password.RequireNonAlphanumeric = false;
-    options.Password.RequireUppercase       = true;
-    options.User.RequireUniqueEmail         = true;
-    options.Lockout.MaxFailedAccessAttempts = 5;
-    options.Lockout.DefaultLockoutTimeSpan  = TimeSpan.FromMinutes(15);
-})
+    var connStr = Environment.GetEnvironmentVariable("DATABASE_URL")
+        ?? builder.Configuration.GetConnectionString("DefaultConnection")
+        ?? throw new InvalidOperationException("No database connection string found.");
+    options.UseMySql(connStr, new MySqlServerVersion(new Version(8, 0, 0)));
+});
 .AddEntityFrameworkStores<AppDbContext>()
 .AddDefaultTokenProviders();
 
