@@ -31,60 +31,55 @@ Log.Logger = new LoggerConfiguration()
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog();
 
-// ── DATABASE (MySQL) ──────────────────────────────────────────
-var connStr = builder.Configuration.GetConnectionString("DefaultConnection") 
-    ?? builder.Configuration["ConnectionStrings__DefaultConnection"]
-    ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection is missing or empty.");if (string.IsNullOrWhiteSpace(connStr))
-    throw new InvalidOperationException(
-        "ConnectionStrings:DefaultConnection is missing or empty. Set it in appsettings / appsettings.Development.json, " +
-        "or clear a blank ConnectionStrings__DefaultConnection environment variable if one is set.");
+// ── DATABASE ──────────────────────────────────────────
+var connStr = Environment.GetEnvironmentVariable("DATABASE_URL")
+    ?? builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Connection string is missing.");
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    var connStr = Environment.GetEnvironmentVariable("DATABASE_URL")
-        ?? builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? "Server=srv1787.hstgr.io;Port=3306;Database=u282618987_sportiveApi;User=u282618987_sportive;Password=CHANGE_ME;";
-    options.UseMySql(connStr, new MySqlServerVersion(new Version(8, 0, 0)));
+    options.UseMySql(connStr, new MySqlServerVersion(new Version(8, 0, 0)),
+        mySqlOptions => mySqlOptions.EnableRetryOnFailure());
 });
 
-// ── IDENTITY ─────────────────────────────────────────────────
-builder.Services.AddDbContext<AppDbContext>(options =>
+// ── IDENTITY ──────────────────────────────────────────
+builder.Services.AddIdentity<AppUser, IdentityRole>(options =>
 {
-    var connStr = Environment.GetEnvironmentVariable("DATABASE_URL")
-        ?? builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? throw new InvalidOperationException("No database connection string found.");
-    options.UseMySql(connStr, new MySqlServerVersion(new Version(8, 0, 0)));
-});
+    options.Password.RequireDigit = true;
+    options.Password.RequiredLength = 6;
+    options.Password.RequireUppercase = false;
+    options.Password.RequireNonAlphanumeric = false;
+})
 .AddEntityFrameworkStores<AppDbContext>()
 .AddDefaultTokenProviders();
 
-// ── JWT ───────────────────────────────────────────────────────
+// ── JWT ───────────────────────────────────────────────
 var jwtSecret = builder.Configuration["JWT:Secret"]
     ?? throw new InvalidOperationException("JWT:Secret is not configured");
 
 builder.Services.AddAuthentication(opt =>
 {
     opt.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    opt.DefaultChallengeScheme    = JwtBearerDefaults.AuthenticationScheme;
+    opt.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
 })
 .AddJwtBearer(opt =>
 {
     opt.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey         = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
-        ValidateIssuer           = true,
-        ValidIssuer              = builder.Configuration["JWT:Issuer"],
-        ValidateAudience         = true,
-        ValidAudience            = builder.Configuration["JWT:Audience"],
-        ValidateLifetime         = true,
-        ClockSkew                = TimeSpan.Zero
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+        ValidateIssuer = true,
+        ValidIssuer = builder.Configuration["JWT:Issuer"],
+        ValidateAudience = true,
+        ValidAudience = builder.Configuration["JWT:Audience"],
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero
     };
 });
 
 builder.Services.AddAuthorization();
 
-// ── CORS ──────────────────────────────────────────────────────
+// ── CORS ──────────────────────────────────────────────
 builder.Services.AddCors(options =>
     options.AddPolicy("AllowReactApp", policy =>
     {
@@ -94,22 +89,28 @@ builder.Services.AddCors(options =>
             "http://localhost:5173",
             "http://localhost:5174"
         };
+
         var extra = builder.Configuration["AllowedOrigins"];
         if (!string.IsNullOrWhiteSpace(extra))
             origins.AddRange(extra.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
         policy.WithOrigins(origins.Distinct(StringComparer.OrdinalIgnoreCase).ToArray())
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
     }));
 
-// ── CACHE ─────────────────────────────────────────────────────
+// ── CACHE ─────────────────────────────────────────────
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
+
 var redisConn = builder.Configuration.GetConnectionString("Redis");
+
 if (!string.IsNullOrEmpty(redisConn))
 {
-    builder.Services.AddStackExchangeRedisCache(opt => opt.Configuration = redisConn);
+    builder.Services.AddStackExchangeRedisCache(opt =>
+        opt.Configuration = redisConn);
+
     builder.Services.AddScoped<ICacheService, RedisCacheService>();
 }
 else
@@ -117,7 +118,7 @@ else
     builder.Services.AddScoped<ICacheService, MemoryCacheService>();
 }
 
-// ── VALIDATION ────────────────────────────────────────────────
+// ── VALIDATION ────────────────────────────────────────
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterValidator>();
 
@@ -129,9 +130,11 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
             .Where(e => e.Value?.Errors.Count > 0)
             .ToDictionary(
                 e => e.Key,
-                e => e.Value!.Errors.Select(x => string.IsNullOrEmpty(x.ErrorMessage) ? x.Exception?.Message : x.ErrorMessage)
+                e => e.Value!.Errors
+                    .Select(x => string.IsNullOrEmpty(x.ErrorMessage) ? x.Exception?.Message : x.ErrorMessage)
                     .Where(m => !string.IsNullOrEmpty(m))
                     .ToArray());
+
         return new BadRequestObjectResult(new
         {
             message = "Validation failed",
@@ -140,50 +143,62 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
     };
 });
 
-// ── SERVICES ──────────────────────────────────────────────────
-builder.Services.AddScoped<IAuthService,      AuthService>();
-builder.Services.AddScoped<IProductService,   ProductService>();
-builder.Services.AddScoped<ICategoryService,  CategoryService>();
-builder.Services.AddScoped<IOrderService,     OrderService>();
-builder.Services.AddScoped<ICartService,      CartService>();
-builder.Services.AddScoped<ICustomerService,  CustomerService>();
+// ── SERVICES ──────────────────────────────────────────
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IProductService, ProductService>();
+builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<ICartService, CartService>();
+builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
-builder.Services.AddScoped<ICouponService,    CouponService>();
-builder.Services.AddScoped<IImageService,     CloudinaryImageService>();
-builder.Services.AddScoped<IPaymobService,    PaymobService>();
+builder.Services.AddScoped<ICouponService, CouponService>();
+builder.Services.AddScoped<IImageService, CloudinaryImageService>();
+builder.Services.AddScoped<IPaymobService, PaymobService>();
+
 builder.Services.AddHttpClient("Paymob");
 
-// ── SWAGGER ───────────────────────────────────────────────────
+// ── SWAGGER ───────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
+
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "Sportive API", Version = "v1" });
+
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Name = "Authorization", Type = SecuritySchemeType.ApiKey,
-        Scheme = "Bearer", BearerFormat = "JWT",
-        In = ParameterLocation.Header, Description = "Enter: Bearer {token}"
+        Name = "Authorization",
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Enter: Bearer {token}"
     });
+
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {{
         new OpenApiSecurityScheme
         {
-            Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+            Reference = new OpenApiReference
+            {
+                Type = ReferenceType.SecurityScheme,
+                Id = "Bearer"
+            }
         },
         Array.Empty<string>()
     }});
 });
 
+// ── CONTROLLERS ───────────────────────────────────────
 builder.Services.AddControllers()
     .AddJsonOptions(x =>
     {
         x.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-        x.JsonSerializerOptions.DictionaryKeyPolicy   = JsonNamingPolicy.CamelCase;
+        x.JsonSerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;
         x.JsonSerializerOptions.Converters.Add(
             new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
 
-// ── BUILD ─────────────────────────────────────────────────────
+// ── BUILD ─────────────────────────────────────────────
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -198,21 +213,27 @@ if (app.Environment.IsDevelopment())
 
 app.UseSerilogRequestLogging();
 app.UseMiddleware<ExceptionMiddleware>();
+
 app.UseHttpsRedirection();
 app.UseStaticFiles();
+
 app.UseCors("AllowReactApp");
+
 app.UseAuthentication();
 app.UseAuthorization();
+
 app.MapControllers();
 
 await SeedAsync(app);
+
 app.Run();
 
-// ── SEED ──────────────────────────────────────────────────────
+// ── SEED ──────────────────────────────────────────────
 static async Task SeedAsync(WebApplication app)
 {
     using var scope = app.Services.CreateScope();
-    var db          = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
 
@@ -222,27 +243,29 @@ static async Task SeedAsync(WebApplication app)
     }
     catch (Exception ex)
     {
-        Log.Fatal(ex,
-            "Cannot reach MySQL. Start MySQL locally (port 3306) and set the correct User/Password in appsettings.Development.json, " +
-            "or use your remote host connection string (e.g. Hostinger). For local MySQL 8, SslMode=None and AllowPublicKeyRetrieval=true often help — see README.");
+        Log.Fatal(ex, "Database connection failed");
         throw;
     }
 
     foreach (var role in new[] { "Admin", "Customer", "Staff" })
+    {
         if (!await roleManager.RoleExistsAsync(role))
             await roleManager.CreateAsync(new IdentityRole(role));
+    }
 
     const string adminEmail = "admin@sportive.com";
+
     if (await userManager.FindByEmailAsync(adminEmail) == null)
     {
         var admin = new AppUser
         {
-            UserName  = adminEmail,
-            Email     = adminEmail,
+            UserName = adminEmail,
+            Email = adminEmail,
             FirstName = "Sport",
-            LastName  = "Zone",
-            IsActive  = true
+            LastName = "Zone",
+            IsActive = true
         };
+
         await userManager.CreateAsync(admin, "Admin@123456");
         await userManager.AddToRoleAsync(admin, "Admin");
     }
