@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 namespace Sportive.API.Services;
 
 // ─── DTOs ────────────────────────────────────────────────────
-public record PaymobOrderRequest(decimal Amount, int OrderId, string OrderNumber);
+public record PaymobOrderRequest(decimal Amount, int OrderId, string OrderNumber, string Email, string Phone, string FullName);
 public record PaymobPaymentResponse(bool Success, string? PaymentUrl, string? Error);
 
 // ─── Service Interface ───────────────────────────────────────
@@ -130,17 +130,17 @@ public class PaymobService : IPaymobService
             billing_data = new
             {
                 apartment       = "NA",
-                email           = "customer@sportive.com",
+                email           = request.Email,
                 floor           = "NA",
-                first_name      = "Sportive",
+                first_name      = request.FullName.Split(' ').FirstOrDefault() ?? "Sportive",
                 street          = "NA",
                 building        = "NA",
-                phone_number    = "+201000000000",
+                phone_number    = request.Phone,
                 shipping_method = "NA",
                 postal_code     = "NA",
                 city            = "Cairo",
                 country         = "EG",
-                last_name       = "Customer",
+                last_name       = request.FullName.Split(' ').Skip(1).FirstOrDefault() ?? "Customer",
                 state           = "NA"
             },
             currency = "EGP",

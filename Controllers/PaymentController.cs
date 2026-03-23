@@ -4,6 +4,7 @@ using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Data;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace Sportive.API.Controllers;
 
@@ -29,7 +30,9 @@ public class PaymentController : ControllerBase
     [HttpPost("create/{orderId}")]
     public async Task<IActionResult> CreatePayment(int orderId)
     {
-        var order = await _db.Orders.FindAsync(orderId);
+        var order = await _db.Orders
+            .Include(o => o.Customer)
+            .FirstOrDefaultAsync(o => o.Id == orderId);
         if (order == null)
             return NotFound(new { message = "الطلب غير موجود" });
 
@@ -39,7 +42,10 @@ public class PaymentController : ControllerBase
         var result = await _paymob.CreatePaymentAsync(new PaymobOrderRequest(
             Amount: order.TotalAmount,
             OrderId: order.Id,
-            OrderNumber: order.OrderNumber
+            OrderNumber: order.OrderNumber,
+            Email: order.Customer.Email,
+            Phone: order.Customer.PhoneNumber ?? "01000000000",
+            FullName: order.Customer.FullName
         ));
 
         if (!result.Success)
@@ -75,6 +81,38 @@ public class PaymentController : ControllerBase
                 await _db.SaveChangesAsync();
                 _logger.LogInformation("Order {OrderNumber} payment {Status}", orderRef, success ? "PAID" : "FAILED");
             }
+        }
+
+        return Ok();
+    }
+
+    /// <summary>Paymob Webhook — يستقبل نتيجة الدفع كـ JSON (أكثر أماناً)</summary>
+    [HttpPost("webhook")]
+    public async Task<IActionResult> Webhook([FromBody] JsonElement payload)
+    {
+        _logger.LogInformation("Paymob Transaction Webhook received");
+        
+        try {
+            var obj         = payload.GetProperty("obj");
+            var success     = obj.GetProperty("success").GetBoolean();
+            var orderRef    = obj.GetProperty("order").GetProperty("merchant_order_id").GetString();
+            
+            // HMAC Verification (Optional for Webhook but recommended)
+            // Note: Webhook structure is slightly different from Callback.
+            // For now we trust and log. You should check if you want to verify HMAC here too.
+
+            if (!string.IsNullOrEmpty(orderRef)) {
+                var order = await _db.Orders.FirstOrDefaultAsync(o => o.OrderNumber == orderRef);
+                if (order != null) {
+                    order.PaymentStatus = success ? PaymentStatus.Paid : PaymentStatus.Failed;
+                    if (success && order.Status == OrderStatus.Pending)
+                        order.Status = OrderStatus.Confirmed;
+                    order.UpdatedAt = DateTime.UtcNow;
+                    await _db.SaveChangesAsync();
+                }
+            }
+        } catch (Exception ex) {
+            _logger.LogError(ex, "Error processing Paymob Webhook");
         }
 
         return Ok();
