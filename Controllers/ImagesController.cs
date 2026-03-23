@@ -23,7 +23,7 @@ public class ImagesController : ControllerBase
     [HttpPost("products/{productId}")]
     [RequestSizeLimit(5 * 1024 * 1024)]
     public async Task<IActionResult> UploadProductImage(
-        int productId, IFormFile file, [FromQuery] bool isMain = false)
+        int productId, [FromForm] IFormFile file, [FromQuery] bool isMain = false)
     {
         var product = await _db.Products.FindAsync(productId);
         if (product == null) return NotFound(new { message = "المنتج غير موجود" });
