@@ -82,14 +82,19 @@ public class PaymentController : ControllerBase
 
     /// <summary>Paymob Redirect بعد الدفع</summary>
     [HttpGet("result")]
-    public IActionResult PaymentResult([FromQuery] string? success, [FromQuery] string? merchant_order_id)
+    public async Task<IActionResult> PaymentResult([FromQuery] string? success, [FromQuery] string? merchant_order_id)
     {
         var frontendUrl = _config["AllowedOrigins"]?.Split(';').FirstOrDefault() 
             ?? "http://localhost:5173";
 
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.OrderNumber == merchant_order_id);
+        
+        if (order == null)
+            return Redirect($"{frontendUrl}/orders");
+
         var redirectUrl = success?.ToLower() == "true"
-            ? $"{frontendUrl}/orders?payment=success&order={merchant_order_id}"
-            : $"{frontendUrl}/orders?payment=failed&order={merchant_order_id}";
+            ? $"{frontendUrl}/order-success/{order.Id}?payment=success"
+            : $"{frontendUrl}/order-success/{order.Id}?payment=failed";
 
         return Redirect(redirectUrl);
     }

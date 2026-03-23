@@ -105,72 +105,114 @@ public class OrderService : IOrderService
 
     public async Task<OrderDetailDto> CreateOrderAsync(int customerId, CreateOrderDto dto)
     {
-        var cartItems = await _db.CartItems
-            .Include(c => c.Product).ThenInclude(p => p.Images)
-            .Include(c => c.ProductVariant)
-            .Where(c => c.CustomerId == customerId)
-            .ToListAsync();
-
-        if (!cartItems.Any())
-            throw new InvalidOperationException("Cart is empty");
-
-        var order = new Order
+        using var transaction = await _db.Database.BeginTransactionAsync();
+        try
         {
-            OrderNumber = await GenerateOrderNumberAsync(),
-            CustomerId = customerId,
-            FulfillmentType = dto.FulfillmentType,
-            PaymentMethod = dto.PaymentMethod,
-            DeliveryAddressId = dto.DeliveryAddressId,
-            PickupScheduledAt = dto.PickupScheduledAt,
-            CustomerNotes = dto.CustomerNotes,
-            CouponCode = dto.CouponCode,
-            Status = OrderStatus.Pending,
-            DeliveryFee = dto.FulfillmentType == FulfillmentType.Delivery ? 50 : 0 // 50 EGP delivery fee
-        };
+            var cartItems = await _db.CartItems
+                .Include(c => c.Product).ThenInclude(p => p.Images)
+                .Include(c => c.ProductVariant)
+                .Where(c => c.CustomerId == customerId)
+                .ToListAsync();
 
-        decimal subtotal = 0;
-        foreach (var item in cartItems)
-        {
-            var effectivePrice = item.Product.DiscountPrice ?? item.Product.Price;
-            if (item.ProductVariant?.PriceAdjustment.HasValue == true)
-                effectivePrice += item.ProductVariant.PriceAdjustment!.Value;
+            if (!cartItems.Any())
+                throw new InvalidOperationException("السلة فارغة");
 
-            var orderItem = new OrderItem
+            var order = new Order
             {
-                ProductId = item.ProductId,
-                ProductVariantId = item.ProductVariantId,
-                ProductNameAr = item.Product.NameAr,
-                ProductNameEn = item.Product.NameEn,
-                Size = item.ProductVariant?.Size,
-                Color = item.ProductVariant?.Color,
-                Quantity = item.Quantity,
-                UnitPrice = effectivePrice,
-                TotalPrice = effectivePrice * item.Quantity
+                OrderNumber = await GenerateOrderNumberAsync(),
+                CustomerId = customerId,
+                FulfillmentType = dto.FulfillmentType,
+                PaymentMethod = dto.PaymentMethod,
+                DeliveryAddressId = dto.DeliveryAddressId,
+                PickupScheduledAt = dto.PickupScheduledAt,
+                CustomerNotes = dto.CustomerNotes,
+                CouponCode = dto.CouponCode,
+                Status = OrderStatus.Pending,
+                DeliveryFee = dto.FulfillmentType == FulfillmentType.Delivery ? 50 : 0
             };
-            order.Items.Add(orderItem);
-            subtotal += orderItem.TotalPrice;
 
-            // Deduct stock
-            if (item.ProductVariant != null)
-                item.ProductVariant.StockQuantity -= item.Quantity;
+            // 1. Calculate Subtotal
+            decimal subtotal = 0;
+            foreach (var item in cartItems)
+            {
+                var effectivePrice = item.Product.DiscountPrice ?? item.Product.Price;
+                if (item.ProductVariant?.PriceAdjustment.HasValue == true)
+                    effectivePrice += item.ProductVariant.PriceAdjustment!.Value;
+
+                var orderItem = new OrderItem
+                {
+                    ProductId = item.ProductId,
+                    ProductVariantId = item.ProductVariantId,
+                    ProductNameAr = item.Product.NameAr,
+                    ProductNameEn = item.Product.NameEn,
+                    Size = item.ProductVariant?.Size,
+                    Color = item.ProductVariant?.Color,
+                    Quantity = item.Quantity,
+                    UnitPrice = effectivePrice,
+                    TotalPrice = effectivePrice * item.Quantity
+                };
+                order.Items.Add(orderItem);
+                subtotal += orderItem.TotalPrice;
+
+                // 2. Deduct stock and check availability
+                if (item.ProductVariant != null)
+                {
+                    if (item.ProductVariant.StockQuantity < item.Quantity)
+                        throw new InvalidOperationException($"الكمية المطلوبة من {item.Product.NameAr} غير متوفرة");
+                    
+                    item.ProductVariant.StockQuantity -= item.Quantity;
+                }
+            }
+
+            order.SubTotal = subtotal;
+
+            // 3. Server-side Coupon Validation (CRITICAL)
+            if (!string.IsNullOrEmpty(dto.CouponCode))
+            {
+                var coupon = await _db.Coupons.FirstOrDefaultAsync(c => 
+                    c.Code == dto.CouponCode && c.IsActive && 
+                    (!c.ExpiresAt.HasValue || c.ExpiresAt > DateTime.UtcNow));
+
+                if (coupon != null)
+                {
+                    // Basic validation logic (simplified from ICouponService)
+                    if (!(coupon.MaxUsageCount.HasValue && coupon.CurrentUsageCount >= coupon.MaxUsageCount) &&
+                        !(coupon.MinOrderAmount.HasValue && subtotal < coupon.MinOrderAmount))
+                    {
+                        decimal disc = coupon.DiscountType == DiscountType.Percentage 
+                            ? subtotal * (coupon.DiscountValue / 100) 
+                            : coupon.DiscountValue;
+
+                        if (coupon.MaxDiscountAmount.HasValue && coupon.MaxDiscountAmount > 0)
+                            disc = Math.Min(disc, coupon.MaxDiscountAmount.Value);
+
+                        order.DiscountAmount = Math.Round(disc, 2);
+                        coupon.CurrentUsageCount++;
+                    }
+                }
+            }
+
+            order.TotalAmount = subtotal + order.DeliveryFee - order.DiscountAmount;
+
+            order.StatusHistory.Add(new OrderStatusHistory
+            {
+                Status = OrderStatus.Pending,
+                Note = "تم استلام الطلب وبانتظار الإجراء"
+            });
+
+            _db.Orders.Add(order);
+            _db.CartItems.RemoveRange(cartItems);
+
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return (await GetOrderByIdAsync(order.Id))!;
         }
-
-        order.SubTotal = subtotal;
-        order.TotalAmount = subtotal + order.DeliveryFee - order.DiscountAmount;
-
-        order.StatusHistory.Add(new OrderStatusHistory
+        catch
         {
-            Status = OrderStatus.Pending,
-            Note = "Order placed"
-        });
-
-        _db.Orders.Add(order);
-
-        // Clear cart
-        _db.CartItems.RemoveRange(cartItems);
-
-        await _db.SaveChangesAsync();
-        return (await GetOrderByIdAsync(order.Id))!;
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     public async Task<OrderDetailDto> UpdateOrderStatusAsync(
