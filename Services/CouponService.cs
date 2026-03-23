@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using System.Text.Json.Serialization;
 
 namespace Sportive.API.Services;
 
@@ -42,7 +43,10 @@ public record CouponListDto(
 
 public class ApplyCouponRequest
 {
+    [JsonPropertyName("code")]
     public string Code { get; set; } = string.Empty;
+    
+    [JsonPropertyName("orderTotal")]
     public decimal OrderTotal { get; set; }
 }
 
@@ -73,7 +77,7 @@ public class CouponService : ICouponService
         if (coupon.DiscountType == DiscountType.Percentage)
         {
             discount = orderTotal * (coupon.DiscountValue / 100);
-            if (coupon.MaxDiscountAmount.HasValue)
+            if (coupon.MaxDiscountAmount.HasValue && coupon.MaxDiscountAmount.Value > 0)
                 discount = Math.Min(discount, coupon.MaxDiscountAmount.Value);
         }
         else
