@@ -55,6 +55,7 @@ public class ExceptionMiddleware
         {
             StatusCode = (int)statusCode,
             Message    = message,
+            ExceptionType = _env.IsDevelopment() ? ex.GetType().Name : null,
             Details    = _env.IsDevelopment() ? ex.StackTrace : null
         };
 
