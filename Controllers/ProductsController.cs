@@ -31,7 +31,7 @@ public class ProductsController : ControllerBase
     public async Task<IActionResult> GetRelated(int id, [FromQuery] int count = 4) =>
         Ok(await _products.GetRelatedProductsAsync(id, count));
 
-    [Authorize(Roles = "Admin,Staff")]
+    [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateProductDto dto)
     {
@@ -39,7 +39,7 @@ public class ProductsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = product.Id }, product);
     }
 
-    [Authorize(Roles = "Admin,Staff")]
+    [Authorize(Roles = "Admin")]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateProductDto dto)
     {
@@ -47,7 +47,7 @@ public class ProductsController : ControllerBase
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
-    [Authorize(Roles = "Admin,Staff")]
+    [Authorize(Roles = "Admin")]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
@@ -55,7 +55,7 @@ public class ProductsController : ControllerBase
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
-    [Authorize(Roles = "Admin,Staff")]
+    [Authorize(Roles = "Admin")]
     [HttpPatch("variants/{variantId}/stock")]
     public async Task<IActionResult> UpdateStock(int variantId, [FromBody] int quantity) =>
         await _products.UpdateStockAsync(variantId, quantity) ? Ok() : NotFound();

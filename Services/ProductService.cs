@@ -153,8 +153,7 @@ public class ProductService : IProductService
         product.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
-        return await GetProductByIdAsync(id)
-            ?? throw new InvalidOperationException($"Product {id} not found after update");
+        return await GetProductByIdAsync(id)!;
     }
 
     public async Task DeleteProductAsync(int id)

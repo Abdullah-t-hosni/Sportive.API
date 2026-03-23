@@ -1,10 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
-using Sportive.API.Models;
 
 namespace Sportive.API.Controllers;
 
@@ -29,7 +26,7 @@ public class CategoriesController : ControllerBase
         return cat == null ? NotFound() : Ok(cat);
     }
 
-    [Authorize(Roles = "Admin,Staff")]
+    [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateCategoryDto dto)
     {
@@ -37,7 +34,7 @@ public class CategoriesController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = cat.Id }, cat);
     }
 
-    [Authorize(Roles = "Admin,Staff")]
+    [Authorize(Roles = "Admin")]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] CreateCategoryDto dto)
     {
@@ -45,7 +42,7 @@ public class CategoriesController : ControllerBase
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
-    [Authorize(Roles = "Admin,Staff")]
+    [Authorize(Roles = "Admin")]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
@@ -63,41 +60,19 @@ public class CategoriesController : ControllerBase
 public class CustomersController : ControllerBase
 {
     private readonly ICustomerService _customers;
-    private readonly UserManager<AppUser> _userManager;
+    public CustomersController(ICustomerService customers) => _customers = customers;
 
-    public CustomersController(ICustomerService customers, UserManager<AppUser> userManager)
-    {
-        _customers = customers;
-        _userManager = userManager;
-    }
-
-    [HttpGet("me")]
-    public async Task<IActionResult> GetMe()
-    {
-        var appUser = await _userManager.GetUserAsync(User);
-        if (appUser == null) return Unauthorized();
-
-        var customerId = await _customers.EnsureCustomerProfileAsync(appUser);
-        var customer = await _customers.GetCustomerByIdAsync(customerId);
-
-        return customer == null ? NotFound() : Ok(customer);
-    }
-
+    /// <summary>كل العملاء — Admin فقط</summary>
+    [Authorize(Roles = "Admin")]
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        [FromQuery] string? search = null)
-    {
-        if (User.IsInRole("Admin") || User.IsInRole("Staff"))
-        {
-            return Ok(await _customers.GetCustomersAsync(page, pageSize, search));
-        }
+        [FromQuery] string? search = null) =>
+        Ok(await _customers.GetCustomersAsync(page, pageSize, search));
 
-        return await GetMe();
-    }
-
-    [Authorize(Roles = "Admin,Staff")]
+    /// <summary>تفاصيل عميل — Admin أو صاحب الحساب</summary>
+    [Authorize]
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
@@ -105,44 +80,23 @@ public class CustomersController : ControllerBase
         return customer == null ? NotFound() : Ok(customer);
     }
 
-    [HttpPost("me/addresses")]
-    public async Task<IActionResult> AddAddressMe([FromBody] CreateAddressDto dto)
+    /// <summary>تفعيل / إيقاف عميل — Admin فقط</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpPatch("{id}/toggle")]
+    public async Task<IActionResult> Toggle(int id)
     {
-        var appUser = await _userManager.GetUserAsync(User);
-        if (appUser == null) return Unauthorized();
-
-        var customerId = await _customers.EnsureCustomerProfileAsync(appUser);
-        return Ok(await _customers.AddAddressAsync(customerId, dto));
+        var result = await _customers.ToggleCustomerAsync(id);
+        return result ? Ok() : NotFound();
     }
 
-    [HttpDelete("me/addresses/{addressId}")]
-    public async Task<IActionResult> DeleteAddressMe(int addressId)
-    {
-        var appUser = await _userManager.GetUserAsync(User);
-        if (appUser == null) return Unauthorized();
-
-        var customerId = await _customers.EnsureCustomerProfileAsync(appUser);
-        try { await _customers.DeleteAddressAsync(customerId, addressId); return NoContent(); }
-        catch (KeyNotFoundException) { return NotFound(); }
-    }
-
-    [HttpPatch("me/addresses/{addressId}/default")]
-    public async Task<IActionResult> SetDefaultMe(int addressId)
-    {
-        var appUser = await _userManager.GetUserAsync(User);
-        if (appUser == null) return Unauthorized();
-
-        var customerId = await _customers.EnsureCustomerProfileAsync(appUser);
-        await _customers.SetDefaultAddressAsync(customerId, addressId);
-        return Ok(new { message = "Default address updated" });
-    }
-
-    [Authorize(Roles = "Admin,Staff")]
+    /// <summary>إضافة عنوان</summary>
+    [Authorize]
     [HttpPost("{customerId}/addresses")]
     public async Task<IActionResult> AddAddress(int customerId, [FromBody] CreateAddressDto dto) =>
         Ok(await _customers.AddAddressAsync(customerId, dto));
 
-    [Authorize(Roles = "Admin,Staff")]
+    /// <summary>حذف عنوان</summary>
+    [Authorize]
     [HttpDelete("{customerId}/addresses/{addressId}")]
     public async Task<IActionResult> DeleteAddress(int customerId, int addressId)
     {
@@ -150,7 +104,8 @@ public class CustomersController : ControllerBase
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
-    [Authorize(Roles = "Admin,Staff")]
+    /// <summary>تعيين عنوان افتراضي</summary>
+    [Authorize]
     [HttpPatch("{customerId}/addresses/{addressId}/default")]
     public async Task<IActionResult> SetDefault(int customerId, int addressId)
     {

@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
-using System.Text.Json.Serialization;
 
 namespace Sportive.API.Services;
 
@@ -9,9 +8,11 @@ public interface ICouponService
 {
     Task<(bool Valid, decimal Discount, string? Error)> ValidateAsync(string code, decimal orderTotal);
     Task<Coupon> CreateAsync(CreateCouponDto dto);
+    Task<CouponListDto?> UpdateAsync(int id, CreateCouponDto dto);
     Task<List<CouponListDto>> GetAllAsync();
     Task<bool> DeactivateAsync(int id);
-    Task UseAsync(string code);
+    Task<bool> ToggleAsync(int id);
+    Task<bool> DeleteAsync(int id);
 }
 
 public record CreateCouponDto(
@@ -41,14 +42,7 @@ public record CouponListDto(
     bool IsActive
 );
 
-public class ApplyCouponRequest
-{
-    [JsonPropertyName("code")]
-    public string Code { get; set; } = string.Empty;
-    
-    [JsonPropertyName("orderTotal")]
-    public decimal OrderTotal { get; set; }
-}
+public record ApplyCouponRequest(string Code, decimal OrderTotal);
 
 public class CouponService : ICouponService
 {
@@ -77,7 +71,7 @@ public class CouponService : ICouponService
         if (coupon.DiscountType == DiscountType.Percentage)
         {
             discount = orderTotal * (coupon.DiscountValue / 100);
-            if (coupon.MaxDiscountAmount.HasValue && coupon.MaxDiscountAmount.Value > 0)
+            if (coupon.MaxDiscountAmount.HasValue)
                 discount = Math.Min(discount, coupon.MaxDiscountAmount.Value);
         }
         else
@@ -122,6 +116,38 @@ public class CouponService : ICouponService
                 c.ExpiresAt, c.IsActive))
             .ToListAsync();
 
+    public async Task<CouponListDto?> UpdateAsync(int id, CreateCouponDto dto)
+    {
+        var coupon = await _db.Coupons.FindAsync(id);
+        if (coupon == null) return null;
+
+        // Check code uniqueness if changed
+        if (!coupon.Code.Equals(dto.Code, StringComparison.OrdinalIgnoreCase))
+        {
+            var exists = await _db.Coupons.AnyAsync(c => c.Code.ToUpper() == dto.Code.ToUpper() && c.Id != id);
+            if (exists) throw new InvalidOperationException("كود الكوبون موجود مسبقاً");
+        }
+
+        coupon.Code              = dto.Code.ToUpper();
+        coupon.DescriptionAr     = dto.DescriptionAr;
+        coupon.DescriptionEn     = dto.DescriptionEn;
+        coupon.DiscountType      = dto.DiscountType;
+        coupon.DiscountValue     = dto.DiscountValue;
+        coupon.MinOrderAmount    = dto.MinOrderAmount;
+        coupon.MaxDiscountAmount = dto.MaxDiscountAmount;
+        coupon.MaxUsageCount     = dto.MaxUsageCount;
+        coupon.ExpiresAt         = dto.ExpiresAt;
+        coupon.UpdatedAt         = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return new CouponListDto(
+            coupon.Id, coupon.Code, coupon.DescriptionAr, coupon.DescriptionEn,
+            coupon.DiscountType.ToString(), coupon.DiscountValue,
+            coupon.MinOrderAmount, coupon.MaxDiscountAmount,
+            coupon.MaxUsageCount, coupon.CurrentUsageCount,
+            coupon.ExpiresAt, coupon.IsActive);
+    }
+
     public async Task<bool> DeactivateAsync(int id)
     {
         var coupon = await _db.Coupons.FindAsync(id);
@@ -132,13 +158,23 @@ public class CouponService : ICouponService
         return true;
     }
 
-    public async Task UseAsync(string code)
+    public async Task<bool> ToggleAsync(int id)
     {
-        var coupon = await _db.Coupons.FirstOrDefaultAsync(c => c.Code.ToUpper() == code.ToUpper());
-        if (coupon != null)
-        {
-            coupon.CurrentUsageCount++;
-            await _db.SaveChangesAsync();
-        }
+        var coupon = await _db.Coupons.FindAsync(id);
+        if (coupon == null) return false;
+        coupon.IsActive  = !coupon.IsActive;
+        coupon.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<bool> DeleteAsync(int id)
+    {
+        var coupon = await _db.Coupons.FindAsync(id);
+        if (coupon == null) return false;
+        coupon.IsDeleted = true;
+        coupon.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return true;
     }
 }

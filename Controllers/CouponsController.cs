@@ -11,6 +11,7 @@ public class CouponsController : ControllerBase
     private readonly ICouponService _coupons;
     public CouponsController(ICouponService coupons) => _coupons = coupons;
 
+    /// <summary>التحقق من كوبون خصم (public)</summary>
     [HttpPost("validate")]
     public async Task<IActionResult> Validate([FromBody] ApplyCouponRequest req)
     {
@@ -19,10 +20,13 @@ public class CouponsController : ControllerBase
         return Ok(new { discount, message = $"تم تطبيق خصم {discount:N2} ج.م" });
     }
 
+    /// <summary>كل الكوبونات (Admin)</summary>
     [Authorize(Roles = "Admin")]
     [HttpGet]
-    public async Task<IActionResult> GetAll() => Ok(await _coupons.GetAllAsync());
+    public async Task<IActionResult> GetAll() =>
+        Ok(await _coupons.GetAllAsync());
 
+    /// <summary>إضافة كوبون جديد (Admin)</summary>
     [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateCouponDto dto)
@@ -31,8 +35,34 @@ public class CouponsController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
+    /// <summary>تعديل كوبون (Admin)</summary>
     [Authorize(Roles = "Admin")]
-    [HttpDelete("{id}")]
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] CreateCouponDto dto)
+    {
+        try
+        {
+            var result = await _coupons.UpdateAsync(id, dto);
+            return result == null ? NotFound() : Ok(result);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
+    /// <summary>تفعيل/إيقاف كوبون (Admin)</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpPatch("{id}/toggle")]
+    public async Task<IActionResult> Toggle(int id) =>
+        await _coupons.ToggleAsync(id) ? Ok() : NotFound();
+
+    /// <summary>تعطيل كوبون (Admin)</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpPatch("{id}/deactivate")]
     public async Task<IActionResult> Deactivate(int id) =>
         await _coupons.DeactivateAsync(id) ? Ok() : NotFound();
+
+    /// <summary>حذف كوبون (Admin)</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(int id) =>
+        await _coupons.DeleteAsync(id) ? Ok() : NotFound();
 }

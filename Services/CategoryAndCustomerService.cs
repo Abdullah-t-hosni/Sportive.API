@@ -108,7 +108,7 @@ public class CustomerService : ICustomerService
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(c => new CustomerDetailDto(
-                c.Id, c.FirstName + " " + c.LastName, c.FirstName, c.LastName, c.Email, c.Phone,
+                c.Id, c.FirstName, c.LastName, c.Email, c.Phone,
                 c.Orders.Count,
                 c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
                 c.CreatedAt,
@@ -130,7 +130,7 @@ public class CustomerService : ICustomerService
             .Include(c => c.Orders)
             .Where(c => c.Id == id)
             .Select(c => new CustomerDetailDto(
-                c.Id, c.FirstName + " " + c.LastName, c.FirstName, c.LastName, c.Email, c.Phone,
+                c.Id, c.FirstName, c.LastName, c.Email, c.Phone,
                 c.Orders.Count,
                 c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
                 c.CreatedAt,
@@ -147,59 +147,7 @@ public class CustomerService : ICustomerService
             .Include(c => c.Orders)
             .Where(c => c.Email == email)
             .Select(c => new CustomerDetailDto(
-                c.Id, c.FirstName + " " + c.LastName, c.FirstName, c.LastName, c.Email, c.Phone,
-                c.Orders.Count,
-                c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
-                c.CreatedAt,
-                c.Addresses.Select(a => new AddressDto(
-                    a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
-                    a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault
-                )).ToList()
-            ))
-            .FirstOrDefaultAsync();
-
-    public async Task<int> EnsureCustomerProfileAsync(AppUser user)
-    {
-        var existing = await _db.Customers.FirstOrDefaultAsync(c => c.AppUserId == user.Id);
-        if (existing != null)
-            return existing.Id;
-
-        var byEmail = await _db.Customers.FirstOrDefaultAsync(c => c.Email == user.Email);
-        if (byEmail != null)
-        {
-            if (!string.IsNullOrEmpty(byEmail.AppUserId) && byEmail.AppUserId != user.Id)
-                throw new InvalidOperationException("This email is already linked to another account.");
-
-            byEmail.AppUserId = user.Id;
-            byEmail.FirstName = user.FirstName;
-            byEmail.LastName  = user.LastName;
-            if (!string.IsNullOrWhiteSpace(user.PhoneNumber))
-                byEmail.Phone = user.PhoneNumber;
-            byEmail.UpdatedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync();
-            return byEmail.Id;
-        }
-
-        var customer = new Customer
-        {
-            FirstName = user.FirstName,
-            LastName  = user.LastName,
-            Email     = user.Email!,
-            Phone     = user.PhoneNumber,
-            AppUserId = user.Id
-        };
-        _db.Customers.Add(customer);
-        await _db.SaveChangesAsync();
-        return customer.Id;
-    }
-
-    public async Task<CustomerDetailDto?> GetCustomerByAppUserIdAsync(string appUserId) =>
-        await _db.Customers
-            .Include(c => c.Addresses)
-            .Include(c => c.Orders)
-            .Where(c => c.AppUserId == appUserId)
-            .Select(c => new CustomerDetailDto(
-                c.Id, c.FirstName + " " + c.LastName, c.FirstName, c.LastName, c.Email, c.Phone,
+                c.Id, c.FirstName, c.LastName, c.Email, c.Phone,
                 c.Orders.Count,
                 c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
                 c.CreatedAt,
@@ -249,6 +197,16 @@ public class CustomerService : ICustomerService
         address.IsDeleted = true;
         address.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
+    }
+
+    public async Task<bool> ToggleCustomerAsync(int id)
+    {
+        var customer = await _db.Customers.FindAsync(id);
+        if (customer == null) return false;
+        // Toggle via AppUser IsActive
+        customer.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return true;
     }
 
     public async Task SetDefaultAddressAsync(int customerId, int addressId)

@@ -19,38 +19,20 @@ public class CartService : ICartService
 
     public async Task<CartSummaryDto> AddToCartAsync(int customerId, AddToCartDto dto)
     {
-        if (!await _db.Customers.AnyAsync(c => c.Id == customerId))
-            throw new InvalidOperationException(
-                "No customer with this id. Create a customer profile or use the correct customer id.");
-
-        if (!await _db.Products.AnyAsync(p => p.Id == dto.ProductId))
-            throw new InvalidOperationException("Product not found.");
-
-        // Clients often send 0 instead of omitting the variant — invalid FK
-        int? variantId = dto.ProductVariantId is 0 ? null : dto.ProductVariantId;
-
-        if (variantId.HasValue)
-        {
-            var ok = await _db.ProductVariants.AnyAsync(v =>
-                v.Id == variantId.Value && v.ProductId == dto.ProductId && !v.IsDeleted);
-            if (!ok)
-                throw new InvalidOperationException("Invalid or inactive variant for this product.");
-        }
-
         var existing = await _db.CartItems.FirstOrDefaultAsync(c =>
             c.CustomerId == customerId &&
             c.ProductId == dto.ProductId &&
-            c.ProductVariantId == variantId);
+            c.ProductVariantId == dto.ProductVariantId);
 
         if (existing != null)
             existing.Quantity += dto.Quantity;
         else
             _db.CartItems.Add(new CartItem
             {
-                CustomerId       = customerId,
-                ProductId        = dto.ProductId,
-                ProductVariantId = variantId,
-                Quantity         = dto.Quantity
+                CustomerId = customerId,
+                ProductId = dto.ProductId,
+                ProductVariantId = dto.ProductVariantId,
+                Quantity = dto.Quantity
             });
 
         await _db.SaveChangesAsync();
@@ -96,28 +78,18 @@ public class CartService : ICartService
     private static CartSummaryDto BuildSummary(List<CartItem> items)
     {
         const decimal deliveryFee = 50m;
-        const string defaultImageUrl = "https://via.placeholder.com/400x400?text=No+Image";
-
         var dtos = items.Select(c =>
         {
-            var price = c.Product?.DiscountPrice ?? c.Product?.Price ?? 0m;
+            var price = c.Product.DiscountPrice ?? c.Product.Price;
             if (c.ProductVariant?.PriceAdjustment.HasValue == true)
                 price += c.ProductVariant.PriceAdjustment!.Value;
 
-            var imageUrl = c.Product?.Images?.FirstOrDefault(i => i.IsMain)?.ImageUrl ?? defaultImageUrl;
-
             return new CartItemDto(
-                c.Id,
-                c.ProductId,
-                c.Product?.NameAr ?? string.Empty,
-                c.Product?.NameEn ?? string.Empty,
-                imageUrl,
-                c.ProductVariant?.Size,
-                c.ProductVariant?.Color,
-                c.ProductVariant?.ColorAr,
-                c.Quantity,
-                price,
-                price * c.Quantity
+                c.Id, c.ProductId,
+                c.Product.NameAr, c.Product.NameEn,
+                c.Product.Images.FirstOrDefault(i => i.IsMain)?.ImageUrl,
+                c.ProductVariant?.Size, c.ProductVariant?.Color, c.ProductVariant?.ColorAr,
+                c.Quantity, price, price * c.Quantity
             );
         }).ToList();
 

@@ -113,32 +113,103 @@ public class OrdersController : ControllerBase
 public class CartController : ControllerBase
 {
     private readonly ICartService _cart;
-    public CartController(ICartService cart) => _cart = cart;
+    private readonly AppDbContext _db;
 
-    [HttpGet("{customerId}")]
-    public async Task<IActionResult> Get(int customerId) =>
+    public CartController(ICartService cart, AppDbContext db)
+    {
+        _cart = cart;
+        _db = db;
+    }
+
+    /// <summary>جيب الـ customerId من التوكن</summary>
+    private async Task<int?> GetCustomerIdAsync()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return null;
+        var customer = await _db.Customers
+            .Where(c => c.AppUserId == userId && !c.IsDeleted)
+            .Select(c => new { c.Id })
+            .FirstOrDefaultAsync();
+        return customer?.Id;
+    }
+
+    /// <summary>GET /api/cart — سلة المستخدم الحالي</summary>
+    [HttpGet]
+    public async Task<IActionResult> Get()
+    {
+        var customerId = await GetCustomerIdAsync();
+        if (customerId == null) return NotFound(new { message = "Customer profile not found" });
+        return Ok(await _cart.GetCartAsync(customerId.Value));
+    }
+
+    /// <summary>GET /api/cart/{customerId} — للتوافق مع الفرونت القديم</summary>
+    [HttpGet("{customerId:int}")]
+    public async Task<IActionResult> GetById(int customerId) =>
         Ok(await _cart.GetCartAsync(customerId));
 
-    [HttpPost("{customerId}")]
-    public async Task<IActionResult> Add(int customerId, [FromBody] AddToCartDto dto) =>
+    /// <summary>POST /api/cart — إضافة للسلة (customerId من التوكن)</summary>
+    [HttpPost]
+    public async Task<IActionResult> Add([FromBody] AddToCartDto dto)
+    {
+        var customerId = await GetCustomerIdAsync();
+        if (customerId == null) return NotFound(new { message = "Customer profile not found" });
+        return Ok(await _cart.AddToCartAsync(customerId.Value, dto));
+    }
+
+    /// <summary>POST /api/cart/{customerId} — للتوافق مع الفرونت القديم</summary>
+    [HttpPost("{customerId:int}")]
+    public async Task<IActionResult> AddById(int customerId, [FromBody] AddToCartDto dto) =>
         Ok(await _cart.AddToCartAsync(customerId, dto));
 
-    [HttpPut("{customerId}/items/{itemId}")]
-    public async Task<IActionResult> Update(int customerId, int itemId, [FromBody] UpdateCartItemDto dto)
+    /// <summary>PUT /api/cart/items/{itemId}</summary>
+    [HttpPut("items/{itemId}")]
+    public async Task<IActionResult> Update(int itemId, [FromBody] UpdateCartItemDto dto)
+    {
+        var customerId = await GetCustomerIdAsync();
+        if (customerId == null) return NotFound(new { message = "Customer profile not found" });
+        try { return Ok(await _cart.UpdateCartItemAsync(customerId.Value, itemId, dto)); }
+        catch (KeyNotFoundException) { return NotFound(); }
+    }
+
+    /// <summary>PUT /api/cart/{customerId}/items/{itemId} — للتوافق</summary>
+    [HttpPut("{customerId:int}/items/{itemId}")]
+    public async Task<IActionResult> UpdateById(int customerId, int itemId, [FromBody] UpdateCartItemDto dto)
     {
         try { return Ok(await _cart.UpdateCartItemAsync(customerId, itemId, dto)); }
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
-    [HttpDelete("{customerId}/items/{itemId}")]
-    public async Task<IActionResult> Remove(int customerId, int itemId)
+    /// <summary>DELETE /api/cart/items/{itemId}</summary>
+    [HttpDelete("items/{itemId}")]
+    public async Task<IActionResult> Remove(int itemId)
+    {
+        var customerId = await GetCustomerIdAsync();
+        if (customerId == null) return NotFound(new { message = "Customer profile not found" });
+        try { return Ok(await _cart.RemoveFromCartAsync(customerId.Value, itemId)); }
+        catch (KeyNotFoundException) { return NotFound(); }
+    }
+
+    /// <summary>DELETE /api/cart/{customerId}/items/{itemId} — للتوافق</summary>
+    [HttpDelete("{customerId:int}/items/{itemId}")]
+    public async Task<IActionResult> RemoveById(int customerId, int itemId)
     {
         try { return Ok(await _cart.RemoveFromCartAsync(customerId, itemId)); }
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
-    [HttpDelete("{customerId}")]
-    public async Task<IActionResult> Clear(int customerId)
+    /// <summary>DELETE /api/cart — مسح السلة</summary>
+    [HttpDelete]
+    public async Task<IActionResult> Clear()
+    {
+        var customerId = await GetCustomerIdAsync();
+        if (customerId == null) return NotFound(new { message = "Customer profile not found" });
+        await _cart.ClearCartAsync(customerId.Value);
+        return NoContent();
+    }
+
+    /// <summary>DELETE /api/cart/{customerId} — للتوافق</summary>
+    [HttpDelete("{customerId:int}")]
+    public async Task<IActionResult> ClearById(int customerId)
     {
         await _cart.ClearCartAsync(customerId);
         return NoContent();
