@@ -1,3 +1,7 @@
+using CloudinaryDotNet;
+using CloudinaryDotNet.Actions;
+using Microsoft.Extensions.Configuration;
+
 namespace Sportive.API.Services;
 
 public interface IImageService
@@ -9,104 +13,69 @@ public interface IImageService
 
 public record ImageUploadDto(bool Success, string? Url, string? PublicId, string? Error);
 
-/// <summary>
-/// Local image service — يحفظ الصور على الـ server محلياً
-/// بدل Cloudinary للتطوير والتجربة
-/// </summary>
 public class CloudinaryImageService : IImageService
 {
+    private readonly Cloudinary _cloudinary;
     private readonly ILogger<CloudinaryImageService> _logger;
-    private readonly IWebHostEnvironment _env;
-    private readonly IHttpContextAccessor _http;
 
-    private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
-    private const long MaxFileSizeBytes = 5 * 1024 * 1024; // 5 MB
-
-    public CloudinaryImageService(
-        ILogger<CloudinaryImageService> logger,
-        IWebHostEnvironment env,
-        IHttpContextAccessor http)
+    public CloudinaryImageService(IConfiguration config, ILogger<CloudinaryImageService> logger)
     {
+        var section = config.GetSection("Cloudinary");
+        var account = new Account(
+            section["CloudName"],
+            section["ApiKey"],
+            section["ApiSecret"]
+        );
+        _cloudinary = new Cloudinary(account);
         _logger = logger;
-        _env    = env;
-        _http   = http;
     }
 
     public async Task<ImageUploadDto> UploadProductImageAsync(IFormFile file, int productId)
-        => await UploadAsync(file, $"products/{productId}");
+        => await UploadAsync(file, $"sportive/products/{productId}");
 
     public async Task<ImageUploadDto> UploadCategoryImageAsync(IFormFile file, int categoryId)
-        => await UploadAsync(file, $"categories/{categoryId}");
+        => await UploadAsync(file, $"sportive/categories/{categoryId}");
 
-    private string WebRoot =>
-        !string.IsNullOrEmpty(_env.WebRootPath)
-            ? _env.WebRootPath
-            : Path.Combine(_env.ContentRootPath, "wwwroot");
-
-    public Task<bool> DeleteImageAsync(string publicId)
+    public async Task<bool> DeleteImageAsync(string publicId)
     {
         try
         {
-            var filePath = Path.Combine(WebRoot, "uploads", publicId.TrimStart('/'));
-            if (File.Exists(filePath))
-                File.Delete(filePath);
-            return Task.FromResult(true);
+            var result = await _cloudinary.DestroyAsync(new DeletionParams(publicId));
+            return result.Result == "ok";
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete image {PublicId}", publicId);
-            return Task.FromResult(false);
+            _logger.LogError(ex, "Cloudinary delete failed for {PublicId}", publicId);
+            return false;
         }
     }
 
     private async Task<ImageUploadDto> UploadAsync(IFormFile file, string folder)
     {
         if (file == null || file.Length == 0)
-            return new ImageUploadDto(false, null, null, "No file uploaded. Use form field name \"file\".");
-
-        // Validate extension
-        var ext = Path.GetExtension(file.FileName).ToLower();
-        if (!AllowedExtensions.Contains(ext))
-            return new ImageUploadDto(false, null, null,
-                $"نوع الملف غير مدعوم. المسموح: {string.Join(", ", AllowedExtensions)}");
-
-        // Validate size
-        if (file.Length > MaxFileSizeBytes)
-            return new ImageUploadDto(false, null, null, "حجم الصورة يتجاوز 5 ميجابايت");
+            return new ImageUploadDto(false, null, null, "No file uploaded.");
 
         try
         {
-            var webRoot = WebRoot;
-            Directory.CreateDirectory(webRoot);
+            await using var stream = file.OpenReadStream();
+            var uploadParams = new ImageUploadParams
+            {
+                File = new FileDescription(file.FileName, stream),
+                Folder = folder,
+                Transformation = new Transformation().Quality("auto").FetchFormat("auto")
+            };
 
-            // Create folder
-            var uploadFolder = Path.Combine(webRoot, "uploads", folder);
-            Directory.CreateDirectory(uploadFolder);
+            var result = await _cloudinary.UploadAsync(uploadParams);
 
-            // Unique filename
-            var fileName  = $"{Guid.NewGuid()}{ext}";
-            var filePath  = Path.Combine(uploadFolder, fileName);
-            var publicId  = $"{folder}/{fileName}";
+            if (result.Error != null)
+                return new ImageUploadDto(false, null, null, result.Error.Message);
 
-            // Save file
-            await using var stream = File.Create(filePath);
-            await file.CopyToAsync(stream);
-
-            // Build URL
-            var request = _http.HttpContext?.Request;
-            var baseUrl = request != null
-                ? $"{request.Scheme}://{request.Host}"
-                : "http://localhost:5000";
-
-            var url = $"{baseUrl}/uploads/{folder}/{fileName}";
-
-            _logger.LogInformation("Image saved: {Path}", filePath);
-            return new ImageUploadDto(true, url, publicId, null);
+            return new ImageUploadDto(true, result.SecureUrl.ToString(), result.PublicId, null);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Image upload failed");
-            return new ImageUploadDto(false, null, null, "فشل حفظ الصورة");
+            _logger.LogError(ex, "Cloudinary upload failed");
+            return new ImageUploadDto(false, null, null, "فشل رفع الصورة للسحابة");
         }
     }
 }
