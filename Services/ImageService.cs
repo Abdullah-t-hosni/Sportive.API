@@ -20,14 +20,20 @@ public class CloudinaryImageService : IImageService
 
     public CloudinaryImageService(IConfiguration config, ILogger<CloudinaryImageService> logger)
     {
-        var section = config.GetSection("Cloudinary");
-        var account = new Account(
-            section["CloudName"],
-            section["ApiKey"],
-            section["ApiSecret"]
-        );
-        _cloudinary = new Cloudinary(account);
         _logger = logger;
+
+        var cloudName  = config["Cloudinary:CloudName"]  ?? Environment.GetEnvironmentVariable("CLOUDINARY_CLOUD_NAME");
+        var apiKey     = config["Cloudinary:ApiKey"]     ?? Environment.GetEnvironmentVariable("CLOUDINARY_API_KEY");
+        var apiSecret  = config["Cloudinary:ApiSecret"]  ?? Environment.GetEnvironmentVariable("CLOUDINARY_API_SECRET");
+
+        if (string.IsNullOrEmpty(cloudName) || string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(apiSecret))
+        {
+            _logger.LogWarning("Cloudinary credentials are missing. Check appsettings.json or environment variables: CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET");
+        }
+
+        var account = new Account(cloudName, apiKey, apiSecret);
+        _cloudinary = new Cloudinary(account);
+        _cloudinary.Api.Secure = true;
     }
 
     public async Task<ImageUploadDto> UploadProductImageAsync(IFormFile file, int productId)
