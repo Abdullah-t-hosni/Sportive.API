@@ -9,8 +9,13 @@ namespace Sportive.API.Services;
 public class OrderService : IOrderService
 {
     private readonly AppDbContext _db;
+    private readonly ICouponService _coupons;
 
-    public OrderService(AppDbContext db) => _db = db;
+    public OrderService(AppDbContext db, ICouponService coupons)
+    {
+        _db = db;
+        _coupons = coupons;
+    }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
         int page, int pageSize, OrderStatus? status = null, string? search = null)
@@ -154,6 +159,17 @@ public class OrderService : IOrderService
         }
 
         order.SubTotal = subtotal;
+
+        if (!string.IsNullOrWhiteSpace(dto.CouponCode))
+        {
+            var (valid, discount, error) = await _coupons.ValidateAsync(dto.CouponCode, subtotal);
+            if (!valid)
+                throw new InvalidOperationException(error ?? "كود الخصم غير صحيح");
+
+            order.DiscountAmount = discount;
+            await _coupons.UseAsync(dto.CouponCode);
+        }
+
         order.TotalAmount = subtotal + order.DeliveryFee - order.DiscountAmount;
 
         order.StatusHistory.Add(new OrderStatusHistory

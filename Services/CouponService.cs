@@ -4,12 +4,11 @@ using Sportive.API.Models;
 
 namespace Sportive.API.Services;
 
-public interface ICouponService
-{
     Task<(bool Valid, decimal Discount, string? Error)> ValidateAsync(string code, decimal orderTotal);
     Task<Coupon> CreateAsync(CreateCouponDto dto);
     Task<List<CouponListDto>> GetAllAsync();
     Task<bool> DeactivateAsync(int id);
+    Task UseAsync(string code);
 }
 
 public record CreateCouponDto(
@@ -121,5 +120,15 @@ public class CouponService : ICouponService
         coupon.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
         return true;
+    }
+
+    public async Task UseAsync(string code)
+    {
+        var coupon = await _db.Coupons.FirstOrDefaultAsync(c => c.Code.ToUpper() == code.ToUpper());
+        if (coupon != null)
+        {
+            coupon.CurrentUsageCount++;
+            await _db.SaveChangesAsync();
+        }
     }
 }
