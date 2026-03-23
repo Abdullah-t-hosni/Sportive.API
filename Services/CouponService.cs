@@ -4,6 +4,8 @@ using Sportive.API.Models;
 
 namespace Sportive.API.Services;
 
+public interface ICouponService
+{
     Task<(bool Valid, decimal Discount, string? Error)> ValidateAsync(string code, decimal orderTotal);
     Task<Coupon> CreateAsync(CreateCouponDto dto);
     Task<List<CouponListDto>> GetAllAsync();
@@ -38,7 +40,11 @@ public record CouponListDto(
     bool IsActive
 );
 
-public record ApplyCouponRequest(string Code, decimal OrderTotal);
+public class ApplyCouponRequest
+{
+    public string Code { get; set; } = string.Empty;
+    public decimal OrderTotal { get; set; }
+}
 
 public class CouponService : ICouponService
 {
