@@ -230,11 +230,12 @@ public record CustomerBasicDto(
 
 public record CustomerDetailDto(
     int Id,
+    string FullName,
     string FirstName,
     string LastName,
     string Email,
     string? Phone,
-    int TotalOrders,
+    int OrderCount,
     decimal TotalSpent,
     DateTime CreatedAt,
     List<AddressDto> Addresses

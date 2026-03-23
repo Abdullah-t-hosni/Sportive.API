@@ -108,7 +108,7 @@ public class CustomerService : ICustomerService
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(c => new CustomerDetailDto(
-                c.Id, c.FirstName, c.LastName, c.Email, c.Phone,
+                c.Id, c.FirstName + " " + c.LastName, c.FirstName, c.LastName, c.Email, c.Phone,
                 c.Orders.Count,
                 c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
                 c.CreatedAt,
@@ -130,7 +130,7 @@ public class CustomerService : ICustomerService
             .Include(c => c.Orders)
             .Where(c => c.Id == id)
             .Select(c => new CustomerDetailDto(
-                c.Id, c.FirstName, c.LastName, c.Email, c.Phone,
+                c.Id, c.FirstName + " " + c.LastName, c.FirstName, c.LastName, c.Email, c.Phone,
                 c.Orders.Count,
                 c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
                 c.CreatedAt,
@@ -147,7 +147,7 @@ public class CustomerService : ICustomerService
             .Include(c => c.Orders)
             .Where(c => c.Email == email)
             .Select(c => new CustomerDetailDto(
-                c.Id, c.FirstName, c.LastName, c.Email, c.Phone,
+                c.Id, c.FirstName + " " + c.LastName, c.FirstName, c.LastName, c.Email, c.Phone,
                 c.Orders.Count,
                 c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
                 c.CreatedAt,
@@ -199,7 +199,7 @@ public class CustomerService : ICustomerService
             .Include(c => c.Orders)
             .Where(c => c.AppUserId == appUserId)
             .Select(c => new CustomerDetailDto(
-                c.Id, c.FirstName, c.LastName, c.Email, c.Phone,
+                c.Id, c.FirstName + " " + c.LastName, c.FirstName, c.LastName, c.Email, c.Phone,
                 c.Orders.Count,
                 c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
                 c.CreatedAt,
