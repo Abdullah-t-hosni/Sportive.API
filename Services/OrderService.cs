@@ -202,11 +202,12 @@ public class OrderService : IOrderService
 
     public async Task<string> GenerateOrderNumberAsync()
     {
-        var today = DateTime.UtcNow;
+        var today    = DateTime.UtcNow;
+        var dayStart = today.Date;
+        var dayEnd   = dayStart.AddDays(1);
+
         var count = await _db.Orders.CountAsync(o =>
-            o.CreatedAt.Year == today.Year &&
-            o.CreatedAt.Month == today.Month &&
-            o.CreatedAt.Day == today.Day);
+            o.CreatedAt >= dayStart && o.CreatedAt < dayEnd);
 
         return $"SZ-{today:yyyyMMdd}-{(count + 1):D4}";
     }

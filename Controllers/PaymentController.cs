@@ -13,13 +13,15 @@ public class PaymentController : ControllerBase
 {
     private readonly IPaymobService _paymob;
     private readonly AppDbContext _db;
+    private readonly IConfiguration _config;
     private readonly ILogger<PaymentController> _logger;
 
-    public PaymentController(IPaymobService paymob, AppDbContext db, ILogger<PaymentController> logger)
+    public PaymentController(IPaymobService paymob, AppDbContext db, ILogger<PaymentController> logger, IConfiguration config)
     {
         _paymob = paymob;
         _db     = db;
         _logger = logger;
+        _config = config;
     }
 
     /// <summary>إنشاء رابط دفع Paymob لطلب معين</summary>
@@ -82,9 +84,12 @@ public class PaymentController : ControllerBase
     [HttpGet("result")]
     public IActionResult PaymentResult([FromQuery] string? success, [FromQuery] string? merchant_order_id)
     {
+        var frontendUrl = _config["AllowedOrigins"]?.Split(';').FirstOrDefault() 
+            ?? "http://localhost:5173";
+
         var redirectUrl = success?.ToLower() == "true"
-            ? $"http://localhost:5173/orders?payment=success&order={merchant_order_id}"
-            : $"http://localhost:5173/orders?payment=failed&order={merchant_order_id}";
+            ? $"{frontendUrl}/orders?payment=success&order={merchant_order_id}"
+            : $"{frontendUrl}/orders?payment=failed&order={merchant_order_id}";
 
         return Redirect(redirectUrl);
     }
