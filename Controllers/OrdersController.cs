@@ -1,7 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
@@ -14,35 +15,23 @@ namespace Sportive.API.Controllers;
 public class OrdersController : ControllerBase
 {
     private readonly IOrderService _orders;
-    private readonly ICustomerService _customers;
-    private readonly UserManager<AppUser> _users;
+    private readonly AppDbContext _db;
 
-    public OrdersController(
-        IOrderService orders,
-        ICustomerService customers,
-        UserManager<AppUser> users)
+    public OrdersController(IOrderService orders, AppDbContext db)
     {
-        _orders    = orders;
-        _customers = customers;
-        _users     = users;
+        _orders = orders;
+        _db = db;
     }
 
     // Admin: get all orders with optional filters
+    [Authorize(Roles = "Admin")]
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] OrderStatus? status = null,
-        [FromQuery] string? search = null)
-    {
-        if (User.IsInRole("Admin") || User.IsInRole("Staff"))
-        {
-            return Ok(await _orders.GetOrdersAsync(page, pageSize, status, search));
-        }
-
-        // Fallback for Customer
-        return await GetMyOrders(page, pageSize);
-    }
+        [FromQuery] string? search = null) =>
+        Ok(await _orders.GetOrdersAsync(page, pageSize, status, search));
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
@@ -51,57 +40,64 @@ public class OrdersController : ControllerBase
         return order == null ? NotFound() : Ok(order);
     }
 
-    // Customer: get my orders (linked via Customer.AppUserId or same email as account)
+    // Customer: get my orders (uses JWT token to find customerId)
     [HttpGet("my")]
     public async Task<IActionResult> GetMyOrders(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
-        var appUser = await _users.GetUserAsync(User);
-        if (appUser == null) return Unauthorized();
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
-        var customerId = await _customers.EnsureCustomerProfileAsync(appUser);
-        return Ok(await _orders.GetCustomerOrdersAsync(customerId, page, pageSize));
+        var customer = await _db.Customers
+            .Where(c => c.AppUserId == userId && !c.IsDeleted)
+            .FirstOrDefaultAsync();
+
+        // Fallback: find by email if no AppUserId link
+        if (customer == null)
+        {
+            var email = User.FindFirstValue(ClaimTypes.Email)!;
+            customer = await _db.Customers
+                .Where(c => c.Email == email && !c.IsDeleted)
+                .FirstOrDefaultAsync();
+
+            // Link them for future
+            if (customer != null)
+            {
+                customer.AppUserId = userId;
+                await _db.SaveChangesAsync();
+            }
+        }
+
+        if (customer == null)
+            return NotFound(new { message = "Customer profile not found" });
+
+        var result = await _orders.GetOrdersAsync(page, pageSize, null, null, customer.Id);
+        return Ok(result);
     }
 
-    /// <summary>
-    /// Customers: omit <c>customerId</c> — the server uses the logged-in profile (same id as cart from login).
-    /// Admins: pass <c>?customerId=</c> to place an order for that customer.
-    /// </summary>
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateOrderDto dto, [FromQuery] int? customerId = null)
     {
-        int resolvedCustomerId;
-
-        if (User.IsInRole("Admin") || User.IsInRole("Staff"))
-        {
-            if (!customerId.HasValue)
-                return BadRequest(new { message = "Admin must pass ?customerId=<id> for the customer who is checking out." });
-            resolvedCustomerId = customerId.Value;
-        }
-        else if (User.IsInRole("Customer"))
-        {
-            var appUser = await _users.GetUserAsync(User);
-            if (appUser == null)
-                return Unauthorized();
-            resolvedCustomerId = await _customers.EnsureCustomerProfileAsync(appUser);
-        }
-        else
-        {
-            return BadRequest(new { message = "Only Customer, Staff or Admin accounts can create orders." });
-        }
-
         try
         {
-            var order = await _orders.CreateOrderAsync(resolvedCustomerId, dto);
+            // If customerId not provided, get it from JWT token
+            if (!customerId.HasValue)
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+                var customer = await _db.Customers
+                    .Where(c => c.AppUserId == userId && !c.IsDeleted)
+                    .FirstOrDefaultAsync();
+                if (customer == null)
+                    return BadRequest(new { message = "Customer profile not found" });
+                customerId = customer.Id;
+            }
+
+            var order = await _orders.CreateOrderAsync(customerId.Value, dto);
             return CreatedAtAction(nameof(GetById), new { id = order.Id }, order);
         }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
-    [Authorize(Roles = "Admin,Staff")]
+    [Authorize(Roles = "Admin")]
     [HttpPatch("{id}/status")]
     public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateOrderStatusDto dto)
     {
@@ -117,43 +113,7 @@ public class OrdersController : ControllerBase
 public class CartController : ControllerBase
 {
     private readonly ICartService _cart;
-    private readonly ICustomerService _customers;
-    private readonly UserManager<AppUser> _users;
-
-    public CartController(ICartService cart, ICustomerService customers, UserManager<AppUser> users)
-    {
-        _cart = cart;
-        _customers = customers;
-        _users = users;
-    }
-
-    [HttpGet("me")]
-    public async Task<IActionResult> GetMe()
-    {
-        var appUser = await _users.GetUserAsync(User);
-        if (appUser == null) return Unauthorized();
-        var customerId = await _customers.EnsureCustomerProfileAsync(appUser);
-        return Ok(await _cart.GetCartAsync(customerId));
-    }
-
-    [HttpPost("me/items")]
-    public async Task<IActionResult> AddMe([FromBody] AddToCartDto dto)
-    {
-        var appUser = await _users.GetUserAsync(User);
-        if (appUser == null) return Unauthorized();
-        var customerId = await _customers.EnsureCustomerProfileAsync(appUser);
-        return Ok(await _cart.AddToCartAsync(customerId, dto));
-    }
-
-    [HttpDelete("me")]
-    public async Task<IActionResult> ClearMe()
-    {
-        var appUser = await _users.GetUserAsync(User);
-        if (appUser == null) return Unauthorized();
-        var customerId = await _customers.EnsureCustomerProfileAsync(appUser);
-        await _cart.ClearCartAsync(customerId);
-        return NoContent();
-    }
+    public CartController(ICartService cart) => _cart = cart;
 
     [HttpGet("{customerId}")]
     public async Task<IActionResult> Get(int customerId) =>

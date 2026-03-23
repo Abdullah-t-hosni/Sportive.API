@@ -3,6 +3,8 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.EntityFrameworkCore;
+using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
@@ -12,14 +14,14 @@ namespace Sportive.API.Services;
 public class AuthService : IAuthService
 {
     private readonly UserManager<AppUser> _userManager;
-    private readonly ICustomerService _customers;
     private readonly IConfiguration _config;
+    private readonly AppDbContext _db;
 
-    public AuthService(UserManager<AppUser> userManager, ICustomerService customers, IConfiguration config)
+    public AuthService(UserManager<AppUser> userManager, IConfiguration config, AppDbContext db)
     {
         _userManager = userManager;
-        _customers   = customers;
-        _config      = config;
+        _config = config;
+        _db = db;
     }
 
     public async Task<AuthResponseDto> RegisterAsync(RegisterDto dto)
@@ -45,6 +47,20 @@ public class AuthService : IAuthService
         }
 
         await _userManager.AddToRoleAsync(user, "Customer");
+
+        // Create customer profile linked to this user
+        var customer = new Customer
+        {
+            FirstName   = dto.FirstName,
+            LastName    = dto.LastName,
+            Email       = dto.Email,
+            Phone       = dto.Phone,
+            AppUserId   = user.Id,
+            CreatedAt   = DateTime.UtcNow
+        };
+        _db.Customers.Add(customer);
+        await _db.SaveChangesAsync();
+
         return await BuildTokenResponse(user);
     }
 
@@ -60,16 +76,6 @@ public class AuthService : IAuthService
             throw new UnauthorizedAccessException("Account is disabled");
 
         return await BuildTokenResponse(user);
-    }
-
-    public async Task<int?> GetMyCustomerIdAsync(string userId)
-    {
-        var user = await _userManager.FindByIdAsync(userId)
-            ?? throw new KeyNotFoundException("User not found");
-        var roles = await _userManager.GetRolesAsync(user);
-        if (!roles.Contains("Customer"))
-            return null;
-        return await _customers.EnsureCustomerProfileAsync(user);
     }
 
     public async Task<bool> ChangePasswordAsync(string userId, ChangePasswordDto dto)
@@ -92,11 +98,8 @@ public class AuthService : IAuthService
     private async Task<AuthResponseDto> BuildTokenResponse(AppUser user)
     {
         var roles = await _userManager.GetRolesAsync(user);
-
-        int? customerId = null;
-        if (roles.Contains("Customer"))
-            customerId = await _customers.EnsureCustomerProfileAsync(user);
-
+        var customer = await _db.Customers
+            .FirstOrDefaultAsync(c => c.AppUserId == user.Id && !c.IsDeleted);
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, user.Id),
@@ -129,7 +132,7 @@ public class AuthService : IAuthService
             $"{user.FirstName} {user.LastName}",
             roles,
             expires,
-            customerId
+            customer?.Id
         );
     }
 }

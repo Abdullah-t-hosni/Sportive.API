@@ -20,7 +20,7 @@ public record AuthResponseDto(
     string FullName,
     IList<string> Roles,
     DateTime ExpiresAt,
-    int? CustomerId
+    int? CustomerId = null
 );
 
 public record ChangePasswordDto(string CurrentPassword, string NewPassword);
@@ -230,12 +230,11 @@ public record CustomerBasicDto(
 
 public record CustomerDetailDto(
     int Id,
-    string FullName,
     string FirstName,
     string LastName,
     string Email,
     string? Phone,
-    int OrderCount,
+    int TotalOrders,
     decimal TotalSpent,
     DateTime CreatedAt,
     List<AddressDto> Addresses

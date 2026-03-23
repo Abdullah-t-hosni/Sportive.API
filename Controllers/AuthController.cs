@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
@@ -12,25 +14,12 @@ namespace Sportive.API.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _auth;
-    public AuthController(IAuthService auth) => _auth = auth;
+    private readonly AppDbContext _db;
 
-    /// <summary>Use this customerId for /api/cart/{customerId} after login (also returned in login/register JSON as customerId).</summary>
-    [Authorize]
-    [HttpGet("customer-id")]
-    public async Task<IActionResult> GetMyCustomerId()
+    public AuthController(IAuthService auth, AppDbContext db)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        try
-        {
-            var id = await _auth.GetMyCustomerIdAsync(userId);
-            return id.HasValue
-                ? Ok(new { customerId = id.Value })
-                : NotFound(new { message = "No customer profile (account is not in Customer role)." });
-        }
-        catch (KeyNotFoundException)
-        {
-            return NotFound();
-        }
+        _auth = auth;
+        _db = db;
     }
 
     [HttpPost("register")]
@@ -54,5 +43,47 @@ public class AuthController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var result = await _auth.ChangePasswordAsync(userId, dto);
         return result ? Ok(new { message = "Password changed successfully" }) : BadRequest(new { message = "Failed to change password" });
+    }
+
+    /// <summary>يرجع customerId للمستخدم المسجل حالياً</summary>
+    [Authorize]
+    [HttpGet("customer-id")]
+    public async Task<IActionResult> GetCustomerId()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var customer = await _db.Customers
+            .Where(c => c.AppUserId == userId && !c.IsDeleted)
+            .Select(c => new { c.Id })
+            .FirstOrDefaultAsync();
+
+        if (customer == null)
+            return NotFound(new { message = "Customer profile not found" });
+
+        return Ok(new { customerId = customer.Id });
+    }
+
+    /// <summary>بيانات المستخدم الحالي</summary>
+    [Authorize]
+    [HttpGet("me")]
+    public async Task<IActionResult> GetMe()
+    {
+        var userId   = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var email    = User.FindFirstValue(ClaimTypes.Email)!;
+        var roles    = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
+        var fullName = $"{User.FindFirstValue(ClaimTypes.GivenName)} {User.FindFirstValue(ClaimTypes.Surname)}".Trim();
+
+        var customer = await _db.Customers
+            .Where(c => c.AppUserId == userId && !c.IsDeleted)
+            .Select(c => new { c.Id, c.Phone })
+            .FirstOrDefaultAsync();
+
+        return Ok(new {
+            userId,
+            email,
+            fullName,
+            roles,
+            customerId = customer?.Id,
+            phone      = customer?.Phone
+        });
     }
 }

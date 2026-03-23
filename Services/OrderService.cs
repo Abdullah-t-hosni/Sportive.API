@@ -9,21 +9,20 @@ namespace Sportive.API.Services;
 public class OrderService : IOrderService
 {
     private readonly AppDbContext _db;
-    private readonly ICouponService _coupons;
 
-    public OrderService(AppDbContext db, ICouponService coupons)
-    {
-        _db = db;
-        _coupons = coupons;
-    }
+    public OrderService(AppDbContext db) => _db = db;
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
-        int page, int pageSize, OrderStatus? status = null, string? search = null)
+        int page, int pageSize, OrderStatus? status = null, string? search = null, int? customerId = null)
     {
         var query = _db.Orders
             .Include(o => o.Customer)
             .Include(o => o.Items)
             .AsQueryable();
+
+        // Filter by customer (for "my orders")
+        if (customerId.HasValue)
+            query = query.Where(o => o.CustomerId == customerId.Value);
 
         if (status.HasValue)
             query = query.Where(o => o.Status == status);
@@ -113,9 +112,7 @@ public class OrderService : IOrderService
             .ToListAsync();
 
         if (!cartItems.Any())
-            throw new InvalidOperationException(
-                "Cart is empty for this customer. Add items using the same customer id as your account (from login: customerId), " +
-                "or call POST /api/orders without ?customerId= so the server uses your profile.");
+            throw new InvalidOperationException("Cart is empty");
 
         var order = new Order
         {
@@ -159,17 +156,6 @@ public class OrderService : IOrderService
         }
 
         order.SubTotal = subtotal;
-
-        if (!string.IsNullOrWhiteSpace(dto.CouponCode))
-        {
-            var (valid, discount, error) = await _coupons.ValidateAsync(dto.CouponCode, subtotal);
-            if (!valid)
-                throw new InvalidOperationException(error ?? "كود الخصم غير صحيح");
-
-            order.DiscountAmount = discount;
-            await _coupons.UseAsync(dto.CouponCode);
-        }
-
         order.TotalAmount = subtotal + order.DeliveryFee - order.DiscountAmount;
 
         order.StatusHistory.Add(new OrderStatusHistory

@@ -8,8 +8,6 @@ public interface IAuthService
 {
     Task<AuthResponseDto> RegisterAsync(RegisterDto dto);
     Task<AuthResponseDto> LoginAsync(LoginDto dto);
-    /// <summary>Resolves or creates the Customer profile for the current user (Customer role only).</summary>
-    Task<int?> GetMyCustomerIdAsync(string userId);
     Task<bool> ChangePasswordAsync(string userId, ChangePasswordDto dto);
     Task<bool> AssignRoleAsync(string userId, string role);
 }
@@ -37,7 +35,7 @@ public interface ICategoryService
 
 public interface IOrderService
 {
-    Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(int page, int pageSize, OrderStatus? status = null, string? search = null);
+    Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(int page, int pageSize, OrderStatus? status = null, string? search = null, int? customerId = null);
     Task<OrderDetailDto?> GetOrderByIdAsync(int id);
     Task<PaginatedResult<OrderSummaryDto>> GetCustomerOrdersAsync(int customerId, int page, int pageSize);
     Task<OrderDetailDto> CreateOrderAsync(int customerId, CreateOrderDto dto);
@@ -59,9 +57,6 @@ public interface ICustomerService
     Task<PaginatedResult<CustomerDetailDto>> GetCustomersAsync(int page, int pageSize, string? search = null);
     Task<CustomerDetailDto?> GetCustomerByIdAsync(int id);
     Task<CustomerDetailDto?> GetCustomerByEmailAsync(string email);
-    Task<CustomerDetailDto?> GetCustomerByAppUserIdAsync(string appUserId);
-    /// <summary>Creates a Customer row linked to the user when missing (for cart & orders).</summary>
-    Task<int> EnsureCustomerProfileAsync(AppUser user);
     Task<AddressDto> AddAddressAsync(int customerId, CreateAddressDto dto);
     Task DeleteAddressAsync(int customerId, int addressId);
     Task SetDefaultAddressAsync(int customerId, int addressId);
