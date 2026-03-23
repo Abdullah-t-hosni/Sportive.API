@@ -98,16 +98,17 @@ public class DashboardService : IDashboardService
 
     public async Task<List<TopProductDto>> GetTopProductsAsync(int count = 10)
     {
-        return await _db.OrderItems
-            .Include(i => i.Product).ThenInclude(p => p.Images)
-            .GroupBy(i => i.ProductId)
-            .Select(g => new TopProductDto(
-                g.Key,
-                g.First().ProductNameAr,
-                g.First().ProductNameEn,
-                g.First().Product.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
-                g.Sum(i => i.Quantity),
-                g.Sum(i => i.TotalPrice)
+        return await _db.Products
+            .Include(p => p.Images)
+            .Include(p => p.OrderItems)
+            .Where(p => p.OrderItems.Any())
+            .Select(p => new TopProductDto(
+                p.Id,
+                p.NameAr,
+                p.NameEn,
+                p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
+                p.OrderItems.Sum(i => i.Quantity),
+                p.OrderItems.Sum(i => i.TotalPrice)
             ))
             .OrderByDescending(x => x.TotalSold)
             .Take(count)

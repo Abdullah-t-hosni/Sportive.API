@@ -29,7 +29,7 @@ public class CategoriesController : ControllerBase
         return cat == null ? NotFound() : Ok(cat);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateCategoryDto dto)
     {
@@ -37,7 +37,7 @@ public class CategoriesController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = cat.Id }, cat);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] CreateCategoryDto dto)
     {
@@ -45,7 +45,7 @@ public class CategoriesController : ControllerBase
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Staff")]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
@@ -83,15 +83,21 @@ public class CustomersController : ControllerBase
         return customer == null ? NotFound() : Ok(customer);
     }
 
-    [Authorize(Roles = "Admin")]
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        [FromQuery] string? search = null) =>
-        Ok(await _customers.GetCustomersAsync(page, pageSize, search));
+        [FromQuery] string? search = null)
+    {
+        if (User.IsInRole("Admin") || User.IsInRole("Staff"))
+        {
+            return Ok(await _customers.GetCustomersAsync(page, pageSize, search));
+        }
 
-    [Authorize(Roles = "Admin")]
+        return await GetMe();
+    }
+
+    [Authorize(Roles = "Admin,Staff")]
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
@@ -131,12 +137,12 @@ public class CustomersController : ControllerBase
         return Ok(new { message = "Default address updated" });
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPost("{customerId}/addresses")]
     public async Task<IActionResult> AddAddress(int customerId, [FromBody] CreateAddressDto dto) =>
         Ok(await _customers.AddAddressAsync(customerId, dto));
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Staff")]
     [HttpDelete("{customerId}/addresses/{addressId}")]
     public async Task<IActionResult> DeleteAddress(int customerId, int addressId)
     {
@@ -144,7 +150,7 @@ public class CustomersController : ControllerBase
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPatch("{customerId}/addresses/{addressId}/default")]
     public async Task<IActionResult> SetDefault(int customerId, int addressId)
     {

@@ -6,7 +6,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin,Staff")]
 public class DashboardController : ControllerBase
 {
     private readonly IDashboardService _dashboard;

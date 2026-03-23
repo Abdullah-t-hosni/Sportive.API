@@ -28,14 +28,21 @@ public class OrdersController : ControllerBase
     }
 
     // Admin: get all orders with optional filters
-    [Authorize(Roles = "Admin")]
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] OrderStatus? status = null,
-        [FromQuery] string? search = null) =>
-        Ok(await _orders.GetOrdersAsync(page, pageSize, status, search));
+        [FromQuery] string? search = null)
+    {
+        if (User.IsInRole("Admin") || User.IsInRole("Staff"))
+        {
+            return Ok(await _orders.GetOrdersAsync(page, pageSize, status, search));
+        }
+
+        // Fallback for Customer
+        return await GetMyOrders(page, pageSize);
+    }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
@@ -65,7 +72,7 @@ public class OrdersController : ControllerBase
     {
         int resolvedCustomerId;
 
-        if (User.IsInRole("Admin"))
+        if (User.IsInRole("Admin") || User.IsInRole("Staff"))
         {
             if (!customerId.HasValue)
                 return BadRequest(new { message = "Admin must pass ?customerId=<id> for the customer who is checking out." });
@@ -80,7 +87,7 @@ public class OrdersController : ControllerBase
         }
         else
         {
-            return BadRequest(new { message = "Only Customer or Admin accounts can create orders." });
+            return BadRequest(new { message = "Only Customer, Staff or Admin accounts can create orders." });
         }
 
         try
@@ -94,7 +101,7 @@ public class OrdersController : ControllerBase
         }
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPatch("{id}/status")]
     public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateOrderStatusDto dto)
     {
