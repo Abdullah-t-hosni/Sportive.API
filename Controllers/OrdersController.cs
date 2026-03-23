@@ -49,16 +49,11 @@ public class OrdersController : ControllerBase
     public async Task<IActionResult> GetMyOrders(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var email  = User.FindFirstValue(ClaimTypes.Email);
+        var appUser = await _users.GetUserAsync(User);
+        if (appUser == null) return Unauthorized();
 
-        var customer = await _customers.GetCustomerByAppUserIdAsync(userId)
-            ?? (email != null ? await _customers.GetCustomerByEmailAsync(email) : null);
-
-        if (customer == null)
-            return NotFound(new { message = "No customer profile linked to this account" });
-
-        return Ok(await _orders.GetCustomerOrdersAsync(customer.Id, page, pageSize));
+        var customerId = await _customers.EnsureCustomerProfileAsync(appUser);
+        return Ok(await _orders.GetCustomerOrdersAsync(customerId, page, pageSize));
     }
 
     /// <summary>
@@ -115,7 +110,43 @@ public class OrdersController : ControllerBase
 public class CartController : ControllerBase
 {
     private readonly ICartService _cart;
-    public CartController(ICartService cart) => _cart = cart;
+    private readonly ICustomerService _customers;
+    private readonly UserManager<AppUser> _users;
+
+    public CartController(ICartService cart, ICustomerService customers, UserManager<AppUser> users)
+    {
+        _cart = cart;
+        _customers = customers;
+        _users = users;
+    }
+
+    [HttpGet("me")]
+    public async Task<IActionResult> GetMe()
+    {
+        var appUser = await _users.GetUserAsync(User);
+        if (appUser == null) return Unauthorized();
+        var customerId = await _customers.EnsureCustomerProfileAsync(appUser);
+        return Ok(await _cart.GetCartAsync(customerId));
+    }
+
+    [HttpPost("me/items")]
+    public async Task<IActionResult> AddMe([FromBody] AddToCartDto dto)
+    {
+        var appUser = await _users.GetUserAsync(User);
+        if (appUser == null) return Unauthorized();
+        var customerId = await _customers.EnsureCustomerProfileAsync(appUser);
+        return Ok(await _cart.AddToCartAsync(customerId, dto));
+    }
+
+    [HttpDelete("me")]
+    public async Task<IActionResult> ClearMe()
+    {
+        var appUser = await _users.GetUserAsync(User);
+        if (appUser == null) return Unauthorized();
+        var customerId = await _customers.EnsureCustomerProfileAsync(appUser);
+        await _cart.ClearCartAsync(customerId);
+        return NoContent();
+    }
 
     [HttpGet("{customerId}")]
     public async Task<IActionResult> Get(int customerId) =>
