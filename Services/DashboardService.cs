@@ -98,21 +98,23 @@ public class DashboardService : IDashboardService
 
     public async Task<List<TopProductDto>> GetTopProductsAsync(int count = 10)
     {
-        return await _db.Products
-            .Include(p => p.Images)
-            .Include(p => p.OrderItems)
+        var data = await _db.Products
             .Where(p => p.OrderItems.Any())
-            .Select(p => new TopProductDto(
+            .Select(p => new {
                 p.Id,
                 p.NameAr,
                 p.NameEn,
-                p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
-                p.OrderItems.Sum(i => i.Quantity),
-                p.OrderItems.Sum(i => i.TotalPrice)
-            ))
+                MainImageUrl = p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
+                TotalSold = p.OrderItems.Sum(i => i.Quantity),
+                TotalRevenue = p.OrderItems.Sum(i => i.TotalPrice)
+            })
             .OrderByDescending(x => x.TotalSold)
             .Take(count)
             .ToListAsync();
+
+        return data.Select(x => new TopProductDto(
+            x.Id, x.NameAr, x.NameEn, x.MainImageUrl, x.TotalSold, x.TotalRevenue
+        )).ToList();
     }
 
     public async Task<List<OrderStatusStatsDto>> GetOrderStatusStatsAsync()
