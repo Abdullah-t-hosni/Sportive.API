@@ -52,6 +52,24 @@ public class AnalyticsController : ControllerBase
         var lowStockCount  = await _db.ProductVariants.CountAsync(v => !v.IsDeleted && v.StockQuantity <= 5 && v.StockQuantity > 0);
         var outOfStockCount = await _db.ProductVariants.CountAsync(v => !v.IsDeleted && v.StockQuantity == 0);
 
+        // منتجات ذات مخزون منخفض (التفاصيل للعرض)
+        var lowStockProducts = await _db.ProductVariants
+            .Include(v => v.Product).ThenInclude(p => p.Images)
+            .Where(v => !v.IsDeleted && v.StockQuantity <= 5 && v.StockQuantity > 0)
+            .Select(v => new {
+                v.Id,
+                ProductId = v.Product.Id,
+                v.Product.NameAr,
+                v.Product.NameEn,
+                v.StockQuantity,
+                ImageUrl = v.Product.Images
+                    .Where(img => img.IsMain && !img.IsDeleted)
+                    .Select(img => img.ImageUrl)
+                    .FirstOrDefault()
+            })
+            .Take(10)
+            .ToListAsync();
+
         // أكثر منتجات مبيعاً هذا الشهر
         var topProductsRaw = await _db.OrderItems
             .Include(i => i.Product)
@@ -96,6 +114,7 @@ public class AnalyticsController : ControllerBase
                 lowStock   = lowStockCount,
                 outOfStock = outOfStockCount
             },
+            lowStockProducts = lowStockProducts,
             topProducts    = topProductsRaw,
             ordersByStatus = ordersByStatus
         });
