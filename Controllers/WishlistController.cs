@@ -60,16 +60,23 @@ public class WishlistController : ControllerBase
         var customerId = await GetCustomerIdAsync();
         if (customerId == null) return NotFound(new { message = "Customer not found" });
 
-        var exists = await _db.Set<WishlistItem>()
-            .AnyAsync(w => w.CustomerId == customerId && w.ProductId == dto.ProductId && !w.IsDeleted);
+        var item = await _db.Set<WishlistItem>()
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(w => w.CustomerId == customerId && w.ProductId == dto.ProductId);
 
-        if (!exists)
+        if (item == null)
         {
             _db.Set<WishlistItem>().Add(new WishlistItem
             {
                 CustomerId = customerId.Value,
                 ProductId  = dto.ProductId
             });
+            await _db.SaveChangesAsync();
+        }
+        else if (item.IsDeleted)
+        {
+            item.IsDeleted = false;
+            item.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
         }
 
