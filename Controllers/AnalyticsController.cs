@@ -76,9 +76,9 @@ public class AnalyticsController : ControllerBase
             .Where(i => !i.IsDeleted && i.Order.CreatedAt >= monthStart)
             .GroupBy(i => new { i.ProductId, i.ProductNameAr, i.ProductNameEn })
             .Select(g => new {
-                g.Key.ProductId,
-                g.Key.ProductNameAr,
-                g.Key.ProductNameEn,
+                ProductId = g.Key.ProductId,
+                NameAr    = g.Key.ProductNameAr,
+                NameEn    = g.Key.ProductNameEn,
                 TotalSold    = g.Sum(i => i.Quantity),
                 TotalRevenue = g.Sum(i => i.TotalPrice)
             })
