@@ -1,6 +1,8 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.DTOs;
+using Sportive.API.Hubs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
 
