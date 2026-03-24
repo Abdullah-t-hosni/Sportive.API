@@ -147,6 +147,7 @@ public class ProductService : IProductService
         product.Price = dto.Price;
         product.DiscountPrice = dto.DiscountPrice;
         product.Brand = dto.Brand;
+        product.SKU = dto.SKU;
         product.CategoryId = dto.CategoryId;
         product.IsFeatured = dto.IsFeatured;
         product.Status = dto.Status;
@@ -179,6 +180,46 @@ public class ProductService : IProductService
         if (variant == null) return false;
         variant.StockQuantity = quantity;
         variant.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<ProductVariantDto> AddVariantAsync(int productId, CreateVariantDto dto)
+    {
+        var v = new ProductVariant
+        {
+            ProductId = productId,
+            Size = dto.Size,
+            Color = dto.Color,
+            ColorAr = dto.ColorAr,
+            StockQuantity = dto.StockQuantity,
+            PriceAdjustment = dto.PriceAdjustment
+        };
+        _db.ProductVariants.Add(v);
+        await _db.SaveChangesAsync();
+        return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment, v.ImageUrl);
+    }
+
+    public async Task<ProductVariantDto> UpdateVariantAsync(int variantId, CreateVariantDto dto)
+    {
+        var v = await _db.ProductVariants.FindAsync(variantId)
+            ?? throw new KeyNotFoundException("Variant not found");
+        v.Size = dto.Size;
+        v.Color = dto.Color;
+        v.ColorAr = dto.ColorAr;
+        v.StockQuantity = dto.StockQuantity;
+        v.PriceAdjustment = dto.PriceAdjustment;
+        v.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment, v.ImageUrl);
+    }
+
+    public async Task<bool> DeleteVariantAsync(int variantId)
+    {
+        var v = await _db.ProductVariants.FindAsync(variantId);
+        if (v == null) return false;
+        v.IsDeleted = true;
+        v.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
         return true;
     }

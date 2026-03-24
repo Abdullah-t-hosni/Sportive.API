@@ -43,12 +43,20 @@ public class DashboardService : IDashboardService
         var totalCustomers = await _db.Customers.CountAsync(c => !c.IsDeleted);
 
         // --- Growth Calculation (Previous Periods) ---
+        var yesterdayStartDate = todayStart.AddDays(-1);
+        var yesterdayOrders = await _db.Orders
+            .CountAsync(o => o.CreatedAt >= yesterdayStartDate && o.CreatedAt < todayStart && o.Status != OrderStatus.Cancelled);
+
+        var lastMonthStartMonth = monthStart.AddMonths(-1);
+        var prevMonthOrders = await _db.Orders
+            .CountAsync(o => o.CreatedAt >= lastMonthStartMonth && o.CreatedAt < monthStart && o.Status != OrderStatus.Cancelled);
+
         var yesterdaySales = await _db.Orders
-            .Where(o => o.CreatedAt >= yesterdayStart && o.CreatedAt < todayStart && o.Status != OrderStatus.Cancelled)
+            .Where(o => o.CreatedAt >= yesterdayStartDate && o.CreatedAt < todayStart && o.Status != OrderStatus.Cancelled)
             .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
 
         var lastMonthSales = await _db.Orders
-            .Where(o => o.CreatedAt >= lastMonthStart && o.CreatedAt < monthStart && o.Status != OrderStatus.Cancelled)
+            .Where(o => o.CreatedAt >= lastMonthStartMonth && o.CreatedAt < monthStart && o.Status != OrderStatus.Cancelled)
             .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
 
         var prevCustomersCount = await _db.Customers
@@ -59,21 +67,22 @@ public class DashboardService : IDashboardService
             previous == 0 ? (current > 0 ? 100 : 0) : Math.Round(((current - previous) / previous) * 100, 1);
 
         var todayGrowth = CalculateGrowth(todaySales, yesterdaySales);
-        var monthGrowth = CalculateGrowth(monthSales, lastMonthSales);
+        var monthSalesGrowth = CalculateGrowth(monthSales, lastMonthSales);
+        var orderGrowth = CalculateGrowth(totalOrders, prevMonthOrders); // Comparing current total to last month's start total (Simplified but better than 0)
         var customerGrowth = CalculateGrowth(totalCustomers, prevCustomersCount);
 
         return new DashboardStatsDto(
             TodaySales: todaySales,
             TodaySalesGrowth: todayGrowth,
             ThisMonthSales: monthSales,
-            ThisMonthSalesGrowth: monthGrowth,
+            ThisMonthSalesGrowth: monthSalesGrowth,
             TotalRevenue: await _db.Orders.Where(o => o.Status != OrderStatus.Cancelled).SumAsync(o => (decimal?)o.TotalAmount) ?? 0,
             TotalOrders: totalOrders,
-            TotalOrdersGrowth: 0, // Simplified
+            TotalOrdersGrowth: (int)orderGrowth,
             PendingOrders: await _db.Orders.CountAsync(o => o.Status == OrderStatus.Pending || o.Status == OrderStatus.Confirmed),
             TodayOrders: await _db.Orders.CountAsync(o => o.CreatedAt >= todayStart && o.CreatedAt < todayEnd && o.Status != OrderStatus.Cancelled),
             TotalCustomers: totalCustomers,
-            TotalCustomersGrowth: customerGrowth,
+            TotalCustomersGrowth: (int)customerGrowth,
             TotalProducts: await _db.Products.CountAsync(p => !p.IsDeleted),
             LowStockProducts: await _db.ProductVariants.CountAsync(v => !v.IsDeleted && v.StockQuantity <= 5 && v.StockQuantity > 0),
             OutOfStockProducts: await _db.ProductVariants.CountAsync(v => !v.IsDeleted && v.StockQuantity == 0)
@@ -97,20 +106,25 @@ public class DashboardService : IDashboardService
             ))
             .ToListAsync();
 
-        // Daily Sales for last 30 days
+        // Daily Sales & New Customers for last 30 days
         var startDate = now.AddDays(-30);
         var orders = await _db.Orders
             .Where(o => o.CreatedAt >= startDate && o.Status != OrderStatus.Cancelled)
             .Select(o => new { o.CreatedAt, o.TotalAmount })
             .ToListAsync();
 
-        var dailyMetrics = orders
-            .GroupBy(o => o.CreatedAt.Date)
-            .Select(g => new DailyMetricDto(
-                g.Key,
-                g.Sum(o => o.TotalAmount),
-                g.Count(),
-                0 // Placeholder for new customers per day if needed
+        var newCustomers = await _db.Customers
+            .Where(c => c.CreatedAt >= startDate && !c.IsDeleted)
+            .Select(c => c.CreatedAt)
+            .ToListAsync();
+
+        var dailyMetrics = Enumerable.Range(0, 31)
+            .Select(offset => startDate.Date.AddDays(offset))
+            .Select(date => new DailyMetricDto(
+                date,
+                orders.Where(o => o.CreatedAt.Date == date).Sum(o => o.TotalAmount),
+                orders.Count(o => o.CreatedAt.Date == date),
+                newCustomers.Count(c => c.Date == date)
             ))
             .OrderBy(x => x.Date)
             .ToList();
@@ -118,12 +132,26 @@ public class DashboardService : IDashboardService
         var totalRev = orders.Sum(o => o.TotalAmount);
         var totalOrd = orders.Count;
 
+        // Retention Rate calculation: (Customers with > 1 order / Total customers with at least 1 order)
+        var orderCountsByCustomer = await _db.Orders
+            .Where(o => o.Status != OrderStatus.Cancelled)
+            .GroupBy(o => o.CustomerId)
+            .Select(g => g.Count())
+            .ToListAsync();
+
+        decimal retentionRate = 0;
+        if (orderCountsByCustomer.Any())
+        {
+            var repeatCustomers = orderCountsByCustomer.Count(c => c > 1);
+            retentionRate = Math.Round(((decimal)repeatCustomers / orderCountsByCustomer.Count) * 100, 1);
+        }
+
         return new AnalyticsSummaryDto(
             CategorySales: catSales,
             TopSellingProducts: await GetTopProductsAsync(5),
             DailySales: dailyMetrics,
-            AverageOrderValue: totalOrd > 0 ? (totalRev / totalOrd) : 0,
-            CustomerRetentionRate: 0 // advanced logic omitted
+            AverageOrderValue: totalOrd > 0 ? Math.Round(totalRev / totalOrd, 1) : 0,
+            CustomerRetentionRate: retentionRate
         );
     }
 

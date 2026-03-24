@@ -59,4 +59,19 @@ public class ProductsController : ControllerBase
     [HttpPatch("variants/{variantId}/stock")]
     public async Task<IActionResult> UpdateStock(int variantId, [FromBody] int quantity) =>
         await _products.UpdateStockAsync(variantId, quantity) ? Ok() : NotFound();
+
+    [Authorize(Roles = "Admin")]
+    [HttpPost("{productId}/variants")]
+    public async Task<IActionResult> AddVariant(int productId, [FromBody] CreateVariantDto dto) =>
+        Ok(await _products.AddVariantAsync(productId, dto));
+
+    [Authorize(Roles = "Admin")]
+    [HttpPatch("variants/{variantId}")]
+    public async Task<IActionResult> UpdateVariant(int variantId, [FromBody] CreateVariantDto dto) =>
+        Ok(await _products.UpdateVariantAsync(variantId, dto));
+
+    [Authorize(Roles = "Admin")]
+    [HttpDelete("variants/{variantId}")]
+    public async Task<IActionResult> DeleteVariant(int variantId) =>
+        await _products.DeleteVariantAsync(variantId) ? NoContent() : NotFound();
 }

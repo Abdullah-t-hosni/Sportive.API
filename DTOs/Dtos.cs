@@ -118,6 +118,7 @@ public record UpdateProductDto(
     decimal Price,
     decimal? DiscountPrice,
     string? Brand,
+    string SKU,
     int CategoryId,
     bool IsFeatured,
     ProductStatus Status
