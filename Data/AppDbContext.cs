@@ -21,6 +21,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<CartItem> CartItems             => Set<CartItem>();
     public DbSet<Coupon> Coupons                 => Set<Coupon>();
     public DbSet<WishlistItem> WishlistItems     => Set<WishlistItem>();
+    public DbSet<Notification> Notifications    => Set<Notification>();
     public DbSet<WishlistItem> WishlistItems      => Set<WishlistItem>();
     public DbSet<Notification> Notifications      => Set<Notification>();
 
@@ -41,7 +42,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<CartItem>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Coupon>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<WishlistItem>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<WishlistItem>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);
 
         builder.Entity<Category>(e => {
@@ -110,6 +113,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.DiscountValue).HasPrecision(18, 2);
             e.Property(x => x.MinOrderAmount).HasPrecision(18, 2);
             e.Property(x => x.MaxDiscountAmount).HasPrecision(18, 2);
+        });
+
+        builder.Entity<Notification>(e => {
+            e.HasIndex(x => x.UserId);
+            e.HasIndex(x => new { x.UserId, x.IsRead });
         });
 
         builder.Entity<WishlistItem>(e => {

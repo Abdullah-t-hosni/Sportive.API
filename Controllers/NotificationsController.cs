@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using Sportive.API.Data;
-using Sportive.API.Services;
+using Sportive.API.Models;
 
 namespace Sportive.API.Controllers;
 
@@ -12,44 +12,78 @@ namespace Sportive.API.Controllers;
 [Authorize]
 public class NotificationsController : ControllerBase
 {
-    private readonly INotificationService _notifications;
     private readonly AppDbContext _db;
+    public NotificationsController(AppDbContext db) => _db = db;
 
-    public NotificationsController(INotificationService notifications, AppDbContext db)
-    {
-        _notifications = notifications;
-        _db = db;
-    }
+    private string GetUserId() => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
-    private async Task<int?> GetCustomerIdAsync()
-    {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userId == null) return null;
-        var customer = await _db.Customers
-            .Where(c => c.AppUserId == userId && !c.IsDeleted)
-            .FirstOrDefaultAsync();
-        return customer?.Id;
-    }
-
+    /// <summary>GET /api/notifications — كل الإشعارات</summary>
     [HttpGet]
-    public async Task<IActionResult> Get()
+    public async Task<IActionResult> GetAll()
     {
-        var custId = await GetCustomerIdAsync();
-        if (custId == null) return NotFound(new { message = "Customer not found" });
-        return Ok(await _notifications.GetMyNotificationsAsync(custId.Value));
+        var userId = GetUserId();
+        var notifications = await _db.Set<Notification>()
+            .Where(n => n.UserId == userId && !n.IsDeleted)
+            .OrderByDescending(n => n.CreatedAt)
+            .Take(50)
+            .Select(n => new {
+                n.Id,
+                n.TitleAr,
+                n.TitleEn,
+                n.MessageAr,
+                n.MessageEn,
+                n.Type,
+                n.IsRead,
+                n.OrderId,
+                n.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(notifications);
     }
+
+    /// <summary>GET /api/notifications/unread-count</summary>
     [HttpGet("unread-count")]
     public async Task<IActionResult> GetUnreadCount()
     {
-        var custId = await GetCustomerIdAsync();
-        if (custId == null) return Ok(0);
-        return Ok(await _notifications.GetUnreadCountAsync(custId.Value));
+        var userId = GetUserId();
+        var count = await _db.Set<Notification>()
+            .CountAsync(n => n.UserId == userId && !n.IsRead && !n.IsDeleted);
+        return Ok(count);
     }
 
+    /// <summary>PATCH /api/notifications/{id}/read</summary>
     [HttpPatch("{id}/read")]
     public async Task<IActionResult> MarkAsRead(int id)
     {
-        await _notifications.MarkAsReadAsync(id);
+        var userId = GetUserId();
+        var n = await _db.Set<Notification>()
+            .FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId && !n.IsDeleted);
+
+        if (n == null) return NotFound();
+
+        n.IsRead    = true;
+        n.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
         return Ok();
+    }
+
+    /// <summary>PATCH /api/notifications/read-all</summary>
+    [HttpPatch("read-all")]
+    public async Task<IActionResult> MarkAllAsRead()
+    {
+        var userId = GetUserId();
+        var notifications = await _db.Set<Notification>()
+            .Where(n => n.UserId == userId && !n.IsRead && !n.IsDeleted)
+            .ToListAsync();
+
+        foreach (var n in notifications)
+        {
+            n.IsRead    = true;
+            n.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { updated = notifications.Count });
     }
 }

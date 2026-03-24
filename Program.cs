@@ -154,10 +154,7 @@ builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ICouponService, CouponService>();
 builder.Services.AddScoped<IImageService, CloudinaryImageService>();
 builder.Services.AddScoped<IPaymobService, PaymobService>();
-builder.Services.AddScoped<IWishlistService, WishlistService>();
-builder.Services.AddScoped<INotificationService, NotificationService>();
-builder.Services.AddScoped<IReviewService, ReviewService>();
-builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
+// Wishlist, Reviews, Notifications, Analytics — handled directly in controllers
 
 builder.Services.AddHttpClient("Paymob");
 
