@@ -153,15 +153,23 @@ public class ProductService : IProductService
         product.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
-        return await GetProductByIdAsync(id)!;
+        return await GetProductByIdAsync(id) ?? throw new KeyNotFoundException($"Product {id} not found after update");
     }
 
     public async Task DeleteProductAsync(int id)
     {
-        var product = await _db.Products.FindAsync(id)
+        var product = await _db.Products
+            .Include(p => p.Variants)
+            .Include(p => p.Images)
+            .FirstOrDefaultAsync(p => p.Id == id)
             ?? throw new KeyNotFoundException($"Product {id} not found");
+
         product.IsDeleted = true;
         product.UpdatedAt = DateTime.UtcNow;
+
+        foreach (var v in product.Variants) { v.IsDeleted = true; v.UpdatedAt = DateTime.UtcNow; }
+        foreach (var i in product.Images)   { i.IsDeleted = true; i.UpdatedAt = DateTime.UtcNow; }
+
         await _db.SaveChangesAsync();
     }
 

@@ -20,7 +20,7 @@ public class WishlistService : IWishlistService
     public async Task<List<Product>> GetWishlistAsync(int customerId)
     {
         return await _db.WishlistItems
-            .Include(w => w.Product).ThenInclude(p => p.Images)
+            .Include(w => w.Product!).ThenInclude(p => p!.Images)
             .Where(w => w.CustomerId == customerId)
             .Select(w => w.Product!)
             .ToListAsync();

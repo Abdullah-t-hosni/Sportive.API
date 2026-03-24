@@ -143,6 +143,9 @@ public class OrderService : IOrderService
                 decimal subtotal = 0;
                 foreach (var item in cartItems)
                 {
+                    if (item.Product.Status != ProductStatus.Active)
+                        throw new InvalidOperationException($"المنتج {item.Product.NameAr} غير متاح حالياً");
+
                     var effectivePrice = item.Product.DiscountPrice ?? item.Product.Price;
                     if (item.ProductVariant?.PriceAdjustment.HasValue == true)
                         effectivePrice += item.ProductVariant.PriceAdjustment!.Value;

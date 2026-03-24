@@ -37,6 +37,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Order>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<OrderItem>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<CartItem>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<Address>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Coupon>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<WishlistItem>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);

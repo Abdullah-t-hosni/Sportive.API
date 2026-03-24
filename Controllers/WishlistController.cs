@@ -35,13 +35,13 @@ public class WishlistController : ControllerBase
         if (customerId == null) return NotFound(new { message = "Customer not found" });
 
         var items = await _db.Set<WishlistItem>()
-            .Include(w => w.Product).ThenInclude(p => p.Images)
-            .Include(w => w.Product).ThenInclude(p => p.Category)
+            .Include(w => w.Product!).ThenInclude(p => p!.Images)
+            .Include(w => w.Product!).ThenInclude(p => p!.Category)
             .Where(w => w.CustomerId == customerId && !w.IsDeleted)
             .Select(w => new {
                 w.Id,
                 w.ProductId,
-                w.Product.NameAr,
+                w.Product!.NameAr,
                 w.Product.NameEn,
                 w.Product.Price,
                 w.Product.DiscountPrice,
