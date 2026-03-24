@@ -280,7 +280,7 @@ public record DashboardStatsDto(
     int LowStockProducts
 );
 
-public record SalesChartDto(string Period, decimal Amount, int OrderCount);
+public record SalesChartDto(string Label, decimal Amount, int OrderCount);
 
 public record TopProductDto(
     int ProductId,

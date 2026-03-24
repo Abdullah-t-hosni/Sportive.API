@@ -6,10 +6,10 @@ namespace Sportive.API.Services;
 
 public interface INotificationService
 {
-    Task SendAsync(int? customerId, string titleAr, string titleEn, string msgAr, string msgEn, string type = "OrderUpdate", string? relatedOrder = null);
-    Task<List<Notification>> GetMyNotificationsAsync(int customerId);
+    Task SendAsync(string? userId, string titleAr, string titleEn, string msgAr, string msgEn, string type = "General", int? orderId = null);
+    Task<List<Notification>> GetMyNotificationsAsync(string userId);
     Task MarkAsReadAsync(int notificationId);
-    Task<int> GetUnreadCountAsync(int customerId);
+    Task<int> GetUnreadCountAsync(string userId);
 }
 
 public class NotificationService : INotificationService
@@ -18,25 +18,25 @@ public class NotificationService : INotificationService
     public NotificationService(AppDbContext db) => _db = db;
 
     public async Task SendAsync(
-        int? customerId, string titleAr, string titleEn, string msgAr, string msgEn, 
-        string type = "OrderUpdate", string? relatedOrder = null)
+        string? userId, string titleAr, string titleEn, string msgAr, string msgEn, 
+        string type = "General", int? orderId = null)
     {
         _db.Notifications.Add(new Notification {
-            CustomerId = customerId,
+            UserId = userId ?? string.Empty,
             TitleAr = titleAr,
             TitleEn = titleEn,
             MessageAr = msgAr,
             MessageEn = msgEn,
             Type = type,
-            RelatedOrderNumber = relatedOrder
+            OrderId = orderId
         });
         await _db.SaveChangesAsync();
     }
 
-    public async Task<List<Notification>> GetMyNotificationsAsync(int customerId)
+    public async Task<List<Notification>> GetMyNotificationsAsync(string userId)
     {
         return await _db.Notifications
-            .Where(n => n.CustomerId == customerId)
+            .Where(n => n.UserId == userId)
             .OrderByDescending(n => n.CreatedAt)
             .Take(50)
             .ToListAsync();
@@ -48,8 +48,8 @@ public class NotificationService : INotificationService
         if (n != null) { n.IsRead = true; await _db.SaveChangesAsync(); }
     }
 
-    public async Task<int> GetUnreadCountAsync(int customerId)
+    public async Task<int> GetUnreadCountAsync(string userId)
     {
-        return await _db.Notifications.CountAsync(n => n.CustomerId == customerId && !n.IsRead);
+        return await _db.Notifications.CountAsync(n => n.UserId == userId && !n.IsRead);
     }
 }

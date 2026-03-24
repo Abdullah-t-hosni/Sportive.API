@@ -44,7 +44,7 @@ public class PaymentController : ControllerBase
             OrderId: order.Id,
             OrderNumber: order.OrderNumber,
             Email: order.Customer.Email,
-            Phone: order.Customer.PhoneNumber ?? "01000000000",
+            Phone: order.Customer.Phone ?? "01000000000",
             FullName: order.Customer.FullName
         ));
 

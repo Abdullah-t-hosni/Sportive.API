@@ -223,7 +223,9 @@ public class OrderService : IOrderService
     public async Task<OrderDetailDto> UpdateOrderStatusAsync(
         int orderId, UpdateOrderStatusDto dto, string updatedByUserId)
     {
-        var order = await _db.Orders.FindAsync(orderId)
+        var order = await _db.Orders
+            .Include(o => o.Customer)
+            .FirstOrDefaultAsync(o => o.Id == orderId)
             ?? throw new KeyNotFoundException($"Order {orderId} not found");
 
         order.Status = dto.Status;
@@ -251,7 +253,7 @@ public class OrderService : IOrderService
         string msgAr = $"تم تغيير حالة طلبك رقم {order.OrderNumber} إلى: {dto.Status}";
         string msgEn = $"Your order {order.OrderNumber} status has been updated to: {dto.Status}";
         
-        await _notifications.SendAsync(order.CustomerId, titleAr, titleEn, msgAr, msgEn, "OrderUpdate", order.OrderNumber);
+        await _notifications.SendAsync(order.Customer?.AppUserId, titleAr, titleEn, msgAr, msgEn, "OrderUpdate", order.Id);
 
         return (await GetOrderByIdAsync(orderId))!;
     }
