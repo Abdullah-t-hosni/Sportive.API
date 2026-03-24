@@ -13,6 +13,12 @@ public class NotificationHub : Hub
         if (!string.IsNullOrEmpty(userId))
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, userId);
+            
+            // Add to Admin group if user is an Admin
+            if (Context.User.IsInRole("Admin"))
+            {
+                await Groups.AddToGroupAsync(Context.ConnectionId, "Admin");
+            }
         }
         await base.OnConnectedAsync();
     }
@@ -23,6 +29,11 @@ public class NotificationHub : Hub
         if (!string.IsNullOrEmpty(userId))
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, userId);
+            
+            if (Context.User.IsInRole("Admin"))
+            {
+                await Groups.RemoveFromGroupAsync(Context.ConnectionId, "Admin");
+            }
         }
         await base.OnDisconnectedAsync(exception);
     }

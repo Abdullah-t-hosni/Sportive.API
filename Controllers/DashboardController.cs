@@ -31,4 +31,22 @@ public class DashboardController : ControllerBase
     [HttpGet("recent-orders")]
     public async Task<IActionResult> GetRecentOrders([FromQuery] int count = 10) =>
         Ok(await _dashboard.GetRecentOrdersAsync(count));
+
+    [HttpGet("analytics-summary")]
+    public async Task<IActionResult> GetAnalyticsSummary() =>
+        Ok(await _dashboard.GetAnalyticsSummaryAsync());
+
+    [HttpGet("export-sales")]
+    public async Task<IActionResult> ExportSales([FromQuery] DateTime? from, [FromQuery] DateTime? to)
+    {
+        var csvBytes = await _dashboard.ExportSalesToCsvAsync(from, to);
+        return File(csvBytes, "text/csv", $"sales-report-{DateTime.UtcNow:yyyyMMdd}.csv");
+    }
+
+    [HttpPost("trigger-update")]
+    public async Task<IActionResult> TriggerUpdate()
+    {
+        await _dashboard.TriggerLiveUpdateAsync();
+        return Ok();
+    }
 }

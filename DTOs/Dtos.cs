@@ -270,15 +270,31 @@ public record CreateAddressDto(
 // ========== DASHBOARD ==========
 public record DashboardStatsDto(
     decimal TodaySales,
+    decimal TodaySalesGrowth, // % vs yesterday
     decimal ThisMonthSales,
+    decimal ThisMonthSalesGrowth, // % vs last month
     decimal TotalRevenue,
     int TotalOrders,
+    int TotalOrdersGrowth, // % vs last period
     int PendingOrders,
     int TodayOrders,
     int TotalCustomers,
+    int TotalCustomersGrowth, // % vs last month
     int TotalProducts,
-    int LowStockProducts
+    int LowStockProducts,
+    int OutOfStockProducts
 );
+
+public record AnalyticsSummaryDto(
+    List<CategorySalesDto> CategorySales,
+    List<TopProductDto> TopSellingProducts,
+    List<DailyMetricDto> DailySales,
+    decimal AverageOrderValue,
+    decimal CustomerRetentionRate
+);
+
+public record CategorySalesDto(int CategoryId, string NameAr, string NameEn, int TotalSold, decimal TotalRevenue);
+public record DailyMetricDto(DateTime Date, decimal Revenue, int Orders, int NewCustomers);
 
 public record SalesChartDto(string Label, decimal Amount, int OrderCount);
 

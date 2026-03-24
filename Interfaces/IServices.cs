@@ -70,4 +70,7 @@ public interface IDashboardService
     Task<List<TopProductDto>> GetTopProductsAsync(int count = 10);
     Task<List<OrderStatusStatsDto>> GetOrderStatusStatsAsync();
     Task<List<OrderSummaryDto>> GetRecentOrdersAsync(int count = 10);
+    Task<AnalyticsSummaryDto> GetAnalyticsSummaryAsync();
+    Task<byte[]> ExportSalesToCsvAsync(DateTime? from, DateTime? to);
+    Task TriggerLiveUpdateAsync(); // Pushes to all Admins via SignalR
 }
