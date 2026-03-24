@@ -38,7 +38,6 @@ public class NotificationsController : ControllerBase
         if (custId == null) return NotFound(new { message = "Customer not found" });
         return Ok(await _notifications.GetMyNotificationsAsync(custId.Value));
     }
-
     [HttpGet("unread-count")]
     public async Task<IActionResult> GetUnreadCount()
     {
