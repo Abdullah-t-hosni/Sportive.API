@@ -21,30 +21,24 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<CartItem> CartItems             => Set<CartItem>();
     public DbSet<Coupon> Coupons                 => Set<Coupon>();
     public DbSet<WishlistItem> WishlistItems     => Set<WishlistItem>();
-    public DbSet<Notification> Notifications    => Set<Notification>();
-    public DbSet<WishlistItem> WishlistItems      => Set<WishlistItem>();
-    public DbSet<Notification> Notifications      => Set<Notification>();
+    public DbSet<Notification> Notifications     => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
 
+        // Global Query Filters (Soft Delete)
         builder.Entity<Category>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Product>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<ProductVariant>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<ProductImage>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Review>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Customer>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<Address>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Order>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<OrderItem>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<OrderStatusHistory>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<CartItem>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Coupon>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<WishlistItem>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<WishlistItem>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);
 
         builder.Entity<Category>(e => {
@@ -95,14 +89,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
         });
 
-        builder.Entity<WishlistItem>(e =>
-            e.HasOne(x => x.Customer).WithMany()
-             .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Cascade));
-
-        builder.Entity<Notification>(e =>
-            e.HasOne(x => x.Customer).WithMany()
-             .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Cascade));
-
         builder.Entity<CartItem>(e =>
             e.HasOne(x => x.Customer).WithMany(c => c.CartItems)
              .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Cascade));
@@ -115,17 +101,17 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.MaxDiscountAmount).HasPrecision(18, 2);
         });
 
-        builder.Entity<Notification>(e => {
-            e.HasIndex(x => x.UserId);
-            e.HasIndex(x => new { x.UserId, x.IsRead });
-        });
-
         builder.Entity<WishlistItem>(e => {
             e.HasOne(x => x.Customer).WithMany()
              .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Product).WithMany()
              .HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.CustomerId, x.ProductId }).IsUnique();
+        });
+
+        builder.Entity<Notification>(e => {
+            e.HasIndex(x => x.UserId);
+            e.HasIndex(x => new { x.UserId, x.IsRead });
         });
 
         builder.Entity<Category>().HasData(
@@ -136,7 +122,3 @@ public class AppDbContext : IdentityDbContext<AppUser>
         );
     }
 }
-
-// This is appended - copy the DbSets below into your AppDbContext manually
-// public DbSet<WishlistItem> WishlistItems => Set<WishlistItem>();
-// public DbSet<Notification> Notifications => Set<Notification>();
