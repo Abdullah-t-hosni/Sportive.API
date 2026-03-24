@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Sportive.API.Models;
@@ -16,16 +15,13 @@ public class WishlistItem : BaseEntity
 
 public class Notification : BaseEntity
 {
-    public int? CustomerId { get; set; }
-    [ForeignKey("CustomerId")]
-    public Customer? Customer { get; set; }
+    public string UserId { get; set; } = string.Empty;  // FK → AspNetUsers.Id
 
-    public string TitleAr { get; set; } = string.Empty;
-    public string TitleEn { get; set; } = string.Empty;
+    public string TitleAr  { get; set; } = string.Empty;
+    public string TitleEn  { get; set; } = string.Empty;
     public string MessageAr { get; set; } = string.Empty;
     public string MessageEn { get; set; } = string.Empty;
-    
-    public string? RelatedOrderNumber { get; set; }
-    public bool IsRead { get; set; } = false;
-    public string Type { get; set; } = "OrderUpdate"; // OrderUpdate, StockAlert, Promo
+    public string Type     { get; set; } = "General"; // OrderUpdate | StockAlert | Promo | General
+    public bool   IsRead   { get; set; } = false;
+    public int?   OrderId  { get; set; }
 }
