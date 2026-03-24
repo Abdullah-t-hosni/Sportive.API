@@ -15,7 +15,7 @@ public class NotificationHub : Hub
             await Groups.AddToGroupAsync(Context.ConnectionId, userId);
             
             // Add to Admin group if user is an Admin
-            if (Context.User.IsInRole("Admin"))
+            if (Context.User?.IsInRole("Admin") == true)
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, "Admin");
             }
@@ -30,7 +30,7 @@ public class NotificationHub : Hub
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, userId);
             
-            if (Context.User.IsInRole("Admin"))
+            if (Context.User?.IsInRole("Admin") == true)
             {
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, "Admin");
             }
