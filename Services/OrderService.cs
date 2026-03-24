@@ -9,8 +9,13 @@ namespace Sportive.API.Services;
 public class OrderService : IOrderService
 {
     private readonly AppDbContext _db;
+    private readonly INotificationService _notifications;
 
-    public OrderService(AppDbContext db) => _db = db;
+    public OrderService(AppDbContext db, INotificationService notifications)
+    {
+        _db = db;
+        _notifications = notifications;
+    }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
         int page, int pageSize, OrderStatus? status = null, string? search = null, int? customerId = null)
@@ -239,6 +244,15 @@ public class OrderService : IOrderService
         });
 
         await _db.SaveChangesAsync();
+
+        // Send Auto Notification
+        string titleAr = "تحديث حالة الطلب";
+        string titleEn = "Order Status Update";
+        string msgAr = $"تم تغيير حالة طلبك رقم {order.OrderNumber} إلى: {dto.Status}";
+        string msgEn = $"Your order {order.OrderNumber} status has been updated to: {dto.Status}";
+        
+        await _notifications.SendAsync(order.CustomerId, titleAr, titleEn, msgAr, msgEn, "OrderUpdate", order.OrderNumber);
+
         return (await GetOrderByIdAsync(orderId))!;
     }
 

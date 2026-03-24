@@ -20,6 +20,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<OrderStatusHistory> OrderStatusHistories => Set<OrderStatusHistory>();
     public DbSet<CartItem> CartItems             => Set<CartItem>();
     public DbSet<Coupon> Coupons                 => Set<Coupon>();
+    public DbSet<WishlistItem> WishlistItems     => Set<WishlistItem>();
+    public DbSet<Notification> Notifications     => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -37,6 +39,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<OrderStatusHistory>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<CartItem>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Coupon>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<WishlistItem>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);
 
         builder.Entity<Category>(e => {
             e.Property(x => x.NameAr).HasMaxLength(100).IsRequired();
