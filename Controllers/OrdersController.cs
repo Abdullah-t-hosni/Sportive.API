@@ -30,8 +30,9 @@ public class OrdersController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] OrderStatus? status = null,
-        [FromQuery] string? search = null) =>
-        Ok(await _orders.GetOrdersAsync(page, pageSize, status, search));
+        [FromQuery] string? search = null,
+        [FromQuery] int? customerId = null) =>
+        Ok(await _orders.GetOrdersAsync(page, pageSize, status, search, customerId));
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
