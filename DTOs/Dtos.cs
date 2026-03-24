@@ -315,3 +315,20 @@ public record ProductFilterDto(
     int Page = 1,
     int PageSize = 12
 );
+
+// ========== REVIEWS ==========
+public record AddReviewDto(int ProductId, int Rating, string? Comment);
+
+// ========== WISHLIST ==========
+public record AddToWishlistDto(int ProductId);
+
+// ========== NOTIFICATIONS ==========
+public record SendNotificationDto(
+    string TitleAr,
+    string TitleEn,
+    string MessageAr,
+    string MessageEn,
+    string Type,
+    string? ActionUrl = null,
+    int? CustomerId = null  // null = send to all
+);

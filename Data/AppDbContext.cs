@@ -20,8 +20,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<OrderStatusHistory> OrderStatusHistories => Set<OrderStatusHistory>();
     public DbSet<CartItem> CartItems             => Set<CartItem>();
     public DbSet<Coupon> Coupons                 => Set<Coupon>();
-    public DbSet<WishlistItem> WishlistItems     => Set<WishlistItem>();
-    public DbSet<Notification> Notifications     => Set<Notification>();
+    public DbSet<WishlistItem> WishlistItems      => Set<WishlistItem>();
+    public DbSet<Notification> Notifications      => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -90,6 +90,14 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
         });
 
+        builder.Entity<WishlistItem>(e =>
+            e.HasOne(x => x.Customer).WithMany()
+             .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Cascade));
+
+        builder.Entity<Notification>(e =>
+            e.HasOne(x => x.Customer).WithMany()
+             .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Cascade));
+
         builder.Entity<CartItem>(e =>
             e.HasOne(x => x.Customer).WithMany(c => c.CartItems)
              .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Cascade));
@@ -110,3 +118,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
         );
     }
 }
+
+// This is appended - copy the DbSets below into your AppDbContext manually
+// public DbSet<WishlistItem> WishlistItems => Set<WishlistItem>();
+// public DbSet<Notification> Notifications => Set<Notification>();
