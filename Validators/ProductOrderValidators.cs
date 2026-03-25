@@ -27,7 +27,7 @@ public class CreateProductValidator : AbstractValidator<CreateProductDto>
         RuleFor(x => x.SKU)
             .NotEmpty().WithMessage("كود المنتج (SKU) مطلوب")
             .MaximumLength(50)
-            .Matches(@"^[A-Za-z0-9\-_]+$").WithMessage("SKU يحتوي على أحرف وأرقام فقط");
+            .Matches(@"^[0-9]+$").WithMessage("SKU يجب أن يحتوي على أرقام فقط");
 
         RuleFor(x => x.CategoryId)
             .GreaterThan(0).WithMessage("القسم مطلوب");
@@ -49,6 +49,10 @@ public class UpdateProductValidator : AbstractValidator<UpdateProductDto>
             .GreaterThan(0).LessThan(x => x.Price)
             .When(x => x.DiscountPrice.HasValue);
         RuleFor(x => x.CategoryId).GreaterThan(0);
+        RuleFor(x => x.SKU)
+            .NotEmpty().WithMessage("كود المنتج (SKU) مطلوب")
+            .MaximumLength(50)
+            .Matches(@"^[0-9]+$").WithMessage("SKU يجب أن يحتوي على أرقام فقط");
     }
 }
 

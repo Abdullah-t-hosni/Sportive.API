@@ -30,6 +30,7 @@ public class ProductService : IProductService
             query = query.Where(p =>
                 p.NameAr.ToLower().Contains(s) ||
                 p.NameEn.ToLower().Contains(s) ||
+                p.SKU.ToLower().Contains(s) ||
                 (p.Brand != null && p.Brand.ToLower().Contains(s)));
         }
 
