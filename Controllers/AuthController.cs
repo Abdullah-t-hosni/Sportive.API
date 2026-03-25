@@ -184,10 +184,10 @@ public class AuthController : ControllerBase
         var user = await _userManager.FindByIdAsync(id);
         if (user == null || !user.IsActive) return NotFound(new { message = "Staff not found" });
 
-        // Soft delete the user
-        user.IsActive = false;
-        await _userManager.UpdateAsync(user);
+        var result = await _userManager.DeleteAsync(user);
+        if (!result.Succeeded) 
+            return BadRequest(new { message = "Failed to delete staff: " + result.Errors.FirstOrDefault()?.Description });
 
-        return Ok(new { message = "Staff disabled successfully" });
+        return Ok(new { message = "Staff deleted permanently" });
     }
 }
