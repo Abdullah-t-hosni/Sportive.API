@@ -1,3 +1,7 @@
+using CloudinaryDotNet;
+using CloudinaryDotNet.Actions;
+using Microsoft.Extensions.Configuration;
+
 namespace Sportive.API.Services;
 
 public interface IImageService
@@ -12,90 +16,93 @@ public record ImageUploadDto(bool Success, string? Url, string? PublicId, string
 public class CloudinaryImageService : IImageService
 {
     private readonly ILogger<CloudinaryImageService> _logger;
+    private readonly Cloudinary _cloudinary;
     private readonly IWebHostEnvironment _env;
-    private readonly IHttpContextAccessor _http;
 
     private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
     private const long MaxFileSizeBytes = 5 * 1024 * 1024;
 
     public CloudinaryImageService(
         ILogger<CloudinaryImageService> logger,
-        IWebHostEnvironment env,
-        IHttpContextAccessor http)
+        IConfiguration config,
+        IWebHostEnvironment env)
     {
         _logger = logger;
-        _env    = env;
-        _http   = http;
+        _env = env;
+
+        var acc = new Account(
+            config["Cloudinary:CloudName"],
+            config["Cloudinary:ApiKey"],
+            config["Cloudinary:ApiSecret"]
+        );
+        _cloudinary = new Cloudinary(acc);
     }
 
     public async Task<ImageUploadDto> UploadProductImageAsync(IFormFile file, int productId)
-        => await UploadAsync(file, $"products/{productId}");
+        => await UploadToCloudinaryAsync(file, $"sportive/products/{productId}");
 
     public async Task<ImageUploadDto> UploadCategoryImageAsync(IFormFile file, int categoryId)
-        => await UploadAsync(file, $"categories/{categoryId}");
+        => await UploadToCloudinaryAsync(file, $"sportive/categories/{categoryId}");
 
-    public Task<bool> DeleteImageAsync(string publicId)
+    public async Task<bool> DeleteImageAsync(string publicId)
     {
+        // For Cloudinary images, publicId is the identifier.
+        // For local images (fallback), we still check local disk.
+        
+        if (publicId.StartsWith("sportive/"))
+        {
+            var deleteParams = new DeletionParams(publicId);
+            var result = await _cloudinary.DestroyAsync(deleteParams);
+            return result.Result == "ok";
+        }
+
+        // Fallback for local files
         try
         {
-            var basePath = GetUploadBasePath();
-            var filePath = Path.Combine(basePath, publicId.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
-            if (File.Exists(filePath)) File.Delete(filePath);
-            return Task.FromResult(true);
+            var localPath = Path.Combine(_env.ContentRootPath, "uploads", publicId.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(localPath)) File.Delete(localPath);
+            return true;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to delete image {PublicId}", publicId);
-            return Task.FromResult(false);
-        }
+        catch { return false; }
     }
 
-    private string GetUploadBasePath()
-    {
-        // Using 'uploads' in the root directory for maximum compatibility across environments
-        return Path.Combine(_env.ContentRootPath, "uploads");
-    }
-
-    private async Task<ImageUploadDto> UploadAsync(IFormFile file, string folder)
+    private async Task<ImageUploadDto> UploadToCloudinaryAsync(IFormFile file, string folder)
     {
         if (file == null || file.Length == 0)
             return new ImageUploadDto(false, null, null, "لم يتم إرسال أي ملف");
 
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
         if (!AllowedExtensions.Contains(ext))
-            return new ImageUploadDto(false, null, null,
-                $"نوع الملف غير مدعوم. المسموح: {string.Join(", ", AllowedExtensions)}");
+            return new ImageUploadDto(false, null, null, "نوع الملف غير مدعوم");
 
         if (file.Length > MaxFileSizeBytes)
             return new ImageUploadDto(false, null, null, "حجم الصورة يتجاوز 5 ميجابايت");
 
         try
         {
-            var basePath    = GetUploadBasePath();
-            var uploadFolder = Path.Combine(basePath, folder.Replace('/', Path.DirectorySeparatorChar));
-            Directory.CreateDirectory(uploadFolder);
+            await using var stream = file.OpenReadStream();
+            var uploadParams = new ImageUploadParams
+            {
+                File = new FileDescription(file.FileName, stream),
+                Folder = folder,
+                PublicId = Guid.NewGuid().ToString(),
+                Overwrite = true
+            };
 
-            var fileName = $"{Guid.NewGuid()}{ext}";
-            var filePath = Path.Combine(uploadFolder, fileName);
-            var publicId = $"{folder}/{fileName}";
+            var uploadResult = await _cloudinary.UploadAsync(uploadParams);
 
-            await using var stream = File.Create(filePath);
-            await file.CopyToAsync(stream);
+            if (uploadResult.Error != null)
+            {
+                _logger.LogError("Cloudinary upload error: {Error}", uploadResult.Error.Message);
+                return new ImageUploadDto(false, null, null, uploadResult.Error.Message);
+            }
 
-            var request = _http.HttpContext?.Request;
-            var baseUrl = request != null
-                ? $"{request.Scheme}://{request.Host}"
-                : "https://sportiveapi-production.up.railway.app";
-
-            var url = $"{baseUrl}/uploads/{folder}/{fileName}";
-
-            _logger.LogInformation("Image saved: {Path}", filePath);
-            return new ImageUploadDto(true, url, publicId, null);
+            return new ImageUploadDto(true, uploadResult.SecureUrl.ToString(), uploadResult.PublicId, null);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Image upload failed for folder {Folder}", folder);
-            return new ImageUploadDto(false, null, null, $"فشل حفظ الصورة: {ex.Message}");
+            _logger.LogError(ex, "Failed to upload to Cloudinary");
+            return new ImageUploadDto(false, null, null, ex.Message);
         }
     }
 }
