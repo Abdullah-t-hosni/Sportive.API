@@ -52,9 +52,8 @@ public class CloudinaryImageService : IImageService
 
     private string GetUploadBasePath()
     {
-        // On Railway, WebRootPath is usually null. We use ContentRootPath/wwwroot/uploads as per Program.cs configuration.
-        var webRoot = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot");
-        return Path.Combine(webRoot, "uploads");
+        // Using 'uploads' in the root directory for maximum compatibility across environments
+        return Path.Combine(_env.ContentRootPath, "uploads");
     }
 
     private async Task<ImageUploadDto> UploadAsync(IFormFile file, string folder)

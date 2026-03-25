@@ -235,9 +235,10 @@ app.UseMiddleware<ExceptionMiddleware>();
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 
-// ✅ أضف الكود ده عشان يخدم الصور من wwwroot/uploads
-var uploadsPath = Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "uploads");
-Directory.CreateDirectory(uploadsPath);
+// ✅ أضف الكود ده عشان يخدم الصور من مجلد uploads في جذر المشروع
+var uploadsPath = Path.Combine(builder.Environment.ContentRootPath, "uploads");
+if (!Directory.Exists(uploadsPath)) Directory.CreateDirectory(uploadsPath);
+Log.Information("Photo uploads path: {Path}", uploadsPath);
 
 app.UseStaticFiles(new StaticFileOptions
 {
