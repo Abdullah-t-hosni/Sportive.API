@@ -90,8 +90,8 @@ public class AuthController : ControllerBase
         });
     }
 
-    /// <summary>الحصول على جميع الموظفين (للمدير)</summary>
-    [Authorize(Roles = "Admin")]
+    /// <summary>الحصول على جميع الموظفين (للمدير ونقطة البيع)</summary>
+    [Authorize(Roles = "Admin,Staff,Cashier")]
     [HttpGet("staff")]
     public async Task<IActionResult> GetStaff()
     {
@@ -122,6 +122,26 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> CreateStaff([FromBody] RegisterDto dto, [FromQuery] string role = "Cashier")
     {
         try {
+            var existingUser = await _userManager.FindByEmailAsync(dto.Email);
+            if (existingUser != null)
+            {
+                // Re-activate and update info if exists
+                existingUser.FirstName = dto.FirstName;
+                existingUser.LastName = dto.LastName;
+                existingUser.IsActive = true;
+                existingUser.PhoneNumber = dto.Phone;
+                
+                await _userManager.UpdateAsync(existingUser);
+                
+                // Reset password if provided (optional but good for re-activation)
+                var token = await _userManager.GeneratePasswordResetTokenAsync(existingUser);
+                await _userManager.ResetPasswordAsync(existingUser, token, dto.Password);
+
+                await _auth.AssignRoleAsync(existingUser.Id, role);
+
+                return Ok(new { message = "Staff reactivated and updated successfully" });
+            }
+
             var authResult = await _auth.RegisterAsync(dto);
             // Delete the automatically created customer record for this staff
             var staffCustomer = await _db.Customers.FirstOrDefaultAsync(c => c.Email == dto.Email);
@@ -139,6 +159,7 @@ public class AuthController : ControllerBase
             return Ok(new { message = "Staff created successfully" }); 
         }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
     }
     /// <summary>تعديل صلاحيات الموظف (للمدير)</summary>
     [Authorize(Roles = "Admin")]
