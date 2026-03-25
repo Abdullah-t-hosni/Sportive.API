@@ -4,14 +4,17 @@ namespace Sportive.API.DTOs;
 
 // ========== AUTH ==========
 public record RegisterDto(
-    string FirstName,
-    string LastName,
-    string Email,
+    string FullName,
+    string Phone,
     string Password,
-    string? Phone
+    string? Email = null
 );
 
-public record LoginDto(string Email, string Password);
+public record LoginDto(
+    string? Phone,
+    string? Email,
+    string Password
+);
 
 public record AuthResponseDto(
     string Token,
@@ -168,7 +171,8 @@ public record CreateOrderDto(
     string? CouponCode,
     string? SalesPersonId,
     string? CustomerPhone = null,
-    string? CustomerName = null
+    string? CustomerName = null,
+    OrderSource Source = OrderSource.Website
 );
 
 public record OrderSummaryDto(
@@ -180,7 +184,8 @@ public record OrderSummaryDto(
     string FulfillmentType,
     decimal TotalAmount,
     DateTime CreatedAt,
-    int ItemCount
+    int ItemCount,
+    string Source = "Website"
 );
 
 public record OrderDetailDto(
@@ -205,7 +210,8 @@ public record OrderDetailDto(
     string? SalesPersonName = null,
     string? TotalAmountInWords = null,
     decimal PreviousBalance = 0,
-    decimal PaidAmount = 0
+    decimal PaidAmount = 0,
+    string Source = "Website"
 );
 
 public record OrderItemDto(
@@ -278,16 +284,16 @@ public record CreateAddressDto(
 // ========== DASHBOARD ==========
 public record DashboardStatsDto(
     decimal TodaySales,
-    decimal TodaySalesGrowth, // % vs yesterday
+    decimal TodaySalesGrowth,
     decimal ThisMonthSales,
-    decimal ThisMonthSalesGrowth, // % vs last month
+    decimal ThisMonthSalesGrowth,
     decimal TotalRevenue,
     int TotalOrders,
-    int TotalOrdersGrowth, // % vs last period
+    int TotalOrdersGrowth,
     int PendingOrders,
     int TodayOrders,
     int TotalCustomers,
-    int TotalCustomersGrowth, // % vs last month
+    int TotalCustomersGrowth,
     int TotalProducts,
     int LowStockProducts,
     int OutOfStockProducts
@@ -303,7 +309,6 @@ public record AnalyticsSummaryDto(
 
 public record CategorySalesDto(int CategoryId, string NameAr, string NameEn, int TotalSold, decimal TotalRevenue);
 public record DailyMetricDto(DateTime Date, decimal Revenue, int Orders, int NewCustomers);
-
 public record SalesChartDto(string Label, decimal Amount, int OrderCount);
 
 public record TopProductDto(
@@ -328,7 +333,6 @@ public record AdvancedDashboardStatsDto(
 );
 
 public record StaffPerformanceDto(string StaffId, string StaffName, int OrderCount, decimal TotalSales);
-
 public record LocationStatDto(string Name, int OrderCount, decimal TotalRevenue);
 public record VipCustomerDto(int Id, string Name, string Email, decimal TotalSpent, int OrderCount);
 public record InventoryIntelligenceDto(int ProductId, string Name, int Stock, double AvgDailySales, int? DaysRemaining);
@@ -375,5 +379,5 @@ public record SendNotificationDto(
     string MessageEn,
     string Type,
     string? ActionUrl = null,
-    int? CustomerId = null  // null = send to all
+    int? CustomerId = null
 );

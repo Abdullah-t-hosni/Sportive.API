@@ -6,6 +6,7 @@ using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
+using Sportive.API.Services;
 
 namespace Sportive.API.Controllers;
 
@@ -47,8 +48,9 @@ public class OrdersController : ControllerBase
         [FromQuery] int? customerId = null,
         [FromQuery] string? salesPersonId = null,
         [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate = null) =>
-        Ok(await _orders.GetOrdersAsync(page, pageSize, status, search, customerId, fromDate, toDate, salesPersonId));
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] OrderSource? source = null) =>
+        Ok(await _orders.GetOrdersAsync(page, pageSize, status, search, customerId, fromDate, toDate, salesPersonId, source));
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)

@@ -4,7 +4,7 @@ using QuestPDF.Infrastructure;
 using QuestPDF.Previewer;
 using Sportive.API.DTOs;
 using Sportive.API.Models;
-using BidiReshapeSharp;
+using ArabicReshaper;
 using System.Text.RegularExpressions;
 
 namespace Sportive.API.Services;
@@ -136,7 +136,18 @@ public class PdfService : IPdfService
         bool hasArabic = Regex.IsMatch(input, @"\p{IsArabic}");
         if (!hasArabic) return input;
 
-        // BidiReshapeSharp handles both shaping and reordering for correct RTL display
-        return BidiShaper.ProcessString(input);
+        // Simple Arabic Reshaper + BiDi reverse (using local Utils/ArabicReshaper.cs)
+        var reshaped = ArabicAdapter.Reshape(input);
+        
+        // Split and reverse for correct RTL display in most PDF viewers
+        var lines = reshaped.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            char[] charArray = lines[i].ToCharArray();
+            Array.Reverse(charArray);
+            lines[i] = new string(charArray);
+        }
+        
+        return string.Join('\n', lines);
     }
 }

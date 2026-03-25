@@ -187,7 +187,7 @@ public class OrderService : IOrderService
 
                 var order = new Order
                 {
-                    OrderNumber = await GenerateOrderNumberAsync(),
+                    OrderNumber = await GenerateOrderNumberAsync(dto.Source),
                     CustomerId = effectiveCustomerId,
                     FulfillmentType = dto.FulfillmentType,
                     PaymentMethod = dto.PaymentMethod,
@@ -196,6 +196,7 @@ public class OrderService : IOrderService
                     CustomerNotes = dto.CustomerNotes,
                     CouponCode = dto.CouponCode,
                     SalesPersonId = dto.SalesPersonId,
+                    Source = dto.Source,
                     Status = string.IsNullOrEmpty(dto.SalesPersonId) ? OrderStatus.Pending : OrderStatus.Delivered,
                     PaymentStatus = string.IsNullOrEmpty(dto.SalesPersonId) ? PaymentStatus.Pending : PaymentStatus.Paid,
                     DeliveryFee = dto.FulfillmentType == FulfillmentType.Delivery ? 50 : 0
@@ -383,15 +384,27 @@ public class OrderService : IOrderService
         return (await GetOrderByIdAsync(orderId))!;
     }
 
-    public async Task<string> GenerateOrderNumberAsync()
+    public async Task<string> GenerateOrderNumberAsync(OrderSource source = OrderSource.Website)
     {
+        if (source == OrderSource.POS)
+        {
+            var yearStart = new DateTime(DateTime.UtcNow.Year, 1, 1);
+            var yearEnd   = yearStart.AddYears(1);
+            var posCount  = await _db.Orders.IgnoreQueryFilters()
+                .CountAsync(o => o.Source == OrderSource.POS
+                              && o.CreatedAt >= yearStart
+                              && o.CreatedAt < yearEnd);
+            var year = DateTime.UtcNow.Year % 100;
+            return $"{year}{(posCount + 1):D4}";
+        }
+
         var today    = TimeHelper.GetEgyptTime();
         var dayStart = today.Date;
         var dayEnd   = dayStart.AddDays(1);
-
-        var count = await _db.Orders.IgnoreQueryFilters().CountAsync(o =>
-            o.CreatedAt >= dayStart && o.CreatedAt < dayEnd);
-
+        var count    = await _db.Orders.IgnoreQueryFilters()
+            .CountAsync(o => o.Source == OrderSource.Website
+                          && o.CreatedAt >= dayStart
+                          && o.CreatedAt < dayEnd);
         return $"SZ-{today:yyyyMMdd}-{(count + 1):D4}";
     }
 
