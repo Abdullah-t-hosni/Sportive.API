@@ -25,7 +25,7 @@ public class ImportController : ControllerBase
 
         // Sheet 1: Products
         var ws1 = wb.Worksheets.Add("المنتجات");
-        ws1.SheetView.RightToLeft = true;
+        ws1.RightToLeft = true;
 
         var headers1 = new[] {
             "الاسم عربي *","الاسم انجليزي *","كود الفئة *","الكود SKU *",
@@ -57,7 +57,7 @@ public class ImportController : ControllerBase
 
         // Sheet 2: Variants
         var ws2 = wb.Worksheets.Add("المقاسات");
-        ws2.SheetView.RightToLeft = true;
+        ws2.RightToLeft = true;
 
         var headers2 = new[] { "الكود SKU *","المقاس","اللون (English)","اللون (عربي)","المخزون *","فارق السعر" };
         for (int c = 0; c < headers2.Length; c++)

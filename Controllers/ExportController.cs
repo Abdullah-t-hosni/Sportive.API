@@ -92,7 +92,7 @@ public class ExportController : ControllerBase
         ws.Cell(row + 1, 11).Style.NumberFormat.Format = "#,##0.00";
 
         ws.Columns().AdjustToContents();
-        ws.SheetView.RightToLeft = true;
+        ws.RightToLeft = true;
 
         var stream = new MemoryStream();
         wb.SaveAs(stream);
@@ -139,7 +139,7 @@ public class ExportController : ControllerBase
             r++;
         }
         ws1.Columns().AdjustToContents();
-        ws1.SheetView.RightToLeft = true;
+        ws1.RightToLeft = true;
 
         // Sheet 2: Variants
         var ws2 = wb.Worksheets.Add("المقاسات والألوان");
@@ -160,7 +160,7 @@ public class ExportController : ControllerBase
             r2++;
         }
         ws2.Columns().AdjustToContents();
-        ws2.SheetView.RightToLeft = true;
+        ws2.RightToLeft = true;
 
         var stream = new MemoryStream();
         wb.SaveAs(stream);
@@ -198,7 +198,7 @@ public class ExportController : ControllerBase
             row++;
         }
         ws.Columns().AdjustToContents();
-        ws.SheetView.RightToLeft = true;
+        ws.RightToLeft = true;
 
         var stream = new MemoryStream();
         wb.SaveAs(stream); stream.Position = 0;
@@ -285,7 +285,7 @@ public class ExportController : ControllerBase
         ws.Cell(row+3, 7).Style.Fill.BackgroundColor = XLColor.FromHtml("#e8f5e9");
 
         ws.Columns().AdjustToContents();
-        ws.SheetView.RightToLeft = true;
+        ws.RightToLeft = true;
 
         var stream = new MemoryStream();
         wb.SaveAs(stream); stream.Position = 0;

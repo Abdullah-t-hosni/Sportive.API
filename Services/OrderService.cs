@@ -101,7 +101,7 @@ public class OrderService : IOrderService
             o.AdminNotes,
             o.CreatedAt,
             o.Items.Select(i => new OrderItemDto(
-                i.Id, i.ProductNameAr, i.ProductNameEn, i.Product.MainImageUrl,
+                i.Id, i.ProductNameAr, i.ProductNameEn, i.Product.Images.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
                 i.Size, i.Color, i.Quantity, i.UnitPrice, i.TotalPrice
             )).ToList(),
             o.StatusHistory.OrderByDescending(h => h.CreatedAt).Select(h => new OrderStatusHistoryDto(

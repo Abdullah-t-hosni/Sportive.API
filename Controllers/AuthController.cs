@@ -119,7 +119,7 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> CreateStaff([FromBody] RegisterDto dto, [FromQuery] string role = "Cashier")
     {
         try {
-            var existingUser = await _userManager.FindByEmailAsync(dto.Email);
+            var existingUser = await _userManager.FindByEmailAsync(dto.Email ?? "");
             if (existingUser != null)
             {
                 // Re-activate and update info if exists
