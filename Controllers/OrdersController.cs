@@ -1,12 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
-using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
-using Sportive.API.Services;
+using System.Security.Claims;
 
 namespace Sportive.API.Controllers;
 
@@ -15,233 +12,72 @@ namespace Sportive.API.Controllers;
 [Authorize]
 public class OrdersController : ControllerBase
 {
-    private readonly IOrderService _orders;
-    private readonly IPdfService _pdf;
-    private readonly AppDbContext _db;
+    private readonly IOrderService _orderService;
+    private readonly IPdfService _pdfService;
 
-    public OrdersController(IOrderService orders, IPdfService pdf, AppDbContext db)
+    public OrdersController(IOrderService orderService, IPdfService pdfService)
     {
-        _orders = orders;
-        _pdf = pdf;
-        _db = db;
+        _orderService = orderService;
+        _pdfService = pdfService;
     }
 
-    [HttpGet("{id}/pdf")]
-    [AllowAnonymous] // Allow customer to access via link if needed
-    public async Task<IActionResult> GetPdf(int id)
-    {
-        var order = await _orders.GetOrderByIdAsync(id);
-        if (order == null) return NotFound();
-
-        var pdfBytes = _pdf.GenerateOrderPdf(order);
-        return File(pdfBytes, "application/pdf", $"Invoice-{order.OrderNumber}.pdf");
-    }
-
-    // Admin: get all orders with optional filters
-    [Authorize(Roles = "Admin")]
     [HttpGet]
-    public async Task<IActionResult> GetAll(
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20,
-        [FromQuery] OrderStatus? status = null,
-        [FromQuery] string? search = null,
-        [FromQuery] int? customerId = null,
-        [FromQuery] string? salesPersonId = null,
-        [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate = null,
-        [FromQuery] OrderSource? source = null) =>
-        Ok(await _orders.GetOrdersAsync(page, pageSize, status, search, customerId, fromDate, toDate, salesPersonId, source));
+    [Authorize(Roles = "Admin,Staff,Cashier")]
+    public async Task<ActionResult<PaginatedResult<OrderSummaryDto>>> GetOrders(
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 12, 
+        [FromQuery] OrderStatus? status = null, [FromQuery] string? search = null,
+        [FromQuery] int? customerId = null, [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null, [FromQuery] string? salesPersonId = null)
+    {
+        var result = await _orderService.GetOrdersAsync(page, pageSize, status, search, customerId, fromDate, toDate, salesPersonId);
+        return Ok(result);
+    }
 
     [HttpGet("{id}")]
-    public async Task<IActionResult> GetById(int id)
+    public async Task<ActionResult<OrderDetailDto>> GetOrder(int id)
     {
-        var order = await _orders.GetOrderByIdAsync(id);
-        return order == null ? NotFound() : Ok(order);
+        var order = await _orderService.GetOrderByIdAsync(id);
+        if (order == null) return NotFound();
+        return Ok(order);
     }
 
-    // Customer: get my orders (uses JWT token to find customerId)
     [HttpGet("my")]
-    public async Task<IActionResult> GetMyOrders(
-        [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+    public async Task<ActionResult<PaginatedResult<OrderSummaryDto>>> GetMyOrders([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-
-        var customer = await _db.Customers
-            .Where(c => c.AppUserId == userId && !c.IsDeleted)
-            .FirstOrDefaultAsync();
-
-        // Fallback: find by email if no AppUserId link
-        if (customer == null)
-        {
-            var email = User.FindFirstValue(ClaimTypes.Email)!;
-            customer = await _db.Customers
-                .Where(c => c.Email == email && !c.IsDeleted)
-                .FirstOrDefaultAsync();
-
-            // Link them for future
-            if (customer != null)
-            {
-                customer.AppUserId = userId;
-                await _db.SaveChangesAsync();
-            }
-        }
-
-        if (customer == null)
-            return NotFound(new { message = "Customer profile not found" });
-
-        var result = await _orders.GetOrdersAsync(page, pageSize, null, null, customer.Id);
+        var customerIdStr = User.FindFirstValue("CustomerId");
+        if (string.IsNullOrEmpty(customerIdStr)) return BadRequest("User has no customer profile");
+        
+        var result = await _orderService.GetCustomerOrdersAsync(int.Parse(customerIdStr), page, pageSize);
         return Ok(result);
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create(
-        [FromBody] CreateOrderDto dto, 
-        [FromQuery] int? customerId = null,
-        [FromQuery] string? salesPersonId = null)
+    public async Task<ActionResult<OrderDetailDto>> CreateOrder([FromBody] CreateOrderDto dto)
     {
-        try
-        {
-            // Set salesPersonId from query if provided (for POS)
-            if (!string.IsNullOrEmpty(salesPersonId))
-            {
-                // CreateOrderDto is a record, we need to create a new one with the ID if we want to mutate it,
-                // but since we just want to pass it to the service, we can handle it there or via a copy.
-                dto = dto with { SalesPersonId = salesPersonId };
-            }
+        var customerIdStr = User.FindFirstValue("CustomerId");
+        int? customerId = string.IsNullOrEmpty(customerIdStr) ? null : int.Parse(customerIdStr);
 
-            // If customerId not provided, get it from JWT token
-            if (!customerId.HasValue)
-            {
-                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-                var customer = await _db.Customers
-                    .Where(c => c.AppUserId == userId && !c.IsDeleted)
-                    .FirstOrDefaultAsync();
-                if (customer == null)
-                    return BadRequest(new { message = "Customer profile not found" });
-                customerId = customer.Id;
-            }
-
-            var order = await _orders.CreateOrderAsync(customerId, dto);
-            return CreatedAtAction(nameof(GetById), new { id = order.Id }, order);
-        }
-        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        var order = await _orderService.CreateOrderAsync(customerId, dto);
+        return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
     }
 
-    [Authorize(Roles = "Admin")]
     [HttpPatch("{id}/status")]
-    public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateOrderStatusDto dto)
+    [Authorize(Roles = "Admin,Staff,Cashier")]
+    public async Task<ActionResult<OrderDetailDto>> UpdateStatus(int id, [FromBody] UpdateOrderStatusDto dto)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        try { return Ok(await _orders.UpdateOrderStatusAsync(id, dto, userId)); }
-        catch (KeyNotFoundException) { return NotFound(); }
-    }
-}
-
-[ApiController]
-[Route("api/[controller]")]
-[Authorize]
-public class CartController : ControllerBase
-{
-    private readonly ICartService _cart;
-    private readonly AppDbContext _db;
-
-    public CartController(ICartService cart, AppDbContext db)
-    {
-        _cart = cart;
-        _db = db;
+        var order = await _orderService.UpdateOrderStatusAsync(id, dto, userId);
+        return Ok(order);
     }
 
-    /// <summary>جيب الـ customerId من التوكن</summary>
-    private async Task<int?> GetCustomerIdAsync()
+    [HttpGet("{id}/pdf")]
+    [AllowAnonymous] // Allow customers to download without force login if they have link
+    public async Task<IActionResult> GetOrderPdf(int id)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userId == null) return null;
-        var customer = await _db.Customers
-            .Where(c => c.AppUserId == userId && !c.IsDeleted)
-            .Select(c => new { c.Id })
-            .FirstOrDefaultAsync();
-        return customer?.Id;
-    }
+        var order = await _orderService.GetOrderByIdAsync(id);
+        if (order == null) return NotFound();
 
-    /// <summary>GET /api/cart — سلة المستخدم الحالي</summary>
-    [HttpGet]
-    public async Task<IActionResult> Get()
-    {
-        var customerId = await GetCustomerIdAsync();
-        if (customerId == null) return NotFound(new { message = "Customer profile not found" });
-        return Ok(await _cart.GetCartAsync(customerId.Value));
-    }
-
-    /// <summary>GET /api/cart/{customerId} — للتوافق مع الفرونت القديم</summary>
-    [HttpGet("{customerId:int}")]
-    public async Task<IActionResult> GetById(int customerId) =>
-        Ok(await _cart.GetCartAsync(customerId));
-
-    /// <summary>POST /api/cart — إضافة للسلة (customerId من التوكن)</summary>
-    [HttpPost]
-    public async Task<IActionResult> Add([FromBody] AddToCartDto dto)
-    {
-        var customerId = await GetCustomerIdAsync();
-        if (customerId == null) return NotFound(new { message = "Customer profile not found" });
-        return Ok(await _cart.AddToCartAsync(customerId.Value, dto));
-    }
-
-    /// <summary>POST /api/cart/{customerId} — للتوافق مع الفرونت القديم</summary>
-    [HttpPost("{customerId:int}")]
-    public async Task<IActionResult> AddById(int customerId, [FromBody] AddToCartDto dto) =>
-        Ok(await _cart.AddToCartAsync(customerId, dto));
-
-    /// <summary>PUT /api/cart/items/{itemId}</summary>
-    [HttpPut("items/{itemId}")]
-    public async Task<IActionResult> Update(int itemId, [FromBody] UpdateCartItemDto dto)
-    {
-        var customerId = await GetCustomerIdAsync();
-        if (customerId == null) return NotFound(new { message = "Customer profile not found" });
-        try { return Ok(await _cart.UpdateCartItemAsync(customerId.Value, itemId, dto)); }
-        catch (KeyNotFoundException) { return NotFound(); }
-    }
-
-    /// <summary>PUT /api/cart/{customerId}/items/{itemId} — للتوافق</summary>
-    [HttpPut("{customerId:int}/items/{itemId}")]
-    public async Task<IActionResult> UpdateById(int customerId, int itemId, [FromBody] UpdateCartItemDto dto)
-    {
-        try { return Ok(await _cart.UpdateCartItemAsync(customerId, itemId, dto)); }
-        catch (KeyNotFoundException) { return NotFound(); }
-    }
-
-    /// <summary>DELETE /api/cart/items/{itemId}</summary>
-    [HttpDelete("items/{itemId}")]
-    public async Task<IActionResult> Remove(int itemId)
-    {
-        var customerId = await GetCustomerIdAsync();
-        if (customerId == null) return NotFound(new { message = "Customer profile not found" });
-        try { return Ok(await _cart.RemoveFromCartAsync(customerId.Value, itemId)); }
-        catch (KeyNotFoundException) { return NotFound(); }
-    }
-
-    /// <summary>DELETE /api/cart/{customerId}/items/{itemId} — للتوافق</summary>
-    [HttpDelete("{customerId:int}/items/{itemId}")]
-    public async Task<IActionResult> RemoveById(int customerId, int itemId)
-    {
-        try { return Ok(await _cart.RemoveFromCartAsync(customerId, itemId)); }
-        catch (KeyNotFoundException) { return NotFound(); }
-    }
-
-    /// <summary>DELETE /api/cart — مسح السلة</summary>
-    [HttpDelete]
-    public async Task<IActionResult> Clear()
-    {
-        var customerId = await GetCustomerIdAsync();
-        if (customerId == null) return NotFound(new { message = "Customer profile not found" });
-        await _cart.ClearCartAsync(customerId.Value);
-        return NoContent();
-    }
-
-    /// <summary>DELETE /api/cart/{customerId} — للتوافق</summary>
-    [HttpDelete("{customerId:int}")]
-    public async Task<IActionResult> ClearById(int customerId)
-    {
-        await _cart.ClearCartAsync(customerId);
-        return NoContent();
+        var pdfBytes = await _pdfService.GenerateOrderPdfAsync(order);
+        return File(pdfBytes, "application/pdf", $"Order-{order.OrderNumber}.pdf");
     }
 }
