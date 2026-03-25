@@ -13,6 +13,7 @@ public class DashboardController : ControllerBase
     public DashboardController(IDashboardService dashboard) => _dashboard = dashboard;
 
     [HttpGet("stats")]
+    [HttpGet("/api/analytics/admin-stats")] // Compatibility for old frontend
     public async Task<IActionResult> GetStats() =>
         Ok(await _dashboard.GetStatsAsync());
 
@@ -33,6 +34,7 @@ public class DashboardController : ControllerBase
         Ok(await _dashboard.GetRecentOrdersAsync(count));
 
     [HttpGet("analytics-summary")]
+    [HttpGet("/api/analytics/summary")] // Compatibility for old frontend
     public async Task<IActionResult> GetAnalyticsSummary() =>
         Ok(await _dashboard.GetAnalyticsSummaryAsync());
 
