@@ -340,20 +340,21 @@ public record PaginatedResult<T>(
     int TotalPages
 );
 
-public record ProductFilterDto(
-    int? CategoryId,
-    string? Search,
-    decimal? MinPrice,
-    decimal? MaxPrice,
-    string? Brand,
-    string? Size,
-    string? Color,
-    bool? IsFeatured,
-    string SortBy = "createdAt",
-    string SortDir = "desc",
-    int Page = 1,
-    int PageSize = 12
-);
+public class ProductFilterDto
+{
+    public int? CategoryId { get; set; }
+    public string? Search { get; set; }
+    public decimal? MinPrice { get; set; }
+    public decimal? MaxPrice { get; set; }
+    public string? Brand { get; set; }
+    public string? Size { get; set; }
+    public string? Color { get; set; }
+    public bool? IsFeatured { get; set; }
+    public string SortBy { get; set; } = "createdAt";
+    public string SortDir { get; set; } = "desc";
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 12;
+}
 
 // ========== REVIEWS ==========
 public record AddReviewDto(int ProductId, int Rating, string? Comment);
