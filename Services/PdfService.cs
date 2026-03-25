@@ -9,10 +9,7 @@ using System.Text.RegularExpressions;
 
 namespace Sportive.API.Services;
 
-public interface IPdfService
-{
-    byte[] GenerateOrderPdf(OrderDetailDto order);
-}
+using Sportive.API.Interfaces;
 
 public class PdfService : IPdfService
 {
@@ -21,7 +18,7 @@ public class PdfService : IPdfService
         QuestPDF.Settings.License = LicenseType.Community;
     }
 
-    public byte[] GenerateOrderPdf(OrderDetailDto order)
+    public Task<byte[]> GenerateOrderPdfAsync(OrderDetailDto order)
     {
         var document = Document.Create(container =>
         {
@@ -125,7 +122,7 @@ public class PdfService : IPdfService
             });
         });
 
-        return document.GeneratePdf();
+        return Task.FromResult(document.GeneratePdf());
     }
 
     private string Reshape(string input)

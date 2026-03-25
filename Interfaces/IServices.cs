@@ -80,3 +80,8 @@ public interface IDashboardService
     Task<StaffPerformanceDto> GetStaffStatsAsync(string staffId);
     Task TriggerLiveUpdateAsync(); // Pushes to all Admins via SignalR
 }
+
+public interface IPdfService
+{
+    Task<byte[]> GenerateOrderPdfAsync(OrderDetailDto order);
+}
