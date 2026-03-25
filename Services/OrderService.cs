@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.DTOs;
@@ -10,11 +11,13 @@ public class OrderService : IOrderService
 {
     private readonly AppDbContext _db;
     private readonly INotificationService _notifications;
+    private readonly UserManager<AppUser> _userManager;
 
-    public OrderService(AppDbContext db, INotificationService notifications)
+    public OrderService(AppDbContext db, INotificationService notifications, UserManager<AppUser> userManager)
     {
         _db = db;
         _notifications = notifications;
+        _userManager = userManager;
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
@@ -81,7 +84,7 @@ public class OrderService : IOrderService
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (o == null) return null;
-        return MapToDetail(o);
+        return await MapToDetailAsync(o);
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetCustomerOrdersAsync(
@@ -316,28 +319,39 @@ public class OrderService : IOrderService
         return $"SZ-{today:yyyyMMdd}-{(count + 1):D4}";
     }
 
-    private static OrderDetailDto MapToDetail(Order o) => new(
-        o.Id, o.OrderNumber,
-        new CustomerBasicDto(o.Customer.Id, o.Customer.FullName, o.Customer.Email, o.Customer.Phone),
-        o.Status.ToString(), o.FulfillmentType.ToString(),
-        o.PaymentMethod.ToString(), o.PaymentStatus.ToString(),
-        o.DeliveryAddress == null ? null : new AddressDto(
-            o.DeliveryAddress.Id,
-            o.DeliveryAddress.TitleAr, o.DeliveryAddress.TitleEn,
-            o.DeliveryAddress.Street, o.DeliveryAddress.City,
-            o.DeliveryAddress.District, o.DeliveryAddress.BuildingNo,
-            o.DeliveryAddress.Floor, o.DeliveryAddress.ApartmentNo,
-            o.DeliveryAddress.IsDefault
-        ),
-        o.PickupScheduledAt, o.SubTotal, o.DiscountAmount, o.DeliveryFee, o.TotalAmount,
-        o.CustomerNotes, o.AdminNotes, o.CreatedAt,
-        o.Items.Select(i => new OrderItemDto(
-            i.Id, i.ProductNameAr, i.ProductNameEn,
-            i.Product?.Images.FirstOrDefault(img => img.IsMain)?.ImageUrl,
-            i.Size, i.Color, i.Quantity, i.UnitPrice, i.TotalPrice
-        )).ToList(),
-        o.StatusHistory.OrderByDescending(h => h.CreatedAt)
-            .Select(h => new OrderStatusHistoryDto(h.Status.ToString(), h.Note, h.CreatedAt))
-            .ToList()
-    );
+    private async Task<OrderDetailDto> MapToDetailAsync(Order o) 
+    {
+        string? sellerName = null;
+        if (!string.IsNullOrEmpty(o.SalesPersonId))
+        {
+            var seller = await _userManager.FindByIdAsync(o.SalesPersonId);
+            if (seller != null) sellerName = $"{seller.FirstName} {seller.LastName}";
+        }
+
+        return new OrderDetailDto(
+            o.Id, o.OrderNumber,
+            new CustomerBasicDto(o.Customer.Id, o.Customer.FullName, o.Customer.Email, o.Customer.Phone),
+            o.Status.ToString(), o.FulfillmentType.ToString(),
+            o.PaymentMethod.ToString(), o.PaymentStatus.ToString(),
+            o.DeliveryAddress == null ? null : new AddressDto(
+                o.DeliveryAddress.Id,
+                o.DeliveryAddress.TitleAr, o.DeliveryAddress.TitleEn,
+                o.DeliveryAddress.Street, o.DeliveryAddress.City,
+                o.DeliveryAddress.District, o.DeliveryAddress.BuildingNo,
+                o.DeliveryAddress.Floor, o.DeliveryAddress.ApartmentNo,
+                o.DeliveryAddress.IsDefault
+            ),
+            o.PickupScheduledAt, o.SubTotal, o.DiscountAmount, o.DeliveryFee, o.TotalAmount,
+            o.CustomerNotes, o.AdminNotes, o.CreatedAt,
+            o.Items.Select(i => new OrderItemDto(
+                i.Id, i.ProductNameAr, i.ProductNameEn,
+                i.Product?.Images.FirstOrDefault(img => img.IsMain)?.ImageUrl,
+                i.Size, i.Color, i.Quantity, i.UnitPrice, i.TotalPrice
+            )).ToList(),
+            o.StatusHistory.OrderByDescending(h => h.CreatedAt)
+                .Select(h => new OrderStatusHistoryDto(h.Status.ToString(), h.Note, h.CreatedAt))
+                .ToList(),
+            sellerName
+        );
+    }
 }

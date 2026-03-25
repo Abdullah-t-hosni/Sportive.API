@@ -199,7 +199,8 @@ public record OrderDetailDto(
     string? AdminNotes,
     DateTime CreatedAt,
     List<OrderItemDto> Items,
-    List<OrderStatusHistoryDto> StatusHistory
+    List<OrderStatusHistoryDto> StatusHistory,
+    string? SalesPersonName = null
 );
 
 public record OrderItemDto(
@@ -317,8 +318,11 @@ public record AdvancedDashboardStatsDto(
     List<InventoryIntelligenceDto> InventoryInsights,
     AbandonedCartDto AbandonedCarts,
     List<PaymentMethodStatDto> PaymentMethods,
-    List<AdminActivityDto> RecentActivity
+    List<AdminActivityDto> RecentActivity,
+    List<StaffPerformanceDto> StaffPerformance
 );
+
+public record StaffPerformanceDto(string StaffId, string StaffName, int OrderCount, decimal TotalSales);
 
 public record LocationStatDto(string Name, int OrderCount, decimal TotalRevenue);
 public record VipCustomerDto(int Id, string Name, string Email, decimal TotalSpent, int OrderCount);

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
@@ -13,11 +14,13 @@ public class DashboardService : IDashboardService
 {
     private readonly AppDbContext _db;
     private readonly IHubContext<NotificationHub> _hub;
+    private readonly UserManager<AppUser> _userManager;
 
-    public DashboardService(AppDbContext db, IHubContext<NotificationHub> hub)
+    public DashboardService(AppDbContext db, IHubContext<NotificationHub> hub, UserManager<AppUser> userManager)
     {
         _db = db;
         _hub = hub;
+        _userManager = userManager;
     }
 
     public async Task<DashboardStatsDto> GetStatsAsync()
@@ -266,6 +269,20 @@ public class DashboardService : IDashboardService
                 h.CreatedAt
             ))
             .ToListAsync();
+        // 7. Staff Performance (CASHIER/SALES TRACKING)
+        var staffOrders = await _db.Orders
+            .Where(o => !string.IsNullOrEmpty(o.SalesPersonId) && o.Status != OrderStatus.Cancelled)
+            .GroupBy(o => o.SalesPersonId)
+            .Select(g => new { StaffId = g.Key, Count = g.Count(), Total = g.Sum(o => o.TotalAmount) })
+            .ToListAsync();
+
+        var staffPerformanceItems = new List<StaffPerformanceDto>();
+        foreach (var s in staffOrders)
+        {
+            var user = await _userManager.FindByIdAsync(s.StaffId!);
+            var name = user != null ? $"{user.FirstName} {user.LastName}" : "Unknown Staff";
+            staffPerformanceItems.Add(new StaffPerformanceDto(s.StaffId!, name, s.Count, s.Total));
+        }
 
         return new AdvancedDashboardStatsDto(
             SalesByCity: salesByCity,
@@ -273,7 +290,8 @@ public class DashboardService : IDashboardService
             InventoryInsights: inventoryInsights,
             AbandonedCarts: abandonedCartStats,
             PaymentMethods: paymentMethods,
-            RecentActivity: recentActivity
+            RecentActivity: recentActivity,
+            StaffPerformance: staffPerformanceItems
         );
     }
 
