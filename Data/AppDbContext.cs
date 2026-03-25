@@ -43,11 +43,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);
 
         builder.Entity<AppUser>(e => {
-            e.HasIndex(u => u.PhoneNumber).IsUnique();
+            e.HasIndex(u => u.PhoneNumber);
         });
 
         builder.Entity<Customer>(e => {
-            e.HasIndex(c => c.Phone).IsUnique();
+            e.HasIndex(c => c.Phone);
         });
 
         builder.Entity<Category>(e => {
