@@ -15,6 +15,7 @@ public interface INotificationService
     Task DeleteAsync(string userId, int notificationId);
     Task ClearAllAsync(string userId);
     Task<int> GetUnreadCountAsync(string userId);
+    Task BroadcastStockUpdateAsync(int productId, int variantId, int newStock);
 }
 
 public class NotificationService : INotificationService
@@ -143,5 +144,14 @@ public class NotificationService : INotificationService
     public async Task<int> GetUnreadCountAsync(string userId)
     {
         return await _db.Notifications.CountAsync(n => n.UserId == userId && !n.IsRead);
+    }
+
+    public async Task BroadcastStockUpdateAsync(int productId, int variantId, int newStock)
+    {
+        await _hubContext.Clients.All.SendAsync("StockUpdated", new {
+            ProductId = productId,
+            VariantId = variantId,
+            NewStock = newStock
+        });
     }
 }

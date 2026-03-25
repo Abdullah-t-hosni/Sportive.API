@@ -222,6 +222,15 @@ public class OrderService : IOrderService
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
 
+                // Broadcast stock updates
+                foreach (var item in cartItems)
+                {
+                    if (item.ProductVariant != null)
+                    {
+                        await _notifications.BroadcastStockUpdateAsync(item.ProductId, item.ProductVariantId!.Value, item.ProductVariant.StockQuantity);
+                    }
+                }
+
                 return (await GetOrderByIdAsync(order.Id))!;
             }
             catch

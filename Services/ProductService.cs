@@ -9,8 +9,13 @@ namespace Sportive.API.Services;
 public class ProductService : IProductService
 {
     private readonly AppDbContext _db;
+    private readonly INotificationService _notifications;
 
-    public ProductService(AppDbContext db) => _db = db;
+    public ProductService(AppDbContext db, INotificationService notifications)
+    {
+        _db = db;
+        _notifications = notifications;
+    }
 
     public async Task<PaginatedResult<ProductSummaryDto>> GetProductsAsync(ProductFilterDto filter)
     {
@@ -45,6 +50,9 @@ public class ProductService : IProductService
 
         if (!string.IsNullOrWhiteSpace(filter.Size))
             query = query.Where(p => p.Variants.Any(v => v.Size == filter.Size));
+
+        if (!string.IsNullOrWhiteSpace(filter.Color))
+            query = query.Where(p => p.Variants.Any(v => v.Color == filter.Color || v.ColorAr == filter.Color));
 
         if (filter.IsFeatured.HasValue)
             query = query.Where(p => p.IsFeatured == filter.IsFeatured);
@@ -182,6 +190,8 @@ public class ProductService : IProductService
         variant.StockQuantity = quantity;
         variant.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
+
+        await _notifications.BroadcastStockUpdateAsync(variant.ProductId, variantId, quantity);
         return true;
     }
 
@@ -198,6 +208,9 @@ public class ProductService : IProductService
         };
         _db.ProductVariants.Add(v);
         await _db.SaveChangesAsync();
+        
+        await _notifications.BroadcastStockUpdateAsync(v.ProductId, v.Id, v.StockQuantity);
+        
         return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment, v.ImageUrl);
     }
 
@@ -212,6 +225,9 @@ public class ProductService : IProductService
         v.PriceAdjustment = dto.PriceAdjustment;
         v.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
+        
+        await _notifications.BroadcastStockUpdateAsync(v.ProductId, v.Id, v.StockQuantity);
+        
         return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment, v.ImageUrl);
     }
 
@@ -222,6 +238,9 @@ public class ProductService : IProductService
         v.IsDeleted = true;
         v.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
+        
+        await _notifications.BroadcastStockUpdateAsync(v.ProductId, v.Id, 0);
+        
         return true;
     }
 

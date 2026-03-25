@@ -342,6 +342,7 @@ public record ProductFilterDto(
     decimal? MaxPrice,
     string? Brand,
     string? Size,
+    string? Color,
     bool? IsFeatured,
     string SortBy = "createdAt",
     string SortDir = "desc",
