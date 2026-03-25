@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.DTOs;
@@ -9,6 +8,8 @@ namespace Sportive.API.Services;
 
 public class OrderService : IOrderService
 {
+    private readonly AppDbContext _db;
+
     public OrderService(AppDbContext db)
     {
         _db = db;
