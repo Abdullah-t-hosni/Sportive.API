@@ -14,6 +14,7 @@ public class Product : BaseEntity
     public string? Brand { get; set; }
     public ProductStatus Status { get; set; } = ProductStatus.Active;
     public bool IsFeatured { get; set; } = false;
+    public int TotalStock { get; set; } = 0;
 
     // Category
     public int CategoryId { get; set; }

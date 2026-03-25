@@ -172,8 +172,11 @@ public record CreateOrderDto(
     string? SalesPersonId,
     string? CustomerPhone = null,
     string? CustomerName = null,
-    OrderSource Source = OrderSource.Website
+    OrderSource Source = OrderSource.Website,
+    List<CreateOrderItemDto>? Items = null
 );
+
+public record CreateOrderItemDto(int ProductId, int? ProductVariantId, int Quantity);
 
 public record OrderSummaryDto(
     int Id,
