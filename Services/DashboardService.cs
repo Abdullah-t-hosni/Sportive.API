@@ -172,6 +172,111 @@ public class DashboardService : IDashboardService
         return Encoding.UTF8.GetBytes(csv.ToString());
     }
 
+    public async Task<AdvancedDashboardStatsDto> GetAdvancedStatsAsync()
+    {
+        var now = DateTime.UtcNow;
+        var thirtyDaysAgo = now.AddDays(-30);
+
+        // 1. Sales by City (Heatmap)
+        var salesByCity = await _db.Orders
+            .Include(o => o.DeliveryAddress)
+            .Where(o => o.Status != OrderStatus.Cancelled && o.DeliveryAddress != null)
+            .GroupBy(o => o.DeliveryAddress!.City)
+            .Select(g => new LocationStatDto(g.Key, g.Count(), g.Sum(o => o.TotalAmount)))
+            .OrderByDescending(x => x.TotalRevenue)
+            .Take(10)
+            .ToListAsync();
+
+        // 2. VIP Customers
+        var topCustomers = await _db.Customers
+            .Include(c => c.Orders)
+            .Select(c => new VipCustomerDto(
+                c.Id,
+                c.FirstName + " " + c.LastName,
+                c.Email,
+                c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
+                c.Orders.Count(o => o.Status != OrderStatus.Cancelled)
+            ))
+            .OrderByDescending(x => x.TotalSpent)
+            .Take(10)
+            .ToListAsync();
+
+        // 3. Inventory Insights (Run-out predictor & Stock health)
+        // Calculating AvgDailySales based on last 30 days
+        var recentSales = await _db.OrderItems
+            .Where(i => i.CreatedAt >= thirtyDaysAgo)
+            .GroupBy(i => i.ProductId)
+            .Select(g => new { ProductId = g.Key, TotalSold = g.Sum(i => i.Quantity) })
+            .ToListAsync();
+
+        var products = await _db.Products
+            .Include(p => p.Variants)
+            .Select(p => new { 
+                p.Id, 
+                p.NameEn, 
+                Stock = p.Variants.Sum(v => v.StockQuantity) 
+            })
+            .ToListAsync();
+
+        var inventoryInsights = products.Select(p => {
+            var sold = recentSales.FirstOrDefault(s => s.ProductId == p.Id)?.TotalSold ?? 0;
+            double avgDaily = Math.Round((double)sold / 30, 2);
+            int? daysRemaining = avgDaily > 0 ? (int)Math.Floor(p.Stock / avgDaily) : null;
+            return new InventoryIntelligenceDto(p.Id, p.NameEn, p.Stock, avgDaily, daysRemaining);
+        })
+        .OrderBy(x => x.DaysRemaining ?? 999)
+        .Take(10)
+        .ToList();
+
+        // 4. Abandoned Carts
+        var abandonedCarts = await _db.CartItems
+            .Include(c => c.Product)
+            .GroupBy(c => c.CustomerId)
+            .Select(g => new { 
+                ItemCount = g.Sum(c => c.Quantity),
+                PotentialRevenue = g.Sum(c => c.Quantity * c.Product.Price)
+            })
+            .ToListAsync();
+
+        var abandonedCartStats = new AbandonedCartDto(
+            abandonedCarts.Count,
+            abandonedCarts.Sum(x => x.ItemCount),
+            abandonedCarts.Sum(x => x.PotentialRevenue)
+        );
+
+        // 5. Payment Methods
+        var paymentMethods = await _db.Orders
+            .GroupBy(o => o.PaymentMethod)
+            .Select(g => new PaymentMethodStatDto(
+                g.Key.ToString(),
+                g.Count(),
+                g.Sum(o => o.TotalAmount)
+            ))
+            .OrderByDescending(x => x.Revenue)
+            .ToListAsync();
+
+        // 6. Recent Admin Activity
+        var recentActivity = await _db.OrderStatusHistories
+            .OrderByDescending(h => h.CreatedAt)
+            .Take(15)
+            .Select(h => new AdminActivityDto(
+                h.ChangedByUserId ?? "System", // Basic implementation, could be joined with Users table
+                $"Changed Order status to {h.Status}",
+                $"Order #{h.OrderId}",
+                h.CreatedAt
+            ))
+            .ToListAsync();
+
+        return new AdvancedDashboardStatsDto(
+            SalesByCity: salesByCity,
+            TopCustomers: topCustomers,
+            InventoryInsights: inventoryInsights,
+            AbandonedCarts: abandonedCartStats,
+            PaymentMethods: paymentMethods,
+            RecentActivity: recentActivity
+        );
+    }
+
     public async Task TriggerLiveUpdateAsync()
     {
         // Pushes a refresh event to all clients in the "Admin" group

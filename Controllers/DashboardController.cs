@@ -45,6 +45,10 @@ public class DashboardController : ControllerBase
         return File(csvBytes, "text/csv", $"sales-report-{DateTime.UtcNow:yyyyMMdd}.csv");
     }
 
+    [HttpGet("advanced-stats")]
+    public async Task<IActionResult> GetAdvancedStats() =>
+        Ok(await _dashboard.GetAdvancedStatsAsync());
+
     [HttpPost("trigger-update")]
     public async Task<IActionResult> TriggerUpdate()
     {

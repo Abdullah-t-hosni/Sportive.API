@@ -310,6 +310,22 @@ public record TopProductDto(
 
 public record OrderStatusStatsDto(string Status, int Count, decimal Percentage);
 
+public record AdvancedDashboardStatsDto(
+    List<LocationStatDto> SalesByCity,
+    List<VipCustomerDto> TopCustomers,
+    List<InventoryIntelligenceDto> InventoryInsights,
+    AbandonedCartDto AbandonedCarts,
+    List<PaymentMethodStatDto> PaymentMethods,
+    List<AdminActivityDto> RecentActivity
+);
+
+public record LocationStatDto(string Name, int OrderCount, decimal TotalRevenue);
+public record VipCustomerDto(int Id, string Name, string Email, decimal TotalSpent, int OrderCount);
+public record InventoryIntelligenceDto(int ProductId, string Name, int Stock, double AvgDailySales, int? DaysRemaining);
+public record AbandonedCartDto(int Count, int TotalItems, decimal PotentialRevenue);
+public record PaymentMethodStatDto(string Method, int Count, decimal Revenue);
+public record AdminActivityDto(string AdminName, string Action, string Target, DateTime Date);
+
 // ========== PAGINATION ==========
 public record PaginatedResult<T>(
     List<T> Items,
