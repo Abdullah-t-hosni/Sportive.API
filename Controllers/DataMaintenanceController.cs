@@ -79,4 +79,24 @@ public class DataMaintenanceController : ControllerBase
             return BadRequest(new { success = false, message = ex.Message });
         }
     }
+
+    [HttpPost("fix-pos-orders")]
+    public async Task<IActionResult> FixPosOrders()
+    {
+        var posOrders = await _db.Orders
+            .Where(o => !string.IsNullOrEmpty(o.SalesPersonId) && 
+                       (o.Status == OrderStatus.Pending || o.PaymentStatus == PaymentStatus.Pending))
+            .ToListAsync();
+
+        foreach (var order in posOrders)
+        {
+            order.Status = OrderStatus.Delivered;
+            order.PaymentStatus = PaymentStatus.Paid;
+            if (order.ActualDeliveryDate == null) 
+                order.ActualDeliveryDate = order.CreatedAt;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true, count = posOrders.Count, message = "تم تحديث كافة طلبات الـ POS السابقة بنجاح" });
+    }
 }

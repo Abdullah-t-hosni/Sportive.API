@@ -145,9 +145,13 @@ public class OrderService : IOrderService
                     CustomerNotes = dto.CustomerNotes,
                     CouponCode = dto.CouponCode,
                     SalesPersonId = dto.SalesPersonId,
-                    Status = OrderStatus.Pending,
+                    Status = string.IsNullOrEmpty(dto.SalesPersonId) ? OrderStatus.Pending : OrderStatus.Delivered,
+                    PaymentStatus = string.IsNullOrEmpty(dto.SalesPersonId) ? PaymentStatus.Pending : PaymentStatus.Paid,
                     DeliveryFee = dto.FulfillmentType == FulfillmentType.Delivery ? 50 : 0
                 };
+
+                if (!string.IsNullOrEmpty(order.SalesPersonId))
+                    order.ActualDeliveryDate = DateTime.UtcNow;
 
                 // 1. Calculate Subtotal
                 decimal subtotal = 0;
@@ -179,9 +183,16 @@ public class OrderService : IOrderService
                     if (item.ProductVariant != null)
                     {
                         if (item.ProductVariant.StockQuantity < item.Quantity)
-                            throw new InvalidOperationException($"الكمية المطلوبة من {item.Product.NameAr} غير متوفرة");
+                            throw new InvalidOperationException($"المخزون غير كافٍ للمنتج {item.Product.NameAr} (المقاس: {item.ProductVariant.Size})");
                         
                         item.ProductVariant.StockQuantity -= item.Quantity;
+
+                        // تحديث حالة المنتج إذا نفد المخزون بالكامل
+                        var totalStock = item.Product.Variants.Sum(v => v.StockQuantity);
+                        if (totalStock <= 0) item.Product.Status = ProductStatus.OutOfStock;
+
+                        // إرسال تنبيه فوري للوحة التحكم
+                        await _notifications.BroadcastStockUpdateAsync(item.ProductId, item.ProductVariant.Id, item.ProductVariant.StockQuantity);
                     }
                 }
 
@@ -250,8 +261,22 @@ public class OrderService : IOrderService
     {
         var order = await _db.Orders
             .Include(o => o.Customer)
+            .Include(o => o.Items).ThenInclude(i => i.ProductVariant)
             .FirstOrDefaultAsync(o => o.Id == orderId)
             ?? throw new KeyNotFoundException($"Order {orderId} not found");
+
+        if (order.Status != OrderStatus.Cancelled && order.Status != OrderStatus.Returned && 
+           (dto.Status == OrderStatus.Cancelled || dto.Status == OrderStatus.Returned))
+        {
+            foreach (var item in order.Items)
+            {
+                if (item.ProductVariant != null)
+                {
+                    item.ProductVariant.StockQuantity += item.Quantity;
+                    await _notifications.BroadcastStockUpdateAsync(item.ProductId, item.ProductVariant.Id, item.ProductVariant.StockQuantity);
+                }
+            }
+        }
 
         order.Status = dto.Status;
         order.UpdatedAt = DateTime.UtcNow;
@@ -330,7 +355,7 @@ public class OrderService : IOrderService
 
         return new OrderDetailDto(
             o.Id, o.OrderNumber,
-            new CustomerBasicDto(o.Customer.Id, o.Customer.FullName, o.Customer.Email, o.Customer.Phone),
+            new CustomerBasicDto(o.Customer.Id, $"{o.Customer.FirstName} {o.Customer.LastName}", o.Customer.Email, o.Customer.Phone),
             o.Status.ToString(), o.FulfillmentType.ToString(),
             o.PaymentMethod.ToString(), o.PaymentStatus.ToString(),
             o.DeliveryAddress == null ? null : new AddressDto(
