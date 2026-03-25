@@ -16,12 +16,18 @@ public class OrderService : IOrderService
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
-        int page, int pageSize, OrderStatus? status = null, string? search = null, int? customerId = null)
+        int page, int pageSize, OrderStatus? status = null, string? search = null, int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null)
     {
         var query = _db.Orders
             .Include(o => o.Customer)
             .Include(o => o.Items)
             .AsQueryable();
+
+        // Date Filters
+        if (fromDate.HasValue)
+            query = query.Where(o => o.CreatedAt >= fromDate.Value);
+        if (toDate.HasValue)
+            query = query.Where(o => o.CreatedAt <= toDate.Value);
 
         // Filter by customer (for "my orders")
         if (customerId.HasValue)
