@@ -148,10 +148,7 @@ public class NotificationService : INotificationService
 
     public async Task BroadcastStockUpdateAsync(int productId, int variantId, int newStock)
     {
-        await _hubContext.Clients.All.SendAsync("StockUpdated", new {
-            ProductId = productId,
-            VariantId = variantId,
-            NewStock = newStock
-        });
+        await _hubContext.Clients.Group("Admin")
+            .SendAsync("StockUpdate", new { productId, variantId, newStock });
     }
 }

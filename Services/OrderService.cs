@@ -310,7 +310,7 @@ public class OrderService : IOrderService
         var dayStart = today.Date;
         var dayEnd   = dayStart.AddDays(1);
 
-        var count = await _db.Orders.CountAsync(o =>
+        var count = await _db.Orders.IgnoreQueryFilters().CountAsync(o =>
             o.CreatedAt >= dayStart && o.CreatedAt < dayEnd);
 
         return $"SZ-{today:yyyyMMdd}-{(count + 1):D4}";
