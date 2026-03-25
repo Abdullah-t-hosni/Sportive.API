@@ -131,8 +131,27 @@ public class CustomerService : ICustomerService
     {
         var customer = await _db.Customers.FindAsync(id);
         if (customer == null) return false;
-        // Toggle via AppUser IsActive
         customer.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<bool> DeleteCustomerAsync(int id)
+    {
+        var customer = await _db.Customers.FindAsync(id);
+        if (customer == null) return false;
+        
+        // Soft delete customer
+        customer.IsDeleted = true;
+        customer.UpdatedAt = DateTime.UtcNow;
+        
+        // Find and soft delete the corresponding AppUser
+        var appUser = await _db.Users.FindAsync(customer.AppUserId);
+        if (appUser != null)
+        {
+            appUser.IsActive = false; // Disable login
+        }
+        
         await _db.SaveChangesAsync();
         return true;
     }

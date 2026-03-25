@@ -61,6 +61,7 @@ public interface ICustomerService
     Task<CustomerDetailDto?> GetCustomerByIdAsync(int id);
     Task<CustomerDetailDto?> GetCustomerByEmailAsync(string email);
     Task<bool> ToggleCustomerAsync(int id);
+    Task<bool> DeleteCustomerAsync(int id);
     Task<AddressDto> AddAddressAsync(int customerId, CreateAddressDto dto);
     Task DeleteAddressAsync(int customerId, int addressId);
     Task SetDefaultAddressAsync(int customerId, int addressId);

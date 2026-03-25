@@ -40,6 +40,15 @@ public class CustomersController : ControllerBase
         return result ? Ok() : NotFound();
     }
 
+    /// <summary>حذف عميل بالكامل — Admin فقط</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteCustomer(int id)
+    {
+        var result = await _customers.DeleteCustomerAsync(id);
+        return result ? Ok(new { message = "Customer deleted successfully" }) : NotFound();
+    }
+
     /// <summary>إضافة عنوان</summary>
     [Authorize]
     [HttpPost("{customerId}/addresses")]

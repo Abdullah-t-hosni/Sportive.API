@@ -30,6 +30,13 @@ public class AuthService : IAuthService
         if (existing != null)
             throw new InvalidOperationException("Email already registered");
 
+        if (!string.IsNullOrWhiteSpace(dto.Phone))
+        {
+            var phoneExists = await _userManager.Users.AnyAsync(u => u.PhoneNumber == dto.Phone);
+            if (phoneExists)
+                throw new InvalidOperationException("رقم الهاتف مسجل مسبقاً بحساب آخر. الرجاء استخدام رقم مختلف أو تسجيل الدخول.");
+        }
+
         var user = new AppUser
         {
             UserName = dto.Email,

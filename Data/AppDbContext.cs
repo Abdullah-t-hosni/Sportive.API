@@ -42,6 +42,14 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<WishlistItem>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);
 
+        builder.Entity<AppUser>(e => {
+            e.HasIndex(u => u.PhoneNumber).IsUnique();
+        });
+
+        builder.Entity<Customer>(e => {
+            e.HasIndex(c => c.Phone).IsUnique();
+        });
+
         builder.Entity<Category>(e => {
             e.Property(x => x.NameAr).HasMaxLength(100).IsRequired();
             e.Property(x => x.NameEn).HasMaxLength(100).IsRequired();
