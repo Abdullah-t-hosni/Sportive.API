@@ -41,7 +41,7 @@ public interface IOrderService
     Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(int page, int pageSize, OrderStatus? status = null, string? search = null, int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null);
     Task<OrderDetailDto?> GetOrderByIdAsync(int id);
     Task<PaginatedResult<OrderSummaryDto>> GetCustomerOrdersAsync(int customerId, int page, int pageSize);
-    Task<OrderDetailDto> CreateOrderAsync(int customerId, CreateOrderDto dto);
+    Task<OrderDetailDto> CreateOrderAsync(int? customerId, CreateOrderDto dto);
     Task<OrderDetailDto> UpdateOrderStatusAsync(int orderId, UpdateOrderStatusDto dto, string updatedByUserId);
     Task<string> GenerateOrderNumberAsync();
 }

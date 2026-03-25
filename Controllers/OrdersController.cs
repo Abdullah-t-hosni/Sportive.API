@@ -15,12 +15,25 @@ namespace Sportive.API.Controllers;
 public class OrdersController : ControllerBase
 {
     private readonly IOrderService _orders;
+    private readonly IPdfService _pdf;
     private readonly AppDbContext _db;
 
-    public OrdersController(IOrderService orders, AppDbContext db)
+    public OrdersController(IOrderService orders, IPdfService pdf, AppDbContext db)
     {
         _orders = orders;
+        _pdf = pdf;
         _db = db;
+    }
+
+    [HttpGet("{id}/pdf")]
+    [AllowAnonymous] // Allow customer to access via link if needed
+    public async Task<IActionResult> GetPdf(int id)
+    {
+        var order = await _orders.GetOrderByIdAsync(id);
+        if (order == null) return NotFound();
+
+        var pdfBytes = _pdf.GenerateOrderPdf(order);
+        return File(pdfBytes, "application/pdf", $"Invoice-{order.OrderNumber}.pdf");
     }
 
     // Admin: get all orders with optional filters
@@ -106,7 +119,7 @@ public class OrdersController : ControllerBase
                 customerId = customer.Id;
             }
 
-            var order = await _orders.CreateOrderAsync(customerId.Value, dto);
+            var order = await _orders.CreateOrderAsync(customerId, dto);
             return CreatedAtAction(nameof(GetById), new { id = order.Id }, order);
         }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }

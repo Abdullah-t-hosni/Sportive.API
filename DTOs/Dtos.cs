@@ -166,7 +166,9 @@ public record CreateOrderDto(
     DateTime? PickupScheduledAt,
     string? CustomerNotes,
     string? CouponCode,
-    string? SalesPersonId
+    string? SalesPersonId,
+    string? CustomerPhone = null,
+    string? CustomerName = null
 );
 
 public record OrderSummaryDto(
@@ -200,7 +202,10 @@ public record OrderDetailDto(
     DateTime CreatedAt,
     List<OrderItemDto> Items,
     List<OrderStatusHistoryDto> StatusHistory,
-    string? SalesPersonName = null
+    string? SalesPersonName = null,
+    string? TotalAmountInWords = null,
+    decimal PreviousBalance = 0,
+    decimal PaidAmount = 0
 );
 
 public record OrderItemDto(

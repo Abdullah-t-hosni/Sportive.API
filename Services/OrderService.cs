@@ -121,7 +121,7 @@ public class OrderService : IOrderService
             (int)Math.Ceiling((double)total / pageSize));
     }
 
-    public async Task<OrderDetailDto> CreateOrderAsync(int customerId, CreateOrderDto dto)
+    public async Task<OrderDetailDto> CreateOrderAsync(int? customerId, CreateOrderDto dto)
     {
         var strategy = _db.Database.CreateExecutionStrategy();
         
@@ -129,19 +129,66 @@ public class OrderService : IOrderService
             using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
+                int effectiveCustomerId;
+
+                // 1. Handle Customer
+                if (customerId.HasValue && customerId.Value > 0)
+                {
+                    effectiveCustomerId = customerId.Value;
+                }
+                else if (!string.IsNullOrEmpty(dto.CustomerPhone))
+                {
+                    // Look for existing customer by phone
+                    var customer = await _db.Customers
+                        .FirstOrDefaultAsync(c => c.Phone == dto.CustomerPhone && !c.IsDeleted);
+
+                    if (customer == null)
+                    {
+                        // Create new basic customer for POS
+                        var names = (dto.CustomerName ?? "عميل كاشير").Split(' ', 2);
+                        customer = new Customer
+                        {
+                            FirstName = names[0],
+                            LastName = names.Length > 1 ? names[1] : string.Empty,
+                            Phone = dto.CustomerPhone,
+                            Email = $"{dto.CustomerPhone}@sportive.com" // Placeholder
+                        };
+                        _db.Customers.Add(customer);
+                        await _db.SaveChangesAsync();
+                    }
+                    effectiveCustomerId = customer.Id;
+                }
+                else
+                {
+                    // Default to a generic "Cashier Customer" if none provided
+                    var defaultCustomer = await _db.Customers
+                        .FirstOrDefaultAsync(c => c.Phone == "0000000000" && !c.IsDeleted);
+                    
+                    if (defaultCustomer == null)
+                    {
+                        defaultCustomer = new Customer { FirstName = "Walk-in", LastName = "Customer", Phone = "0000000000", Email = "pos@sportive.com" };
+                        _db.Customers.Add(defaultCustomer);
+                        await _db.SaveChangesAsync();
+                    }
+                    effectiveCustomerId = defaultCustomer.Id;
+                }
+
                 var cartItems = await _db.CartItems
                     .Include(c => c.Product).ThenInclude(p => p.Images)
                     .Include(c => c.ProductVariant)
-                    .Where(c => c.CustomerId == customerId && !c.IsDeleted)
+                    .Where(c => c.CustomerId == effectiveCustomerId && !c.IsDeleted)
                     .ToListAsync();
 
+                // If salla is empty, check if we're creating an order from scratch in POS (not implemented in CartService yet but maybe we should allow it?)
+                // Actually, the current system relies on CartItems.
+
                 if (!cartItems.Any())
-                    throw new InvalidOperationException("السلة فارغة");
+                    throw new InvalidOperationException("السلة فارغة. يرجى إضافة منتجات أولاً.");
 
                 var order = new Order
                 {
                     OrderNumber = await GenerateOrderNumberAsync(),
-                    CustomerId = customerId,
+                    CustomerId = effectiveCustomerId,
                     FulfillmentType = dto.FulfillmentType,
                     PaymentMethod = dto.PaymentMethod,
                     DeliveryAddressId = dto.DeliveryAddressId,
@@ -231,8 +278,8 @@ public class OrderService : IOrderService
 
                 order.StatusHistory.Add(new OrderStatusHistory
                 {
-                    Status = OrderStatus.Pending,
-                    Note = "تم استلام الطلب وبانتظار الإجراء"
+                    Status = order.Status,
+                    Note = "تم إنشاء الطلب" + (string.IsNullOrEmpty(order.SalesPersonId) ? "" : " عبر الكاشير")
                 });
 
                 _db.Orders.Add(order);
@@ -252,7 +299,7 @@ public class OrderService : IOrderService
 
                 return (await GetOrderByIdAsync(order.Id))!;
             }
-            catch
+            catch (Exception)
             {
                 await transaction.RollbackAsync();
                 throw;
@@ -348,6 +395,12 @@ public class OrderService : IOrderService
         return $"SZ-{today:yyyyMMdd}-{(count + 1):D4}";
     }
 
+    private string NumberToArabicWords(decimal number)
+    {
+        try { return CurrencyHelper.ToArabicWords(number); }
+        catch { return $"{number} EGP"; }
+    }
+
     private async Task<OrderDetailDto> MapToDetailAsync(Order o) 
     {
         string? sellerName = null;
@@ -356,6 +409,8 @@ public class OrderService : IOrderService
             var seller = await _userManager.FindByIdAsync(o.SalesPersonId);
             if (seller != null) sellerName = $"{seller.FirstName} {seller.LastName}";
         }
+
+        decimal previousBalance = 0;
 
         return new OrderDetailDto(
             o.Id, o.OrderNumber,
@@ -380,7 +435,10 @@ public class OrderService : IOrderService
             o.StatusHistory.OrderByDescending(h => h.CreatedAt)
                 .Select(h => new OrderStatusHistoryDto(h.Status.ToString(), h.Note, h.CreatedAt))
                 .ToList(),
-            sellerName
+            sellerName,
+            NumberToArabicWords(o.TotalAmount),
+            previousBalance,
+            o.PaymentStatus == PaymentStatus.Paid ? o.TotalAmount : 0
         );
     }
 }

@@ -90,29 +90,26 @@ public class AuthController : ControllerBase
         });
     }
 
-    /// <summary>الحصول على جميع الموظفين (للمدير ونقطة البيع)</summary>
     [Authorize(Roles = "Admin,Staff,Cashier")]
     [HttpGet("staff")]
     public async Task<IActionResult> GetStaff()
     {
-        var users = await _db.Users
-            .Where(u => u.IsActive)
-            .Select(u => new {
-                u.Id,
-                u.FirstName,
-                u.LastName,
-                u.Email,
-                u.PhoneNumber,
-                FullName = $"{u.FirstName} {u.LastName}",
-                Role = _db.UserRoles.Where(ur => ur.UserId == u.Id)
-                        .Join(_db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name)
-                        .FirstOrDefault()
-            })
-            .ToListAsync();
+        var staffRoles = new[] { "Admin", "Staff", "Cashier" };
+        
+        var users = await (from u in _db.Users
+                          join ur in _db.UserRoles on u.Id equals ur.UserId
+                          join r in _db.Roles on ur.RoleId equals r.Id
+                          where u.IsActive && staffRoles.Contains(r.Name)
+                          select new {
+                              u.Id,
+                              u.FirstName,
+                              u.LastName,
+                              u.Email,
+                              u.PhoneNumber,
+                              FullName = u.FirstName + " " + u.LastName,
+                              Role = r.Name
+                          }).ToListAsync();
 
-        // In a real scenario, you'd filter by role, but here we can just return all users who are not mapped to regular Customers
-        // Or we can return all if this is a small POS system. Let's return all active users for simplicity, or we can use RoleManager.
-        // For efficiency, we just return the users list. 
         return Ok(users);
     }
 
