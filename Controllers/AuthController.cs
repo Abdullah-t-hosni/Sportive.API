@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Identity;
 using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
@@ -15,11 +16,13 @@ public class AuthController : ControllerBase
 {
     private readonly IAuthService _auth;
     private readonly AppDbContext _db;
+    private readonly UserManager<AppUser> _userManager;
 
-    public AuthController(IAuthService auth, AppDbContext db)
+    public AuthController(IAuthService auth, AppDbContext db, UserManager<AppUser> userManager)
     {
         _auth = auth;
         _db = db;
+        _userManager = userManager;
     }
 
     [HttpPost("register")]
@@ -100,7 +103,10 @@ public class AuthController : ControllerBase
                 u.LastName,
                 u.Email,
                 u.PhoneNumber,
-                FullName = $"{u.FirstName} {u.LastName}"
+                FullName = $"{u.FirstName} {u.LastName}",
+                Role = _db.UserRoles.Where(ur => ur.UserId == u.Id)
+                        .Join(_db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name)
+                        .FirstOrDefault()
             })
             .ToListAsync();
 
@@ -133,5 +139,34 @@ public class AuthController : ControllerBase
             return Ok(new { message = "Staff created successfully" }); 
         }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+    /// <summary>تعديل صلاحيات الموظف (للمدير)</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpPut("staff/{id}/role")]
+    public async Task<IActionResult> UpdateStaffRole(string id, [FromQuery] string role)
+    {
+        var user = await _userManager.FindByIdAsync(id);
+        if (user == null || !user.IsActive) return NotFound(new { message = "Staff not found" });
+
+        var currentRoles = await _userManager.GetRolesAsync(user);
+        await _userManager.RemoveFromRolesAsync(user, currentRoles);
+        await _userManager.AddToRoleAsync(user, role);
+
+        return Ok(new { message = "Role updated successfully" });
+    }
+
+    /// <summary>حذف الموظف (للمدير)</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpDelete("staff/{id}")]
+    public async Task<IActionResult> DeleteStaff(string id)
+    {
+        var user = await _userManager.FindByIdAsync(id);
+        if (user == null || !user.IsActive) return NotFound(new { message = "Staff not found" });
+
+        // Soft delete the user
+        user.IsActive = false;
+        await _userManager.UpdateAsync(user);
+
+        return Ok(new { message = "Staff disabled successfully" });
     }
 }
