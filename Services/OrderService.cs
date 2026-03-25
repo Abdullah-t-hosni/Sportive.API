@@ -1,3 +1,4 @@
+using Sportive.API.Utils;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
@@ -154,7 +155,7 @@ public class OrderService : IOrderService
                 };
 
                 if (!string.IsNullOrEmpty(order.SalesPersonId))
-                    order.ActualDeliveryDate = DateTime.UtcNow;
+                    order.ActualDeliveryDate = TimeHelper.GetEgyptTime();
 
                 // 1. Calculate Subtotal
                 decimal subtotal = 0;
@@ -206,7 +207,7 @@ public class OrderService : IOrderService
                 {
                     var coupon = await _db.Coupons.FirstOrDefaultAsync(c => 
                         c.Code == dto.CouponCode && c.IsActive && 
-                        (!c.ExpiresAt.HasValue || c.ExpiresAt > DateTime.UtcNow));
+                        (!c.ExpiresAt.HasValue || c.ExpiresAt > TimeHelper.GetEgyptTime()));
 
                     if (coupon != null)
                     {
@@ -282,13 +283,13 @@ public class OrderService : IOrderService
         }
 
         order.Status = dto.Status;
-        order.UpdatedAt = DateTime.UtcNow;
+        order.UpdatedAt = TimeHelper.GetEgyptTime();
 
         if (dto.Status == OrderStatus.Delivered)
-            order.ActualDeliveryDate = DateTime.UtcNow;
+            order.ActualDeliveryDate = TimeHelper.GetEgyptTime();
 
         if (dto.Status == OrderStatus.ReadyForPickup)
-            order.PickupConfirmedAt = DateTime.UtcNow;
+            order.PickupConfirmedAt = TimeHelper.GetEgyptTime();
 
         _db.OrderStatusHistories.Add(new OrderStatusHistory
         {
@@ -337,7 +338,7 @@ public class OrderService : IOrderService
 
     public async Task<string> GenerateOrderNumberAsync()
     {
-        var today    = DateTime.UtcNow;
+        var today    = TimeHelper.GetEgyptTime();
         var dayStart = today.Date;
         var dayEnd   = dayStart.AddDays(1);
 

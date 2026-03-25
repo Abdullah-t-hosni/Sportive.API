@@ -79,10 +79,21 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateOrderDto dto, [FromQuery] int? customerId = null)
+    public async Task<IActionResult> Create(
+        [FromBody] CreateOrderDto dto, 
+        [FromQuery] int? customerId = null,
+        [FromQuery] string? salesPersonId = null)
     {
         try
         {
+            // Set salesPersonId from query if provided (for POS)
+            if (!string.IsNullOrEmpty(salesPersonId))
+            {
+                // CreateOrderDto is a record, we need to create a new one with the ID if we want to mutate it,
+                // but since we just want to pass it to the service, we can handle it there or via a copy.
+                dto = dto with { SalesPersonId = salesPersonId };
+            }
+
             // If customerId not provided, get it from JWT token
             if (!customerId.HasValue)
             {

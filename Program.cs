@@ -280,7 +280,7 @@ static async Task SeedAsync(WebApplication app)
         throw;
     }
 
-    foreach (var role in new[] { "Admin", "Customer", "Staff" })
+    foreach (var role in new[] { "Admin", "Customer", "Staff", "Cashier" })
     {
         if (!await roleManager.RoleExistsAsync(role))
             await roleManager.CreateAsync(new IdentityRole(role));

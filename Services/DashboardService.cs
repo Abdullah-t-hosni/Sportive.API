@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SignalR;
+using Sportive.API.Utils;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.DTOs;
@@ -25,7 +26,7 @@ public class DashboardService : IDashboardService
 
     public async Task<DashboardStatsDto> GetStatsAsync()
     {
-        var now        = DateTime.UtcNow;
+        var now        = TimeHelper.GetEgyptTime();
         var todayStart = now.Date;
         var todayEnd   = todayStart.AddDays(1);
         var yesterdayStart = todayStart.AddDays(-1);
@@ -94,7 +95,7 @@ public class DashboardService : IDashboardService
 
     public async Task<AnalyticsSummaryDto> GetAnalyticsSummaryAsync()
     {
-        var now = DateTime.UtcNow;
+        var now = TimeHelper.GetEgyptTime();
         var monthStart = new DateTime(now.Year, now.Month, 1);
 
         // Category Sales
@@ -177,7 +178,7 @@ public class DashboardService : IDashboardService
 
     public async Task<AdvancedDashboardStatsDto> GetAdvancedStatsAsync()
     {
-        var now = DateTime.UtcNow;
+        var now = TimeHelper.GetEgyptTime();
         var thirtyDaysAgo = now.AddDays(-30);
 
         // 1. Sales by City (Heatmap)
@@ -322,7 +323,7 @@ public class DashboardService : IDashboardService
 
     public async Task<List<SalesChartDto>> GetSalesChartAsync(string period)
     {
-        var now = DateTime.UtcNow;
+        var now = TimeHelper.GetEgyptTime();
         if (period == "daily")
         {
             var from = now.AddDays(-29).Date;
