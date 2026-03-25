@@ -38,7 +38,7 @@ public interface ICategoryService
 
 public interface IOrderService
 {
-    Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(int page, int pageSize, OrderStatus? status = null, string? search = null, int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null);
+    Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(int page, int pageSize, OrderStatus? status = null, string? search = null, int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null);
     Task<OrderDetailDto?> GetOrderByIdAsync(int id);
     Task<PaginatedResult<OrderSummaryDto>> GetCustomerOrdersAsync(int customerId, int page, int pageSize);
     Task<OrderDetailDto> CreateOrderAsync(int customerId, CreateOrderDto dto);
@@ -77,5 +77,6 @@ public interface IDashboardService
     Task<AnalyticsSummaryDto> GetAnalyticsSummaryAsync();
     Task<byte[]> ExportSalesToCsvAsync(DateTime? from, DateTime? to);
     Task<AdvancedDashboardStatsDto> GetAdvancedStatsAsync();
+    Task<StaffPerformanceDto> GetStaffStatsAsync(string staffId);
     Task TriggerLiveUpdateAsync(); // Pushes to all Admins via SignalR
 }

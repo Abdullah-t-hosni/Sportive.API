@@ -21,7 +21,7 @@ public class OrderService : IOrderService
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
-        int page, int pageSize, OrderStatus? status = null, string? search = null, int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null)
+        int page, int pageSize, OrderStatus? status = null, string? search = null, int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null)
     {
         var query = _db.Orders
             .Include(o => o.Customer)
@@ -40,6 +40,9 @@ public class OrderService : IOrderService
 
         if (status.HasValue)
             query = query.Where(o => o.Status == status);
+
+        if (!string.IsNullOrEmpty(salesPersonId))
+            query = query.Where(o => o.SalesPersonId == salesPersonId);
 
         if (!string.IsNullOrWhiteSpace(search))
         {

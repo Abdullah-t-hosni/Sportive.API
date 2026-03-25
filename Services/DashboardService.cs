@@ -295,6 +295,23 @@ public class DashboardService : IDashboardService
         );
     }
 
+    public async Task<StaffPerformanceDto> GetStaffStatsAsync(string staffId)
+    {
+        var orders = await _db.Orders
+            .Where(o => o.SalesPersonId == staffId && o.Status != OrderStatus.Cancelled)
+            .ToListAsync();
+
+        var user = await _userManager.FindByIdAsync(staffId);
+        var name = user != null ? $"{user.FirstName} {user.LastName}" : "Unknown Staff";
+
+        return new StaffPerformanceDto(
+            staffId,
+            name,
+            orders.Count,
+            orders.Sum(o => o.TotalAmount)
+        );
+    }
+
     public async Task TriggerLiveUpdateAsync()
     {
         // Pushes a refresh event to all clients in the "Admin" group

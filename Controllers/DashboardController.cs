@@ -49,6 +49,10 @@ public class DashboardController : ControllerBase
     public async Task<IActionResult> GetAdvancedStats() =>
         Ok(await _dashboard.GetAdvancedStatsAsync());
 
+    [HttpGet("staff-stats")]
+    public async Task<IActionResult> GetStaffStats([FromQuery] string staffId) =>
+        Ok(await _dashboard.GetStaffStatsAsync(staffId));
+
     [HttpPost("trigger-update")]
     public async Task<IActionResult> TriggerUpdate()
     {
