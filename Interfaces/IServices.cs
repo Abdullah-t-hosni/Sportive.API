@@ -43,7 +43,7 @@ public interface IOrderService
     Task<PaginatedResult<OrderSummaryDto>> GetCustomerOrdersAsync(int customerId, int page, int pageSize);
     Task<OrderDetailDto> CreateOrderAsync(int? customerId, CreateOrderDto dto);
     Task<OrderDetailDto> UpdateOrderStatusAsync(int orderId, UpdateOrderStatusDto dto, string updatedByUserId);
-    Task<string> GenerateOrderNumberAsync();
+    Task<string> GenerateOrderNumberAsync(OrderSource source = OrderSource.Website);
 }
 
 public interface ICartService
