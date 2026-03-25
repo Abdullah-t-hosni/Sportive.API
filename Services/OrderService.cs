@@ -9,10 +9,12 @@ namespace Sportive.API.Services;
 public class OrderService : IOrderService
 {
     private readonly AppDbContext _db;
+    private readonly INotificationService _notifications;
 
-    public OrderService(AppDbContext db)
+    public OrderService(AppDbContext db, INotificationService notifications)
     {
         _db = db;
+        _notifications = notifications;
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
@@ -256,6 +258,38 @@ public class OrderService : IOrderService
         });
 
         await _db.SaveChangesAsync();
+
+        // 4. Send Notification to Customer
+        if (!string.IsNullOrEmpty(order.Customer.AppUserId))
+        {
+            var statusMsgAr = dto.Status switch {
+                OrderStatus.Confirmed => "تم تأكيد طلبك #",
+                OrderStatus.Processing => "طلبك قيد التحضير #",
+                OrderStatus.ReadyForPickup => "طلبك جاهز للاستلام #",
+                OrderStatus.OutForDelivery => "طلبك في الطريق إليك #",
+                OrderStatus.Delivered => "تم توصيل طلبك بنجاح #",
+                OrderStatus.Cancelled => "تم إلغاء طلبك #",
+                OrderStatus.Returned => "طلبك مرتجع #",
+                _ => "تحديث جديد لطلبك #"
+            } + order.OrderNumber;
+
+            var statusMsgEn = dto.Status switch {
+                OrderStatus.Confirmed => "Your order has been confirmed #",
+                OrderStatus.Processing => "Your order is being processed #",
+                OrderStatus.ReadyForPickup => "Your order is ready for pickup #",
+                OrderStatus.OutForDelivery => "Your order is out for delivery #",
+                OrderStatus.Delivered => "Your order has been delivered #",
+                OrderStatus.Cancelled => "Your order has been cancelled #",
+                OrderStatus.Returned => "Your order has been returned #",
+                _ => "New update for your order #"
+            } + order.OrderNumber;
+
+            await _notifications.SendAsync(
+                order.Customer.AppUserId,
+                "تحديث حالة الطلب", "Order Status Update",
+                statusMsgAr, statusMsgEn,
+                "OrderUpdate", order.Id);
+        }
 
         return (await GetOrderByIdAsync(orderId))!;
     }

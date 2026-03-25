@@ -54,19 +54,18 @@ public class UpdateProductValidator : AbstractValidator<UpdateProductDto>
 
 public class CreateVariantValidator : AbstractValidator<CreateVariantDto>
 {
-    private static readonly string[] ValidSizes =
-        { "XS", "S", "M", "L", "XL", "XXL", "XXXL",
-          "36", "37", "38", "39", "40", "41", "42", "43", "44", "45" };
-
     public CreateVariantValidator()
     {
         RuleFor(x => x.StockQuantity)
             .GreaterThanOrEqualTo(0).WithMessage("المخزون لا يمكن أن يكون سالبًا");
 
         RuleFor(x => x.Size)
-            .Must(s => ValidSizes.Contains(s))
-            .When(x => !string.IsNullOrEmpty(x.Size))
-            .WithMessage($"المقاس غير صحيح. المقاسات المتاحة: {string.Join(", ", ValidSizes)}");
+            .MaximumLength(20).WithMessage("المقاس لا يمكن أن يتجاوز 20 حرف")
+            .When(x => !string.IsNullOrEmpty(x.Size));
+
+        RuleFor(x => x.Color)
+            .MaximumLength(50).WithMessage("اسم اللون لا يمكن أن يتجاوز 50 حرف")
+            .When(x => !string.IsNullOrEmpty(x.Color));
 
         RuleFor(x => x.PriceAdjustment)
             .GreaterThanOrEqualTo(0)
