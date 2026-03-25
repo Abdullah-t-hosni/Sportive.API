@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
-using Sportive.API.Services;
+using Sportive.API.Data;
+using Sportive.API.Models;
 
 namespace Sportive.API.Controllers;
 
@@ -10,16 +12,33 @@ namespace Sportive.API.Controllers;
 [Authorize]
 public class NotificationsController : ControllerBase
 {
-    private readonly INotificationService _notificationService;
-    public NotificationsController(INotificationService notificationService) => _notificationService = notificationService;
+    private readonly AppDbContext _db;
+    public NotificationsController(AppDbContext db) => _db = db;
 
     private string GetUserId() => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
-    /// <summary>GET /api/notifications</summary>
+    /// <summary>GET /api/notifications — كل الإشعارات</summary>
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] int count = 50)
+    public async Task<IActionResult> GetAll()
     {
-        var notifications = await _notificationService.GetMyNotificationsAsync(GetUserId(), count);
+        var userId = GetUserId();
+        var notifications = await _db.Set<Notification>()
+            .Where(n => n.UserId == userId && !n.IsDeleted)
+            .OrderByDescending(n => n.CreatedAt)
+            .Take(50)
+            .Select(n => new {
+                n.Id,
+                n.TitleAr,
+                n.TitleEn,
+                n.MessageAr,
+                n.MessageEn,
+                n.Type,
+                n.IsRead,
+                n.OrderId,
+                n.CreatedAt
+            })
+            .ToListAsync();
+
         return Ok(notifications);
     }
 
@@ -27,7 +46,9 @@ public class NotificationsController : ControllerBase
     [HttpGet("unread-count")]
     public async Task<IActionResult> GetUnreadCount()
     {
-        var count = await _notificationService.GetUnreadCountAsync(GetUserId());
+        var userId = GetUserId();
+        var count = await _db.Set<Notification>()
+            .CountAsync(n => n.UserId == userId && !n.IsRead && !n.IsDeleted);
         return Ok(count);
     }
 
@@ -35,7 +56,15 @@ public class NotificationsController : ControllerBase
     [HttpPatch("{id}/read")]
     public async Task<IActionResult> MarkAsRead(int id)
     {
-        await _notificationService.MarkAsReadAsync(GetUserId(), id);
+        var userId = GetUserId();
+        var n = await _db.Set<Notification>()
+            .FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId && !n.IsDeleted);
+
+        if (n == null) return NotFound();
+
+        n.IsRead    = true;
+        n.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
         return Ok();
     }
 
@@ -43,23 +72,49 @@ public class NotificationsController : ControllerBase
     [HttpPatch("read-all")]
     public async Task<IActionResult> MarkAllAsRead()
     {
-        await _notificationService.MarkAllAsReadAsync(GetUserId());
-        return Ok();
+        var userId = GetUserId();
+        var notifications = await _db.Set<Notification>()
+            .Where(n => n.UserId == userId && !n.IsRead && !n.IsDeleted)
+            .ToListAsync();
+
+        foreach (var n in notifications)
+        {
+            n.IsRead    = true;
+            n.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { updated = notifications.Count });
     }
 
-    /// <summary>DELETE /api/notifications/{id}</summary>
+    /// <summary>DELETE /api/notifications/{id} — حذف إشعار</summary>
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
-        await _notificationService.DeleteAsync(GetUserId(), id);
-        return Ok();
+        var userId = GetUserId();
+        var n = await _db.Set<Notification>()
+            .FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId);
+        if (n == null) return NotFound();
+        n.IsDeleted = true;
+        n.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return NoContent();
     }
 
-    /// <summary>DELETE /api/notifications/clear-all</summary>
+    /// <summary>DELETE /api/notifications/clear-all — مسح كل الإشعارات</summary>
     [HttpDelete("clear-all")]
     public async Task<IActionResult> ClearAll()
     {
-        await _notificationService.ClearAllAsync(GetUserId());
-        return Ok();
+        var userId = GetUserId();
+        var notifications = await _db.Set<Notification>()
+            .Where(n => n.UserId == userId && !n.IsDeleted)
+            .ToListAsync();
+        foreach (var n in notifications)
+        {
+            n.IsDeleted = true;
+            n.UpdatedAt = DateTime.UtcNow;
+        }
+        await _db.SaveChangesAsync();
+        return Ok(new { deleted = notifications.Count });
     }
 }
