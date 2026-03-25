@@ -21,6 +21,6 @@
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="9.0.0" />
     <PackageReference Include="CloudinaryDotNet" Version="1.26.1" />
     <PackageReference Include="QuestPDF" Version="2024.12.3" />
-    <PackageReference Include="ArabicReshaper" Version="0.0.1" />
+    <PackageReference Include="BidiReshapeSharp" Version="1.2.0" />
   </ItemGroup>
 </Project>
