@@ -17,7 +17,6 @@ using Sportive.API.Middleware;
 using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Validators;
-using Sportive.API.Hubs;
 
 
 Log.Logger = new LoggerConfiguration()
@@ -170,7 +169,7 @@ builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ICouponService, CouponService>();
 builder.Services.AddScoped<IImageService, CloudinaryImageService>();
 builder.Services.AddScoped<IPaymobService, PaymobService>();
-builder.Services.AddScoped<INotificationService, NotificationService>();
+
 // Wishlist, Reviews, Analytics — handled directly in controllers
 
 builder.Services.AddHttpClient("Paymob");
@@ -241,8 +240,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-app.MapHub<NotificationHub>("/notifications-hub");
-
 
 await SeedAsync(app);
 

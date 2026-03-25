@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.DTOs;
-using Sportive.API.Hubs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
 
@@ -10,15 +9,9 @@ namespace Sportive.API.Services;
 
 public class OrderService : IOrderService
 {
-    private readonly AppDbContext _db;
-    private readonly INotificationService _notifications;
-    private readonly IHubContext<NotificationHub> _hub;
-
-    public OrderService(AppDbContext db, INotificationService notifications, IHubContext<NotificationHub> hub)
+    public OrderService(AppDbContext db)
     {
         _db = db;
-        _notifications = notifications;
-        _hub = hub;
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
@@ -220,9 +213,6 @@ public class OrderService : IOrderService
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                // Live Update for Admin Dash
-                await _hub.Clients.Group("Admin").SendAsync("RefreshDashboard");
-
                 return (await GetOrderByIdAsync(order.Id))!;
             }
             catch
@@ -259,17 +249,6 @@ public class OrderService : IOrderService
         });
 
         await _db.SaveChangesAsync();
-
-        // Send Auto Notification
-        string titleAr = "تحديث حالة الطلب";
-        string titleEn = "Order Status Update";
-        string msgAr = $"تم تغيير حالة طلبك رقم {order.OrderNumber} إلى: {dto.Status}";
-        string msgEn = $"Your order {order.OrderNumber} status has been updated to: {dto.Status}";
-        
-        await _notifications.SendAsync(order.Customer?.AppUserId, titleAr, titleEn, msgAr, msgEn, "OrderUpdate", order.Id);
-
-        // Live Update for Admin Dash
-        await _hub.Clients.Group("Admin").SendAsync("RefreshDashboard");
 
         return (await GetOrderByIdAsync(orderId))!;
     }
