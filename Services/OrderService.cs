@@ -141,6 +141,7 @@ public class OrderService : IOrderService
                     PickupScheduledAt = dto.PickupScheduledAt,
                     CustomerNotes = dto.CustomerNotes,
                     CouponCode = dto.CouponCode,
+                    SalesPersonId = dto.SalesPersonId,
                     Status = OrderStatus.Pending,
                     DeliveryFee = dto.FulfillmentType == FulfillmentType.Delivery ? 50 : 0
                 };

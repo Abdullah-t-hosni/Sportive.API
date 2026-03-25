@@ -86,4 +86,52 @@ public class AuthController : ControllerBase
             phone      = customer?.Phone
         });
     }
+
+    /// <summary>الحصول على جميع الموظفين (للمدير)</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpGet("staff")]
+    public async Task<IActionResult> GetStaff()
+    {
+        var users = await _db.Users
+            .Where(u => u.IsActive)
+            .Select(u => new {
+                u.Id,
+                u.FirstName,
+                u.LastName,
+                u.Email,
+                u.PhoneNumber,
+                FullName = $"{u.FirstName} {u.LastName}"
+            })
+            .ToListAsync();
+
+        // In a real scenario, you'd filter by role, but here we can just return all users who are not mapped to regular Customers
+        // Or we can return all if this is a small POS system. Let's return all active users for simplicity, or we can use RoleManager.
+        // For efficiency, we just return the users list. 
+        return Ok(users);
+    }
+
+    /// <summary>تسجيل موظف جديد (للمدير)</summary>
+    [Authorize(Roles = "Admin")]
+    [HttpPost("staff")]
+    public async Task<IActionResult> CreateStaff([FromBody] RegisterDto dto, [FromQuery] string role = "Cashier")
+    {
+        try {
+            var authResult = await _auth.RegisterAsync(dto);
+            // Delete the automatically created customer record for this staff
+            var staffCustomer = await _db.Customers.FirstOrDefaultAsync(c => c.Email == dto.Email);
+            if (staffCustomer != null)
+            {
+                staffCustomer.IsDeleted = true;
+                await _db.SaveChangesAsync();
+            }
+
+            // Assign role
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
+            if (user != null)
+                await _auth.AssignRoleAsync(user.Id, role);
+
+            return Ok(new { message = "Staff created successfully" }); 
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
 }

@@ -165,7 +165,8 @@ public record CreateOrderDto(
     int? DeliveryAddressId,
     DateTime? PickupScheduledAt,
     string? CustomerNotes,
-    string? CouponCode
+    string? CouponCode,
+    string? SalesPersonId
 );
 
 public record OrderSummaryDto(

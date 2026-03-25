@@ -66,6 +66,9 @@ public class Order : BaseEntity
     // Notes
     public string? CustomerNotes { get; set; }
     public string? AdminNotes { get; set; }
+    
+    // Target Tracking
+    public string? SalesPersonId { get; set; } // The ID of the employee who made the sale using POS
 
     // Navigation
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
