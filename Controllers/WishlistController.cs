@@ -32,7 +32,7 @@ public class WishlistController : ControllerBase
     public async Task<IActionResult> Get()
     {
         var customerId = await GetCustomerIdAsync();
-        if (customerId == null) return NotFound(new { message = "Customer not found" });
+        if (customerId == null) return Ok(new List<object>()); // Return empty list for non-customers (Staff/Admins)
 
         var items = await _db.Set<WishlistItem>()
             .Include(w => w.Product!).ThenInclude(p => p!.Images)
@@ -58,7 +58,7 @@ public class WishlistController : ControllerBase
     public async Task<IActionResult> Add([FromBody] AddWishlistDto dto)
     {
         var customerId = await GetCustomerIdAsync();
-        if (customerId == null) return NotFound(new { message = "Customer not found" });
+        if (customerId == null) return BadRequest(new { message = "Only customers can have a wishlist" });
 
         var item = await _db.Set<WishlistItem>()
             .IgnoreQueryFilters()
@@ -88,7 +88,7 @@ public class WishlistController : ControllerBase
     public async Task<IActionResult> Remove(int productId)
     {
         var customerId = await GetCustomerIdAsync();
-        if (customerId == null) return NotFound(new { message = "Customer not found" });
+        if (customerId == null) return Ok(new { isInWishlist = false });
 
         var item = await _db.Set<WishlistItem>()
             .FirstOrDefaultAsync(w => w.CustomerId == customerId && w.ProductId == productId && !w.IsDeleted);
