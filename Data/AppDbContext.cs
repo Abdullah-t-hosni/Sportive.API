@@ -28,6 +28,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<PurchaseInvoiceItem>  PurchaseInvoiceItems { get; set; }
     public DbSet<SupplierPayment>      SupplierPayments     { get; set; }
 
+    public DbSet<Account>        Accounts        { get; set; }
+    public DbSet<JournalEntry>   JournalEntries  { get; set; }
+    public DbSet<JournalLine>    JournalLines    { get; set; }
+    public DbSet<ReceiptVoucher> ReceiptVouchers { get; set; }
+    public DbSet<PaymentVoucher> PaymentVouchers { get; set; }
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -158,6 +164,42 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(p => p.Supplier).WithMany(s => s.Payments).HasForeignKey(p => p.SupplierId);
             e.HasOne(p => p.Invoice).WithMany(i => i.Payments)
                 .HasForeignKey(p => p.PurchaseInvoiceId).IsRequired(false);
+        });
+
+        builder.Entity<Account>(e => {
+            e.HasQueryFilter(a => !a.IsDeleted);
+            e.Property(a => a.OpeningBalance).HasPrecision(18,2);
+            e.HasOne(a => a.Parent).WithMany(a => a.Children).HasForeignKey(a => a.ParentId).IsRequired(false);
+            e.HasIndex(a => a.Code).IsUnique();
+        });
+
+        builder.Entity<JournalEntry>(e => {
+            e.HasQueryFilter(j => !j.IsDeleted);
+            e.HasOne(j => j.ReversalOf).WithMany().HasForeignKey(j => j.ReversalOfId).IsRequired(false);
+        });
+
+        builder.Entity<JournalLine>(e => {
+            e.HasQueryFilter(l => !l.IsDeleted);
+            e.Property(l => l.Debit).HasPrecision(18,2);
+            e.Property(l => l.Credit).HasPrecision(18,2);
+            e.HasOne(l => l.JournalEntry).WithMany(j => j.Lines).HasForeignKey(l => l.JournalEntryId);
+            e.HasOne(l => l.Account).WithMany(a => a.Lines).HasForeignKey(l => l.AccountId);
+        });
+
+        builder.Entity<ReceiptVoucher>(e => {
+            e.HasQueryFilter(v => !v.IsDeleted);
+            e.Property(v => v.Amount).HasPrecision(18,2);
+            e.HasOne(v => v.CashAccount).WithMany().HasForeignKey(v => v.CashAccountId);
+            e.HasOne(v => v.FromAccount).WithMany().HasForeignKey(v => v.FromAccountId);
+            e.HasOne(v => v.JournalEntry).WithMany().HasForeignKey(v => v.JournalEntryId).IsRequired(false);
+        });
+
+        builder.Entity<PaymentVoucher>(e => {
+            e.HasQueryFilter(v => !v.IsDeleted);
+            e.Property(v => v.Amount).HasPrecision(18,2);
+            e.HasOne(v => v.CashAccount).WithMany().HasForeignKey(v => v.CashAccountId);
+            e.HasOne(v => v.ToAccount).WithMany().HasForeignKey(v => v.ToAccountId);
+            e.HasOne(v => v.JournalEntry).WithMany().HasForeignKey(v => v.JournalEntryId).IsRequired(false);
         });
 
         builder.Entity<Category>().HasData(
