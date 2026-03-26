@@ -477,7 +477,7 @@ public class FinancialReportsController : ControllerBase
     {
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add("ميزان المراجعة");
-        ws.SheetView.RightToLeft = true;
+        ws.RightToLeft = true;
 
         ws.Cell(1, 1).Value = $"ميزان المراجعة — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
         ws.Cell(1, 1).Style.Font.Bold = true; ws.Cell(1, 1).Style.Font.FontSize = 13;
@@ -532,7 +532,7 @@ public class FinancialReportsController : ControllerBase
     {
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add("قائمة الدخل");
-        ws.SheetView.RightToLeft = true;
+        ws.RightToLeft = true;
 
         ws.Cell(1, 1).Value = $"قائمة الدخل — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
         ws.Cell(1, 1).Style.Font.Bold = true; ws.Cell(1, 1).Style.Font.FontSize = 13;
@@ -581,7 +581,7 @@ public class FinancialReportsController : ControllerBase
     {
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add("الميزانية العمومية");
-        ws.SheetView.RightToLeft = true;
+        ws.RightToLeft = true;
 
         ws.Cell(1, 1).Value = $"الميزانية العمومية — في {to:yyyy-MM-dd}";
         ws.Cell(1, 1).Style.Font.Bold = true; ws.Cell(1, 1).Style.Font.FontSize = 13;
@@ -625,7 +625,7 @@ public class FinancialReportsController : ControllerBase
     {
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add("دفتر الأستاذ");
-        ws.SheetView.RightToLeft = true;
+        ws.RightToLeft = true;
 
         string[] hdrs = { "الكود","اسم الحساب","التاريخ","القيد","البيان","مدين","دائن","الرصيد" };
         for (int c = 0; c < hdrs.Length; c++)
@@ -659,7 +659,7 @@ public class FinancialReportsController : ControllerBase
     {
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add("كشف حساب");
-        ws.SheetView.RightToLeft = true;
+        ws.RightToLeft = true;
 
         ws.Cell(1,1).Value = $"كشف حساب: {acct.Code} — {acct.NameAr}";
         ws.Cell(1,1).Style.Font.Bold = true; ws.Cell(1,1).Style.Font.FontSize = 13;

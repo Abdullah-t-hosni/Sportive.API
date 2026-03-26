@@ -606,7 +606,7 @@ public class OperationalReportsController : ControllerBase
     {
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add("كشف حساب عميل");
-        ws.SheetView.RightToLeft = true;
+        ws.RightToLeft = true;
         ws.Cell(1,1).Value = $"كشف حساب: {c.FullName} | {c.Phone}";
         ws.Cell(1,1).Style.Font.Bold = true; ws.Cell(1,1).Style.Font.FontSize = 13;
         ws.Cell(2,1).Value = $"من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
@@ -626,7 +626,7 @@ public class OperationalReportsController : ControllerBase
     {
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add("ديون العملاء");
-        ws.SheetView.RightToLeft = true;
+        ws.RightToLeft = true;
         ws.Cell(1,1).Value = $"تقرير ديون العملاء — حتى {asOf:yyyy-MM-dd}";
         ws.Cell(1,1).Style.Font.Bold = true; ws.Cell(1,1).Style.Font.FontSize = 13;
         ws.Range(1,1,1,7).Merge();
@@ -645,7 +645,7 @@ public class OperationalReportsController : ControllerBase
     {
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add("ديون الموردين");
-        ws.SheetView.RightToLeft = true;
+        ws.RightToLeft = true;
         ws.Cell(1,1).Value = $"تقرير ديون الموردين — حتى {asOf:yyyy-MM-dd}";
         ws.Cell(1,1).Style.Font.Bold = true; ws.Cell(1,1).Style.Font.FontSize = 13;
 
@@ -662,7 +662,7 @@ public class OperationalReportsController : ControllerBase
     {
         using var wb = new XLWorkbook();
         var ws1 = wb.Worksheets.Add("ملخص المخزون");
-        ws1.SheetView.RightToLeft = true;
+        ws1.RightToLeft = true;
         string[] h1 = {"الاسم عربي","SKU","الفئة","السعر","سعر البيع","إجمالي المخزون","قيمة المخزون"};
         for(int i=0;i<h1.Length;i++){ws1.Cell(1,i+1).Value=h1[i];ws1.Cell(1,i+1).Style.Font.Bold=true;ws1.Cell(1,i+1).Style.Fill.BackgroundColor=XLColor.FromHtml("#1b5e20");ws1.Cell(1,i+1).Style.Font.FontColor=XLColor.White;}
         int r=2;
@@ -670,7 +670,7 @@ public class OperationalReportsController : ControllerBase
         ws1.Columns().AdjustToContents();
 
         var ws2 = wb.Worksheets.Add("تفاصيل المقاسات");
-        ws2.SheetView.RightToLeft = true;
+        ws2.RightToLeft = true;
         string[] h2 = {"المنتج","SKU","المقاس","اللون","المخزون","السعر","القيمة"};
         for(int i=0;i<h2.Length;i++){ws2.Cell(1,i+1).Value=h2[i];ws2.Cell(1,i+1).Style.Font.Bold=true;}
         int r2=2;
@@ -684,7 +684,7 @@ public class OperationalReportsController : ControllerBase
     {
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add("تقرير المبيعات");
-        ws.SheetView.RightToLeft = true;
+        ws.RightToLeft = true;
         ws.Cell(1,1).Value=$"تقرير المبيعات — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";ws.Cell(1,1).Style.Font.Bold=true;
         string[] h={"رقم الطلب","التاريخ","العميل","التليفون","المصدر","الحالة","الدفع","المجموع","الخصم","الإجمالي","عدد القطع"};
         for(int i=0;i<h.Length;i++){ws.Cell(2,i+1).Value=h[i];ws.Cell(2,i+1).Style.Font.Bold=true;ws.Cell(2,i+1).Style.Fill.BackgroundColor=XLColor.FromHtml("#1a237e");ws.Cell(2,i+1).Style.Font.FontColor=XLColor.White;}
@@ -698,7 +698,7 @@ public class OperationalReportsController : ControllerBase
     {
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add("تقرير المشتريات");
-        ws.SheetView.RightToLeft = true;
+        ws.RightToLeft = true;
         string[] h={"رقم الفاتورة","فاتورة المورد","المورد","التاريخ","شروط الدفع","الحالة","المجموع","الضريبة","الإجمالي","المدفوع","المتبقي"};
         for(int i=0;i<h.Length;i++){ws.Cell(1,i+1).Value=h[i];ws.Cell(1,i+1).Style.Font.Bold=true;ws.Cell(1,i+1).Style.Fill.BackgroundColor=XLColor.FromHtml("#e65100");ws.Cell(1,i+1).Style.Font.FontColor=XLColor.White;}
         int r=2;
@@ -711,7 +711,7 @@ public class OperationalReportsController : ControllerBase
     {
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add(title);
-        ws.SheetView.RightToLeft = true;
+        ws.RightToLeft = true;
         ws.Cell(1,1).Value=$"{title} — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";ws.Cell(1,1).Style.Font.Bold=true;
         string[] h={"الرقم","التاريخ","الاسم","التليفون","المبلغ","السبب"};
         for(int i=0;i<h.Length;i++){ws.Cell(2,i+1).Value=h[i];ws.Cell(2,i+1).Style.Font.Bold=true;}
@@ -725,7 +725,7 @@ public class OperationalReportsController : ControllerBase
     {
         using var wb = new XLWorkbook();
         var ws1 = wb.Worksheets.Add("ملخص الكاشير");
-        ws1.SheetView.RightToLeft = true;
+        ws1.RightToLeft = true;
         string[] h={"المستخدم","عدد الفواتير","إجمالي المبيعات","المرتجعات","الملغيات"};
         for(int i=0;i<h.Length;i++){ws1.Cell(1,i+1).Value=h[i];ws1.Cell(1,i+1).Style.Font.Bold=true;}
         int r=2;
@@ -738,7 +738,7 @@ public class OperationalReportsController : ControllerBase
     {
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add("حركة الصنف");
-        ws.SheetView.RightToLeft = true;
+        ws.RightToLeft = true;
         ws.Cell(1,1).Value=$"حركة صنف: {p.NameAr} ({p.SKU})";ws.Cell(1,1).Style.Font.Bold=true;
         string[] h={"التاريخ","النوع","المرجع","الاسم","وارد","صادر","المبلغ"};
         for(int i=0;i<h.Length;i++){ws.Cell(2,i+1).Value=h[i];ws.Cell(2,i+1).Style.Font.Bold=true;}

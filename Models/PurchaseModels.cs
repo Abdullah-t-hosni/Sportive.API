@@ -37,6 +37,7 @@ public enum PurchaseInvoiceStatus
     Paid     = 3,  // مدفوعة
     PartPaid = 4,  // مدفوعة جزئياً
     Overdue  = 5,  // متأخرة
+    Returned = 6,  // مرتجعة
 }
 
 public class PurchaseInvoice : BaseEntity
