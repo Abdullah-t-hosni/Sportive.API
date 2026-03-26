@@ -123,12 +123,12 @@ public class SuppliersController : ControllerBase
 public class PurchaseInvoicesController : ControllerBase
 {
     private readonly AppDbContext _db;
-    private readonly IAccountingService _accounting;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public PurchaseInvoicesController(AppDbContext db, IAccountingService accounting)
+    public PurchaseInvoicesController(AppDbContext db, IServiceScopeFactory scopeFactory)
     {
-        _db         = db;
-        _accounting = accounting;
+        _db           = db;
+        _scopeFactory = scopeFactory;
     }
 
     [HttpGet]
@@ -264,7 +264,18 @@ public class PurchaseInvoicesController : ControllerBase
 
         _ = Task.Run(async () =>
         {
-            try { await _accounting.PostPurchaseInvoiceAsync(invoiceWithSupplier); }
+            using var scope = _scopeFactory.CreateScope();
+            var accountingInner = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+            var dbInner = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            try 
+            {
+                var invoiceInner = await dbInner.PurchaseInvoices
+                    .Include(i => i.Supplier)
+                    .FirstAsync(i => i.Id == invoice.Id);
+
+                await accountingInner.PostPurchaseInvoiceAsync(invoiceInner); 
+            }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[Accounting] PostPurchaseInvoice failed for {invoice.InvoiceNumber}: {ex.Message}");
@@ -292,10 +303,21 @@ public class PurchaseInvoicesController : ControllerBase
 
             _ = Task.Run(async () =>
             {
-                try { await _accounting.PostPurchaseReturnAsync(fullInvoice); }
+                using var scope = _scopeFactory.CreateScope();
+                var accountingInner = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var dbInner = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+                try 
+                {
+                    var fullInvoiceInner = await dbInner.PurchaseInvoices
+                        .Include(i => i.Supplier)
+                        .FirstAsync(i => i.Id == id);
+
+                    await accountingInner.PostPurchaseReturnAsync(fullInvoiceInner); 
+                }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"[Accounting] PostPurchaseReturn failed: {ex.Message}");
+                    Console.Error.WriteLine($"[Accounting] PostPurchaseReturn failed for {id}: {ex.Message}");
                 }
             });
         }
@@ -329,12 +351,12 @@ public record UpdatePurchaseStatusDto(PurchaseInvoiceStatus Status);
 public class SupplierPaymentsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    private readonly IAccountingService _accounting;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public SupplierPaymentsController(AppDbContext db, IAccountingService accounting)
+    public SupplierPaymentsController(AppDbContext db, IServiceScopeFactory scopeFactory)
     {
-        _db         = db;
-        _accounting = accounting;
+        _db           = db;
+        _scopeFactory = scopeFactory;
     }
 
     [HttpGet]
@@ -431,10 +453,21 @@ public class SupplierPaymentsController : ControllerBase
 
         _ = Task.Run(async () =>
         {
-            try { await _accounting.PostSupplierPaymentAsync(paymentWithSupplier); }
+            using var scope = _scopeFactory.CreateScope();
+            var accountingInner = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+            var dbInner = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            try 
+            {
+                var paymentInner = await dbInner.SupplierPayments
+                    .Include(p => p.Supplier)
+                    .FirstAsync(p => p.Id == payment.Id);
+
+                await accountingInner.PostSupplierPaymentAsync(paymentInner); 
+            }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[Accounting] PostSupplierPayment failed: {ex.Message}");
+                Console.Error.WriteLine($"[Accounting] PostSupplierPayment failed for {payment.PaymentNumber}: {ex.Message}");
             }
         });
 

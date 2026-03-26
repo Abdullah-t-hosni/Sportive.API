@@ -11,16 +11,16 @@ public class OrderService : IOrderService
 {
     private readonly AppDbContext _db;
     private readonly INotificationService _notificationService;
-    private readonly IAccountingService _accounting;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     public OrderService(
         AppDbContext db,
         INotificationService notificationService,
-        IAccountingService accounting)
+        IServiceScopeFactory scopeFactory)
     {
         _db = db;
         _notificationService = notificationService;
-        _accounting = accounting;
+        _scopeFactory = scopeFactory;
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
@@ -256,9 +256,18 @@ public class OrderService : IOrderService
 
         _ = Task.Run(async () =>
         {
+            using var scope = _scopeFactory.CreateScope();
+            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
             try
             {
-                await _accounting.PostSalesOrderAsync(orderWithCustomer);
+                // Re-fetch the order inside the new scope to avoid context mismatch
+                var orderInner = await db.Orders
+                    .Include(o => o.Customer)
+                    .FirstAsync(o => o.Id == order.Id);
+
+                await accounting.PostSalesOrderAsync(orderInner);
             }
             catch (Exception ex)
             {
@@ -310,13 +319,22 @@ public class OrderService : IOrderService
 
             _ = Task.Run(async () =>
             {
+                using var scope = _scopeFactory.CreateScope();
+                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
                 try
                 {
-                    await _accounting.PostSalesReturnAsync(fullOrder);
+                    // Re-fetch the order inside the new scope to avoid context mismatch
+                    var fullOrderInner = await db.Orders
+                        .Include(o => o.Customer)
+                        .FirstAsync(o => o.Id == orderId);
+
+                    await accounting.PostSalesReturnAsync(fullOrderInner);
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"[Accounting] PostSalesReturn failed for {fullOrder.OrderNumber}: {ex.Message}");
+                    Console.Error.WriteLine($"[Accounting] PostSalesReturn failed for {orderId}: {ex.Message}");
                 }
             });
         }
