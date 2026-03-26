@@ -132,19 +132,44 @@ public class UsersController : ControllerBase
     public async Task<IActionResult> DeleteUser(string id, [FromQuery] bool permanent = false)
     {
         var user = await _userManager.FindByIdAsync(id);
-        if (user == null) return NotFound(new { message = "المستخدم غير موجود" });
+        if (user == null) return NotFound(new { message = "المستخدم غير موجود / User not found" });
 
         if (permanent)
         {
+            // 1. Check for Customer profile
+            var customer = await _db.Customers.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(c => c.AppUserId == id);
+
+            if (customer != null)
+            {
+                // 2. Check for Orders (Foreign Key Constraint)
+                var hasOrders = await _db.Orders.IgnoreQueryFilters()
+                    .AnyAsync(o => o.CustomerId == customer.Id || o.SalesPersonId == id);
+
+                if (hasOrders)
+                {
+                    return BadRequest(new { 
+                        message = "لا يمكن حذف هذا المستخدم نهائياً لوجود طلبات مرتبطة به. برجاء تعطيل الحساب بدلاً من الحذف الزائد.",
+                        details = "This user has order history and cannot be permanently deleted due to database integrity. Use 'Deactivate' (Soft Delete) instead." 
+                    });
+                }
+
+                // 3. Delete associated records that might not be cascaded or cause issues
+                _db.Customers.Remove(customer);
+                await _db.SaveChangesAsync();
+            }
+
+            // 4. Delete the Identity User
             var result = await _userManager.DeleteAsync(user);
             if (!result.Succeeded) return BadRequest(result.Errors);
         }
         else
         {
             user.IsActive = false;
-            await _userManager.UpdateAsync(user);
+            var result = await _userManager.UpdateAsync(user);
+            if (!result.Succeeded) return BadRequest(result.Errors);
         }
 
-        return Ok(new { message = "تم حذف المستخدم بنجاح" });
+        return Ok(new { message = "تم حذف المستخدم بنجاح / Operation successful" });
     }
 }
