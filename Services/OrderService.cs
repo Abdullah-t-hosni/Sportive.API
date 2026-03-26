@@ -11,11 +11,16 @@ public class OrderService : IOrderService
 {
     private readonly AppDbContext _db;
     private readonly INotificationService _notificationService;
+    private readonly IAccountingService _accounting;
 
-    public OrderService(AppDbContext db, INotificationService notificationService)
+    public OrderService(
+        AppDbContext db,
+        INotificationService notificationService,
+        IAccountingService accounting)
     {
         _db = db;
         _notificationService = notificationService;
+        _accounting = accounting;
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
@@ -243,6 +248,25 @@ public class OrderService : IOrderService
 
         await _db.SaveChangesAsync();
 
+        // ── ترحيل القيد المحاسبي تلقائياً ────────────────
+        // نحتاج الـ Customer مع الـ order عشان اسم العميل في البيان
+        var orderWithCustomer = await _db.Orders
+            .Include(o => o.Customer)
+            .FirstAsync(o => o.Id == order.Id);
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _accounting.PostSalesOrderAsync(orderWithCustomer);
+            }
+            catch (Exception ex)
+            {
+                // لا نوقف الطلب بسبب خطأ محاسبي — نسجله فقط
+                Console.Error.WriteLine($"[Accounting] PostSalesOrder failed for {order.OrderNumber}: {ex.Message}");
+            }
+        });
+
         // 5. Notifications
         var customer = await _db.Customers.FindAsync(order.CustomerId);
         if (customer != null && !string.IsNullOrEmpty(customer.AppUserId))
@@ -277,6 +301,25 @@ public class OrderService : IOrderService
         }
 
         await _db.SaveChangesAsync();
+
+        if (dto.Status == OrderStatus.Returned)
+        {
+            var fullOrder = await _db.Orders
+                .Include(o => o.Customer)
+                .FirstAsync(o => o.Id == orderId);
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _accounting.PostSalesReturnAsync(fullOrder);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[Accounting] PostSalesReturn failed for {fullOrder.OrderNumber}: {ex.Message}");
+                }
+            });
+        }
 
         // Notify Customer
         var customer = await _db.Customers.FindAsync(order.CustomerId);

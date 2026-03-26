@@ -177,6 +177,7 @@ builder.Services.AddScoped<IImageService, CloudinaryImageService>();
 builder.Services.AddScoped<IPaymobService, PaymobService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
+builder.Services.AddScoped<IAccountingService, AccountingService>();
 
 // Wishlist, Reviews, Analytics — handled directly in controllers
 builder.Services.AddScoped<IWishlistService, WishlistService>();

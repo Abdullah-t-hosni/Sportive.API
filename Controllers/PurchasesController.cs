@@ -5,6 +5,8 @@ using System.Security.Claims;
 using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Models;
+using Sportive.API.Services;
+using Sportive.API.Interfaces;
 
 namespace Sportive.API.Controllers;
 
@@ -121,7 +123,13 @@ public class SuppliersController : ControllerBase
 public class PurchaseInvoicesController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public PurchaseInvoicesController(AppDbContext db) => _db = db;
+    private readonly IAccountingService _accounting;
+
+    public PurchaseInvoicesController(AppDbContext db, IAccountingService accounting)
+    {
+        _db         = db;
+        _accounting = accounting;
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -249,6 +257,20 @@ public class PurchaseInvoicesController : ControllerBase
         _db.PurchaseInvoices.Add(invoice);
         await _db.SaveChangesAsync();
 
+        // ترحيل القيد المحاسبي
+        var invoiceWithSupplier = await _db.PurchaseInvoices
+            .Include(i => i.Supplier)
+            .FirstAsync(i => i.Id == invoice.Id);
+
+        _ = Task.Run(async () =>
+        {
+            try { await _accounting.PostPurchaseInvoiceAsync(invoiceWithSupplier); }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Accounting] PostPurchaseInvoice failed for {invoice.InvoiceNumber}: {ex.Message}");
+            }
+        });
+
         return CreatedAtAction(nameof(GetById), new { id = invoice.Id },
             new { id = invoice.Id, invoiceNumber = invoice.InvoiceNumber });
     }
@@ -261,6 +283,23 @@ public class PurchaseInvoicesController : ControllerBase
         inv.Status    = dto.Status;
         inv.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
+
+        if (dto.Status == PurchaseInvoiceStatus.Returned)
+        {
+            var fullInvoice = await _db.PurchaseInvoices
+                .Include(i => i.Supplier)
+                .FirstAsync(i => i.Id == id);
+
+            _ = Task.Run(async () =>
+            {
+                try { await _accounting.PostPurchaseReturnAsync(fullInvoice); }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[Accounting] PostPurchaseReturn failed: {ex.Message}");
+                }
+            });
+        }
+
         return Ok(new { status = inv.Status.ToString() });
     }
 
@@ -290,7 +329,13 @@ public record UpdatePurchaseStatusDto(PurchaseInvoiceStatus Status);
 public class SupplierPaymentsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public SupplierPaymentsController(AppDbContext db) => _db = db;
+    private readonly IAccountingService _accounting;
+
+    public SupplierPaymentsController(AppDbContext db, IAccountingService accounting)
+    {
+        _db         = db;
+        _accounting = accounting;
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -378,6 +423,20 @@ public class SupplierPaymentsController : ControllerBase
 
         _db.SupplierPayments.Add(payment);
         await _db.SaveChangesAsync();
+
+        // ترحيل سند الصرف
+        var paymentWithSupplier = await _db.SupplierPayments
+            .Include(p => p.Supplier)
+            .FirstAsync(p => p.Id == payment.Id);
+
+        _ = Task.Run(async () =>
+        {
+            try { await _accounting.PostSupplierPaymentAsync(paymentWithSupplier); }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Accounting] PostSupplierPayment failed: {ex.Message}");
+            }
+        });
 
         return CreatedAtAction(nameof(GetAll), new { },
             new { id = payment.Id, paymentNumber = payment.PaymentNumber });
