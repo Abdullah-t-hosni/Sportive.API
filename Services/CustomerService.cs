@@ -43,7 +43,8 @@ public class CustomerService : ICustomerService
                 c.Addresses.Select(a => new AddressDto(
                     a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault
-                )).ToList()
+                )).ToList(),
+                c.AppUserId
             ))
             .ToListAsync();
 
@@ -65,7 +66,8 @@ public class CustomerService : ICustomerService
                 c.Addresses.Select(a => new AddressDto(
                     a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault
-                )).ToList()
+                )).ToList(),
+                c.AppUserId
             ))
             .FirstOrDefaultAsync();
 
@@ -82,7 +84,8 @@ public class CustomerService : ICustomerService
                 c.Addresses.Select(a => new AddressDto(
                     a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault
-                )).ToList()
+                )).ToList(),
+                c.AppUserId
             ))
             .FirstOrDefaultAsync();
 

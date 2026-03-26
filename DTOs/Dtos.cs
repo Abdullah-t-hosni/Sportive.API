@@ -261,7 +261,8 @@ public record CustomerDetailDto(
     int TotalOrders,
     decimal TotalSpent,
     DateTime CreatedAt,
-    List<AddressDto> Addresses
+    List<AddressDto> Addresses,
+    string? AppUserId = null
 );
 
 public record AddressDto(
