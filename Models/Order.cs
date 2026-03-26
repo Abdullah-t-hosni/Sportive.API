@@ -21,6 +21,7 @@ public enum FulfillmentType
 public enum PaymentMethod
 {
     Cash      = 1,
+    CreditCard = 2,
     Vodafone  = 3,
     InstaPay  = 4
 }
@@ -33,6 +34,12 @@ public enum PaymentStatus
     Refunded = 4
 }
 
+public enum OrderSource
+{
+    Website = 0,
+    POS     = 1,
+}
+
 public class Order : BaseEntity
 {
     public string OrderNumber { get; set; } = string.Empty; // e.g. SZ-20240001
@@ -43,6 +50,7 @@ public class Order : BaseEntity
     public FulfillmentType FulfillmentType { get; set; }
     public PaymentMethod PaymentMethod { get; set; }
     public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.Pending;
+    public OrderSource Source { get; set; } = OrderSource.Website;
 
     // Delivery info
     public int? DeliveryAddressId { get; set; }

@@ -11,7 +11,7 @@ public record RegisterDto(
     string? Phone
 );
 
-public record LoginDto(string Email, string Password);
+public record LoginDto(string Email, string Password, string? Phone = null);
 
 public record AuthResponseDto(
     string Token,
@@ -169,8 +169,16 @@ public record CreateOrderDto(
     string? CustomerNotes,
     string? CouponCode,
     string? SalesPersonId,
+    OrderSource Source,
+    List<CreateOrderItemDto>? Items = null,
     string? CustomerPhone = null,
     string? CustomerName = null
+);
+
+public record CreateOrderItemDto(
+    int ProductId,
+    int? ProductVariantId,
+    int Quantity
 );
 
 public record OrderSummaryDto(
@@ -182,7 +190,8 @@ public record OrderSummaryDto(
     string FulfillmentType,
     decimal TotalAmount,
     DateTime CreatedAt,
-    int ItemCount
+    int ItemCount,
+    string Source
 );
 
 public record OrderDetailDto(
@@ -207,7 +216,8 @@ public record OrderDetailDto(
     string? SalesPersonName = null,
     string? TotalAmountInWords = null,
     decimal PreviousBalance = 0,
-    decimal PaidAmount = 0
+    decimal PaidAmount = 0,
+    string Source = "Website"
 );
 
 public record OrderItemDto(
