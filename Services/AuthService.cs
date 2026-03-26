@@ -159,6 +159,7 @@ public class AuthService : IAuthService
         );
 
         return new AuthResponseDto(
+            user.Id,
             new JwtSecurityTokenHandler().WriteToken(token),
             Guid.NewGuid().ToString(), // Mock refresh token
             user.Email ?? "",

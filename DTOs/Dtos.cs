@@ -14,6 +14,7 @@ public record RegisterDto(
 public record LoginDto(string Identifier, string Password);
 
 public record AuthResponseDto(
+    string UserId,
     string Token,
     string RefreshToken,
     string Email,
