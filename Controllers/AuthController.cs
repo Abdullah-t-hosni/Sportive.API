@@ -7,6 +7,7 @@ using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Sportive.API.Controllers;
 
@@ -17,12 +18,14 @@ public class AuthController : ControllerBase
     private readonly IAuthService _auth;
     private readonly AppDbContext _db;
     private readonly UserManager<AppUser> _userManager;
+    private readonly IMemoryCache _cache;
 
-    public AuthController(IAuthService auth, AppDbContext db, UserManager<AppUser> userManager)
+    public AuthController(IAuthService auth, AppDbContext db, UserManager<AppUser> userManager, IMemoryCache cache)
     {
         _auth = auth;
         _db = db;
         _userManager = userManager;
+        _cache = cache;
     }
 
     [HttpPost("register")]
@@ -37,6 +40,49 @@ public class AuthController : ControllerBase
     {
         try { return Ok(await _auth.LoginAsync(dto)); }
         catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+    }
+
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto)
+    {
+        var user = await _userManager.FindByEmailAsync(dto.Identifier ?? "") 
+                   ?? await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == dto.Identifier);
+        
+        if (user == null)
+            return NotFound(new { message = "User not found with this identifier" });
+
+        // GENERATE MOCK CODE (100000 - 999999)
+        var code = new Random().Next(100000, 999999).ToString();
+        _cache.Set($"ResetCode_{dto.Identifier}", code, TimeSpan.FromMinutes(10));
+
+        return Ok(new { 
+            message = "Authentication code generated. Verify to proceed.",
+            code = code, // RETURNED IN RESPONSE AS REQUESTED (MOCK/MANUAL MODE)
+            supportPhone = "201021461937"
+        });
+    }
+
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto dto)
+    {
+        if (!_cache.TryGetValue($"ResetCode_{dto.Identifier}", out string? cachedCode) || cachedCode != dto.Code)
+        {
+            return BadRequest(new { message = "Invalid or expired verify code" });
+        }
+
+        var user = await _userManager.FindByEmailAsync(dto.Identifier ?? "") 
+                   ?? await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == dto.Identifier);
+
+        if (user == null) return NotFound(new { message = "User no longer exists" });
+
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var result = await _userManager.ResetPasswordAsync(user, token, dto.NewPassword);
+
+        if (!result.Succeeded)
+            return BadRequest(new { message = string.Join(", ", result.Errors.Select(e => e.Description)) });
+
+        _cache.Remove($"ResetCode_{dto.Identifier}");
+        return Ok(new { message = "Password reset successful" });
     }
 
     [Authorize]

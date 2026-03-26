@@ -25,6 +25,8 @@ public record AuthResponseDto(
 );
 
 public record ChangePasswordDto(string CurrentPassword, string NewPassword);
+public record ForgotPasswordDto(string Identifier);
+public record ResetPasswordDto(string Identifier, string Code, string NewPassword);
 
 // ========== CATEGORY ==========
 public record CategoryDto(
