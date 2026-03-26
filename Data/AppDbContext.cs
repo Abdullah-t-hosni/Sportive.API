@@ -23,6 +23,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<WishlistItem> WishlistItems     => Set<WishlistItem>();
     public DbSet<Notification> Notifications     => Set<Notification>();
 
+    public DbSet<Supplier>             Suppliers            { get; set; }
+    public DbSet<PurchaseInvoice>      PurchaseInvoices     { get; set; }
+    public DbSet<PurchaseInvoiceItem>  PurchaseInvoiceItems { get; set; }
+    public DbSet<SupplierPayment>      SupplierPayments     { get; set; }
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -41,6 +46,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Coupon>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<WishlistItem>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<OrderStatusHistory>().HasQueryFilter(x => !x.IsDeleted);
 
         builder.Entity<AppUser>(e => {
             e.HasIndex(u => u.PhoneNumber);
@@ -121,6 +127,37 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Notification>(e => {
             e.HasIndex(x => x.UserId);
             e.HasIndex(x => new { x.UserId, x.IsRead });
+        });
+
+        // ── PURCHASE & SUPPLIERS ──────────────────────────────
+        builder.Entity<Supplier>(e => {
+            e.HasQueryFilter(s => !s.IsDeleted);
+            e.Property(s => s.TotalPurchases).HasPrecision(18, 2);
+            e.Property(s => s.TotalPaid).HasPrecision(18, 2);
+        });
+
+        builder.Entity<PurchaseInvoice>(e => {
+            e.HasQueryFilter(i => !i.IsDeleted);
+            e.Property(i => i.SubTotal).HasPrecision(18, 2);
+            e.Property(i => i.TaxAmount).HasPrecision(18, 2);
+            e.Property(i => i.TaxPercent).HasPrecision(5, 2);
+            e.Property(i => i.TotalAmount).HasPrecision(18, 2);
+            e.Property(i => i.PaidAmount).HasPrecision(18, 2);
+            e.HasOne(i => i.Supplier).WithMany(s => s.Invoices).HasForeignKey(i => i.SupplierId);
+        });
+
+        builder.Entity<PurchaseInvoiceItem>(e => {
+            e.HasQueryFilter(i => !i.IsDeleted);
+            e.Property(i => i.UnitCost).HasPrecision(18, 2);
+            e.Property(i => i.TotalCost).HasPrecision(18, 2);
+        });
+
+        builder.Entity<SupplierPayment>(e => {
+            e.HasQueryFilter(p => !p.IsDeleted);
+            e.Property(p => p.Amount).HasPrecision(18, 2);
+            e.HasOne(p => p.Supplier).WithMany(s => s.Payments).HasForeignKey(p => p.SupplierId);
+            e.HasOne(p => p.Invoice).WithMany(i => i.Payments)
+                .HasForeignKey(p => p.PurchaseInvoiceId).IsRequired(false);
         });
 
         builder.Entity<Category>().HasData(

@@ -103,8 +103,11 @@ builder.Services.AddCors(options =>
         var origins = new List<string>
         {
             "http://localhost:3000",
+            "https://localhost:3000",
             "http://localhost:5173",
-            "http://localhost:5174"
+            "https://localhost:5173",
+            "http://localhost:5174",
+            "https://localhost:5174"
         };
 
         var extra = builder.Configuration["AllowedOrigins"];
@@ -232,6 +235,7 @@ app.UseSwaggerUI(c =>
     c.DocumentTitle = "Sportive API";
 });
 
+app.UseCors("AllowReactApp");
 app.UseSerilogRequestLogging();
 app.UseMiddleware<ExceptionMiddleware>();
 
@@ -248,8 +252,6 @@ app.UseStaticFiles(new StaticFileOptions
     FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsPath),
     RequestPath = "/uploads"
 });
-
-app.UseCors("AllowReactApp");
 
 app.UseAuthentication();
 app.UseAuthorization();
