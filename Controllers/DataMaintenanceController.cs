@@ -99,4 +99,55 @@ public class DataMaintenanceController : ControllerBase
         await _db.SaveChangesAsync();
         return Ok(new { success = true, count = posOrders.Count, message = "تم تحديث كافة طلبات الـ POS السابقة بنجاح" });
     }
+
+    /// <summary>
+    /// مسح كافة بيانات العملاء وحساباتهم نهائياً (البدء من الصفر)
+    /// </summary>
+    [HttpPost("wipe-customers")]
+    public async Task<IActionResult> WipeCustomers()
+    {
+        // 1. تحديد كافة مستخدمي "العملاء" فقط (تجنب حذف الأدمن)
+        var customerRole = await _db.Roles.FirstOrDefaultAsync(r => r.Name == "Customer");
+        if (customerRole == null) return BadRequest(new { message = "Role 'Customer' not found" });
+
+        var customerUserIds = await _db.UserRoles
+            .Where(ur => ur.RoleId == customerRole.Id)
+            .Select(ur => ur.UserId)
+            .ToListAsync();
+
+        // 2. مسح البيانات المرتبطة (العناوين، السلال، المفضلة)
+        // ملاحظة: الطلبات لا تحذف لأنها مرتبطة بالحسابات المالية
+        var addresses = await _db.Addresses.IgnoreQueryFilters().ToListAsync();
+        _db.Addresses.RemoveRange(addresses);
+
+        var wishlist = await _db.WishlistItems.IgnoreQueryFilters().ToListAsync();
+        _db.WishlistItems.RemoveRange(wishlist);
+
+        var cartItems = await _db.CartItems.IgnoreQueryFilters().ToListAsync();
+        _db.CartItems.RemoveRange(cartItems);
+
+        // 3. مسح سجلات العملاء
+        var customers = await _db.Customers.IgnoreQueryFilters().ToListAsync();
+        _db.Customers.RemoveRange(customers);
+
+        // 4. مسح حسابات المستخدمين (Identity) المرتبطة بالعملاء فقط
+        var usersToDelete = await _db.Users
+            .Where(u => customerUserIds.Contains(u.Id))
+            .ToListAsync();
+        
+        // التأكد من عدم حذف الأدمن (زيادة في الأمان)
+        usersToDelete = usersToDelete.Where(u => u.Email != "admin@sportive.com" && u.Email != "abdullah@sportive.com").ToList();
+        
+        _db.Users.RemoveRange(usersToDelete);
+
+        try 
+        {
+            await _db.SaveChangesAsync();
+            return Ok(new { success = true, message = $"تم مسح {customers.Count} عميل و {usersToDelete.Count} حساب مستخدم بنجاح" });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { success = false, message = "حدث خطأ أثناء المسح: " + ex.Message });
+        }
+    }
 }
