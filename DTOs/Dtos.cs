@@ -6,12 +6,12 @@ namespace Sportive.API.DTOs;
 public record RegisterDto(
     string FirstName,
     string LastName,
-    string Email,
+    string? Email,
     string Password,
     string? Phone
 );
 
-public record LoginDto(string Email, string Password, string? Phone = null);
+public record LoginDto(string Identifier, string Password);
 
 public record AuthResponseDto(
     string Token,

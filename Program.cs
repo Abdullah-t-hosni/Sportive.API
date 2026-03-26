@@ -178,6 +178,7 @@ builder.Services.AddScoped<IPaymobService, PaymobService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
 builder.Services.AddScoped<IAccountingService, AccountingService>();
+builder.Services.AddScoped<IWaMeService, WaMeService>();
 
 // Wishlist, Reviews, Analytics — handled directly in controllers
 builder.Services.AddScoped<IWishlistService, WishlistService>();
