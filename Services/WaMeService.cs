@@ -37,7 +37,7 @@ public class WaMeService : IWaMeService
     public WaMeResult OrderConfirmation(Order order)
     {
         var itemsList = order.Items?.Select(i =>
-            $"  • {i.ProductNameAr ?? i.ProductName} × {i.Quantity}").ToList()
+            $"  • {i.ProductNameAr} × {i.Quantity}").ToList()
             ?? new List<string>();
 
         var msg = $"""
@@ -166,10 +166,11 @@ _{StoreName}_
 
     private static string PaymentMethodAr(PaymentMethod m) => m switch
     {
-        PaymentMethod.Cash     => "كاش عند الاستلام",
-        PaymentMethod.Vodafone => "فودافون كاش",
-        PaymentMethod.InstaPay => "انستاباي",
-        _                      => m.ToString()
+        PaymentMethod.Cash       => "كاش عند الاستلام",
+        PaymentMethod.CreditCard => "فيزا / ماستر كارد",
+        PaymentMethod.Vodafone   => "فودافون كاش",
+        PaymentMethod.InstaPay   => "انستاباي",
+        _                        => m.ToString()
     };
 
     private static string FulfillmentAr(FulfillmentType f) => f switch

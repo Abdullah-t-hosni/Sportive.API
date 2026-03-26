@@ -448,7 +448,7 @@ public class ReceiptVouchersController : ControllerBase
     public async Task<IActionResult> Delete(int id)
     {
         var v = await _db.ReceiptVouchers
-            .Include(x => x.JournalEntry).ThenInclude(e => e.Lines)
+            .Include(x => x.JournalEntry).ThenInclude(e => e!.Lines)
             .FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
         if (v == null) return NotFound();
 
