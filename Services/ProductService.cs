@@ -31,11 +31,16 @@ public class ProductService : IProductService
 
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
-            var s = filter.Search.ToLower();
+            var s = filter.Search.Trim().ToLower();
+            bool isInt = int.TryParse(s, out int searchId);
+            bool isDecimal = decimal.TryParse(s, out decimal searchPrice);
+            
             query = query.Where(p =>
                 p.NameAr.ToLower().Contains(s) ||
                 p.NameEn.ToLower().Contains(s) ||
                 p.SKU.ToLower().Contains(s) ||
+                (isInt && p.Id == searchId) ||
+                (isDecimal && (p.Price == searchPrice || p.DiscountPrice == searchPrice)) ||
                 (p.Brand != null && p.Brand.ToLower().Contains(s)));
         }
 
