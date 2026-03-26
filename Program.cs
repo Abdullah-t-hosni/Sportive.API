@@ -297,6 +297,7 @@ static async Task SeedAsync(WebApplication app)
     }
 
     const string adminEmail = "admin@sportive.com";
+    const string abdullahEmail = "abdullah@sportive.com";
 
     if (await userManager.FindByEmailAsync(adminEmail) == null)
     {
@@ -308,8 +309,21 @@ static async Task SeedAsync(WebApplication app)
             LastName = "Zone",
             IsActive = true
         };
-
         await userManager.CreateAsync(admin, "Admin@123456");
         await userManager.AddToRoleAsync(admin, "Admin");
+    }
+
+    if (await userManager.FindByEmailAsync(abdullahEmail) == null)
+    {
+        var abdullah = new AppUser
+        {
+            UserName = abdullahEmail,
+            Email = abdullahEmail,
+            FirstName = "Abdullah",
+            LastName = "Admin",
+            IsActive = true
+        };
+        await userManager.CreateAsync(abdullah, "Admin@2026");
+        await userManager.AddToRoleAsync(abdullah, "Admin");
     }
 }
