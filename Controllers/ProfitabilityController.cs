@@ -231,14 +231,14 @@ public class ProfitabilityController : ControllerBase
             ws.Cell(r,  3).Value = row.CategoryName;
             ws.Cell(r,  4).Value = row.ListPrice;
             ws.Cell(r,  5).Value = row.AvgSellingPrice;
-            ws.Cell(r,  6).Value = row.CostPrice.HasValue ? row.CostPrice.Value : (object)"—";
+            ws.Cell(r,  6).Value = row.CostPrice.HasValue ? (XLCellValue)row.CostPrice.Value : (XLCellValue)"—";
             ws.Cell(r,  7).Value = row.UnitsSold;
             ws.Cell(r,  8).Value = row.ReturnedUnits;
             ws.Cell(r,  9).Value = row.NetUnits;
             ws.Cell(r, 10).Value = row.NetRevenue;
-            ws.Cell(r, 11).Value = row.TotalCost.HasValue ? row.TotalCost.Value : (object)"لا تكلفة";
-            ws.Cell(r, 12).Value = row.GrossProfit.HasValue ? row.GrossProfit.Value : (object)"—";
-            ws.Cell(r, 13).Value = row.MarginPct.HasValue  ? row.MarginPct.Value   : (object)"—";
+            ws.Cell(r, 11).Value = row.TotalCost.HasValue ? (XLCellValue)row.TotalCost.Value : (XLCellValue)"لا تكلفة";
+            ws.Cell(r, 12).Value = row.GrossProfit.HasValue ? (XLCellValue)row.GrossProfit.Value : (XLCellValue)"—";
+            ws.Cell(r, 13).Value = row.MarginPct.HasValue  ? (XLCellValue)row.MarginPct.Value   : (XLCellValue)"—";
 
             // تنسيق الأرقام
             foreach (int col in new[] { 4, 5, 6, 10, 11, 12 })
@@ -298,7 +298,7 @@ public class ProfitabilityController : ControllerBase
         foreach (var (label, val) in summaryRows)
         {
             ws2.Cell(sr, 1).Value = label;
-            ws2.Cell(sr, 2).Value = val;
+            ws2.Cell(sr, 2).Value = XLCellValue.FromObject(val);
             if (val is decimal d && (label.Contains("إيراد") || label.Contains("تكلف") || label.Contains("ربح")))
                 ws2.Cell(sr, 2).Style.NumberFormat.Format = "#,##0.00";
             if (label.Contains("%"))
