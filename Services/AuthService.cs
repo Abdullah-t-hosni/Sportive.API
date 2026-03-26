@@ -32,13 +32,21 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponseDto> RegisterAsync(RegisterDto dto)
     {
-        var existing = await _userManager.FindByEmailAsync(dto.Email ?? "");
-        if (existing != null) throw new InvalidOperationException("Email already in use.");
+        // 1. Validate Uniqueness
+        if (!string.IsNullOrEmpty(dto.Email))
+        {
+            var existingEmail = await _userManager.FindByEmailAsync(dto.Email);
+            if (existingEmail != null) throw new InvalidOperationException("البريد الإلكتروني مستخدم بالفعل / Email already in use.");
+        }
 
+        var existingPhone = await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == dto.Phone);
+        if (existingPhone != null) throw new InvalidOperationException("رقم الهاتف مستخدم بالفعل / Phone number already in use.");
+
+        // 2. Create User
         var user = new AppUser
         {
-            UserName = dto.Email ?? dto.Phone,
-            Email = dto.Email,
+            UserName = !string.IsNullOrEmpty(dto.Email) ? dto.Email : dto.Phone,
+            Email = !string.IsNullOrEmpty(dto.Email) ? dto.Email : null,
             PhoneNumber = dto.Phone,
             FirstName = dto.FirstName,
             LastName = dto.LastName,
@@ -59,17 +67,34 @@ public class AuthService : IAuthService
         
         await _userManager.AddToRoleAsync(user, "Customer");
 
-        // Create Customer record
-        var customer = new Customer
+        // 3. Link or Create Customer record
+        var customer = await _db.Customers
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(c => c.Phone == dto.Phone);
+
+        if (customer != null)
         {
-            AppUserId = user.Id,
-            FirstName = user.FirstName,
-            LastName = user.LastName,
-            Email = user.Email ?? "",
-            Phone = user.PhoneNumber,
-            CreatedAt = DateTime.UtcNow
-        };
-        _db.Customers.Add(customer);
+            customer.AppUserId = user.Id;
+            customer.Email = user.Email ?? customer.Email; // Sync email if provided
+            customer.FirstName = user.FirstName;
+            customer.LastName = user.LastName;
+            customer.IsDeleted = false; // "Re-activate" if it was soft-deleted
+            customer.UpdatedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            customer = new Customer
+            {
+                AppUserId = user.Id,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                Email = user.Email ?? "",
+                Phone = user.PhoneNumber,
+                CreatedAt = DateTime.UtcNow
+            };
+            _db.Customers.Add(customer);
+        }
+        
         await _db.SaveChangesAsync();
 
         return await LoginInternalAsync(user);

@@ -141,12 +141,17 @@ public class CustomerService : ICustomerService
         var customer = await _db.Customers.FindAsync(id);
         if (customer == null) return false;
         
-        // Find the corresponding AppUser
-        var appUser = await _db.Users.FindAsync(customer.AppUserId);
-        
-        // Hard delete
-        if (appUser != null) _db.Users.Remove(appUser);
-        _db.Customers.Remove(customer);
+        customer.IsDeleted = true;
+        customer.UpdatedAt = DateTime.UtcNow;
+
+        if (!string.IsNullOrEmpty(customer.AppUserId))
+        {
+            var appUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == customer.AppUserId);
+            if (appUser != null)
+            {
+                appUser.IsActive = false; // "Soft delete" IdentityUser by deactivating it
+            }
+        }
         
         await _db.SaveChangesAsync();
         return true;

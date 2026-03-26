@@ -178,6 +178,7 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
 
 // Wishlist, Reviews, Analytics — handled directly in controllers
+builder.Services.AddScoped<IWishlistService, WishlistService>();
 
 builder.Services.AddHttpClient("Paymob");
 builder.Services.AddSignalR();
