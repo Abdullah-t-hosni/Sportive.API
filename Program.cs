@@ -112,7 +112,8 @@ builder.Services.AddCors(options =>
 
         var extra = builder.Configuration["AllowedOrigins"];
         if (!string.IsNullOrWhiteSpace(extra))
-            origins.AddRange(extra.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            origins.AddRange(extra.Split(new[] { ',', ';' },
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
         policy.WithOrigins(origins.Distinct(StringComparer.OrdinalIgnoreCase).ToArray())
               .AllowAnyHeader()
@@ -240,7 +241,8 @@ app.UseCors("AllowReactApp");
 app.UseSerilogRequestLogging();
 app.UseMiddleware<ExceptionMiddleware>();
 
-app.UseHttpsRedirection();
+// ⚠️ UseHttpsRedirection removed — Railway terminates SSL at proxy level
+// app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 // ✅ أضف الكود ده عشان يخدم الصور من مجلد uploads في جذر المشروع
@@ -263,7 +265,9 @@ app.MapHub<NotificationHub>("/notifications-hub");
 
 await SeedAsync(app);
 
-app.Run();
+// ── Railway dynamic PORT fix ──────────────────────────
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+app.Run($"http://0.0.0.0:{port}");
 
 // ── SEED ──────────────────────────────────────────────
 static async Task SeedAsync(WebApplication app)
