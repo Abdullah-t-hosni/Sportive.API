@@ -78,11 +78,17 @@ public class AuthService : IAuthService
     public async Task<AuthResponseDto> LoginAsync(LoginDto dto)
     {
         AppUser? user = null;
-        if (!string.IsNullOrEmpty(dto.Email)) user = await _userManager.FindByEmailAsync(dto.Email);
-        else if (!string.IsNullOrEmpty(dto.Phone)) user = await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == dto.Phone);
+
+        // Try Phone first (mandatory in validation)
+        if (!string.IsNullOrEmpty(dto.Phone))
+            user = await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == dto.Phone);
+
+        // Then try Email if phone not found and email is provided
+        if (user == null && !string.IsNullOrEmpty(dto.Email))
+            user = await _userManager.FindByEmailAsync(dto.Email);
 
         if (user == null || !user.IsActive || !await _userManager.CheckPasswordAsync(user, dto.Password))
-            throw new UnauthorizedAccessException("Invalid login credentials.");
+            throw new UnauthorizedAccessException("رقم الهاتف أو كلمة المرور غير صحيحة");
 
         return await LoginInternalAsync(user);
     }
