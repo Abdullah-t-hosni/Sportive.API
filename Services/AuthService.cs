@@ -30,7 +30,7 @@ public class AuthService : IAuthService
         _db = db;
     }
 
-    public async Task<AuthResponseDto> RegisterAsync(RegisterDto dto)
+    public async Task<AuthResponseDto> RegisterAsync(RegisterDto dto, bool isCustomer = true)
     {
         // 1. Validate Uniqueness
         if (!string.IsNullOrEmpty(dto.Email))
@@ -69,41 +69,45 @@ public class AuthService : IAuthService
             throw new InvalidOperationException(msg);
         }
 
-        // Default role: Customer
-        if (!await _roleManager.RoleExistsAsync("Customer"))
-            await _roleManager.CreateAsync(new IdentityRole("Customer"));
-        
-        await _userManager.AddToRoleAsync(user, "Customer");
-
-        // 3. Link or Create Customer record
-        var customer = await _db.Customers
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(c => c.Phone == dto.Phone);
-
-        if (customer != null)
+        if (isCustomer)
         {
-            customer.AppUserId = user.Id;
-            customer.Email = user.Email ?? customer.Email; // Sync email if provided
-            customer.FirstName = user.FirstName;
-            customer.LastName = user.LastName;
-            customer.IsDeleted = false; // "Re-activate" if it was soft-deleted
-            customer.UpdatedAt = DateTime.UtcNow;
+            if (!await _roleManager.RoleExistsAsync("Customer"))
+                await _roleManager.CreateAsync(new IdentityRole("Customer"));
+            
+            await _userManager.AddToRoleAsync(user, "Customer");
         }
-        else
+
+        if (isCustomer)
         {
-            customer = new Customer
+            // 3. Link or Create Customer record
+            var customer = await _db.Customers
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(c => c.Phone == dto.Phone);
+
+            if (customer != null)
             {
-                AppUserId = user.Id,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                Email = user.Email ?? "",
-                Phone = user.PhoneNumber,
-                CreatedAt = DateTime.UtcNow
-            };
-            _db.Customers.Add(customer);
+                customer.AppUserId = user.Id;
+                customer.Email = user.Email ?? customer.Email; // Sync email if provided
+                customer.FirstName = user.FirstName;
+                customer.LastName = user.LastName;
+                customer.IsDeleted = false; // "Re-activate" if it was soft-deleted
+                customer.UpdatedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                customer = new Customer
+                {
+                    AppUserId = user.Id,
+                    FirstName = user.FirstName,
+                    LastName = user.LastName,
+                    Email = user.Email ?? "",
+                    Phone = user.PhoneNumber,
+                    CreatedAt = DateTime.UtcNow
+                };
+                _db.Customers.Add(customer);
+            }
+            await _db.SaveChangesAsync();
         }
-        
-        await _db.SaveChangesAsync();
 
         return await LoginInternalAsync(user);
     }

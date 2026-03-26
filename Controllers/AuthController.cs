@@ -139,14 +139,7 @@ public class AuthController : ControllerBase
                 return Ok(new { message = "Staff reactivated and updated successfully" });
             }
 
-            var authResult = await _auth.RegisterAsync(dto);
-            // Delete the automatically created customer record for this staff
-            var staffCustomer = await _db.Customers.FirstOrDefaultAsync(c => c.Email == dto.Email);
-            if (staffCustomer != null)
-            {
-                staffCustomer.IsDeleted = true;
-                await _db.SaveChangesAsync();
-            }
+            var authResult = await _auth.RegisterAsync(dto, isCustomer: false);
 
             // Assign role
             var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);

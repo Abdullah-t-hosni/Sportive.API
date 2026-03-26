@@ -6,7 +6,7 @@ namespace Sportive.API.Interfaces;
 
 public interface IAuthService
 {
-    Task<AuthResponseDto> RegisterAsync(RegisterDto dto);
+    Task<AuthResponseDto> RegisterAsync(RegisterDto dto, bool isCustomer = true);
     Task<AuthResponseDto> LoginAsync(LoginDto dto);
     Task<bool> ChangePasswordAsync(string userId, ChangePasswordDto dto);
     Task<bool> AssignRoleAsync(string userId, string role);
