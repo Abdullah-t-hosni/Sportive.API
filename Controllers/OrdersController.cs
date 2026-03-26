@@ -1,9 +1,13 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using System.Security.Claims;
+using System;
+using System.Threading.Tasks;
 
 namespace Sportive.API.Controllers;
 
@@ -14,11 +18,13 @@ public class OrdersController : ControllerBase
 {
     private readonly IOrderService _orderService;
     private readonly IPdfService _pdfService;
+    private readonly AppDbContext _db;
 
-    public OrdersController(IOrderService orderService, IPdfService pdfService)
+    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db)
     {
         _orderService = orderService;
         _pdfService = pdfService;
+        _db = db;
     }
 
     [HttpGet]
@@ -79,5 +85,41 @@ public class OrdersController : ControllerBase
 
         var pdfBytes = await _pdfService.GenerateOrderPdfAsync(order);
         return File(pdfBytes, "application/pdf", $"Order-{order.OrderNumber}.pdf");
+    }
+
+    [Authorize(Roles = "Admin,Staff,Cashier")]
+    [HttpPatch("{id}/payment-status")]
+    public async Task<IActionResult> UpdatePaymentStatus(
+        int id,
+        [FromBody] UpdatePaymentStatusDto dto)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id && !o.IsDeleted);
+        if (order == null) return NotFound();
+
+        order.PaymentStatus = dto.PaymentStatus;
+        order.UpdatedAt     = DateTime.UtcNow;
+
+        // لو الحالة دي "مدفوع" وكان آجل → يولّد قيد تحصيل
+        if (dto.PaymentStatus == PaymentStatus.Paid &&
+            order.PaymentStatus != PaymentStatus.Paid)
+        {
+            // optional: trigger accounting cash entry
+        }
+
+        // سجّل في StatusHistory لو عندك Note
+        if (!string.IsNullOrEmpty(dto.Note))
+        {
+            _db.OrderStatusHistories.Add(new OrderStatusHistory
+            {
+                OrderId          = id,
+                Status           = order.Status,
+                Note             = $"[حالة الدفع → {dto.PaymentStatus}] {dto.Note}",
+                ChangedByUserId  = User.FindFirstValue(ClaimTypes.NameIdentifier),
+                CreatedAt        = DateTime.UtcNow
+            });
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { paymentStatus = order.PaymentStatus.ToString() });
     }
 }

@@ -10,11 +10,11 @@ public class Product : BaseEntity
     public string? DescriptionEn { get; set; }
     public decimal Price { get; set; }
     public decimal? DiscountPrice { get; set; }
+    public decimal? CostPrice { get; set; }        // تكلفة المنتج (للحسابات الداخلية)
     public string SKU { get; set; } = string.Empty;
     public string? Brand { get; set; }
     public ProductStatus Status { get; set; } = ProductStatus.Active;
     public bool IsFeatured { get; set; } = false;
-    public int TotalStock { get; set; } = 0;
 
     // Category
     public int CategoryId { get; set; }

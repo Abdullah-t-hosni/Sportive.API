@@ -6,16 +6,12 @@ namespace Sportive.API.DTOs;
 public record RegisterDto(
     string FirstName,
     string LastName,
-    string Phone,
+    string Email,
     string Password,
-    string? Email = null
+    string? Phone
 );
 
-public record LoginDto(
-    string? Phone,
-    string? Email,
-    string Password
-);
+public record LoginDto(string Email, string Password);
 
 public record AuthResponseDto(
     string Token,
@@ -107,6 +103,7 @@ public record CreateProductDto(
     string? DescriptionEn,
     decimal Price,
     decimal? DiscountPrice,
+    decimal? CostPrice,
     string SKU,
     string? Brand,
     int CategoryId,
@@ -121,6 +118,7 @@ public record UpdateProductDto(
     string? DescriptionEn,
     decimal Price,
     decimal? DiscountPrice,
+    decimal? CostPrice,
     string? Brand,
     string SKU,
     int CategoryId,
@@ -172,12 +170,8 @@ public record CreateOrderDto(
     string? CouponCode,
     string? SalesPersonId,
     string? CustomerPhone = null,
-    string? CustomerName = null,
-    OrderSource Source = OrderSource.Website,
-    List<CreateOrderItemDto>? Items = null
+    string? CustomerName = null
 );
-
-public record CreateOrderItemDto(int ProductId, int? ProductVariantId, int Quantity);
 
 public record OrderSummaryDto(
     int Id,
@@ -188,8 +182,7 @@ public record OrderSummaryDto(
     string FulfillmentType,
     decimal TotalAmount,
     DateTime CreatedAt,
-    int ItemCount,
-    string Source = "Website"
+    int ItemCount
 );
 
 public record OrderDetailDto(
@@ -214,8 +207,7 @@ public record OrderDetailDto(
     string? SalesPersonName = null,
     string? TotalAmountInWords = null,
     decimal PreviousBalance = 0,
-    decimal PaidAmount = 0,
-    string Source = "Website"
+    decimal PaidAmount = 0
 );
 
 public record OrderItemDto(
@@ -237,6 +229,9 @@ public record OrderStatusHistoryDto(
 );
 
 public record UpdateOrderStatusDto(OrderStatus Status, string? Note);
+
+// تغيير حالة الدفع
+public record UpdatePaymentStatusDto(PaymentStatus PaymentStatus, string? Note);
 
 // ========== CUSTOMER ==========
 public record CustomerBasicDto(
@@ -288,16 +283,16 @@ public record CreateAddressDto(
 // ========== DASHBOARD ==========
 public record DashboardStatsDto(
     decimal TodaySales,
-    decimal TodaySalesGrowth,
+    decimal TodaySalesGrowth, // % vs yesterday
     decimal ThisMonthSales,
-    decimal ThisMonthSalesGrowth,
+    decimal ThisMonthSalesGrowth, // % vs last month
     decimal TotalRevenue,
     int TotalOrders,
-    int TotalOrdersGrowth,
+    int TotalOrdersGrowth, // % vs last period
     int PendingOrders,
     int TodayOrders,
     int TotalCustomers,
-    int TotalCustomersGrowth,
+    int TotalCustomersGrowth, // % vs last month
     int TotalProducts,
     int LowStockProducts,
     int OutOfStockProducts
@@ -313,6 +308,7 @@ public record AnalyticsSummaryDto(
 
 public record CategorySalesDto(int CategoryId, string NameAr, string NameEn, int TotalSold, decimal TotalRevenue);
 public record DailyMetricDto(DateTime Date, decimal Revenue, int Orders, int NewCustomers);
+
 public record SalesChartDto(string Label, decimal Amount, int OrderCount);
 
 public record TopProductDto(
@@ -337,6 +333,7 @@ public record AdvancedDashboardStatsDto(
 );
 
 public record StaffPerformanceDto(string StaffId, string StaffName, int OrderCount, decimal TotalSales);
+
 public record LocationStatDto(string Name, int OrderCount, decimal TotalRevenue);
 public record VipCustomerDto(int Id, string Name, string Email, decimal TotalSpent, int OrderCount);
 public record InventoryIntelligenceDto(int ProductId, string Name, int Stock, double AvgDailySales, int? DaysRemaining);
@@ -383,5 +380,5 @@ public record SendNotificationDto(
     string MessageEn,
     string Type,
     string? ActionUrl = null,
-    int? CustomerId = null
+    int? CustomerId = null  // null = send to all
 );

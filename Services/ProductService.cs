@@ -115,6 +115,7 @@ public class ProductService : IProductService
             DescriptionEn = dto.DescriptionEn,
             Price = dto.Price,
             DiscountPrice = dto.DiscountPrice,
+            CostPrice = dto.CostPrice,
             SKU = dto.SKU,
             Brand = dto.Brand,
             CategoryId = dto.CategoryId,
@@ -155,6 +156,7 @@ public class ProductService : IProductService
         product.DescriptionEn = dto.DescriptionEn;
         product.Price = dto.Price;
         product.DiscountPrice = dto.DiscountPrice;
+        product.CostPrice = dto.CostPrice;
         product.Brand = dto.Brand;
         product.SKU = dto.SKU;
         product.CategoryId = dto.CategoryId;
