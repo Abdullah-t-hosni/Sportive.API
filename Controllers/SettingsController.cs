@@ -25,14 +25,25 @@ public class SettingsController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Get()
     {
-        var info = await _db.StoreInfo.FirstOrDefaultAsync(x => x.StoreConfigId == 1);
-        if (info == null)
+        try 
         {
-            info = new StoreInfo { StoreConfigId = 1 };
-            _db.StoreInfo.Add(info);
-            await _db.SaveChangesAsync();
+            var info = await _db.StoreInfo.FirstOrDefaultAsync(x => x.StoreConfigId == 1);
+            if (info == null)
+            {
+                info = new StoreInfo { StoreConfigId = 1 };
+                _db.StoreInfo.Add(info);
+                await _db.SaveChangesAsync();
+            }
+            return Ok(info);
         }
-        return Ok(info);
+        catch (Exception ex)
+        {
+            return BadRequest(new { 
+                error = ex.Message, 
+                inner = ex.InnerException?.Message,
+                stack = ex.StackTrace 
+            });
+        }
     }
 
     // ══════════════════════════════════════════════════
