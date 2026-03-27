@@ -239,6 +239,15 @@ public class ImportController : ControllerBase
                 }
 
                 await _db.SaveChangesAsync();
+
+                // Recalculate Total Stock for all products that have variants
+                var productsWithVariants = await _db.Products.Include(p => p.Variants)
+                    .Where(p => p.Variants.Any(v => !v.IsDeleted)).ToListAsync();
+                foreach (var p in productsWithVariants)
+                {
+                    p.TotalStock = p.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity);
+                }
+                await _db.SaveChangesAsync();
             }
         }
         catch (Exception ex)

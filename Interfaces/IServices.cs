@@ -23,6 +23,7 @@ public interface IProductService
     Task<ProductVariantDto> AddVariantAsync(int productId, CreateVariantDto dto);
     Task<ProductVariantDto> UpdateVariantAsync(int variantId, CreateVariantDto dto);
     Task<bool> DeleteVariantAsync(int variantId);
+    Task UpdateTotalStockAsync(int productId);
     Task<List<ProductSummaryDto>> GetFeaturedProductsAsync(int count = 8);
     Task<List<ProductSummaryDto>> GetRelatedProductsAsync(int productId, int count = 4);
 }

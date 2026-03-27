@@ -132,7 +132,7 @@ public class ProductService : IProductService
             Status = ProductStatus.Active
         };
 
-        if (dto.Variants != null)
+        if (dto.Variants != null && dto.Variants.Any())
         {
             foreach (var v in dto.Variants)
             {
@@ -146,6 +146,12 @@ public class ProductService : IProductService
                 });
             }
             product.TotalStock = product.Variants.Sum(v => v.StockQuantity);
+        }
+        else
+        {
+             // For simple products, we rely on the purchase invoices or manual set (if exposed)
+             // Initial creation might have 0 stock.
+             product.TotalStock = 0;
         }
 
         _db.Products.Add(product);
@@ -181,7 +187,11 @@ public class ProductService : IProductService
         product.UpdatedAt = DateTime.UtcNow;
 
         // إعادة حساب إجمالي المخزون للتأكد من الدقة
-        product.TotalStock = product.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity);
+        if (product.Variants.Any(v => !v.IsDeleted))
+        {
+             product.TotalStock = product.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity);
+        }
+        // If simple product (no variants), we don't zero out TotalStock as it might have manual/purchase stock
 
         await _db.SaveChangesAsync();
         return await GetProductByIdAsync(id) ?? throw new KeyNotFoundException($"Product {id} not found after update");
@@ -211,16 +221,32 @@ public class ProductService : IProductService
         variant.StockQuantity = quantity;
         variant.UpdatedAt = DateTime.UtcNow;
 
-        var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == variant.ProductId);
-        if (product != null)
-        {
-            product.TotalStock = product.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity);
-            product.UpdatedAt = DateTime.UtcNow;
-        }
+        await UpdateTotalStockAsync(variant.ProductId);
 
         await _db.SaveChangesAsync();
         await _notifications.BroadcastStockUpdateAsync(variant.ProductId, variantId, quantity);
         return true;
+    }
+
+    public async Task UpdateTotalStockAsync(int productId)
+    {
+        var product = await _db.Products
+            .Include(p => p.Variants)
+            .FirstOrDefaultAsync(p => p.Id == productId);
+
+        if (product != null)
+        {
+            if (product.Variants.Any(v => !v.IsDeleted))
+            {
+                product.TotalStock = product.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity);
+            }
+            else if (product.Variants.Any())
+            {
+                 // Has variants but all are deleted
+                 product.TotalStock = 0;
+            }
+            product.UpdatedAt = DateTime.UtcNow;
+        }
     }
 
     public async Task<ProductVariantDto> AddVariantAsync(int productId, CreateVariantDto dto)
@@ -239,7 +265,7 @@ public class ProductService : IProductService
         var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == productId);
         if (product != null)
         {
-            product.TotalStock += dto.StockQuantity;
+            await UpdateTotalStockAsync(productId);
             product.UpdatedAt = DateTime.UtcNow;
         }
 
@@ -263,7 +289,7 @@ public class ProductService : IProductService
         var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == v.ProductId);
         if (product != null)
         {
-            product.TotalStock = product.Variants.Where(v => !v.IsDeleted).Sum(x => x.StockQuantity);
+            await UpdateTotalStockAsync(v.ProductId);
             product.UpdatedAt = DateTime.UtcNow;
         }
 
@@ -283,7 +309,7 @@ public class ProductService : IProductService
         var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == v.ProductId);
         if (product != null)
         {
-            product.TotalStock = product.Variants.Where(x => !x.IsDeleted).Sum(x => x.StockQuantity);
+            await UpdateTotalStockAsync(v.ProductId);
             product.UpdatedAt = DateTime.UtcNow;
         }
 

@@ -124,11 +124,13 @@ public class PurchaseInvoicesController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IProductService _productService;
 
-    public PurchaseInvoicesController(AppDbContext db, IServiceScopeFactory scopeFactory)
+    public PurchaseInvoicesController(AppDbContext db, IServiceScopeFactory scopeFactory, IProductService productService)
     {
         _db           = db;
         _scopeFactory = scopeFactory;
+        _productService = productService;
     }
 
     [HttpGet]
@@ -269,12 +271,15 @@ public class PurchaseInvoicesController : ControllerBase
                         {
                             variant.StockQuantity += item.Quantity;
                             variant.UpdatedAt = DateTime.UtcNow;
+                            // Synchronize total stock
+                            await _productService.UpdateTotalStockAsync(product.Id);
                         }
                     }
-                    
-                    // تحديث إجمالي مخزون المنتج
-                    product.TotalStock = product.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity);
-                    if (!product.Variants.Any(v => !v.IsDeleted)) product.TotalStock += item.Quantity; // للمنتجات بدون موديلات
+                    else 
+                    {
+                        // للمنتجات بدون موديلات (أو في حال عدم اختيار موديل)
+                        product.TotalStock += item.Quantity;
+                    }
                 }
             }
         }
@@ -345,12 +350,14 @@ public class PurchaseInvoicesController : ControllerBase
                             {
                                 variant.StockQuantity -= item.Quantity;
                                 variant.UpdatedAt = DateTime.UtcNow;
+                                await _productService.UpdateTotalStockAsync(product.Id);
                             }
                         }
-
-                        // إعادة حساب إجمالي المخزون
-                        product.TotalStock = product.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity);
-                        if (!product.Variants.Any(v => !v.IsDeleted)) product.TotalStock -= item.Quantity;
+                        else
+                        {
+                            // للمنتجات بدون موديلات
+                            product.TotalStock -= item.Quantity;
+                        }
 
                         product.UpdatedAt = DateTime.UtcNow;
                     }
