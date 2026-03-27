@@ -40,6 +40,7 @@ public class AccountingService : IAccountingService
     private const string SALES_REVENUE   = "4101";   // إيرادات المبيعات
     private const string SALES_RETURN    = "4102";   // مرتجع المبيعات
     private const string SALES_DISCOUNT  = "410101"; // الخصم الممنوح
+    private const string DELIVERY_REVENUE = "410102"; // إيراد خدمات توصيل
     private const string COGS            = "51101";  // تكلفة البضاعة المباعة
     private const string PURCHASES_NET   = "511";    // صافي المشتريات
     private const string PURCHASE_DISC   = "51103";  // خصم مكتسب (المشتريات)
@@ -58,29 +59,36 @@ public class AccountingService : IAccountingService
 
         // ── الجانب الدائن: الإيرادات ──────────────────────
         lines.Add((SALES_REVENUE, 0, order.SubTotal, $"مبيعات - {order.OrderNumber}"));
+        
+        // إيراد التوصيل (هام لموازنة القيد)
+        if (order.DeliveryFee > 0)
+            lines.Add((DELIVERY_REVENUE, 0, order.DeliveryFee, $"إيراد توصيل - {order.OrderNumber}"));
 
-        // ── خصم ممنوح إذا وجد ─────────────────────────────
+        // ── خصم ممنوح إذا وجد (مدين) ──────────────────────
         if (order.DiscountAmount > 0)
-            lines.Add((SALES_DISCOUNT, order.DiscountAmount, 0, $"خصم - {order.OrderNumber}"));
-
-        // ── رسوم توصيل (تُعالَج كإيراد أو تتحمله الشركة) ─
-        // لو فيه delivery fee تضيفها كإيراد إضافي
-        // if (order.DeliveryFee > 0)
-        //     lines.Add((DELIVERY_REVENUE, 0, order.DeliveryFee, ...))
+            lines.Add((SALES_DISCOUNT, order.DiscountAmount, 0, $"خصم لعميل - {order.OrderNumber}"));
 
         // ── الجانب المدين: النقدية أو المدينون ─────────────
         var cashCode = GetCashAccount(order.PaymentMethod, order.Source);
-        var netReceivable = order.TotalAmount; // بعد الخصم
+        var netReceivable = order.TotalAmount; // المبلغ النهائي (SubTotal + Delivery - Discount)
 
         if (order.PaymentStatus == PaymentStatus.Paid)
         {
             // دفع فوري → مدين النقدية
-            lines.Add((cashCode, netReceivable, 0, $"تحصيل - {order.OrderNumber}"));
+            lines.Add((cashCode, netReceivable, 0, $"تحصيل نقدي - {order.OrderNumber}"));
         }
         else
         {
             // آجل → مدين حساب العملاء
-            lines.Add((RECEIVABLES, netReceivable, 0, $"مستحق من العميل - {order.OrderNumber}"));
+            lines.Add((RECEIVABLES, netReceivable, 0, $"مستحق على العميل - {order.OrderNumber}"));
+        }
+
+        // ── نظام الجرد المستمر: التكلفة والمخزون ─────────
+        var totalCost = order.Items?.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity) ?? 0;
+        if (totalCost > 0)
+        {
+            lines.Add((COGS,      totalCost, 0,         $"تكلفة المبيعات - {order.OrderNumber}"));
+            lines.Add((INVENTORY, 0,         totalCost, $"خروج مخزون - {order.OrderNumber}"));
         }
 
         await PostEntry(
@@ -103,9 +111,17 @@ public class AccountingService : IAccountingService
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
-        // عكس القيد الأصلي
-        lines.Add((SALES_RETURN,  order.TotalAmount, 0,               $"مرتجع - {order.OrderNumber}"));
-        lines.Add((RECEIVABLES,   0,                 order.TotalAmount, $"رد للعميل - {order.OrderNumber}"));
+        // عكس القيد المالي
+        lines.Add((SALES_RETURN,  order.TotalAmount, 0,               $"مرتجع مبيعات - {order.OrderNumber}"));
+        lines.Add((RECEIVABLES,   0,                 order.TotalAmount, $"دائن العميل - {order.OrderNumber}"));
+
+        // عكس قيد التكلفة (إعادة للمخزون)
+        var totalCost = order.Items?.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity) ?? 0;
+        if (totalCost > 0)
+        {
+            lines.Add((INVENTORY, totalCost, 0,         $"إعادة للمخزون - {order.OrderNumber}"));
+            lines.Add((COGS,      0,         totalCost, $"تخفيض تكلفة المبيعات - {order.OrderNumber}"));
+        }
 
         await PostEntry(
             type:        JournalEntryType.SalesReturn,
@@ -127,9 +143,9 @@ public class AccountingService : IAccountingService
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
-        // مدين المخزون / تكلفة المشتريات
-        lines.Add((PURCHASES_NET, invoice.SubTotal, 0,
-            $"مشتريات - {invoice.InvoiceNumber}"));
+        // مدين المخزون
+        lines.Add((INVENTORY, invoice.SubTotal, 0,
+            $"مشتريات بضاعة - {invoice.InvoiceNumber}"));
 
         // ضريبة إذا وجدت (مدين ضريبة القيمة المضافة)
         if (invoice.TaxAmount > 0)

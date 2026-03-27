@@ -58,12 +58,22 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult<OrderDetailDto>> CreateOrder([FromBody] CreateOrderDto dto)
+    public async Task<ActionResult<OrderDetailDto>> CreateOrder([FromBody] CreateOrderDto dto, [FromQuery] int? customerId = null)
     {
-        var customerIdStr = User.FindFirstValue("CustomerId");
-        int? customerId = string.IsNullOrEmpty(customerIdStr) ? null : int.Parse(customerIdStr);
+        var claimCustomerIdStr = User.FindFirstValue("CustomerId");
+        int? finalCustomerId = null;
 
-        var order = await _orderService.CreateOrderAsync(customerId, dto);
+        if (!string.IsNullOrEmpty(claimCustomerIdStr) && int.TryParse(claimCustomerIdStr, out var parsedId))
+        {
+            finalCustomerId = parsedId;
+        }
+        else
+        {
+            // If no customer claim (e.g. Staff/Admin), use the provided customerId from query
+            finalCustomerId = customerId;
+        }
+
+        var order = await _orderService.CreateOrderAsync(finalCustomerId, dto);
         return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
     }
 

@@ -149,7 +149,7 @@ public class OrderService : IOrderService
             }
         }
 
-        if (!customerId.HasValue) throw new Exception("Customer identification required.");
+        if (!customerId.HasValue) throw new ArgumentException("Customer identification required.");
 
         // 2. Setup Order
         var order = new Order
@@ -210,7 +210,7 @@ public class OrderService : IOrderService
             var cartItems = await _db.CartItems.Include(c => c.Product).Include(c => c.ProductVariant)
                 .Where(c => c.CustomerId == customerId.Value).ToListAsync();
             
-            if (!cartItems.Any()) throw new Exception("Cart is empty.");
+            if (!cartItems.Any()) throw new ArgumentException("Cart is empty.");
 
             foreach (var ci in cartItems)
             {
@@ -248,12 +248,6 @@ public class OrderService : IOrderService
 
         await _db.SaveChangesAsync();
 
-        // ── ترحيل القيد المحاسبي تلقائياً ────────────────
-        // نحتاج الـ Customer مع الـ order عشان اسم العميل في البيان
-        var orderWithCustomer = await _db.Orders
-            .Include(o => o.Customer)
-            .FirstAsync(o => o.Id == order.Id);
-
         _ = Task.Run(async () =>
         {
             using var scope = _scopeFactory.CreateScope();
@@ -265,6 +259,7 @@ public class OrderService : IOrderService
                 // Re-fetch the order inside the new scope to avoid context mismatch
                 var orderInner = await db.Orders
                     .Include(o => o.Customer)
+                    .Include(o => o.Items).ThenInclude(i => i.Product)
                     .FirstAsync(o => o.Id == order.Id);
 
                 await accounting.PostSalesOrderAsync(orderInner);
@@ -292,7 +287,7 @@ public class OrderService : IOrderService
     public async Task<OrderDetailDto> UpdateOrderStatusAsync(int orderId, UpdateOrderStatusDto dto, string updatedByUserId)
     {
         var order = await _db.Orders.Include(o => o.StatusHistory).FirstOrDefaultAsync(o => o.Id == orderId);
-        if (order == null) throw new Exception("Order not found.");
+        if (order == null) throw new KeyNotFoundException("Order not found.");
 
         order.Status = dto.Status;
         order.UpdatedAt = DateTime.UtcNow;
@@ -307,6 +302,25 @@ public class OrderService : IOrderService
         {
             order.ActualDeliveryDate = DateTime.UtcNow;
             order.PaymentStatus = PaymentStatus.Paid;
+        }
+
+        if (dto.Status == OrderStatus.Returned)
+        {
+            // إعادة المنتجات للمخزون فوراً عند الاسترجاع
+            var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
+            foreach (var item in orderWithItems.Items)
+            {
+                if (item.ProductVariantId.HasValue)
+                {
+                    var variant = await _db.ProductVariants.FirstOrDefaultAsync(v => v.Id == item.ProductVariantId);
+                    if (variant != null) variant.StockQuantity += item.Quantity;
+                }
+                else
+                {
+                    var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == item.ProductId);
+                    if (product != null) product.TotalStock += item.Quantity;
+                }
+            }
         }
 
         await _db.SaveChangesAsync();
@@ -328,6 +342,7 @@ public class OrderService : IOrderService
                     // Re-fetch the order inside the new scope to avoid context mismatch
                     var fullOrderInner = await db.Orders
                         .Include(o => o.Customer)
+                        .Include(o => o.Items).ThenInclude(i => i.Product)
                         .FirstAsync(o => o.Id == orderId);
 
                     await accounting.PostSalesReturnAsync(fullOrderInner);
