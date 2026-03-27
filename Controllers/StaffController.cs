@@ -163,7 +163,7 @@ public class StaffController : ControllerBase
     // إعادة تعيين كلمة مرور موظف
     // ══════════════════════════════════════════════════
     [HttpPut("{id}/reset-password")]
-    public async Task<IActionResult> ResetPassword(string id, [FromBody] ResetPasswordDto dto)
+    public async Task<IActionResult> ResetPassword(string id, [FromBody] StaffResetPasswordDto dto)
     {
         var user = await _users.FindByIdAsync(id);
         if (user == null) return NotFound();
@@ -278,5 +278,5 @@ public record CreateStaffDto(
 );
 
 public record ChangeRoleDto(string Role);
-public record ResetPasswordDto(string NewPassword);
+public record StaffResetPasswordDto(string NewPassword);
 public record UserModulePermissionDto(string ModuleKey, bool CanView, bool CanEdit);
