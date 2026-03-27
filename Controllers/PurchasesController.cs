@@ -191,7 +191,7 @@ public class PurchaseInvoicesController : ControllerBase
             inv.SubTotal, inv.TaxPercent, inv.TaxAmount, inv.TotalAmount,
             inv.PaidAmount, inv.TotalAmount - inv.PaidAmount, inv.Notes,
             inv.Items.Select(it => new PurchaseItemDto(
-                it.Id, it.Description, it.ProductId, it.Unit, it.Quantity, it.UnitCost, it.TotalCost
+                it.Id, it.Description, it.ProductId, it.ProductVariantId, it.Unit, it.Quantity, it.UnitCost, it.TotalCost
             )).ToList(),
             inv.Payments.Select(p => new SupplierPaymentSummaryDto(
                 p.Id, p.PaymentNumber, inv.Supplier.Name, inv.InvoiceNumber,
@@ -234,17 +234,45 @@ public class PurchaseInvoicesController : ControllerBase
         foreach (var item in dto.Items)
         {
             var total = item.Quantity * item.UnitCost;
-            invoice.Items.Add(new PurchaseInvoiceItem
+            var invoiceItem = new PurchaseInvoiceItem
             {
                 Description = item.Description,
                 ProductId   = item.ProductId,
+                ProductVariantId = item.ProductVariantId,
                 Unit        = item.Unit,
                 Quantity    = item.Quantity,
                 UnitCost    = item.UnitCost,
                 TotalCost   = total,
                 CreatedAt   = DateTime.UtcNow,
-            });
+            };
+            invoice.Items.Add(invoiceItem);
             subtotal += total;
+
+            // ── تحديث المخزون والتكلفة ──────────────────────
+            if (item.ProductId.HasValue)
+            {
+                var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == item.ProductId.Value);
+                if (product != null)
+                {
+                    // تحديث سعر التكلفة ليكون آخر سعر شراء
+                    product.CostPrice = item.UnitCost;
+                    product.UpdatedAt = DateTime.UtcNow;
+
+                    if (item.ProductVariantId.HasValue)
+                    {
+                        var variant = product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId.Value);
+                        if (variant != null)
+                        {
+                            variant.StockQuantity += item.Quantity;
+                            variant.UpdatedAt = DateTime.UtcNow;
+                        }
+                    }
+                    
+                    // تحديث إجمالي مخزون المنتج
+                    product.TotalStock = product.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity);
+                    if (!product.Variants.Any(v => !v.IsDeleted)) product.TotalStock += item.Quantity; // للمنتجات بدون موديلات
+                }
+            }
         }
 
         invoice.SubTotal    = subtotal;
@@ -253,20 +281,6 @@ public class PurchaseInvoicesController : ControllerBase
 
         // Update supplier totals
         supplier.TotalPurchases += invoice.TotalAmount;
-
-        // Update Product Stocks (Increase)
-        foreach (var item in invoice.Items)
-        {
-            if (item.ProductId.HasValue)
-            {
-                var product = await _db.Products.FindAsync(item.ProductId.Value);
-                if (product != null)
-                {
-                    product.TotalStock += item.Quantity;
-                    product.UpdatedAt = DateTime.UtcNow;
-                }
-            }
-        }
 
         _db.PurchaseInvoices.Add(invoice);
         await _db.SaveChangesAsync();
@@ -317,10 +331,23 @@ public class PurchaseInvoicesController : ControllerBase
             {
                 if (item.ProductId.HasValue)
                 {
-                    var product = await _db.Products.FindAsync(item.ProductId.Value);
+                    var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == item.ProductId.Value);
                     if (product != null)
                     {
-                        product.TotalStock -= item.Quantity;
+                        if (item.ProductVariantId.HasValue)
+                        {
+                            var variant = product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId.Value);
+                            if (variant != null)
+                            {
+                                variant.StockQuantity -= item.Quantity;
+                                variant.UpdatedAt = DateTime.UtcNow;
+                            }
+                        }
+
+                        // إعادة حساب إجمالي المخزون
+                        product.TotalStock = product.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity);
+                        if (!product.Variants.Any(v => !v.IsDeleted)) product.TotalStock -= item.Quantity;
+
                         product.UpdatedAt = DateTime.UtcNow;
                     }
                 }

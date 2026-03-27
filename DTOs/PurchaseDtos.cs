@@ -60,9 +60,10 @@ public record CreatePurchaseInvoiceDto(
 public record CreatePurchaseItemDto(
     string  Description,
     int?    ProductId,
-    string? Unit,
-    int     Quantity,
-    decimal UnitCost
+    int?    ProductVariantId = null,
+    string? Unit = null,
+    int     Quantity = 1,
+    decimal UnitCost = 0
 );
 
 public record UpdatePurchaseInvoiceDto(
@@ -113,6 +114,7 @@ public record PurchaseItemDto(
     int     Id,
     string  Description,
     int?    ProductId,
+    int?    ProductVariantId,
     string? Unit,
     int     Quantity,
     decimal UnitCost,

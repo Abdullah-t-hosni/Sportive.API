@@ -71,8 +71,11 @@ public class PurchaseInvoiceItem : BaseEntity
     public int    PurchaseInvoiceId { get; set; }
     public PurchaseInvoice Invoice  { get; set; } = null!;
 
-    public int?    ProductId   { get; set; }
-    public Product? Product    { get; set; }
+    public int?    ProductId        { get; set; }
+    public Product? Product         { get; set; }
+    public int?    ProductVariantId { get; set; }
+    public ProductVariant? ProductVariant { get; set; }
+    
     public string  Description { get; set; } = string.Empty; // وصف الصنف
     public string? Unit        { get; set; }                  // الوحدة
     public int     Quantity    { get; set; } = 1;
