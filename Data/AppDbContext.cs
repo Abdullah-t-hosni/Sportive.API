@@ -22,6 +22,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<Coupon> Coupons                 => Set<Coupon>();
     public DbSet<WishlistItem> WishlistItems     => Set<WishlistItem>();
     public DbSet<Notification> Notifications     => Set<Notification>();
+    public DbSet<BackupRecord> BackupRecords     => Set<BackupRecord>();
 
     public DbSet<Supplier>             Suppliers            { get; set; }
     public DbSet<PurchaseInvoice>      PurchaseInvoices     { get; set; }
@@ -53,6 +54,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<WishlistItem>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<OrderStatusHistory>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<BackupRecord>().HasQueryFilter(x => !x.IsDeleted);
 
         builder.Entity<AppUser>(e => {
             e.HasIndex(u => u.PhoneNumber);
