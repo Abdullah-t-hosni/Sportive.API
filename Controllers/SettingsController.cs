@@ -25,10 +25,10 @@ public class SettingsController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Get()
     {
-        var info = await _db.StoreInfo.FirstOrDefaultAsync(x => x.Id == 1);
+        var info = await _db.StoreInfo.FirstOrDefaultAsync(x => x.StoreConfigId == 1);
         if (info == null)
         {
-            info = new StoreInfo { Id = 1 };
+            info = new StoreInfo { StoreConfigId = 1 };
             _db.StoreInfo.Add(info);
             await _db.SaveChangesAsync();
         }
@@ -43,24 +43,24 @@ public class SettingsController : ControllerBase
     [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> Update([FromBody] StoreInfo dto)
     {
-        var info = await _db.StoreInfo.FirstOrDefaultAsync(x => x.Id == 1);
+        var info = await _db.StoreInfo.FirstOrDefaultAsync(x => x.StoreConfigId == 1);
         if (info == null) return NotFound();
 
-        // تحديث الحقول
-        info.StoreName = dto.StoreName;
-        info.Slogan = dto.Slogan;
-        info.Phone = dto.Phone;
-        info.WhatsApp = dto.WhatsApp;
-        info.Email = dto.Email;
-        info.Address = dto.Address;
-        info.VatPercent = dto.VatPercent;
-        info.DeliveryFee = dto.DeliveryFee;
-        info.FreeDeliveryThreshold = dto.FreeDeliveryThreshold;
-        info.FacebookUrl = dto.FacebookUrl;
-        info.InstagramUrl = dto.InstagramUrl;
-        info.TikTokUrl = dto.TikTokUrl;
-        info.IsMaintenanceMode = dto.IsMaintenanceMode;
-        info.LastUpdatedAt = DateTime.UtcNow;
+        // تحديث الحقول بالمسميات الجديدة
+        info.StoreBrandName       = dto.StoreBrandName;
+        info.StoreSlogan          = dto.StoreSlogan;
+        info.StorePhoneNo         = dto.StorePhoneNo;
+        info.StoreWhatsAppNo      = dto.StoreWhatsAppNo;
+        info.StoreEmailAddr       = dto.StoreEmailAddr;
+        info.StorePhysicalAddr    = dto.StorePhysicalAddr;
+        info.VatRatePercent       = dto.VatRatePercent;
+        info.FixedDeliveryFee     = dto.FixedDeliveryFee;
+        info.FreeDeliveryAt       = dto.FreeDeliveryAt;
+        info.FacebookPage         = dto.FacebookPage;
+        info.InstagramPage        = dto.InstagramPage;
+        info.TikTokPage           = dto.TikTokPage;
+        info.InMaintenance        = dto.InMaintenance;
+        info.LastUpdateDate       = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
         return Ok(info);

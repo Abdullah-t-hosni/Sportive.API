@@ -79,6 +79,7 @@ public interface IDashboardService
     Task<byte[]> ExportSalesToCsvAsync(DateTime? from, DateTime? to);
     Task<AdvancedDashboardStatsDto> GetAdvancedStatsAsync();
     Task<StaffPerformanceDto> GetStaffStatsAsync(string staffId);
+    Task<object> GetKpiAsync();
     Task TriggerLiveUpdateAsync(); // Pushes to all Admins via SignalR
 }
 

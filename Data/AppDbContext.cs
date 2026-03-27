@@ -182,6 +182,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(j => j.ReversalOf).WithMany().HasForeignKey(j => j.ReversalOfId).IsRequired(false);
         });
 
+        builder.Entity<StoreInfo>(e => {
+            e.Property(x => x.VatRatePercent).HasPrecision(18, 2);
+            e.Property(x => x.FixedDeliveryFee).HasPrecision(18, 2);
+            e.Property(x => x.FreeDeliveryAt).HasPrecision(18, 2);
+        });
+
         builder.Entity<JournalLine>(e => {
             e.HasQueryFilter(l => !l.IsDeleted);
             e.Property(l => l.Debit).HasPrecision(18,2);

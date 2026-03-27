@@ -1,45 +1,49 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Sportive.API.Models;
 
+[Table("StoreSettings")]
 public class StoreInfo
 {
-    public int Id { get; set; } = 1;
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.None)]
+    public int StoreConfigId { get; set; } = 1;
     
     [MaxLength(100)]
-    public string StoreName { get; set; } = "Sportive";
+    public string StoreBrandName { get; set; } = "Sportive";
     
     [MaxLength(200)]
-    public string Slogan { get; set; } = "Your Ultimate Sports Destination";
+    public string StoreSlogan { get; set; } = "Your Ultimate Sports Destination";
     
     [MaxLength(20)]
-    public string Phone { get; set; } = "";
+    public string StorePhoneNo { get; set; } = "";
     
     [MaxLength(20)]
-    public string WhatsApp { get; set; } = "";
+    public string StoreWhatsAppNo { get; set; } = "";
     
     [MaxLength(100)]
-    public string Email { get; set; } = "";
+    public string StoreEmailAddr { get; set; } = "";
     
     [MaxLength(500)]
-    public string Address { get; set; } = "";
+    public string StorePhysicalAddr { get; set; } = "";
     
-    public decimal VatPercent { get; set; } = 14;
+    public decimal VatRatePercent { get; set; } = 14;
     
-    public decimal DeliveryFee { get; set; } = 50;
+    public decimal FixedDeliveryFee { get; set; } = 50;
     
-    public decimal FreeDeliveryThreshold { get; set; } = 2000;
-    
-    [MaxLength(200)]
-    public string FacebookUrl { get; set; } = "";
+    public decimal FreeDeliveryAt { get; set; } = 2000;
     
     [MaxLength(200)]
-    public string InstagramUrl { get; set; } = "";
+    public string FacebookPage { get; set; } = "";
     
     [MaxLength(200)]
-    public string TikTokUrl { get; set; } = "";
+    public string InstagramPage { get; set; } = "";
     
-    public bool IsMaintenanceMode { get; set; } = false;
+    [MaxLength(200)]
+    public string TikTokPage { get; set; } = "";
     
-    public DateTime LastUpdatedAt { get; set; } = DateTime.UtcNow;
+    public bool InMaintenance { get; set; } = false;
+    
+    public DateTime LastUpdateDate { get; set; } = DateTime.UtcNow;
 }
