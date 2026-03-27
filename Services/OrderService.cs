@@ -362,7 +362,7 @@ public class OrderService : IOrderService
 
         await _db.SaveChangesAsync();
 
-        if (dto.Status == OrderStatus.Returned)
+        if (dto.Status == OrderStatus.Returned || dto.Status == OrderStatus.Cancelled)
         {
             var fullOrder = await _db.Orders
                 .Include(o => o.Customer)

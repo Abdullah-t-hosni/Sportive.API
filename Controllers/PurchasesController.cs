@@ -254,6 +254,20 @@ public class PurchaseInvoicesController : ControllerBase
         // Update supplier totals
         supplier.TotalPurchases += invoice.TotalAmount;
 
+        // Update Product Stocks (Increase)
+        foreach (var item in invoice.Items)
+        {
+            if (item.ProductId.HasValue)
+            {
+                var product = await _db.Products.FindAsync(item.ProductId.Value);
+                if (product != null)
+                {
+                    product.TotalStock += item.Quantity;
+                    product.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+        }
+
         _db.PurchaseInvoices.Add(invoice);
         await _db.SaveChangesAsync();
 
@@ -297,6 +311,22 @@ public class PurchaseInvoicesController : ControllerBase
 
         if (dto.Status == PurchaseInvoiceStatus.Returned)
         {
+            // Reduce Stock (Decrease)
+            var invoiceWithItems = await _db.PurchaseInvoices.Include(i => i.Items).FirstAsync(i => i.Id == id);
+            foreach (var item in invoiceWithItems.Items)
+            {
+                if (item.ProductId.HasValue)
+                {
+                    var product = await _db.Products.FindAsync(item.ProductId.Value);
+                    if (product != null)
+                    {
+                        product.TotalStock -= item.Quantity;
+                        product.UpdatedAt = DateTime.UtcNow;
+                    }
+                }
+            }
+            await _db.SaveChangesAsync(); // Save stock changes
+
             var fullInvoice = await _db.PurchaseInvoices
                 .Include(i => i.Supplier)
                 .FirstAsync(i => i.Id == id);
