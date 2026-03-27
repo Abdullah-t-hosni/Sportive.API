@@ -6,7 +6,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager")]
+[Authorize(Roles = "Admin,Manager,Accountant")]
 public class DashboardController : ControllerBase
 {
     private readonly IDashboardService _dashboard;
@@ -16,6 +16,10 @@ public class DashboardController : ControllerBase
     [HttpGet("/api/analytics/admin-stats")] // Compatibility for old frontend
     public async Task<IActionResult> GetStats() =>
         Ok(await _dashboard.GetStatsAsync());
+
+    [HttpGet("kpi")]
+    public async Task<IActionResult> GetKpi() =>
+        Ok(await _dashboard.GetKpiAsync());
 
     [HttpGet("sales-chart")]
     public async Task<IActionResult> GetSalesChart([FromQuery] string period = "monthly") =>
