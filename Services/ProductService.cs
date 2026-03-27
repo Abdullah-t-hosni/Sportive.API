@@ -235,6 +235,8 @@ public class ProductService : IProductService
         return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment, v.ImageUrl);
     }
 
+    public async Task<ProductVariantDto> UpdateVariantAsync(int variantId, CreateVariantDto dto)
+    {
         var v = await _db.ProductVariants.FindAsync(variantId)
             ?? throw new KeyNotFoundException("Variant not found");
         v.Size = dto.Size;
@@ -257,6 +259,8 @@ public class ProductService : IProductService
         return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment, v.ImageUrl);
     }
 
+    public async Task<bool> DeleteVariantAsync(int variantId)
+    {
         var v = await _db.ProductVariants.FindAsync(variantId);
         if (v == null) return false;
         v.IsDeleted = true;
