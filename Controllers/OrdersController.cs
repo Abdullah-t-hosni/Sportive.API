@@ -78,6 +78,28 @@ public class OrdersController : ControllerBase
         return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
     }
 
+    [HttpPost("pos")]
+    [Authorize(Roles = "Admin,Staff,Cashier")]
+    public async Task<ActionResult<OrderDetailDto>> CreatePosOrder([FromBody] CreatePOSOrderDto posDto)
+    {
+        var dto = new CreateOrderDto(
+            FulfillmentType.Pickup,
+            (PaymentMethod)posDto.PaymentMethod,
+            null,
+            null,
+            "POS Sale",
+            null,
+            posDto.PosEmployeeId ?? User.FindFirstValue(ClaimTypes.NameIdentifier),
+            (OrderSource)posDto.OrderSource,
+            posDto.Items.Select(i => new CreateOrderItemDto(i.ProductId, i.ProductVariantId, i.Quantity)).ToList(),
+            posDto.CustomerPhone,
+            posDto.CustomerName
+        );
+
+        var order = await _orderService.CreateOrderAsync(posDto.CustomerId, dto);
+        return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
+    }
+
     [HttpPatch("{id}/status")]
     [Authorize(Roles = "Admin,Staff,Cashier")]
     public async Task<ActionResult<OrderDetailDto>> UpdateStatus(int id, [FromBody] UpdateOrderStatusDto dto)

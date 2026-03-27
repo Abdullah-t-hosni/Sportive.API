@@ -184,6 +184,25 @@ public record CreateOrderItemDto(
     int Quantity
 );
 
+public record CreatePOSOrderDto(
+    int? CustomerId,
+    string? CustomerName,
+    string? CustomerPhone,
+    List<CreatePOSOrderItemDto> Items,
+    decimal TotalAmount,
+    int PaymentMethod,
+    string? PosEmployeeId,
+    int OrderSource
+);
+
+public record CreatePOSOrderItemDto(
+    int ProductId,
+    int? ProductVariantId,
+    int Quantity,
+    decimal UnitPrice,
+    decimal TotalPrice
+);
+
 public record OrderSummaryDto(
     int Id,
     string OrderNumber,

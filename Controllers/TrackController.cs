@@ -69,7 +69,7 @@ public class TrackController : ControllerBase
             deliveryAddress   = order.DeliveryAddress == null ? null : new {
                 street = order.DeliveryAddress.Street,
                 city   = order.DeliveryAddress.City,
-                area   = order.DeliveryAddress.Area,
+                area   = order.DeliveryAddress.District,
             },
             pricing = new {
                 subtotal = order.SubTotal,
