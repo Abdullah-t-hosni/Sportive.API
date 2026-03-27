@@ -126,22 +126,24 @@ public class OrderService : IOrderService
     public async Task<OrderDetailDto> CreateOrderAsync(int? customerId, CreateOrderDto dto)
     {
         // 1. Handle Customer (For POS or non-logged in website visitors)
-        if (!customerId.HasValue && !string.IsNullOrEmpty(dto.CustomerPhone))
+        if (!customerId.HasValue)
         {
-            var existing = await _db.Customers.FirstOrDefaultAsync(c => c.Phone == dto.CustomerPhone);
+            var phone = string.IsNullOrEmpty(dto.CustomerPhone) ? "0000000000" : dto.CustomerPhone;
+            var existing = await _db.Customers.FirstOrDefaultAsync(c => c.Phone == phone);
+            
             if (existing != null)
             {
                 customerId = existing.Id;
             }
             else
             {
-                var names = (dto.CustomerName ?? "Walk-in Guest").Split(' ');
+                var names = (dto.CustomerName ?? "Walking Customer").Split(' ');
                 var c = new Customer
                 {
                     FirstName = names[0],
                     LastName = names.Length > 1 ? string.Join(' ', names.Skip(1)) : "Customer",
-                    Phone = dto.CustomerPhone,
-                    Email = $"{dto.CustomerPhone}@pos.sportive.com", // Dummy email
+                    Phone = phone,
+                    Email = $"{phone}@pos.sportive.com",
                     CreatedAt = DateTime.UtcNow
                 };
                 _db.Customers.Add(c);
