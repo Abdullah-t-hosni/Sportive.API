@@ -299,7 +299,6 @@ static async Task SeedAsync(WebApplication app)
     }
 
     const string adminEmail = "admin@sportive.com";
-    const string abdullahEmail = "abdullah@sportive.com";
 
     // Admin 1
     var admin = await userManager.FindByEmailAsync(adminEmail);
@@ -322,26 +321,5 @@ static async Task SeedAsync(WebApplication app)
         admin.PhoneNumber = "01111111111";
         await userManager.UpdateAsync(admin);
     }
-
-    // Admin 2 (Abdullah)
-    var abdullah = await userManager.FindByEmailAsync(abdullahEmail);
-    if (abdullah == null)
-    {
-        abdullah = new AppUser
-        {
-            UserName = abdullahEmail,
-            Email = abdullahEmail,
-            PhoneNumber = "01012345678",
-            FirstName = "Abdullah",
-            LastName = "Admin",
-            IsActive = true
-        };
-        await userManager.CreateAsync(abdullah, "Admin@2026");
-        await userManager.AddToRoleAsync(abdullah, "Admin");
-    }
-    else if (string.IsNullOrEmpty(abdullah.PhoneNumber))
-    {
-        abdullah.PhoneNumber = "01012345678";
-        await userManager.UpdateAsync(abdullah);
-    }
+    Log.Information("Seed process completed successfully.");
 }
