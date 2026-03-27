@@ -34,7 +34,7 @@ public class OrdersController : ControllerBase
         [FromQuery] OrderStatus? status = null, [FromQuery] string? search = null,
         [FromQuery] int? customerId = null, [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null, [FromQuery] string? salesPersonId = null,
-        [FromQuery] OrderSource? source = null)
+        [FromQuery] int? source = null)
     {
         var result = await _orderService.GetOrdersAsync(page, pageSize, status, search, customerId, fromDate, toDate, salesPersonId, source);
         return Ok(result);

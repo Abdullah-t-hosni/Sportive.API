@@ -25,14 +25,14 @@ public class OrderService : IOrderService
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
         int page, int pageSize, OrderStatus? status = null, string? search = null, 
-        int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null, OrderSource? source = null)
+        int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null, int? source = null)
     {
         var query = _db.Orders
             .Include(o => o.Customer)
             .AsNoTracking();
 
         if (status.HasValue) query = query.Where(o => o.Status == status.Value);
-        if (source.HasValue) query = query.Where(o => o.Source == source.Value);
+        if (source.HasValue) query = query.Where(o => o.Source == (OrderSource)source.Value);
         if (customerId.HasValue) query = query.Where(o => o.CustomerId == customerId.Value);
         if (fromDate.HasValue) query = query.Where(o => o.CreatedAt >= fromDate.Value);
         if (toDate.HasValue) query = query.Where(o => o.CreatedAt <= toDate.Value);

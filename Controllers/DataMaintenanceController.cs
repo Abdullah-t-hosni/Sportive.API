@@ -80,24 +80,44 @@ public class DataMaintenanceController : ControllerBase
         }
     }
 
+    [AllowAnonymous] // للمساعدة السريعة
     [HttpPost("fix-pos-orders")]
     public async Task<IActionResult> FixPosOrders()
     {
-        var posOrders = await _db.Orders
-            .Where(o => !string.IsNullOrEmpty(o.SalesPersonId) && 
-                       (o.Status == OrderStatus.Pending || o.PaymentStatus == PaymentStatus.Pending))
-            .ToListAsync();
+        var logs = new List<string>();
+        // 1. تحديد الطلبات اللي بتبدأ بـ POS- أو ORD- وبناءً عليه نحدد الـ Source
+        var allOrders = await _db.Orders.ToListAsync();
+        int fixedCount = 0;
 
-        foreach (var order in posOrders)
+        foreach (var order in allOrders)
         {
-            order.Status = OrderStatus.Delivered;
-            order.PaymentStatus = PaymentStatus.Paid;
-            if (order.ActualDeliveryDate == null) 
-                order.ActualDeliveryDate = order.CreatedAt;
+            bool changed = false;
+            
+            // تصحيح المصدر بناءً على الرقم
+            if (order.OrderNumber.StartsWith("POS-") && order.Source != OrderSource.POS)
+            {
+                order.Source = OrderSource.POS;
+                changed = true;
+            }
+            else if (order.OrderNumber.StartsWith("ORD-") && order.Source != OrderSource.Website)
+            {
+                order.Source = OrderSource.Website;
+                changed = true;
+            }
+
+            // لو POS، نخليه Delivered و Paid
+            if (order.Source == OrderSource.POS)
+            {
+                if (order.Status != OrderStatus.Delivered) { order.Status = OrderStatus.Delivered; changed = true; }
+                if (order.PaymentStatus != PaymentStatus.Paid) { order.PaymentStatus = PaymentStatus.Paid; changed = true; }
+                if (order.ActualDeliveryDate == null) { order.ActualDeliveryDate = order.CreatedAt; changed = true; }
+            }
+
+            if (changed) fixedCount++;
         }
 
         await _db.SaveChangesAsync();
-        return Ok(new { success = true, count = posOrders.Count, message = "تم تحديث كافة طلبات الـ POS السابقة بنجاح" });
+        return Ok(new { success = true, count = fixedCount, message = $"تم تحديث {fixedCount} طلب بنجاح لتصحيح المصدر والحالات." });
     }
 
     /// <summary>
