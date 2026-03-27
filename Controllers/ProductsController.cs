@@ -57,6 +57,11 @@ public class ProductsController : ControllerBase
     }
 
     [Authorize(Roles = "Admin,Manager")]
+    [HttpPatch("{id}/cost")]
+    public async Task<IActionResult> UpdateCost(int id, [FromBody] decimal? costPrice) =>
+        await _products.UpdateCostPriceAsync(id, costPrice) ? Ok() : NotFound();
+
+    [Authorize(Roles = "Admin,Manager")]
     [HttpPatch("variants/{variantId}/stock")]
     public async Task<IActionResult> UpdateStock(int variantId, [FromBody] int quantity) =>
         await _products.UpdateStockAsync(variantId, quantity) ? Ok() : NotFound();

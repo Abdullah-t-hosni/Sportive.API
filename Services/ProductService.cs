@@ -228,6 +228,16 @@ public class ProductService : IProductService
         return true;
     }
 
+    public async Task<bool> UpdateCostPriceAsync(int productId, decimal? costPrice)
+    {
+        var product = await _db.Products.FindAsync(productId);
+        if (product == null) return false;
+        product.CostPrice = costPrice;
+        product.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return true;
+    }
+
     public async Task UpdateTotalStockAsync(int productId)
     {
         var product = await _db.Products
