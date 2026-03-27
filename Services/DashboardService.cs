@@ -186,7 +186,7 @@ public class DashboardService : IDashboardService
             .Include(o => o.DeliveryAddress)
             .Where(o => o.Status != OrderStatus.Cancelled && o.DeliveryAddress != null)
             .GroupBy(o => o.DeliveryAddress!.City)
-            .Select(g => new LocationStatDto(g.Key, g.Count(), g.Sum(o => o.TotalAmount)))
+            .Select(g => new LocationStatDto(g.Key, g.Count(), g.Sum(o => (decimal?)o.TotalAmount) ?? 0))
             .OrderByDescending(x => x.TotalRevenue)
             .Take(10)
             .ToListAsync();
@@ -198,7 +198,7 @@ public class DashboardService : IDashboardService
                 c.Id,
                 c.FirstName + " " + c.LastName,
                 c.Email,
-                c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
+                c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
                 c.Orders.Count(o => o.Status != OrderStatus.Cancelled)
             ))
             .OrderByDescending(x => x.TotalSpent)
@@ -254,7 +254,7 @@ public class DashboardService : IDashboardService
             .Select(g => new PaymentMethodStatDto(
                 g.Key.ToString(),
                 g.Count(),
-                g.Sum(o => o.TotalAmount)
+                g.Sum(o => (decimal?)o.TotalAmount) ?? 0
             ))
             .OrderByDescending(x => x.Revenue)
             .ToListAsync();
@@ -274,7 +274,7 @@ public class DashboardService : IDashboardService
         var staffOrders = await _db.Orders
             .Where(o => !string.IsNullOrEmpty(o.SalesPersonId) && o.Status != OrderStatus.Cancelled)
             .GroupBy(o => o.SalesPersonId)
-            .Select(g => new { StaffId = g.Key, Count = g.Count(), Total = g.Sum(o => o.TotalAmount) })
+            .Select(g => new { StaffId = g.Key, Count = g.Count(), Total = g.Sum(o => (decimal?)o.TotalAmount) ?? 0 })
             .ToListAsync();
 
         var staffPerformanceItems = new List<StaffPerformanceDto>();
