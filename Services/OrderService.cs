@@ -25,13 +25,14 @@ public class OrderService : IOrderService
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
         int page, int pageSize, OrderStatus? status = null, string? search = null, 
-        int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null)
+        int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null, OrderSource? source = null)
     {
         var query = _db.Orders
             .Include(o => o.Customer)
             .AsNoTracking();
 
         if (status.HasValue) query = query.Where(o => o.Status == status.Value);
+        if (source.HasValue) query = query.Where(o => o.Source == source.Value);
         if (customerId.HasValue) query = query.Where(o => o.CustomerId == customerId.Value);
         if (fromDate.HasValue) query = query.Where(o => o.CreatedAt >= fromDate.Value);
         if (toDate.HasValue) query = query.Where(o => o.CreatedAt <= toDate.Value);
@@ -156,10 +157,10 @@ public class OrderService : IOrderService
         {
             CustomerId = customerId.Value,
             OrderNumber = await GenerateOrderNumberAsync(dto.Source),
-            Status = OrderStatus.Pending,
+            Status = dto.Source == OrderSource.POS ? OrderStatus.Delivered : OrderStatus.Pending,
             FulfillmentType = dto.FulfillmentType,
             PaymentMethod = dto.PaymentMethod,
-            PaymentStatus = PaymentStatus.Pending,
+            PaymentStatus = dto.Source == OrderSource.POS ? PaymentStatus.Paid : PaymentStatus.Pending,
             DeliveryAddressId = dto.DeliveryAddressId,
             PickupScheduledAt = dto.PickupScheduledAt,
             CustomerNotes = dto.CustomerNotes,
