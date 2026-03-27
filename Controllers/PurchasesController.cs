@@ -15,7 +15,7 @@ namespace Sportive.API.Controllers;
 // ══════════════════════════════════════════════════════
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin,Manager,Accountant")]
 public class SuppliersController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -119,7 +119,7 @@ public class SuppliersController : ControllerBase
 // ══════════════════════════════════════════════════════
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin,Manager,Accountant")]
 public class PurchaseInvoicesController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -415,7 +415,7 @@ public record UpdatePurchaseStatusDto(PurchaseInvoiceStatus Status);
 // ══════════════════════════════════════════════════════
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin,Manager,Accountant")]
 public class SupplierPaymentsController : ControllerBase
 {
     private readonly AppDbContext _db;

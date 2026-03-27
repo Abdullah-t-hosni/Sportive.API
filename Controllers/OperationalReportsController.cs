@@ -9,7 +9,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin,Manager,Accountant,Staff")]
 public class OperationalReportsController : ControllerBase
 {
     private readonly AppDbContext _db;

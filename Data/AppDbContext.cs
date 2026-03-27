@@ -23,6 +23,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<WishlistItem> WishlistItems     => Set<WishlistItem>();
     public DbSet<Notification> Notifications     => Set<Notification>();
     public DbSet<BackupRecord> BackupRecords     => Set<BackupRecord>();
+    public DbSet<UserModulePermission> UserModulePermissions => Set<UserModulePermission>();
 
     public DbSet<Supplier>             Suppliers            { get; set; }
     public DbSet<PurchaseInvoice>      PurchaseInvoices     { get; set; }

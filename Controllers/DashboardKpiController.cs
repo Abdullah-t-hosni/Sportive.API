@@ -12,7 +12,7 @@ namespace Sportive.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/dashboard")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin,Manager,Accountant")]
 public class DashboardKpiController : ControllerBase
 {
     private readonly AppDbContext _db;

@@ -119,7 +119,26 @@ public class AuthController : ControllerBase
         var userId   = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var email    = User.FindFirstValue(ClaimTypes.Email)!;
         var roles    = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
-        var fullName = $"{User.FindFirstValue(ClaimTypes.GivenName)} {User.FindFirstValue(ClaimTypes.Surname)}".Trim();
+        var fullName    = $"{User.FindFirstValue(ClaimTypes.GivenName)} {User.FindFirstValue(ClaimTypes.Surname)}".Trim();
+        
+        // 1. Get static role-based baseline
+        var permissions = GetDefaultRolePermissions(roles);
+
+        // 2. Override with DB-specific ones (The Checkboxes system)
+        var overrides = await _db.UserModulePermissions.Where(p => p.UserId == userId).ToListAsync();
+        foreach (var over in overrides)
+        {
+            if (over.CanView)
+            {
+                if (!permissions.Contains(over.ModuleKey)) permissions.Add(over.ModuleKey);
+                if (over.CanEdit && !permissions.Contains($"{over.ModuleKey}.edit")) permissions.Add($"{over.ModuleKey}.edit");
+            }
+            else
+            {
+                permissions.Remove(over.ModuleKey);
+                permissions.Remove($"{over.ModuleKey}.edit");
+            }
+        }
 
         var customer = await _db.Customers
             .Where(c => c.AppUserId == userId && !c.IsDeleted)
@@ -131,6 +150,7 @@ public class AuthController : ControllerBase
             email,
             fullName,
             roles,
+            permissions,
             customerId = customer?.Id,
             phone      = customer?.Phone
         });
@@ -225,5 +245,35 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Failed to delete staff: " + result.Errors.FirstOrDefault()?.Description });
 
         return Ok(new { message = "Staff deleted permanently" });
+    }
+
+    private static List<string> GetDefaultRolePermissions(IList<string> roles)
+    {
+        var perms = new HashSet<string>();
+        if (roles.Contains("Admin") || roles.Contains("Manager"))
+        {
+            perms.Add("dashboard"); perms.Add("orders"); perms.Add("products");
+            perms.Add("customers"); perms.Add("categories"); perms.Add("coupons");
+            perms.Add("reports"); perms.Add("purchases"); perms.Add("accounting");
+            perms.Add("pos"); perms.Add("backup"); perms.Add("whatsapp");
+        }
+        if (roles.Contains("Admin"))
+        {
+            perms.Add("staff"); perms.Add("settings"); perms.Add("backup");
+        }
+        if (roles.Contains("Cashier"))
+        {
+            perms.Add("pos"); perms.Add("orders.read");
+        }
+        if (roles.Contains("Accountant"))
+        {
+            perms.Add("reports"); perms.Add("accounting"); perms.Add("purchases");
+            perms.Add("orders.read");
+        }
+        if (roles.Contains("Staff"))
+        {
+            perms.Add("orders"); perms.Add("products.read"); perms.Add("customers.read");
+        }
+        return perms.ToList();
     }
 }

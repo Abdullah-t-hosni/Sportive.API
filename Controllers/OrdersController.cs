@@ -28,7 +28,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "Admin,Staff,Cashier")]
+    [Authorize(Roles = "Admin,Manager,Staff,Cashier")]
     public async Task<ActionResult<PaginatedResult<OrderSummaryDto>>> GetOrders(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 12, 
         [FromQuery] OrderStatus? status = null, [FromQuery] string? search = null,
@@ -101,7 +101,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPatch("{id}/status")]
-    [Authorize(Roles = "Admin,Staff,Cashier")]
+    [Authorize(Roles = "Admin,Manager,Staff")]
     public async Task<ActionResult<OrderDetailDto>> UpdateStatus(int id, [FromBody] UpdateOrderStatusDto dto)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -120,7 +120,7 @@ public class OrdersController : ControllerBase
         return File(pdfBytes, "application/pdf", $"Order-{order.OrderNumber}.pdf");
     }
 
-    [Authorize(Roles = "Admin,Staff,Cashier")]
+    [Authorize(Roles = "Admin,Manager,Staff")]
     [HttpPatch("{id}/payment-status")]
     public async Task<IActionResult> UpdatePaymentStatus(
         int id,

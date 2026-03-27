@@ -9,7 +9,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Staff,Cashier")]
+[Authorize(Roles = "Admin,Manager,Staff,Cashier")]
 public class WaMeController : ControllerBase
 {
     private readonly AppDbContext _db;

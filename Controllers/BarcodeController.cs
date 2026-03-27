@@ -8,7 +8,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Cashier")]
+[Authorize(Roles = "Admin,Manager,Cashier")]
 public class BarcodeController : ControllerBase
 {
     private readonly AppDbContext _db;

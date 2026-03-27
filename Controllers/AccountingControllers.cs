@@ -13,7 +13,7 @@ namespace Sportive.API.Controllers;
 // ══════════════════════════════════════════════════════
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin,Manager,Accountant")]
 public class AccountsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -170,7 +170,7 @@ public class AccountsController : ControllerBase
 // ══════════════════════════════════════════════════════
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin,Manager,Accountant")]
 public class JournalEntriesController : ControllerBase
 {
     private readonly AppDbContext _db;
