@@ -112,6 +112,10 @@ public class ProductService : IProductService
 
     public async Task<ProductDetailDto> CreateProductAsync(CreateProductDto dto)
     {
+        // التحقق من تكرار الكود
+        if (await _db.Products.AnyAsync(p => p.SKU == dto.SKU))
+            throw new ArgumentException($"كود المنتج {dto.SKU} مستخدم بالفعل لمنتج آخر.");
+
         var product = new Product
         {
             NameAr = dto.NameAr,
@@ -153,6 +157,10 @@ public class ProductService : IProductService
 
     public async Task<ProductDetailDto> UpdateProductAsync(int id, UpdateProductDto dto)
     {
+        // التحقق من تكرار الكود مع استبعاد المنتج الحالي
+        if (await _db.Products.AnyAsync(p => p.SKU == dto.SKU && p.Id != id))
+            throw new ArgumentException($"كود المنتج {dto.SKU} مستخدم بالفعل لمنتج آخر.");
+
         var product = await _db.Products
             .Include(p => p.Variants)
             .FirstOrDefaultAsync(p => p.Id == id)

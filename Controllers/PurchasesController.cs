@@ -178,6 +178,7 @@ public class PurchaseInvoicesController : ControllerBase
         var inv = await _db.PurchaseInvoices
             .Include(i => i.Supplier)
             .Include(i => i.Items).ThenInclude(it => it.Product)
+            .Include(i => i.Items).ThenInclude(it => it.ProductVariant)
             .Include(i => i.Payments)
             .FirstOrDefaultAsync(i => i.Id == id && !i.IsDeleted);
 
@@ -191,7 +192,10 @@ public class PurchaseInvoicesController : ControllerBase
             inv.SubTotal, inv.TaxPercent, inv.TaxAmount, inv.TotalAmount,
             inv.PaidAmount, inv.TotalAmount - inv.PaidAmount, inv.Notes,
             inv.Items.Select(it => new PurchaseItemDto(
-                it.Id, it.Description, it.ProductId, it.ProductVariantId, it.Unit, it.Quantity, it.UnitCost, it.TotalCost
+                it.Id, it.Description, it.ProductId, 
+                it.Product?.SKU, it.Product?.NameAr, 
+                it.ProductVariantId, it.ProductVariant?.Size, it.ProductVariant?.ColorAr,
+                it.Unit, it.Quantity, it.UnitCost, it.TotalCost
             )).ToList(),
             inv.Payments.Select(p => new SupplierPaymentSummaryDto(
                 p.Id, p.PaymentNumber, inv.Supplier.Name, inv.InvoiceNumber,
