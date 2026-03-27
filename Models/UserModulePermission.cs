@@ -1,15 +1,19 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Sportive.API.Models;
 
 public class UserModulePermission
 {
     [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     public int PermissionEntryId { get; set; }
 
     [Required]
     public string UserAccountID { get; set; } = string.Empty;
-    public AppUser User { get; set; } = null!;
+    
+    [ForeignKey("UserAccountID")]
+    public virtual AppUser? User { get; set; }
 
     [Required]
     public string ModuleKey { get; set; } = string.Empty; // dashboard, orders, products, etc.
