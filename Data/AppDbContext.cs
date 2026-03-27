@@ -24,6 +24,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<Notification> Notifications     => Set<Notification>();
     public DbSet<BackupRecord> BackupRecords     => Set<BackupRecord>();
     public DbSet<UserModulePermission> UserModulePermissions => Set<UserModulePermission>();
+    public DbSet<StoreInfo> StoreInfo           => Set<StoreInfo>();
 
     public DbSet<Supplier>             Suppliers            { get; set; }
     public DbSet<PurchaseInvoice>      PurchaseInvoices     { get; set; }
@@ -210,6 +211,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
             new Category { Id=2, NameAr="حريمي",         NameEn="Women",            Type=CategoryType.Women,     IsActive=true, CreatedAt=new DateTime(2024,1,1,0,0,0,DateTimeKind.Utc) },
             new Category { Id=3, NameAr="أطفال",         NameEn="Kids",             Type=CategoryType.Kids,      IsActive=true, CreatedAt=new DateTime(2024,1,1,0,0,0,DateTimeKind.Utc) },
             new Category { Id=4, NameAr="أدوات رياضية", NameEn="Sports Equipment", Type=CategoryType.Equipment, IsActive=true, CreatedAt=new DateTime(2024,1,1,0,0,0,DateTimeKind.Utc) }
+        );
+
+        builder.Entity<StoreInfo>().HasData(
+            new StoreInfo { Id = 1, StoreName = "Sportive", LastUpdatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
         );
     }
 }
