@@ -141,6 +141,7 @@ public class ProductService : IProductService
                     PriceAdjustment = v.PriceAdjustment
                 });
             }
+            product.TotalStock = product.Variants.Sum(v => v.StockQuantity);
         }
 
         _db.Products.Add(product);
@@ -152,7 +153,9 @@ public class ProductService : IProductService
 
     public async Task<ProductDetailDto> UpdateProductAsync(int id, UpdateProductDto dto)
     {
-        var product = await _db.Products.FindAsync(id)
+        var product = await _db.Products
+            .Include(p => p.Variants)
+            .FirstOrDefaultAsync(p => p.Id == id)
             ?? throw new KeyNotFoundException($"Product {id} not found");
 
         product.NameAr = dto.NameAr;
@@ -168,6 +171,9 @@ public class ProductService : IProductService
         product.IsFeatured = dto.IsFeatured;
         product.Status = dto.Status;
         product.UpdatedAt = DateTime.UtcNow;
+
+        // إعادة حساب إجمالي المخزون للتأكد من الدقة
+        product.TotalStock = product.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity);
 
         await _db.SaveChangesAsync();
         return await GetProductByIdAsync(id) ?? throw new KeyNotFoundException($"Product {id} not found after update");
