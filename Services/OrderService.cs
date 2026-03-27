@@ -200,9 +200,24 @@ public class OrderService : IOrderService
                 order.Items.Add(orderItem);
                 order.SubTotal += orderItem.TotalPrice;
 
-                // Simple Stock Update
-                if (variant != null) variant.StockQuantity -= item.Quantity;
-                else product.TotalStock -= item.Quantity;
+                // Stock Update & Check
+                if (variant != null)
+                {
+                    if (variant.StockQuantity < item.Quantity)
+                        throw new InvalidOperationException($"Insufficient stock for {product.NameAr} ({variant.Size}/{variant.Color})");
+                    
+                    variant.StockQuantity -= item.Quantity;
+                    product.TotalStock -= item.Quantity;
+                    variant.UpdatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    if (product.TotalStock < item.Quantity)
+                        throw new InvalidOperationException($"Insufficient stock for {product.NameAr}");
+
+                    product.TotalStock -= item.Quantity;
+                }
+                product.UpdatedAt = DateTime.UtcNow;
             }
         }
         else
@@ -232,8 +247,22 @@ public class OrderService : IOrderService
                 order.Items.Add(orderItem);
                 order.SubTotal += orderItem.TotalPrice;
 
-                if (ci.ProductVariant != null) ci.ProductVariant.StockQuantity -= ci.Quantity;
-                else ci.Product.TotalStock -= ci.Quantity;
+                if (ci.ProductVariant != null)
+                {
+                    if (ci.ProductVariant.StockQuantity < ci.Quantity)
+                        throw new InvalidOperationException($"Insufficient stock for {ci.Product.NameAr} ({ci.ProductVariant.Size})");
+                    
+                    ci.ProductVariant.StockQuantity -= ci.Quantity;
+                    ci.Product.TotalStock -= ci.Quantity;
+                }
+                else
+                {
+                    if (ci.Product.TotalStock < ci.Quantity)
+                        throw new InvalidOperationException($"Insufficient stock for {ci.Product.NameAr}");
+
+                    ci.Product.TotalStock -= ci.Quantity;
+                }
+                ci.Product.UpdatedAt = DateTime.UtcNow;
                 
                 ci.IsDeleted = true; // Clear cart after order
             }
@@ -305,21 +334,28 @@ public class OrderService : IOrderService
             order.PaymentStatus = PaymentStatus.Paid;
         }
 
-        if (dto.Status == OrderStatus.Returned)
+        // Stock Restoration for Cancelled/Returned
+        if ((dto.Status == OrderStatus.Cancelled || dto.Status == OrderStatus.Returned) && 
+            order.Status != OrderStatus.Cancelled && order.Status != OrderStatus.Returned)
         {
-            // إعادة المنتجات للمخزون فوراً عند الاسترجاع
             var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
             foreach (var item in orderWithItems.Items)
             {
+                var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == item.ProductId);
+                if (product == null) continue;
+
                 if (item.ProductVariantId.HasValue)
                 {
                     var variant = await _db.ProductVariants.FirstOrDefaultAsync(v => v.Id == item.ProductVariantId);
-                    if (variant != null) variant.StockQuantity += item.Quantity;
+                    if (variant != null) 
+                    {
+                        variant.StockQuantity += item.Quantity;
+                        product.TotalStock += item.Quantity;
+                    }
                 }
                 else
                 {
-                    var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == item.ProductId);
-                    if (product != null) product.TotalStock += item.Quantity;
+                    product.TotalStock += item.Quantity;
                 }
             }
         }

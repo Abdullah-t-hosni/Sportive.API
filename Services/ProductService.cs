@@ -196,8 +196,15 @@ public class ProductService : IProductService
         if (variant == null) return false;
         variant.StockQuantity = quantity;
         variant.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
 
+        var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == variant.ProductId);
+        if (product != null)
+        {
+            product.TotalStock = product.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity);
+            product.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync();
         await _notifications.BroadcastStockUpdateAsync(variant.ProductId, variantId, quantity);
         return true;
     }
@@ -214,15 +221,20 @@ public class ProductService : IProductService
             PriceAdjustment = dto.PriceAdjustment
         };
         _db.ProductVariants.Add(v);
-        await _db.SaveChangesAsync();
         
+        var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == productId);
+        if (product != null)
+        {
+            product.TotalStock += dto.StockQuantity;
+            product.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync();
         await _notifications.BroadcastStockUpdateAsync(v.ProductId, v.Id, v.StockQuantity);
         
         return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment, v.ImageUrl);
     }
 
-    public async Task<ProductVariantDto> UpdateVariantAsync(int variantId, CreateVariantDto dto)
-    {
         var v = await _db.ProductVariants.FindAsync(variantId)
             ?? throw new KeyNotFoundException("Variant not found");
         v.Size = dto.Size;
@@ -231,21 +243,33 @@ public class ProductService : IProductService
         v.StockQuantity = dto.StockQuantity;
         v.PriceAdjustment = dto.PriceAdjustment;
         v.UpdatedAt = DateTime.UtcNow;
+
+        var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == v.ProductId);
+        if (product != null)
+        {
+            product.TotalStock = product.Variants.Where(v => !v.IsDeleted).Sum(x => x.StockQuantity);
+            product.UpdatedAt = DateTime.UtcNow;
+        }
+
         await _db.SaveChangesAsync();
-        
         await _notifications.BroadcastStockUpdateAsync(v.ProductId, v.Id, v.StockQuantity);
         
         return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment, v.ImageUrl);
     }
 
-    public async Task<bool> DeleteVariantAsync(int variantId)
-    {
         var v = await _db.ProductVariants.FindAsync(variantId);
         if (v == null) return false;
         v.IsDeleted = true;
         v.UpdatedAt = DateTime.UtcNow;
+
+        var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == v.ProductId);
+        if (product != null)
+        {
+            product.TotalStock = product.Variants.Where(x => !x.IsDeleted).Sum(x => x.StockQuantity);
+            product.UpdatedAt = DateTime.UtcNow;
+        }
+
         await _db.SaveChangesAsync();
-        
         await _notifications.BroadcastStockUpdateAsync(v.ProductId, v.Id, 0);
         
         return true;
