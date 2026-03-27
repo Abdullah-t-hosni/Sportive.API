@@ -187,7 +187,7 @@ public class StaffController : ControllerBase
         if (user == null) return NotFound();
 
         var perms = await _db.UserModulePermissions
-            .Where(p => p.UserId == id)
+            .Where(p => p.UserAccountID == id)
             .Select(p => new { p.ModuleKey, p.CanView, p.CanEdit })
             .ToListAsync();
 
@@ -205,7 +205,7 @@ public class StaffController : ControllerBase
         if (user == null) return NotFound();
 
         // حذف القديم
-        var existing = await _db.UserModulePermissions.Where(p => p.UserId == id).ToListAsync();
+        var existing = await _db.UserModulePermissions.Where(p => p.UserAccountID == id).ToListAsync();
         _db.UserModulePermissions.RemoveRange(existing);
 
         // إضافة الجديد
@@ -213,10 +213,10 @@ public class StaffController : ControllerBase
         {
             _db.UserModulePermissions.Add(new UserModulePermission
             {
-                UserId    = id,
-                ModuleKey = p.ModuleKey,
-                CanView   = p.CanView,
-                CanEdit   = p.CanEdit
+                UserAccountID = id,
+                ModuleKey     = p.ModuleKey,
+                CanView       = p.CanView,
+                CanEdit       = p.CanEdit
             });
         }
 

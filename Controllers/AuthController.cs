@@ -125,7 +125,7 @@ public class AuthController : ControllerBase
         var permissions = GetDefaultRolePermissions(roles);
 
         // 2. Override with DB-specific ones (The Checkboxes system)
-        var overrides = await _db.UserModulePermissions.Where(p => p.UserId == userId).ToListAsync();
+        var overrides = await _db.UserModulePermissions.Where(p => p.UserAccountID == userId).ToListAsync();
         foreach (var over in overrides)
         {
             if (over.CanView)
