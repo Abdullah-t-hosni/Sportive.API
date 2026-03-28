@@ -91,6 +91,83 @@ public class TrackController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// GET /api/track/by-phone?phone=01xxxxxxxx
+    /// يرجع قائمة الطلبات "الغير مكتملة" لهذا الرقم
+    /// </summary>
+    [HttpGet("by-phone")]
+    public async Task<IActionResult> TrackByPhone([FromQuery] string phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone))
+            return BadRequest(new { message = "رقم التليفون مطلوب" });
+
+        var normalizedPhone = NormalizePhone(phone.Trim());
+        // البحث بآخر 10 أرقام لضمان الوصول الصحيح حتى لو اختلف كود الدولة
+        var searchSuffix = normalizedPhone.Length >= 10 
+            ? normalizedPhone.Substring(normalizedPhone.Length - 10) 
+            : normalizedPhone;
+
+        var orders = await _db.Orders
+            .Include(o => o.Customer)
+            .Include(o => o.Items)
+                .ThenInclude(i => i.Product)
+                    .ThenInclude(p => p.Images.Where(img => img.IsMain && !img.IsDeleted))
+            .Include(o => o.DeliveryAddress)
+            .Include(o => o.StatusHistory.OrderByDescending(h => h.CreatedAt))
+            .Where(o => !o.IsDeleted
+                     && o.Customer.Phone.EndsWith(searchSuffix)
+                     // استبعاد تم التوصيل، الملغي، والمرتجع
+                     && o.Status != OrderStatus.Delivered
+                     && o.Status != OrderStatus.Cancelled
+                     && o.Status != OrderStatus.Returned)
+            .OrderByDescending(o => o.CreatedAt)
+            .ToListAsync();
+
+        if (!orders.Any())
+            return NotFound(new { message = "لا توجد طلبات جاري توصيلها لهذا الرقم حالياً" });
+
+        return Ok(orders.Select(order => new
+        {
+            id           = order.Id,
+            orderNumber  = order.OrderNumber,
+            status       = order.Status.ToString(),
+            statusAr     = GetStatusAr(order.Status),
+            statusColor  = GetStatusColor(order.Status),
+            isActive     = true, // بما أنه لسه موصلش
+            fulfillment  = order.FulfillmentType.ToString(),
+            fulfillmentAr= order.FulfillmentType == FulfillmentType.Delivery ? "توصيل للمنزل" : "استلام من الفرع",
+            paymentMethod= GetPaymentAr(order.PaymentMethod),
+            paymentStatus= GetPaymentStatusAr(order.PaymentStatus),
+            paymentPaid  = order.PaymentStatus == PaymentStatus.Paid,
+            createdAt    = order.CreatedAt,
+            estimatedDelivery = order.EstimatedDeliveryDate,
+            actualDelivery    = order.ActualDeliveryDate,
+            pickupScheduled   = order.PickupScheduledAt,
+            deliveryAddress   = order.DeliveryAddress == null ? null : new {
+                street = order.DeliveryAddress.Street,
+                city   = order.DeliveryAddress.City,
+                area   = order.DeliveryAddress.District,
+            },
+            pricing = new {
+                subtotal = order.SubTotal,
+                discount = order.DiscountAmount,
+                delivery = order.DeliveryFee,
+                total    = order.TotalAmount,
+            },
+            items = order.Items.Select(i => new {
+                name    = i.ProductNameAr,
+                nameEn  = i.ProductNameEn,
+                size    = i.Size,
+                color   = i.Color,
+                qty     = i.Quantity,
+                price   = i.TotalPrice,
+                image   = i.Product?.Images.FirstOrDefault()?.ImageUrl,
+            }),
+            timeline = BuildTimeline(order),
+            customerName = order.Customer?.FullName,
+        }));
+    }
+
     // ── Timeline ─────────────────────────────────────────
     private static List<object> BuildTimeline(Order order)
     {
