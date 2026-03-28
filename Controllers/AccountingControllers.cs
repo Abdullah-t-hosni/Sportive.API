@@ -8,6 +8,24 @@ using Sportive.API.Models;
 
 namespace Sportive.API.Controllers;
 
+internal static class AccountMappingsExceptionHelper
+{
+    internal static bool LooksLikeMissingMappingsTable(Exception ex)
+    {
+        for (var e = ex; e != null; e = e.InnerException!)
+        {
+            var m = e.Message;
+            if (m.Contains("AccountSystemMappings", StringComparison.OrdinalIgnoreCase) &&
+                (m.Contains("doesn't exist", StringComparison.OrdinalIgnoreCase)
+                 || m.Contains("Unknown table", StringComparison.OrdinalIgnoreCase)
+                 || m.Contains("Base table or view not found", StringComparison.OrdinalIgnoreCase)))
+                return true;
+        }
+
+        return false;
+    }
+}
+
 // ══════════════════════════════════════════════════════
 // CHART OF ACCOUNTS
 // ══════════════════════════════════════════════════════
@@ -17,7 +35,13 @@ namespace Sportive.API.Controllers;
 public class AccountsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public AccountsController(AppDbContext db) => _db = db;
+    private readonly ILogger<AccountsController> _log;
+
+    public AccountsController(AppDbContext db, ILogger<AccountsController> log)
+    {
+        _db  = db;
+        _log = log;
+    }
 
     // شجرة الحسابات الكاملة (هرمية)
     [HttpGet("tree")]
@@ -58,8 +82,7 @@ public class AccountsController : ControllerBase
     /// ربط مفاتيح النظام (مبيعات، مخزون، نقدية...) بحسابات شجرة الحسابات — للواجهة التي تستدعي `/api/accounts/mappings`.
     /// </summary>
     [HttpGet("mappings")]
-    public async Task<IActionResult> GetMappings() =>
-        Ok(await GetMappingsDictionaryAsync());
+    public async Task<IActionResult> GetMappings() => await OkMappingsOrErrorAsync();
 
     [HttpPut("mappings")]
     [HttpPost("mappings")]
@@ -101,7 +124,29 @@ public class AccountsController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
-        return Ok(await GetMappingsDictionaryAsync());
+        return await OkMappingsOrErrorAsync();
+    }
+
+    private async Task<IActionResult> OkMappingsOrErrorAsync()
+    {
+        try
+        {
+            return Ok(await GetMappingsDictionaryAsync());
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "AccountSystemMappings read failed");
+            if (AccountMappingsExceptionHelper.LooksLikeMissingMappingsTable(ex))
+            {
+                return StatusCode(503, new
+                {
+                    message = "جدول ربط الحسابات غير موجود في قاعدة البيانات. طبّق migrations الأخيرة (مثلاً AddAccountSystemMappings) ثم أعد النشر.",
+                    code = "MAPPINGS_TABLE_MISSING"
+                });
+            }
+
+            throw;
+        }
     }
 
     private async Task<Dictionary<string, int?>> GetMappingsDictionaryAsync()
@@ -111,7 +156,10 @@ public class AccountsController : ControllerBase
             .AsNoTracking()
             .ToListAsync();
 
-        return rows.ToDictionary(r => r.Key, r => r.AccountId);
+        return rows
+            .Where(r => !string.IsNullOrEmpty(r.Key))
+            .GroupBy(r => r.Key)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.Id).First().AccountId);
     }
 
     [HttpPost]
