@@ -26,8 +26,7 @@ public class CreateProductValidator : AbstractValidator<CreateProductDto>
 
         RuleFor(x => x.SKU)
             .NotEmpty().WithMessage("كود المنتج (SKU) مطلوب")
-            .MaximumLength(50)
-            .Matches(@"^[0-9]+$").WithMessage("SKU يجب أن يحتوي على أرقام فقط");
+            .MaximumLength(50);
 
         RuleFor(x => x.CategoryId)
             .GreaterThan(0).WithMessage("القسم مطلوب");
@@ -51,8 +50,7 @@ public class UpdateProductValidator : AbstractValidator<UpdateProductDto>
         RuleFor(x => x.CategoryId).GreaterThan(0);
         RuleFor(x => x.SKU)
             .NotEmpty().WithMessage("كود المنتج (SKU) مطلوب")
-            .MaximumLength(50)
-            .Matches(@"^[0-9]+$").WithMessage("SKU يجب أن يحتوي على أرقام فقط");
+            .MaximumLength(50);
     }
 }
 

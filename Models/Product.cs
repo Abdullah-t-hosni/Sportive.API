@@ -1,6 +1,6 @@
 namespace Sportive.API.Models;
 
-public enum ProductStatus { Active, OutOfStock, Discontinued }
+public enum ProductStatus { Active, OutOfStock, Discontinued, Draft, Hidden }
 
 public class Product : BaseEntity
 {

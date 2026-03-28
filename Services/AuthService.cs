@@ -150,6 +150,18 @@ public class AuthService : IAuthService
         if (customerId.HasValue)
             claims.Add(new Claim("CustomerId", customerId.Value.ToString()));
 
+        // Fetch addresses if customer
+        var addresses = customerId.HasValue 
+            ? await _db.Addresses.Where(a => a.CustomerId == customerId.Value && !a.IsDeleted)
+                .Select(a => new AddressDto(a.Id, a.TitleAr, a.TitleEn, a.Street, a.City, a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude))
+                .ToListAsync()
+            : null;
+
+        // Fetch permissions override
+        var permissions = await _db.UserModulePermissions.Where(p => p.UserAccountID == user.Id)
+            .Select(p => new ModulePermissionDto(p.ModuleKey, p.CanView, p.CanEdit))
+            .ToListAsync();
+
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["JWT:Secret"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var expires = DateTime.UtcNow.AddHours(double.Parse(_config["JWT:ExpiresHours"] ?? "72"));
@@ -170,7 +182,10 @@ public class AuthService : IAuthService
             $"{user.FirstName} {user.LastName}",
             roles,
             expires,
-            customerId
+            customerId,
+            user.PhoneNumber,
+            addresses,
+            permissions
         );
     }
 

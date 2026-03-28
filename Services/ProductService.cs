@@ -62,6 +62,9 @@ public class ProductService : IProductService
         if (filter.IsFeatured.HasValue)
             query = query.Where(p => p.IsFeatured == filter.IsFeatured);
 
+        if (filter.Status.HasValue)
+            query = query.Where(p => p.Status == filter.Status);
+
         // Sorting
         query = filter.SortBy switch
         {

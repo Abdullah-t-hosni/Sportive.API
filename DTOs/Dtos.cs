@@ -21,8 +21,13 @@ public record AuthResponseDto(
     string FullName,
     IList<string> Roles,
     DateTime ExpiresAt,
-    int? CustomerId = null
+    int? CustomerId = null,
+    string? Phone = null,
+    List<AddressDto>? Addresses = null,
+    List<ModulePermissionDto>? ModulePermissions = null
 );
+
+public record ModulePermissionDto(string ModuleKey, bool CanView, bool CanEdit);
 
 public record ChangePasswordDto(string CurrentPassword, string NewPassword);
 public record ForgotPasswordDto(string Identifier);
@@ -78,6 +83,7 @@ public record ProductDetailDto(
     string? DescriptionEn,
     decimal Price,
     decimal DiscountPrice,
+    decimal? CostPrice,
     string SKU,
     string? Brand,
     string Status,
@@ -196,9 +202,9 @@ public record CreatePOSOrderDto(
     string? CustomerPhone,
     List<CreatePOSOrderItemDto> Items,
     decimal TotalAmount,
-    int PaymentMethod,
+    PaymentMethod PaymentMethod,
     string? PosEmployeeId,
-    int OrderSource
+    OrderSource OrderSource
 );
 
 public record CreatePOSOrderItemDto(
@@ -302,7 +308,9 @@ public record AddressDto(
     string? BuildingNo,
     string? Floor,
     string? ApartmentNo,
-    bool IsDefault
+    bool IsDefault,
+    double? Latitude = null,
+    double? Longitude = null
 );
 
 public record CreateAddressDto(
@@ -399,6 +407,7 @@ public class ProductFilterDto
     public string? Size { get; set; }
     public string? Color { get; set; }
     public bool? IsFeatured { get; set; }
+    public ProductStatus? Status { get; set; }
     public string SortBy { get; set; } = "createdAt";
     public string SortDir { get; set; } = "desc";
     public int Page { get; set; } = 1;
