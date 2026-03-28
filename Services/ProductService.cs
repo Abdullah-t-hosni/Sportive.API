@@ -85,8 +85,8 @@ public class ProductService : IProductService
                 p.Price,
                 p.DiscountPrice ?? 0,
                 p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
-                p.Category.NameAr,
-                p.Category.NameEn,
+                p.Category != null ? p.Category.NameAr : "Category Missing",
+                p.Category != null ? p.Category.NameEn : "Category Missing",
                 p.Brand,
                 p.Status.ToString(),
                 p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
@@ -385,11 +385,11 @@ public class ProductService : IProductService
     private static ProductDetailDto MapToDetail(Product p) => new(
         p.Id, p.NameAr, p.NameEn, p.DescriptionAr, p.DescriptionEn,
         p.Price, p.DiscountPrice ?? 0, p.CostPrice, p.SKU, p.Brand, p.Status.ToString(), p.IsFeatured,
-        p.CategoryId, p.Category.NameAr, p.Category.NameEn,
-        p.Variants.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList(),
-        p.Images.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr)).ToList(),
-        p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
-        p.Reviews.Count,
+        p.CategoryId, p.Category?.NameAr ?? "Category Missing", p.Category?.NameEn ?? "Category Missing",
+        p.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList() ?? new List<ProductVariantDto>(),
+        p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr)).ToList() ?? new List<ProductImageDto>(),
+        p.Reviews?.Any() == true ? p.Reviews.Average(r => r.Rating) : 0,
+        p.Reviews?.Count ?? 0,
         p.TotalStock,
         p.CreatedAt
     );
