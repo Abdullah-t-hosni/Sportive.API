@@ -115,7 +115,7 @@ public class TrackController : ControllerBase
             .Include(o => o.DeliveryAddress)
             .Include(o => o.StatusHistory.OrderByDescending(h => h.CreatedAt))
             .Where(o => !o.IsDeleted
-                     && o.Customer.Phone.EndsWith(searchSuffix)
+                     && o.Customer != null && o.Customer.Phone != null && o.Customer.Phone.EndsWith(searchSuffix)
                      // استبعاد تم التوصيل، الملغي، والمرتجع
                      && o.Status != OrderStatus.Delivered
                      && o.Status != OrderStatus.Cancelled

@@ -42,7 +42,7 @@ public class CustomerService : ICustomerService
                 c.CreatedAt,
                 c.Addresses.Select(a => new AddressDto(
                     a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
-                    a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault
+                    a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
                 )).ToList(),
                 c.AppUserId
             ))
@@ -65,7 +65,7 @@ public class CustomerService : ICustomerService
                 c.CreatedAt,
                 c.Addresses.Select(a => new AddressDto(
                     a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
-                    a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault
+                    a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
                 )).ToList(),
                 c.AppUserId
             ))
@@ -83,7 +83,7 @@ public class CustomerService : ICustomerService
                 c.CreatedAt,
                 c.Addresses.Select(a => new AddressDto(
                     a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
-                    a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault
+                    a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
                 )).ToList(),
                 c.AppUserId
             ))
@@ -116,7 +116,8 @@ public class CustomerService : ICustomerService
 
         return new AddressDto(address.Id, address.TitleAr, address.TitleEn,
             address.Street, address.City, address.District,
-            address.BuildingNo, address.Floor, address.ApartmentNo, address.IsDefault);
+            address.BuildingNo, address.Floor, address.ApartmentNo, address.IsDefault, 
+            address.Latitude, address.Longitude);
     }
 
     public async Task DeleteAddressAsync(int customerId, int addressId)
