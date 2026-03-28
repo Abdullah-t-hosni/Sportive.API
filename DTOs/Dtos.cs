@@ -44,7 +44,11 @@ public record CategoryDto(
     string? ImageUrl,
     bool IsActive,
     int ProductCount,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    int? ParentId = null,
+    string? ParentNameAr = null,
+    string? ParentNameEn = null,
+    List<CategoryDto>? Children = null
 );
 
 public record CreateCategoryDto(
@@ -53,7 +57,8 @@ public record CreateCategoryDto(
     string? DescriptionAr,
     string? DescriptionEn,
     CategoryType Type,
-    string? ImageUrl
+    string? ImageUrl,
+    int? ParentId = null
 );
 
 // ========== PRODUCT ==========

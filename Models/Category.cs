@@ -18,6 +18,11 @@ public class Category : BaseEntity
     public string? ImageUrl { get; set; }
     public bool IsActive { get; set; } = true;
 
+    // Subcategory support
+    public int? ParentId { get; set; }
+    public Category? Parent { get; set; }
+    public ICollection<Category> Children { get; set; } = new List<Category>();
+
     // Navigation
     public ICollection<Product> Products { get; set; } = new List<Product>();
 }

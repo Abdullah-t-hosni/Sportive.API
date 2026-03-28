@@ -12,9 +12,15 @@ public class CategoriesController : ControllerBase
     private readonly ICategoryService _categories;
     public CategoriesController(ICategoryService categories) => _categories = categories;
 
+    /// <summary>Flat list of all categories (includes parent info and direct children)</summary>
     [HttpGet]
     public async Task<IActionResult> GetAll() =>
         Ok(await _categories.GetAllAsync());
+
+    /// <summary>Hierarchical tree — roots only, with nested children</summary>
+    [HttpGet("tree")]
+    public async Task<IActionResult> GetTree() =>
+        Ok(await _categories.GetTreeAsync());
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
@@ -27,8 +33,12 @@ public class CategoriesController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateCategoryDto dto)
     {
-        var cat = await _categories.CreateAsync(dto);
-        return CreatedAtAction(nameof(GetById), new { id = cat.Id }, cat);
+        try
+        {
+            var cat = await _categories.CreateAsync(dto);
+            return CreatedAtAction(nameof(GetById), new { id = cat.Id }, cat);
+        }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
     [Authorize(Roles = "Admin,Manager")]
@@ -37,6 +47,7 @@ public class CategoriesController : ControllerBase
     {
         try { return Ok(await _categories.UpdateAsync(id, dto)); }
         catch (KeyNotFoundException) { return NotFound(); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
     [Authorize(Roles = "Admin,Manager")]

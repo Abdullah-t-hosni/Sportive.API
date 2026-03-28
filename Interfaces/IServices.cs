@@ -32,6 +32,7 @@ public interface IProductService
 public interface ICategoryService
 {
     Task<List<CategoryDto>> GetAllAsync();
+    Task<List<CategoryDto>> GetTreeAsync();
     Task<CategoryDto?> GetByIdAsync(int id);
     Task<CategoryDto> CreateAsync(CreateCategoryDto dto);
     Task<CategoryDto> UpdateAsync(int id, CreateCategoryDto dto);
