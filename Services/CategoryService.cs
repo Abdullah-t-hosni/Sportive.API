@@ -26,7 +26,7 @@ public class CategoryService : ICategoryService
             .Select(c => new CategoryDto(
                 c.Id, c.NameAr, c.NameEn, c.DescriptionAr, c.DescriptionEn,
                 c.Type.ToString(), c.ImageUrl, c.IsActive,
-                c.Products.Count(p => !p.IsDeleted)))
+                c.Products.Count(p => !p.IsDeleted), c.CreatedAt))
             .FirstOrDefaultAsync();
 
     public async Task<CategoryDto> CreateAsync(CreateCategoryDto dto)
