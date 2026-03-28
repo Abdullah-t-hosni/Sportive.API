@@ -54,6 +54,66 @@ public class AccountsController : ControllerBase
         )));
     }
 
+    /// <summary>
+    /// ربط مفاتيح النظام (مبيعات، مخزون، نقدية...) بحسابات شجرة الحسابات — للواجهة التي تستدعي `/api/accounts/mappings`.
+    /// </summary>
+    [HttpGet("mappings")]
+    public async Task<IActionResult> GetMappings() =>
+        Ok(await GetMappingsDictionaryAsync());
+
+    [HttpPut("mappings")]
+    [HttpPost("mappings")]
+    public async Task<IActionResult> SaveMappings([FromBody] Dictionary<string, int?>? body)
+    {
+        if (body == null)
+            return BadRequest(new { message = "Body is required (empty object {} is allowed)." });
+
+        foreach (var kv in body)
+        {
+            if (string.IsNullOrWhiteSpace(kv.Key) || kv.Key.Length > AccountSystemMapping.MaxKeyLength)
+                return BadRequest(new { message = $"Invalid key: {kv.Key}" });
+
+            if (kv.Value.HasValue)
+            {
+                var ok = await _db.Accounts.AnyAsync(a => a.Id == kv.Value.Value && !a.IsDeleted);
+                if (!ok)
+                    return BadRequest(new { message = $"Account id {kv.Value} not found for key '{kv.Key}'" });
+            }
+        }
+
+        foreach (var kv in body)
+        {
+            var row = await _db.AccountSystemMappings.FirstOrDefaultAsync(m => m.Key == kv.Key && !m.IsDeleted);
+            if (row == null)
+            {
+                _db.AccountSystemMappings.Add(new AccountSystemMapping
+                {
+                    Key       = kv.Key,
+                    AccountId = kv.Value,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                row.AccountId = kv.Value;
+                row.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(await GetMappingsDictionaryAsync());
+    }
+
+    private async Task<Dictionary<string, int?>> GetMappingsDictionaryAsync()
+    {
+        var rows = await _db.AccountSystemMappings
+            .Where(m => !m.IsDeleted)
+            .AsNoTracking()
+            .ToListAsync();
+
+        return rows.ToDictionary(r => r.Key, r => r.AccountId);
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateAccountDto dto)
     {

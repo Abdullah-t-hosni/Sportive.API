@@ -32,6 +32,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<SupplierPayment>      SupplierPayments     { get; set; }
 
     public DbSet<Account>        Accounts        { get; set; }
+    public DbSet<AccountSystemMapping> AccountSystemMappings { get; set; }
     public DbSet<JournalEntry>   JournalEntries  { get; set; }
     public DbSet<JournalLine>    JournalLines    { get; set; }
     public DbSet<ReceiptVoucher> ReceiptVouchers { get; set; }
@@ -175,6 +176,13 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(a => a.OpeningBalance).HasPrecision(18,2);
             e.HasOne(a => a.Parent).WithMany(a => a.Children).HasForeignKey(a => a.ParentId).IsRequired(false);
             e.HasIndex(a => a.Code).IsUnique();
+        });
+
+        builder.Entity<AccountSystemMapping>(e => {
+            e.HasQueryFilter(x => !x.IsDeleted);
+            e.Property(x => x.Key).HasMaxLength(AccountSystemMapping.MaxKeyLength).IsRequired();
+            e.HasIndex(x => x.Key).IsUnique();
+            e.HasOne(x => x.Account).WithMany().HasForeignKey(x => x.AccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<JournalEntry>(e => {
