@@ -57,7 +57,7 @@ public record ProductSummaryDto(
     string NameAr,
     string NameEn,
     decimal Price,
-    decimal? DiscountPrice,
+    decimal DiscountPrice,
     string? MainImageUrl,
     string CategoryNameAr,
     string CategoryNameEn,
@@ -77,7 +77,7 @@ public record ProductDetailDto(
     string? DescriptionAr,
     string? DescriptionEn,
     decimal Price,
-    decimal? DiscountPrice,
+    decimal DiscountPrice,
     string SKU,
     string? Brand,
     string Status,
@@ -99,7 +99,7 @@ public record ProductVariantDto(
     string? Color,
     string? ColorAr,
     int StockQuantity,
-    decimal? PriceAdjustment,
+    decimal PriceAdjustment,
     string? ImageUrl
 );
 

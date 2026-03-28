@@ -80,7 +80,7 @@ public class ProductService : IProductService
                 p.NameAr,
                 p.NameEn,
                 p.Price,
-                p.DiscountPrice,
+                p.DiscountPrice ?? 0,
                 p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
                 p.Category.NameAr,
                 p.Category.NameEn,
@@ -285,7 +285,7 @@ public class ProductService : IProductService
         await _db.SaveChangesAsync();
         await _notifications.BroadcastStockUpdateAsync(v.ProductId, v.Id, v.StockQuantity);
         
-        return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment, v.ImageUrl);
+        return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment ?? 0, v.ImageUrl);
     }
 
     public async Task<ProductVariantDto> UpdateVariantAsync(int variantId, CreateVariantDto dto)
@@ -309,7 +309,7 @@ public class ProductService : IProductService
         await _db.SaveChangesAsync();
         await _notifications.BroadcastStockUpdateAsync(v.ProductId, v.Id, v.StockQuantity);
         
-        return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment, v.ImageUrl);
+        return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment ?? 0, v.ImageUrl);
     }
 
     public async Task<bool> DeleteVariantAsync(int variantId)
@@ -342,7 +342,7 @@ public class ProductService : IProductService
             .OrderByDescending(p => p.CreatedAt)
             .Take(count)
             .Select(p => new ProductSummaryDto(
-                p.Id, p.NameAr, p.NameEn, p.Price, p.DiscountPrice,
+                p.Id, p.NameAr, p.NameEn, p.Price, p.DiscountPrice ?? 0,
                 p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
                 p.Category.NameAr, p.Category.NameEn, p.Brand, p.Status.ToString(),
                 p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
@@ -367,7 +367,7 @@ public class ProductService : IProductService
             .OrderBy(_ => Guid.NewGuid())
             .Take(count)
             .Select(p => new ProductSummaryDto(
-                p.Id, p.NameAr, p.NameEn, p.Price, p.DiscountPrice,
+                p.Id, p.NameAr, p.NameEn, p.Price, p.DiscountPrice ?? 0,
                 p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
                 p.Category.NameAr, p.Category.NameEn, p.Brand, p.Status.ToString(),
                 p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
@@ -381,9 +381,9 @@ public class ProductService : IProductService
 
     private static ProductDetailDto MapToDetail(Product p) => new(
         p.Id, p.NameAr, p.NameEn, p.DescriptionAr, p.DescriptionEn,
-        p.Price, p.DiscountPrice, p.SKU, p.Brand, p.Status.ToString(), p.IsFeatured,
+        p.Price, p.DiscountPrice ?? 0, p.SKU, p.Brand, p.Status.ToString(), p.IsFeatured,
         p.CategoryId, p.Category.NameAr, p.Category.NameEn,
-        p.Variants.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment, v.ImageUrl)).ToList(),
+        p.Variants.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment ?? 0, v.ImageUrl)).ToList(),
         p.Images.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.IsMain, i.SortOrder)).ToList(),
         p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
         p.Reviews.Count,
