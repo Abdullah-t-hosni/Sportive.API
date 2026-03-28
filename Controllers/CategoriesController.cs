@@ -7,7 +7,6 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager")]
 public class CategoriesController : ControllerBase
 {
     private readonly ICategoryService _categories;
@@ -24,6 +23,7 @@ public class CategoriesController : ControllerBase
         return cat == null ? NotFound() : Ok(cat);
     }
 
+    [Authorize(Roles = "Admin,Manager")]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateCategoryDto dto)
     {
@@ -31,6 +31,7 @@ public class CategoriesController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = cat.Id }, cat);
     }
 
+    [Authorize(Roles = "Admin,Manager")]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] CreateCategoryDto dto)
     {
@@ -38,6 +39,7 @@ public class CategoriesController : ControllerBase
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
+    [Authorize(Roles = "Admin,Manager")]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {

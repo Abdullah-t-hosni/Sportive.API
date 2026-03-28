@@ -7,7 +7,6 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Staff,Cashier")]
 public class ProductsController : ControllerBase
 {
     private readonly IProductService _products;
