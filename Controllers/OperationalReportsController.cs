@@ -525,112 +525,122 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? toDate    = null,
         [FromQuery] bool      excel     = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate   ?? DateTime.UtcNow;
-
-        if (productId == null && !string.IsNullOrEmpty(search))
+        try
         {
-            var p = await _db.Products.Where(x => !x.IsDeleted && (x.NameAr.Contains(search) || x.SKU.Contains(search))).FirstOrDefaultAsync();
-            if (p != null) productId = p.Id;
-        }
+            var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
+            var to   = toDate ?? DateTime.UtcNow;
 
-        if (productId == null)
+            if (productId == null && !string.IsNullOrEmpty(search))
+            {
+                var p = await _db.Products
+                    .Where(x => !x.IsDeleted && (x.NameAr.Contains(search) || x.SKU.Contains(search)))
+                    .FirstOrDefaultAsync();
+                if (p != null) productId = p.Id;
+            }
+
+            if (productId == null)
+            {
+                var pList = await _db.Products
+                    .Where(p => !p.IsDeleted)
+                    .Select(p => new { p.Id, p.NameAr, p.SKU })
+                    .ToListAsync();
+                return Ok(new { products = pList });
+            }
+
+            var product = await _db.Products
+                .Include(p => p.Variants)
+                .FirstOrDefaultAsync(p => p.Id == productId && !p.IsDeleted);
+
+            if (product == null) return NotFound("Product not found");
+
+            // 1. مبيعات (Sales) — Not Cancelled and Not Returned
+            var salesMovements = await _db.OrderItems
+                .Where(i => i.ProductId == productId && !i.IsDeleted
+                         && i.Order.CreatedAt >= from && i.Order.CreatedAt <= to
+                         && i.Order.Status != OrderStatus.Cancelled 
+                         && i.Order.Status != OrderStatus.Returned 
+                         && !i.Order.IsDeleted)
+                .Select(i => new ProductMovementLine(
+                    i.Order.CreatedAt,
+                    "مبيعات",
+                    i.Order.OrderNumber ?? "N/A",
+                    i.Order.Customer.FirstName + " " + i.Order.Customer.LastName,
+                    0,
+                    i.Quantity,
+                    i.TotalPrice))
+                .ToListAsync();
+
+            // 2. مرتجع مبيعات (Sales Returns)
+            var returnMovements = await _db.OrderItems
+                .Where(i => i.ProductId == productId && !i.IsDeleted
+                         && i.Order.CreatedAt >= from && i.Order.CreatedAt <= to
+                         && i.Order.Status == OrderStatus.Returned 
+                         && !i.Order.IsDeleted)
+                .Select(i => new ProductMovementLine(
+                    i.Order.CreatedAt,
+                    "مرتجع مبيعات",
+                    i.Order.OrderNumber ?? "N/A",
+                    i.Order.Customer.FirstName + " " + i.Order.Customer.LastName,
+                    i.Quantity,
+                    0,
+                    i.TotalPrice))
+                .ToListAsync();
+
+            // 3. مشتريات (Purchases) — Not Draft and Not Returned
+            var purchaseMovements = await _db.PurchaseInvoiceItems
+                .Where(i => i.ProductId == productId && !i.IsDeleted
+                         && i.Invoice.InvoiceDate >= from && i.Invoice.InvoiceDate <= to
+                         && i.Invoice.Status != PurchaseInvoiceStatus.Draft 
+                         && i.Invoice.Status != PurchaseInvoiceStatus.Returned)
+                .Select(i => new ProductMovementLine(
+                    i.Invoice.InvoiceDate,
+                    "مشتريات",
+                    i.Invoice.InvoiceNumber ?? "N/A",
+                    i.Invoice.Supplier.Name ?? "مورد غير معروف",
+                    i.Quantity,
+                    0,
+                    i.TotalCost))
+                .ToListAsync();
+
+            var movements = salesMovements
+                .Concat(returnMovements)
+                .Concat(purchaseMovements)
+                .OrderBy(m => m.Date)
+                .ToList();
+
+            var currentStock = product.Variants?
+                .Where(v => !v.IsDeleted)
+                .Sum(v => v.StockQuantity) ?? 0;
+
+            var summary = new
+            {
+                totalSold      = salesMovements.Sum(i => i.Out),
+                totalReturned  = returnMovements.Sum(i => i.In),
+                totalPurchased = purchaseMovements.Sum(i => i.In),
+                salesRevenue   = salesMovements.Sum(i => i.Amount),
+                currentStock
+            };
+
+            if (excel) return ExcelProductMovement(product, movements, summary, from, to);
+
+            return Ok(new
+            {
+                product = new { product.Id, product.NameAr, product.SKU },
+                from,
+                to,
+                movements,
+                summary
+            });
+        }
+        catch (Exception ex)
         {
-            var products = await _db.Products.Where(p => !p.IsDeleted).Select(p => new { p.Id, p.NameAr, p.SKU }).ToListAsync();
-            return Ok(new { products });
+            // Log for debugging (Log.Error would be better if Serilog is configured)
+            return StatusCode(500, new { 
+                message = "Error generating product movement report", 
+                details = ex.Message,
+                inner = ex.InnerException?.Message
+            });
         }
-
-        var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == productId && !p.IsDeleted);
-        if (product == null) return NotFound();
-
-        // مبيعات
-        var salesItems = await _db.OrderItems
-            .Include(i => i.Order).ThenInclude(o => o.Customer)
-            .Where(i => i.ProductId == productId && !i.IsDeleted
-                     && i.Order.CreatedAt >= from && i.Order.CreatedAt <= to
-                     && i.Order.Status != OrderStatus.Cancelled && i.Order.Status != OrderStatus.Returned && !i.Order.IsDeleted)
-            .OrderBy(i => i.Order.CreatedAt)
-            .ToListAsync();
-
-        // مرتجع مبيعات
-        var salesReturnItems = await _db.OrderItems
-            .Include(i => i.Order).ThenInclude(o => o.Customer)
-            .Where(i => i.ProductId == productId && !i.IsDeleted
-                     && i.Order.CreatedAt >= from && i.Order.CreatedAt <= to
-                     && i.Order.Status == OrderStatus.Returned && !i.Order.IsDeleted)
-            .OrderBy(i => i.Order.CreatedAt)
-            .ToListAsync();
-
-        // مشتريات
-        var purchaseItems = await _db.PurchaseInvoiceItems
-            .Include(i => i.Invoice).ThenInclude(inv => inv.Supplier)
-            .Where(i => i.ProductId == productId && !i.IsDeleted
-                     && i.Invoice.InvoiceDate >= from && i.Invoice.InvoiceDate <= to
-                     && i.Invoice.Status != PurchaseInvoiceStatus.Draft && i.Invoice.Status != PurchaseInvoiceStatus.Returned)
-            .OrderBy(i => i.Invoice.InvoiceDate)
-            .ToListAsync();
-
-        var movements = new List<ProductMovementLine>();
-
-        foreach (var i in salesItems)
-        {
-            if (i.Order == null) continue;
-            movements.Add(new ProductMovementLine(
-                i.Order.CreatedAt, 
-                "مبيعات", 
-                i.Order.OrderNumber ?? "N/A", 
-                i.Order.Customer?.FullName ?? "عميل نقدي", 
-                0, 
-                i.Quantity, 
-                i.TotalPrice));
-        }
-
-        foreach (var i in salesReturnItems)
-        {
-            if (i.Order == null) continue;
-            movements.Add(new ProductMovementLine(
-                i.Order.CreatedAt, 
-                "مرتجع مبيعات", 
-                i.Order.OrderNumber ?? "N/A", 
-                i.Order.Customer?.FullName ?? "عميل نقدي", 
-                i.Quantity, 
-                0, 
-                i.TotalPrice));
-        }
-
-        foreach (var i in purchaseItems)
-        {
-            if (i.Invoice == null) continue;
-            movements.Add(new ProductMovementLine(
-                i.Invoice.InvoiceDate, 
-                "مشتريات", 
-                i.Invoice.InvoiceNumber ?? "N/A", 
-                i.Invoice.Supplier?.Name ?? "مورد غير معروف", 
-                i.Quantity, 
-                0, 
-                i.TotalCost));
-        }
-
-        movements = movements.OrderBy(m => m.Date).ToList();
-
-        var currentStock = product.Variants != null 
-            ? product.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity)
-            : 0;
-
-        var summary = new {
-            totalSold     = salesItems.Sum(i => i.Quantity),
-            totalReturned = salesReturnItems.Sum(i => i.Quantity),
-            totalPurchased= purchaseItems.Sum(i => i.Quantity),
-            salesRevenue  = salesItems.Sum(i => i.TotalPrice),
-            currentStock,
-        };
-
-        if (excel) return ExcelProductMovement(product, movements, summary, from, to);
-
-        return Ok(new {
-            product = new { product.Id, product.NameAr, product.SKU },
-            from, to, movements, summary
-        });
     }
 
     // ══════════════════════════════════════════════════════
