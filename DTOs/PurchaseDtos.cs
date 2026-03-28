@@ -24,7 +24,9 @@ public record UpdateSupplierDto(
     string? TaxNumber,
     string? Email,
     string? Address,
-    bool    IsActive = true
+    bool    IsActive = true,
+    string? AttachmentUrl = null,
+    string? AttachmentPublicId = null
 );
 
 public record SupplierDto(
@@ -58,7 +60,9 @@ public record CreatePurchaseInvoiceDto(
     string?  SupplierInvoiceNumber,
     decimal  TaxPercent,
     string?  Notes,
-    List<CreatePurchaseItemDto> Items
+    List<CreatePurchaseItemDto> Items,
+    string?  AttachmentUrl = null,
+    string?  AttachmentPublicId = null
 );
 
 public record CreatePurchaseItemDto(
@@ -77,7 +81,9 @@ public record UpdatePurchaseInvoiceDto(
     string?  SupplierInvoiceNumber,
     decimal  TaxPercent,
     string?  Notes,
-    List<CreatePurchaseItemDto> Items
+    List<CreatePurchaseItemDto> Items,
+    string?  AttachmentUrl = null,
+    string?  AttachmentPublicId = null
 );
 
 public record PurchaseInvoiceSummaryDto(
