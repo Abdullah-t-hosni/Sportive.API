@@ -86,8 +86,11 @@ public class ProductService : IProductService
                 p.Category.NameEn,
                 p.Brand,
                 p.Status.ToString(),
-                p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : null,
-                p.Reviews.Count
+                p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
+                p.Reviews.Count,
+                p.TotalStock,
+                p.SKU,
+                p.CreatedAt
             ))
             .ToListAsync();
 
@@ -342,8 +345,11 @@ public class ProductService : IProductService
                 p.Id, p.NameAr, p.NameEn, p.Price, p.DiscountPrice,
                 p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
                 p.Category.NameAr, p.Category.NameEn, p.Brand, p.Status.ToString(),
-                p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : null,
-                p.Reviews.Count
+                p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
+                p.Reviews.Count,
+                p.TotalStock,
+                p.SKU,
+                p.CreatedAt
             ))
             .ToListAsync();
     }
@@ -364,8 +370,11 @@ public class ProductService : IProductService
                 p.Id, p.NameAr, p.NameEn, p.Price, p.DiscountPrice,
                 p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
                 p.Category.NameAr, p.Category.NameEn, p.Brand, p.Status.ToString(),
-                p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : null,
-                p.Reviews.Count
+                p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
+                p.Reviews.Count,
+                p.TotalStock,
+                p.SKU,
+                p.CreatedAt
             ))
             .ToListAsync();
     }
@@ -376,7 +385,9 @@ public class ProductService : IProductService
         p.CategoryId, p.Category.NameAr, p.Category.NameEn,
         p.Variants.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment, v.ImageUrl)).ToList(),
         p.Images.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.IsMain, i.SortOrder)).ToList(),
-        p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : null,
-        p.Reviews.Count
+        p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
+        p.Reviews.Count,
+        p.TotalStock,
+        p.CreatedAt
     );
 }

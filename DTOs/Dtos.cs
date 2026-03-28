@@ -38,7 +38,8 @@ public record CategoryDto(
     string Type,
     string? ImageUrl,
     bool IsActive,
-    int ProductCount
+    int ProductCount,
+    DateTime CreatedAt
 );
 
 public record CreateCategoryDto(
@@ -62,8 +63,11 @@ public record ProductSummaryDto(
     string CategoryNameEn,
     string? Brand,
     string Status,
-    double? AverageRating,
-    int ReviewCount
+    double AverageRating,
+    int ReviewCount,
+    int TotalStock,
+    string SKU,
+    DateTime CreatedAt
 );
 
 public record ProductDetailDto(
@@ -83,8 +87,10 @@ public record ProductDetailDto(
     string CategoryNameEn,
     List<ProductVariantDto> Variants,
     List<ProductImageDto> Images,
-    double? AverageRating,
-    int ReviewCount
+    double AverageRating,
+    int ReviewCount,
+    int TotalStock,
+    DateTime CreatedAt
 );
 
 public record ProductVariantDto(
