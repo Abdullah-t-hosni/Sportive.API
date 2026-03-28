@@ -39,6 +39,7 @@ public class ProductVariant : BaseEntity
     public int StockQuantity { get; set; } = 0;
     public decimal? PriceAdjustment { get; set; } = 0; // extra price for this variant
     public string? ImageUrl { get; set; }
+    public string? ImagePublicId { get; set; }
 }
 
 public class ProductImage : BaseEntity
@@ -46,7 +47,9 @@ public class ProductImage : BaseEntity
     public int ProductId { get; set; }
     public Product Product { get; set; } = null!;
     public string ImageUrl { get; set; } = string.Empty;
+    public string? ImagePublicId { get; set; }
     public bool IsMain { get; set; } = false;
+    public string? ColorAr { get; set; } // The color associated with this image
     public int SortOrder { get; set; } = 0;
 }
 

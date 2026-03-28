@@ -23,7 +23,7 @@ public class ImagesController : ControllerBase
     [HttpPost("products/{productId}")]
     [RequestSizeLimit(5 * 1024 * 1024)]
     public async Task<IActionResult> UploadProductImage(
-        int productId, IFormFile file, [FromQuery] bool isMain = false)
+        int productId, IFormFile file, [FromQuery] bool isMain = false, [FromQuery] string? colorAr = null)
     {
         var product = await _db.Products.FindAsync(productId);
         if (product == null) return NotFound(new { message = "المنتج غير موجود" });
@@ -41,7 +41,9 @@ public class ImagesController : ControllerBase
         {
             ProductId = productId,
             ImageUrl  = result.Url!,
+            ImagePublicId = result.PublicId, // Save this!
             IsMain    = isMain,
+            ColorAr   = colorAr,
             SortOrder = _db.ProductImages.Count(i => i.ProductId == productId)
         };
 
@@ -49,6 +51,23 @@ public class ImagesController : ControllerBase
         await _db.SaveChangesAsync();
 
         return Ok(new { id = productImage.Id, url = result.Url, publicId = result.PublicId, isMain });
+    }
+
+    [HttpPost("products/variants/{variantId}")]
+    [RequestSizeLimit(5 * 1024 * 1024)]
+    public async Task<IActionResult> UploadVariantImage(int variantId, IFormFile file)
+    {
+        var variant = await _db.ProductVariants.FindAsync(variantId);
+        if (variant == null) return NotFound(new { message = "الموديل غير موجود" });
+
+        var result = await _images.UploadAttachmentAsync(file, $"variants/{variantId}");
+        if (!result.Success) return BadRequest(new { message = result.Error });
+
+        variant.ImageUrl = result.Url;
+        variant.ImagePublicId = result.PublicId;
+        await _db.SaveChangesAsync();
+
+        return Ok(new { url = result.Url, publicId = result.PublicId });
     }
 
     [HttpPost("categories/{categoryId}")]
@@ -121,16 +140,52 @@ public class ImagesController : ControllerBase
         return Ok(new { url = result.Url, publicId = result.PublicId });
     }
 
-    [HttpDelete("products/images/{imageId}")]
-    public async Task<IActionResult> DeleteProductImage(int imageId, [FromQuery] string? publicId)
+    [HttpPatch("products/images/{imageId}/metadata")]
+    public async Task<IActionResult> UpdateImageMetadata(int imageId, [FromQuery] string? colorAr, [FromQuery] bool? isMain)
     {
         var image = await _db.ProductImages.FindAsync(imageId);
         if (image == null) return NotFound();
 
-        if (!string.IsNullOrEmpty(publicId))
-            await _images.DeleteImageAsync(publicId);
+        if (colorAr != null) image.ColorAr = colorAr == "null" ? null : colorAr;
+        if (isMain.HasValue)
+        {
+            if (isMain.Value)
+            {
+                var existing = _db.ProductImages.Where(i => i.ProductId == image.ProductId && i.IsMain);
+                foreach (var img in existing) img.IsMain = false;
+            }
+            image.IsMain = isMain.Value;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { id = image.Id, colorAr = image.ColorAr, isMain = image.IsMain });
+    }
+
+    [HttpDelete("products/images/{imageId}")]
+    public async Task<IActionResult> DeleteProductImage(int imageId)
+    {
+        var image = await _db.ProductImages.FindAsync(imageId);
+        if (image == null) return NotFound();
+
+        if (!string.IsNullOrEmpty(image.ImagePublicId))
+            await _images.DeleteImageAsync(image.ImagePublicId);
 
         _db.ProductImages.Remove(image);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpDelete("products/variants/{variantId}")]
+    public async Task<IActionResult> DeleteVariantImage(int variantId)
+    {
+        var variant = await _db.ProductVariants.FindAsync(variantId);
+        if (variant == null) return NotFound();
+
+        if (!string.IsNullOrEmpty(variant.ImagePublicId))
+            await _images.DeleteImageAsync(variant.ImagePublicId);
+
+        variant.ImageUrl = null;
+        variant.ImagePublicId = null;
         await _db.SaveChangesAsync();
         return NoContent();
     }

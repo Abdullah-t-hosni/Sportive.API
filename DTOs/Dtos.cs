@@ -106,10 +106,11 @@ public record ProductVariantDto(
     string? ColorAr,
     int StockQuantity,
     decimal PriceAdjustment,
-    string? ImageUrl
+    string? ImageUrl,
+    string? ImagePublicId
 );
 
-public record ProductImageDto(int Id, string ImageUrl, bool IsMain, int SortOrder);
+public record ProductImageDto(int Id, string ImageUrl, string? ImagePublicId, bool IsMain, int SortOrder, string? ColorAr);
 
 public record CreateProductDto(
     string NameAr,
