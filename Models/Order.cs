@@ -73,6 +73,8 @@ public class Order : BaseEntity
     // Notes
     public string? CustomerNotes { get; set; }
     public string? AdminNotes { get; set; }
+    public string? AttachmentUrl { get; set; }
+    public string? AttachmentPublicId { get; set; }
     
     // Target Tracking
     public string? SalesPersonId { get; set; } // The ID of the employee who made the sale using POS

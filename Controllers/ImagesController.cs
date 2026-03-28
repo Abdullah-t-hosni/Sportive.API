@@ -68,6 +68,59 @@ public class ImagesController : ControllerBase
         return Ok(new { url = result.Url, publicId = result.PublicId });
     }
 
+    [HttpPost("attachments/{type}/{id}")]
+    [RequestSizeLimit(10 * 1024 * 1024)] // 10MB
+    public async Task<IActionResult> UploadAttachment(string type, int id, IFormFile file)
+    {
+        var result = await _images.UploadAttachmentAsync(file, $"{type}/{id}");
+        if (!result.Success) return BadRequest(new { message = result.Error });
+
+        switch (type.ToLower())
+        {
+            case "order":
+                var order = await _db.Orders.FindAsync(id);
+                if (order == null) return NotFound();
+                order.AttachmentUrl = result.Url;
+                order.AttachmentPublicId = result.PublicId;
+                break;
+            case "purchase":
+                var pur = await _db.PurchaseInvoices.FindAsync(id);
+                if (pur == null) return NotFound();
+                pur.AttachmentUrl = result.Url;
+                pur.AttachmentPublicId = result.PublicId;
+                break;
+            case "receiptvoucher":
+                var rv = await _db.ReceiptVouchers.FindAsync(id);
+                if (rv == null) return NotFound();
+                rv.AttachmentUrl = result.Url;
+                rv.AttachmentPublicId = result.PublicId;
+                break;
+            case "paymentvoucher":
+                var pv = await _db.PaymentVouchers.FindAsync(id);
+                if (pv == null) return NotFound();
+                pv.AttachmentUrl = result.Url;
+                pv.AttachmentPublicId = result.PublicId;
+                break;
+            case "journalentry":
+                var je = await _db.JournalEntries.FindAsync(id);
+                if (je == null) return NotFound();
+                je.AttachmentUrl = result.Url;
+                je.AttachmentPublicId = result.PublicId;
+                break;
+            case "supplier":
+                var sup = await _db.Suppliers.FindAsync(id);
+                if (sup == null) return NotFound();
+                sup.AttachmentUrl = result.Url;
+                sup.AttachmentPublicId = result.PublicId;
+                break;
+            default:
+                return BadRequest(new { message = "Entity type not supported" });
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { url = result.Url, publicId = result.PublicId });
+    }
+
     [HttpDelete("products/images/{imageId}")]
     public async Task<IActionResult> DeleteProductImage(int imageId, [FromQuery] string? publicId)
     {

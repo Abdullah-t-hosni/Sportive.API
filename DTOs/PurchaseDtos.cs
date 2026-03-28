@@ -12,7 +12,9 @@ public record CreateSupplierDto(
     string? CompanyName  = null,
     string? TaxNumber    = null,
     string? Email        = null,
-    string? Address      = null
+    string? Address      = null,
+    string? AttachmentUrl = null,
+    string? AttachmentPublicId = null
 );
 
 public record UpdateSupplierDto(
@@ -37,7 +39,9 @@ public record SupplierDto(
     decimal TotalPurchases,
     decimal TotalPaid,
     decimal Balance,
-    int     InvoiceCount
+    int     InvoiceCount,
+    string? AttachmentUrl = null,
+    string? AttachmentPublicId = null
 );
 
 public record SupplierBasicDto(int Id, string Name, string Phone, string? CompanyName);
@@ -106,6 +110,8 @@ public record PurchaseInvoiceDetailDto(
     decimal  PaidAmount,
     decimal  RemainingAmount,
     string?  Notes,
+    string?  AttachmentUrl = null,
+    string?  AttachmentPublicId = null,
     List<PurchaseItemDto> Items,
     List<SupplierPaymentSummaryDto> Payments
 );
@@ -137,7 +143,9 @@ public record CreateSupplierPaymentDto(
     PaymentMethod_Purchase PaymentMethod,
     string   AccountName,   // اسم الحساب (الخزينة / البنك)
     string?  Notes,         // البيان
-    string?  ReferenceNumber
+    string?  ReferenceNumber,
+    string?  AttachmentUrl = null,
+    string?  AttachmentPublicId = null
 );
 
 public record SupplierPaymentSummaryDto(
@@ -149,7 +157,9 @@ public record SupplierPaymentSummaryDto(
     decimal  Amount,
     string   PaymentMethod,
     string   AccountName,
-    string?  Notes
+    string?  Notes,
+    string?  AttachmentUrl = null,
+    string?  AttachmentPublicId = null
 );
 
 // ══════════════════════════════════════════════════════

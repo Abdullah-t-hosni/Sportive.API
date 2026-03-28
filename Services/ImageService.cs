@@ -8,6 +8,7 @@ public interface IImageService
 {
     Task<ImageUploadDto> UploadProductImageAsync(IFormFile file, int productId);
     Task<ImageUploadDto> UploadCategoryImageAsync(IFormFile file, int categoryId);
+    Task<ImageUploadDto> UploadAttachmentAsync(IFormFile file, string subFolder);
     Task<bool> DeleteImageAsync(string publicId);
 }
 
@@ -19,8 +20,8 @@ public class CloudinaryImageService : IImageService
     private readonly Cloudinary _cloudinary;
     private readonly IWebHostEnvironment _env;
 
-    private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
-    private const long MaxFileSizeBytes = 5 * 1024 * 1024;
+    private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".gif", ".pdf", ".docx", ".xlsx", ".txt" };
+    private const long MaxFileSizeBytes = 10 * 1024 * 1024; // 10MB for attachments
 
     public CloudinaryImageService(
         ILogger<CloudinaryImageService> logger,
@@ -44,19 +45,26 @@ public class CloudinaryImageService : IImageService
     public async Task<ImageUploadDto> UploadCategoryImageAsync(IFormFile file, int categoryId)
         => await UploadToCloudinaryAsync(file, $"sportive/categories/{categoryId}");
 
+    public async Task<ImageUploadDto> UploadAttachmentAsync(IFormFile file, string subFolder)
+        => await UploadToCloudinaryAsync(file, $"sportive/attachments/{subFolder}");
+
     public async Task<bool> DeleteImageAsync(string publicId)
     {
-        // For Cloudinary images, publicId is the identifier.
-        // For local images (fallback), we still check local disk.
-        
+        if (string.IsNullOrEmpty(publicId)) return true;
+
         if (publicId.StartsWith("sportive/"))
         {
-            var deleteParams = new DeletionParams(publicId);
+            var deleteParams = new DeletionParams(publicId) { ResourceType = ResourceType.Image };
             var result = await _cloudinary.DestroyAsync(deleteParams);
+            if (result.Result != "ok")
+            {
+                 // Try as raw/auto if image delete failed
+                 deleteParams.ResourceType = ResourceType.Auto;
+                 result = await _cloudinary.DestroyAsync(deleteParams);
+            }
             return result.Result == "ok";
         }
 
-        // Fallback for local files
         try
         {
             var localPath = Path.Combine(_env.ContentRootPath, "uploads", publicId.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
@@ -76,7 +84,7 @@ public class CloudinaryImageService : IImageService
             return new ImageUploadDto(false, null, null, "نوع الملف غير مدعوم");
 
         if (file.Length > MaxFileSizeBytes)
-            return new ImageUploadDto(false, null, null, "حجم الصورة يتجاوز 5 ميجابايت");
+            return new ImageUploadDto(false, null, null, "حجم الملف يتجاوز 10 ميجابايت");
 
         try
         {
@@ -86,7 +94,8 @@ public class CloudinaryImageService : IImageService
                 File = new FileDescription(file.FileName, stream),
                 Folder = folder,
                 PublicId = Guid.NewGuid().ToString(),
-                Overwrite = true
+                Overwrite = true,
+                ResourceType = "auto" // Support images, PDFs, etc.
             };
 
             var uploadResult = await _cloudinary.UploadAsync(uploadParams);

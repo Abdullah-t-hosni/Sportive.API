@@ -251,7 +251,9 @@ public record OrderDetailDto(
     string? TotalAmountInWords = null,
     decimal PreviousBalance = 0,
     decimal PaidAmount = 0,
-    string Source = "Website"
+    string Source = "Website",
+    string? AttachmentUrl = null,
+    string? AttachmentPublicId = null
 );
 
 public record OrderItemDto(

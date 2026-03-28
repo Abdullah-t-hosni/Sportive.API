@@ -68,6 +68,8 @@ public record CreateJournalEntryDto(
     DateTime          EntryDate,
     string?           Reference,
     string?           Description,
+    string?           AttachmentUrl = null,
+    string?           AttachmentPublicId = null,
     List<CreateJournalLineDto> Lines
 );
 
@@ -92,6 +94,8 @@ public record JournalEntryDto(
     decimal  TotalCredit,
     bool     IsBalanced,
     DateTime CreatedAt,
+    string?  AttachmentUrl = null,
+    string?  AttachmentPublicId = null,
     List<JournalLineDto> Lines
 );
 
@@ -124,7 +128,9 @@ public record JournalEntrySummaryDto(
     string?  Reference,
     string?  Description,
     decimal  TotalDebit,
-    decimal  TotalCredit
+    decimal  TotalCredit,
+    string?  AttachmentUrl = null,
+    string?  AttachmentPublicId = null
 );
 
 // ══════════════════════════════════════════════════════
@@ -139,7 +145,9 @@ public record CreateReceiptVoucherDto(
     int?     CustomerId,
     VoucherPaymentMethod PaymentMethod,
     string?  Reference,
-    string?  Description
+    string?  Description,
+    string?  AttachmentUrl = null,
+    string?  AttachmentPublicId = null
 );
 
 public record VoucherSummaryDto(
@@ -151,7 +159,9 @@ public record VoucherSummaryDto(
     string   CounterpartAccountName,
     string?  EntityName,
     string   PaymentMethod,
-    string?  Description
+    string?  Description,
+    string?  AttachmentUrl = null,
+    string?  AttachmentPublicId = null
 );
 
 // ══════════════════════════════════════════════════════
@@ -166,7 +176,9 @@ public record CreatePaymentVoucherDto(
     int?     SupplierId,
     VoucherPaymentMethod PaymentMethod,
     string?  Reference,
-    string?  Description
+    string?  Description,
+    string?  AttachmentUrl = null,
+    string?  AttachmentPublicId = null
 );
 
 // ══════════════════════════════════════════════════════

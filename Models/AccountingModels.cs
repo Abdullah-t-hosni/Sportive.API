@@ -73,6 +73,8 @@ public class JournalEntry : BaseEntity
     public string?            CreatedByUserId { get; set; }
     public int?               ReversalOfId    { get; set; }   // إذا كان قيد عكسي
     public JournalEntry?      ReversalOf      { get; set; }
+    public string?            AttachmentUrl   { get; set; }
+    public string?            AttachmentPublicId { get; set; }
 
     public ICollection<JournalLine> Lines { get; set; } = new List<JournalLine>();
 
@@ -127,6 +129,8 @@ public class ReceiptVoucher : BaseEntity
     public int?     JournalEntryId  { get; set; }
     public JournalEntry? JournalEntry { get; set; }
     public string?  CreatedByUserId { get; set; }
+    public string?  AttachmentUrl   { get; set; }
+    public string?  AttachmentPublicId { get; set; }
 }
 
 // ══════════════════════════════════════════════════════
@@ -150,4 +154,6 @@ public class PaymentVoucher : BaseEntity
     public int?     JournalEntryId  { get; set; }
     public JournalEntry? JournalEntry { get; set; }
     public string?  CreatedByUserId { get; set; }
+    public string?  AttachmentUrl   { get; set; }
+    public string?  AttachmentPublicId { get; set; }
 }

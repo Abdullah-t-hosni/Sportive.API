@@ -18,6 +18,8 @@ public class Supplier : BaseEntity
     public decimal TotalPurchases { get; set; } = 0;
     public decimal TotalPaid      { get; set; } = 0;
     public decimal Balance        => TotalPurchases - TotalPaid; // المديونية
+    public string? AttachmentUrl { get; set; }
+    public string? AttachmentPublicId { get; set; }
 
     public ICollection<PurchaseInvoice>  Invoices { get; set; } = new List<PurchaseInvoice>();
     public ICollection<SupplierPayment>  Payments { get; set; } = new List<SupplierPayment>();
@@ -61,6 +63,8 @@ public class PurchaseInvoice : BaseEntity
     public decimal RemainingAmount => TotalAmount - PaidAmount;
 
     public string? Notes { get; set; }
+    public string? AttachmentUrl { get; set; }
+    public string? AttachmentPublicId { get; set; }
 
     public ICollection<PurchaseInvoiceItem> Items    { get; set; } = new List<PurchaseInvoiceItem>();
     public ICollection<SupplierPayment>     Payments { get; set; } = new List<SupplierPayment>();
