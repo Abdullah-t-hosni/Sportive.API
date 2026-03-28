@@ -548,7 +548,7 @@ public class OperationalReportsController : ControllerBase
             .Include(i => i.Order).ThenInclude(o => o.Customer)
             .Where(i => i.ProductId == productId && !i.IsDeleted
                      && i.Order.CreatedAt >= from && i.Order.CreatedAt <= to
-                     && i.Order.Status != OrderStatus.Cancelled && !i.Order.IsDeleted)
+                     && i.Order.Status != OrderStatus.Cancelled && i.Order.Status != OrderStatus.Returned && !i.Order.IsDeleted)
             .OrderBy(i => i.Order.CreatedAt)
             .ToListAsync();
 
@@ -565,24 +565,58 @@ public class OperationalReportsController : ControllerBase
         var purchaseItems = await _db.PurchaseInvoiceItems
             .Include(i => i.Invoice).ThenInclude(inv => inv.Supplier)
             .Where(i => i.ProductId == productId && !i.IsDeleted
-                     && i.Invoice.InvoiceDate >= from && i.Invoice.InvoiceDate <= to)
+                     && i.Invoice.InvoiceDate >= from && i.Invoice.InvoiceDate <= to
+                     && i.Invoice.Status != PurchaseInvoiceStatus.Draft && i.Invoice.Status != PurchaseInvoiceStatus.Returned)
             .OrderBy(i => i.Invoice.InvoiceDate)
             .ToListAsync();
 
         var movements = new List<ProductMovementLine>();
 
         foreach (var i in salesItems)
-            movements.Add(new ProductMovementLine(i.Order.CreatedAt, "مبيعات", i.Order.OrderNumber, i.Order.Customer?.FullName ?? "", i.Quantity, -i.Quantity, i.TotalPrice));
+        {
+            if (i.Order == null) continue;
+            movements.Add(new ProductMovementLine(
+                i.Order.CreatedAt, 
+                "مبيعات", 
+                i.Order.OrderNumber ?? "N/A", 
+                i.Order.Customer?.FullName ?? "عميل نقدي", 
+                0, 
+                i.Quantity, 
+                i.TotalPrice));
+        }
 
         foreach (var i in salesReturnItems)
-            movements.Add(new ProductMovementLine(i.Order.CreatedAt, "مرتجع مبيعات", i.Order.OrderNumber, i.Order.Customer?.FullName ?? "", 0, i.Quantity, i.TotalPrice));
+        {
+            if (i.Order == null) continue;
+            movements.Add(new ProductMovementLine(
+                i.Order.CreatedAt, 
+                "مرتجع مبيعات", 
+                i.Order.OrderNumber ?? "N/A", 
+                i.Order.Customer?.FullName ?? "عميل نقدي", 
+                i.Quantity, 
+                0, 
+                i.TotalPrice));
+        }
 
         foreach (var i in purchaseItems)
-            movements.Add(new ProductMovementLine(i.Invoice.InvoiceDate, "مشتريات", i.Invoice.InvoiceNumber, i.Invoice.Supplier.Name, i.Quantity, i.Quantity, i.TotalCost));
+        {
+            if (i.Invoice == null) continue;
+            movements.Add(new ProductMovementLine(
+                i.Invoice.InvoiceDate, 
+                "مشتريات", 
+                i.Invoice.InvoiceNumber ?? "N/A", 
+                i.Invoice.Supplier?.Name ?? "مورد غير معروف", 
+                i.Quantity, 
+                0, 
+                i.TotalCost));
+        }
 
         movements = movements.OrderBy(m => m.Date).ToList();
 
-        var currentStock = product.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity);
+        var currentStock = product.Variants != null 
+            ? product.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity)
+            : 0;
+
         var summary = new {
             totalSold     = salesItems.Sum(i => i.Quantity),
             totalReturned = salesReturnItems.Sum(i => i.Quantity),
