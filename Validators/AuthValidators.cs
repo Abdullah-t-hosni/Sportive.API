@@ -21,10 +21,7 @@ public class RegisterValidator : AbstractValidator<RegisterDto>
             .WithMessage("صيغة البريد الإلكتروني غير صحيحة");
 
         RuleFor(x => x.Password)
-            .NotEmpty().WithMessage("كلمة المرور مطلوبة")
-            .MinimumLength(8).WithMessage("كلمة المرور لازم تكون 8 أحرف على الأقل")
-            .Matches("[A-Z]").WithMessage("لازم تحتوي على حرف كبير")
-            .Matches("[0-9]").WithMessage("لازم تحتوي على رقم");
+            .NotEmpty().WithMessage("كلمة المرور مطلوبة");
 
         RuleFor(x => x.Phone)
             .NotEmpty().WithMessage("رقم الهاتف مطلوب / Phone is required")
@@ -52,9 +49,6 @@ public class ChangePasswordValidator : AbstractValidator<ChangePasswordDto>
         RuleFor(x => x.CurrentPassword).NotEmpty();
         RuleFor(x => x.NewPassword)
             .NotEmpty()
-            .MinimumLength(8)
-            .Matches("[A-Z]")
-            .Matches("[0-9]")
             .NotEqual(x => x.CurrentPassword)
             .WithMessage("كلمة المرور الجديدة لازم تختلف عن القديمة");
     }
