@@ -39,6 +39,11 @@ var connStr = Environment.GetEnvironmentVariable("DATABASE_URL")
     ?? builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string is missing.");
 
+if (!connStr.Contains("Allow User Variables=true", StringComparison.OrdinalIgnoreCase))
+{
+    connStr = connStr.TrimEnd(';') + ";Allow User Variables=true;";
+}
+
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     options.UseMySql(connStr, new MySqlServerVersion(new Version(8, 0, 0)),
