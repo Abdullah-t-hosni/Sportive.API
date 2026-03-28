@@ -40,7 +40,7 @@ public class AccountingService : IAccountingService
     private const string SALES_REVENUE   = "4101";   // إيرادات المبيعات
     private const string SALES_RETURN    = "4102";   // مرتجع المبيعات
     private const string SALES_DISCOUNT  = "410101"; // الخصم الممنوح
-    private const string DELIVERY_REVENUE = "410102"; // إيراد خدمات توصيل
+    private const string DELIVERY_REVENUE = "410105"; // إيراد خدمات توصيل (تحت 4101؛ لا 410102 بسبب تقاطع مع 4102)
     private const string COGS            = "51101";  // تكلفة البضاعة المباعة
     private const string PURCHASES_NET   = "511";    // صافي المشتريات
     private const string PURCHASE_DISC   = "51103";  // خصم مكتسب (المشتريات)

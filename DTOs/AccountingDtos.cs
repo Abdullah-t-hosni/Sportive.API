@@ -70,7 +70,18 @@ public record CreateJournalEntryDto(
     string?           Description,
     List<CreateJournalLineDto> Lines,
     string?           AttachmentUrl = null,
-    string?           AttachmentPublicId = null
+    string?           AttachmentPublicId = null,
+    bool              AsDraft = false
+);
+
+public record UpdateJournalEntryDto(
+    DateTime          EntryDate,
+    string?           Reference,
+    string?           Description,
+    List<CreateJournalLineDto> Lines,
+    string?           AttachmentUrl = null,
+    string?           AttachmentPublicId = null,
+    bool              PostAfterUpdate = false
 );
 
 public record CreateJournalLineDto(

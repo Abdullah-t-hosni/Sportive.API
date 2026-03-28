@@ -1,3 +1,4 @@
+"""Legacy: يقرأ coa_data.txt. للمزامنة مع Accounts.xlsx استخدم: python tools/sync_coa_from_xlsx.py"""
 import csv
 import json
 

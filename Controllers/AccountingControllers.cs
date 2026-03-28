@@ -372,7 +372,7 @@ public class JournalEntriesController : ControllerBase
             EntryNumber     = entryNo,
             EntryDate       = dto.EntryDate,
             Type            = JournalEntryType.Manual,
-            Status          = JournalEntryStatus.Posted, // ترحيل مباشر للقيود اليدوية
+            Status          = dto.AsDraft ? JournalEntryStatus.Draft : JournalEntryStatus.Posted,
             Reference       = dto.Reference,
             Description     = dto.Description,
             CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
@@ -400,6 +400,95 @@ public class JournalEntriesController : ControllerBase
 
         return CreatedAtAction(nameof(GetById), new { id = entry.Id },
             new { id = entry.Id, entryNumber = entry.EntryNumber });
+    }
+
+    /// <summary>تعديل قيد يدوي — مسودة فقط.</summary>
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateJournalEntryDto dto)
+    {
+        if (!dto.Lines.Any() || dto.Lines.Count < 2)
+            return BadRequest(new { message = "القيد يجب أن يحتوي على سطرين على الأقل" });
+
+        var totalDebit  = dto.Lines.Sum(l => l.Debit);
+        var totalCredit = dto.Lines.Sum(l => l.Credit);
+        if (Math.Round(totalDebit, 2) != Math.Round(totalCredit, 2))
+            return BadRequest(new { message = $"القيد غير متوازن — المدين: {totalDebit}, الدائن: {totalCredit}" });
+
+        foreach (var line in dto.Lines)
+        {
+            var acct = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == line.AccountId && !a.IsDeleted);
+            if (acct == null) return BadRequest(new { message = $"الحساب {line.AccountId} غير موجود" });
+            if (!acct.AllowPosting) return BadRequest(new { message = $"الحساب '{acct.NameAr}' لا يقبل الترحيل المباشر" });
+        }
+
+        var entry = await _db.JournalEntries
+            .Include(e => e.Lines)
+            .FirstOrDefaultAsync(e => e.Id == id && !e.IsDeleted);
+
+        if (entry == null) return NotFound();
+        if (entry.Type != JournalEntryType.Manual)
+            return BadRequest(new { message = "يمكن تعديل القيود اليدوية فقط" });
+        if (entry.Status != JournalEntryStatus.Draft)
+            return BadRequest(new { message = "يمكن تعديل المسودات فقط" });
+
+        entry.EntryDate   = dto.EntryDate;
+        entry.Reference   = dto.Reference;
+        entry.Description = dto.Description;
+        entry.AttachmentUrl = dto.AttachmentUrl;
+        entry.AttachmentPublicId = dto.AttachmentPublicId;
+        entry.UpdatedAt   = DateTime.UtcNow;
+
+        foreach (var line in entry.Lines.Where(l => !l.IsDeleted).ToList())
+        {
+            line.IsDeleted  = true;
+            line.UpdatedAt  = DateTime.UtcNow;
+        }
+
+        foreach (var line in dto.Lines)
+        {
+            entry.Lines.Add(new JournalLine
+            {
+                AccountId   = line.AccountId,
+                Debit       = line.Debit,
+                Credit      = line.Credit,
+                Description = line.Description,
+                CustomerId  = line.CustomerId,
+                SupplierId  = line.SupplierId,
+                CreatedAt   = DateTime.UtcNow,
+            });
+        }
+
+        if (dto.PostAfterUpdate)
+            entry.Status = JournalEntryStatus.Posted;
+
+        await _db.SaveChangesAsync();
+        return Ok(new { id = entry.Id, entryNumber = entry.EntryNumber });
+    }
+
+    /// <summary>حذف قيد يدوي — مسودة فقط (soft delete).</summary>
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var entry = await _db.JournalEntries
+            .Include(e => e.Lines)
+            .FirstOrDefaultAsync(e => e.Id == id && !e.IsDeleted);
+
+        if (entry == null) return NotFound();
+        if (entry.Type != JournalEntryType.Manual)
+            return BadRequest(new { message = "يمكن حذف القيود اليدوية فقط" });
+        if (entry.Status != JournalEntryStatus.Draft)
+            return BadRequest(new { message = "يمكن حذف المسودات فقط" });
+
+        foreach (var line in entry.Lines.Where(l => !l.IsDeleted))
+        {
+            line.IsDeleted  = true;
+            line.UpdatedAt  = DateTime.UtcNow;
+        }
+
+        entry.IsDeleted  = true;
+        entry.UpdatedAt  = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return NoContent();
     }
 
     // عكس القيد
