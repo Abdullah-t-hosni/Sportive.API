@@ -68,9 +68,9 @@ public record CreateJournalEntryDto(
     DateTime          EntryDate,
     string?           Reference,
     string?           Description,
+    List<CreateJournalLineDto> Lines,
     string?           AttachmentUrl = null,
-    string?           AttachmentPublicId = null,
-    List<CreateJournalLineDto> Lines
+    string?           AttachmentPublicId = null
 );
 
 public record CreateJournalLineDto(
@@ -94,9 +94,9 @@ public record JournalEntryDto(
     decimal  TotalCredit,
     bool     IsBalanced,
     DateTime CreatedAt,
+    List<JournalLineDto> Lines,
     string?  AttachmentUrl = null,
-    string?  AttachmentPublicId = null,
-    List<JournalLineDto> Lines
+    string?  AttachmentPublicId = null
 );
 
 public record JournalLineSummaryDto(

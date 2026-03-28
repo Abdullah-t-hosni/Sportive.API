@@ -110,10 +110,10 @@ public record PurchaseInvoiceDetailDto(
     decimal  PaidAmount,
     decimal  RemainingAmount,
     string?  Notes,
-    string?  AttachmentUrl = null,
-    string?  AttachmentPublicId = null,
     List<PurchaseItemDto> Items,
-    List<SupplierPaymentSummaryDto> Payments
+    List<SupplierPaymentSummaryDto> Payments,
+    string?  AttachmentUrl = null,
+    string?  AttachmentPublicId = null
 );
 
 public record PurchaseItemDto(
