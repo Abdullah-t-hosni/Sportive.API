@@ -114,7 +114,8 @@ public class OrderService : IOrderService
                 h.Status.ToString(), h.Note, h.CreatedAt
             )).ToList(),
             salesPersonName,
-            null, 0, 0, o.Source.ToString()
+            null, 0, 0, o.Source.ToString(),
+            o.AttachmentUrl, o.AttachmentPublicId
         );
     }
 

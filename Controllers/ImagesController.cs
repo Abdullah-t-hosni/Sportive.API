@@ -21,9 +21,9 @@ public class ImagesController : ControllerBase
     }
 
     [HttpPost("products/{productId}")]
-    [RequestSizeLimit(5 * 1024 * 1024)]
+    [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> UploadProductImage(
-        int productId, IFormFile file, [FromQuery] bool isMain = false, [FromQuery] string? colorAr = null)
+        [FromRoute] int productId, [FromForm] IFormFile file, [FromQuery] bool isMain = false, [FromQuery] string? colorAr = null)
     {
         var product = await _db.Products.FindAsync(productId);
         if (product == null) return NotFound(new { message = "المنتج غير موجود" });
@@ -54,8 +54,8 @@ public class ImagesController : ControllerBase
     }
 
     [HttpPost("products/variants/{variantId}")]
-    [RequestSizeLimit(5 * 1024 * 1024)]
-    public async Task<IActionResult> UploadVariantImage(int variantId, IFormFile file)
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> UploadVariantImage([FromRoute] int variantId, [FromForm] IFormFile file)
     {
         var variant = await _db.ProductVariants.FindAsync(variantId);
         if (variant == null) return NotFound(new { message = "الموديل غير موجود" });
@@ -71,8 +71,8 @@ public class ImagesController : ControllerBase
     }
 
     [HttpPost("categories/{categoryId}")]
-    [RequestSizeLimit(5 * 1024 * 1024)]
-    public async Task<IActionResult> UploadCategoryImage(int categoryId, IFormFile file)
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> UploadCategoryImage([FromRoute] int categoryId, [FromForm] IFormFile file)
     {
         var category = await _db.Categories.FindAsync(categoryId);
         if (category == null) return NotFound(new { message = "القسم غير موجود" });
@@ -89,7 +89,7 @@ public class ImagesController : ControllerBase
 
     [HttpPost("attachments/{type}/{id}")]
     [RequestSizeLimit(10 * 1024 * 1024)] // 10MB
-    public async Task<IActionResult> UploadAttachment(string type, int id, IFormFile file)
+    public async Task<IActionResult> UploadAttachment([FromRoute] string type, [FromRoute] int id, [FromForm] IFormFile file)
     {
         var result = await _images.UploadAttachmentAsync(file, $"{type}/{id}");
         if (!result.Success) return BadRequest(new { message = result.Error });

@@ -112,4 +112,6 @@ public class SupplierPayment : BaseEntity
     public string?  Notes        { get; set; }                  // البيان
     public string?  ReferenceNumber { get; set; }               // رقم مرجعي
     public string?  CreatedByUserId { get; set; }
+    public string?  AttachmentUrl   { get; set; }
+    public string?  AttachmentPublicId { get; set; }
 }

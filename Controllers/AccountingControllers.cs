@@ -230,7 +230,8 @@ public class JournalEntriesController : ControllerBase
             entry.CreatedAt,
             entry.Lines.Select(l => new JournalLineDto(
                 l.Id, l.AccountId, l.Account.Code, l.Account.NameAr, l.Debit, l.Credit, l.Description
-            )).ToList()
+            )).ToList(),
+            entry.AttachmentUrl, entry.AttachmentPublicId
         ));
     }
 
@@ -267,6 +268,8 @@ public class JournalEntriesController : ControllerBase
             Reference       = dto.Reference,
             Description     = dto.Description,
             CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            AttachmentUrl   = dto.AttachmentUrl,
+            AttachmentPublicId = dto.AttachmentPublicId,
             CreatedAt       = DateTime.UtcNow,
         };
 
@@ -437,6 +440,8 @@ public class ReceiptVouchersController : ControllerBase
             Description    = dto.Description,
             JournalEntryId = entry.Id,
             CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            AttachmentUrl  = dto.AttachmentUrl,
+            AttachmentPublicId = dto.AttachmentPublicId,
             CreatedAt      = DateTime.UtcNow,
         };
 
@@ -553,6 +558,8 @@ public class PaymentVouchersController : ControllerBase
             Description     = dto.Description,
             JournalEntryId  = entry.Id,
             CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            AttachmentUrl   = dto.AttachmentUrl,
+            AttachmentPublicId = dto.AttachmentPublicId,
             CreatedAt       = DateTime.UtcNow,
         };
 

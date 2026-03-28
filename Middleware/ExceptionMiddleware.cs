@@ -43,6 +43,7 @@ public class ExceptionMiddleware
             UnauthorizedAccessException => (HttpStatusCode.Unauthorized,   ex.Message),
             InvalidOperationException => (HttpStatusCode.BadRequest,       ex.Message),
             ArgumentException       => (HttpStatusCode.BadRequest,         ex.Message),
+            BadHttpRequestException => (HttpStatusCode.BadRequest,         ex.Message),
             DbUpdateException       => (HttpStatusCode.BadRequest,
                 _env.IsDevelopment() ? (ex.InnerException?.Message ?? ex.Message)
                     : "Could not save data (invalid reference or constraint)."),

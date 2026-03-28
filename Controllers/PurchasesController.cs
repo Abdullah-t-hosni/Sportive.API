@@ -55,11 +55,12 @@ public class SuppliersController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var s = await _db.Suppliers.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
+        var s = await _db.Suppliers.Include(s => s.Invoices).FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
         if (s == null) return NotFound();
         return Ok(new SupplierDto(s.Id, s.Name, s.Phone, s.CompanyName, s.TaxNumber,
             s.Email, s.Address, s.IsActive, s.TotalPurchases, s.TotalPaid,
-            s.TotalPurchases - s.TotalPaid, 0));
+            s.TotalPurchases - s.TotalPaid, s.Invoices.Count(i => !i.IsDeleted),
+            s.AttachmentUrl, s.AttachmentPublicId));
     }
 
     [HttpPost]
@@ -77,6 +78,8 @@ public class SuppliersController : ControllerBase
             Email       = dto.Email?.Trim().ToLower(),
             Address     = dto.Address?.Trim(),
             CreatedAt   = DateTime.UtcNow,
+            AttachmentUrl = dto.AttachmentUrl,
+            AttachmentPublicId = dto.AttachmentPublicId
         };
 
         _db.Suppliers.Add(supplier);
@@ -97,6 +100,8 @@ public class SuppliersController : ControllerBase
         supplier.Email       = dto.Email?.Trim().ToLower();
         supplier.Address     = dto.Address?.Trim();
         supplier.IsActive    = dto.IsActive;
+        supplier.AttachmentUrl = dto.AttachmentUrl;
+        supplier.AttachmentPublicId = dto.AttachmentPublicId;
         supplier.UpdatedAt   = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
@@ -202,8 +207,10 @@ public class PurchaseInvoicesController : ControllerBase
             )).ToList(),
             inv.Payments.Select(p => new SupplierPaymentSummaryDto(
                 p.Id, p.PaymentNumber, inv.Supplier.Name, inv.InvoiceNumber,
-                p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes
-            )).ToList()
+                p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes,
+                p.AttachmentUrl, p.AttachmentPublicId
+            )).ToList(),
+            inv.AttachmentUrl, inv.AttachmentPublicId
         ));
     }
 
@@ -234,6 +241,8 @@ public class PurchaseInvoicesController : ControllerBase
             Notes                 = dto.Notes,
             Status                = dto.PaymentTerms == PaymentTerms.Cash
                 ? PurchaseInvoiceStatus.Received : PurchaseInvoiceStatus.Draft,
+            AttachmentUrl         = dto.AttachmentUrl,
+            AttachmentPublicId    = dto.AttachmentPublicId,
             CreatedAt             = DateTime.UtcNow,
         };
 
@@ -458,7 +467,7 @@ public class SupplierPaymentsController : ControllerBase
                 p.Invoice != null ? p.Invoice.InvoiceNumber : null,
                 p.PaymentDate, p.Amount, p.PaymentMethod.ToString(),
                 p.AccountName, p.Notes,
-                null, null
+                p.AttachmentUrl, p.AttachmentPublicId
             )).ToListAsync();
 
         return Ok(new PaginatedResult<SupplierPaymentSummaryDto>(items, total, page, pageSize,
@@ -492,6 +501,8 @@ public class SupplierPaymentsController : ControllerBase
             Notes             = dto.Notes?.Trim(),
             ReferenceNumber   = dto.ReferenceNumber?.Trim(),
             CreatedByUserId   = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            AttachmentUrl     = dto.AttachmentUrl,
+            AttachmentPublicId = dto.AttachmentPublicId,
             CreatedAt         = DateTime.UtcNow,
         };
 
