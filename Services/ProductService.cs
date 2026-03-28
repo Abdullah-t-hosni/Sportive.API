@@ -288,7 +288,7 @@ public class ProductService : IProductService
         await _db.SaveChangesAsync();
         await _notifications.BroadcastStockUpdateAsync(v.ProductId, v.Id, v.StockQuantity);
         
-        return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment ?? 0, v.ImageUrl);
+        return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId);
     }
 
     public async Task<ProductVariantDto> UpdateVariantAsync(int variantId, CreateVariantDto dto)
@@ -312,7 +312,7 @@ public class ProductService : IProductService
         await _db.SaveChangesAsync();
         await _notifications.BroadcastStockUpdateAsync(v.ProductId, v.Id, v.StockQuantity);
         
-        return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment ?? 0, v.ImageUrl);
+        return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId);
     }
 
     public async Task<bool> DeleteVariantAsync(int variantId)
@@ -386,8 +386,8 @@ public class ProductService : IProductService
         p.Id, p.NameAr, p.NameEn, p.DescriptionAr, p.DescriptionEn,
         p.Price, p.DiscountPrice ?? 0, p.CostPrice, p.SKU, p.Brand, p.Status.ToString(), p.IsFeatured,
         p.CategoryId, p.Category.NameAr, p.Category.NameEn,
-        p.Variants.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment ?? 0, v.ImageUrl)).ToList(),
-        p.Images.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.IsMain, i.SortOrder)).ToList(),
+        p.Variants.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList(),
+        p.Images.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr)).ToList(),
         p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
         p.Reviews.Count,
         p.TotalStock,

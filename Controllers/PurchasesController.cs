@@ -44,7 +44,8 @@ public class SuppliersController : ControllerBase
             .Select(s => new SupplierDto(
                 s.Id, s.Name, s.Phone, s.CompanyName, s.TaxNumber, s.Email, s.Address,
                 s.IsActive, s.TotalPurchases, s.TotalPaid, s.TotalPurchases - s.TotalPaid,
-                s.Invoices.Count(i => !i.IsDeleted)
+                s.Invoices.Count(i => !i.IsDeleted),
+                s.AttachmentUrl, s.AttachmentPublicId
             )).ToListAsync();
 
         return Ok(new PaginatedResult<SupplierDto>(items, total, page, pageSize,
@@ -456,7 +457,8 @@ public class SupplierPaymentsController : ControllerBase
                 p.Id, p.PaymentNumber, p.Supplier.Name,
                 p.Invoice != null ? p.Invoice.InvoiceNumber : null,
                 p.PaymentDate, p.Amount, p.PaymentMethod.ToString(),
-                p.AccountName, p.Notes
+                p.AccountName, p.Notes,
+                null, null
             )).ToListAsync();
 
         return Ok(new PaginatedResult<SupplierPaymentSummaryDto>(items, total, page, pageSize,

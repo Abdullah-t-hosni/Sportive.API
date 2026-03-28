@@ -205,7 +205,8 @@ public class JournalEntriesController : ControllerBase
             .Select(e => new JournalEntrySummaryDto(
                 e.Id, e.EntryNumber, e.EntryDate, e.Type.ToString(), e.Status.ToString(),
                 e.Reference, e.Description,
-                e.Lines.Sum(l => l.Debit), e.Lines.Sum(l => l.Credit)
+                e.Lines.Sum(l => l.Debit), e.Lines.Sum(l => l.Credit),
+                e.AttachmentUrl, e.AttachmentPublicId
             )).ToListAsync();
 
         return Ok(new PaginatedResult<JournalEntrySummaryDto>(items, total, page, pageSize,
@@ -379,7 +380,8 @@ public class ReceiptVouchersController : ControllerBase
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount,
                 v.CashAccount.NameAr, v.FromAccount.NameAr,
                 v.Customer != null ? v.Customer.FullName : null,
-                v.PaymentMethod.ToString(), v.Description
+                v.PaymentMethod.ToString(), v.Description,
+                v.AttachmentUrl, v.AttachmentPublicId
             )).ToListAsync();
 
         return Ok(new PaginatedResult<VoucherSummaryDto>(items, total, page, pageSize,
@@ -500,7 +502,8 @@ public class PaymentVouchersController : ControllerBase
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount,
                 v.CashAccount.NameAr, v.ToAccount.NameAr,
                 v.Supplier != null ? v.Supplier.Name : null,
-                v.PaymentMethod.ToString(), v.Description
+                v.PaymentMethod.ToString(), v.Description,
+                v.AttachmentUrl, v.AttachmentPublicId
             )).ToListAsync();
 
         return Ok(new PaginatedResult<VoucherSummaryDto>(items, total, page, pageSize,

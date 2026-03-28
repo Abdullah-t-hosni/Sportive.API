@@ -89,16 +89,32 @@ public class CloudinaryImageService : IImageService
         try
         {
             await using var stream = file.OpenReadStream();
-            var uploadParams = new ImageUploadParams
-            {
-                File = new FileDescription(file.FileName, stream),
-                Folder = folder,
-                PublicId = Guid.NewGuid().ToString(),
-                Overwrite = true,
-                ResourceType = "auto" // Support images, PDFs, etc.
-            };
+            var imageExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
+            var isImage = imageExtensions.Contains(ext);
 
-            var uploadResult = await _cloudinary.UploadAsync(uploadParams);
+            CloudinaryDotNet.Actions.RawUploadResult uploadResult;
+            if (isImage)
+            {
+                var uploadParams = new ImageUploadParams
+                {
+                    File      = new FileDescription(file.FileName, stream),
+                    Folder    = folder,
+                    PublicId  = Guid.NewGuid().ToString(),
+                    Overwrite = true,
+                };
+                uploadResult = await _cloudinary.UploadAsync(uploadParams);
+            }
+            else
+            {
+                var uploadParams = new RawUploadParams
+                {
+                    File      = new FileDescription(file.FileName, stream),
+                    Folder    = folder,
+                    PublicId  = Guid.NewGuid().ToString(),
+                    Overwrite = true,
+                };
+                uploadResult = await _cloudinary.UploadAsync(uploadParams);
+            }
 
             if (uploadResult.Error != null)
             {

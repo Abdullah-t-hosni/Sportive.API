@@ -107,10 +107,10 @@ public record ProductVariantDto(
     int StockQuantity,
     decimal PriceAdjustment,
     string? ImageUrl,
-    string? ImagePublicId
+    string? ImagePublicId = null
 );
 
-public record ProductImageDto(int Id, string ImageUrl, string? ImagePublicId, bool IsMain, int SortOrder, string? ColorAr);
+public record ProductImageDto(int Id, string ImageUrl, string? ImagePublicId = null, bool IsMain = false, int SortOrder = 0, string? ColorAr = null);
 
 public record CreateProductDto(
     string NameAr,
