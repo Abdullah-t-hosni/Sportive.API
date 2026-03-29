@@ -17,57 +17,83 @@ public class CartController : ControllerBase
         _cartService = cartService;
     }
 
-    /// <summary>الحصول على السلة لعميل معين</summary>
-    [HttpGet("{customerId}")]
-    public async Task<IActionResult> Get(int customerId)
+    private async Task<int?> GetCustomerIdAsync()
     {
-        var cart = await _cartService.GetCartAsync(customerId);
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return null;
+        var c = await _db.Customers
+            .Where(c => c.AppUserId == userId && !c.IsDeleted)
+            .Select(c => new { c.Id })
+            .FirstOrDefaultAsync();
+        return c?.Id;
+    }
+
+    /// <summary>الحصول على السلة لعميل معين</summary>
+    [HttpGet]
+    public async Task<IActionResult> Get()
+    {
+        var customerId = await GetCustomerIdAsync();
+        if (customerId == null) return BadRequest(new { message = "Only customers have shopping carts" });
+
+        var cart = await _cartService.GetCartAsync(customerId.Value);
         return Ok(cart);
     }
 
     /// <summary>إضافة منتج للسلة</summary>
-    [HttpPost("{customerId}")]
-    public async Task<IActionResult> Add(int customerId, [FromBody] AddToCartDto dto)
+    [HttpPost]
+    public async Task<IActionResult> Add([FromBody] AddToCartDto dto)
     {
-        var cart = await _cartService.AddToCartAsync(customerId, dto);
+        var customerId = await GetCustomerIdAsync();
+        if (customerId == null) return BadRequest(new { message = "Only customers can add items to cart" });
+
+        var cart = await _cartService.AddToCartAsync(customerId.Value, dto);
         return Ok(cart);
     }
 
     /// <summary>تحديث كمية منتج في السلة</summary>
-    [HttpPut("{customerId}/items/{cartItemId}")]
-    public async Task<IActionResult> Update(int customerId, int cartItemId, [FromBody] UpdateCartItemDto dto)
+    [HttpPut("items/{cartItemId}")]
+    public async Task<IActionResult> Update(int cartItemId, [FromBody] UpdateCartItemDto dto)
     {
+        var customerId = await GetCustomerIdAsync();
+        if (customerId == null) return Forbid();
+
         try
         {
-            var cart = await _cartService.UpdateCartItemAsync(customerId, cartItemId, dto);
+            var cart = await _cartService.UpdateCartItemAsync(customerId.Value, cartItemId, dto);
             return Ok(cart);
         }
         catch (KeyNotFoundException)
         {
-            return NotFound(new { message = "Item not found in cart" });
+            return NotFound(new { message = "Item not found in your cart" });
         }
     }
 
     /// <summary>حذف منتج من السلة</summary>
-    [HttpDelete("{customerId}/items/{cartItemId}")]
-    public async Task<IActionResult> Remove(int customerId, int cartItemId)
+    [HttpDelete("items/{cartItemId}")]
+    public async Task<IActionResult> Remove(int cartItemId)
     {
+        var customerId = await GetCustomerIdAsync();
+        if (customerId == null) return Forbid();
+
         try
         {
-            var cart = await _cartService.RemoveFromCartAsync(customerId, cartItemId);
+            var cart = await _cartService.RemoveFromCartAsync(customerId.Value, cartItemId);
             return Ok(cart);
         }
         catch (KeyNotFoundException)
         {
-            return NotFound(new { message = "Item not found in cart" });
+            return NotFound(new { message = "Item not found in your cart" });
         }
     }
 
     /// <summary>تفريغ السلة بالكامل</summary>
-    [HttpDelete("{customerId}")]
-    public async Task<IActionResult> Clear(int customerId)
+    [HttpDelete]
+    public async Task<IActionResult> Clear()
     {
-        await _cartService.ClearCartAsync(customerId);
+        var customerId = await GetCustomerIdAsync();
+        if (customerId == null) return Forbid();
+
+        await _cartService.ClearCartAsync(customerId.Value);
         return NoContent();
     }
 }

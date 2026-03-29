@@ -45,6 +45,11 @@ public class OrdersController : ControllerBase
     {
         var order = await _orderService.GetOrderByIdAsync(id);
         if (order == null) return NotFound();
+
+        // 🛡️ Security Check: Owner or Admin/Staff?
+        if (!IsOwnerOrStaff(order.CustomerId))
+            return Forbid();
+
         return Ok(order);
     }
 
@@ -56,6 +61,16 @@ public class OrdersController : ControllerBase
         
         var result = await _orderService.GetCustomerOrdersAsync(int.Parse(customerIdStr), page, pageSize);
         return Ok(result);
+    }
+    
+    // Helper to check ownership
+    private bool IsOwnerOrStaff(int customerId)
+    {
+        if (User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Staff") || User.IsInRole("Cashier"))
+            return true;
+
+        var currentCustomerId = User.FindFirstValue("CustomerId");
+        return currentCustomerId != null && int.Parse(currentCustomerId) == customerId;
     }
 
     [HttpPost]
@@ -110,11 +125,14 @@ public class OrdersController : ControllerBase
     }
 
     [HttpGet("{id}/pdf")]
-    [AllowAnonymous] // Allow customers to download without force login if they have link
     public async Task<IActionResult> GetOrderPdf(int id)
     {
         var order = await _orderService.GetOrderByIdAsync(id);
         if (order == null) return NotFound();
+
+        // 🛡️ Security Check: Owner or Admin/Staff?
+        if (!IsOwnerOrStaff(order.CustomerId))
+            return Forbid();
 
         var pdfBytes = await _pdfService.GenerateOrderPdfAsync(order);
         return File(pdfBytes, "application/pdf", $"Order-{order.OrderNumber}.pdf");

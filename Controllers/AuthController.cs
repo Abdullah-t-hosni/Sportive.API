@@ -15,17 +15,15 @@ namespace Sportive.API.Controllers;
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
-    private readonly IAuthService _auth;
-    private readonly AppDbContext _db;
-    private readonly UserManager<AppUser> _userManager;
-    private readonly IMemoryCache _cache;
+    private readonly IEmailService _email;
 
-    public AuthController(IAuthService auth, AppDbContext db, UserManager<AppUser> userManager, IMemoryCache cache)
+    public AuthController(IAuthService auth, AppDbContext db, UserManager<AppUser> userManager, IMemoryCache cache, IEmailService email)
     {
         _auth = auth;
         _db = db;
         _userManager = userManager;
         _cache = cache;
+        _email = email;
     }
 
     [HttpPost("register")]
@@ -55,9 +53,28 @@ public class AuthController : ControllerBase
         var code = new Random().Next(100000, 999999).ToString();
         _cache.Set($"ResetCode_{dto.Identifier}", code, TimeSpan.FromMinutes(10));
 
+        // 🛡️ SECURITY FIX: Only send via email/WhatsApp, never return in production!
+        if (!string.IsNullOrEmpty(user.Email))
+        {
+            var subject = "كود إعادة تعيين كلمة السر - Sportive";
+            var body = $@"
+                <div dir='rtl' style='font-family: Arial, sans-serif; border: 1px solid #eee; padding: 20px;'>
+                    <h2 style='color: #0f3460;'>Sportive Store</h2>
+                    <p>أهلاً بك {user.FirstName}،</p>
+                    <p>كود استعادة كلمة السر الخاص بك هو:</p>
+                    <div style='background: #f4f4f4; padding: 15px; font-size: 24px; font-weight: bold; text-align: center; border-radius: 5px;'>{code}</div>
+                    <p>هذا الكود صالح لمدة 10 دقائق فقط.</p>
+                    <p>إذا لم تكن أنت من طلب هذا الكود، يرجى تجاهل هذه الرسالة.</p>
+                </div>";
+            
+            await _email.SendEmailAsync(user.Email, subject, body);
+        }
+
+        bool isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
+        
         return Ok(new { 
-            message = "Authentication code generated. Verify to proceed.",
-            code = code, // RETURNED IN RESPONSE AS REQUESTED (MOCK/MANUAL MODE)
+            message = "Authentication code sent to your registered email/phone.",
+            code = isDev ? code : null, 
             supportPhone = "201021461937"
         });
     }

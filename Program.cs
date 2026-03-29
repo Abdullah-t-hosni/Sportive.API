@@ -190,6 +190,7 @@ builder.Services.AddScoped<IPdfService, PdfService>();
 builder.Services.AddScoped<IAccountingService, AccountingService>();
 builder.Services.AddScoped<IWaMeService, WaMeService>();
 builder.Services.AddScoped<IBackupService, BackupService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddHostedService<BackupHostedService>();
 
 // Wishlist, Reviews, Analytics — handled directly in controllers

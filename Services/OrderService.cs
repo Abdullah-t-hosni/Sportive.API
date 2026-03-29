@@ -11,16 +11,22 @@ public class OrderService : IOrderService
 {
     private readonly AppDbContext _db;
     private readonly INotificationService _notificationService;
+    private readonly IEmailService _emailService;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IConfiguration _config;
 
     public OrderService(
         AppDbContext db,
         INotificationService notificationService,
-        IServiceScopeFactory scopeFactory)
+        IEmailService emailService,
+        IServiceScopeFactory scopeFactory,
+        IConfiguration config)
     {
         _db = db;
         _notificationService = notificationService;
+        _emailService = emailService;
         _scopeFactory = scopeFactory;
+        _config = config;
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
@@ -313,6 +319,38 @@ public class OrderService : IOrderService
                 $"طلبك رقم {order.OrderNumber} قيد الانتظار.", $"Your order #{order.OrderNumber} is pending.",
                 "Order", order.Id);
         }
+
+        // 🛡️ SECURITY & ADMIN NOTIFICATION: Send email to Admin
+        _ = Task.Run(async () =>
+        {
+            try 
+            {
+                var adminEmails = _config["Backup:Email:To"]?.Split(',') ?? new[] { "admin@sportive.com" };
+                var subject = $"🔔 طلب جديد: {order.OrderNumber}";
+                var body = $@"
+                    <div dir='rtl' style='font-family: Arial, sans-serif; border: 1px solid #eee; padding: 20px;'>
+                        <h2 style='color: #0f3460;'>تنبيه طلب جديد 🆕</h2>
+                        <p>رقم الطلب: <b>{order.OrderNumber}</b></p>
+                        <p>اسم العميل: {customer?.FullName ?? "عميل خارجي"}</p>
+                        <p>إجمالي المبلغ: <span style='color: green; font-weight: bold;'>{order.TotalAmount:N2} ج.م</span></p>
+                        <p>رقم التليفون: {customer?.Phone ?? "غير مسجل"}</p>
+                        <hr/>
+                        <a href='https://admin.sportive-sportwear.com/orders/{order.Id}' 
+                           style='display: inline-block; background: #0f3460; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;'>
+                           عرض تفاصيل الطلب في لوحة التحكم
+                        </a>
+                    </div>";
+                
+                foreach(var email in adminEmails)
+                {
+                    await _emailService.SendEmailAsync(email.Trim(), subject, body);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Admin Notification] Failed: {ex.Message}");
+            }
+        });
 
         return (await GetOrderByIdAsync(order.Id))!;
     }

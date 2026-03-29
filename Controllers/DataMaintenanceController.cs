@@ -80,7 +80,6 @@ public class DataMaintenanceController : ControllerBase
         }
     }
 
-    [AllowAnonymous] // للمساعدة السريعة
     [HttpPost("fix-pos-orders")]
     public async Task<IActionResult> FixPosOrders()
     {

@@ -27,6 +27,9 @@ public class CustomersController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
+        // 🛡️ Security Check: Owner or Admin?
+        if (!IsOwnerOrAdmin(id)) return Forbid();
+
         var customer = await _customers.GetCustomerByIdAsync(id);
         return customer == null ? NotFound() : Ok(customer);
     }
@@ -52,14 +55,21 @@ public class CustomersController : ControllerBase
     /// <summary>إضافة عنوان</summary>
     [Authorize]
     [HttpPost("{customerId}/addresses")]
-    public async Task<IActionResult> AddAddress(int customerId, [FromBody] CreateAddressDto dto) =>
-        Ok(await _customers.AddAddressAsync(customerId, dto));
+    public async Task<IActionResult> AddAddress(int customerId, [FromBody] CreateAddressDto dto) 
+    {
+        // 🛡️ Security Check: Owner or Admin?
+        if (!IsOwnerOrAdmin(customerId)) return Forbid();
+        return Ok(await _customers.AddAddressAsync(customerId, dto));
+    }
 
     /// <summary>حذف عنوان</summary>
     [Authorize]
     [HttpDelete("{customerId}/addresses/{addressId}")]
     public async Task<IActionResult> DeleteAddress(int customerId, int addressId)
     {
+        // 🛡️ Security Check: Owner or Admin?
+        if (!IsOwnerOrAdmin(customerId)) return Forbid();
+
         try { await _customers.DeleteAddressAsync(customerId, addressId); return NoContent(); }
         catch (KeyNotFoundException) { return NotFound(); }
     }
@@ -69,7 +79,20 @@ public class CustomersController : ControllerBase
     [HttpPatch("{customerId}/addresses/{addressId}/default")]
     public async Task<IActionResult> SetDefault(int customerId, int addressId)
     {
+        // 🛡️ Security Check: Owner or Admin?
+        if (!IsOwnerOrAdmin(customerId)) return Forbid();
+
         await _customers.SetDefaultAddressAsync(customerId, addressId);
         return Ok(new { message = "Default address updated" });
+    }
+
+    // Helper to check ownership
+    private bool IsOwnerOrAdmin(int customerId)
+    {
+        if (User.IsInRole("Admin") || User.IsInRole("Manager"))
+            return true;
+
+        var currentCustomerId = User.FindFirstValue("CustomerId");
+        return currentCustomerId != null && int.Parse(currentCustomerId) == customerId;
     }
 }

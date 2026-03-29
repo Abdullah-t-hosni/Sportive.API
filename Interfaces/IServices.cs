@@ -89,3 +89,8 @@ public interface IPdfService
 {
     Task<byte[]> GenerateOrderPdfAsync(OrderDetailDto order);
 }
+
+public interface IEmailService
+{
+    Task SendEmailAsync(string to, string subject, string body);
+}
