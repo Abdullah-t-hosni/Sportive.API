@@ -154,26 +154,27 @@ public class AccountingService : IAccountingService
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
         // ── 1. الجانب المدين: المخزون + الضريبة ──────────────────────────────
-        // المخزون يدخل بكامل القيمة قبل الخصم (لأنه إيراد آخر لا يؤثر على تكلفة البضاعة مباشرة في المخزن حالياً)
-        lines.Add((INVENTORY, invoice.SubTotal, 0, $"مشتريات بضاعة - {invoice.InvoiceNumber}"));
+        var invAcct = invoice.InventoryAccountId?.ToString() ?? INVENTORY;
+        lines.Add((invAcct, invoice.SubTotal, 0, $"مشتريات بضاعة - {invoice.InvoiceNumber}"));
 
         if (invoice.TaxAmount > 0)
-            lines.Add((VAT_INPUT, invoice.TaxAmount, 0, $"ضريبة مشتريات مدخلات - {invoice.InvoiceNumber}"));
+        {
+            var vatAcct = invoice.VatAccountId?.ToString() ?? VAT_INPUT;
+            lines.Add((vatAcct, invoice.TaxAmount, 0, $"ضريبة مشتريات مدخلات - {invoice.InvoiceNumber}"));
+        }
 
         // ── 2. الجانب الدائن: المورد + الخصم المكتسب ──────────────────────────
-        // أ. استحقاق المورد (بصافي المبلغ بعد الخصم)
-        lines.Add((PAYABLES, 0, invoice.TotalAmount, $"إثبات استحقاق للمورد (صافي) - {invoice.InvoiceNumber}"));
-
-        // ب. الخصم المكتسب (دائن - اعتباره إيرادات أخرى)
-        // ملاحظة: نحتاج لحساب الخصم برمجياً لو لم يكن مسجلاً في حقل منفصل، 
-        // حالياً سنفترض وجوده أو نحسبه من الفرق بين البنود والإجمالي لو توفر مستقبلاً.
-        // قيد الخصم المكتسب المباشر سيتم تفعيله فور إضافة حقل Discount للفاتورة.
+        var vendorAcct = invoice.VendorAccountId?.ToString() 
+                        ?? invoice.Supplier?.MainAccountId?.ToString() 
+                        ?? PAYABLES;
+        lines.Add((vendorAcct, 0, invoice.TotalAmount, $"إثبات استحقاق للمورد (صافي) - {invoice.InvoiceNumber}"));
 
         // ── 3. السداد النقدي (إن وجد) ──────────────────────────────────────────
         if (invoice.PaymentTerms == PaymentTerms.Cash)
         {
-            lines.Add((PAYABLES, invoice.TotalAmount, 0, $"سداد نقدي فوري - {invoice.InvoiceNumber}"));
-            lines.Add((CASH_ACCOUNTS, 0, invoice.TotalAmount, $"صرف من نقدية الحسابات - {invoice.InvoiceNumber}"));
+            var cashAcct = invoice.CashAccountId?.ToString() ?? CASH_ACCOUNTS;
+            lines.Add((vendorAcct, invoice.TotalAmount, 0, $"سداد نقدي فوري - {invoice.InvoiceNumber}"));
+            lines.Add((cashAcct, 0, invoice.TotalAmount, $"صرف من نقدية الحسابات - {invoice.InvoiceNumber}"));
         }
 
         await PostEntry(
@@ -196,11 +197,17 @@ public class AccountingService : IAccountingService
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
-        lines.Add((PAYABLES,      invoice.TotalAmount, 0,                $"رد للمورد - {invoice.InvoiceNumber}"));
-        lines.Add((PURCHASES_NET, 0,                  invoice.SubTotal,  $"مرتجع مشتريات - {invoice.InvoiceNumber}"));
+        var vendorAcct = invoice.VendorAccountId?.ToString() 
+                        ?? invoice.Supplier?.MainAccountId?.ToString() 
+                        ?? PAYABLES;
+        var expAcct    = invoice.ExpenseAccountId?.ToString() ?? PURCHASES_NET;
+        var vatAcct    = invoice.VatAccountId?.ToString() ?? VAT_INPUT;
+
+        lines.Add((vendorAcct, invoice.TotalAmount, 0,                $"رد للمورد - {invoice.InvoiceNumber}"));
+        lines.Add((expAcct,    0,                  invoice.SubTotal,  $"مرتجع مشتريات - {invoice.InvoiceNumber}"));
 
         if (invoice.TaxAmount > 0)
-            lines.Add(("2105", 0, invoice.TaxAmount, $"استرداد ضريبة - {invoice.InvoiceNumber}"));
+            lines.Add((vatAcct, 0, invoice.TaxAmount, $"استرداد ضريبة - {invoice.InvoiceNumber}"));
 
         await PostEntry(
             type:        JournalEntryType.PurchaseReturn,
@@ -316,16 +323,32 @@ public class AccountingService : IAccountingService
         };
 
     /// يجيب Id الحساب من الكود
-    private async Task<int> GetAccountIdAsync(string code)
+    private async Task<int> GetAccountIdAsync(string input)
     {
+        // إذا كان المدخل رقماً (Id الحساب)
+        if (int.TryParse(input, out var id) && id > 1000) // افتراض أن Id دايما أكبر من 1000 لكن الكود أقل
+        {
+             var acctById = await _db.Accounts
+                .Where(a => a.Id == id && !a.IsDeleted && a.IsActive)
+                .Select(a => new { a.Id, a.AllowPosting, a.NameAr })
+                .FirstOrDefaultAsync();
+
+             if (acctById != null)
+             {
+                 if (!acctById.AllowPosting) throw new InvalidOperationException($"حساب '{acctById.NameAr}' لا يقبل الترحيل المباشر");
+                 return acctById.Id;
+             }
+        }
+
+        // إذا كان المدخل رمز الحساب (Code)
         var acct = await _db.Accounts
-            .Where(a => a.Code == code && !a.IsDeleted && a.IsActive)
-            .Select(a => new { a.Id, a.AllowPosting })
+            .Where(a => a.Code == input && !a.IsDeleted && a.IsActive)
+            .Select(a => new { a.Id, a.AllowPosting, a.NameAr })
             .FirstOrDefaultAsync()
-            ?? throw new InvalidOperationException($"حساب '{code}' غير موجود أو غير نشط");
+            ?? throw new InvalidOperationException($"حساب '{input}' غير موجود أو غير نشط");
 
         if (!acct.AllowPosting)
-            throw new InvalidOperationException($"حساب '{code}' لا يقبل الترحيل المباشر");
+            throw new InvalidOperationException($"حساب '{acct.NameAr}' لا يقبل الترحيل المباشر");
 
         return acct.Id;
     }

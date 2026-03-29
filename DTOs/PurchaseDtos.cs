@@ -63,7 +63,12 @@ public record CreatePurchaseInvoiceDto(
     List<CreatePurchaseItemDto> Items,
     decimal  DiscountAmount = 0,
     string?  AttachmentUrl = null,
-    string?  AttachmentPublicId = null
+    string?  AttachmentPublicId = null,
+    int? VendorAccountId = null,
+    int? InventoryAccountId = null,
+    int? ExpenseAccountId = null,
+    int? VatAccountId = null,
+    int? CashAccountId = null
 );
 
 public record CreatePurchaseItemDto(

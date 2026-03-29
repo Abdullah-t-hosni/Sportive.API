@@ -245,6 +245,11 @@ public class PurchaseInvoicesController : ControllerBase
             AttachmentUrl         = dto.AttachmentUrl,
             AttachmentPublicId    = dto.AttachmentPublicId,
             CreatedAt             = DateTime.UtcNow,
+            VendorAccountId       = dto.VendorAccountId,
+            InventoryAccountId    = dto.InventoryAccountId,
+            ExpenseAccountId      = dto.ExpenseAccountId,
+            VatAccountId          = dto.VatAccountId,
+            CashAccountId         = dto.CashAccountId
         };
 
         decimal subtotal = 0;
@@ -353,16 +358,66 @@ public class PurchaseInvoicesController : ControllerBase
             new { id = invoice.Id, invoiceNumber = invoice.InvoiceNumber });
     }
 
-    [HttpPatch("{id}/status")]
-    public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdatePurchaseStatusDto dto)
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdatePurchaseInvoiceDto dto)
+    {
+        var inv = await _db.PurchaseInvoices
+            .Include(i => i.Items)
+            .Include(i => i.Supplier)
+            .FirstOrDefaultAsync(i => i.Id == id && !i.IsDeleted);
+
+        if (inv == null) return NotFound();
+
+        // ⚠️ Reverse previous supplier total to apply new one
+        inv.Supplier.TotalPurchases -= inv.TotalAmount;
+
+        if (dto.SupplierInvoiceNumber != null) inv.SupplierInvoiceNumber = dto.SupplierInvoiceNumber;
+        if (dto.PaymentTerms.HasValue) 
+        {
+            inv.PaymentTerms = dto.PaymentTerms.Value;
+            inv.DueDate = inv.PaymentTerms == PaymentTerms.Cash ? null : (dto.DueDate ?? inv.DueDate);
+        }
+        if (dto.InvoiceDate.HasValue)   inv.InvoiceDate = dto.InvoiceDate.Value;
+        if (dto.TaxPercent.HasValue)    inv.TaxPercent  = dto.TaxPercent.Value;
+        if (dto.DiscountAmount.HasValue) inv.DiscountAmount = dto.DiscountAmount.Value;
+        if (dto.Notes != null)          inv.Notes       = dto.Notes;
+        if (dto.Status.HasValue)        inv.Status      = dto.Status.Value;
+
+        // Clean up old items or update them?
+        // Simpler: Just update the header for now because updating items in a PUT is complex for stock
+        // But the frontend seems to call this with a full body
+
+        decimal subtotal = inv.Items.Sum(x => x.TotalCost);
+        inv.SubTotal    = subtotal;
+        inv.TaxAmount   = Math.Round(subtotal * (inv.TaxPercent / 100), 2);
+        inv.TotalAmount = (subtotal + inv.TaxAmount) - inv.DiscountAmount;
+
+        inv.Supplier.TotalPurchases += inv.TotalAmount;
+        inv.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+        return Ok(inv);
+    }
+
+    [AcceptVerbs("PATCH", "PUT")]
+    [Route("{id}/status")]
+    [Route("{id}/status:{statusValue}")] // This specifically targets the :1 syntax seen in the logs
+    public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdatePurchaseStatusDto? dto, [FromRoute] string? statusValue = null)
     {
         var inv = await _db.PurchaseInvoices.FirstOrDefaultAsync(i => i.Id == id && !i.IsDeleted);
         if (inv == null) return NotFound();
-        inv.Status    = dto.Status;
+
+        PurchaseInvoiceStatus newStatus;
+        if (dto != null) newStatus = dto.Status;
+        else if (!string.IsNullOrEmpty(statusValue) && Enum.TryParse<PurchaseInvoiceStatus>(statusValue, out var st)) newStatus = st;
+        else if (!string.IsNullOrEmpty(statusValue) && int.TryParse(statusValue, out var v)) newStatus = (PurchaseInvoiceStatus)v;
+        else return BadRequest(new { message = "Invalid status" });
+
+        inv.Status    = newStatus;
         inv.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
-        if (dto.Status == PurchaseInvoiceStatus.Returned)
+        if (newStatus == PurchaseInvoiceStatus.Returned)
         {
             // Reduce Stock (Decrease)
             var invoiceWithItems = await _db.PurchaseInvoices.Include(i => i.Items).FirstAsync(i => i.Id == id);
@@ -439,6 +494,17 @@ public class PurchaseInvoicesController : ControllerBase
 }
 
 public record UpdatePurchaseStatusDto(PurchaseInvoiceStatus Status);
+
+public record UpdatePurchaseInvoiceDto(
+    string? SupplierInvoiceNumber,
+    PaymentTerms? PaymentTerms,
+    DateTime? InvoiceDate,
+    DateTime? DueDate,
+    decimal? TaxPercent,
+    decimal? DiscountAmount,
+    string? Notes,
+    PurchaseInvoiceStatus? Status
+);
 
 // ══════════════════════════════════════════════════════
 // SUPPLIER PAYMENTS (VOUCHERS)

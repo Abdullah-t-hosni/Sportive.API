@@ -21,6 +21,9 @@ public class Supplier : BaseEntity
     public string? AttachmentUrl { get; set; }
     public string? AttachmentPublicId { get; set; }
 
+    public int? MainAccountId { get; set; } // الربط المحاسبي الدائم
+    public Account? MainAccount { get; set; }
+
     public ICollection<PurchaseInvoice>  Invoices { get; set; } = new List<PurchaseInvoice>();
     public ICollection<SupplierPayment>  Payments { get; set; } = new List<SupplierPayment>();
 }
@@ -66,6 +69,13 @@ public class PurchaseInvoice : BaseEntity
     public string? Notes { get; set; }
     public string? AttachmentUrl { get; set; }
     public string? AttachmentPublicId { get; set; }
+
+    // ── FINANCIAL MAPPINGS (Explicit per invoice) ───────
+    public int? VendorAccountId    { get; set; } // الحساب الدائن (المورد)
+    public int? InventoryAccountId { get; set; } // الحساب المدين (المخزون)
+    public int? ExpenseAccountId   { get; set; } // الحساب المدين (المشتريات)
+    public int? VatAccountId       { get; set; } // حساب الضريبة
+    public int? CashAccountId      { get; set; } // حساب الخزينة (لو نقدي)
 
     public ICollection<PurchaseInvoiceItem> Items    { get; set; } = new List<PurchaseInvoiceItem>();
     public ICollection<SupplierPayment>     Payments { get; set; } = new List<SupplierPayment>();
