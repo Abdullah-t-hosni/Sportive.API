@@ -21,28 +21,6 @@ public class SuppliersController : ControllerBase
     private readonly AppDbContext _db;
     public SuppliersController(AppDbContext db) => _db = db;
 
-    [HttpGet("fix-schema-v2")] // Using V2 to ensure it's fresh if others existed
-    [AllowAnonymous]
-    public async Task<IActionResult> FixSchema()
-    {
-        try 
-        {
-            // Adding columns if they don't exist
-            await _db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS VendorAccountId INT NULL;");
-            await _db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS InventoryAccountId INT NULL;");
-            await _db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS ExpenseAccountId INT NULL;");
-            await _db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS VatAccountId INT NULL;");
-            await _db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS CashAccountId INT NULL;");
-            await _db.Database.ExecuteSqlRawAsync("ALTER TABLE Suppliers ADD COLUMN IF NOT EXISTS MainAccountId INT NULL;");
-            
-            return Ok(new { message = "Schema updated successfully" });
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { error = ex.Message });
-        }
-    }
-
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? search   = null,
