@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
+using System.Security.Claims;
 
 namespace Sportive.API.Controllers;
 
@@ -92,7 +93,7 @@ public class CustomersController : ControllerBase
         if (User.IsInRole("Admin") || User.IsInRole("Manager"))
             return true;
 
-        var currentCustomerId = User.FindFirstValue("CustomerId");
+        var currentCustomerId = User.FindFirst("CustomerId")?.Value;
         return currentCustomerId != null && int.Parse(currentCustomerId) == customerId;
     }
 }

@@ -500,7 +500,7 @@ public class SupplierPaymentsController : ControllerBase
             AccountName       = dto.AccountName.Trim(),
             Notes             = dto.Notes?.Trim(),
             ReferenceNumber   = dto.ReferenceNumber?.Trim(),
-            CreatedByUserId   = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            CreatedByUserId   = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             AttachmentUrl     = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
             CreatedAt         = DateTime.UtcNow,

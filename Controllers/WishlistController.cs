@@ -18,7 +18,7 @@ public class WishlistController : ControllerBase
 
     private async Task<int?> GetCustomerIdAsync()
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (userId == null) return null;
         var c = await _db.Customers
             .Where(c => c.AppUserId == userId && !c.IsDeleted)

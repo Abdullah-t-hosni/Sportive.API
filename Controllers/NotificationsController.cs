@@ -15,7 +15,7 @@ public class NotificationsController : ControllerBase
     private readonly AppDbContext _db;
     public NotificationsController(AppDbContext db) => _db = db;
 
-    private string GetUserId() => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+    private string GetUserId() => User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
 
     /// <summary>GET /api/notifications — كل الإشعارات</summary>
     [HttpGet]

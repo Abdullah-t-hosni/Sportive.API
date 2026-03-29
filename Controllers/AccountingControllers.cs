@@ -400,7 +400,7 @@ public class JournalEntriesController : ControllerBase
             Status          = dto.AsDraft ? JournalEntryStatus.Draft : JournalEntryStatus.Posted,
             Reference       = dto.Reference,
             Description     = dto.Description,
-            CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             AttachmentUrl   = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
             CreatedAt       = DateTime.UtcNow,
@@ -541,7 +541,7 @@ public class JournalEntriesController : ControllerBase
             Reference       = entry.EntryNumber,
             Description     = $"عكس قيد {entry.EntryNumber}",
             ReversalOfId    = entry.Id,
-            CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             CreatedAt       = DateTime.UtcNow,
         };
 
@@ -640,7 +640,7 @@ public class ReceiptVouchersController : ControllerBase
             Status      = JournalEntryStatus.Posted,
             Reference   = vNo,
             Description = dto.Description ?? $"سند قبض {vNo}",
-            CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             CreatedAt   = DateTime.UtcNow,
         };
         entry.Lines.Add(new JournalLine { AccountId = dto.CashAccountId, Debit = dto.Amount,   CreatedAt = DateTime.UtcNow });
@@ -661,7 +661,7 @@ public class ReceiptVouchersController : ControllerBase
             Reference      = dto.Reference,
             Description    = dto.Description,
             JournalEntryId = entry.Id,
-            CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             AttachmentUrl  = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
             CreatedAt      = DateTime.UtcNow,
@@ -758,7 +758,7 @@ public class PaymentVouchersController : ControllerBase
             Status      = JournalEntryStatus.Posted,
             Reference   = vNo,
             Description = dto.Description ?? $"سند دفع {vNo}",
-            CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             CreatedAt   = DateTime.UtcNow,
         };
         entry.Lines.Add(new JournalLine { AccountId = dto.ToAccountId,   Debit  = dto.Amount, SupplierId = dto.SupplierId, CreatedAt = DateTime.UtcNow });
@@ -779,7 +779,7 @@ public class PaymentVouchersController : ControllerBase
             Reference       = dto.Reference,
             Description     = dto.Description,
             JournalEntryId  = entry.Id,
-            CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             AttachmentUrl   = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
             CreatedAt       = DateTime.UtcNow,

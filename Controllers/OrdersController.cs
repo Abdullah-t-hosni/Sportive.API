@@ -47,7 +47,7 @@ public class OrdersController : ControllerBase
         if (order == null) return NotFound();
 
         // 🛡️ Security Check: Owner or Admin/Staff?
-        if (!IsOwnerOrStaff(order.CustomerId))
+        if (!IsOwnerOrStaff(order.Customer.Id))
             return Forbid();
 
         return Ok(order);
@@ -56,7 +56,7 @@ public class OrdersController : ControllerBase
     [HttpGet("my")]
     public async Task<ActionResult<PaginatedResult<OrderSummaryDto>>> GetMyOrders([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
-        var customerIdStr = User.FindFirstValue("CustomerId");
+        var customerIdStr = User.FindFirst("CustomerId")?.Value;
         if (string.IsNullOrEmpty(customerIdStr)) return BadRequest("User has no customer profile");
         
         var result = await _orderService.GetCustomerOrdersAsync(int.Parse(customerIdStr), page, pageSize);
@@ -69,14 +69,14 @@ public class OrdersController : ControllerBase
         if (User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Staff") || User.IsInRole("Cashier"))
             return true;
 
-        var currentCustomerId = User.FindFirstValue("CustomerId");
+        var currentCustomerId = User.FindFirst("CustomerId")?.Value;
         return currentCustomerId != null && int.Parse(currentCustomerId) == customerId;
     }
 
     [HttpPost]
     public async Task<ActionResult<OrderDetailDto>> CreateOrder([FromBody] CreateOrderDto dto, [FromQuery] int? customerId = null)
     {
-        var claimCustomerIdStr = User.FindFirstValue("CustomerId");
+        var claimCustomerIdStr = User.FindFirst("CustomerId")?.Value;
         int? finalCustomerId = null;
 
         if (!string.IsNullOrEmpty(claimCustomerIdStr) && int.TryParse(claimCustomerIdStr, out var parsedId))
@@ -104,7 +104,7 @@ public class OrdersController : ControllerBase
             null,
             "POS Sale",
             null,
-            posDto.PosEmployeeId ?? User.FindFirstValue(ClaimTypes.NameIdentifier),
+            posDto.PosEmployeeId ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             (OrderSource)posDto.OrderSource,
             posDto.Items.Select(i => new CreateOrderItemDto(i.ProductId, i.ProductVariantId, i.Quantity)).ToList(),
             posDto.CustomerPhone,
@@ -119,7 +119,7 @@ public class OrdersController : ControllerBase
     [Authorize(Roles = "Admin,Manager,Staff")]
     public async Task<ActionResult<OrderDetailDto>> UpdateStatus(int id, [FromBody] UpdateOrderStatusDto dto)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
         var order = await _orderService.UpdateOrderStatusAsync(id, dto, userId);
         return Ok(order);
     }
@@ -131,7 +131,7 @@ public class OrdersController : ControllerBase
         if (order == null) return NotFound();
 
         // 🛡️ Security Check: Owner or Admin/Staff?
-        if (!IsOwnerOrStaff(order.CustomerId))
+        if (!IsOwnerOrStaff(order.Customer.Id))
             return Forbid();
 
         var pdfBytes = await _pdfService.GenerateOrderPdfAsync(order);
@@ -165,7 +165,7 @@ public class OrdersController : ControllerBase
                 OrderId          = id,
                 Status           = order.Status,
                 Note             = $"[حالة الدفع → {dto.PaymentStatus}] {dto.Note}",
-                ChangedByUserId  = User.FindFirstValue(ClaimTypes.NameIdentifier),
+                ChangedByUserId  = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                 CreatedAt        = DateTime.UtcNow
             });
         }

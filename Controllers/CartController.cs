@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
+using System.Security.Claims;
 
 namespace Sportive.API.Controllers;
 
@@ -11,15 +14,17 @@ namespace Sportive.API.Controllers;
 public class CartController : ControllerBase
 {
     private readonly ICartService _cartService;
+    private readonly AppDbContext _db;
 
-    public CartController(ICartService cartService)
+    public CartController(ICartService cartService, AppDbContext db)
     {
         _cartService = cartService;
+        _db = db;
     }
 
     private async Task<int?> GetCustomerIdAsync()
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (userId == null) return null;
         var c = await _db.Customers
             .Where(c => c.AppUserId == userId && !c.IsDeleted)

@@ -15,6 +15,10 @@ namespace Sportive.API.Controllers;
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
+    private readonly IAuthService _auth;
+    private readonly AppDbContext _db;
+    private readonly UserManager<AppUser> _userManager;
+    private readonly IMemoryCache _cache;
     private readonly IEmailService _email;
 
     public AuthController(IAuthService auth, AppDbContext db, UserManager<AppUser> userManager, IMemoryCache cache, IEmailService email)
@@ -106,7 +110,7 @@ public class AuthController : ControllerBase
     [HttpPost("change-password")]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto dto)
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
         var result = await _auth.ChangePasswordAsync(userId, dto);
         return result ? Ok(new { message = "Password changed successfully" }) : BadRequest(new { message = "Failed to change password" });
     }
@@ -116,7 +120,7 @@ public class AuthController : ControllerBase
     [HttpGet("customer-id")]
     public async Task<IActionResult> GetCustomerId()
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
         var customer = await _db.Customers
             .Where(c => c.AppUserId == userId && !c.IsDeleted)
             .Select(c => new { c.Id })
@@ -133,10 +137,10 @@ public class AuthController : ControllerBase
     [HttpGet("me")]
     public async Task<IActionResult> GetMe()
     {
-        var userId   = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var email    = User.FindFirstValue(ClaimTypes.Email)!;
+        var userId   = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
+        var email    = User.FindFirst(ClaimTypes.Email)?.Value!;
         var roles    = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
-        var fullName    = $"{User.FindFirstValue(ClaimTypes.GivenName)} {User.FindFirstValue(ClaimTypes.Surname)}".Trim();
+        var fullName    = $"{User.FindFirst(ClaimTypes.GivenName)?.Value} {User.FindFirst(ClaimTypes.Surname)?.Value}".Trim();
         
         // 1. Get static role-based baseline
         var permissions = GetDefaultRolePermissions(roles);
