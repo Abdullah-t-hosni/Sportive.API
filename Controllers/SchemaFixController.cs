@@ -24,7 +24,10 @@ public class SchemaFixController : ControllerBase
             await _db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS CashAccountId INT NULL;");
             await _db.Database.ExecuteSqlRawAsync("ALTER TABLE Suppliers ADD COLUMN IF NOT EXISTS MainAccountId INT NULL;");
             
-            return Ok(new { message = "Schema updated successfully (V3)" });
+            // Fix Chart of Accounts - Allow all accounts to be postable
+            await _db.Database.ExecuteSqlRawAsync("UPDATE Accounts SET AllowPosting = 1 WHERE IsDeleted = 0;");
+            
+            return Ok(new { message = "Schema updated successfully (V3.1 - Account Posting Enabled)" });
         }
         catch (Exception ex)
         {

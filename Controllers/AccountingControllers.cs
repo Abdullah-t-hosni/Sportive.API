@@ -380,12 +380,11 @@ public class JournalEntriesController : ControllerBase
         if (Math.Round(totalDebit, 2) != Math.Round(totalCredit, 2))
             return BadRequest(new { message = $"القيد غير متوازن — المدين: {totalDebit}, الدائن: {totalCredit}" });
 
-        // Validate all accounts exist and allow posting
+        // Validate all accounts exist
         foreach (var line in dto.Lines)
         {
-            var acct = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == line.AccountId && !a.IsDeleted);
-            if (acct == null) return BadRequest(new { message = $"الحساب {line.AccountId} غير موجود" });
-            if (!acct.AllowPosting) return BadRequest(new { message = $"الحساب '{acct.NameAr}' لا يقبل الترحيل المباشر" });
+            var acct = await _db.Accounts.AnyAsync(a => a.Id == line.AccountId && !a.IsDeleted);
+            if (!acct) return BadRequest(new { message = $"الحساب {line.AccountId} غير موجود" });
         }
 
         var count = await _db.JournalEntries.IgnoreQueryFilters().CountAsync() + 1;
@@ -441,9 +440,8 @@ public class JournalEntriesController : ControllerBase
 
         foreach (var line in dto.Lines)
         {
-            var acct = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == line.AccountId && !a.IsDeleted);
-            if (acct == null) return BadRequest(new { message = $"الحساب {line.AccountId} غير موجود" });
-            if (!acct.AllowPosting) return BadRequest(new { message = $"الحساب '{acct.NameAr}' لا يقبل الترحيل المباشر" });
+            var acct = await _db.Accounts.AnyAsync(a => a.Id == line.AccountId && !a.IsDeleted);
+            if (!acct) return BadRequest(new { message = $"الحساب {line.AccountId} غير موجود" });
         }
 
         var entry = await _db.JournalEntries

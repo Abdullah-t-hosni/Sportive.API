@@ -335,7 +335,6 @@ public class AccountingService : IAccountingService
 
              if (acctById != null)
              {
-                 if (!acctById.AllowPosting) throw new InvalidOperationException($"حساب '{acctById.NameAr}' لا يقبل الترحيل المباشر");
                  return acctById.Id;
              }
         }
@@ -346,9 +345,6 @@ public class AccountingService : IAccountingService
             .Select(a => new { a.Id, a.AllowPosting, a.NameAr })
             .FirstOrDefaultAsync()
             ?? throw new InvalidOperationException($"حساب '{input}' غير موجود أو غير نشط");
-
-        if (!acct.AllowPosting)
-            throw new InvalidOperationException($"حساب '{acct.NameAr}' لا يقبل الترحيل المباشر");
 
         return acct.Id;
     }

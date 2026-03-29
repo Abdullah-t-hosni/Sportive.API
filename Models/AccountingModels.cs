@@ -31,7 +31,7 @@ public class Account : BaseEntity
     public Account? Parent      { get; set; }
     public int      Level       { get; set; } = 1;             // مستوى الحساب (1-6)
     public bool     IsLeaf      { get; set; } = true;          // يمكن الترحيل إليه
-    public bool     AllowPosting{ get; set; } = false;         // يقبل قيود مباشرة
+    public bool     AllowPosting{ get; set; } = true;          // يقبل قيود مباشرة
     public bool     IsActive    { get; set; } = true;
     public bool     IsSystem    { get; set; } = false;         // لا يمكن حذفه
     public decimal  OpeningBalance { get; set; } = 0;          // الرصيد الافتتاحي
