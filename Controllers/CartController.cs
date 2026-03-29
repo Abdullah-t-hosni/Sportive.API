@@ -35,36 +35,69 @@ public class CartController : ControllerBase
 
     /// <summary>الحصول على السلة لعميل معين</summary>
     [HttpGet]
-    public async Task<IActionResult> Get()
+    [HttpGet("{customerId}")]
+    public async Task<IActionResult> Get(int? customerId = null)
     {
-        var customerId = await GetCustomerIdAsync();
-        if (customerId == null) return BadRequest(new { message = "Only customers have shopping carts" });
+        var loggedInId = await GetCustomerIdAsync();
+        var targetId = customerId ?? loggedInId;
 
-        var cart = await _cartService.GetCartAsync(customerId.Value);
+        if (targetId == null) return BadRequest(new { message = "Only customers have shopping carts" });
+
+        if (customerId.HasValue)
+        {
+            bool isStaff = User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Staff") || User.IsInRole("Cashier");
+            if (!isStaff && (!loggedInId.HasValue || customerId.Value != loggedInId.Value))
+            {
+                return Forbid();
+            }
+        }
+
+        var cart = await _cartService.GetCartAsync(targetId.Value);
         return Ok(cart);
     }
 
     /// <summary>إضافة منتج للسلة</summary>
     [HttpPost]
-    public async Task<IActionResult> Add([FromBody] AddToCartDto dto)
+    [HttpPost("{customerId}")]
+    public async Task<IActionResult> Add(int? customerId, [FromBody] AddToCartDto dto)
     {
-        var customerId = await GetCustomerIdAsync();
-        if (customerId == null) return BadRequest(new { message = "Only customers can add items to cart" });
+        var loggedInId = await GetCustomerIdAsync();
+        var targetId = customerId ?? loggedInId;
 
-        var cart = await _cartService.AddToCartAsync(customerId.Value, dto);
+        if (targetId == null) return BadRequest(new { message = "Only customers can add items to cart" });
+
+        if (customerId.HasValue && loggedInId.HasValue && customerId.Value != loggedInId.Value)
+        {
+            if (!User.IsInRole("Admin") && !User.IsInRole("Manager") && !User.IsInRole("Staff") && !User.IsInRole("Cashier"))
+                return Forbid();
+        }
+
+        var cart = await _cartService.AddToCartAsync(targetId.Value, dto);
         return Ok(cart);
     }
 
     /// <summary>تحديث كمية منتج في السلة</summary>
     [HttpPut("items/{cartItemId}")]
-    public async Task<IActionResult> Update(int cartItemId, [FromBody] UpdateCartItemDto dto)
+    [HttpPut("{customerId}/items/{cartItemId}")]
+    public async Task<IActionResult> Update(int cartItemId, [FromBody] UpdateCartItemDto dto, int? customerId = null)
     {
-        var customerId = await GetCustomerIdAsync();
-        if (customerId == null) return Forbid();
+        var loggedInId = await GetCustomerIdAsync();
+        var targetId = customerId ?? loggedInId;
+
+        if (targetId == null) return Forbid();
+
+        if (customerId.HasValue)
+        {
+            bool isStaff = User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Staff") || User.IsInRole("Cashier");
+            if (!isStaff && (!loggedInId.HasValue || customerId.Value != loggedInId.Value))
+            {
+                return Forbid();
+            }
+        }
 
         try
         {
-            var cart = await _cartService.UpdateCartItemAsync(customerId.Value, cartItemId, dto);
+            var cart = await _cartService.UpdateCartItemAsync(targetId.Value, cartItemId, dto);
             return Ok(cart);
         }
         catch (KeyNotFoundException)
@@ -75,14 +108,23 @@ public class CartController : ControllerBase
 
     /// <summary>حذف منتج من السلة</summary>
     [HttpDelete("items/{cartItemId}")]
-    public async Task<IActionResult> Remove(int cartItemId)
+    [HttpDelete("{customerId}/items/{cartItemId}")]
+    public async Task<IActionResult> Remove(int cartItemId, int? customerId = null)
     {
-        var customerId = await GetCustomerIdAsync();
-        if (customerId == null) return Forbid();
+        var loggedInId = await GetCustomerIdAsync();
+        var targetId = customerId ?? loggedInId;
+
+        if (targetId == null) return Forbid();
+
+        if (customerId.HasValue && loggedInId.HasValue && customerId.Value != loggedInId.Value)
+        {
+            if (!User.IsInRole("Admin") && !User.IsInRole("Manager") && !User.IsInRole("Staff") && !User.IsInRole("Cashier"))
+                return Forbid();
+        }
 
         try
         {
-            var cart = await _cartService.RemoveFromCartAsync(customerId.Value, cartItemId);
+            var cart = await _cartService.RemoveFromCartAsync(targetId.Value, cartItemId);
             return Ok(cart);
         }
         catch (KeyNotFoundException)
@@ -93,12 +135,21 @@ public class CartController : ControllerBase
 
     /// <summary>تفريغ السلة بالكامل</summary>
     [HttpDelete]
-    public async Task<IActionResult> Clear()
+    [HttpDelete("{customerId}")]
+    public async Task<IActionResult> Clear(int? customerId = null)
     {
-        var customerId = await GetCustomerIdAsync();
-        if (customerId == null) return Forbid();
+        var loggedInId = await GetCustomerIdAsync();
+        var targetId = customerId ?? loggedInId;
 
-        await _cartService.ClearCartAsync(customerId.Value);
+        if (targetId == null) return Forbid();
+
+        if (customerId.HasValue && loggedInId.HasValue && customerId.Value != loggedInId.Value)
+        {
+            if (!User.IsInRole("Admin") && !User.IsInRole("Manager") && !User.IsInRole("Staff") && !User.IsInRole("Cashier"))
+                return Forbid();
+        }
+
+        await _cartService.ClearCartAsync(targetId.Value);
         return NoContent();
     }
 }
