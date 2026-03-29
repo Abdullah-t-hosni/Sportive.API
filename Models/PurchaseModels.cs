@@ -58,6 +58,7 @@ public class PurchaseInvoice : BaseEntity
     public decimal SubTotal      { get; set; } = 0;
     public decimal TaxPercent    { get; set; } = 0;   // نسبة الضريبة %
     public decimal TaxAmount     { get; set; } = 0;   // مبلغ الضريبة
+    public decimal DiscountAmount { get; set; } = 0;  // قيمة الخصم المكتسب
     public decimal TotalAmount   { get; set; } = 0;
     public decimal PaidAmount    { get; set; } = 0;
     public decimal RemainingAmount => TotalAmount - PaidAmount;

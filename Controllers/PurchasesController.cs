@@ -197,7 +197,7 @@ public class PurchaseInvoicesController : ControllerBase
             new SupplierBasicDto(inv.Supplier.Id, inv.Supplier.Name, inv.Supplier.Phone, inv.Supplier.CompanyName),
             inv.PaymentTerms.ToString(), inv.Status.ToString(),
             inv.InvoiceDate, inv.DueDate,
-            inv.SubTotal, inv.TaxPercent, inv.TaxAmount, inv.TotalAmount,
+            inv.SubTotal, inv.TaxPercent, inv.TaxAmount, inv.DiscountAmount, inv.TotalAmount,
             inv.PaidAmount, inv.TotalAmount - inv.PaidAmount, inv.Notes,
             inv.Items.Select(it => new PurchaseItemDto(
                 it.Id, it.Description, it.ProductId, 
@@ -238,6 +238,7 @@ public class PurchaseInvoicesController : ControllerBase
             InvoiceDate           = dto.InvoiceDate,
             DueDate               = dto.PaymentTerms == PaymentTerms.Cash ? null : dto.DueDate,
             TaxPercent            = dto.TaxPercent,
+            DiscountAmount        = dto.DiscountAmount,
             Notes                 = dto.Notes,
             Status                = dto.PaymentTerms == PaymentTerms.Cash
                 ? PurchaseInvoiceStatus.Received : PurchaseInvoiceStatus.Draft,
@@ -296,7 +297,7 @@ public class PurchaseInvoicesController : ControllerBase
 
         invoice.SubTotal    = subtotal;
         invoice.TaxAmount   = Math.Round(subtotal * (dto.TaxPercent / 100), 2);
-        invoice.TotalAmount = subtotal + invoice.TaxAmount;
+        invoice.TotalAmount = (subtotal + invoice.TaxAmount) - dto.DiscountAmount;
 
         // Update supplier totals (Accrual)
         supplier.TotalPurchases += invoice.TotalAmount;

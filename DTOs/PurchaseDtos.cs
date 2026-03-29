@@ -61,6 +61,7 @@ public record CreatePurchaseInvoiceDto(
     decimal  TaxPercent,
     string?  Notes,
     List<CreatePurchaseItemDto> Items,
+    decimal  DiscountAmount = 0,
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null
 );
@@ -82,6 +83,7 @@ public record UpdatePurchaseInvoiceDto(
     decimal  TaxPercent,
     string?  Notes,
     List<CreatePurchaseItemDto> Items,
+    decimal  DiscountAmount = 0,
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null
 );
@@ -112,6 +114,7 @@ public record PurchaseInvoiceDetailDto(
     decimal  SubTotal,
     decimal  TaxPercent,
     decimal  TaxAmount,
+    decimal  DiscountAmount,
     decimal  TotalAmount,
     decimal  PaidAmount,
     decimal  RemainingAmount,
