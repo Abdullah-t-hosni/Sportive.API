@@ -126,7 +126,7 @@ public class DataMaintenanceController : ControllerBase
     [HttpPost("wipe-customers")]
     public async Task<IActionResult> WipeCustomers()
     {
-        // 1. تحديد كافة مستخدمي "العملاء" فقط (تجنب حذف الأدمن)
+        // 1. تحديد كافة مستخدمي "العملاء" فقط
         var customerRole = await _db.Roles.FirstOrDefaultAsync(r => r.Name == "Customer");
         if (customerRole == null) return BadRequest(new { message = "Role 'Customer' not found" });
 
@@ -135,8 +135,20 @@ public class DataMaintenanceController : ControllerBase
             .Select(ur => ur.UserId)
             .ToListAsync();
 
-        // 2. مسح البيانات المرتبطة (العناوين، السلال، المفضلة)
-        // ملاحظة: الطلبات لا تحذف لأنها مرتبطة بالحسابات المالية
+        // 2. مسح البيانات المرتبطة تدريجياً لتجنب مشاكل الـ Foreign Keys
+        // حذفة الطلبات أولاً لأنها تعتمد على العملاء
+        var orderHistory = await _db.OrderStatusHistories.IgnoreQueryFilters().ToListAsync();
+        _db.OrderStatusHistories.RemoveRange(orderHistory);
+
+        var orderItems = await _db.OrderItems.IgnoreQueryFilters().ToListAsync();
+        _db.OrderItems.RemoveRange(orderItems);
+
+        var orders = await _db.Orders.IgnoreQueryFilters().ToListAsync();
+        _db.Orders.RemoveRange(orders);
+
+        var reviews = await _db.Reviews.IgnoreQueryFilters().ToListAsync();
+        _db.Reviews.RemoveRange(reviews);
+
         var addresses = await _db.Addresses.IgnoreQueryFilters().ToListAsync();
         _db.Addresses.RemoveRange(addresses);
 
@@ -155,7 +167,7 @@ public class DataMaintenanceController : ControllerBase
             .Where(u => customerUserIds.Contains(u.Id))
             .ToListAsync();
         
-        // التأكد من عدم حذف الأدمن (زيادة في الأمان)
+        // التأكد من عدم حذف المسئولين
         usersToDelete = usersToDelete.Where(u => u.Email != "admin@sportive.com" && u.Email != "abdullah@sportive.com").ToList();
         
         _db.Users.RemoveRange(usersToDelete);
@@ -163,11 +175,12 @@ public class DataMaintenanceController : ControllerBase
         try 
         {
             await _db.SaveChangesAsync();
-            return Ok(new { success = true, message = $"تم مسح {customers.Count} عميل و {usersToDelete.Count} حساب مستخدم بنجاح" });
+            return Ok(new { success = true, message = $"تم تصفير النظام بنجاح: مسح {customers.Count} عميل، {orders.Count} طلب، و {usersToDelete.Count} مستخدم." });
         }
         catch (Exception ex)
         {
-            return BadRequest(new { success = false, message = "حدث خطأ أثناء المسح: " + ex.Message });
+            var msg = ex.InnerException?.Message ?? ex.Message;
+            return BadRequest(new { success = false, message = "حدث خطأ أثناء المسح: " + msg });
         }
     }
 }
