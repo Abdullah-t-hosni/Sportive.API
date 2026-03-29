@@ -45,8 +45,7 @@ public class ExceptionMiddleware
             ArgumentException       => (HttpStatusCode.BadRequest,         ex.Message),
             BadHttpRequestException => (HttpStatusCode.BadRequest,         ex.Message),
             DbUpdateException       => (HttpStatusCode.BadRequest,
-                _env.IsDevelopment() ? (ex.InnerException?.Message ?? ex.Message)
-                    : "Could not save data (invalid reference or constraint)."),
+                ex.InnerException != null ? ex.InnerException.Message : ex.Message),
             _                       => (HttpStatusCode.InternalServerError, "An unexpected error occurred")
         };
 
