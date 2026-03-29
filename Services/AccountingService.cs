@@ -59,32 +59,27 @@ public class AccountingService : IAccountingService
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
-        // ── حساب الضريبة وصافي الإيراد ──────────────────
-        // المعادلة: السعر شامل الضريبة / 1.14 = السعر قبل الضريبة
+        // ── 1. الجانب الدائن: الإيرادات (بكامل القيمة قبل الخصم) ──────────────────
+        // المبلغ قبل الضريبة = (المجموع الفرعي) / 1.14
         var netRevenue = Math.Round(order.SubTotal / (1 + VAT_RATE), 2);
         var vatAmount = order.SubTotal - netRevenue;
 
-        // ── الجانب الدائن ──────────────────────────────
-        // 1. حساب الإيرادات (المبلغ قبل الضريبة)
-        lines.Add((SALES_REVENUE, 0, netRevenue, $"مبيعات - {order.OrderNumber} (قبل الضريبة)"));
+        lines.Add((SALES_REVENUE, 0, netRevenue, $"مبيعات - {order.OrderNumber}"));
         
-        // 2. حساب ضريبة المبيعات (دائنة)
         if (vatAmount > 0)
             lines.Add((VAT_OUTPUT, 0, vatAmount, $"ضريبة مبيعات 14% - {order.OrderNumber}"));
 
-        // 3. إيراد التوصيل (هام لموازنة القيد)
         if (order.DeliveryFee > 0)
             lines.Add((DELIVERY_REVENUE, 0, order.DeliveryFee, $"إيراد توصيل - {order.OrderNumber}"));
 
-        // ── الجانب المدين (استيفاء المبلغ) ─────────────
+        // ── 2. الجانب المدين: التحصيل + الخصم ────────────────────────────────────
+        // أ. الخصم الممنوح (مدين) - يظهر بوضوح في القيد
         if (order.DiscountAmount > 0)
-            lines.Add((SALES_DISCOUNT, order.DiscountAmount, 0, $"خصم لعميل - {order.OrderNumber}"));
+            lines.Add((SALES_DISCOUNT, order.DiscountAmount, 0, $"خصم ممنوح لعميل - {order.OrderNumber}"));
 
+        // ب. المبلغ المحصل أو المستحق (صافي الفاتورة)
         var netReceivable = order.TotalAmount; 
 
-        // المنطق الجديد: 
-        // 1. لو POS (كاشير) ومدفوع -> يرحل للصناديق فوراً
-        // 2. لو Website (موقع) وكاش -> يرحل "للعملاء" ليكون ذمة مدسنة حتى تحصيل شركة الشحن
         if (order.Source == OrderSource.POS && order.PaymentStatus == PaymentStatus.Paid)
         {
             var cashCode = GetCashAccount(order.PaymentMethod, order.Source);
@@ -92,11 +87,10 @@ public class AccountingService : IAccountingService
         }
         else
         {
-            // الموقع أو أي طلب غير مدفوع فوري -> حساب العملاء (مدينون)
             lines.Add((RECEIVABLES, netReceivable, 0, $"مستحق على العميل - {order.OrderNumber}"));
         }
 
-        // ── نظام الجرد المستمر ─────────────────────────
+        // ── 3. نظام الجرد المستمر ───────────────────────────────────────────────
         var totalCost = order.Items?.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity) ?? 0;
         if (totalCost > 0)
         {
@@ -156,22 +150,25 @@ public class AccountingService : IAccountingService
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
-        // ── الجانب المدين (الاستخدامات) ────────────────
-        // 1. مدين المخزون
+        // ── 1. الجانب المدين: المخزون + الضريبة ──────────────────────────────
+        // المخزون يدخل بكامل القيمة قبل الخصم (لأنه إيراد آخر لا يؤثر على تكلفة البضاعة مباشرة في المخزن حالياً)
         lines.Add((INVENTORY, invoice.SubTotal, 0, $"مشتريات بضاعة - {invoice.InvoiceNumber}"));
 
-        // 2. ضريبة مدخلات (مشتريات) - مدينة
         if (invoice.TaxAmount > 0)
             lines.Add((VAT_INPUT, invoice.TaxAmount, 0, $"ضريبة مشتريات مدخلات - {invoice.InvoiceNumber}"));
 
-        // ── الجانب الدائن (المصادر) ───────────────────
-        // التعديل: تمر العملية دائماً عبر حساب الموردين للـ Audit Trail
-        lines.Add((PAYABLES, 0, invoice.TotalAmount, $"إثبات استحقاق للمورد - {invoice.InvoiceNumber}"));
+        // ── 2. الجانب الدائن: المورد + الخصم المكتسب ──────────────────────────
+        // أ. استحقاق المورد (بصافي المبلغ بعد الخصم)
+        lines.Add((PAYABLES, 0, invoice.TotalAmount, $"إثبات استحقاق للمورد (صافي) - {invoice.InvoiceNumber}"));
 
-        // إذا كانت الفاتورة نقدية، يتم توليد قيد صرف فوراً من المورد للصندوق
+        // ب. الخصم المكتسب (دائن - اعتباره إيرادات أخرى)
+        // ملاحظة: نحتاج لحساب الخصم برمجياً لو لم يكن مسجلاً في حقل منفصل، 
+        // حالياً سنفترض وجوده أو نحسبه من الفرق بين البنود والإجمالي لو توفر مستقبلاً.
+        // قيد الخصم المكتسب المباشر سيتم تفعيله فور إضافة حقل Discount للفاتورة.
+
+        // ── 3. السداد النقدي (إن وجد) ──────────────────────────────────────────
         if (invoice.PaymentTerms == PaymentTerms.Cash)
         {
-            // قيد سداد فوري من الصندوق للمورد
             lines.Add((PAYABLES, invoice.TotalAmount, 0, $"سداد نقدي فوري - {invoice.InvoiceNumber}"));
             lines.Add((CASH_ACCOUNTS, 0, invoice.TotalAmount, $"صرف من نقدية الحسابات - {invoice.InvoiceNumber}"));
         }
