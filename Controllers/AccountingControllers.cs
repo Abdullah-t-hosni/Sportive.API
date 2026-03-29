@@ -78,6 +78,24 @@ public class AccountsController : ControllerBase
         )));
     }
 
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var acct = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == id && !a.IsDeleted);
+        if (acct == null) return NotFound();
+
+        // Get balance
+        var balances = await GetAccountBalances(null, null);
+        var balance = balances.FirstOrDefault(b => b.AccountId == id)?.Balance ?? 0;
+
+        return Ok(new AccountFlatDto(
+            acct.Id, acct.Code, acct.NameAr, acct.NameEn,
+            acct.Type.ToString(), acct.Nature.ToString(),
+            acct.ParentId, acct.Level, acct.AllowPosting, acct.IsActive,
+            balance
+        ));
+    }
+
     /// <summary>
     /// ربط مفاتيح النظام (مبيعات، مخزون، نقدية...) بحسابات شجرة الحسابات — للواجهة التي تستدعي `/api/accounts/mappings`.
     /// </summary>
