@@ -369,7 +369,7 @@ public class OperationalReportsController : ControllerBase
 
         var rows = invoices.Select(i => new PurchaseRow(
             i.InvoiceNumber, i.SupplierInvoiceNumber ?? "",
-            i.Supplier.Name, i.InvoiceDate,
+            i.Supplier?.Name ?? "N/A", i.InvoiceDate,
             i.PaymentTerms.ToString(), i.Status.ToString(),
             i.SubTotal, i.TaxAmount, i.TotalAmount,
             i.PaidAmount, i.TotalAmount - i.PaidAmount
