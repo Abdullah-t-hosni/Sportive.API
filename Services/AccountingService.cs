@@ -59,43 +59,46 @@ public class AccountingService : IAccountingService
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
-        // ── 1. الجانب الدائن: الإيرادات (بكامل القيمة قبل الخصم) ──────────────────
-        // المبلغ قبل الضريبة = (المجموع الفرعي) / 1.14
+        // ── 1. حسابات الجانب الدائن (Credits) ──────────────────
+        // أ. قيمة المبيعات (قبل الضريبة والخصم)
         var netRevenue = Math.Round(order.SubTotal / (1 + VAT_RATE), 2);
         var vatAmount = order.SubTotal - netRevenue;
 
-        lines.Add((SALES_REVENUE, 0, netRevenue, $"مبيعات - {order.OrderNumber}"));
+        lines.Add((SALES_REVENUE, 0, netRevenue, $"مبيعات - {order.OrderNumber} (الإيراد)"));
         
+        // ب. ضريبة القيمة المضافة (دائنة دائماً في المبيعات)
         if (vatAmount > 0)
-            lines.Add((VAT_OUTPUT, 0, vatAmount, $"ضريبة مبيعات 14% - {order.OrderNumber}"));
+            lines.Add((VAT_OUTPUT, 0, vatAmount, $"ضريبة مبيعات 14% - {order.OrderNumber} (دائن)"));
 
+        // ج. إيراد التوصيل (دائن)
         if (order.DeliveryFee > 0)
-            lines.Add((DELIVERY_REVENUE, 0, order.DeliveryFee, $"إيراد توصيل - {order.OrderNumber}"));
+            lines.Add((DELIVERY_REVENUE, 0, order.DeliveryFee, $"إيراد توصيل - {order.OrderNumber} (دائن)"));
 
-        // ── 2. الجانب المدين: التحصيل + الخصم ────────────────────────────────────
-        // أ. الخصم الممنوح (مدين) - يظهر بوضوح في القيد
+        // ── 2. حسابات الجانب المدين (Debits) ──────────────────
+        // أ. الخصم الممنوح (مدين)
         if (order.DiscountAmount > 0)
-            lines.Add((SALES_DISCOUNT, order.DiscountAmount, 0, $"خصم ممنوح لعميل - {order.OrderNumber}"));
+            lines.Add((SALES_DISCOUNT, order.DiscountAmount, 0, $"خصم ممنوح لعميل - {order.OrderNumber} (مدين)"));
 
-        // ب. المبلغ المحصل أو المستحق (صافي الفاتورة)
+        // ب. التحصيل أو المديونية (مدين)
         var netReceivable = order.TotalAmount; 
-
         if (order.Source == OrderSource.POS && order.PaymentStatus == PaymentStatus.Paid)
         {
             var cashCode = GetCashAccount(order.PaymentMethod, order.Source);
-            lines.Add((cashCode, netReceivable, 0, $"تحصيل نقدي كاشير - {order.OrderNumber}"));
+            lines.Add((cashCode, netReceivable, 0, $"تحصيل نقدي كاشير - {order.OrderNumber} (مدين)"));
         }
         else
         {
-            lines.Add((RECEIVABLES, netReceivable, 0, $"مستحق على العميل - {order.OrderNumber}"));
+            lines.Add((RECEIVABLES, netReceivable, 0, $"مستحق على العميل - {order.OrderNumber} (مدين)"));
         }
 
-        // ── 3. نظام الجرد المستمر ───────────────────────────────────────────────
+        // ── 3. قيد التكلفة (نظام الجرد المستمر) ───────────────
         var totalCost = order.Items?.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity) ?? 0;
         if (totalCost > 0)
         {
-            lines.Add((COGS,      totalCost, 0,         $"تكلفة المبيعات - {order.OrderNumber}"));
-            lines.Add((INVENTORY, 0,         totalCost, $"خروج مخزون - {order.OrderNumber}"));
+            // مدين: تكلفة البضاعة المباعة
+            lines.Add((COGS, totalCost, 0, $"تكلفة المبيعات - {order.OrderNumber} (مدين)"));
+            // دائن: المخزون (خروج بضاعة)
+            lines.Add((INVENTORY, 0, totalCost, $"خروج مخزون - {order.OrderNumber} (دائن)"));
         }
 
         await PostEntry(
