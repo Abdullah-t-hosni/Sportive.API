@@ -46,7 +46,7 @@ public class ExceptionMiddleware
             BadHttpRequestException => (HttpStatusCode.BadRequest,         ex.Message),
             DbUpdateException       => (HttpStatusCode.BadRequest,
                 ex.InnerException != null ? ex.InnerException.Message : ex.Message),
-            _                       => (HttpStatusCode.InternalServerError, "An unexpected error occurred")
+            _                       => (HttpStatusCode.InternalServerError, ex.InnerException != null ? ex.InnerException.Message : ex.Message)
         };
 
         context.Response.StatusCode = (int)statusCode;
@@ -55,8 +55,8 @@ public class ExceptionMiddleware
         {
             StatusCode = (int)statusCode,
             Message    = message,
-            ExceptionType = _env.IsDevelopment() ? ex.GetType().Name : null,
-            Details    = _env.IsDevelopment() ? ex.StackTrace : null
+            ExceptionType = ex.GetType().Name,
+            Details    = ex.StackTrace
         };
 
         await context.Response.WriteAsync(

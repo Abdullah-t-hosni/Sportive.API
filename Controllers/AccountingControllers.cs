@@ -222,15 +222,22 @@ public class AccountsController : ControllerBase
     {
         var acct = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == id && !a.IsDeleted);
         if (acct == null) return NotFound();
-        if (acct.IsSystem) return BadRequest(new { message = "لا يمكن تعديل هذا الحساب" });
-
-        acct.NameAr         = dto.NameAr;
-        acct.NameEn         = dto.NameEn;
-        acct.Description    = dto.Description;
-        acct.AllowPosting   = dto.AllowPosting;
-        acct.IsActive       = dto.IsActive;
-        acct.OpeningBalance = dto.OpeningBalance;
-        acct.UpdatedAt      = DateTime.UtcNow;
+        if (acct.IsSystem) 
+        {
+            // For system accounts, we ONLY allow updating the opening balance
+            acct.OpeningBalance = dto.OpeningBalance;
+            acct.UpdatedAt      = DateTime.UtcNow;
+        }
+        else
+        {
+            acct.NameAr         = dto.NameAr;
+            acct.NameEn         = dto.NameEn;
+            acct.Description    = dto.Description;
+            acct.AllowPosting   = dto.AllowPosting;
+            acct.IsActive       = dto.IsActive;
+            acct.OpeningBalance = dto.OpeningBalance;
+            acct.UpdatedAt      = DateTime.UtcNow;
+        }
 
         await _db.SaveChangesAsync();
         return Ok();
