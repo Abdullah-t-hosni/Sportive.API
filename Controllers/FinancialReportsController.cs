@@ -99,7 +99,6 @@ public class FinancialReportsController : ControllerBase
 
         var balances = await GetBalances(from, to);
         var rows = balances
-            .Where(b => b.PeriodDebit != 0 || b.PeriodCredit != 0 || b.OpenBalance != 0)
             .OrderBy(b => b.Code)
             .Select(b => new TrialBalanceRow(
                 b.Code, b.NameAr, b.Level,

@@ -298,17 +298,35 @@ public class PurchaseInvoicesController : ControllerBase
         invoice.TaxAmount   = Math.Round(subtotal * (dto.TaxPercent / 100), 2);
         invoice.TotalAmount = subtotal + invoice.TaxAmount;
 
-        // Update supplier totals
+        // Update supplier totals (Accrual)
         supplier.TotalPurchases += invoice.TotalAmount;
+
+        // 🛡️ AUTO-PAYMENT FOR CASH INVOICES
+        if (dto.PaymentTerms == PaymentTerms.Cash)
+        {
+            invoice.PaidAmount = invoice.TotalAmount;
+            invoice.Status     = PurchaseInvoiceStatus.Paid;
+            
+            supplier.TotalPaid += invoice.TotalAmount;
+
+            var pCount = await _db.SupplierPayments.IgnoreQueryFilters().CountAsync() + 1;
+            invoice.Payments.Add(new SupplierPayment
+            {
+                PaymentNumber = $"PV-{year}{pCount:D4}",
+                SupplierId    = supplier.Id,
+                Amount        = invoice.TotalAmount,
+                PaymentDate   = invoice.InvoiceDate,
+                PaymentMethod = PaymentMethod_Purchase.Cash,
+                AccountName   = "الخزينة (آلي)",
+                Notes         = $"سداد تلقائي لفاتورة {invNo}",
+                CreatedAt     = DateTime.UtcNow
+            });
+        }
 
         _db.PurchaseInvoices.Add(invoice);
         await _db.SaveChangesAsync();
 
         // ترحيل القيد المحاسبي
-        var invoiceWithSupplier = await _db.PurchaseInvoices
-            .Include(i => i.Supplier)
-            .FirstAsync(i => i.Id == invoice.Id);
-
         _ = Task.Run(async () =>
         {
             using var scope = _scopeFactory.CreateScope();
@@ -319,6 +337,7 @@ public class PurchaseInvoicesController : ControllerBase
             {
                 var invoiceInner = await dbInner.PurchaseInvoices
                     .Include(i => i.Supplier)
+                    .Include(i => i.Payments)
                     .FirstAsync(i => i.Id == invoice.Id);
 
                 await accountingInner.PostPurchaseInvoiceAsync(invoiceInner); 

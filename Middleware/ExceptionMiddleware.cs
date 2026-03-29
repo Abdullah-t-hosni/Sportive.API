@@ -56,7 +56,7 @@ public class ExceptionMiddleware
             StatusCode = (int)statusCode,
             Message    = message,
             ExceptionType = ex.GetType().Name,
-            Details    = ex.StackTrace
+            Details    = _env.IsDevelopment() ? ex.StackTrace : null
         };
 
         await context.Response.WriteAsync(

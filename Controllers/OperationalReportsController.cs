@@ -562,9 +562,10 @@ public class OperationalReportsController : ControllerBase
                          && !i.Order.IsDeleted)
                 .Select(i => new ProductMovementLine(
                     i.Order.CreatedAt,
-                    "مبيعات",
+                    "مبيعات (بيبع)",
                     i.Order.OrderNumber ?? "N/A",
                     i.Order.Customer.FirstName + " " + i.Order.Customer.LastName,
+                    (i.ProductVariant != null ? (i.ProductVariant.Size + " / " + i.ProductVariant.ColorAr) : "أساسي"),
                     0,
                     i.Quantity,
                     i.TotalPrice))
@@ -581,6 +582,7 @@ public class OperationalReportsController : ControllerBase
                     "مرتجع مبيعات",
                     i.Order.OrderNumber ?? "N/A",
                     i.Order.Customer.FirstName + " " + i.Order.Customer.LastName,
+                    (i.ProductVariant != null ? (i.ProductVariant.Size + " / " + i.ProductVariant.ColorAr) : "أساسي"),
                     i.Quantity,
                     0,
                     i.TotalPrice))
@@ -594,9 +596,10 @@ public class OperationalReportsController : ControllerBase
                          && i.Invoice.Status != PurchaseInvoiceStatus.Returned)
                 .Select(i => new ProductMovementLine(
                     i.Invoice.InvoiceDate,
-                    "مشتريات",
+                    "مشتريات (توريد)",
                     i.Invoice.InvoiceNumber ?? "N/A",
                     i.Invoice.Supplier.Name ?? "مورد غير معروف",
+                    (i.ProductVariant != null ? (i.ProductVariant.Size + " / " + i.ProductVariant.ColorAr) : "أساسي"),
                     i.Quantity,
                     0,
                     i.TotalCost))
@@ -784,10 +787,10 @@ public class OperationalReportsController : ControllerBase
         var ws = wb.Worksheets.Add("حركة الصنف");
         ws.RightToLeft = true;
         ws.Cell(1,1).Value=$"حركة صنف: {p.NameAr} ({p.SKU})";ws.Cell(1,1).Style.Font.Bold=true;
-        string[] h={"التاريخ","النوع","المرجع","الاسم","وارد","صادر","المبلغ"};
+        string[] h={"التاريخ","النوع","المرجع","الاسم","التفاصيل","وارد","صادر","المبلغ"};
         for(int i=0;i<h.Length;i++){ws.Cell(2,i+1).Value=h[i];ws.Cell(2,i+1).Style.Font.Bold=true;}
         int r=3;
-        foreach(var m in movements){ws.Cell(r,1).Value=m.Date.ToString("yyyy-MM-dd");ws.Cell(r,2).Value=m.Type;ws.Cell(r,3).Value=m.Reference;ws.Cell(r,4).Value=m.EntityName;ws.Cell(r,5).Value=m.In>0?m.In:0;ws.Cell(r,6).Value=m.Out<0?Math.Abs(m.Out):0;ws.Cell(r,7).Value=m.Amount;ws.Cell(r,7).Style.NumberFormat.Format="#,##0.00";r++;}
+        foreach(var m in movements){ws.Cell(r,1).Value=m.Date.ToString("yyyy-MM-dd");ws.Cell(r,2).Value=m.Type;ws.Cell(r,3).Value=m.Reference;ws.Cell(r,4).Value=m.EntityName;ws.Cell(r,5).Value=m.Details;ws.Cell(r,6).Value=m.In>0?m.In:0;ws.Cell(r,7).Value=m.Out>0?m.Out:0;ws.Cell(r,8).Value=m.Amount;ws.Cell(r,8).Style.NumberFormat.Format="#,##0.00";r++;}
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"product_{p.SKU}_{from:yyyyMMdd}.xlsx");
     }
@@ -809,4 +812,4 @@ public record SalesRow(string OrderNumber, DateTime Date, string CustomerName, s
 public record PurchaseRow(string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal PaidAmount, decimal RemainingAmount);
 public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason);
 public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal TotalSales, int Returns, int Cancellations);
-public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, int In, int Out, decimal Amount);
+public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount);
