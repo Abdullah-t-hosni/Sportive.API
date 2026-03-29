@@ -44,6 +44,9 @@ public class AccountingService : IAccountingService
     private const string COGS            = "51101";  // تكلفة البضاعة المباعة
     private const string PURCHASES_NET   = "511";    // صافي المشتريات
     private const string PURCHASE_DISC   = "51103";  // خصم مكتسب (المشتريات)
+    private const string VAT_OUTPUT      = "2104";   // ضريبة قيمة مضافة - دائنة (مبيعات)
+    private const string VAT_INPUT       = "2105";   // ضريبة قيمة مضافة - مدينة (مشتريات)
+    private const decimal VAT_RATE       = 0.14m;    // نسبة الضريبة (افتراضية 14%)
 
     public AccountingService(AppDbContext db) => _db = db;
 
@@ -52,38 +55,48 @@ public class AccountingService : IAccountingService
     // ══════════════════════════════════════════════════════
     public async Task PostSalesOrderAsync(Order order)
     {
-        // لا تُعيد الترحيل لو القيد موجود
         if (await EntryExists(JournalEntryType.SalesInvoice, order.OrderNumber)) return;
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
-        // ── الجانب الدائن: الإيرادات ──────────────────────
-        lines.Add((SALES_REVENUE, 0, order.SubTotal, $"مبيعات - {order.OrderNumber}"));
+        // ── حساب الضريبة وصافي الإيراد ──────────────────
+        // المعادلة: السعر شامل الضريبة / 1.14 = السعر قبل الضريبة
+        var netRevenue = Math.Round(order.SubTotal / (1 + VAT_RATE), 2);
+        var vatAmount = order.SubTotal - netRevenue;
+
+        // ── الجانب الدائن ──────────────────────────────
+        // 1. حساب الإيرادات (المبلغ قبل الضريبة)
+        lines.Add((SALES_REVENUE, 0, netRevenue, $"مبيعات - {order.OrderNumber} (قبل الضريبة)"));
         
-        // إيراد التوصيل (هام لموازنة القيد)
+        // 2. حساب ضريبة المبيعات (دائنة)
+        if (vatAmount > 0)
+            lines.Add((VAT_OUTPUT, 0, vatAmount, $"ضريبة مبيعات 14% - {order.OrderNumber}"));
+
+        // 3. إيراد التوصيل (هام لموازنة القيد)
         if (order.DeliveryFee > 0)
             lines.Add((DELIVERY_REVENUE, 0, order.DeliveryFee, $"إيراد توصيل - {order.OrderNumber}"));
 
-        // ── خصم ممنوح إذا وجد (مدين) ──────────────────────
+        // ── الجانب المدين (استيفاء المبلغ) ─────────────
         if (order.DiscountAmount > 0)
             lines.Add((SALES_DISCOUNT, order.DiscountAmount, 0, $"خصم لعميل - {order.OrderNumber}"));
 
-        // ── الجانب المدين: النقدية أو المدينون ─────────────
-        var cashCode = GetCashAccount(order.PaymentMethod, order.Source);
-        var netReceivable = order.TotalAmount; // المبلغ النهائي (SubTotal + Delivery - Discount)
+        var netReceivable = order.TotalAmount; 
 
-        if (order.PaymentStatus == PaymentStatus.Paid)
+        // المنطق الجديد: 
+        // 1. لو POS (كاشير) ومدفوع -> يرحل للصناديق فوراً
+        // 2. لو Website (موقع) وكاش -> يرحل "للعملاء" ليكون ذمة مدسنة حتى تحصيل شركة الشحن
+        if (order.Source == OrderSource.POS && order.PaymentStatus == PaymentStatus.Paid)
         {
-            // دفع فوري → مدين النقدية
-            lines.Add((cashCode, netReceivable, 0, $"تحصيل نقدي - {order.OrderNumber}"));
+            var cashCode = GetCashAccount(order.PaymentMethod, order.Source);
+            lines.Add((cashCode, netReceivable, 0, $"تحصيل نقدي كاشير - {order.OrderNumber}"));
         }
         else
         {
-            // آجل → مدين حساب العملاء
+            // الموقع أو أي طلب غير مدفوع فوري -> حساب العملاء (مدينون)
             lines.Add((RECEIVABLES, netReceivable, 0, $"مستحق على العميل - {order.OrderNumber}"));
         }
 
-        // ── نظام الجرد المستمر: التكلفة والمخزون ─────────
+        // ── نظام الجرد المستمر ─────────────────────────
         var totalCost = order.Items?.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity) ?? 0;
         if (totalCost > 0)
         {
@@ -143,26 +156,24 @@ public class AccountingService : IAccountingService
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
-        // مدين المخزون
-        lines.Add((INVENTORY, invoice.SubTotal, 0,
-            $"مشتريات بضاعة - {invoice.InvoiceNumber}"));
+        // ── الجانب المدين (الاستخدامات) ────────────────
+        // 1. مدين المخزون
+        lines.Add((INVENTORY, invoice.SubTotal, 0, $"مشتريات بضاعة - {invoice.InvoiceNumber}"));
 
-        // ضريبة إذا وجدت (مدين ضريبة القيمة المضافة)
+        // 2. ضريبة مدخلات (مشتريات) - مدينة
         if (invoice.TaxAmount > 0)
-            lines.Add(("2105", invoice.TaxAmount, 0,
-                $"ضريبة مشتريات - {invoice.InvoiceNumber}"));
+            lines.Add((VAT_INPUT, invoice.TaxAmount, 0, $"ضريبة مشتريات مدخلات - {invoice.InvoiceNumber}"));
 
-        // دائن — نقدي أم آجل؟
+        // ── الجانب الدائن (المصادر) ───────────────────
+        // التعديل: تمر العملية دائماً عبر حساب الموردين للـ Audit Trail
+        lines.Add((PAYABLES, 0, invoice.TotalAmount, $"إثبات استحقاق للمورد - {invoice.InvoiceNumber}"));
+
+        // إذا كانت الفاتورة نقدية، يتم توليد قيد صرف فوراً من المورد للصندوق
         if (invoice.PaymentTerms == PaymentTerms.Cash)
         {
-            lines.Add((CASH_ACCOUNTS, 0, invoice.TotalAmount,
-                $"دفع نقدي - {invoice.InvoiceNumber}"));
-        }
-        else
-        {
-            // آجل → دائن حساب الموردين
-            lines.Add((PAYABLES, 0, invoice.TotalAmount,
-                $"مستحق للمورد - {invoice.InvoiceNumber}"));
+            // قيد سداد فوري من الصندوق للمورد
+            lines.Add((PAYABLES, invoice.TotalAmount, 0, $"سداد نقدي فوري - {invoice.InvoiceNumber}"));
+            lines.Add((CASH_ACCOUNTS, 0, invoice.TotalAmount, $"صرف من نقدية الحسابات - {invoice.InvoiceNumber}"));
         }
 
         await PostEntry(
