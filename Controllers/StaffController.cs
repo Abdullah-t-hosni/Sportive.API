@@ -9,7 +9,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = AppRoles.Admin)]
+[Authorize(Roles = "Admin,Manager")]
 public class StaffController : ControllerBase
 {
     private readonly UserManager<AppUser>     _users;

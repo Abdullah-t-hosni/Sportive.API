@@ -13,8 +13,8 @@ public class CustomersController : ControllerBase
     private readonly ICustomerService _customers;
     public CustomersController(ICustomerService customers) => _customers = customers;
 
-    /// <summary>كل العملاء — Admin فقط</summary>
-    [Authorize(Roles = "Admin")]
+    /// <summary>كل العملاء — Admin, Manager فقط</summary>
+    [Authorize(Roles = "Admin,Manager")]
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,

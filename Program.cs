@@ -83,7 +83,7 @@ builder.Services.AddAuthentication(opt =>
         ValidateAudience = true,
         ValidAudience = builder.Configuration["JWT:Audience"],
         ValidateLifetime = true,
-        ClockSkew = TimeSpan.Zero
+        ClockSkew = TimeSpan.FromMinutes(5) // Increased from Zero to fix production timing shifts
     };
 
     opt.Events = new JwtBearerEvents
