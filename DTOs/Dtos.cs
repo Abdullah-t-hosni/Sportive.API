@@ -341,6 +341,13 @@ public record CreateAddressDto(
     double? Longitude
 );
 
+public record CreateCustomerDto(
+    string FirstName,
+    string LastName,
+    string Email,
+    string? Phone = null
+);
+
 // ========== DASHBOARD ==========
 public record DashboardStatsDto(
     decimal TodaySales,

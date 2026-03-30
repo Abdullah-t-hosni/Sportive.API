@@ -530,6 +530,7 @@ public class OperationalReportsController : ControllerBase
             var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
             var to   = toDate ?? DateTime.UtcNow;
 
+            // Handle search
             if (productId == null && !string.IsNullOrEmpty(search))
             {
                 var p = await _db.Products
@@ -538,97 +539,151 @@ public class OperationalReportsController : ControllerBase
                 if (p != null) productId = p.Id;
             }
 
+            // If productId is null, return the choices list including "All"
             if (productId == null)
             {
                 var pList = await _db.Products
                     .Where(p => !p.IsDeleted)
                     .Select(p => new { p.Id, p.NameAr, p.SKU })
                     .ToListAsync();
-                return Ok(new { products = pList });
+                
+                // Add "All" option
+                var result = new List<object> { new { Id = 0, NameAr = "الكل (جميع الأصناف)", SKU = "ALL" } };
+                result.AddRange(pList.Cast<object>());
+                
+                return Ok(new { products = result });
             }
 
-            var product = await _db.Products
-                .Include(p => p.Variants)
-                .FirstOrDefaultAsync(p => p.Id == productId && !p.IsDeleted);
+            // 1. مبيعات (Sales) — Include everything except Cancelled
+            // We include Returned here so the initial sale shows up, and the return shows as a second entry
+            var salesQuery = _db.OrderItems
+                .Where(i => !i.IsDeleted && !i.Order.IsDeleted && i.Order.Status != OrderStatus.Cancelled
+                         && i.Order.CreatedAt >= from && i.Order.CreatedAt <= to);
 
-            if (product == null) return NotFound("Product not found");
+            if (productId > 0) salesQuery = salesQuery.Where(i => i.ProductId == productId);
 
-            // 1. مبيعات (Sales) — Not Cancelled and Not Returned
-            var salesMovements = await _db.OrderItems
-                .Where(i => i.ProductId == productId && !i.IsDeleted
-                         && i.Order.CreatedAt >= from && i.Order.CreatedAt <= to
-                         && i.Order.Status != OrderStatus.Cancelled 
-                         && i.Order.Status != OrderStatus.Returned 
-                         && !i.Order.IsDeleted)
+            var salesMovements = await salesQuery
                 .Select(i => new ProductMovementLine(
                     i.Order.CreatedAt,
-                    "مبيعات (بيبع)",
+                    "مبيعات",
                     i.Order.OrderNumber ?? "N/A",
                     i.Order.Customer.FirstName + " " + i.Order.Customer.LastName,
                     (i.ProductVariant != null ? (i.ProductVariant.Size + " / " + i.ProductVariant.ColorAr) : "أساسي"),
                     0,
                     i.Quantity,
-                    i.TotalPrice))
+                    i.TotalPrice,
+                    i.Product.NameAr))
                 .ToListAsync();
 
             // 2. مرتجع مبيعات (Sales Returns)
-            var returnMovements = await _db.OrderItems
-                .Where(i => i.ProductId == productId && !i.IsDeleted
-                         && i.Order.CreatedAt >= from && i.Order.CreatedAt <= to
-                         && i.Order.Status == OrderStatus.Returned 
-                         && !i.Order.IsDeleted)
+            // Ideally we'd use StatusHistory for refined date, but using Order.UpdatedAt (standard for status change) or CreatedAt
+            var returnQuery = _db.OrderItems
+                .Where(i => !i.IsDeleted && !i.Order.IsDeleted && i.Order.Status == OrderStatus.Returned
+                         && i.Order.UpdatedAt >= from && i.Order.UpdatedAt <= to);
+
+            if (productId > 0) returnQuery = returnQuery.Where(i => i.ProductId == productId);
+
+            var returnMovements = await returnQuery
                 .Select(i => new ProductMovementLine(
-                    i.Order.CreatedAt,
+                    i.Order.UpdatedAt ?? i.Order.CreatedAt,
                     "مرتجع مبيعات",
                     i.Order.OrderNumber ?? "N/A",
                     i.Order.Customer.FirstName + " " + i.Order.Customer.LastName,
                     (i.ProductVariant != null ? (i.ProductVariant.Size + " / " + i.ProductVariant.ColorAr) : "أساسي"),
                     i.Quantity,
                     0,
-                    i.TotalPrice))
+                    i.TotalPrice,
+                    i.Product.NameAr))
                 .ToListAsync();
 
-            // 3. مشتريات (Purchases) — Not Draft and Not Returned
-            var purchaseMovements = await _db.PurchaseInvoiceItems
-                .Where(i => i.ProductId == productId && !i.IsDeleted
-                         && i.Invoice.InvoiceDate >= from && i.Invoice.InvoiceDate <= to
-                         && i.Invoice.Status != PurchaseInvoiceStatus.Draft 
-                         && i.Invoice.Status != PurchaseInvoiceStatus.Returned)
+            // 3. مشتريات (Purchases) — Not Draft
+            var purchaseQuery = _db.PurchaseInvoiceItems
+                .Where(i => !i.IsDeleted && i.Invoice.Status != PurchaseInvoiceStatus.Draft
+                         && i.Invoice.InvoiceDate >= from && i.Invoice.InvoiceDate <= to);
+
+            if (productId > 0) purchaseQuery = purchaseQuery.Where(i => i.ProductId == productId);
+
+            var purchaseMovements = await purchaseQuery
                 .Select(i => new ProductMovementLine(
                     i.Invoice.InvoiceDate,
-                    "مشتريات (توريد)",
+                    "مشتريات",
                     i.Invoice.InvoiceNumber ?? "N/A",
                     i.Invoice.Supplier.Name ?? "مورد غير معروف",
                     (i.ProductVariant != null ? (i.ProductVariant.Size + " / " + i.ProductVariant.ColorAr) : "أساسي"),
                     i.Quantity,
                     0,
-                    i.TotalCost))
+                    i.TotalCost,
+                    i.Product.NameAr))
+                .ToListAsync();
+
+            // 4. مرتجع مشتريات (Purchase Returns)
+            var purchaseReturnQuery = _db.PurchaseInvoiceItems
+                .Where(i => !i.IsDeleted && i.Invoice.Status == PurchaseInvoiceStatus.Returned
+                         && i.Invoice.UpdatedAt >= from && i.Invoice.UpdatedAt <= to);
+
+            if (productId > 0) purchaseReturnQuery = purchaseReturnQuery.Where(i => i.ProductId == productId);
+
+            var purchaseReturnMovements = await purchaseReturnQuery
+                .Select(i => new ProductMovementLine(
+                    i.Invoice.UpdatedAt ?? i.Invoice.InvoiceDate,
+                    "مرتجع مشتريات",
+                    i.Invoice.InvoiceNumber ?? "N/A",
+                    i.Invoice.Supplier.Name ?? "مورد غير معروف",
+                    (i.ProductVariant != null ? (i.ProductVariant.Size + " / " + i.ProductVariant.ColorAr) : "أساسي"),
+                    0,
+                    i.Quantity,
+                    i.TotalCost,
+                    i.Product.NameAr))
                 .ToListAsync();
 
             var movements = salesMovements
                 .Concat(returnMovements)
                 .Concat(purchaseMovements)
+                .Concat(purchaseReturnMovements)
                 .OrderBy(m => m.Date)
                 .ToList();
 
-            var currentStock = product.Variants?
-                .Where(v => !v.IsDeleted)
-                .Sum(v => v.StockQuantity) ?? 0;
+            // Summary
+            decimal currentStock = 0;
+            string productBrief = "الكل";
+
+            if (productId > 0)
+            {
+                var product = await _db.Products
+                    .Include(p => p.Variants)
+                    .FirstOrDefaultAsync(p => p.Id == productId && !p.IsDeleted);
+                if (product != null)
+                {
+                    currentStock = product.Variants?
+                        .Where(v => !v.IsDeleted)
+                        .Sum(v => v.StockQuantity) ?? 0;
+                    productBrief = $"{product.NameAr} ({product.SKU})";
+                }
+            }
+            else
+            {
+                // All products stock
+                currentStock = await _db.ProductVariants
+                    .Where(v => !v.IsDeleted && !v.Product.IsDeleted)
+                    .SumAsync(v => (decimal)v.StockQuantity);
+            }
 
             var summary = new
             {
                 totalSold      = salesMovements.Sum(i => i.Out),
                 totalReturned  = returnMovements.Sum(i => i.In),
                 totalPurchased = purchaseMovements.Sum(i => i.In),
+                totalPurchaseReturned = purchaseReturnMovements.Sum(i => i.Out),
                 salesRevenue   = salesMovements.Sum(i => i.Amount),
                 currentStock
             };
 
-            if (excel) return ExcelProductMovement(product, movements, summary, from, to);
+            if (excel) return ExcelProductMovement(productId == 0 ? null : await _db.Products.FindAsync(productId), movements, summary, from, to);
 
             return Ok(new
             {
-                product = new { product.Id, product.NameAr, product.SKU },
+                productId = productId,
+                productName = productBrief,
                 from,
                 to,
                 movements,
@@ -637,11 +692,9 @@ public class OperationalReportsController : ControllerBase
         }
         catch (Exception ex)
         {
-            // Log for debugging (Log.Error would be better if Serilog is configured)
             return StatusCode(500, new { 
                 message = "Error generating product movement report", 
-                details = ex.Message,
-                inner = ex.InnerException?.Message
+                details = ex.Message
             });
         }
     }
@@ -781,18 +834,45 @@ public class OperationalReportsController : ControllerBase
         return ExcelResult(wb, $"user_activity_{from:yyyyMMdd}.xlsx");
     }
 
-    private IActionResult ExcelProductMovement(Product p, List<ProductMovementLine> movements, dynamic summary, DateTime from, DateTime to)
+    private IActionResult ExcelProductMovement(Product? p, List<ProductMovementLine> movements, dynamic summary, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add("حركة الصنف");
         ws.RightToLeft = true;
-        ws.Cell(1,1).Value=$"حركة صنف: {p.NameAr} ({p.SKU})";ws.Cell(1,1).Style.Font.Bold=true;
-        string[] h={"التاريخ","النوع","المرجع","الاسم","التفاصيل","وارد","صادر","المبلغ"};
-        for(int i=0;i<h.Length;i++){ws.Cell(2,i+1).Value=h[i];ws.Cell(2,i+1).Style.Font.Bold=true;}
-        int r=3;
-        foreach(var m in movements){ws.Cell(r,1).Value=m.Date.ToString("yyyy-MM-dd");ws.Cell(r,2).Value=m.Type;ws.Cell(r,3).Value=m.Reference;ws.Cell(r,4).Value=m.EntityName;ws.Cell(r,5).Value=m.Details;ws.Cell(r,6).Value=m.In>0?m.In:0;ws.Cell(r,7).Value=m.Out>0?m.Out:0;ws.Cell(r,8).Value=m.Amount;ws.Cell(r,8).Style.NumberFormat.Format="#,##0.00";r++;}
+        
+        var title = p != null ? $"حركة صنف: {p.NameAr} ({p.SKU})" : "حركة جميع الأصناف";
+        ws.Cell(1,1).Value = title;
+        ws.Cell(1,1).Style.Font.Bold = true;
+        ws.Cell(1,1).Style.Font.FontSize = 14;
+
+        string[] h = { "التاريخ", "النوع", "المرجع", "الصنف", "الاسم/المورد", "التفاصيل", "وارد", "صادر", "المبلغ" };
+        for (int i = 0; i < h.Length; i++)
+        {
+            ws.Cell(3, i + 1).Value = h[i];
+            ws.Cell(3, i + 1).Style.Font.Bold = true;
+            ws.Cell(3, i + 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#1a237e");
+            ws.Cell(3, i + 1).Style.Font.FontColor = XLColor.White;
+        }
+
+        int r = 4;
+        foreach (var m in movements)
+        {
+            ws.Cell(r, 1).Value = m.Date.ToString("yyyy-MM-dd HH:mm");
+            ws.Cell(r, 2).Value = m.Type;
+            ws.Cell(r, 3).Value = m.Reference;
+            ws.Cell(r, 4).Value = m.ProductName;
+            ws.Cell(r, 5).Value = m.EntityName;
+            ws.Cell(r, 6).Value = m.Details;
+            ws.Cell(r, 7).Value = m.In > 0 ? m.In : 0;
+            ws.Cell(r, 8).Value = m.Out > 0 ? m.Out : 0;
+            ws.Cell(r, 9).Value = m.Amount;
+            ws.Cell(r, 9).Style.NumberFormat.Format = "#,##0.00";
+            r++;
+        }
+
         ws.Columns().AdjustToContents();
-        return ExcelResult(wb, $"product_{p.SKU}_{from:yyyyMMdd}.xlsx");
+        var fileName = p != null ? $"product_{p.SKU}_{from:yyyyMMdd}.xlsx" : $"all_products_movement_{from:yyyyMMdd}.xlsx";
+        return ExcelResult(wb, fileName);
     }
 
     private static FileStreamResult ExcelResult(XLWorkbook wb, string filename)
@@ -812,4 +892,4 @@ public record SalesRow(string OrderNumber, DateTime Date, string CustomerName, s
 public record PurchaseRow(string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal PaidAmount, decimal RemainingAmount);
 public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason);
 public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal TotalSales, int Returns, int Cancellations);
-public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount);
+public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "");

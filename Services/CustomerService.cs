@@ -89,6 +89,27 @@ public class CustomerService : ICustomerService
             ))
             .FirstOrDefaultAsync();
 
+    public async Task<CustomerDetailDto> CreateCustomerAsync(CreateCustomerDto dto)
+    {
+        // 1. Check if email already exists
+        if (await _db.Customers.AnyAsync(c => c.Email.ToLower() == dto.Email.ToLower() && !c.IsDeleted))
+            throw new Exception("البريد الإلكتروني مسجل بالفعل لعميل آخر.");
+
+        var customer = new Customer
+        {
+            FirstName = dto.FirstName,
+            LastName = dto.LastName,
+            Email = dto.Email,
+            Phone = dto.Phone,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _db.Customers.Add(customer);
+        await _db.SaveChangesAsync();
+
+        return (await GetCustomerByIdAsync(customer.Id))!;
+    }
+
     public async Task<AddressDto> AddAddressAsync(int customerId, CreateAddressDto dto)
     {
         // If first address → make it default
