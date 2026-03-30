@@ -132,15 +132,30 @@ public class OrderService : IOrderService
 
     public async Task<OrderDetailDto> CreateOrderAsync(int? customerId, CreateOrderDto dto)
     {
+        // 🛡️ SECURITY & INTEGRITY FIX: Handle customerId = 0 or invalid ID
+        if (customerId.HasValue && (customerId.Value <= 0 || !await _db.Customers.AnyAsync(c => c.Id == customerId.Value)))
+        {
+            customerId = null;
+        }
+
         // 1. Handle Customer (For POS or non-logged in website visitors)
         if (!customerId.HasValue)
         {
             var phone = string.IsNullOrEmpty(dto.CustomerPhone) ? "0000000000" : dto.CustomerPhone;
-            var existing = await _db.Customers.FirstOrDefaultAsync(c => c.Phone == phone);
+            
+            // Use IgnoreQueryFilters to find soft-deleted customers
+            var existing = await _db.Customers.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.Phone == phone);
             
             if (existing != null)
             {
                 customerId = existing.Id;
+                // If it was deleted, restore it
+                if (existing.IsDeleted)
+                {
+                    existing.IsDeleted = false;
+                    existing.UpdatedAt = DateTime.UtcNow;
+                    await _db.SaveChangesAsync();
+                }
             }
             else
             {
@@ -151,7 +166,8 @@ public class OrderService : IOrderService
                     LastName = names.Length > 1 ? string.Join(' ', names.Skip(1)) : "Customer",
                     Phone = phone,
                     Email = $"{phone}@pos.sportive.com",
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
                 };
                 _db.Customers.Add(c);
                 await _db.SaveChangesAsync();
@@ -170,7 +186,9 @@ public class OrderService : IOrderService
             FulfillmentType = dto.FulfillmentType,
             PaymentMethod = dto.PaymentMethod,
             PaymentStatus = dto.Source == OrderSource.POS ? PaymentStatus.Paid : PaymentStatus.Pending,
-            DeliveryAddressId = dto.DeliveryAddressId,
+            DeliveryAddressId = (dto.DeliveryAddressId.HasValue && dto.DeliveryAddressId.Value > 0) 
+                                ? (await _db.Addresses.AnyAsync(a => a.Id == dto.DeliveryAddressId.Value && a.CustomerId == customerId.Value) ? dto.DeliveryAddressId : null) 
+                                : null,
             PickupScheduledAt = dto.PickupScheduledAt,
             CustomerNotes = dto.CustomerNotes,
             CouponCode = dto.CouponCode,
