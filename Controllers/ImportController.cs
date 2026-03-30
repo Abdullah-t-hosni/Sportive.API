@@ -317,7 +317,7 @@ public class ImportController : ControllerBase
             {
                 foreach (var v in p.Variants.Where(v => !v.IsDeleted))
                 {
-                    var varSku = !string.IsNullOrEmpty(v.SKU) ? v.SKU : p.SKU;
+                    var varSku = p.SKU;
                     ws.Cell(row, 1).Value = varSku;
                     ws.Cell(row, 2).Value = p.NameAr;
                     ws.Cell(row, 3).Value = v.Size ?? "";
@@ -401,8 +401,7 @@ public class ImportController : ControllerBase
                 if (!activeVariants.Any())
                 {
                     // Product without variants — update directly
-                    product.TotalStock    = qty;
-                    product.StockQuantity = qty;
+                    product.TotalStock = qty;
                     updated++;
                 }
                 else if (!string.IsNullOrEmpty(size) || !string.IsNullOrEmpty(color))
