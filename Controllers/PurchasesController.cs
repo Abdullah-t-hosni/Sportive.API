@@ -360,6 +360,7 @@ public class PurchaseInvoicesController : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdatePurchaseInvoiceDto dto)
     {
         var inv = await _db.PurchaseInvoices
@@ -494,6 +495,7 @@ public class PurchaseInvoicesController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> Delete(int id)
     {
         var inv = await _db.PurchaseInvoices
@@ -703,6 +705,7 @@ public class SupplierPaymentsController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> Delete(int id)
     {
         var payment = await _db.SupplierPayments

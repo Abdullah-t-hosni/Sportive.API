@@ -485,6 +485,7 @@ public class JournalEntriesController : ControllerBase
 
     /// <summary>تعديل قيد يدوي — مسودة فقط.</summary>
     [HttpPut("{id}")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateJournalEntryDto dto)
     {
         if (!dto.Lines.Any() || dto.Lines.Count < 2)
@@ -545,6 +546,7 @@ public class JournalEntriesController : ControllerBase
 
     /// <summary>حذف قيد يدوي — مسودة فقط (soft delete).</summary>
     [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> Delete(int id)
     {
         var entry = await _db.JournalEntries
@@ -569,6 +571,7 @@ public class JournalEntriesController : ControllerBase
 
     // عكس القيد
     [HttpPost("{id}/reverse")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> Reverse(int id)
     {
         var entry = await _db.JournalEntries
@@ -624,7 +627,7 @@ public class JournalEntriesController : ControllerBase
 // ══════════════════════════════════════════════════════
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin,Manager")]
 public class ReceiptVouchersController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -790,7 +793,7 @@ public class ReceiptVouchersController : ControllerBase
 // ══════════════════════════════════════════════════════
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin,Manager")]
 public class PaymentVouchersController : ControllerBase
 {
     private readonly AppDbContext _db;
