@@ -85,6 +85,24 @@ public class CreateCategoryValidator : AbstractValidator<CreateCategoryDto>
     }
 }
 
+public class CreateBrandValidator : AbstractValidator<CreateBrandDto>
+{
+    public CreateBrandValidator()
+    {
+        RuleFor(x => x.NameAr).NotEmpty().WithMessage("الاسم بالعربي مطلوب").MinimumLength(2).MaximumLength(100);
+        RuleFor(x => x.NameEn).NotEmpty().WithMessage("الاسم بالإنجليزي مطلوب").MinimumLength(2).MaximumLength(100);
+    }
+}
+
+public class UpdateBrandValidator : AbstractValidator<UpdateBrandDto>
+{
+    public UpdateBrandValidator()
+    {
+        RuleFor(x => x.NameAr).NotEmpty().MinimumLength(2).MaximumLength(100);
+        RuleFor(x => x.NameEn).NotEmpty().MinimumLength(2).MaximumLength(100);
+    }
+}
+
 public class CreateOrderValidator : AbstractValidator<CreateOrderDto>
 {
     public CreateOrderValidator()

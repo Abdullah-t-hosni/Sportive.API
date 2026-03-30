@@ -61,6 +61,24 @@ public record CreateCategoryDto(
     int? ParentId = null
 );
 
+public record CreateBrandDto(
+    string NameAr,
+    string NameEn,
+    string? DescriptionAr,
+    string? DescriptionEn,
+    string? ImageUrl,
+    int? ParentId = null
+);
+
+public record UpdateBrandDto(
+    string NameAr,
+    string NameEn,
+    string? DescriptionAr,
+    string? DescriptionEn,
+    string? ImageUrl,
+    int? ParentId = null
+);
+
 // ========== PRODUCT ==========
 public record ProductSummaryDto(
     int Id,

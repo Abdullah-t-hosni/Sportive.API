@@ -36,12 +36,22 @@ public class BrandController : ControllerBase
 
     [Authorize(Roles = "Admin,Manager")]
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateCategoryDto dto)
+    public async Task<IActionResult> Create([FromBody] CreateBrandDto dto)
     {
         try
         {
-            var brandDto = dto with { Type = CategoryType.Brand };
-            var cat = await _categories.CreateAsync(brandDto);
+            // تحويل الـ CreateBrandDto إلى CreateCategoryDto مع تحديد النوع كماركة
+            var categoryDto = new CreateCategoryDto(
+                dto.NameAr,
+                dto.NameEn,
+                dto.DescriptionAr,
+                dto.DescriptionEn,
+                CategoryType.Brand,
+                dto.ImageUrl,
+                dto.ParentId
+            );
+            
+            var cat = await _categories.CreateAsync(categoryDto);
             return CreatedAtAction(nameof(GetById), new { id = cat.Id }, cat);
         }
         catch (ArgumentException ex) 
@@ -52,13 +62,26 @@ public class BrandController : ControllerBase
 
     [Authorize(Roles = "Admin,Manager")]
     [HttpPut("{id}")]
-    public async Task<IActionResult> Update(int id, [FromBody] CreateCategoryDto dto)
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateBrandDto dto)
     {
         try 
         { 
-            var brandDto = dto with { Type = CategoryType.Brand };
-            var cat = await _categories.UpdateAsync(id, brandDto);
-            return Ok(cat); 
+            var cat = await _categories.GetByIdAsync(id);
+            if(cat == null || cat.Type != CategoryType.Brand.ToString()) 
+                return NotFound();
+
+            var categoryDto = new CreateCategoryDto(
+                dto.NameAr,
+                dto.NameEn,
+                dto.DescriptionAr,
+                dto.DescriptionEn,
+                CategoryType.Brand,
+                dto.ImageUrl,
+                dto.ParentId
+            );
+
+            var updated = await _categories.UpdateAsync(id, categoryDto);
+            return Ok(updated); 
         }
         catch (KeyNotFoundException) 
         { 
