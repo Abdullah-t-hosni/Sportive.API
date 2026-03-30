@@ -294,8 +294,10 @@ public class FinancialReportsController : ControllerBase
             ledgerRows.Add(new LedgerRow(
                 line.AccountId, line.Account.Code, line.Account.NameAr,
                 line.JournalEntry.EntryDate, line.JournalEntry.EntryNumber,
+                line.JournalEntry.Type.ToString(),
                 line.JournalEntry.Description ?? line.Description ?? "",
-                line.Debit, line.Credit, balanceMap[line.AccountId]
+                line.Debit, line.Credit, balanceMap[line.AccountId],
+                line.JournalEntry.Reference, line.JournalEntry.Id
             ));
         }
 
@@ -363,8 +365,10 @@ public class FinancialReportsController : ControllerBase
             return new LedgerRow(
                 accountId, acct.Code, acct.NameAr,
                 l.JournalEntry.EntryDate, l.JournalEntry.EntryNumber,
+                l.JournalEntry.Type.ToString(),
                 l.JournalEntry.Description ?? l.Description ?? "",
-                l.Debit, l.Credit, runBal
+                l.Debit, l.Credit, runBal,
+                l.JournalEntry.Reference, l.JournalEntry.Id
             );
         }).ToList();
 
@@ -735,6 +739,7 @@ public record IncomeRow(string Code, string NameAr, int Level, decimal Amount);
 public record BalanceSheetRow(string Code, string NameAr, int Level, decimal Amount);
 public record LedgerRow(
     int AccountId, string AccountCode, string AccountName,
-    DateTime Date, string EntryNumber, string Description,
-    decimal Debit, decimal Credit, decimal RunningBalance);
+    DateTime Date, string EntryNumber, string EntryType, string Description,
+    decimal Debit, decimal Credit, decimal RunningBalance,
+    string? Reference = null, int JournalEntryId = 0);
 public record CashFlowItem(DateTime Date, string EntryNumber, string Description, string Account, decimal Amount);
