@@ -613,7 +613,7 @@ public class OperationalReportsController : ControllerBase
                     i.Quantity,
                     0,
                     i.TotalCost,
-                    i.Product?.NameAr ?? "Deleted Product"))
+                    i.Product != null ? i.Product.NameAr : "Deleted Product"))
                 .ToListAsync();
 
             // 4. مرتجع مشتريات (Purchase Returns)
@@ -633,7 +633,7 @@ public class OperationalReportsController : ControllerBase
                     0,
                     i.Quantity,
                     i.TotalCost,
-                    i.Product?.NameAr ?? "Deleted Product"))
+                    i.Product != null ? i.Product.NameAr : "Deleted Product"))
                 .ToListAsync();
 
             var movements = salesMovements
