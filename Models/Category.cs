@@ -5,7 +5,8 @@ public enum CategoryType
     Men = 1,      // رجالي
     Women = 2,    // حريمي
     Kids = 3,     // أطفال
-    Equipment = 4 // أدوات رياضية
+    Equipment = 4, // أدوات رياضية
+    Brand = 5     // ماركة
 }
 
 public class Category : BaseEntity
