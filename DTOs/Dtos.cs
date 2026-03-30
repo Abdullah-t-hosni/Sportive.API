@@ -96,6 +96,7 @@ public record ProductSummaryDto(
     int TotalStock,
     int ReorderLevel,
     string SKU,
+    bool HasTax,
     DateTime CreatedAt
 );
 
@@ -121,6 +122,7 @@ public record ProductDetailDto(
     int ReviewCount,
     int TotalStock,
     int ReorderLevel,
+    bool HasTax,
     DateTime CreatedAt
 );
 
@@ -151,7 +153,8 @@ public record CreateProductDto(
     int CategoryId,
     bool IsFeatured,
     List<CreateVariantDto>? Variants,
-    int ReorderLevel = 0
+    int ReorderLevel = 0,
+    bool HasTax = true
 );
 
 public record UpdateProductDto(
@@ -167,7 +170,8 @@ public record UpdateProductDto(
     int CategoryId,
     bool IsFeatured,
     int ReorderLevel,
-    ProductStatus Status
+    ProductStatus Status,
+    bool HasTax = true
 );
 
 public record CreateVariantDto(

@@ -77,6 +77,8 @@ public class SettingsController : ControllerBase
             info.InstagramPage        = dto.InstagramPage;
             info.TikTokPage           = dto.TikTokPage;
             info.InMaintenance        = dto.InMaintenance;
+            info.DeliveryAccountId    = dto.DeliveryAccountId;
+            info.StoreVatAccountId    = dto.StoreVatAccountId;
             info.LastUpdateDate       = DateTime.UtcNow;
 
             await _db.SaveChangesAsync();

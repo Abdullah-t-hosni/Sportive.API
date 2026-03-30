@@ -17,6 +17,7 @@ public class Product : BaseEntity
     public bool IsFeatured { get; set; } = false;
     public int TotalStock { get; set; } = 0;
     public int ReorderLevel { get; set; } = 0; // حد الطلب للمنتج الرئيسي
+    public bool HasTax { get; set; } = true; // خيار وجود ضريبة على المنتج
 
     // Category
     public int CategoryId { get; set; }

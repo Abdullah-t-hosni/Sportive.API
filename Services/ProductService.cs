@@ -94,6 +94,7 @@ public class ProductService : IProductService
                 p.TotalStock,
                 p.ReorderLevel,
                 p.SKU,
+                p.HasTax,
                 p.CreatedAt
             ))
             .ToListAsync();
@@ -137,6 +138,7 @@ public class ProductService : IProductService
             CategoryId = dto.CategoryId,
             IsFeatured = dto.IsFeatured,
             ReorderLevel = dto.ReorderLevel,
+            HasTax = dto.HasTax,
             Status = ProductStatus.Active
         };
 
@@ -194,6 +196,7 @@ public class ProductService : IProductService
         product.IsFeatured = dto.IsFeatured;
         product.ReorderLevel = dto.ReorderLevel;
         product.Status = dto.Status;
+        product.HasTax = dto.HasTax;
         product.UpdatedAt = DateTime.UtcNow;
 
         // إعادة حساب إجمالي المخزون للتأكد من الدقة
@@ -400,6 +403,7 @@ public class ProductService : IProductService
         p.Reviews?.Count ?? 0,
         p.TotalStock,
         p.ReorderLevel,
+        p.HasTax,
         p.CreatedAt
     );
 }

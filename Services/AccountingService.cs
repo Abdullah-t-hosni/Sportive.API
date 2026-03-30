@@ -57,34 +57,63 @@ public class AccountingService : IAccountingService
     {
         if (await EntryExists(JournalEntryType.SalesInvoice, order.OrderNumber)) return;
 
+        // جلب إعدادات المتجر للحصول على الحسابات المختارة ونسبة الضريبة
+        var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        var vatRate = (store?.VatRatePercent ?? 14) / 100m;
+        var deliveryAcct = !string.IsNullOrEmpty(store?.DeliveryAccountId) ? store.DeliveryAccountId : DELIVERY_REVENUE;
+        var vatAcct = !string.IsNullOrEmpty(store?.StoreVatAccountId) ? store.StoreVatAccountId : VAT_OUTPUT;
+
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
         // ── 1. حسابات الجانب الدائن (Credits) ──────────────────
-        // أ. قيمة المبيعات (قبل الضريبة والخصم)
-        var netRevenue = Math.Round(order.SubTotal / (1 + VAT_RATE), 2);
-        var vatAmount = order.SubTotal - netRevenue;
+        decimal totalVatAmount = 0;
+        decimal totalNetRevenue = 0;
 
-        lines.Add((SALES_REVENUE, 0, netRevenue, $"مبيعات - {order.OrderNumber} (الإيراد)"));
+        if (order.Items != null && order.Items.Any())
+        {
+            foreach (var item in order.Items)
+            {
+                decimal itemVat = 0;
+                decimal itemNet = item.TotalPrice;
+
+                if (item.Product != null && item.Product.HasTax)
+                {
+                    itemNet = Math.Round(item.TotalPrice / (1 + vatRate), 2);
+                    itemVat = item.TotalPrice - itemNet;
+                }
+                
+                totalNetRevenue += itemNet;
+                totalVatAmount += itemVat;
+            }
+        }
+        else
+        {
+            totalNetRevenue = Math.Round(order.SubTotal / (1 + vatRate), 2);
+            totalVatAmount = order.SubTotal - totalNetRevenue;
+        }
+
+        lines.Add((SALES_REVENUE, 0, totalNetRevenue, $"مبيعات - {order.OrderNumber} (الإيراد)"));
         
-        // ب. ضريبة القيمة المضافة (دائنة دائماً في المبيعات)
-        if (vatAmount > 0)
-            lines.Add((VAT_OUTPUT, 0, vatAmount, $"ضريبة مبيعات 14% - {order.OrderNumber} (دائن)"));
+        if (totalVatAmount > 0)
+            lines.Add((vatAcct, 0, totalVatAmount, $"ضريبة مبيعات {(store?.VatRatePercent ?? 14)}% - {order.OrderNumber} (دائن)"));
 
-        // ج. إيراد التوصيل (دائن)
         if (order.DeliveryFee > 0)
-            lines.Add((DELIVERY_REVENUE, 0, order.DeliveryFee, $"إيراد توصيل - {order.OrderNumber} (دائن)"));
+            lines.Add((deliveryAcct, 0, order.DeliveryFee, $"إيراد توصيل - {order.OrderNumber} (دائن)"));
 
         // ── 2. حسابات الجانب المدين (Debits) ──────────────────
-        // أ. الخصم الممنوح (مدين)
         if (order.DiscountAmount > 0)
             lines.Add((SALES_DISCOUNT, order.DiscountAmount, 0, $"خصم ممنوح لعميل - {order.OrderNumber} (مدين)"));
 
-        // ب. التحصيل أو المديونية (مدين)
         var netReceivable = order.TotalAmount; 
-        if (order.Source == OrderSource.POS && order.PaymentStatus == PaymentStatus.Paid)
+        
+        bool isCashCollection = (order.Source == OrderSource.POS && order.PaymentStatus == PaymentStatus.Paid) ||
+                                (order.Source == OrderSource.Website && order.PaymentMethod == PaymentMethod.Cash && order.PaymentStatus == PaymentStatus.Paid);
+
+        if (isCashCollection)
         {
             var cashCode = GetCashAccount(order.PaymentMethod, order.Source);
-            lines.Add((cashCode, netReceivable, 0, $"تحصيل نقدي كاشير - {order.OrderNumber} (مدين)"));
+            var sourceName = order.Source == OrderSource.POS ? "كاشير" : "موقع";
+            lines.Add((cashCode, netReceivable, 0, $"تحصيل نقدي {sourceName} - {order.OrderNumber} (مدين)"));
         }
         else
         {
@@ -95,9 +124,7 @@ public class AccountingService : IAccountingService
         var totalCost = order.Items?.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity) ?? 0;
         if (totalCost > 0)
         {
-            // مدين: تكلفة البضاعة المباعة
             lines.Add((COGS, totalCost, 0, $"تكلفة المبيعات - {order.OrderNumber} (مدين)"));
-            // دائن: المخزون (خروج بضاعة)
             lines.Add((INVENTORY, 0, totalCost, $"خروج مخزون - {order.OrderNumber} (دائن)"));
         }
 
@@ -108,7 +135,8 @@ public class AccountingService : IAccountingService
             date:        order.CreatedAt,
             lines:       lines,
             orderId:     order.Id,
-            customerId:  order.CustomerId
+            customerId:  order.CustomerId,
+            source:      order.Source
         );
     }
 
@@ -306,6 +334,7 @@ public class AccountingService : IAccountingService
             (PaymentMethod.InstaPay,   OrderSource.POS)     => INSTAPAY,
             (PaymentMethod.InstaPay,   OrderSource.Website) => INSTAPAY_WEB,
             (PaymentMethod.CreditCard, _)                   => CASH_ACCOUNTS,
+            (PaymentMethod.Cash,       OrderSource.Website) => CASH_WEBSITE,
             (_,                        OrderSource.POS)     => CASH_CASHIER,
             _                                               => CASH_WEBSITE,
         };
@@ -365,7 +394,8 @@ public class AccountingService : IAccountingService
         List<(string code, decimal debit, decimal credit, string desc)> lines,
         int? orderId    = null,
         int? customerId = null,
-        int? supplierId = null)
+        int? supplierId = null,
+        OrderSource? source = null)
     {
         // التحقق من التوازن
         var totalDr = lines.Sum(l => l.debit);
@@ -376,7 +406,15 @@ public class AccountingService : IAccountingService
 
         var count   = await _db.JournalEntries.IgnoreQueryFilters().CountAsync() + 1;
         var year    = date.Year % 100;
-        var entryNo = $"JE-{year}{count:D5}";
+        
+        // تمييز أرقام القيود بناءً على المصدر
+        string entryNo;
+        if (source == OrderSource.POS)
+            entryNo = $"JE-POS-{year}{count:D5}";
+        else if (source == OrderSource.Website)
+            entryNo = $"JE-WEB-{year}{count:D5}";
+        else
+            entryNo = $"JE-{year}{count:D5}";
 
         var entry = new JournalEntry
         {

@@ -45,6 +45,12 @@ public class StoreInfo
     [JsonPropertyName("freeDeliveryThreshold")]
     public decimal FreeDeliveryAt { get; set; } = 2000;
     
+    [JsonPropertyName("deliveryAccountId")]
+    public string? DeliveryAccountId { get; set; } // الربط المالي: حساب إيراد التوصيل
+    
+    [JsonPropertyName("storeVatAccountId")]
+    public string? StoreVatAccountId { get; set; } // الربط المالي: حساب ضريبة المبيعات
+    
     [MaxLength(200)]
     [JsonPropertyName("facebookUrl")]
     public string FacebookPage { get; set; } = "";
