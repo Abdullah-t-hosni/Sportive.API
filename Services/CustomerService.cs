@@ -91,14 +91,35 @@ public class CustomerService : ICustomerService
 
     public async Task<CustomerDetailDto> CreateCustomerAsync(CreateCustomerDto dto)
     {
-        // 1. Check if email exists (only if provided)
-        if (!string.IsNullOrEmpty(dto.Email))
+        // 1. Check for existing customer (including deleted)
+        Customer? existing = null;
+
+        if (!string.IsNullOrEmpty(dto.Phone))
+            existing = await _db.Customers.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.Phone == dto.Phone);
+        
+        if (existing == null && !string.IsNullOrEmpty(dto.Email))
+            existing = await _db.Customers.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.Email.ToLower() == dto.Email.ToLower());
+
+        // 2. If found deleted, restore it
+        if (existing != null)
         {
-            if (await _db.Customers.AnyAsync(c => c.Email.ToLower() == dto.Email.ToLower() && !c.IsDeleted))
-                throw new Exception("البريد الإلكتروني مسجل بالفعل لعميل آخر.");
+            if (!existing.IsDeleted)
+                throw new Exception("هذا العميل (أو الهاتف) مسجل بالفعل في النظام.");
+            
+            // Restore
+            existing.IsDeleted = false;
+            existing.FirstName = dto.FirstName;
+            existing.LastName  = dto.LastName ?? "";
+            existing.Phone     = dto.Phone;
+            // Only update email if provided, otherwise keep existing or regenerate
+            if (!string.IsNullOrEmpty(dto.Email)) existing.Email = dto.Email;
+            
+            existing.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+            return (await GetCustomerByIdAsync(existing.Id))!;
         }
 
-        // 2. Handle missing email for POS (Identify by phone or auto-generate)
+        // 3. Create New if not found
         var email = dto.Email;
         if (string.IsNullOrWhiteSpace(email))
         {
@@ -106,6 +127,10 @@ public class CustomerService : ICustomerService
                 email = $"{dto.Phone}@sportive.com";
             else
                 email = $"{Guid.NewGuid().ToString().Substring(0, 8)}@pos.com";
+            
+            // Quick check for safety
+            if (await _db.Customers.IgnoreQueryFilters().AnyAsync(c => c.Email.ToLower() == email.ToLower()))
+                throw new Exception("عذراً، حدث تضارب في البيانات التلقائية. يرجى إدخال بريد إلكتروني يدوياً.");
         }
 
         var customer = new Customer
@@ -114,7 +139,8 @@ public class CustomerService : ICustomerService
             LastName = dto.LastName ?? "",
             Email = email,
             Phone = dto.Phone,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
         };
 
         _db.Customers.Add(customer);
