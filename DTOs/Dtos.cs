@@ -76,6 +76,7 @@ public record ProductSummaryDto(
     double AverageRating,
     int ReviewCount,
     int TotalStock,
+    int ReorderLevel,
     string SKU,
     DateTime CreatedAt
 );
@@ -101,6 +102,7 @@ public record ProductDetailDto(
     double AverageRating,
     int ReviewCount,
     int TotalStock,
+    int ReorderLevel,
     DateTime CreatedAt
 );
 
@@ -110,6 +112,7 @@ public record ProductVariantDto(
     string? Color,
     string? ColorAr,
     int StockQuantity,
+    int ReorderLevel,
     decimal PriceAdjustment,
     string? ImageUrl,
     string? ImagePublicId = null
@@ -129,7 +132,8 @@ public record CreateProductDto(
     string? Brand,
     int CategoryId,
     bool IsFeatured,
-    List<CreateVariantDto>? Variants
+    List<CreateVariantDto>? Variants,
+    int ReorderLevel = 0
 );
 
 public record UpdateProductDto(
@@ -144,6 +148,7 @@ public record UpdateProductDto(
     string SKU,
     int CategoryId,
     bool IsFeatured,
+    int ReorderLevel,
     ProductStatus Status
 );
 
@@ -152,7 +157,8 @@ public record CreateVariantDto(
     string? Color,
     string? ColorAr,
     int StockQuantity,
-    decimal? PriceAdjustment
+    decimal? PriceAdjustment,
+    int ReorderLevel = 0
 );
 
 // ========== CART ==========

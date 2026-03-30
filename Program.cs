@@ -304,8 +304,13 @@ static async Task SeedAsync(WebApplication app)
         await db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS VatAccountId INT NULL;");
         await db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS CashAccountId INT NULL;");
         await db.Database.ExecuteSqlRawAsync("ALTER TABLE Suppliers ADD COLUMN IF NOT EXISTS MainAccountId INT NULL;");
+        await db.Database.ExecuteSqlRawAsync("ALTER TABLE Products ADD COLUMN IF NOT EXISTS ReorderLevel INT NOT NULL DEFAULT 0;");
+        await db.Database.ExecuteSqlRawAsync("ALTER TABLE ProductVariants ADD COLUMN IF NOT EXISTS ReorderLevel INT NOT NULL DEFAULT 0;");
         
-        Log.Information("Manual schema patch check completed.");
+        // 🚀 Fix: Make all accounts postable by default to allow automatic posting
+        await db.Database.ExecuteSqlRawAsync("UPDATE Accounts SET AllowPosting = 1 WHERE IsDeleted = 0;");
+        
+        Log.Information("Manual schema patch check (V4.0 - Reorder Level Added) completed.");
     }
     catch (Exception ex)
     {

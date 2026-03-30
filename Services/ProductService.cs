@@ -92,6 +92,7 @@ public class ProductService : IProductService
                 p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
                 p.Reviews.Count,
                 p.TotalStock,
+                p.ReorderLevel,
                 p.SKU,
                 p.CreatedAt
             ))
@@ -135,6 +136,7 @@ public class ProductService : IProductService
             Brand = dto.Brand,
             CategoryId = dto.CategoryId,
             IsFeatured = dto.IsFeatured,
+            ReorderLevel = dto.ReorderLevel,
             Status = ProductStatus.Active
         };
 
@@ -148,6 +150,7 @@ public class ProductService : IProductService
                     Color = v.Color,
                     ColorAr = v.ColorAr,
                     StockQuantity = v.StockQuantity,
+                    ReorderLevel = v.ReorderLevel,
                     PriceAdjustment = v.PriceAdjustment
                 });
             }
@@ -189,6 +192,7 @@ public class ProductService : IProductService
         product.SKU = dto.SKU;
         product.CategoryId = dto.CategoryId;
         product.IsFeatured = dto.IsFeatured;
+        product.ReorderLevel = dto.ReorderLevel;
         product.Status = dto.Status;
         product.UpdatedAt = DateTime.UtcNow;
 
@@ -274,6 +278,7 @@ public class ProductService : IProductService
             Color = dto.Color,
             ColorAr = dto.ColorAr,
             StockQuantity = dto.StockQuantity,
+            ReorderLevel = dto.ReorderLevel,
             PriceAdjustment = dto.PriceAdjustment
         };
         _db.ProductVariants.Add(v);
@@ -288,7 +293,7 @@ public class ProductService : IProductService
         await _db.SaveChangesAsync();
         await _notifications.BroadcastStockUpdateAsync(v.ProductId, v.Id, v.StockQuantity);
         
-        return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId);
+        return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId);
     }
 
     public async Task<ProductVariantDto> UpdateVariantAsync(int variantId, CreateVariantDto dto)
@@ -299,6 +304,7 @@ public class ProductService : IProductService
         v.Color = dto.Color;
         v.ColorAr = dto.ColorAr;
         v.StockQuantity = dto.StockQuantity;
+        v.ReorderLevel = dto.ReorderLevel;
         v.PriceAdjustment = dto.PriceAdjustment;
         v.UpdatedAt = DateTime.UtcNow;
 
@@ -312,7 +318,7 @@ public class ProductService : IProductService
         await _db.SaveChangesAsync();
         await _notifications.BroadcastStockUpdateAsync(v.ProductId, v.Id, v.StockQuantity);
         
-        return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId);
+        return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId);
     }
 
     public async Task<bool> DeleteVariantAsync(int variantId)
@@ -351,6 +357,7 @@ public class ProductService : IProductService
                 p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
                 p.Reviews.Count,
                 p.TotalStock,
+                p.ReorderLevel,
                 p.SKU,
                 p.CreatedAt
             ))
@@ -376,6 +383,7 @@ public class ProductService : IProductService
                 p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
                 p.Reviews.Count,
                 p.TotalStock,
+                p.ReorderLevel,
                 p.SKU,
                 p.CreatedAt
             ))
@@ -386,11 +394,12 @@ public class ProductService : IProductService
         p.Id, p.NameAr, p.NameEn, p.DescriptionAr, p.DescriptionEn,
         p.Price, p.DiscountPrice ?? 0, p.CostPrice, p.SKU, p.Brand, p.Status.ToString(), p.IsFeatured,
         p.CategoryId, p.Category?.NameAr ?? "Category Missing", p.Category?.NameEn ?? "Category Missing",
-        p.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList() ?? new List<ProductVariantDto>(),
+        p.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList() ?? new List<ProductVariantDto>(),
         p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr)).ToList() ?? new List<ProductImageDto>(),
         p.Reviews?.Any() == true ? p.Reviews.Average(r => r.Rating) : 0,
         p.Reviews?.Count ?? 0,
         p.TotalStock,
+        p.ReorderLevel,
         p.CreatedAt
     );
 }

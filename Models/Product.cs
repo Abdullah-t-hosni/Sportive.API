@@ -16,6 +16,7 @@ public class Product : BaseEntity
     public ProductStatus Status { get; set; } = ProductStatus.Active;
     public bool IsFeatured { get; set; } = false;
     public int TotalStock { get; set; } = 0;
+    public int ReorderLevel { get; set; } = 0; // حد الطلب للمنتج الرئيسي
 
     // Category
     public int CategoryId { get; set; }
@@ -37,6 +38,7 @@ public class ProductVariant : BaseEntity
     public string? Color { get; set; }
     public string? ColorAr { get; set; }
     public int StockQuantity { get; set; } = 0;
+    public int ReorderLevel { get; set; } = 0; // حد الطلب للموديل/المقاس الصغير
     public decimal? PriceAdjustment { get; set; } = 0; // extra price for this variant
     public string? ImageUrl { get; set; }
     public string? ImagePublicId { get; set; }
