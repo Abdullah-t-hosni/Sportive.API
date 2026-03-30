@@ -146,9 +146,19 @@ public record JournalEntrySummaryDto(
 );
 
 // ══════════════════════════════════════════════════════
-// RECEIPT VOUCHER
+// RECEIPT VOUCHERS
 // ══════════════════════════════════════════════════════
 
+public record CreateReceiptVoucherDto(
+    DateTime VoucherDate,
+    decimal  Amount,
+    int      CashAccountId,
+    int      FromAccountId,
+    int?     CustomerId,
+    VoucherPaymentMethod PaymentMethod,
+    string?  Reference,
+    string?  Description,
+    string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null
 );
 
