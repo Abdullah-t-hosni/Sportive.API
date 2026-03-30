@@ -195,6 +195,8 @@ public class CustomerService : ICustomerService
     {
         var customer = await _db.Customers.FindAsync(id);
         if (customer == null) return false;
+        
+        customer.IsActive = !customer.IsActive;
         customer.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
         return true;

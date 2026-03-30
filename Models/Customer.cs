@@ -20,6 +20,7 @@ public class Customer : BaseEntity
     public string? AppUserId { get; set; }
     public AppUser? AppUser { get; set; }
     public DateTime? DateOfBirth { get; set; }
+    public bool IsActive { get; set; } = true;
 
     // Navigation
     public ICollection<Order> Orders { get; set; } = new List<Order>();
