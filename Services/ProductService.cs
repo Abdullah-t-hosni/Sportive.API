@@ -362,6 +362,7 @@ public class ProductService : IProductService
                 p.TotalStock,
                 p.ReorderLevel,
                 p.SKU,
+                p.HasTax,
                 p.CreatedAt
             ))
             .ToListAsync();
@@ -388,6 +389,7 @@ public class ProductService : IProductService
                 p.TotalStock,
                 p.ReorderLevel,
                 p.SKU,
+                p.HasTax,
                 p.CreatedAt
             ))
             .ToListAsync();
