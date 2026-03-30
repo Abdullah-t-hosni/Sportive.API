@@ -56,6 +56,7 @@ public class PurchaseInvoice : BaseEntity
     public PurchaseInvoiceStatus Status       { get; set; } = PurchaseInvoiceStatus.Draft;
 
     public DateTime  InvoiceDate  { get; set; } = DateTime.UtcNow;
+    public int?      PaymentTermDays { get; set; }                   // دورة الدفع بالأيام (30، 60، إلخ)
     public DateTime? DueDate      { get; set; }
 
     public decimal SubTotal      { get; set; } = 0;

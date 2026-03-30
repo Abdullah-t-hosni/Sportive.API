@@ -236,7 +236,8 @@ public class PurchaseInvoicesController : ControllerBase
             SupplierId            = dto.SupplierId,
             PaymentTerms          = dto.PaymentTerms,
             InvoiceDate           = dto.InvoiceDate,
-            DueDate               = dto.PaymentTerms == PaymentTerms.Cash ? null : dto.DueDate,
+            PaymentTermDays       = dto.PaymentTermDays,
+            DueDate               = dto.PaymentTerms == PaymentTerms.Cash ? null : (dto.PaymentTermDays.HasValue ? dto.InvoiceDate.AddDays(dto.PaymentTermDays.Value) : dto.DueDate),
             TaxPercent            = dto.TaxPercent,
             DiscountAmount        = dto.DiscountAmount,
             Notes                 = dto.Notes,
@@ -375,9 +376,23 @@ public class PurchaseInvoicesController : ControllerBase
         if (dto.PaymentTerms.HasValue) 
         {
             inv.PaymentTerms = dto.PaymentTerms.Value;
-            inv.DueDate = inv.PaymentTerms == PaymentTerms.Cash ? null : (dto.DueDate ?? inv.DueDate);
         }
         if (dto.InvoiceDate.HasValue)   inv.InvoiceDate = dto.InvoiceDate.Value;
+        if (dto.PaymentTermDays.HasValue) inv.PaymentTermDays = dto.PaymentTermDays.Value;
+
+        // Auto-calculate DueDate
+        if (inv.PaymentTerms == PaymentTerms.Cash)
+        {
+            inv.DueDate = null;
+        }
+        else if (dto.PaymentTermDays.HasValue)
+        {
+            inv.DueDate = inv.InvoiceDate.AddDays(dto.PaymentTermDays.Value);
+        }
+        else if (dto.DueDate.HasValue)
+        {
+            inv.DueDate = dto.DueDate.Value;
+        }
         if (dto.TaxPercent.HasValue)    inv.TaxPercent  = dto.TaxPercent.Value;
         if (dto.DiscountAmount.HasValue) inv.DiscountAmount = dto.DiscountAmount.Value;
         if (dto.Notes != null)          inv.Notes       = dto.Notes;
@@ -483,9 +498,53 @@ public class PurchaseInvoicesController : ControllerBase
     {
         var inv = await _db.PurchaseInvoices
             .Include(i => i.Supplier)
+            .Include(i => i.Items)
+            .Include(i => i.Payments)
             .FirstOrDefaultAsync(i => i.Id == id && !i.IsDeleted);
+
         if (inv == null) return NotFound();
+
+        // 1. Reverse Supplier Totals
         inv.Supplier.TotalPurchases -= inv.TotalAmount;
+        inv.Supplier.TotalPaid -= inv.PaidAmount;
+
+        // 2. Reverse Stock
+        foreach (var item in inv.Items)
+        {
+            if (item.ProductId.HasValue)
+            {
+                var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == item.ProductId.Value);
+                if (product != null)
+                {
+                    if (item.ProductVariantId.HasValue)
+                    {
+                        var variant = product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId.Value);
+                        if (variant != null)
+                        {
+                            variant.StockQuantity -= item.Quantity;
+                        }
+                    }
+                    else
+                    {
+                        product.TotalStock -= item.Quantity;
+                    }
+                    await _productService.UpdateTotalStockAsync(product.Id);
+                }
+            }
+        }
+
+        // 3. Delete Associated Payments and their Journal Entries
+        foreach (var p in inv.Payments)
+        {
+            p.IsDeleted = true;
+            var pEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == p.PaymentNumber);
+            if (pEntry != null) pEntry.IsDeleted = true;
+        }
+
+        // 4. Delete the Invoice Journal Entry
+        var invoiceEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == inv.InvoiceNumber);
+        if (invoiceEntry != null) invoiceEntry.IsDeleted = true;
+
         inv.IsDeleted = true;
         inv.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
@@ -499,6 +558,7 @@ public record UpdatePurchaseInvoiceDto(
     string? SupplierInvoiceNumber,
     PaymentTerms? PaymentTerms,
     DateTime? InvoiceDate,
+    int? PaymentTermDays,
     DateTime? DueDate,
     decimal? TaxPercent,
     decimal? DiscountAmount,

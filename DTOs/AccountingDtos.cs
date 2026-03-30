@@ -69,6 +69,7 @@ public record CreateJournalEntryDto(
     string?           Reference,
     string?           Description,
     List<CreateJournalLineDto> Lines,
+    JournalEntryType? Type = JournalEntryType.Manual,
     string?           AttachmentUrl = null,
     string?           AttachmentPublicId = null,
     bool              AsDraft = false

@@ -55,7 +55,8 @@ public record SupplierBasicDto(int Id, string Name, string Phone, string? Compan
 public record CreatePurchaseInvoiceDto(
     int      SupplierId,
     PaymentTerms PaymentTerms,
-    DateTime InvoiceDate,
+    DateTime  InvoiceDate,
+    int?      PaymentTermDays,
     DateTime? DueDate,
     string?  SupplierInvoiceNumber,
     decimal  TaxPercent,

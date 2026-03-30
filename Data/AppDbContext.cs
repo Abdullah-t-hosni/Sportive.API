@@ -37,6 +37,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<JournalLine>    JournalLines    { get; set; }
     public DbSet<ReceiptVoucher> ReceiptVouchers { get; set; }
     public DbSet<PaymentVoucher> PaymentVouchers { get; set; }
+    
+    public DbSet<InventoryAudit>     InventoryAudits     { get; set; }
+    public DbSet<InventoryAuditItem> InventoryAuditItems { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -58,6 +61,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<OrderStatusHistory>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<BackupRecord>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<InventoryAudit>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<InventoryAuditItem>().HasQueryFilter(x => !x.IsDeleted);
 
         builder.Entity<AppUser>(e => {
             e.HasIndex(u => u.PhoneNumber);

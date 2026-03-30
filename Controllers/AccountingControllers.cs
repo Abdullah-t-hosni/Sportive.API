@@ -443,13 +443,16 @@ public class JournalEntriesController : ControllerBase
 
         var count = await _db.JournalEntries.IgnoreQueryFilters().CountAsync() + 1;
         var year  = dto.EntryDate.Year % 100;
-        var entryNo = $"JE-{year}{count:D5}";
+        
+        var type = dto.Type ?? JournalEntryType.Manual;
+        var prefix = type == JournalEntryType.OpeningBalance ? "OB" : "JE";
+        var entryNo = $"{prefix}-{year}{count:D5}";
 
         var entry = new JournalEntry
         {
             EntryNumber     = entryNo,
             EntryDate       = dto.EntryDate,
-            Type            = JournalEntryType.Manual,
+            Type            = type,
             Status          = dto.AsDraft ? JournalEntryStatus.Draft : JournalEntryStatus.Posted,
             Reference       = dto.Reference,
             Description     = dto.Description,
@@ -503,10 +506,8 @@ public class JournalEntriesController : ControllerBase
             .FirstOrDefaultAsync(e => e.Id == id && !e.IsDeleted);
 
         if (entry == null) return NotFound();
-        if (entry.Type != JournalEntryType.Manual)
-            return BadRequest(new { message = "يمكن تعديل القيود اليدوية فقط" });
-        if (entry.Status != JournalEntryStatus.Draft)
-            return BadRequest(new { message = "يمكن تعديل المسودات فقط" });
+        if (entry.Type != JournalEntryType.Manual && entry.Type != JournalEntryType.OpeningBalance)
+            return BadRequest(new { message = "يمكن تعديل القيود اليدوية أو الافتتاحية فقط" });
 
         entry.EntryDate   = dto.EntryDate;
         entry.Reference   = dto.Reference;
@@ -551,10 +552,8 @@ public class JournalEntriesController : ControllerBase
             .FirstOrDefaultAsync(e => e.Id == id && !e.IsDeleted);
 
         if (entry == null) return NotFound();
-        if (entry.Type != JournalEntryType.Manual)
-            return BadRequest(new { message = "يمكن حذف القيود اليدوية فقط" });
-        if (entry.Status != JournalEntryStatus.Draft)
-            return BadRequest(new { message = "يمكن حذف المسودات فقط" });
+        if (entry.Type != JournalEntryType.Manual && entry.Type != JournalEntryType.OpeningBalance)
+            return BadRequest(new { message = "يمكن حذف القيود اليدوية أو الافتتاحية فقط" });
 
         foreach (var line in entry.Lines.Where(l => !l.IsDeleted))
         {
