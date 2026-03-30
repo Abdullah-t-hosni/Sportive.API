@@ -91,15 +91,28 @@ public class CustomerService : ICustomerService
 
     public async Task<CustomerDetailDto> CreateCustomerAsync(CreateCustomerDto dto)
     {
-        // 1. Check if email already exists
-        if (await _db.Customers.AnyAsync(c => c.Email.ToLower() == dto.Email.ToLower() && !c.IsDeleted))
-            throw new Exception("البريد الإلكتروني مسجل بالفعل لعميل آخر.");
+        // 1. Check if email exists (only if provided)
+        if (!string.IsNullOrEmpty(dto.Email))
+        {
+            if (await _db.Customers.AnyAsync(c => c.Email.ToLower() == dto.Email.ToLower() && !c.IsDeleted))
+                throw new Exception("البريد الإلكتروني مسجل بالفعل لعميل آخر.");
+        }
+
+        // 2. Handle missing email for POS (Identify by phone or auto-generate)
+        var email = dto.Email;
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            if (!string.IsNullOrWhiteSpace(dto.Phone))
+                email = $"{dto.Phone}@sportive.com";
+            else
+                email = $"{Guid.NewGuid().ToString().Substring(0, 8)}@pos.com";
+        }
 
         var customer = new Customer
         {
             FirstName = dto.FirstName,
-            LastName = dto.LastName,
-            Email = dto.Email,
+            LastName = dto.LastName ?? "",
+            Email = email,
             Phone = dto.Phone,
             CreatedAt = DateTime.UtcNow
         };

@@ -23,8 +23,8 @@ public class CustomersController : ControllerBase
         [FromQuery] string? search = null) =>
         Ok(await _customers.GetCustomersAsync(page, pageSize, search));
 
-    /// <summary>إضافة عميل جديد — Admin, Manager</summary>
-    [Authorize(Roles = "Admin,Manager,Pos")]
+    /// <summary>إضافة عميل جديد — Admin, Manager, Cashier</summary>
+    [Authorize(Roles = "Admin,Manager,Cashier,sttaf")]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateCustomerDto dto)
     {

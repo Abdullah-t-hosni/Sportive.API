@@ -343,8 +343,8 @@ public record CreateAddressDto(
 
 public record CreateCustomerDto(
     string FirstName,
-    string LastName,
-    string Email,
+    string? LastName = null,
+    string? Email = null,
     string? Phone = null
 );
 
