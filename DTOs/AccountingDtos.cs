@@ -41,7 +41,7 @@ public record AccountFlatDto(
 );
 
 public record CreateAccountDto(
-    string  Code,
+    string? Code,
     string  NameAr,
     string? NameEn,
     string? Description,

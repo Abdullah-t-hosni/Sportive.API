@@ -183,28 +183,82 @@ public class AccountsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateAccountDto dto)
     {
-        if (await _db.Accounts.AnyAsync(a => a.Code == dto.Code && !a.IsDeleted))
-            return BadRequest(new { message = $"الكود '{dto.Code}' مستخدم مسبقاً" });
+        string? generatedCode = dto.Code;
 
         int level = 1;
+        Account? parent = null;
         if (dto.ParentId.HasValue)
         {
-            var parent = await _db.Accounts.FindAsync(dto.ParentId.Value);
+            parent = await _db.Accounts.FindAsync(dto.ParentId.Value);
             if (parent == null) return BadRequest(new { message = "الحساب الأب غير موجود" });
-            parent.IsLeaf = false;
             level = parent.Level + 1;
         }
 
-        var nature = dto.Nature;
+        // Automatic Code Generation
+        if (string.IsNullOrWhiteSpace(generatedCode))
+        {
+            if (parent != null)
+            {
+                // Find last child under this parent
+                var lastChildCode = await _db.Accounts
+                    .Where(a => a.ParentId == dto.ParentId && !a.IsDeleted)
+                    .OrderByDescending(a => a.Code)
+                    .Select(a => a.Code)
+                    .FirstOrDefaultAsync();
+
+                if (string.IsNullOrEmpty(lastChildCode))
+                {
+                    // First child: ParentCode + "01"
+                    generatedCode = parent.Code + "01";
+                }
+                else
+                {
+                    // Increment suffix
+                    string prefix = parent.Code;
+                    string suffixStr = lastChildCode.Substring(prefix.Length);
+                    if (int.TryParse(suffixStr, out int lastSuffix))
+                    {
+                        generatedCode = prefix + (lastSuffix + 1).ToString("D2");
+                    }
+                    else
+                    {
+                         generatedCode = parent.Code + "01"; // Fallback
+                    }
+                }
+            }
+            else
+            {
+                // Root account auto-increment
+                var lastRootCode = await _db.Accounts
+                    .Where(a => a.ParentId == null && !a.IsDeleted)
+                    .OrderByDescending(a => a.Code)
+                    .Select(a => a.Code)
+                    .FirstOrDefaultAsync();
+
+                if (int.TryParse(lastRootCode, out int lastNum))
+                {
+                    generatedCode = (lastNum + 1).ToString();
+                }
+                else
+                {
+                    generatedCode = "1";
+                }
+            }
+        }
+
+        if (await _db.Accounts.AnyAsync(a => a.Code == generatedCode && !a.IsDeleted))
+            return BadRequest(new { message = $"الكود '{generatedCode}' مستخدم مسبقاً أو غير صالح للتوليد التلقائي" });
+
+        if (parent != null) parent.IsLeaf = false;
 
         var acct = new Account
         {
-            Code         = dto.Code,
+            Code         = generatedCode!,
             NameAr       = dto.NameAr,
             NameEn       = dto.NameEn,
             Description  = dto.Description,
             Type         = dto.Type,
-            Nature       = nature,
+            Nature       = dto.Nature,
             ParentId     = dto.ParentId,
             Level        = level,
             AllowPosting = dto.AllowPosting,
