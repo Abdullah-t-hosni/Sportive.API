@@ -274,7 +274,7 @@ public class FinancialReportsController : ControllerBase
             openingMap[aId] = acct.Nature == AccountNature.Debit ? openDr - openCr : openCr - openDr;
         }
 
-        // بناء السجلات مع الرصيد المتراكم
+        // بناء السجلات مع الرصيد المتراكم — مرتبة حسب التاريخ ثم رقم القيد
         var ledgerRows = new List<LedgerRow>();
         var balanceMap = new Dictionary<int, decimal>(openingMap);
 
@@ -301,14 +301,15 @@ public class FinancialReportsController : ControllerBase
 
         if (excel) return ExcelLedger(ledgerRows, openingMap, from, to);
 
-        // Group by account
+        // تجميع حسب الحساب — الحسابات مرتبة بالكود، والصفوف داخل كل حساب مرتبة بالتاريخ ثم رقم القيد
         var grouped = ledgerRows
             .GroupBy(r => new { r.AccountId, r.AccountCode, r.AccountName })
+            .OrderBy(g => g.Key.AccountCode)
             .Select(g => new {
                 g.Key.AccountId, g.Key.AccountCode, g.Key.AccountName,
                 openingBalance = openingMap.GetValueOrDefault(g.Key.AccountId, 0),
-                rows = g.ToList(),
-                closingBalance = g.LastOrDefault()?.RunningBalance ?? 0
+                rows = g.OrderBy(r => r.Date).ThenBy(r => r.EntryNumber).ToList(),
+                closingBalance = g.OrderBy(r => r.Date).ThenBy(r => r.EntryNumber).LastOrDefault()?.RunningBalance ?? 0
             }).ToList();
 
         return Ok(new { from, to, accounts = grouped });

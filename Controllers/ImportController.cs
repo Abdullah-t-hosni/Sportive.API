@@ -265,6 +265,190 @@ public class ImportController : ControllerBase
         });
     }
 
+    // ── INVENTORY TEMPLATE ────────────────────────────────────
+    // GET /api/import/inventory-template
+    [HttpGet("inventory-template")]
+    public async Task<IActionResult> GetInventoryTemplate()
+    {
+        using var wb = new XLWorkbook();
+
+        // Sheet 1: Stock Update
+        var ws = wb.Worksheets.Add("تحديث المخزون");
+        ws.RightToLeft = true;
+
+        var headers = new[] { "الكود (SKU) *", "اسم المنتج", "المقاس", "اللون", "الكمية الجديدة *" };
+        for (int c = 0; c < headers.Length; c++)
+        {
+            var cell = ws.Cell(1, c + 1);
+            cell.Value = headers[c];
+            cell.Style.Font.Bold = true;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1a1a2e");
+            cell.Style.Font.FontColor = XLColor.White;
+            cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+
+        // Add instruction row
+        ws.Cell(2, 1).Value = "(أدخل SKU المنتج أو المتغير والكمية الفعلية)";
+        ws.Row(2).Style.Font.FontColor = XLColor.Gray;
+        ws.Row(2).Style.Font.Italic = true;
+
+        // Populate with existing products + variants as reference
+        var products = await _db.Products
+            .Include(p => p.Variants)
+            .OrderBy(p => p.NameAr)
+            .Take(200)
+            .ToListAsync();
+
+        int row = 3;
+        foreach (var p in products)
+        {
+            if (!p.Variants.Any(v => !v.IsDeleted))
+            {
+                // Product-level (no variants)
+                ws.Cell(row, 1).Value = p.SKU;
+                ws.Cell(row, 2).Value = p.NameAr;
+                ws.Cell(row, 3).Value = "";
+                ws.Cell(row, 4).Value = "";
+                ws.Cell(row, 5).Value = p.TotalStock;
+                ws.Row(row).Style.Font.FontColor = XLColor.DarkGray;
+                row++;
+            }
+            else
+            {
+                foreach (var v in p.Variants.Where(v => !v.IsDeleted))
+                {
+                    var varSku = !string.IsNullOrEmpty(v.SKU) ? v.SKU : p.SKU;
+                    ws.Cell(row, 1).Value = varSku;
+                    ws.Cell(row, 2).Value = p.NameAr;
+                    ws.Cell(row, 3).Value = v.Size ?? "";
+                    ws.Cell(row, 4).Value = v.Color ?? "";
+                    ws.Cell(row, 5).Value = v.StockQuantity;
+                    ws.Row(row).Style.Font.FontColor = XLColor.DarkGray;
+                    row++;
+                }
+            }
+        }
+
+        ws.Columns().AdjustToContents();
+
+        var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        stream.Position = 0;
+
+        return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "inventory_import_template.xlsx");
+    }
+
+    // ── IMPORT INVENTORY (STOCK UPDATE ONLY) ──────────────────
+    // POST /api/import/inventory
+    [HttpPost("inventory")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> ImportInventory(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "لم يتم رفع ملف" });
+
+        var ext = Path.GetExtension(file.FileName).ToLower();
+        if (ext != ".xlsx" && ext != ".xls")
+            return BadRequest(new { message = "يجب أن يكون الملف بصيغة Excel (.xlsx)" });
+
+        int updated = 0;
+        var skipped = new List<string>();
+        var errors  = new List<string>();
+
+        try
+        {
+            using var stream = file.OpenReadStream();
+            using var wb     = new XLWorkbook(stream);
+
+            if (!wb.TryGetWorksheet("تحديث المخزون", out var ws))
+                ws = wb.Worksheets.First();
+
+            var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
+
+            // Load all products with their variants
+            var allProducts = await _db.Products
+                .Include(p => p.Variants.Where(v => !v.IsDeleted))
+                .ToListAsync();
+
+            // Build lookup: productSKU -> product
+            var productBySku = allProducts.ToDictionary(p => p.SKU, StringComparer.OrdinalIgnoreCase);
+
+            for (int r = 2; r <= lastRow; r++)
+            {
+                var sku    = ws.Cell(r, 1).GetString().Trim();
+                var size   = ws.Cell(r, 3).GetString().Trim().ToLower();
+                var color  = ws.Cell(r, 4).GetString().Trim().ToLower();
+                var qtyStr = ws.Cell(r, 5).GetString().Trim();
+
+                // Skip empty or instruction rows
+                if (string.IsNullOrEmpty(sku) || sku.StartsWith("(")) continue;
+
+                if (!int.TryParse(qtyStr, out var qty) || qty < 0)
+                {
+                    errors.Add($"صف {r}: الكمية غير صحيحة للكود '{sku}'");
+                    continue;
+                }
+
+                if (!productBySku.TryGetValue(sku, out var product))
+                {
+                    skipped.Add($"صف {r}: الكود '{sku}' غير موجود في النظام — تم تخطيه");
+                    continue;
+                }
+
+                var activeVariants = product.Variants.Where(v => !v.IsDeleted).ToList();
+
+                if (!activeVariants.Any())
+                {
+                    // Product without variants — update directly
+                    product.TotalStock    = qty;
+                    product.StockQuantity = qty;
+                    updated++;
+                }
+                else if (!string.IsNullOrEmpty(size) || !string.IsNullOrEmpty(color))
+                {
+                    // Match by size and/or color
+                    var variant = activeVariants.FirstOrDefault(v =>
+                        (string.IsNullOrEmpty(size)  || (v.Size  ?? "").ToLower() == size) &&
+                        (string.IsNullOrEmpty(color) || (v.Color ?? "").ToLower() == color));
+
+                    if (variant == null)
+                    {
+                        skipped.Add($"صف {r}: لم يُعثر على مقاس/لون '{size}/{color}' للكود '{sku}'");
+                        continue;
+                    }
+
+                    variant.StockQuantity = qty;
+
+                    // Recalculate product total stock
+                    product.TotalStock = activeVariants.Sum(v => v.StockQuantity);
+                    updated++;
+                }
+                else
+                {
+                    // SKU has variants but no size/color specified — skip with helpful message
+                    skipped.Add($"صف {r}: الكود '{sku}' له مقاسات — حدد المقاس واللون في العمودين C وD");
+                    continue;
+                }
+            }
+
+            await _db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = $"خطأ في قراءة الملف: {ex.Message}" });
+        }
+
+        return Ok(new
+        {
+            message  = $"تم تحديث مخزون {updated} صف بنجاح",
+            updated,
+            skipped  = skipped.Count,
+            errors   = errors.Count,
+            details  = new { skipped, errors }
+        });
+    }
+
     private class ImportResult
     {
         public int Added         { get; set; }
