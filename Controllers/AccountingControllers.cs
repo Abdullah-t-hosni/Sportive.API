@@ -507,7 +507,7 @@ public class JournalEntriesController : ControllerBase
             .FirstOrDefaultAsync(e => e.Id == id && !e.IsDeleted);
 
         if (entry == null) return NotFound();
-        if (entry.Type == JournalEntryType.SalesInvoice || entry.Type == JournalEntryType.SalesReturn)
+        if ((entry.Type == JournalEntryType.SalesInvoice || entry.Type == JournalEntryType.SalesReturn) && !User.IsInRole("Admin"))
             return BadRequest(new { message = "لا يمكن تعديل السندات التلقائية الخاصة بالمبيعات" });
 
         entry.EntryDate   = dto.EntryDate;
@@ -554,7 +554,7 @@ public class JournalEntriesController : ControllerBase
             .FirstOrDefaultAsync(e => e.Id == id && !e.IsDeleted);
 
         if (entry == null) return NotFound();
-        if (entry.Type == JournalEntryType.SalesInvoice || entry.Type == JournalEntryType.SalesReturn)
+        if ((entry.Type == JournalEntryType.SalesInvoice || entry.Type == JournalEntryType.SalesReturn) && !User.IsInRole("Admin"))
             return BadRequest(new { message = "لا يمكن حذف السندات التلقائية الخاصة بالمبيعات" });
 
         foreach (var line in entry.Lines.Where(l => !l.IsDeleted))
