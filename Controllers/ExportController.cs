@@ -294,6 +294,193 @@ public class ExportController : ControllerBase
             $"pos_report_{from:yyyyMMdd}.xlsx");
     }
 
+    // ── INVENTORY FULL ────────────────────────────────────────
+    // GET /api/export/inventory-full
+    [HttpGet("inventory-full")]
+    public async Task<IActionResult> ExportInventoryFull()
+    {
+        var products = await _db.Products
+            .Include(p => p.Category)
+            .Include(p => p.Variants)
+            .OrderBy(p => p.Category.NameAr).ThenBy(p => p.NameAr)
+            .ToListAsync();
+
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("المخزون الكامل");
+
+        var headers = new[]
+        {
+            "الكود (SKU)", "اسم المنتج", "الفئة", "الماركة",
+            "السعر", "التكلفة", "إجمالي المخزون", "حد إعادة الطلب",
+            "قيمة المخزون", "الحالة"
+        };
+        StyleHeader(ws, headers);
+
+        int row = 2;
+        decimal grandTotal = 0;
+        foreach (var p in products)
+        {
+            var stockValue = p.TotalStock * (p.CostPrice ?? 0);
+            grandTotal += stockValue;
+
+            ws.Cell(row, 1).Value  = p.SKU;
+            ws.Cell(row, 2).Value  = p.NameAr;
+            ws.Cell(row, 3).Value  = p.Category?.NameAr ?? "";
+            ws.Cell(row, 4).Value  = p.Brand ?? "";
+            ws.Cell(row, 5).Value  = p.Price;
+            ws.Cell(row, 6).Value  = p.CostPrice ?? 0;
+            ws.Cell(row, 7).Value  = p.TotalStock;
+            ws.Cell(row, 8).Value  = p.ReorderLevel;
+            ws.Cell(row, 9).Value  = stockValue;
+            ws.Cell(row, 10).Value = p.Status.ToString();
+
+            ws.Cell(row, 5).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 6).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 9).Style.NumberFormat.Format = "#,##0.00";
+
+            // تلوين المنتجات منخفضة المخزون
+            if (p.TotalStock == 0)
+                ws.Row(row).Style.Fill.BackgroundColor = XLColor.FromHtml("#ffebee");
+            else if (p.ReorderLevel > 0 && p.TotalStock <= p.ReorderLevel)
+                ws.Row(row).Style.Fill.BackgroundColor = XLColor.FromHtml("#fff8e1");
+
+            row++;
+        }
+
+        // صف الإجمالي
+        ws.Cell(row + 1, 8).Value = "إجمالي قيمة المخزون:";
+        ws.Cell(row + 1, 8).Style.Font.Bold = true;
+        ws.Cell(row + 1, 9).Value = grandTotal;
+        ws.Cell(row + 1, 9).Style.Font.Bold = true;
+        ws.Cell(row + 1, 9).Style.NumberFormat.Format = "#,##0.00";
+        ws.Cell(row + 1, 9).Style.Fill.BackgroundColor = XLColor.FromHtml("#e8f5e9");
+
+        ws.Columns().AdjustToContents();
+        ws.RightToLeft = true;
+
+        var stream = new MemoryStream();
+        wb.SaveAs(stream); stream.Position = 0;
+
+        return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"inventory_full_{DateTime.Now:yyyyMMdd}.xlsx");
+    }
+
+    // ── LOW STOCK ─────────────────────────────────────────────
+    // GET /api/export/low-stock
+    [HttpGet("low-stock")]
+    public async Task<IActionResult> ExportLowStock()
+    {
+        var products = await _db.Products
+            .Include(p => p.Category)
+            .Include(p => p.Variants)
+            .Where(p => p.ReorderLevel > 0 && p.TotalStock <= p.ReorderLevel)
+            .OrderBy(p => p.TotalStock)
+            .ToListAsync();
+
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("منخفضة المخزون");
+
+        var headers = new[]
+        {
+            "الكود (SKU)", "اسم المنتج", "الفئة", "الماركة",
+            "المخزون الحالي", "حد إعادة الطلب", "النقص", "التكلفة", "الحالة"
+        };
+        StyleHeader(ws, headers);
+
+        int row = 2;
+        foreach (var p in products)
+        {
+            var shortage = p.ReorderLevel - p.TotalStock;
+
+            ws.Cell(row, 1).Value = p.SKU;
+            ws.Cell(row, 2).Value = p.NameAr;
+            ws.Cell(row, 3).Value = p.Category?.NameAr ?? "";
+            ws.Cell(row, 4).Value = p.Brand ?? "";
+            ws.Cell(row, 5).Value = p.TotalStock;
+            ws.Cell(row, 6).Value = p.ReorderLevel;
+            ws.Cell(row, 7).Value = shortage > 0 ? shortage : 0;
+            ws.Cell(row, 8).Value = p.CostPrice ?? 0;
+            ws.Cell(row, 9).Value = p.TotalStock == 0 ? "نفذ المخزون" : "مخزون منخفض";
+
+            ws.Cell(row, 8).Style.NumberFormat.Format = "#,##0.00";
+
+            // أحمر للنافذ، أصفر للمنخفض
+            ws.Row(row).Style.Fill.BackgroundColor = p.TotalStock == 0
+                ? XLColor.FromHtml("#ffebee")
+                : XLColor.FromHtml("#fff8e1");
+
+            row++;
+        }
+
+        ws.Columns().AdjustToContents();
+        ws.RightToLeft = true;
+
+        var stream = new MemoryStream();
+        wb.SaveAs(stream); stream.Position = 0;
+
+        return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"low_stock_{DateTime.Now:yyyyMMdd}.xlsx");
+    }
+
+    // ── VARIANTS (SIZES & COLORS) ─────────────────────────────
+    // GET /api/export/inventory-variants
+    [HttpGet("inventory-variants")]
+    public async Task<IActionResult> ExportInventoryVariants()
+    {
+        var products = await _db.Products
+            .Include(p => p.Category)
+            .Include(p => p.Variants)
+            .Where(p => p.Variants.Any())
+            .OrderBy(p => p.Category.NameAr).ThenBy(p => p.NameAr)
+            .ToListAsync();
+
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("المقاسات والألوان");
+
+        var headers = new[]
+        {
+            "الكود (SKU)", "اسم المنتج", "الفئة", "الماركة",
+            "المقاس", "اللون", "اللون عربي",
+            "المخزون", "حد إعادة الطلب", "فارق السعر", "الحالة"
+        };
+        StyleHeader(ws, headers);
+
+        int row = 2;
+        foreach (var p in products)
+        foreach (var v in p.Variants.Where(v => !v.IsDeleted))
+        {
+            ws.Cell(row, 1).Value  = p.SKU;
+            ws.Cell(row, 2).Value  = p.NameAr;
+            ws.Cell(row, 3).Value  = p.Category?.NameAr ?? "";
+            ws.Cell(row, 4).Value  = p.Brand ?? "";
+            ws.Cell(row, 5).Value  = v.Size ?? "";
+            ws.Cell(row, 6).Value  = v.Color ?? "";
+            ws.Cell(row, 7).Value  = v.ColorAr ?? "";
+            ws.Cell(row, 8).Value  = v.StockQuantity;
+            ws.Cell(row, 9).Value  = v.ReorderLevel;
+            ws.Cell(row, 10).Value = v.PriceAdjustment ?? 0;
+            ws.Cell(row, 11).Value = v.StockQuantity == 0 ? "نفذ" : v.ReorderLevel > 0 && v.StockQuantity <= v.ReorderLevel ? "منخفض" : "متاح";
+
+            ws.Cell(row, 10).Style.NumberFormat.Format = "#,##0.00";
+
+            if (v.StockQuantity == 0)
+                ws.Row(row).Style.Fill.BackgroundColor = XLColor.FromHtml("#ffebee");
+            else if (v.ReorderLevel > 0 && v.StockQuantity <= v.ReorderLevel)
+                ws.Row(row).Style.Fill.BackgroundColor = XLColor.FromHtml("#fff8e1");
+
+            row++;
+        }
+
+        ws.Columns().AdjustToContents();
+        ws.RightToLeft = true;
+
+        var stream = new MemoryStream();
+        wb.SaveAs(stream); stream.Position = 0;
+
+        return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"variants_{DateTime.Now:yyyyMMdd}.xlsx");
+    }
+
     private static void StyleHeader(IXLWorksheet ws, string[] headers)
     {
         for (int c = 0; c < headers.Length; c++)

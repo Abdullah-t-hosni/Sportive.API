@@ -322,31 +322,33 @@ public class AccountingService : IAccountingService
             _                                               => CASH_ACCOUNTS,
         };
 
-    /// يجيب Id الحساب من الكود
+    /// يجيب Id الحساب من الكود أو Id
+    /// المنطق: إذا كان الإدخال رقماً ويشبه Id (قصير ≤ 6 أرقام ولا يبدأ بصفر)
+    /// نحاول الكود أولاً لأن أكواد الحسابات (مثل 2104, 1106) قد تتطابق مع Id صغيرة
     private async Task<int> GetAccountIdAsync(string input)
     {
-        // إذا كان المدخل رقماً (Id الحساب)
-        if (int.TryParse(input, out var id) && id > 1000) // افتراض أن Id دايما أكبر من 1000 لكن الكود أقل
+        // أولاً: دائماً نحاول البحث بالكود (Code) لأن الأكواد المحاسبية أهم
+        var acctByCode = await _db.Accounts
+            .Where(a => a.Code == input && !a.IsDeleted && a.IsActive)
+            .Select(a => new { a.Id })
+            .FirstOrDefaultAsync();
+
+        if (acctByCode != null)
+            return acctByCode.Id;
+
+        // ثانياً: إذا لم يوجد بالكود، نحاول بالـ Id (للحالات التي يُمرَّر فيها Id مباشرة)
+        if (int.TryParse(input, out var id) && id > 0)
         {
-             var acctById = await _db.Accounts
+            var acctById = await _db.Accounts
                 .Where(a => a.Id == id && !a.IsDeleted && a.IsActive)
-                .Select(a => new { a.Id, a.AllowPosting, a.NameAr })
+                .Select(a => new { a.Id })
                 .FirstOrDefaultAsync();
 
-             if (acctById != null)
-             {
-                 return acctById.Id;
-             }
+            if (acctById != null)
+                return acctById.Id;
         }
 
-        // إذا كان المدخل رمز الحساب (Code)
-        var acct = await _db.Accounts
-            .Where(a => a.Code == input && !a.IsDeleted && a.IsActive)
-            .Select(a => new { a.Id, a.AllowPosting, a.NameAr })
-            .FirstOrDefaultAsync()
-            ?? throw new InvalidOperationException($"حساب '{input}' غير موجود أو غير نشط");
-
-        return acct.Id;
+        throw new InvalidOperationException($"حساب '{input}' غير موجود أو غير نشط في شجرة الحسابات");
     }
 
     /// يتحقق إذا كان القيد موجود مسبقاً (يمنع التكرار)
