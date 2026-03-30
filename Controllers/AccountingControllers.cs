@@ -506,8 +506,8 @@ public class JournalEntriesController : ControllerBase
             .FirstOrDefaultAsync(e => e.Id == id && !e.IsDeleted);
 
         if (entry == null) return NotFound();
-        if (entry.Type != JournalEntryType.Manual && entry.Type != JournalEntryType.OpeningBalance)
-            return BadRequest(new { message = "يمكن تعديل القيود اليدوية أو الافتتاحية فقط" });
+        if (entry.Type == JournalEntryType.SalesInvoice || entry.Type == JournalEntryType.SalesReturn)
+            return BadRequest(new { message = "لا يمكن تعديل السندات التلقائية الخاصة بالمبيعات" });
 
         entry.EntryDate   = dto.EntryDate;
         entry.Reference   = dto.Reference;
@@ -552,8 +552,8 @@ public class JournalEntriesController : ControllerBase
             .FirstOrDefaultAsync(e => e.Id == id && !e.IsDeleted);
 
         if (entry == null) return NotFound();
-        if (entry.Type != JournalEntryType.Manual && entry.Type != JournalEntryType.OpeningBalance)
-            return BadRequest(new { message = "يمكن حذف القيود اليدوية أو الافتتاحية فقط" });
+        if (entry.Type == JournalEntryType.SalesInvoice || entry.Type == JournalEntryType.SalesReturn)
+            return BadRequest(new { message = "لا يمكن حذف السندات التلقائية الخاصة بالمبيعات" });
 
         foreach (var line in entry.Lines.Where(l => !l.IsDeleted))
         {
@@ -724,6 +724,46 @@ public class ReceiptVouchersController : ControllerBase
         return Ok(new { id = voucher.Id, voucherNumber = voucher.VoucherNumber, journalEntryId = entry.Id });
     }
 
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateReceiptVoucherDto dto)
+    {
+        var v = await _db.ReceiptVouchers
+            .Include(x => x.JournalEntry).ThenInclude(e => e!.Lines)
+            .FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
+        if (v == null) return NotFound();
+
+        v.VoucherDate    = dto.VoucherDate;
+        v.Amount         = dto.Amount;
+        v.CashAccountId  = dto.CashAccountId;
+        v.FromAccountId  = dto.FromAccountId;
+        v.CustomerId     = dto.CustomerId;
+        v.PaymentMethod  = dto.PaymentMethod;
+        v.Reference      = dto.Reference;
+        v.Description    = dto.Description;
+        v.AttachmentUrl  = dto.AttachmentUrl;
+        v.AttachmentPublicId = dto.AttachmentPublicId;
+        v.UpdatedAt      = DateTime.UtcNow;
+
+        if (v.JournalEntry != null)
+        {
+            v.JournalEntry.EntryDate   = dto.VoucherDate;
+            v.JournalEntry.Description = dto.Description ?? $"سند قبض {v.VoucherNumber}";
+            v.JournalEntry.UpdatedAt   = DateTime.UtcNow;
+
+            foreach (var line in v.JournalEntry.Lines.Where(l => !l.IsDeleted).ToList())
+            {
+                line.IsDeleted = true;
+                line.UpdatedAt = DateTime.UtcNow;
+            }
+
+            v.JournalEntry.Lines.Add(new JournalLine { AccountId = dto.CashAccountId, Debit = dto.Amount, CreatedAt = DateTime.UtcNow });
+            v.JournalEntry.Lines.Add(new JournalLine { AccountId = dto.FromAccountId, Credit = dto.Amount, CustomerId = dto.CustomerId, CreatedAt = DateTime.UtcNow });
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(v);
+    }
+
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
@@ -840,6 +880,46 @@ public class PaymentVouchersController : ControllerBase
         await _db.SaveChangesAsync();
 
         return Ok(new { id = voucher.Id, voucherNumber = voucher.VoucherNumber, journalEntryId = entry.Id });
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdatePaymentVoucherDto dto)
+    {
+        var v = await _db.PaymentVouchers
+            .Include(x => x.JournalEntry).ThenInclude(e => e!.Lines)
+            .FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
+        if (v == null) return NotFound();
+
+        v.VoucherDate    = dto.VoucherDate;
+        v.Amount         = dto.Amount;
+        v.CashAccountId  = dto.CashAccountId;
+        v.ToAccountId     = dto.ToAccountId;
+        v.SupplierId      = dto.SupplierId;
+        v.PaymentMethod  = dto.PaymentMethod;
+        v.Reference      = dto.Reference;
+        v.Description    = dto.Description;
+        v.AttachmentUrl  = dto.AttachmentUrl;
+        v.AttachmentPublicId = dto.AttachmentPublicId;
+        v.UpdatedAt      = DateTime.UtcNow;
+
+        if (v.JournalEntry != null)
+        {
+            v.JournalEntry.EntryDate   = dto.VoucherDate;
+            v.JournalEntry.Description = dto.Description ?? $"سند دفع {v.VoucherNumber}";
+            v.JournalEntry.UpdatedAt   = DateTime.UtcNow;
+
+            foreach (var line in v.JournalEntry.Lines.Where(l => !l.IsDeleted).ToList())
+            {
+                line.IsDeleted = true;
+                line.UpdatedAt = DateTime.UtcNow;
+            }
+
+            v.JournalEntry.Lines.Add(new JournalLine { AccountId = dto.ToAccountId,   Debit  = dto.Amount, SupplierId = dto.SupplierId, CreatedAt = DateTime.UtcNow });
+            v.JournalEntry.Lines.Add(new JournalLine { AccountId = dto.CashAccountId, Credit = dto.Amount, CreatedAt = DateTime.UtcNow });
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(v);
     }
 
     [HttpDelete("{id}")]
