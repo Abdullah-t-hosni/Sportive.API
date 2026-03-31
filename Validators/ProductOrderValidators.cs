@@ -81,7 +81,6 @@ public class CreateCategoryValidator : AbstractValidator<CreateCategoryDto>
     {
         RuleFor(x => x.NameAr).NotEmpty().MinimumLength(2).MaximumLength(100);
         RuleFor(x => x.NameEn).NotEmpty().MinimumLength(2).MaximumLength(100);
-        RuleFor(x => x.Type).IsInEnum().WithMessage("نوع القسم غير صحيح");
     }
 }
 

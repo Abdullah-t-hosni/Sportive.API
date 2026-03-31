@@ -127,6 +127,7 @@ public class ImportController : ControllerBase
 
             var lastRow = ws1.LastRowUsed()?.RowNumber() ?? 1;
             var categories = await _db.Categories.ToListAsync();
+            var brands     = await _db.Brands.ToListAsync();
             var existingSkus = await _db.Products.Select(p => p.SKU).ToHashSetAsync();
 
             for (int r = 2; r <= lastRow; r++)
@@ -169,6 +170,15 @@ public class ImportController : ControllerBase
                 if (!string.IsNullOrEmpty(discStr) && decimal.TryParse(discStr, out var disc) && disc > 0)
                     discountPrice = disc;
 
+                var brandName = ws1.Cell(r, 7).GetString().Trim();
+                int? brandId = null;
+                if (!string.IsNullOrEmpty(brandName))
+                {
+                    brandId = brands.FirstOrDefault(b => 
+                        b.NameAr.Equals(brandName, StringComparison.OrdinalIgnoreCase) || 
+                        b.NameEn.Equals(brandName, StringComparison.OrdinalIgnoreCase))?.Id;
+                }
+
                 var product = new Product
                 {
                     NameAr        = nameAr,
@@ -177,7 +187,7 @@ public class ImportController : ControllerBase
                     SKU           = sku,
                     Price         = price,
                     DiscountPrice = discountPrice,
-                    Brand         = ws1.Cell(r, 7).GetString().Trim().NullIfEmpty(),
+                    BrandId       = brandId,
                     DescriptionAr = ws1.Cell(r, 8).GetString().Trim().NullIfEmpty(),
                     DescriptionEn = ws1.Cell(r, 9).GetString().Trim().NullIfEmpty(),
                     IsFeatured    = ws1.Cell(r, 10).GetString().Contains("نعم"),
