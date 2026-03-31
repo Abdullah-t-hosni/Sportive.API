@@ -124,7 +124,7 @@ public class CategoryService : ICategoryService
     // ─── Private Helper ──────────────────────────────────────────────
     private static CategoryDto MapToDto(Category c, bool includeChildren)
     {
-        var children = includeChildren && c.Children.Any()
+        var children = includeChildren && (c.Children != null && c.Children.Any())
             ? c.Children
                 .Where(ch => !ch.IsDeleted)
                 .OrderBy(ch => ch.NameAr)
@@ -135,7 +135,7 @@ public class CategoryService : ICategoryService
         return new CategoryDto(
             c.Id, c.NameAr, c.NameEn, c.DescriptionAr, c.DescriptionEn,
             c.Type.ToString(), c.ImageUrl, c.IsActive,
-            c.Products.Count(p => !p.IsDeleted), c.CreatedAt,
+            c.Products?.Count(p => !p.IsDeleted) ?? 0, c.CreatedAt,
             c.ParentId,
             c.Parent?.NameAr,
             c.Parent?.NameEn,
