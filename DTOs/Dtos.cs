@@ -69,8 +69,11 @@ public record BrandDto(
     string? DescriptionEn,
     string? ImageUrl,
     bool IsActive,
-    int ProductCount,
-    DateTime CreatedAt
+    int? ParentId = null,
+    string? ParentNameAr = null,
+    string? ParentNameEn = null,
+    int ProductCount = 0,
+    DateTime? CreatedAt = null
 );
 
 public record CreateBrandDto(
@@ -78,7 +81,8 @@ public record CreateBrandDto(
     string NameEn,
     string? DescriptionAr,
     string? DescriptionEn,
-    string? ImageUrl
+    string? ImageUrl,
+    int? ParentId = null
 );
 
 public record UpdateBrandDto(
@@ -87,7 +91,8 @@ public record UpdateBrandDto(
     string? DescriptionAr,
     string? DescriptionEn,
     string? ImageUrl,
-    bool IsActive = true
+    bool IsActive,
+    int? ParentId = null
 );
 
 // ========== PRODUCT ==========

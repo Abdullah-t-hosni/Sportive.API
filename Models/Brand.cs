@@ -9,6 +9,10 @@ public class Brand : BaseEntity
     public string? ImageUrl { get; set; }
     public bool IsActive { get; set; } = true;
 
+    public int? ParentId { get; set; }
+    public Brand? Parent { get; set; }
+    public ICollection<Brand> SubBrands { get; set; } = new List<Brand>();
+
     // Navigation
     public ICollection<Product> Products { get; set; } = new List<Product>();
 }

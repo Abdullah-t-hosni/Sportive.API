@@ -15,6 +15,7 @@ public class BrandService : IBrandService
     {
         var brands = await _db.Set<Brand>()
             .Include(b => b.Products)
+            .Include(b => b.Parent)
             .OrderBy(b => b.NameAr)
             .ToListAsync();
 
@@ -25,6 +26,7 @@ public class BrandService : IBrandService
     {
         var b = await _db.Set<Brand>()
             .Include(b => b.Products)
+            .Include(b => b.Parent)
             .FirstOrDefaultAsync(x => x.Id == id);
 
         return b == null ? null : MapToDto(b);
@@ -39,6 +41,7 @@ public class BrandService : IBrandService
             DescriptionAr = dto.DescriptionAr,
             DescriptionEn = dto.DescriptionEn,
             ImageUrl = dto.ImageUrl,
+            ParentId = dto.ParentId,
             IsActive = true
         };
         _db.Set<Brand>().Add(brand);
@@ -57,6 +60,7 @@ public class BrandService : IBrandService
         brand.DescriptionEn = dto.DescriptionEn;
         brand.ImageUrl = dto.ImageUrl;
         brand.IsActive = dto.IsActive;
+        brand.ParentId = dto.ParentId;
         brand.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
@@ -81,6 +85,9 @@ public class BrandService : IBrandService
         b.DescriptionEn,
         b.ImageUrl,
         b.IsActive,
+        b.ParentId,
+        b.Parent?.NameAr,
+        b.Parent?.NameEn,
         b.Products?.Count(p => !p.IsDeleted) ?? 0,
         b.CreatedAt
     );
