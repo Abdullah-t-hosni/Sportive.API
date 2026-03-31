@@ -132,9 +132,44 @@ public class AccountingService : IAccountingService
 
         if (isCashCollection)
         {
-            var cashCode = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-            var sourceName = order.Source == OrderSource.POS ? "كاشير" : "موقع";
-            lines.Add((cashCode, netReceivable, 0, $"تحصيل نقدي {sourceName} - {order.OrderNumber} (مدين)"));
+            // --- SMART MIXED PAYMENT SPLIT ---
+            // Pattern: "Mixed: Cash=500, Card=500" in AdminNotes or description
+            var note = order.AdminNotes ?? "";
+            bool isMixed = order.PaymentMethod == PaymentMethod.Mixed || note.Contains("Mixed:", StringComparison.OrdinalIgnoreCase);
+            
+            if (isMixed && note.Contains("Cash=", StringComparison.OrdinalIgnoreCase))
+            {
+                // Simple parsing for "Cash=X, Card=Y"
+                decimal cashPart = 0, cardPart = 0;
+                var parts = note.Split(new[] { ' ', ',', ':', '=' }, StringSplitOptions.RemoveEmptyEntries);
+                for(int i=0; i<parts.Length-1; i++) {
+                    if (parts[i].Equals("Cash", StringComparison.OrdinalIgnoreCase)) decimal.TryParse(parts[i+1], out cashPart);
+                    if (parts[i].Equals("Card", StringComparison.OrdinalIgnoreCase)) decimal.TryParse(parts[i+1], out cardPart);
+                }
+
+                if (cashPart > 0) {
+                    var cashCode = GetMappedCashAccount(PaymentMethod.Cash, order.Source, mapDict);
+                    lines.Add((cashCode, cashPart, 0, $"تحصيل (كاش جزء مختلط) - {order.OrderNumber}"));
+                }
+                if (cardPart > 0) {
+                    var cardCode = GetMappedCashAccount(PaymentMethod.CreditCard, order.Source, mapDict);
+                    lines.Add((cardCode, cardPart, 0, $"تحصيل (فيزا جزء مختلط) - {order.OrderNumber}"));
+                }
+                
+                // If sum doesn't match Total, put remainder in main cash
+                var remaining = netReceivable - (cashPart + cardPart);
+                if (Math.Abs(remaining) > 0.01m) {
+                     var fallback = GetMappedCashAccount(PaymentMethod.Cash, order.Source, mapDict);
+                     lines.Add((fallback, remaining, 0, $"تحصيل (متبقي مختلط) - {order.OrderNumber}"));
+                }
+            }
+            else 
+            {
+                // Standard Single-Method Collection
+                var cashCode = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+                var sourceName = order.Source == OrderSource.POS ? "كاشير" : "موقع";
+                lines.Add((cashCode, netReceivable, 0, $"تحصيل نقدي {sourceName} - {order.OrderNumber} (مدين)"));
+            }
         }
         else
         {

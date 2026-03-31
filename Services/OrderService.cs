@@ -204,6 +204,7 @@ public class OrderService : IOrderService
             CouponCode = dto.CouponCode,
             SalesPersonId = dto.SalesPersonId,
             Source = dto.Source,
+            AdminNotes = dto.Note,
             CreatedAt = DateTime.UtcNow
         };
 

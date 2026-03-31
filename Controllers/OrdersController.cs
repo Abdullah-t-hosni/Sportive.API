@@ -109,7 +109,8 @@ public class OrdersController : ControllerBase
             (OrderSource)posDto.OrderSource,
             posDto.Items.Select(i => new CreateOrderItemDto(i.ProductId, i.ProductVariantId, i.Quantity)).ToList(),
             posDto.CustomerPhone,
-            posDto.CustomerName
+            posDto.CustomerName,
+            posDto.Note
         );
 
         var order = await _orderService.CreateOrderAsync(posDto.CustomerId, dto);

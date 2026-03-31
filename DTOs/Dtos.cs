@@ -242,7 +242,8 @@ public record CreateOrderDto(
     OrderSource Source,
     List<CreateOrderItemDto>? Items = null,
     string? CustomerPhone = null,
-    string? CustomerName = null
+    string? CustomerName = null,
+    string? Note = null
 );
 
 public record CreateOrderItemDto(
@@ -259,7 +260,8 @@ public record CreatePOSOrderDto(
     decimal TotalAmount,
     PaymentMethod PaymentMethod,
     string? PosEmployeeId,
-    OrderSource OrderSource
+    OrderSource OrderSource,
+    string? Note = null
 );
 
 public record CreatePOSOrderItemDto(
