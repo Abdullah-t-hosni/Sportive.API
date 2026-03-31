@@ -21,6 +21,7 @@ public class ProductService : IProductService
     {
         var query = _db.Products
             .Include(p => p.Category)
+            .Include(p => p.Brand)
             .Include(p => p.Images)
             .Include(p => p.Reviews)
             .Include(p => p.Variants)
@@ -41,7 +42,7 @@ public class ProductService : IProductService
                 p.SKU.ToLower().Contains(s) ||
                 (isInt && p.Id == searchId) ||
                 (isDecimal && (p.Price == searchPrice || p.DiscountPrice == searchPrice)) ||
-                (p.Brand != null && p.Brand.ToLower().Contains(s)));
+                (p.Brand != null && (p.Brand.NameAr.ToLower().Contains(s) || p.Brand.NameEn.ToLower().Contains(s))));
         }
 
         if (filter.MinPrice.HasValue)
@@ -50,8 +51,8 @@ public class ProductService : IProductService
         if (filter.MaxPrice.HasValue)
             query = query.Where(p => p.Price <= filter.MaxPrice);
 
-        if (!string.IsNullOrWhiteSpace(filter.Brand))
-            query = query.Where(p => p.Brand == filter.Brand);
+        if (filter.BrandId.HasValue)
+            query = query.Where(p => p.BrandId == filter.BrandId);
 
         if (!string.IsNullOrWhiteSpace(filter.Size))
             query = query.Where(p => p.Variants.Any(v => v.Size == filter.Size));
@@ -87,7 +88,9 @@ public class ProductService : IProductService
                 p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
                 p.Category != null ? p.Category.NameAr : "Category Missing",
                 p.Category != null ? p.Category.NameEn : "Category Missing",
-                p.Brand,
+                p.Brand != null ? p.Brand.NameAr : null,
+                p.Brand != null ? p.Brand.NameEn : null,
+                p.BrandId,
                 p.Status.ToString(),
                 p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
                 p.Reviews.Count,
@@ -110,6 +113,7 @@ public class ProductService : IProductService
     {
         var p = await _db.Products
             .Include(x => x.Category)
+            .Include(x => x.Brand)
             .Include(x => x.Images.OrderBy(i => i.SortOrder))
             .Include(x => x.Variants)
             .Include(x => x.Reviews)
@@ -135,7 +139,7 @@ public class ProductService : IProductService
             DiscountPrice = dto.DiscountPrice,
             CostPrice = dto.CostPrice,
             SKU = dto.SKU,
-            Brand = dto.Brand,
+            BrandId = dto.BrandId,
             CategoryId = dto.CategoryId,
             IsFeatured = dto.IsFeatured,
             ReorderLevel = dto.ReorderLevel,
@@ -191,7 +195,7 @@ public class ProductService : IProductService
         product.Price = dto.Price;
         product.DiscountPrice = dto.DiscountPrice;
         product.CostPrice = dto.CostPrice;
-        product.Brand = dto.Brand;
+        product.BrandId = dto.BrandId;
         product.SKU = dto.SKU;
         product.CategoryId = dto.CategoryId;
         product.IsFeatured = dto.IsFeatured;
@@ -349,6 +353,7 @@ public class ProductService : IProductService
     {
         return await _db.Products
             .Include(p => p.Category)
+            .Include(p => p.Brand)
             .Include(p => p.Images)
             .Include(p => p.Reviews)
             .Where(p => p.IsFeatured && p.Status == ProductStatus.Active)
@@ -357,7 +362,11 @@ public class ProductService : IProductService
             .Select(p => new ProductSummaryDto(
                 p.Id, p.NameAr, p.NameEn, p.Price, p.DiscountPrice ?? 0,
                 p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
-                p.Category.NameAr, p.Category.NameEn, p.Brand, p.Status.ToString(),
+                p.Category.NameAr, p.Category.NameEn, 
+                p.Brand != null ? p.Brand.NameAr : null, 
+                p.Brand != null ? p.Brand.NameEn : null,
+                p.BrandId,
+                p.Status.ToString(),
                 p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
                 p.Reviews.Count,
                 p.TotalStock,
@@ -377,6 +386,7 @@ public class ProductService : IProductService
 
         return await _db.Products
             .Include(p => p.Category)
+            .Include(p => p.Brand)
             .Include(p => p.Images)
             .Include(p => p.Reviews)
             .Where(p => p.CategoryId == product.CategoryId && p.Id != productId && p.Status == ProductStatus.Active)
@@ -385,7 +395,11 @@ public class ProductService : IProductService
             .Select(p => new ProductSummaryDto(
                 p.Id, p.NameAr, p.NameEn, p.Price, p.DiscountPrice ?? 0,
                 p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
-                p.Category.NameAr, p.Category.NameEn, p.Brand, p.Status.ToString(),
+                p.Category.NameAr, p.Category.NameEn, 
+                p.Brand != null ? p.Brand.NameAr : null, 
+                p.Brand != null ? p.Brand.NameEn : null,
+                p.BrandId,
+                p.Status.ToString(),
                 p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
                 p.Reviews.Count,
                 p.TotalStock,
@@ -400,7 +414,11 @@ public class ProductService : IProductService
 
     private static ProductDetailDto MapToDetail(Product p) => new(
         p.Id, p.NameAr, p.NameEn, p.DescriptionAr, p.DescriptionEn,
-        p.Price, p.DiscountPrice ?? 0, p.CostPrice, p.SKU, p.Brand, p.Status.ToString(), p.IsFeatured,
+        p.Price, p.DiscountPrice ?? 0, p.CostPrice, p.SKU, 
+        p.Brand != null ? p.Brand.NameAr : null,
+        p.Brand != null ? p.Brand.NameEn : null,
+        p.BrandId,
+        p.Status.ToString(), p.IsFeatured,
         p.CategoryId, p.Category?.NameAr ?? "Category Missing", p.Category?.NameEn ?? "Category Missing",
         p.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList() ?? new List<ProductVariantDto>(),
         p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr)).ToList() ?? new List<ProductImageDto>(),

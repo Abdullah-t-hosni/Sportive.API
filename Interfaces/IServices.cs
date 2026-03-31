@@ -39,6 +39,15 @@ public interface ICategoryService
     Task DeleteAsync(int id);
 }
 
+public interface IBrandService
+{
+    Task<List<BrandDto>> GetAllAsync();
+    Task<BrandDto?> GetByIdAsync(int id);
+    Task<BrandDto> CreateAsync(CreateBrandDto dto);
+    Task<BrandDto> UpdateAsync(int id, UpdateBrandDto dto);
+    Task DeleteAsync(int id);
+}
+
 public interface IOrderService
 {
     Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(int page, int pageSize, OrderStatus? status = null, string? search = null, int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null, int? source = null);

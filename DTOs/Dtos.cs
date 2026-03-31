@@ -41,7 +41,6 @@ public record CategoryDto(
     [property: JsonPropertyName("nameEn")] string NameEn,
     [property: JsonPropertyName("descriptionAr")] string? DescriptionAr,
     [property: JsonPropertyName("descriptionEn")] string? DescriptionEn,
-    [property: JsonPropertyName("type")] int Type,
     [property: JsonPropertyName("imageUrl")] string? ImageUrl,
     [property: JsonPropertyName("isActive")] bool IsActive,
     [property: JsonPropertyName("productCount")] int ProductCount,
@@ -57,9 +56,21 @@ public record CreateCategoryDto(
     [property: JsonPropertyName("nameEn")] string NameEn,
     [property: JsonPropertyName("descriptionAr")] string? DescriptionAr,
     [property: JsonPropertyName("descriptionEn")] string? DescriptionEn,
-    [property: JsonPropertyName("type")] CategoryType Type,
     [property: JsonPropertyName("imageUrl")] string? ImageUrl,
     [property: JsonPropertyName("parentId")] int? ParentId = null
+);
+
+// ========== BRAND ==========
+public record BrandDto(
+    int Id,
+    string NameAr,
+    string NameEn,
+    string? DescriptionAr,
+    string? DescriptionEn,
+    string? ImageUrl,
+    bool IsActive,
+    int ProductCount,
+    DateTime CreatedAt
 );
 
 public record CreateBrandDto(
@@ -67,8 +78,7 @@ public record CreateBrandDto(
     string NameEn,
     string? DescriptionAr,
     string? DescriptionEn,
-    string? ImageUrl,
-    int? ParentId = null
+    string? ImageUrl
 );
 
 public record UpdateBrandDto(
@@ -77,7 +87,7 @@ public record UpdateBrandDto(
     string? DescriptionAr,
     string? DescriptionEn,
     string? ImageUrl,
-    int? ParentId = null
+    bool IsActive = true
 );
 
 // ========== PRODUCT ==========
@@ -90,7 +100,9 @@ public record ProductSummaryDto(
     string? MainImageUrl,
     string CategoryNameAr,
     string CategoryNameEn,
-    string? Brand,
+    string? BrandNameAr,
+    string? BrandNameEn,
+    int? BrandId,
     string Status,
     double AverageRating,
     int ReviewCount,
@@ -112,7 +124,9 @@ public record ProductDetailDto(
     decimal DiscountPrice,
     decimal? CostPrice,
     string SKU,
-    string? Brand,
+    string? BrandNameAr,
+    string? BrandNameEn,
+    int? BrandId,
     string Status,
     bool IsFeatured,
     int CategoryId,
@@ -151,7 +165,7 @@ public record CreateProductDto(
     decimal? DiscountPrice,
     decimal? CostPrice,
     string SKU,
-    string? Brand,
+    int? BrandId,
     int CategoryId,
     bool IsFeatured,
     List<CreateVariantDto>? Variants,
@@ -167,7 +181,7 @@ public record UpdateProductDto(
     decimal Price,
     decimal? DiscountPrice,
     decimal? CostPrice,
-    string? Brand,
+    int? BrandId,
     string SKU,
     int CategoryId,
     bool IsFeatured,
@@ -448,7 +462,7 @@ public class ProductFilterDto
     public string? Search { get; set; }
     public decimal? MinPrice { get; set; }
     public decimal? MaxPrice { get; set; }
-    public string? Brand { get; set; }
+    public int? BrandId { get; set; }
     public string? Size { get; set; }
     public string? Color { get; set; }
     public bool? IsFeatured { get; set; }

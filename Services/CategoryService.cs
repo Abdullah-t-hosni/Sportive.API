@@ -16,31 +16,48 @@ public class CategoryService : ICategoryService
     {
         var cats = await _db.Categories
             .Include(c => c.Parent)
-            .Include(c => c.Children.Where(ch => !ch.IsDeleted))
-                .ThenInclude(ch => ch.Products.Where(p => !p.IsDeleted))
             .Include(c => c.Products.Where(p => !p.IsDeleted))
             .Where(c => !c.IsDeleted)
-            .OrderBy(c => c.ParentId).ThenBy(c => c.Type).ThenBy(c => c.NameAr)
+            .OrderBy(c => c.ParentId).ThenBy(c => c.NameAr)
             .ToListAsync();
 
-        return cats.Select(c => MapToDto(c, includeChildren: true)).ToList();
+        return cats.Select(c => MapToDto(c, includeChildren: false)).ToList();
     }
 
-    // Tree — only root categories, already containing nested children
+    // Tree — only root categories, building the entire structure recursively in memory
     public async Task<List<CategoryDto>> GetTreeAsync()
     {
-        var roots = await _db.Categories
-            .Include(c => c.Children.Where(ch => !ch.IsDeleted))
-                .ThenInclude(ch => ch.Children.Where(gch => !gch.IsDeleted))
-                    .ThenInclude(gch => gch.Products.Where(p => !p.IsDeleted))
-            .Include(c => c.Children.Where(ch => !ch.IsDeleted))
-                .ThenInclude(ch => ch.Products.Where(p => !p.IsDeleted))
+        // Fetch everything to build the tree in memory (efficient for usual category amounts)
+        var allCats = await _db.Categories
             .Include(c => c.Products.Where(p => !p.IsDeleted))
-            .Where(c => c.ParentId == null && !c.IsDeleted)
-            .OrderBy(c => c.Type).ThenBy(c => c.NameAr)
+            .Where(c => !c.IsDeleted)
             .ToListAsync();
 
-        return roots.Select(c => MapToDto(c, includeChildren: true)).ToList();
+        // Recursively build tree starting from roots
+        var roots = allCats.Where(c => c.ParentId == null).OrderBy(x => x.NameAr).ToList();
+        return roots.Select(r => BuildTreeRecursive(r, allCats)).ToList();
+    }
+
+    private CategoryDto BuildTreeRecursive(Category current, List<Category> all)
+    {
+        var children = all.Where(c => c.ParentId == current.Id).OrderBy(x => x.NameAr).ToList();
+        var subDtos = children.Select(c => BuildTreeRecursive(c, all)).ToList();
+
+        return new CategoryDto(
+            current.Id,
+            current.NameAr,
+            current.NameEn,
+            current.DescriptionAr,
+            current.DescriptionEn,
+            current.ImageUrl,
+            current.IsActive,
+            current.Products?.Count(p => !p.IsDeleted) ?? 0,
+            current.CreatedAt,
+            current.ParentId,
+            current.Parent?.NameAr,
+            current.Parent?.NameEn,
+            subDtos.Any() ? subDtos : null
+        );
     }
 
     public async Task<CategoryDto?> GetByIdAsync(int id)
@@ -48,7 +65,6 @@ public class CategoryService : ICategoryService
         var c = await _db.Categories
             .Include(c => c.Parent)
             .Include(c => c.Children.Where(ch => !ch.IsDeleted))
-                .ThenInclude(ch => ch.Products.Where(p => !p.IsDeleted))
             .Include(c => c.Products.Where(p => !p.IsDeleted))
             .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted);
 
@@ -57,7 +73,6 @@ public class CategoryService : ICategoryService
 
     public async Task<CategoryDto> CreateAsync(CreateCategoryDto dto)
     {
-        // Validate ParentId if given
         if (dto.ParentId.HasValue)
         {
             var parent = await _db.Categories.FindAsync(dto.ParentId.Value);
@@ -71,7 +86,6 @@ public class CategoryService : ICategoryService
             NameEn        = dto.NameEn,
             DescriptionAr = dto.DescriptionAr,
             DescriptionEn = dto.DescriptionEn,
-            Type          = dto.Type,
             ImageUrl      = dto.ImageUrl,
             ParentId      = dto.ParentId,
         };
@@ -85,7 +99,6 @@ public class CategoryService : ICategoryService
         var cat = await _db.Categories.FindAsync(id)
             ?? throw new KeyNotFoundException($"Category {id} not found");
 
-        // Prevent setting a category as its own parent
         if (dto.ParentId.HasValue && dto.ParentId.Value == id)
             throw new ArgumentException("لا يمكن تعيين القسم كقسم فرعي من نفسه");
 
@@ -93,7 +106,6 @@ public class CategoryService : ICategoryService
         cat.NameEn        = dto.NameEn;
         cat.DescriptionAr = dto.DescriptionAr;
         cat.DescriptionEn = dto.DescriptionEn;
-        cat.Type          = dto.Type;
         cat.ImageUrl      = dto.ImageUrl;
         cat.ParentId      = dto.ParentId;
         cat.UpdatedAt     = DateTime.UtcNow;
@@ -121,7 +133,6 @@ public class CategoryService : ICategoryService
         await _db.SaveChangesAsync();
     }
 
-    // ─── Private Helper ──────────────────────────────────────────────
     private static CategoryDto MapToDto(Category c, bool includeChildren)
     {
         var subCategories = includeChildren && (c.Children != null && c.Children.Any())
@@ -134,7 +145,7 @@ public class CategoryService : ICategoryService
 
         return new CategoryDto(
             c.Id, c.NameAr, c.NameEn, c.DescriptionAr, c.DescriptionEn,
-            (int)c.Type, c.ImageUrl, c.IsActive,
+            c.ImageUrl, c.IsActive,
             c.Products?.Count(p => !p.IsDeleted) ?? 0, c.CreatedAt,
             c.ParentId,
             c.Parent?.NameAr,

@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
-using Sportive.API.Models;
 
 namespace Sportive.API.Controllers;
 
@@ -10,28 +9,27 @@ namespace Sportive.API.Controllers;
 [Route("api/[controller]")]
 public class BrandController : ControllerBase
 {
-    private readonly ICategoryService _categories;
+    private readonly IBrandService _brands;
     
-    public BrandController(ICategoryService categories) 
+    public BrandController(IBrandService brands) 
     {
-        _categories = categories;
+        _brands = brands;
     }
 
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var all = await _categories.GetAllAsync();
-        return Ok(all.Where(x => x.Type == (int)CategoryType.Brand));
+        return Ok(await _brands.GetAllAsync());
     }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var cat = await _categories.GetByIdAsync(id);
-        if (cat == null || cat.Type != (int)CategoryType.Brand) 
+        var brand = await _brands.GetByIdAsync(id);
+        if (brand == null) 
             return NotFound();
             
-        return Ok(cat);
+        return Ok(brand);
     }
 
     [Authorize(Roles = "Admin,Manager")]
@@ -40,19 +38,8 @@ public class BrandController : ControllerBase
     {
         try
         {
-            // تحويل الـ CreateBrandDto إلى CreateCategoryDto مع تحديد النوع كماركة
-            var categoryDto = new CreateCategoryDto(
-                dto.NameAr,
-                dto.NameEn,
-                dto.DescriptionAr,
-                dto.DescriptionEn,
-                CategoryType.Brand,
-                dto.ImageUrl,
-                dto.ParentId
-            );
-            
-            var cat = await _categories.CreateAsync(categoryDto);
-            return CreatedAtAction(nameof(GetById), new { id = cat.Id }, cat);
+            var brand = await _brands.CreateAsync(dto);
+            return CreatedAtAction(nameof(GetById), new { id = brand.Id }, brand);
         }
         catch (ArgumentException ex) 
         { 
@@ -66,21 +53,7 @@ public class BrandController : ControllerBase
     {
         try 
         { 
-            var cat = await _categories.GetByIdAsync(id);
-            if(cat == null || cat.Type != (int)CategoryType.Brand) 
-                return NotFound();
-
-            var categoryDto = new CreateCategoryDto(
-                dto.NameAr,
-                dto.NameEn,
-                dto.DescriptionAr,
-                dto.DescriptionEn,
-                CategoryType.Brand,
-                dto.ImageUrl,
-                dto.ParentId
-            );
-
-            var updated = await _categories.UpdateAsync(id, categoryDto);
+            var updated = await _brands.UpdateAsync(id, dto);
             return Ok(updated); 
         }
         catch (KeyNotFoundException) 
@@ -99,11 +72,7 @@ public class BrandController : ControllerBase
     {
         try 
         { 
-            var cat = await _categories.GetByIdAsync(id);
-            if(cat == null || cat.Type != (int)CategoryType.Brand) 
-                return NotFound();
-            
-            await _categories.DeleteAsync(id); 
+            await _brands.DeleteAsync(id); 
             return NoContent(); 
         }
         catch (KeyNotFoundException) 

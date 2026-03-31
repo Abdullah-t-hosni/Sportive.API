@@ -9,6 +9,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
     public DbSet<Category> Categories            => Set<Category>();
+    public DbSet<Brand> Brands                  => Set<Brand>();
     public DbSet<Product> Products               => Set<Product>();
     public DbSet<ProductVariant> ProductVariants => Set<ProductVariant>();
     public DbSet<ProductImage> ProductImages     => Set<ProductImage>();
@@ -47,6 +48,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         // Global Query Filters (Soft Delete)
         builder.Entity<Category>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<Brand>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Product>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<ProductVariant>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<ProductImage>().HasQueryFilter(x => !x.IsDeleted);
@@ -73,8 +75,13 @@ public class AppDbContext : IdentityDbContext<AppUser>
         });
 
         builder.Entity<Category>(e => {
-            e.Property(x => x.NameAr).HasMaxLength(100).IsRequired();
-            e.Property(x => x.NameEn).HasMaxLength(100).IsRequired();
+            e.Property(x => x.NameAr).HasMaxLength(150).IsRequired();
+            e.Property(x => x.NameEn).HasMaxLength(150).IsRequired();
+        });
+
+        builder.Entity<Brand>(e => {
+            e.Property(x => x.NameAr).HasMaxLength(150).IsRequired();
+            e.Property(x => x.NameEn).HasMaxLength(150).IsRequired();
         });
 
         builder.Entity<Product>(e => {
@@ -84,6 +91,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => x.SKU).IsUnique();
             e.HasOne(x => x.Category).WithMany(c => c.Products)
              .HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Brand).WithMany(b => b.Products)
+             .HasForeignKey(x => x.BrandId).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<ProductVariant>(e =>

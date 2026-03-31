@@ -109,6 +109,7 @@ public class ExportController : ControllerBase
     {
         var products = await _db.Products
             .Include(p => p.Category)
+            .Include(p => p.Brand)
             .Include(p => p.Variants)
             .OrderBy(p => p.NameAr)
             .ToListAsync();
@@ -130,7 +131,7 @@ public class ExportController : ControllerBase
             ws1.Cell(r,4).Value  = p.SKU;
             ws1.Cell(r,5).Value  = p.Price;
             ws1.Cell(r,6).Value  = p.DiscountPrice ?? 0;
-            ws1.Cell(r,7).Value  = p.Brand ?? "";
+            ws1.Cell(r,7).Value  = p.Brand?.NameAr ?? "";
             ws1.Cell(r,8).Value  = p.Status.ToString();
             ws1.Cell(r,9).Value  = p.IsFeatured ? "نعم" : "لا";
             ws1.Cell(r,10).Value = p.DescriptionAr ?? "";
@@ -301,6 +302,7 @@ public class ExportController : ControllerBase
     {
         var products = await _db.Products
             .Include(p => p.Category)
+            .Include(p => p.Brand)
             .Include(p => p.Variants)
             .OrderBy(p => p.Category.NameAr).ThenBy(p => p.NameAr)
             .ToListAsync();
@@ -326,7 +328,7 @@ public class ExportController : ControllerBase
             ws.Cell(row, 1).Value  = p.SKU;
             ws.Cell(row, 2).Value  = p.NameAr;
             ws.Cell(row, 3).Value  = p.Category?.NameAr ?? "";
-            ws.Cell(row, 4).Value  = p.Brand ?? "";
+            ws.Cell(row, 4).Value  = p.Brand?.NameAr ?? "";
             ws.Cell(row, 5).Value  = p.Price;
             ws.Cell(row, 6).Value  = p.CostPrice ?? 0;
             ws.Cell(row, 7).Value  = p.TotalStock;
@@ -372,6 +374,7 @@ public class ExportController : ControllerBase
     {
         var products = await _db.Products
             .Include(p => p.Category)
+            .Include(p => p.Brand)
             .Include(p => p.Variants)
             .Where(p => p.ReorderLevel > 0 && p.TotalStock <= p.ReorderLevel)
             .OrderBy(p => p.TotalStock)
@@ -395,7 +398,7 @@ public class ExportController : ControllerBase
             ws.Cell(row, 1).Value = p.SKU;
             ws.Cell(row, 2).Value = p.NameAr;
             ws.Cell(row, 3).Value = p.Category?.NameAr ?? "";
-            ws.Cell(row, 4).Value = p.Brand ?? "";
+            ws.Cell(row, 4).Value = p.Brand?.NameAr ?? "";
             ws.Cell(row, 5).Value = p.TotalStock;
             ws.Cell(row, 6).Value = p.ReorderLevel;
             ws.Cell(row, 7).Value = shortage > 0 ? shortage : 0;
@@ -429,6 +432,7 @@ public class ExportController : ControllerBase
     {
         var products = await _db.Products
             .Include(p => p.Category)
+            .Include(p => p.Brand)
             .Include(p => p.Variants)
             .Where(p => p.Variants.Any())
             .OrderBy(p => p.Category.NameAr).ThenBy(p => p.NameAr)
@@ -452,7 +456,7 @@ public class ExportController : ControllerBase
             ws.Cell(row, 1).Value  = p.SKU;
             ws.Cell(row, 2).Value  = p.NameAr;
             ws.Cell(row, 3).Value  = p.Category?.NameAr ?? "";
-            ws.Cell(row, 4).Value  = p.Brand ?? "";
+            ws.Cell(row, 4).Value  = p.Brand?.NameAr ?? "";
             ws.Cell(row, 5).Value  = v.Size ?? "";
             ws.Cell(row, 6).Value  = v.Color ?? "";
             ws.Cell(row, 7).Value  = v.ColorAr ?? "";
