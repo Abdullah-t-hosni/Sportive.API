@@ -1,4 +1,5 @@
 using Sportive.API.Models;
+using System.Text.Json.Serialization;
 
 namespace Sportive.API.DTOs;
 
@@ -35,30 +36,30 @@ public record ResetPasswordDto(string Identifier, string Code, string NewPasswor
 
 // ========== CATEGORY ==========
 public record CategoryDto(
-    int Id,
-    string NameAr,
-    string NameEn,
-    string? DescriptionAr,
-    string? DescriptionEn,
-    string Type,
-    string? ImageUrl,
-    bool IsActive,
-    int ProductCount,
-    DateTime CreatedAt,
-    int? ParentId = null,
-    string? ParentCategoryNameAr = null,
-    string? ParentCategoryNameEn = null,
-    List<CategoryDto>? SubCategories = null
+    [property: JsonPropertyName("id")] int Id,
+    [property: JsonPropertyName("nameAr")] string NameAr,
+    [property: JsonPropertyName("nameEn")] string NameEn,
+    [property: JsonPropertyName("descriptionAr")] string? DescriptionAr,
+    [property: JsonPropertyName("descriptionEn")] string? DescriptionEn,
+    [property: JsonPropertyName("type")] int Type,
+    [property: JsonPropertyName("imageUrl")] string? ImageUrl,
+    [property: JsonPropertyName("isActive")] bool IsActive,
+    [property: JsonPropertyName("productCount")] int ProductCount,
+    [property: JsonPropertyName("createdAt")] DateTime CreatedAt,
+    [property: JsonPropertyName("parentId")] int? ParentId = null,
+    [property: JsonPropertyName("parentCategoryNameAr")] string? ParentCategoryNameAr = null,
+    [property: JsonPropertyName("parentCategoryNameEn")] string? ParentCategoryNameEn = null,
+    [property: JsonPropertyName("subCategories")] List<CategoryDto>? SubCategories = null
 );
 
 public record CreateCategoryDto(
-    string NameAr,
-    string NameEn,
-    string? DescriptionAr,
-    string? DescriptionEn,
-    CategoryType Type,
-    string? ImageUrl,
-    int? ParentId = null
+    [property: JsonPropertyName("nameAr")] string NameAr,
+    [property: JsonPropertyName("nameEn")] string NameEn,
+    [property: JsonPropertyName("descriptionAr")] string? DescriptionAr,
+    [property: JsonPropertyName("descriptionEn")] string? DescriptionEn,
+    [property: JsonPropertyName("type")] CategoryType Type,
+    [property: JsonPropertyName("imageUrl")] string? ImageUrl,
+    [property: JsonPropertyName("parentId")] int? ParentId = null
 );
 
 public record CreateBrandDto(

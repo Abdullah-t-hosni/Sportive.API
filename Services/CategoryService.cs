@@ -134,7 +134,7 @@ public class CategoryService : ICategoryService
 
         return new CategoryDto(
             c.Id, c.NameAr, c.NameEn, c.DescriptionAr, c.DescriptionEn,
-            c.Type.ToString(), c.ImageUrl, c.IsActive,
+            (int)c.Type, c.ImageUrl, c.IsActive,
             c.Products?.Count(p => !p.IsDeleted) ?? 0, c.CreatedAt,
             c.ParentId,
             c.Parent?.NameAr,
