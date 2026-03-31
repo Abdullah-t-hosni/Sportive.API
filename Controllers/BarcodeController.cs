@@ -113,7 +113,7 @@ public class BarcodeController : ControllerBase
             .Include(i => i.Items)
             .ThenInclude(item => item.Product)
             .Include(i => i.Items)
-            .ThenInclude(item => item.Variant)
+            .ThenInclude(item => item.ProductVariant)
             .FirstOrDefaultAsync(i => i.Id == id && !i.IsDeleted);
 
         if (invoice == null) return NotFound(new { message = "الفاتورة غير موجودة" });
@@ -121,10 +121,10 @@ public class BarcodeController : ControllerBase
         var stickers = invoice.Items.Where(i => !i.IsDeleted && i.Product != null).Select(item => new
         {
             code = item.Product!.SKU, 
-            productName = item.VariantId != null
-                ? $"{item.Product.NameAr} - {item.Variant!.Size ?? ""} {item.Variant.ColorAr ?? item.Variant.Color ?? ""}".Trim()
+            productName = item.ProductVariantId != null
+                ? $"{item.Product.NameAr} - {item.ProductVariant!.Size ?? ""} {item.ProductVariant.ColorAr ?? item.ProductVariant.Color ?? ""}".Trim()
                 : item.Product.NameAr,
-            price = item.Product.DiscountPrice ?? item.Product.Price + (item.Variant?.PriceAdjustment ?? 0),
+            price = item.Product.DiscountPrice ?? item.Product.Price + (item.ProductVariant?.PriceAdjustment ?? 0),
             sku = item.Product.SKU,
             qty = item.Quantity
         }).ToList();
