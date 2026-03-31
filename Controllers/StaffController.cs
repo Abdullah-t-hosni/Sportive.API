@@ -68,8 +68,10 @@ public class StaffController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateStaffDto dto)
     {
         // تحقق من صحة الدور
-        if (!AppRoles.StaffRoles.Contains(dto.Role))
+        var validRole = AppRoles.StaffRoles.FirstOrDefault(r => r.Equals(dto.Role, StringComparison.OrdinalIgnoreCase));
+        if (validRole == null)
             return BadRequest(new { message = $"دور غير صالح: {dto.Role}" });
+        dto = dto with { Role = validRole };
 
         // تحقق من التكرار
         if (await _users.FindByEmailAsync(dto.Email) != null)
@@ -114,8 +116,10 @@ public class StaffController : ControllerBase
     [HttpPut("{id}/role")]
     public async Task<IActionResult> ChangeRole(string id, [FromBody] ChangeRoleDto dto)
     {
-        if (!AppRoles.StaffRoles.Contains(dto.Role))
+        var validRole = AppRoles.StaffRoles.FirstOrDefault(r => r.Equals(dto.Role, StringComparison.OrdinalIgnoreCase));
+        if (validRole == null)
             return BadRequest(new { message = $"دور غير صالح: {dto.Role}" });
+        dto = dto with { Role = validRole };
 
         var user = await _users.FindByIdAsync(id);
         if (user == null) return NotFound();
