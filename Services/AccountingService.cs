@@ -61,8 +61,14 @@ public class AccountingService : IAccountingService
         // جلب إعدادات المتجر للحصول على الحسابات المختارة ونسبة الضريبة
         var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         var vatRate = (store?.VatRatePercent ?? 14) / 100m;
-        var deliveryRevAcct = !string.IsNullOrEmpty(store?.DeliveryRevenueAccountId) ? store.DeliveryRevenueAccountId 
-                             : (!string.IsNullOrEmpty(store?.DeliveryAccountId) ? store.DeliveryAccountId : DELIVERY_REVENUE);
+
+        // جلب حساب إيراد التوصيل من الإعدادات أو الربط العام
+        var sysMappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
+        var sysDeliveryRev = sysMappings.FirstOrDefault(m => m.Key == "webDeliveryRevenueAccountID")?.AccountId;
+
+        string deliveryRevAcct = !string.IsNullOrEmpty(store?.DeliveryRevenueAccountId) ? store.DeliveryRevenueAccountId 
+                             : (sysDeliveryRev.HasValue ? sysDeliveryRev.Value.ToString() : DELIVERY_REVENUE);
+
         var vatAcct = !string.IsNullOrEmpty(store?.StoreVatAccountId) ? store.StoreVatAccountId : VAT_OUTPUT;
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
