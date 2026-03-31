@@ -177,6 +177,33 @@ public class StaffController : ControllerBase
     }
 
     // ══════════════════════════════════════════════════
+    // DELETE /api/staff/{id}
+    // حذف موظف نهائياً أو تعطيله
+    // ══════════════════════════════════════════════════
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(string id)
+    {
+        var user = await _users.FindByIdAsync(id);
+        if (user == null) return NotFound();
+        if (user.Email == "admin@sportive.com")
+            return BadRequest(new { message = "لا يمكن حذف الأدمن الأصلي" });
+
+        // نفضل التعطيل (Soft Delete) لو كان هناك سجلات مرتبطة به
+        var hasOrders = await _db.Orders.AnyAsync(o => o.SalesPersonId == id);
+        if (hasOrders)
+        {
+            user.IsActive = false;
+            await _users.UpdateAsync(user);
+            return Ok(new { message = "تم تعطيل الحساب بدلاً من الحذف لوجود سجلات مبيعات مرتبطة به" });
+        }
+
+        var result = await _users.DeleteAsync(user);
+        return result.Succeeded
+            ? Ok(new { message = "تم حذف الموظف بنجاح" })
+            : BadRequest(new { errors = result.Errors.Select(e => e.Description) });
+    }
+
+    // ══════════════════════════════════════════════════
     // GET /api/staff/{id}/permissions
     // جلب صلاحيات المستخدم الخاصة
     // ══════════════════════════════════════════════════

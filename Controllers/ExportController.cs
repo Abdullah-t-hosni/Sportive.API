@@ -481,6 +481,68 @@ public class ExportController : ControllerBase
             $"variants_{DateTime.Now:yyyyMMdd}.xlsx");
     }
 
+    // ── PURCHASE INVOICES ─────────────────────────────────────
+    [HttpGet("purchase-invoices")]
+    public async Task<IActionResult> ExportPurchaseInvoices(
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate   = null)
+    {
+        var query = _db.PurchaseInvoices
+            .Include(i => i.Supplier)
+            .OrderByDescending(i => i.CreatedAt)
+            .AsQueryable();
+
+        if (fromDate.HasValue) query = query.Where(i => i.InvoiceDate >= fromDate.Value);
+        if (toDate.HasValue)   query = query.Where(i => i.InvoiceDate <= toDate.Value.AddDays(1));
+
+        var invoices = await query.ToListAsync();
+
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("فواتير المشتريات");
+
+        var headers = new[] {
+            "رقم الفاتورة","المورد","رقم فاتورة المورد","الحالة",
+            "طريقة الدفع","التاريخ","تاريخ الاستحقاق",
+            "المجموع","الخصم","الضريبة","الإجمالي","المدفوع","المتبقي"
+        };
+        StyleHeader(ws, headers);
+
+        int row = 2;
+        foreach (var i in invoices)
+        {
+            ws.Cell(row, 1).Value  = i.InvoiceNumber;
+            ws.Cell(row, 2).Value  = i.Supplier?.Name ?? "";
+            ws.Cell(row, 3).Value  = i.SupplierInvoiceNumber ?? "";
+            ws.Cell(row, 4).Value  = i.Status.ToString();
+            ws.Cell(row, 5).Value  = i.PaymentTerms.ToString();
+            ws.Cell(row, 6).Value  = i.InvoiceDate.ToString("yyyy-MM-dd");
+            ws.Cell(row, 7).Value  = i.DueDate?.ToString("yyyy-MM-dd") ?? "";
+            ws.Cell(row, 8).Value  = i.SubTotal;
+            ws.Cell(row, 9).Value  = i.DiscountAmount;
+            ws.Cell(row, 10).Value = i.TaxAmount;
+            ws.Cell(row, 11).Value = i.TotalAmount;
+            ws.Cell(row, 12).Value = i.PaidAmount;
+            ws.Cell(row, 13).Value = i.RemainingAmount;
+
+            ws.Cell(row, 8).Style.NumberFormat.Format  = "#,##0.00";
+            ws.Cell(row, 9).Style.NumberFormat.Format  = "#,##0.00";
+            ws.Cell(row, 10).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 11).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 12).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 13).Style.NumberFormat.Format = "#,##0.00";
+            row++;
+        }
+
+        ws.Columns().AdjustToContents();
+        ws.RightToLeft = true;
+
+        var stream = new MemoryStream();
+        wb.SaveAs(stream); stream.Position = 0;
+
+        return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"purchases_{DateTime.Now:yyyyMMdd}.xlsx");
+    }
+
     private static void StyleHeader(IXLWorksheet ws, string[] headers)
     {
         for (int c = 0; c < headers.Length; c++)

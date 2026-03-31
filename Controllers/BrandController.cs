@@ -21,14 +21,14 @@ public class BrandController : ControllerBase
     public async Task<IActionResult> GetAll()
     {
         var all = await _categories.GetAllAsync();
-        return Ok(all.Where(x => x.Type == CategoryType.Brand.ToString()));
+        return Ok(all.Where(x => x.Type == (int)CategoryType.Brand));
     }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
         var cat = await _categories.GetByIdAsync(id);
-        if (cat == null || cat.Type != CategoryType.Brand.ToString()) 
+        if (cat == null || cat.Type != (int)CategoryType.Brand) 
             return NotFound();
             
         return Ok(cat);
@@ -67,7 +67,7 @@ public class BrandController : ControllerBase
         try 
         { 
             var cat = await _categories.GetByIdAsync(id);
-            if(cat == null || cat.Type != CategoryType.Brand.ToString()) 
+            if(cat == null || cat.Type != (int)CategoryType.Brand) 
                 return NotFound();
 
             var categoryDto = new CreateCategoryDto(
@@ -100,7 +100,7 @@ public class BrandController : ControllerBase
         try 
         { 
             var cat = await _categories.GetByIdAsync(id);
-            if(cat == null || cat.Type != CategoryType.Brand.ToString()) 
+            if(cat == null || cat.Type != (int)CategoryType.Brand) 
                 return NotFound();
             
             await _categories.DeleteAsync(id); 
