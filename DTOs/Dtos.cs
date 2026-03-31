@@ -280,7 +280,8 @@ public record OrderSummaryDto(
     decimal TotalAmount,
     DateTime CreatedAt,
     int ItemCount,
-    int Source
+    int Source,
+    int PaymentMethod
 );
 
 public record OrderDetailDto(

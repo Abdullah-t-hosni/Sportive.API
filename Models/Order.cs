@@ -20,10 +20,13 @@ public enum FulfillmentType
 
 public enum PaymentMethod
 {
-    Cash      = 1,
+    Cash       = 1,
     CreditCard = 2,
-    Vodafone  = 3,
-    InstaPay  = 4
+    Vodafone   = 3,
+    InstaPay   = 4,
+    Credit     = 5, // آجل / مديونية
+    Bank       = 6, // بنك / فيزا
+    Mixed      = 7  // جزء وجزء
 }
 
 public enum PaymentStatus
