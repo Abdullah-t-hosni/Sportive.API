@@ -14,6 +14,7 @@ public interface IAccountingService
     Task PostSalesReturnAsync(Order order);
     Task PostPurchaseInvoiceAsync(PurchaseInvoice invoice);
     Task PostPurchaseReturnAsync(PurchaseInvoice invoice);
+    Task PostOrderPaymentAsync(Order order);
     Task PostSupplierPaymentAsync(SupplierPayment payment);
     Task ReverseEntryAsync(int journalEntryId, string reason);
 }
@@ -198,6 +199,40 @@ public class AccountingService : IAccountingService
             lines:       lines,
             orderId:     order.Id,
             customerId:  order.CustomerId
+        );
+    }
+
+    // ══════════════════════════════════════════════════════
+    // 2.5 تحصيل مالي لطلب (تحويل من ذمم مدينة إلى نقدية)
+    // ══════════════════════════════════════════════════════
+    public async Task PostOrderPaymentAsync(Order order)
+    {
+        // تمييز رمز التحصيل لمنع التكرار
+        var reference = order.OrderNumber + "-PMT";
+        if (await EntryExists(JournalEntryType.ReceiptVoucher, reference)) return;
+
+        // جلب الإحصائيات والربط
+        var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
+        var mapDict = mappings.ToDictionary(m => m.Key, m => m.AccountId);
+
+        string receivablesAcct = mapDict.GetValueOrDefault("customerAccountID")?.ToString() ?? RECEIVABLES;
+        var cashCode = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+
+        var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
+
+        // القيد: من حساب النقدية/البنك إلى حساب العملاء
+        lines.Add((cashCode,        order.TotalAmount, 0,                $"تحصيل طلب {order.OrderNumber} ({order.PaymentMethod})"));
+        lines.Add((receivablesAcct, 0,                order.TotalAmount, $"إغلاق مديونية طلب {order.OrderNumber}"));
+
+        await PostEntry(
+            type:        JournalEntryType.ReceiptVoucher,
+            reference:   reference,
+            description: $"تحصيل تلقائي للطلب {order.OrderNumber} - {order.Customer?.FullName}",
+            date:        DateTime.UtcNow,
+            lines:       lines,
+            orderId:     order.Id,
+            customerId:  order.CustomerId,
+            source:      order.Source
         );
     }
 

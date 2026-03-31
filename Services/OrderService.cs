@@ -180,6 +180,12 @@ public class OrderService : IOrderService
 
         if (!customerId.HasValue) throw new ArgumentException("Customer identification required.");
 
+        // 🛡️ POS PROTECTION: Ensure SalesPersonId is provided for POS orders
+        if (dto.Source == OrderSource.POS && string.IsNullOrEmpty(dto.SalesPersonId))
+        {
+            throw new ArgumentException("معرف البائع مطلوب لعمليات الـ POS");
+        }
+
         // 2. Setup Order
         var order = new Order
         {
@@ -380,6 +386,26 @@ public class OrderService : IOrderService
         {
             order.ActualDeliveryDate = DateTime.UtcNow;
             order.PaymentStatus = PaymentStatus.Paid;
+
+            // أتمتة التحصيل المحاسبي لطلبات الموقع (لأن الـ POS سدد في قيد الفاتورة الأول)
+            if (order.Source == OrderSource.Website)
+            {
+                _ = Task.Run(async () =>
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    try
+                    {
+                        var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == orderId);
+                        await accounting.PostOrderPaymentAsync(fullOrder);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"[Accounting] Auto-collection failed for {orderId}: {ex.Message}");
+                    }
+                });
+            }
         }
 
         // Stock Restoration for Cancelled/Returned

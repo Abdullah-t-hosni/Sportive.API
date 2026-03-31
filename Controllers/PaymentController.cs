@@ -16,13 +16,15 @@ public class PaymentController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
     private readonly ILogger<PaymentController> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public PaymentController(IPaymobService paymob, AppDbContext db, ILogger<PaymentController> logger, IConfiguration config)
+    public PaymentController(IPaymobService paymob, AppDbContext db, ILogger<PaymentController> logger, IConfiguration config, IServiceScopeFactory scopeFactory)
     {
-        _paymob = paymob;
-        _db     = db;
-        _logger = logger;
-        _config = config;
+        _paymob       = paymob;
+        _db           = db;
+        _logger       = logger;
+        _config       = config;
+        _scopeFactory = scopeFactory;
     }
 
     /// <summary>إنشاء رابط دفع Paymob لطلب معين</summary>
@@ -80,6 +82,25 @@ public class PaymentController : ControllerBase
                 order.UpdatedAt = DateTime.UtcNow;
                 await _db.SaveChangesAsync();
                 _logger.LogInformation("Order {OrderNumber} payment {Status}", orderRef, success ? "PAID" : "FAILED");
+
+                if (success)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        using var scope = _scopeFactory.CreateScope();
+                        try
+                        {
+                            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                            var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == order.Id);
+                            await accounting.PostOrderPaymentAsync(fullOrder);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "[Accounting] Auto-collection from PaymentCallback failed");
+                        }
+                    });
+                }
             }
         }
 
@@ -104,11 +125,30 @@ public class PaymentController : ControllerBase
             if (!string.IsNullOrEmpty(orderRef)) {
                 var order = await _db.Orders.FirstOrDefaultAsync(o => o.OrderNumber == orderRef);
                 if (order != null) {
-                    order.PaymentStatus = success ? PaymentStatus.Paid : PaymentStatus.Failed;
-                    if (success && order.Status == OrderStatus.Pending)
-                        order.Status = OrderStatus.Confirmed;
-                    order.UpdatedAt = DateTime.UtcNow;
-                    await _db.SaveChangesAsync();
+                order.PaymentStatus = success ? PaymentStatus.Paid : PaymentStatus.Failed;
+                if (success && order.Status == OrderStatus.Pending)
+                    order.Status = OrderStatus.Confirmed;
+                order.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+
+                if (success)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        using var scope = _scopeFactory.CreateScope();
+                        try
+                        {
+                            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                            var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == order.Id);
+                            await accounting.PostOrderPaymentAsync(fullOrder);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine($"[Accounting] Auto-collection from PaymentCallback failed: {ex.Message}");
+                        }
+                    });
+                }
                 }
             }
         } catch (Exception ex) {

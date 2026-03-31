@@ -5,9 +5,11 @@ using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
+using Sportive.API.Services;
 using System.Security.Claims;
 using System;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Sportive.API.Controllers;
 
@@ -19,12 +21,14 @@ public class OrdersController : ControllerBase
     private readonly IOrderService _orderService;
     private readonly IPdfService _pdfService;
     private readonly AppDbContext _db;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db)
+    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory)
     {
         _orderService = orderService;
-        _pdfService = pdfService;
-        _db = db;
+        _pdfService   = pdfService;
+        _db           = db;
+        _scopeFactory = scopeFactory;
     }
 
     [HttpGet]
@@ -46,7 +50,6 @@ public class OrdersController : ControllerBase
         var order = await _orderService.GetOrderByIdAsync(id);
         if (order == null) return NotFound();
 
-        // 🛡️ Security Check: Owner or Admin/Staff?
         if (!IsOwnerOrStaff(order.Customer.Id))
             return Forbid();
 
@@ -63,7 +66,6 @@ public class OrdersController : ControllerBase
         return Ok(result);
     }
     
-    // Helper to check ownership
     private bool IsOwnerOrStaff(int customerId)
     {
         if (User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Staff") || User.IsInRole("Cashier"))
@@ -85,7 +87,6 @@ public class OrdersController : ControllerBase
         }
         else
         {
-            // If no customer claim (e.g. Staff/Admin), use the provided customerId from query
             finalCustomerId = customerId;
         }
 
@@ -130,7 +131,6 @@ public class OrdersController : ControllerBase
         var order = await _orderService.GetOrderByIdAsync(id);
         if (order == null) return NotFound();
 
-        // 🛡️ Security Check: Owner or Admin/Staff?
         if (!IsOwnerOrStaff(order.Customer.Id))
             return Forbid();
 
@@ -140,24 +140,34 @@ public class OrdersController : ControllerBase
 
     [Authorize(Roles = "Admin,Manager,Staff")]
     [HttpPatch("{id}/payment-status")]
-    public async Task<IActionResult> UpdatePaymentStatus(
-        int id,
-        [FromBody] UpdatePaymentStatusDto dto)
+    public async Task<IActionResult> UpdatePaymentStatus(int id, [FromBody] UpdatePaymentStatusDto dto)
     {
-        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id && !o.IsDeleted);
+        var order = await _db.Orders.Include(o => o.Customer).FirstOrDefaultAsync(o => o.Id == id && !o.IsDeleted);
         if (order == null) return NotFound();
 
+        var oldStatus = order.PaymentStatus;
         order.PaymentStatus = dto.PaymentStatus;
         order.UpdatedAt     = DateTime.UtcNow;
 
-        // لو الحالة دي "مدفوع" وكان آجل → يولّد قيد تحصيل
-        if (dto.PaymentStatus == PaymentStatus.Paid &&
-            order.PaymentStatus != PaymentStatus.Paid)
+        if (dto.PaymentStatus == PaymentStatus.Paid && oldStatus != PaymentStatus.Paid)
         {
-            // optional: trigger accounting cash entry
+            _ = Task.Run(async () =>
+            {
+                using var scope = _scopeFactory.CreateScope();
+                try
+                {
+                    var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == id);
+                    await accounting.PostOrderPaymentAsync(fullOrder);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[Accounting] Auto-collection from UpdatePaymentStatus failed: {ex.Message}");
+                }
+            });
         }
 
-        // سجّل في StatusHistory لو عندك Note
         if (!string.IsNullOrEmpty(dto.Note))
         {
             _db.OrderStatusHistories.Add(new OrderStatusHistory

@@ -489,12 +489,18 @@ public class OperationalReportsController : ControllerBase
 
         var orders = await q.OrderByDescending(o => o.CreatedAt).ToListAsync();
 
+        // 🛡️ REFINEMENT: Fetch User Names for the summary
+        var userIds = orders.Select(o => o.SalesPersonId).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
+        var userNames = await _db.Users
+            .Where(u => userIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}");
+
         // Group by sales person
         var byPerson = orders
             .GroupBy(o => o.SalesPersonId!)
             .Select(g => new UserActivityRow(
                 g.Key,
-                g.Key, // اسم البائع — سيتم استرجاعه من الـ Identity
+                userNames.GetValueOrDefault(g.Key, "System/Unknown"),
                 g.Count(),
                 g.Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned).Sum(o => o.TotalAmount),
                 g.Count(o => o.Status == OrderStatus.Returned),
