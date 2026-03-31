@@ -58,18 +58,31 @@ public class AccountingService : IAccountingService
     {
         if (await EntryExists(JournalEntryType.SalesInvoice, order.OrderNumber)) return;
 
-        // جلب إعدادات المتجر للحصول على الحسابات المختارة ونسبة الضريبة
+        // جلب إعدادات المتجر والربط العام للحصول على الحسابات المختارة
         var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         var vatRate = (store?.VatRatePercent ?? 14) / 100m;
+        
+        var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
+        var mapDict = mappings.ToDictionary(m => m.Key, m => m.AccountId);
 
-        // جلب حساب إيراد التوصيل من الإعدادات أو الربط العام
-        var sysMappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
-        var sysDeliveryRev = sysMappings.FirstOrDefault(m => m.Key == "webDeliveryRevenueAccountID")?.AccountId;
-
+        // ── جلب الحسابات (إعدادات المتجر تعلو على الربط العام، والربط العام يعلو على الثوابت) ──
+        
+        // 1. حسابات الإيرادات والضريبة
+        string salesRevAcct = mapDict.GetValueOrDefault("salesAccountID")?.ToString() ?? SALES_REVENUE;
+        string salesDiscAcct = mapDict.GetValueOrDefault("salesDiscountAccountID")?.ToString() ?? SALES_DISCOUNT;
+        
         string deliveryRevAcct = !string.IsNullOrEmpty(store?.DeliveryRevenueAccountId) ? store.DeliveryRevenueAccountId 
-                             : (sysDeliveryRev.HasValue ? sysDeliveryRev.Value.ToString() : DELIVERY_REVENUE);
+                             : (mapDict.GetValueOrDefault("webDeliveryRevenueAccountID")?.ToString() ?? DELIVERY_REVENUE);
 
-        var vatAcct = !string.IsNullOrEmpty(store?.StoreVatAccountId) ? store.StoreVatAccountId : VAT_OUTPUT;
+        string vatAcct = !string.IsNullOrEmpty(store?.StoreVatAccountId) ? store.StoreVatAccountId 
+                       : (mapDict.GetValueOrDefault("vatOutputAccountID")?.ToString() ?? VAT_OUTPUT);
+
+        // 2. حساب المخزون والتكلفة
+        string inventoryAcct = mapDict.GetValueOrDefault("inventoryAccountID")?.ToString() ?? INVENTORY;
+        string cogsAcct      = mapDict.GetValueOrDefault("costOfGoodsSoldAccountID")?.ToString() ?? COGS;
+
+        // 3. حساب المدين (العميل آجل)
+        string receivablesAcct = mapDict.GetValueOrDefault("customerAccountID")?.ToString() ?? RECEIVABLES;
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
@@ -100,7 +113,7 @@ public class AccountingService : IAccountingService
             totalVatAmount = order.SubTotal - totalNetRevenue;
         }
 
-        lines.Add((SALES_REVENUE, 0, totalNetRevenue, $"مبيعات - {order.OrderNumber} (الإيراد)"));
+        lines.Add((salesRevAcct, 0, totalNetRevenue, $"مبيعات - {order.OrderNumber} (الإيراد)"));
         
         if (totalVatAmount > 0)
             lines.Add((vatAcct, 0, totalVatAmount, $"ضريبة مبيعات {(store?.VatRatePercent ?? 14)}% - {order.OrderNumber} (دائن)"));
@@ -110,7 +123,7 @@ public class AccountingService : IAccountingService
 
         // ── 2. حسابات الجانب المدين (Debits) ──────────────────
         if (order.DiscountAmount > 0)
-            lines.Add((SALES_DISCOUNT, order.DiscountAmount, 0, $"خصم ممنوح لعميل - {order.OrderNumber} (مدين)"));
+            lines.Add((salesDiscAcct, order.DiscountAmount, 0, $"خصم ممنوح لعميل - {order.OrderNumber} (مدين)"));
 
         var netReceivable = order.TotalAmount; 
         
@@ -119,21 +132,21 @@ public class AccountingService : IAccountingService
 
         if (isCashCollection)
         {
-            var cashCode = GetCashAccount(order.PaymentMethod, order.Source);
+            var cashCode = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
             var sourceName = order.Source == OrderSource.POS ? "كاشير" : "موقع";
             lines.Add((cashCode, netReceivable, 0, $"تحصيل نقدي {sourceName} - {order.OrderNumber} (مدين)"));
         }
         else
         {
-            lines.Add((RECEIVABLES, netReceivable, 0, $"مستحق على العميل - {order.OrderNumber} (مدين)"));
+            lines.Add((receivablesAcct, netReceivable, 0, $"مستحق على العميل - {order.OrderNumber} (مدين)"));
         }
 
         // ── 3. قيد التكلفة (نظام الجرد المستمر) ───────────────
         var totalCost = order.Items?.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity) ?? 0;
         if (totalCost > 0)
         {
-            lines.Add((COGS, totalCost, 0, $"تكلفة المبيعات - {order.OrderNumber} (مدين)"));
-            lines.Add((INVENTORY, 0, totalCost, $"خروج مخزون - {order.OrderNumber} (دائن)"));
+            lines.Add((cogsAcct, totalCost, 0, $"تكلفة المبيعات - {order.OrderNumber} (مدين)"));
+            lines.Add((inventoryAcct, 0, totalCost, $"خروج مخزون - {order.OrderNumber} (دائن)"));
         }
 
         await PostEntry(
@@ -155,18 +168,26 @@ public class AccountingService : IAccountingService
     {
         if (await EntryExists(JournalEntryType.SalesReturn, order.OrderNumber + "-RTN")) return;
 
+        var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
+        var mapDict = mappings.ToDictionary(m => m.Key, m => m.AccountId);
+
+        string salesReturnAcct = mapDict.GetValueOrDefault("salesReturnAccountID")?.ToString() ?? SALES_RETURN;
+        string receivablesAcct = mapDict.GetValueOrDefault("customerAccountID")?.ToString() ?? RECEIVABLES;
+        string inventoryAcct   = mapDict.GetValueOrDefault("inventoryAccountID")?.ToString() ?? INVENTORY;
+        string cogsAcct        = mapDict.GetValueOrDefault("costOfGoodsSoldAccountID")?.ToString() ?? COGS;
+
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
         // عكس القيد المالي
-        lines.Add((SALES_RETURN,  order.TotalAmount, 0,               $"مرتجع مبيعات - {order.OrderNumber}"));
-        lines.Add((RECEIVABLES,   0,                 order.TotalAmount, $"دائن العميل - {order.OrderNumber}"));
+        lines.Add((salesReturnAcct,  order.TotalAmount, 0,               $"مرتجع مبيعات - {order.OrderNumber}"));
+        lines.Add((receivablesAcct,   0,                 order.TotalAmount, $"دائن العميل - {order.OrderNumber}"));
 
         // عكس قيد التكلفة (إعادة للمخزون)
         var totalCost = order.Items?.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity) ?? 0;
         if (totalCost > 0)
         {
-            lines.Add((INVENTORY, totalCost, 0,         $"إعادة للمخزون - {order.OrderNumber}"));
-            lines.Add((COGS,      0,         totalCost, $"تخفيض تكلفة المبيعات - {order.OrderNumber}"));
+            lines.Add((inventoryAcct, totalCost, 0,         $"إعادة للمخزون - {order.OrderNumber}"));
+            lines.Add((cogsAcct,      0,         totalCost, $"تخفيض تكلفة المبيعات - {order.OrderNumber}"));
         }
 
         await PostEntry(
@@ -332,9 +353,30 @@ public class AccountingService : IAccountingService
     // PRIVATE HELPERS
     // ══════════════════════════════════════════════════════
 
-    /// يختار حساب النقدية بناءً على طريقة الدفع والمصدر
-    private static string GetCashAccount(PaymentMethod method, OrderSource source)
+    /// يختار حساب النقدية بناءً على طريقة الدفع والمصدر والربط المخزن في القاعدة
+    private static string GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, int?> map)
     {
+        string? key = (method, source) switch
+        {
+            (PaymentMethod.Vodafone, OrderSource.POS)     => "posVodafoneAccountID",
+            (PaymentMethod.Vodafone, OrderSource.Website) => "webVodafoneAccountID",
+            (PaymentMethod.InstaPay, OrderSource.POS)     => "posInstapayAccountID",
+            (PaymentMethod.InstaPay, OrderSource.Website) => "webInstapayAccountID",
+            (PaymentMethod.CreditCard, OrderSource.POS)   => "posBankAccountID",
+            (PaymentMethod.CreditCard, OrderSource.Website) => "webBankAccountID",
+            (PaymentMethod.Cash, OrderSource.POS)         => "posCashAccountID",
+            (PaymentMethod.Cash, OrderSource.Website)     => "webCashAccountID",
+            _ => null
+        };
+
+        if (key != null && map.TryGetValue(key, out var mappedId) && mappedId.HasValue)
+            return mappedId.Value.ToString();
+
+        // Fallback to main cashAccountID
+        if (map.TryGetValue("cashAccountID", out var mainCashId) && mainCashId.HasValue)
+            return mainCashId.Value.ToString();
+
+        // Ultimate hardcoded fallbacks (same as before)
         return (method, source) switch
         {
             (PaymentMethod.Vodafone,   OrderSource.POS)     => VODAFONE,
