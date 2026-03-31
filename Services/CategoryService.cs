@@ -124,7 +124,7 @@ public class CategoryService : ICategoryService
     // ─── Private Helper ──────────────────────────────────────────────
     private static CategoryDto MapToDto(Category c, bool includeChildren)
     {
-        var children = includeChildren && (c.Children != null && c.Children.Any())
+        var subCategories = includeChildren && (c.Children != null && c.Children.Any())
             ? c.Children
                 .Where(ch => !ch.IsDeleted)
                 .OrderBy(ch => ch.NameAr)
@@ -139,7 +139,7 @@ public class CategoryService : ICategoryService
             c.ParentId,
             c.Parent?.NameAr,
             c.Parent?.NameEn,
-            children
+            subCategories
         );
     }
 }

@@ -60,7 +60,7 @@ public class StoreInfo
     public string InstagramPage { get; set; } = "";
     
     [MaxLength(200)]
-    [JsonPropertyName("tiktokUrl")]
+    [JsonPropertyName("tikTokUrl")]
     public string TikTokPage { get; set; } = "";
     
     [JsonPropertyName("isMaintenanceMode")]

@@ -66,7 +66,7 @@ public class OrderService : IOrderService
                 o.TotalAmount,
                 o.CreatedAt,
                 o.Items.Count,
-                o.Source.ToString()
+                (int)o.Source
             ))
             .ToListAsync();
 
@@ -120,7 +120,7 @@ public class OrderService : IOrderService
                 h.Status.ToString(), h.Note, h.CreatedAt
             )).ToList(),
             salesPersonName,
-            null, 0, 0, o.Source.ToString(),
+            null, 0, 0, (int)o.Source,
             o.AttachmentUrl, o.AttachmentPublicId
         );
     }

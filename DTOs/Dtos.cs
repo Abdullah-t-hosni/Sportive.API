@@ -46,9 +46,9 @@ public record CategoryDto(
     int ProductCount,
     DateTime CreatedAt,
     int? ParentId = null,
-    string? ParentNameAr = null,
-    string? ParentNameEn = null,
-    List<CategoryDto>? Children = null
+    string? ParentCategoryNameAr = null,
+    string? ParentCategoryNameEn = null,
+    List<CategoryDto>? SubCategories = null
 );
 
 public record CreateCategoryDto(
@@ -96,6 +96,7 @@ public record ProductSummaryDto(
     int TotalStock,
     int ReorderLevel,
     string SKU,
+    bool HasVariants,
     bool HasTax,
     DateTime CreatedAt
 );
@@ -259,7 +260,7 @@ public record OrderSummaryDto(
     decimal TotalAmount,
     DateTime CreatedAt,
     int ItemCount,
-    string Source
+    int Source
 );
 
 public record OrderDetailDto(
@@ -285,7 +286,7 @@ public record OrderDetailDto(
     string? TotalAmountInWords = null,
     decimal PreviousBalance = 0,
     decimal PaidAmount = 0,
-    string Source = "Website",
+    int Source = 0,
     string? AttachmentUrl = null,
     string? AttachmentPublicId = null
 );

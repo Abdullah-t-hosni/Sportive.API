@@ -94,6 +94,7 @@ public class ProductService : IProductService
                 p.TotalStock,
                 p.ReorderLevel,
                 p.SKU,
+                p.Variants.Any(),
                 p.HasTax,
                 p.CreatedAt
             ))
@@ -362,6 +363,7 @@ public class ProductService : IProductService
                 p.TotalStock,
                 p.ReorderLevel,
                 p.SKU,
+                p.Variants != null && p.Variants.Any(),
                 p.HasTax,
                 p.CreatedAt
             ))
@@ -389,6 +391,7 @@ public class ProductService : IProductService
                 p.TotalStock,
                 p.ReorderLevel,
                 p.SKU,
+                p.Variants != null && p.Variants.Any(),
                 p.HasTax,
                 p.CreatedAt
             ))
