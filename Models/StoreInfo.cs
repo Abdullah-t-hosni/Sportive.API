@@ -46,8 +46,11 @@ public class StoreInfo
     public decimal FreeDeliveryAt { get; set; } = 2000;
     
     [JsonPropertyName("deliveryAccountId")]
-    public string? DeliveryAccountId { get; set; } // الربط المالي: حساب إيراد التوصيل
-    
+    public string? DeliveryAccountId { get; set; } // الربط المالي: حساب التوصيل (الرئيسي أو الوسيط)
+
+    [JsonPropertyName("deliveryRevenueAccountId")]
+    public string? DeliveryRevenueAccountId { get; set; } // الربط المالي: حساب إيراد التوصيل
+
     [JsonPropertyName("storeVatAccountId")]
     public string? StoreVatAccountId { get; set; } // الربط المالي: حساب ضريبة المبيعات
     

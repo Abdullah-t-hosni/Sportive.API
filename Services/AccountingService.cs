@@ -40,7 +40,8 @@ public class AccountingService : IAccountingService
     private const string SALES_REVENUE   = "4101";   // إيرادات المبيعات
     private const string SALES_RETURN    = "4102";   // مرتجع المبيعات
     private const string SALES_DISCOUNT  = "410101"; // الخصم الممنوح
-    private const string DELIVERY_REVENUE = "410105"; // إيراد خدمات توصيل (تحت 4101؛ لا 410102 بسبب تقاطع مع 4102)
+    private const string DELIVERY_GROUP   = "4103";   // حساب التوصيل (رئيسي)
+    private const string DELIVERY_REVENUE = "410301"; // إيراد خدمات توصيل
     private const string COGS            = "51101";  // تكلفة البضاعة المباعة
     private const string PURCHASES_NET   = "511";    // صافي المشتريات
     private const string PURCHASE_DISC   = "51103";  // خصم مكتسب (المشتريات)
@@ -60,7 +61,8 @@ public class AccountingService : IAccountingService
         // جلب إعدادات المتجر للحصول على الحسابات المختارة ونسبة الضريبة
         var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         var vatRate = (store?.VatRatePercent ?? 14) / 100m;
-        var deliveryAcct = !string.IsNullOrEmpty(store?.DeliveryAccountId) ? store.DeliveryAccountId : DELIVERY_REVENUE;
+        var deliveryRevAcct = !string.IsNullOrEmpty(store?.DeliveryRevenueAccountId) ? store.DeliveryRevenueAccountId 
+                             : (!string.IsNullOrEmpty(store?.DeliveryAccountId) ? store.DeliveryAccountId : DELIVERY_REVENUE);
         var vatAcct = !string.IsNullOrEmpty(store?.StoreVatAccountId) ? store.StoreVatAccountId : VAT_OUTPUT;
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
@@ -98,7 +100,7 @@ public class AccountingService : IAccountingService
             lines.Add((vatAcct, 0, totalVatAmount, $"ضريبة مبيعات {(store?.VatRatePercent ?? 14)}% - {order.OrderNumber} (دائن)"));
 
         if (order.DeliveryFee > 0)
-            lines.Add((deliveryAcct, 0, order.DeliveryFee, $"إيراد توصيل - {order.OrderNumber} (دائن)"));
+            lines.Add((deliveryRevAcct, 0, order.DeliveryFee, $"إيراد توصيل - {order.OrderNumber} (دائن)"));
 
         // ── 2. حسابات الجانب المدين (Debits) ──────────────────
         if (order.DiscountAmount > 0)

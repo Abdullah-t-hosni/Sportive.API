@@ -98,7 +98,8 @@ INSERT INTO `Accounts` (`Code`,`NameAr`,`Description`,`Type`,`Nature`,`ParentId`
 ('4102', 'مرتجع المبيعات', NULL, 4, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='41') x), 3, 1, 0, 1, NOW()),
 ('4201', 'إيرادات أخرى', 'إيراد نتج من أنشطة أخرى للمنشأة غير النشاط الأساسي', 4, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='42') x), 3, 1, 0, 1, NOW()),
 ('410101', 'الخصم الممنوح', NULL, 4, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='4101') x), 4, 1, 0, 1, NOW()),
-('410105', 'إيراد خدمات توصيل', 'إيراد رسوم التوصيل للعملاء', 4, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='4101') x), 4, 1, 1, 1, NOW());
+('4103', 'حساب التوصيل', 'إيرادات خدمات التوصيل والشحن', 4, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='41') x), 3, 0, 0, 1, NOW()),
+('410301', 'إيرادات التوصيل', 'إيرادات محصلة من العملاء مقابل التوصيل', 4, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='4103') x), 4, 1, 1, 1, NOW());
 
 -- 5. المصاريف
 INSERT INTO `Accounts` (`Code`,`NameAr`,`Description`,`Type`,`Nature`,`ParentId`,`Level`,`IsLeaf`,`AllowPosting`,`IsSystem`,`CreatedAt`) VALUES
