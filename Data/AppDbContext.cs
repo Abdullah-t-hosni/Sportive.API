@@ -225,13 +225,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(v => v.JournalEntry).WithMany().HasForeignKey(v => v.JournalEntryId).IsRequired(false);
         });
 
-        builder.Entity<Category>().HasData(
-            new Category { Id=1, NameAr="رجالي",         NameEn="Men",              Type=CategoryType.Men,       IsActive=true, CreatedAt=new DateTime(2024,1,1,0,0,0,DateTimeKind.Utc) },
-            new Category { Id=2, NameAr="حريمي",         NameEn="Women",            Type=CategoryType.Women,     IsActive=true, CreatedAt=new DateTime(2024,1,1,0,0,0,DateTimeKind.Utc) },
-            new Category { Id=3, NameAr="أطفال",         NameEn="Kids",             Type=CategoryType.Kids,      IsActive=true, CreatedAt=new DateTime(2024,1,1,0,0,0,DateTimeKind.Utc) },
-            new Category { Id=4, NameAr="أدوات رياضية", NameEn="Sports Equipment", Type=CategoryType.Equipment, IsActive=true, CreatedAt=new DateTime(2024,1,1,0,0,0,DateTimeKind.Utc) }
-        );
-
         builder.Entity<StoreInfo>().HasData(
             new StoreInfo { StoreConfigId = 1, StoreBrandName = "Sportive", LastUpdateDate = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
         );

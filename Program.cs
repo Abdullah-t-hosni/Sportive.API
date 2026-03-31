@@ -305,6 +305,7 @@ static async Task SeedAsync(WebApplication app)
         await db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS CashAccountId INT NULL;");
         await db.Database.ExecuteSqlRawAsync("ALTER TABLE Suppliers ADD COLUMN IF NOT EXISTS MainAccountId INT NULL;");
         await db.Database.ExecuteSqlRawAsync("ALTER TABLE Products ADD COLUMN IF NOT EXISTS ReorderLevel INT NOT NULL DEFAULT 0;");
+        await db.Database.ExecuteSqlRawAsync("ALTER TABLE Products ADD COLUMN IF NOT EXISTS HasTax TINYINT(1) NOT NULL DEFAULT 1;");
         await db.Database.ExecuteSqlRawAsync("ALTER TABLE ProductVariants ADD COLUMN IF NOT EXISTS ReorderLevel INT NOT NULL DEFAULT 0;");
         
         // 🚀 Fix: Make all accounts postable by default to allow automatic posting
