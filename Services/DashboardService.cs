@@ -75,6 +75,10 @@ public class DashboardService : IDashboardService
         var orderGrowth = CalculateGrowth(totalOrders, prevMonthOrders); // Comparing current total to last month's start total (Simplified but better than 0)
         var customerGrowth = CalculateGrowth(totalCustomers, prevCustomersCount);
 
+        var uncollectedAmount = await _db.Orders
+            .Where(o => o.PaymentStatus != PaymentStatus.Paid && o.Status != OrderStatus.Cancelled)
+            .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
+
         return new DashboardStatsDto(
             TodaySales: todaySales,
             TodaySalesGrowth: todayGrowth,
@@ -89,7 +93,8 @@ public class DashboardService : IDashboardService
             TotalCustomersGrowth: (int)customerGrowth,
             TotalProducts: await _db.Products.CountAsync(p => !p.IsDeleted),
             LowStockProducts: await _db.ProductVariants.CountAsync(v => !v.IsDeleted && v.StockQuantity <= 5 && v.StockQuantity > 0),
-            OutOfStockProducts: await _db.ProductVariants.CountAsync(v => !v.IsDeleted && v.StockQuantity == 0)
+            OutOfStockProducts: await _db.ProductVariants.CountAsync(v => !v.IsDeleted && v.StockQuantity == 0),
+            UncollectedAmount: uncollectedAmount
         );
     }
 

@@ -15,6 +15,7 @@ public interface IAccountingService
     Task PostPurchaseInvoiceAsync(PurchaseInvoice invoice);
     Task PostPurchaseReturnAsync(PurchaseInvoice invoice);
     Task PostOrderPaymentAsync(Order order);
+    Task PostOrderRefundAsync(Order order);
     Task PostSupplierPaymentAsync(SupplierPayment payment);
     Task ReverseEntryAsync(int journalEntryId, string reason);
 }
@@ -228,6 +229,38 @@ public class AccountingService : IAccountingService
             type:        JournalEntryType.ReceiptVoucher,
             reference:   reference,
             description: $"تحصيل تلقائي للطلب {order.OrderNumber} - {order.Customer?.FullName}",
+            date:        DateTime.UtcNow,
+            lines:       lines,
+            orderId:     order.Id,
+            customerId:  order.CustomerId,
+            source:      order.Source
+        );
+    }
+
+    // ══════════════════════════════════════════════════════
+    // 2.6 رد مالي لطلب (تحويل من نقدية إلى ذمم مدينة)
+    // ══════════════════════════════════════════════════════
+    public async Task PostOrderRefundAsync(Order order)
+    {
+        var reference = order.OrderNumber + "-RFD";
+        if (await EntryExists(JournalEntryType.PaymentVoucher, reference)) return;
+
+        var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
+        var mapDict = mappings.ToDictionary(m => m.Key, m => m.AccountId);
+
+        string receivablesAcct = mapDict.GetValueOrDefault("customerAccountID")?.ToString() ?? RECEIVABLES;
+        var cashCode = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+
+        var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
+
+        // القيد: من حساب العملاء إلى حساب النقدية (رد المبلغ)
+        lines.Add((receivablesAcct, order.TotalAmount, 0,                $"رد مديونية لطلب {order.OrderNumber}"));
+        lines.Add((cashCode,        0,                order.TotalAmount, $"رد مبلغ الطلب {order.OrderNumber} ({order.PaymentMethod})"));
+
+        await PostEntry(
+            type:        JournalEntryType.PaymentVoucher,
+            reference:   reference,
+            description: $"رد تلقائي للطلب {order.OrderNumber} - {order.Customer?.FullName}",
             date:        DateTime.UtcNow,
             lines:       lines,
             orderId:     order.Id,

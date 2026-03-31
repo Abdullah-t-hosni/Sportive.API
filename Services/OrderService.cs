@@ -316,6 +316,12 @@ public class OrderService : IOrderService
                     .FirstAsync(o => o.Id == order.Id);
 
                 await accounting.PostSalesOrderAsync(orderInner);
+
+                // 🛡️ REFINEMENT: Immediate collection for POS
+                if (orderInner.Source == OrderSource.POS)
+                {
+                    await accounting.PostOrderPaymentAsync(orderInner);
+                }
             }
             catch (Exception ex)
             {
@@ -451,10 +457,16 @@ public class OrderService : IOrderService
                         .FirstAsync(o => o.Id == orderId);
 
                     await accounting.PostSalesReturnAsync(fullOrderInner);
+
+                    // 🛡️ REFINEMENT: If previously PAID, we must issue a REFUND entry
+                    if (fullOrderInner.PaymentStatus == PaymentStatus.Paid)
+                    {
+                        await accounting.PostOrderRefundAsync(fullOrderInner);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"[Accounting] PostSalesReturn failed for {orderId}: {ex.Message}");
+                    Console.Error.WriteLine($"[Accounting] PostSalesReturn/Refund failed for {orderId}: {ex.Message}");
                 }
             });
         }

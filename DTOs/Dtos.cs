@@ -407,7 +407,8 @@ public record DashboardStatsDto(
     int TotalCustomersGrowth, // % vs last month
     int TotalProducts,
     int LowStockProducts,
-    int OutOfStockProducts
+    int OutOfStockProducts,
+    decimal UncollectedAmount = 0
 );
 
 public record AnalyticsSummaryDto(
