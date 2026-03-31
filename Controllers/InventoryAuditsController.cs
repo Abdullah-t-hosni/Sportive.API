@@ -5,6 +5,7 @@ using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Models;
 using System.Security.Claims;
+using Sportive.API.Interfaces;
 
 namespace Sportive.API.Controllers;
 
@@ -14,7 +15,12 @@ namespace Sportive.API.Controllers;
 public class InventoryAuditsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public InventoryAuditsController(AppDbContext db) => _db = db;
+    private readonly IInventoryService _inventory;
+    public InventoryAuditsController(AppDbContext db, IInventoryService inventory)
+    {
+        _db = db;
+        _inventory = inventory;
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
@@ -128,29 +134,19 @@ public class InventoryAuditsController : ControllerBase
         if (audit == null) return NotFound();
         if (audit.Status == InventoryAuditStatus.Posted) return BadRequest("هذا الجرد معتمد بالفعل");
 
-        // Update Stock
+        // Update Stock via InventoryService
         foreach (var item in audit.Items)
         {
-            if (item.ProductVariantId.HasValue)
-            {
-                var variant = await _db.ProductVariants.Include(v => v.Product).FirstOrDefaultAsync(v => v.Id == item.ProductVariantId);
-                if (variant != null)
-                {
-                    variant.StockQuantity = item.ActualQuantity;
-                    variant.UpdatedAt     = DateTime.UtcNow;
-                    // update total stock
-                    variant.Product.TotalStock = await _db.ProductVariants.Where(v => v.ProductId == variant.ProductId && !v.IsDeleted).SumAsync(v => v.StockQuantity);
-                }
-            }
-            else if (item.ProductId.HasValue)
-            {
-                var product = await _db.Products.FindAsync(item.ProductId);
-                if (product != null)
-                {
-                    product.TotalStock = item.ActualQuantity;
-                    product.UpdatedAt  = DateTime.UtcNow;
-                }
-            }
+            // Difference = Actual - Expected
+            await _inventory.LogMovementAsync(
+                InventoryMovementType.Audit,
+                item.Difference,
+                item.ProductId,
+                item.ProductVariantId,
+                $"AUDIT-{audit.Id}",
+                item.Note,
+                User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            );
         }
 
         audit.Status    = InventoryAuditStatus.Posted;

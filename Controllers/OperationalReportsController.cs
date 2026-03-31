@@ -273,8 +273,10 @@ public class OperationalReportsController : ControllerBase
                 p.Id, p.NameAr, p.NameEn, p.SKU,
                 p.Category?.NameAr ?? "",
                 p.Price, p.DiscountPrice,
+                p.CostPrice ?? 0,
                 totalStock,
-                totalStock * (p.DiscountPrice ?? p.Price),
+                totalStock * (p.DiscountPrice ?? p.Price), // Sales Value
+                totalStock * (p.CostPrice ?? 0),           // Cost Value
                 variants
             );
         }).ToList();
@@ -284,7 +286,8 @@ public class OperationalReportsController : ControllerBase
         var summary = new {
             totalProducts  = rows.Count,
             totalUnits     = rows.Sum(r => r.TotalStock),
-            totalValue     = rows.Sum(r => r.TotalValue),
+            totalSalesValue = rows.Sum(r => r.TotalValue),
+            totalCostValue  = rows.Sum(r => r.TotalCostValue),
             lowStockCount  = rows.Count(r => r.TotalStock <= 5),
             outOfStock     = rows.Count(r => r.TotalStock == 0),
         };
@@ -700,6 +703,63 @@ public class OperationalReportsController : ControllerBase
     }
 
     // ══════════════════════════════════════════════════════
+    // 11. سجل حركات المخزن الشامل (Advanced Movement Ledger)
+    // GET /api/operationalreports/stock-movements?productId=&fromDate=&toDate=&type=
+    // ══════════════════════════════════════════════════════
+    [HttpGet("stock-movements")]
+    public async Task<IActionResult> StockMovementsLedger(
+        [FromQuery] int?      productId = null,
+        [FromQuery] int?      variantId = null,
+        [FromQuery] DateTime? fromDate  = null,
+        [FromQuery] DateTime? toDate    = null,
+        [FromQuery] InventoryMovementType? type = null)
+    {
+        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
+        var to   = toDate ?? DateTime.UtcNow;
+
+        var q = _db.InventoryMovements
+            .Include(m => m.Product)
+            .Include(m => m.ProductVariant)
+            .Where(m => m.CreatedAt >= from && m.CreatedAt <= to)
+            .AsQueryable();
+
+        if (productId.HasValue) q = q.Where(m => m.ProductId == productId.Value);
+        if (variantId.HasValue) q = q.Where(m => m.ProductVariantId == variantId.Value);
+        if (type.HasValue)      q = q.Where(m => m.Type == type.Value);
+
+        var items = await q.OrderByDescending(m => m.CreatedAt).ToListAsync();
+
+        var rows = items.Select(m => new {
+            m.Id,
+            m.CreatedAt,
+            productName = m.Product?.NameAr,
+            variant     = m.ProductVariant != null ? $"{m.ProductVariant.Size} {m.ProductVariant.ColorAr}" : "أساسي",
+            m.Type,
+            typeAr      = GetMovementTypeAr(m.Type),
+            m.Quantity,
+            m.RemainingStock,
+            m.Reference,
+            m.Note,
+            m.UnitCost,
+            totalValue = m.Quantity * m.UnitCost
+        }).ToList();
+
+        return Ok(new { from, to, rows });
+    }
+
+    private string GetMovementTypeAr(InventoryMovementType type) => type switch
+    {
+        InventoryMovementType.OpeningBalance => "رصيد أول المدة",
+        InventoryMovementType.Purchase       => "مشتريات",
+        InventoryMovementType.Sale           => "مبيعات",
+        InventoryMovementType.ReturnIn       => "مرتجع مبيعات",
+        InventoryMovementType.ReturnOut      => "مرتجع مشتريات",
+        InventoryMovementType.Audit          => "جرد",
+        InventoryMovementType.Adjustment     => "تسوية مخزنية",
+        _ => type.ToString()
+    };
+
+    // ══════════════════════════════════════════════════════
     // EXCEL HELPERS
     // ══════════════════════════════════════════════════════
     private IActionResult ExcelCustomerStatement(Customer c, List<CustomerStatementLine> lines, decimal invoiced, decimal paid, decimal outstanding, DateTime from, DateTime to)
@@ -886,7 +946,7 @@ public class OperationalReportsController : ControllerBase
 public record CustomerStatementLine(DateTime Date, string Type, string Reference, string Description, decimal Debit, decimal Credit, decimal Balance);
 public record CustomerAgingRow(int CustomerId, string CustomerName, string Phone, decimal Total, decimal Current, decimal Days60, decimal Days90, decimal Over90);
 public record SupplierAgingRow(int SupplierId, string SupplierName, string Phone, string CompanyName, decimal Total, decimal Current, decimal Days60, decimal Days90, decimal Over90);
-public record InventoryRow(int Id, string NameAr, string NameEn, string SKU, string CategoryName, decimal Price, decimal? DiscountPrice, int TotalStock, decimal TotalValue, List<VariantInventoryRow> Variants);
+public record InventoryRow(int Id, string NameAr, string NameEn, string SKU, string CategoryName, decimal Price, decimal? DiscountPrice, decimal CostPrice, int TotalStock, decimal TotalValue, decimal TotalCostValue, List<VariantInventoryRow> Variants);
 public record VariantInventoryRow(int Id, string Size, string Color, string ColorAr, int StockQuantity, decimal Price, decimal Value);
 public record SalesRow(string OrderNumber, DateTime Date, string CustomerName, string Phone, string Source, string Status, string PaymentMethod, decimal SubTotal, decimal DiscountAmount, decimal TotalAmount, int ItemCount);
 public record PurchaseRow(string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal PaidAmount, decimal RemainingAmount);

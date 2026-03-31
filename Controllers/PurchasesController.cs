@@ -132,11 +132,14 @@ public class PurchaseInvoicesController : ControllerBase
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IProductService _productService;
 
-    public PurchaseInvoicesController(AppDbContext db, IServiceScopeFactory scopeFactory, IProductService productService)
+    private readonly IInventoryService _inventory;
+
+    public PurchaseInvoicesController(AppDbContext db, IServiceScopeFactory scopeFactory, IProductService productService, IInventoryService inventory)
     {
         _db           = db;
         _scopeFactory = scopeFactory;
         _productService = productService;
+        _inventory = inventory;
     }
 
     [HttpGet]
@@ -271,33 +274,18 @@ public class PurchaseInvoicesController : ControllerBase
             invoice.Items.Add(invoiceItem);
             subtotal += total;
 
-            // ── تحديث المخزون والتكلفة ──────────────────────
+            // ── Inventory Movement Logging ──────────────────────
             if (item.ProductId.HasValue)
             {
-                var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == item.ProductId.Value);
-                if (product != null)
-                {
-                    // تحديث سعر التكلفة ليكون آخر سعر شراء
-                    product.CostPrice = item.UnitCost;
-                    product.UpdatedAt = DateTime.UtcNow;
-
-                    if (item.ProductVariantId.HasValue)
-                    {
-                        var variant = product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId.Value);
-                        if (variant != null)
-                        {
-                            variant.StockQuantity += item.Quantity;
-                            variant.UpdatedAt = DateTime.UtcNow;
-                            // Synchronize total stock
-                            await _productService.UpdateTotalStockAsync(product.Id);
-                        }
-                    }
-                    else 
-                    {
-                        // للمنتجات بدون موديلات (أو في حال عدم اختيار موديل)
-                        product.TotalStock += item.Quantity;
-                    }
-                }
+                await _inventory.LogMovementAsync(
+                    InventoryMovementType.Purchase,
+                    item.Quantity,
+                    item.ProductId,
+                    item.ProductVariantId,
+                    invNo,
+                    $"Purchase Invoice receipt",
+                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                );
             }
         }
 
@@ -441,27 +429,15 @@ public class PurchaseInvoicesController : ControllerBase
             {
                 if (item.ProductId.HasValue)
                 {
-                    var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == item.ProductId.Value);
-                    if (product != null)
-                    {
-                        if (item.ProductVariantId.HasValue)
-                        {
-                            var variant = product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId.Value);
-                            if (variant != null)
-                            {
-                                variant.StockQuantity -= item.Quantity;
-                                variant.UpdatedAt = DateTime.UtcNow;
-                                await _productService.UpdateTotalStockAsync(product.Id);
-                            }
-                        }
-                        else
-                        {
-                            // للمنتجات بدون موديلات
-                            product.TotalStock -= item.Quantity;
-                        }
-
-                        product.UpdatedAt = DateTime.UtcNow;
-                    }
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.ReturnOut,
+                        -item.Quantity, // deduction
+                        item.ProductId,
+                        item.ProductVariantId,
+                        inv.InvoiceNumber,
+                        $"Purchase Return",
+                        User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    );
                 }
             }
             await _db.SaveChangesAsync(); // Save stock changes
@@ -510,28 +486,20 @@ public class PurchaseInvoicesController : ControllerBase
         inv.Supplier.TotalPurchases -= inv.TotalAmount;
         inv.Supplier.TotalPaid -= inv.PaidAmount;
 
-        // 2. Reverse Stock
+        // 2. Reverse Stock (Technically a deletion movement)
         foreach (var item in inv.Items)
         {
             if (item.ProductId.HasValue)
             {
-                var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == item.ProductId.Value);
-                if (product != null)
-                {
-                    if (item.ProductVariantId.HasValue)
-                    {
-                        var variant = product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId.Value);
-                        if (variant != null)
-                        {
-                            variant.StockQuantity -= item.Quantity;
-                        }
-                    }
-                    else
-                    {
-                        product.TotalStock -= item.Quantity;
-                    }
-                    await _productService.UpdateTotalStockAsync(product.Id);
-                }
+                await _inventory.LogMovementAsync(
+                    InventoryMovementType.Adjustment,
+                    -item.Quantity, // Reverse the previous addition
+                    item.ProductId,
+                    item.ProductVariantId,
+                    inv.InvoiceNumber,
+                    $"Purchase Invoice Deleted",
+                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                );
             }
         }
 

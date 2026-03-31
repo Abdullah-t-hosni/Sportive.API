@@ -13,6 +13,7 @@ public class OrderService : IOrderService
     private readonly INotificationService _notificationService;
     private readonly IEmailService _emailService;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IInventoryService _inventory;
     private readonly IConfiguration _config;
 
     public OrderService(
@@ -20,12 +21,14 @@ public class OrderService : IOrderService
         INotificationService notificationService,
         IEmailService emailService,
         IServiceScopeFactory scopeFactory,
+        IInventoryService inventory,
         IConfiguration config)
     {
         _db = db;
         _notificationService = notificationService;
         _emailService = emailService;
         _scopeFactory = scopeFactory;
+        _inventory = inventory;
         _config = config;
     }
 
@@ -227,24 +230,16 @@ public class OrderService : IOrderService
                 order.Items.Add(orderItem);
                 order.SubTotal += orderItem.TotalPrice;
 
-                // Stock Update & Check
-                if (variant != null)
-                {
-                    if (variant.StockQuantity < item.Quantity)
-                        throw new InvalidOperationException($"Insufficient stock for {product.NameAr} ({variant.Size}/{variant.Color})");
-                    
-                    variant.StockQuantity -= item.Quantity;
-                    product.TotalStock -= item.Quantity;
-                    variant.UpdatedAt = DateTime.UtcNow;
-                }
-                else
-                {
-                    if (product.TotalStock < item.Quantity)
-                        throw new InvalidOperationException($"Insufficient stock for {product.NameAr}");
-
-                    product.TotalStock -= item.Quantity;
-                }
-                product.UpdatedAt = DateTime.UtcNow;
+                // Stock Update via InventoryService
+                await _inventory.LogMovementAsync(
+                    InventoryMovementType.Sale,
+                    -item.Quantity, // deduction
+                    item.ProductId,
+                    item.ProductVariantId,
+                    order.OrderNumber,
+                    "Order created",
+                    order.SalesPersonId
+                );
             }
         }
         else
@@ -274,22 +269,16 @@ public class OrderService : IOrderService
                 order.Items.Add(orderItem);
                 order.SubTotal += orderItem.TotalPrice;
 
-                if (ci.ProductVariant != null)
-                {
-                    if (ci.ProductVariant.StockQuantity < ci.Quantity)
-                        throw new InvalidOperationException($"Insufficient stock for {ci.Product.NameAr} ({ci.ProductVariant.Size})");
-                    
-                    ci.ProductVariant.StockQuantity -= ci.Quantity;
-                    ci.Product.TotalStock -= ci.Quantity;
-                }
-                else
-                {
-                    if (ci.Product.TotalStock < ci.Quantity)
-                        throw new InvalidOperationException($"Insufficient stock for {ci.Product.NameAr}");
-
-                    ci.Product.TotalStock -= ci.Quantity;
-                }
-                ci.Product.UpdatedAt = DateTime.UtcNow;
+                // Stock Update via InventoryService
+                await _inventory.LogMovementAsync(
+                    InventoryMovementType.Sale,
+                    -ci.Quantity, // deduction
+                    ci.ProductId,
+                    ci.ProductVariantId,
+                    order.OrderNumber,
+                    "Website Order created",
+                    null
+                );
                 
                 ci.IsDeleted = true; // Clear cart after order
             }
@@ -400,22 +389,15 @@ public class OrderService : IOrderService
             var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
             foreach (var item in orderWithItems.Items)
             {
-                var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == item.ProductId);
-                if (product == null) continue;
-
-                if (item.ProductVariantId.HasValue)
-                {
-                    var variant = await _db.ProductVariants.FirstOrDefaultAsync(v => v.Id == item.ProductVariantId);
-                    if (variant != null) 
-                    {
-                        variant.StockQuantity += item.Quantity;
-                        product.TotalStock += item.Quantity;
-                    }
-                }
-                else
-                {
-                    product.TotalStock += item.Quantity;
-                }
+                await _inventory.LogMovementAsync(
+                    dto.Status == OrderStatus.Returned ? InventoryMovementType.ReturnIn : InventoryMovementType.Adjustment,
+                    item.Quantity, // Add back
+                    item.ProductId,
+                    item.ProductVariantId,
+                    order.OrderNumber,
+                    $"Order {dto.Status}",
+                    updatedByUserId
+                );
             }
         }
 

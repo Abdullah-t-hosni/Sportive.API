@@ -11,10 +11,13 @@ public class ProductService : IProductService
     private readonly AppDbContext _db;
     private readonly INotificationService _notifications;
 
-    public ProductService(AppDbContext db, INotificationService notifications)
+    private readonly IInventoryService _inventory;
+
+    public ProductService(AppDbContext db, INotificationService notifications, IInventoryService inventory)
     {
         _db = db;
         _notifications = notifications;
+        _inventory = inventory;
     }
 
     public async Task<PaginatedResult<ProductSummaryDto>> GetProductsAsync(ProductFilterDto filter)
@@ -173,6 +176,25 @@ public class ProductService : IProductService
         _db.Products.Add(product);
         await _db.SaveChangesAsync();
 
+        // 3. Log initial movements for variants
+        foreach (var v in product.Variants)
+        {
+            if (v.StockQuantity != 0)
+            {
+                await _inventory.LogMovementAsync(
+                    InventoryMovementType.OpeningBalance,
+                    v.StockQuantity,
+                    product.Id,
+                    v.Id,
+                    "INIT-PRODUCT",
+                    "رصيد افتتاحي عند إنشاء المنتج",
+                    null
+                );
+            }
+        }
+        
+        await _db.SaveChangesAsync();
+
         return await GetProductByIdAsync(product.Id)
             ?? throw new Exception("Product not found after creation");
     }
@@ -236,10 +258,19 @@ public class ProductService : IProductService
     {
         var variant = await _db.ProductVariants.FindAsync(variantId);
         if (variant == null) return false;
-        variant.StockQuantity = quantity;
-        variant.UpdatedAt = DateTime.UtcNow;
+        
+        var diff = quantity - variant.StockQuantity;
+        if (diff == 0) return true;
 
-        await UpdateTotalStockAsync(variant.ProductId);
+        await _inventory.LogMovementAsync(
+            InventoryMovementType.Adjustment,
+            diff,
+            variant.ProductId,
+            variant.Id,
+            "MANUAL-UPDATE",
+            "تحديث يدوي من صفحة المنتج",
+            null
+        );
 
         await _db.SaveChangesAsync();
         await _notifications.BroadcastStockUpdateAsync(variant.ProductId, variantId, quantity);
@@ -290,15 +321,22 @@ public class ProductService : IProductService
             PriceAdjustment = dto.PriceAdjustment
         };
         _db.ProductVariants.Add(v);
-        
-        var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == productId);
-        if (product != null)
+        await _db.SaveChangesAsync(); // Save to get the ID
+
+        if (dto.StockQuantity != 0)
         {
-            await UpdateTotalStockAsync(productId);
-            product.UpdatedAt = DateTime.UtcNow;
+            await _inventory.LogMovementAsync(
+                InventoryMovementType.OpeningBalance,
+                dto.StockQuantity,
+                productId,
+                v.Id,
+                "INIT-VARIANT",
+                "رصيد افتتاحي للموديل الجديد",
+                null
+            );
+            await _db.SaveChangesAsync();
         }
 
-        await _db.SaveChangesAsync();
         await _notifications.BroadcastStockUpdateAsync(v.ProductId, v.Id, v.StockQuantity);
         
         return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId);
