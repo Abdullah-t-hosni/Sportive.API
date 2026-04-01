@@ -122,9 +122,12 @@ public class CustomerService : ICustomerService
 
         if (!string.IsNullOrEmpty(generatedEmail))
         {
-            var userConflict = await _db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == generatedEmail.ToLower() || u.PhoneNumber == dto.Phone);
+            var userConflict = await _db.Users.FirstOrDefaultAsync(u => 
+                (u.Email != null && !string.IsNullOrEmpty(generatedEmail) && u.Email.ToLower() == generatedEmail.ToLower()) || 
+                (u.PhoneNumber != null && u.PhoneNumber == dto.Phone));
+            
             if (userConflict != null)
-                throw new Exception($"عذراً، هذا الهاتف ({dto.Phone}) مرتبط بحساب مستخدم آخر في النظام (Staff). يرجى التغيير.");
+                throw new Exception($"عذراً، هذا الهاتف ({dto.Phone ?? "غير محدد"}) مرتبط بحساب مستخدم آخر في النظام (Staff). يرجى التغيير.");
         }
 
         // 4. Create New
