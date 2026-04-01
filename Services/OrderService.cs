@@ -411,6 +411,7 @@ public class OrderService : IOrderService
         var order = await _db.Orders.Include(o => o.StatusHistory).FirstOrDefaultAsync(o => o.Id == orderId);
         if (order == null) throw new KeyNotFoundException("Order not found.");
 
+        var oldStatus = order.Status;
         order.Status = dto.Status;
         order.UpdatedAt = DateTime.UtcNow;
         order.StatusHistory.Add(new OrderStatusHistory {
@@ -448,7 +449,7 @@ public class OrderService : IOrderService
 
         // Stock Restoration for Cancelled/Returned
         if ((dto.Status == OrderStatus.Cancelled || dto.Status == OrderStatus.Returned) && 
-            order.Status != OrderStatus.Cancelled && order.Status != OrderStatus.Returned)
+            oldStatus != OrderStatus.Cancelled && oldStatus != OrderStatus.Returned)
         {
             var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
             foreach (var item in orderWithItems.Items)
