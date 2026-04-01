@@ -20,14 +20,16 @@ public class AuthController : ControllerBase
     private readonly UserManager<AppUser> _userManager;
     private readonly IMemoryCache _cache;
     private readonly IEmailService _email;
+    private readonly IWhatsAppApiService _whatsappApi;
 
-    public AuthController(IAuthService auth, AppDbContext db, UserManager<AppUser> userManager, IMemoryCache cache, IEmailService email)
+    public AuthController(IAuthService auth, AppDbContext db, UserManager<AppUser> userManager, IMemoryCache cache, IEmailService email, IWhatsAppApiService whatsappApi)
     {
         _auth = auth;
         _db = db;
         _userManager = userManager;
         _cache = cache;
         _email = email;
+        _whatsappApi = whatsappApi;
     }
 
     [HttpPost("register")]
@@ -104,6 +106,42 @@ public class AuthController : ControllerBase
 
         _cache.Remove($"ResetCode_{dto.Identifier}");
         return Ok(new { message = "Password reset successful" });
+    }
+
+    [HttpPost("send-otp")]
+    public async Task<IActionResult> SendOtp([FromBody] SendOtpDto dto)
+    {
+        var code = new Random().Next(100000, 999999).ToString();
+        // حفظ الكود لمدة 5 دقائق
+        _cache.Set($"OtpCode_{dto.PhoneNumber}", code, TimeSpan.FromMinutes(5));
+
+        bool isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
+        
+        // إرسال رسالة باستخدام الواتساب
+        bool sent = await _whatsappApi.SendOtpAsync(dto.PhoneNumber, code);
+
+        if (!sent && !isDev)
+        {
+            return BadRequest(new { message = "Failed to send OTP message via WhatsApp" });
+        }
+
+        return Ok(new { 
+            message = "OTP sent successfully to your WhatsApp.",
+            code = isDev ? code : null 
+        });
+    }
+
+    [HttpPost("verify-otp")]
+    public IActionResult VerifyOtp([FromBody] VerifyOtpDto dto)
+    {
+        if (!_cache.TryGetValue($"OtpCode_{dto.PhoneNumber}", out string? cachedCode) || cachedCode != dto.Code)
+        {
+            return BadRequest(new { message = "Invalid or expired OTP code" });
+        }
+
+        // في حال النجاح نقوم بمسح الكود من الـ Cache
+        _cache.Remove($"OtpCode_{dto.PhoneNumber}");
+        return Ok(new { message = "OTP verified successfully" });
     }
 
     [Authorize]

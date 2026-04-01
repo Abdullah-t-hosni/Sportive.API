@@ -424,10 +424,15 @@ public class OrderService : IOrderService
         if (dto.Status == OrderStatus.Delivered)
         {
             order.ActualDeliveryDate = DateTime.UtcNow;
-            order.PaymentStatus = PaymentStatus.Paid;
+            
+            // 🛡️ POS / CREDIT PROTECTION: Only force Paid if NOT a Credit sale
+            if (order.PaymentMethod != PaymentMethod.Credit)
+            {
+                order.PaymentStatus = PaymentStatus.Paid;
+            }
 
             // أتمتة التحصيل المحاسبي لطلبات الموقع (لأن الـ POS سدد في قيد الفاتورة الأول)
-            if (order.Source == OrderSource.Website)
+            if (order.Source == OrderSource.Website && order.PaymentStatus == PaymentStatus.Paid)
             {
                 _ = Task.Run(async () =>
                 {

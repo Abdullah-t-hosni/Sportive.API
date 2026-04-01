@@ -34,6 +34,10 @@ public record ChangePasswordDto(string CurrentPassword, string NewPassword);
 public record ForgotPasswordDto(string Identifier);
 public record ResetPasswordDto(string Identifier, string Code, string NewPassword);
 
+// ========== OTP VIA WHATSAPP ==========
+public record SendOtpDto(string PhoneNumber);
+public record VerifyOtpDto(string PhoneNumber, string Code);
+
 // ========== CATEGORY ==========
 public record CategoryDto(
     [property: JsonPropertyName("id")] int Id,
