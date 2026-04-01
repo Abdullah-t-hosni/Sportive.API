@@ -1,0 +1,21 @@
+version: 2
+
+updates:
+  # NuGet packages
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      aspnetcore:
+        patterns: [ "Microsoft.AspNetCore.*", "Microsoft.EntityFrameworkCore.*", "Microsoft.Extensions.*" ]
+      testing:
+        patterns: [ "xunit*", "Moq", "FluentAssertions", "coverlet*" ]
+
+  # GitHub Actions versions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"

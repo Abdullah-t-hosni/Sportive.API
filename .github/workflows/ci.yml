@@ -1,0 +1,87 @@
+name: CI — Build & Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Build & Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Setup .NET 9 ────────────────────────────────────
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      # ── 3. Cache NuGet packages ────────────────────────────
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # ── 4. Restore dependencies ────────────────────────────
+      - name: Restore dependencies
+        run: dotnet restore
+
+      # ── 5. Build (fail fast on errors) ────────────────────
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      # ── 6. Run Tests with coverage ─────────────────────────
+      - name: Run tests
+        run: |
+          dotnet test Sportive.API.Tests/Sportive.API.Tests.csproj \
+            --no-build \
+            --configuration Release \
+            --logger "trx;LogFileName=test-results.trx" \
+            --collect:"XPlat Code Coverage" \
+            --results-directory ./TestResults \
+            -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+        env:
+          JWT__Secret: "ci-test-secret-key-minimum-32-characters!!"
+          JWT__Issuer: "Sportive.API.Tests"
+          JWT__Audience: "Sportive.Client.Tests"
+          ADMIN_EMAIL: "admin@test.com"
+          ADMIN_PASSWORD: "Admin@Test123"
+
+      # ── 7. Publish test results ────────────────────────────
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: xUnit Test Results
+          path: TestResults/test-results.trx
+          reporter: dotnet-trx
+          fail-on-error: true
+
+      # ── 8. Upload coverage report ──────────────────────────
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: TestResults/**/coverage.cobertura.xml
+          flags: unittests
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      # ── 9. Upload test artifacts on failure ────────────────
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-results
+          path: TestResults/
+          retention-days: 7
