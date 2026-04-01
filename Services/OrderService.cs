@@ -204,7 +204,7 @@ public class OrderService : IOrderService
             Status = dto.Source == OrderSource.POS ? OrderStatus.Delivered : OrderStatus.Pending,
             FulfillmentType = dto.FulfillmentType,
             PaymentMethod = dto.PaymentMethod,
-            PaymentStatus = dto.Source == OrderSource.POS ? PaymentStatus.Paid : PaymentStatus.Pending,
+            PaymentStatus = (dto.Source == OrderSource.POS && dto.PaymentMethod != PaymentMethod.Credit) ? PaymentStatus.Paid : PaymentStatus.Pending,
             DeliveryAddressId = (dto.DeliveryAddressId.HasValue && dto.DeliveryAddressId.Value > 0) 
                                 ? (await _db.Addresses.AnyAsync(a => a.Id == dto.DeliveryAddressId.Value && a.CustomerId == customerId.Value) ? dto.DeliveryAddressId : null) 
                                 : null,
@@ -353,12 +353,6 @@ public class OrderService : IOrderService
                     .FirstAsync(o => o.Id == order.Id);
 
                 await accounting.PostSalesOrderAsync(orderInner);
-
-                // 🛡️ REFINEMENT: Immediate collection for POS
-                if (orderInner.Source == OrderSource.POS)
-                {
-                    await accounting.PostOrderPaymentAsync(orderInner);
-                }
             }
             catch (Exception ex)
             {
