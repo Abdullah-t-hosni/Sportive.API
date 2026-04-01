@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
+using System.Text.Json;
 using Sportive.API.Models;
 
 namespace Sportive.API.Services;
@@ -135,59 +136,60 @@ public class AccountingService : IAccountingService
         if (isCashCollection)
         {
             // --- SMART MIXED PAYMENT SPLIT ---
-            // Pattern: "Mixed: Cash=500, Card=500" in AdminNotes or description
             var note = order.AdminNotes ?? "";
-            bool isMixed = order.PaymentMethod == PaymentMethod.Mixed || note.Contains("Mixed:", StringComparison.OrdinalIgnoreCase);
-            
-            if (isMixed && note.Contains("Mixed:", StringComparison.OrdinalIgnoreCase))
+            bool isJsonMixed = note.Trim().StartsWith("{") && note.Contains("mixed");
+            bool isStringMixed = note.Contains("Mixed:", StringComparison.OrdinalIgnoreCase);
+
+            var splits = new List<(PaymentMethod method, decimal amount)>();
+
+            if (isJsonMixed)
             {
-                // Robust parsing for "Mixed: Cash=100, Bank=200, Vodafone=50, ..."
-                decimal cashPart = 0, bankPart = 0, vodafonePart = 0, instaPart = 0;
+                try {
+                    using var doc = JsonDocument.Parse(note);
+                    if (doc.RootElement.TryGetProperty("mixed", out var mixedProps)) {
+                        foreach (var prop in mixedProps.EnumerateObject()) {
+                            var m = prop.Name.ToLower() switch {
+                                "cash" => PaymentMethod.Cash,
+                                "bank" => PaymentMethod.Bank,
+                                "vodafone" => PaymentMethod.Vodafone,
+                                "instapay" => PaymentMethod.InstaPay,
+                                _ => PaymentMethod.Cash
+                            };
+                            if (decimal.TryParse(prop.Value.ToString(), out decimal val) && val > 0)
+                                splits.Add((m, val));
+                        }
+                    }
+                } catch { /* Fallback */ }
+            }
+            
+            if (splits.Count == 0 && isStringMixed)
+            {
                 var cleanNote = note.Replace("Mixed:", "").Replace("/", " ").Replace("-", " ");
-                var pairs = cleanNote.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
-
-                foreach (var pair in pairs)
-                {
-                    var kv = pair.Split(new[] { '=' }, StringSplitOptions.RemoveEmptyEntries);
-                    if (kv.Length < 2) continue;
-                    var k = kv[0].Trim().ToLower();
-                    var vStr = kv[1].Trim();
-                    if (!decimal.TryParse(vStr, out var v)) continue;
-
-                    if (k.Contains("cash")) cashPart += v;
-                    else if (k.Contains("bank") || k.Contains("card") || k.Contains("visa") || k.Contains("terminal")) bankPart += v;
-                    else if (k.Contains("vodafone")) vodafonePart += v;
-                    else if (k.Contains("instapay") || k.Contains("insta")) instaPart += v;
-                }
-
-                if (cashPart > 0) {
-                    var code = GetMappedCashAccount(PaymentMethod.Cash, order.Source, mapDict);
-                    lines.Add((code, cashPart, 0, $"تحصيل (كاش مختلط) - {order.OrderNumber}"));
-                }
-                if (bankPart > 0) {
-                    var code = GetMappedCashAccount(PaymentMethod.CreditCard, order.Source, mapDict);
-                    lines.Add((code, bankPart, 0, $"تحصيل (بنك مختلط) - {order.OrderNumber}"));
-                }
-                if (vodafonePart > 0) {
-                    var code = GetMappedCashAccount(PaymentMethod.Vodafone, order.Source, mapDict);
-                    lines.Add((code, vodafonePart, 0, $"تحصيل (فودافون مختلط) - {order.OrderNumber}"));
-                }
-                if (instaPart > 0) {
-                    var code = GetMappedCashAccount(PaymentMethod.InstaPay, order.Source, mapDict);
-                    lines.Add((code, instaPart, 0, $"تحصيل (إنستاباي مختلط) - {order.OrderNumber}"));
-                }
-                
-                // Final residual reconciliation (ensures Journal balance match)
-                var parsedSum = cashPart + bankPart + vodafonePart + instaPart;
-                var residual  = netReceivable - parsedSum;
-                if (Math.Abs(residual) > 0.01m) {
-                     var fallback = GetMappedCashAccount(PaymentMethod.Cash, order.Source, mapDict);
-                     lines.Add((fallback, residual, 0, $"تحصيل (متبقي الصندوق) - {order.OrderNumber}"));
+                foreach (var pair in cleanNote.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)) {
+                    var kv = pair.Split('=');
+                    if (kv.Length == 2 && decimal.TryParse(kv[1].Trim(), out decimal v)) {
+                        var k = kv[0].Trim().ToLower();
+                        var m = k switch {
+                            var s when s.Contains("cash") => PaymentMethod.Cash,
+                            var s when s.Contains("bank") || s.Contains("card") || s.Contains("visa") => PaymentMethod.Bank,
+                            var s when s.Contains("vodafone") => PaymentMethod.Vodafone,
+                            var s when s.Contains("insta") => PaymentMethod.InstaPay,
+                            _ => PaymentMethod.Cash
+                        };
+                        splits.Add((m, v));
+                    }
                 }
             }
-            else 
+
+            if (splits.Count > 0)
             {
-                // Standard Single-Method Collection
+                foreach (var (m, v) in splits) {
+                    var code = GetMappedCashAccount(m, order.Source, mapDict);
+                    lines.Add((code, v, 0, $"تحصيل ({m} مختلط) - {order.OrderNumber}"));
+                }
+            }
+            else
+            {
                 var cashCode = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
                 var sourceName = order.Source == OrderSource.POS ? "كاشير" : "موقع";
                 lines.Add((cashCode, netReceivable, 0, $"تحصيل نقدي {sourceName} - {order.OrderNumber} (مدين)"));
