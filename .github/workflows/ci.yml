@@ -9,14 +9,16 @@ on:
 jobs:
   test:
     name: Build & Run Tests
-    runs-on: ubuntu-latest
+    # self-hosted: شغّل على جهازك بدون استهلاك GitHub minutes
+    # لو عايز GitHub servers: غيّر لـ ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       # ── 1. Checkout ────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. Setup .NET 9 ────────────────────────────────────
+      # ── 2. Setup .NET 9 (محتاجها بس أول مرة على self-hosted) ──
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v4
         with:

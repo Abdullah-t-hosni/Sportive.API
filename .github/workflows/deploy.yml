@@ -9,7 +9,7 @@ jobs:
   # ── Job 1: Tests must pass before deploy ──────────────────
   test:
     name: Run Tests (Gate)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +45,7 @@ jobs:
   # ── Job 2: Deploy (only runs if tests pass) ────────────────
   deploy:
     name: Deploy to Railway
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: test          # ← هيتنفذ بس لو job test عدى بنجاح
 
     steps:
