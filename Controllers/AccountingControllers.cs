@@ -627,7 +627,7 @@ public class JournalEntriesController : ControllerBase
 // ══════════════════════════════════════════════════════
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager")]
+[Authorize(Roles = "Admin,Manager,Staff,Cashier")]
 public class ReceiptVouchersController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -793,7 +793,7 @@ public class ReceiptVouchersController : ControllerBase
 // ══════════════════════════════════════════════════════
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager")]
+[Authorize(Roles = "Admin,Manager,Staff,Cashier")]
 public class PaymentVouchersController : ControllerBase
 {
     private readonly AppDbContext _db;

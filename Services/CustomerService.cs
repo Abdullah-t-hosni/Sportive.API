@@ -44,7 +44,8 @@ public class CustomerService : ICustomerService
                     a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
                 )).ToList(),
-                c.AppUserId
+                c.AppUserId,
+                _db.JournalLines.Where(l => l.CustomerId == c.Id && !l.IsDeleted && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
             ))
             .ToListAsync();
 
@@ -67,7 +68,8 @@ public class CustomerService : ICustomerService
                     a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
                 )).ToList(),
-                c.AppUserId
+                c.AppUserId,
+                _db.JournalLines.Where(l => l.CustomerId == c.Id && !l.IsDeleted && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
             ))
             .FirstOrDefaultAsync();
 
@@ -85,7 +87,8 @@ public class CustomerService : ICustomerService
                     a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
                 )).ToList(),
-                c.AppUserId
+                c.AppUserId,
+                _db.JournalLines.Where(l => l.CustomerId == c.Id && !l.IsDeleted && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
             ))
             .FirstOrDefaultAsync();
 

@@ -367,7 +367,8 @@ public record CustomerDetailDto(
     decimal TotalSpent,
     DateTime CreatedAt,
     List<AddressDto> Addresses,
-    string? AppUserId = null
+    string? AppUserId = null,
+    decimal Balance = 0
 );
 
 public record AddressDto(
