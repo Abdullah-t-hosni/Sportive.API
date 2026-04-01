@@ -126,8 +126,7 @@ public class AuthController : ControllerBase
         }
 
         return Ok(new { 
-            message = "OTP sent successfully to your WhatsApp.",
-            code = isDev ? code : null 
+            message = "OTP sent successfully to your WhatsApp."
         });
     }
 
