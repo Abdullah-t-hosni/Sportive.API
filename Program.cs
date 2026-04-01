@@ -1,8 +1,10 @@
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Threading.RateLimiting;
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Identity;
@@ -53,8 +55,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // ── IDENTITY ──────────────────────────────────────────
 builder.Services.AddIdentity<AppUser, IdentityRole>(options =>
 {
-    options.Password.RequireDigit = false;
-    options.Password.RequiredLength = 4; // reduced from 6
+    options.Password.RequireDigit = true;
+    options.Password.RequiredLength = 8;
     options.Password.RequireLowercase = false;
     options.Password.RequireUppercase = false;
     options.Password.RequireNonAlphanumeric = false;
@@ -66,6 +68,9 @@ builder.Services.AddIdentity<AppUser, IdentityRole>(options =>
 // ── JWT ───────────────────────────────────────────────
 var jwtSecret = builder.Configuration["JWT:Secret"]
     ?? throw new InvalidOperationException("JWT:Secret is not configured");
+
+if (jwtSecret.Length < 32 || jwtSecret.StartsWith("CHANGE_ME", StringComparison.OrdinalIgnoreCase))
+    throw new InvalidOperationException("JWT:Secret must be at least 32 characters and not the default placeholder value.");
 
 builder.Services.AddAuthentication(opt =>
 {
@@ -130,6 +135,30 @@ builder.Services.AddCors(options =>
               .AllowAnyMethod()
               .AllowCredentials();
     }));
+
+// ── RATE LIMITING ─────────────────────────────────────
+builder.Services.AddRateLimiter(options =>
+{
+    // Auth endpoints: max 10 requests per IP per minute
+    options.AddPolicy("auth", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit          = 10,
+                Window               = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit           = 0
+            }));
+
+    options.RejectionStatusCode = 429;
+    options.OnRejected = async (context, _) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsync(
+            """{"message":"Too many requests. Please wait a minute and try again."}""");
+    };
+});
 
 // ── CACHE ─────────────────────────────────────────────
 builder.Services.AddMemoryCache();
@@ -274,6 +303,7 @@ app.UseStaticFiles(new StaticFileOptions
     RequestPath = "/uploads"
 });
 
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -300,32 +330,6 @@ static async Task SeedAsync(WebApplication app)
     {
         await db.Database.MigrateAsync();
 
-        // 🛡️ Manual Hack for production schema update 
-        await db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS VendorAccountId INT NULL;");
-        await db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS InventoryAccountId INT NULL;");
-        await db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS ExpenseAccountId INT NULL;");
-        await db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS VatAccountId INT NULL;");
-        await db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS CashAccountId INT NULL;");
-        await db.Database.ExecuteSqlRawAsync("ALTER TABLE Suppliers ADD COLUMN IF NOT EXISTS MainAccountId INT NULL;");
-        await db.Database.ExecuteSqlRawAsync("ALTER TABLE Products ADD COLUMN IF NOT EXISTS ReorderLevel INT NOT NULL DEFAULT 0;");
-        await db.Database.ExecuteSqlRawAsync("ALTER TABLE Products ADD COLUMN IF NOT EXISTS HasTax TINYINT(1) NOT NULL DEFAULT 1;");
-        await db.Database.ExecuteSqlRawAsync("ALTER TABLE ProductVariants ADD COLUMN IF NOT EXISTS ReorderLevel INT NOT NULL DEFAULT 0;");
-        await db.Database.ExecuteSqlRawAsync("UPDATE Accounts SET AllowPosting = 1 WHERE IsDeleted = 0;");
-
-        // 🛡️ TRANSITION: Migrate Orders.Source from INT (0,1) to VARCHAR ('Website', 'POS')
-        try {
-            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Orders MODIFY COLUMN Source VARCHAR(50);");
-            await db.Database.ExecuteSqlRawAsync("UPDATE Orders SET Source = 'POS' WHERE Source = '1';");
-            await db.Database.ExecuteSqlRawAsync("UPDATE Orders SET Source = 'Website' WHERE Source = '0' OR Source IS NULL;");
-            
-            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Orders MODIFY COLUMN Status VARCHAR(50);");
-            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Orders MODIFY COLUMN PaymentStatus VARCHAR(50);");
-            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Orders MODIFY COLUMN PaymentMethod VARCHAR(50);");
-            
-            await db.Database.ExecuteSqlRawAsync("ALTER TABLE OrderStatusHistories MODIFY COLUMN Status VARCHAR(50);");
-        } catch (Exception ex) { Log.Warning("Enum column transition failed (might already be done): {Msg}", ex.Message); }
-        
-        Log.Information("Manual schema patch check (V4.1 - OrderSource String Transition) completed.");
     }
     catch (Exception ex)
     {
@@ -338,7 +342,8 @@ static async Task SeedAsync(WebApplication app)
             await roleManager.CreateAsync(new IdentityRole(role));
     }
 
-    const string adminEmail = "admin@sportive.com";
+    var adminEmail    = Environment.GetEnvironmentVariable("ADMIN_EMAIL")    ?? "admin@sportive.com";
+    var adminPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD") ?? "Admin@123456";
 
     // Admin 1
     var admin = await userManager.FindByEmailAsync(adminEmail);
@@ -353,7 +358,7 @@ static async Task SeedAsync(WebApplication app)
             LastName = "Zone",
             IsActive = true
         };
-        await userManager.CreateAsync(admin, "Admin@123456");
+        await userManager.CreateAsync(admin, adminPassword);
         await userManager.AddToRoleAsync(admin, "Admin");
     }
     else if (string.IsNullOrEmpty(admin.PhoneNumber))

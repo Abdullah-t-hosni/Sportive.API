@@ -496,7 +496,13 @@ public class ProductFilterDto
     public string SortBy { get; set; } = "createdAt";
     public string SortDir { get; set; } = "desc";
     public int Page { get; set; } = 1;
-    public int PageSize { get; set; } = 12;
+
+    private int _pageSize = 12;
+    public int PageSize
+    {
+        get => _pageSize;
+        set => _pageSize = Math.Clamp(value, 1, 100);
+    }
 }
 
 // ========== REVIEWS ==========

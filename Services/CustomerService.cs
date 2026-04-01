@@ -14,6 +14,7 @@ public class CustomerService : ICustomerService
     public async Task<PaginatedResult<CustomerDetailDto>> GetCustomersAsync(
         int page, int pageSize, string? search = null)
     {
+        pageSize = Math.Clamp(pageSize, 1, 100);
         var query = _db.Customers
             .Include(c => c.Addresses)
             .Include(c => c.Orders)

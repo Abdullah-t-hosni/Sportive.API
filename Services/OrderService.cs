@@ -33,9 +33,10 @@ public class OrderService : IOrderService
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
-        int page, int pageSize, OrderStatus? status = null, string? search = null, 
+        int page, int pageSize, OrderStatus? status = null, string? search = null,
         int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null, OrderSource? source = null)
     {
+        pageSize = Math.Clamp(pageSize, 1, 100);
         var query = _db.Orders
             .Include(o => o.Customer)
             .AsNoTracking();
