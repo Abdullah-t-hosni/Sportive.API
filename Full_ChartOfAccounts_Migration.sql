@@ -82,9 +82,10 @@ INSERT INTO `Accounts` (`Code`,`NameAr`,`Description`,`Type`,`Nature`,`ParentId`
 ('3101', 'رأس المال المسجل', 'رأس المال المسجل في السجل التجاري', 3, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='31') x), 3, 1, 0, 1, NOW()),
 ('3102', 'رأس المال الإضافي المدفوع', 'رأس المال إضافي مدفوع من قبل المستثمرين لزيادة حقوق الملكية', 3, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='31') x), 3, 1, 0, 1, NOW()),
 ('3201', 'أرصدة افتتاحية', 'الأرصدة الافتتاحية', 3, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='32') x), 3, 1, 0, 1, NOW()),
-('3202', 'جاري الشريك دكتور محمد', 'جاري الشركاء', 3, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='32') x), 3, 1, 1, 1, NOW()),
-('3203', 'جاري الشريك إبراهيم', 'جاري الشركاء', 3, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='32') x), 3, 1, 1, 1, NOW()),
-('3204', 'جاري الشريك حتاته', 'جاري الشركاء', 3, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='32') x), 3, 1, 1, 1, NOW()),
+('3205', 'جاري الشركاء', 'جاري الشركاء', 3, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='32') x), 3, 0, 0, 1, NOW()),
+('320501', 'جاري الدكتور محمد', 'جاري الشريك محمد', 3, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='3205') x), 4, 1, 1, 1, NOW()),
+('320502', 'جاري ابراهيم', 'جاري الشريك ابراهيم', 3, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='3205') x), 4, 1, 1, 1, NOW()),
+('320503', 'جاري حتاته', 'جاري الشريك حتاته', 3, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='3205') x), 4, 1, 1, 1, NOW()),
 ('3301', 'احتياطي نظامي', 'تجنيب 10% من صافي الربح حتى يصل إلى 30% من رأس المال حسب نظام الشركات', 3, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='33') x), 3, 1, 0, 1, NOW()),
 ('3401', 'الأرباح والخسائر العاملة', 'صافي الربح أو الخسارة للفترة المالية الحالية', 3, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='34') x), 3, 1, 0, 1, NOW()),
 ('3402', 'الأرباح المبقاة (أو الخسائر)', 'أرباح مبقاة لغرض إعادة استثمارها في أعمال المنشأة', 3, 2, (SELECT Id FROM (SELECT Id FROM Accounts WHERE Code='34') x), 3, 1, 0, 1, NOW());
