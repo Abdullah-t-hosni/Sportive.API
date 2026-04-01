@@ -182,4 +182,70 @@ public class DataMaintenanceController : ControllerBase
             return BadRequest(new { success = false, message = "حدث خطأ أثناء المسح: " + msg });
         }
     }
+
+    /// <summary>
+    /// تصفير شامل للنظام (Reset) - مسح كافة البيانات المعاملاتية والكيانات مع الحفاظ على الهيكل (الأدمن، الحسابات، الأقسام)
+    /// </summary>
+    [HttpPost("factory-reset")]
+    public async Task<IActionResult> FactoryReset()
+    {
+        try
+        {
+            // 🛑 1. مسح حركات وحسابات المخزن
+            _db.InventoryMovements.RemoveRange(await _db.InventoryMovements.IgnoreQueryFilters().ToListAsync());
+            _db.InventoryAuditItems.RemoveRange(await _db.InventoryAuditItems.IgnoreQueryFilters().ToListAsync());
+            _db.InventoryAudits.RemoveRange(await _db.InventoryAudits.IgnoreQueryFilters().ToListAsync());
+
+            // 🛑 2. مسح كافة المعاملات المالية (Accounting)
+            _db.JournalLines.RemoveRange(await _db.JournalLines.IgnoreQueryFilters().ToListAsync());
+            _db.JournalEntries.RemoveRange(await _db.JournalEntries.IgnoreQueryFilters().ToListAsync());
+            _db.ReceiptVouchers.RemoveRange(await _db.ReceiptVouchers.IgnoreQueryFilters().ToListAsync());
+            _db.PaymentVouchers.RemoveRange(await _db.PaymentVouchers.IgnoreQueryFilters().ToListAsync());
+
+            // 🛑 3. مسح المبيعات بالكامل
+            _db.OrderItems.RemoveRange(await _db.OrderItems.IgnoreQueryFilters().ToListAsync());
+            _db.OrderStatusHistories.RemoveRange(await _db.OrderStatusHistories.IgnoreQueryFilters().ToListAsync());
+            _db.Orders.RemoveRange(await _db.Orders.IgnoreQueryFilters().ToListAsync());
+            _db.CartItems.RemoveRange(await _db.CartItems.IgnoreQueryFilters().ToListAsync());
+            _db.WishlistItems.RemoveRange(await _db.WishlistItems.IgnoreQueryFilters().ToListAsync());
+
+            // 🛑 4. مسح المشتريات والموردين
+            _db.PurchaseInvoiceItems.RemoveRange(await _db.PurchaseInvoiceItems.IgnoreQueryFilters().ToListAsync());
+            _db.SupplierPayments.RemoveRange(await _db.SupplierPayments.IgnoreQueryFilters().ToListAsync());
+            _db.PurchaseInvoices.RemoveRange(await _db.PurchaseInvoices.IgnoreQueryFilters().ToListAsync());
+            _db.Suppliers.RemoveRange(await _db.Suppliers.IgnoreQueryFilters().ToListAsync());
+
+            // 🛑 5. مسح المنتجات وتفاصيلها (يترك الأقسام والبراندات كـ Structure)
+            _db.ProductImages.RemoveRange(await _db.ProductImages.IgnoreQueryFilters().ToListAsync());
+            _db.ProductVariants.RemoveRange(await _db.ProductVariants.IgnoreQueryFilters().ToListAsync());
+            _db.Reviews.RemoveRange(await _db.Reviews.IgnoreQueryFilters().ToListAsync());
+            _db.Products.RemoveRange(await _db.Products.IgnoreQueryFilters().ToListAsync());
+
+            // 🛑 6. مسح العملاء والمستخدمين التابعين لهم
+            _db.Addresses.RemoveRange(await _db.Addresses.IgnoreQueryFilters().ToListAsync());
+            var customers = await _db.Customers.IgnoreQueryFilters().ToListAsync();
+            _db.Customers.RemoveRange(customers);
+
+            var customerRole = await _db.Roles.FirstOrDefaultAsync(r => r.Name == "Customer");
+            if (customerRole != null)
+            {
+                var customerUserIds = await _db.UserRoles.Where(ur => ur.RoleId == customerRole.Id).Select(ur => ur.UserId).ToListAsync();
+                var usersToDelete = await _db.Users.Where(u => customerUserIds.Contains(u.Id)).ToListAsync();
+                // حماية الأدمن
+                usersToDelete = usersToDelete.Where(u => u.Email != "admin@sportive.com" && u.Email != "abdullah@sportive.com").ToList();
+                _db.Users.RemoveRange(usersToDelete);
+            }
+
+            // 🛑 7. مسح بيانات أخرى
+            _db.Notifications.RemoveRange(await _db.Notifications.IgnoreQueryFilters().ToListAsync());
+            _db.Coupons.RemoveRange(await _db.Coupons.IgnoreQueryFilters().ToListAsync());
+
+            await _db.SaveChangesAsync();
+            return Ok(new { success = true, message = "تم تصفير كافة البيانات بنجاح (مبيعات، مشتريات، مخزون، ملقات المحاسبة، والمنتجات). النظام الآن جاهز للبداية من الصفر." });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { success = false, message = "حدث خطأ أثناء التصفير الشامل: " + (ex.InnerException?.Message ?? ex.Message) });
+        }
+    }
 }
