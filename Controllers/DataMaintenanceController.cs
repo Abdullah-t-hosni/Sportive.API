@@ -1,137 +1,72 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Diagnostics;
 using Sportive.API.Data;
-using Sportive.API.Models;
 using Sportive.API.Services;
+using System.IO;
 
 namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Accountant")]
+[Authorize(Roles = "Admin")]
 public class DataMaintenanceController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ILogger<DataMaintenanceController> _logger;
-    private readonly IBackupService _backupService;
 
-    public DataMaintenanceController(AppDbContext db, ILogger<DataMaintenanceController> logger, IBackupService backupService)
+    public DataMaintenanceController(AppDbContext db, ILogger<DataMaintenanceController> logger)
     {
         _db = db;
         _logger = logger;
-        _backupService = backupService;
     }
 
-    /// <summary>
-    /// مسح كافة بيانات العملاء (تصفير العملاء)
-    /// </summary>
     [HttpPost("wipe-customers")]
-    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> WipeCustomers()
     {
-        _logger.LogWarning("[Maintenance] Wipe Customers requested by: {User}", User.Identity?.Name);
-        
-        using var transaction = await _db.Database.BeginTransactionAsync();
         try
         {
             await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 0;");
-
-            // 1. التوابع (الطلبات، العنوان، السلة، الوش لست)
-            await _db.CartItems.IgnoreQueryFilters().ExecuteDeleteAsync();
-            await _db.WishlistItems.IgnoreQueryFilters().ExecuteDeleteAsync();
-            await _db.Reviews.IgnoreQueryFilters().ExecuteDeleteAsync();
-            await _db.OrderStatusHistories.IgnoreQueryFilters().ExecuteDeleteAsync();
-            await _db.OrderItems.IgnoreQueryFilters().ExecuteDeleteAsync();
-            await _db.Orders.IgnoreQueryFilters().ExecuteDeleteAsync();
-            await _db.Addresses.IgnoreQueryFilters().ExecuteDeleteAsync();
-
-            // 2. المحاسبة التابعة للعملاء
-            await _db.ReceiptVouchers.IgnoreQueryFilters().ExecuteDeleteAsync();
-
-            // 3. مسح العملاء
-            await _db.Customers.IgnoreQueryFilters().ExecuteDeleteAsync();
-
-            // 4. Identity - مسح المستخدمين ذوي رتبة Customer
-            var customerRole = await _db.Roles.FirstOrDefaultAsync(r => r.Name == "Customer");
-            if (customerRole != null)
-            {
-                var customerUserIds = await _db.UserRoles.Where(ur => ur.RoleId == customerRole.Id).Select(ur => ur.UserId).ToListAsync();
-                var idsToDelete = await _db.Users
-                    .Where(u => customerUserIds.Contains(u.Id))
-                    .Where(u => u.Email != "admin@sportive.com" && u.Email != "abdullah@sportive.com")
-                    .Select(u => u.Id).ToListAsync();
-
-                if (idsToDelete.Any())
-                {
-                    await _db.Users.Where(u => idsToDelete.Contains(u.Id)).ExecuteDeleteAsync();
-                }
-            }
-
+            await _db.Addresses.ExecuteDeleteAsync();
+            await _db.Customers.ExecuteDeleteAsync();
             await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
-            await transaction.CommitAsync();
 
-            _logger.LogInformation("Customers wiped successfully.");
-            return Ok(new { success = true, message = "تم مسح كافة بيانات العملاء بنجاح." });
+            return Ok(new { success = true, message = "تم مسح كافة سجلات العملاء." });
         }
         catch (Exception ex)
         {
-            await transaction.RollbackAsync();
-            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
-            _logger.LogError(ex, "Wipe Customers failed.");
             return BadRequest(new { success = false, message = ex.Message });
         }
     }
 
-    /// <summary>
-    /// تصفير شامل للنظام (Factory Reset)
-    /// </summary>
     [HttpPost("factory-reset")]
     public async Task<IActionResult> FactoryReset()
     {
-        _logger.LogCritical("FACTORY RESET requested by: {User}", User.Identity?.Name);
+        _logger.LogWarning("FACTORY RESET INITIATED.");
 
-        try 
+        try
         {
-            // 0. Backup قبل العملية
-            try { await _backupService.RunBackupAsync(); } catch { }
+            // 1. التحرر من قيود المفاتيح لإلقاء البيانات بفعالية
+            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 0;");
 
             using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
-                await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 0;");
+                var tablesToTruncate = new[] {
+                    "OrderItemAttributes", "InventoryAuditItems", "InventoryMovements", "PurchaseInvoiceItems",
+                    "SupplierPayments", "JournalLines", "ReceiptVouchers", "PaymentVouchers", "JournalEntries",
+                    "Orders", "InventoryAudits", "PurchaseInvoices", "Suppliers", "ProductImages",
+                    "ProductVariants", "Products", "Coupons", "Addresses", "Customers", "Notifications",
+                    "CartItems", "WishlistItems", "Reviews", "OrderStatusHistories", "OrderItems"
+                };
 
-                // 1. المسح الشامل للجداول التابعة
-                await _db.CartItems.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.WishlistItems.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.Reviews.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.OrderStatusHistories.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.OrderItems.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.InventoryAuditItems.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.InventoryMovements.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.PurchaseInvoiceItems.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.SupplierPayments.IgnoreQueryFilters().ExecuteDeleteAsync();
+                foreach (var table in tablesToTruncate)
+                {
+                    try { await _db.Database.ExecuteSqlRawAsync($"TRUNCATE TABLE `{table}`;"); } catch { }
+                }
 
-                // 2. المحاسبة
-                await _db.JournalLines.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.ReceiptVouchers.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.PaymentVouchers.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.JournalEntries.IgnoreQueryFilters().ExecuteDeleteAsync();
-
-                // 3. الكيانات الرئيسية
-                await _db.Orders.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.InventoryAudits.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.PurchaseInvoices.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.Suppliers.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.ProductImages.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.ProductVariants.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.Products.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.Coupons.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.Addresses.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.Customers.IgnoreQueryFilters().ExecuteDeleteAsync();
-                await _db.Notifications.IgnoreQueryFilters().ExecuteDeleteAsync();
-
-                // 4. Identity - حذف العملاء مع حماية الأدمن
+                // 2. Identity - حذف العملاء مع حماية الأدمن
                 var customerRole = await _db.Roles.FirstOrDefaultAsync(r => r.Name == "Customer");
                 if (customerRole != null)
                 {
@@ -141,26 +76,32 @@ public class DataMaintenanceController : ControllerBase
                         .Where(u => u.Email != "admin@sportive.com" && u.Email != "abdullah@sportive.com")
                         .Select(u => u.Id).ToListAsync();
 
-                    if (idsToDelete.Any()) await _db.Users.Where(u => idsToDelete.Contains(u.Id)).ExecuteDeleteAsync();
+                    if (idsToDelete.Any())
+                    {
+                         await _db.Users.Where(u => idsToDelete.Contains(u.Id))
+                                        .IgnoreQueryFilters()
+                                        .ExecuteDeleteAsync();
+                    }
                 }
 
-                await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
                 await transaction.CommitAsync();
+                await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
 
                 _logger.LogCritical("FACTORY RESET COMPLETED.");
-                return Ok(new { success = true, message = "تم تصفير النظام بالكامل بنجاح." });
+                return Ok(new { success = true, message = "تم تصفير النظام بنجاح وبدء تسلسل المعرفات من 1." });
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
+                _logger.LogError(ex, "INNER FACTORY RESET ERROR");
                 throw;
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            _logger.LogError("FACTORY RESET FAILED.");
-            return BadRequest(new { success = false, message = "Reset failed." });
+            _logger.LogError(ex, "OUTER FACTORY RESET ERROR");
+            return BadRequest(new { success = false, message = "فشل التصفير: " + ex.Message });
         }
     }
 }
