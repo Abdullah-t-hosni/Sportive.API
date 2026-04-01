@@ -176,8 +176,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? toDate = null,
         [FromQuery] bool      excel  = false)
     {
-        var from = new DateTime(2000, 1, 1);
-        var to   = toDate ?? DateTime.UtcNow;
+        var from = new DateTime(2000, 1, 1).Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
 
         var balances = await GetBalances(from, to);
 

@@ -27,8 +27,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? toDate     = null,
         [FromQuery] bool      excel      = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate   ?? DateTime.UtcNow;
+        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1).Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
 
         // إذا بحث بالاسم ابحث أول
         if (customerId == null && !string.IsNullOrEmpty(search))
@@ -106,7 +106,7 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? asOfDate = null,
         [FromQuery] bool      excel   = false)
     {
-        var asOf = asOfDate ?? DateTime.UtcNow;
+        var asOf = asOfDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
 
         var customers = await _db.Customers
             .Include(c => c.Orders)
@@ -180,7 +180,7 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? asOfDate = null,
         [FromQuery] bool      excel    = false)
     {
-        var asOf = asOfDate ?? DateTime.UtcNow;
+        var asOf = asOfDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
 
         var suppliers = await _db.Suppliers
             .Include(s => s.Invoices)
@@ -308,8 +308,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] OrderSource? source   = null,
         [FromQuery] bool         excel    = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate   ?? DateTime.UtcNow;
+        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1).Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
 
         var q = _db.Orders
             .Include(o => o.Customer)
@@ -358,8 +358,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int?      supplierId = null,
         [FromQuery] bool      excel      = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate   ?? DateTime.UtcNow;
+        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1).Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
 
         var q = _db.PurchaseInvoices
             .Include(i => i.Supplier)
@@ -401,8 +401,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate   ?? DateTime.UtcNow;
+        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1).Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
 
         var returns = await _db.Orders
             .Include(o => o.Customer)
@@ -441,8 +441,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate   ?? DateTime.UtcNow;
+        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1).Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
 
         var returns = await _db.PurchaseInvoices
             .Include(i => i.Supplier)
@@ -475,7 +475,7 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] bool      excel    = false)
     {
         var from = fromDate ?? DateTime.UtcNow.Date;
-        var to   = toDate   ?? DateTime.UtcNow;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
 
         var q = _db.Orders
             .Include(o => o.Customer)
@@ -536,8 +536,8 @@ public class OperationalReportsController : ControllerBase
     {
         try
         {
-            var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-            var to   = toDate ?? DateTime.UtcNow;
+            var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1).Date;
+            var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
 
             // Handle search
             if (productId == null && !string.IsNullOrEmpty(search))
@@ -581,7 +581,10 @@ public class OperationalReportsController : ControllerBase
                     0,
                     i.Quantity,
                     i.TotalPrice,
-                    i.Product.NameAr))
+                    i.Product.NameAr,
+                    i.Order.Source.ToString(),
+                    i.Order.Status.ToString(),
+                    i.Product.SKU))
                 .ToListAsync();
 
             // 2. مرتجع مبيعات (Sales Returns)
@@ -602,7 +605,10 @@ public class OperationalReportsController : ControllerBase
                     i.Quantity,
                     0,
                     i.TotalPrice,
-                    i.Product.NameAr))
+                    i.Product.NameAr,
+                    i.Order.Source.ToString(),
+                    i.Order.Status.ToString(),
+                    i.Product.SKU))
                 .ToListAsync();
 
             // 3. مشتريات (Purchases) — Not Draft
@@ -622,7 +628,10 @@ public class OperationalReportsController : ControllerBase
                     i.Quantity,
                     0,
                     i.TotalCost,
-                    i.Product != null ? i.Product.NameAr : "Deleted Product"))
+                    i.Product != null ? i.Product.NameAr : "Deleted Product",
+                    "Supplier",
+                    i.Invoice.Status.ToString(),
+                    i.Product != null ? i.Product.SKU : "N/A"))
                 .ToListAsync();
 
             // 4. مرتجع مشتريات (Purchase Returns)
@@ -642,7 +651,10 @@ public class OperationalReportsController : ControllerBase
                     0,
                     i.Quantity,
                     i.TotalCost,
-                    i.Product != null ? i.Product.NameAr : "Deleted Product"))
+                    i.Product != null ? i.Product.NameAr : "Deleted Product",
+                    "Supplier",
+                    i.Invoice.Status.ToString(),
+                    i.Product != null ? i.Product.SKU : "N/A"))
                 .ToListAsync();
 
             var movements = salesMovements
@@ -684,6 +696,11 @@ public class OperationalReportsController : ControllerBase
                 totalPurchased = purchaseMovements.Sum(i => i.In),
                 totalPurchaseReturned = purchaseReturnMovements.Sum(i => i.Out),
                 salesRevenue   = salesMovements.Sum(i => i.Amount),
+                totalOrders    = salesMovements.Select(m => m.Reference).Distinct().Count(),
+                totalDiscount  = 0, // Placeholder if needed, but revenue is post-discount usually 
+                avgOrder       = salesMovements.Select(m => m.Reference).Distinct().Count() > 0 
+                                 ? salesMovements.Sum(i => i.Amount) / salesMovements.Select(m => m.Reference).Distinct().Count() 
+                                 : 0,
                 currentStock
             };
 
@@ -958,4 +975,4 @@ public record SalesRow(string OrderNumber, DateTime Date, string CustomerName, s
 public record PurchaseRow(string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal PaidAmount, decimal RemainingAmount);
 public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason);
 public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal TotalSales, int Returns, int Cancellations);
-public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "");
+public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "");

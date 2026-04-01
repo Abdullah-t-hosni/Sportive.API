@@ -378,7 +378,7 @@ public class JournalEntriesController : ControllerBase
             .AsQueryable();
 
         if (fromDate.HasValue) q = q.Where(e => e.EntryDate >= fromDate.Value);
-        if (toDate.HasValue)   q = q.Where(e => e.EntryDate <= toDate.Value.AddDays(1));
+        if (toDate.HasValue)   q = q.Where(e => e.EntryDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
         if (!string.IsNullOrEmpty(search))
             q = q.Where(e => e.EntryNumber.Contains(search) || (e.Reference != null && e.Reference.Contains(search)) || (e.Description != null && e.Description.Contains(search)));
         if (!string.IsNullOrEmpty(type) && Enum.TryParse<JournalEntryType>(type, out var t))
@@ -646,7 +646,7 @@ public class ReceiptVouchersController : ControllerBase
             .Where(v => !v.IsDeleted).AsQueryable();
 
         if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value);
-        if (toDate.HasValue)   q = q.Where(v => v.VoucherDate <= toDate.Value.AddDays(1));
+        if (toDate.HasValue)   q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
         if (!string.IsNullOrEmpty(search))
             q = q.Where(v => v.VoucherNumber.Contains(search)
                 || (v.Customer != null && v.Customer.FirstName.Contains(search))
@@ -810,7 +810,7 @@ public class PaymentVouchersController : ControllerBase
             .Where(v => !v.IsDeleted).AsQueryable();
 
         if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value);
-        if (toDate.HasValue)   q = q.Where(v => v.VoucherDate <= toDate.Value.AddDays(1));
+        if (toDate.HasValue)   q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
         if (!string.IsNullOrEmpty(search))
             q = q.Where(v => v.VoucherNumber.Contains(search)
                 || (v.Supplier != null && v.Supplier.Name.Contains(search))

@@ -298,7 +298,7 @@ static async Task SeedAsync(WebApplication app)
     {
         await db.Database.MigrateAsync();
 
-        // 🛡️ Manual Hack for production schema update until full migrations are synced
+        // 🛡️ Manual Hack for production schema update 
         await db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS VendorAccountId INT NULL;");
         await db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS InventoryAccountId INT NULL;");
         await db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS ExpenseAccountId INT NULL;");
@@ -308,11 +308,22 @@ static async Task SeedAsync(WebApplication app)
         await db.Database.ExecuteSqlRawAsync("ALTER TABLE Products ADD COLUMN IF NOT EXISTS ReorderLevel INT NOT NULL DEFAULT 0;");
         await db.Database.ExecuteSqlRawAsync("ALTER TABLE Products ADD COLUMN IF NOT EXISTS HasTax TINYINT(1) NOT NULL DEFAULT 1;");
         await db.Database.ExecuteSqlRawAsync("ALTER TABLE ProductVariants ADD COLUMN IF NOT EXISTS ReorderLevel INT NOT NULL DEFAULT 0;");
-        
-        // 🚀 Fix: Make all accounts postable by default to allow automatic posting
         await db.Database.ExecuteSqlRawAsync("UPDATE Accounts SET AllowPosting = 1 WHERE IsDeleted = 0;");
+
+        // 🛡️ TRANSITION: Migrate Orders.Source from INT (0,1) to VARCHAR ('Website', 'POS')
+        try {
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Orders MODIFY COLUMN Source VARCHAR(50);");
+            await db.Database.ExecuteSqlRawAsync("UPDATE Orders SET Source = 'POS' WHERE Source = '1';");
+            await db.Database.ExecuteSqlRawAsync("UPDATE Orders SET Source = 'Website' WHERE Source = '0' OR Source IS NULL;");
+            
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Orders MODIFY COLUMN Status VARCHAR(50);");
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Orders MODIFY COLUMN PaymentStatus VARCHAR(50);");
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Orders MODIFY COLUMN PaymentMethod VARCHAR(50);");
+            
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE OrderStatusHistories MODIFY COLUMN Status VARCHAR(50);");
+        } catch (Exception ex) { Log.Warning("Enum column transition failed (might already be done): {Msg}", ex.Message); }
         
-        Log.Information("Manual schema patch check (V4.0 - Reorder Level Added) completed.");
+        Log.Information("Manual schema patch check (V4.1 - OrderSource String Transition) completed.");
     }
     catch (Exception ex)
     {

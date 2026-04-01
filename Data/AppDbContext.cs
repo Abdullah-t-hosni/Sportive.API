@@ -63,6 +63,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<WishlistItem>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<OrderStatusHistory>().HasQueryFilter(x => !x.IsDeleted);
+        builder.Entity<OrderStatusHistory>().Property(h => h.Status).HasConversion<string>();
         builder.Entity<BackupRecord>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<InventoryAudit>().HasQueryFilter(x => !x.IsDeleted);
         builder.Entity<InventoryAuditItem>().HasQueryFilter(x => !x.IsDeleted);
@@ -120,6 +121,13 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.DeliveryAddress).WithMany()
              .HasForeignKey(x => x.DeliveryAddressId).OnDelete(DeleteBehavior.SetNull);
+
+            // 🛡️ TRANSITION: Store Enums as Strings in the database
+            e.Property(x => x.Status).HasConversion<string>();
+            e.Property(x => x.FulfillmentType).HasConversion<string>();
+            e.Property(x => x.PaymentMethod).HasConversion<string>();
+            e.Property(x => x.PaymentStatus).HasConversion<string>();
+            e.Property(x => x.Source).HasConversion<string>();
         });
 
         builder.Entity<OrderItem>(e => {

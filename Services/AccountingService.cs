@@ -137,30 +137,50 @@ public class AccountingService : IAccountingService
             var note = order.AdminNotes ?? "";
             bool isMixed = order.PaymentMethod == PaymentMethod.Mixed || note.Contains("Mixed:", StringComparison.OrdinalIgnoreCase);
             
-            if (isMixed && note.Contains("Cash=", StringComparison.OrdinalIgnoreCase))
+            if (isMixed && note.Contains("Mixed:", StringComparison.OrdinalIgnoreCase))
             {
-                // Simple parsing for "Cash=X, Card=Y"
-                decimal cashPart = 0, cardPart = 0;
-                var parts = note.Split(new[] { ' ', ',', ':', '=' }, StringSplitOptions.RemoveEmptyEntries);
-                for(int i=0; i<parts.Length-1; i++) {
-                    if (parts[i].Equals("Cash", StringComparison.OrdinalIgnoreCase)) decimal.TryParse(parts[i+1], out cashPart);
-                    if (parts[i].Equals("Card", StringComparison.OrdinalIgnoreCase)) decimal.TryParse(parts[i+1], out cardPart);
+                // Robust parsing for "Mixed: Cash=100, Bank=200, Vodafone=50, ..."
+                decimal cashPart = 0, bankPart = 0, vodafonePart = 0, instaPart = 0;
+                var cleanNote = note.Replace("Mixed:", "").Replace("/", " ").Replace("-", " ");
+                var pairs = cleanNote.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+
+                foreach (var pair in pairs)
+                {
+                    var kv = pair.Split(new[] { '=' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (kv.Length < 2) continue;
+                    var k = kv[0].Trim().ToLower();
+                    var vStr = kv[1].Trim();
+                    if (!decimal.TryParse(vStr, out var v)) continue;
+
+                    if (k.Contains("cash")) cashPart += v;
+                    else if (k.Contains("bank") || k.Contains("card") || k.Contains("visa") || k.Contains("terminal")) bankPart += v;
+                    else if (k.Contains("vodafone")) vodafonePart += v;
+                    else if (k.Contains("instapay") || k.Contains("insta")) instaPart += v;
                 }
 
                 if (cashPart > 0) {
-                    var cashCode = GetMappedCashAccount(PaymentMethod.Cash, order.Source, mapDict);
-                    lines.Add((cashCode, cashPart, 0, $"تحصيل (كاش جزء مختلط) - {order.OrderNumber}"));
+                    var code = GetMappedCashAccount(PaymentMethod.Cash, order.Source, mapDict);
+                    lines.Add((code, cashPart, 0, $"تحصيل (كاش مختلط) - {order.OrderNumber}"));
                 }
-                if (cardPart > 0) {
-                    var cardCode = GetMappedCashAccount(PaymentMethod.CreditCard, order.Source, mapDict);
-                    lines.Add((cardCode, cardPart, 0, $"تحصيل (فيزا جزء مختلط) - {order.OrderNumber}"));
+                if (bankPart > 0) {
+                    var code = GetMappedCashAccount(PaymentMethod.CreditCard, order.Source, mapDict);
+                    lines.Add((code, bankPart, 0, $"تحصيل (بنك مختلط) - {order.OrderNumber}"));
+                }
+                if (vodafonePart > 0) {
+                    var code = GetMappedCashAccount(PaymentMethod.Vodafone, order.Source, mapDict);
+                    lines.Add((code, vodafonePart, 0, $"تحصيل (فودافون مختلط) - {order.OrderNumber}"));
+                }
+                if (instaPart > 0) {
+                    var code = GetMappedCashAccount(PaymentMethod.InstaPay, order.Source, mapDict);
+                    lines.Add((code, instaPart, 0, $"تحصيل (إنستاباي مختلط) - {order.OrderNumber}"));
                 }
                 
-                // If sum doesn't match Total, put remainder in main cash
-                var remaining = netReceivable - (cashPart + cardPart);
-                if (Math.Abs(remaining) > 0.01m) {
+                // Final residual reconciliation (ensures Journal balance match)
+                var parsedSum = cashPart + bankPart + vodafonePart + instaPart;
+                var residual  = netReceivable - parsedSum;
+                if (Math.Abs(residual) > 0.01m) {
                      var fallback = GetMappedCashAccount(PaymentMethod.Cash, order.Source, mapDict);
-                     lines.Add((fallback, remaining, 0, $"تحصيل (متبقي مختلط) - {order.OrderNumber}"));
+                     lines.Add((fallback, residual, 0, $"تحصيل (متبقي الصندوق) - {order.OrderNumber}"));
                 }
             }
             else 
