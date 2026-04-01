@@ -291,7 +291,8 @@ public record OrderSummaryDto(
     DateTime CreatedAt,
     int ItemCount,
     string Source,
-    string PaymentMethod
+    string PaymentMethod,
+    string PaymentStatus
 );
 
 public record OrderDetailDto(

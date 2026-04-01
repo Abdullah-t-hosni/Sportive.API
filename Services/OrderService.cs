@@ -74,7 +74,8 @@ public class OrderService : IOrderService
                 o.CreatedAt,
                 o.Items.Count,
                 o.Source.ToString(),
-                o.PaymentMethod.ToString()
+                o.PaymentMethod.ToString(),
+                o.PaymentStatus.ToString()
             ))
             .ToListAsync();
 
