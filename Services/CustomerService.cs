@@ -92,26 +92,22 @@ public class CustomerService : ICustomerService
     public async Task<CustomerDetailDto> CreateCustomerAsync(CreateCustomerDto dto)
     {
         // 1. Check for existing customer (including deleted)
-        Customer? existing = null;
-
-        if (!string.IsNullOrEmpty(dto.Phone))
-            existing = await _db.Customers.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.Phone == dto.Phone);
+        Customer? existing = await _db.Customers.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(c => 
+                (!string.IsNullOrEmpty(dto.Phone) && c.Phone == dto.Phone) || 
+                (!string.IsNullOrEmpty(dto.Email) && c.Email.ToLower() == dto.Email.ToLower()));
         
-        if (existing == null && !string.IsNullOrEmpty(dto.Email))
-            existing = await _db.Customers.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.Email.ToLower() == dto.Email.ToLower());
-
-        // 2. If found deleted, restore it
+        // 2. If found (active or deleted), restore or fail
         if (existing != null)
         {
             if (!existing.IsDeleted)
-                throw new Exception("هذا العميل (أو الهاتف) مسجل بالفعل في النظام.");
+                throw new Exception("هذا العميل (أو الهاتف) مسجل بالفعل في ملفات العملاء النشطة.");
             
-            // Restore
+            // Restore deleted
             existing.IsDeleted = false;
-            existing.FirstName = dto.FirstName;
-            existing.LastName  = dto.LastName ?? "";
-            existing.Phone     = dto.Phone;
-            // Only update email if provided, otherwise keep existing or regenerate
+            if (!string.IsNullOrEmpty(dto.FirstName)) existing.FirstName = dto.FirstName;
+            if (!string.IsNullOrEmpty(dto.LastName))  existing.LastName  = dto.LastName;
+            existing.Phone = dto.Phone;
             if (!string.IsNullOrEmpty(dto.Email)) existing.Email = dto.Email;
             
             existing.UpdatedAt = DateTime.UtcNow;
@@ -119,25 +115,24 @@ public class CustomerService : ICustomerService
             return (await GetCustomerByIdAsync(existing.Id))!;
         }
 
-        // 3. Create New if not found
-        var email = dto.Email;
-        if (string.IsNullOrWhiteSpace(email))
+        // 3. Check for conflict in Identity Users (Even if not a customer)
+        var generatedEmail = dto.Email;
+        if (string.IsNullOrWhiteSpace(generatedEmail) && !string.IsNullOrWhiteSpace(dto.Phone))
+            generatedEmail = $"{dto.Phone}@sportive.com";
+
+        if (!string.IsNullOrEmpty(generatedEmail))
         {
-            if (!string.IsNullOrWhiteSpace(dto.Phone))
-                email = $"{dto.Phone}@sportive.com";
-            else
-                email = $"{Guid.NewGuid().ToString().Substring(0, 8)}@pos.com";
-            
-            // Quick check for safety
-            if (await _db.Customers.IgnoreQueryFilters().AnyAsync(c => c.Email.ToLower() == email.ToLower()))
-                throw new Exception("عذراً، حدث تضارب في البيانات التلقائية. يرجى إدخال بريد إلكتروني يدوياً.");
+            var userConflict = await _db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == generatedEmail.ToLower() || u.PhoneNumber == dto.Phone);
+            if (userConflict != null)
+                throw new Exception($"عذراً، هذا الهاتف ({dto.Phone}) مرتبط بحساب مستخدم آخر في النظام (Staff). يرجى التغيير.");
         }
 
+        // 4. Create New
         var customer = new Customer
         {
             FirstName = dto.FirstName,
             LastName = dto.LastName ?? "",
-            Email = email,
+            Email = generatedEmail ?? $"{Guid.NewGuid().ToString().Substring(0, 8)}@pos.com",
             Phone = dto.Phone,
             CreatedAt = DateTime.UtcNow,
             IsActive = true
