@@ -176,6 +176,7 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 
 // ── SERVICES ──────────────────────────────────────────
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IBrandService, BrandService>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
