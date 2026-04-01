@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using System.Text.Json;
 using Sportive.API.Models;
+using System.Collections.Concurrent;
 
 namespace Sportive.API.Services;
 
@@ -24,6 +25,7 @@ public interface IAccountingService
 public class AccountingService : IAccountingService
 {
     private readonly AppDbContext _db;
+    private static readonly ConcurrentDictionary<string, bool> _activePostings = new();
 
     // ── كودات الحسابات الثابتة من شجرة حساباتك ──────────
     // النقدية والصناديق
@@ -47,7 +49,7 @@ public class AccountingService : IAccountingService
     private const string DELIVERY_REVENUE = "410301"; // إيراد خدمات توصيل
     private const string COGS            = "51101";  // تكلفة البضاعة المباعة
     private const string PURCHASES_NET   = "511";    // صافي المشتريات
-    private const string PURCHASE_DISC   = "51103";  // خصم مكتسب (المشتريات)
+    private const string PURCHASE_DISC   = "51103"; // خصم مكتسب (المشتريات)
     private const string VAT_OUTPUT      = "2104";   // ضريبة قيمة مضافة - دائنة (مبيعات)
     private const string VAT_INPUT       = "2105";   // ضريبة قيمة مضافة - مدينة (مشتريات)
     private const decimal VAT_RATE       = 0.14m;    // نسبة الضريبة (افتراضية 14%)
@@ -343,45 +345,58 @@ public class AccountingService : IAccountingService
     // ══════════════════════════════════════════════════════
     public async Task PostPurchaseInvoiceAsync(PurchaseInvoice invoice)
     {
-        if (await EntryExists(JournalEntryType.PurchaseInvoice, invoice.InvoiceNumber)) return;
+        if (string.IsNullOrEmpty(invoice.InvoiceNumber)) return;
 
-        var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
-        var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
+        // Prevent parallel processing for the same invoice number
+        var lockKey = $"Purchase-{invoice.InvoiceNumber}";
+        if (!_activePostings.TryAdd(lockKey, true)) return;
 
-        var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
-
-        // ── 1. Debits: Inventory + VAT ─────────────────────────────
-        var invAcct = invoice.InventoryAccountId?.ToString() ?? GetMap(mapDict, "inventoryAccountID", INVENTORY);
-        lines.Add((invAcct, invoice.SubTotal, 0, $"مشتريات بضاعة - {invoice.InvoiceNumber}"));
-
-        if (invoice.TaxAmount > 0)
+        try 
         {
-            var vatAcct = invoice.VatAccountId?.ToString() ?? GetMap(mapDict, "vatInputAccountID", VAT_INPUT);
-            lines.Add((vatAcct, invoice.TaxAmount, 0, $"ضريبة مشتريات (مدخلات) - {invoice.InvoiceNumber}"));
+            if (await EntryExists(JournalEntryType.PurchaseInvoice, invoice.InvoiceNumber)) return;
+
+            var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
+            var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
+
+            var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
+
+            // ── 1. Debits: Inventory + VAT ─────────────────────────────
+            var invAcct = invoice.InventoryAccountId?.ToString() ?? GetMap(mapDict, "inventoryAccountID", INVENTORY);
+            lines.Add((invAcct, invoice.SubTotal, 0, $"مشتريات بضاعة - {invoice.InvoiceNumber}"));
+
+            if (invoice.TaxAmount > 0)
+            {
+                var vatAcct = invoice.VatAccountId?.ToString() ?? GetMap(mapDict, "vatInputAccountID", VAT_INPUT);
+                lines.Add((vatAcct, invoice.TaxAmount, 0, $"ضريبة مشتريات (مدخلات) - {invoice.InvoiceNumber}"));
+            }
+
+            // ── 2. Credits: Vendor + Discount ───────────────────────────
+            var vendorAcct = invoice.VendorAccountId?.ToString() 
+                            ?? invoice.Supplier?.MainAccountId?.ToString() 
+                            ?? GetMap(mapDict, "supplierAccountID", PAYABLES);
+            lines.Add((vendorAcct, 0, invoice.TotalAmount, $"إثبات استحقاق للمورد - {invoice.InvoiceNumber}"));
+
+            // ── 3. Immediate Cash payment (If terms=Cash) ───────────────
+            if (invoice.PaymentTerms == PaymentTerms.Cash)
+            {
+                var cashAcct = invoice.CashAccountId?.ToString() ?? GetMap(mapDict, "cashAccountID", CASH_ACCOUNTS);
+                lines.Add((vendorAcct, invoice.TotalAmount, 0, $"سداد مورد فوري - {invoice.InvoiceNumber}"));
+                lines.Add((cashAcct, 0, invoice.TotalAmount, $"خروج نقدية مشتريات - {invoice.InvoiceNumber}"));
+            }
+
+            await PostEntry(
+                type:        JournalEntryType.PurchaseInvoice,
+                reference:   invoice.InvoiceNumber,
+                description: $"فاتورة مشتريات {invoice.InvoiceNumber} - {invoice.Supplier?.Name}",
+                date:        invoice.InvoiceDate,
+                lines:       lines,
+                supplierId:  invoice.SupplierId
+            );
         }
-
-        // ── 2. Credits: Vendor + Discount ───────────────────────────
-        var vendorAcct = invoice.VendorAccountId?.ToString() 
-                        ?? invoice.Supplier?.MainAccountId?.ToString() 
-                        ?? GetMap(mapDict, "supplierAccountID", PAYABLES);
-        lines.Add((vendorAcct, 0, invoice.TotalAmount, $"إثبات استحقاق للمورد - {invoice.InvoiceNumber}"));
-
-        // ── 3. Immediate Cash payment (If terms=Cash) ───────────────
-        if (invoice.PaymentTerms == PaymentTerms.Cash)
+        finally
         {
-            var cashAcct = invoice.CashAccountId?.ToString() ?? GetMap(mapDict, "cashAccountID", CASH_ACCOUNTS);
-            lines.Add((vendorAcct, invoice.TotalAmount, 0, $"سداد مورد فوري - {invoice.InvoiceNumber}"));
-            lines.Add((cashAcct, 0, invoice.TotalAmount, $"خروج نقدية مشتريات - {invoice.InvoiceNumber}"));
+            _activePostings.TryRemove(lockKey, out _);
         }
-
-        await PostEntry(
-            type:        JournalEntryType.PurchaseInvoice,
-            reference:   invoice.InvoiceNumber,
-            description: $"فاتورة مشتريات {invoice.InvoiceNumber} - {invoice.Supplier?.Name}",
-            date:        invoice.InvoiceDate,
-            lines:       lines,
-            supplierId:  invoice.SupplierId
-        );
     }
 
     // ══════════════════════════════════════════════════════
@@ -581,9 +596,16 @@ public class AccountingService : IAccountingService
     }
 
     /// يتحقق إذا كان القيد موجود مسبقاً (يمنع التكرار)
-    private async Task<bool> EntryExists(JournalEntryType type, string reference) =>
-        await _db.JournalEntries
-            .AnyAsync(e => !e.IsDeleted && e.Type == type && e.Reference == reference);
+    private async Task<bool> EntryExists(JournalEntryType type, string reference)
+    {
+        if (string.IsNullOrEmpty(reference)) return false;
+
+        return await _db.JournalEntries
+            .AnyAsync(e => !e.IsDeleted 
+                         && e.Type == type 
+                         && e.Reference != null 
+                         && e.Reference.Trim().ToLower() == reference.Trim().ToLower());
+    }
 
     /// ينشئ ويرحّل القيد
     private async Task PostEntry(

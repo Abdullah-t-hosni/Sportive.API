@@ -131,7 +131,6 @@ public class PurchaseInvoicesController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IProductService _productService;
-
     private readonly IInventoryService _inventory;
 
     public PurchaseInvoicesController(AppDbContext db, IServiceScopeFactory scopeFactory, IProductService productService, IInventoryService inventory)
@@ -165,9 +164,6 @@ public class PurchaseInvoicesController : ControllerBase
             q = q.Where(i => i.InvoiceNumber.Contains(search)
                            || (i.SupplierInvoiceNumber != null && i.SupplierInvoiceNumber.Contains(search))
                            || i.Supplier.Name.Contains(search));
-
-        // Auto-flag overdue
-        var now = DateTime.UtcNow;
 
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(i => i.InvoiceDate)
@@ -227,7 +223,6 @@ public class PurchaseInvoicesController : ControllerBase
         if (supplier == null)
             return BadRequest(new { message = "المورد غير موجود" });
 
-        // Generate invoice number
         var year  = DateTime.UtcNow.Year % 100;
         var count = await _db.PurchaseInvoices.IgnoreQueryFilters().CountAsync() + 1;
         var invNo = $"PO-{year}{count:D4}";
@@ -244,8 +239,7 @@ public class PurchaseInvoicesController : ControllerBase
             TaxPercent            = dto.TaxPercent,
             DiscountAmount        = dto.DiscountAmount,
             Notes                 = dto.Notes,
-            Status                = dto.PaymentTerms == PaymentTerms.Cash
-                ? PurchaseInvoiceStatus.Received : PurchaseInvoiceStatus.Draft,
+            Status                = dto.PaymentTerms == PaymentTerms.Cash ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.Draft,
             AttachmentUrl         = dto.AttachmentUrl,
             AttachmentPublicId    = dto.AttachmentPublicId,
             CreatedAt             = DateTime.UtcNow,
@@ -260,7 +254,7 @@ public class PurchaseInvoicesController : ControllerBase
         foreach (var item in dto.Items)
         {
             var total = item.Quantity * item.UnitCost;
-            var invoiceItem = new PurchaseInvoiceItem
+            invoice.Items.Add(new PurchaseInvoiceItem
             {
                 Description = item.Description,
                 ProductId   = item.ProductId,
@@ -269,39 +263,24 @@ public class PurchaseInvoicesController : ControllerBase
                 Quantity    = item.Quantity,
                 UnitCost    = item.UnitCost,
                 TotalCost   = total,
-                CreatedAt   = DateTime.UtcNow,
-            };
-            invoice.Items.Add(invoiceItem);
+                CreatedAt   = DateTime.UtcNow
+            });
             subtotal += total;
 
-            // ── Inventory Movement Logging ──────────────────────
             if (item.ProductId.HasValue)
             {
-                await _inventory.LogMovementAsync(
-                    InventoryMovementType.Purchase,
-                    item.Quantity,
-                    item.ProductId,
-                    item.ProductVariantId,
-                    invNo,
-                    $"Purchase Invoice receipt",
-                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                );
+                await _inventory.LogMovementAsync(InventoryMovementType.Purchase, item.Quantity, item.ProductId, item.ProductVariantId, invNo, "Purchase Invoice receipt", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
             }
         }
 
         invoice.SubTotal    = subtotal;
         invoice.TaxAmount   = Math.Round(subtotal * (dto.TaxPercent / 100), 2);
         invoice.TotalAmount = (subtotal + invoice.TaxAmount) - dto.DiscountAmount;
-
-        // Update supplier totals (Accrual)
         supplier.TotalPurchases += invoice.TotalAmount;
 
-        // 🛡️ AUTO-PAYMENT FOR CASH INVOICES
         if (dto.PaymentTerms == PaymentTerms.Cash)
         {
             invoice.PaidAmount = invoice.TotalAmount;
-            invoice.Status     = PurchaseInvoiceStatus.Paid;
-            
             supplier.TotalPaid += invoice.TotalAmount;
 
             var pCount = await _db.SupplierPayments.IgnoreQueryFilters().CountAsync() + 1;
@@ -321,30 +300,18 @@ public class PurchaseInvoicesController : ControllerBase
         _db.PurchaseInvoices.Add(invoice);
         await _db.SaveChangesAsync();
 
-        // ترحيل القيد المحاسبي
         _ = Task.Run(async () =>
         {
             using var scope = _scopeFactory.CreateScope();
-            var accountingInner = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-            var dbInner = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-            try 
-            {
-                var invoiceInner = await dbInner.PurchaseInvoices
-                    .Include(i => i.Supplier)
-                    .Include(i => i.Payments)
-                    .FirstAsync(i => i.Id == invoice.Id);
-
-                await accountingInner.PostPurchaseInvoiceAsync(invoiceInner); 
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[Accounting] PostPurchaseInvoice failed for {invoice.InvoiceNumber}: {ex.Message}");
-            }
+            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            try {
+                var invInner = await db.PurchaseInvoices.Include(i => i.Supplier).Include(i => i.Payments).FirstAsync(i => i.Id == invoice.Id);
+                await accounting.PostPurchaseInvoiceAsync(invInner); 
+            } catch { }
         });
 
-        return CreatedAtAction(nameof(GetById), new { id = invoice.Id },
-            new { id = invoice.Id, invoiceNumber = invoice.InvoiceNumber });
+        return CreatedAtAction(nameof(GetById), new { id = invoice.Id }, new { id = invoice.Id, invoiceNumber = invoice.InvoiceNumber });
     }
 
     [HttpPut("{id}")]
@@ -354,120 +321,129 @@ public class PurchaseInvoicesController : ControllerBase
         var inv = await _db.PurchaseInvoices
             .Include(i => i.Items)
             .Include(i => i.Supplier)
+            .Include(i => i.Payments)
             .FirstOrDefaultAsync(i => i.Id == id && !i.IsDeleted);
 
         if (inv == null) return NotFound();
 
-        // ⚠️ Reverse previous supplier total to apply new one
+        var oldStockMap = inv.Items
+            .Where(x => x.ProductId.HasValue)
+            .GroupBy(x => new { x.ProductId, x.ProductVariantId })
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
+
         inv.Supplier.TotalPurchases -= inv.TotalAmount;
 
+        // Use the global DTO properties
+        inv.PaymentTerms = dto.PaymentTerms;
+        inv.InvoiceDate = dto.InvoiceDate;
+        inv.DueDate = dto.DueDate;
+        inv.TaxPercent = dto.TaxPercent;
+        inv.DiscountAmount = dto.DiscountAmount;
+        inv.Notes = dto.Notes;
         if (dto.SupplierInvoiceNumber != null) inv.SupplierInvoiceNumber = dto.SupplierInvoiceNumber;
-        if (dto.PaymentTerms.HasValue) 
-        {
-            inv.PaymentTerms = dto.PaymentTerms.Value;
-        }
-        if (dto.InvoiceDate.HasValue)   inv.InvoiceDate = dto.InvoiceDate.Value;
-        if (dto.PaymentTermDays.HasValue) inv.PaymentTermDays = dto.PaymentTermDays.Value;
 
-        // Auto-calculate DueDate
-        if (inv.PaymentTerms == PaymentTerms.Cash)
-        {
-            inv.DueDate = null;
-        }
-        else if (dto.PaymentTermDays.HasValue)
-        {
-            inv.DueDate = inv.InvoiceDate.AddDays(dto.PaymentTermDays.Value);
-        }
-        else if (dto.DueDate.HasValue)
-        {
-            inv.DueDate = dto.DueDate.Value;
-        }
-        if (dto.TaxPercent.HasValue)    inv.TaxPercent  = dto.TaxPercent.Value;
-        if (dto.DiscountAmount.HasValue) inv.DiscountAmount = dto.DiscountAmount.Value;
-        if (dto.Notes != null)          inv.Notes       = dto.Notes;
-        if (dto.Status.HasValue)        inv.Status      = dto.Status.Value;
+        _db.PurchaseInvoiceItems.RemoveRange(inv.Items);
+        inv.Items.Clear();
 
-        // Clean up old items or update them?
-        // Simpler: Just update the header for now because updating items in a PUT is complex for stock
-        // But the frontend seems to call this with a full body
+        decimal subtotal = 0;
+        if (dto.Items != null)
+        {
+            foreach (var item in dto.Items)
+            {
+                var total = Math.Round(item.Quantity * item.UnitCost, 2);
+                subtotal += total;
+                inv.Items.Add(new PurchaseInvoiceItem
+                {
+                    ProductId = item.ProductId,
+                    ProductVariantId = item.ProductVariantId,
+                    Description = item.Description,
+                    Unit = item.Unit ?? "Unit",
+                    Quantity = item.Quantity,
+                    UnitCost = item.UnitCost,
+                    TotalCost = total
+                });
+            }
+        }
 
-        decimal subtotal = inv.Items.Sum(x => x.TotalCost);
-        inv.SubTotal    = subtotal;
-        inv.TaxAmount   = Math.Round(subtotal * (inv.TaxPercent / 100), 2);
+        inv.SubTotal = subtotal;
+        inv.TaxAmount = Math.Round(subtotal * (inv.TaxPercent / 100), 2);
         inv.TotalAmount = (subtotal + inv.TaxAmount) - inv.DiscountAmount;
-
         inv.Supplier.TotalPurchases += inv.TotalAmount;
-        inv.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
+
+        var newStockMap = inv.Items
+            .Where(x => x.ProductId.HasValue)
+            .GroupBy(x => new { x.ProductId, x.ProductVariantId })
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
+
+        var keys = oldStockMap.Keys.Union(newStockMap.Keys).Distinct();
+        foreach (var key in keys)
+        {
+            var oldQty = oldStockMap.GetValueOrDefault(key, 0);
+            var newQty = newStockMap.GetValueOrDefault(key, 0);
+            var diff = newQty - oldQty;
+            if (diff != 0)
+            {
+                await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, diff, key.ProductId, key.ProductVariantId, inv.InvoiceNumber, $"Edit Inv #{inv.InvoiceNumber}", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+            }
+        }
+
+        _ = Task.Run(async () =>
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var acc = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            try {
+                var full = await db.PurchaseInvoices.Include(i => i.Supplier).FirstAsync(i => i.Id == id);
+                await acc.PostPurchaseInvoiceAsync(full);
+            } catch { }
+        });
+
         return Ok(inv);
     }
 
     [AcceptVerbs("PATCH", "PUT")]
     [Route("{id}/status")]
-    [Route("{id}/status:{statusValue}")] // This specifically targets the :1 syntax seen in the logs
-    public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdatePurchaseStatusDto? dto, [FromRoute] string? statusValue = null)
+    public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdatePurchaseStatusDto dto)
     {
-        var inv = await _db.PurchaseInvoices.FirstOrDefaultAsync(i => i.Id == id && !i.IsDeleted);
+        var inv = await _db.PurchaseInvoices
+            .Include(i => i.Supplier)
+            .Include(i => i.Payments)
+            .FirstOrDefaultAsync(i => i.Id == id && !i.IsDeleted);
+
         if (inv == null) return NotFound();
 
-        PurchaseInvoiceStatus newStatus;
-        if (dto != null) newStatus = dto.Status;
-        else if (!string.IsNullOrEmpty(statusValue) && Enum.TryParse<PurchaseInvoiceStatus>(statusValue, out var st)) newStatus = st;
-        else if (!string.IsNullOrEmpty(statusValue) && int.TryParse(statusValue, out var v)) newStatus = (PurchaseInvoiceStatus)v;
-        else return BadRequest(new { message = "Invalid status" });
-
-        inv.Status    = newStatus;
-        inv.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
-
-        if (newStatus == PurchaseInvoiceStatus.Returned)
+        if (dto.Status == PurchaseInvoiceStatus.Cancelled)
         {
-            // Reduce Stock (Decrease)
-            var invoiceWithItems = await _db.PurchaseInvoices.Include(i => i.Items).FirstAsync(i => i.Id == id);
-            foreach (var item in invoiceWithItems.Items)
+            var journalEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == inv.InvoiceNumber);
+            if (journalEntry != null) { journalEntry.IsDeleted = true; }
+            foreach (var p in inv.Payments)
             {
-                if (item.ProductId.HasValue)
-                {
-                    await _inventory.LogMovementAsync(
-                        InventoryMovementType.ReturnOut,
-                        -item.Quantity, // deduction
-                        item.ProductId,
-                        item.ProductVariantId,
-                        inv.InvoiceNumber,
-                        $"Purchase Return",
-                        User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                    );
-                }
+                p.IsDeleted = true;
+                var pEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == p.PaymentNumber);
+                if (pEntry != null) pEntry.IsDeleted = true;
             }
-            await _db.SaveChangesAsync(); // Save stock changes
+        }
 
-            var fullInvoice = await _db.PurchaseInvoices
-                .Include(i => i.Supplier)
-                .FirstAsync(i => i.Id == id);
-
+        if (dto.Status == PurchaseInvoiceStatus.Returned)
+        {
             _ = Task.Run(async () =>
             {
                 using var scope = _scopeFactory.CreateScope();
-                var accountingInner = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-                var dbInner = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-                try 
-                {
-                    var fullInvoiceInner = await dbInner.PurchaseInvoices
-                        .Include(i => i.Supplier)
-                        .FirstAsync(i => i.Id == id);
-
-                    await accountingInner.PostPurchaseReturnAsync(fullInvoiceInner); 
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"[Accounting] PostPurchaseReturn failed for {id}: {ex.Message}");
-                }
+                var acc = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                try {
+                    var full = await db.PurchaseInvoices.Include(i => i.Supplier).FirstAsync(i => i.Id == id);
+                    await acc.PostPurchaseReturnAsync(full); 
+                } catch { }
             });
         }
 
-        return Ok(new { status = inv.Status.ToString() });
+        inv.Status = dto.Status;
+        inv.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return Ok(inv);
     }
 
     [HttpDelete("{id}")]
@@ -482,28 +458,17 @@ public class PurchaseInvoicesController : ControllerBase
 
         if (inv == null) return NotFound();
 
-        // 1. Reverse Supplier Totals
         inv.Supplier.TotalPurchases -= inv.TotalAmount;
         inv.Supplier.TotalPaid -= inv.PaidAmount;
 
-        // 2. Reverse Stock (Technically a deletion movement)
         foreach (var item in inv.Items)
         {
             if (item.ProductId.HasValue)
             {
-                await _inventory.LogMovementAsync(
-                    InventoryMovementType.Adjustment,
-                    -item.Quantity, // Reverse the previous addition
-                    item.ProductId,
-                    item.ProductVariantId,
-                    inv.InvoiceNumber,
-                    $"Purchase Invoice Deleted",
-                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                );
+                await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, -item.Quantity, item.ProductId, item.ProductVariantId, inv.InvoiceNumber, "Purchase Invoice Deleted", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
             }
         }
 
-        // 3. Delete Associated Payments and their Journal Entries
         foreach (var p in inv.Payments)
         {
             p.IsDeleted = true;
@@ -511,191 +476,11 @@ public class PurchaseInvoicesController : ControllerBase
             if (pEntry != null) pEntry.IsDeleted = true;
         }
 
-        // 4. Delete the Invoice Journal Entry
         var invoiceEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == inv.InvoiceNumber);
         if (invoiceEntry != null) invoiceEntry.IsDeleted = true;
 
         inv.IsDeleted = true;
         inv.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
-        return NoContent();
-    }
-}
-
-public record UpdatePurchaseStatusDto(PurchaseInvoiceStatus Status);
-
-public record UpdatePurchaseInvoiceDto(
-    string? SupplierInvoiceNumber,
-    PaymentTerms? PaymentTerms,
-    DateTime? InvoiceDate,
-    int? PaymentTermDays,
-    DateTime? DueDate,
-    decimal? TaxPercent,
-    decimal? DiscountAmount,
-    string? Notes,
-    PurchaseInvoiceStatus? Status
-);
-
-// ══════════════════════════════════════════════════════
-// SUPPLIER PAYMENTS (VOUCHERS)
-// ══════════════════════════════════════════════════════
-[ApiController]
-[Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Accountant")]
-public class SupplierPaymentsController : ControllerBase
-{
-    private readonly AppDbContext _db;
-    private readonly IServiceScopeFactory _scopeFactory;
-
-    public SupplierPaymentsController(AppDbContext db, IServiceScopeFactory scopeFactory)
-    {
-        _db           = db;
-        _scopeFactory = scopeFactory;
-    }
-
-    [HttpGet]
-    public async Task<IActionResult> GetAll(
-        [FromQuery] int?    supplierId = null,
-        [FromQuery] string? search     = null,
-        [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate   = null,
-        [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
-    {
-        var q = _db.SupplierPayments
-            .Include(p => p.Supplier)
-            .Include(p => p.Invoice)
-            .Where(p => !p.IsDeleted)
-            .AsQueryable();
-
-        if (supplierId.HasValue) q = q.Where(p => p.SupplierId == supplierId.Value);
-        if (fromDate.HasValue)   q = q.Where(p => p.PaymentDate >= fromDate.Value);
-        if (toDate.HasValue)     q = q.Where(p => p.PaymentDate <= toDate.Value);
-        if (!string.IsNullOrEmpty(search))
-            q = q.Where(p => p.PaymentNumber.Contains(search)
-                           || p.Supplier.Name.Contains(search)
-                           || p.Supplier.Phone.Contains(search));
-
-        var total = await q.CountAsync();
-        var items = await q.OrderByDescending(p => p.PaymentDate)
-            .Skip((page-1)*pageSize).Take(pageSize)
-            .Select(p => new SupplierPaymentSummaryDto(
-                p.Id, p.PaymentNumber, p.Supplier.Name,
-                p.Invoice != null ? p.Invoice.InvoiceNumber : null,
-                p.PaymentDate, p.Amount, p.PaymentMethod.ToString(),
-                p.AccountName, p.Notes,
-                p.AttachmentUrl, p.AttachmentPublicId
-            )).ToListAsync();
-
-        return Ok(new PaginatedResult<SupplierPaymentSummaryDto>(items, total, page, pageSize,
-            (int)Math.Ceiling((double)total / pageSize)));
-    }
-
-    [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateSupplierPaymentDto dto)
-    {
-        var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId && !s.IsDeleted);
-        if (supplier == null)
-            return BadRequest(new { message = "المورد غير موجود" });
-
-        if (dto.Amount <= 0)
-            return BadRequest(new { message = "المبلغ يجب أن يكون أكبر من صفر" });
-
-        // Voucher number
-        var year  = DateTime.UtcNow.Year % 100;
-        var count = await _db.SupplierPayments.IgnoreQueryFilters().CountAsync() + 1;
-        var voucherNo = $"SP-{year}{count:D4}";
-
-        var payment = new SupplierPayment
-        {
-            PaymentNumber     = voucherNo,
-            SupplierId        = dto.SupplierId,
-            PurchaseInvoiceId = dto.PurchaseInvoiceId,
-            PaymentDate       = dto.PaymentDate,
-            Amount            = dto.Amount,
-            PaymentMethod     = dto.PaymentMethod,
-            AccountName       = dto.AccountName.Trim(),
-            Notes             = dto.Notes?.Trim(),
-            ReferenceNumber   = dto.ReferenceNumber?.Trim(),
-            CreatedByUserId   = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-            AttachmentUrl     = dto.AttachmentUrl,
-            AttachmentPublicId = dto.AttachmentPublicId,
-            CreatedAt         = DateTime.UtcNow,
-        };
-
-        // Update supplier paid amount
-        supplier.TotalPaid += dto.Amount;
-
-        // Update invoice paid amount if linked
-        if (dto.PurchaseInvoiceId.HasValue)
-        {
-            var invoice = await _db.PurchaseInvoices
-                .FirstOrDefaultAsync(i => i.Id == dto.PurchaseInvoiceId && !i.IsDeleted);
-            if (invoice != null)
-            {
-                invoice.PaidAmount += dto.Amount;
-                invoice.Status = invoice.PaidAmount >= invoice.TotalAmount
-                    ? PurchaseInvoiceStatus.Paid
-                    : PurchaseInvoiceStatus.PartPaid;
-                invoice.UpdatedAt = DateTime.UtcNow;
-            }
-        }
-
-        _db.SupplierPayments.Add(payment);
-        await _db.SaveChangesAsync();
-
-        // ترحيل سند الصرف
-        var paymentWithSupplier = await _db.SupplierPayments
-            .Include(p => p.Supplier)
-            .FirstAsync(p => p.Id == payment.Id);
-
-        _ = Task.Run(async () =>
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var accountingInner = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-            var dbInner = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-            try 
-            {
-                var paymentInner = await dbInner.SupplierPayments
-                    .Include(p => p.Supplier)
-                    .FirstAsync(p => p.Id == payment.Id);
-
-                await accountingInner.PostSupplierPaymentAsync(paymentInner); 
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[Accounting] PostSupplierPayment failed for {payment.PaymentNumber}: {ex.Message}");
-            }
-        });
-
-        return CreatedAtAction(nameof(GetAll), new { },
-            new { id = payment.Id, paymentNumber = payment.PaymentNumber });
-    }
-
-    [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin,Manager")]
-    public async Task<IActionResult> Delete(int id)
-    {
-        var payment = await _db.SupplierPayments
-            .Include(p => p.Supplier)
-            .Include(p => p.Invoice)
-            .FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted);
-        if (payment == null) return NotFound();
-
-        // Reverse supplier total
-        payment.Supplier.TotalPaid -= payment.Amount;
-
-        // Reverse invoice
-        if (payment.Invoice != null)
-        {
-            payment.Invoice.PaidAmount -= payment.Amount;
-            payment.Invoice.Status = payment.Invoice.PaidAmount <= 0
-                ? PurchaseInvoiceStatus.Draft
-                : PurchaseInvoiceStatus.PartPaid;
-        }
-
-        payment.IsDeleted = true;
-        payment.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
         return NoContent();
     }

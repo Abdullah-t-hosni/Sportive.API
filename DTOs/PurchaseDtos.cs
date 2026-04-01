@@ -195,3 +195,5 @@ public record SupplierBalanceDto(
     string  SupplierName,
     decimal Balance
 );
+
+public record UpdatePurchaseStatusDto(PurchaseInvoiceStatus Status);
