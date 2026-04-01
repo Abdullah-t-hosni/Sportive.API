@@ -44,12 +44,12 @@ public class WhatsAppApiService : IWhatsAppApiService
                 {
                     name = templateName,
                     language = new { code = languageCode },
-                    components = new[]
+                    components = new object[]
                     {
                         new
                         {
                             type = "body",
-                            parameters = new[]
+                            parameters = new object[]
                             {
                                 new { type = "text", text = otpCode }
                             }
@@ -59,7 +59,7 @@ public class WhatsAppApiService : IWhatsAppApiService
                             type = "button",
                             sub_type = "url",
                             index = "0",
-                            parameters = new[]
+                            parameters = new object[]
                             {
                                 new { type = "text", text = otpCode }
                             }
