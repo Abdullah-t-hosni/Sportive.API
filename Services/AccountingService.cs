@@ -235,11 +235,23 @@ public class AccountingService : IAccountingService
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
-        // Reversal of Finance
-        lines.Add((salesReturnAcct,  order.TotalAmount, 0,               $"مرتجع مبيعات - {order.OrderNumber}"));
-        lines.Add((receivablesAcct,   0,                 order.TotalAmount, $"دائن العميل - {order.OrderNumber}"));
+        // 1. Separate Net Return and VAT based on Snapshots
+        var totalVatAmount = order.TotalVatAmount;
+        var netReturnPrice = order.TotalAmount - totalVatAmount;
 
-        // Reversal of COGS (Stock back to Inventory)
+        // 2. Financial Reversal
+        lines.Add((salesReturnAcct, netReturnPrice, 0, $"مرتجع مبيعات (صافي) - {order.OrderNumber}"));
+        
+        if (totalVatAmount > 0)
+        {
+            const string VAT_PAYABLE = "2221"; // Standard fallback code
+            string vatAcct = GetMap(mapDict, "vatPayableAccountID", VAT_PAYABLE);
+            lines.Add((vatAcct, totalVatAmount, 0, $"إلغاء ضريبة قيمة مضافة - {order.OrderNumber}"));
+        }
+
+        lines.Add((receivablesAcct, 0, order.TotalAmount, $"دائن العميل (إجمالي) - {order.OrderNumber}"));
+
+        // 3. Reversal of COGS (Stock back to Inventory)
         var totalCost = order.Items?.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity) ?? 0;
         if (totalCost > 0)
         {
