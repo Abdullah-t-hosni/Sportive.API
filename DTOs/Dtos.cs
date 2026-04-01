@@ -116,6 +116,7 @@ public record ProductSummaryDto(
     string SKU,
     bool HasVariants,
     bool HasTax,
+    decimal? VatRate,
     DateTime CreatedAt
 );
 
@@ -144,6 +145,7 @@ public record ProductDetailDto(
     int TotalStock,
     int ReorderLevel,
     bool HasTax,
+    decimal? VatRate,
     DateTime CreatedAt
 );
 
@@ -175,7 +177,8 @@ public record CreateProductDto(
     bool IsFeatured,
     List<CreateVariantDto>? Variants,
     int ReorderLevel = 0,
-    bool HasTax = true
+    bool HasTax = true,
+    decimal? VatRate = null
 );
 
 public record UpdateProductDto(
@@ -192,7 +195,8 @@ public record UpdateProductDto(
     bool IsFeatured,
     int ReorderLevel,
     ProductStatus Status,
-    bool HasTax = true
+    bool HasTax = true,
+    decimal? VatRate = null
 );
 
 public record CreateVariantDto(
@@ -249,7 +253,9 @@ public record CreateOrderDto(
 public record CreateOrderItemDto(
     int ProductId,
     int? ProductVariantId,
-    int Quantity
+    int Quantity,
+    bool? HasTax = null,
+    decimal? VatRate = null
 );
 
 public record CreatePOSOrderDto(
@@ -269,7 +275,9 @@ public record CreatePOSOrderItemDto(
     int? ProductVariantId,
     int Quantity,
     decimal UnitPrice,
-    decimal TotalPrice
+    decimal TotalPrice,
+    bool? HasTax = null,
+    decimal? VatRate = null
 );
 
 public record OrderSummaryDto(
@@ -323,7 +331,10 @@ public record OrderItemDto(
     string? Color,
     int Quantity,
     decimal UnitPrice,
-    decimal TotalPrice
+    decimal TotalPrice,
+    bool HasTax = true,
+    decimal? VatRateApplied = null,
+    decimal ItemVatAmount = 0
 );
 
 public record OrderStatusHistoryDto(

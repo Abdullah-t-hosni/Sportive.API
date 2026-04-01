@@ -90,6 +90,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Product>(e => {
             e.Property(x => x.Price).HasPrecision(18, 2);
             e.Property(x => x.DiscountPrice).HasPrecision(18, 2);
+            e.Property(x => x.CostPrice).HasPrecision(18, 2);
+            e.Property(x => x.VatRate).HasPrecision(18, 2);
             e.Property(x => x.SKU).HasMaxLength(50);
             e.HasIndex(x => x.SKU).IsUnique();
             e.HasOne(x => x.Category).WithMany(c => c.Products)
@@ -114,6 +116,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Order>(e => {
             e.Property(x => x.SubTotal).HasPrecision(18, 2);
             e.Property(x => x.TotalAmount).HasPrecision(18, 2);
+            e.Property(x => x.TotalVatAmount).HasPrecision(18, 2);
             e.Property(x => x.DiscountAmount).HasPrecision(18, 2);
             e.Property(x => x.DeliveryFee).HasPrecision(18, 2);
             e.HasIndex(x => x.OrderNumber).IsUnique();
@@ -133,6 +136,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<OrderItem>(e => {
             e.Property(x => x.UnitPrice).HasPrecision(18, 2);
             e.Property(x => x.TotalPrice).HasPrecision(18, 2);
+            e.Property(x => x.VatRateApplied).HasPrecision(18, 2);
+            e.Property(x => x.ItemVatAmount).HasPrecision(18, 2);
             e.HasOne(x => x.Order).WithMany(o => o.Items)
              .HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Product).WithMany(p => p.OrderItems)

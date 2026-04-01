@@ -121,8 +121,9 @@ public class OrderService : IOrderService
             o.AdminNotes,
             o.CreatedAt,
             o.Items.Select(i => new OrderItemDto(
-                i.Id, i.ProductNameAr, i.ProductNameEn, i.Product.Images.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
-                i.Size, i.Color, i.Quantity, i.UnitPrice, i.TotalPrice
+                i.Id, i.ProductNameAr, i.ProductNameEn, i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
+                i.Size, i.Color, i.Quantity, i.UnitPrice, i.TotalPrice,
+                i.HasTax, i.VatRateApplied, i.ItemVatAmount
             )).ToList(),
             o.StatusHistory.OrderByDescending(h => h.CreatedAt).Select(h => new OrderStatusHistoryDto(
                 h.Status.ToString(), h.Note, h.CreatedAt
@@ -143,8 +144,11 @@ public class OrderService : IOrderService
         // 🛡️ SECURITY & INTEGRITY FIX: Handle customerId = 0 or invalid ID
         if (customerId.HasValue && (customerId.Value <= 0 || !await _db.Customers.AnyAsync(c => c.Id == customerId.Value)))
         {
-            customerId = null;
+        customerId = null;
         }
+
+        var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        var globalVatRate = (store?.VatRatePercent ?? 14) / 100m;
 
         // 1. Handle Customer (For POS or non-logged in website visitors)
         if (!customerId.HasValue)
@@ -226,6 +230,7 @@ public class OrderService : IOrderService
 
                 var unitPrice = product.DiscountPrice ?? (product.Price + (variant?.PriceAdjustment ?? 0));
                 
+
                 var orderItem = new OrderItem
                 {
                     ProductId = item.ProductId,
@@ -237,8 +242,20 @@ public class OrderService : IOrderService
                     Quantity = item.Quantity,
                     UnitPrice = unitPrice,
                     TotalPrice = unitPrice * item.Quantity,
+                    HasTax = item.HasTax ?? product.HasTax,
+                    VatRateApplied = item.VatRate ?? product.VatRate ?? (store?.VatRatePercent ?? 14),
                     CreatedAt = DateTime.UtcNow
                 };
+
+                // Calculate VAT part (Tax Inclusive)
+                if (orderItem.HasTax)
+                {
+                    var rate = (orderItem.VatRateApplied ?? 14) / 100m;
+                    decimal net = Math.Round(orderItem.TotalPrice / (1 + rate), 2);
+                    orderItem.ItemVatAmount = orderItem.TotalPrice - net;
+                    order.TotalVatAmount += orderItem.ItemVatAmount;
+                }
+
                 order.Items.Add(orderItem);
                 order.SubTotal += orderItem.TotalPrice;
 
@@ -265,6 +282,8 @@ public class OrderService : IOrderService
             foreach (var ci in cartItems)
             {
                 var unitPrice = ci.Product.DiscountPrice ?? (ci.Product.Price + (ci.ProductVariant?.PriceAdjustment ?? 0));
+
+
                 var orderItem = new OrderItem
                 {
                     ProductId = ci.ProductId,
@@ -276,8 +295,20 @@ public class OrderService : IOrderService
                     Quantity = ci.Quantity,
                     UnitPrice = unitPrice,
                     TotalPrice = unitPrice * ci.Quantity,
+                    HasTax = ci.Product.HasTax,
+                    VatRateApplied = ci.Product.VatRate ?? (store?.VatRatePercent ?? 14),
                     CreatedAt = DateTime.UtcNow
                 };
+
+                // Calculate VAT part (Tax Inclusive)
+                if (orderItem.HasTax)
+                {
+                    var rate = (orderItem.VatRateApplied ?? 14) / 100m;
+                    decimal net = Math.Round(orderItem.TotalPrice / (1 + rate), 2);
+                    orderItem.ItemVatAmount = orderItem.TotalPrice - net;
+                    order.TotalVatAmount += orderItem.ItemVatAmount;
+                }
+
                 order.Items.Add(orderItem);
                 order.SubTotal += orderItem.TotalPrice;
 

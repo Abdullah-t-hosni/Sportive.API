@@ -19,6 +19,7 @@ public class Product : BaseEntity
     public int TotalStock { get; set; } = 0;
     public int ReorderLevel { get; set; } = 0; // حد الطلب للمنتج الرئيسي
     public bool HasTax { get; set; } = true; // خيار وجود ضريبة على المنتج
+    public decimal? VatRate { get; set; } // نسبة الضريبة المخصصة للمنتج (null تعني استخدام النسبة الافتراضية للمتجر)
 
     // Category
     public int CategoryId { get; set; }

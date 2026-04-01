@@ -72,6 +72,7 @@ public class Order : BaseEntity
     public decimal DiscountAmount { get; set; } = 0;
     public string? CouponCode { get; set; }
     public decimal TotalAmount { get; set; }
+    public decimal TotalVatAmount { get; set; } = 0;
 
     // Notes
     public string? CustomerNotes { get; set; }
@@ -103,6 +104,9 @@ public class OrderItem : BaseEntity
     public int Quantity { get; set; }
     public decimal UnitPrice { get; set; }
     public decimal TotalPrice { get; set; }
+    public bool HasTax { get; set; } = true;
+    public decimal? VatRateApplied { get; set; }
+    public decimal ItemVatAmount { get; set; } = 0;
 }
 
 public class OrderStatusHistory : BaseEntity

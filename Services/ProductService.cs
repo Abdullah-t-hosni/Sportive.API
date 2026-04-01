@@ -102,6 +102,7 @@ public class ProductService : IProductService
                 p.SKU,
                 p.Variants.Any(),
                 p.HasTax,
+                p.VatRate,
                 p.CreatedAt
             ))
             .ToListAsync();
@@ -147,6 +148,7 @@ public class ProductService : IProductService
             IsFeatured = dto.IsFeatured,
             ReorderLevel = dto.ReorderLevel,
             HasTax = dto.HasTax,
+            VatRate = dto.VatRate,
             Status = ProductStatus.Active
         };
 
@@ -224,6 +226,7 @@ public class ProductService : IProductService
         product.ReorderLevel = dto.ReorderLevel;
         product.Status = dto.Status;
         product.HasTax = dto.HasTax;
+        product.VatRate = dto.VatRate;
         product.UpdatedAt = DateTime.UtcNow;
 
         // إعادة حساب إجمالي المخزون للتأكد من الدقة
@@ -412,6 +415,7 @@ public class ProductService : IProductService
                 p.SKU,
                 p.Variants != null && p.Variants.Any(),
                 p.HasTax,
+                p.VatRate,
                 p.CreatedAt
             ))
             .ToListAsync();
@@ -445,6 +449,7 @@ public class ProductService : IProductService
                 p.SKU,
                 p.Variants != null && p.Variants.Any(),
                 p.HasTax,
+                p.VatRate,
                 p.CreatedAt
             ))
             .ToListAsync();
@@ -465,6 +470,7 @@ public class ProductService : IProductService
         p.TotalStock,
         p.ReorderLevel,
         p.HasTax,
+        p.VatRate,
         p.CreatedAt
     );
 }

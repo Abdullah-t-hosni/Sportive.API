@@ -96,9 +96,11 @@ public class AccountingService : IAccountingService
                 decimal itemVat = 0;
                 decimal itemNet = item.TotalPrice;
 
-                if (item.Product != null && item.Product.HasTax)
+                if (item.HasTax)
                 {
-                    itemNet = Math.Round(item.TotalPrice / (1 + vatRate), 2);
+                    // Use the rate captured at the time of order
+                    var rate = (item.VatRateApplied ?? 14) / 100m;
+                    itemNet = Math.Round(item.TotalPrice / (1 + rate), 2);
                     itemVat = item.TotalPrice - itemNet;
                 }
                 
