@@ -148,6 +148,39 @@ public class CustomerService : ICustomerService
         _db.Customers.Add(customer);
         await _db.SaveChangesAsync();
 
+        // ── Auto-create Customer Account in Chart of Accounts ──
+        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
+        if (parent != null)
+        {
+            var maxCode = await _db.Accounts.Where(a => a.ParentId == parent.Id).MaxAsync(a => (string?)a.Code);
+            long nextCodeNum = 1;
+            if (maxCode != null && maxCode.StartsWith("1103") && long.TryParse(maxCode.Substring(4), out var existingNum)) {
+                nextCodeNum = existingNum + 1;
+            } else {
+                nextCodeNum = 1;
+            }
+            var newCode = $"1103{nextCodeNum:D4}";
+
+            var account = new Account
+            {
+                Code = newCode,
+                NameAr = $"عميل - {customer.FullName}",
+                Type = AccountType.Asset,
+                Nature = AccountNature.Debit,
+                ParentId = parent.Id,
+                Level = parent.Level + 1,
+                IsLeaf = true,
+                AllowPosting = true,
+                IsSystem = false,
+                CreatedAt = DateTime.UtcNow
+            };
+            _db.Accounts.Add(account);
+            await _db.SaveChangesAsync();
+
+            customer.MainAccountId = account.Id;
+            await _db.SaveChangesAsync();
+        }
+
         return (await GetCustomerByIdAsync(customer.Id))!;
     }
 

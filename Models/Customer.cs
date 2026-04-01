@@ -22,6 +22,9 @@ public class Customer : BaseEntity
     public DateTime? DateOfBirth { get; set; }
     public bool IsActive { get; set; } = true;
 
+    public int? MainAccountId { get; set; }
+    public Account? MainAccount { get; set; }
+
     // Navigation
     public ICollection<Order> Orders { get; set; } = new List<Order>();
     public ICollection<Address> Addresses { get; set; } = new List<Address>();

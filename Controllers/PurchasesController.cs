@@ -84,6 +84,40 @@ public class SuppliersController : ControllerBase
 
         _db.Suppliers.Add(supplier);
         await _db.SaveChangesAsync();
+
+        // ── Auto-create Supplier Account in Chart of Accounts ──
+        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "2101");
+        if (parent != null)
+        {
+            var maxCode = await _db.Accounts.Where(a => a.ParentId == parent.Id).MaxAsync(a => (string?)a.Code);
+            long nextCodeNum = 1;
+            if (maxCode != null && maxCode.StartsWith("2101") && long.TryParse(maxCode.Substring(4), out var existingNum)) {
+                nextCodeNum = existingNum + 1;
+            } else {
+                nextCodeNum = 1;
+            }
+            var newCode = $"2101{nextCodeNum:D4}";
+
+            var account = new Account
+            {
+                Code = newCode,
+                NameAr = $"مورد - {supplier.Name}",
+                Type = AccountType.Liability,
+                Nature = AccountNature.Credit,
+                ParentId = parent.Id,
+                Level = parent.Level + 1,
+                IsLeaf = true,
+                AllowPosting = true,
+                IsSystem = false,
+                CreatedAt = DateTime.UtcNow
+            };
+            _db.Accounts.Add(account);
+            await _db.SaveChangesAsync();
+
+            supplier.MainAccountId = account.Id;
+            await _db.SaveChangesAsync();
+        }
+
         return CreatedAtAction(nameof(GetById), new { id = supplier.Id }, supplier);
     }
 
@@ -219,6 +253,9 @@ public class PurchaseInvoicesController : ControllerBase
         if (!dto.Items.Any())
             return BadRequest(new { message = "يجب إضافة صنف واحد على الأقل" });
 
+        if (dto.Items.Any(i => i.ProductId.HasValue && !i.ProductVariantId.HasValue))
+            return BadRequest(new { message = "إلزامي اختيار المقاس واللون لكل صنف في الفاتورة" });
+
         var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId && !s.IsDeleted);
         if (supplier == null)
             return BadRequest(new { message = "المورد غير موجود" });
@@ -326,6 +363,9 @@ public class PurchaseInvoicesController : ControllerBase
 
         if (inv == null) return NotFound();
 
+        if (dto.Items != null && dto.Items.Any(i => i.ProductId.HasValue && !i.ProductVariantId.HasValue))
+            return BadRequest(new { message = "إلزامي اختيار المقاس واللون لكل صنف في الفاتورة للتعديل" });
+
         var oldStockMap = inv.Items
             .Where(x => x.ProductId.HasValue)
             .GroupBy(x => new { x.ProductId, x.ProductVariantId })
@@ -416,13 +456,19 @@ public class PurchaseInvoicesController : ControllerBase
 
         if (dto.Status == PurchaseInvoiceStatus.Cancelled)
         {
-            var journalEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == inv.InvoiceNumber);
-            if (journalEntry != null) { journalEntry.IsDeleted = true; }
+            var journalEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == inv.InvoiceNumber);
+            if (journalEntry != null) { 
+                journalEntry.IsDeleted = true; 
+                foreach (var l in journalEntry.Lines) l.IsDeleted = true;
+            }
             foreach (var p in inv.Payments)
             {
                 p.IsDeleted = true;
-                var pEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == p.PaymentNumber);
-                if (pEntry != null) pEntry.IsDeleted = true;
+                var pEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == p.PaymentNumber);
+                if (pEntry != null) {
+                    pEntry.IsDeleted = true;
+                    foreach (var l in pEntry.Lines) l.IsDeleted = true;
+                }
             }
         }
 
@@ -472,12 +518,18 @@ public class PurchaseInvoicesController : ControllerBase
         foreach (var p in inv.Payments)
         {
             p.IsDeleted = true;
-            var pEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == p.PaymentNumber);
-            if (pEntry != null) pEntry.IsDeleted = true;
+            var pEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == p.PaymentNumber);
+            if (pEntry != null) {
+                pEntry.IsDeleted = true;
+                foreach (var l in pEntry.Lines) l.IsDeleted = true;
+            }
         }
 
-        var invoiceEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == inv.InvoiceNumber);
-        if (invoiceEntry != null) invoiceEntry.IsDeleted = true;
+        var invoiceEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == inv.InvoiceNumber);
+        if (invoiceEntry != null) {
+            invoiceEntry.IsDeleted = true;
+            foreach (var l in invoiceEntry.Lines) l.IsDeleted = true;
+        }
 
         inv.IsDeleted = true;
         inv.UpdatedAt = DateTime.UtcNow;
