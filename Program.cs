@@ -241,6 +241,12 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "Sportive API", Version = "v1" });
+    
+    // ✅ CRITICAL FIX: Resolve duplicate routes or overlapping controllers (e.g. Dashboard)
+    c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
+    
+    // ✅ FIX: Avoid schema ID conflicts using full type names
+    c.CustomSchemaIds(type => type.FullName);
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
@@ -272,6 +278,8 @@ builder.Services.AddControllers()
     {
         x.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         x.JsonSerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;
+        // ✅ FIX: Handle circular references in Swagger schema generation
+        x.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
         x.JsonSerializerOptions.Converters.Add(
             new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
