@@ -14,7 +14,6 @@ public class CustomersController : ControllerBase
     private readonly ICustomerService _customers;
     public CustomersController(ICustomerService customers) => _customers = customers;
 
-    /// <summary>كل العملاء — Admin, Manager فقط</summary>
     [Authorize(Roles = "Admin,Manager")]
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -22,6 +21,11 @@ public class CustomersController : ControllerBase
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null) =>
         Ok(await _customers.GetCustomersAsync(page, pageSize, search));
+
+    [Authorize(Roles = "Admin,Manager")]
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateCustomerDto dto) =>
+        Ok(await _customers.UpdateCustomerAsync(id, dto));
 
     /// <summary>إضافة عميل جديد — Admin, Manager, Cashier</summary>
     [Authorize(Roles = "Admin,Manager,Cashier,sttaf")]

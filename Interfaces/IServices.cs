@@ -81,6 +81,7 @@ public interface ICustomerService
     Task SetDefaultAddressAsync(int customerId, int addressId);
     Task EnsureCustomerAccountAsync(int customerId);
     Task SyncAllMissingAccountsAsync();
+    Task<CustomerDetailDto> UpdateCustomerAsync(int id, UpdateCustomerDto dto);
 }
 
 public interface IDashboardService

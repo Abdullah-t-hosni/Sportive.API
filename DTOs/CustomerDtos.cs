@@ -23,7 +23,8 @@ public record CustomerDetailDto(
     DateTime CreatedAt,
     List<AddressDto> Addresses,
     string? AppUserId = null,
-    decimal Balance = 0
+    decimal Balance = 0,
+    int? MainAccountId = null
 );
 
 // ========== ADDRESS ==========
@@ -61,4 +62,13 @@ public record CreateCustomerDto(
     string? LastName = null,
     string? Email = null,
     string? Phone = null
+);
+
+public record UpdateCustomerDto(
+    string FirstName,
+    string? LastName,
+    string? Email,
+    string? Phone,
+    bool IsActive = true,
+    int? MainAccountId = null
 );

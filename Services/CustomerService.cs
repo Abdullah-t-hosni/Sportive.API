@@ -54,7 +54,8 @@ public class CustomerService : ICustomerService
                        !l.IsDeleted && 
                        !l.JournalEntry.IsDeleted &&
                        l.JournalEntry.Status == JournalEntryStatus.Posted)
-                   .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
+                   .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0,
+                c.MainAccountId
             ))
             .ToListAsync();
 
@@ -79,7 +80,8 @@ public class CustomerService : ICustomerService
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
                 )).ToList(),
                 c.AppUserId,
-                (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + _db.JournalLines.Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && !l.IsDeleted && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
+                (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + _db.JournalLines.Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && !l.IsDeleted && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0,
+                c.MainAccountId
             ))
             .FirstOrDefaultAsync();
 
@@ -99,7 +101,8 @@ public class CustomerService : ICustomerService
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
                 )).ToList(),
                 c.AppUserId,
-                (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + _db.JournalLines.Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && !l.IsDeleted && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
+                (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + _db.JournalLines.Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && !l.IsDeleted && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0,
+                c.MainAccountId
             ))
             .FirstOrDefaultAsync();
 
@@ -154,6 +157,23 @@ public class CustomerService : ICustomerService
         // ── Auto-create Account ──
         await EnsureCustomerAccountAsync(customer.Id);
 
+        return (await GetCustomerByIdAsync(customer.Id))!;
+    }
+
+    public async Task<CustomerDetailDto> UpdateCustomerAsync(int id, UpdateCustomerDto dto)
+    {
+        var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == id)
+            ?? throw new Exception("Customer not found");
+
+        customer.FirstName = dto.FirstName;
+        customer.LastName = dto.LastName ?? "";
+        customer.Email = dto.Email ?? customer.Email;
+        customer.Phone = dto.Phone;
+        customer.IsActive = dto.IsActive;
+        customer.MainAccountId = dto.MainAccountId;
+        customer.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
         return (await GetCustomerByIdAsync(customer.Id))!;
     }
 

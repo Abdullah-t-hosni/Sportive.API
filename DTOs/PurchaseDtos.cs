@@ -26,7 +26,8 @@ public record UpdateSupplierDto(
     string? Address,
     bool    IsActive = true,
     string? AttachmentUrl = null,
-    string? AttachmentPublicId = null
+    string? AttachmentPublicId = null,
+    int?    MainAccountId = null
 );
 
 public record SupplierDto(

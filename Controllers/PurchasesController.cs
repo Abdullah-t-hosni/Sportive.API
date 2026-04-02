@@ -136,6 +136,7 @@ public class SuppliersController : ControllerBase
         supplier.IsActive    = dto.IsActive;
         supplier.AttachmentUrl = dto.AttachmentUrl;
         supplier.AttachmentPublicId = dto.AttachmentPublicId;
+        supplier.MainAccountId = dto.MainAccountId;
         supplier.UpdatedAt   = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
@@ -276,7 +277,7 @@ public class PurchaseInvoicesController : ControllerBase
             TaxPercent            = dto.TaxPercent,
             DiscountAmount        = dto.DiscountAmount,
             Notes                 = dto.Notes,
-            Status                = dto.PaymentTerms == PaymentTerms.Cash ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.Draft,
+            Status                = dto.PaymentTerms == PaymentTerms.Cash ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.Received,
             AttachmentUrl         = dto.AttachmentUrl,
             AttachmentPublicId    = dto.AttachmentPublicId,
             CreatedAt             = DateTime.UtcNow,
