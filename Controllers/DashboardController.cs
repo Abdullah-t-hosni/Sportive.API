@@ -13,12 +13,16 @@ public class DashboardController : ControllerBase
     public DashboardController(IDashboardService dashboard) => _dashboard = dashboard;
 
     [HttpGet("stats")]
-    [HttpGet("/api/analytics/admin-stats")] // Compatibility for old frontend
     public async Task<IActionResult> GetStats() =>
         Ok(await _dashboard.GetStatsAsync());
 
-    // ✅ kpi endpoint moved to DashboardKpiController (api/dashboard/kpi)
-    // Removed duplicate [HttpGet("kpi")] that was causing Swagger 500 error
+    // ✅ FIX: Swashbuckle 7 crashes on stacked routes — compatibility alias as separate action
+    [HttpGet("/api/analytics/admin-stats")]
+    [ApiExplorerSettings(IgnoreApi = true)] // hide from Swagger, keep working
+    public async Task<IActionResult> GetStatsAlias() =>
+        Ok(await _dashboard.GetStatsAsync());
+
+    // ✅ kpi endpoint is in DashboardKpiController (removed duplicate)
 
     [HttpGet("sales-chart")]
     public async Task<IActionResult> GetSalesChart([FromQuery] string period = "monthly") =>
@@ -37,8 +41,13 @@ public class DashboardController : ControllerBase
         Ok(await _dashboard.GetRecentOrdersAsync(count));
 
     [HttpGet("analytics-summary")]
-    [HttpGet("/api/analytics/summary")] // Compatibility for old frontend
     public async Task<IActionResult> GetAnalyticsSummary() =>
+        Ok(await _dashboard.GetAnalyticsSummaryAsync());
+
+    // ✅ FIX: compatibility alias as separate hidden action
+    [HttpGet("/api/analytics/summary")]
+    [ApiExplorerSettings(IgnoreApi = true)]
+    public async Task<IActionResult> GetAnalyticsSummaryAlias() =>
         Ok(await _dashboard.GetAnalyticsSummaryAsync());
 
     [HttpGet("export-sales")]

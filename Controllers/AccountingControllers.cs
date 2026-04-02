@@ -103,8 +103,15 @@ public class AccountsController : ControllerBase
     public async Task<IActionResult> GetMappings() => await OkMappingsOrErrorAsync();
 
     [HttpPut("mappings")]
+    // ✅ FIX: Swashbuckle 7 crashes on stacked Http verbs — split into two separate actions
+    public async Task<IActionResult> SaveMappingsPut([FromBody] Dictionary<string, int?>? body)
+        => await SaveMappingsInternal(body);
+
     [HttpPost("mappings")]
-    public async Task<IActionResult> SaveMappings([FromBody] Dictionary<string, int?>? body)
+    public async Task<IActionResult> SaveMappingsPost([FromBody] Dictionary<string, int?>? body)
+        => await SaveMappingsInternal(body);
+
+    private async Task<IActionResult> SaveMappingsInternal(Dictionary<string, int?>? body)
     {
         if (body == null)
             return BadRequest(new { message = "Body is required (empty object {} is allowed)." });
