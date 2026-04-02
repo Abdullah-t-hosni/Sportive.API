@@ -15,6 +15,8 @@ public class OrderService : IOrderService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IInventoryService _inventory;
     private readonly IConfiguration _config;
+    private readonly ICustomerService _customerService;
+    private readonly IAccountingService _accounting;
 
     public OrderService(
         AppDbContext db,
@@ -22,7 +24,9 @@ public class OrderService : IOrderService
         IEmailService emailService,
         IServiceScopeFactory scopeFactory,
         IInventoryService inventory,
-        IConfiguration config)
+        IConfiguration config,
+        ICustomerService customerService,
+        IAccountingService accounting)
     {
         _db = db;
         _notificationService = notificationService;
@@ -30,6 +34,8 @@ public class OrderService : IOrderService
         _scopeFactory = scopeFactory;
         _inventory = inventory;
         _config = config;
+        _customerService = customerService;
+        _accounting = accounting;
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
@@ -185,6 +191,10 @@ public class OrderService : IOrderService
                 };
                 _db.Customers.Add(c);
                 await _db.SaveChangesAsync();
+                
+                // ── Auto-create Account ──
+                await _customerService.EnsureCustomerAccountAsync(c.Id);
+                
                 customerId = c.Id;
             }
         }
@@ -537,5 +547,66 @@ public class OrderService : IOrderService
         }
 
         return orderNumber;
+    }
+
+    public async Task SyncAllOrderAccountingAsync()
+    {
+        var orders = await _db.Orders
+            .Include(o => o.Customer)
+            .Include(o => o.Items).ThenInclude(i => i.Product)
+            .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Pending)
+            .ToListAsync();
+        
+        foreach (var order in orders)
+        {
+            try
+            {
+                // 1. Check if entry exists (Robust comparison)
+                var orderNum = order.OrderNumber.Trim().ToLower();
+                var entry = await _db.JournalEntries.Include(j => j.Lines)
+                    .FirstOrDefaultAsync(j => !j.IsDeleted && j.Type == JournalEntryType.SalesInvoice && j.Reference != null && j.Reference.Trim().ToLower() == orderNum);
+
+                if (entry == null || !entry.Lines.Any() || entry.Lines.All(l => l.CustomerId == null))
+                {
+                    // Full re-post if missing OR corrupted
+                    if (entry != null)
+                    {
+                        _db.JournalLines.RemoveRange(entry.Lines);
+                        _db.JournalEntries.Remove(entry);
+                        await _db.SaveChangesAsync();
+                    }
+                    await _accounting.PostSalesOrderAsync(order);
+                }
+                else
+                {
+                    // Aggressive Repair
+                    bool modified = false;
+                    if (entry.Status != JournalEntryStatus.Posted) { entry.Status = JournalEntryStatus.Posted; modified = true; }
+                    foreach (var line in entry.Lines)
+                    {
+                        if (line.CustomerId == null) { line.CustomerId = order.CustomerId; modified = true; }
+                        if (order.Customer?.MainAccountId != null && line.AccountId != order.Customer.MainAccountId)
+                        {
+                            var account = await _db.Accounts.FindAsync(line.AccountId);
+                            if (account != null && account.Code == "1103") // Generic Receivables
+                            {
+                                line.AccountId = order.Customer.MainAccountId.Value;
+                                modified = true;
+                            }
+                        }
+                    }
+                    if (modified) await _db.SaveChangesAsync();
+                }
+
+                if (order.PaymentStatus == PaymentStatus.Paid)
+                {
+                    await _accounting.PostOrderPaymentAsync(order);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Accounting Sync] Failed for {order.OrderNumber}: {ex.Message}");
+            }
+        }
     }
 }

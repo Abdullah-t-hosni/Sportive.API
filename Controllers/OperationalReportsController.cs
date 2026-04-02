@@ -62,7 +62,28 @@ public class OperationalReportsController : ControllerBase
 
         // بناء الكشف
         var lines = new List<CustomerStatementLine>();
-        decimal balance = 0;
+        
+        // 1. الرصيد قبل الفترة = (الافتتاحي للحساب) + (الفواتير السابقة) - (المقبوضات السابقة)
+        decimal initialAccountBalance = (customer.MainAccountId != null) 
+            ? (await _db.Accounts.Where(a => a.Id == customer.MainAccountId).Select(a => a.OpeningBalance).FirstOrDefaultAsync())
+            : 0;
+
+        decimal priorOrders = await _db.Orders
+            .Where(o => o.CustomerId == customerId && !o.IsDeleted && o.CreatedAt < from && o.Status != OrderStatus.Cancelled)
+            .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
+
+        decimal priorReceipts = await _db.ReceiptVouchers
+            .Where(r => r.CustomerId == customerId && !r.IsDeleted && r.VoucherDate < from)
+            .SumAsync(r => (decimal?)r.Amount) ?? 0;
+
+        decimal balance = initialAccountBalance + priorOrders - priorReceipts;
+
+        if (balance != 0)
+        {
+            lines.Add(new CustomerStatementLine(
+                from.AddSeconds(-1), "رصيد", "OPENING",
+                "رصيد مرحّل من الفترة السابقة", balance, 0, balance));
+        }
 
         foreach (var o in orders)
         {
@@ -110,6 +131,7 @@ public class OperationalReportsController : ControllerBase
 
         var customers = await _db.Customers
             .Include(c => c.Orders)
+            .Include(c => c.MainAccount)
             .Where(c => !c.IsDeleted)
             .ToListAsync();
 
@@ -125,9 +147,10 @@ public class OperationalReportsController : ControllerBase
 
         foreach (var c in customers)
         {
+            var opening  = (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0);
             var invoiced = c.Orders.Where(o => !o.IsDeleted && o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount);
             var paid     = allReceipts.Where(r => r.CustomerId == c.Id).Sum(r => r.Amount);
-            var balance  = invoiced - paid;
+            var balance  = opening + invoiced - paid;
             if (balance <= 0) continue;
 
             // حساب عمر الدين

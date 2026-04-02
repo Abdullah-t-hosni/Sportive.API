@@ -56,6 +56,7 @@ public interface IOrderService
     Task<OrderDetailDto> CreateOrderAsync(int? customerId, CreateOrderDto dto);
     Task<OrderDetailDto> UpdateOrderStatusAsync(int orderId, UpdateOrderStatusDto dto, string updatedByUserId);
     Task<string> GenerateOrderNumberAsync(OrderSource source = OrderSource.Website);
+    Task SyncAllOrderAccountingAsync();
 }
 
 public interface ICartService
@@ -78,6 +79,8 @@ public interface ICustomerService
     Task<AddressDto> AddAddressAsync(int customerId, CreateAddressDto dto);
     Task DeleteAddressAsync(int customerId, int addressId);
     Task SetDefaultAddressAsync(int customerId, int addressId);
+    Task EnsureCustomerAccountAsync(int customerId);
+    Task SyncAllMissingAccountsAsync();
 }
 
 public interface IDashboardService

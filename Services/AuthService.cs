@@ -17,17 +17,20 @@ public class AuthService : IAuthService
     private readonly RoleManager<IdentityRole> _roleManager;
     private readonly IConfiguration _config;
     private readonly AppDbContext _db;
+    private readonly ICustomerService _customerService;
 
     public AuthService(
         UserManager<AppUser> userManager, 
         RoleManager<IdentityRole> roleManager, 
         IConfiguration config,
-        AppDbContext db)
+        AppDbContext db,
+        ICustomerService customerService)
     {
         _userManager = userManager;
         _roleManager = roleManager;
         _config = config;
         _db = db;
+        _customerService = customerService;
     }
 
     public async Task<AuthResponseDto> RegisterAsync(RegisterDto dto, bool isCustomer = true)
@@ -107,6 +110,9 @@ public class AuthService : IAuthService
                 _db.Customers.Add(customer);
             }
             await _db.SaveChangesAsync();
+            
+            // ── Auto-create Account ──
+            await _customerService.EnsureCustomerAccountAsync(customer.Id);
         }
 
         return await LoginInternalAsync(user);

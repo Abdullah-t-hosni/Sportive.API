@@ -63,7 +63,7 @@ public class DataMaintenanceController : ControllerBase
 
                 foreach (var table in tablesToTruncate)
                 {
-                    try { await _db.Database.ExecuteSqlRawAsync($"TRUNCATE TABLE `{table}`;"); } catch { }
+                    try { await _db.Database.ExecuteSqlRawAsync("TRUNCATE TABLE `" + table + "`;"); } catch { }
                 }
 
                 // 2. Identity - حذف العملاء مع حماية الأدمن

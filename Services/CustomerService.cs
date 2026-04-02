@@ -18,6 +18,7 @@ public class CustomerService : ICustomerService
         var query = _db.Customers
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
+            .Include(c => c.MainAccount)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -46,7 +47,14 @@ public class CustomerService : ICustomerService
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
                 )).ToList(),
                 c.AppUserId,
-                _db.JournalLines.Where(l => l.CustomerId == c.Id && !l.IsDeleted && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
+                (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + 
+                _db.JournalLines
+                   .Where(l => 
+                       (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && 
+                       !l.IsDeleted && 
+                       !l.JournalEntry.IsDeleted &&
+                       l.JournalEntry.Status == JournalEntryStatus.Posted)
+                   .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
             ))
             .ToListAsync();
 
@@ -59,6 +67,7 @@ public class CustomerService : ICustomerService
         await _db.Customers
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
+            .Include(c => c.MainAccount)
             .Where(c => c.Id == id)
             .Select(c => new CustomerDetailDto(
                 c.Id, c.FirstName, c.LastName, c.Email, c.Phone,
@@ -70,7 +79,7 @@ public class CustomerService : ICustomerService
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
                 )).ToList(),
                 c.AppUserId,
-                _db.JournalLines.Where(l => l.CustomerId == c.Id && !l.IsDeleted && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
+                (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + _db.JournalLines.Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && !l.IsDeleted && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
             ))
             .FirstOrDefaultAsync();
 
@@ -78,6 +87,7 @@ public class CustomerService : ICustomerService
         await _db.Customers
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
+            .Include(c => c.MainAccount)
             .Where(c => c.Email == email)
             .Select(c => new CustomerDetailDto(
                 c.Id, c.FirstName, c.LastName, c.Email, c.Phone,
@@ -89,7 +99,7 @@ public class CustomerService : ICustomerService
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
                 )).ToList(),
                 c.AppUserId,
-                _db.JournalLines.Where(l => l.CustomerId == c.Id && !l.IsDeleted && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
+                (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + _db.JournalLines.Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && !l.IsDeleted && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
             ))
             .FirstOrDefaultAsync();
 
@@ -108,13 +118,6 @@ public class CustomerService : ICustomerService
                 throw new Exception("هذا العميل (أو الهاتف) مسجل بالفعل في ملفات العملاء النشطة.");
             
             // Restore deleted
-            existing.IsDeleted = false;
-            if (!string.IsNullOrEmpty(dto.FirstName)) existing.FirstName = dto.FirstName;
-            if (!string.IsNullOrEmpty(dto.LastName))  existing.LastName  = dto.LastName;
-            existing.Phone = dto.Phone;
-            if (!string.IsNullOrEmpty(dto.Email)) existing.Email = dto.Email;
-            
-            existing.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
             return (await GetCustomerByIdAsync(existing.Id))!;
         }
@@ -148,40 +151,54 @@ public class CustomerService : ICustomerService
         _db.Customers.Add(customer);
         await _db.SaveChangesAsync();
 
-        // ── Auto-create Customer Account in Chart of Accounts ──
-        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
-        if (parent != null)
-        {
-            var maxCode = await _db.Accounts.Where(a => a.ParentId == parent.Id).MaxAsync(a => (string?)a.Code);
-            long nextCodeNum = 1;
-            if (maxCode != null && maxCode.StartsWith("1103") && long.TryParse(maxCode.Substring(4), out var existingNum)) {
-                nextCodeNum = existingNum + 1;
-            } else {
-                nextCodeNum = 1;
-            }
-            var newCode = $"1103{nextCodeNum:D4}";
-
-            var account = new Account
-            {
-                Code = newCode,
-                NameAr = $"عميل - {customer.FullName}",
-                Type = AccountType.Asset,
-                Nature = AccountNature.Debit,
-                ParentId = parent.Id,
-                Level = parent.Level + 1,
-                IsLeaf = true,
-                AllowPosting = true,
-                IsSystem = false,
-                CreatedAt = DateTime.UtcNow
-            };
-            _db.Accounts.Add(account);
-            await _db.SaveChangesAsync();
-
-            customer.MainAccountId = account.Id;
-            await _db.SaveChangesAsync();
-        }
+        // ── Auto-create Account ──
+        await EnsureCustomerAccountAsync(customer.Id);
 
         return (await GetCustomerByIdAsync(customer.Id))!;
+    }
+
+    public async Task EnsureCustomerAccountAsync(int customerId)
+    {
+        var customer = await _db.Customers.FindAsync(customerId);
+        if (customer == null || customer.MainAccountId != null) return;
+
+        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
+        if (parent == null) return;
+
+        var maxCode = await _db.Accounts.Where(a => a.ParentId == parent.Id).MaxAsync(a => (string?)a.Code);
+        long nextCodeNum = 1;
+        if (maxCode != null && maxCode.Length > 4 && long.TryParse(maxCode.Substring(4), out var existingNum)) {
+            nextCodeNum = existingNum + 1;
+        }
+        var newCode = $"1103{nextCodeNum:D4}";
+
+        var account = new Account
+        {
+            Code = newCode,
+            NameAr = $"عميل - {customer.FullName}",
+            Type = AccountType.Asset,
+            Nature = AccountNature.Debit,
+            ParentId = parent.Id,
+            Level = parent.Level + 1,
+            IsLeaf = true,
+            AllowPosting = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        
+        _db.Accounts.Add(account);
+        await _db.SaveChangesAsync();
+
+        customer.MainAccountId = account.Id;
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task SyncAllMissingAccountsAsync()
+    {
+        var customers = await _db.Customers.Where(c => c.MainAccountId == null).ToListAsync();
+        foreach (var c in customers)
+        {
+            try { await EnsureCustomerAccountAsync(c.Id); } catch { /* ignore */ }
+        }
     }
 
     public async Task<AddressDto> AddAddressAsync(int customerId, CreateAddressDto dto)

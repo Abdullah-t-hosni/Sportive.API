@@ -76,7 +76,18 @@ public class AccountingService : IAccountingService
         string salesDiscAcct  = GetMap(mapDict, "salesDiscountAccountID", SALES_DISCOUNT);
         string inventoryAcct  = GetMap(mapDict, "inventoryAccountID", INVENTORY);
         string cogsAcct       = GetMap(mapDict, "costOfGoodsSoldAccountID", COGS);
-        string receivablesAcct = GetMap(mapDict, "customerAccountID", RECEIVABLES);
+        
+        // --- CUSTOMER ACCOUNT RESOLUTION ---
+        string receivablesAcct = RECEIVABLES; // Default generic
+        if (order.Customer?.MainAccountId != null)
+        {
+            var acc = await _db.Accounts.FindAsync(order.Customer.MainAccountId);
+            if (acc != null) receivablesAcct = acc.Code;
+        }
+        else
+        {
+            receivablesAcct = GetMap(mapDict, "customerAccountID", RECEIVABLES);
+        }
         
         // Delivery Revenue (Store specific > Web Mapping > Default)
         string deliveryRevAcct = !string.IsNullOrEmpty(store?.DeliveryRevenueAccountId) ? store.DeliveryRevenueAccountId 
@@ -125,29 +136,41 @@ public class AccountingService : IAccountingService
         if (order.DeliveryFee > 0)
             lines.Add((deliveryRevAcct, 0, order.DeliveryFee, $"إيراد توصيل - {order.OrderNumber} (دائن)"));
 
-        // ── 2. Debits (Discount + Receivables/Cash) ───────────
+        // ── 2. Debits (Discount + Receivables/Cash/Mixed) ────────
         if (order.DiscountAmount > 0)
             lines.Add((salesDiscAcct, order.DiscountAmount, 0, $"خصم ممنوح - {order.OrderNumber} (مدين)"));
 
         var netReceivable = order.TotalAmount; 
         
-        // POS is usually paid instantly unless credit. Website is paid if Paid (Online/COD delivered).
-        bool isCashCollection = (order.Source == OrderSource.POS && order.PaymentStatus == PaymentStatus.Paid) ||
-                                (order.Source == OrderSource.Website && order.PaymentMethod != PaymentMethod.Credit && order.PaymentStatus == PaymentStatus.Paid);
+        // --- SMART CUSTOMER LEDGER ROUTING ---
+        // If we have a customer, we ALWAYS record the receivable on them first to ensure it shows in their aging/balance.
+        // If it's a cash/paid sale, we will add a second part to "Collect" it.
+        
+        bool isCredit = order.PaymentMethod == PaymentMethod.Credit || order.PaymentStatus == PaymentStatus.Pending;
+        var note = order.AdminNotes ?? "";
 
-        if (isCashCollection)
+        if (isCredit)
         {
-            // --- SMART MIXED PAYMENT SPLIT ---
-            var note = order.AdminNotes ?? "";
+            // ── Pure Credit Sale: Customer is Debited
+            lines.Add((receivablesAcct, netReceivable, 0, $"مستحق على العميل (آجل) - {order.OrderNumber}"));
+        }
+        else
+        {
+            // ── Paid Sale for a Known Customer:
+            // 1. Debit Customer (Record the sale in their ledger)
+            // 2. Credit Customer & Debit Cash/Bank (Record the immediate payment)
+            
+            // Step 1: Record in Customer Sub-ledger
+            lines.Add((receivablesAcct, netReceivable, 0, $"إثبات مبيعات عميل - {order.OrderNumber}"));
+            
+            // Step 2 & 3: Handle Payments (Supporting Mixed Payments)
             bool isJsonMixed = note.Trim().StartsWith("{") && note.Contains("mixed");
-            bool isStringMixed = note.Contains("Mixed:", StringComparison.OrdinalIgnoreCase);
-
             var splits = new List<(PaymentMethod method, decimal amount)>();
 
             if (isJsonMixed)
             {
                 try {
-                    using var doc = JsonDocument.Parse(note);
+                    using var doc = System.Text.Json.JsonDocument.Parse(note);
                     if (doc.RootElement.TryGetProperty("mixed", out var mixedProps)) {
                         foreach (var prop in mixedProps.EnumerateObject()) {
                             var m = prop.Name.ToLower() switch {
@@ -163,43 +186,23 @@ public class AccountingService : IAccountingService
                     }
                 } catch { /* Fallback */ }
             }
-            
-            if (splits.Count == 0 && isStringMixed)
-            {
-                var cleanNote = note.Replace("Mixed:", "").Replace("/", " ").Replace("-", " ");
-                foreach (var pair in cleanNote.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)) {
-                    var kv = pair.Split('=');
-                    if (kv.Length == 2 && decimal.TryParse(kv[1].Trim(), out decimal v)) {
-                        var k = kv[0].Trim().ToLower();
-                        var m = k switch {
-                            var s when s.Contains("cash") => PaymentMethod.Cash,
-                            var s when s.Contains("bank") || s.Contains("card") || s.Contains("visa") => PaymentMethod.Bank,
-                            var s when s.Contains("vodafone") => PaymentMethod.Vodafone,
-                            var s when s.Contains("insta") => PaymentMethod.InstaPay,
-                            _ => PaymentMethod.Cash
-                        };
-                        splits.Add((m, v));
-                    }
-                }
-            }
 
             if (splits.Count > 0)
             {
                 foreach (var (m, v) in splits) {
-                    var code = GetMappedCashAccount(m, order.Source, mapDict);
-                    lines.Add((code, v, 0, $"تحصيل ({m} مختلط) - {order.OrderNumber}"));
+                    string cashAcct = GetMappedCashAccount(m, order.Source, mapDict);
+                    // Money into Bank/Cash, Money out of Customer
+                    lines.Add((cashAcct, v, 0, $"تحصيل ({m}) - {order.OrderNumber}"));
+                    lines.Add((receivablesAcct, 0, v, $"سداد فوري للعميل ({m}) - {order.OrderNumber}"));
                 }
             }
             else
             {
-                var cashCode = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-                var sourceName = order.Source == OrderSource.POS ? "كاشير" : "موقع";
-                lines.Add((cashCode, netReceivable, 0, $"تحصيل نقدي {sourceName} - {order.OrderNumber} (مدين)"));
+                string cashAcct = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+                // Money into Bank/Cash, Money out of Customer
+                lines.Add((cashAcct, netReceivable, 0, $"تحصيل مبيعات نقدية - {order.OrderNumber}"));
+                lines.Add((receivablesAcct, 0, netReceivable, $"سداد فوري للعميل - {order.OrderNumber}"));
             }
-        }
-        else
-        {
-            lines.Add((receivablesAcct, netReceivable, 0, $"مستحق على العميل - {order.OrderNumber} (مدين)"));
         }
 
         // ── 3. COGS / Inventory (Continuous Inventory) ─────────
@@ -287,7 +290,8 @@ public class AccountingService : IAccountingService
         var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
         var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
 
-        string receivablesAcct = GetMap(mapDict, "customerAccountID", RECEIVABLES);
+        string receivablesAcct = order.Customer?.MainAccountId?.ToString() 
+                               ?? GetMap(mapDict, "customerAccountID", RECEIVABLES);
         var cashCode = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
@@ -668,5 +672,24 @@ public class AccountingService : IAccountingService
 
         _db.JournalEntries.Add(entry);
         await _db.SaveChangesAsync();
+    }
+
+    private string GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, string> mapDict)
+    {
+        string baseKey = source == OrderSource.POS ? "posCashAccountID" : "cashAccountID";
+        string fallback = GetMap(mapDict, baseKey, source == OrderSource.POS ? CASH_CASHIER : CASH_WEBSITE);
+
+        return method switch
+        {
+            PaymentMethod.Vodafone => source == OrderSource.POS ? GetMap(mapDict, "posVodafoneAccountID", VODAFONE) : GetMap(mapDict, "vodafoneCashAccountID", VODAFONE_WEB),
+            PaymentMethod.InstaPay => source == OrderSource.POS ? GetMap(mapDict, "posInstapayAccountID", INSTAPAY) : GetMap(mapDict, "instapayAccountID", INSTAPAY_WEB),
+            PaymentMethod.Bank     => source == OrderSource.POS ? GetMap(mapDict, "posBankAccountID", BANK) : GetMap(mapDict, "bankAccountID", BANK),
+            _                      => fallback
+        };
+    }
+
+    private string GetMap(Dictionary<string, string> map, string key, string fallback)
+    {
+        return map.TryGetValue(key.ToLower(), out var val) && !string.IsNullOrEmpty(val) ? val : fallback;
     }
 }

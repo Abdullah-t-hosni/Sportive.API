@@ -86,7 +86,7 @@ public class UsersController : ControllerBase
         return Ok(new { message = "تم تحديث بيانات المستخدم بنجاح" });
     }
 
-    // ── Reset Password ──────────────────────────────────────
+    // ── Reset Password (ADMIN OVERRIDE) ────────────────────
     public record ResetPasswordDto(string NewPassword);
     [HttpPost("{id}/reset-password")]
     public async Task<IActionResult> ResetPassword(string id, [FromBody] ResetPasswordDto dto)
@@ -94,11 +94,14 @@ public class UsersController : ControllerBase
         var user = await _userManager.FindByIdAsync(id);
         if (user == null) return NotFound(new { message = "المستخدم غير موجود" });
 
-        // Force password reset (Admin override)
-        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
-        var result = await _userManager.ResetPasswordAsync(user, token, dto.NewPassword);
+        if (string.IsNullOrWhiteSpace(dto.NewPassword)) return BadRequest(new { message = "كلمة المرور لا يمكن أن تكون فارغة" });
 
-        if (!result.Succeeded) return BadRequest(result.Errors);
+        // 🛡️ STRATEGY: Hard override by removing and adding password
+        await _userManager.RemovePasswordAsync(user);
+        var result = await _userManager.AddPasswordAsync(user, dto.NewPassword);
+
+        if (!result.Succeeded) 
+            return BadRequest(new { message = "فشل تغيير كلمة المرور", errors = result.Errors.Select(e => e.Description) });
 
         return Ok(new { message = "تم تغيير كلمة المرور بنجاح" });
     }

@@ -366,5 +366,11 @@ static async Task SeedAsync(WebApplication app)
         admin.PhoneNumber = "01111111111";
         await userManager.UpdateAsync(admin);
     }
-    Log.Information("Seed process completed successfully.");
+    var customerService = scope.ServiceProvider.GetRequiredService<ICustomerService>();
+    await customerService.SyncAllMissingAccountsAsync();
+
+    var orderService = scope.ServiceProvider.GetRequiredService<IOrderService>();
+    await orderService.SyncAllOrderAccountingAsync();
+
+    Log.Information("Seed process and accounting synchronization completed successfully.");
 }
