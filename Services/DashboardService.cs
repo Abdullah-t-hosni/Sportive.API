@@ -188,10 +188,13 @@ public class DashboardService : IDashboardService
 
         // 1. Sales by City (Heatmap)
         var salesByCity = await _db.Orders
-            .Include(o => o.DeliveryAddress)
-            .Where(o => o.Status != OrderStatus.Cancelled && o.DeliveryAddress != null)
-            .GroupBy(o => o.DeliveryAddress!.City)
-            .Select(g => new LocationStatDto(g.Key, g.Count(), g.Sum(o => (decimal?)o.TotalAmount) ?? 0))
+            .Where(o => o.Status != OrderStatus.Cancelled && o.DeliveryAddressId != null)
+            .Select(o => new { o.DeliveryAddress!.City, o.TotalAmount })
+            .GroupBy(o => o.City)
+            .Select(g => new LocationStatDto(
+                g.Key, 
+                g.Count(), 
+                g.Sum(x => (decimal?)x.TotalAmount) ?? 0))
             .OrderByDescending(x => x.TotalRevenue)
             .Take(10)
             .ToListAsync();
