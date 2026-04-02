@@ -3,6 +3,7 @@ using Sportive.API.Data;
 using System.Text.Json;
 using Sportive.API.Models;
 using System.Collections.Concurrent;
+using Sportive.API.DTOs;
 
 namespace Sportive.API.Services;
 
@@ -20,6 +21,9 @@ public interface IAccountingService
     Task PostOrderRefundAsync(Order order);
     Task PostSupplierPaymentAsync(SupplierPayment payment);
     Task ReverseEntryAsync(int journalEntryId, string reason);
+    Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, string? userId);
+    Task PostReceiptVoucherAsync(ReceiptVoucher voucher);
+    Task PostPaymentVoucherAsync(PaymentVoucher voucher);
 }
 
 public class AccountingService : IAccountingService
@@ -509,6 +513,62 @@ public class AccountingService : IAccountingService
 
         _db.JournalEntries.Add(reversal);
         await _db.SaveChangesAsync();
+    }
+
+    // ── MANUAL & VOUCHER POSTING ─────────────────────────
+
+    public async Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, string? userId)
+    {
+        var count = await _db.JournalEntries.IgnoreQueryFilters().CountAsync() + 1;
+        var entry = new JournalEntry
+        {
+            EntryNumber = $"JE-{DateTime.UtcNow:yy}{count:D5}",
+            EntryDate = dto.EntryDate,
+            Description = dto.Description,
+            Reference = dto.Reference,
+            Type = JournalEntryType.Manual,
+            Status = JournalEntryStatus.Posted,
+            CreatedByUserId = userId
+        };
+
+        foreach (var l in dto.Lines)
+        {
+            entry.Lines.Add(new JournalLine
+            {
+                AccountId = l.AccountId,
+                Debit = l.Debit,
+                Credit = l.Credit,
+                Description = l.Description,
+                CustomerId = l.CustomerId,
+                SupplierId = l.SupplierId
+            });
+        }
+
+        _db.JournalEntries.Add(entry);
+        await _db.SaveChangesAsync();
+        return entry;
+    }
+
+    public async Task PostReceiptVoucherAsync(ReceiptVoucher voucher)
+    {
+        var lines = new List<(string code, decimal debit, decimal credit, string desc)>
+        {
+            (voucher.CashAccountId.ToString(), voucher.Amount, 0, $"سند قبض {voucher.VoucherNumber} - {voucher.Description}"),
+            (voucher.FromAccountId.ToString(), 0, voucher.Amount, $"من حساب {voucher.FromAccount?.NameAr} - {voucher.VoucherNumber}")
+        };
+
+        await PostEntry(JournalEntryType.ReceiptVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, customerId: voucher.CustomerId);
+    }
+
+    public async Task PostPaymentVoucherAsync(PaymentVoucher voucher)
+    {
+        var lines = new List<(string code, decimal debit, decimal credit, string desc)>
+        {
+            (voucher.ToAccountId.ToString(), voucher.Amount, 0, $"سند صرف {voucher.VoucherNumber} - {voucher.Description}"),
+            (voucher.CashAccountId.ToString(), 0, voucher.Amount, $"من حساب {voucher.CashAccount?.NameAr} - {voucher.VoucherNumber}")
+        };
+
+        await PostEntry(JournalEntryType.PaymentVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, supplierId: voucher.SupplierId);
     }
 
     // ══════════════════════════════════════════════════════

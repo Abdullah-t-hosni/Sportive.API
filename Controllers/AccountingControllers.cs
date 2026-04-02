@@ -7,8 +7,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
-using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
+using Sportive.API.Services;
+using Sportive.API.DTOs;
 using System.Security.Claims;
 
 namespace Sportive.API.Controllers;
@@ -48,7 +49,7 @@ public class AccountsController : ControllerBase
 
         var account = new Account
         {
-            Code           = dto.Code,
+            Code           = dto.Code ?? string.Empty,
             NameAr         = dto.NameAr,
             NameEn         = dto.NameEn,
             Type           = dto.Type,
@@ -98,7 +99,7 @@ public class AccountsController : ControllerBase
     [HttpGet("mappings")]
     public async Task<IActionResult> GetMappings()
     {
-        var mappings = await _db.AccountMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
+        var mappings = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
         return Ok(mappings);
     }
 
@@ -116,7 +117,7 @@ public class AccountsController : ControllerBase
 
         foreach (var kvp in body)
         {
-            var mapping = await _db.AccountMappings.FirstOrDefaultAsync(m => m.Key == kvp.Key);
+            var mapping = await _db.AccountSystemMappings.FirstOrDefaultAsync(m => m.Key == kvp.Key);
             if (mapping != null)
             {
                 mapping.AccountId = kvp.Value;
@@ -124,7 +125,7 @@ public class AccountsController : ControllerBase
             }
             else
             {
-                _db.AccountMappings.Add(new AccountMapping { Key = kvp.Key, AccountId = kvp.Value });
+                _db.AccountSystemMappings.Add(new AccountSystemMapping { Key = kvp.Key, AccountId = kvp.Value });
             }
         }
 
@@ -209,10 +210,10 @@ public class ReceiptVouchersController : ControllerBase
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(v => v.VoucherDate)
             .Skip((page-1)*pageSize).Take(pageSize)
-            .Select(v => new { v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Notes })
+            .Select(v => new { v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description })
             .ToListAsync();
 
-        return Ok(new PaginatedResult<object>(items, total, page, pageSize, (int)Math.Ceiling(total/(double)pageSize)));
+        return Ok(new { items, total, page, pageSize, totalPages = (int)Math.Ceiling(total/(double)pageSize) });
     }
 
     [HttpPost]
@@ -248,10 +249,10 @@ public class PaymentVouchersController : ControllerBase
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(v => v.VoucherDate)
             .Skip((page-1)*pageSize).Take(pageSize)
-            .Select(v => new { v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Notes })
+            .Select(v => new { v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description })
             .ToListAsync();
 
-        return Ok(new PaginatedResult<object>(items, total, page, pageSize, (int)Math.Ceiling(total/(double)pageSize)));
+        return Ok(new { items, total, page, pageSize, totalPages = (int)Math.Ceiling(total/(double)pageSize) });
     }
 
     [HttpPost]

@@ -48,6 +48,9 @@ public record CreateAccountDto(
     AccountType  Type,
     AccountNature Nature,
     int?    ParentId,
+    decimal OpeningBalance = 0,
+    int     Level = 1,
+    bool    IsLeaf = true,
     bool    AllowPosting = true
 );
 
