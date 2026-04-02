@@ -189,7 +189,8 @@ public class DashboardService : IDashboardService
         // 1. Sales by City (Heatmap)
         var salesByCity = await _db.Orders
             .Where(o => !o.IsDeleted && o.Status != OrderStatus.Cancelled && o.DeliveryAddressId != null)
-            .GroupBy(o => o.DeliveryAddress!.City)
+            .Select(o => new { City = o.DeliveryAddress!.City, o.TotalAmount }) // 👈 Explicit projection helps EF Core translation
+            .GroupBy(x => x.City)
             .Select(g => new LocationStatDto(
                 g.Key, 
                 g.Count(), 
