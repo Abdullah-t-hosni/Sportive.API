@@ -181,8 +181,8 @@ public class JournalEntriesController : ControllerBase
     {
         var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Id == id);
         if (entry == null) return NotFound();
-        if (entry.Status == JournalEntryStatus.Posted)
-            return BadRequest("لا يمكن حذف قيد مرحّل.");
+        if (entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
+            return BadRequest("لا يمكن حذف قيد مرحّل إلا من خلال الإدارة.");
 
         entry.IsDeleted = true;
         await _db.SaveChangesAsync();
@@ -227,6 +227,24 @@ public class ReceiptVouchersController : ControllerBase
         await _accounting.PostReceiptVoucherAsync(voucher);
         return Ok(voucher);
     }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var voucher = await _db.ReceiptVouchers.FindAsync(id);
+        if (voucher == null) return NotFound();
+
+        // السماح بحذف القيد المرحّل للمدير فقط عبر فحص القيد المحاسبي المرتبط
+        var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber);
+        if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
+            return BadRequest("لا يمكن حذف سند مرحّل إلا من خلال الإدارة.");
+
+        voucher.IsDeleted = true;
+        if (entry != null) entry.IsDeleted = true;
+
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
 }
 
 // 4. PAYMENT VOUCHERS (سندات الصرف)
@@ -265,5 +283,22 @@ public class PaymentVouchersController : ControllerBase
         // ترحيل تلقائي للمحاسبة
         await _accounting.PostPaymentVoucherAsync(voucher);
         return Ok(voucher);
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var voucher = await _db.PaymentVouchers.FindAsync(id);
+        if (voucher == null) return NotFound();
+
+        var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == voucher.VoucherNumber);
+        if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
+            return BadRequest("لا يمكن حذف سند مرحّل إلا من خلال الإدارة.");
+
+        voucher.IsDeleted = true;
+        if (entry != null) entry.IsDeleted = true;
+
+        await _db.SaveChangesAsync();
+        return NoContent();
     }
 }

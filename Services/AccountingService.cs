@@ -520,13 +520,16 @@ public class AccountingService : IAccountingService
     public async Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, string? userId)
     {
         var count = await _db.JournalEntries.IgnoreQueryFilters().CountAsync() + 1;
+        var type  = dto.Type ?? JournalEntryType.Manual;
+        var prefix = type == JournalEntryType.OpeningBalance ? "OPE" : "JE";
+        
         var entry = new JournalEntry
         {
-            EntryNumber = $"JE-{DateTime.UtcNow:yy}{count:D5}",
+            EntryNumber = $"{prefix}-{DateTime.UtcNow:yy}{count:D5}",
             EntryDate = dto.EntryDate,
             Description = dto.Description,
             Reference = dto.Reference,
-            Type = JournalEntryType.Manual,
+            Type = type,
             Status = JournalEntryStatus.Posted,
             CreatedByUserId = userId
         };

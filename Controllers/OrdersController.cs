@@ -184,4 +184,54 @@ public class OrdersController : ControllerBase
         await _db.SaveChangesAsync();
         return Ok(new { paymentStatus = order.PaymentStatus.ToString() });
     }
+
+    [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin,Manager")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var order = await _db.Orders
+            .Include(o => o.Items)
+            .Include(o => o.Customer)
+            .FirstOrDefaultAsync(o => o.Id == id && !o.IsDeleted);
+
+        if (order == null) return NotFound();
+
+        using var scope = _scopeFactory.CreateScope();
+        var inventory = scope.ServiceProvider.GetRequiredService<IInventoryService>();
+
+        foreach (var item in order.Items)
+        {
+            // ProductId هو int (ليس Nullable) لذا لا يحتاج HasValue
+            if (item.ProductId > 0)
+            {
+                await inventory.LogMovementAsync(
+                    InventoryMovementType.Adjustment,
+                    item.Quantity, // الإضافة للمخزن بدلاً من الخصم
+                    item.ProductId,
+                    item.ProductVariantId,
+                    order.OrderNumber,
+                    "Order Deleted (Cascade Cleanup)",
+                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                );
+            }
+        }
+
+        // 3. حذف القيد المحاسبي المرتبط بالطلب (Sales Invoice)
+        var salesEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.SalesInvoice && e.Reference == order.OrderNumber);
+        if (salesEntry != null) salesEntry.IsDeleted = true;
+
+        // 4. حذف قيد التحصيل (ReceiptVoucher) أو قيد الرد (PaymentVoucher) لو موجود
+        var paymentEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == order.OrderNumber);
+        if (paymentEntry != null) paymentEntry.IsDeleted = true;
+
+        var refundEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == order.OrderNumber + "-RFD");
+        if (refundEntry != null) refundEntry.IsDeleted = true;
+
+        // 5. حذف الطلب وسجل حالته
+        order.IsDeleted = true;
+        order.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
 }
