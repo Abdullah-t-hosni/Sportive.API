@@ -188,9 +188,8 @@ public class DashboardService : IDashboardService
 
         // 1. Sales by City (Heatmap)
         var salesByCity = await _db.Orders
-            .Where(o => o.Status != OrderStatus.Cancelled && o.DeliveryAddressId != null)
-            .Select(o => new { o.DeliveryAddress!.City, o.TotalAmount })
-            .GroupBy(o => o.City)
+            .Where(o => !o.IsDeleted && o.Status != OrderStatus.Cancelled && o.DeliveryAddressId != null)
+            .GroupBy(o => o.DeliveryAddress!.City)
             .Select(g => new LocationStatDto(
                 g.Key, 
                 g.Count(), 
