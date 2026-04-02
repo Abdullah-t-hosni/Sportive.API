@@ -187,17 +187,21 @@ public class DashboardService : IDashboardService
         var thirtyDaysAgo = now.AddDays(-30);
 
         // 1. Sales by City (Heatmap)
-        var salesByCity = await _db.Orders
+        var salesByCityRaw = await _db.Orders
             .Where(o => !o.IsDeleted && o.Status != OrderStatus.Cancelled && o.DeliveryAddressId != null)
-            .Select(o => new { City = o.DeliveryAddress!.City, o.TotalAmount }) // 👈 Explicit projection helps EF Core translation
-            .GroupBy(x => x.City)
-            .Select(g => new LocationStatDto(
-                g.Key, 
-                g.Count(), 
-                g.Sum(x => (decimal?)x.TotalAmount) ?? 0))
-            .OrderByDescending(x => x.TotalRevenue)
+            .GroupBy(o => o.DeliveryAddress!.City)
+            .Select(g => new { 
+                City = g.Key, 
+                Count = g.Count(), 
+                Total = g.Sum(x => (decimal?)x.TotalAmount) ?? 0 
+            })
+            .OrderByDescending(x => x.Total)
             .Take(10)
             .ToListAsync();
+
+        var salesByCity = salesByCityRaw
+            .Select(s => new LocationStatDto(s.City ?? "Unknown", s.Count, s.Total))
+            .ToList();
 
         // 2. VIP Customers
         var topCustomers = await _db.Customers
@@ -241,43 +245,57 @@ public class DashboardService : IDashboardService
         .ToList();
 
         // 4. Abandoned Carts
-        var abandonedCarts = await _db.CartItems
+        var abandonedCartsRaw = await _db.CartItems
             .Include(c => c.Product)
             .GroupBy(c => c.CustomerId)
             .Select(g => new { 
                 ItemCount = g.Sum(c => c.Quantity),
-                PotentialRevenue = g.Sum(c => c.Quantity * c.Product.Price)
+                PotentialRevenue = g.Sum(c => (decimal?)c.Quantity * (c.Product != null ? c.Product.Price : 0)) ?? 0
             })
             .ToListAsync();
 
         var abandonedCartStats = new AbandonedCartDto(
-            abandonedCarts.Count,
-            abandonedCarts.Sum(x => x.ItemCount),
-            abandonedCarts.Sum(x => x.PotentialRevenue)
+            abandonedCartsRaw.Count,
+            abandonedCartsRaw.Sum(x => x.ItemCount),
+            abandonedCartsRaw.Sum(x => x.PotentialRevenue)
         );
 
         // 5. Payment Methods
-        var paymentMethods = await _db.Orders
+        var paymentMethodsRaw = await _db.Orders
             .GroupBy(o => o.PaymentMethod)
-            .Select(g => new PaymentMethodStatDto(
-                g.Key.ToString(),
-                g.Count(),
-                g.Sum(o => (decimal?)o.TotalAmount) ?? 0
-            ))
+            .Select(g => new {
+                Method = g.Key,
+                Count = g.Count(),
+                Revenue = g.Sum(o => (decimal?)o.TotalAmount) ?? 0
+            })
             .OrderByDescending(x => x.Revenue)
             .ToListAsync();
 
+        var paymentMethods = paymentMethodsRaw
+            .Select(p => new PaymentMethodStatDto(p.Method.ToString(), p.Count, p.Revenue))
+            .ToList();
+
         // 6. Recent Admin Activity
-        var recentActivity = await _db.OrderStatusHistories
+        var recentActivityRaw = await _db.OrderStatusHistories
             .OrderByDescending(h => h.CreatedAt)
             .Take(15)
+            .Select(h => new {
+                h.ChangedByUserId,
+                h.Status,
+                h.OrderId,
+                h.CreatedAt
+            })
+            .ToListAsync();
+
+        var recentActivity = recentActivityRaw
             .Select(h => new AdminActivityDto(
-                h.ChangedByUserId ?? "System", // Basic implementation, could be joined with Users table
+                h.ChangedByUserId ?? "System",
                 $"Changed Order status to {h.Status}",
                 $"Order #{h.OrderId}",
                 h.CreatedAt
             ))
-            .ToListAsync();
+            .ToList();
+
         // 7. Staff Performance (CASHIER/SALES TRACKING)
         var staffOrders = await _db.Orders
             .Where(o => !string.IsNullOrEmpty(o.SalesPersonId) && o.Status != OrderStatus.Cancelled)
