@@ -7,6 +7,7 @@ using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Sportive.API.Services;
@@ -183,7 +184,7 @@ public class AuthService : IAuthService
         return new AuthResponseDto(
             user.Id,
             new JwtSecurityTokenHandler().WriteToken(token),
-            Guid.NewGuid().ToString(), // Mock refresh token
+            GenerateSecureRefreshToken(), // ✅ FIX: Cryptographically secure refresh token
             user.Email ?? "",
             $"{user.FirstName} {user.LastName}",
             roles,
@@ -193,6 +194,17 @@ public class AuthService : IAuthService
             addresses,
             permissions
         );
+    }
+
+    /// <summary>
+    /// ✅ يولّد Refresh Token آمن باستخدام RandomNumberGenerator
+    /// ملاحظة: في الإصدار القادم يجب تخزينه في DB وربطه بالمستخدم لدعم الإلغاء الكامل
+    /// </summary>
+    private static string GenerateSecureRefreshToken()
+    {
+        var bytes = new byte[64];
+        RandomNumberGenerator.Fill(bytes);
+        return Convert.ToBase64String(bytes);
     }
 
     public async Task<bool> ChangePasswordAsync(string userId, ChangePasswordDto dto)

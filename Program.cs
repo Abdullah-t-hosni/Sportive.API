@@ -228,6 +228,9 @@ builder.Services.AddHostedService<BackupHostedService>();
 // Wishlist, Reviews, Analytics — handled directly in controllers
 builder.Services.AddScoped<IWishlistService, WishlistService>();
 
+// ✅ جديد — خدمة سجل التدقيق
+builder.Services.AddScoped<IAuditService, AuditService>();
+
 builder.Services.AddHttpClient("Paymob");
 builder.Services.AddSignalR();
 
@@ -273,8 +276,23 @@ builder.Services.AddControllers()
             new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
 
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
+    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
+});
+
+builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(options =>
+    options.Level = System.IO.Compression.CompressionLevel.Fastest);
+
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<AppDbContext>("database");
+
 // ── BUILD ─────────────────────────────────────────────
 var app = builder.Build();
+
+app.UseResponseCompression();  // ← يجب أن يكون قبل UseStaticFiles
 
 app.UseSwagger();
 app.UseSwaggerUI(c =>
@@ -292,7 +310,7 @@ app.UseMiddleware<ExceptionMiddleware>();
 // app.UseHttpsRedirection();
 app.UseStaticFiles();
 
-// ✅ أضف الكود ده عشان يخدم الصور من مجلد uploads في جذر المشروع
+// ✅ يخدم الصور من مجلد uploads في جذر المشروع
 var uploadsPath = Path.Combine(builder.Environment.ContentRootPath, "uploads");
 if (!Directory.Exists(uploadsPath)) Directory.CreateDirectory(uploadsPath);
 Log.Information("Photo uploads path: {Path}", uploadsPath);
@@ -308,7 +326,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-
+app.MapHealthChecks("/health");
 app.MapHub<NotificationHub>("/notifications-hub");
 
 await SeedAsync(app);

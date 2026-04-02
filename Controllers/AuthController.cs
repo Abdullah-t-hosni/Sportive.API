@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Identity;
 using Sportive.API.Data;
 using Sportive.API.DTOs;
@@ -59,8 +60,8 @@ public class AuthController : ControllerBase
         if (user == null)
             return NotFound(new { message = "User not found with this identifier" });
 
-        // GENERATE MOCK CODE (100000 - 999999)
-        var code = new Random().Next(100000, 999999).ToString();
+        // ✅ FIX: استخدام RandomNumberGenerator الآمن بدلاً من new Random() غير الآمن
+        var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
         _cache.Set($"ResetCode_{dto.Identifier}", code, TimeSpan.FromMinutes(10));
 
         // 🛡️ SECURITY FIX: Only send via email/WhatsApp, never return in production!
@@ -117,7 +118,8 @@ public class AuthController : ControllerBase
     [EnableRateLimiting("auth")]
     public async Task<IActionResult> SendOtp([FromBody] SendOtpDto dto)
     {
-        var code = new Random().Next(100000, 999999).ToString();
+        // ✅ FIX: استخدام RandomNumberGenerator الآمن
+        var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
         // حفظ الكود لمدة 5 دقائق
         _cache.Set($"OtpCode_{dto.PhoneNumber}", code, TimeSpan.FromMinutes(5));
 

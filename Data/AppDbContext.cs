@@ -1,3 +1,6 @@
+// ============================================================
+// Data/AppDbContext.cs — تم إضافة AuditLogs DbSet
+// ============================================================
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Models;
@@ -27,6 +30,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<UserModulePermission> UserModulePermissions => Set<UserModulePermission>();
     public DbSet<StoreInfo> StoreInfo           => Set<StoreInfo>();
 
+    // ✅ جديد — سجل التدقيق للعمليات الحساسة
+    public DbSet<AuditLog> AuditLogs            => Set<AuditLog>();
+
     public DbSet<Supplier>             Suppliers            { get; set; }
     public DbSet<PurchaseInvoice>      PurchaseInvoices     { get; set; }
     public DbSet<PurchaseInvoiceItem>  PurchaseInvoiceItems { get; set; }
@@ -38,7 +44,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<JournalLine>    JournalLines    { get; set; }
     public DbSet<ReceiptVoucher> ReceiptVouchers { get; set; }
     public DbSet<PaymentVoucher> PaymentVouchers { get; set; }
-    
+
     public DbSet<InventoryAudit>     InventoryAudits     { get; set; }
     public DbSet<InventoryAuditItem> InventoryAuditItems => Set<InventoryAuditItem>();
     public DbSet<InventoryMovement>  InventoryMovements  => Set<InventoryMovement>();
@@ -124,8 +130,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.DeliveryAddress).WithMany()
              .HasForeignKey(x => x.DeliveryAddressId).OnDelete(DeleteBehavior.SetNull);
-
-            // 🛡️ TRANSITION: Store Enums as Strings in the database
             e.Property(x => x.Status).HasConversion<string>();
             e.Property(x => x.FulfillmentType).HasConversion<string>();
             e.Property(x => x.PaymentMethod).HasConversion<string>();
@@ -167,6 +171,14 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Notification>(e => {
             e.HasIndex(x => x.UserId);
             e.HasIndex(x => new { x.UserId, x.IsRead });
+        });
+
+        // ── AUDIT LOG ─────────────────────────────────────────
+        builder.Entity<AuditLog>(e => {
+            e.HasIndex(x => x.UserId);
+            e.HasIndex(x => x.EntityType);
+            e.HasIndex(x => x.CreatedAt);
+            e.HasIndex(x => new { x.EntityType, x.EntityId });
         });
 
         // ── PURCHASE & SUPPLIERS ──────────────────────────────

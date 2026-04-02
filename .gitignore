@@ -1,35 +1,45 @@
-## .NET
-bin/
-obj/
+# ✅ SECURITY: أبداً لا ترفع ملفات الـ Secrets الحقيقية
+appsettings.json
+appsettings.Development.json
+appsettings.Production.json
+
+# ارفع فقط المثال بدون بيانات حقيقية
+!appsettings.example.json
+
+# ملفات خطرة — سكريبتات تعديل/حذف قاعدة البيانات
+wipe_db.py
+generate_coa_sql.py
+
+# .NET build outputs
+[Bb]in/
+[Oo]bj/
 out/
+
+# .NET user secrets
 *.user
-*.suo
-.vs/
+*.userosspecific
+
+# Logs
 logs/
 *.log
 
-## Migrations - Railway هيعملها هو
-Migrations/
+# uploads folder (don't commit user uploads)
+uploads/
+wwwroot/uploads/
 
-## Secrets - لا ترفعهم أبداً
-appsettings.Development.json
-appsettings.Production.json
-*.pfx
-*.p12
+# VS & Rider
+.vs/
+.idea/
+*.suo
+*.user
 
-## OS
+# OS
 .DS_Store
 Thumbs.db
 
-node_modules/
-obj/
-bin/
-out/
-Migrations/
-*.Development.json
+# Docker
+.dockerignore
 
-wwwroot/uploads/**/*.jpg
-wwwroot/uploads/**/*.png
-wwwroot/uploads/**/*.webp
-wwwroot/uploads/**/*.jpeg
-appsettings.json
+# Backup files
+/tmp/
+*.bak
