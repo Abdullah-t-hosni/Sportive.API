@@ -42,15 +42,11 @@ var connStr = Environment.GetEnvironmentVariable("DATABASE_URL")
     ?? throw new InvalidOperationException("Connection string is missing.");
 
 if (!connStr.Contains("Allow User Variables=true", StringComparison.OrdinalIgnoreCase))
-{
     connStr = connStr.TrimEnd(';') + ";Allow User Variables=true;";
-}
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-{
     options.UseMySql(connStr, new MySqlServerVersion(new Version(8, 0, 0)),
-        mySqlOptions => mySqlOptions.EnableRetryOnFailure());
-});
+        mySqlOptions => mySqlOptions.EnableRetryOnFailure()));
 
 // ── IDENTITY ──────────────────────────────────────────
 builder.Services.AddIdentity<AppUser, IdentityRole>(options =>
@@ -88,7 +84,7 @@ builder.Services.AddAuthentication(opt =>
         ValidateAudience = true,
         ValidAudience = builder.Configuration["JWT:Audience"],
         ValidateLifetime = true,
-        ClockSkew = TimeSpan.FromMinutes(5) // Increased from Zero to fix production timing shifts
+        ClockSkew = TimeSpan.FromMinutes(5)
     };
 
     opt.Events = new JwtBearerEvents
@@ -98,9 +94,7 @@ builder.Services.AddAuthentication(opt =>
             var accessToken = context.Request.Query["access_token"];
             var path = context.HttpContext.Request.Path;
             if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/notifications-hub"))
-            {
                 context.Token = accessToken;
-            }
             return Task.CompletedTask;
         }
     };
@@ -114,12 +108,9 @@ builder.Services.AddCors(options =>
     {
         var origins = new List<string>
         {
-            "http://localhost:3000",
-            "https://localhost:3000",
-            "http://localhost:5173",
-            "https://localhost:5173",
-            "http://localhost:5174",
-            "https://localhost:5174",
+            "http://localhost:3000", "https://localhost:3000",
+            "http://localhost:5173", "https://localhost:5173",
+            "http://localhost:5174", "https://localhost:5174",
             "https://www.sportive-sportwear.com",
             "https://sportive-sportwear.com",
             "https://admin.sportive-sportwear.com"
@@ -131,26 +122,20 @@ builder.Services.AddCors(options =>
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
         policy.WithOrigins(origins.Distinct(StringComparer.OrdinalIgnoreCase).ToArray())
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+              .AllowAnyHeader().AllowAnyMethod().AllowCredentials();
     }));
 
 // ── RATE LIMITING ─────────────────────────────────────
 builder.Services.AddRateLimiter(options =>
 {
-    // Auth endpoints: max 10 requests per IP per minute
     options.AddPolicy("auth", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit          = 10,
-                Window               = TimeSpan.FromMinutes(1),
-                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                QueueLimit           = 0
+                PermitLimit = 10, Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 0
             }));
-
     options.RejectionStatusCode = 429;
     options.OnRejected = async (context, _) =>
     {
@@ -165,12 +150,9 @@ builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
 
 var redisConn = builder.Configuration.GetConnectionString("Redis");
-
 if (!string.IsNullOrEmpty(redisConn))
 {
-    builder.Services.AddStackExchangeRedisCache(opt =>
-        opt.Configuration = redisConn);
-
+    builder.Services.AddStackExchangeRedisCache(opt => opt.Configuration = redisConn);
     builder.Services.AddScoped<ICacheService, RedisCacheService>();
 }
 else
@@ -194,12 +176,7 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
                     .Select(x => string.IsNullOrEmpty(x.ErrorMessage) ? x.Exception?.Message : x.ErrorMessage)
                     .Where(m => !string.IsNullOrEmpty(m))
                     .ToArray());
-
-        return new BadRequestObjectResult(new
-        {
-            message = "Validation failed",
-            errors
-        });
+        return new BadRequestObjectResult(new { message = "Validation failed", errors });
     };
 });
 
@@ -224,29 +201,35 @@ builder.Services.AddHttpClient<IWhatsAppApiService, WhatsAppApiService>();
 builder.Services.AddScoped<IBackupService, BackupService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddHostedService<BackupHostedService>();
-
-// Wishlist, Reviews, Analytics — handled directly in controllers
 builder.Services.AddScoped<IWishlistService, WishlistService>();
-
-// ✅ جديد — خدمة سجل التدقيق
-builder.Services.AddScoped<IAuditService, AuditService>();
-
 builder.Services.AddHttpClient("Paymob");
 builder.Services.AddSignalR();
 
+// ── RESPONSE COMPRESSION ──────────────────────────────
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
+    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
+});
+builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(
+    options => options.Level = System.IO.Compression.CompressionLevel.Fastest);
+
+// ── HEALTH CHECKS ─────────────────────────────────────
+// ✅ Basic health check — no extra NuGet package needed
+builder.Services.AddHealthChecks();
 
 // ── SWAGGER ───────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
-
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "Sportive API", Version = "v1" });
-    
-    // ✅ CRITICAL FIX: Resolve duplicate routes or overlapping controllers (e.g. Dashboard)
+
+    // ✅ FIX 1: Handle any remaining duplicate routes gracefully
     c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
-    
-    // ✅ FIX: Avoid schema ID conflicts using full type names
-    c.CustomSchemaIds(type => type.FullName);
+
+    // ✅ FIX 2: Use short type names to avoid FullName issues with nested/generic types
+    c.CustomSchemaIds(type => type.Name);
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
@@ -257,16 +240,11 @@ builder.Services.AddSwaggerGen(c =>
         In = ParameterLocation.Header,
         Description = "Enter: Bearer {token}"
     });
-
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {{
         new OpenApiSecurityScheme
         {
-            Reference = new OpenApiReference
-            {
-                Type = ReferenceType.SecurityScheme,
-                Id = "Bearer"
-            }
+            Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
         },
         Array.Empty<string>()
     }});
@@ -278,29 +256,16 @@ builder.Services.AddControllers()
     {
         x.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         x.JsonSerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;
-        // ✅ FIX: Handle circular references in Swagger schema generation
-        x.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+        x.JsonSerializerOptions.ReferenceHandler =
+            System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
         x.JsonSerializerOptions.Converters.Add(
             new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
 
-builder.Services.AddResponseCompression(options =>
-{
-    options.EnableForHttps = true;
-    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
-    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
-});
-
-builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(options =>
-    options.Level = System.IO.Compression.CompressionLevel.Fastest);
-
-builder.Services.AddHealthChecks()
-    .AddDbContextCheck<AppDbContext>("database");
-
 // ── BUILD ─────────────────────────────────────────────
 var app = builder.Build();
 
-app.UseResponseCompression();  // ← يجب أن يكون قبل UseStaticFiles
+app.UseResponseCompression();
 
 app.UseSwagger();
 app.UseSwaggerUI(c =>
@@ -314,11 +279,8 @@ app.UseCors("AllowReactApp");
 app.UseSerilogRequestLogging();
 app.UseMiddleware<ExceptionMiddleware>();
 
-// ⚠️ UseHttpsRedirection removed — Railway terminates SSL at proxy level
-// app.UseHttpsRedirection();
 app.UseStaticFiles();
 
-// ✅ يخدم الصور من مجلد uploads في جذر المشروع
 var uploadsPath = Path.Combine(builder.Environment.ContentRootPath, "uploads");
 if (!Directory.Exists(uploadsPath)) Directory.CreateDirectory(uploadsPath);
 Log.Information("Photo uploads path: {Path}", uploadsPath);
@@ -339,7 +301,6 @@ app.MapHub<NotificationHub>("/notifications-hub");
 
 await SeedAsync(app);
 
-// ── Railway dynamic PORT fix ──────────────────────────
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Run($"http://0.0.0.0:{port}");
 
@@ -347,42 +308,28 @@ app.Run($"http://0.0.0.0:{port}");
 static async Task SeedAsync(WebApplication app)
 {
     using var scope = app.Services.CreateScope();
-
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var db          = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
 
-    try
-    {
-        await db.Database.MigrateAsync();
-
-    }
-    catch (Exception ex)
-    {
-        Log.Warning(ex, "Schema update or Migration failed, but continuing...");
-    }
+    try { await db.Database.MigrateAsync(); }
+    catch (Exception ex) { Log.Warning(ex, "Migration failed, continuing..."); }
 
     foreach (var role in AppRoles.All)
-    {
         if (!await roleManager.RoleExistsAsync(role))
             await roleManager.CreateAsync(new IdentityRole(role));
-    }
 
     var adminEmail    = Environment.GetEnvironmentVariable("ADMIN_EMAIL")    ?? "admin@sportive.com";
     var adminPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD") ?? "Admin@123456";
 
-    // Admin 1
     var admin = await userManager.FindByEmailAsync(adminEmail);
     if (admin == null)
     {
         admin = new AppUser
         {
-            UserName = adminEmail,
-            Email = adminEmail,
-            PhoneNumber = "01111111111",
-            FirstName = "Sport",
-            LastName = "Zone",
-            IsActive = true
+            UserName = adminEmail, Email = adminEmail,
+            PhoneNumber = "01111111111", FirstName = "Sport",
+            LastName = "Zone", IsActive = true
         };
         await userManager.CreateAsync(admin, adminPassword);
         await userManager.AddToRoleAsync(admin, "Admin");
@@ -392,6 +339,7 @@ static async Task SeedAsync(WebApplication app)
         admin.PhoneNumber = "01111111111";
         await userManager.UpdateAsync(admin);
     }
+
     var customerService = scope.ServiceProvider.GetRequiredService<ICustomerService>();
     await customerService.SyncAllMissingAccountsAsync();
 
