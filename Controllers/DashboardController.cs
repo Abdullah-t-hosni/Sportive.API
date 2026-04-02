@@ -17,9 +17,8 @@ public class DashboardController : ControllerBase
     public async Task<IActionResult> GetStats() =>
         Ok(await _dashboard.GetStatsAsync());
 
-    [HttpGet("kpi")]
-    public async Task<IActionResult> GetKpi() =>
-        Ok(await _dashboard.GetKpiAsync());
+    // ✅ kpi endpoint moved to DashboardKpiController (api/dashboard/kpi)
+    // Removed duplicate [HttpGet("kpi")] that was causing Swagger 500 error
 
     [HttpGet("sales-chart")]
     public async Task<IActionResult> GetSalesChart([FromQuery] string period = "monthly") =>
