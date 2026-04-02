@@ -429,6 +429,8 @@ public class PurchaseInvoicesController : ControllerBase
             }
         }
 
+        await _db.SaveChangesAsync();
+
         _ = Task.Run(async () =>
         {
             using var scope = _scopeFactory.CreateScope();
@@ -440,7 +442,7 @@ public class PurchaseInvoicesController : ControllerBase
             } catch { }
         });
 
-        return Ok(inv);
+        return Ok(new { id = inv.Id, invoiceNumber = inv.InvoiceNumber });
     }
 
     [AcceptVerbs("PATCH", "PUT")]
@@ -489,7 +491,7 @@ public class PurchaseInvoicesController : ControllerBase
         inv.Status = dto.Status;
         inv.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
-        return Ok(inv);
+        return Ok(new { id = inv.Id, status = inv.Status.ToString() });
     }
 
     [HttpDelete("{id}")]
