@@ -189,7 +189,8 @@ public class DashboardService : IDashboardService
         // 1. Sales by City (Heatmap)
         var salesByCityRaw = await _db.Orders
             .Where(o => !o.IsDeleted && o.Status != OrderStatus.Cancelled && o.DeliveryAddressId != null)
-            .GroupBy(o => o.DeliveryAddress!.City)
+            .Select(o => new { City = o.DeliveryAddress!.City, o.TotalAmount }) 
+            .GroupBy(x => x.City)
             .Select(g => new { 
                 City = g.Key, 
                 Count = g.Count(), 
@@ -204,18 +205,22 @@ public class DashboardService : IDashboardService
             .ToList();
 
         // 2. VIP Customers
-        var topCustomers = await _db.Customers
+        var topCustomersRaw = await _db.Customers
             .Include(c => c.Orders)
-            .Select(c => new VipCustomerDto(
+            .Select(c => new {
                 c.Id,
-                c.FirstName + " " + c.LastName,
+                FullName = c.FirstName + " " + c.LastName,
                 c.Email,
-                c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
-                c.Orders.Count(o => o.Status != OrderStatus.Cancelled)
-            ))
+                TotalSpent = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
+                OrderCount = c.Orders.Count(o => o.Status != OrderStatus.Cancelled)
+            })
             .OrderByDescending(x => x.TotalSpent)
             .Take(10)
             .ToListAsync();
+
+        var topCustomers = topCustomersRaw
+            .Select(c => new VipCustomerDto(c.Id, c.FullName, c.Email, c.TotalSpent, c.OrderCount))
+            .ToList();
 
         // 3. Inventory Insights (Run-out predictor & Stock health)
         // Calculating AvgDailySales based on last 30 days
@@ -247,10 +252,11 @@ public class DashboardService : IDashboardService
         // 4. Abandoned Carts
         var abandonedCartsRaw = await _db.CartItems
             .Include(c => c.Product)
+            .Select(c => new { c.CustomerId, c.Quantity, Price = c.Product.Price })
             .GroupBy(c => c.CustomerId)
             .Select(g => new { 
                 ItemCount = g.Sum(c => c.Quantity),
-                PotentialRevenue = g.Sum(c => (decimal?)c.Quantity * (c.Product != null ? c.Product.Price : 0)) ?? 0
+                PotentialRevenue = g.Sum(c => (decimal)c.Quantity * c.Price)
             })
             .ToListAsync();
 
@@ -262,6 +268,7 @@ public class DashboardService : IDashboardService
 
         // 5. Payment Methods
         var paymentMethodsRaw = await _db.Orders
+            .Select(o => new { o.PaymentMethod, o.TotalAmount })
             .GroupBy(o => o.PaymentMethod)
             .Select(g => new {
                 Method = g.Key,
