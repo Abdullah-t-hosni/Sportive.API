@@ -132,6 +132,47 @@ public class AccountsController : ControllerBase
         await _db.SaveChangesAsync();
         return Ok(new { success = true });
     }
+
+    [HttpGet("fix-tree"), HttpPost("fix-tree")]
+    public async Task<IActionResult> FixTree()
+    {
+        try
+        {
+            var allAccounts = await _db.Accounts.IgnoreQueryFilters().Where(a => !a.IsDeleted).ToListAsync();
+            
+            // 1. Reset all first to be safe
+            foreach (var a in allAccounts)
+            {
+                a.Level = 1;
+                a.IsLeaf = true;
+            }
+
+            // 2. Recursive level calculation
+            void UpdateLevels(int? parentId, int level)
+            {
+                var children = allAccounts.Where(a => a.ParentId == parentId).ToList();
+                foreach (var child in children)
+                {
+                    child.Level = level;
+                    var hasChildren = allAccounts.Any(a => a.ParentId == child.Id);
+                    child.IsLeaf = !hasChildren;
+                    UpdateLevels(child.Id, level + 1);
+                }
+            }
+
+            UpdateLevels(null, 1);
+
+            await _db.SaveChangesAsync();
+            return Ok(new { success = true, message = "تم إصلاح شجرة الحسابات بنجاح.", count = allAccounts.Count });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
+    [HttpGet("rebuild"), HttpPost("rebuild")]
+    public async Task<IActionResult> Rebuild() => await FixTree();
 }
 
 // 2. JOURNAL ENTRIES (قيود اليومية)

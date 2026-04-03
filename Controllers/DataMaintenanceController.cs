@@ -101,7 +101,47 @@ public class DataMaintenanceController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "OUTER FACTORY RESET ERROR");
-            return BadRequest(new { success = false, message = "فشل التصفير: " + ex.Message });
         }
     }
+
+    [HttpGet("fix-tree"), HttpPost("fix-tree")]
+    public async Task<IActionResult> FixTree()
+    {
+        try
+        {
+            var allAccounts = await _db.Accounts.IgnoreQueryFilters().Where(a => !a.IsDeleted).ToListAsync();
+            
+            // 1. Reset all first to be safe
+            foreach (var a in allAccounts)
+            {
+                a.Level = 1;
+                a.IsLeaf = true;
+            }
+
+            // 2. Recursive level calculation (Helper function locally)
+            UpdateLevelsRecursively(allAccounts, null, 1);
+
+            await _db.SaveChangesAsync();
+            return Ok(new { success = true, message = "تم إصلاح شجرة الحسابات بنجاح.", count = allAccounts.Count });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
+    private void UpdateLevelsRecursively(List<Account> allAccounts, int? parentId, int level)
+    {
+        var children = allAccounts.Where(a => a.ParentId == parentId).ToList();
+        foreach (var child in children)
+        {
+            child.Level = level;
+            var hasChildren = allAccounts.Any(a => a.ParentId == child.Id);
+            child.IsLeaf = !hasChildren;
+            UpdateLevelsRecursively(allAccounts, child.Id, level + 1);
+        }
+    }
+
+    [HttpGet("rebuild"), HttpPost("rebuild")]
+    public async Task<IActionResult> Rebuild() => await FixTree();
 }
