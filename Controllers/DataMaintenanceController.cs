@@ -154,11 +154,61 @@ public class DataMaintenanceController : ControllerBase
             id = acc.Id, 
             code = acc.Code, 
             name = acc.NameAr, 
-            isDeleted = acc.IsDeleted,
             parentId = acc.ParentId,
             level = acc.Level,
             type = acc.Type.ToString()
         });
+    }
+
+    [HttpGet("debug-supplier/{id}")]
+    public async Task<IActionResult> DebugSupplier(int id)
+    {
+        var s = await _db.Suppliers.Include(s => s.MainAccount).FirstOrDefaultAsync(x => x.Id == id);
+        if (s == null) return NotFound(new { message = "المورد غير موجود نهائياً." });
+        return Ok(new { s.Id, s.Name, s.Phone, s.MainAccountId, accountCode = s.MainAccount?.Code });
+    }
+
+    [HttpGet("sync-accounts")]
+    public async Task<IActionResult> SyncAccounts()
+    {
+        int count = 0;
+        var suppliers = await _db.Suppliers.Where(s => s.MainAccountId == null).ToListAsync();
+        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "2101");
+        if (parent == null) return BadRequest("حساب الموردين الرئيسي (2101) غير موجود.");
+
+        foreach (var s in suppliers)
+        {
+            var query = _db.Accounts.IgnoreQueryFilters().Where(a => a.ParentId == parent.Id);
+            var maxCode = await query.MaxAsync(a => (string?)a.Code);
+            long nextCodeNum = 1;
+            if (maxCode != null && maxCode.Length > 4 && long.TryParse(maxCode.Substring(4), out var existingNum)) {
+                nextCodeNum = existingNum + 1;
+            }
+            
+            string newCode;
+            while (true)
+            {
+                newCode = $"2101{nextCodeNum:D4}";
+                bool exists = await _db.Accounts.IgnoreQueryFilters().AnyAsync(a => a.Code == newCode);
+                if (!exists) break;
+                nextCodeNum++;
+            }
+
+            var account = new Account
+            {
+                Code = newCode,
+                NameAr = $"مورد - {s.Name}",
+                Type = AccountType.Liability, Nature = AccountNature.Credit,
+                ParentId = parent.Id, Level = parent.Level + 1, IsLeaf = true, AllowPosting = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            _db.Accounts.Add(account);
+            await _db.SaveChangesAsync();
+            s.MainAccountId = account.Id;
+            count++;
+        }
+        await _db.SaveChangesAsync();
+        return Ok(new { message = $"تم تعميد {count} حساب مورد بنجاح." });
     }
 
     [HttpGet("rebuild"), HttpPost("rebuild")]

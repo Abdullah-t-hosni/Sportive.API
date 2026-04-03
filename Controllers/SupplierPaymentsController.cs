@@ -34,7 +34,6 @@ public class SupplierPaymentsController : ControllerBase
         var q = _db.SupplierPayments
             .Include(p => p.Supplier)
             .Include(p => p.Invoice)
-            .Where(p => !p.IsDeleted)
             .AsQueryable();
 
         if (supplierId.HasValue) q = q.Where(p => p.SupplierId == supplierId.Value);
@@ -62,7 +61,7 @@ public class SupplierPaymentsController : ControllerBase
         var p = await _db.SupplierPayments
             .Include(p => p.Supplier)
             .Include(p => p.Invoice)
-            .FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
+            .FirstOrDefaultAsync(x => x.Id == id);
 
         if (p == null) return NotFound();
 
@@ -81,7 +80,7 @@ public class SupplierPaymentsController : ControllerBase
 
         // Debug: Log info to see ID
         // Note: dto.SupplierId might be 0 if parsing fails or ID is missing
-        var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId && !s.IsDeleted);
+        var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
         
         if (supplier == null) 
         {
@@ -93,7 +92,7 @@ public class SupplierPaymentsController : ControllerBase
         PurchaseInvoice? invoice = null;
         if (dto.PurchaseInvoiceId.HasValue && dto.PurchaseInvoiceId > 0)
         {
-            invoice = await _db.PurchaseInvoices.FirstOrDefaultAsync(i => i.Id == dto.PurchaseInvoiceId.Value && !i.IsDeleted);
+            invoice = await _db.PurchaseInvoices.FirstOrDefaultAsync(i => i.Id == dto.PurchaseInvoiceId.Value);
             if (invoice == null) return BadRequest(new { message = "الفاتورة المحددة غير موجودة" });
         }
 
@@ -152,7 +151,7 @@ public class SupplierPaymentsController : ControllerBase
         var p = await _db.SupplierPayments
             .Include(p => p.Supplier)
             .Include(p => p.Invoice)
-            .FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
+            .FirstOrDefaultAsync(x => x.Id == id);
 
         if (p == null) return NotFound();
 
@@ -169,13 +168,10 @@ public class SupplierPaymentsController : ControllerBase
         var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Reference == p.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher);
         if (entry != null)
         {
-            entry.IsDeleted = true;
-            entry.UpdatedAt = DateTime.UtcNow;
-            await _db.JournalLines.Where(l => l.JournalEntryId == entry.Id).ExecuteUpdateAsync(s => s.SetProperty(l => l.IsDeleted, true));
+            _db.JournalEntries.Remove(entry);
         }
 
-        p.IsDeleted = true;
-        p.UpdatedAt = DateTime.UtcNow;
+        _db.SupplierPayments.Remove(p);
 
         await _db.SaveChangesAsync();
         return NoContent();

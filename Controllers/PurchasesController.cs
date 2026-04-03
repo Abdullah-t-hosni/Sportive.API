@@ -30,7 +30,6 @@ public class SuppliersController : ControllerBase
     {
         var q = _db.Suppliers
             .Include(s => s.Invoices)
-            .Where(s => !s.IsDeleted)
             .AsQueryable();
 
         if (isActive.HasValue) q = q.Where(s => s.IsActive == isActive.Value);
@@ -44,7 +43,7 @@ public class SuppliersController : ControllerBase
             .Select(s => new SupplierDto(
                 s.Id, s.Name, s.Phone, s.CompanyName, s.TaxNumber, s.Email, s.Address,
                 s.IsActive, s.TotalPurchases, s.TotalPaid, s.TotalPurchases - s.TotalPaid,
-                s.Invoices.Count(i => !i.IsDeleted),
+                s.Invoices.Count,
                 s.AttachmentUrl, s.AttachmentPublicId
             )).ToListAsync();
 
@@ -55,11 +54,11 @@ public class SuppliersController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var s = await _db.Suppliers.Include(s => s.Invoices).FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
+        var s = await _db.Suppliers.Include(s => s.Invoices).FirstOrDefaultAsync(x => x.Id == id);
         if (s == null) return NotFound();
         return Ok(new SupplierDto(s.Id, s.Name, s.Phone, s.CompanyName, s.TaxNumber,
             s.Email, s.Address, s.IsActive, s.TotalPurchases, s.TotalPaid,
-            s.TotalPurchases - s.TotalPaid, s.Invoices.Count(i => !i.IsDeleted),
+            s.TotalPurchases - s.TotalPaid, s.Invoices.Count,
             s.AttachmentUrl, s.AttachmentPublicId));
     }
 
@@ -143,7 +142,7 @@ public class SuppliersController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateSupplierDto dto)
     {
-        var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == id && !s.IsDeleted);
+        var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == id);
         if (supplier == null) return NotFound();
 
         supplier.Name        = dto.Name.Trim();
@@ -482,17 +481,15 @@ public class PurchaseInvoicesController : ControllerBase
         {
             var journalEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == inv.InvoiceNumber);
             if (journalEntry != null) { 
-                journalEntry.IsDeleted = true; 
-                foreach (var l in journalEntry.Lines) l.IsDeleted = true;
+                _db.JournalEntries.Remove(journalEntry);
             }
-            foreach (var p in inv.Payments)
+            foreach (var p in inv.Payments.ToList())
             {
-                p.IsDeleted = true;
-                var pEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == p.PaymentNumber);
+                var pEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Reference == p.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher);
                 if (pEntry != null) {
-                    pEntry.IsDeleted = true;
-                    foreach (var l in pEntry.Lines) l.IsDeleted = true;
+                    _db.JournalEntries.Remove(pEntry);
                 }
+                _db.SupplierPayments.Remove(p);
             }
         }
 
@@ -539,21 +536,15 @@ public class PurchaseInvoicesController : ControllerBase
             }
         }
 
-        foreach (var p in inv.Payments)
+        foreach (var p in inv.Payments.ToList())
         {
-            p.IsDeleted = true;
-            var pEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == p.PaymentNumber);
-            if (pEntry != null) {
-                pEntry.IsDeleted = true;
-                foreach (var l in pEntry.Lines) l.IsDeleted = true;
-            }
+            var pEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Reference == p.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher);
+            if (pEntry != null) _db.JournalEntries.Remove(pEntry);
+            _db.SupplierPayments.Remove(p);
         }
 
-        var invoiceEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == inv.InvoiceNumber);
-        if (invoiceEntry != null) {
-            invoiceEntry.IsDeleted = true;
-            foreach (var l in invoiceEntry.Lines) l.IsDeleted = true;
-        }
+        var invoiceEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == inv.InvoiceNumber);
+        if (invoiceEntry != null) _db.JournalEntries.Remove(invoiceEntry);
 
         _db.PurchaseInvoices.Remove(inv);
         await _db.SaveChangesAsync();
