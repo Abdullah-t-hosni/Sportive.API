@@ -11,7 +11,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin,Manager,Accountant")]
 public class DataMaintenanceController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -48,7 +48,6 @@ public class DataMaintenanceController : ControllerBase
 
         try
         {
-            // 1. التحرر من قيود المفاتيح لإلقاء البيانات بفعالية
             await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 0;");
 
             using var transaction = await _db.Database.BeginTransactionAsync();
@@ -67,7 +66,6 @@ public class DataMaintenanceController : ControllerBase
                     try { await _db.Database.ExecuteSqlRawAsync("TRUNCATE TABLE `" + table + "`;"); } catch { }
                 }
 
-                // 2. Identity - حذف العملاء مع حماية الأدمن
                 var customerRole = await _db.Roles.FirstOrDefaultAsync(r => r.Name == "Customer");
                 if (customerRole != null)
                 {
@@ -91,17 +89,16 @@ public class DataMaintenanceController : ControllerBase
                 _logger.LogCritical("FACTORY RESET COMPLETED.");
                 return Ok(new { success = true, message = "تم تصفير النظام بنجاح وبدء تسلسل المعرفات من 1." });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 await transaction.RollbackAsync();
                 await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
-                _logger.LogError(ex, "INNER FACTORY RESET ERROR");
                 throw;
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "OUTER FACTORY RESET ERROR");
+            _logger.LogError(ex, "FACTORY RESET ERROR");
             return BadRequest(new { success = false, message = "فشل التصفير: " + ex.Message });
         }
     }
@@ -112,17 +109,12 @@ public class DataMaintenanceController : ControllerBase
         try
         {
             var allAccounts = await _db.Accounts.IgnoreQueryFilters().Where(a => !a.IsDeleted).ToListAsync();
-            
-            // 1. Reset all first to be safe
             foreach (var a in allAccounts)
             {
                 a.Level = 1;
                 a.IsLeaf = true;
             }
-
-            // 2. Recursive level calculation (Helper function locally)
             UpdateLevelsRecursively(allAccounts, null, 1);
-
             await _db.SaveChangesAsync();
             return Ok(new { success = true, message = "تم إصلاح شجرة الحسابات بنجاح.", count = allAccounts.Count });
         }
@@ -149,15 +141,7 @@ public class DataMaintenanceController : ControllerBase
     {
         var acc = await _db.Accounts.IgnoreQueryFilters().FirstOrDefaultAsync(a => a.Code == code);
         if (acc == null) return NotFound(new { message = $"لم يتم العثور على أي حساب بالكود {code}" });
-        
-        return Ok(new { 
-            id = acc.Id, 
-            code = acc.Code, 
-            name = acc.NameAr, 
-            parentId = acc.ParentId,
-            level = acc.Level,
-            type = acc.Type.ToString()
-        });
+        return Ok(new { id = acc.Id, code = acc.Code, name = acc.NameAr, parentId = acc.ParentId, level = acc.Level, type = acc.Type.ToString() });
     }
 
     [HttpGet("debug-supplier/{id}")]
@@ -184,23 +168,17 @@ public class DataMaintenanceController : ControllerBase
             if (maxCode != null && maxCode.Length > 4 && long.TryParse(maxCode.Substring(4), out var existingNum)) {
                 nextCodeNum = existingNum + 1;
             }
-            
             string newCode;
             while (true)
             {
                 newCode = $"2101{nextCodeNum:D4}";
-                bool exists = await _db.Accounts.IgnoreQueryFilters().AnyAsync(a => a.Code == newCode);
-                if (!exists) break;
+                if (!await _db.Accounts.IgnoreQueryFilters().AnyAsync(a => a.Code == newCode)) break;
                 nextCodeNum++;
             }
-
             var account = new Account
             {
-                Code = newCode,
-                NameAr = $"مورد - {s.Name}",
-                Type = AccountType.Liability, Nature = AccountNature.Credit,
-                ParentId = parent.Id, Level = parent.Level + 1, IsLeaf = true, AllowPosting = true,
-                CreatedAt = DateTime.UtcNow
+                Code = newCode, NameAr = $"مورد - {s.Name}", Type = AccountType.Liability, Nature = AccountNature.Credit,
+                ParentId = parent.Id, Level = parent.Level + 1, IsLeaf = true, AllowPosting = true, CreatedAt = DateTime.UtcNow
             };
             _db.Accounts.Add(account);
             await _db.SaveChangesAsync();
@@ -213,4 +191,47 @@ public class DataMaintenanceController : ControllerBase
 
     [HttpGet("rebuild"), HttpPost("rebuild")]
     public async Task<IActionResult> Rebuild() => await FixTree();
+
+    [HttpGet("purge-deleted"), HttpPost("purge-deleted")]
+    public async Task<IActionResult> PurgeDeleted()
+    {
+        try {
+            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 0;");
+            var counts = new Dictionary<string, int>();
+            counts["Accounts"] = await _db.Accounts.IgnoreQueryFilters().Where(x => x.IsDeleted).ExecuteDeleteAsync();
+            counts["Journals"] = await _db.JournalEntries.IgnoreQueryFilters().Where(x => x.IsDeleted).ExecuteDeleteAsync();
+            counts["Suppliers"] = await _db.Suppliers.IgnoreQueryFilters().Where(x => x.IsDeleted).ExecuteDeleteAsync();
+            counts["Customers"] = await _db.Customers.IgnoreQueryFilters().Where(x => x.IsDeleted).ExecuteDeleteAsync();
+            counts["Orders"] = await _db.Orders.IgnoreQueryFilters().Where(x => x.IsDeleted).ExecuteDeleteAsync();
+            counts["Products"] = await _db.Products.IgnoreQueryFilters().Where(x => x.IsDeleted).ExecuteDeleteAsync();
+            counts["Variants"] = await _db.ProductVariants.IgnoreQueryFilters().Where(x => x.IsDeleted).ExecuteDeleteAsync();
+            counts["Purchases"] = await _db.PurchaseInvoices.IgnoreQueryFilters().Where(x => x.IsDeleted).ExecuteDeleteAsync();
+            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
+            return Ok(new { success = true, purged = counts });
+        }
+        catch (Exception ex) {
+            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
+    [HttpPost("fix-pos-orders")]
+    public async Task<IActionResult> FixPosOrders()
+    {
+        try {
+            var affected = await _db.Orders.Where(o => o.OrderNumber.StartsWith("POS") && o.Source == OrderSource.Website)
+                                         .ExecuteUpdateAsync(s => s.SetProperty(o => o.Source, OrderSource.POS));
+            return Ok(new { success = true, message = affected > 0 ? $"تم تصحيح {affected} طلب POS." : "كافة الطلبات سليمة." });
+        } catch (Exception ex) { return BadRequest(new { success = false, message = ex.Message }); }
+    }
+
+    [HttpPost("cleanup-duplicates")]
+    public async Task<IActionResult> CleanupDuplicates()
+    {
+        try {
+            var dupCodes = await _db.Accounts.IgnoreQueryFilters().GroupBy(a => a.Code).Where(g => g.Count() > 1).Select(g => g.Key).ToListAsync();
+            if (!dupCodes.Any()) return Ok(new { success = true, message = "لم يتم العثور على تكرارات في الأكواد." });
+            return Ok(new { success = true, message = $"تم العثور على {dupCodes.Count} كود مكرر. يرجى استخدام Purge Deleted أولاً." });
+        } catch (Exception ex) { return BadRequest(new { success = false, message = ex.Message }); }
+    }
 }

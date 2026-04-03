@@ -94,7 +94,9 @@ public class OrderService : IOrderService
         var o = await _db.Orders
             .Include(o => o.Customer)
             .Include(o => o.DeliveryAddress)
-            .Include(o => o.Items).ThenInclude(i => i.Product)
+            .Include(o => o.Items)
+                .ThenInclude(i => i.Product)
+                    .ThenInclude(p => p.Images)
             .Include(o => o.StatusHistory)
             .FirstOrDefaultAsync(o => o.Id == id);
 
@@ -149,27 +151,22 @@ public class OrderService : IOrderService
 
     public async Task<OrderDetailDto> CreateOrderAsync(int? customerId, CreateOrderDto dto)
     {
-        // 🛡️ SECURITY & INTEGRITY FIX: Handle customerId = 0 or invalid ID
         if (customerId.HasValue && (customerId.Value <= 0 || !await _db.Customers.AnyAsync(c => c.Id == customerId.Value)))
         {
-        customerId = null;
+            customerId = null;
         }
 
         var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
-        var globalVatRate = (store?.VatRatePercent ?? 14) / 100m;
-
-        // 1. Handle Customer (For POS or non-logged in website visitors)
+        
+        // 1. Handle Customer
         if (!customerId.HasValue)
         {
             var phone = string.IsNullOrEmpty(dto.CustomerPhone) ? "0000000000" : dto.CustomerPhone;
-            
-            // Use IgnoreQueryFilters to find soft-deleted customers
             var existing = await _db.Customers.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.Phone == phone);
             
             if (existing != null)
             {
                 customerId = existing.Id;
-                // If it was deleted, restore it
                 if (existing.IsDeleted)
                 {
                     existing.IsDeleted = false;
@@ -191,17 +188,13 @@ public class OrderService : IOrderService
                 };
                 _db.Customers.Add(c);
                 await _db.SaveChangesAsync();
-                
-                // ── Auto-create Account ──
                 await _customerService.EnsureCustomerAccountAsync(c.Id);
-                
                 customerId = c.Id;
             }
         }
 
         if (!customerId.HasValue) throw new ArgumentException("Customer identification required.");
 
-        // 🛡️ POS PROTECTION: Ensure SalesPersonId is provided for POS orders
         if (dto.Source == OrderSource.POS && string.IsNullOrEmpty(dto.SalesPersonId))
         {
             throw new ArgumentException("معرف البائع مطلوب لعمليات الـ POS");
@@ -242,7 +235,6 @@ public class OrderService : IOrderService
 
                 var unitPrice = product.DiscountPrice ?? (product.Price + (variant?.PriceAdjustment ?? 0));
                 
-
                 var orderItem = new OrderItem
                 {
                     ProductId = item.ProductId,
@@ -259,7 +251,6 @@ public class OrderService : IOrderService
                     CreatedAt = DateTime.UtcNow
                 };
 
-                // Calculate VAT part (Tax Inclusive)
                 if (orderItem.HasTax)
                 {
                     var rate = (orderItem.VatRateApplied ?? 14) / 100m;
@@ -271,10 +262,9 @@ public class OrderService : IOrderService
                 order.Items.Add(orderItem);
                 order.SubTotal += orderItem.TotalPrice;
 
-                // Stock Update via InventoryService
                 await _inventory.LogMovementAsync(
                     InventoryMovementType.Sale,
-                    -item.Quantity, // deduction
+                    -item.Quantity,
                     item.ProductId,
                     item.ProductVariantId,
                     order.OrderNumber,
@@ -285,7 +275,6 @@ public class OrderService : IOrderService
         }
         else
         {
-            // fallback to Cart if no items provided (Website flow)
             var cartItems = await _db.CartItems.Include(c => c.Product).Include(c => c.ProductVariant)
                 .Where(c => c.CustomerId == customerId.Value).ToListAsync();
             
@@ -294,7 +283,6 @@ public class OrderService : IOrderService
             foreach (var ci in cartItems)
             {
                 var unitPrice = ci.Product.DiscountPrice ?? (ci.Product.Price + (ci.ProductVariant?.PriceAdjustment ?? 0));
-
 
                 var orderItem = new OrderItem
                 {
@@ -312,7 +300,6 @@ public class OrderService : IOrderService
                     CreatedAt = DateTime.UtcNow
                 };
 
-                // Calculate VAT part (Tax Inclusive)
                 if (orderItem.HasTax)
                 {
                     var rate = (orderItem.VatRateApplied ?? 14) / 100m;
@@ -324,10 +311,9 @@ public class OrderService : IOrderService
                 order.Items.Add(orderItem);
                 order.SubTotal += orderItem.TotalPrice;
 
-                // Stock Update via InventoryService
                 await _inventory.LogMovementAsync(
                     InventoryMovementType.Sale,
-                    -ci.Quantity, // deduction
+                    -ci.Quantity,
                     ci.ProductId,
                     ci.ProductVariantId,
                     order.OrderNumber,
@@ -335,16 +321,12 @@ public class OrderService : IOrderService
                     null
                 );
                 
-                ci.IsDeleted = true; // Clear cart after order
+                _db.CartItems.Remove(ci);
             }
         }
 
-        // 4. Final Totals (Handle Coupons/Fees in real app logic)
         order.TotalAmount = order.SubTotal + order.DeliveryFee - order.DiscountAmount;
-
         _db.Orders.Add(order);
-        
-        // Initial History
         order.StatusHistory.Add(new OrderStatusHistory { Status = order.Status, CreatedAt = DateTime.UtcNow, Note = "Order Created." });
 
         await _db.SaveChangesAsync();
@@ -357,7 +339,6 @@ public class OrderService : IOrderService
 
             try
             {
-                // Re-fetch the order inside the new scope to avoid context mismatch
                 var orderInner = await db.Orders
                     .Include(o => o.Customer)
                     .Include(o => o.Items).ThenInclude(i => i.Product)
@@ -367,51 +348,46 @@ public class OrderService : IOrderService
             }
             catch (Exception ex)
             {
-                // لا نوقف الطلب بسبب خطأ محاسبي — نسجله فقط
                 Console.Error.WriteLine($"[Accounting] PostSalesOrder failed for {order.OrderNumber}: {ex.Message}");
             }
         });
 
-        // 5. Notifications
-        var customer = await _db.Customers.FindAsync(order.CustomerId);
-        if (customer != null && !string.IsNullOrEmpty(customer.AppUserId))
-        {
-            await _notificationService.SendAsync(customer.AppUserId, 
-                "تم استلام طلبك", "Order Received",
-                $"طلبك رقم {order.OrderNumber} قيد الانتظار.", $"Your order #{order.OrderNumber} is pending.",
-                "Order", order.Id);
-        }
-
-        // 🛡️ SECURITY & ADMIN NOTIFICATION: Send email to Admin
+        // 5. Notifications & Email
         _ = Task.Run(async () =>
         {
+            using var scope = _scopeFactory.CreateScope();
+            var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
+            var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+            var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var customerInner = await db.Customers.FindAsync(order.CustomerId);
+            if (customerInner != null && !string.IsNullOrEmpty(customerInner.AppUserId))
+            {
+                await notificationService.SendAsync(customerInner.AppUserId, 
+                    "تم استلام طلبك", "Order Received",
+                    $"طلبك رقم {order.OrderNumber} قيد الانتظار.", $"Your order #{order.OrderNumber} is pending.",
+                    "Order", order.Id);
+            }
+
             try 
             {
-                var adminEmails = _config["Backup:Email:To"]?.Split(',') ?? new[] { "admin@sportive.com" };
+                var adminEmails = (config["Backup:Email:To"] ?? "admin@sportive.com").Split(',');
                 var subject = $"🔔 طلب جديد: {order.OrderNumber}";
                 var body = $@"
                     <div dir='rtl' style='font-family: Arial, sans-serif; border: 1px solid #eee; padding: 20px;'>
                         <h2 style='color: #0f3460;'>تنبيه طلب جديد 🆕</h2>
                         <p>رقم الطلب: <b>{order.OrderNumber}</b></p>
-                        <p>اسم العميل: {customer?.FullName ?? "عميل خارجي"}</p>
+                        <p>اسم العميل: {customerInner?.FullName ?? "عميل خارجي"}</p>
                         <p>إجمالي المبلغ: <span style='color: green; font-weight: bold;'>{order.TotalAmount:N2} ج.م</span></p>
-                        <p>رقم التليفون: {customer?.Phone ?? "غير مسجل"}</p>
                         <hr/>
                         <a href='https://admin.sportive-sportwear.com/orders/{order.Id}' 
                            style='display: inline-block; background: #0f3460; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;'>
-                           عرض تفاصيل الطلب في لوحة التحكم
+                           عرض التفاصيل
                         </a>
                     </div>";
-                
-                foreach(var email in adminEmails)
-                {
-                    await _emailService.SendEmailAsync(email.Trim(), subject, body);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Admin Notification] Failed: {ex.Message}");
-            }
+                foreach(var email in adminEmails) await emailService.SendEmailAsync(email.Trim(), subject, body);
+            } catch { }
         });
 
         return (await GetOrderByIdAsync(order.Id))!;
@@ -426,23 +402,14 @@ public class OrderService : IOrderService
         order.Status = dto.Status;
         order.UpdatedAt = DateTime.UtcNow;
         order.StatusHistory.Add(new OrderStatusHistory {
-            Status = dto.Status,
-            Note = dto.Note,
-            ChangedByUserId = updatedByUserId,
-            CreatedAt = DateTime.UtcNow
+            Status = dto.Status, Note = dto.Note, ChangedByUserId = updatedByUserId, CreatedAt = DateTime.UtcNow
         });
 
         if (dto.Status == OrderStatus.Delivered)
         {
             order.ActualDeliveryDate = DateTime.UtcNow;
-            
-            // 🛡️ POS / CREDIT PROTECTION: Only force Paid if NOT a Credit sale
-            if (order.PaymentMethod != PaymentMethod.Credit)
-            {
-                order.PaymentStatus = PaymentStatus.Paid;
-            }
+            if (order.PaymentMethod != PaymentMethod.Credit) order.PaymentStatus = PaymentStatus.Paid;
 
-            // أتمتة التحصيل المحاسبي لطلبات الموقع (لأن الـ POS سدد في قيد الفاتورة الأول)
             if (order.Source == OrderSource.Website && order.PaymentStatus == PaymentStatus.Paid)
             {
                 _ = Task.Run(async () =>
@@ -450,20 +417,14 @@ public class OrderService : IOrderService
                     using var scope = _scopeFactory.CreateScope();
                     var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
                     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                    try
-                    {
+                    try {
                         var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == orderId);
                         await accounting.PostOrderPaymentAsync(fullOrder);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.Error.WriteLine($"[Accounting] Auto-collection failed for {orderId}: {ex.Message}");
-                    }
+                    } catch { }
                 });
             }
         }
 
-        // Stock Restoration for Cancelled/Returned
         if ((dto.Status == OrderStatus.Cancelled || dto.Status == OrderStatus.Returned) && 
             oldStatus != OrderStatus.Cancelled && oldStatus != OrderStatus.Returned)
         {
@@ -472,12 +433,7 @@ public class OrderService : IOrderService
             {
                 await _inventory.LogMovementAsync(
                     dto.Status == OrderStatus.Returned ? InventoryMovementType.ReturnIn : InventoryMovementType.Adjustment,
-                    item.Quantity, // Add back
-                    item.ProductId,
-                    item.ProductVariantId,
-                    order.OrderNumber,
-                    $"Order {dto.Status}",
-                    updatedByUserId
+                    item.Quantity, item.ProductId, item.ProductVariantId, order.OrderNumber, $"Order {dto.Status}", updatedByUserId
                 );
             }
         }
@@ -486,47 +442,17 @@ public class OrderService : IOrderService
 
         if (dto.Status == OrderStatus.Returned || dto.Status == OrderStatus.Cancelled)
         {
-            var fullOrder = await _db.Orders
-                .Include(o => o.Customer)
-                .FirstAsync(o => o.Id == orderId);
-
             _ = Task.Run(async () =>
             {
                 using var scope = _scopeFactory.CreateScope();
                 var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-                try
-                {
-                    // Re-fetch the order inside the new scope to avoid context mismatch
-                    var fullOrderInner = await db.Orders
-                        .Include(o => o.Customer)
-                        .Include(o => o.Items).ThenInclude(i => i.Product)
-                        .FirstAsync(o => o.Id == orderId);
-
+                try {
+                    var fullOrderInner = await db.Orders.Include(o => o.Customer).Include(o => o.Items).ThenInclude(i => i.Product).FirstAsync(o => o.Id == orderId);
                     await accounting.PostSalesReturnAsync(fullOrderInner);
-
-                    // 🛡️ REFINEMENT: If previously PAID, we must issue a REFUND entry
-                    if (fullOrderInner.PaymentStatus == PaymentStatus.Paid)
-                    {
-                        await accounting.PostOrderRefundAsync(fullOrderInner);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"[Accounting] PostSalesReturn/Refund failed for {orderId}: {ex.Message}");
-                }
+                    if (fullOrderInner.PaymentStatus == PaymentStatus.Paid) await accounting.PostOrderRefundAsync(fullOrderInner);
+                } catch { }
             });
-        }
-
-        // Notify Customer
-        var customer = await _db.Customers.FindAsync(order.CustomerId);
-        if (customer != null && !string.IsNullOrEmpty(customer.AppUserId))
-        {
-            await _notificationService.SendAsync(customer.AppUserId,
-                "تحديث حالة الطلب", "Order Status Update",
-                $"حالة طلبك {order.OrderNumber} أصبحت: {dto.Status}", $"Order {order.OrderNumber} is now: {dto.Status}",
-                "Order", order.Id);
         }
 
         return (await GetOrderByIdAsync(orderId))!;
@@ -536,77 +462,33 @@ public class OrderService : IOrderService
     {
         var prefix = source == OrderSource.POS ? "POS" : "ORD";
         var date = DateTime.UtcNow.ToString("yyMMdd");
-        var random = new Random().Next(1000, 9999);
-        var orderNumber = $"{prefix}-{date}-{random}";
-        
-        // Ensure uniqueness
-        while (await _db.Orders.AnyAsync(o => o.OrderNumber == orderNumber))
-        {
-            random = new Random().Next(1000, 9999);
+        string orderNumber;
+        do {
+            var random = new Random().Next(1000, 9999);
             orderNumber = $"{prefix}-{date}-{random}";
-        }
-
+        } while (await _db.Orders.AnyAsync(o => o.OrderNumber == orderNumber));
         return orderNumber;
     }
 
     public async Task SyncAllOrderAccountingAsync()
     {
-        var orders = await _db.Orders
-            .Include(o => o.Customer)
-            .Include(o => o.Items).ThenInclude(i => i.Product)
-            .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Pending)
-            .ToListAsync();
+        var orders = await _db.Orders.Include(o => o.Customer).Include(o => o.Items).ThenInclude(i => i.Product)
+            .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Pending && !o.IsDeleted).ToListAsync();
         
         foreach (var order in orders)
         {
-            try
-            {
-                // 1. Check if entry exists (Robust comparison)
+            try {
                 var orderNum = order.OrderNumber.Trim().ToLower();
                 var entry = await _db.JournalEntries.Include(j => j.Lines)
                     .FirstOrDefaultAsync(j => !j.IsDeleted && j.Type == JournalEntryType.SalesInvoice && j.Reference != null && j.Reference.Trim().ToLower() == orderNum);
 
                 if (entry == null || !entry.Lines.Any() || entry.Lines.All(l => l.CustomerId == null))
                 {
-                    // Full re-post if missing OR corrupted
-                    if (entry != null)
-                    {
-                        _db.JournalLines.RemoveRange(entry.Lines);
-                        _db.JournalEntries.Remove(entry);
-                        await _db.SaveChangesAsync();
-                    }
+                    if (entry != null) { _db.JournalLines.RemoveRange(entry.Lines); _db.JournalEntries.Remove(entry); await _db.SaveChangesAsync(); }
                     await _accounting.PostSalesOrderAsync(order);
                 }
-                else
-                {
-                    // Aggressive Repair
-                    bool modified = false;
-                    if (entry.Status != JournalEntryStatus.Posted) { entry.Status = JournalEntryStatus.Posted; modified = true; }
-                    foreach (var line in entry.Lines)
-                    {
-                        if (line.CustomerId == null) { line.CustomerId = order.CustomerId; modified = true; }
-                        if (order.Customer?.MainAccountId != null && line.AccountId != order.Customer.MainAccountId)
-                        {
-                            var account = await _db.Accounts.FindAsync(line.AccountId);
-                            if (account != null && account.Code == "1103") // Generic Receivables
-                            {
-                                line.AccountId = order.Customer.MainAccountId.Value;
-                                modified = true;
-                            }
-                        }
-                    }
-                    if (modified) await _db.SaveChangesAsync();
-                }
-
-                if (order.PaymentStatus == PaymentStatus.Paid)
-                {
-                    await _accounting.PostOrderPaymentAsync(order);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Accounting Sync] Failed for {order.OrderNumber}: {ex.Message}");
-            }
+                if (order.PaymentStatus == PaymentStatus.Paid) await _accounting.PostOrderPaymentAsync(order);
+            } catch { }
         }
     }
 }

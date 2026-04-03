@@ -216,20 +216,19 @@ public class OrdersController : ControllerBase
             }
         }
 
-        // 3. حذف القيد المحاسبي المرتبط بالطلب (Sales Invoice)
+        // 3. حذف القيد المحاسبي المرتبط بالطلب نهائياً (Sales Invoice)
         var salesEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.SalesInvoice && e.Reference == order.OrderNumber);
-        if (salesEntry != null) salesEntry.IsDeleted = true;
+        if (salesEntry != null) _db.JournalEntries.Remove(salesEntry);
 
-        // 4. حذف قيد التحصيل (ReceiptVoucher) أو قيد الرد (PaymentVoucher) لو موجود
+        // 4. حذف قيد التحصيل (ReceiptVoucher) أو قيد الرد (PaymentVoucher) لو موجود نهائياً
         var paymentEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == order.OrderNumber);
-        if (paymentEntry != null) paymentEntry.IsDeleted = true;
+        if (paymentEntry != null) _db.JournalEntries.Remove(paymentEntry);
 
         var refundEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == order.OrderNumber + "-RFD");
-        if (refundEntry != null) refundEntry.IsDeleted = true;
+        if (refundEntry != null) _db.JournalEntries.Remove(refundEntry);
 
-        // 5. حذف الطلب وسجل حالته
-        order.IsDeleted = true;
-        order.UpdatedAt = DateTime.UtcNow;
+        // 5. حذف الطلب وسجل حالته نهائياً (Hard-Delete)
+        _db.Orders.Remove(order);
 
         await _db.SaveChangesAsync();
         return NoContent();

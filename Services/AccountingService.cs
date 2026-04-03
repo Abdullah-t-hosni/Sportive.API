@@ -736,23 +736,4 @@ public class AccountingService : IAccountingService
         _db.JournalEntries.Add(entry);
         await _db.SaveChangesAsync();
     }
-
-    private string GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, string> mapDict)
-    {
-        string baseKey = source == OrderSource.POS ? "posCashAccountID" : "cashAccountID";
-        string fallback = GetMap(mapDict, baseKey, source == OrderSource.POS ? CASH_CASHIER : CASH_WEBSITE);
-
-        return method switch
-        {
-            PaymentMethod.Vodafone => source == OrderSource.POS ? GetMap(mapDict, "posVodafoneAccountID", VODAFONE) : GetMap(mapDict, "vodafoneCashAccountID", VODAFONE_WEB),
-            PaymentMethod.InstaPay => source == OrderSource.POS ? GetMap(mapDict, "posInstapayAccountID", INSTAPAY) : GetMap(mapDict, "instapayAccountID", INSTAPAY_WEB),
-            PaymentMethod.Bank     => source == OrderSource.POS ? GetMap(mapDict, "posBankAccountID", BANK) : GetMap(mapDict, "bankAccountID", BANK),
-            _                      => fallback
-        };
-    }
-
-    private string GetMap(Dictionary<string, string> map, string key, string fallback)
-    {
-        return map.TryGetValue(key.ToLower(), out var val) && !string.IsNullOrEmpty(val) ? val : fallback;
-    }
 }
