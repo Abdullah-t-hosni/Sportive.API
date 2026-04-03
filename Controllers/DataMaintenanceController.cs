@@ -5,6 +5,7 @@ using System.Diagnostics;
 using Sportive.API.Data;
 using Sportive.API.Services;
 using System.IO;
+using Sportive.API.Models;
 
 namespace Sportive.API.Controllers;
 
