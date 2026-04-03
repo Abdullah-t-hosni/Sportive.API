@@ -85,7 +85,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Brand).WithMany(b => b.Products)
              .HasForeignKey(x => x.BrandId).OnDelete(DeleteBehavior.SetNull);
-            // e.Property(x => x.Status).HasConversion<string>();
+            e.Property(x => x.Status).HasConversion<string>();
         });
 
         builder.Entity<ProductVariant>(e =>
@@ -112,12 +112,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.DeliveryAddress).WithMany()
              .HasForeignKey(x => x.DeliveryAddressId).OnDelete(DeleteBehavior.SetNull);
-            // Reverted to manual INT handling to avoid cast errors on existing DB
-            // e.Property(x => x.Status).HasConversion<string>();
-            // e.Property(x => x.FulfillmentType).HasConversion<string>();
-            // e.Property(x => x.PaymentMethod).HasConversion<string>();
-            // e.Property(x => x.PaymentStatus).HasConversion<string>();
-            // e.Property(x => x.Source).HasConversion<string>();
+            // String representation for enums in the database
+            e.Property(x => x.Status).HasConversion<string>();
+            e.Property(x => x.FulfillmentType).HasConversion<string>();
+            e.Property(x => x.PaymentMethod).HasConversion<string>();
+            e.Property(x => x.PaymentStatus).HasConversion<string>();
+            e.Property(x => x.Source).HasConversion<string>();
         });
 
         builder.Entity<OrderItem>(e => {
@@ -132,7 +132,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
         });
 
         builder.Entity<OrderStatusHistory>(e => {
-            // e.Property(x => x.Status).HasConversion<string>();
+            e.Property(x => x.Status).HasConversion<string>();
         });
 
         builder.Entity<CartItem>(e =>
@@ -181,8 +181,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(i => i.TotalAmount).HasPrecision(18, 2);
             e.Property(i => i.PaidAmount).HasPrecision(18, 2);
             e.HasOne(i => i.Supplier).WithMany(s => s.Invoices).HasForeignKey(i => i.SupplierId);
-            // e.Property(i => i.PaymentTerms).HasConversion<string>();
-            // e.Property(i => i.Status).HasConversion<string>();
+            e.Property(i => i.PaymentTerms).HasConversion<string>();
+            e.Property(i => i.Status).HasConversion<string>();
         });
 
         builder.Entity<PurchaseInvoiceItem>(e => {
@@ -195,15 +195,15 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(p => p.Supplier).WithMany(s => s.Payments).HasForeignKey(p => p.SupplierId);
             e.HasOne(p => p.Invoice).WithMany(i => i.Payments)
                 .HasForeignKey(p => p.PurchaseInvoiceId).IsRequired(false);
-            // e.Property(p => p.PaymentMethod).HasConversion<string>();
+            e.Property(p => p.PaymentMethod).HasConversion<string>();
         });
 
         builder.Entity<Account>(e => {
             e.Property(a => a.OpeningBalance).HasPrecision(18,2);
             e.HasOne(a => a.Parent).WithMany(a => a.Children).HasForeignKey(a => a.ParentId).IsRequired(false);
             e.HasIndex(a => a.Code).IsUnique();
-            // e.Property(a => a.Type).HasConversion<string>();
-            // e.Property(a => a.Nature).HasConversion<string>();
+            e.Property(a => a.Type).HasConversion<string>();
+            e.Property(a => a.Nature).HasConversion<string>();
         });
 
         builder.Entity<AccountSystemMapping>(e => {
@@ -214,8 +214,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<JournalEntry>(e => {
             e.HasOne(j => j.ReversalOf).WithMany().HasForeignKey(j => j.ReversalOfId).IsRequired(false);
-            // e.Property(j => j.Type).HasConversion<string>();
-            // e.Property(j => j.Status).HasConversion<string>();
+            e.Property(j => j.Type).HasConversion<string>();
+            e.Property(j => j.Status).HasConversion<string>();
         });
 
         builder.Entity<StoreInfo>(e => {
@@ -236,7 +236,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(v => v.CashAccount).WithMany().HasForeignKey(v => v.CashAccountId);
             e.HasOne(v => v.FromAccount).WithMany().HasForeignKey(v => v.FromAccountId);
             e.HasOne(v => v.JournalEntry).WithMany().HasForeignKey(v => v.JournalEntryId).IsRequired(false);
-            // e.Property(v => v.PaymentMethod).HasConversion<string>();
+            e.Property(v => v.PaymentMethod).HasConversion<string>();
         });
 
         builder.Entity<PaymentVoucher>(e => {
@@ -244,7 +244,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(v => v.CashAccount).WithMany().HasForeignKey(v => v.CashAccountId);
             e.HasOne(v => v.ToAccount).WithMany().HasForeignKey(v => v.ToAccountId);
             e.HasOne(v => v.JournalEntry).WithMany().HasForeignKey(v => v.JournalEntryId).IsRequired(false);
-            // e.Property(v => v.PaymentMethod).HasConversion<string>();
+            e.Property(v => v.PaymentMethod).HasConversion<string>();
         });
 
         builder.Entity<StoreInfo>().HasData(
