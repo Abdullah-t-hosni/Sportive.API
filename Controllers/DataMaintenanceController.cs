@@ -102,6 +102,7 @@ public class DataMaintenanceController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "OUTER FACTORY RESET ERROR");
+            return BadRequest(new { success = false, message = "فشل التصفير: " + ex.Message });
         }
     }
 
