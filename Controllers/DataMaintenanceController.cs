@@ -144,6 +144,23 @@ public class DataMaintenanceController : ControllerBase
         }
     }
 
+    [HttpGet("debug-account/{code}")]
+    public async Task<IActionResult> DebugAccount(string code)
+    {
+        var acc = await _db.Accounts.IgnoreQueryFilters().FirstOrDefaultAsync(a => a.Code == code);
+        if (acc == null) return NotFound(new { message = $"لم يتم العثور على أي حساب بالكود {code}" });
+        
+        return Ok(new { 
+            id = acc.Id, 
+            code = acc.Code, 
+            name = acc.NameAr, 
+            isDeleted = acc.IsDeleted,
+            parentId = acc.ParentId,
+            level = acc.Level,
+            type = acc.Type.ToString()
+        });
+    }
+
     [HttpGet("rebuild"), HttpPost("rebuild")]
     public async Task<IActionResult> Rebuild() => await FixTree();
 }
