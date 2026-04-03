@@ -53,28 +53,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
     {
         base.OnModelCreating(builder);
 
-        // Global Query Filters (Soft Delete)
-        builder.Entity<Category>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<Brand>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<Product>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<ProductVariant>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<ProductImage>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<Review>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<Customer>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<Order>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<OrderItem>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<CartItem>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<Address>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<Coupon>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<WishlistItem>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<Notification>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<OrderStatusHistory>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<OrderStatusHistory>().Property(h => h.Status).HasConversion<string>();
-        builder.Entity<BackupRecord>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<InventoryAudit>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<InventoryAuditItem>().HasQueryFilter(x => !x.IsDeleted);
-        builder.Entity<InventoryMovement>().HasQueryFilter(x => !x.IsDeleted);
-
+        // ❌ تم إزالة فلاتر الحذف الناعم (Soft Delete) بناءً على طلب العميل
+        // النظام الآن يستخدم المسح الفعلي (Hard Delete) لضمان نظافة قاعدة البيانات
+        
         builder.Entity<AppUser>(e => {
             e.HasIndex(u => u.PhoneNumber);
         });
@@ -183,13 +164,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         // ── PURCHASE & SUPPLIERS ──────────────────────────────
         builder.Entity<Supplier>(e => {
-            e.HasQueryFilter(s => !s.IsDeleted);
             e.Property(s => s.TotalPurchases).HasPrecision(18, 2);
             e.Property(s => s.TotalPaid).HasPrecision(18, 2);
         });
 
         builder.Entity<PurchaseInvoice>(e => {
-            e.HasQueryFilter(i => !i.IsDeleted);
             e.Property(i => i.SubTotal).HasPrecision(18, 2);
             e.Property(i => i.TaxAmount).HasPrecision(18, 2);
             e.Property(i => i.TaxPercent).HasPrecision(5, 2);
@@ -199,13 +178,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
         });
 
         builder.Entity<PurchaseInvoiceItem>(e => {
-            e.HasQueryFilter(i => !i.IsDeleted);
             e.Property(i => i.UnitCost).HasPrecision(18, 2);
             e.Property(i => i.TotalCost).HasPrecision(18, 2);
         });
 
         builder.Entity<SupplierPayment>(e => {
-            e.HasQueryFilter(p => !p.IsDeleted);
             e.Property(p => p.Amount).HasPrecision(18, 2);
             e.HasOne(p => p.Supplier).WithMany(s => s.Payments).HasForeignKey(p => p.SupplierId);
             e.HasOne(p => p.Invoice).WithMany(i => i.Payments)
@@ -213,21 +190,18 @@ public class AppDbContext : IdentityDbContext<AppUser>
         });
 
         builder.Entity<Account>(e => {
-            e.HasQueryFilter(a => !a.IsDeleted);
             e.Property(a => a.OpeningBalance).HasPrecision(18,2);
             e.HasOne(a => a.Parent).WithMany(a => a.Children).HasForeignKey(a => a.ParentId).IsRequired(false);
             e.HasIndex(a => a.Code).IsUnique();
         });
 
         builder.Entity<AccountSystemMapping>(e => {
-            e.HasQueryFilter(x => !x.IsDeleted);
             e.Property(x => x.Key).HasMaxLength(AccountSystemMapping.MaxKeyLength).IsRequired();
             e.HasIndex(x => x.Key).IsUnique();
             e.HasOne(x => x.Account).WithMany().HasForeignKey(x => x.AccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<JournalEntry>(e => {
-            e.HasQueryFilter(j => !j.IsDeleted);
             e.HasOne(j => j.ReversalOf).WithMany().HasForeignKey(j => j.ReversalOfId).IsRequired(false);
         });
 
@@ -238,7 +212,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
         });
 
         builder.Entity<JournalLine>(e => {
-            e.HasQueryFilter(l => !l.IsDeleted);
             e.Property(l => l.Debit).HasPrecision(18,2);
             e.Property(l => l.Credit).HasPrecision(18,2);
             e.HasOne(l => l.JournalEntry).WithMany(j => j.Lines).HasForeignKey(l => l.JournalEntryId);
@@ -246,7 +219,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
         });
 
         builder.Entity<ReceiptVoucher>(e => {
-            e.HasQueryFilter(v => !v.IsDeleted);
             e.Property(v => v.Amount).HasPrecision(18,2);
             e.HasOne(v => v.CashAccount).WithMany().HasForeignKey(v => v.CashAccountId);
             e.HasOne(v => v.FromAccount).WithMany().HasForeignKey(v => v.FromAccountId);
@@ -254,7 +226,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
         });
 
         builder.Entity<PaymentVoucher>(e => {
-            e.HasQueryFilter(v => !v.IsDeleted);
             e.Property(v => v.Amount).HasPrecision(18,2);
             e.HasOne(v => v.CashAccount).WithMany().HasForeignKey(v => v.CashAccountId);
             e.HasOne(v => v.ToAccount).WithMany().HasForeignKey(v => v.ToAccountId);

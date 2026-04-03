@@ -108,21 +108,15 @@ public class CustomerService : ICustomerService
 
     public async Task<CustomerDetailDto> CreateCustomerAsync(CreateCustomerDto dto)
     {
-        // 1. Check for existing customer (including deleted)
-        Customer? existing = await _db.Customers.IgnoreQueryFilters()
+        // 1. Check for existing customer
+        Customer? existing = await _db.Customers
             .FirstOrDefaultAsync(c => 
                 (!string.IsNullOrEmpty(dto.Phone) && c.Phone == dto.Phone) || 
                 (!string.IsNullOrEmpty(dto.Email) && c.Email.ToLower() == dto.Email.ToLower()));
         
-        // 2. If found (active or deleted), restore or fail
         if (existing != null)
         {
-            if (!existing.IsDeleted)
-                throw new Exception("هذا العميل (أو الهاتف) مسجل بالفعل في ملفات العملاء النشطة.");
-            
-            // Restore deleted
-            await _db.SaveChangesAsync();
-            return (await GetCustomerByIdAsync(existing.Id))!;
+            throw new Exception("هذا العميل (أو الهاتف) مسجل بالفعل في ملفات العملاء.");
         }
 
         // 3. Check for conflict in Identity Users (Even if not a customer)
@@ -185,12 +179,21 @@ public class CustomerService : ICustomerService
         var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
         if (parent == null) return;
 
-        var maxCode = await _db.Accounts.Where(a => a.ParentId == parent.Id).MaxAsync(a => (string?)a.Code);
+        var query = _db.Accounts.IgnoreQueryFilters().Where(a => a.ParentId == parent.Id);
+        var maxCode = await query.MaxAsync(a => (string?)a.Code);
         long nextCodeNum = 1;
         if (maxCode != null && maxCode.Length > 4 && long.TryParse(maxCode.Substring(4), out var existingNum)) {
             nextCodeNum = existingNum + 1;
         }
-        var newCode = $"1103{nextCodeNum:D4}";
+        
+        string newCode;
+        while (true)
+        {
+            newCode = $"1103{nextCodeNum:D4}";
+            bool exists = await _db.Accounts.IgnoreQueryFilters().AnyAsync(a => a.Code == newCode);
+            if (!exists) break;
+            nextCodeNum++;
+        }
 
         var account = new Account
         {
@@ -258,8 +261,7 @@ public class CustomerService : ICustomerService
             .FirstOrDefaultAsync(a => a.Id == addressId && a.CustomerId == customerId)
             ?? throw new KeyNotFoundException("Address not found");
 
-        address.IsDeleted = true;
-        address.UpdatedAt = DateTime.UtcNow;
+        _db.Addresses.Remove(address);
         await _db.SaveChangesAsync();
     }
 
@@ -276,21 +278,19 @@ public class CustomerService : ICustomerService
 
     public async Task<bool> DeleteCustomerAsync(int id)
     {
-        var customer = await _db.Customers.FindAsync(id);
+        var customer = await _db.Customers.Include(c => c.Orders).FirstOrDefaultAsync(c => c.Id == id);
         if (customer == null) return false;
-        
-        customer.IsDeleted = true;
-        customer.UpdatedAt = DateTime.UtcNow;
 
+        if (customer.Orders.Any(o => o.Status != OrderStatus.Cancelled))
+            throw new Exception("لا يمكن حذف عميل لديه طلبات نشطة بقاعدة البيانات.");
+        
         if (!string.IsNullOrEmpty(customer.AppUserId))
         {
             var appUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == customer.AppUserId);
-            if (appUser != null)
-            {
-                appUser.IsActive = false; // "Soft delete" IdentityUser by deactivating it
-            }
+            if (appUser != null) _db.Users.Remove(appUser);
         }
         
+        _db.Customers.Remove(customer);
         await _db.SaveChangesAsync();
         return true;
     }

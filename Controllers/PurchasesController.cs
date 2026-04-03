@@ -69,6 +69,15 @@ public class SuppliersController : ControllerBase
         if (string.IsNullOrWhiteSpace(dto.Name) || string.IsNullOrWhiteSpace(dto.Phone))
             return BadRequest(new { message = "الاسم ورقم الهاتف إلزاميان" });
 
+        // 1. التحقق من وجود المورد مسبقاً (نشط)
+        var existing = await _db.Suppliers.FirstOrDefaultAsync(s => 
+            s.Name.Trim() == dto.Name.Trim() || s.Phone.Trim() == dto.Phone.Trim());
+        
+        if (existing != null)
+        {
+            return BadRequest(new { message = "هذا المورد مسجل بالفعل." });
+        }
+
         var supplier = new Supplier
         {
             Name        = dto.Name.Trim(),
@@ -89,14 +98,24 @@ public class SuppliersController : ControllerBase
         var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "2101");
         if (parent != null)
         {
-            var maxCode = await _db.Accounts.Where(a => a.ParentId == parent.Id).MaxAsync(a => (string?)a.Code);
+            // نستخدم IgnoreQueryFilters لضمان عدم تكرار كود حتى لو كان محذوفاً
+            var query = _db.Accounts.IgnoreQueryFilters().Where(a => a.ParentId == parent.Id);
+            var maxCode = await query.MaxAsync(a => (string?)a.Code);
+
             long nextCodeNum = 1;
-            if (maxCode != null && maxCode.StartsWith("2101") && long.TryParse(maxCode.Substring(4), out var existingNum)) {
+            if (maxCode != null && maxCode.Length > 4 && long.TryParse(maxCode.Substring(4), out var existingNum)) {
                 nextCodeNum = existingNum + 1;
-            } else {
-                nextCodeNum = 1;
             }
-            var newCode = $"2101{nextCodeNum:D4}";
+            
+            // تأكيد إضافي: التحقق من التكرار في حلقة للتأكد من خلو الرقم تماماً
+            string newCode;
+            while (true)
+            {
+                newCode = $"2101{nextCodeNum:D4}";
+                bool exists = await _db.Accounts.IgnoreQueryFilters().AnyAsync(a => a.Code == newCode);
+                if (!exists) break;
+                nextCodeNum++;
+            }
 
             var account = new Account
             {
@@ -146,10 +165,13 @@ public class SuppliersController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == id && !s.IsDeleted);
+        var supplier = await _db.Suppliers.Include(s => s.Invoices).FirstOrDefaultAsync(s => s.Id == id);
         if (supplier == null) return NotFound();
-        supplier.IsDeleted = true;
-        supplier.UpdatedAt = DateTime.UtcNow;
+
+        if (supplier.Invoices.Any(i => !i.IsDeleted))
+            return BadRequest(new { message = "لا يمكن حذف مورد مسجل له فواتير مشتريات. يرجى حذف الفواتير أولاً." });
+
+        _db.Suppliers.Remove(supplier);
         await _db.SaveChangesAsync();
         return NoContent();
     }
@@ -187,7 +209,6 @@ public class PurchaseInvoicesController : ControllerBase
     {
         var q = _db.PurchaseInvoices
             .Include(i => i.Supplier)
-            .Where(i => !i.IsDeleted)
             .AsQueryable();
 
         if (supplierId.HasValue) q = q.Where(i => i.SupplierId == supplierId.Value);
@@ -222,7 +243,7 @@ public class PurchaseInvoicesController : ControllerBase
             .Include(i => i.Items).ThenInclude(it => it.Product)
             .Include(i => i.Items).ThenInclude(it => it.ProductVariant)
             .Include(i => i.Payments)
-            .FirstOrDefaultAsync(i => i.Id == id && !i.IsDeleted);
+            .FirstOrDefaultAsync(i => i.Id == id);
 
         if (inv == null) return NotFound();
 
@@ -360,7 +381,7 @@ public class PurchaseInvoicesController : ControllerBase
             .Include(i => i.Items)
             .Include(i => i.Supplier)
             .Include(i => i.Payments)
-            .FirstOrDefaultAsync(i => i.Id == id && !i.IsDeleted);
+            .FirstOrDefaultAsync(i => i.Id == id);
 
         if (inv == null) return NotFound();
 
@@ -453,7 +474,7 @@ public class PurchaseInvoicesController : ControllerBase
         var inv = await _db.PurchaseInvoices
             .Include(i => i.Supplier)
             .Include(i => i.Payments)
-            .FirstOrDefaultAsync(i => i.Id == id && !i.IsDeleted);
+            .FirstOrDefaultAsync(i => i.Id == id);
 
         if (inv == null) return NotFound();
 
@@ -503,7 +524,7 @@ public class PurchaseInvoicesController : ControllerBase
             .Include(i => i.Supplier)
             .Include(i => i.Items)
             .Include(i => i.Payments)
-            .FirstOrDefaultAsync(i => i.Id == id && !i.IsDeleted);
+            .FirstOrDefaultAsync(i => i.Id == id);
 
         if (inv == null) return NotFound();
 
@@ -534,8 +555,7 @@ public class PurchaseInvoicesController : ControllerBase
             foreach (var l in invoiceEntry.Lines) l.IsDeleted = true;
         }
 
-        inv.IsDeleted = true;
-        inv.UpdatedAt = DateTime.UtcNow;
+        _db.PurchaseInvoices.Remove(inv);
         await _db.SaveChangesAsync();
         return NoContent();
     }

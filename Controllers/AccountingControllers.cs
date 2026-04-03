@@ -91,7 +91,7 @@ public class AccountsController : ControllerBase
         if (await _db.JournalLines.AnyAsync(l => l.AccountId == id && !l.IsDeleted))
             return BadRequest("لا يمكن حذف حساب يحتوي على حركات مالية.");
 
-        account.IsDeleted = true;
+        _db.Accounts.Remove(account);
         await _db.SaveChangesAsync();
         return NoContent();
     }
@@ -191,7 +191,7 @@ public class JournalEntriesController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var q = _db.JournalEntries.Where(e => !e.IsDeleted);
+        var q = _db.JournalEntries;
         var total = await q.CountAsync();
         var entries = await q.OrderByDescending(e => e.EntryDate)
             .Skip((page-1)*pageSize).Take(pageSize)
@@ -204,7 +204,7 @@ public class JournalEntriesController : ControllerBase
     public async Task<IActionResult> GetById(int id)
     {
         var entry = await _db.JournalEntries.Include(e => e.Lines).ThenInclude(l => l.Account)
-            .FirstOrDefaultAsync(e => e.Id == id && !e.IsDeleted);
+            .FirstOrDefaultAsync(e => e.Id == id);
         if (entry == null) return NotFound();
         return Ok(entry);
     }
@@ -225,7 +225,7 @@ public class JournalEntriesController : ControllerBase
         if (entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
             return BadRequest("لا يمكن حذف قيد مرحّل إلا من خلال الإدارة.");
 
-        entry.IsDeleted = true;
+        _db.JournalEntries.Remove(entry);
         await _db.SaveChangesAsync();
         return NoContent();
     }
@@ -247,7 +247,7 @@ public class ReceiptVouchersController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var q = _db.ReceiptVouchers.Where(v => !v.IsDeleted);
+        var q = _db.ReceiptVouchers;
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(v => v.VoucherDate)
             .Skip((page-1)*pageSize).Take(pageSize)
@@ -275,13 +275,12 @@ public class ReceiptVouchersController : ControllerBase
         var voucher = await _db.ReceiptVouchers.FindAsync(id);
         if (voucher == null) return NotFound();
 
-        // السماح بحذف القيد المرحّل للمدير فقط عبر فحص القيد المحاسبي المرتبط
         var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber);
         if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
             return BadRequest("لا يمكن حذف سند مرحّل إلا من خلال الإدارة.");
 
-        voucher.IsDeleted = true;
-        if (entry != null) entry.IsDeleted = true;
+        _db.ReceiptVouchers.Remove(voucher);
+        if (entry != null) _db.JournalEntries.Remove(entry);
 
         await _db.SaveChangesAsync();
         return NoContent();
@@ -304,7 +303,7 @@ public class PaymentVouchersController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var q = _db.PaymentVouchers.Where(v => !v.IsDeleted);
+        var q = _db.PaymentVouchers;
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(v => v.VoucherDate)
             .Skip((page-1)*pageSize).Take(pageSize)
@@ -336,8 +335,8 @@ public class PaymentVouchersController : ControllerBase
         if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
             return BadRequest("لا يمكن حذف سند مرحّل إلا من خلال الإدارة.");
 
-        voucher.IsDeleted = true;
-        if (entry != null) entry.IsDeleted = true;
+        _db.PaymentVouchers.Remove(voucher);
+        if (entry != null) _db.JournalEntries.Remove(entry);
 
         await _db.SaveChangesAsync();
         return NoContent();
