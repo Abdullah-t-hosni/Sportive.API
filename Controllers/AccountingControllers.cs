@@ -258,9 +258,29 @@ public class ReceiptVouchersController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] ReceiptVoucher voucher)
+    public async Task<IActionResult> Create([FromBody] CreateReceiptVoucherDto dto)
     {
-        voucher.CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var year = DateTime.UtcNow.Year % 100;
+        var count = await _db.ReceiptVouchers.IgnoreQueryFilters().CountAsync() + 1;
+        var vNo = $"RV-{year}{count:D4}";
+
+        var voucher = new ReceiptVoucher
+        {
+            VoucherNumber = vNo,
+            VoucherDate = dto.VoucherDate,
+            Amount = dto.Amount,
+            CashAccountId = dto.CashAccountId,
+            FromAccountId = dto.FromAccountId,
+            CustomerId = dto.CustomerId,
+            PaymentMethod = dto.PaymentMethod,
+            Reference = dto.Reference,
+            Description = dto.Description,
+            AttachmentUrl = dto.AttachmentUrl,
+            AttachmentPublicId = dto.AttachmentPublicId,
+            CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+            CreatedAt = DateTime.UtcNow
+        };
+
         _db.ReceiptVouchers.Add(voucher);
         await _db.SaveChangesAsync();
 
@@ -314,9 +334,29 @@ public class PaymentVouchersController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] PaymentVoucher voucher)
+    public async Task<IActionResult> Create([FromBody] CreatePaymentVoucherDto dto)
     {
-        voucher.CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var year = DateTime.UtcNow.Year % 100;
+        var count = await _db.PaymentVouchers.IgnoreQueryFilters().CountAsync() + 1;
+        var vNo = $"PV-{year}{count:D4}";
+
+        var voucher = new PaymentVoucher
+        {
+            VoucherNumber = vNo,
+            VoucherDate = dto.VoucherDate,
+            Amount = dto.Amount,
+            CashAccountId = dto.CashAccountId,
+            ToAccountId = dto.ToAccountId,
+            SupplierId = dto.SupplierId,
+            PaymentMethod = dto.PaymentMethod,
+            Reference = dto.Reference,
+            Description = dto.Description,
+            AttachmentUrl = dto.AttachmentUrl,
+            AttachmentPublicId = dto.AttachmentPublicId,
+            CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+            CreatedAt = DateTime.UtcNow
+        };
+
         _db.PaymentVouchers.Add(voucher);
         await _db.SaveChangesAsync();
 

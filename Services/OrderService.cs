@@ -139,7 +139,7 @@ public class OrderService : IOrderService
                 h.Status.ToString(), h.Note, h.CreatedAt
             )).ToList(),
             salesPersonName,
-            null, 0, 0, (int)o.Source,
+            null, 0, 0, o.Source.ToString(),
             o.AttachmentUrl, o.AttachmentPublicId
         );
     }
