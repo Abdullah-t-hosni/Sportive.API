@@ -48,22 +48,31 @@ public class NotificationService : INotificationService
         await _db.SaveChangesAsync();
 
         // Push to SignalR
+        var payload = new {
+            notification.Id,
+            notification.TitleAr,
+            notification.TitleEn,
+            notification.MessageAr,
+            notification.MessageEn,
+            notification.Type,
+            notification.IsRead,
+            notification.OrderId,
+            notification.CreatedAt
+        };
+
+        // 1. Send to the specific user if exists
         if (!string.IsNullOrEmpty(finalUserId))
         {
-            await _hubContext.Clients.Group(finalUserId).SendAsync("ReceiveNotification", new {
-                notification.Id,
-                notification.TitleAr,
-                notification.TitleEn,
-                notification.MessageAr,
-                notification.MessageEn,
-                notification.Type,
-                notification.IsRead,
-                notification.OrderId,
-                notification.CreatedAt
-            });
+            await _hubContext.Clients.Group(finalUserId).SendAsync("ReceiveNotification", payload);
             
             var unreadCount = await GetUnreadCountAsync(finalUserId);
             await _hubContext.Clients.Group(finalUserId).SendAsync("ReceiveUnreadCount", unreadCount);
+        }
+
+        // 2. IMPORTANT: If it's an order or a general alert, inform all Admins/Staff
+        if (type == "Order" || type == "Alert" || string.IsNullOrEmpty(userId))
+        {
+            await _hubContext.Clients.Group("Admin").SendAsync("ReceiveNotification", payload);
         }
     }
 
