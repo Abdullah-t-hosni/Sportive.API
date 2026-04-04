@@ -720,14 +720,23 @@ public class AccountingService : IAccountingService
         {
             if (debit == 0 && credit == 0) continue;
             var accountId = await GetAccountIdAsync(code);
+
+            // ⚠️ STRICT ENTITY ROUTING (User Preference):
+            // We only attach entity IDs (CustomerId/SupplierId) to their specific trade accounts.
+            // Customers -> Receivables (starts with 1103)
+            // Suppliers -> Payables (starts with 2101)
+            // This ensures clean ledgers for Revenue, Expenses, and Cash accounts.
+            bool isReceivables = code.StartsWith("1103");
+            bool isPayables = code.StartsWith("2101");
+
             entry.Lines.Add(new JournalLine
             {
                 AccountId   = accountId,
                 Debit       = debit,
                 Credit      = credit,
                 Description = desc,
-                CustomerId  = customerId,
-                SupplierId  = supplierId,
+                CustomerId  = isReceivables ? customerId : null,
+                SupplierId  = isPayables ? supplierId : null,
                 OrderId     = orderId,
                 CreatedAt   = DateTime.UtcNow,
             });

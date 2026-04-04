@@ -77,17 +77,6 @@ def load_accounts(path: Path) -> list[dict]:
         by_code[a["code"]] = a
     accounts = list(by_code.values())
 
-    # إيراد توصيل — لا نستخدم 410102 لأن البادئة تتقاطع مع حساب 4102 (مرتجع)
-    if "410105" not in by_code:
-        accounts.append(
-            {
-                "code": "410105",
-                "name": "إيراد خدمات توصيل",
-                "desc": "إيراد رسوم التوصيل للعملاء",
-                "allow": 1,
-            }
-        )
-
     return accounts
 
 
@@ -120,7 +109,6 @@ def build_sql(accounts: list[dict]) -> str:
     lines.append("-- Seed: شجرة الحسابات الكاملة (متزامن مع Accounts.xlsx)")
     lines.append("-- توليد تلقائي: python tools/sync_coa_from_xlsx.py")
     lines.append("-- يُصلح تلقائياً: تكرار 110103 الثاني → 110104 (العجز والزيادة)")
-    lines.append("-- يُضاف: 410105 إيراد خدمات توصيل (410102 يتقاطع بادئته مع 4102 مرتجع المبيعات)")
     lines.append("-- قم بتشغيل السكربت في قاعدة البيانات بعد أخذ نسخة احتياطية")
     lines.append("-- ══════════════════════════════════════════════════════")
     lines.append("")
