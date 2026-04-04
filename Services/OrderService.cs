@@ -334,6 +334,8 @@ public class OrderService : IOrderService
 
         _ = Task.Run(async () =>
         {
+            if (order.Source == OrderSource.POS) return; // ✅ Delegation: POS accounting is handled by Frontend for better precision
+
             using var scope = _scopeFactory.CreateScope();
             var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
