@@ -373,7 +373,7 @@ public class AccountingService : IAccountingService
 
         string receivablesAcct = order.Customer?.MainAccountId?.ToString() 
                                ?? GetMap(mapDict, "customerAccountID", RECEIVABLES);
-        var cashCode = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+        var cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
@@ -405,7 +405,7 @@ public class AccountingService : IAccountingService
         var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
 
         string receivablesAcct = GetMap(mapDict, "customerAccountID", RECEIVABLES);
-        var cashCode = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+        var cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
