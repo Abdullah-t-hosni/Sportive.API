@@ -188,10 +188,11 @@ public class BackupService : IBackupService
 
         using var client = new SmtpClient(smtp, port)
         {
+            UseDefaultCredentials = false, // Critical for Gmail
             Credentials      = new NetworkCredential(user, pass),
             EnableSsl        = cfg.GetValue<bool>("Ssl", true),
             DeliveryMethod   = SmtpDeliveryMethod.Network,
-            Timeout          = 60_000,
+            Timeout          = 100_000, // Increase for large attachments
         };
 
         var dateStr = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm") + " UTC";
