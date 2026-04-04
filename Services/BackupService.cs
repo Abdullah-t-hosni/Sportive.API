@@ -16,6 +16,7 @@ public interface IBackupService
     Task<BackupResult> RunBackupAsync(CancellationToken ct = default);
     Task<List<BackupRecord>> GetHistoryAsync(int limit = 30);
     Task DeleteOldBackupsAsync(int keepDays = 30);
+    Task<BackupResult> RestoreAsync(Stream fileStream, string fileName, CancellationToken ct = default);
 }
 
 public record BackupResult(
@@ -263,6 +264,99 @@ public class BackupService : IBackupService
         _db.BackupRecords.RemoveRange(old);
         await _db.SaveChangesAsync();
         _log.LogInformation("[Backup] Cleaned {count} old backups", old.Count);
+    }
+
+    // ══════════════════════════════════════════════════
+    // Restore Database
+    // ══════════════════════════════════════════════════
+    public async Task<BackupResult> RestoreAsync(Stream fileStream, string fileName, CancellationToken ct = default)
+    {
+        var sw = Stopwatch.StartNew();
+        var tempFile = Path.Combine(BackupDir, $"restore_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{fileName}");
+        var finalSql = tempFile;
+
+        try
+        {
+            _log.LogInformation("[Restore] Starting restoration from {file}", fileName);
+
+            // 1. Save uploaded file to temp
+            await using (var fs = File.Create(tempFile))
+            {
+                await fileStream.CopyToAsync(fs, ct);
+            }
+
+            // 2. If compressed, decompress
+            if (fileName.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
+            {
+                finalSql = tempFile.Replace(".gz", "");
+                await DecompressFileAsync(tempFile, finalSql);
+            }
+
+            // 3. Run mysql command
+            await ExecuteRestoreAsync(finalSql, ct);
+
+            sw.Stop();
+            _log.LogInformation("[Restore] Success in {ms}ms", sw.ElapsedMilliseconds);
+
+            return new BackupResult(true, fileName, new FileInfo(tempFile).Length, sw.Elapsed);
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            _log.LogError(ex, "[Restore] Failed");
+            return new BackupResult(false, fileName, 0, sw.Elapsed, ex.Message);
+        }
+        finally
+        {
+            // Cleanup temp files
+            if (File.Exists(tempFile)) File.Delete(tempFile);
+            if (finalSql != tempFile && File.Exists(finalSql)) File.Delete(finalSql);
+        }
+    }
+
+    private static async Task DecompressFileAsync(string source, string dest)
+    {
+        await using var input = File.OpenRead(source);
+        await using var output = File.Create(dest);
+        await using var gz = new GZipStream(input, CompressionMode.Decompress);
+        await gz.CopyToAsync(output);
+    }
+
+    private async Task ExecuteRestoreAsync(string sqlPath, CancellationToken ct)
+    {
+        var connStr = _config.GetConnectionString("DefaultConnection")
+                   ?? _config["DATABASE_URL"]
+                   ?? throw new InvalidOperationException("No connection string");
+
+        var (host, port, db, user, password) = ParseConnectionString(connStr);
+
+        // Note: We use mysql command instead of mysqldump
+        var args = $"--host={host} --port={port} --user={user} --password={password} {db}";
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = "mysql",
+            Arguments = args,
+            RedirectStandardInput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        using var process = Process.Start(psi)
+            ?? throw new InvalidOperationException("mysql process failed to start");
+
+        await using var sqlStream = File.OpenRead(sqlPath);
+        var copyTask = sqlStream.CopyToAsync(process.StandardInput.BaseStream, ct);
+        var errorTask = process.StandardError.ReadToEndAsync(ct);
+
+        await Task.WhenAll(copyTask, process.WaitForExitAsync(ct));
+        process.StandardInput.Close(); // Critical: close stdin to signal EOF to mysql
+
+        var errorOutput = await errorTask;
+
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException($"mysql restore exited {process.ExitCode}: {errorOutput}");
     }
 
     // ══════════════════════════════════════════════════

@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
+using Sportive.API.Data;
 using Sportive.API.Models;
 
 namespace Sportive.API.Services;
@@ -36,7 +38,7 @@ public class BackupHostedService : BackgroundService
         {
             try
             {
-                var delay = CalculateDelay();
+                var delay = await CalculateDelayAsync(stoppingToken);
                 _log.LogInformation("[Backup] Next backup in {h:N1}h ({time})",
                     delay.TotalHours, DateTime.UtcNow.Add(delay).ToString("HH:mm UTC"));
 
@@ -70,21 +72,33 @@ public class BackupHostedService : BackgroundService
         await svc.DeleteOldBackupsAsync(keepDays);
     }
 
-    // ── يحسب الوقت للـ backup القادم ─────────────────
-    private TimeSpan CalculateDelay()
+    private async Task<TimeSpan> CalculateDelayAsync(CancellationToken ct)
     {
-        // وقت الـ backup من الـ config (افتراضي 2:00 صباحاً)
-        var timeStr   = _config["Backup:DailyTime"] ?? "02:00";
-        var parts     = timeStr.Split(':');
-        var targetHour= int.Parse(parts[0]);
-        var targetMin = parts.Length > 1 ? int.Parse(parts[1]) : 0;
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        
+        // Get store settings
+        var settings = await db.StoreInfo.FirstOrDefaultAsync(ct) ?? new StoreInfo();
+        
+        var targetTime = settings.BackupTime ?? "02:00";
+        var parts      = targetTime.Split(':');
+        var localHour  = int.Parse(parts[0]);
+        var localMin   = parts.Length > 1 ? int.Parse(parts[1]) : 0;
+        var offsetHours= settings.BackupUtcOffset;
 
-        var now  = DateTime.UtcNow;
-        var next = now.Date.AddHours(targetHour).AddMinutes(targetMin);
+        // Calculate UTC time: UTC = Local - Offset
+        var nowUtcS    = DateTime.UtcNow;
+        var nowLocal   = nowUtcS.AddHours(offsetHours);
+        
+        // Target local time today
+        var nextLocal  = nowLocal.Date.AddHours(localHour).AddMinutes(localMin);
+        
+        // If local time has passed, move to tomorrow
+        if (nextLocal <= nowLocal) nextLocal = nextLocal.AddDays(1);
 
-        // لو الوقت فات اليوم، خد بكره
-        if (next <= now) next = next.AddDays(1);
-
-        return next - now;
+        // Convert back to UTC for the delay
+        var nextUtc    = nextLocal.AddHours(-offsetHours);
+        
+        return nextUtc - nowUtcS;
     }
 }

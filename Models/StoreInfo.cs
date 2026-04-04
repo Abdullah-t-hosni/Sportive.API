@@ -68,7 +68,15 @@ public class StoreInfo
     
     [JsonPropertyName("isMaintenanceMode")]
     public bool InMaintenance { get; set; } = false;
-    
+
+    // --- Backup Schedule Configuration ---
+    [MaxLength(10)]
+    [JsonPropertyName("backupTime")]
+    public string BackupTime { get; set; } = "02:00"; // Local time (HH:mm)
+
+    [JsonPropertyName("backupUtcOffset")]
+    public int BackupUtcOffset { get; set; } = 2; // Default for Egypt/Cairo (UTC+2)
+
     [JsonPropertyName("lastUpdatedAt")]
     public DateTime LastUpdateDate { get; set; } = DateTime.UtcNow;
 }

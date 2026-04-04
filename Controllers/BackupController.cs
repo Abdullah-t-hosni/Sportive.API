@@ -63,11 +63,26 @@ public class BackupController : ControllerBase
         return File(bytes, "application/gzip", record.FileName);
     }
 
-    // ── DELETE /api/backup/cleanup ────────────────────
-    [HttpDelete("cleanup")]
-    public async Task<IActionResult> Cleanup([FromQuery] int keepDays = 30)
+    // ── POST /api/backup/restore ──────────────────────
+    // يرفع ملف ويسترجع القاعدة منه
+    [HttpPost("restore")]
+    public async Task<IActionResult> Restore(IFormFile file)
     {
-        await _backup.DeleteOldBackupsAsync(keepDays);
-        return Ok(new { message = $"تم حذف النسخ الأقدم من {keepDays} يوم" });
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "يرجى اختيار ملف صالح" });
+
+        if (!file.FileName.EndsWith(".sql") && !file.FileName.EndsWith(".gz"))
+            return BadRequest(new { message = "الملحقات المسموحة فقط هي .sql أو .sql.gz" });
+
+        using var stream = file.OpenReadStream();
+        var result = await _backup.RestoreAsync(stream, file.FileName);
+
+        return result.Success
+            ? Ok(new {
+                success = true,
+                message = "تم استرجاع قاعدة البيانات بنجاح ✅ - يرجى مراجعة البيانات الآن",
+                durationS = Math.Round(result.Duration.TotalSeconds, 1)
+              })
+            : StatusCode(500, new { success = false, error = result.Error });
     }
 }
