@@ -20,12 +20,20 @@ public class BackupController : ControllerBase
     public async Task<IActionResult> RunNow()
     {
         var result = await _backup.RunBackupAsync();
+        
+        // We'll fetch the record to get its DB ID if it was successful
+        var records = await _backup.GetHistoryAsync(1);
+        var latest  = records.FirstOrDefault();
+
         return result.Success
             ? Ok(new {
                 success  = true,
+                id       = latest?.Id, // Return the ID for auto-download
                 fileName = result.FileName,
                 sizeMb   = Math.Round((double)result.FileSizeBytes / 1024 / 1024, 2),
                 durationS= Math.Round(result.Duration.TotalSeconds, 1),
+                emailSent= latest?.EmailSent ?? false,
+                emailError= latest?.EmailError,
                 message  = "تم عمل النسخة الاحتياطية بنجاح ✅"
               })
             : StatusCode(500, new { success = false, error = result.Error });
