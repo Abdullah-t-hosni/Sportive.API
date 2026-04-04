@@ -189,15 +189,33 @@ public class JournalEntriesController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
     {
-        var q = _db.JournalEntries;
+        var q = _db.JournalEntries.AsNoTracking();
+
+        if (!string.IsNullOrEmpty(search))
+            q = q.Where(e => e.EntryNumber.Contains(search) || (e.Description != null && e.Description.Contains(search)) || (e.Reference != null && e.Reference.Contains(search)));
+        
+        if (fromDate.HasValue) q = q.Where(e => e.EntryDate >= fromDate.Value.Date);
+        if (toDate.HasValue) q = q.Where(e => e.EntryDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+
         var total = await q.CountAsync();
-        var entries = await q.OrderByDescending(e => e.EntryDate)
+        var entries = await q.OrderByDescending(e => e.Id)
             .Skip((page-1)*pageSize).Take(pageSize)
+            .Select(e => new {
+                Id = e.Id,
+                EntryNumber = e.EntryNumber,
+                EntryDate = e.EntryDate,
+                Description = e.Description,
+                Reference = e.Reference,
+                Status = e.Status.ToString(),
+                Type = e.Type.ToString(),
+                LineCount = _db.JournalLines.Count(l => l.JournalEntryId == e.Id),
+                TotalAmount = _db.JournalLines.Where(l => l.JournalEntryId == e.Id && l.Debit > 0).Sum(l => (decimal?)l.Debit) ?? 0
+            })
             .ToListAsync();
 
-        return Ok(new PaginatedResult<JournalEntry>(entries, total, page, pageSize, (int)Math.Ceiling(total/(double)pageSize)));
+        return Ok(new { items = entries, total, page, pageSize, totalPages = (int)Math.Ceiling(total/(double)pageSize) });
     }
 
     [HttpGet("{id}")]

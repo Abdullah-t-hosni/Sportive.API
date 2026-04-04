@@ -110,6 +110,12 @@ public class OrderService : IOrderService
             salesPersonName = sp != null ? $"{sp.FirstName} {sp.LastName}" : "";
         }
 
+        // 💡 SMART FINANCE: Calculate actual paid amount from Journal Entries
+        var paidAmount = await _db.JournalLines
+            .Where(l => l.OrderId == id && l.Credit > 0)
+            .Where(l => l.Account.Code.StartsWith("1103")) // Credit to Receivables = Money Paid
+            .SumAsync(l => l.Credit);
+
         return new OrderDetailDto(
             o.Id,
             o.OrderNumber,
@@ -140,8 +146,12 @@ public class OrderService : IOrderService
                 h.Status.ToString(), h.Note, h.CreatedAt
             )).ToList(),
             salesPersonName,
-            null, 0, 0, o.Source.ToString(),
-            o.AttachmentUrl, o.AttachmentPublicId
+            null, 
+            0, 
+            paidAmount, // ✅ Show the real paid amount
+            o.Source.ToString(),
+            o.AttachmentUrl, 
+            o.AttachmentPublicId
         );
     }
 
@@ -326,6 +336,13 @@ public class OrderService : IOrderService
             }
         }
 
+        // 4. Finalize Totals & Delivery (Website Specific)
+        if (order.Source == OrderSource.Website && order.FulfillmentType == FulfillmentType.Delivery)
+        {
+            // Fetch delivery fee from store settings
+            order.DeliveryFee = (order.SubTotal >= (store?.FreeDeliveryAt ?? 2000)) ? 0 : (store?.FixedDeliveryFee ?? 50);
+        }
+
         order.TotalAmount = order.SubTotal + order.DeliveryFee - order.DiscountAmount;
         _db.Orders.Add(order);
         order.StatusHistory.Add(new OrderStatusHistory { Status = order.Status, CreatedAt = DateTime.UtcNow, Note = "Order Created." });
@@ -408,24 +425,35 @@ public class OrderService : IOrderService
             Status = dto.Status, Note = dto.Note, ChangedByUserId = updatedByUserId, CreatedAt = DateTime.UtcNow
         });
 
+        // 💡 AUTO-FLOW: When a Website order is "Confirmed" or "Delivered", set PaymentStatus to Paid (unless Credit)
+        bool websiteConfirmation = (dto.Status == OrderStatus.Confirmed || dto.Status == OrderStatus.Delivered) 
+                                 && order.Source == OrderSource.Website;
+
+        if (websiteConfirmation && order.PaymentMethod != PaymentMethod.Credit)
+        {
+            order.PaymentStatus = PaymentStatus.Paid;
+        }
+
         if (dto.Status == OrderStatus.Delivered)
         {
             order.ActualDeliveryDate = DateTime.UtcNow;
             if (order.PaymentMethod != PaymentMethod.Credit) order.PaymentStatus = PaymentStatus.Paid;
+        }
 
-            if (order.Source == OrderSource.Website && order.PaymentStatus == PaymentStatus.Paid)
+        // Post accounting if paid
+        if ((dto.Status == OrderStatus.Delivered || dto.Status == OrderStatus.Confirmed) && 
+            order.Source == OrderSource.Website && order.PaymentStatus == PaymentStatus.Paid)
+        {
+            _ = Task.Run(async () =>
             {
-                _ = Task.Run(async () =>
-                {
-                    using var scope = _scopeFactory.CreateScope();
-                    var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                    try {
-                        var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == orderId);
-                        await accounting.PostOrderPaymentAsync(fullOrder);
-                    } catch { }
-                });
-            }
+                using var scope = _scopeFactory.CreateScope();
+                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                try {
+                    var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == orderId);
+                    await accounting.PostOrderPaymentAsync(fullOrder);
+                } catch { }
+            });
         }
 
         if ((dto.Status == OrderStatus.Cancelled || dto.Status == OrderStatus.Returned) && 
