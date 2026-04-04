@@ -607,7 +607,7 @@ public class DashboardService : IDashboardService
                 o.Id, o.OrderNumber, o.Customer.FirstName + " " + o.Customer.LastName, 
                 o.Customer.Phone ?? "", o.Status.ToString(), o.FulfillmentType.ToString(), 
                 o.TotalAmount, o.CreatedAt, o.Items.Sum(i => i.Quantity), 
-                o.Source.ToString(), o.PaymentMethod.ToString(), o.PaymentStatus.ToString()))
+                o.Source.ToString(), o.PaymentMethod.ToString(), o.PaymentStatus.ToString(), o.AdminNotes))
             .ToListAsync();
     }
 }

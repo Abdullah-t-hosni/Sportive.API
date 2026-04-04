@@ -92,7 +92,8 @@ public record OrderSummaryDto(
     int ItemCount,
     string Source,
     string PaymentMethod,
-    string PaymentStatus
+    string PaymentStatus,
+    string? AdminNotes = null
 );
 
 public record OrderDetailDto(
