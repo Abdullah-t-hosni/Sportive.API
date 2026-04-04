@@ -440,6 +440,18 @@ public class OrderService : IOrderService
             if (order.PaymentMethod != PaymentMethod.Credit) order.PaymentStatus = PaymentStatus.Paid;
         }
 
+        if (dto.Status == OrderStatus.Returned && order.Source == OrderSource.POS)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+            var cashCode = await accounting.GetMappedCashAccount(order.PaymentMethod, order.Source);
+            var balance = await accounting.GetAccountBalanceAsync(cashCode);
+            if (balance < order.TotalAmount)
+            {
+               throw new InvalidOperationException($"عذراً، رصيد الدرج غير كافٍ. المتوفر حالياً: {balance:N2} ج.م فقط.");
+            }
+        }
+
         // Post accounting if paid
         if ((dto.Status == OrderStatus.Delivered || dto.Status == OrderStatus.Confirmed) && 
             order.Source == OrderSource.Website && order.PaymentStatus == PaymentStatus.Paid)
@@ -493,6 +505,31 @@ public class OrderService : IOrderService
         var order = await _db.Orders.Include(o => o.Items).ThenInclude(i => i.Product).FirstOrDefaultAsync(o => o.Id == orderId);
         if (order == null) throw new KeyNotFoundException("Order not found.");
         if (order.Status == OrderStatus.Cancelled) throw new InvalidOperationException("Cannot return items from a cancelled order.");
+
+        // 1. Calculate Refund Amount First
+        decimal refundAmountTotal = 0;
+        foreach (var req in dto.Items)
+        {
+            var line = order.Items.FirstOrDefault(i => i.Id == req.OrderItemId);
+            if (line != null && req.Quantity > 0)
+            {
+                var ratio = (decimal)req.Quantity / (decimal)line.Quantity;
+                refundAmountTotal += Math.Round(line.TotalPrice * ratio, 2);
+            }
+        }
+
+        // 2. Mandatory Drawer Balance Check for POS returns
+        if (order.Source == OrderSource.POS)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+            var cashierCode = await accounting.GetMappedCashAccount(order.PaymentMethod, order.Source);
+            var currentDrawerBalance = await accounting.GetAccountBalanceAsync(cashierCode);
+            if (currentDrawerBalance < refundAmountTotal)
+            {
+               throw new InvalidOperationException($"عذراً، رصيد الدرج غير كافٍ لإتمام هذا المرتجع الجزئي. المتوفر حالياً: {currentDrawerBalance:N2} ج.م فقط.");
+            }
+        }
 
         var returnedOrderItems = new List<OrderItem>();
         decimal refundAmount = 0;

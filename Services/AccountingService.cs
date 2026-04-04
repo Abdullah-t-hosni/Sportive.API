@@ -25,6 +25,8 @@ public interface IAccountingService
     Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, string? userId);
     Task PostReceiptVoucherAsync(ReceiptVoucher voucher);
     Task PostPaymentVoucherAsync(PaymentVoucher voucher);
+    Task<string> GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, int?>? map = null);
+    Task<decimal> GetAccountBalanceAsync(string code);
 }
 
 public class AccountingService : IAccountingService
@@ -195,16 +197,16 @@ public class AccountingService : IAccountingService
             if (splits.Count > 0)
             {
                 foreach (var (m, v) in splits) {
-                    string cashAcct = GetMappedCashAccount(m, order.Source, mapDict);
-                    // Money into Bank/Cash, Money out of Customer
+                    string cashAcct = await GetMappedCashAccount(m, order.Source, mapDict);
+                    // Money into Bank, Money out of Customer
                     lines.Add((cashAcct, v, 0, $"تحصيل ({m}) - {order.OrderNumber}"));
                     lines.Add((receivablesAcct, 0, v, $"سداد فوري للعميل ({m}) - {order.OrderNumber}"));
                 }
             }
             else
             {
-                string cashAcct = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-                // Money into Bank/Cash, Money out of Customer
+                string cashAcct = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+                // Money into Bank, Money out of Customer
                 lines.Add((cashAcct, netReceivable, 0, $"تحصيل مبيعات نقدية - {order.OrderNumber}"));
                 lines.Add((receivablesAcct, 0, netReceivable, $"سداد فوري للعميل - {order.OrderNumber}"));
             }
@@ -266,7 +268,7 @@ public class AccountingService : IAccountingService
         // 4. Cash Refund (Unified Entry Part 2 - Only if it was paid)
         if (order.PaymentStatus == PaymentStatus.Paid)
         {
-            var cashCode = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+            var cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
             lines.Add((receivablesAcct, order.TotalAmount, 0,                $"رد مرتجع مالي للعميل - {order.OrderNumber}"));
             lines.Add((cashCode,        0,                order.TotalAmount, $"خروج نقدية للمرتجع - {order.OrderNumber} ({order.PaymentMethod})"));
         }
@@ -333,7 +335,7 @@ public class AccountingService : IAccountingService
         lines.Add((receivablesAcct, 0, refundAmount, $"دائن العميل (مرتجع جزئي) - {order.OrderNumber}"));
 
         // Cash component (The immediate refund)
-        var cashCode = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+        var cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
         lines.Add((receivablesAcct, refundAmount, 0,            $"إثبات رد نقدي للعميل - {order.OrderNumber}"));
         lines.Add((cashCode,        0,            refundAmount, $"خروج نقدية للمرتجع - {order.OrderNumber} ({order.PaymentMethod})"));
 
@@ -661,8 +663,14 @@ public class AccountingService : IAccountingService
     }
 
     /// Choosing the cash account based on payment method, source, and stored mappings
-    private string GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, int?> map)
+    public async Task<string> GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, int?>? map = null)
     {
+        if (map == null)
+        {
+            var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
+            map = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
+        }
+
         string? key = (method, source) switch
         {
             (PaymentMethod.Vodafone, OrderSource.POS)     => "posVodafoneAccountID",
@@ -695,6 +703,15 @@ public class AccountingService : IAccountingService
             (_,                        OrderSource.POS)     => CASH_CASHIER,
             _                                               => CASH_WEBSITE,
         };
+    }
+
+    public async Task<decimal> GetAccountBalanceAsync(string code)
+    {
+        var accountId = await GetAccountIdAsync(code);
+        var balance = await _db.JournalLines
+            .Where(l => l.AccountId == accountId && !l.JournalEntry.IsDeleted)
+            .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
+        return balance;
     }
 
     /// يختار حساب النقدية من اسم الحساب النصي (من سندات الصرف)
