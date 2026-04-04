@@ -331,6 +331,7 @@ public class BackupService : IBackupService
         var (host, port, db, user, password) = ParseConnectionString(connStr);
 
         // Note: We use mysql command instead of mysqldump
+        // Passing password via command line can be risky but is common in this setup
         var args = $"--host={host} --port={port} --user={user} --password={password} {db}";
 
         var psi = new ProcessStartInfo
@@ -346,13 +347,25 @@ public class BackupService : IBackupService
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException("mysql process failed to start");
 
-        await using var sqlStream = File.OpenRead(sqlPath);
-        var copyTask = sqlStream.CopyToAsync(process.StandardInput.BaseStream, ct);
+        // ── IMPORTANT: StandardInput must be closed to signal EOF to mysql ──
+        try
+        {
+            await using (var sqlStream = File.OpenRead(sqlPath))
+            {
+                await sqlStream.CopyToAsync(process.StandardInput.BaseStream, ct);
+            }
+            await process.StandardInput.BaseStream.FlushAsync(ct);
+            process.StandardInput.Close(); // Signal EOF
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Error feeding SQL to mysql process");
+            if (!process.HasExited) process.Kill();
+            throw;
+        }
+
         var errorTask = process.StandardError.ReadToEndAsync(ct);
-
-        await Task.WhenAll(copyTask, process.WaitForExitAsync(ct));
-        process.StandardInput.Close(); // Critical: close stdin to signal EOF to mysql
-
+        await process.WaitForExitAsync(ct);
         var errorOutput = await errorTask;
 
         if (process.ExitCode != 0)
