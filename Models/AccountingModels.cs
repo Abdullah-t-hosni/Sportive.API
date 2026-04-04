@@ -95,7 +95,9 @@ public class JournalLine : BaseEntity
     public string?       Description    { get; set; }        // بيان السطر
     // روابط اختيارية
     public int?          CustomerId     { get; set; }
+    public Customer?     Customer       { get; set; }  // Nav Property
     public int?          SupplierId     { get; set; }
+    public Supplier?     Supplier       { get; set; }  // Nav Property
     public int?          OrderId        { get; set; }
 }
 

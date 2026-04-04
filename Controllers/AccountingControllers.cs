@@ -203,10 +203,27 @@ public class JournalEntriesController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var entry = await _db.JournalEntries.Include(e => e.Lines).ThenInclude(l => l.Account)
-            .FirstOrDefaultAsync(e => e.Id == id);
-        if (entry == null) return NotFound();
-        return Ok(entry);
+        var e = await _db.JournalEntries
+            .Include(x => x.Lines).ThenInclude(l => l.Account)
+            .Include(x => x.Lines).ThenInclude(l => l.Supplier)
+            .Include(x => x.Lines).ThenInclude(l => l.Customer)
+            .FirstOrDefaultAsync(x => x.Id == id);
+            
+        if (e == null) return NotFound();
+
+        // 🏛️ Projection to DTO with Entity Resolution
+        return Ok(new JournalEntryDto(
+            e.Id, e.EntryNumber, e.EntryDate, e.Type.ToString(), e.Status.ToString(),
+            e.Reference, e.Description, e.TotalDebit, e.TotalCredit, e.IsBalanced, e.CreatedAt,
+            e.Lines.Select(l => new JournalLineDto(
+                l.Id, l.AccountId, l.Account?.Code ?? "", l.Account?.NameAr ?? "",
+                l.Debit, l.Credit, l.Description, l.CustomerId, l.SupplierId,
+                l.Supplier?.Name ?? l.Customer?.FullName ?? null
+            )).ToList(),
+            e.AttachmentUrl, e.AttachmentPublicId,
+            null, // Global CustomerId
+            null  // Global SupplierId
+        ));
     }
 
     [HttpPost]

@@ -234,4 +234,90 @@ public class DataMaintenanceController : ControllerBase
             return Ok(new { success = true, message = $"تم العثور على {dupCodes.Count} كود مكرر. يرجى استخدام Purge Deleted أولاً." });
         } catch (Exception ex) { return BadRequest(new { success = false, message = ex.Message }); }
     }
+    [HttpPost("sync-purchase-journal-entries")]
+    public async Task<IActionResult> SyncPurchaseJournalEntries()
+    {
+        try
+        {
+            int updatedEntries = 0;
+            int updatedLines = 0;
+
+            // 1. Process Purchase Invoices
+            var invoiceEntries = await _db.JournalEntries
+                .Include(e => e.Lines)
+                .Where(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference != null)
+                .ToListAsync();
+
+            foreach (var entry in invoiceEntries)
+            {
+                var invoice = await _db.PurchaseInvoices.FirstOrDefaultAsync(i => i.InvoiceNumber == entry.Reference);
+                if (invoice != null)
+                {
+                    bool entryChanged = false;
+                    foreach (var line in entry.Lines.Where(l => l.SupplierId == null))
+                    {
+                        line.SupplierId = invoice.SupplierId;
+                        updatedLines++;
+                        entryChanged = true;
+                    }
+                    if (entryChanged) updatedEntries++;
+                }
+            }
+
+            // 2. Process Supplier Payments (Payment Vouchers)
+            var paymentEntries = await _db.JournalEntries
+                .Include(e => e.Lines)
+                .Where(e => (e.Type == JournalEntryType.PaymentVoucher || e.Type == JournalEntryType.ReceiptVoucher) && e.Reference != null)
+                .ToListAsync();
+
+            foreach (var entry in paymentEntries)
+            {
+                // Try to find in SupplierPayments
+                var payment = await _db.SupplierPayments.FirstOrDefaultAsync(p => p.PaymentNumber == entry.Reference);
+                if (payment != null)
+                {
+                    bool entryChanged = false;
+                    foreach (var line in entry.Lines.Where(l => l.SupplierId == null && l.CustomerId == null))
+                    {
+                        line.SupplierId = payment.SupplierId;
+                        updatedLines++;
+                        entryChanged = true;
+                    }
+                    if (entryChanged) updatedEntries++;
+                }
+                else 
+                {
+                    // Try to find in ReceiptVouchers (for Customer returns/payments if needed)
+                    var rv = await _db.ReceiptVouchers.FirstOrDefaultAsync(v => v.VoucherNumber == entry.Reference);
+                    if (rv != null && rv.CustomerId != null)
+                    {
+                        bool entryChanged = false;
+                        foreach (var line in entry.Lines.Where(l => l.CustomerId == null && l.SupplierId == null))
+                        {
+                            line.CustomerId = rv.CustomerId;
+                            updatedLines++;
+                            entryChanged = true;
+                        }
+                        if (entryChanged) updatedEntries++;
+                    }
+                }
+            }
+
+            if (updatedLines > 0)
+            {
+                await _db.SaveChangesAsync();
+            }
+
+            return Ok(new { 
+                success = true, 
+                message = $"تم تحديث {updatedLines} سطر محاسبي في {updatedEntries} قيد بنجاح.",
+                details = new { entries = updatedEntries, lines = updatedLines }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "SYNC PURCHASE ENTRIES ERROR");
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
 }

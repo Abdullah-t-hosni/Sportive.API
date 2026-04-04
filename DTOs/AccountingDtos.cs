@@ -111,7 +111,9 @@ public record JournalEntryDto(
     DateTime CreatedAt,
     List<JournalLineDto> Lines,
     string?  AttachmentUrl = null,
-    string?  AttachmentPublicId = null
+    string?  AttachmentPublicId = null,
+    int?     CustomerId = null,
+    int?     SupplierId = null
 );
 
 public record JournalLineSummaryDto(
@@ -125,13 +127,16 @@ public record JournalLineSummaryDto(
 );
 
 public record JournalLineDto(
-    int     Id,
-    int     AccountId,
-    string  AccountCode,
-    string  AccountName,
-    decimal Debit,
-    decimal Credit,
-    string? Description
+    int      Id,
+    int      AccountId,
+    string   AccountCode,
+    string   AccountName,
+    decimal  Debit,
+    decimal  Credit,
+    string?  Description,
+    int?     CustomerId = null,
+    int?     SupplierId = null,
+    string?  EntityName = null
 );
 
 public record JournalEntrySummaryDto(
