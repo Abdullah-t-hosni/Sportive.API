@@ -41,6 +41,8 @@ public class InventoryService : IInventoryService
                     .SumAsync(v => v.StockQuantity);
                 
                 variant.Product.TotalStock = totalStock;
+                if (variant.Product.Status == ProductStatus.OutOfStock && totalStock > 0)
+                    variant.Product.Status = ProductStatus.Active;
                 variant.Product.UpdatedAt  = DateTime.UtcNow;
 
                 productId = variant.ProductId; // ensure we log the product id too
@@ -54,6 +56,8 @@ public class InventoryService : IInventoryService
                 unitCost = product.CostPrice ?? 0;
                 remainingBefore = product.TotalStock;
                 product.TotalStock += quantity;
+                if (product.Status == ProductStatus.OutOfStock && product.TotalStock > 0)
+                    product.Status = ProductStatus.Active;
                 product.UpdatedAt = DateTime.UtcNow;
             }
         }

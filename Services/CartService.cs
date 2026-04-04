@@ -85,7 +85,7 @@ public class CartService : ICartService
                 price += c.ProductVariant.PriceAdjustment!.Value;
 
             return new CartItemDto(
-                c.Id, c.ProductId,
+                c.Id, c.ProductId, c.ProductVariantId,
                 c.Product.NameAr, c.Product.NameEn,
                 c.Product.Images.FirstOrDefault(i => i.IsMain)?.ImageUrl,
                 c.ProductVariant?.Size, c.ProductVariant?.Color, c.ProductVariant?.ColorAr,

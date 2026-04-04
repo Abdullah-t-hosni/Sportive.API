@@ -10,6 +10,7 @@ namespace Sportive.API.DTOs;
 public record CartItemDto(
     int Id,
     int ProductId,
+    int? ProductVariantId,
     string ProductNameAr,
     string ProductNameEn,
     string? MainImageUrl,
