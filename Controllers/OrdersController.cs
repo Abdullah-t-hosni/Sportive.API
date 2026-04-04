@@ -201,12 +201,11 @@ public class OrdersController : ControllerBase
 
         foreach (var item in order.Items)
         {
-            // ProductId هو int (ليس Nullable) لذا لا يحتاج HasValue
             if (item.ProductId > 0)
             {
                 await inventory.LogMovementAsync(
                     InventoryMovementType.Adjustment,
-                    item.Quantity, // الإضافة للمخزن بدلاً من الخصم
+                    item.Quantity, 
                     item.ProductId,
                     item.ProductVariantId,
                     order.OrderNumber,
@@ -216,21 +215,26 @@ public class OrdersController : ControllerBase
             }
         }
 
-        // 3. حذف القيد المحاسبي المرتبط بالطلب نهائياً (Sales Invoice)
         var salesEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.SalesInvoice && e.Reference == order.OrderNumber);
         if (salesEntry != null) _db.JournalEntries.Remove(salesEntry);
 
-        // 4. حذف قيد التحصيل (ReceiptVoucher) أو قيد الرد (PaymentVoucher) لو موجود نهائياً
         var paymentEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == order.OrderNumber);
         if (paymentEntry != null) _db.JournalEntries.Remove(paymentEntry);
 
         var refundEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == order.OrderNumber + "-RFD");
         if (refundEntry != null) _db.JournalEntries.Remove(refundEntry);
 
-        // 5. حذف الطلب وسجل حالته نهائياً (Hard-Delete)
         _db.Orders.Remove(order);
-
         await _db.SaveChangesAsync();
         return NoContent();
+    }
+
+    [HttpPost("{id}/partial-return")]
+    [Authorize(Roles = "Admin,Manager,Staff,Cashier")]
+    public async Task<ActionResult<OrderDetailDto>> PostPartialReturn(int id, [FromBody] PartialReturnDto dto)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
+        var order = await _orderService.ProcessPartialReturnAsync(id, dto, userId);
+        return Ok(order);
     }
 }

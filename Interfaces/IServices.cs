@@ -55,6 +55,7 @@ public interface IOrderService
     Task<PaginatedResult<OrderSummaryDto>> GetCustomerOrdersAsync(int customerId, int page, int pageSize);
     Task<OrderDetailDto> CreateOrderAsync(int? customerId, CreateOrderDto dto);
     Task<OrderDetailDto> UpdateOrderStatusAsync(int orderId, UpdateOrderStatusDto dto, string updatedByUserId);
+    Task<OrderDetailDto> ProcessPartialReturnAsync(int orderId, PartialReturnDto dto, string updatedByUserId);
     Task<string> GenerateOrderNumberAsync(OrderSource source = OrderSource.Website);
     Task SyncAllOrderAccountingAsync();
 }

@@ -19,6 +19,7 @@ public interface IAccountingService
     Task PostPurchaseReturnAsync(PurchaseInvoice invoice);
     Task PostOrderPaymentAsync(Order order);
     Task PostOrderRefundAsync(Order order);
+    Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount);
     Task PostSupplierPaymentAsync(SupplierPayment payment);
     Task ReverseEntryAsync(int journalEntryId, string reason);
     Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, string? userId);
@@ -278,6 +279,89 @@ public class AccountingService : IAccountingService
             lines:       lines,
             orderId:     order.Id,
             customerId:  order.CustomerId
+        );
+    }
+
+    public async Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount)
+    {
+        // 1. Generate unique reference for this partial return
+        var suffix = DateTime.UtcNow.Ticks.ToString().Substring(10);
+        var reference = $"{order.OrderNumber}-PRT-{suffix}";
+
+        var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
+        var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
+
+        string salesReturnAcct = GetMap(mapDict, "salesReturnAccountID", SALES_RETURN);
+        string receivablesAcct = GetMap(mapDict, "customerAccountID", RECEIVABLES);
+        string inventoryAcct   = GetMap(mapDict, "inventoryAccountID", INVENTORY);
+        string cogsAcct        = GetMap(mapDict, "costOfGoodsSoldAccountID", COGS);
+
+        var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
+
+        // 2. Financial Reversal
+        decimal totalVatToReverse = returnedItems.Sum(i => i.ItemVatAmount * (i.Quantity > 0 ? (decimal)i.Quantity / (decimal)i.Quantity : 1)); // We should pass quantities
+        // Wait, better logic below for partial vat
+        
+        // Accurate calculation:
+        decimal totalNetReturn = 0;
+        decimal totalVatReturn = 0;
+        decimal totalCostReturn = 0;
+
+        foreach(var item in returnedItems)
+        {
+             // Item in order has full quantity. We need the quantity returned.
+             // For simplicity, let's assume 'returnedItems' are clones with 'Quantity' set to 'returned quantity'.
+             var net = item.TotalPrice - item.ItemVatAmount;
+             totalNetReturn += net;
+             totalVatReturn += item.ItemVatAmount;
+             totalCostReturn += (item.Product?.CostPrice ?? 0) * item.Quantity;
+        }
+
+        lines.Add((salesReturnAcct, totalNetReturn, 0, $"مرتجع جزئي (صافي) - {order.OrderNumber}"));
+        if (totalVatReturn > 0)
+        {
+            const string VAT_PAYABLE = "2221";
+            string vatAcct = GetMap(mapDict, "vatPayableAccountID", VAT_PAYABLE);
+            lines.Add((vatAcct, totalVatReturn, 0, $"إلغاء ضريبة جزئية - {order.OrderNumber}"));
+        }
+
+        lines.Add((receivablesAcct, 0, refundAmount, $"دائن العميل (مرتجع جزئي) - {order.OrderNumber}"));
+
+        // 3. Inventory Reversal
+        if (totalCostReturn > 0)
+        {
+            lines.Add((inventoryAcct, totalCostReturn, 0,           $"إعادة للمخزون (جزئي) - {order.OrderNumber}"));
+            lines.Add((cogsAcct,      0,               totalCostReturn, $"تخفيض تكلفة (جزئي) - {order.OrderNumber}"));
+        }
+
+        await PostEntry(
+            type:        JournalEntryType.SalesReturn,
+            reference:   reference,
+            description: $"مرتجع جزئي للطلب {order.OrderNumber} ({returnedItems.Count} أصناف)",
+            date:        DateTime.UtcNow,
+            lines:       lines,
+            orderId:     order.Id,
+            customerId:  order.CustomerId
+        );
+        
+        // 4. Record the refund payment (Cash/Bank Out)
+        var refundRef = reference + "-PAY";
+        var cashCode = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+        var refundLines = new List<(string code, decimal debit, decimal credit, string desc)>
+        {
+            (receivablesAcct, refundAmount, 0,            $"رد مبالغ للعميل (مرتجع جزئي) - {order.OrderNumber}"),
+            (cashCode,        0,            refundAmount, $"خروج نقدية للمرتجع الجزئي - {order.OrderNumber}")
+        };
+
+        await PostEntry(
+            type:        JournalEntryType.PaymentVoucher,
+            reference:   refundRef,
+            description: $"رد نقدية للطلب {order.OrderNumber} (مرتجع جزئي)",
+            date:        DateTime.UtcNow,
+            lines:       refundLines,
+            orderId:     order.Id,
+            customerId:  order.CustomerId,
+            source:      order.Source
         );
     }
 

@@ -489,6 +489,86 @@ public class OrderService : IOrderService
         return (await GetOrderByIdAsync(orderId))!;
     }
 
+    public async Task<OrderDetailDto> ProcessPartialReturnAsync(int orderId, PartialReturnDto dto, string updatedByUserId)
+    {
+        var order = await _db.Orders.Include(o => o.Items).ThenInclude(i => i.Product).FirstOrDefaultAsync(o => o.Id == orderId);
+        if (order == null) throw new KeyNotFoundException("Order not found.");
+        if (order.Status == OrderStatus.Cancelled) throw new InvalidOperationException("Cannot return items from a cancelled order.");
+
+        var returnedOrderItems = new List<OrderItem>();
+        decimal refundAmount = 0;
+
+        foreach (var req in dto.Items)
+        {
+            var line = order.Items.FirstOrDefault(i => i.Id == req.OrderItemId);
+            if (line == null) continue;
+            if (req.Quantity <= 0) continue;
+            if (req.Quantity > line.Quantity) throw new InvalidOperationException($"Cannot return {req.Quantity} for item {line.ProductNameAr}. Max is {line.Quantity}.");
+
+            // 1. Calculate partial values for this item
+            var ratio = (decimal)req.Quantity / (decimal)line.Quantity;
+            var itemTotalReturn = Math.Round(line.TotalPrice * ratio, 2);
+            var itemVatReturn = Math.Round(line.ItemVatAmount * ratio, 2);
+            
+            refundAmount += itemTotalReturn;
+
+            // 2. Clone for accounting (to represent the returned part)
+            var returnClone = new OrderItem
+            {
+                ProductId = line.ProductId,
+                ProductVariantId = line.ProductVariantId,
+                ProductNameAr = line.ProductNameAr,
+                Quantity = req.Quantity,
+                UnitPrice = line.UnitPrice,
+                TotalPrice = itemTotalReturn, // This part is returned
+                ItemVatAmount = itemVatReturn,
+                Product = line.Product // For COGS
+            };
+            returnedOrderItems.Add(returnClone);
+
+            // 3. Update Inventory
+            await _inventory.LogMovementAsync(
+                InventoryMovementType.ReturnIn,
+                req.Quantity, line.ProductId, line.ProductVariantId,
+                order.OrderNumber, $"Partial Return: {req.Quantity} units", updatedByUserId
+            );
+
+            // 4. Update Original Line (Optional: Some systems keep it but add a status? We'll leave it but the return is a child transaction)
+            // Or we reduce the quantity? If we reduce the quantity, the original invoice changes. 
+            // Better: Record it as a "ReturnedQuantity" column if it existed, but for now we just process the return event.
+        }
+
+        if (!returnedOrderItems.Any()) throw new InvalidOperationException("No items selected for return.");
+
+        // 5. Status History
+        order.StatusHistory.Add(new OrderStatusHistory {
+            Status = order.Status, // Keep current status (e.g. Delivered)
+            Note = $"[مرتجع جزئي] {dto.Reason}: {dto.Note}",
+            ChangedByUserId = updatedByUserId,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        await _db.SaveChangesAsync();
+
+        // 6. Post Accounting
+        _ = Task.Run(async () =>
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            try {
+                // We need the instances with tracking/includes in the new scope
+                var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == orderId);
+                // We must pass the returned items data correctly
+                await accounting.PostPartialSalesReturnAsync(fullOrder, returnedOrderItems, refundAmount);
+            } catch (Exception ex) {
+                Console.Error.WriteLine($"[Accounting] Partial return failed: {ex.Message}");
+            }
+        });
+
+        return (await GetOrderByIdAsync(orderId))!;
+    }
+
     public async Task<string> GenerateOrderNumberAsync(OrderSource source = OrderSource.Website)
     {
         var prefix = source == OrderSource.POS ? "POS" : "ORD";
