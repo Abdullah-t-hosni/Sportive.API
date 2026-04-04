@@ -251,19 +251,27 @@ public class AccountingService : IAccountingService
         var totalVatAmount = order.TotalVatAmount;
         var netReturnPrice = order.TotalAmount - totalVatAmount;
 
-        // 2. Financial Reversal
+        // 2. Financial Reversal (Unified Entry Part 1)
         lines.Add((salesReturnAcct, netReturnPrice, 0, $"مرتجع مبيعات (صافي) - {order.OrderNumber}"));
-        
         if (totalVatAmount > 0)
         {
-            const string VAT_PAYABLE = "2221"; // Standard fallback code
+            const string VAT_PAYABLE = "2221"; 
             string vatAcct = GetMap(mapDict, "vatPayableAccountID", VAT_PAYABLE);
-            lines.Add((vatAcct, totalVatAmount, 0, $"إلغاء ضريبة قيمة مضافة - {order.OrderNumber}"));
+            lines.Add((vatAcct, totalVatAmount, 0, $"إلغاء ضريبة مبيعات - {order.OrderNumber}"));
         }
 
-        lines.Add((receivablesAcct, 0, order.TotalAmount, $"دائن العميل (إجمالي) - {order.OrderNumber}"));
+        // 3. Sub-ledger Traceability (Receivables Reversal)
+        lines.Add((receivablesAcct, 0, order.TotalAmount, $"تنزيل من مديونية العميل - {order.OrderNumber}"));
 
-        // 3. Reversal of COGS (Stock back to Inventory)
+        // 4. Cash Refund (Unified Entry Part 2 - Only if it was paid)
+        if (order.PaymentStatus == PaymentStatus.Paid)
+        {
+            var cashCode = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+            lines.Add((receivablesAcct, order.TotalAmount, 0,                $"رد مرتجع مالي للعميل - {order.OrderNumber}"));
+            lines.Add((cashCode,        0,                order.TotalAmount, $"خروج نقدية للمرتجع - {order.OrderNumber} ({order.PaymentMethod})"));
+        }
+
+        // 5. Reversal of COGS (Stock back to Inventory)
         var totalCost = order.Items?.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity) ?? 0;
         if (totalCost > 0)
         {
@@ -274,11 +282,12 @@ public class AccountingService : IAccountingService
         await PostEntry(
             type:        JournalEntryType.SalesReturn,
             reference:   order.OrderNumber + "-RTN",
-            description: $"مرتجع مبيعات {order.OrderNumber}",
+            description: $"مرتجع مبيعات موحد {order.OrderNumber}",
             date:        DateTime.UtcNow,
             lines:       lines,
             orderId:     order.Id,
-            customerId:  order.CustomerId
+            customerId:  order.CustomerId,
+            source:      order.Source
         );
     }
 
@@ -298,25 +307,20 @@ public class AccountingService : IAccountingService
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
-        // 2. Financial Reversal
-        decimal totalVatToReverse = returnedItems.Sum(i => i.ItemVatAmount * (i.Quantity > 0 ? (decimal)i.Quantity / (decimal)i.Quantity : 1)); // We should pass quantities
-        // Wait, better logic below for partial vat
-        
-        // Accurate calculation:
+        // 2. Calculate Totals
         decimal totalNetReturn = 0;
         decimal totalVatReturn = 0;
         decimal totalCostReturn = 0;
 
         foreach(var item in returnedItems)
         {
-             // Item in order has full quantity. We need the quantity returned.
-             // For simplicity, let's assume 'returnedItems' are clones with 'Quantity' set to 'returned quantity'.
              var net = item.TotalPrice - item.ItemVatAmount;
              totalNetReturn += net;
              totalVatReturn += item.ItemVatAmount;
              totalCostReturn += (item.Product?.CostPrice ?? 0) * item.Quantity;
         }
 
+        // 3. Reversal Lines (Composite Unified Entry)
         lines.Add((salesReturnAcct, totalNetReturn, 0, $"مرتجع جزئي (صافي) - {order.OrderNumber}"));
         if (totalVatReturn > 0)
         {
@@ -325,9 +329,15 @@ public class AccountingService : IAccountingService
             lines.Add((vatAcct, totalVatReturn, 0, $"إلغاء ضريبة جزئية - {order.OrderNumber}"));
         }
 
+        // Sub-ledger credit to customer
         lines.Add((receivablesAcct, 0, refundAmount, $"دائن العميل (مرتجع جزئي) - {order.OrderNumber}"));
 
-        // 3. Inventory Reversal
+        // Cash component (The immediate refund)
+        var cashCode = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+        lines.Add((receivablesAcct, refundAmount, 0,            $"إثبات رد نقدي للعميل - {order.OrderNumber}"));
+        lines.Add((cashCode,        0,            refundAmount, $"خروج نقدية للمرتجع - {order.OrderNumber} ({order.PaymentMethod})"));
+
+        // 4. Inventory Reversal
         if (totalCostReturn > 0)
         {
             lines.Add((inventoryAcct, totalCostReturn, 0,           $"إعادة للمخزون (جزئي) - {order.OrderNumber}"));
@@ -337,28 +347,9 @@ public class AccountingService : IAccountingService
         await PostEntry(
             type:        JournalEntryType.SalesReturn,
             reference:   reference,
-            description: $"مرتجع جزئي للطلب {order.OrderNumber} ({returnedItems.Count} أصناف)",
+            description: $"مرتجع جزئي موحد {order.OrderNumber} ({returnedItems.Count} أصناف)",
             date:        DateTime.UtcNow,
             lines:       lines,
-            orderId:     order.Id,
-            customerId:  order.CustomerId
-        );
-        
-        // 4. Record the refund payment (Cash/Bank Out)
-        var refundRef = reference + "-PAY";
-        var cashCode = GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-        var refundLines = new List<(string code, decimal debit, decimal credit, string desc)>
-        {
-            (receivablesAcct, refundAmount, 0,            $"رد مبالغ للعميل (مرتجع جزئي) - {order.OrderNumber}"),
-            (cashCode,        0,            refundAmount, $"خروج نقدية للمرتجع الجزئي - {order.OrderNumber}")
-        };
-
-        await PostEntry(
-            type:        JournalEntryType.PaymentVoucher,
-            reference:   refundRef,
-            description: $"رد نقدية للطلب {order.OrderNumber} (مرتجع جزئي)",
-            date:        DateTime.UtcNow,
-            lines:       refundLines,
             orderId:     order.Id,
             customerId:  order.CustomerId,
             source:      order.Source

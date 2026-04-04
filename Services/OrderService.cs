@@ -481,7 +481,6 @@ public class OrderService : IOrderService
                 try {
                     var fullOrderInner = await db.Orders.Include(o => o.Customer).Include(o => o.Items).ThenInclude(i => i.Product).FirstAsync(o => o.Id == orderId);
                     await accounting.PostSalesReturnAsync(fullOrderInner);
-                    if (fullOrderInner.PaymentStatus == PaymentStatus.Paid) await accounting.PostOrderRefundAsync(fullOrderInner);
                 } catch { }
             });
         }
