@@ -55,7 +55,8 @@ public class CustomerService : ICustomerService
                        !l.JournalEntry.IsDeleted &&
                        l.JournalEntry.Status == JournalEntryStatus.Posted)
                    .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0,
-                c.MainAccountId
+                c.MainAccountId,
+                c.FixedDiscount
             ))
             .ToListAsync();
 
@@ -81,7 +82,8 @@ public class CustomerService : ICustomerService
                 )).ToList(),
                 c.AppUserId,
                 (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + _db.JournalLines.Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && !l.IsDeleted && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0,
-                c.MainAccountId
+                c.MainAccountId,
+                c.FixedDiscount
             ))
             .FirstOrDefaultAsync();
 
@@ -102,7 +104,8 @@ public class CustomerService : ICustomerService
                 )).ToList(),
                 c.AppUserId,
                 (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + _db.JournalLines.Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && !l.IsDeleted && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0,
-                c.MainAccountId
+                c.MainAccountId,
+                c.FixedDiscount
             ))
             .FirstOrDefaultAsync();
 
@@ -142,7 +145,8 @@ public class CustomerService : ICustomerService
             Email = generatedEmail ?? $"{Guid.NewGuid().ToString().Substring(0, 8)}@pos.com",
             Phone = dto.Phone,
             CreatedAt = DateTime.UtcNow,
-            IsActive = true
+            IsActive = true,
+            FixedDiscount = dto.FixedDiscount
         };
 
         _db.Customers.Add(customer);
@@ -165,6 +169,7 @@ public class CustomerService : ICustomerService
         customer.Phone = dto.Phone;
         customer.IsActive = dto.IsActive;
         customer.MainAccountId = dto.MainAccountId;
+        customer.FixedDiscount = dto.FixedDiscount;
         customer.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();

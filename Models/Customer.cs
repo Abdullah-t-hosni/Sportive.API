@@ -9,6 +9,7 @@ public class AppUser : IdentityUser
     public string? ProfileImageUrl { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public bool IsActive { get; set; } = true;
+    public decimal FixedDiscount { get; set; } = 0;
 }
 
 public class Customer : BaseEntity
@@ -21,6 +22,7 @@ public class Customer : BaseEntity
     public AppUser? AppUser { get; set; }
     public DateTime? DateOfBirth { get; set; }
     public bool IsActive { get; set; } = true;
+    public decimal FixedDiscount { get; set; } = 0;
 
     public int? MainAccountId { get; set; }
     public Account? MainAccount { get; set; }

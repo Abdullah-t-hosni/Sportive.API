@@ -2,6 +2,8 @@
 // DTOs/CustomerDtos.cs
 // تم الفصل من Dtos.cs الكبير — يشمل Customers, Addresses
 // ============================================================
+using System.Text.Json.Serialization;
+
 namespace Sportive.API.DTOs;
 
 // ========== CUSTOMER ==========
@@ -9,22 +11,24 @@ public record CustomerBasicDto(
     int Id,
     string FullName,
     string Email,
-    string? Phone
+    string? Phone,
+    decimal FixedDiscount = 0
 );
 
 public record CustomerDetailDto(
-    int Id,
-    string FirstName,
-    string LastName,
-    string Email,
-    string? Phone,
-    int TotalOrders,
-    decimal TotalSpent,
-    DateTime CreatedAt,
-    List<AddressDto> Addresses,
-    string? AppUserId = null,
-    decimal Balance = 0,
-    int? MainAccountId = null
+    [property: JsonPropertyName("id")] int Id,
+    [property: JsonPropertyName("firstName")] string FirstName,
+    [property: JsonPropertyName("lastName")] string LastName,
+    [property: JsonPropertyName("email")] string Email,
+    [property: JsonPropertyName("phone")] string? Phone,
+    [property: JsonPropertyName("totalOrders")] int TotalOrders,
+    [property: JsonPropertyName("totalSpent")] decimal TotalSpent,
+    [property: JsonPropertyName("createdAt")] DateTime CreatedAt,
+    [property: JsonPropertyName("addresses")] List<AddressDto> Addresses,
+    [property: JsonPropertyName("appUserId")] string? AppUserId = null,
+    [property: JsonPropertyName("balance")] decimal Balance = 0,
+    [property: JsonPropertyName("mainAccountId")] int? MainAccountId = null,
+    [property: JsonPropertyName("fixedDiscount")] decimal FixedDiscount = 0
 );
 
 // ========== ADDRESS ==========
@@ -58,17 +62,19 @@ public record CreateAddressDto(
 );
 
 public record CreateCustomerDto(
-    string FirstName,
-    string? LastName = null,
-    string? Email = null,
-    string? Phone = null
+    [property: JsonPropertyName("firstName")] string FirstName,
+    [property: JsonPropertyName("lastName")] string? LastName = null,
+    [property: JsonPropertyName("email")] string? Email = null,
+    [property: JsonPropertyName("phone")] string? Phone = null,
+    [property: JsonPropertyName("fixedDiscount")] decimal FixedDiscount = 0
 );
 
 public record UpdateCustomerDto(
-    string FirstName,
-    string? LastName,
-    string? Email,
-    string? Phone,
-    bool IsActive = true,
-    int? MainAccountId = null
+    [property: JsonPropertyName("firstName")] string FirstName,
+    [property: JsonPropertyName("lastName")] string? LastName,
+    [property: JsonPropertyName("email")] string? Email,
+    [property: JsonPropertyName("phone")] string? Phone,
+    [property: JsonPropertyName("isActive")] bool IsActive = true,
+    [property: JsonPropertyName("mainAccountId")] int? MainAccountId = null,
+    [property: JsonPropertyName("fixedDiscount")] decimal FixedDiscount = 0
 );

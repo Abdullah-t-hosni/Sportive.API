@@ -440,7 +440,7 @@ public class OrderService : IOrderService
             if (order.PaymentMethod != PaymentMethod.Credit) order.PaymentStatus = PaymentStatus.Paid;
         }
 
-        if (dto.Status == OrderStatus.Returned && order.Source == OrderSource.POS)
+        if (dto.Status == OrderStatus.Returned && order.Source == OrderSource.POS && order.PaymentStatus == PaymentStatus.Paid)
         {
             using var scope = _scopeFactory.CreateScope();
             var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
@@ -518,8 +518,8 @@ public class OrderService : IOrderService
             }
         }
 
-        // 2. Mandatory Drawer Balance Check for POS returns
-        if (order.Source == OrderSource.POS)
+        // 2. Mandatory Drawer Balance Check (only for PAID POS returns)
+        if (order.Source == OrderSource.POS && order.PaymentStatus == PaymentStatus.Paid)
         {
             using var scope = _scopeFactory.CreateScope();
             var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();

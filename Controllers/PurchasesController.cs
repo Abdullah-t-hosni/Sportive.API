@@ -328,6 +328,14 @@ public class PurchaseInvoicesController : ControllerBase
             if (item.ProductId.HasValue)
             {
                 await _inventory.LogMovementAsync(InventoryMovementType.Purchase, item.Quantity, item.ProductId, item.ProductVariantId, invNo, "Purchase Invoice receipt", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                
+                // ── Auto-update Product Cost Price ──
+                var product = await _db.Products.FindAsync(item.ProductId.Value);
+                if (product != null)
+                {
+                    product.CostPrice = item.UnitCost;
+                    product.UpdatedAt = DateTime.UtcNow;
+                }
             }
         }
 
@@ -430,6 +438,17 @@ public class PurchaseInvoicesController : ControllerBase
         inv.TaxAmount = Math.Round(subtotal * (inv.TaxPercent / 100), 2);
         inv.TotalAmount = (subtotal + inv.TaxAmount) - inv.DiscountAmount;
         inv.Supplier.TotalPurchases += inv.TotalAmount;
+
+        // ── Auto-update Product Cost Prices from updated items ──
+        foreach (var item in inv.Items.Where(i => i.ProductId.HasValue))
+        {
+            var product = await _db.Products.FindAsync(item.ProductId!.Value);
+            if (product != null)
+            {
+                product.CostPrice = item.UnitCost;
+                product.UpdatedAt = DateTime.UtcNow;
+            }
+        }
 
         await _db.SaveChangesAsync();
 

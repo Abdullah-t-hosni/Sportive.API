@@ -103,6 +103,7 @@ public class ProductService : IProductService
                 p.Variants.Any(),
                 p.HasTax,
                 p.VatRate,
+                p.CostPrice,
                 p.CreatedAt
             ))
             .ToListAsync();
@@ -416,6 +417,7 @@ public class ProductService : IProductService
                 p.Variants != null && p.Variants.Any(),
                 p.HasTax,
                 p.VatRate,
+                p.CostPrice,
                 p.CreatedAt
             ))
             .ToListAsync();
@@ -450,6 +452,7 @@ public class ProductService : IProductService
                 p.Variants != null && p.Variants.Any(),
                 p.HasTax,
                 p.VatRate,
+                p.CostPrice,
                 p.CreatedAt
             ))
             .ToListAsync();
