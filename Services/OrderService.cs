@@ -445,10 +445,11 @@ public class OrderService : IOrderService
             using var scope = _scopeFactory.CreateScope();
             var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
             var cashCode = await accounting.GetMappedCashAccount(order.PaymentMethod, order.Source);
-            var balance = await accounting.GetAccountBalanceAsync(cashCode);
-            if (balance < order.TotalAmount)
+            // ✅ نتحقق من رصيد الدرج في اليوم الحالي فقط (مش الرصيد التراكمي)
+            var todayBalance = await accounting.GetTodayDrawerBalanceAsync(cashCode);
+            if (todayBalance < order.TotalAmount)
             {
-               throw new InvalidOperationException($"عذراً، رصيد الدرج غير كافٍ. المتوفر حالياً: {balance:N2} ج.م فقط.");
+               throw new InvalidOperationException($"عذراً، رصيد الدرج لليوم غير كافٍ. المتوفر النهارده: {todayBalance:N2} ج.م فقط.");
             }
         }
 
@@ -524,10 +525,11 @@ public class OrderService : IOrderService
             using var scope = _scopeFactory.CreateScope();
             var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
             var cashierCode = await accounting.GetMappedCashAccount(order.PaymentMethod, order.Source);
-            var currentDrawerBalance = await accounting.GetAccountBalanceAsync(cashierCode);
+            // ✅ نتحقق من رصيد اليوم الحالي فقط (مش الرصيد المحاسبي التراكمي)
+            var currentDrawerBalance = await accounting.GetTodayDrawerBalanceAsync(cashierCode);
             if (currentDrawerBalance < refundAmountTotal)
             {
-               throw new InvalidOperationException($"عذراً، رصيد الدرج غير كافٍ لإتمام هذا المرتجع الجزئي. المتوفر حالياً: {currentDrawerBalance:N2} ج.م فقط.");
+               throw new InvalidOperationException($"عذراً، رصيد الدرج لليوم غير كافٍ لإتمام هذا المرتجع الجزئي. المتوفر النهارده: {currentDrawerBalance:N2} ج.م فقط.");
             }
         }
 

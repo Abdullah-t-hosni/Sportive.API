@@ -27,6 +27,8 @@ public interface IAccountingService
     Task PostPaymentVoucherAsync(PaymentVoucher voucher);
     Task<string> GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, int?>? map = null);
     Task<decimal> GetAccountBalanceAsync(string code);
+    /// <summary>بيجيب رصيد حساب الكاشير في اليوم الحالي فقط (اليوم من منتصف الليل UTC)</summary>
+    Task<decimal> GetTodayDrawerBalanceAsync(string cashAccountCode);
 }
 
 public class AccountingService : IAccountingService
@@ -711,6 +713,25 @@ public class AccountingService : IAccountingService
         var balance = await _db.JournalLines
             .Where(l => l.AccountId == accountId && !l.JournalEntry.IsDeleted)
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
+        return balance;
+    }
+
+    /// <summary>
+    /// يحسب رصيد درج الكاشير في اليوم الحالي فقط.
+    /// يجمع الدبت والكريدت للقيود الصادرة من اليوم الحالي (UTC) فقط.
+    /// هذا هو المبلغ الفعلي الموجود في الدرج الآن.
+    /// </summary>
+    public async Task<decimal> GetTodayDrawerBalanceAsync(string cashAccountCode)
+    {
+        var accountId = await GetAccountIdAsync(cashAccountCode);
+        var todayStart = DateTime.UtcNow.Date; // منتصف الليل اليوم
+
+        var balance = await _db.JournalLines
+            .Where(l => l.AccountId == accountId
+                     && !l.JournalEntry.IsDeleted
+                     && l.JournalEntry.EntryDate >= todayStart)
+            .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
+
         return balance;
     }
 

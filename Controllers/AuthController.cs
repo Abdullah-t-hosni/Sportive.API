@@ -330,7 +330,11 @@ public class AuthController : ControllerBase
         }
         if (roles.Contains("Cashier"))
         {
-            perms.Add("pos"); perms.Add("orders.read");
+            perms.Add("pos");
+            // ✅ إضافة "orders" و"orders.read" معاً لضمان التوافق مع الفرونت إند
+            // بعض الـ route guards بتشيك على "orders" والبعض على "orders.read"
+            perms.Add("orders");
+            perms.Add("orders.read");
         }
         if (roles.Contains("Accountant"))
         {
