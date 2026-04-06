@@ -40,7 +40,7 @@ public class OrderService : IOrderService
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
         int page, int pageSize, OrderStatus? status = null, string? search = null,
-        int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null, OrderSource? source = null)
+        int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null, OrderSource? source = null, PaymentMethod? paymentMethod = null)
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
         var query = _db.Orders
@@ -49,6 +49,7 @@ public class OrderService : IOrderService
 
         if (status.HasValue) query = query.Where(o => o.Status == status.Value);
         if (source.HasValue) query = query.Where(o => o.Source == source.Value);
+        if (paymentMethod.HasValue) query = query.Where(o => o.PaymentMethod == paymentMethod.Value);
         if (customerId.HasValue) query = query.Where(o => o.CustomerId == customerId.Value);
         if (fromDate.HasValue) query = query.Where(o => o.CreatedAt >= fromDate.Value.Date);
         if (toDate.HasValue) 
@@ -157,7 +158,7 @@ public class OrderService : IOrderService
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetCustomerOrdersAsync(int customerId, int page, int pageSize)
     {
-        return await GetOrdersAsync(page, pageSize, customerId: customerId);
+        return await GetOrdersAsync(page, pageSize, customerId: customerId, paymentMethod: null);
     }
 
     public async Task<OrderDetailDto> CreateOrderAsync(int? customerId, CreateOrderDto dto)
@@ -211,15 +212,15 @@ public class OrderService : IOrderService
             throw new ArgumentException("معرف البائع مطلوب لعمليات الـ POS");
         }
 
-        // 2. Setup Order
+        var actualSource = (int)dto.Source == 0 ? OrderSource.Website : dto.Source;
         var order = new Order
         {
             CustomerId = customerId.Value,
-            OrderNumber = await GenerateOrderNumberAsync(dto.Source),
-            Status = dto.Source == OrderSource.POS ? OrderStatus.Delivered : OrderStatus.Pending,
+            OrderNumber = await GenerateOrderNumberAsync(actualSource),
+            Status = actualSource == OrderSource.POS ? OrderStatus.Delivered : OrderStatus.Pending,
             FulfillmentType = dto.FulfillmentType,
             PaymentMethod = dto.PaymentMethod,
-            PaymentStatus = (dto.Source == OrderSource.POS && dto.PaymentMethod != PaymentMethod.Credit) ? PaymentStatus.Paid : PaymentStatus.Pending,
+            PaymentStatus = (actualSource == OrderSource.POS && dto.PaymentMethod != PaymentMethod.Credit) ? PaymentStatus.Paid : PaymentStatus.Pending,
             DeliveryAddressId = (dto.DeliveryAddressId.HasValue && dto.DeliveryAddressId.Value > 0) 
                                 ? (await _db.Addresses.AnyAsync(a => a.Id == dto.DeliveryAddressId.Value && a.CustomerId == customerId.Value) ? dto.DeliveryAddressId : null) 
                                 : null,
@@ -227,8 +228,9 @@ public class OrderService : IOrderService
             CustomerNotes = dto.CustomerNotes,
             CouponCode = dto.CouponCode,
             SalesPersonId = dto.SalesPersonId,
-            Source = dto.Source,
+            Source = actualSource,
             AdminNotes = dto.Note,
+            DiscountAmount = dto.DiscountAmount ?? 0,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -244,7 +246,10 @@ public class OrderService : IOrderService
                     ? product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId)
                     : null;
 
-                var unitPrice = product.DiscountPrice ?? (product.Price + (variant?.PriceAdjustment ?? 0));
+                // For POS, we trust the price sent by the cashier (which may include manual discounts)
+                var unitPrice = (actualSource == OrderSource.POS) 
+                    ? item.UnitPrice 
+                    : (product.DiscountPrice ?? (product.Price + (variant?.PriceAdjustment ?? 0)));
                 
                 var orderItem = new OrderItem
                 {
@@ -256,7 +261,7 @@ public class OrderService : IOrderService
                     Color = variant?.Color,
                     Quantity = item.Quantity,
                     UnitPrice = unitPrice,
-                    TotalPrice = unitPrice * item.Quantity,
+                    TotalPrice = (actualSource == OrderSource.POS) ? item.TotalPrice : (unitPrice * item.Quantity),
                     HasTax = item.HasTax ?? product.HasTax,
                     VatRateApplied = item.VatRate ?? product.VatRate ?? (store?.VatRatePercent ?? 14),
                     CreatedAt = DateTime.UtcNow
@@ -268,6 +273,16 @@ public class OrderService : IOrderService
                     decimal net = Math.Round(orderItem.TotalPrice / (1 + rate), 2);
                     orderItem.ItemVatAmount = orderItem.TotalPrice - net;
                     order.TotalVatAmount += orderItem.ItemVatAmount;
+                }
+
+                // 🛑 STOCK VALIDATION
+                var availableStock = variant?.StockQuantity ?? product.TotalStock;
+                if (item.Quantity > availableStock)
+                {
+                    throw new ArgumentException(
+                        actualSource == OrderSource.POS
+                        ? $"الكمية المطلوبة ({item.Quantity}) من {product.NameAr} غير متاحة في المخزون (المتاح: {availableStock})"
+                        : $"Requested quantity for {product.NameAr} is not available in stock.");
                 }
 
                 order.Items.Add(orderItem);
@@ -286,13 +301,21 @@ public class OrderService : IOrderService
         }
         else
         {
-            var cartItems = await _db.CartItems.Include(c => c.Product).Include(c => c.ProductVariant)
+            var cartItems = await _db.CartItems.Include(c => c.Product).ThenInclude(p => p.Variants)
+                .Include(c => c.ProductVariant)
                 .Where(c => c.CustomerId == customerId.Value).ToListAsync();
             
             if (!cartItems.Any()) throw new ArgumentException("Cart is empty.");
 
             foreach (var ci in cartItems)
             {
+                // 🛑 STOCK VALIDATION (Website)
+                var availableStock = ci.ProductVariant?.StockQuantity ?? ci.Product.TotalStock;
+                if (ci.Quantity > availableStock)
+                {
+                    throw new ArgumentException($"الكمية المطلوبة ({ci.Quantity}) من {ci.Product.NameAr} غير متاحة في المخزون حالياً.");
+                }
+
                 var unitPrice = ci.Product.DiscountPrice ?? (ci.Product.Price + (ci.ProductVariant?.PriceAdjustment ?? 0));
 
                 var orderItem = new OrderItem
@@ -425,13 +448,15 @@ public class OrderService : IOrderService
             Status = dto.Status, Note = dto.Note, ChangedByUserId = updatedByUserId, CreatedAt = DateTime.UtcNow
         });
 
-        // 💡 AUTO-FLOW: When a Website order is "Confirmed" or "Delivered", set PaymentStatus to Paid (unless Credit)
-        bool websiteConfirmation = (dto.Status == OrderStatus.Confirmed || dto.Status == OrderStatus.Delivered) 
-                                 && order.Source == OrderSource.Website;
-
-        if (websiteConfirmation && order.PaymentMethod != PaymentMethod.Credit)
+        // 💡 AUTO-FLOW: For Website orders, Digital Payments (Vodafone, InstaPay, Visa) are paid upon Confirmation. Cash is paid ONLY upon Delivery.
+        if (order.Source == OrderSource.Website && dto.Status == OrderStatus.Confirmed)
         {
-            order.PaymentStatus = PaymentStatus.Paid;
+            if (order.PaymentMethod == PaymentMethod.Vodafone || 
+                order.PaymentMethod == PaymentMethod.InstaPay || 
+                order.PaymentMethod == PaymentMethod.CreditCard)
+            {
+                order.PaymentStatus = PaymentStatus.Paid;
+            }
         }
 
         if (dto.Status == OrderStatus.Delivered)

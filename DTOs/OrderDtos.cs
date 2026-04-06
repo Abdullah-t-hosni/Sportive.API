@@ -46,13 +46,17 @@ public record CreateOrderDto(
     List<CreateOrderItemDto>? Items = null,
     string? CustomerPhone = null,
     string? CustomerName = null,
-    string? Note = null
+    string? Note = null,
+    decimal? DiscountAmount = null,
+    decimal? SubTotal = null
 );
 
 public record CreateOrderItemDto(
     int ProductId,
     int? ProductVariantId,
     int Quantity,
+    decimal UnitPrice = 0,
+    decimal TotalPrice = 0,
     bool? HasTax = null,
     decimal? VatRate = null
 );
@@ -67,7 +71,9 @@ public record CreatePOSOrderDto(
     PaymentMethod PaymentMethod,
     string? PosEmployeeId,
     OrderSource OrderSource,
-    string? Note = null
+    string? Note = null,
+    decimal? DiscountAmount = null,
+    decimal? Subtotal = null
 );
 
 public record CreatePOSOrderItemDto(

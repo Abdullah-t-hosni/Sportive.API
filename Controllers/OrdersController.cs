@@ -38,9 +38,9 @@ public class OrdersController : ControllerBase
         [FromQuery] OrderStatus? status = null, [FromQuery] string? search = null,
         [FromQuery] int? customerId = null, [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null, [FromQuery] string? salesPersonId = null,
-        [FromQuery] OrderSource? source = null)
+        [FromQuery] OrderSource? source = null, [FromQuery] PaymentMethod? paymentMethod = null)
     {
-        var result = await _orderService.GetOrdersAsync(page, pageSize, status, search, customerId, fromDate, toDate, salesPersonId, source);
+        var result = await _orderService.GetOrdersAsync(page, pageSize, status, search, customerId, fromDate, toDate, salesPersonId, source, paymentMethod);
         return Ok(result);
     }
 
@@ -107,7 +107,7 @@ public class OrdersController : ControllerBase
             null,
             posDto.PosEmployeeId ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             (OrderSource)posDto.OrderSource,
-            posDto.Items.Select(i => new CreateOrderItemDto(i.ProductId, i.ProductVariantId, i.Quantity)).ToList(),
+            posDto.Items.Select(i => new CreateOrderItemDto(i.ProductId, i.ProductVariantId, i.Quantity, i.UnitPrice, i.TotalPrice)).ToList(),
             posDto.CustomerPhone,
             posDto.CustomerName,
             posDto.Note

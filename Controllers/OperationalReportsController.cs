@@ -288,8 +288,8 @@ public class OperationalReportsController : ControllerBase
             var variants = p.Variants.Where(v => !v.IsDeleted).Select(v => new VariantInventoryRow(
                 v.Id, v.Size ?? "", v.Color ?? "", v.ColorAr ?? "",
                 v.StockQuantity,
-                (p.DiscountPrice ?? p.Price) + (v.PriceAdjustment ?? 0),
-                v.StockQuantity * ((p.DiscountPrice ?? p.Price) + (v.PriceAdjustment ?? 0))
+                p.Price + (v.PriceAdjustment ?? 0),
+                v.StockQuantity * (p.Price + (v.PriceAdjustment ?? 0))
             )).ToList();
 
             return new InventoryRow(
@@ -298,7 +298,7 @@ public class OperationalReportsController : ControllerBase
                 p.Price, p.DiscountPrice,
                 p.CostPrice ?? 0,
                 totalStock,
-                totalStock * (p.DiscountPrice ?? p.Price), // Sales Value
+                totalStock * p.Price, // Sales Value
                 totalStock * (p.CostPrice ?? 0),           // Cost Value
                 variants
             );
@@ -779,8 +779,10 @@ public class OperationalReportsController : ControllerBase
             m.Id,
             m.CreatedAt,
             productName = m.Product?.NameAr,
+            sku         = m.Product?.SKU,
             variant     = m.ProductVariant != null ? $"{m.ProductVariant.Size} {m.ProductVariant.ColorAr}" : "أساسي",
             m.Type,
+            type        = m.Type.ToString(),
             typeAr      = GetMovementTypeAr(m.Type),
             m.Quantity,
             m.RemainingStock,

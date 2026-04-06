@@ -183,23 +183,29 @@ public class FinancialReportsController : ControllerBase
 
         // الأصول — طبيعة مدين
         var assets = balances
-            .Where(b => b.Type == AccountType.Asset && b.IsLeaf && b.ClosingBal != 0)
+            .Where(b => b.Type == AccountType.Asset && b.IsLeaf && (b.ClosingBal != 0 || b.OpenBalance != 0))
             .OrderBy(b => b.Code)
-            .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
+            .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, Math.Abs(b.ClosingBal)))
+            .Where(b => b.Amount != 0)
             .ToList();
 
         // الالتزامات — طبيعة دائن
         var liabilities = balances
-            .Where(b => b.Type == AccountType.Liability && b.IsLeaf && b.ClosingBal != 0)
+            .Where(b => b.Type == AccountType.Liability && b.IsLeaf && (b.ClosingBal != 0 || b.OpenBalance != 0))
             .OrderBy(b => b.Code)
-            .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
+            .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, Math.Abs(b.ClosingBal)))
+            .Where(b => b.Amount != 0)
             .ToList();
 
-        // حقوق الملكية
+        // حقوق الملكية — نعرض الحسابات التي لها رصيد افتتاحي أو حركات
+        // نستخدم Max(ClosingBal, OpenBalance) لأن بعض الحسابات قد لا تحمل قيوداً
         var equity = balances
-            .Where(b => b.Type == AccountType.Equity && b.IsLeaf && b.ClosingBal != 0)
+            .Where(b => b.Type == AccountType.Equity && b.IsLeaf && (b.ClosingBal != 0 || b.OpenBalance != 0))
             .OrderBy(b => b.Code)
-            .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
+            .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, 
+                // إذا كان الرصيد النهائي صفر ولكن الرصيد الافتتاحي موجب، اعرض الافتتاحي
+                b.ClosingBal != 0 ? Math.Abs(b.ClosingBal) : Math.Abs(b.OpenBalance)))
+            .Where(b => b.Amount != 0)
             .ToList();
 
         // صافي الربح للسنة يضاف لحقوق الملكية

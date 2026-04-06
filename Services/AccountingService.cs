@@ -373,8 +373,9 @@ public class AccountingService : IAccountingService
         var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
         var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
 
-        string receivablesAcct = order.Customer?.MainAccountId?.ToString() 
-                               ?? GetMap(mapDict, "customerAccountID", RECEIVABLES);
+        string receivablesAcct = order.Customer?.MainAccountId != null 
+                               ? $"ID:{order.Customer.MainAccountId}" 
+                               : GetMap(mapDict, "customerAccountID", RECEIVABLES);
         var cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
@@ -448,25 +449,25 @@ public class AccountingService : IAccountingService
             var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
             // ── 1. Debits: Inventory + VAT ─────────────────────────────
-            var invAcct = invoice.InventoryAccountId?.ToString() ?? GetMap(mapDict, "inventoryAccountID", INVENTORY);
+            var invAcct = invoice.InventoryAccountId != null ? $"ID:{invoice.InventoryAccountId}" : GetMap(mapDict, "inventoryAccountID", INVENTORY);
             lines.Add((invAcct, invoice.SubTotal, 0, $"مشتريات بضاعة - {invoice.InvoiceNumber}"));
 
             if (invoice.TaxAmount > 0)
             {
-                var vatAcct = invoice.VatAccountId?.ToString() ?? GetMap(mapDict, "vatInputAccountID", VAT_INPUT);
+                var vatAcct = invoice.VatAccountId != null ? $"ID:{invoice.VatAccountId}" : GetMap(mapDict, "vatInputAccountID", VAT_INPUT);
                 lines.Add((vatAcct, invoice.TaxAmount, 0, $"ضريبة مشتريات (مدخلات) - {invoice.InvoiceNumber}"));
             }
 
             // ── 2. Credits: Vendor + Discount ───────────────────────────
-            var vendorAcct = invoice.VendorAccountId?.ToString() 
-                            ?? invoice.Supplier?.MainAccountId?.ToString() 
-                            ?? GetMap(mapDict, "supplierAccountID", PAYABLES);
+            var vendorAcct = invoice.VendorAccountId != null ? $"ID:{invoice.VendorAccountId}" 
+                            : invoice.Supplier?.MainAccountId != null ? $"ID:{invoice.Supplier.MainAccountId}" 
+                            : GetMap(mapDict, "supplierAccountID", PAYABLES);
             lines.Add((vendorAcct, 0, invoice.TotalAmount, $"إثبات استحقاق للمورد - {invoice.InvoiceNumber}"));
 
             // ── 3. Immediate Cash payment (If terms=Cash) ───────────────
             if (invoice.PaymentTerms == PaymentTerms.Cash)
             {
-                var cashAcct = invoice.CashAccountId?.ToString() ?? GetMap(mapDict, "cashAccountID", CASH_ACCOUNTS);
+                var cashAcct = invoice.CashAccountId != null ? $"ID:{invoice.CashAccountId}" : GetMap(mapDict, "cashAccountID", CASH_ACCOUNTS);
                 lines.Add((vendorAcct, invoice.TotalAmount, 0, $"سداد مورد فوري - {invoice.InvoiceNumber}"));
                 lines.Add((cashAcct, 0, invoice.TotalAmount, $"خروج نقدية مشتريات - {invoice.InvoiceNumber}"));
             }
@@ -499,11 +500,11 @@ public class AccountingService : IAccountingService
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
-        var vendorAcct = invoice.VendorAccountId?.ToString() 
-                        ?? invoice.Supplier?.MainAccountId?.ToString() 
-                        ?? GetMap(mapDict, "supplierAccountID", PAYABLES);
-        var rtnAcct    = invoice.ExpenseAccountId?.ToString() ?? GetMap(mapDict, "purchaseReturnAccountID", PURCHASES_NET);
-        var vatAcct    = invoice.VatAccountId?.ToString() ?? GetMap(mapDict, "vatInputAccountID", VAT_INPUT);
+        var vendorAcct = invoice.VendorAccountId != null ? $"ID:{invoice.VendorAccountId}" 
+                        : invoice.Supplier?.MainAccountId != null ? $"ID:{invoice.Supplier.MainAccountId}" 
+                        : GetMap(mapDict, "supplierAccountID", PAYABLES);
+        var rtnAcct    = invoice.ExpenseAccountId != null ? $"ID:{invoice.ExpenseAccountId}" : GetMap(mapDict, "purchaseReturnAccountID", PURCHASES_NET);
+        var vatAcct    = invoice.VatAccountId != null ? $"ID:{invoice.VatAccountId}" : GetMap(mapDict, "vatInputAccountID", VAT_INPUT);
 
         lines.Add((vendorAcct, invoice.TotalAmount, 0,                $"رد للمورد - {invoice.InvoiceNumber}"));
         lines.Add((rtnAcct,    0,                  invoice.SubTotal,  $"مرتجع مشتريات - {invoice.InvoiceNumber}"));
@@ -635,8 +636,8 @@ public class AccountingService : IAccountingService
     {
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>
         {
-            (voucher.CashAccountId.ToString(), voucher.Amount, 0, $"سند قبض {voucher.VoucherNumber} - {voucher.Description}"),
-            (voucher.FromAccountId.ToString(), 0, voucher.Amount, $"من حساب {voucher.FromAccount?.NameAr} - {voucher.VoucherNumber}")
+            ($"ID:{voucher.CashAccountId}", voucher.Amount, 0, $"سند قبض {voucher.VoucherNumber} - {voucher.Description}"),
+            ($"ID:{voucher.FromAccountId}", 0, voucher.Amount, $"من حساب {voucher.FromAccount?.NameAr} - {voucher.VoucherNumber}")
         };
 
         await PostEntry(JournalEntryType.ReceiptVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, customerId: voucher.CustomerId);
@@ -646,8 +647,8 @@ public class AccountingService : IAccountingService
     {
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>
         {
-            (voucher.ToAccountId.ToString(), voucher.Amount, 0, $"سند صرف {voucher.VoucherNumber} - {voucher.Description}"),
-            (voucher.CashAccountId.ToString(), 0, voucher.Amount, $"من حساب {voucher.CashAccount?.NameAr} - {voucher.VoucherNumber}")
+            ($"ID:{voucher.ToAccountId}", voucher.Amount, 0, $"سند صرف {voucher.VoucherNumber} - {voucher.Description}"),
+            ($"ID:{voucher.CashAccountId}", 0, voucher.Amount, $"من حساب {voucher.CashAccount?.NameAr} - {voucher.VoucherNumber}")
         };
 
         await PostEntry(JournalEntryType.PaymentVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, supplierId: voucher.SupplierId);
@@ -660,7 +661,7 @@ public class AccountingService : IAccountingService
     private string GetMap(Dictionary<string, int?> map, string key, string fallback)
     {
         if (map.TryGetValue(key.ToLower(), out var id) && id.HasValue)
-            return id.Value.ToString();
+            return $"ID:{id.Value}";
         return fallback;
     }
 
@@ -687,11 +688,11 @@ public class AccountingService : IAccountingService
         };
 
         if (key != null && map.TryGetValue(key.ToLower(), out var mappedId) && mappedId.HasValue)
-            return mappedId.Value.ToString();
+            return $"ID:{mappedId.Value}";
 
         // Fallback to main cash account
         if (map.TryGetValue("cashaccountid", out var mainCashId) && mainCashId.HasValue)
-            return mainCashId.Value.ToString();
+            return $"ID:{mainCashId.Value}";
 
         // Ultimate hardcoded fallbacks
         return (method, source) switch
@@ -751,25 +752,37 @@ public class AccountingService : IAccountingService
     /// نحاول الكود أولاً لأن أكواد الحسابات (مثل 2104, 1106) قد تتطابق مع Id صغيرة
     private async Task<int> GetAccountIdAsync(string input)
     {
-        // أولاً: دائماً نحاول البحث بالكود (Code) لأن الأكواد المحاسبية أهم
-        var acctByCode = await _db.Accounts
-            .Where(a => a.Code == input && !a.IsDeleted && a.IsActive)
-            .Select(a => new { a.Id })
-            .FirstOrDefaultAsync();
-
-        if (acctByCode != null)
-            return acctByCode.Id;
-
-        // ثانياً: إذا لم يوجد بالكود، نحاول بالـ Id (للحالات التي يُمرَّر فيها Id مباشرة)
-        if (int.TryParse(input, out var id) && id > 0)
+        // 1. Explicit ID Resolution
+        if (input.StartsWith("ID:"))
         {
-            var acctById = await _db.Accounts
-                .Where(a => a.Id == id && !a.IsDeleted && a.IsActive)
+            if (int.TryParse(input.Substring(3), out var exactId) && exactId > 0)
+            {
+                var acctById = await _db.Accounts.Where(a => a.Id == exactId && !a.IsDeleted && a.IsActive).Select(a => new { a.Id }).FirstOrDefaultAsync();
+                if (acctById != null) return acctById.Id;
+            }
+        }
+        else
+        {
+            // 2. Resolve by Account Code (Constants like '2101')
+            var acctByCode = await _db.Accounts
+                .Where(a => a.Code == input && !a.IsDeleted && a.IsActive)
                 .Select(a => new { a.Id })
                 .FirstOrDefaultAsync();
 
-            if (acctById != null)
-                return acctById.Id;
+            if (acctByCode != null)
+                return acctByCode.Id;
+
+            // 3. Last fallback: It might be a bare ID passed from Legacy Code
+            if (int.TryParse(input, out var id) && id > 0)
+            {
+                var acctById = await _db.Accounts
+                    .Where(a => a.Id == id && !a.IsDeleted && a.IsActive)
+                    .Select(a => new { a.Id })
+                    .FirstOrDefaultAsync();
+
+                if (acctById != null)
+                    return acctById.Id;
+            }
         }
 
         throw new InvalidOperationException($"حساب '{input}' غير موجود أو غير نشط في شجرة الحسابات");
