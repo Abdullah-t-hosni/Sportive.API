@@ -142,7 +142,7 @@ public record CreateProductDto(
     [property: JsonPropertyName("nameEn")] string NameEn,
     [property: JsonPropertyName("descriptionAr")] string? DescriptionAr,
     [property: JsonPropertyName("descriptionEn")] string? DescriptionEn,
-    [property: JsonPropertyName("price")] decimal Price,
+    [property: JsonPropertyName("price")] decimal? Price,
     [property: JsonPropertyName("discountPrice")] decimal? DiscountPrice,
     [property: JsonPropertyName("costPrice")] decimal? CostPrice,
     [property: JsonPropertyName("sku")] string SKU,
@@ -150,7 +150,7 @@ public record CreateProductDto(
     [property: JsonPropertyName("categoryId")] int CategoryId,
     [property: JsonPropertyName("isFeatured")] bool IsFeatured,
     [property: JsonPropertyName("variants")] List<CreateVariantDto>? Variants,
-    [property: JsonPropertyName("reorderLevel")] int ReorderLevel = 0,
+    [property: JsonPropertyName("reorderLevel")] int? ReorderLevel = 0,
     [property: JsonPropertyName("hasTax")] bool HasTax = true,
     [property: JsonPropertyName("vatRate")] decimal? VatRate = null
 );
@@ -160,14 +160,14 @@ public record UpdateProductDto(
     [property: JsonPropertyName("nameEn")] string NameEn,
     [property: JsonPropertyName("descriptionAr")] string? DescriptionAr,
     [property: JsonPropertyName("descriptionEn")] string? DescriptionEn,
-    [property: JsonPropertyName("price")] decimal Price,
+    [property: JsonPropertyName("price")] decimal? Price,
     [property: JsonPropertyName("discountPrice")] decimal? DiscountPrice,
     [property: JsonPropertyName("costPrice")] decimal? CostPrice,
     [property: JsonPropertyName("brandId")] int? BrandId,
     [property: JsonPropertyName("sku")] string SKU,
     [property: JsonPropertyName("categoryId")] int CategoryId,
     [property: JsonPropertyName("isFeatured")] bool IsFeatured,
-    [property: JsonPropertyName("reorderLevel")] int ReorderLevel,
+    [property: JsonPropertyName("reorderLevel")] int? ReorderLevel,
     [property: JsonPropertyName("status")] ProductStatus Status,
     [property: JsonPropertyName("hasTax")] bool HasTax = true,
     [property: JsonPropertyName("vatRate")] decimal? VatRate = null
@@ -177,9 +177,9 @@ public record CreateVariantDto(
     string? Size,
     string? Color,
     string? ColorAr,
-    int StockQuantity,
+    int? StockQuantity,
     decimal? PriceAdjustment,
-    int ReorderLevel = 0
+    int? ReorderLevel = 0
 );
 
 // ========== REVIEWS & WISHLIST ==========

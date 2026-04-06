@@ -134,20 +134,23 @@ public class ProductService : IProductService
         if (await _db.Products.AnyAsync(p => p.SKU == dto.SKU))
             throw new ArgumentException($"كود المنتج {dto.SKU} مستخدم بالفعل لمنتج آخر.");
 
+        if (!dto.Price.HasValue || dto.Price <= 0)
+            throw new ArgumentException("سعر المنتج مطلوب ويجب أن يكون أكبر من صفر.");
+
         var product = new Product
         {
             NameAr = dto.NameAr,
             NameEn = dto.NameEn,
             DescriptionAr = dto.DescriptionAr,
             DescriptionEn = dto.DescriptionEn,
-            Price = dto.Price,
+            Price = dto.Price.Value,
             DiscountPrice = dto.DiscountPrice,
             CostPrice = dto.CostPrice,
             SKU = dto.SKU,
             BrandId = dto.BrandId,
             CategoryId = dto.CategoryId,
             IsFeatured = dto.IsFeatured,
-            ReorderLevel = dto.ReorderLevel,
+            ReorderLevel = dto.ReorderLevel ?? 0,
             HasTax = dto.HasTax,
             VatRate = dto.VatRate,
             Status = ProductStatus.Active
@@ -162,8 +165,8 @@ public class ProductService : IProductService
                     Size = v.Size,
                     Color = v.Color,
                     ColorAr = v.ColorAr,
-                    StockQuantity = v.StockQuantity,
-                    ReorderLevel = v.ReorderLevel,
+                    StockQuantity = v.StockQuantity ?? 0,
+                    ReorderLevel = v.ReorderLevel ?? 0,
                     PriceAdjustment = v.PriceAdjustment
                 });
             }
@@ -213,18 +216,21 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync(p => p.Id == id)
             ?? throw new KeyNotFoundException($"Product {id} not found");
 
+        if (!dto.Price.HasValue || dto.Price <= 0)
+            throw new ArgumentException("سعر المنتج مطلوب ويجب أن يكون أكبر من صفر.");
+
         product.NameAr = dto.NameAr;
         product.NameEn = dto.NameEn;
         product.DescriptionAr = dto.DescriptionAr;
         product.DescriptionEn = dto.DescriptionEn;
-        product.Price = dto.Price;
+        product.Price = dto.Price.Value;
         product.DiscountPrice = dto.DiscountPrice;
         product.CostPrice = dto.CostPrice;
         product.BrandId = dto.BrandId;
         product.SKU = dto.SKU;
         product.CategoryId = dto.CategoryId;
         product.IsFeatured = dto.IsFeatured;
-        product.ReorderLevel = dto.ReorderLevel;
+        product.ReorderLevel = dto.ReorderLevel ?? 0;
         product.Status = dto.Status;
         product.HasTax = dto.HasTax;
         product.VatRate = dto.VatRate;
