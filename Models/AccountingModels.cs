@@ -75,6 +75,9 @@ public class JournalEntry : BaseEntity
     public JournalEntry?      ReversalOf      { get; set; }
     public string?            AttachmentUrl   { get; set; }
     public string?            AttachmentPublicId { get; set; }
+    
+    public int?               OrderId { get; set; }
+    public Order?             Order   { get; set; }
 
     public ICollection<JournalLine> Lines { get; set; } = new List<JournalLine>();
 

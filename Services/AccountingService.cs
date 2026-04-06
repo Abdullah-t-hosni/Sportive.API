@@ -839,6 +839,7 @@ public class AccountingService : IAccountingService
             Status      = JournalEntryStatus.Posted,
             Reference   = reference,
             Description = description,
+            OrderId     = orderId,
             CreatedAt   = DateTime.UtcNow,
         };
 

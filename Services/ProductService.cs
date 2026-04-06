@@ -326,8 +326,8 @@ public class ProductService : IProductService
             Size = dto.Size,
             Color = dto.Color,
             ColorAr = dto.ColorAr,
-            StockQuantity = dto.StockQuantity,
-            ReorderLevel = dto.ReorderLevel,
+            StockQuantity = dto.StockQuantity ?? 0,
+            ReorderLevel = dto.ReorderLevel ?? 0,
             PriceAdjustment = dto.PriceAdjustment
         };
         _db.ProductVariants.Add(v);
@@ -337,7 +337,7 @@ public class ProductService : IProductService
         {
             await _inventory.LogMovementAsync(
                 InventoryMovementType.OpeningBalance,
-                dto.StockQuantity,
+                dto.StockQuantity ?? 0,
                 productId,
                 v.Id,
                 "INIT-VARIANT",
@@ -359,8 +359,8 @@ public class ProductService : IProductService
         v.Size = dto.Size;
         v.Color = dto.Color;
         v.ColorAr = dto.ColorAr;
-        v.StockQuantity = dto.StockQuantity;
-        v.ReorderLevel = dto.ReorderLevel;
+        v.StockQuantity = dto.StockQuantity ?? 0;
+        v.ReorderLevel = dto.ReorderLevel ?? 0;
         v.PriceAdjustment = dto.PriceAdjustment;
         v.UpdatedAt = DateTime.UtcNow;
 
