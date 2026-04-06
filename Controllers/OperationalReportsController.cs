@@ -447,7 +447,7 @@ public class OperationalReportsController : ControllerBase
         // Get all SalesReturn journal entries
         var returns = await _db.JournalEntries
             .Include(j => j.Lines)
-            .Include(j => j.Order).ThenInclude(o => o.Customer)
+            .Include(j => j.Order).ThenInclude(o => o!.Customer)
             .Where(j => !j.IsDeleted && j.Type == JournalEntryType.SalesReturn 
                      && j.EntryDate >= from && j.EntryDate <= to)
             .OrderByDescending(j => j.EntryDate)
