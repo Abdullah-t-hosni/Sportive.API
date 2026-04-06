@@ -344,6 +344,21 @@ public class OperationalReportsController : ControllerBase
         if (source.HasValue) q = q.Where(o => o.Source == source.Value);
 
         var orders = await q.OrderByDescending(o => o.CreatedAt).ToListAsync();
+        
+        // 🚨 GET RETURNS IN THE SAME PERIOD
+        var returns = await _db.JournalEntries
+            .Include(j => j.Lines)
+            .Where(j => !j.IsDeleted && j.Type == JournalEntryType.SalesReturn && j.EntryDate >= from && j.EntryDate <= to)
+            .ToListAsync();
+        
+        decimal totalReturnAmount = 0;
+        foreach(var ret in returns)
+        {
+            // Sum all SalesReturn account debits
+            // or just the total amount of the entry
+            // Usually the SalesReturn line is the one we want to track as "Loss of Revenue"
+             totalReturnAmount += ret.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit);
+        }
 
         var rows = orders.Select(o => new SalesRow(
             o.OrderNumber, o.CreatedAt,
@@ -358,9 +373,11 @@ public class OperationalReportsController : ControllerBase
 
         var summary = new {
             totalOrders   = rows.Count,
-            totalRevenue  = rows.Sum(r => r.TotalAmount),
+            totalGrossRevenue  = rows.Sum(r => r.TotalAmount),
+            totalReturns       = totalReturnAmount,
+            totalNetRevenue    = rows.Sum(r => r.TotalAmount) - totalReturnAmount,
             totalDiscount = rows.Sum(r => r.DiscountAmount),
-            avgOrder      = rows.Count > 0 ? rows.Sum(r => r.TotalAmount) / rows.Count : 0,
+            avgOrder      = rows.Count > 0 ? (rows.Sum(r => r.TotalAmount) - totalReturnAmount) / rows.Count : 0,
             website       = rows.Count(r => r.Source == "Website"),
             pos           = rows.Count(r => r.Source == "POS"),
         };
@@ -427,21 +444,21 @@ public class OperationalReportsController : ControllerBase
         var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1).Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
 
-        var returns = await _db.Orders
-            .Include(o => o.Customer)
-            .Include(o => o.Items)
-            .Include(o => o.StatusHistory)
-            .Where(o => !o.IsDeleted && o.Status == OrderStatus.Returned
-                     && o.CreatedAt >= from && o.CreatedAt <= to)
-            .OrderByDescending(o => o.CreatedAt)
+        // Get all SalesReturn journal entries
+        var returns = await _db.JournalEntries
+            .Include(j => j.Lines)
+            .Include(j => j.Order).ThenInclude(o => o.Customer)
+            .Where(j => !j.IsDeleted && j.Type == JournalEntryType.SalesReturn 
+                     && j.EntryDate >= from && j.EntryDate <= to)
+            .OrderByDescending(j => j.EntryDate)
             .ToListAsync();
 
-        var rows = returns.Select(o => new ReturnRow(
-            o.OrderNumber, o.CreatedAt,
-            o.Customer?.FullName ?? "",
-            o.Customer?.Phone ?? "",
-            o.TotalAmount,
-            o.StatusHistory.Where(h => h.Status == OrderStatus.Returned).LastOrDefault()?.Note ?? ""
+        var rows = returns.Select(j => new ReturnRow(
+            j.Reference ?? j.EntryNumber, j.EntryDate,
+            j.Order?.Customer?.FullName ?? "Walk-in",
+            j.Order?.Customer?.Phone ?? "",
+            j.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit), // The return amount (Revenue reversal part)
+            j.Description ?? ""
         )).ToList();
 
         var summary = new {

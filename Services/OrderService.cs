@@ -470,12 +470,17 @@ public class OrderService : IOrderService
             using var scope = _scopeFactory.CreateScope();
             var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
             var cashCode = await accounting.GetMappedCashAccount(order.PaymentMethod, order.Source);
-            // ✅ نتحقق من رصيد الدرج في اليوم الحالي فقط (مش الرصيد التراكمي)
+            
+            // ✅ نتحقق من رصيد الدرج في اليوم الحالي فقط (بناءً على طلب العميل للحسابات المنفصلة يومياً)
             var todayBalance = await accounting.GetTodayDrawerBalanceAsync(cashCode);
             if (todayBalance < order.TotalAmount)
             {
-               throw new InvalidOperationException($"عذراً، رصيد الدرج لليوم غير كافٍ. المتوفر النهارده: {todayBalance:N2} ج.م فقط.");
+               throw new InvalidOperationException($"عذراً، رصيد الدرج لليوم ({todayBalance:N2} ج.م) غير كافٍ لرد نقود هذا الطلب ({order.TotalAmount:N2} ج.م).");
             }
+
+            // Mark all items as returned
+            var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
+            foreach (var it in orderWithItems.Items) it.ReturnedQuantity = it.Quantity;
         }
 
         // Post accounting if paid
@@ -532,15 +537,18 @@ public class OrderService : IOrderService
         if (order == null) throw new KeyNotFoundException("Order not found.");
         if (order.Status == OrderStatus.Cancelled) throw new InvalidOperationException("Cannot return items from a cancelled order.");
 
-        // 1. Calculate Refund Amount First
+        // 1. Calculate Refund Amount (Proportional to Discount) First
         decimal refundAmountTotal = 0;
+        var discountRatio = order.SubTotal > 0 ? (order.TotalAmount - order.DeliveryFee) / order.SubTotal : 1;
+
         foreach (var req in dto.Items)
         {
             var line = order.Items.FirstOrDefault(i => i.Id == req.OrderItemId);
             if (line != null && req.Quantity > 0)
             {
-                var ratio = (decimal)req.Quantity / (decimal)line.Quantity;
-                refundAmountTotal += Math.Round(line.TotalPrice * ratio, 2);
+                // We refund the proportional part of what they PAID (Price after discount share)
+                var grossPrice = line.UnitPrice * req.Quantity;
+                refundAmountTotal += Math.Round(grossPrice * discountRatio, 2);
             }
         }
 
@@ -550,11 +558,12 @@ public class OrderService : IOrderService
             using var scope = _scopeFactory.CreateScope();
             var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
             var cashierCode = await accounting.GetMappedCashAccount(order.PaymentMethod, order.Source);
-            // ✅ نتحقق من رصيد اليوم الحالي فقط (مش الرصيد المحاسبي التراكمي)
+            
+            // ✅ نتحقق من رصيد اليوم الحالي فقط (بناءً على طلب العميل للحسابات المنفصلة يومياً)
             var currentDrawerBalance = await accounting.GetTodayDrawerBalanceAsync(cashierCode);
             if (currentDrawerBalance < refundAmountTotal)
             {
-               throw new InvalidOperationException($"عذراً، رصيد الدرج لليوم غير كافٍ لإتمام هذا المرتجع الجزئي. المتوفر النهارده: {currentDrawerBalance:N2} ج.م فقط.");
+               throw new InvalidOperationException($"عذراً، رصيد الدرج لليوم ({currentDrawerBalance:N2} ج.م) غير كافٍ لإتمام هذا المرتجع الجزئي ({refundAmountTotal:N2} ج.م).");
             }
         }
 
@@ -566,14 +575,17 @@ public class OrderService : IOrderService
             var line = order.Items.FirstOrDefault(i => i.Id == req.OrderItemId);
             if (line == null) continue;
             if (req.Quantity <= 0) continue;
-            if (req.Quantity > line.Quantity) throw new InvalidOperationException($"Cannot return {req.Quantity} for item {line.ProductNameAr}. Max is {line.Quantity}.");
+            
+            int maxCanReturn = line.Quantity - line.ReturnedQuantity;
+            if (req.Quantity > maxCanReturn) 
+               throw new InvalidOperationException($"Cannot return {req.Quantity} for item {line.ProductNameAr}. Already returned: {line.ReturnedQuantity}. Max remaining: {maxCanReturn}.");
 
             // 1. Calculate partial values for this item
-            var ratio = (decimal)req.Quantity / (decimal)line.Quantity;
-            var itemTotalReturn = Math.Round(line.TotalPrice * ratio, 2);
-            var itemVatReturn = Math.Round(line.ItemVatAmount * ratio, 2);
+            var itemTotalReturn = Math.Round((line.UnitPrice * req.Quantity) * discountRatio, 2);
+            var itemVatReturn = Math.Round(line.ItemVatAmount * ((decimal)req.Quantity / line.Quantity), 2);
             
             refundAmount += itemTotalReturn;
+            line.ReturnedQuantity += req.Quantity; // ✅ Update the item tracking
 
             // 2. Clone for accounting (to represent the returned part)
             var returnClone = new OrderItem
@@ -583,7 +595,7 @@ public class OrderService : IOrderService
                 ProductNameAr = line.ProductNameAr,
                 Quantity = req.Quantity,
                 UnitPrice = line.UnitPrice,
-                TotalPrice = itemTotalReturn, // This part is returned
+                TotalPrice = itemTotalReturn, // This part is refunded
                 ItemVatAmount = itemVatReturn,
                 Product = line.Product // For COGS
             };
@@ -595,10 +607,17 @@ public class OrderService : IOrderService
                 req.Quantity, line.ProductId, line.ProductVariantId,
                 order.OrderNumber, $"Partial Return: {req.Quantity} units", updatedByUserId
             );
+        }
 
-            // 4. Update Original Line (Optional: Some systems keep it but add a status? We'll leave it but the return is a child transaction)
-            // Or we reduce the quantity? If we reduce the quantity, the original invoice changes. 
-            // Better: Record it as a "ReturnedQuantity" column if it existed, but for now we just process the return event.
+        // 4. Update Order Status
+        if (order.Items.All(i => i.Quantity == i.ReturnedQuantity))
+        {
+           order.Status = OrderStatus.Returned;
+           order.PaymentStatus = PaymentStatus.Refunded;
+        }
+        else if (order.Items.Any(i => i.ReturnedQuantity > 0))
+        {
+           order.Status = OrderStatus.PartiallyReturned;
         }
 
         if (!returnedOrderItems.Any()) throw new InvalidOperationException("No items selected for return.");

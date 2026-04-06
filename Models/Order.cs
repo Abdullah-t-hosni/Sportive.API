@@ -9,7 +9,8 @@ public enum OrderStatus
     OutForDelivery = 5, // خرج للتوصيل
     Delivered = 6,      // تم التوصيل
     Cancelled = 7,      // ملغي
-    Returned = 8        // مرتجع
+    Returned = 8,       // مرتجع كامل
+    PartiallyReturned = 9 // مرتجع جزئي
 }
 
 public enum FulfillmentType
@@ -102,6 +103,7 @@ public class OrderItem : BaseEntity
     public string? Size { get; set; }
     public string? Color { get; set; }
     public int Quantity { get; set; }
+    public int ReturnedQuantity { get; set; } = 0; // The amount returned back to stock
     public decimal UnitPrice { get; set; }
     public decimal TotalPrice { get; set; }
     public bool HasTax { get; set; } = true;
