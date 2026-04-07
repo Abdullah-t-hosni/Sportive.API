@@ -462,23 +462,13 @@ public class OrderService : IOrderService
             if (order.PaymentMethod != PaymentMethod.Credit) order.PaymentStatus = PaymentStatus.Paid;
         }
 
-        if (dto.Status == OrderStatus.Returned && order.Source == OrderSource.POS && order.PaymentStatus == PaymentStatus.Paid)
+        if (dto.Status == OrderStatus.Returned && order.Source == OrderSource.POS)
         {
-            using var scope = _scopeFactory.CreateScope();
-            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-            var cashCode = await accounting.GetMappedCashAccount(order.PaymentMethod, order.Source);
-            
-            // ✅ نتحقق من رصيد الدرج في اليوم الحالي فقط (بناءً على طلب العميل للحسابات المنفصلة يومياً)
-            var todayBalance = await accounting.GetTodayDrawerBalanceAsync(cashCode);
-            if (todayBalance < order.TotalAmount)
-            {
-               throw new InvalidOperationException($"عذراً، رصيد الدرج لليوم ({todayBalance:N2} ج.م) غير كافٍ لرد نقود هذا الطلب ({order.TotalAmount:N2} ج.م).");
-            }
-
-            // Mark all items as returned
+            // Mark all items as returned (inventory handled below)
             var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
             foreach (var it in orderWithItems.Items) it.ReturnedQuantity = it.Quantity;
         }
+
 
         // Post accounting if paid
         if ((dto.Status == OrderStatus.Delivered || dto.Status == OrderStatus.Confirmed) && 
@@ -549,20 +539,8 @@ public class OrderService : IOrderService
             }
         }
 
-        // 2. Mandatory Drawer Balance Check (only for PAID POS returns)
-        if (order.Source == OrderSource.POS && order.PaymentStatus == PaymentStatus.Paid)
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-            var cashierCode = await accounting.GetMappedCashAccount(order.PaymentMethod, order.Source);
-            
-            // ✅ نتحقق من رصيد اليوم الحالي فقط (بناءً على طلب العميل للحسابات المنفصلة يومياً)
-            var currentDrawerBalance = await accounting.GetTodayDrawerBalanceAsync(cashierCode);
-            if (currentDrawerBalance < refundAmountTotal)
-            {
-               throw new InvalidOperationException($"عذراً، رصيد الدرج لليوم ({currentDrawerBalance:N2} ج.م) غير كافٍ لإتمام هذا المرتجع الجزئي ({refundAmountTotal:N2} ج.م).");
-            }
-        }
+        // NOTE: Drawer balance check is enforced by the frontend using real order cash data.
+        // Backend validates item quantities and business rules only.
 
         var returnedOrderItems = new List<OrderItem>();
         decimal refundAmount = 0;
