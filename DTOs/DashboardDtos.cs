@@ -20,7 +20,9 @@ public record DashboardStatsDto(
     int TotalProducts,
     int LowStockProducts,
     int OutOfStockProducts,
-    decimal UncollectedAmount = 0
+    decimal UncollectedAmount = 0,
+    decimal DebtAmount = 0,
+    decimal ReturnAmount = 0
 );
 
 public record AnalyticsSummaryDto(

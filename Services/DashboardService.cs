@@ -79,6 +79,16 @@ public class DashboardService : IDashboardService
             .Where(o => o.PaymentStatus != PaymentStatus.Paid && o.Status != OrderStatus.Cancelled)
             .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
 
+        // الديون: هي الطلبات التي لم تُدفع بعد وليست ملغاة أو مرتجعة بالكامل (تشمل الآجل وأي طلب معلق الدفع)
+        var debtAmount = await _db.Orders
+            .Where(o => o.PaymentStatus != PaymentStatus.Paid && o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned)
+            .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
+
+        // المرتجعات: قيمة كل السلع التي تم إرجاعها (سواء مرتجع كامل أو جزئي)
+        var returnAmount = await _db.OrderItems
+            .Where(i => !i.IsDeleted && i.ReturnedQuantity > 0)
+            .SumAsync(i => (decimal?)i.ReturnedQuantity * i.UnitPrice) ?? 0;
+
         return new DashboardStatsDto(
             TodaySales: todaySales,
             TodaySalesGrowth: todayGrowth,
@@ -94,7 +104,9 @@ public class DashboardService : IDashboardService
             TotalProducts: await _db.Products.CountAsync(p => !p.IsDeleted),
             LowStockProducts: await _db.ProductVariants.CountAsync(v => !v.IsDeleted && v.StockQuantity <= 5 && v.StockQuantity > 0),
             OutOfStockProducts: await _db.ProductVariants.CountAsync(v => !v.IsDeleted && v.StockQuantity == 0),
-            UncollectedAmount: uncollectedAmount
+            UncollectedAmount: uncollectedAmount,
+            DebtAmount: debtAmount,
+            ReturnAmount: returnAmount
         );
     }
 
