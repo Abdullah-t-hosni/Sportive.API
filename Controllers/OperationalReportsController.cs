@@ -720,6 +720,22 @@ public class OperationalReportsController : ControllerBase
                         .Sum(v => v.StockQuantity) ?? 0;
                     productBrief = $"{product.NameAr} ({product.SKU})";
                 }
+
+                // Calculate exact running balance for each movement by starting from currentStock
+                // Net change after the report 'to' date until now
+                int netChangeAfterToDate = await _db.InventoryMovements
+                        .Where(m => m.ProductId == productId && m.CreatedAt > to)
+                        .SumAsync(m => m.Quantity);
+
+                int runningBalance = (int)currentStock - netChangeAfterToDate;
+
+                // Propagate backwards (from most recent to oldest in the report range)
+                for (int i = movements.Count - 1; i >= 0; i--)
+                {
+                    var m = movements[i];
+                    movements[i] = m with { Balance = runningBalance };
+                    runningBalance -= (m.In - m.Out);
+                }
             }
             else
             {
@@ -1016,4 +1032,4 @@ public record SalesRow(string OrderNumber, DateTime Date, string CustomerName, s
 public record PurchaseRow(string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal PaidAmount, decimal RemainingAmount);
 public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason);
 public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal TotalSales, int Returns, int Cancellations);
-public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "");
+public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "", int Balance = 0);
