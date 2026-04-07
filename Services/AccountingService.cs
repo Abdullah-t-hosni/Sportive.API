@@ -305,6 +305,7 @@ public class AccountingService : IAccountingService
         var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
 
         string salesReturnAcct = GetMap(mapDict, "salesReturnAccountID", SALES_RETURN);
+        string salesDiscAcct   = GetMap(mapDict, "salesDiscountAccountID", SALES_DISCOUNT);
         string receivablesAcct = GetMap(mapDict, "customerAccountID", RECEIVABLES);
         string inventoryAcct   = GetMap(mapDict, "inventoryAccountID", INVENTORY);
         string cogsAcct        = GetMap(mapDict, "costOfGoodsSoldAccountID", COGS);
@@ -331,6 +332,15 @@ public class AccountingService : IAccountingService
             const string VAT_PAYABLE = "2221";
             string vatAcct = GetMap(mapDict, "vatPayableAccountID", VAT_PAYABLE);
             lines.Add((vatAcct, totalVatReturn, 0, $"إلغاء ضريبة جزئية - {order.OrderNumber}"));
+        }
+
+        // Handle Discount Reversal to Balance Entry precisely
+        decimal discountReversal = (totalNetReturn + totalVatReturn) - refundAmount;
+        if (discountReversal > 0)
+        {
+            lines.Add((salesDiscAcct, 0, discountReversal, $"موازنة خصم (مرتجع جزئي) - {order.OrderNumber}"));
+        } else if (discountReversal < 0) {
+            lines.Add((salesDiscAcct, Math.Abs(discountReversal), 0, $"تسوية تفاوت (مرتجع جزئي) - {order.OrderNumber}"));
         }
 
         // Sub-ledger credit to customer

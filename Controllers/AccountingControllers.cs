@@ -189,9 +189,11 @@ public class JournalEntriesController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
+    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null, [FromQuery] bool includeLines = false)
     {
         var q = _db.JournalEntries.AsNoTracking();
+
+        if (includeLines) q = q.Include(e => e.Lines).ThenInclude(l => l.Account);
 
         if (!string.IsNullOrEmpty(search))
             q = q.Where(e => e.EntryNumber.Contains(search) || (e.Description != null && e.Description.Contains(search)) || (e.Reference != null && e.Reference.Contains(search)));
@@ -210,8 +212,9 @@ public class JournalEntriesController : ControllerBase
                 Reference = e.Reference,
                 Status = e.Status.ToString(),
                 Type = e.Type.ToString(),
-                LineCount = _db.JournalLines.Count(l => l.JournalEntryId == e.Id),
-                TotalAmount = _db.JournalLines.Where(l => l.JournalEntryId == e.Id && l.Debit > 0).Sum(l => (decimal?)l.Debit) ?? 0
+                LineCount = includeLines ? e.Lines.Count : _db.JournalLines.Count(l => l.JournalEntryId == e.Id),
+                TotalAmount = includeLines ? e.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit) : (_db.JournalLines.Where(l => l.JournalEntryId == e.Id && l.Debit > 0).Sum(l => (decimal?)l.Debit) ?? 0),
+                Lines = includeLines ? e.Lines.Select(l => new { l.AccountId, l.Credit, l.Debit, l.AccountName = l.Account != null ? l.Account.NameAr : null }).ToList() : null
             })
             .ToListAsync();
 
