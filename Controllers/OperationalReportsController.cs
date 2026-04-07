@@ -624,7 +624,8 @@ public class OperationalReportsController : ControllerBase
                     i.Product.NameAr,
                     i.Order.Source.ToString(),
                     i.Order.Status.ToString(),
-                    i.Product.SKU))
+                    i.Product.SKU,
+                    0))
                 .ToListAsync();
 
             // 2. مرتجع مبيعات (Sales Returns)
@@ -648,7 +649,8 @@ public class OperationalReportsController : ControllerBase
                     i.Product.NameAr,
                     i.Order.Source.ToString(),
                     i.Order.Status.ToString(),
-                    i.Product.SKU))
+                    i.Product.SKU,
+                    0))
                 .ToListAsync();
 
             // 3. مشتريات (Purchases) — Not Draft
@@ -671,7 +673,8 @@ public class OperationalReportsController : ControllerBase
                     i.Product != null ? i.Product.NameAr : "Deleted Product",
                     "Supplier",
                     i.Invoice.Status.ToString(),
-                    i.Product != null ? i.Product.SKU : "N/A"))
+                    i.Product != null ? i.Product.SKU : "N/A",
+                    0))
                 .ToListAsync();
 
             // 4. مرتجع مشتريات (Purchase Returns)
@@ -694,7 +697,8 @@ public class OperationalReportsController : ControllerBase
                     i.Product != null ? i.Product.NameAr : "Deleted Product",
                     "Supplier",
                     i.Invoice.Status.ToString(),
-                    i.Product != null ? i.Product.SKU : "N/A"))
+                    i.Product != null ? i.Product.SKU : "N/A",
+                    0))
                 .ToListAsync();
 
             var movements = salesMovements
