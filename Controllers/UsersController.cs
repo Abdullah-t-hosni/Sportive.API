@@ -40,9 +40,7 @@ public class UsersController : ControllerBase
         var grouped = list.GroupBy(x => x.u.Id)
                           .Select(g => new {
                               id          = g.Key,
-                              firstName   = g.First().u.FirstName,
-                              lastName    = g.First().u.LastName,
-                              fullName    = $"{g.First().u.FirstName} {g.First().u.LastName}",
+                              fullName    = g.First().u.FullName,
                               email       = g.First().u.Email,
                               phone       = g.First().u.PhoneNumber,
                               isActive    = g.First().u.IsActive,
@@ -66,15 +64,14 @@ public class UsersController : ControllerBase
     }
 
     // ── Update User Basic Info ──────────────────────────────
-    public record UpdateUserDto(string FirstName, string LastName, string Email, string? Phone, bool? IsActive);
+    public record UpdateUserDto(string FullName, string Email, string? Phone, bool? IsActive);
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateUser(string id, [FromBody] UpdateUserDto dto)
     {
         var user = await _userManager.FindByIdAsync(id);
         if (user == null) return NotFound(new { message = "المستخدم غير موجود" });
 
-        user.FirstName   = dto.FirstName;
-        user.LastName    = dto.LastName;
+        user.FullName    = dto.FullName;
         user.Email       = dto.Email;
         user.UserName    = dto.Email; // Keep UserName and Email same for simplicity
         user.PhoneNumber = dto.Phone;

@@ -51,7 +51,7 @@ public class CashierPerformanceController : ControllerBase
         var cashierIds = orders.Select(o => o.SalesPersonId!).Distinct().ToList();
         var users = await _db.Users
             .Where(u => cashierIds.Contains(u.Id))
-            .Select(u => new { u.Id, u.FirstName, u.LastName, u.PhoneNumber })
+            .Select(u => new { u.Id, u.FullName, u.PhoneNumber })
             .ToDictionaryAsync(u => u.Id);
 
         // ── تجميع حسب الكاشير ─────────────────────────
@@ -60,9 +60,7 @@ public class CashierPerformanceController : ControllerBase
             .Select(g =>
             {
                 var user       = users.GetValueOrDefault(g.Key);
-                var name       = user != null
-                    ? $"{user.FirstName} {user.LastName}".Trim()
-                    : "كاشير غير معروف";
+                var name       = user?.FullName?.Trim() ?? "كاشير غير معروف";
                 var allOrders  = g.ToList();
                 var revenue    = allOrders.Sum(o => o.TotalAmount);
                 var count      = allOrders.Count;

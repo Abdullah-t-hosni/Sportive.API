@@ -17,8 +17,7 @@ public record CustomerBasicDto(
 
 public record CustomerDetailDto(
     [property: JsonPropertyName("id")] int Id,
-    [property: JsonPropertyName("firstName")] string FirstName,
-    [property: JsonPropertyName("lastName")] string LastName,
+    [property: JsonPropertyName("fullName")] string FullName,
     [property: JsonPropertyName("email")] string Email,
     [property: JsonPropertyName("phone")] string? Phone,
     [property: JsonPropertyName("totalOrders")] int TotalOrders,
@@ -62,16 +61,14 @@ public record CreateAddressDto(
 );
 
 public record CreateCustomerDto(
-    [property: JsonPropertyName("firstName")] string FirstName,
-    [property: JsonPropertyName("lastName")] string? LastName = null,
+    [property: JsonPropertyName("fullName")] string FullName,
     [property: JsonPropertyName("email")] string? Email = null,
     [property: JsonPropertyName("phone")] string? Phone = null,
     [property: JsonPropertyName("fixedDiscount")] decimal FixedDiscount = 0
 );
 
 public record UpdateCustomerDto(
-    [property: JsonPropertyName("firstName")] string FirstName,
-    [property: JsonPropertyName("lastName")] string? LastName,
+    [property: JsonPropertyName("fullName")] string FullName,
     [property: JsonPropertyName("email")] string? Email,
     [property: JsonPropertyName("phone")] string? Phone,
     [property: JsonPropertyName("isActive")] bool IsActive = true,

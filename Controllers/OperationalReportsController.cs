@@ -34,7 +34,7 @@ public class OperationalReportsController : ControllerBase
         if (customerId == null && !string.IsNullOrEmpty(search))
         {
             var found = await _db.Customers
-                .Where(c => !c.IsDeleted && (c.FirstName.Contains(search) || c.LastName.Contains(search) || (c.Phone != null && c.Phone.Contains(search))))
+                .Where(c => !c.IsDeleted && (c.FullName.Contains(search) || (c.Phone != null && c.Phone.Contains(search))))
                 .Select(c => c.Id)
                 .FirstOrDefaultAsync();
             if (found > 0) customerId = found;
@@ -533,7 +533,7 @@ public class OperationalReportsController : ControllerBase
         var userIds = orders.Select(o => o.SalesPersonId).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
         var userNames = await _db.Users
             .Where(u => userIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}");
+            .ToDictionaryAsync(u => u.Id, u => u.FullName);
 
         // Group by sales person
         var byPerson = orders
@@ -616,7 +616,7 @@ public class OperationalReportsController : ControllerBase
                     i.Order.CreatedAt,
                     "مبيعات",
                     i.Order.OrderNumber ?? "N/A",
-                    i.Order.Customer.FirstName + " " + i.Order.Customer.LastName,
+                    i.Order.Customer.FullName,
                     (i.ProductVariant != null ? (i.ProductVariant.Size + " / " + i.ProductVariant.ColorAr) : "أساسي"),
                     0,
                     i.Quantity,
@@ -640,7 +640,7 @@ public class OperationalReportsController : ControllerBase
                     i.Order.UpdatedAt ?? i.Order.CreatedAt,
                     "مرتجع مبيعات",
                     i.Order.OrderNumber ?? "N/A",
-                    i.Order.Customer.FirstName + " " + i.Order.Customer.LastName,
+                    i.Order.Customer.FullName,
                     (i.ProductVariant != null ? (i.ProductVariant.Size + " / " + i.ProductVariant.ColorAr) : "أساسي"),
                     i.Quantity,
                     0,

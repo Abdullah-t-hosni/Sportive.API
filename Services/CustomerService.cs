@@ -25,8 +25,7 @@ public class CustomerService : ICustomerService
         {
             var s = search.ToLower();
             query = query.Where(c =>
-                c.FirstName.ToLower().Contains(s) ||
-                c.LastName.ToLower().Contains(s)  ||
+                c.FullName.ToLower().Contains(s) ||
                 c.Email.ToLower().Contains(s)     ||
                 (c.Phone != null && c.Phone.Contains(s)));
         }
@@ -38,7 +37,7 @@ public class CustomerService : ICustomerService
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(c => new CustomerDetailDto(
-                c.Id, c.FirstName, c.LastName, c.Email, c.Phone,
+                c.Id, c.FullName, c.Email, c.Phone,
                 c.Orders.Count,
                 c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
                 c.CreatedAt,
@@ -72,7 +71,7 @@ public class CustomerService : ICustomerService
             .Include(c => c.MainAccount)
             .Where(c => c.Id == id)
             .Select(c => new CustomerDetailDto(
-                c.Id, c.FirstName, c.LastName, c.Email, c.Phone,
+                c.Id, c.FullName, c.Email, c.Phone,
                 c.Orders.Count,
                 c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
                 c.CreatedAt,
@@ -94,7 +93,7 @@ public class CustomerService : ICustomerService
             .Include(c => c.MainAccount)
             .Where(c => c.Email == email)
             .Select(c => new CustomerDetailDto(
-                c.Id, c.FirstName, c.LastName, c.Email, c.Phone,
+                c.Id, c.FullName, c.Email, c.Phone,
                 c.Orders.Count,
                 c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
                 c.CreatedAt,
@@ -140,8 +139,7 @@ public class CustomerService : ICustomerService
         // 4. Create New
         var customer = new Customer
         {
-            FirstName = dto.FirstName,
-            LastName = dto.LastName ?? "",
+            FullName = dto.FullName,
             Email = generatedEmail ?? $"{Guid.NewGuid().ToString().Substring(0, 8)}@pos.com",
             Phone = dto.Phone,
             CreatedAt = DateTime.UtcNow,
@@ -163,8 +161,7 @@ public class CustomerService : ICustomerService
         var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == id)
             ?? throw new Exception("Customer not found");
 
-        customer.FirstName = dto.FirstName;
-        customer.LastName = dto.LastName ?? "";
+        customer.FullName = dto.FullName;
         customer.Email = dto.Email ?? customer.Email;
         customer.Phone = dto.Phone;
         customer.IsActive = dto.IsActive;

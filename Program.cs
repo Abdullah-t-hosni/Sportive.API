@@ -328,8 +328,7 @@ static async Task SeedAsync(WebApplication app)
         admin = new AppUser
         {
             UserName = adminEmail, Email = adminEmail,
-            PhoneNumber = "01111111111", FirstName = "Sport",
-            LastName = "Zone", IsActive = true
+            PhoneNumber = "01111111111", FullName = "Sport Zone", IsActive = true
         };
         await userManager.CreateAsync(admin, adminPassword);
         await userManager.AddToRoleAsync(admin, "Admin");

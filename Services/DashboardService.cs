@@ -176,7 +176,7 @@ public class DashboardService : IDashboardService
         csv.AppendLine("OrderNumber,Date,Customer,Email,Status,TotalAmount");
         foreach(var o in orders)
         {
-            csv.AppendLine($"{o.OrderNumber},{o.CreatedAt:yyyy-MM-dd HH:mm},{o.Customer.FirstName} {o.Customer.LastName},{o.Customer.Email},{o.Status},{o.TotalAmount}");
+            csv.AppendLine($"{o.OrderNumber},{o.CreatedAt:yyyy-MM-dd HH:mm},{o.Customer.FullName},{o.Customer.Email},{o.Status},{o.TotalAmount}");
         }
         return Encoding.UTF8.GetBytes(csv.ToString());
     }
@@ -209,7 +209,7 @@ public class DashboardService : IDashboardService
             .Include(c => c.Orders)
             .Select(c => new {
                 c.Id,
-                FullName = c.FirstName + " " + c.LastName,
+                c.FullName,
                 c.Email,
                 TotalSpent = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
                 OrderCount = c.Orders.Count(o => o.Status != OrderStatus.Cancelled)
@@ -314,7 +314,7 @@ public class DashboardService : IDashboardService
         foreach (var s in staffOrders)
         {
             var user = await _userManager.FindByIdAsync(s.StaffId!);
-            var name = user != null ? $"{user.FirstName} {user.LastName}" : "Unknown Staff";
+            var name = user?.FullName ?? "Unknown Staff";
             staffPerformanceItems.Add(new StaffPerformanceDto(s.StaffId!, name, s.Count, s.Total));
         }
 
@@ -336,7 +336,7 @@ public class DashboardService : IDashboardService
             .ToListAsync();
 
         var user = await _userManager.FindByIdAsync(staffId);
-        var name = user != null ? $"{user.FirstName} {user.LastName}" : "Unknown Staff";
+        var name = user?.FullName ?? "Unknown Staff";
 
         return new StaffPerformanceDto(
             staffId,
@@ -604,7 +604,7 @@ public class DashboardService : IDashboardService
     {
         return await _db.Orders.Include(o => o.Customer).Include(o => o.Items).Where(o => !o.IsDeleted).OrderByDescending(o => o.CreatedAt).Take(count)
             .Select(o => new OrderSummaryDto(
-                o.Id, o.OrderNumber, o.Customer.FirstName + " " + o.Customer.LastName, 
+                o.Id, o.OrderNumber, o.Customer.FullName, 
                 o.Customer.Phone ?? "", o.Status.ToString(), o.FulfillmentType.ToString(), 
                 o.TotalAmount, o.CreatedAt, o.Items.Sum(i => i.Quantity), 
                 o.Source.ToString(), o.PaymentMethod.ToString(), o.PaymentStatus.ToString(), o.AdminNotes))

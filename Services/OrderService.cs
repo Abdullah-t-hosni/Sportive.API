@@ -62,8 +62,7 @@ public class OrderService : IOrderService
         if (!string.IsNullOrEmpty(search))
         {
             query = query.Where(o => o.OrderNumber.Contains(search) || 
-                                     o.Customer.FirstName.Contains(search) || 
-                                     o.Customer.LastName.Contains(search));
+                                     o.Customer.FullName.Contains(search));
         }
 
         var total = await query.CountAsync();
@@ -108,7 +107,7 @@ public class OrderService : IOrderService
         if (!string.IsNullOrEmpty(o.SalesPersonId))
         {
             var sp = await _db.Users.FirstOrDefaultAsync(u => u.Id == o.SalesPersonId);
-            salesPersonName = sp != null ? $"{sp.FirstName} {sp.LastName}" : "";
+            salesPersonName = sp?.FullName ?? "";
         }
 
         // 💡 SMART FINANCE: Calculate actual paid amount from Journal Entries
@@ -188,11 +187,9 @@ public class OrderService : IOrderService
             }
             else
             {
-                var names = (dto.CustomerName ?? "Walking Customer").Split(' ');
                 var c = new Customer
                 {
-                    FirstName = names[0],
-                    LastName = names.Length > 1 ? string.Join(' ', names.Skip(1)) : "Customer",
+                    FullName = dto.CustomerName ?? "Walk-in Customer",
                     Phone = phone,
                     Email = $"{phone}@pos.sportive.com",
                     CreatedAt = DateTime.UtcNow,

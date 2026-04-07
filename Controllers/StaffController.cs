@@ -45,9 +45,7 @@ public class StaffController : ControllerBase
 
             staffUsers.Add(new {
                 id          = user.Id,
-                firstName   = user.FirstName,
-                lastName    = user.LastName,
-                fullName    = $"{user.FirstName} {user.LastName}",
+                fullName    = user.FullName,
                 email       = user.Email,
                 phone       = user.PhoneNumber,
                 isActive    = user.IsActive,
@@ -88,8 +86,7 @@ public class StaffController : ControllerBase
         {
             UserName    = dto.Email,
             Email       = dto.Email,
-            FirstName   = dto.FirstName,
-            LastName    = dto.LastName,
+            FullName    = dto.FullName,
             PhoneNumber = dto.Phone,
             IsActive    = true,
             CreatedAt   = DateTime.UtcNow,
@@ -103,7 +100,7 @@ public class StaffController : ControllerBase
 
         return Ok(new {
             id       = user.Id,
-            fullName = $"{user.FirstName} {user.LastName}",
+            fullName = user.FullName,
             role     = dto.Role,
             message  = $"تم إنشاء {GetRoleAr(dto.Role)} بنجاح"
         });
@@ -300,8 +297,7 @@ public class StaffController : ControllerBase
 
 // ── DTOs ──────────────────────────────────────────────
 public record CreateStaffDto(
-    string FirstName,
-    string LastName,
+    string FullName,
     string Email,
     string Phone,
     string Password,

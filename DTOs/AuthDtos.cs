@@ -6,8 +6,7 @@ namespace Sportive.API.DTOs;
 
 // ========== AUTH ==========
 public record RegisterDto(
-    string FirstName,
-    string LastName,
+    string FullName,
     string? Email,
     string Password,
     string? Phone

@@ -124,9 +124,9 @@ public class CreateCustomerValidator : AbstractValidator<CreateCustomerDto>
 {
     public CreateCustomerValidator()
     {
-        RuleFor(x => x.FirstName)
-            .NotEmpty().WithMessage("الاسم الأول مطلوب")
-            .MaximumLength(100);
+        RuleFor(x => x.FullName)
+            .NotEmpty().WithMessage("الاسم بالكامل مطلوب")
+            .MaximumLength(200);
 
         RuleFor(x => x.Email)
             .EmailAddress().When(x => !string.IsNullOrEmpty(x.Email))

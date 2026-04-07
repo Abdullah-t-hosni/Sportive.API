@@ -71,7 +71,7 @@ public class AuthController : ControllerBase
             var body = $@"
                 <div dir='rtl' style='font-family: Arial, sans-serif; border: 1px solid #eee; padding: 20px;'>
                     <h2 style='color: #0f3460;'>Sportive Store</h2>
-                    <p>أهلاً بك {user.FirstName}،</p>
+                    <p>أهلاً بك {user.FullName}،</p>
                     <p>كود استعادة كلمة السر الخاص بك هو:</p>
                     <div style='background: #f4f4f4; padding: 15px; font-size: 24px; font-weight: bold; text-align: center; border-radius: 5px;'>{code}</div>
                     <p>هذا الكود صالح لمدة 10 دقائق فقط.</p>
@@ -186,7 +186,7 @@ public class AuthController : ControllerBase
         var userId   = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
         var email    = User.FindFirst(ClaimTypes.Email)?.Value!;
         var roles    = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
-        var fullName    = $"{User.FindFirst(ClaimTypes.GivenName)?.Value} {User.FindFirst(ClaimTypes.Surname)?.Value}".Trim();
+        var fullName    = User.FindFirst(ClaimTypes.Name)?.Value ?? "";
         
         // 1. Get static role-based baseline
         var permissions = GetDefaultRolePermissions(roles);
@@ -235,11 +235,9 @@ public class AuthController : ControllerBase
                           where u.IsActive && staffRoles.Contains(r.Name)
                           select new {
                               u.Id,
-                              u.FirstName,
-                              u.LastName,
+                              u.FullName,
                               u.Email,
                               u.PhoneNumber,
-                              FullName = u.FirstName + " " + u.LastName,
                               Role = r.Name
                           }).ToListAsync();
 
@@ -256,8 +254,7 @@ public class AuthController : ControllerBase
             if (existingUser != null)
             {
                 // Re-activate and update info if exists
-                existingUser.FirstName = dto.FirstName;
-                existingUser.LastName = dto.LastName;
+                existingUser.FullName = dto.FullName;
                 existingUser.IsActive = true;
                 existingUser.PhoneNumber = dto.Phone;
                 

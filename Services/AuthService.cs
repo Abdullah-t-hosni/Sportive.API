@@ -60,8 +60,7 @@ public class AuthService : IAuthService
             UserName = userName,
             Email = !string.IsNullOrEmpty(dto.Email) ? dto.Email : null,
             PhoneNumber = dto.Phone,
-            FirstName = dto.FirstName,
-            LastName = dto.LastName,
+            FullName = dto.FullName,
             CreatedAt = DateTime.UtcNow,
             IsActive = true
         };
@@ -92,8 +91,7 @@ public class AuthService : IAuthService
             {
                 customer.AppUserId = user.Id;
                 customer.Email = user.Email ?? customer.Email; // Sync email if provided
-                customer.FirstName = user.FirstName;
-                customer.LastName = user.LastName;
+                customer.FullName = user.FullName;
                 customer.IsDeleted = false; // "Re-activate" if it was soft-deleted
                 customer.UpdatedAt = DateTime.UtcNow;
             }
@@ -102,8 +100,7 @@ public class AuthService : IAuthService
                 customer = new Customer
                 {
                     AppUserId = user.Id,
-                    FirstName = user.FirstName,
-                    LastName = user.LastName,
+                    FullName = user.FullName,
                     Email = user.Email ?? "",
                     Phone = user.PhoneNumber,
                     CreatedAt = DateTime.UtcNow
@@ -143,8 +140,7 @@ public class AuthService : IAuthService
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id),
             new Claim(ClaimTypes.Email, user.Email ?? ""),
-            new Claim(ClaimTypes.GivenName, user.FirstName),
-            new Claim(ClaimTypes.Surname, user.LastName)
+            new Claim(ClaimTypes.Name, user.FullName)
         };
         foreach (var r in roles) claims.Add(new Claim(ClaimTypes.Role, r));
 
@@ -186,7 +182,7 @@ public class AuthService : IAuthService
             new JwtSecurityTokenHandler().WriteToken(token),
             GenerateSecureRefreshToken(), // ✅ FIX: Cryptographically secure refresh token
             user.Email ?? "",
-            $"{user.FirstName} {user.LastName}",
+            user.FullName,
             roles,
             expires,
             customerId,

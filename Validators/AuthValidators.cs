@@ -7,14 +7,10 @@ public class RegisterValidator : AbstractValidator<RegisterDto>
 {
     public RegisterValidator()
     {
-        RuleFor(x => x.FirstName)
-            .NotEmpty().WithMessage("الاسم الأول مطلوب / First name is required")
-            .MinimumLength(2).WithMessage("الاسم الأول لازم يكون 2 حروف على الأقل")
-            .MaximumLength(50).WithMessage("الاسم الأول لا يتجاوز 50 حرف");
-
-        RuleFor(x => x.LastName)
-            .NotEmpty().WithMessage("اسم العائلة مطلوب / Last name is required")
-            .MinimumLength(2).MaximumLength(50);
+        RuleFor(x => x.FullName)
+            .NotEmpty().WithMessage("الاسم بالكامل مطلوب / Full name is required")
+            .MinimumLength(2).WithMessage("الاسم لازم يكون 3 حروف على الأقل")
+            .MaximumLength(100).WithMessage("الاسم لا يجب أن يتجاوز 100 حرف");
 
         RuleFor(x => x.Email)
             .EmailAddress().When(x => !string.IsNullOrEmpty(x.Email))

@@ -4,8 +4,7 @@ namespace Sportive.API.Models;
 
 public class AppUser : IdentityUser
 {
-    public string FirstName { get; set; } = string.Empty;
-    public string LastName { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
     public string? ProfileImageUrl { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public bool IsActive { get; set; } = true;
@@ -14,8 +13,7 @@ public class AppUser : IdentityUser
 
 public class Customer : BaseEntity
 {
-    public string FirstName { get; set; } = string.Empty;
-    public string LastName { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string? Phone { get; set; }
     public string? AppUserId { get; set; }
@@ -32,9 +30,6 @@ public class Customer : BaseEntity
     public ICollection<Address> Addresses { get; set; } = new List<Address>();
     public ICollection<CartItem> CartItems { get; set; } = new List<CartItem>();
     public ICollection<Review> Reviews { get; set; } = new List<Review>();
-
-    // Computed
-    public string FullName => $"{FirstName} {LastName}";
 }
 
 public class Address : BaseEntity
