@@ -140,7 +140,7 @@ public class OrderService : IOrderService
             o.Items.Select(i => new OrderItemDto(
                 i.Id, i.ProductNameAr, i.ProductNameEn, i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
                 i.Size, i.Color, i.Quantity, i.UnitPrice, i.TotalPrice,
-                i.HasTax, i.VatRateApplied, i.ItemVatAmount
+                i.HasTax, i.VatRateApplied, i.ItemVatAmount, i.ReturnedQuantity
             )).ToList(),
             o.StatusHistory.OrderByDescending(h => h.CreatedAt).Select(h => new OrderStatusHistoryDto(
                 h.Status.ToString(), h.Note, h.CreatedAt

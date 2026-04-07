@@ -143,7 +143,8 @@ public record OrderItemDto(
     decimal TotalPrice,
     bool HasTax = true,
     decimal? VatRateApplied = null,
-    decimal ItemVatAmount = 0
+    decimal ItemVatAmount = 0,
+    int ReturnedQuantity = 0
 );
 
 public record OrderStatusHistoryDto(
