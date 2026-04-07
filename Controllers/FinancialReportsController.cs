@@ -181,42 +181,41 @@ public class FinancialReportsController : ControllerBase
 
         var balances = await GetBalances(from, to);
 
-        // الأصول — طبيعة مدين
+        // الأصول — طبيعة مدين (closingBal = Dr - Cr)
         var assets = balances
-            .Where(b => b.Type == AccountType.Asset && b.IsLeaf && (b.ClosingBal != 0 || b.OpenBalance != 0))
+            .Where(b => b.Type == AccountType.Asset && b.IsLeaf && b.ClosingBal != 0)
             .OrderBy(b => b.Code)
-            .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, Math.Abs(b.ClosingBal)))
-            .Where(b => b.Amount != 0)
+            .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
             .ToList();
 
-        // الالتزامات — طبيعة دائن
+        // الالتزامات — طبيعة دائن (closingBal = Cr - Dr)
         var liabilities = balances
-            .Where(b => b.Type == AccountType.Liability && b.IsLeaf && (b.ClosingBal != 0 || b.OpenBalance != 0))
+            .Where(b => b.Type == AccountType.Liability && b.IsLeaf && b.ClosingBal != 0)
             .OrderBy(b => b.Code)
-            .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, Math.Abs(b.ClosingBal)))
-            .Where(b => b.Amount != 0)
+            .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
             .ToList();
 
-        // حقوق الملكية — نعرض الحسابات التي لها رصيد افتتاحي أو حركات
-        // نستخدم Max(ClosingBal, OpenBalance) لأن بعض الحسابات قد لا تحمل قيوداً
+        // حقوق الملكية — طبيعة دائن
         var equity = balances
-            .Where(b => b.Type == AccountType.Equity && b.IsLeaf && (b.ClosingBal != 0 || b.OpenBalance != 0))
+            .Where(b => b.Type == AccountType.Equity && b.IsLeaf && b.ClosingBal != 0)
             .OrderBy(b => b.Code)
-            .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, 
-                // إذا كان الرصيد النهائي صفر ولكن الرصيد الافتتاحي موجب، اعرض الافتتاحي
-                b.ClosingBal != 0 ? Math.Abs(b.ClosingBal) : Math.Abs(b.OpenBalance)))
-            .Where(b => b.Amount != 0)
+            .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
             .ToList();
 
-        // صافي الربح للسنة يضاف لحقوق الملكية
+        // صافي الربح للسنة يضاف لحقوق الملكية ونظهره في القائمة للشفافية
         var incomeFrom = new DateTime(to.Year, 1, 1);
         var incomeBals = await GetBalances(incomeFrom, to);
         var netProfit  = incomeBals.Where(b => b.Type == AccountType.Revenue && b.IsLeaf).Sum(b => b.ClosingBal)
                        - incomeBals.Where(b => b.Type == AccountType.Expense && b.IsLeaf).Sum(b => b.ClosingBal);
 
+        if (netProfit != 0)
+        {
+            equity.Add(new BalanceSheetRow("N/P", "صافي ربح / (خسارة) العام", 1, netProfit));
+        }
+
         var totalAssets      = assets.Sum(a => a.Amount);
         var totalLiabilities = liabilities.Sum(l => l.Amount);
-        var totalEquity      = equity.Sum(e => e.Amount) + netProfit;
+        var totalEquity      = equity.Sum(e => e.Amount);
         var totalLiabEquity  = totalLiabilities + totalEquity;
 
         if (excel) return ExcelBalanceSheet(assets, liabilities, equity, netProfit,
