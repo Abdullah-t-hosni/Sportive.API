@@ -152,7 +152,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.ItemVatAmount).HasPrecision(18, 2);
             e.HasOne(x => x.Order).WithMany(o => o.Items)
              .HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
-            e.HasOne(x => x.Product).WithMany()
+            e.HasOne(x => x.Product).WithMany(p => p.OrderItems)
              .HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.SetNull);
         });
         builder.Entity<OrderStatusHistory>(e => {
@@ -162,7 +162,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<CartItem>(e => {
             e.HasOne(x => x.Customer).WithMany(c => c.CartItems)
              .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Cascade);
-            e.HasOne(x => x.Product).WithMany()
+            e.HasOne(x => x.Product).WithMany(p => p.CartItems)
              .HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
         });
 
