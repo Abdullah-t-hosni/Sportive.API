@@ -37,7 +37,7 @@ public class InventoryService : IInventoryService
 
                 // Sync parent product total stock
                 var totalStock = await _db.ProductVariants
-                    .Where(v => v.ProductId == variant.ProductId && !v.IsDeleted)
+                    .Where(v => v.ProductId == variant.ProductId)
                     .SumAsync(v => v.StockQuantity);
                 
                 variant.Product.TotalStock = totalStock;

@@ -137,13 +137,13 @@ public class UsersController : ControllerBase
         if (permanent)
         {
             // 1. Check for Customer profile
-            var customer = await _db.Customers.IgnoreQueryFilters()
+            var customer = await _db.Customers
                 .FirstOrDefaultAsync(c => c.AppUserId == id);
 
             if (customer != null)
             {
                 // 2. Check for Orders (Foreign Key Constraint)
-                var hasOrders = await _db.Orders.IgnoreQueryFilters()
+                var hasOrders = await _db.Orders
                     .AnyAsync(o => o.CustomerId == customer.Id || o.SalesPersonId == id);
 
                 if (hasOrders)

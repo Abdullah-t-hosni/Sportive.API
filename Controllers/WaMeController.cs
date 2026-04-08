@@ -93,7 +93,7 @@ public class WaMeController : ControllerBase
         await _db.Orders
             .Include(o => o.Customer)
             .Include(o => o.Items)
-            .FirstOrDefaultAsync(o => o.Id == id && !o.IsDeleted);
+            .FirstOrDefaultAsync(o => o.Id == id);
 }
 
 public record CustomWaDto(string Phone, string Message);

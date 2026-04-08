@@ -36,10 +36,8 @@ public class ProfitabilityController : ControllerBase
             .Include(i => i.Product)
                 .ThenInclude(p => p.Category)
             .Include(i => i.Product)
-                .ThenInclude(p => p.Images.Where(img => img.IsMain && !img.IsDeleted))
-            .Where(i => !i.IsDeleted
-                     && !i.Order.IsDeleted
-                     && i.Order.Status != OrderStatus.Cancelled
+                .ThenInclude(p => p.Images.Where(img => img.IsMain))
+            .Where(i => i.Order.Status != OrderStatus.Cancelled
                      && i.Order.Status != OrderStatus.Returned
                      && i.Order.CreatedAt >= from
                      && i.Order.CreatedAt <= to);
@@ -52,9 +50,7 @@ public class ProfitabilityController : ControllerBase
         // ── المرتجعات (نخصمها من الإيرادات) ──────────
         var returnedItems = await _db.OrderItems
             .Include(i => i.Order)
-            .Where(i => !i.IsDeleted
-                     && !i.Order.IsDeleted
-                     && i.Order.Status == OrderStatus.Returned
+            .Where(i => i.Order.Status == OrderStatus.Returned
                      && i.Order.CreatedAt >= from
                      && i.Order.CreatedAt <= to)
             .ToListAsync();
@@ -172,8 +168,7 @@ public class ProfitabilityController : ControllerBase
         var items = await _db.OrderItems
             .Include(i => i.Order)
             .Include(i => i.Product)
-            .Where(i => !i.IsDeleted && !i.Order.IsDeleted
-                     && i.Order.Status != OrderStatus.Cancelled
+            .Where(i => i.Order.Status != OrderStatus.Cancelled
                      && i.Order.Status != OrderStatus.Returned
                      && i.Order.CreatedAt >= from && i.Order.CreatedAt <= to
                      && i.Product.CostPrice != null)

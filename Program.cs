@@ -128,6 +128,7 @@ builder.Services.AddCors(options =>
 // ── RATE LIMITING ─────────────────────────────────────
 builder.Services.AddRateLimiter(options =>
 {
+    // Per-route auth policy — strict (10 req/min per IP)
     options.AddPolicy("auth", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
@@ -136,6 +137,17 @@ builder.Services.AddRateLimiter(options =>
                 PermitLimit = 10, Window = TimeSpan.FromMinutes(1),
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 0
             }));
+
+    // Global policy — applied to all endpoints (60 req/min per IP)
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 60, Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 2
+            }));
+
     options.RejectionStatusCode = 429;
     options.OnRejected = async (context, _) =>
     {
@@ -277,6 +289,22 @@ app.UseSwaggerUI(c =>
 
 app.UseCors("AllowReactApp");
 app.UseSerilogRequestLogging();
+
+// ── SECURITY HEADERS ──────────────────────────────────
+app.Use(async (ctx, next) =>
+{
+    ctx.Response.Headers["X-Content-Type-Options"]    = "nosniff";
+    ctx.Response.Headers["X-Frame-Options"]           = "DENY";
+    ctx.Response.Headers["X-XSS-Protection"]          = "0"; // deprecated, disable
+    ctx.Response.Headers["Referrer-Policy"]           = "strict-origin-when-cross-origin";
+    ctx.Response.Headers["Permissions-Policy"]        = "camera=(), microphone=(), geolocation=()";
+    ctx.Response.Headers["Content-Security-Policy"]   =
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss:";
+    if (ctx.Request.IsHttps)
+        ctx.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+    await next();
+});
+
 app.UseMiddleware<ExceptionMiddleware>();
 
 app.UseStaticFiles();

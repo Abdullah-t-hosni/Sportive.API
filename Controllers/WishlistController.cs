@@ -21,7 +21,7 @@ public class WishlistController : ControllerBase
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (userId == null) return null;
         var c = await _db.Customers
-            .Where(c => c.AppUserId == userId && !c.IsDeleted)
+            .Where(c => c.AppUserId == userId)
             .Select(c => new { c.Id })
             .FirstOrDefaultAsync();
         return c?.Id;
@@ -37,7 +37,7 @@ public class WishlistController : ControllerBase
         var items = await _db.Set<WishlistItem>()
             .Include(w => w.Product!).ThenInclude(p => p!.Images)
             .Include(w => w.Product!).ThenInclude(p => p!.Category)
-            .Where(w => w.CustomerId == customerId && !w.IsDeleted)
+            .Where(w => w.CustomerId == customerId)
             .Select(w => new {
                 w.Id,
                 w.ProductId,
@@ -61,7 +61,6 @@ public class WishlistController : ControllerBase
         if (customerId == null) return BadRequest(new { message = "Only customers can have a wishlist" });
 
         var item = await _db.Set<WishlistItem>()
-            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(w => w.CustomerId == customerId && w.ProductId == dto.ProductId);
 
         if (item == null)
@@ -71,12 +70,6 @@ public class WishlistController : ControllerBase
                 CustomerId = customerId.Value,
                 ProductId  = dto.ProductId
             });
-            await _db.SaveChangesAsync();
-        }
-        else if (item.IsDeleted)
-        {
-            item.IsDeleted = false;
-            item.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
         }
 
@@ -91,12 +84,11 @@ public class WishlistController : ControllerBase
         if (customerId == null) return Ok(new { isInWishlist = false });
 
         var item = await _db.Set<WishlistItem>()
-            .FirstOrDefaultAsync(w => w.CustomerId == customerId && w.ProductId == productId && !w.IsDeleted);
+            .FirstOrDefaultAsync(w => w.CustomerId == customerId && w.ProductId == productId);
 
         if (item != null)
         {
-            item.IsDeleted = true;
-            item.UpdatedAt = DateTime.UtcNow;
+            _db.Set<WishlistItem>().Remove(item);
             await _db.SaveChangesAsync();
         }
 
@@ -111,7 +103,7 @@ public class WishlistController : ControllerBase
         if (customerId == null) return Ok(new { isInWishlist = false });
 
         var exists = await _db.Set<WishlistItem>()
-            .AnyAsync(w => w.CustomerId == customerId && w.ProductId == productId && !w.IsDeleted);
+            .AnyAsync(w => w.CustomerId == customerId && w.ProductId == productId);
 
         return Ok(new { isInWishlist = exists });
     }
@@ -126,8 +118,7 @@ public class WishlistController : ControllerBase
 
         var wishlistIds = await _db.Set<WishlistItem>()
             .Where(w => w.CustomerId == customerId
-                     && productIds.Contains(w.ProductId)
-                     && !w.IsDeleted)
+                     && productIds.Contains(w.ProductId))
             .Select(w => w.ProductId)
             .ToListAsync();
 

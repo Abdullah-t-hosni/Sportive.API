@@ -145,7 +145,7 @@ public class OrdersController : ControllerBase
     [HttpPatch("{id}/payment-status")]
     public async Task<IActionResult> UpdatePaymentStatus(int id, [FromBody] UpdatePaymentStatusDto dto)
     {
-        var order = await _db.Orders.Include(o => o.Customer).FirstOrDefaultAsync(o => o.Id == id && !o.IsDeleted);
+        var order = await _db.Orders.Include(o => o.Customer).FirstOrDefaultAsync(o => o.Id == id);
         if (order == null) return NotFound();
 
         var oldStatus = order.PaymentStatus;
@@ -194,7 +194,7 @@ public class OrdersController : ControllerBase
         var order = await _db.Orders
             .Include(o => o.Items)
             .Include(o => o.Customer)
-            .FirstOrDefaultAsync(o => o.Id == id && !o.IsDeleted);
+            .FirstOrDefaultAsync(o => o.Id == id);
 
         if (order == null) return NotFound();
 

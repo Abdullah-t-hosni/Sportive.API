@@ -30,8 +30,7 @@ public class CashierPerformanceController : ControllerBase
         // ── جلب طلبات الكاشير فقط (Source = POS) ────
         var orders = await _db.Orders
             .Include(o => o.Items)
-            .Where(o => !o.IsDeleted
-                     && o.Status != OrderStatus.Cancelled
+            .Where(o => o.Status != OrderStatus.Cancelled
                      && o.Source == OrderSource.POS
                      && !string.IsNullOrEmpty(o.SalesPersonId)
                      && o.CreatedAt >= from

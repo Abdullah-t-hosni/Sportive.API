@@ -168,22 +168,21 @@ public class OrderService : IOrderService
         }
 
         var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
-        
+
+        Order order = null;
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
         // 1. Handle Customer
         if (!customerId.HasValue)
         {
             var phone = string.IsNullOrEmpty(dto.CustomerPhone) ? "0000000000" : dto.CustomerPhone;
-            var existing = await _db.Customers.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.Phone == phone);
-            
+            var existing = await _db.Customers.FirstOrDefaultAsync(c => c.Phone == phone);
+
             if (existing != null)
             {
                 customerId = existing.Id;
-                if (existing.IsDeleted)
-                {
-                    existing.IsDeleted = false;
-                    existing.UpdatedAt = DateTime.UtcNow;
-                    await _db.SaveChangesAsync();
-                }
             }
             else
             {
@@ -210,7 +209,7 @@ public class OrderService : IOrderService
         }
 
         var actualSource = (int)dto.Source == 0 ? OrderSource.Website : dto.Source;
-        var order = new Order
+        order = new Order
         {
             CustomerId = customerId.Value,
             OrderNumber = await GenerateOrderNumberAsync(actualSource),
@@ -368,6 +367,13 @@ public class OrderService : IOrderService
         order.StatusHistory.Add(new OrderStatusHistory { Status = order.Status, CreatedAt = DateTime.UtcNow, Note = "Order Created." });
 
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
 
         _ = Task.Run(async () =>
         {
@@ -520,6 +526,12 @@ public class OrderService : IOrderService
 
     public async Task<OrderDetailDto> ProcessPartialReturnAsync(int orderId, PartialReturnDto dto, string updatedByUserId)
     {
+        var returnedOrderItems = new List<OrderItem>();
+        decimal refundAmount = 0;
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
         var order = await _db.Orders.Include(o => o.Items).ThenInclude(i => i.Product).FirstOrDefaultAsync(o => o.Id == orderId);
         if (order == null) throw new KeyNotFoundException("Order not found.");
         if (order.Status == OrderStatus.Cancelled) throw new InvalidOperationException("Cannot return items from a cancelled order.");
@@ -542,8 +554,8 @@ public class OrderService : IOrderService
         // NOTE: Drawer balance check is enforced by the frontend using real order cash data.
         // Backend validates item quantities and business rules only.
 
-        var returnedOrderItems = new List<OrderItem>();
-        decimal refundAmount = 0;
+        returnedOrderItems = new List<OrderItem>();
+        refundAmount = 0;
 
         foreach (var req in dto.Items)
         {
@@ -599,13 +611,20 @@ public class OrderService : IOrderService
 
         // 5. Status History
         order.StatusHistory.Add(new OrderStatusHistory {
-            Status = order.Status, // Keep current status (e.g. Delivered)
+            Status = order.Status,
             Note = $"[مرتجع جزئي] {dto.Reason}: {dto.Note}",
             ChangedByUserId = updatedByUserId,
             CreatedAt = DateTime.UtcNow
         });
 
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
 
         // 6. Post Accounting
         _ = Task.Run(async () =>
@@ -641,14 +660,14 @@ public class OrderService : IOrderService
     public async Task SyncAllOrderAccountingAsync()
     {
         var orders = await _db.Orders.Include(o => o.Customer).Include(o => o.Items).ThenInclude(i => i.Product)
-            .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Pending && !o.IsDeleted).ToListAsync();
-        
+            .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Pending).ToListAsync();
+
         foreach (var order in orders)
         {
             try {
                 var orderNum = order.OrderNumber.Trim().ToLower();
                 var entry = await _db.JournalEntries.Include(j => j.Lines)
-                    .FirstOrDefaultAsync(j => !j.IsDeleted && j.Type == JournalEntryType.SalesInvoice && j.Reference != null && j.Reference.Trim().ToLower() == orderNum);
+                    .FirstOrDefaultAsync(j => j.Type == JournalEntryType.SalesInvoice && j.Reference != null && j.Reference.Trim().ToLower() == orderNum);
 
                 if (entry == null || !entry.Lines.Any() || entry.Lines.All(l => l.CustomerId == null))
                 {

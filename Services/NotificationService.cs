@@ -123,14 +123,14 @@ public class NotificationService : INotificationService
     {
         var n = await _db.Notifications
             .FirstOrDefaultAsync(x => x.Id == notificationId && x.UserId == userId);
-            
+
         if (n != null)
         {
-            n.IsDeleted = true;
-            n.UpdatedAt = DateTime.UtcNow;
+            var wasUnread = !n.IsRead;
+            _db.Notifications.Remove(n);
             await _db.SaveChangesAsync();
 
-            if (!n.IsRead)
+            if (wasUnread)
             {
                 var unreadCount = await GetUnreadCountAsync(userId);
                 await _hubContext.Clients.Group(userId).SendAsync("ReceiveUnreadCount", unreadCount);
@@ -141,11 +141,7 @@ public class NotificationService : INotificationService
     public async Task ClearAllAsync(string userId)
     {
         var all = await _db.Notifications.Where(n => n.UserId == userId).ToListAsync();
-        foreach (var n in all)
-        {
-            n.IsDeleted = true;
-            n.UpdatedAt = DateTime.UtcNow;
-        }
+        _db.Notifications.RemoveRange(all);
         await _db.SaveChangesAsync();
         await _hubContext.Clients.Group(userId).SendAsync("ReceiveUnreadCount", 0);
     }

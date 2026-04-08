@@ -25,7 +25,7 @@ public class AccountsController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] bool onlyActive = false)
     {
-        var q = _db.Accounts.Where(a => !a.IsDeleted);
+        var q = _db.Accounts.AsQueryable();
         if (onlyActive) q = q.Where(a => a.IsActive);
         
         var accounts = await q.OrderBy(a => a.Code).ToListAsync();
@@ -35,7 +35,7 @@ public class AccountsController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var account = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == id && !a.IsDeleted);
+        var account = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == id);
         if (account == null) return NotFound();
         return Ok(account);
     }
@@ -44,7 +44,7 @@ public class AccountsController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateAccountDto dto)
     {
         // التحقق من تكرار الكود
-        if (await _db.Accounts.AnyAsync(a => a.Code == dto.Code && !a.IsDeleted))
+        if (await _db.Accounts.AnyAsync(a => a.Code == dto.Code))
             return BadRequest("كود الحساب موجود مسبقاً.");
 
         var account = new Account
@@ -88,7 +88,7 @@ public class AccountsController : ControllerBase
         if (account == null) return NotFound();
 
         // منع الحذف إذا كان هناك حركات
-        if (await _db.JournalLines.AnyAsync(l => l.AccountId == id && !l.IsDeleted))
+        if (await _db.JournalLines.AnyAsync(l => l.AccountId == id))
             return BadRequest("لا يمكن حذف حساب يحتوي على حركات مالية.");
 
         _db.Accounts.Remove(account);
@@ -138,7 +138,7 @@ public class AccountsController : ControllerBase
     {
         try
         {
-            var allAccounts = await _db.Accounts.IgnoreQueryFilters().Where(a => !a.IsDeleted).ToListAsync();
+            var allAccounts = await _db.Accounts.ToListAsync();
             
             // 1. Reset all first to be safe
             foreach (var a in allAccounts)
@@ -213,7 +213,7 @@ public class JournalEntriesController : ControllerBase
                 Status = e.Status.ToString(),
                 Type = e.Type.ToString(),
                 LineCount = includeLines ? e.Lines.Count : _db.JournalLines.Count(l => l.JournalEntryId == e.Id),
-                TotalAmount = includeLines ? e.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit) : (_db.JournalLines.Where(l => l.JournalEntryId == e.Id && l.Debit > 0).Sum(l => (decimal?)l.Debit) ?? 0),
+                TotalAmount = includeLines ? e.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit) : (_db.JournalLines.AsNoTracking().Where(l => l.JournalEntryId == e.Id && l.Debit > 0).Sum(l => (decimal?)l.Debit) ?? 0),
                 Lines = includeLines ? (object)e.Lines.Select(l => new { l.AccountId, l.Credit, l.Debit, AccountName = l.Account != null ? l.Account.NameAr : null }).ToList() : null
             })
             .ToListAsync();
@@ -299,7 +299,7 @@ public class ReceiptVouchersController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateReceiptVoucherDto dto)
     {
         var year = DateTime.UtcNow.Year % 100;
-        var count = await _db.ReceiptVouchers.IgnoreQueryFilters().CountAsync() + 1;
+        var count = await _db.ReceiptVouchers.CountAsync() + 1;
         var vNo = $"RV-{year}{count:D4}";
 
         var voucher = new ReceiptVoucher
@@ -375,7 +375,7 @@ public class PaymentVouchersController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreatePaymentVoucherDto dto)
     {
         var year = DateTime.UtcNow.Year % 100;
-        var count = await _db.PaymentVouchers.IgnoreQueryFilters().CountAsync() + 1;
+        var count = await _db.PaymentVouchers.CountAsync() + 1;
         var vNo = $"PV-{year}{count:D4}";
 
         var voucher = new PaymentVoucher

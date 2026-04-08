@@ -24,5 +24,4 @@ public class UserModulePermission
     // Manually added BaseEntity fields to match the SQL table
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
-    public bool IsDeleted { get; set; } = false;
 }

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.Services;
+using Sportive.API.DTOs;
 
 namespace Sportive.API.Controllers;
 

@@ -23,7 +23,7 @@ public class NotificationsController : ControllerBase
     {
         var userId = GetUserId();
         var notifications = await _db.Set<Notification>()
-            .Where(n => n.UserId == userId && !n.IsDeleted)
+            .Where(n => n.UserId == userId)
             .OrderByDescending(n => n.CreatedAt)
             .Take(50)
             .Select(n => new {
@@ -48,7 +48,7 @@ public class NotificationsController : ControllerBase
     {
         var userId = GetUserId();
         var count = await _db.Set<Notification>()
-            .CountAsync(n => n.UserId == userId && !n.IsRead && !n.IsDeleted);
+            .CountAsync(n => n.UserId == userId && !n.IsRead);
         return Ok(count);
     }
 
@@ -58,7 +58,7 @@ public class NotificationsController : ControllerBase
     {
         var userId = GetUserId();
         var n = await _db.Set<Notification>()
-            .FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId && !n.IsDeleted);
+            .FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId);
 
         if (n == null) return NotFound();
 
@@ -74,7 +74,7 @@ public class NotificationsController : ControllerBase
     {
         var userId = GetUserId();
         var notifications = await _db.Set<Notification>()
-            .Where(n => n.UserId == userId && !n.IsRead && !n.IsDeleted)
+            .Where(n => n.UserId == userId && !n.IsRead)
             .ToListAsync();
 
         foreach (var n in notifications)
@@ -95,8 +95,7 @@ public class NotificationsController : ControllerBase
         var n = await _db.Set<Notification>()
             .FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId);
         if (n == null) return NotFound();
-        n.IsDeleted = true;
-        n.UpdatedAt = DateTime.UtcNow;
+        _db.Set<Notification>().Remove(n);
         await _db.SaveChangesAsync();
         return NoContent();
     }
@@ -107,13 +106,9 @@ public class NotificationsController : ControllerBase
     {
         var userId = GetUserId();
         var notifications = await _db.Set<Notification>()
-            .Where(n => n.UserId == userId && !n.IsDeleted)
+            .Where(n => n.UserId == userId)
             .ToListAsync();
-        foreach (var n in notifications)
-        {
-            n.IsDeleted = true;
-            n.UpdatedAt = DateTime.UtcNow;
-        }
+        _db.Set<Notification>().RemoveRange(notifications);
         await _db.SaveChangesAsync();
         return Ok(new { deleted = notifications.Count });
     }

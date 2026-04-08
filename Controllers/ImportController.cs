@@ -252,10 +252,10 @@ public class ImportController : ControllerBase
 
                 // Recalculate Total Stock for all products that have variants
                 var productsWithVariants = await _db.Products.Include(p => p.Variants)
-                    .Where(p => p.Variants.Any(v => !v.IsDeleted)).ToListAsync();
+                    .Where(p => p.Variants.Any()).ToListAsync();
                 foreach (var p in productsWithVariants)
                 {
-                    p.TotalStock = p.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity);
+                    p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
                 }
                 await _db.SaveChangesAsync();
             }
@@ -312,7 +312,7 @@ public class ImportController : ControllerBase
         int row = 3;
         foreach (var p in products)
         {
-            if (!p.Variants.Any(v => !v.IsDeleted))
+            if (!p.Variants.Any())
             {
                 // Product-level (no variants)
                 ws.Cell(row, 1).Value = p.SKU;
@@ -325,7 +325,7 @@ public class ImportController : ControllerBase
             }
             else
             {
-                foreach (var v in p.Variants.Where(v => !v.IsDeleted))
+                foreach (var v in p.Variants)
                 {
                     var varSku = p.SKU;
                     ws.Cell(row, 1).Value = varSku;
@@ -378,7 +378,7 @@ public class ImportController : ControllerBase
 
             // Load all products with their variants
             var allProducts = await _db.Products
-                .Include(p => p.Variants.Where(v => !v.IsDeleted))
+                .Include(p => p.Variants)
                 .ToListAsync();
 
             // Build lookup: productSKU -> product
@@ -406,7 +406,7 @@ public class ImportController : ControllerBase
                     continue;
                 }
 
-                var activeVariants = product.Variants.Where(v => !v.IsDeleted).ToList();
+                var activeVariants = product.Variants.ToList();
 
                 if (!activeVariants.Any())
                 {

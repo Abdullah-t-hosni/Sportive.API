@@ -16,8 +16,7 @@ public class CategoryService : ICategoryService
     {
         var cats = await _db.Categories
             .Include(c => c.Parent)
-            .Include(c => c.Products.Where(p => !p.IsDeleted))
-            .Where(c => !c.IsDeleted)
+            .Include(c => c.Products)
             .OrderBy(c => c.ParentId).ThenBy(c => c.NameAr)
             .ToListAsync();
 
@@ -29,8 +28,7 @@ public class CategoryService : ICategoryService
     {
         // Fetch everything to build the tree in memory (efficient for usual category amounts)
         var allCats = await _db.Categories
-            .Include(c => c.Products.Where(p => !p.IsDeleted))
-            .Where(c => !c.IsDeleted)
+            .Include(c => c.Products)
             .ToListAsync();
 
         // Recursively build tree starting from roots
@@ -51,7 +49,7 @@ public class CategoryService : ICategoryService
             current.DescriptionEn,
             current.ImageUrl,
             current.IsActive,
-            current.Products?.Count(p => !p.IsDeleted) ?? 0,
+            current.Products?.Count ?? 0,
             current.CreatedAt,
             current.ParentId,
             current.Parent?.NameAr,
@@ -64,9 +62,9 @@ public class CategoryService : ICategoryService
     {
         var c = await _db.Categories
             .Include(c => c.Parent)
-            .Include(c => c.Children.Where(ch => !ch.IsDeleted))
-            .Include(c => c.Products.Where(p => !p.IsDeleted))
-            .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted);
+            .Include(c => c.Children)
+            .Include(c => c.Products)
+            .FirstOrDefaultAsync(c => c.Id == id);
 
         return c == null ? null : MapToDto(c, includeChildren: true);
     }
@@ -76,7 +74,7 @@ public class CategoryService : ICategoryService
         if (dto.ParentId.HasValue)
         {
             var parent = await _db.Categories.FindAsync(dto.ParentId.Value);
-            if (parent == null || parent.IsDeleted)
+            if (parent == null)
                 throw new ArgumentException("القسم الرئيسي غير موجود");
         }
 
@@ -121,15 +119,15 @@ public class CategoryService : ICategoryService
             .FirstOrDefaultAsync(c => c.Id == id)
             ?? throw new KeyNotFoundException($"Category {id} not found");
 
-        // Move children to parent's parent (or make them root)
+        // Re-parent children before hard-deleting
         foreach (var child in cat.Children)
         {
             child.ParentId  = cat.ParentId;
             child.UpdatedAt = DateTime.UtcNow;
         }
+        await _db.SaveChangesAsync();
 
-        cat.IsDeleted = true;
-        cat.UpdatedAt = DateTime.UtcNow;
+        _db.Categories.Remove(cat);
         await _db.SaveChangesAsync();
     }
 
@@ -137,7 +135,6 @@ public class CategoryService : ICategoryService
     {
         var subCategories = includeChildren && (c.Children != null && c.Children.Any())
             ? c.Children
-                .Where(ch => !ch.IsDeleted)
                 .OrderBy(ch => ch.NameAr)
                 .Select(ch => MapToDto(ch, includeChildren: true))
                 .ToList()
@@ -146,7 +143,7 @@ public class CategoryService : ICategoryService
         return new CategoryDto(
             c.Id, c.NameAr, c.NameEn, c.DescriptionAr, c.DescriptionEn,
             c.ImageUrl, c.IsActive,
-            c.Products?.Count(p => !p.IsDeleted) ?? 0, c.CreatedAt,
+            c.Products?.Count ?? 0, c.CreatedAt,
             c.ParentId,
             c.Parent?.NameAr,
             c.Parent?.NameEn,

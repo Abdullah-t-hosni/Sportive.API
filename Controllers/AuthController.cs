@@ -168,7 +168,7 @@ public class AuthController : ControllerBase
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
         var customer = await _db.Customers
-            .Where(c => c.AppUserId == userId && !c.IsDeleted)
+            .Where(c => c.AppUserId == userId)
             .Select(c => new { c.Id })
             .FirstOrDefaultAsync();
 
@@ -208,7 +208,7 @@ public class AuthController : ControllerBase
         }
 
         var customer = await _db.Customers
-            .Where(c => c.AppUserId == userId && !c.IsDeleted)
+            .Where(c => c.AppUserId == userId)
             .Select(c => new { c.Id, c.Phone })
             .FirstOrDefaultAsync();
 

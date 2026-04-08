@@ -28,38 +28,31 @@ public class WishlistService : IWishlistService
 
     public async Task<bool> AddToWishlistAsync(int customerId, int productId)
     {
-        var item = await _db.WishlistItems
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(w => w.CustomerId == customerId && w.ProductId == productId);
+        var exists = await _db.WishlistItems
+            .AnyAsync(w => w.CustomerId == customerId && w.ProductId == productId);
 
-        if (item == null)
+        if (!exists)
         {
             _db.WishlistItems.Add(new WishlistItem { CustomerId = customerId, ProductId = productId });
             return await _db.SaveChangesAsync() > 0;
         }
 
-        if (item.IsDeleted)
-        {
-            item.IsDeleted = false;
-            item.UpdatedAt = DateTime.UtcNow;
-            return await _db.SaveChangesAsync() > 0;
-        }
-
-        return true;
+        return true; // already in wishlist
     }
 
     public async Task<bool> RemoveFromWishlistAsync(int customerId, int productId)
     {
-        var item = await _db.WishlistItems.FirstOrDefaultAsync(w => w.CustomerId == customerId && w.ProductId == productId);
+        var item = await _db.WishlistItems
+            .FirstOrDefaultAsync(w => w.CustomerId == customerId && w.ProductId == productId);
         if (item == null) return false;
 
-        item.IsDeleted = true;
-        item.UpdatedAt = DateTime.UtcNow;
+        _db.WishlistItems.Remove(item);
         return await _db.SaveChangesAsync() > 0;
     }
 
     public async Task<bool> IsInWishlistAsync(int customerId, int productId)
     {
-        return await _db.WishlistItems.AnyAsync(w => w.CustomerId == customerId && w.ProductId == productId);
+        return await _db.WishlistItems
+            .AnyAsync(w => w.CustomerId == customerId && w.ProductId == productId);
     }
 }

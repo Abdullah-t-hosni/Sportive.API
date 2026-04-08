@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l /d/Sportive.API/Controllers/*.cs)",
+      "Bash(xargs wc:*)",
+      "Bash(grep -A 5 \"ArgumentNullException\\\\|ArgumentException\" /d/Sportive.API/Services/*.cs)"
+    ]
+  }
+}

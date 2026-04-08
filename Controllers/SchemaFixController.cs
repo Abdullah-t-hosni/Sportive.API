@@ -36,7 +36,7 @@ public class SchemaFixController : ControllerBase
             await _db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS VatAccountId INT NULL;");
             await _db.Database.ExecuteSqlRawAsync("ALTER TABLE PurchaseInvoices ADD COLUMN IF NOT EXISTS CashAccountId INT NULL;");
             await _db.Database.ExecuteSqlRawAsync("ALTER TABLE Suppliers ADD COLUMN IF NOT EXISTS MainAccountId INT NULL;");
-            await _db.Database.ExecuteSqlRawAsync("UPDATE Accounts SET AllowPosting = 1 WHERE IsDeleted = 0;");
+            await _db.Database.ExecuteSqlRawAsync("UPDATE Accounts SET AllowPosting = 1;");
 
             return Ok(new { message = "Schema updated successfully (V3.1 - Account Posting Enabled)" });
         }

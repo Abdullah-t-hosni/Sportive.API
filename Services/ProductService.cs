@@ -79,8 +79,9 @@ public class ProductService : IProductService
 
         var total = await query.CountAsync();
 
+        var page = Math.Max(1, filter.Page);
         var items = await query
-            .Skip((filter.Page - 1) * filter.PageSize)
+            .Skip((page - 1) * filter.PageSize)
             .Take(filter.PageSize)
             .Select(p => new ProductSummaryDto(
                 p.Id,
@@ -109,7 +110,7 @@ public class ProductService : IProductService
             .ToListAsync();
 
         return new PaginatedResult<ProductSummaryDto>(
-            items, total, filter.Page, filter.PageSize,
+            items, total, page, filter.PageSize,
             (int)Math.Ceiling((double)total / filter.PageSize)
         );
     }
@@ -237,9 +238,9 @@ public class ProductService : IProductService
         product.UpdatedAt = DateTime.UtcNow;
 
         // إعادة حساب إجمالي المخزون للتأكد من الدقة
-        if (product.Variants.Any(v => !v.IsDeleted))
+        if (product.Variants.Any())
         {
-             product.TotalStock = product.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity);
+             product.TotalStock = product.Variants.Sum(v => v.StockQuantity);
         }
         // If simple product (no variants), we don't zero out TotalStock as it might have manual/purchase stock
 
@@ -255,12 +256,8 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync(p => p.Id == id)
             ?? throw new KeyNotFoundException($"Product {id} not found");
 
-        product.IsDeleted = true;
-        product.UpdatedAt = DateTime.UtcNow;
-
-        foreach (var v in product.Variants) { v.IsDeleted = true; v.UpdatedAt = DateTime.UtcNow; }
-        foreach (var i in product.Images)   { i.IsDeleted = true; i.UpdatedAt = DateTime.UtcNow; }
-
+        // Hard delete — variants and images cascade via DB
+        _db.Products.Remove(product);
         await _db.SaveChangesAsync();
     }
 
@@ -305,14 +302,9 @@ public class ProductService : IProductService
 
         if (product != null)
         {
-            if (product.Variants.Any(v => !v.IsDeleted))
+            if (product.Variants.Any())
             {
-                product.TotalStock = product.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity);
-            }
-            else if (product.Variants.Any())
-            {
-                 // Has variants but all are deleted
-                 product.TotalStock = 0;
+                product.TotalStock = product.Variants.Sum(v => v.StockQuantity);
             }
             product.UpdatedAt = DateTime.UtcNow;
         }
@@ -381,19 +373,16 @@ public class ProductService : IProductService
     {
         var v = await _db.ProductVariants.FindAsync(variantId);
         if (v == null) return false;
-        v.IsDeleted = true;
-        v.UpdatedAt = DateTime.UtcNow;
 
-        var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == v.ProductId);
-        if (product != null)
-        {
-            await UpdateTotalStockAsync(v.ProductId);
-            product.UpdatedAt = DateTime.UtcNow;
-        }
-
+        var productId = v.ProductId;
+        _db.ProductVariants.Remove(v);
         await _db.SaveChangesAsync();
-        await _notifications.BroadcastStockUpdateAsync(v.ProductId, v.Id, 0);
-        
+
+        await UpdateTotalStockAsync(productId);
+        var product = await _db.Products.FindAsync(productId);
+        if (product != null) { product.UpdatedAt = DateTime.UtcNow; await _db.SaveChangesAsync(); }
+
+        await _notifications.BroadcastStockUpdateAsync(productId, variantId, 0);
         return true;
     }
 

@@ -34,20 +34,20 @@ public class OperationalReportsController : ControllerBase
         if (customerId == null && !string.IsNullOrEmpty(search))
         {
             var found = await _db.Customers
-                .Where(c => !c.IsDeleted && (c.FullName.Contains(search) || (c.Phone != null && c.Phone.Contains(search))))
+                .Where(c => c.FullName.Contains(search) || (c.Phone != null && c.Phone.Contains(search)))
                 .Select(c => c.Id)
                 .FirstOrDefaultAsync();
             if (found > 0) customerId = found;
         }
 
         if (customerId == null)
-            return Ok(new { customers = await _db.Customers.Where(c => !c.IsDeleted).Select(c => new { c.Id, c.FullName, c.Phone, c.Email }).ToListAsync() });
+            return Ok(new { customers = await _db.Customers.Select(c => new { c.Id, c.FullName, c.Phone, c.Email }).ToListAsync() });
 
-        var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId && !c.IsDeleted);
+        var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId);
         if (customer == null) return NotFound();
 
         var orders = await _db.Orders
-            .Where(o => o.CustomerId == customerId && !o.IsDeleted
+            .Where(o => o.CustomerId == customerId
                      && o.CreatedAt >= from && o.CreatedAt <= to
                      && o.Status != OrderStatus.Cancelled)
             .OrderBy(o => o.CreatedAt)
@@ -55,7 +55,7 @@ public class OperationalReportsController : ControllerBase
 
         // مدفوعات العميل من سندات القبض (إذا كان لديك JournalLines)
         var receipts = await _db.ReceiptVouchers
-            .Where(r => r.CustomerId == customerId && !r.IsDeleted
+            .Where(r => r.CustomerId == customerId
                      && r.VoucherDate >= from && r.VoucherDate <= to)
             .OrderBy(r => r.VoucherDate)
             .ToListAsync();
@@ -69,11 +69,11 @@ public class OperationalReportsController : ControllerBase
             : 0;
 
         decimal priorOrders = await _db.Orders
-            .Where(o => o.CustomerId == customerId && !o.IsDeleted && o.CreatedAt < from && o.Status != OrderStatus.Cancelled)
+            .Where(o => o.CustomerId == customerId && o.CreatedAt < from && o.Status != OrderStatus.Cancelled)
             .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
 
         decimal priorReceipts = await _db.ReceiptVouchers
-            .Where(r => r.CustomerId == customerId && !r.IsDeleted && r.VoucherDate < from)
+            .Where(r => r.CustomerId == customerId && r.VoucherDate < from)
             .SumAsync(r => (decimal?)r.Amount) ?? 0;
 
         decimal balance = initialAccountBalance + priorOrders - priorReceipts;
@@ -132,7 +132,6 @@ public class OperationalReportsController : ControllerBase
         var customers = await _db.Customers
             .Include(c => c.Orders)
             .Include(c => c.MainAccount)
-            .Where(c => !c.IsDeleted)
             .ToListAsync();
 
         if (!string.IsNullOrEmpty(search))
@@ -140,7 +139,7 @@ public class OperationalReportsController : ControllerBase
 
         // المدفوعات
         var allReceipts = await _db.ReceiptVouchers
-            .Where(r => !r.IsDeleted && r.CustomerId != null)
+            .Where(r => r.CustomerId != null)
             .ToListAsync();
 
         var rows = new List<CustomerAgingRow>();
@@ -148,14 +147,14 @@ public class OperationalReportsController : ControllerBase
         foreach (var c in customers)
         {
             var opening  = (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0);
-            var invoiced = c.Orders.Where(o => !o.IsDeleted && o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount);
+            var invoiced = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount);
             var paid     = allReceipts.Where(r => r.CustomerId == c.Id).Sum(r => r.Amount);
             var balance  = opening + invoiced - paid;
             if (balance <= 0) continue;
 
             // حساب عمر الدين
             var unpaidOrders = c.Orders
-                .Where(o => !o.IsDeleted && o.Status != OrderStatus.Cancelled)
+                .Where(o => o.Status != OrderStatus.Cancelled)
                 .OrderBy(o => o.CreatedAt)
                 .ToList();
 
@@ -208,7 +207,6 @@ public class OperationalReportsController : ControllerBase
         var suppliers = await _db.Suppliers
             .Include(s => s.Invoices)
             .Include(s => s.Payments)
-            .Where(s => !s.IsDeleted)
             .ToListAsync();
 
         if (!string.IsNullOrEmpty(search))
@@ -221,7 +219,7 @@ public class OperationalReportsController : ControllerBase
                 decimal b    = s.Balance;
                 decimal c30 = 0, c60 = 0, c90 = 0, c90p = 0;
 
-                foreach (var inv in s.Invoices.Where(i => !i.IsDeleted && i.RemainingAmount > 0).OrderBy(i => i.InvoiceDate))
+                foreach (var inv in s.Invoices.Where(i => i.RemainingAmount > 0).OrderBy(i => i.InvoiceDate))
                 {
                     var days = (asOf - inv.InvoiceDate).Days;
                     var amt  = Math.Min(b, inv.RemainingAmount);
@@ -270,7 +268,7 @@ public class OperationalReportsController : ControllerBase
         var q = _db.Products
             .Include(p => p.Category)
             .Include(p => p.Variants)
-            .Where(p => !p.IsDeleted && p.Status == ProductStatus.Active);
+            .Where(p => p.Status == ProductStatus.Active);
 
         if (!string.IsNullOrEmpty(search))
             q = q.Where(p => p.NameAr.Contains(search) || p.SKU.Contains(search));
@@ -281,11 +279,11 @@ public class OperationalReportsController : ControllerBase
 
         var rows = products.Select(p =>
         {
-            var totalStock = p.Variants.Any(v => !v.IsDeleted)
-                ? p.Variants.Where(v => !v.IsDeleted).Sum(v => v.StockQuantity)
+            var totalStock = p.Variants.Any()
+                ? p.Variants.Sum(v => v.StockQuantity)
                 : p.TotalStock;
 
-            var variants = p.Variants.Where(v => !v.IsDeleted).Select(v => new VariantInventoryRow(
+            var variants = p.Variants.Select(v => new VariantInventoryRow(
                 v.Id, v.Size ?? "", v.Color ?? "", v.ColorAr ?? "",
                 v.StockQuantity,
                 p.Price + (v.PriceAdjustment ?? 0),
@@ -337,8 +335,7 @@ public class OperationalReportsController : ControllerBase
         var q = _db.Orders
             .Include(o => o.Customer)
             .Include(o => o.Items)
-            .Where(o => !o.IsDeleted
-                     && o.Status != OrderStatus.Cancelled
+            .Where(o => o.Status != OrderStatus.Cancelled
                      && o.CreatedAt >= from && o.CreatedAt <= to);
 
         if (source.HasValue) q = q.Where(o => o.Source == source.Value);
@@ -348,7 +345,7 @@ public class OperationalReportsController : ControllerBase
         // 🚨 GET RETURNS IN THE SAME PERIOD
         var returns = await _db.JournalEntries
             .Include(j => j.Lines)
-            .Where(j => !j.IsDeleted && j.Type == JournalEntryType.SalesReturn && j.EntryDate >= from && j.EntryDate <= to)
+            .Where(j => j.Type == JournalEntryType.SalesReturn && j.EntryDate >= from && j.EntryDate <= to)
             .ToListAsync();
         
         decimal totalReturnAmount = 0;
@@ -404,7 +401,7 @@ public class OperationalReportsController : ControllerBase
         var q = _db.PurchaseInvoices
             .Include(i => i.Supplier)
             .Include(i => i.Items)
-            .Where(i => !i.IsDeleted && i.InvoiceDate >= from && i.InvoiceDate <= to);
+            .Where(i => i.InvoiceDate >= from && i.InvoiceDate <= to);
 
         if (supplierId.HasValue) q = q.Where(i => i.SupplierId == supplierId.Value);
 
@@ -448,7 +445,7 @@ public class OperationalReportsController : ControllerBase
         var returns = await _db.JournalEntries
             .Include(j => j.Lines)
             .Include(j => j.Order).ThenInclude(o => o!.Customer)
-            .Where(j => !j.IsDeleted && j.Type == JournalEntryType.SalesReturn 
+            .Where(j => j.Type == JournalEntryType.SalesReturn 
                      && j.EntryDate >= from && j.EntryDate <= to)
             .OrderByDescending(j => j.EntryDate)
             .ToListAsync();
@@ -486,8 +483,7 @@ public class OperationalReportsController : ControllerBase
 
         var returns = await _db.PurchaseInvoices
             .Include(i => i.Supplier)
-            .Where(i => !i.IsDeleted
-                     && i.Status == PurchaseInvoiceStatus.Returned
+            .Where(i => i.Status == PurchaseInvoiceStatus.Returned
                      && i.InvoiceDate >= from && i.InvoiceDate <= to)
             .OrderByDescending(i => i.InvoiceDate)
             .ToListAsync();
@@ -520,7 +516,7 @@ public class OperationalReportsController : ControllerBase
         var q = _db.Orders
             .Include(o => o.Customer)
             .Include(o => o.Items)
-            .Where(o => !o.IsDeleted && o.Source == OrderSource.POS
+            .Where(o => o.Source == OrderSource.POS
                      && o.CreatedAt >= from && o.CreatedAt <= to
                      && !string.IsNullOrEmpty(o.SalesPersonId));
 
@@ -583,7 +579,7 @@ public class OperationalReportsController : ControllerBase
             if (productId == null && !string.IsNullOrEmpty(search))
             {
                 var p = await _db.Products
-                    .Where(x => !x.IsDeleted && (x.NameAr.Contains(search) || x.SKU.Contains(search)))
+                    .Where(x => (x.NameAr.Contains(search) || x.SKU.Contains(search)))
                     .FirstOrDefaultAsync();
                 if (p != null) productId = p.Id;
             }
@@ -592,7 +588,6 @@ public class OperationalReportsController : ControllerBase
             if (productId == null)
             {
                 var pList = await _db.Products
-                    .Where(p => !p.IsDeleted)
                     .Select(p => new { p.Id, p.NameAr, p.SKU })
                     .ToListAsync();
                 
@@ -606,7 +601,7 @@ public class OperationalReportsController : ControllerBase
             // 1. مبيعات (Sales) — Include everything except Cancelled
             // We include Returned here so the initial sale shows up, and the return shows as a second entry
             var salesQuery = _db.OrderItems
-                .Where(i => !i.IsDeleted && !i.Order.IsDeleted && i.Order.Status != OrderStatus.Cancelled
+                .Where(i => i.Order.Status != OrderStatus.Cancelled
                          && i.Order.CreatedAt >= from && i.Order.CreatedAt <= to);
 
             if (productId > 0) salesQuery = salesQuery.Where(i => i.ProductId == productId);
@@ -631,7 +626,7 @@ public class OperationalReportsController : ControllerBase
             // 2. مرتجع مبيعات (Sales Returns)
             // Ideally we'd use StatusHistory for refined date, but using Order.UpdatedAt (standard for status change) or CreatedAt
             var returnQuery = _db.OrderItems
-                .Where(i => !i.IsDeleted && !i.Order.IsDeleted && i.Order.Status == OrderStatus.Returned
+                .Where(i => i.Order.Status == OrderStatus.Returned
                          && i.Order.UpdatedAt >= from && i.Order.UpdatedAt <= to);
 
             if (productId > 0) returnQuery = returnQuery.Where(i => i.ProductId == productId);
@@ -655,7 +650,7 @@ public class OperationalReportsController : ControllerBase
 
             // 3. مشتريات (Purchases) — Not Draft
             var purchaseQuery = _db.PurchaseInvoiceItems
-                .Where(i => !i.IsDeleted && i.Invoice.Status != PurchaseInvoiceStatus.Draft
+                .Where(i => i.Invoice.Status != PurchaseInvoiceStatus.Draft
                          && i.Invoice.InvoiceDate >= from && i.Invoice.InvoiceDate <= to);
 
             if (productId > 0) purchaseQuery = purchaseQuery.Where(i => i.ProductId == productId);
@@ -679,7 +674,7 @@ public class OperationalReportsController : ControllerBase
 
             // 4. مرتجع مشتريات (Purchase Returns)
             var purchaseReturnQuery = _db.PurchaseInvoiceItems
-                .Where(i => !i.IsDeleted && i.Invoice.Status == PurchaseInvoiceStatus.Returned
+                .Where(i => i.Invoice.Status == PurchaseInvoiceStatus.Returned
                          && i.Invoice.UpdatedAt >= from && i.Invoice.UpdatedAt <= to);
 
             if (productId > 0) purchaseReturnQuery = purchaseReturnQuery.Where(i => i.ProductId == productId);
@@ -716,11 +711,10 @@ public class OperationalReportsController : ControllerBase
             {
                 var product = await _db.Products
                     .Include(p => p.Variants)
-                    .FirstOrDefaultAsync(p => p.Id == productId && !p.IsDeleted);
+                    .FirstOrDefaultAsync(p => p.Id == productId);
                 if (product != null)
                 {
                     currentStock = product.Variants?
-                        .Where(v => !v.IsDeleted)
                         .Sum(v => v.StockQuantity) ?? 0;
                     productBrief = $"{product.NameAr} ({product.SKU})";
                 }
@@ -745,7 +739,6 @@ public class OperationalReportsController : ControllerBase
             {
                 // All products stock
                 currentStock = await _db.ProductVariants
-                    .Where(v => !v.IsDeleted && !v.Product.IsDeleted)
                     .SumAsync(v => (decimal)v.StockQuantity);
             }
 

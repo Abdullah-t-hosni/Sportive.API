@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using Sportive.API.DTOs;
 
 namespace Sportive.API.Services;
 
@@ -14,35 +15,6 @@ public interface ICouponService
     Task<bool> ToggleAsync(int id);
     Task<bool> DeleteAsync(int id);
 }
-
-public record CreateCouponDto(
-    string Code,
-    string? DescriptionAr,
-    string? DescriptionEn,
-    DiscountType DiscountType,
-    decimal DiscountValue,
-    decimal? MinOrderAmount,
-    decimal? MaxDiscountAmount,
-    int? MaxUsageCount,
-    DateTime? ExpiresAt
-);
-
-public record CouponListDto(
-    int Id,
-    string Code,
-    string? DescriptionAr,
-    string? DescriptionEn,
-    string DiscountType,
-    decimal DiscountValue,
-    decimal? MinOrderAmount,
-    decimal? MaxDiscountAmount,
-    int? MaxUsageCount,
-    int CurrentUsageCount,
-    DateTime? ExpiresAt,
-    bool IsActive
-);
-
-public record ApplyCouponRequest(string Code, decimal OrderTotal);
 
 public class CouponService : ICouponService
 {
@@ -172,8 +144,7 @@ public class CouponService : ICouponService
     {
         var coupon = await _db.Coupons.FindAsync(id);
         if (coupon == null) return false;
-        coupon.IsDeleted = true;
-        coupon.UpdatedAt = DateTime.UtcNow;
+        _db.Coupons.Remove(coupon);
         await _db.SaveChangesAsync();
         return true;
     }

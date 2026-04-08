@@ -84,7 +84,6 @@ public class AuthService : IAuthService
         {
             // 3. Link or Create Customer record
             var customer = await _db.Customers
-                .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(c => c.Phone == dto.Phone);
 
             if (customer != null)
@@ -92,7 +91,6 @@ public class AuthService : IAuthService
                 customer.AppUserId = user.Id;
                 customer.Email = user.Email ?? customer.Email; // Sync email if provided
                 customer.FullName = user.FullName;
-                customer.IsDeleted = false; // "Re-activate" if it was soft-deleted
                 customer.UpdatedAt = DateTime.UtcNow;
             }
             else
@@ -146,7 +144,7 @@ public class AuthService : IAuthService
 
         // Get customer ID
         var customerId = await _db.Customers
-            .Where(c => c.AppUserId == user.Id && !c.IsDeleted)
+            .Where(c => c.AppUserId == user.Id)
             .Select(c => (int?)c.Id)
             .FirstOrDefaultAsync();
 
@@ -155,7 +153,7 @@ public class AuthService : IAuthService
 
         // Fetch addresses if customer
         var addresses = customerId.HasValue 
-            ? await _db.Addresses.Where(a => a.CustomerId == customerId.Value && !a.IsDeleted)
+            ? await _db.Addresses.Where(a => a.CustomerId == customerId.Value)
                 .Select(a => new AddressDto(a.Id, a.TitleAr, a.TitleEn, a.Street, a.City, a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude))
                 .ToListAsync()
             : null;

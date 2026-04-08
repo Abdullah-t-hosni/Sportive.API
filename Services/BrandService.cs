@@ -72,8 +72,7 @@ public class BrandService : IBrandService
         var brand = await _db.Set<Brand>().FindAsync(id)
             ?? throw new KeyNotFoundException($"Brand {id} not found");
 
-        brand.IsDeleted = true;
-        brand.UpdatedAt = DateTime.UtcNow;
+        _db.Set<Brand>().Remove(brand);
         await _db.SaveChangesAsync();
     }
 
@@ -88,7 +87,7 @@ public class BrandService : IBrandService
         b.ParentId,
         b.Parent?.NameAr,
         b.Parent?.NameEn,
-        b.Products?.Count(p => !p.IsDeleted) ?? 0,
+        b.Products?.Count ?? 0,
         b.CreatedAt
     );
 }

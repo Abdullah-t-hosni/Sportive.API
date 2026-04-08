@@ -163,7 +163,7 @@ public class InventoryAuditsController : ControllerBase
         if (audit == null) return NotFound();
         if (audit.Status == InventoryAuditStatus.Posted) return BadRequest("لا يمكن حذف جرد معتمد");
 
-        audit.IsDeleted = true;
+        _db.InventoryAudits.Remove(audit);
         await _db.SaveChangesAsync();
         return NoContent();
     }

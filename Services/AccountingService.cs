@@ -76,7 +76,7 @@ public class AccountingService : IAccountingService
         var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         var vatRate = (store?.VatRatePercent ?? 14) / 100m;
         
-        var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
+        var mappings = await _db.AccountSystemMappings.ToListAsync();
         // Force keys to lowercase for robust lookup
         var mapDict = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
 
@@ -241,7 +241,7 @@ public class AccountingService : IAccountingService
     {
         if (await EntryExists(JournalEntryType.SalesReturn, order.OrderNumber + "-RTN")) return;
 
-        var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
+        var mappings = await _db.AccountSystemMappings.ToListAsync();
         var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
 
         string salesReturnAcct = GetMap(mapDict, "salesReturnAccountID", SALES_RETURN);
@@ -301,7 +301,7 @@ public class AccountingService : IAccountingService
         var suffix = DateTime.UtcNow.Ticks.ToString().Substring(10);
         var reference = $"{order.OrderNumber}-PRT-{suffix}";
 
-        var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
+        var mappings = await _db.AccountSystemMappings.ToListAsync();
         var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
 
         string salesReturnAcct = GetMap(mapDict, "salesReturnAccountID", SALES_RETURN);
@@ -380,7 +380,7 @@ public class AccountingService : IAccountingService
         if (await EntryExists(JournalEntryType.ReceiptVoucher, reference)) return;
 
         // جلب الإحصائيات والربط
-        var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
+        var mappings = await _db.AccountSystemMappings.ToListAsync();
         var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
 
         string receivablesAcct = order.Customer?.MainAccountId != null 
@@ -414,7 +414,7 @@ public class AccountingService : IAccountingService
         var reference = order.OrderNumber + "-RFD";
         if (await EntryExists(JournalEntryType.PaymentVoucher, reference)) return;
 
-        var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
+        var mappings = await _db.AccountSystemMappings.ToListAsync();
         var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
 
         string receivablesAcct = GetMap(mapDict, "customerAccountID", RECEIVABLES);
@@ -453,7 +453,7 @@ public class AccountingService : IAccountingService
         {
             if (await EntryExists(JournalEntryType.PurchaseInvoice, invoice.InvoiceNumber)) return;
 
-            var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
+            var mappings = await _db.AccountSystemMappings.ToListAsync();
             var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
 
             var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
@@ -505,7 +505,7 @@ public class AccountingService : IAccountingService
         var refNo = invoice.InvoiceNumber + "-RTN";
         if (await EntryExists(JournalEntryType.PurchaseReturn, refNo)) return;
 
-        var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
+        var mappings = await _db.AccountSystemMappings.ToListAsync();
         var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
@@ -564,11 +564,11 @@ public class AccountingService : IAccountingService
     {
         var entry = await _db.JournalEntries
             .Include(e => e.Lines)
-            .FirstOrDefaultAsync(e => e.Id == journalEntryId && !e.IsDeleted);
+            .FirstOrDefaultAsync(e => e.Id == journalEntryId);
 
         if (entry == null || entry.Status == JournalEntryStatus.Reversed) return;
 
-        var count  = await _db.JournalEntries.IgnoreQueryFilters().CountAsync() + 1;
+        var count  = await _db.JournalEntries.CountAsync() + 1;
         var year   = DateTime.UtcNow.Year % 100;
         var revNo  = $"JE-{year}{count:D5}";
 
@@ -609,7 +609,7 @@ public class AccountingService : IAccountingService
 
     public async Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, string? userId)
     {
-        var count = await _db.JournalEntries.IgnoreQueryFilters().CountAsync() + 1;
+        var count = await _db.JournalEntries.CountAsync() + 1;
         var type  = dto.Type ?? JournalEntryType.Manual;
         var prefix = type == JournalEntryType.OpeningBalance ? "OPE" : "JE";
         
@@ -680,7 +680,7 @@ public class AccountingService : IAccountingService
     {
         if (map == null)
         {
-            var mappings = await _db.AccountSystemMappings.Where(m => !m.IsDeleted).ToListAsync();
+            var mappings = await _db.AccountSystemMappings.ToListAsync();
             map = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
         }
 
@@ -722,7 +722,7 @@ public class AccountingService : IAccountingService
     {
         var accountId = await GetAccountIdAsync(code);
         var balance = await _db.JournalLines
-            .Where(l => l.AccountId == accountId && !l.JournalEntry.IsDeleted)
+            .Where(l => l.AccountId == accountId)
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
         return balance;
     }
@@ -739,7 +739,6 @@ public class AccountingService : IAccountingService
 
         var balance = await _db.JournalLines
             .Where(l => l.AccountId == accountId
-                     && !l.JournalEntry.IsDeleted
                      && l.JournalEntry.EntryDate >= todayStart)
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
@@ -767,7 +766,7 @@ public class AccountingService : IAccountingService
         {
             if (int.TryParse(input.Substring(3), out var exactId) && exactId > 0)
             {
-                var acctById = await _db.Accounts.Where(a => a.Id == exactId && !a.IsDeleted && a.IsActive).Select(a => new { a.Id }).FirstOrDefaultAsync();
+                var acctById = await _db.Accounts.Where(a => a.Id == exactId && a.IsActive).Select(a => new { a.Id }).FirstOrDefaultAsync();
                 if (acctById != null) return acctById.Id;
             }
         }
@@ -775,7 +774,7 @@ public class AccountingService : IAccountingService
         {
             // 2. Resolve by Account Code (Constants like '2101')
             var acctByCode = await _db.Accounts
-                .Where(a => a.Code == input && !a.IsDeleted && a.IsActive)
+                .Where(a => a.Code == input && a.IsActive)
                 .Select(a => new { a.Id })
                 .FirstOrDefaultAsync();
 
@@ -786,7 +785,7 @@ public class AccountingService : IAccountingService
             if (int.TryParse(input, out var id) && id > 0)
             {
                 var acctById = await _db.Accounts
-                    .Where(a => a.Id == id && !a.IsDeleted && a.IsActive)
+                    .Where(a => a.Id == id && a.IsActive)
                     .Select(a => new { a.Id })
                     .FirstOrDefaultAsync();
 
@@ -804,8 +803,7 @@ public class AccountingService : IAccountingService
         if (string.IsNullOrEmpty(reference)) return false;
 
         return await _db.JournalEntries
-            .AnyAsync(e => !e.IsDeleted 
-                         && e.Type == type 
+            .AnyAsync(e => e.Type == type 
                          && e.Reference != null 
                          && e.Reference.Trim().ToLower() == reference.Trim().ToLower());
     }
@@ -829,7 +827,7 @@ public class AccountingService : IAccountingService
             throw new InvalidOperationException(
                 $"القيد غير متوازن: مدين={totalDr}, دائن={totalCr} | {reference}");
 
-        var count   = await _db.JournalEntries.IgnoreQueryFilters().CountAsync() + 1;
+        var count   = await _db.JournalEntries.CountAsync() + 1;
         var year    = date.Year % 100;
         
         // تمييز أرقام القيود بناءً على المصدر

@@ -49,9 +49,7 @@ public class CustomerService : ICustomerService
                 (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + 
                 _db.JournalLines
                    .Where(l => 
-                       (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && 
-                       !l.IsDeleted && 
-                       !l.JournalEntry.IsDeleted &&
+                       (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) &&
                        l.JournalEntry.Status == JournalEntryStatus.Posted)
                    .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0,
                 c.MainAccountId,
@@ -80,7 +78,7 @@ public class CustomerService : ICustomerService
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
                 )).ToList(),
                 c.AppUserId,
-                (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + _db.JournalLines.Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && !l.IsDeleted && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0,
+                (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + _db.JournalLines.Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0,
                 c.MainAccountId,
                 c.FixedDiscount
             ))
@@ -102,7 +100,7 @@ public class CustomerService : ICustomerService
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
                 )).ToList(),
                 c.AppUserId,
-                (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + _db.JournalLines.Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && !l.IsDeleted && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0,
+                (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + _db.JournalLines.Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0,
                 c.MainAccountId,
                 c.FixedDiscount
             ))
@@ -181,7 +179,7 @@ public class CustomerService : ICustomerService
         var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
         if (parent == null) return;
 
-        var query = _db.Accounts.IgnoreQueryFilters().Where(a => a.ParentId == parent.Id);
+        var query = _db.Accounts.Where(a => a.ParentId == parent.Id);
         var maxCode = await query.MaxAsync(a => (string?)a.Code);
         long nextCodeNum = 1;
         if (maxCode != null && maxCode.Length > 4 && long.TryParse(maxCode.Substring(4), out var existingNum)) {
@@ -192,7 +190,7 @@ public class CustomerService : ICustomerService
         while (true)
         {
             newCode = $"1103{nextCodeNum:D4}";
-            bool exists = await _db.Accounts.IgnoreQueryFilters().AnyAsync(a => a.Code == newCode);
+            bool exists = await _db.Accounts.AnyAsync(a => a.Code == newCode);
             if (!exists) break;
             nextCodeNum++;
         }

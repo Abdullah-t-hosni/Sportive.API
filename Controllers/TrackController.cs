@@ -32,11 +32,10 @@ public class TrackController : ControllerBase
             .Include(o => o.Customer)
             .Include(o => o.Items)
                 .ThenInclude(i => i.Product)
-                    .ThenInclude(p => p.Images.Where(img => img.IsMain && !img.IsDeleted))
+                    .ThenInclude(p => p.Images.Where(img => img.IsMain))
             .Include(o => o.DeliveryAddress)
             .Include(o => o.StatusHistory.OrderByDescending(h => h.CreatedAt))
-            .Where(o => !o.IsDeleted
-                     && o.OrderNumber.ToUpper() == normalizedOrder)
+            .Where(o => o.OrderNumber.ToUpper() == normalizedOrder)
             .FirstOrDefaultAsync();
 
         if (order == null)
@@ -111,11 +110,10 @@ public class TrackController : ControllerBase
             .Include(o => o.Customer)
             .Include(o => o.Items)
                 .ThenInclude(i => i.Product)
-                    .ThenInclude(p => p.Images.Where(img => img.IsMain && !img.IsDeleted))
+                    .ThenInclude(p => p.Images.Where(img => img.IsMain))
             .Include(o => o.DeliveryAddress)
             .Include(o => o.StatusHistory.OrderByDescending(h => h.CreatedAt))
-            .Where(o => !o.IsDeleted
-                     && o.Customer != null && o.Customer.Phone != null && o.Customer.Phone.EndsWith(searchSuffix)
+            .Where(o => o.Customer != null && o.Customer.Phone != null && o.Customer.Phone.EndsWith(searchSuffix)
                      // استبعاد تم التوصيل، الملغي، والمرتجع
                      && o.Status != OrderStatus.Delivered
                      && o.Status != OrderStatus.Cancelled

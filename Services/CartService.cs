@@ -14,7 +14,8 @@ public class CartService : ICartService
     public async Task<CartSummaryDto> GetCartAsync(int customerId)
     {
         var items = await GetCartItemsAsync(customerId);
-        return BuildSummary(items);
+        var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        return BuildSummary(items, store);
     }
 
     public async Task<CartSummaryDto> AddToCartAsync(int customerId, AddToCartDto dto)
@@ -75,9 +76,10 @@ public class CartService : ICartService
             .Where(c => c.CustomerId == customerId)
             .ToListAsync();
 
-    private static CartSummaryDto BuildSummary(List<CartItem> items)
+    private static CartSummaryDto BuildSummary(List<CartItem> items, StoreInfo? store)
     {
-        const decimal deliveryFee = 50m;
+        var deliveryFee = store?.FixedDeliveryFee ?? 50m;
+
         var dtos = items.Select(c =>
         {
             var price = c.Product.DiscountPrice ?? c.Product.Price;
@@ -94,6 +96,11 @@ public class CartService : ICartService
         }).ToList();
 
         var subTotal = dtos.Sum(d => d.TotalPrice);
-        return new CartSummaryDto(dtos, subTotal, deliveryFee, subTotal + deliveryFee, dtos.Sum(d => d.Quantity));
+
+        // Apply free-delivery threshold from store settings
+        var freeAt = store?.FreeDeliveryAt ?? 2000m;
+        var appliedFee = subTotal >= freeAt ? 0m : deliveryFee;
+
+        return new CartSummaryDto(dtos, subTotal, appliedFee, subTotal + appliedFee, dtos.Sum(d => d.Quantity));
     }
 }

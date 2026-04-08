@@ -99,7 +99,7 @@ public class DashboardKpiController : ControllerBase
 
         // ── جلب كل الطلبات المهمة مرة واحدة ──────────
         var allOrders = await _db.Orders
-            .Where(o => !o.IsDeleted && o.Status != OrderStatus.Cancelled)
+            .Where(o => o.Status != OrderStatus.Cancelled)
             .Select(o => new {
                 o.Id, o.CreatedAt, o.TotalAmount, o.SubTotal,
                 o.DiscountAmount, o.Status, o.Source,
@@ -137,7 +137,7 @@ public class DashboardKpiController : ControllerBase
 
         // ── KPI 6: المرتجعات ──────────────────────────
         var returnedThisMonth = await _db.Orders
-            .Where(o => !o.IsDeleted && o.Status == OrderStatus.Returned && o.CreatedAt >= monthStart)
+            .Where(o => o.Status == OrderStatus.Returned && o.CreatedAt >= monthStart)
             .CountAsync();
         var returnRate = thisMonthOrders.Count > 0
             ? Math.Round((decimal)returnedThisMonth / (thisMonthOrders.Count + returnedThisMonth) * 100, 1) : 0;
@@ -146,8 +146,7 @@ public class DashboardKpiController : ControllerBase
         var topProducts = await _db.OrderItems
             .Include(i => i.Order)
             .Include(i => i.Product).ThenInclude(p => p.Images)
-            .Where(i => !i.IsDeleted && !i.Order.IsDeleted
-                     && i.Order.Status != OrderStatus.Cancelled
+            .Where(i => i.Order.Status != OrderStatus.Cancelled
                      && i.Order.CreatedAt >= monthStart)
             .GroupBy(i => new { i.ProductId, i.ProductNameAr, i.ProductNameEn })
             .Select(g => new {
@@ -165,7 +164,7 @@ public class DashboardKpiController : ControllerBase
         // Add images
         var productIds = topProducts.Select(p => p.ProductId).ToList();
         var images     = await _db.ProductImages
-            .Where(img => productIds.Contains(img.ProductId) && img.IsMain && !img.IsDeleted)
+            .Where(img => productIds.Contains(img.ProductId) && img.IsMain)
             .ToDictionaryAsync(img => img.ProductId, img => img.ImageUrl);
 
         // ── SALES BY HOUR (آخر 24 ساعة) ──────────────
@@ -205,7 +204,7 @@ public class DashboardKpiController : ControllerBase
         // ── NEW vs RETURNING CUSTOMERS ────────────────
         var thisMonthCustomers = thisMonthOrders.Select(o => o.CustomerId).Distinct().Count();
         var newCustomers = await _db.Customers
-            .CountAsync(c => !c.IsDeleted && c.CreatedAt >= monthStart);
+            .CountAsync(c => c.CreatedAt >= monthStart);
         var returningCustomers = thisMonthCustomers - newCustomers < 0 ? 0 : thisMonthCustomers - newCustomers;
 
         // ── HOURLY PEAK (أوقات الذروة) ────────────────

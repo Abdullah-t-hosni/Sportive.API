@@ -98,7 +98,7 @@ public class SuppliersController : ControllerBase
         if (parent != null)
         {
             // نستخدم IgnoreQueryFilters لضمان عدم تكرار كود حتى لو كان محذوفاً
-            var query = _db.Accounts.IgnoreQueryFilters().Where(a => a.ParentId == parent.Id);
+            var query = _db.Accounts.Where(a => a.ParentId == parent.Id);
             var maxCode = await query.MaxAsync(a => (string?)a.Code);
 
             long nextCodeNum = 1;
@@ -111,7 +111,7 @@ public class SuppliersController : ControllerBase
             while (true)
             {
                 newCode = $"2101{nextCodeNum:D4}";
-                bool exists = await _db.Accounts.IgnoreQueryFilters().AnyAsync(a => a.Code == newCode);
+                bool exists = await _db.Accounts.AnyAsync(a => a.Code == newCode);
                 if (!exists) break;
                 nextCodeNum++;
             }
@@ -167,7 +167,7 @@ public class SuppliersController : ControllerBase
         var supplier = await _db.Suppliers.Include(s => s.Invoices).FirstOrDefaultAsync(s => s.Id == id);
         if (supplier == null) return NotFound();
 
-        if (supplier.Invoices.Any(i => !i.IsDeleted))
+        if (supplier.Invoices.Any())
             return BadRequest(new { message = "لا يمكن حذف مورد مسجل له فواتير مشتريات. يرجى حذف الفواتير أولاً." });
 
         _db.Suppliers.Remove(supplier);
@@ -277,12 +277,12 @@ public class PurchaseInvoicesController : ControllerBase
         if (dto.Items.Any(i => i.ProductId.HasValue && !i.ProductVariantId.HasValue))
             return BadRequest(new { message = "إلزامي اختيار المقاس واللون لكل صنف في الفاتورة" });
 
-        var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId && !s.IsDeleted);
+        var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
         if (supplier == null)
             return BadRequest(new { message = "المورد غير موجود" });
 
         var year  = DateTime.UtcNow.Year % 100;
-        var count = await _db.PurchaseInvoices.IgnoreQueryFilters().CountAsync() + 1;
+        var count = await _db.PurchaseInvoices.CountAsync() + 1;
         var invNo = $"PO-{year}{count:D4}";
 
         var invoice = new PurchaseInvoice
@@ -349,7 +349,7 @@ public class PurchaseInvoicesController : ControllerBase
             invoice.PaidAmount = invoice.TotalAmount;
             supplier.TotalPaid += invoice.TotalAmount;
 
-            var pCount = await _db.SupplierPayments.IgnoreQueryFilters().CountAsync() + 1;
+            var pCount = await _db.SupplierPayments.CountAsync() + 1;
             invoice.Payments.Add(new SupplierPayment
             {
                 PaymentNumber = $"PV-{year}{pCount:D4}",

@@ -209,3 +209,33 @@ public class ProductFilterDto
         set => _pageSize = Math.Clamp(value, 1, 100);
     }
 }
+
+// ========== COUPON ==========
+public record CreateCouponDto(
+    string Code,
+    string? DescriptionAr,
+    string? DescriptionEn,
+    DiscountType DiscountType,
+    decimal DiscountValue,
+    decimal? MinOrderAmount,
+    decimal? MaxDiscountAmount,
+    int? MaxUsageCount,
+    DateTime? ExpiresAt
+);
+
+public record CouponListDto(
+    int Id,
+    string Code,
+    string? DescriptionAr,
+    string? DescriptionEn,
+    string DiscountType,
+    decimal DiscountValue,
+    decimal? MinOrderAmount,
+    decimal? MaxDiscountAmount,
+    int? MaxUsageCount,
+    int CurrentUsageCount,
+    DateTime? ExpiresAt,
+    bool IsActive
+);
+
+public record ApplyCouponRequest(string Code, decimal OrderTotal);

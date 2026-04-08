@@ -49,7 +49,7 @@ public class BarcodeController : ControllerBase
             discountPrice = product.DiscountPrice,
             image = product.Images.FirstOrDefault(i => i.IsMain)?.ImageUrl ?? product.Images.FirstOrDefault()?.ImageUrl,
             totalStock = product.Variants.Sum(v => v.StockQuantity),
-            variants = product.Variants.Where(v => !v.IsDeleted).Select(v => new
+            variants = product.Variants.Select(v => new
             {
                 id = v.Id,
                 size = v.Size,
@@ -66,14 +66,14 @@ public class BarcodeController : ControllerBase
     {
         var product = await _db.Products
             .Include(p => p.Variants)
-            .FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted);
+            .FirstOrDefaultAsync(p => p.Id == id);
 
         if (product == null) return NotFound(new { message = "المنتج غير موجود" });
 
         var stickers = new List<object>();
         var basePrice = product.DiscountPrice ?? product.Price;
 
-        var activeVariants = product.Variants.Where(v => !v.IsDeleted).ToList();
+        var activeVariants = product.Variants.ToList();
         
         if (!activeVariants.Any())
         {
@@ -114,11 +114,11 @@ public class BarcodeController : ControllerBase
             .ThenInclude(item => item.Product)
             .Include(i => i.Items)
             .ThenInclude(item => item.ProductVariant)
-            .FirstOrDefaultAsync(i => i.Id == id && !i.IsDeleted);
+            .FirstOrDefaultAsync(i => i.Id == id);
 
         if (invoice == null) return NotFound(new { message = "الفاتورة غير موجودة" });
 
-        var stickers = invoice.Items.Where(i => !i.IsDeleted && i.Product != null).Select(item => new
+        var stickers = invoice.Items.Where(i => i.Product != null).Select(item => new
         {
             code = item.Product!.SKU, 
             productName = item.ProductVariantId != null

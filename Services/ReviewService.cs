@@ -66,7 +66,7 @@ public class ReviewService : IReviewService
     {
         var r = await _db.Reviews.FindAsync(reviewId);
         if (r == null) return false;
-        r.IsDeleted = true;
+        _db.Reviews.Remove(r);
         return await _db.SaveChangesAsync() > 0;
     }
 }

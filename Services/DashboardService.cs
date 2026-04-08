@@ -44,7 +44,7 @@ public class DashboardService : IDashboardService
             .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
 
         var totalOrders = await _db.Orders.CountAsync(o => o.Status != OrderStatus.Cancelled);
-        var totalCustomers = await _db.Customers.CountAsync(c => !c.IsDeleted);
+        var totalCustomers = await _db.Customers.CountAsync();
 
         // --- Growth Calculation (Previous Periods) ---
         var yesterdayStartDate = todayStart.AddDays(-1);
@@ -64,7 +64,7 @@ public class DashboardService : IDashboardService
             .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
 
         var prevCustomersCount = await _db.Customers
-            .CountAsync(c => c.CreatedAt < monthStart && !c.IsDeleted);
+            .CountAsync(c => c.CreatedAt < monthStart);
 
         // Growth Rates
         decimal CalculateGrowth(decimal current, decimal previous) => 
@@ -86,7 +86,7 @@ public class DashboardService : IDashboardService
 
         // المرتجعات: قيمة كل السلع التي تم إرجاعها (سواء مرتجع كامل أو جزئي)
         var returnAmount = await _db.OrderItems
-            .Where(i => !i.IsDeleted && i.ReturnedQuantity > 0)
+            .Where(i => i.ReturnedQuantity > 0)
             .SumAsync(i => (decimal?)i.ReturnedQuantity * i.UnitPrice) ?? 0;
 
         return new DashboardStatsDto(
@@ -101,9 +101,9 @@ public class DashboardService : IDashboardService
             TodayOrders: await _db.Orders.CountAsync(o => o.CreatedAt >= todayStart && o.CreatedAt < todayEnd && o.Status != OrderStatus.Cancelled),
             TotalCustomers: totalCustomers,
             TotalCustomersGrowth: (int)customerGrowth,
-            TotalProducts: await _db.Products.CountAsync(p => !p.IsDeleted),
-            LowStockProducts: await _db.ProductVariants.CountAsync(v => !v.IsDeleted && v.StockQuantity <= 5 && v.StockQuantity > 0),
-            OutOfStockProducts: await _db.ProductVariants.CountAsync(v => !v.IsDeleted && v.StockQuantity == 0),
+            TotalProducts: await _db.Products.CountAsync(),
+            LowStockProducts: await _db.ProductVariants.CountAsync(v => v.StockQuantity <= 5 && v.StockQuantity > 0),
+            OutOfStockProducts: await _db.ProductVariants.CountAsync(v => v.StockQuantity == 0),
             UncollectedAmount: uncollectedAmount,
             DebtAmount: debtAmount,
             ReturnAmount: returnAmount
@@ -118,7 +118,6 @@ public class DashboardService : IDashboardService
         // Category Sales
         var catSales = await _db.OrderItems
             .Include(i => i.Product).ThenInclude(p => p.Category)
-            .Where(i => !i.IsDeleted)
             .GroupBy(i => new { i.Product.Category.Id, i.Product.Category.NameAr, i.Product.Category.NameEn })
             .Select(g => new CategorySalesDto(
                 g.Key.Id, g.Key.NameAr, g.Key.NameEn,
@@ -135,7 +134,7 @@ public class DashboardService : IDashboardService
             .ToListAsync();
 
         var newCustomers = await _db.Customers
-            .Where(c => c.CreatedAt >= startDate && !c.IsDeleted)
+            .Where(c => c.CreatedAt >= startDate)
             .Select(c => c.CreatedAt)
             .ToListAsync();
 
@@ -178,7 +177,7 @@ public class DashboardService : IDashboardService
 
     public async Task<byte[]> ExportSalesToCsvAsync(DateTime? from, DateTime? to)
     {
-        var query = _db.Orders.Include(o => o.Customer).Where(o => !o.IsDeleted);
+        var query = _db.Orders.Include(o => o.Customer).AsQueryable();
         if (from.HasValue) query = query.Where(o => o.CreatedAt >= from.Value);
         if (to.HasValue)   query = query.Where(o => o.CreatedAt <= to.Value);
 
@@ -200,7 +199,7 @@ public class DashboardService : IDashboardService
 
         // 1. Sales by City (Heatmap)
         var salesByCityRaw = await _db.Orders
-            .Where(o => !o.IsDeleted && o.Status != OrderStatus.Cancelled && o.DeliveryAddressId != null)
+            .Where(o => o.Status != OrderStatus.Cancelled && o.DeliveryAddressId != null)
             .Select(o => new { City = o.DeliveryAddress!.City, o.TotalAmount }) 
             .GroupBy(x => x.City)
             .Select(g => new { 
@@ -380,7 +379,7 @@ public class DashboardService : IDashboardService
 
         // ── جلب كل الطلبات المهمة مرة واحدة ──────────
         var allOrders = await _db.Orders
-            .Where(o => !o.IsDeleted && o.Status != OrderStatus.Cancelled)
+            .Where(o => o.Status != OrderStatus.Cancelled)
             .Select(o => new {
                 o.Id, o.CreatedAt, o.TotalAmount, o.SubTotal,
                 o.DiscountAmount, o.Status, o.Source,
@@ -418,7 +417,7 @@ public class DashboardService : IDashboardService
 
         // ── KPI 6: المرتجعات ──────────────────────────
         var returnedThisMonth = await _db.Orders
-            .Where(o => !o.IsDeleted && o.Status == OrderStatus.Returned && o.CreatedAt >= monthStart)
+            .Where(o => o.Status == OrderStatus.Returned && o.CreatedAt >= monthStart)
             .CountAsync();
         var returnRate = thisMonthOrders.Count > 0
             ? Math.Round((decimal)returnedThisMonth / (thisMonthOrders.Count + returnedThisMonth) * 100, 1) : 0;
@@ -427,8 +426,7 @@ public class DashboardService : IDashboardService
         var topProducts = await _db.OrderItems
             .Include(i => i.Order)
             .Include(i => i.Product).ThenInclude(p => p.Images)
-            .Where(i => !i.IsDeleted && !i.Order.IsDeleted
-                     && i.Order.Status != OrderStatus.Cancelled
+            .Where(i => i.Order.Status != OrderStatus.Cancelled
                      && i.Order.CreatedAt >= monthStart)
             .GroupBy(i => new { i.ProductId, i.ProductNameAr, i.ProductNameEn })
             .Select(g => new {
@@ -446,7 +444,7 @@ public class DashboardService : IDashboardService
         // Add images
         var productIds = topProducts.Select(p => p.ProductId).ToList();
         var images     = await _db.ProductImages
-            .Where(img => productIds.Contains(img.ProductId) && img.IsMain && !img.IsDeleted)
+            .Where(img => productIds.Contains(img.ProductId) && img.IsMain)
             .ToDictionaryAsync(img => img.ProductId, img => img.ImageUrl);
 
         // ── SALES BY HOUR (آخر 24 ساعة) ──────────────
@@ -486,7 +484,7 @@ public class DashboardService : IDashboardService
         // ── NEW vs RETURNING CUSTOMERS ────────────────
         var thisMonthCustomers = thisMonthOrders.Select(o => o.CustomerId).Distinct().Count();
         var newCustomers = await _db.Customers
-            .CountAsync(c => !c.IsDeleted && c.CreatedAt >= monthStart);
+            .CountAsync(c => c.CreatedAt >= monthStart);
         var returningCustomers = thisMonthCustomers - newCustomers < 0 ? 0 : thisMonthCustomers - newCustomers;
 
         // ── HOURLY PEAK (أوقات الذروة) ────────────────
@@ -597,8 +595,7 @@ public class DashboardService : IDashboardService
     public async Task<List<TopProductDto>> GetTopProductsAsync(int count = 10)
     {
         var items = await _db.OrderItems.Include(i => i.Product).ThenInclude(p => p.Images)
-            .Where(i => !i.IsDeleted)
-            .Select(i => new { i.ProductId, i.ProductNameAr, i.ProductNameEn, i.Quantity, i.TotalPrice, MainImage = i.Product.Images.Where(img => img.IsMain && !img.IsDeleted).Select(img => img.ImageUrl).FirstOrDefault() })
+            .Select(i => new { i.ProductId, i.ProductNameAr, i.ProductNameEn, i.Quantity, i.TotalPrice, MainImage = i.Product.Images.Where(img => img.IsMain).Select(img => img.ImageUrl).FirstOrDefault() })
             .ToListAsync();
 
         return items.GroupBy(i => i.ProductId).Select(g => new TopProductDto(g.Key, g.First().ProductNameAr, g.First().ProductNameEn, g.First().MainImage, g.Sum(i => i.Quantity), g.Sum(i => i.TotalPrice))).OrderByDescending(x => x.TotalSold).Take(count).ToList();
@@ -606,15 +603,15 @@ public class DashboardService : IDashboardService
 
     public async Task<List<OrderStatusStatsDto>> GetOrderStatusStatsAsync()
     {
-        var total = await _db.Orders.CountAsync(o => !o.IsDeleted);
+        var total = await _db.Orders.CountAsync();
         if (total == 0) return new List<OrderStatusStatsDto>();
-        var groups = await _db.Orders.Where(o => !o.IsDeleted).GroupBy(o => o.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync();
+        var groups = await _db.Orders.GroupBy(o => o.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync();
         return groups.Select(g => new OrderStatusStatsDto(g.Status.ToString(), g.Count, Math.Round((decimal)g.Count / total * 100, 1))).ToList();
     }
 
     public async Task<List<OrderSummaryDto>> GetRecentOrdersAsync(int count = 10)
     {
-        return await _db.Orders.Include(o => o.Customer).Include(o => o.Items).Where(o => !o.IsDeleted).OrderByDescending(o => o.CreatedAt).Take(count)
+        return await _db.Orders.Include(o => o.Customer).Include(o => o.Items).OrderByDescending(o => o.CreatedAt).Take(count)
             .Select(o => new OrderSummaryDto(
                 o.Id, o.OrderNumber, o.Customer.FullName, 
                 o.Customer.Phone ?? "", o.Status.ToString(), o.FulfillmentType.ToString(), 

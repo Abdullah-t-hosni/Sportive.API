@@ -78,7 +78,6 @@ public class DataMaintenanceController : ControllerBase
                     if (idsToDelete.Any())
                     {
                          await _db.Users.Where(u => idsToDelete.Contains(u.Id))
-                                        .IgnoreQueryFilters()
                                         .ExecuteDeleteAsync();
                     }
                 }
@@ -108,7 +107,7 @@ public class DataMaintenanceController : ControllerBase
     {
         try
         {
-            var allAccounts = await _db.Accounts.IgnoreQueryFilters().Where(a => !a.IsDeleted).ToListAsync();
+            var allAccounts = await _db.Accounts.ToListAsync();
             foreach (var a in allAccounts)
             {
                 a.Level = 1;
@@ -139,7 +138,7 @@ public class DataMaintenanceController : ControllerBase
     [HttpGet("debug-account/{code}")]
     public async Task<IActionResult> DebugAccount(string code)
     {
-        var acc = await _db.Accounts.IgnoreQueryFilters().FirstOrDefaultAsync(a => a.Code == code);
+        var acc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == code);
         if (acc == null) return NotFound(new { message = $"لم يتم العثور على أي حساب بالكود {code}" });
         return Ok(new { id = acc.Id, code = acc.Code, name = acc.NameAr, parentId = acc.ParentId, level = acc.Level, type = acc.Type.ToString() });
     }
@@ -162,7 +161,7 @@ public class DataMaintenanceController : ControllerBase
 
         foreach (var s in suppliers)
         {
-            var query = _db.Accounts.IgnoreQueryFilters().Where(a => a.ParentId == parent.Id);
+            var query = _db.Accounts.Where(a => a.ParentId == parent.Id);
             var maxCode = await query.MaxAsync(a => (string?)a.Code);
             long nextCodeNum = 1;
             if (maxCode != null && maxCode.Length > 4 && long.TryParse(maxCode.Substring(4), out var existingNum)) {
@@ -172,7 +171,7 @@ public class DataMaintenanceController : ControllerBase
             while (true)
             {
                 newCode = $"2101{nextCodeNum:D4}";
-                if (!await _db.Accounts.IgnoreQueryFilters().AnyAsync(a => a.Code == newCode)) break;
+                if (!await _db.Accounts.AnyAsync(a => a.Code == newCode)) break;
                 nextCodeNum++;
             }
             var account = new Account
@@ -198,14 +197,14 @@ public class DataMaintenanceController : ControllerBase
         try {
             await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 0;");
             var counts = new Dictionary<string, int>();
-            counts["Accounts"] = await _db.Accounts.IgnoreQueryFilters().Where(x => x.IsDeleted).ExecuteDeleteAsync();
-            counts["Journals"] = await _db.JournalEntries.IgnoreQueryFilters().Where(x => x.IsDeleted).ExecuteDeleteAsync();
-            counts["Suppliers"] = await _db.Suppliers.IgnoreQueryFilters().Where(x => x.IsDeleted).ExecuteDeleteAsync();
-            counts["Customers"] = await _db.Customers.IgnoreQueryFilters().Where(x => x.IsDeleted).ExecuteDeleteAsync();
-            counts["Orders"] = await _db.Orders.IgnoreQueryFilters().Where(x => x.IsDeleted).ExecuteDeleteAsync();
-            counts["Products"] = await _db.Products.IgnoreQueryFilters().Where(x => x.IsDeleted).ExecuteDeleteAsync();
-            counts["Variants"] = await _db.ProductVariants.IgnoreQueryFilters().Where(x => x.IsDeleted).ExecuteDeleteAsync();
-            counts["Purchases"] = await _db.PurchaseInvoices.IgnoreQueryFilters().Where(x => x.IsDeleted).ExecuteDeleteAsync();
+            counts["Accounts"] = 0;
+            counts["Journals"] = 0;
+            counts["Suppliers"] = 0;
+            counts["Customers"] = 0;
+            counts["Orders"] = 0;
+            counts["Products"] = 0;
+            counts["Variants"] = 0;
+            counts["Purchases"] = 0;
             await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
             return Ok(new { success = true, purged = counts });
         }
@@ -229,7 +228,7 @@ public class DataMaintenanceController : ControllerBase
     public async Task<IActionResult> CleanupDuplicates()
     {
         try {
-            var dupCodes = await _db.Accounts.IgnoreQueryFilters().GroupBy(a => a.Code).Where(g => g.Count() > 1).Select(g => g.Key).ToListAsync();
+            var dupCodes = await _db.Accounts.GroupBy(a => a.Code).Where(g => g.Count() > 1).Select(g => g.Key).ToListAsync();
             if (!dupCodes.Any()) return Ok(new { success = true, message = "لم يتم العثور على تكرارات في الأكواد." });
             return Ok(new { success = true, message = $"تم العثور على {dupCodes.Count} كود مكرر. يرجى استخدام Purge Deleted أولاً." });
         } catch (Exception ex) { return BadRequest(new { success = false, message = ex.Message }); }

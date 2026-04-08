@@ -97,7 +97,7 @@ public class SupplierPaymentsController : ControllerBase
         }
 
         var year = DateTime.UtcNow.Year % 100;
-        var count = await _db.SupplierPayments.IgnoreQueryFilters().CountAsync() + 1;
+        var count = await _db.SupplierPayments.CountAsync() + 1;
         var pNo = $"PV-{year}{count:D4}";
 
         var payment = new SupplierPayment

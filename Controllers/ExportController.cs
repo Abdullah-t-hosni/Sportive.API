@@ -177,7 +177,6 @@ public class ExportController : ControllerBase
     {
         var customers = await _db.Customers
             .Include(c => c.Orders)
-            .Where(c => !c.IsDeleted)
             .OrderByDescending(c => c.Orders.Sum(o => o.TotalAmount))
             .ToListAsync();
 
@@ -192,8 +191,8 @@ public class ExportController : ControllerBase
             ws.Cell(row,1).Value = c.FullName;
             ws.Cell(row,2).Value = c.Email;
             ws.Cell(row,3).Value = c.Phone ?? "";
-            ws.Cell(row,4).Value = c.Orders.Count(o => !o.IsDeleted);
-            ws.Cell(row,5).Value = c.Orders.Where(o => !o.IsDeleted).Sum(o => o.TotalAmount);
+            ws.Cell(row,4).Value = c.Orders.Count;
+            ws.Cell(row,5).Value = c.Orders.Sum(o => o.TotalAmount);
             ws.Cell(row,6).Value = c.CreatedAt.ToString("yyyy-MM-dd");
             ws.Cell(row,5).Style.NumberFormat.Format = "#,##0.00";
             row++;
@@ -451,7 +450,7 @@ public class ExportController : ControllerBase
 
         int row = 2;
         foreach (var p in products)
-        foreach (var v in p.Variants.Where(v => !v.IsDeleted))
+        foreach (var v in p.Variants)
         {
             ws.Cell(row, 1).Value  = p.SKU;
             ws.Cell(row, 2).Value  = p.NameAr;

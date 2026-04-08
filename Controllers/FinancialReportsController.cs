@@ -22,15 +22,14 @@ public class FinancialReportsController : ControllerBase
     private async Task<List<AccountBalance>> GetBalances(DateTime from, DateTime to)
     {
         var accounts = await _db.Accounts
-            .Where(a => !a.IsDeleted && a.IsActive)
+            .Where(a => a.IsActive)
             .OrderBy(a => a.Code)
             .ToListAsync();
 
         // كل القيود المرحّلة في الفترة
         var lines = await _db.JournalLines
             .Include(l => l.JournalEntry)
-            .Where(l => !l.IsDeleted
-                     && l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to)
             .ToListAsync();
@@ -38,8 +37,7 @@ public class FinancialReportsController : ControllerBase
         // القيود قبل الفترة (للرصيد الافتتاحي)
         var openingLines = await _db.JournalLines
             .Include(l => l.JournalEntry)
-            .Where(l => !l.IsDeleted
-                     && l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate < from)
             .ToListAsync();
 
@@ -245,8 +243,7 @@ public class FinancialReportsController : ControllerBase
         var q = _db.JournalLines
             .Include(l => l.JournalEntry)
             .Include(l => l.Account)
-            .Where(l => !l.IsDeleted
-                     && l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to);
 
@@ -269,7 +266,6 @@ public class FinancialReportsController : ControllerBase
             var openLines = await _db.JournalLines
                 .Include(l => l.JournalEntry)
                 .Where(l => l.AccountId == aId
-                         && !l.IsDeleted
                          && l.JournalEntry.Status == JournalEntryStatus.Posted
                          && l.JournalEntry.EntryDate < from)
                 .ToListAsync();
@@ -335,13 +331,13 @@ public class FinancialReportsController : ControllerBase
         var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
         var to   = toDate   ?? DateTime.UtcNow;
 
-        var acct = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == accountId && !a.IsDeleted);
+        var acct = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == accountId);
         if (acct == null) return NotFound(new { message = "الحساب غير موجود" });
 
         // الرصيد الافتتاحي
         var openLines = await _db.JournalLines
             .Include(l => l.JournalEntry)
-            .Where(l => l.AccountId == accountId && !l.IsDeleted
+            .Where(l => l.AccountId == accountId
                      && l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate < from)
             .ToListAsync();
@@ -353,7 +349,7 @@ public class FinancialReportsController : ControllerBase
         // حركات الفترة
         var periodLines = await _db.JournalLines
             .Include(l => l.JournalEntry)
-            .Where(l => l.AccountId == accountId && !l.IsDeleted
+            .Where(l => l.AccountId == accountId
                      && l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to)
@@ -404,7 +400,7 @@ public class FinancialReportsController : ControllerBase
 
         // حسابات النقدية (كل ما يبدأ بـ 11)
         var cashAccounts = await _db.Accounts
-            .Where(a => !a.IsDeleted && a.IsLeaf && a.Code.StartsWith("11"))
+            .Where(a => a.IsLeaf && a.Code.StartsWith("11"))
             .ToListAsync();
 
         var cashIds = cashAccounts.Select(a => a.Id).ToHashSet();
@@ -412,8 +408,7 @@ public class FinancialReportsController : ControllerBase
         var lines = await _db.JournalLines
             .Include(l => l.JournalEntry)
             .Include(l => l.Account)
-            .Where(l => !l.IsDeleted
-                     && l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to
                      && cashIds.Contains(l.AccountId))
@@ -458,7 +453,7 @@ public class FinancialReportsController : ControllerBase
         {
             var ol = await _db.JournalLines
                 .Include(l => l.JournalEntry)
-                .Where(l => l.AccountId == ca.Id && !l.IsDeleted
+                .Where(l => l.AccountId == ca.Id
                          && l.JournalEntry.Status == JournalEntryStatus.Posted
                          && l.JournalEntry.EntryDate < from)
                 .ToListAsync();
