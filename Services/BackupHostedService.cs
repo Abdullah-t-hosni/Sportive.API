@@ -78,7 +78,7 @@ public class BackupHostedService : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         
         // Get store settings
-        var settings = await db.StoreInfo.FirstOrDefaultAsync(ct) ?? new StoreInfo();
+        var settings = await db.StoreInfo.OrderBy(s => s.StoreConfigId).FirstOrDefaultAsync(ct) ?? new StoreInfo();
         
         var targetTime = settings.BackupTime ?? "02:00";
         var parts      = targetTime.Split(':');

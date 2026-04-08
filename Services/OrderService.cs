@@ -661,16 +661,26 @@ public class OrderService : IOrderService
         var orders = await _db.Orders.Include(o => o.Customer).Include(o => o.Items).ThenInclude(i => i.Product)
             .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Pending).ToListAsync();
 
+        var orderNums = orders.Select(o => o.OrderNumber.Trim().ToLower()).ToList();
+        var entries = await _db.JournalEntries.Include(j => j.Lines)
+            .Where(j => j.Type == JournalEntryType.SalesInvoice && j.Reference != null && orderNums.Contains(j.Reference))
+            .ToListAsync();
+
+        var entryMap = entries.GroupBy(e => e.Reference!.Trim().ToLower()).ToDictionary(g => g.Key, g => g.First());
+
         foreach (var order in orders)
         {
             try {
                 var orderNum = order.OrderNumber.Trim().ToLower();
-                var entry = await _db.JournalEntries.Include(j => j.Lines)
-                    .FirstOrDefaultAsync(j => j.Type == JournalEntryType.SalesInvoice && j.Reference != null && j.Reference.Trim().ToLower() == orderNum);
+                entryMap.TryGetValue(orderNum, out var entry);
 
                 if (entry == null || !entry.Lines.Any() || entry.Lines.All(l => l.CustomerId == null))
                 {
-                    if (entry != null) { _db.JournalLines.RemoveRange(entry.Lines); _db.JournalEntries.Remove(entry); await _db.SaveChangesAsync(); }
+                    if (entry != null) { 
+                        _db.JournalLines.RemoveRange(entry.Lines); 
+                        _db.JournalEntries.Remove(entry); 
+                        await _db.SaveChangesAsync(); 
+                    }
                     await _accounting.PostSalesOrderAsync(order);
                 }
                 if (order.PaymentStatus == PaymentStatus.Paid) await _accounting.PostOrderPaymentAsync(order);

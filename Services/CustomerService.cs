@@ -217,11 +217,50 @@ public class CustomerService : ICustomerService
 
     public async Task SyncAllMissingAccountsAsync()
     {
-        var customers = await _db.Customers.Where(c => c.MainAccountId == null).ToListAsync();
+        var customers = await _db.Customers.Include(c => c.MainAccount).Where(c => c.MainAccountId == null).ToListAsync();
+        if (!customers.Any()) return;
+
+        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
+        if (parent == null) return;
+
+        var maxCode = await _db.Accounts.Where(a => a.ParentId == parent.Id).MaxAsync(a => (string?)a.Code);
+        long nextCodeNum = 1;
+        if (maxCode != null && maxCode.Length > 4 && long.TryParse(maxCode.Substring(4), out var existingNum)) {
+            nextCodeNum = existingNum + 1;
+        }
+
+        var existingCodes = await _db.Accounts.Where(a => a.Code.StartsWith("1103")).Select(a => a.Code).ToListAsync();
+        var codeSet = new HashSet<string>(existingCodes);
+
         foreach (var c in customers)
         {
-            try { await EnsureCustomerAccountAsync(c.Id); } catch { /* ignore */ }
+            string newCode;
+            while (true)
+            {
+                newCode = $"1103{nextCodeNum:D4}";
+                if (!codeSet.Contains(newCode)) break;
+                nextCodeNum++;
+            }
+            codeSet.Add(newCode);
+
+            var account = new Account
+            {
+                Code = newCode,
+                NameAr = $"عميل - {c.FullName}",
+                Type = AccountType.Asset,
+                Nature = AccountNature.Debit,
+                ParentId = parent.Id,
+                Level = parent.Level + 1,
+                IsLeaf = true,
+                AllowPosting = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            _db.Accounts.Add(account);
+            c.MainAccount = account;
+            nextCodeNum++;
         }
+
+        await _db.SaveChangesAsync();
     }
 
     public async Task<AddressDto> AddAddressAsync(int customerId, CreateAddressDto dto)
