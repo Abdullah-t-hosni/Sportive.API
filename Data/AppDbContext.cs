@@ -67,6 +67,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Category>(e => {
             e.Property(x => x.NameAr).HasMaxLength(150).IsRequired();
             e.Property(x => x.NameEn).HasMaxLength(150).IsRequired();
+            // Self-referencing hierarchy — قسم رئيسي → أقسام فرعية (أي عمق)
+            e.HasOne(x => x.Parent)
+             .WithMany(x => x.Children)
+             .HasForeignKey(x => x.ParentId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<Brand>(e => {
