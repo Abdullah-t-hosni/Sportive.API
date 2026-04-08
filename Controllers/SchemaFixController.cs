@@ -73,4 +73,52 @@ public class SchemaFixController : ControllerBase
             return StatusCode(500, new { error = ex.Message });
         }
     }
+
+    [HttpGet("run-v6")]
+    public async Task<IActionResult> RunV6()
+    {
+        _logger.LogWarning("SchemaFix run-v6 (Orphaned Movement Cleanup) triggered.");
+        try
+        {
+            // تنظيف الحركات التي تشير إلى أشكال منتجات (Variants) تم حذفها
+            var orphanedCount = await _db.Database.ExecuteSqlRawAsync(@"
+                UPDATE InventoryMovements 
+                SET ProductVariantId = NULL 
+                WHERE ProductVariantId IS NOT NULL 
+                AND ProductVariantId NOT IN (SELECT Id FROM ProductVariants);
+            ");
+
+            return Ok(new { 
+                message = "Cleaned up orphaned movements successfully.", 
+                orphanedCount 
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("run-v7")]
+    public async Task<IActionResult> RunV7()
+    {
+        _logger.LogWarning("SchemaFix run-v7 (Emergency FK Fix) triggered.");
+        try {
+            // 1. تنظيف البيانات أولاً لضمان إمكانية إنشاء الربط
+            await _db.Database.ExecuteSqlRawAsync(@"
+                UPDATE InventoryMovements SET ProductVariantId = NULL 
+                WHERE ProductVariantId IS NOT NULL AND ProductVariantId NOT IN (SELECT Id FROM ProductVariants);");
+
+            // 2. محاولة إضافة الـ FK يدوياً (لكي يجدها الـ EF ويحذفها في الخطوة القادمة من Migration)
+            try {
+                await _db.Database.ExecuteSqlRawAsync(@"
+                    ALTER TABLE InventoryMovements ADD CONSTRAINT FK_InventoryMovements_ProductVariants_ProductVariantId 
+                    FOREIGN KEY (ProductVariantId) REFERENCES ProductVariants(Id) ON DELETE SET NULL;");
+            } catch { /* إذا كانت موجودة بالفعل لا مشكلة */ }
+
+            return Ok(new { message = "Emergency fix applied successfully. Please try 'dotnet ef database update' again." });
+        } catch (Exception ex) {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
 }
