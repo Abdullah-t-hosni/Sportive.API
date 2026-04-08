@@ -231,11 +231,13 @@ public class FinancialReportsController : ControllerBase
     // ══════════════════════════════════════════════════════
     [HttpGet("ledger")]
     public async Task<IActionResult> Ledger(
-        [FromQuery] int?      accountId = null,
-        [FromQuery] DateTime? fromDate  = null,
-        [FromQuery] DateTime? toDate    = null,
-        [FromQuery] string?   search    = null,
-        [FromQuery] bool      excel     = false)
+        [FromQuery] int?      accountId  = null,
+        [FromQuery] int?      customerId = null,
+        [FromQuery] int?      supplierId = null,
+        [FromQuery] DateTime? fromDate   = null,
+        [FromQuery] DateTime? toDate     = null,
+        [FromQuery] string?   search     = null,
+        [FromQuery] bool      excel      = false)
     {
         var from = fromDate?.Date ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
@@ -256,6 +258,12 @@ public class FinancialReportsController : ControllerBase
 
         if (accountId.HasValue)
             q = q.Where(l => l.AccountId == accountId.Value);
+        
+        if (customerId.HasValue)
+            q = q.Where(l => l.CustomerId == customerId.Value);
+            
+        if (supplierId.HasValue)
+            q = q.Where(l => l.SupplierId == supplierId.Value);
 
         var lines = await q.OrderBy(l => l.JournalEntry.EntryDate)
                            .ThenBy(l => l.JournalEntry.Id)
@@ -331,10 +339,12 @@ public class FinancialReportsController : ControllerBase
     [HttpGet("account-statement")]
     public async Task<IActionResult> AccountStatement(
         [FromQuery] int       accountId,
-        [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate   = null,
-        [FromQuery] string?   search   = null,
-        [FromQuery] bool      excel    = false)
+        [FromQuery] int?      customerId = null,
+        [FromQuery] int?      supplierId = null,
+        [FromQuery] DateTime? fromDate   = null,
+        [FromQuery] DateTime? toDate     = null,
+        [FromQuery] string?   search     = null,
+        [FromQuery] bool      excel      = false)
     {
         var from = fromDate?.Date ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
