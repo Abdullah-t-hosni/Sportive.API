@@ -283,13 +283,22 @@ public class ReceiptVouchersController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
     {
-        var q = _db.ReceiptVouchers;
+        var q = _db.ReceiptVouchers.AsQueryable();
+        if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value.Date);
+        if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+        
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(v => v.VoucherDate)
             .Skip((page-1)*pageSize).Take(pageSize)
-            .Select(v => new { v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description })
+            .Select(v => new { 
+                v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description,
+                v.CashAccountId,
+                CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
+                FromAccountName = v.FromAccount != null ? v.FromAccount.NameAr : null,
+                EntityName = v.Customer != null ? v.Customer.FullName : null
+            })
             .ToListAsync();
 
         return Ok(new { items, total, page, pageSize, totalPages = (int)Math.Ceiling(total/(double)pageSize) });
@@ -402,13 +411,22 @@ public class PaymentVouchersController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
     {
-        var q = _db.PaymentVouchers;
+        var q = _db.PaymentVouchers.AsQueryable();
+        if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value.Date);
+        if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(v => v.VoucherDate)
             .Skip((page-1)*pageSize).Take(pageSize)
-            .Select(v => new { v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description })
+            .Select(v => new { 
+                v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description,
+                v.CashAccountId,
+                CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
+                ToAccountName = v.ToAccount != null ? v.ToAccount.NameAr : null,
+                EntityName = v.Supplier != null ? v.Supplier.Name : null
+            })
             .ToListAsync();
 
         return Ok(new { items, total, page, pageSize, totalPages = (int)Math.Ceiling(total/(double)pageSize) });
