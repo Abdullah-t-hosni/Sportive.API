@@ -22,8 +22,8 @@ public class Product : BaseEntity
     public decimal? VatRate { get; set; } // نسبة الضريبة المخصصة للمنتج (null تعني استخدام النسبة الافتراضية للمتجر)
 
     // Category
-    public int CategoryId { get; set; }
-    public Category Category { get; set; } = null!;
+    public int? CategoryId { get; set; }
+    public Category? Category { get; set; }
 
     // Navigation
     public ICollection<ProductVariant> Variants { get; set; } = new List<ProductVariant>();

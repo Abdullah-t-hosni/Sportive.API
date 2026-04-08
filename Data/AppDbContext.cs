@@ -78,6 +78,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Brand>(e => {
             e.Property(x => x.NameAr).HasMaxLength(150).IsRequired();
             e.Property(x => x.NameEn).HasMaxLength(150).IsRequired();
+            // Self-referencing hierarchy
+            e.HasOne(x => x.Parent)
+             .WithMany(x => x.SubBrands)
+             .HasForeignKey(x => x.ParentId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<Product>(e => {
@@ -88,7 +94,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.SKU).HasMaxLength(50);
             e.HasIndex(x => x.SKU).IsUnique();
             e.HasOne(x => x.Category).WithMany(c => c.Products)
-             .HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);
+             .HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(x => x.Brand).WithMany(b => b.Products)
              .HasForeignKey(x => x.BrandId).OnDelete(DeleteBehavior.SetNull);
             e.Property(x => x.Status).HasConversion<string>();
