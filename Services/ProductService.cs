@@ -175,29 +175,44 @@ public class ProductService : IProductService
         }
         else
         {
-             // For simple products, we rely on the purchase invoices or manual set (if exposed)
-             // Initial creation might have 0 stock.
-             product.TotalStock = 0;
+             // For simple products (like many Equipment/Tools), we can set initial stock directly
+             product.TotalStock = dto.InitialStock ?? 0;
         }
 
         _db.Products.Add(product);
         await _db.SaveChangesAsync();
 
-        // 3. Log initial movements for variants
-        foreach (var v in product.Variants)
+        // 3. Log initial movements
+        if (product.Variants.Any())
         {
-            if (v.StockQuantity != 0)
+            foreach (var v in product.Variants)
             {
-                await _inventory.LogMovementAsync(
-                    InventoryMovementType.OpeningBalance,
-                    v.StockQuantity,
-                    product.Id,
-                    v.Id,
-                    "INIT-PRODUCT",
-                    "رصيد افتتاحي عند إنشاء المنتج",
-                    null
-                );
+                if (v.StockQuantity != 0)
+                {
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.OpeningBalance,
+                        v.StockQuantity,
+                        product.Id,
+                        v.Id,
+                        "INIT-PRODUCT",
+                        "رصيد افتتاحي عند إنشاء المنتج",
+                        null
+                    );
+                }
             }
+        }
+        else if (product.TotalStock != 0)
+        {
+            // For simple products without variants (Tools/Equipment)
+            await _inventory.LogMovementAsync(
+                InventoryMovementType.OpeningBalance,
+                product.TotalStock,
+                product.Id,
+                null,
+                "INIT-PRODUCT",
+                "رصيد افتتاحي عند إنشاء المنتج",
+                null
+            );
         }
         
         await _db.SaveChangesAsync();
@@ -281,6 +296,29 @@ public class ProductService : IProductService
 
         await _db.SaveChangesAsync();
         await _notifications.BroadcastStockUpdateAsync(variant.ProductId, variantId, quantity);
+        return true;
+    }
+
+    public async Task<bool> UpdateProductStockAsync(int productId, int quantity)
+    {
+        var product = await _db.Products.FindAsync(productId);
+        if (product == null) return false;
+
+        var diff = quantity - product.TotalStock;
+        if (diff == 0) return true;
+
+        await _inventory.LogMovementAsync(
+            InventoryMovementType.Adjustment,
+            diff,
+            product.Id,
+            null,
+            "MANUAL-UPDATE",
+            "تحديث يدوي من صفحة المنتج",
+            null
+        );
+
+        await _db.SaveChangesAsync();
+        await _notifications.BroadcastStockUpdateAsync(product.Id, 0, quantity);
         return true;
     }
 

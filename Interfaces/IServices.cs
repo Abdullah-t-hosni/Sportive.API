@@ -20,6 +20,7 @@ public interface IProductService
     Task<ProductDetailDto> UpdateProductAsync(int id, UpdateProductDto dto);
     Task DeleteProductAsync(int id);
     Task<bool> UpdateStockAsync(int variantId, int quantity);
+    Task<bool> UpdateProductStockAsync(int productId, int quantity);
     Task<ProductVariantDto> AddVariantAsync(int productId, CreateVariantDto dto);
     Task<ProductVariantDto> UpdateVariantAsync(int variantId, CreateVariantDto dto);
     Task<bool> DeleteVariantAsync(int variantId);

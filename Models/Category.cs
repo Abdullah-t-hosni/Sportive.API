@@ -1,5 +1,7 @@
 namespace Sportive.API.Models;
 
+public enum CategoryType { Men = 1, Women = 2, Kids = 3, Equipment = 4 }
+
 public class Category : BaseEntity
 {
     public string NameAr { get; set; } = string.Empty;  // الاسم بالعربي
@@ -8,6 +10,7 @@ public class Category : BaseEntity
     public string? DescriptionEn { get; set; }
     public string? ImageUrl { get; set; }
     public bool IsActive { get; set; } = true;
+    public CategoryType Type { get; set; } = CategoryType.Men;
 
     // Subcategory support
     public int? ParentId { get; set; }

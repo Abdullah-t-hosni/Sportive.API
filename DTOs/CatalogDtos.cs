@@ -16,6 +16,7 @@ public record CategoryDto(
     [property: JsonPropertyName("descriptionEn")] string? DescriptionEn,
     [property: JsonPropertyName("imageUrl")] string? ImageUrl,
     [property: JsonPropertyName("isActive")] bool IsActive,
+    [property: JsonPropertyName("type")] CategoryType Type,
     [property: JsonPropertyName("productCount")] int ProductCount,
     [property: JsonPropertyName("createdAt")] DateTime CreatedAt,
     [property: JsonPropertyName("parentId")] int? ParentId = null,
@@ -30,6 +31,7 @@ public record CreateCategoryDto(
     [property: JsonPropertyName("descriptionAr")] string? DescriptionAr,
     [property: JsonPropertyName("descriptionEn")] string? DescriptionEn,
     [property: JsonPropertyName("imageUrl")] string? ImageUrl,
+    [property: JsonPropertyName("type")] CategoryType Type = CategoryType.Men,
     [property: JsonPropertyName("parentId")] int? ParentId = null
 );
 
@@ -149,6 +151,7 @@ public record CreateProductDto(
     [property: JsonPropertyName("brandId")] int? BrandId,
     [property: JsonPropertyName("categoryId")] int? CategoryId,
     [property: JsonPropertyName("isFeatured")] bool IsFeatured,
+    [property: JsonPropertyName("initialStock")] int? InitialStock = 0,
     [property: JsonPropertyName("variants")] List<CreateVariantDto>? Variants,
     [property: JsonPropertyName("reorderLevel")] int? ReorderLevel = 0,
     [property: JsonPropertyName("hasTax")] bool HasTax = true,

@@ -66,6 +66,11 @@ public class ProductsController : ControllerBase
         await _products.UpdateStockAsync(variantId, quantity) ? Ok() : NotFound();
 
     [Authorize(Roles = "Admin,Manager")]
+    [HttpPatch("{id}/stock")]
+    public async Task<IActionResult> UpdateProductStock(int id, [FromBody] int quantity) =>
+        await _products.UpdateProductStockAsync(id, quantity) ? Ok() : NotFound();
+
+    [Authorize(Roles = "Admin,Manager")]
     [HttpPost("{productId}/variants")]
     public async Task<IActionResult> AddVariant(int productId, [FromBody] CreateVariantDto dto) =>
         Ok(await _products.AddVariantAsync(productId, dto));

@@ -82,6 +82,7 @@ public class CategoryService : ICategoryService
             DescriptionAr = dto.DescriptionAr,
             DescriptionEn = dto.DescriptionEn,
             ImageUrl      = dto.ImageUrl,
+            Type          = dto.Type,
             ParentId      = dto.ParentId,
         };
         _db.Categories.Add(cat);
@@ -113,6 +114,7 @@ public class CategoryService : ICategoryService
         cat.DescriptionAr = dto.DescriptionAr;
         cat.DescriptionEn = dto.DescriptionEn;
         cat.ImageUrl      = dto.ImageUrl;
+        cat.Type          = dto.Type;
         cat.ParentId      = dto.ParentId;
         cat.UpdatedAt     = DateTime.UtcNow;
 
@@ -166,6 +168,7 @@ public class CategoryService : ICategoryService
             current.DescriptionEn,
             current.ImageUrl,
             current.IsActive,
+            current.Type,
             current.Products?.Count ?? 0,
             current.CreatedAt,
             current.ParentId,
@@ -183,6 +186,7 @@ public class CategoryService : ICategoryService
         return new CategoryDto(
             c.Id, c.NameAr, c.NameEn, c.DescriptionAr, c.DescriptionEn,
             c.ImageUrl, c.IsActive,
+            c.Type,
             c.Products?.Count ?? 0, c.CreatedAt,
             c.ParentId,
             c.Parent?.NameAr,
