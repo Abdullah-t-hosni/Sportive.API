@@ -152,7 +152,7 @@ public record CreateProductDto(
     [property: JsonPropertyName("categoryId")] int? CategoryId,
     [property: JsonPropertyName("isFeatured")] bool IsFeatured,
     [property: JsonPropertyName("initialStock")] int? InitialStock = 0,
-    [property: JsonPropertyName("variants")] List<CreateVariantDto>? Variants,
+    [property: JsonPropertyName("variants")] List<CreateVariantDto>? Variants = null,
     [property: JsonPropertyName("reorderLevel")] int? ReorderLevel = 0,
     [property: JsonPropertyName("hasTax")] bool HasTax = true,
     [property: JsonPropertyName("vatRate")] decimal? VatRate = null
