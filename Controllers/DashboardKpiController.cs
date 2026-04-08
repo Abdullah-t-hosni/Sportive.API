@@ -145,10 +145,11 @@ public class DashboardKpiController : ControllerBase
         // ── TOP PRODUCTS (أفضل 10 منتجات) ───────────
         var topProducts = await _db.OrderItems
             .Include(i => i.Order)
-            .Include(i => i.Product).ThenInclude(p => p.Images)
+            .Include(i => i.Product).ThenInclude(p => p!.Images)
             .Where(i => i.Order.Status != OrderStatus.Cancelled
-                     && i.Order.CreatedAt >= monthStart)
-            .GroupBy(i => new { i.ProductId, i.ProductNameAr, i.ProductNameEn })
+                     && i.Order.CreatedAt >= monthStart
+                     && i.ProductId.HasValue) // ✅ Added
+            .GroupBy(i => new { ProductId = i.ProductId!.Value, i.ProductNameAr, i.ProductNameEn })
             .Select(g => new {
                 g.Key.ProductId,
                 g.Key.ProductNameAr,

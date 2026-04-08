@@ -9,7 +9,7 @@ namespace Sportive.API.DTOs;
 // ========== CART ==========
 public record CartItemDto(
     int Id,
-    int ProductId,
+    int? ProductId,
     int? ProductVariantId,
     string ProductNameAr,
     string ProductNameEn,

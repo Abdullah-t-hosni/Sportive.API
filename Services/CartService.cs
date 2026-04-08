@@ -71,7 +71,7 @@ public class CartService : ICartService
 
     private async Task<List<CartItem>> GetCartItemsAsync(int customerId) =>
         await _db.CartItems
-            .Include(c => c.Product).ThenInclude(p => p.Images)
+            .Include(c => c.Product).ThenInclude(p => p!.Images)
             .Include(c => c.ProductVariant)
             .Where(c => c.CustomerId == customerId)
             .ToListAsync();
@@ -82,14 +82,14 @@ public class CartService : ICartService
 
         var dtos = items.Select(c =>
         {
-            var price = c.Product.DiscountPrice ?? c.Product.Price;
+            var price = c.Product?.DiscountPrice ?? c.Product?.Price ?? 0;
             if (c.ProductVariant?.PriceAdjustment.HasValue == true)
                 price += c.ProductVariant.PriceAdjustment!.Value;
 
             return new CartItemDto(
                 c.Id, c.ProductId, c.ProductVariantId,
-                c.Product.NameAr, c.Product.NameEn,
-                c.Product.Images.FirstOrDefault(i => i.IsMain)?.ImageUrl,
+                c.Product?.NameAr ?? "", c.Product?.NameEn ?? "",
+                c.Product?.Images.FirstOrDefault(i => i.IsMain)?.ImageUrl,
                 c.ProductVariant?.Size, c.ProductVariant?.Color, c.ProductVariant?.ColorAr,
                 c.Quantity, price, price * c.Quantity
             );

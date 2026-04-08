@@ -117,11 +117,11 @@ public class DashboardService : IDashboardService
 
         // Category Sales
         var catSales = await _db.OrderItems
-            .Include(i => i.Product).ThenInclude(p => p.Category)
+            .Include(i => i.Product).ThenInclude(p => p!.Category)
             .GroupBy(i => new { 
-                CategoryId = i.Product.Category != null ? (int?)i.Product.Category.Id : null, 
-                CategoryNameAr = i.Product.Category != null ? i.Product.Category.NameAr : "Category Missing", 
-                CategoryNameEn = i.Product.Category != null ? i.Product.Category.NameEn : "Category Missing" 
+                CategoryId = (i.Product != null && i.Product.Category != null) ? (int?)i.Product.Category.Id : null, 
+                CategoryNameAr = (i.Product != null && i.Product.Category != null) ? i.Product.Category.NameAr : "Category Missing", 
+                CategoryNameEn = (i.Product != null && i.Product.Category != null) ? i.Product.Category.NameEn : "Category Missing" 
             })
             .Select(g => new CategorySalesDto(
                 g.Key.CategoryId ?? 0, g.Key.CategoryNameAr, g.Key.CategoryNameEn,
@@ -134,7 +134,7 @@ public class DashboardService : IDashboardService
         var startDate = now.AddDays(-30);
         var orders = await _db.Orders
             .Where(o => o.CreatedAt >= startDate && o.Status != OrderStatus.Cancelled)
-            .Select(o => new { o.CreatedAt, o.TotalAmount })
+            .Select(o => new { o.CreatedAt, o.TotalAmount, o.Source }) // ✅ Added Source
             .ToListAsync();
 
         var newCustomers = await _db.Customers
@@ -191,7 +191,7 @@ public class DashboardService : IDashboardService
         csv.AppendLine("OrderNumber,Date,Customer,Email,Status,TotalAmount");
         foreach(var o in orders)
         {
-            csv.AppendLine($"{o.OrderNumber},{o.CreatedAt:yyyy-MM-dd HH:mm},{o.Customer.FullName},{o.Customer.Email},{o.Status},{o.TotalAmount}");
+            csv.AppendLine($"{o.OrderNumber},{o.CreatedAt:yyyy-MM-dd HH:mm},{o.Customer?.FullName},{o.Customer?.Email},{o.Status},{o.TotalAmount}");
         }
         return Encoding.UTF8.GetBytes(csv.ToString());
     }
@@ -267,7 +267,7 @@ public class DashboardService : IDashboardService
         // 4. Abandoned Carts
         var abandonedCartsRaw = await _db.CartItems
             .Include(c => c.Product)
-            .Select(c => new { c.CustomerId, c.Quantity, Price = c.Product.Price })
+            .Select(c => new { c.CustomerId, c.Quantity, Price = c.Product != null ? c.Product.Price : 0 })
             .GroupBy(c => c.CustomerId)
             .Select(g => new { 
                 ItemCount = g.Sum(c => c.Quantity),
@@ -429,10 +429,11 @@ public class DashboardService : IDashboardService
         // ── TOP PRODUCTS (أفضل 10 منتجات) ───────────
         var topProducts = await _db.OrderItems
             .Include(i => i.Order)
-            .Include(i => i.Product).ThenInclude(p => p.Images)
+            .Include(i => i.Product).ThenInclude(p => p!.Images)
             .Where(i => i.Order.Status != OrderStatus.Cancelled
-                     && i.Order.CreatedAt >= monthStart)
-            .GroupBy(i => new { i.ProductId, i.ProductNameAr, i.ProductNameEn })
+                     && i.Order.CreatedAt >= monthStart
+                     && i.ProductId.HasValue) // ✅ Added
+            .GroupBy(i => new { ProductId = i.ProductId!.Value, i.ProductNameAr, i.ProductNameEn })
             .Select(g => new {
                 g.Key.ProductId,
                 g.Key.ProductNameAr,
@@ -551,7 +552,7 @@ public class DashboardService : IDashboardService
             topProducts = topProducts.Select(p => new {
                 p.ProductId, p.ProductNameAr, p.ProductNameEn,
                 p.TotalSold, p.TotalRevenue, p.OrderCount,
-                image = images.GetValueOrDefault(p.ProductId),
+                image = images.GetValueOrDefault(p.ProductId), // Works now if ProductId is forced to int above
             }),
 
             // مخطط المبيعات
@@ -598,8 +599,11 @@ public class DashboardService : IDashboardService
 
     public async Task<List<TopProductDto>> GetTopProductsAsync(int count = 10)
     {
-        var items = await _db.OrderItems.Include(i => i.Product).ThenInclude(p => p.Images)
-            .Select(i => new { i.ProductId, i.ProductNameAr, i.ProductNameEn, i.Quantity, i.TotalPrice, MainImage = i.Product.Images.Where(img => img.IsMain).Select(img => img.ImageUrl).FirstOrDefault() })
+        var items = await _db.OrderItems.Include(i => i.Product!).ThenInclude(p => p.Images)
+            .Select(i => new { 
+                i.ProductId, i.ProductNameAr, i.ProductNameEn, i.Quantity, i.TotalPrice, 
+                MainImage = i.Product != null ? i.Product.Images.Where(img => img.IsMain).Select(img => img.ImageUrl).FirstOrDefault() : null 
+            })
             .ToListAsync();
 
         return items.GroupBy(i => i.ProductId).Select(g => new TopProductDto(g.Key, g.First().ProductNameAr, g.First().ProductNameEn, g.First().MainImage, g.Sum(i => i.Quantity), g.Sum(i => i.TotalPrice))).OrderByDescending(x => x.TotalSold).Take(count).ToList();

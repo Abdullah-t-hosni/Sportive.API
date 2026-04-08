@@ -38,7 +38,7 @@ public record DailyMetricDto(DateTime Date, decimal Revenue, int Orders, int New
 public record SalesChartDto(string Label, decimal Amount, int OrderCount);
 
 public record TopProductDto(
-    int ProductId,
+    int? ProductId,
     string NameAr,
     string NameEn,
     string? ImageUrl,
@@ -61,7 +61,7 @@ public record AdvancedDashboardStatsDto(
 public record StaffPerformanceDto(string StaffId, string StaffName, int OrderCount, decimal TotalSales);
 public record LocationStatDto(string Name, int OrderCount, decimal TotalRevenue);
 public record VipCustomerDto(int Id, string Name, string Email, decimal TotalSpent, int OrderCount);
-public record InventoryIntelligenceDto(int ProductId, string Name, int Stock, double AvgDailySales, int? DaysRemaining);
+public record InventoryIntelligenceDto(int? ProductId, string Name, int Stock, double AvgDailySales, int? DaysRemaining);
 public record AbandonedCartDto(int Count, int TotalItems, decimal PotentialRevenue);
 public record PaymentMethodStatDto(string Method, int Count, decimal Revenue);
 public record AdminActivityDto(string AdminName, string Action, string Target, DateTime Date);

@@ -96,7 +96,7 @@ public class OrderService : IOrderService
             .Include(o => o.Customer)
             .Include(o => o.DeliveryAddress)
             .Include(o => o.Items)
-                .ThenInclude(i => i.Product)
+                .ThenInclude(i => i.Product!)
                     .ThenInclude(p => p.Images)
             .Include(o => o.StatusHistory)
             .FirstOrDefaultAsync(o => o.Id == id);
@@ -172,7 +172,7 @@ public class OrderService : IOrderService
         Order? order = null;
 
         var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        var result = await strategy.ExecuteAsync(async () =>
         {
             await using var tx = await _db.Database.BeginTransactionAsync();
             try
@@ -298,7 +298,7 @@ public class OrderService : IOrderService
                 }
                 else
                 {
-                    var cartItems = await _db.CartItems.Include(c => c.Product).ThenInclude(p => p.Variants)
+                    var cartItems = await _db.CartItems.Include(c => c.Product).ThenInclude(p => p!.Variants)
                         .Include(c => c.ProductVariant)
                         .Where(c => c.CustomerId == customerId.Value).ToListAsync();
                     
@@ -306,13 +306,14 @@ public class OrderService : IOrderService
 
                     foreach (var ci in cartItems)
                     {
-                        var availableStock = ci.ProductVariant?.StockQuantity ?? ci.Product.TotalStock;
-                        if (ci.Quantity > availableStock)
-                        {
-                            throw new ArgumentException($"الكمية المطلوبة ({ci.Quantity}) من {ci.Product.NameAr} غير متاحة في المخزون حالياً.");
-                        }
+                    if (ci.Product == null) continue;
+                    var availableStock = ci.ProductVariant?.StockQuantity ?? ci.Product.TotalStock;
+                    if (ci.Quantity > availableStock)
+                    {
+                        throw new ArgumentException($"الكمية المطلوبة ({ci.Quantity}) من {ci.Product.NameAr} غير متاحة في المخزون حالياً.");
+                    }
 
-                        var unitPrice = ci.Product.DiscountPrice ?? (ci.Product.Price + (ci.ProductVariant?.PriceAdjustment ?? 0));
+                    var unitPrice = ci.Product.DiscountPrice ?? (ci.Product.Price + (ci.ProductVariant?.PriceAdjustment ?? 0));
 
                         var orderItem = new OrderItem
                         {
@@ -364,19 +365,15 @@ public class OrderService : IOrderService
                 _db.Orders.Add(order);
                 order.StatusHistory.Add(new OrderStatusHistory { Status = order.Status, CreatedAt = DateTime.UtcNow, Note = "Order Created." });
 
-                await _db.SaveChangesAsync();
                 await tx.CommitAsync();
+                return (await GetOrderByIdAsync(order.Id))!;
             }
-            catch
-            {
-                await tx.RollbackAsync();
-                throw;
-            }
+            catch { await tx.RollbackAsync(); throw; }
         });
 
         _ = Task.Run(async () =>
         {
-            if (order.Source == OrderSource.POS) return; // ✅ Delegation: POS accounting is handled by Frontend for better precision
+            if (order == null || order.Source == OrderSource.POS) return;
 
             using var scope = _scopeFactory.CreateScope();
             var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
@@ -406,6 +403,7 @@ public class OrderService : IOrderService
             var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+            if (order == null) return;
             var customerInner = await db.Customers.FindAsync(order.CustomerId);
             if (customerInner != null && !string.IsNullOrEmpty(customerInner.AppUserId))
             {
@@ -435,7 +433,7 @@ public class OrderService : IOrderService
             } catch { }
         });
 
-        return (await GetOrderByIdAsync(order.Id))!;
+        return result;
     }
 
     public async Task<OrderDetailDto> UpdateOrderStatusAsync(int orderId, UpdateOrderStatusDto dto, string updatedByUserId)
@@ -529,7 +527,7 @@ public class OrderService : IOrderService
         decimal refundAmount = 0;
 
         var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        var result = await strategy.ExecuteAsync(async () =>
         {
             await using var tx = await _db.Database.BeginTransactionAsync();
             try
@@ -621,12 +619,9 @@ public class OrderService : IOrderService
 
                 await _db.SaveChangesAsync();
                 await tx.CommitAsync();
+                return (await GetOrderByIdAsync(orderId))!;
             }
-            catch
-            {
-                await tx.RollbackAsync();
-                throw;
-            }
+            catch { await tx.RollbackAsync(); throw; }
         });
 
         // 6. Post Accounting
@@ -645,7 +640,7 @@ public class OrderService : IOrderService
             }
         });
 
-        return (await GetOrderByIdAsync(orderId))!;
+        return result;
     }
 
     public async Task<string> GenerateOrderNumberAsync(OrderSource source = OrderSource.Website)

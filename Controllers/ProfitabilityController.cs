@@ -34,16 +34,16 @@ public class ProfitabilityController : ControllerBase
         var itemsQ = _db.OrderItems
             .Include(i => i.Order)
             .Include(i => i.Product)
-                .ThenInclude(p => p.Category)
+                .ThenInclude(p => p!.Category)
             .Include(i => i.Product)
-                .ThenInclude(p => p.Images.Where(img => img.IsMain))
+                .ThenInclude(p => p!.Images.Where(img => img.IsMain))
             .Where(i => i.Order.Status != OrderStatus.Cancelled
                      && i.Order.Status != OrderStatus.Returned
                      && i.Order.CreatedAt >= from
                      && i.Order.CreatedAt <= to);
 
         if (categoryId.HasValue)
-            itemsQ = itemsQ.Where(i => i.Product.CategoryId == categoryId.Value);
+            itemsQ = itemsQ.Where(i => i.Product != null && i.Product.CategoryId == categoryId.Value);
 
         var items = await itemsQ.ToListAsync();
 
@@ -57,10 +57,14 @@ public class ProfitabilityController : ControllerBase
 
         // ── تجميع حسب المنتج ──────────────────────────
         var grouped = items
-            .GroupBy(i => i.ProductId)
+            .Where(i => i.ProductId.HasValue) // ✅ Ensure ProductId is not null
+            .GroupBy(i => i.ProductId!.Value) // Now we have int
             .Select(g =>
             {
-                var product      = g.First().Product;
+                var firstItem    = g.First();
+                var product      = firstItem.Product;
+                if (product == null) return null; // Should be filtered but safety first
+
                 var mainImage    = product.Images.FirstOrDefault()?.ImageUrl;
                 var unitsSold    = g.Sum(i => i.Quantity);
                 var grossRevenue = g.Sum(i => i.TotalPrice);
@@ -110,6 +114,8 @@ public class ProfitabilityController : ControllerBase
                     OrderCount:       g.Select(i => i.OrderId).Distinct().Count()
                 );
             })
+            .Where(x => x != null)
+            .Cast<ProductProfitRow>()
             .ToList();
 
         // فلتر المنتجات اللي عندها cost
@@ -171,11 +177,12 @@ public class ProfitabilityController : ControllerBase
             .Where(i => i.Order.Status != OrderStatus.Cancelled
                      && i.Order.Status != OrderStatus.Returned
                      && i.Order.CreatedAt >= from && i.Order.CreatedAt <= to
-                     && i.Product.CostPrice != null)
+                     && i.ProductId.HasValue // ✅ Added
+                     && i.Product != null && i.Product.CostPrice != null)
             .ToListAsync();
 
         var totalRevenue = items.Sum(i => i.TotalPrice);
-        var totalCost    = items.Sum(i => (i.Product.CostPrice ?? 0) * i.Quantity);
+        var totalCost    = items.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity);
         var totalProfit  = totalRevenue - totalCost;
         var margin       = totalRevenue > 0 ? Math.Round(totalProfit / totalRevenue * 100, 1) : 0;
 

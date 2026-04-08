@@ -616,10 +616,10 @@ public class OperationalReportsController : ControllerBase
                     0,
                     i.Quantity,
                     i.TotalPrice,
-                    i.Product.NameAr,
+                    i.Product != null ? i.Product.NameAr : "Deleted Product",
                     i.Order.Source.ToString(),
                     i.Order.Status.ToString(),
-                    i.Product.SKU,
+                    i.Product != null ? i.Product.SKU : "N/A",
                     0))
                 .ToListAsync();
 
@@ -641,10 +641,10 @@ public class OperationalReportsController : ControllerBase
                     i.Quantity,
                     0,
                     i.TotalPrice,
-                    i.Product.NameAr,
+                    i.Product != null ? i.Product.NameAr : "Deleted Product",
                     i.Order.Source.ToString(),
                     i.Order.Status.ToString(),
-                    i.Product.SKU,
+                    i.Product != null ? i.Product.SKU : "N/A",
                     0))
                 .ToListAsync();
 
