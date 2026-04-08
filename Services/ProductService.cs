@@ -344,6 +344,17 @@ public class ProductService : IProductService
             {
                 product.TotalStock = product.Variants.Sum(v => v.StockQuantity);
             }
+            
+            // 💡 AUTO-STATUS: Sync status with stock levels
+            if (product.Status == ProductStatus.Active && product.TotalStock <= 0)
+            {
+                product.Status = ProductStatus.OutOfStock;
+            }
+            else if (product.Status == ProductStatus.OutOfStock && product.TotalStock > 0)
+            {
+                product.Status = ProductStatus.Active;
+            }
+
             product.UpdatedAt = DateTime.UtcNow;
         }
     }
