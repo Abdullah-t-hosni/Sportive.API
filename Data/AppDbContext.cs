@@ -132,6 +132,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.TotalVatAmount).HasPrecision(18, 2);
             e.Property(x => x.DiscountAmount).HasPrecision(18, 2);
             e.Property(x => x.DeliveryFee).HasPrecision(18, 2);
+            e.Property(x => x.PaidAmount).HasPrecision(18, 2);
             e.HasIndex(x => x.OrderNumber).IsUnique();
             e.HasOne(x => x.Customer).WithMany(c => c.Orders)
              .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);

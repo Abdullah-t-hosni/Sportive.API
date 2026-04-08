@@ -92,8 +92,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate   ?? DateTime.UtcNow;
+        var from = fromDate?.Date ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
 
         var balances = await GetBalances(from, to);
         var rows = balances
@@ -130,8 +130,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate   ?? DateTime.UtcNow;
+        var from = fromDate?.Date ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
 
         var balances = await GetBalances(from, to);
 
@@ -237,8 +237,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] string?   search    = null,
         [FromQuery] bool      excel     = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate   ?? DateTime.UtcNow;
+        var from = fromDate?.Date ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
 
         var q = _db.JournalLines
             .Include(l => l.JournalEntry)
@@ -246,6 +246,13 @@ public class FinancialReportsController : ControllerBase
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to);
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            q = q.Where(l => (l.Description != null && l.Description.Contains(search))
+                          || (l.JournalEntry.Description != null && l.JournalEntry.Description.Contains(search))
+                          || (l.JournalEntry.Reference != null && l.JournalEntry.Reference.Contains(search)));
+        }
 
         if (accountId.HasValue)
             q = q.Where(l => l.AccountId == accountId.Value);
@@ -326,10 +333,11 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] int       accountId,
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate   = null,
+        [FromQuery] string?   search   = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate   ?? DateTime.UtcNow;
+        var from = fromDate?.Date ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
 
         var acct = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == accountId);
         if (acct == null) return NotFound(new { message = "الحساب غير موجود" });
@@ -347,13 +355,21 @@ public class FinancialReportsController : ControllerBase
         var openBal = acct.Nature == AccountNature.Debit ? openDr - openCr : openCr - openDr;
 
         // حركات الفترة
-        var periodLines = await _db.JournalLines
+        var q = _db.JournalLines
             .Include(l => l.JournalEntry)
             .Where(l => l.AccountId == accountId
                      && l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
-                     && l.JournalEntry.EntryDate <= to)
-            .OrderBy(l => l.JournalEntry.EntryDate).ThenBy(l => l.JournalEntry.Id)
+                     && l.JournalEntry.EntryDate <= to);
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            q = q.Where(l => (l.Description != null && l.Description.Contains(search))
+                          || (l.JournalEntry.Description != null && l.JournalEntry.Description.Contains(search))
+                          || (l.JournalEntry.Reference != null && l.JournalEntry.Reference.Contains(search)));
+        }
+
+        var periodLines = await q.OrderBy(l => l.JournalEntry.EntryDate).ThenBy(l => l.JournalEntry.Id)
             .ToListAsync();
 
         var runBal = openBal;
@@ -395,8 +411,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate   ?? DateTime.UtcNow;
+        var from = fromDate?.Date ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
 
         // حسابات النقدية (كل ما يبدأ بـ 11)
         var cashAccounts = await _db.Accounts

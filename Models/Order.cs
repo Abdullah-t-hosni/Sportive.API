@@ -81,6 +81,10 @@ public class Order : BaseEntity
     public string? AttachmentUrl { get; set; }
     public string? AttachmentPublicId { get; set; }
     
+    // Payment Progress
+    public decimal PaidAmount { get; set; } = 0;
+    public decimal RemainingAmount => TotalAmount - PaidAmount;
+    
     // Target Tracking
     public string? SalesPersonId { get; set; } // The ID of the employee who made the sale using POS
 
