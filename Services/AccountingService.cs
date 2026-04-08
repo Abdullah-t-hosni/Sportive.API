@@ -182,7 +182,10 @@ public class AccountingService : IAccountingService
                     using var doc = System.Text.Json.JsonDocument.Parse(note);
                     if (doc.RootElement.TryGetProperty("mixed", out var mixedProps)) {
                         foreach (var prop in mixedProps.EnumerateObject()) {
-                            var m = prop.Name.ToLower() switch {
+                            var pm = prop.Name.ToLower();
+                            if (pm == "credit") continue; // Debt stays as balance
+
+                            var m = pm switch {
                                 "cash" => PaymentMethod.Cash,
                                 "bank" => PaymentMethod.Bank,
                                 "vodafone" => PaymentMethod.Vodafone,
@@ -855,14 +858,16 @@ public class AccountingService : IAccountingService
         {
             if (debit == 0 && credit == 0) continue;
             var accountId = await GetAccountIdAsync(code);
+            var actualAccount = await _db.Accounts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == accountId);
+            var realCode = actualAccount?.Code ?? "";
 
             // ⚠️ STRICT ENTITY ROUTING (User Preference):
             // We only attach entity IDs (CustomerId/SupplierId) to their specific trade accounts.
             // Customers -> Receivables (starts with 1103)
             // Suppliers -> Payables (starts with 2101)
             // This ensures clean ledgers for Revenue, Expenses, and Cash accounts.
-            bool isReceivables = code.StartsWith("1103");
-            bool isPayables = code.StartsWith("2101");
+            bool isReceivables = realCode.StartsWith("1103");
+            bool isPayables = realCode.StartsWith("2101");
 
             entry.Lines.Add(new JournalLine
             {

@@ -219,7 +219,7 @@ public class OrderService : IOrderService
                     Status = actualSource == OrderSource.POS ? OrderStatus.Delivered : OrderStatus.Pending,
                     FulfillmentType = dto.FulfillmentType,
                     PaymentMethod = dto.PaymentMethod,
-                    PaymentStatus = (actualSource == OrderSource.POS && dto.PaymentMethod != PaymentMethod.Credit) ? PaymentStatus.Paid : PaymentStatus.Pending,
+                    PaymentStatus = (actualSource == OrderSource.POS && (dto.PaymentMethod != PaymentMethod.Credit && dto.PaymentMethod != (PaymentMethod)7)) ? PaymentStatus.Paid : PaymentStatus.Pending,
                     DeliveryAddressId = (dto.DeliveryAddressId.HasValue && dto.DeliveryAddressId.Value > 0) 
                                         ? (await _db.Addresses.AnyAsync(a => a.Id == dto.DeliveryAddressId.Value && a.CustomerId == customerId.Value) ? dto.DeliveryAddressId : null) 
                                         : null,
@@ -374,7 +374,7 @@ public class OrderService : IOrderService
 
         _ = Task.Run(async () =>
         {
-            if (order == null || order.Source == OrderSource.POS) return;
+            if (order == null) return;
 
             using var scope = _scopeFactory.CreateScope();
             var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
