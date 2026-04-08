@@ -327,6 +327,49 @@ public class ReceiptVouchersController : ControllerBase
         return Ok(voucher);
     }
 
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateReceiptVoucherDto dto)
+    {
+        var voucher = await _db.ReceiptVouchers.Include(v => v.FromAccount).FirstOrDefaultAsync(v => v.Id == id);
+        if (voucher == null) return NotFound();
+
+        // Check if there's a posted journal entry
+        var entry = await _db.JournalEntries.Include(e => e.Lines)
+            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber);
+        
+        if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
+            return BadRequest("لا يمكن تعديل سند مرحّل إلا من خلال الإدارة.");
+
+        // 1. Update Voucher Data
+        voucher.VoucherDate = dto.VoucherDate;
+        voucher.Amount = dto.Amount;
+        voucher.CashAccountId = dto.CashAccountId;
+        voucher.FromAccountId = dto.FromAccountId;
+        voucher.CustomerId = dto.CustomerId;
+        voucher.PaymentMethod = dto.PaymentMethod;
+        voucher.Reference = dto.Reference;
+        voucher.Description = dto.Description;
+        voucher.AttachmentUrl = dto.AttachmentUrl;
+        voucher.AttachmentPublicId = dto.AttachmentPublicId;
+        voucher.UpdatedAt = DateTime.UtcNow;
+
+        // 2. Synchronize Journal Entry
+        if (entry != null)
+        {
+            entry.EntryDate = voucher.VoucherDate;
+            entry.Description = voucher.Description;
+            entry.UpdatedAt = DateTime.UtcNow;
+
+            // Rebuild lines to reflect new accounts/amounts
+            _db.JournalLines.RemoveRange(entry.Lines);
+            entry.Lines.Add(new JournalLine { AccountId = voucher.CashAccountId, Debit = voucher.Amount, Credit = 0, Description = $"[تحديث] {voucher.VoucherNumber} - {voucher.Description}" });
+            entry.Lines.Add(new JournalLine { AccountId = voucher.FromAccountId, Debit = 0, Credit = voucher.Amount, Description = $"[تحديث] من ح/ {voucher.FromAccount?.NameAr} - {voucher.VoucherNumber}" });
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(voucher);
+    }
+
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
@@ -400,6 +443,47 @@ public class PaymentVouchersController : ControllerBase
 
         // ترحيل تلقائي للمحاسبة
         await _accounting.PostPaymentVoucherAsync(voucher);
+        return Ok(voucher);
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdatePaymentVoucherDto dto)
+    {
+        var voucher = await _db.PaymentVouchers.Include(v => v.CashAccount).FirstOrDefaultAsync(v => v.Id == id);
+        if (voucher == null) return NotFound();
+
+        var entry = await _db.JournalEntries.Include(e => e.Lines)
+            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == voucher.VoucherNumber);
+        
+        if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
+            return BadRequest("لا يمكن تعديل سند مرحّل إلا من خلال الإدارة.");
+
+        // 1. Update Voucher
+        voucher.VoucherDate = dto.VoucherDate;
+        voucher.Amount = dto.Amount;
+        voucher.CashAccountId = dto.CashAccountId;
+        voucher.ToAccountId = dto.ToAccountId;
+        voucher.SupplierId = dto.SupplierId;
+        voucher.PaymentMethod = dto.PaymentMethod;
+        voucher.Reference = dto.Reference;
+        voucher.Description = dto.Description;
+        voucher.AttachmentUrl = dto.AttachmentUrl;
+        voucher.AttachmentPublicId = dto.AttachmentPublicId;
+        voucher.UpdatedAt = DateTime.UtcNow;
+
+        // 2. Sync Ledger
+        if (entry != null)
+        {
+            entry.EntryDate = voucher.VoucherDate;
+            entry.Description = voucher.Description;
+            entry.UpdatedAt = DateTime.UtcNow;
+
+            _db.JournalLines.RemoveRange(entry.Lines);
+            entry.Lines.Add(new JournalLine { AccountId = voucher.ToAccountId, Debit = voucher.Amount, Credit = 0, Description = $"[تحديث] {voucher.VoucherNumber} - {voucher.Description}" });
+            entry.Lines.Add(new JournalLine { AccountId = voucher.CashAccountId, Debit = 0, Credit = voucher.Amount, Description = $"[تحديث] من ح/ {voucher.CashAccount?.NameAr} - {voucher.VoucherNumber}" });
+        }
+
+        await _db.SaveChangesAsync();
         return Ok(voucher);
     }
 
