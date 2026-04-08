@@ -171,209 +171,208 @@ public class OrderService : IOrderService
 
         Order? order = null;
 
-        await using var tx = await _db.Database.BeginTransactionAsync();
-        try
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
-        // 1. Handle Customer
-        if (!customerId.HasValue)
-        {
-            var phone = string.IsNullOrEmpty(dto.CustomerPhone) ? "0000000000" : dto.CustomerPhone;
-            var existing = await _db.Customers.FirstOrDefaultAsync(c => c.Phone == phone);
-
-            if (existing != null)
+            await using var tx = await _db.Database.BeginTransactionAsync();
+            try
             {
-                customerId = existing.Id;
-            }
-            else
-            {
-                var c = new Customer
+                // 1. Handle Customer
+                if (!customerId.HasValue)
                 {
-                    FullName = dto.CustomerName ?? "Walk-in Customer",
-                    Phone = phone,
-                    Email = $"{phone}@pos.sportive.com",
-                    CreatedAt = DateTime.UtcNow,
-                    IsActive = true
+                    var phone = string.IsNullOrEmpty(dto.CustomerPhone) ? "0000000000" : dto.CustomerPhone;
+                    var existing = await _db.Customers.FirstOrDefaultAsync(c => c.Phone == phone);
+
+                    if (existing != null)
+                    {
+                        customerId = existing.Id;
+                    }
+                    else
+                    {
+                        var c = new Customer
+                        {
+                            FullName = dto.CustomerName ?? "Walk-in Customer",
+                            Phone = phone,
+                            Email = $"{phone}@pos.sportive.com",
+                            CreatedAt = DateTime.UtcNow,
+                            IsActive = true
+                        };
+                        _db.Customers.Add(c);
+                        await _db.SaveChangesAsync();
+                        await _customerService.EnsureCustomerAccountAsync(c.Id);
+                        customerId = c.Id;
+                    }
+                }
+
+                if (!customerId.HasValue) throw new ArgumentException("Customer identification required.");
+
+                if (dto.Source == OrderSource.POS && string.IsNullOrEmpty(dto.SalesPersonId))
+                {
+                    throw new ArgumentException("معرف البائع مطلوب لعمليات الـ POS");
+                }
+
+                var actualSource = (int)dto.Source == 0 ? OrderSource.Website : dto.Source;
+                order = new Order
+                {
+                    CustomerId = customerId.Value,
+                    OrderNumber = await GenerateOrderNumberAsync(actualSource),
+                    Status = actualSource == OrderSource.POS ? OrderStatus.Delivered : OrderStatus.Pending,
+                    FulfillmentType = dto.FulfillmentType,
+                    PaymentMethod = dto.PaymentMethod,
+                    PaymentStatus = (actualSource == OrderSource.POS && dto.PaymentMethod != PaymentMethod.Credit) ? PaymentStatus.Paid : PaymentStatus.Pending,
+                    DeliveryAddressId = (dto.DeliveryAddressId.HasValue && dto.DeliveryAddressId.Value > 0) 
+                                        ? (await _db.Addresses.AnyAsync(a => a.Id == dto.DeliveryAddressId.Value && a.CustomerId == customerId.Value) ? dto.DeliveryAddressId : null) 
+                                        : null,
+                    PickupScheduledAt = dto.PickupScheduledAt,
+                    CustomerNotes = dto.CustomerNotes,
+                    CouponCode = dto.CouponCode,
+                    SalesPersonId = dto.SalesPersonId,
+                    Source = actualSource,
+                    AdminNotes = dto.Note,
+                    DiscountAmount = dto.DiscountAmount ?? 0,
+                    CreatedAt = DateTime.UtcNow
                 };
-                _db.Customers.Add(c);
+
+                // 3. Handle Items
+                if (dto.Items != null && dto.Items.Any())
+                {
+                    foreach (var item in dto.Items)
+                    {
+                        var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == item.ProductId);
+                        if (product == null) continue;
+
+                        var variant = item.ProductVariantId.HasValue 
+                            ? product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId)
+                            : null;
+
+                        var unitPrice = (actualSource == OrderSource.POS) 
+                            ? item.UnitPrice 
+                            : (product.DiscountPrice ?? (product.Price + (variant?.PriceAdjustment ?? 0)));
+                        
+                        var orderItem = new OrderItem
+                        {
+                            ProductId = item.ProductId,
+                            ProductVariantId = item.ProductVariantId,
+                            ProductNameAr = product.NameAr,
+                            ProductNameEn = product.NameEn,
+                            Size = variant?.Size,
+                            Color = variant?.Color,
+                            Quantity = item.Quantity,
+                            UnitPrice = unitPrice,
+                            TotalPrice = (actualSource == OrderSource.POS) ? item.TotalPrice : (unitPrice * item.Quantity),
+                            HasTax = item.HasTax ?? product.HasTax,
+                            VatRateApplied = item.VatRate ?? product.VatRate ?? (store?.VatRatePercent ?? 14),
+                            CreatedAt = DateTime.UtcNow
+                        };
+
+                        if (orderItem.HasTax)
+                        {
+                            var rate = (orderItem.VatRateApplied ?? 14) / 100m;
+                            decimal net = Math.Round(orderItem.TotalPrice / (1 + rate), 2);
+                            orderItem.ItemVatAmount = orderItem.TotalPrice - net;
+                            order.TotalVatAmount += orderItem.ItemVatAmount;
+                        }
+
+                        var availableStock = variant?.StockQuantity ?? (product.TotalStock);
+                        if (item.Quantity > availableStock)
+                        {
+                            throw new ArgumentException(
+                                actualSource == OrderSource.POS
+                                ? $"الكمية المطلوبة ({item.Quantity}) من {product.NameAr} غير متاحة في المخزون (المتاح: {availableStock})"
+                                : $"Requested quantity for {product.NameAr} is not available in stock.");
+                        }
+
+                        order.Items.Add(orderItem);
+                        order.SubTotal += orderItem.TotalPrice;
+
+                        await _inventory.LogMovementAsync(
+                            InventoryMovementType.Sale,
+                            -item.Quantity,
+                            item.ProductId,
+                            item.ProductVariantId,
+                            order.OrderNumber,
+                            "Order created",
+                            order.SalesPersonId
+                        );
+                    }
+                }
+                else
+                {
+                    var cartItems = await _db.CartItems.Include(c => c.Product).ThenInclude(p => p.Variants)
+                        .Include(c => c.ProductVariant)
+                        .Where(c => c.CustomerId == customerId.Value).ToListAsync();
+                    
+                    if (!cartItems.Any()) throw new ArgumentException("Cart is empty.");
+
+                    foreach (var ci in cartItems)
+                    {
+                        var availableStock = ci.ProductVariant?.StockQuantity ?? ci.Product.TotalStock;
+                        if (ci.Quantity > availableStock)
+                        {
+                            throw new ArgumentException($"الكمية المطلوبة ({ci.Quantity}) من {ci.Product.NameAr} غير متاحة في المخزون حالياً.");
+                        }
+
+                        var unitPrice = ci.Product.DiscountPrice ?? (ci.Product.Price + (ci.ProductVariant?.PriceAdjustment ?? 0));
+
+                        var orderItem = new OrderItem
+                        {
+                            ProductId = ci.ProductId,
+                            ProductVariantId = ci.ProductVariantId,
+                            ProductNameAr = ci.Product.NameAr,
+                            ProductNameEn = ci.Product.NameEn,
+                            Size = ci.ProductVariant?.Size,
+                            Color = ci.ProductVariant?.Color,
+                            Quantity = ci.Quantity,
+                            UnitPrice = unitPrice,
+                            TotalPrice = unitPrice * ci.Quantity,
+                            HasTax = ci.Product.HasTax,
+                            VatRateApplied = ci.Product.VatRate ?? (store?.VatRatePercent ?? 14),
+                            CreatedAt = DateTime.UtcNow
+                        };
+
+                        if (orderItem.HasTax)
+                        {
+                            var rate = (orderItem.VatRateApplied ?? 14) / 100m;
+                            decimal net = Math.Round(orderItem.TotalPrice / (1 + rate), 2);
+                            orderItem.ItemVatAmount = orderItem.TotalPrice - net;
+                            order.TotalVatAmount += orderItem.ItemVatAmount;
+                        }
+
+                        order.Items.Add(orderItem);
+                        order.SubTotal += orderItem.TotalPrice;
+
+                        await _inventory.LogMovementAsync(
+                            InventoryMovementType.Sale,
+                            -ci.Quantity,
+                            ci.ProductId,
+                            ci.ProductVariantId,
+                            order.OrderNumber,
+                            "Website Order created",
+                            null
+                        );
+                        
+                        _db.CartItems.Remove(ci);
+                    }
+                }
+
+                if (order.Source == OrderSource.Website && order.FulfillmentType == FulfillmentType.Delivery)
+                {
+                    order.DeliveryFee = (order.SubTotal >= (store?.FreeDeliveryAt ?? 2000)) ? 0 : (store?.FixedDeliveryFee ?? 50);
+                }
+
+                order.TotalAmount = order.SubTotal + order.DeliveryFee - order.DiscountAmount;
+                _db.Orders.Add(order);
+                order.StatusHistory.Add(new OrderStatusHistory { Status = order.Status, CreatedAt = DateTime.UtcNow, Note = "Order Created." });
+
                 await _db.SaveChangesAsync();
-                await _customerService.EnsureCustomerAccountAsync(c.Id);
-                customerId = c.Id;
+                await tx.CommitAsync();
             }
-        }
-
-        if (!customerId.HasValue) throw new ArgumentException("Customer identification required.");
-
-        if (dto.Source == OrderSource.POS && string.IsNullOrEmpty(dto.SalesPersonId))
-        {
-            throw new ArgumentException("معرف البائع مطلوب لعمليات الـ POS");
-        }
-
-        var actualSource = (int)dto.Source == 0 ? OrderSource.Website : dto.Source;
-        order = new Order
-        {
-            CustomerId = customerId.Value,
-            OrderNumber = await GenerateOrderNumberAsync(actualSource),
-            Status = actualSource == OrderSource.POS ? OrderStatus.Delivered : OrderStatus.Pending,
-            FulfillmentType = dto.FulfillmentType,
-            PaymentMethod = dto.PaymentMethod,
-            PaymentStatus = (actualSource == OrderSource.POS && dto.PaymentMethod != PaymentMethod.Credit) ? PaymentStatus.Paid : PaymentStatus.Pending,
-            DeliveryAddressId = (dto.DeliveryAddressId.HasValue && dto.DeliveryAddressId.Value > 0) 
-                                ? (await _db.Addresses.AnyAsync(a => a.Id == dto.DeliveryAddressId.Value && a.CustomerId == customerId.Value) ? dto.DeliveryAddressId : null) 
-                                : null,
-            PickupScheduledAt = dto.PickupScheduledAt,
-            CustomerNotes = dto.CustomerNotes,
-            CouponCode = dto.CouponCode,
-            SalesPersonId = dto.SalesPersonId,
-            Source = actualSource,
-            AdminNotes = dto.Note,
-            DiscountAmount = dto.DiscountAmount ?? 0,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        // 3. Handle Items
-        if (dto.Items != null && dto.Items.Any())
-        {
-            foreach (var item in dto.Items)
+            catch
             {
-                var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == item.ProductId);
-                if (product == null) continue;
-
-                var variant = item.ProductVariantId.HasValue 
-                    ? product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId)
-                    : null;
-
-                // For POS, we trust the price sent by the cashier (which may include manual discounts)
-                var unitPrice = (actualSource == OrderSource.POS) 
-                    ? item.UnitPrice 
-                    : (product.DiscountPrice ?? (product.Price + (variant?.PriceAdjustment ?? 0)));
-                
-                var orderItem = new OrderItem
-                {
-                    ProductId = item.ProductId,
-                    ProductVariantId = item.ProductVariantId,
-                    ProductNameAr = product.NameAr,
-                    ProductNameEn = product.NameEn,
-                    Size = variant?.Size,
-                    Color = variant?.Color,
-                    Quantity = item.Quantity,
-                    UnitPrice = unitPrice,
-                    TotalPrice = (actualSource == OrderSource.POS) ? item.TotalPrice : (unitPrice * item.Quantity),
-                    HasTax = item.HasTax ?? product.HasTax,
-                    VatRateApplied = item.VatRate ?? product.VatRate ?? (store?.VatRatePercent ?? 14),
-                    CreatedAt = DateTime.UtcNow
-                };
-
-                if (orderItem.HasTax)
-                {
-                    var rate = (orderItem.VatRateApplied ?? 14) / 100m;
-                    decimal net = Math.Round(orderItem.TotalPrice / (1 + rate), 2);
-                    orderItem.ItemVatAmount = orderItem.TotalPrice - net;
-                    order.TotalVatAmount += orderItem.ItemVatAmount;
-                }
-
-                // 🛑 STOCK VALIDATION
-                var availableStock = variant?.StockQuantity ?? product.TotalStock;
-                if (item.Quantity > availableStock)
-                {
-                    throw new ArgumentException(
-                        actualSource == OrderSource.POS
-                        ? $"الكمية المطلوبة ({item.Quantity}) من {product.NameAr} غير متاحة في المخزون (المتاح: {availableStock})"
-                        : $"Requested quantity for {product.NameAr} is not available in stock.");
-                }
-
-                order.Items.Add(orderItem);
-                order.SubTotal += orderItem.TotalPrice;
-
-                await _inventory.LogMovementAsync(
-                    InventoryMovementType.Sale,
-                    -item.Quantity,
-                    item.ProductId,
-                    item.ProductVariantId,
-                    order.OrderNumber,
-                    "Order created",
-                    order.SalesPersonId
-                );
+                await tx.RollbackAsync();
+                throw;
             }
-        }
-        else
-        {
-            var cartItems = await _db.CartItems.Include(c => c.Product).ThenInclude(p => p.Variants)
-                .Include(c => c.ProductVariant)
-                .Where(c => c.CustomerId == customerId.Value).ToListAsync();
-            
-            if (!cartItems.Any()) throw new ArgumentException("Cart is empty.");
-
-            foreach (var ci in cartItems)
-            {
-                // 🛑 STOCK VALIDATION (Website)
-                var availableStock = ci.ProductVariant?.StockQuantity ?? ci.Product.TotalStock;
-                if (ci.Quantity > availableStock)
-                {
-                    throw new ArgumentException($"الكمية المطلوبة ({ci.Quantity}) من {ci.Product.NameAr} غير متاحة في المخزون حالياً.");
-                }
-
-                var unitPrice = ci.Product.DiscountPrice ?? (ci.Product.Price + (ci.ProductVariant?.PriceAdjustment ?? 0));
-
-                var orderItem = new OrderItem
-                {
-                    ProductId = ci.ProductId,
-                    ProductVariantId = ci.ProductVariantId,
-                    ProductNameAr = ci.Product.NameAr,
-                    ProductNameEn = ci.Product.NameEn,
-                    Size = ci.ProductVariant?.Size,
-                    Color = ci.ProductVariant?.Color,
-                    Quantity = ci.Quantity,
-                    UnitPrice = unitPrice,
-                    TotalPrice = unitPrice * ci.Quantity,
-                    HasTax = ci.Product.HasTax,
-                    VatRateApplied = ci.Product.VatRate ?? (store?.VatRatePercent ?? 14),
-                    CreatedAt = DateTime.UtcNow
-                };
-
-                if (orderItem.HasTax)
-                {
-                    var rate = (orderItem.VatRateApplied ?? 14) / 100m;
-                    decimal net = Math.Round(orderItem.TotalPrice / (1 + rate), 2);
-                    orderItem.ItemVatAmount = orderItem.TotalPrice - net;
-                    order.TotalVatAmount += orderItem.ItemVatAmount;
-                }
-
-                order.Items.Add(orderItem);
-                order.SubTotal += orderItem.TotalPrice;
-
-                await _inventory.LogMovementAsync(
-                    InventoryMovementType.Sale,
-                    -ci.Quantity,
-                    ci.ProductId,
-                    ci.ProductVariantId,
-                    order.OrderNumber,
-                    "Website Order created",
-                    null
-                );
-                
-                _db.CartItems.Remove(ci);
-            }
-        }
-
-        // 4. Finalize Totals & Delivery (Website Specific)
-        if (order.Source == OrderSource.Website && order.FulfillmentType == FulfillmentType.Delivery)
-        {
-            // Fetch delivery fee from store settings
-            order.DeliveryFee = (order.SubTotal >= (store?.FreeDeliveryAt ?? 2000)) ? 0 : (store?.FixedDeliveryFee ?? 50);
-        }
-
-        order.TotalAmount = order.SubTotal + order.DeliveryFee - order.DiscountAmount;
-        _db.Orders.Add(order);
-        order.StatusHistory.Add(new OrderStatusHistory { Status = order.Status, CreatedAt = DateTime.UtcNow, Note = "Order Created." });
-
-        await _db.SaveChangesAsync();
-        await tx.CommitAsync();
-        }
-        catch
-        {
-            await tx.RollbackAsync();
-            throw;
-        }
+        });
 
         _ = Task.Run(async () =>
         {
@@ -529,102 +528,106 @@ public class OrderService : IOrderService
         var returnedOrderItems = new List<OrderItem>();
         decimal refundAmount = 0;
 
-        await using var tx = await _db.Database.BeginTransactionAsync();
-        try
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
-        var order = await _db.Orders.Include(o => o.Items).ThenInclude(i => i.Product).FirstOrDefaultAsync(o => o.Id == orderId);
-        if (order == null) throw new KeyNotFoundException("Order not found.");
-        if (order.Status == OrderStatus.Cancelled) throw new InvalidOperationException("Cannot return items from a cancelled order.");
-
-        // 1. Calculate Refund Amount (Proportional to Discount) First
-        decimal refundAmountTotal = 0;
-        var discountRatio = order.SubTotal > 0 ? (order.TotalAmount - order.DeliveryFee) / order.SubTotal : 1;
-
-        foreach (var req in dto.Items)
-        {
-            var line = order.Items.FirstOrDefault(i => i.Id == req.OrderItemId);
-            if (line != null && req.Quantity > 0)
+            await using var tx = await _db.Database.BeginTransactionAsync();
+            try
             {
-                // We refund the proportional part of what they PAID (Price after discount share)
-                var grossPrice = line.UnitPrice * req.Quantity;
-                refundAmountTotal += Math.Round(grossPrice * discountRatio, 2);
+                var order = await _db.Orders.Include(o => o.Items).ThenInclude(i => i.Product).FirstOrDefaultAsync(o => o.Id == orderId);
+                if (order == null) throw new KeyNotFoundException("Order not found.");
+                if (order.Status == OrderStatus.Cancelled) throw new InvalidOperationException("Cannot return items from a cancelled order.");
+
+                // 1. Calculate Refund Amount (Proportional to Discount) First
+                decimal refundAmountTotal = 0;
+                var discountRatio = order.SubTotal > 0 ? (order.TotalAmount - order.DeliveryFee) / order.SubTotal : 1;
+
+                foreach (var req in dto.Items)
+                {
+                    var line = order.Items.FirstOrDefault(i => i.Id == req.OrderItemId);
+                    if (line != null && req.Quantity > 0)
+                    {
+                        // We refund the proportional part of what they PAID (Price after discount share)
+                        var grossPrice = line.UnitPrice * req.Quantity;
+                        refundAmountTotal += Math.Round(grossPrice * discountRatio, 2);
+                    }
+                }
+
+                // NOTE: Drawer balance check is enforced by the frontend using real order cash data.
+                // Backend validates item quantities and business rules only.
+
+                returnedOrderItems = new List<OrderItem>();
+                refundAmount = 0;
+
+                foreach (var req in dto.Items)
+                {
+                    var line = order.Items.FirstOrDefault(i => i.Id == req.OrderItemId);
+                    if (line == null) continue;
+                    if (req.Quantity <= 0) continue;
+                    
+                    int maxCanReturn = line.Quantity - line.ReturnedQuantity;
+                    if (req.Quantity > maxCanReturn) 
+                       throw new InvalidOperationException($"Cannot return {req.Quantity} for item {line.ProductNameAr}. Already returned: {line.ReturnedQuantity}. Max remaining: {maxCanReturn}.");
+
+                    // 1. Calculate partial values for this item
+                    var itemTotalReturn = Math.Round((line.UnitPrice * req.Quantity) * discountRatio, 2);
+                    var itemVatReturn = Math.Round(line.ItemVatAmount * ((decimal)req.Quantity / line.Quantity), 2);
+                    
+                    refundAmount += itemTotalReturn;
+                    line.ReturnedQuantity += req.Quantity; // ✅ Update the item tracking
+
+                    // 2. Clone for accounting (to represent the returned part)
+                    var returnClone = new OrderItem
+                    {
+                        ProductId = line.ProductId,
+                        ProductVariantId = line.ProductVariantId,
+                        ProductNameAr = line.ProductNameAr,
+                        Quantity = req.Quantity,
+                        UnitPrice = line.UnitPrice,
+                        TotalPrice = itemTotalReturn, // This part is refunded
+                        ItemVatAmount = itemVatReturn,
+                        Product = line.Product // For COGS
+                    };
+                    returnedOrderItems.Add(returnClone);
+
+                    // 3. Update Inventory
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.ReturnIn,
+                        req.Quantity, line.ProductId, line.ProductVariantId,
+                        order.OrderNumber, $"Partial Return: {req.Quantity} units", updatedByUserId
+                    );
+                }
+
+                // 4. Update Order Status
+                if (order.Items.All(i => i.Quantity == i.ReturnedQuantity))
+                {
+                   order.Status = OrderStatus.Returned;
+                   order.PaymentStatus = PaymentStatus.Refunded;
+                }
+                else if (order.Items.Any(i => i.ReturnedQuantity > 0))
+                {
+                   order.Status = OrderStatus.PartiallyReturned;
+                }
+
+                if (!returnedOrderItems.Any()) throw new InvalidOperationException("No items selected for return.");
+
+                // 5. Status History
+                order.StatusHistory.Add(new OrderStatusHistory {
+                    Status = order.Status,
+                    Note = $"[مرتجع جزئي] {dto.Reason}: {dto.Note}",
+                    ChangedByUserId = updatedByUserId,
+                    CreatedAt = DateTime.UtcNow
+                });
+
+                await _db.SaveChangesAsync();
+                await tx.CommitAsync();
             }
-        }
-
-        // NOTE: Drawer balance check is enforced by the frontend using real order cash data.
-        // Backend validates item quantities and business rules only.
-
-        returnedOrderItems = new List<OrderItem>();
-        refundAmount = 0;
-
-        foreach (var req in dto.Items)
-        {
-            var line = order.Items.FirstOrDefault(i => i.Id == req.OrderItemId);
-            if (line == null) continue;
-            if (req.Quantity <= 0) continue;
-            
-            int maxCanReturn = line.Quantity - line.ReturnedQuantity;
-            if (req.Quantity > maxCanReturn) 
-               throw new InvalidOperationException($"Cannot return {req.Quantity} for item {line.ProductNameAr}. Already returned: {line.ReturnedQuantity}. Max remaining: {maxCanReturn}.");
-
-            // 1. Calculate partial values for this item
-            var itemTotalReturn = Math.Round((line.UnitPrice * req.Quantity) * discountRatio, 2);
-            var itemVatReturn = Math.Round(line.ItemVatAmount * ((decimal)req.Quantity / line.Quantity), 2);
-            
-            refundAmount += itemTotalReturn;
-            line.ReturnedQuantity += req.Quantity; // ✅ Update the item tracking
-
-            // 2. Clone for accounting (to represent the returned part)
-            var returnClone = new OrderItem
+            catch
             {
-                ProductId = line.ProductId,
-                ProductVariantId = line.ProductVariantId,
-                ProductNameAr = line.ProductNameAr,
-                Quantity = req.Quantity,
-                UnitPrice = line.UnitPrice,
-                TotalPrice = itemTotalReturn, // This part is refunded
-                ItemVatAmount = itemVatReturn,
-                Product = line.Product // For COGS
-            };
-            returnedOrderItems.Add(returnClone);
-
-            // 3. Update Inventory
-            await _inventory.LogMovementAsync(
-                InventoryMovementType.ReturnIn,
-                req.Quantity, line.ProductId, line.ProductVariantId,
-                order.OrderNumber, $"Partial Return: {req.Quantity} units", updatedByUserId
-            );
-        }
-
-        // 4. Update Order Status
-        if (order.Items.All(i => i.Quantity == i.ReturnedQuantity))
-        {
-           order.Status = OrderStatus.Returned;
-           order.PaymentStatus = PaymentStatus.Refunded;
-        }
-        else if (order.Items.Any(i => i.ReturnedQuantity > 0))
-        {
-           order.Status = OrderStatus.PartiallyReturned;
-        }
-
-        if (!returnedOrderItems.Any()) throw new InvalidOperationException("No items selected for return.");
-
-        // 5. Status History
-        order.StatusHistory.Add(new OrderStatusHistory {
-            Status = order.Status,
-            Note = $"[مرتجع جزئي] {dto.Reason}: {dto.Note}",
-            ChangedByUserId = updatedByUserId,
-            CreatedAt = DateTime.UtcNow
+                await tx.RollbackAsync();
+                throw;
+            }
         });
-
-        await _db.SaveChangesAsync();
-        await tx.CommitAsync();
-        }
-        catch
-        {
-            await tx.RollbackAsync();
-            throw;
-        }
 
         // 6. Post Accounting
         _ = Task.Run(async () =>

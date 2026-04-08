@@ -50,53 +50,56 @@ public class DataMaintenanceController : ControllerBase
         {
             await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 0;");
 
-            using var transaction = await _db.Database.BeginTransactionAsync();
-            try
+            var strategy = _db.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
             {
-                var tablesToTruncate = new[] {
-                    "OrderItemAttributes", "InventoryAuditItems", "InventoryMovements", "PurchaseInvoiceItems",
-                    "SupplierPayments", "JournalLines", "ReceiptVouchers", "PaymentVouchers", "JournalEntries",
-                    "Orders", "InventoryAudits", "PurchaseInvoices", "Suppliers", "ProductImages",
-                    "ProductVariants", "Products", "Coupons", "Addresses", "Customers", "Notifications",
-                    "CartItems", "WishlistItems", "Reviews", "OrderStatusHistories", "OrderItems"
-                };
-
-                foreach (var table in tablesToTruncate)
+                using var transaction = await _db.Database.BeginTransactionAsync();
+                try
                 {
-                    try { await _db.Database.ExecuteSqlRawAsync("TRUNCATE TABLE `" + table + "`;"); } catch { }
-                }
+                    var tablesToTruncate = new[] {
+                        "OrderItemAttributes", "InventoryAuditItems", "InventoryMovements", "PurchaseInvoiceItems",
+                        "SupplierPayments", "JournalLines", "ReceiptVouchers", "PaymentVouchers", "JournalEntries",
+                        "Orders", "InventoryAudits", "PurchaseInvoices", "Suppliers", "ProductImages",
+                        "ProductVariants", "Products", "Coupons", "Addresses", "Customers", "Notifications",
+                        "CartItems", "WishlistItems", "Reviews", "OrderStatusHistories", "OrderItems"
+                    };
 
-                var customerRole = await _db.Roles.FirstOrDefaultAsync(r => r.Name == "Customer");
-                if (customerRole != null)
-                {
-                    var customerUserIds = await _db.UserRoles.Where(ur => ur.RoleId == customerRole.Id).Select(ur => ur.UserId).ToListAsync();
-                    var idsToDelete = await _db.Users
-                        .Where(u => customerUserIds.Contains(u.Id))
-                        .Where(u => u.Email != "admin@sportive.com" && u.Email != "abdullah@sportive.com")
-                        .Select(u => u.Id).ToListAsync();
-
-                    if (idsToDelete.Any())
+                    foreach (var table in tablesToTruncate)
                     {
-                         await _db.Users.Where(u => idsToDelete.Contains(u.Id))
-                                        .ExecuteDeleteAsync();
+                        try { await _db.Database.ExecuteSqlRawAsync("TRUNCATE TABLE `" + table + "`;"); } catch { }
                     }
+
+                    var customerRole = await _db.Roles.FirstOrDefaultAsync(r => r.Name == "Customer");
+                    if (customerRole != null)
+                    {
+                        var customerUserIds = await _db.UserRoles.Where(ur => ur.RoleId == customerRole.Id).Select(ur => ur.UserId).ToListAsync();
+                        var idsToDelete = await _db.Users
+                            .Where(u => customerUserIds.Contains(u.Id))
+                            .Where(u => u.Email != "admin@sportive.com" && u.Email != "abdullah@sportive.com")
+                            .Select(u => u.Id).ToListAsync();
+
+                        if (idsToDelete.Any())
+                        {
+                             await _db.Users.Where(u => idsToDelete.Contains(u.Id))
+                                            .ExecuteDeleteAsync();
+                        }
+                    }
+
+                    await transaction.CommitAsync();
                 }
-
-                await transaction.CommitAsync();
-                await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
-
-                _logger.LogCritical("FACTORY RESET COMPLETED.");
-                return Ok(new { success = true, message = "تم تصفير النظام بنجاح وبدء تسلسل المعرفات من 1." });
-            }
-            catch (Exception)
-            {
-                await transaction.RollbackAsync();
-                await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
-                throw;
-            }
+                catch (Exception)
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            });
+            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
+            _logger.LogCritical("FACTORY RESET COMPLETED.");
+            return Ok(new { success = true, message = "تم تصفير النظام بنجاح وبدء تسلسل المعرفات من 1." });
         }
         catch (Exception ex)
         {
+            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
             _logger.LogError(ex, "FACTORY RESET ERROR");
             return BadRequest(new { success = false, message = "فشل التصفير: " + ex.Message });
         }
