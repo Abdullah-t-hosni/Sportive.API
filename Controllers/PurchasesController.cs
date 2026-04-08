@@ -274,8 +274,17 @@ public class PurchaseInvoicesController : ControllerBase
         if (!dto.Items.Any())
             return BadRequest(new { message = "يجب إضافة صنف واحد على الأقل" });
 
-        if (dto.Items.Any(i => i.ProductId.HasValue && !i.ProductVariantId.HasValue))
-            return BadRequest(new { message = "إلزامي اختيار المقاس واللون لكل صنف في الفاتورة" });
+        foreach (var item in dto.Items)
+        {
+            if (item.ProductId.HasValue && !item.ProductVariantId.HasValue)
+            {
+                var hasVariants = await _db.ProductVariants.AnyAsync(v => v.ProductId == item.ProductId.Value);
+                if (hasVariants)
+                {
+                    return BadRequest(new { message = $"يجب اختيار المقاس واللون للصنف: {item.Description}" });
+                }
+            }
+        }
 
         var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
         if (supplier == null)
@@ -392,8 +401,20 @@ public class PurchaseInvoicesController : ControllerBase
 
         if (inv == null) return NotFound();
 
-        if (dto.Items != null && dto.Items.Any(i => i.ProductId.HasValue && !i.ProductVariantId.HasValue))
-            return BadRequest(new { message = "إلزامي اختيار المقاس واللون لكل صنف في الفاتورة للتعديل" });
+        if (dto.Items != null)
+        {
+            foreach (var item in dto.Items)
+            {
+                if (item.ProductId.HasValue && !item.ProductVariantId.HasValue)
+                {
+                    var hasVariants = await _db.ProductVariants.AnyAsync(v => v.ProductId == item.ProductId.Value);
+                    if (hasVariants)
+                    {
+                        return BadRequest(new { message = $"يجب اختيار المقاس واللون للصنف بالتعديل: {item.Description}" });
+                    }
+                }
+            }
+        }
 
         var oldStockMap = inv.Items
             .Where(x => x.ProductId.HasValue)
