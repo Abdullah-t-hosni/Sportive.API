@@ -3,6 +3,7 @@ using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
+using Sportive.API.Utils;
 using System.Text;
 
 namespace Sportive.API.Services;
@@ -194,7 +195,7 @@ public class OrderService : IOrderService
                             FullName = dto.CustomerName ?? "Walk-in Customer",
                             Phone = phone,
                             Email = $"{phone}@pos.sportive.com",
-                            CreatedAt = DateTime.UtcNow,
+                            CreatedAt = TimeHelper.GetEgyptTime(),
                             IsActive = true
                         };
                         _db.Customers.Add(c);
@@ -230,7 +231,7 @@ public class OrderService : IOrderService
                     Source = actualSource,
                     AdminNotes = dto.Note,
                     DiscountAmount = dto.DiscountAmount ?? 0,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = TimeHelper.GetEgyptTime()
                 };
 
                 // 3. Handle Items
@@ -262,7 +263,7 @@ public class OrderService : IOrderService
                             TotalPrice = (actualSource == OrderSource.POS) ? item.TotalPrice : (unitPrice * item.Quantity),
                             HasTax = item.HasTax ?? product.HasTax,
                             VatRateApplied = item.VatRate ?? product.VatRate ?? (store?.VatRatePercent ?? 14),
-                            CreatedAt = DateTime.UtcNow
+                            CreatedAt = TimeHelper.GetEgyptTime()
                         };
 
                         if (orderItem.HasTax)
@@ -328,7 +329,7 @@ public class OrderService : IOrderService
                             TotalPrice = unitPrice * ci.Quantity,
                             HasTax = ci.Product.HasTax,
                             VatRateApplied = ci.Product.VatRate ?? (store?.VatRatePercent ?? 14),
-                            CreatedAt = DateTime.UtcNow
+                            CreatedAt = TimeHelper.GetEgyptTime()
                         };
 
                         if (orderItem.HasTax)
@@ -363,7 +364,7 @@ public class OrderService : IOrderService
 
                 order.TotalAmount = order.SubTotal + order.DeliveryFee - order.DiscountAmount;
                 _db.Orders.Add(order);
-                order.StatusHistory.Add(new OrderStatusHistory { Status = order.Status, CreatedAt = DateTime.UtcNow, Note = "Order Created." });
+                order.StatusHistory.Add(new OrderStatusHistory { Status = order.Status, CreatedAt = TimeHelper.GetEgyptTime(), Note = "Order Created." });
 
                 await _db.SaveChangesAsync();
                 await tx.CommitAsync();
@@ -444,9 +445,9 @@ public class OrderService : IOrderService
 
         var oldStatus = order.Status;
         order.Status = dto.Status;
-        order.UpdatedAt = DateTime.UtcNow;
+        order.UpdatedAt = TimeHelper.GetEgyptTime();
         order.StatusHistory.Add(new OrderStatusHistory {
-            Status = dto.Status, Note = dto.Note, ChangedByUserId = updatedByUserId, CreatedAt = DateTime.UtcNow
+            Status = dto.Status, Note = dto.Note, ChangedByUserId = updatedByUserId, CreatedAt = TimeHelper.GetEgyptTime()
         });
 
         // 💡 AUTO-FLOW: For Website orders, Digital Payments (Vodafone, InstaPay, Visa) are paid upon Confirmation. Cash is paid ONLY upon Delivery.
@@ -462,7 +463,7 @@ public class OrderService : IOrderService
 
         if (dto.Status == OrderStatus.Delivered)
         {
-            order.ActualDeliveryDate = DateTime.UtcNow;
+            order.ActualDeliveryDate = TimeHelper.GetEgyptTime();
             if (order.PaymentMethod != PaymentMethod.Credit) order.PaymentStatus = PaymentStatus.Paid;
         }
 
@@ -615,7 +616,7 @@ public class OrderService : IOrderService
                     Status = order.Status,
                     Note = $"[مرتجع جزئي] {dto.Reason}: {dto.Note}",
                     ChangedByUserId = updatedByUserId,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = TimeHelper.GetEgyptTime()
                 });
 
                 await _db.SaveChangesAsync();
@@ -647,7 +648,7 @@ public class OrderService : IOrderService
     public async Task<string> GenerateOrderNumberAsync(OrderSource source = OrderSource.Website)
     {
         var prefix = source == OrderSource.POS ? "POS" : "ORD";
-        var date = DateTime.UtcNow.ToString("yyMMdd");
+        var date = TimeHelper.GetEgyptTime().ToString("yyMMdd");
         string orderNumber;
         do {
             var random = new Random().Next(1000, 9999);

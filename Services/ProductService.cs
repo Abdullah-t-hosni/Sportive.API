@@ -3,6 +3,7 @@ using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Services;
 
@@ -250,7 +251,7 @@ public class ProductService : IProductService
         product.Status = dto.Status;
         product.HasTax = dto.HasTax;
         product.VatRate = dto.VatRate;
-        product.UpdatedAt = DateTime.UtcNow;
+        product.UpdatedAt = TimeHelper.GetEgyptTime();
 
         // إعادة حساب إجمالي المخزون للتأكد من الدقة
         if (product.Variants.Any())
@@ -327,7 +328,7 @@ public class ProductService : IProductService
         var product = await _db.Products.FindAsync(productId);
         if (product == null) return false;
         product.CostPrice = costPrice;
-        product.UpdatedAt = DateTime.UtcNow;
+        product.UpdatedAt = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
         return true;
     }
@@ -355,7 +356,7 @@ public class ProductService : IProductService
                 product.Status = ProductStatus.Active;
             }
 
-            product.UpdatedAt = DateTime.UtcNow;
+            product.UpdatedAt = TimeHelper.GetEgyptTime();
         }
     }
 
@@ -403,13 +404,13 @@ public class ProductService : IProductService
         v.StockQuantity = dto.StockQuantity ?? 0;
         v.ReorderLevel = dto.ReorderLevel ?? 0;
         v.PriceAdjustment = dto.PriceAdjustment;
-        v.UpdatedAt = DateTime.UtcNow;
+        v.UpdatedAt = TimeHelper.GetEgyptTime();
 
         var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == v.ProductId);
         if (product != null)
         {
             await UpdateTotalStockAsync(v.ProductId);
-            product.UpdatedAt = DateTime.UtcNow;
+            product.UpdatedAt = TimeHelper.GetEgyptTime();
         }
 
         await _db.SaveChangesAsync();
@@ -429,7 +430,7 @@ public class ProductService : IProductService
 
         await UpdateTotalStockAsync(productId);
         var product = await _db.Products.FindAsync(productId);
-        if (product != null) { product.UpdatedAt = DateTime.UtcNow; await _db.SaveChangesAsync(); }
+        if (product != null) { product.UpdatedAt = TimeHelper.GetEgyptTime(); await _db.SaveChangesAsync(); }
 
         await _notifications.BroadcastStockUpdateAsync(productId, variantId, 0);
         return true;

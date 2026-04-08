@@ -369,7 +369,7 @@ public class DashboardService : IDashboardService
 
     public async Task<object> GetKpiAsync()
     {
-        var now        = DateTime.UtcNow;
+        var now        = TimeHelper.GetEgyptTime();
         var todayStart     = now.Date;
         var todayEnd       = todayStart.AddDays(1);
         var yesterdayStart = todayStart.AddDays(-1);

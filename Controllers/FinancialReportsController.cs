@@ -5,6 +5,7 @@ using ClosedXML.Excel;
 using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.DTOs;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Controllers;
 
@@ -92,8 +93,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate?.Date ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
+        var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         var balances = await GetBalances(from, to);
         var rows = balances
@@ -130,8 +131,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate?.Date ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
+        var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         var balances = await GetBalances(from, to);
 
@@ -175,7 +176,7 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] bool      excel  = false)
     {
         var from = new DateTime(2000, 1, 1).Date;
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         var balances = await GetBalances(from, to);
 
@@ -239,8 +240,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] string?   search     = null,
         [FromQuery] bool      excel      = false)
     {
-        var from = fromDate?.Date ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
+        var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         var q = _db.JournalLines
             .Include(l => l.JournalEntry)
@@ -346,8 +347,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] string?   search     = null,
         [FromQuery] bool      excel      = false)
     {
-        var from = fromDate?.Date ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
+        var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         var acct = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == accountId);
         if (acct == null) return NotFound(new { message = "الحساب غير موجود" });
@@ -421,8 +422,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate?.Date ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
+        var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         // حسابات النقدية (كل ما يبدأ بـ 11)
         var cashAccounts = await _db.Accounts

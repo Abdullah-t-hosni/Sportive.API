@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Services;
 
@@ -33,7 +34,7 @@ public class InventoryService : IInventoryService
                 unitCost = variant.Product.CostPrice ?? 0;
                 remainingBefore = variant.StockQuantity;
                 variant.StockQuantity += quantity;
-                variant.UpdatedAt = DateTime.UtcNow;
+                variant.UpdatedAt = TimeHelper.GetEgyptTime();
 
                 // Sync parent product total stock
                 var totalStock = await _db.ProductVariants
@@ -52,7 +53,7 @@ public class InventoryService : IInventoryService
                     variant.Product.Status = ProductStatus.Active;
                 }
 
-                variant.Product.UpdatedAt  = DateTime.UtcNow;
+                variant.Product.UpdatedAt  = TimeHelper.GetEgyptTime();
 
                 productId = variant.ProductId; // ensure we log the product id too
             }
@@ -76,7 +77,7 @@ public class InventoryService : IInventoryService
                     product.Status = ProductStatus.Active;
                 }
 
-                product.UpdatedAt = DateTime.UtcNow;
+                product.UpdatedAt = TimeHelper.GetEgyptTime();
             }
         }
 
@@ -92,7 +93,7 @@ public class InventoryService : IInventoryService
             Note             = note,
             UnitCost         = unitCost,
             CreatedByUserId  = userId,
-            CreatedAt        = DateTime.UtcNow
+            CreatedAt        = TimeHelper.GetEgyptTime()
         });
 
         // We don't save changes here to allow the calling method to wrap it in its own transaction if needed

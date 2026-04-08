@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using System.Text.Json;
 using Sportive.API.Models;
+using Sportive.API.Utils;
 using System.Collections.Concurrent;
 using Sportive.API.DTOs;
 
@@ -290,7 +291,7 @@ public class AccountingService : IAccountingService
             type:        JournalEntryType.SalesReturn,
             reference:   order.OrderNumber + "-RTN",
             description: $"مرتجع مبيعات موحد {order.OrderNumber}",
-            date:        DateTime.UtcNow,
+            date:        TimeHelper.GetEgyptTime(),
             lines:       lines,
             orderId:     order.Id,
             customerId:  order.CustomerId,
@@ -301,7 +302,7 @@ public class AccountingService : IAccountingService
     public async Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount)
     {
         // 1. Generate unique reference for this partial return
-        var suffix = DateTime.UtcNow.Ticks.ToString().Substring(10);
+        var suffix = TimeHelper.GetEgyptTime().Ticks.ToString().Substring(10);
         var reference = $"{order.OrderNumber}-PRT-{suffix}";
 
         var mappings = await _db.AccountSystemMappings.ToListAsync();
@@ -365,7 +366,7 @@ public class AccountingService : IAccountingService
             type:        JournalEntryType.SalesReturn,
             reference:   reference,
             description: $"مرتجع جزئي موحد {order.OrderNumber} ({returnedItems.Count} أصناف)",
-            date:        DateTime.UtcNow,
+            date:        TimeHelper.GetEgyptTime(),
             lines:       lines,
             orderId:     order.Id,
             customerId:  order.CustomerId,
@@ -401,7 +402,7 @@ public class AccountingService : IAccountingService
             type:        JournalEntryType.ReceiptVoucher,
             reference:   reference,
             description: $"تحصيل تلقائي للطلب {order.OrderNumber} - {order.Customer?.FullName}",
-            date:        DateTime.UtcNow,
+            date:        TimeHelper.GetEgyptTime(),
             lines:       lines,
             orderId:     order.Id,
             customerId:  order.CustomerId,
@@ -433,7 +434,7 @@ public class AccountingService : IAccountingService
             type:        JournalEntryType.PaymentVoucher,
             reference:   reference,
             description: $"رد تلقائي للطلب {order.OrderNumber} - {order.Customer?.FullName}",
-            date:        DateTime.UtcNow,
+            date:        TimeHelper.GetEgyptTime(),
             lines:       lines,
             orderId:     order.Id,
             customerId:  order.CustomerId,
@@ -529,7 +530,7 @@ public class AccountingService : IAccountingService
             type:        JournalEntryType.PurchaseReturn,
             reference:   refNo,
             description: $"مرتجع مشتريات {invoice.InvoiceNumber}",
-            date:        DateTime.UtcNow,
+            date:        TimeHelper.GetEgyptTime(),
             lines:       lines,
             supplierId:  invoice.SupplierId
         );
@@ -572,19 +573,19 @@ public class AccountingService : IAccountingService
         if (entry == null || entry.Status == JournalEntryStatus.Reversed) return;
 
         var count  = await _db.JournalEntries.CountAsync() + 1;
-        var year   = DateTime.UtcNow.Year % 100;
+        var year   = TimeHelper.GetEgyptTime().Year % 100;
         var revNo  = $"JE-{year}{count:D5}";
 
         var reversal = new JournalEntry
         {
             EntryNumber  = revNo,
-            EntryDate    = DateTime.UtcNow,
+            EntryDate    = TimeHelper.GetEgyptTime(),
             Type         = entry.Type,
             Status       = JournalEntryStatus.Posted,
             Reference    = entry.EntryNumber,
             Description  = $"عكس: {entry.EntryNumber} — {reason}",
             ReversalOfId = entry.Id,
-            CreatedAt    = DateTime.UtcNow,
+            CreatedAt    = TimeHelper.GetEgyptTime(),
         };
 
         foreach (var line in entry.Lines)
@@ -597,12 +598,12 @@ public class AccountingService : IAccountingService
                 Description = line.Description,
                 CustomerId  = line.CustomerId,
                 SupplierId  = line.SupplierId,
-                CreatedAt   = DateTime.UtcNow,
+                CreatedAt   = TimeHelper.GetEgyptTime(),
             });
         }
 
         entry.Status    = JournalEntryStatus.Reversed;
-        entry.UpdatedAt = DateTime.UtcNow;
+        entry.UpdatedAt = TimeHelper.GetEgyptTime();
 
         _db.JournalEntries.Add(reversal);
         await _db.SaveChangesAsync();
@@ -738,7 +739,7 @@ public class AccountingService : IAccountingService
     public async Task<decimal> GetTodayDrawerBalanceAsync(string cashAccountCode)
     {
         var accountId = await GetAccountIdAsync(cashAccountCode);
-        var todayStart = DateTime.UtcNow.Date; // منتصف الليل اليوم
+        var todayStart = TimeHelper.GetEgyptTime().Date; // منتصف الليل اليوم (بالتوقيت المحلي)
 
         var balance = await _db.JournalLines
             .Where(l => l.AccountId == accountId

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using ClosedXML.Excel;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Controllers;
 
@@ -27,8 +28,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? toDate     = null,
         [FromQuery] bool      excel      = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1).Date;
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
+        var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         // إذا بحث بالاسم ابحث أول
         if (customerId == null && !string.IsNullOrEmpty(search))
@@ -127,7 +128,7 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? asOfDate = null,
         [FromQuery] bool      excel   = false)
     {
-        var asOf = asOfDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
+        var asOf = asOfDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         var customers = await _db.Customers
             .Include(c => c.Orders)
@@ -202,7 +203,7 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? asOfDate = null,
         [FromQuery] bool      excel    = false)
     {
-        var asOf = asOfDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
+        var asOf = asOfDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         var suppliers = await _db.Suppliers
             .Include(s => s.Invoices)
@@ -329,8 +330,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] OrderSource? source   = null,
         [FromQuery] bool         excel    = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1).Date;
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
+        var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         var q = _db.Orders
             .Include(o => o.Customer)
@@ -395,8 +396,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int?      supplierId = null,
         [FromQuery] bool      excel      = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1).Date;
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
+        var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         var q = _db.PurchaseInvoices
             .Include(i => i.Supplier)
@@ -438,8 +439,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1).Date;
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
+        var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         // Get all SalesReturn journal entries
         var returns = await _db.JournalEntries
@@ -478,8 +479,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1).Date;
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
+        var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         var returns = await _db.PurchaseInvoices
             .Include(i => i.Supplier)
@@ -510,8 +511,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] string?   userId   = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate ?? DateTime.UtcNow.Date;
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
+        var from = fromDate ?? TimeHelper.GetEgyptTime().Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         var q = _db.Orders
             .Include(o => o.Customer)
@@ -572,8 +573,8 @@ public class OperationalReportsController : ControllerBase
     {
         try
         {
-            var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1).Date;
-            var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? DateTime.UtcNow;
+            var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
+            var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
             // Handle search
             if (productId == null && !string.IsNullOrEmpty(search))
@@ -790,8 +791,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? toDate    = null,
         [FromQuery] InventoryMovementType? type = null)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate ?? DateTime.UtcNow;
+        var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
+        var to   = toDate ?? TimeHelper.GetEgyptTime();
 
         var q = _db.InventoryMovements
             .Include(m => m.Product)
