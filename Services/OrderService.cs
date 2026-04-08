@@ -365,6 +365,7 @@ public class OrderService : IOrderService
                 _db.Orders.Add(order);
                 order.StatusHistory.Add(new OrderStatusHistory { Status = order.Status, CreatedAt = DateTime.UtcNow, Note = "Order Created." });
 
+                await _db.SaveChangesAsync();
                 await tx.CommitAsync();
                 return (await GetOrderByIdAsync(order.Id))!;
             }

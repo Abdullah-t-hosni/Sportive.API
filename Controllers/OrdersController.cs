@@ -98,6 +98,9 @@ public class OrdersController : ControllerBase
     [Authorize(Roles = "Admin,Staff,Cashier")]
     public async Task<ActionResult<OrderDetailDto>> CreatePosOrder([FromBody] CreatePOSOrderDto posDto)
     {
+        if (posDto == null || posDto.Items == null || !posDto.Items.Any())
+            return BadRequest("Order must have at least one item.");
+
         var dto = new CreateOrderDto(
             FulfillmentType.Pickup,
             (PaymentMethod)posDto.PaymentMethod,
@@ -116,6 +119,8 @@ public class OrdersController : ControllerBase
         );
 
         var order = await _orderService.CreateOrderAsync(posDto.CustomerId, dto);
+        if (order == null) return StatusCode(500, "Failed to create order.");
+        
         return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
     }
 
