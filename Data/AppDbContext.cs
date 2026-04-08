@@ -100,8 +100,21 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.Status).HasConversion<string>();
         });
 
-        builder.Entity<ProductVariant>(e =>
-            e.Property(x => x.PriceAdjustment).HasPrecision(18, 2));
+        builder.Entity<ProductVariant>(e => {
+            e.Property(x => x.PriceAdjustment).HasPrecision(18, 2);
+            e.HasOne(x => x.Product).WithMany(p => p.Variants)
+             .HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<ProductImage>(e => {
+            e.HasOne(x => x.Product).WithMany(p => p.Images)
+             .HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<Review>(e => {
+            e.HasOne(x => x.Product).WithMany(p => p.Reviews)
+             .HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+        });
 
         builder.Entity<Customer>(e => {
             e.Property(x => x.Email).HasMaxLength(200).IsRequired();
@@ -139,17 +152,19 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.ItemVatAmount).HasPrecision(18, 2);
             e.HasOne(x => x.Order).WithMany(o => o.Items)
              .HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
-            e.HasOne(x => x.Product).WithMany(p => p.OrderItems)
-             .HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Product).WithMany()
+             .HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.SetNull);
         });
-
         builder.Entity<OrderStatusHistory>(e => {
             e.Property(x => x.Status).HasConversion<string>();
         });
 
-        builder.Entity<CartItem>(e =>
+        builder.Entity<CartItem>(e => {
             e.HasOne(x => x.Customer).WithMany(c => c.CartItems)
-             .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Cascade));
+             .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Product).WithMany()
+             .HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+        });
 
         builder.Entity<Coupon>(e => {
             e.Property(x => x.Code).HasMaxLength(50).IsRequired();
@@ -257,6 +272,13 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(v => v.ToAccount).WithMany().HasForeignKey(v => v.ToAccountId);
             e.HasOne(v => v.JournalEntry).WithMany().HasForeignKey(v => v.JournalEntryId).IsRequired(false);
             e.Property(v => v.PaymentMethod).HasConversion<string>();
+        });
+
+        builder.Entity<InventoryMovement>(e => {
+            e.Property(x => x.UnitCost).HasPrecision(18, 2);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.ProductVariant).WithMany().HasForeignKey(x => x.ProductVariantId).OnDelete(DeleteBehavior.SetNull);
+            e.Property(x => x.Type).HasConversion<string>();
         });
 
         builder.Entity<StoreInfo>().HasData(

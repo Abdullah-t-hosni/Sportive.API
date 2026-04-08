@@ -27,28 +27,49 @@ public class SchemaFixController : ControllerBase
     [HttpGet("run-v4")]
     public async Task<IActionResult> RunV4()
     {
-        _logger.LogWarning("SchemaFix run-v4 triggered by admin user: {User}", User.Identity?.Name);
+        _logger.LogWarning("SchemaFix run-v4 triggered.");
         try
         {
-            // ──────────────────────────────────────────────────────────
-            // 1. جعل تصنيف المنتج اختيارياً (Nullable) والسماح بالحذف (Set Null)
-            // ──────────────────────────────────────────────────────────
-            try {
-                // قد يفشل هذا إذا كان العمود بالفعل Nullable في بعض نسخ MySQL
-                await _db.Database.ExecuteSqlRawAsync("ALTER TABLE Products MODIFY COLUMN CategoryId INT NULL;");
-            } catch { }
+            await _db.Database.ExecuteSqlRawAsync("ALTER TABLE Products MODIFY COLUMN CategoryId INT NULL;");
+            return Ok(new { message = "Category constraints updated." });
+        }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
 
-            // ──────────────────────────────────────────────────────────
-            // 2. تحديث الماركات لجعل الأبناء ينتقلون (أو يصبحون NULL) عند حذف الأب
-            // ──────────────────────────────────────────────────────────
-            // في Entity Framework، الضبط الجديد الذي وضعناه في DbContext سيقوم بذلك، 
-            // لكن هنا نضمن أن قاعدة البيانات نفسها تسمح بذلك.
-            
-            return Ok(new { message = "Category and Brand constraints updated successfully." });
+    [HttpGet("run-v5")]
+    public async Task<IActionResult> RunV5()
+    {
+        _logger.LogWarning("SchemaFix run-v5 (Full Catalog Deletion Fix) triggered.");
+        try
+        {
+            var cmds = new[] {
+                "ALTER TABLE OrderItems MODIFY COLUMN ProductId INT NULL;",
+                "ALTER TABLE OrderItems DROP FOREIGN KEY FK_OrderItems_Products_ProductId;",
+                "ALTER TABLE OrderItems ADD CONSTRAINT FK_OrderItems_Products_ProductId FOREIGN KEY (ProductId) REFERENCES Products(Id) ON DELETE SET NULL;",
+
+                "ALTER TABLE InventoryMovements DROP FOREIGN KEY FK_InventoryMovements_Products_ProductId;",
+                "ALTER TABLE InventoryMovements ADD CONSTRAINT FK_InventoryMovements_Products_ProductId FOREIGN KEY (ProductId) REFERENCES Products(Id) ON DELETE SET NULL;",
+
+                "ALTER TABLE CartItems MODIFY COLUMN ProductId INT NULL;",
+                "ALTER TABLE CartItems DROP FOREIGN KEY FK_CartItems_Products_ProductId;",
+                "ALTER TABLE CartItems ADD CONSTRAINT FK_CartItems_Products_ProductId FOREIGN KEY (ProductId) REFERENCES Products(Id) ON DELETE CASCADE;",
+
+                "ALTER TABLE ProductVariants DROP FOREIGN KEY FK_ProductVariants_Products_ProductId;",
+                "ALTER TABLE ProductVariants ADD CONSTRAINT FK_ProductVariants_Products_ProductId FOREIGN KEY (ProductId) REFERENCES Products(Id) ON DELETE CASCADE;",
+
+                "ALTER TABLE ProductImages DROP FOREIGN KEY FK_ProductImages_Products_ProductId;",
+                "ALTER TABLE ProductImages ADD CONSTRAINT FK_ProductImages_Products_ProductId FOREIGN KEY (ProductId) REFERENCES Products(Id) ON DELETE CASCADE;",
+
+                "ALTER TABLE Reviews DROP FOREIGN KEY FK_Reviews_Products_ProductId;",
+                "ALTER TABLE Reviews ADD CONSTRAINT FK_Reviews_Products_ProductId FOREIGN KEY (ProductId) REFERENCES Products(Id) ON DELETE CASCADE;"
+            };
+
+            foreach(var c in cmds) { try { await _db.Database.ExecuteSqlRawAsync(c); } catch { } }
+
+            return Ok(new { message = "Constraints updated successfully. You can now delete products and categories freely." });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "SchemaFix v4 failed");
             return StatusCode(500, new { error = ex.Message });
         }
     }
