@@ -127,7 +127,7 @@ public class ExportController : ControllerBase
         {
             ws1.Cell(r,1).Value  = p.NameAr;
             ws1.Cell(r,2).Value  = p.NameEn;
-            ws1.Cell(r,3).Value  = p.Category?.NameAr ?? "";
+            ws1.Cell(r,3).Value  = p.Category != null ? p.Category.NameAr : "Category Missing";
             ws1.Cell(r,4).Value  = p.SKU;
             ws1.Cell(r,5).Value  = p.Price;
             ws1.Cell(r,6).Value  = p.DiscountPrice ?? 0;
@@ -303,7 +303,7 @@ public class ExportController : ControllerBase
             .Include(p => p.Category)
             .Include(p => p.Brand)
             .Include(p => p.Variants)
-            .OrderBy(p => p.Category.NameAr).ThenBy(p => p.NameAr)
+            .OrderBy(p => p.Category == null ? "" : p.Category.NameAr).ThenBy(p => p.NameAr)
             .ToListAsync();
 
         using var wb = new XLWorkbook();
@@ -434,7 +434,7 @@ public class ExportController : ControllerBase
             .Include(p => p.Brand)
             .Include(p => p.Variants)
             .Where(p => p.Variants.Any())
-            .OrderBy(p => p.Category.NameAr).ThenBy(p => p.NameAr)
+            .OrderBy(p => p.Category == null ? "" : p.Category.NameAr).ThenBy(p => p.NameAr)
             .ToListAsync();
 
         using var wb = new XLWorkbook();

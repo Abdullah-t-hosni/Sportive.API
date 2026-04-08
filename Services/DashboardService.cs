@@ -118,9 +118,13 @@ public class DashboardService : IDashboardService
         // Category Sales
         var catSales = await _db.OrderItems
             .Include(i => i.Product).ThenInclude(p => p.Category)
-            .GroupBy(i => new { i.Product.Category.Id, i.Product.Category.NameAr, i.Product.Category.NameEn })
+            .GroupBy(i => new { 
+                CategoryId = i.Product.Category != null ? (int?)i.Product.Category.Id : null, 
+                CategoryNameAr = i.Product.Category != null ? i.Product.Category.NameAr : "Category Missing", 
+                CategoryNameEn = i.Product.Category != null ? i.Product.Category.NameEn : "Category Missing" 
+            })
             .Select(g => new CategorySalesDto(
-                g.Key.Id, g.Key.NameAr, g.Key.NameEn,
+                g.Key.CategoryId ?? 0, g.Key.CategoryNameAr, g.Key.CategoryNameEn,
                 g.Sum(i => i.Quantity),
                 g.Sum(i => i.TotalPrice)
             ))

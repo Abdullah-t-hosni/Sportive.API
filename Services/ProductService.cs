@@ -399,7 +399,8 @@ public class ProductService : IProductService
             .Select(p => new ProductSummaryDto(
                 p.Id, p.NameAr, p.NameEn, p.Price, p.DiscountPrice ?? 0,
                 p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
-                p.Category.NameAr, p.Category.NameEn, 
+                p.Category != null ? p.Category.NameAr : "Category Missing", 
+                p.Category != null ? p.Category.NameEn : "Category Missing", 
                 p.Brand != null ? p.Brand.NameAr : null, 
                 p.Brand != null ? p.Brand.NameEn : null,
                 p.BrandId,
@@ -434,7 +435,8 @@ public class ProductService : IProductService
             .Select(p => new ProductSummaryDto(
                 p.Id, p.NameAr, p.NameEn, p.Price, p.DiscountPrice ?? 0,
                 p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
-                p.Category.NameAr, p.Category.NameEn, 
+                p.Category != null ? p.Category.NameAr : "Category Missing", 
+                p.Category != null ? p.Category.NameEn : "Category Missing", 
                 p.Brand != null ? p.Brand.NameAr : null, 
                 p.Brand != null ? p.Brand.NameEn : null,
                 p.BrandId,

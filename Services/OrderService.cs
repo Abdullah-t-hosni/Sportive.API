@@ -169,7 +169,7 @@ public class OrderService : IOrderService
 
         var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
 
-        Order order = null;
+        Order? order = null;
 
         await using var tx = await _db.Database.BeginTransactionAsync();
         try
