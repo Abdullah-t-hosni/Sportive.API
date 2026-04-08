@@ -157,6 +157,12 @@ public class OrdersController : ControllerBase
         order.PaymentStatus = dto.PaymentStatus;
         order.UpdatedAt     = DateTime.UtcNow;
 
+        // ✅ IMPORTANT: Sync the numerical PaidAmount when status moves to Paid
+        if (dto.PaymentStatus == PaymentStatus.Paid)
+        {
+            order.PaidAmount = order.TotalAmount;
+        }
+
         if (dto.PaymentStatus == PaymentStatus.Paid && oldStatus != PaymentStatus.Paid)
         {
             _ = Task.Run(async () =>
