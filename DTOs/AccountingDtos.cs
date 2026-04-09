@@ -163,6 +163,7 @@ public record CreateReceiptVoucherDto(
     int      CashAccountId,
     int      FromAccountId,
     int?     CustomerId,
+    int?     OrderId,
     VoucherPaymentMethod PaymentMethod,
     string?  Reference,
     string?  Description,

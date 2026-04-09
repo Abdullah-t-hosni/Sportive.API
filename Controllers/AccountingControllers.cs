@@ -340,8 +340,20 @@ public class ReceiptVouchersController : ControllerBase
         _db.ReceiptVouchers.Add(voucher);
         await _db.SaveChangesAsync();
 
+        // 🏛️ PRO-ACCOUNTING: Link to Order & Update Status if provided
+        if (dto.OrderId.HasValue)
+        {
+            var order = await _db.Orders.FindAsync(dto.OrderId.Value);
+            if (order != null)
+            {
+                // Update Order Payment calculations
+                order.PaymentStatus = PaymentStatus.Paid;
+                order.UpdatedAt = TimeHelper.GetEgyptTime();
+            }
+        }
+
         // ترحيل تلقائي للمحاسبة
-        await _accounting.PostReceiptVoucherAsync(voucher);
+        await _accounting.PostReceiptVoucherAsync(voucher, dto.OrderId);
         return Ok(voucher);
     }
 

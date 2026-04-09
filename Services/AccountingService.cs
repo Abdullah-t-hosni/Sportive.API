@@ -25,7 +25,7 @@ public interface IAccountingService
     Task PostSupplierPaymentAsync(SupplierPayment payment);
     Task ReverseEntryAsync(int journalEntryId, string reason);
     Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, string? userId);
-    Task PostReceiptVoucherAsync(ReceiptVoucher voucher);
+    Task PostReceiptVoucherAsync(ReceiptVoucher voucher, int? orderId = null);
     Task PostPaymentVoucherAsync(PaymentVoucher voucher);
     Task<string> GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, int?>? map = null);
     Task<decimal> GetAccountBalanceAsync(string code);
@@ -685,7 +685,7 @@ public class AccountingService : IAccountingService
         return entry;
     }
 
-    public async Task PostReceiptVoucherAsync(ReceiptVoucher voucher)
+    public async Task PostReceiptVoucherAsync(ReceiptVoucher voucher, int? orderId = null)
     {
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>
         {
@@ -693,7 +693,12 @@ public class AccountingService : IAccountingService
             ($"ID:{voucher.FromAccountId}", 0, voucher.Amount, $"من حساب {voucher.FromAccount?.NameAr} - {voucher.VoucherNumber}")
         };
 
-        await PostEntry(JournalEntryType.ReceiptVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, customerId: voucher.CustomerId);
+        if (orderId.HasValue)
+        {
+             lines[1] = (lines[1].code, lines[1].debit, lines[1].credit, $"إغلاق مديونية طلب {orderId} - سند {voucher.VoucherNumber}");
+        }
+
+        await PostEntry(JournalEntryType.ReceiptVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, customerId: voucher.CustomerId, orderId: orderId);
     }
 
     public async Task PostPaymentVoucherAsync(PaymentVoucher voucher)
