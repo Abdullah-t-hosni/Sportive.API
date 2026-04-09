@@ -178,6 +178,20 @@ public class CustomerService : ICustomerService
 
 
 
+    public async Task EnsureCustomerAccountAsync(int customerId)
+    {
+        var customer = await _db.Customers.FindAsync(customerId);
+        if (customer != null && customer.MainAccountId == null)
+        {
+            var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
+            if (parent != null)
+            {
+                customer.MainAccountId = parent.Id;
+                await _db.SaveChangesAsync();
+            }
+        }
+    }
+
     public async Task SyncAllMissingAccountsAsync()
     {
         var customers = await _db.Customers.Where(c => c.MainAccountId == null).ToListAsync();
