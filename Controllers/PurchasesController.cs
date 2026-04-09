@@ -26,6 +26,8 @@ public class SuppliersController : ControllerBase
     public async Task<IActionResult> GetAll(
         [FromQuery] string? search   = null,
         [FromQuery] bool?   isActive = null,
+        [FromQuery] string? sortBy   = null,
+        [FromQuery] string  sortDir  = "asc",
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
@@ -39,7 +41,14 @@ public class SuppliersController : ControllerBase
                            || (s.CompanyName != null && s.CompanyName.Contains(search)));
 
         var total = await q.CountAsync();
-        var items = await q.OrderBy(s => s.Name)
+        var desc = sortDir.Equals("desc", StringComparison.OrdinalIgnoreCase);
+        IOrderedQueryable<Supplier> ordered = sortBy?.ToLower() switch {
+            "totalpurchases" => desc ? q.OrderByDescending(s => s.TotalPurchases) : q.OrderBy(s => s.TotalPurchases),
+            "totalpaid"      => desc ? q.OrderByDescending(s => s.TotalPaid)      : q.OrderBy(s => s.TotalPaid),
+            "balance"        => desc ? q.OrderByDescending(s => s.TotalPurchases - s.TotalPaid) : q.OrderBy(s => s.TotalPurchases - s.TotalPaid),
+            _                => q.OrderBy(s => s.Name),
+        };
+        var items = await ordered
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(s => new SupplierDto(
                 s.Id, s.Name, s.Phone, s.CompanyName, s.TaxNumber, s.Email, s.Address,

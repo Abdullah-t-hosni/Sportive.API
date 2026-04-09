@@ -163,10 +163,35 @@ public class CustomerService : ICustomerService
             FixedDiscount = dto.FixedDiscount
         };
 
-        // ── Link to Global Control Account ──
+        // ── Create Unique Sub-Account under 1103 (Receivables) ──
         var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
         if (parent != null)
-            customer.MainAccountId = parent.Id;
+        {
+            // Next sub-account code: 1103-001, 1103-002, ...
+            var existingCodes = await _db.Accounts
+                .Where(a => a.ParentId == parent.Id)
+                .Select(a => a.Code)
+                .ToListAsync();
+            var maxSeq = existingCodes
+                .Select(c => {
+                    var parts = c.Split('-');
+                    return parts.Length == 2 && int.TryParse(parts[1], out var n) ? n : 0;
+                })
+                .DefaultIfEmpty(0).Max();
+            var subCode = $"1103-{(maxSeq + 1):D3}";
+            var subAccount = new Sportive.API.Models.Account
+            {
+                Code     = subCode,
+                NameAr   = dto.FullName,
+                NameEn   = dto.FullName,
+                ParentId = parent.Id,
+                Type     = parent.Type,
+                Nature   = parent.Nature,
+            };
+            _db.Accounts.Add(subAccount);
+            await _db.SaveChangesAsync(); // get sub-account Id
+            customer.MainAccountId = subAccount.Id;
+        }
 
         _db.Customers.Add(customer);
         await _db.SaveChangesAsync();
@@ -196,15 +221,27 @@ public class CustomerService : ICustomerService
     public async Task EnsureCustomerAccountAsync(int customerId)
     {
         var customer = await _db.Customers.FindAsync(customerId);
-        if (customer != null && customer.MainAccountId == null)
+        if (customer == null || customer.MainAccountId != null) return;
+
+        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
+        if (parent == null) return;
+
+        var existingCodes = await _db.Accounts
+            .Where(a => a.ParentId == parent.Id)
+            .Select(a => a.Code)
+            .ToListAsync();
+        var maxSeq = existingCodes
+            .Select(c => { var p = c.Split('-'); return p.Length == 2 && int.TryParse(p[1], out var n) ? n : 0; })
+            .DefaultIfEmpty(0).Max();
+        var sub = new Sportive.API.Models.Account
         {
-            var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
-            if (parent != null)
-            {
-                customer.MainAccountId = parent.Id;
-                await _db.SaveChangesAsync();
-            }
-        }
+            Code = $"1103-{(maxSeq + 1):D3}", NameAr = customer.FullName, NameEn = customer.FullName,
+            ParentId = parent.Id, Type = parent.Type, Nature = parent.Nature,
+        };
+        _db.Accounts.Add(sub);
+        await _db.SaveChangesAsync();
+        customer.MainAccountId = sub.Id;
+        await _db.SaveChangesAsync();
     }
 
     public async Task SyncAllMissingAccountsAsync()
@@ -215,9 +252,25 @@ public class CustomerService : ICustomerService
         var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
         if (parent == null) return;
 
+        var existingCodes = await _db.Accounts
+            .Where(a => a.ParentId == parent.Id)
+            .Select(a => a.Code)
+            .ToListAsync();
+        var maxSeq = existingCodes
+            .Select(c => { var p = c.Split('-'); return p.Length == 2 && int.TryParse(p[1], out var n) ? n : 0; })
+            .DefaultIfEmpty(0).Max();
+
         foreach (var c in customers)
         {
-            c.MainAccountId = parent.Id;
+            maxSeq++;
+            var sub = new Sportive.API.Models.Account
+            {
+                Code = $"1103-{maxSeq:D3}", NameAr = c.FullName, NameEn = c.FullName,
+                ParentId = parent.Id, Type = parent.Type, Nature = parent.Nature,
+            };
+            _db.Accounts.Add(sub);
+            await _db.SaveChangesAsync();
+            c.MainAccountId = sub.Id;
         }
 
         await _db.SaveChangesAsync();
@@ -285,8 +338,14 @@ public class CustomerService : ICustomerService
         
         if (!string.IsNullOrEmpty(customer.AppUserId))
         {
-            // Only delete the linked AppUser if they have no staff roles (not Admin/Manager/Staff/etc.)
-            var isStaff = await _db.UserRoles.AnyAsync(ur => ur.UserId == customer.AppUserId);
+            // Only delete the AppUser if they hold no staff-level roles
+            var staffRoleNames = new[] { "Admin", "Manager", "Cashier", "Accountant", "Staff" };
+            var staffRoleIds = await _db.Roles
+                .Where(r => r.Name != null && staffRoleNames.Contains(r.Name))
+                .Select(r => r.Id)
+                .ToListAsync();
+            var isStaff = await _db.UserRoles
+                .AnyAsync(ur => ur.UserId == customer.AppUserId && staffRoleIds.Contains(ur.RoleId));
             if (!isStaff)
             {
                 var appUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == customer.AppUserId);

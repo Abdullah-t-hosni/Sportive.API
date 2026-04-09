@@ -400,6 +400,18 @@ public class AccountingService : IAccountingService
         lines.Add((cashCode,        order.TotalAmount, 0,                $"تحصيل طلب {order.OrderNumber} ({order.PaymentMethod})"));
         lines.Add((receivablesAcct, 0,                order.TotalAmount, $"إغلاق مديونية طلب {order.OrderNumber}"));
 
+        // 🛡️ DOUBLE-CHECK: If there's already a full or partial payment via Vouchers or other logic, skip or adjust.
+        // For simplicity and safety, if ANY Credit already exists for this order in Receivables, we skip auto-PMT.
+        var existingCredit = await _db.JournalLines
+            .Where(l => l.OrderId == order.Id && l.Credit > 0 && l.Account.Code.StartsWith("1103"))
+            .AnyAsync();
+        
+        if (existingCredit) 
+        {
+            _logger.LogInformation("[Accounting] Skipping auto-payment for {OrderNum} as payments already exist in ledger.", order.OrderNumber);
+            return;
+        }
+
         await PostEntry(
             type:        JournalEntryType.ReceiptVoucher,
             reference:   reference,

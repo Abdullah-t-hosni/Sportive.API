@@ -307,6 +307,18 @@ public class ReceiptVouchersController : ControllerBase
         return Ok(new { items, total, page, pageSize, totalPages = (int)Math.Ceiling(total/(double)pageSize) });
     }
 
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var v = await _db.ReceiptVouchers
+            .Include(v => v.CashAccount)
+            .Include(v => v.FromAccount)
+            .Include(v => v.Customer)
+            .FirstOrDefaultAsync(v => v.Id == id);
+        if (v == null) return NotFound();
+        return Ok(v);
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateReceiptVoucherDto dto)
     {
@@ -469,6 +481,18 @@ public class PaymentVouchersController : ControllerBase
             .ToListAsync();
 
         return Ok(new { items, total, page, pageSize, totalPages = (int)Math.Ceiling(total/(double)pageSize) });
+    }
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var v = await _db.PaymentVouchers
+            .Include(v => v.CashAccount)
+            .Include(v => v.ToAccount)
+            .Include(v => v.Supplier)
+            .FirstOrDefaultAsync(v => v.Id == id);
+        if (v == null) return NotFound();
+        return Ok(v);
     }
 
     [HttpPost]

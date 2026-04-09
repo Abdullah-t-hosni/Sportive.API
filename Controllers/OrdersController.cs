@@ -161,9 +161,18 @@ public class OrdersController : ControllerBase
         order.UpdatedAt     = TimeHelper.GetEgyptTime();
 
         // ✅ IMPORTANT: Sync the numerical PaidAmount when status moves to Paid
+        // ✅ IMPORTANT: Sync the numerical PaidAmount when status moves to Paid
         if (dto.PaymentStatus == PaymentStatus.Paid)
         {
-            order.PaidAmount = order.TotalAmount;
+            // Only force total amount if no vouchers/payments exist yet to avoid double counting
+            var currentVouchersSum = await _db.JournalLines
+                .Where(l => l.OrderId == id && l.Credit > 0 && l.Account.Code.StartsWith("1103"))
+                .SumAsync(l => l.Credit);
+
+            if (currentVouchersSum < order.TotalAmount)
+            {
+                order.PaidAmount = order.TotalAmount;
+            }
         }
 
         if (dto.PaymentStatus == PaymentStatus.Paid && oldStatus != PaymentStatus.Paid)
@@ -271,29 +280,35 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPost("archive-batch")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> ArchiveBatch([FromBody] ArchiveBatchDto dto)
     {
         if (dto.Ids == null || dto.Ids.Length == 0)
             return BadRequest(new { message = "No order IDs provided" });
 
+        var shouldArchive = dto.Archive ?? true;
         var orders = await _db.Orders
-            .Where(o => dto.Ids.Contains(o.Id) && !o.IsArchived)
+            .Where(o => dto.Ids.Contains(o.Id) && o.IsArchived != shouldArchive)
             .ToListAsync();
 
         var now = TimeHelper.GetEgyptTime();
-        foreach (var o in orders) { o.IsArchived = true; o.ArchivedAt = now; }
+        foreach (var o in orders)
+        {
+            o.IsArchived = shouldArchive;
+            o.ArchivedAt = shouldArchive ? now : null;
+        }
         await _db.SaveChangesAsync();
-        return Ok(new { archived = orders.Count });
+        return Ok(new { processed = orders.Count, archived = shouldArchive });
     }
 
     [HttpGet("archived")]
     [Authorize(Roles = "Admin,Manager,Accountant")]
     public async Task<IActionResult> GetArchived(
+        [FromQuery] string?   search   = null,
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] int page           = 1,
-        [FromQuery] int pageSize       = 50)
+        [FromQuery] int pageSize       = 20)
     {
         var from = fromDate?.Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1);
@@ -301,15 +316,22 @@ public class OrdersController : ControllerBase
         var q = _db.Orders.AsNoTracking().Where(o => o.IsArchived).Include(o => o.Customer).AsQueryable();
         if (from.HasValue) q = q.Where(o => o.ArchivedAt >= from);
         if (to.HasValue)   q = q.Where(o => o.ArchivedAt <= to);
+        if (!string.IsNullOrEmpty(search))
+            q = q.Where(o => o.OrderNumber.Contains(search)
+                           || (o.Customer != null && o.Customer.FullName.Contains(search))
+                           || (o.Customer != null && o.Customer.Phone != null && o.Customer.Phone.Contains(search)));
 
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(o => o.ArchivedAt).Skip((page - 1) * pageSize).Take(pageSize)
             .Select(o => new {
-                o.Id, o.OrderNumber, o.Status, o.TotalAmount, o.CreatedAt, o.ArchivedAt,
-                CustomerName = o.Customer != null ? o.Customer.FullName : ""
+                o.Id, o.OrderNumber,
+                Status = o.Status.ToString(),
+                o.TotalAmount, o.CreatedAt, o.ArchivedAt,
+                CustomerName  = o.Customer != null ? o.Customer.FullName : null,
+                CustomerPhone = o.Customer != null ? o.Customer.Phone    : null,
             }).ToListAsync();
 
-        return Ok(new { items, totalCount = total, page, pageSize });
+        return Ok(new { items, totalCount = total, totalPages = (int)Math.Ceiling((double)total / pageSize), page, pageSize });
     }
 
     private async Task PostOrderPaymentWithRetryAsync(int orderId)
@@ -343,4 +365,4 @@ public class OrdersController : ControllerBase
     }
 }
 
-public record ArchiveBatchDto(int[] Ids);
+public record ArchiveBatchDto(int[] Ids, bool? Archive = true);

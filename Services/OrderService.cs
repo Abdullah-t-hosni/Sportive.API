@@ -20,6 +20,7 @@ public class OrderService : IOrderService
     private readonly ICustomerService _customerService;
     private readonly IAccountingService _accounting;
     private readonly ILogger<OrderService> _logger;
+    private readonly SequenceService _seq;
 
     public OrderService(
         AppDbContext db,
@@ -30,7 +31,8 @@ public class OrderService : IOrderService
         IConfiguration config,
         ICustomerService customerService,
         IAccountingService accounting,
-        ILogger<OrderService> logger)
+        ILogger<OrderService> logger,
+        SequenceService seq)
     {
         _db = db;
         _notificationService = notificationService;
@@ -41,6 +43,7 @@ public class OrderService : IOrderService
         _customerService = customerService;
         _accounting = accounting;
         _logger = logger;
+        _seq = seq;
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
@@ -604,13 +607,15 @@ public class OrderService : IOrderService
     public async Task<string> GenerateOrderNumberAsync(OrderSource source = OrderSource.Website)
     {
         var prefix = source == OrderSource.POS ? "POS" : "ORD";
-        var date = TimeHelper.GetEgyptTime().ToString("yyMMdd");
-        string orderNumber;
-        do {
-            var random = Random.Shared.Next(1000, 9999);
-            orderNumber = $"{prefix}-{date}-{random}";
-        } while (await _db.Orders.AnyAsync(o => o.OrderNumber == orderNumber));
-        return orderNumber;
+        return await _seq.NextAsync(prefix, async (db, pattern) =>
+        {
+            var max = await db.Orders
+                .Where(o => EF.Functions.Like(o.OrderNumber, pattern))
+                .Select(o => o.OrderNumber)
+                .ToListAsync();
+            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                      .DefaultIfEmpty(0).Max();
+        });
     }
 
     public async Task SyncAllOrderAccountingAsync()
