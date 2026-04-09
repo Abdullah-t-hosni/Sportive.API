@@ -373,5 +373,8 @@ static async Task SeedAsync(WebApplication app)
     var orderService = scope.ServiceProvider.GetRequiredService<IOrderService>();
     await orderService.SyncAllOrderAccountingAsync();
 
+    var accountingService = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+    await accountingService.SyncAllPurchaseAccountingAsync();
+
     Log.Information("Seed process and accounting synchronization completed successfully.");
 }

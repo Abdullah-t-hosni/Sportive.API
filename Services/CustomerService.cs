@@ -3,6 +3,7 @@ using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Services;
 
@@ -14,7 +15,7 @@ public class CustomerService : ICustomerService
     public async Task<PaginatedResult<CustomerDetailDto>> GetCustomersAsync(
         int page, int pageSize, string? search = null)
     {
-        pageSize = Math.Clamp(pageSize, 1, 100);
+        pageSize = AppConstants.ClampPrecacheSize(pageSize);
         var query = _db.Customers
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
@@ -33,29 +34,47 @@ public class CustomerService : ICustomerService
         query = query.OrderByDescending(c => c.CreatedAt);
 
         var total = await query.CountAsync();
-        var items = await query
+
+        // 1. Fetch the page of customers (no balance sub-query here — avoids N+1)
+        var rawCustomers = await query
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(c => new CustomerDetailDto(
-                c.Id, c.FullName, c.Email, c.Phone,
-                c.Orders.Count,
-                c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
-                c.CreatedAt,
-                c.Addresses.Select(a => new AddressDto(
+            .Select(c => new
+            {
+                c.Id, c.FullName, c.Email, c.Phone, c.AppUserId,
+                c.MainAccountId, c.FixedDiscount, c.CreatedAt,
+                OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
+                OrderCount = c.Orders.Count,
+                OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
+                Addresses = c.Addresses.Select(a => new AddressDto(
                     a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
-                )).ToList(),
-                c.AppUserId,
-                (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + 
-                _db.JournalLines
-                   .Where(l => 
-                       (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) &&
-                       l.JournalEntry.Status == JournalEntryStatus.Posted)
-                   .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0,
-                c.MainAccountId,
-                c.FixedDiscount
-            ))
+                )).ToList()
+            })
             .ToListAsync();
+
+        // 2. Fetch all balances for this page in a single query (one round-trip instead of N)
+        var customerIds = rawCustomers.Select(c => c.Id).ToList();
+        var accountIds  = rawCustomers.Where(c => c.MainAccountId.HasValue)
+                                      .Select(c => c.MainAccountId!.Value).ToList();
+
+        var balanceMap = await _db.JournalLines
+            .Where(l =>
+                (l.CustomerId != null && customerIds.Contains(l.CustomerId.Value) ||
+                 accountIds.Contains(l.AccountId)) &&
+                l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .GroupBy(l => l.CustomerId ?? 0)
+            .Select(g => new { CustomerId = g.Key, Net = g.Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0 })
+            .ToDictionaryAsync(x => x.CustomerId, x => x.Net);
+
+        // 3. Map to DTOs — balance = opening + journal net
+        var items = rawCustomers.Select(c => new CustomerDetailDto(
+            c.Id, c.FullName, c.Email, c.Phone,
+            c.OrderCount, c.OrderTotal, c.CreatedAt,
+            c.Addresses, c.AppUserId,
+            c.OpeningBalance + (balanceMap.TryGetValue(c.Id, out var net) ? net : 0),
+            c.MainAccountId, c.FixedDiscount
+        )).ToList();
 
         return new PaginatedResult<CustomerDetailDto>(
             items, total, page, pageSize,

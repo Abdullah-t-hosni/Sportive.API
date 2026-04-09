@@ -152,13 +152,15 @@ public class PurchaseInvoicesController : ControllerBase
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IProductService _productService;
     private readonly IInventoryService _inventory;
+    private readonly ILogger<PurchaseInvoicesController> _logger;
 
-    public PurchaseInvoicesController(AppDbContext db, IServiceScopeFactory scopeFactory, IProductService productService, IInventoryService inventory)
+    public PurchaseInvoicesController(AppDbContext db, IServiceScopeFactory scopeFactory, IProductService productService, IInventoryService inventory, ILogger<PurchaseInvoicesController> logger)
     {
-        _db           = db;
-        _scopeFactory = scopeFactory;
+        _db             = db;
+        _scopeFactory   = scopeFactory;
         _productService = productService;
-        _inventory = inventory;
+        _inventory      = inventory;
+        _logger         = logger;
     }
 
     [HttpGet]
@@ -339,16 +341,7 @@ public class PurchaseInvoicesController : ControllerBase
         _db.PurchaseInvoices.Add(invoice);
         await _db.SaveChangesAsync();
 
-        _ = Task.Run(async () =>
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            try {
-                var invInner = await db.PurchaseInvoices.Include(i => i.Supplier).Include(i => i.Payments).FirstAsync(i => i.Id == invoice.Id);
-                await accounting.PostPurchaseInvoiceAsync(invInner); 
-            } catch { }
-        });
+        _ = PostJournalWithRetryAsync(invoice.Id, invoice.InvoiceNumber, isReturn: false);
 
         return CreatedAtAction(nameof(GetById), new { id = invoice.Id }, new { id = invoice.Id, invoiceNumber = invoice.InvoiceNumber });
     }
@@ -456,16 +449,7 @@ public class PurchaseInvoicesController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        _ = Task.Run(async () =>
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var acc = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            try {
-                var full = await db.PurchaseInvoices.Include(i => i.Supplier).FirstAsync(i => i.Id == id);
-                await acc.PostPurchaseInvoiceAsync(full);
-            } catch { }
-        });
+        _ = PostJournalWithRetryAsync(id, inv.InvoiceNumber, isReturn: false);
 
         return Ok(new { id = inv.Id, invoiceNumber = inv.InvoiceNumber });
     }
@@ -477,12 +461,63 @@ public class PurchaseInvoicesController : ControllerBase
         var inv = await _db.PurchaseInvoices
             .Include(i => i.Supplier)
             .Include(i => i.Payments)
+            .Include(i => i.Items)
             .FirstOrDefaultAsync(i => i.Id == id);
 
         if (inv == null) return NotFound();
 
+        var oldStatus = inv.Status;
+        if (oldStatus == dto.Status) return Ok(new { id = inv.Id, status = inv.Status.ToString() });
+
+        // ── 1. Handle Stock Reversal (If moving FROM received TO inactive) ──
+        bool wasInStock = (oldStatus == PurchaseInvoiceStatus.Received || oldStatus == PurchaseInvoiceStatus.Paid || oldStatus == PurchaseInvoiceStatus.PartPaid);
+        bool willBeOut  = (dto.Status == PurchaseInvoiceStatus.Cancelled || dto.Status == PurchaseInvoiceStatus.Returned);
+
+        if (wasInStock && willBeOut)
+        {
+            foreach (var item in inv.Items)
+            {
+                if (item.ProductId.HasValue)
+                {
+                    await _inventory.LogMovementAsync(
+                        dto.Status == PurchaseInvoiceStatus.Returned ? InventoryMovementType.ReturnOut : InventoryMovementType.Adjustment,
+                        -item.Quantity, // Reverse the previous increase
+                        item.ProductId,
+                        item.ProductVariantId,
+                        inv.InvoiceNumber,
+                        $"Purchase status changed: {oldStatus} -> {dto.Status}",
+                        User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    );
+                }
+            }
+        }
+        // Case: If moving FROM Draft/Cancelled TO Received/Paid (Re-activating)
+        else if (!wasInStock && (dto.Status == PurchaseInvoiceStatus.Received || dto.Status == PurchaseInvoiceStatus.Paid))
+        {
+             foreach (var item in inv.Items)
+             {
+                if (item.ProductId.HasValue)
+                {
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.Purchase,
+                        item.Quantity,
+                        item.ProductId,
+                        item.ProductVariantId,
+                        inv.InvoiceNumber,
+                        $"Purchase status activated: {dto.Status}",
+                        User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    );
+                }
+             }
+        }
+
+        // ── 2. Handle Accounting & Totals ──
         if (dto.Status == PurchaseInvoiceStatus.Cancelled)
         {
+            // Reverse Supplier Totals
+            inv.Supplier.TotalPurchases -= inv.TotalAmount;
+            inv.Supplier.TotalPaid -= inv.PaidAmount;
+
             var journalEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == inv.InvoiceNumber);
             if (journalEntry != null) { 
                 _db.JournalEntries.Remove(journalEntry);
@@ -499,16 +534,7 @@ public class PurchaseInvoicesController : ControllerBase
 
         if (dto.Status == PurchaseInvoiceStatus.Returned)
         {
-            _ = Task.Run(async () =>
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var acc = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                try {
-                    var full = await db.PurchaseInvoices.Include(i => i.Supplier).FirstAsync(i => i.Id == id);
-                    await acc.PostPurchaseReturnAsync(full); 
-                } catch { }
-            });
+            _ = PostJournalWithRetryAsync(id, inv.InvoiceNumber, isReturn: true);
         }
 
         inv.Status = dto.Status;
@@ -553,5 +579,47 @@ public class PurchaseInvoicesController : ControllerBase
         _db.PurchaseInvoices.Remove(inv);
         await _db.SaveChangesAsync();
         return NoContent();
+    }
+
+    /// <summary>
+    /// Posts the accounting journal for a purchase invoice in the background.
+    /// Retries up to 3 times with exponential back-off before giving up and logging an error.
+    /// </summary>
+    private async Task PostJournalWithRetryAsync(int invoiceId, string invoiceNumber, bool isReturn)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var acc = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var db  = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var inv = await db.PurchaseInvoices
+                    .Include(i => i.Supplier)
+                    .Include(i => i.Payments)
+                    .FirstAsync(i => i.Id == invoiceId);
+
+                if (isReturn)
+                    await acc.PostPurchaseReturnAsync(inv);
+                else
+                    await acc.PostPurchaseInvoiceAsync(inv);
+
+                return; // success
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogWarning(ex,
+                    "[Accounting] Journal posting attempt {Attempt}/{Max} failed for invoice {Number}. Retrying...",
+                    attempt, maxAttempts, invoiceNumber);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "[Accounting] Journal posting permanently failed for invoice {Number} after {Max} attempts.",
+                    invoiceNumber, maxAttempts);
+            }
+        }
     }
 }

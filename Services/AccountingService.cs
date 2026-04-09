@@ -30,6 +30,7 @@ public interface IAccountingService
     Task<decimal> GetAccountBalanceAsync(string code);
     /// <summary>بيجيب رصيد حساب الكاشير في اليوم الحالي فقط (اليوم من منتصف الليل UTC)</summary>
     Task<decimal> GetTodayDrawerBalanceAsync(string cashAccountCode);
+    Task SyncAllPurchaseAccountingAsync();
 }
 
 public class AccountingService : IAccountingService
@@ -478,6 +479,13 @@ public class AccountingService : IAccountingService
                             : GetMap(mapDict, "supplierAccountID", PAYABLES);
             lines.Add((vendorAcct, 0, invoice.TotalAmount, $"إثبات استحقاق للمورد - {invoice.InvoiceNumber}"));
 
+            // ── 2.5 Credits: Discount Amount ──────────────────────────
+            if (invoice.DiscountAmount > 0)
+            {
+                var discAcct = GetMap(mapDict, "purchaseDiscountAccountID", PURCHASE_DISC);
+                lines.Add((discAcct, 0, invoice.DiscountAmount, $"خصم مكتسب مشتريات - {invoice.InvoiceNumber}"));
+            }
+
             // ── 3. Immediate Cash payment (If terms=Cash) ───────────────
             if (invoice.PaymentTerms == PaymentTerms.Cash)
             {
@@ -522,6 +530,12 @@ public class AccountingService : IAccountingService
 
         lines.Add((vendorAcct, invoice.TotalAmount, 0,                $"رد للمورد - {invoice.InvoiceNumber}"));
         lines.Add((rtnAcct,    0,                  invoice.SubTotal,  $"مرتجع مشتريات - {invoice.InvoiceNumber}"));
+
+        if (invoice.DiscountAmount > 0)
+        {
+            var discAcct = GetMap(mapDict, "purchaseDiscountAccountID", PURCHASE_DISC);
+            lines.Add((discAcct, invoice.DiscountAmount, 0, $"عكس خصم مشتريات (مرتجع) - {invoice.InvoiceNumber}"));
+        }
 
         if (invoice.TaxAmount > 0)
             lines.Add((vatAcct, 0, invoice.TaxAmount, $"استرداد ضريبة - {invoice.InvoiceNumber}"));
@@ -885,5 +899,32 @@ public class AccountingService : IAccountingService
 
         _db.JournalEntries.Add(entry);
         await _db.SaveChangesAsync();
+    }
+
+    public async Task SyncAllPurchaseAccountingAsync()
+    {
+        var invoices = await _db.PurchaseInvoices
+            .Include(i => i.Supplier)
+            .Include(i => i.Payments)
+            .Where(i => i.Status != PurchaseInvoiceStatus.Cancelled && i.Status != PurchaseInvoiceStatus.Draft)
+            .ToListAsync();
+
+        var invoiceNums = invoices.Select(i => i.InvoiceNumber.Trim().ToLower()).ToList();
+        var existingEntries = await _db.JournalEntries
+            .Where(j => j.Type == JournalEntryType.PurchaseInvoice && j.Reference != null && invoiceNums.Contains(j.Reference))
+            .ToListAsync();
+
+        var entryMap = existingEntries.GroupBy(e => e.Reference!.Trim().ToLower()).ToDictionary(g => g.Key, g => g.First());
+
+        foreach (var inv in invoices)
+        {
+            var key = inv.InvoiceNumber.Trim().ToLower();
+            if (!entryMap.ContainsKey(key))
+            {
+                try {
+                    await PostPurchaseInvoiceAsync(inv);
+                } catch { }
+            }
+        }
     }
 }

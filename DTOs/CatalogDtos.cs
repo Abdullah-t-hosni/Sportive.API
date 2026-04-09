@@ -3,6 +3,7 @@
 // تم الفصل من Dtos.cs الكبير — يشمل Categories, Brands, Products
 // ============================================================
 using Sportive.API.Models;
+using Sportive.API.Utils;
 using System.Text.Json.Serialization;
 
 namespace Sportive.API.DTOs;
@@ -209,7 +210,7 @@ public class ProductFilterDto
     public int PageSize
     {
         get => _pageSize;
-        set => _pageSize = Math.Clamp(value, 1, 100);
+        set => _pageSize = AppConstants.ClampPrecacheSize(value);
     }
 }
 
