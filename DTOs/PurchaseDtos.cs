@@ -99,6 +99,7 @@ public record PurchaseInvoiceSummaryDto(
     int      Id,
     string   InvoiceNumber,
     string?  SupplierInvoiceNumber,
+    int      SupplierId,
     string   SupplierName,
     string   PaymentTerms,
     string   Status,

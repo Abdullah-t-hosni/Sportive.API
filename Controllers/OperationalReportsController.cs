@@ -261,22 +261,50 @@ public class OperationalReportsController : ControllerBase
     // ══════════════════════════════════════════════════════
     [HttpGet("inventory")]
     public async Task<IActionResult> Inventory(
-        [FromQuery] string? search     = null,
-        [FromQuery] int?    categoryId = null,
-        [FromQuery] bool    lowStock   = false,
-        [FromQuery] bool    excel      = false)
+        [FromQuery] string? search      = null,
+        [FromQuery] int?    categoryId  = null,
+        [FromQuery] bool    lowStock    = false,
+        [FromQuery] string  stockStatus = "all", // "all", "positive", "zero"
+        [FromQuery] int     page        = 1,
+        [FromQuery] int     pageSize    = 50,
+        [FromQuery] bool    excel       = false)
     {
         var q = _db.Products
             .Include(p => p.Category)
             .Include(p => p.Variants)
             .Where(p => p.Status == ProductStatus.Active);
 
+        // --- Filtering ---
         if (!string.IsNullOrEmpty(search))
             q = q.Where(p => p.NameAr.Contains(search) || p.SKU.Contains(search));
+            
         if (categoryId.HasValue)
             q = q.Where(p => p.CategoryId == categoryId.Value);
 
-        var products = await q.OrderBy(p => p.CategoryId).ThenBy(p => p.NameAr).ToListAsync();
+        if (lowStock)
+            q = q.Where(p => p.TotalStock <= 5);
+
+        if (stockStatus == "positive")
+            q = q.Where(p => p.TotalStock > 0);
+        else if (stockStatus == "zero")
+            q = q.Where(p => p.TotalStock <= 0);
+
+        // --- Totals for Summary (Before Pagination) ---
+        // Warning: This consumes extra resources but provides accurate summary for filtered set
+        var summaryPre = new {
+            totalUnits     = await q.SumAsync(p => p.TotalStock),
+            lowStockCount  = await q.CountAsync(p => p.TotalStock <= 5),
+            outOfStock     = await q.CountAsync(p => p.TotalStock <= 0),
+        };
+
+        // --- Pagination ---
+        var totalCount = await q.CountAsync();
+        
+        var products = await q.OrderBy(p => p.CategoryId)
+                             .ThenBy(p => p.NameAr)
+                             .Skip((page - 1) * pageSize)
+                             .Take(pageSize)
+                             .ToListAsync();
 
         var rows = products.Select(p =>
         {
@@ -303,20 +331,27 @@ public class OperationalReportsController : ControllerBase
             );
         }).ToList();
 
-        if (lowStock) rows = rows.Where(r => r.TotalStock <= 5).ToList();
-
         var summary = new {
-            totalProducts  = rows.Count,
-            totalUnits     = rows.Sum(r => r.TotalStock),
-            totalSalesValue = rows.Sum(r => r.TotalValue),
-            totalCostValue  = rows.Sum(r => r.TotalCostValue),
-            lowStockCount  = rows.Count(r => r.TotalStock <= 5),
-            outOfStock     = rows.Count(r => r.TotalStock == 0),
+            totalFilteredProducts = totalCount,
+            totalUnits            = summaryPre.totalUnits,
+            lowStockCount         = summaryPre.lowStockCount,
+            outOfStock            = summaryPre.outOfStock,
+            totalSalesValue       = await q.SumAsync(p => p.TotalStock * p.Price),
+            totalCostValue        = await q.SumAsync(p => p.TotalStock * (p.CostPrice ?? 0))
         };
 
         if (excel) return ExcelInventory(rows, summary);
 
-        return Ok(new { rows, summary });
+        return Ok(new { 
+            rows, 
+            summary,
+            pagination = new {
+                totalCount,
+                pageSize,
+                currentPage = page,
+                totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+            }
+        });
     }
 
     // ══════════════════════════════════════════════════════
