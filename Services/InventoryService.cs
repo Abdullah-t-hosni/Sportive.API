@@ -27,6 +27,8 @@ public class InventoryService : IInventoryService
         string? userId = null)
     {
         if (quantity == 0) return;
+        if (variantId == 0) variantId = null;
+        if (productId == 0) productId = null;
 
         decimal unitCost = 0;
         int remainingBefore = 0;
