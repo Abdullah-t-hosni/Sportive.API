@@ -472,40 +472,42 @@ public class AccountingService : IAccountingService
             var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
             // ── 1. Debits: Inventory + VAT ─────────────────────────────
+            var typeStr = invoice.PaymentTerms == PaymentTerms.Cash ? "نقدي" : "آجل";
             var invAcct = invoice.InventoryAccountId != null ? $"ID:{invoice.InventoryAccountId}" : GetMap(mapDict, "inventoryAccountID", INVENTORY);
-            lines.Add((invAcct, invoice.SubTotal, 0, $"مشتريات بضاعة - {invoice.InvoiceNumber}"));
+            lines.Add((invAcct, invoice.SubTotal, 0, $"مشتريات {typeStr} - {invoice.InvoiceNumber}"));
 
             if (invoice.TaxAmount > 0)
             {
                 var vatAcct = invoice.VatAccountId != null ? $"ID:{invoice.VatAccountId}" : GetMap(mapDict, "vatInputAccountID", VAT_INPUT);
-                lines.Add((vatAcct, invoice.TaxAmount, 0, $"ضريبة مشتريات (مدخلات) - {invoice.InvoiceNumber}"));
+                lines.Add((vatAcct, invoice.TaxAmount, 0, $"ضريبة قيمة مضافة {typeStr} - {invoice.InvoiceNumber}"));
             }
 
             // ── 2. Credits: Vendor + Discount ───────────────────────────
             var vendorAcct = invoice.VendorAccountId != null ? $"ID:{invoice.VendorAccountId}" 
                             : invoice.Supplier?.MainAccountId != null ? $"ID:{invoice.Supplier.MainAccountId}" 
                             : GetMap(mapDict, "supplierAccountID", PAYABLES);
-            lines.Add((vendorAcct, 0, invoice.TotalAmount, $"إثبات استحقاق للمورد - {invoice.InvoiceNumber}"));
+            lines.Add((vendorAcct, 0, invoice.TotalAmount, $"إثبات استحقاق مورد ({typeStr}) - {invoice.InvoiceNumber}"));
 
             // ── 2.5 Credits: Discount Amount ──────────────────────────
             if (invoice.DiscountAmount > 0)
             {
                 var discAcct = GetMap(mapDict, "purchaseDiscountAccountID", PURCHASE_DISC);
-                lines.Add((discAcct, 0, invoice.DiscountAmount, $"خصم مكتسب مشتريات - {invoice.InvoiceNumber}"));
+                lines.Add((discAcct, 0, invoice.DiscountAmount, $"خصم مكتسب مشتريات {typeStr} - {invoice.InvoiceNumber}"));
             }
 
             // ── 3. Immediate Cash payment (If terms=Cash) ───────────────
             if (invoice.PaymentTerms == PaymentTerms.Cash)
             {
                 var cashAcct = invoice.CashAccountId != null ? $"ID:{invoice.CashAccountId}" : GetMap(mapDict, "cashAccountID", CASH_ACCOUNTS);
-                lines.Add((vendorAcct, invoice.TotalAmount, 0, $"سداد مورد فوري - {invoice.InvoiceNumber}"));
-                lines.Add((cashAcct, 0, invoice.TotalAmount, $"خروج نقدية مشتريات - {invoice.InvoiceNumber}"));
+                lines.Add((vendorAcct, invoice.TotalAmount, 0, $"سداد نقدي فوري للمورد - {invoice.InvoiceNumber}"));
+                lines.Add((cashAcct, 0, invoice.TotalAmount, $"صرف نقدية لشراء بضاعة - {invoice.InvoiceNumber}"));
             }
 
+            var jeTypeStr = invoice.PaymentTerms == PaymentTerms.Cash ? "نقدي" : "آجل";
             await PostEntry(
                 type:        JournalEntryType.PurchaseInvoice,
                 reference:   invoice.InvoiceNumber,
-                description: $"فاتورة مشتريات {invoice.InvoiceNumber} - {invoice.Supplier?.Name}",
+                description: $"فاتورة مشتريات {jeTypeStr} {invoice.InvoiceNumber} - {invoice.Supplier?.Name}",
                 date:        invoice.InvoiceDate,
                 lines:       lines,
                 supplierId:  invoice.SupplierId
