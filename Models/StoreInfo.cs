@@ -29,6 +29,10 @@ public class StoreInfo
     [JsonPropertyName("currencyCode")]
     public string CurrencyCode { get; set; } = "EGP";
 
+    [MaxLength(10)]
+    [JsonPropertyName("currencySymbol")]
+    public string CurrencySymbol { get; set; } = "ج.م";
+
     [MaxLength(500)]
     [JsonPropertyName("logoUrl")]
     public string? LogoUrl { get; set; }
@@ -110,6 +114,9 @@ public class StoreInfo
 
     [JsonPropertyName("allowGuestCheckout")]
     public bool AllowGuestCheckout { get; set; } = true;
+
+    [JsonPropertyName("enableCoupons")]
+    public bool EnableCoupons { get; set; } = true;
 
     [JsonPropertyName("enableReviews")]
     public bool EnableReviews { get; set; } = true;

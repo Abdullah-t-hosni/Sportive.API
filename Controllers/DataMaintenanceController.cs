@@ -62,7 +62,7 @@ public class DataMaintenanceController : ControllerBase
                         "SupplierPayments", "JournalLines", "ReceiptVouchers", "PaymentVouchers", "JournalEntries",
                         "Orders", "InventoryAudits", "PurchaseInvoices", "Suppliers", "ProductImages",
                         "ProductVariants", "Products", "Coupons", "Addresses", "Customers", "Notifications",
-                        "CartItems", "WishlistItems", "Reviews", "OrderStatusHistories", "OrderItems"
+                        "CartItems", "WishlistItems", "Reviews", "OrderStatusHistories", "OrderItems", "ShippingZones"
                     };
 
                     foreach (var table in tablesToTruncate)

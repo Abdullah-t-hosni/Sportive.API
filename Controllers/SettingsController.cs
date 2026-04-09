@@ -73,6 +73,7 @@ public class SettingsController : ControllerBase
             info.StoreSlogan             = dto.StoreSlogan;
             info.OrderNumberPrefix       = dto.OrderNumberPrefix;
             info.CurrencyCode            = dto.CurrencyCode;
+            info.CurrencySymbol          = dto.CurrencySymbol;
             info.LogoUrl                 = dto.LogoUrl;
             info.FaviconUrl              = dto.FaviconUrl;
 
@@ -97,6 +98,7 @@ public class SettingsController : ControllerBase
 
             info.MinOrderAmount          = dto.MinOrderAmount;
             info.AllowGuestCheckout      = dto.AllowGuestCheckout;
+            info.EnableCoupons           = dto.EnableCoupons;
             info.EnableReviews           = dto.EnableReviews;
             info.ReviewsRequirePurchase  = dto.ReviewsRequirePurchase;
             info.AllowedPaymentMethods   = dto.AllowedPaymentMethods;

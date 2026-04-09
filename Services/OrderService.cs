@@ -366,7 +366,29 @@ public class OrderService : IOrderService
 
                 if (order.Source == OrderSource.Website && order.FulfillmentType == FulfillmentType.Delivery)
                 {
-                    order.DeliveryFee = (order.SubTotal >= (store?.FreeDeliveryAt ?? 2000)) ? 0 : (store?.FixedDeliveryFee ?? 50);
+                    decimal fee = store?.FixedDeliveryFee ?? 50;
+                    decimal? threshold = store?.FreeDeliveryAt ?? 2000;
+
+                    if (dto.DeliveryAddressId.HasValue)
+                    {
+                        var addr = await _db.Addresses.AsNoTracking().FirstOrDefaultAsync(a => a.Id == dto.DeliveryAddressId.Value);
+                        if (addr != null && !string.IsNullOrEmpty(addr.City))
+                        {
+                            var city = addr.City.Trim().ToLower();
+                            var zone = await _db.ShippingZones.AsNoTracking()
+                                .Where(z => z.IsActive)
+                                .ToListAsync();
+                            
+                            var matched = zone.FirstOrDefault(z => z.Governorates.ToLower().Split(',').Any(g => g.Trim() == city));
+                            if (matched != null)
+                            {
+                                fee = matched.Fee;
+                                threshold = matched.FreeThreshold;
+                            }
+                        }
+                    }
+
+                    order.DeliveryFee = (threshold.HasValue && order.SubTotal >= threshold.Value) ? 0 : fee;
                 }
 
                 order.TotalAmount = order.SubTotal + order.DeliveryFee - order.DiscountAmount;

@@ -29,6 +29,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<BackupRecord> BackupRecords     => Set<BackupRecord>();
     public DbSet<UserModulePermission> UserModulePermissions => Set<UserModulePermission>();
     public DbSet<StoreInfo> StoreInfo           => Set<StoreInfo>();
+    public DbSet<ShippingZone> ShippingZones    => Set<ShippingZone>();
 
     // ✅ جديد — سجل التدقيق للعمليات الحساسة
     public DbSet<AuditLog> AuditLogs            => Set<AuditLog>();
@@ -255,6 +256,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.VatRatePercent).HasPrecision(18, 2);
             e.Property(x => x.FixedDeliveryFee).HasPrecision(18, 2);
             e.Property(x => x.FreeDeliveryAt).HasPrecision(18, 2);
+            e.Property(x => x.MinOrderAmount).HasPrecision(18, 2);
+        });
+
+        builder.Entity<ShippingZone>(e => {
+            e.Property(x => x.Fee).HasPrecision(18, 2);
+            e.Property(x => x.FreeThreshold).HasPrecision(18, 2);
         });
 
         builder.Entity<JournalLine>(e => {
