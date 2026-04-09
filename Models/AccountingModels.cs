@@ -136,6 +136,8 @@ public class ReceiptVoucher : BaseEntity
     public string?  CreatedByUserId { get; set; }
     public string?  AttachmentUrl   { get; set; }
     public string?  AttachmentPublicId { get; set; }
+    public int?     OrderId         { get; set; }
+    public Order?   Order           { get; set; }
 }
 
 // ══════════════════════════════════════════════════════
@@ -161,4 +163,6 @@ public class PaymentVoucher : BaseEntity
     public string?  CreatedByUserId { get; set; }
     public string?  AttachmentUrl   { get; set; }
     public string?  AttachmentPublicId { get; set; }
+    public int?     PurchaseInvoiceId { get; set; }
+    public PurchaseInvoice? PurchaseInvoice { get; set; }
 }

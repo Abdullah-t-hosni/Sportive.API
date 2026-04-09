@@ -334,11 +334,11 @@ public class ReceiptVouchersController : ControllerBase
             AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-            CreatedAt = TimeHelper.GetEgyptTime()
+            CreatedAt = TimeHelper.GetEgyptTime(),
+            OrderId = dto.OrderId
         };
 
         _db.ReceiptVouchers.Add(voucher);
-        await _db.SaveChangesAsync();
 
         // 🏛️ PRO-ACCOUNTING: Link to Order & Update Status if provided
         if (dto.OrderId.HasValue)
@@ -352,6 +352,8 @@ public class ReceiptVouchersController : ControllerBase
                 order.UpdatedAt = TimeHelper.GetEgyptTime();
             }
         }
+
+        await _db.SaveChangesAsync();
 
         // ترحيل تلقائي للمحاسبة
         await _accounting.PostReceiptVoucherAsync(voucher, dto.OrderId);
