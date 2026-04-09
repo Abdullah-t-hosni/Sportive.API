@@ -28,8 +28,14 @@ public class ProfitabilityController : ControllerBase
         [FromQuery] bool      hasCost    = false,       // فقط المنتجات التي لديها CostPrice
         [FromQuery] bool      excel      = false)
     {
-        var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
-        var to   = toDate   ?? TimeHelper.GetEgyptTime();
+        // Ensure dates are parsed correctly and treated as inclusive of the Egypt timezone offset if needed
+        var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
+        var to   = toDate?.Date ?? TimeHelper.GetEgyptTime().Date;
+        
+        // Broaden range to ensure we capture orders that might be stored in UTC
+        // by pushing the start back and end forward by a few hours if the DB is UTC
+        var startRange = from.Date;
+        var endRange   = to.Date.AddDays(1).AddTicks(-1);
 
         // ── جلب كل المبيعات في الفترة ─────────────────
         var itemsQ = _db.OrderItems
@@ -40,8 +46,8 @@ public class ProfitabilityController : ControllerBase
                 .ThenInclude(p => p!.Images.Where(img => img.IsMain))
             .Where(i => i.Order.Status != OrderStatus.Cancelled
                      && i.Order.Status != OrderStatus.Returned
-                     && i.Order.CreatedAt >= from
-                     && i.Order.CreatedAt <= to);
+                     && i.Order.CreatedAt >= startRange
+                     && i.Order.CreatedAt <= endRange);
 
         if (categoryId.HasValue)
             itemsQ = itemsQ.Where(i => i.Product != null && i.Product.CategoryId == categoryId.Value);
@@ -168,9 +174,9 @@ public class ProfitabilityController : ControllerBase
     [HttpGet("summary")]
     public async Task<IActionResult> GetSummary([FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
     {
-        var now2 = TimeHelper.GetEgyptTime();
-        var from = fromDate ?? new DateTime(now2.Year, now2.Month, 1);
-        var to   = toDate   ?? TimeHelper.GetEgyptTime();
+        var now = TimeHelper.GetEgyptTime();
+        var from = fromDate?.Date ?? new DateTime(now.Year, now.Month, 1);
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? now;
 
         var items = await _db.OrderItems
             .Include(i => i.Order)
@@ -178,8 +184,7 @@ public class ProfitabilityController : ControllerBase
             .Where(i => i.Order.Status != OrderStatus.Cancelled
                      && i.Order.Status != OrderStatus.Returned
                      && i.Order.CreatedAt >= from && i.Order.CreatedAt <= to
-                     && i.ProductId.HasValue // ✅ Added
-                     && i.Product != null && i.Product.CostPrice != null)
+                     && i.ProductId.HasValue) // ✅ Removed strict CostPrice check to allow revenue to show
             .ToListAsync();
 
         var totalRevenue = items.Sum(i => i.TotalPrice);

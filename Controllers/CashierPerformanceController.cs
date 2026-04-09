@@ -25,8 +25,8 @@ public class CashierPerformanceController : ControllerBase
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate ?? TimeHelper.GetEgyptTime().Date.AddDays(-30);
-        var to   = toDate   ?? TimeHelper.GetEgyptTime();
+        var from = fromDate?.Date ?? TimeHelper.GetEgyptTime().Date.AddDays(-30);
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         // ── جلب طلبات الكاشير فقط (Source = POS) ────
         var orders = await _db.Orders

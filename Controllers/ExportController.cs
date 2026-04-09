@@ -33,8 +33,8 @@ public class ExportController : ControllerBase
 
         if (source.HasValue)   query = query.Where(o => o.Source   == source.Value);
         if (status.HasValue)   query = query.Where(o => o.Status   == status.Value);
-        if (fromDate.HasValue) query = query.Where(o => o.CreatedAt >= fromDate.Value);
-        if (toDate.HasValue)   query = query.Where(o => o.CreatedAt <= toDate.Value);
+        if (fromDate.HasValue) query = query.Where(o => o.CreatedAt >= fromDate.Value.Date);
+        if (toDate.HasValue)   query = query.Where(o => o.CreatedAt <= toDate.Value.Date.AddDays(1).AddTicks(-1));
 
         var orders = await query.OrderByDescending(o => o.CreatedAt).ToListAsync();
 
@@ -214,8 +214,8 @@ public class ExportController : ControllerBase
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate   = null)
     {
-        var from  = fromDate ?? TimeHelper.GetEgyptTime().Date;
-        var to    = toDate   ?? TimeHelper.GetEgyptTime().Date.AddDays(1);
+        var from  = fromDate?.Date ?? TimeHelper.GetEgyptTime().Date;
+        var to    = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         var orders = await _db.Orders
             .Include(o => o.Customer)
@@ -496,8 +496,8 @@ public class ExportController : ControllerBase
             .OrderByDescending(i => i.CreatedAt)
             .AsQueryable();
 
-        if (fromDate.HasValue) query = query.Where(i => i.InvoiceDate >= fromDate.Value);
-        if (toDate.HasValue)   query = query.Where(i => i.InvoiceDate <= toDate.Value.AddDays(1));
+        if (fromDate.HasValue) query = query.Where(i => i.InvoiceDate >= fromDate.Value.Date);
+        if (toDate.HasValue)   query = query.Where(i => i.InvoiceDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
 
         var invoices = await query.ToListAsync();
 

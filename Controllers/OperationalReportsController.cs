@@ -394,7 +394,7 @@ public class OperationalReportsController : ControllerBase
         }
 
         var rows = orders.Select(o => new SalesRow(
-            o.OrderNumber, o.CreatedAt,
+            o.Id, o.OrderNumber, o.CreatedAt,
             o.Customer?.FullName ?? "",
             o.Customer?.Phone ?? "",
             o.Source.ToString(),
@@ -444,7 +444,7 @@ public class OperationalReportsController : ControllerBase
         var invoices = await q.OrderByDescending(i => i.InvoiceDate).ToListAsync();
 
         var rows = invoices.Select(i => new PurchaseRow(
-            i.InvoiceNumber, i.SupplierInvoiceNumber ?? "",
+            i.Id, i.InvoiceNumber, i.SupplierInvoiceNumber ?? "",
             i.Supplier?.Name ?? "N/A", i.InvoiceDate,
             i.PaymentTerms.ToString(), i.Status.ToString(),
             i.SubTotal, i.TaxAmount, i.TotalAmount,
@@ -1061,8 +1061,8 @@ public record CustomerAgingRow(int CustomerId, string CustomerName, string Phone
 public record SupplierAgingRow(int SupplierId, string SupplierName, string Phone, string CompanyName, decimal Total, decimal Current, decimal Days60, decimal Days90, decimal Over90);
 public record InventoryRow(int Id, string NameAr, string NameEn, string SKU, string CategoryName, decimal Price, decimal? DiscountPrice, decimal CostPrice, int TotalStock, decimal TotalValue, decimal TotalCostValue, List<VariantInventoryRow> Variants);
 public record VariantInventoryRow(int Id, string Size, string Color, string ColorAr, int StockQuantity, decimal Price, decimal Value);
-public record SalesRow(string OrderNumber, DateTime Date, string CustomerName, string Phone, string Source, string Status, string PaymentMethod, decimal SubTotal, decimal DiscountAmount, decimal TotalAmount, int ItemCount);
-public record PurchaseRow(string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal PaidAmount, decimal RemainingAmount);
+public record SalesRow(int Id, string OrderNumber, DateTime Date, string CustomerName, string Phone, string Source, string Status, string PaymentMethod, decimal SubTotal, decimal DiscountAmount, decimal TotalAmount, int ItemCount);
+public record PurchaseRow(int Id, string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal PaidAmount, decimal RemainingAmount);
 public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason);
 public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal TotalSales, int Returns, int Cancellations);
 public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "", int Balance = 0);

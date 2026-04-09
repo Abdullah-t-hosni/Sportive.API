@@ -204,8 +204,8 @@ public class PurchaseInvoicesController : ControllerBase
             .AsQueryable();
 
         if (supplierId.HasValue) q = q.Where(i => i.SupplierId == supplierId.Value);
-        if (fromDate.HasValue)   q = q.Where(i => i.InvoiceDate >= fromDate.Value);
-        if (toDate.HasValue)     q = q.Where(i => i.InvoiceDate <= toDate.Value);
+        if (fromDate.HasValue)   q = q.Where(i => i.InvoiceDate >= fromDate.Value.Date);
+        if (toDate.HasValue)     q = q.Where(i => i.InvoiceDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
         if (!string.IsNullOrEmpty(status) && Enum.TryParse<PurchaseInvoiceStatus>(status, out var st))
             q = q.Where(i => i.Status == st);
         if (!string.IsNullOrEmpty(search))

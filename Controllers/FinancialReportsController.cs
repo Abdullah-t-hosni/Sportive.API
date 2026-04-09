@@ -324,9 +324,9 @@ public class FinancialReportsController : ControllerBase
         // تحسين: تجميع العملاء والموردين تحت حسابات رقابة إذا لم يكن هناك فلترة محددة
         var grouped = ledgerRows
             .GroupBy(r => {
-                if (r.AccountCode.StartsWith("1103") && r.AccountCode.Length > 4 && !customerId.HasValue)
+                if (r.AccountCode.StartsWith("1103") && !customerId.HasValue)
                     return new { Id = 0, Code = "1103", Name = "إجمالي العملاء" };
-                if (r.AccountCode.StartsWith("2101") && r.AccountCode.Length > 4 && !supplierId.HasValue)
+                if (r.AccountCode.StartsWith("2101") && !supplierId.HasValue)
                     return new { Id = 0, Code = "2101", Name = "إجمالي الموردين" };
                 return new { Id = r.AccountId, Code = r.AccountCode, Name = r.AccountName };
             })
@@ -492,8 +492,8 @@ public class FinancialReportsController : ControllerBase
             var amount    = line.Debit - line.Credit; // + = تدفق داخل، - = تدفق خارج
 
             string displayName = line.Account.NameAr;
-            if (line.Account.Code.StartsWith("1103") && line.Account.Code.Length > 4) displayName = "إجمالي العملاء";
-            else if (line.Account.Code.StartsWith("2101") && line.Account.Code.Length > 4) displayName = "إجمالي الموردين";
+            if (line.Account.Code.StartsWith("1103")) displayName = "إجمالي العملاء";
+            else if (line.Account.Code.StartsWith("2101")) displayName = "إجمالي الموردين";
 
             var item = new CashFlowItem(
                 line.JournalEntry.EntryDate,
