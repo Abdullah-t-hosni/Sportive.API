@@ -175,14 +175,7 @@ public class AccountingService : IAccountingService
         }
         else
         {
-            // ── Paid Sale for a Known Customer:
-            // 1. Debit Customer (Record the sale in their ledger)
-            // 2. Credit Customer & Debit Cash/Bank (Record the immediate payment)
-            
-            // Step 1: Record in Customer Sub-ledger
-            lines.Add((receivablesAcct, netReceivable, 0, $"إثبات مبيعات عميل - {order.OrderNumber}"));
-            
-            // Step 2 & 3: Handle Payments (Supporting Mixed Payments)
+            // ── Paid Sale: Handling Mixed and 100% Cash
             bool isJsonMixed = note.Trim().StartsWith("{") && note.Contains("mixed");
             var splits = new List<(PaymentMethod method, decimal amount)>();
 
@@ -193,7 +186,7 @@ public class AccountingService : IAccountingService
                     if (doc.RootElement.TryGetProperty("mixed", out var mixedProps)) {
                         foreach (var prop in mixedProps.EnumerateObject()) {
                             var pm = prop.Name.ToLower();
-                            if (pm == "credit") continue; // Debt stays as balance
+                            if (pm == "credit") continue; 
 
                             var m = pm switch {
                                 "cash" => PaymentMethod.Cash,
@@ -211,19 +204,19 @@ public class AccountingService : IAccountingService
 
             if (splits.Count > 0)
             {
+                // 🔥 MIXED: We still record the FULL sale on the customer to show the transaction activity, then settle the cash parts.
+                lines.Add((receivablesAcct, netReceivable, 0, $"إثبات مبيعات (مختلط) - {order.OrderNumber}"));
                 foreach (var (m, v) in splits) {
                     string cashAcct = await GetMappedCashAccount(m, order.Source, mapDict);
-                    // Money into Bank, Money out of Customer
                     lines.Add((cashAcct, v, 0, $"تحصيل ({m}) - {order.OrderNumber}"));
-                    lines.Add((receivablesAcct, 0, v, $"سداد فوري للعميل ({m}) - {order.OrderNumber}"));
+                    lines.Add((receivablesAcct, 0, v, $"سداد جزئي للعميل ({m}) - {order.OrderNumber}"));
                 }
             }
             else
             {
+                // 🔥 100% CASH: Directly to cash account, bypasses customer ledger entirely
                 string cashAcct = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-                // Money into Bank, Money out of Customer
-                lines.Add((cashAcct, netReceivable, 0, $"تحصيل مبيعات نقدية - {order.OrderNumber}"));
-                lines.Add((receivablesAcct, 0, netReceivable, $"سداد فوري للعميل - {order.OrderNumber}"));
+                lines.Add((cashAcct, netReceivable, 0, $"مبيعات نقدية - {order.OrderNumber}"));
             }
         }
 
@@ -486,21 +479,26 @@ public class AccountingService : IAccountingService
             var vendorAcct = invoice.VendorAccountId != null ? $"ID:{invoice.VendorAccountId}" 
                             : invoice.Supplier?.MainAccountId != null ? $"ID:{invoice.Supplier.MainAccountId}" 
                             : GetMap(mapDict, "supplierAccountID", PAYABLES);
-            lines.Add((vendorAcct, 0, invoice.TotalAmount, $"إثبات استحقاق مورد ({typeStr}) - {invoice.InvoiceNumber}"));
+            
+            bool isCashPurchase = invoice.PaymentTerms == PaymentTerms.Cash;
+            
+            if (!isCashPurchase)
+            {
+                // 🛠️ CREDIT: Hit Vendor Ledger
+                lines.Add((vendorAcct, 0, invoice.TotalAmount, $"إثبات استحقاق مورد ({typeStr}) - {invoice.InvoiceNumber}"));
+            }
+            else
+            {
+                // 🛠️ CASH: Direct to Cash Account, bypass vendor account
+                var cashAcct = invoice.CashAccountId != null ? $"ID:{invoice.CashAccountId}" : GetMap(mapDict, "cashAccountID", CASH_ACCOUNTS);
+                lines.Add((cashAcct, 0, invoice.TotalAmount, $"صرف نقدية مشتريات فورية - {invoice.InvoiceNumber}"));
+            }
 
             // ── 2.5 Credits: Discount Amount ──────────────────────────
             if (invoice.DiscountAmount > 0)
             {
                 var discAcct = GetMap(mapDict, "purchaseDiscountAccountID", PURCHASE_DISC);
                 lines.Add((discAcct, 0, invoice.DiscountAmount, $"خصم مكتسب مشتريات {typeStr} - {invoice.InvoiceNumber}"));
-            }
-
-            // ── 3. Immediate Cash payment (If terms=Cash) ───────────────
-            if (invoice.PaymentTerms == PaymentTerms.Cash)
-            {
-                var cashAcct = invoice.CashAccountId != null ? $"ID:{invoice.CashAccountId}" : GetMap(mapDict, "cashAccountID", CASH_ACCOUNTS);
-                lines.Add((vendorAcct, invoice.TotalAmount, 0, $"سداد نقدي فوري للمورد - {invoice.InvoiceNumber}"));
-                lines.Add((cashAcct, 0, invoice.TotalAmount, $"صرف نقدية لشراء بضاعة - {invoice.InvoiceNumber}"));
             }
 
             var jeTypeStr = invoice.PaymentTerms == PaymentTerms.Cash ? "نقدي" : "آجل";
