@@ -148,8 +148,13 @@ public class CustomerService : ICustomerService
         _db.Customers.Add(customer);
         await _db.SaveChangesAsync();
 
-        // ── Auto-create Account ──
-        await EnsureCustomerAccountAsync(customer.Id);
+        // ── Link to Global Control Account ──
+        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
+        if (parent != null)
+        {
+            customer.MainAccountId = parent.Id;
+            await _db.SaveChangesAsync();
+        }
 
         return (await GetCustomerByIdAsync(customer.Id))!;
     }
@@ -171,93 +176,19 @@ public class CustomerService : ICustomerService
         return (await GetCustomerByIdAsync(customer.Id))!;
     }
 
-    public async Task EnsureCustomerAccountAsync(int customerId)
-    {
-        var customer = await _db.Customers.FindAsync(customerId);
-        if (customer == null || customer.MainAccountId != null) return;
 
-        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
-        if (parent == null) return;
-
-        var query = _db.Accounts.Where(a => a.ParentId == parent.Id);
-        var maxCode = await query.MaxAsync(a => (string?)a.Code);
-        long nextCodeNum = 1;
-        if (maxCode != null && maxCode.Length > 4 && long.TryParse(maxCode.Substring(4), out var existingNum)) {
-            nextCodeNum = existingNum + 1;
-        }
-        
-        string newCode;
-        while (true)
-        {
-            newCode = $"1103{nextCodeNum:D4}";
-            bool exists = await _db.Accounts.AnyAsync(a => a.Code == newCode);
-            if (!exists) break;
-            nextCodeNum++;
-        }
-
-        var account = new Account
-        {
-            Code = newCode,
-            NameAr = $"عميل - {customer.FullName}",
-            Type = AccountType.Asset,
-            Nature = AccountNature.Debit,
-            ParentId = parent.Id,
-            Level = parent.Level + 1,
-            IsLeaf = true,
-            AllowPosting = true,
-            CreatedAt = DateTime.UtcNow
-        };
-        
-        _db.Accounts.Add(account);
-        await _db.SaveChangesAsync();
-
-        customer.MainAccountId = account.Id;
-        await _db.SaveChangesAsync();
-    }
 
     public async Task SyncAllMissingAccountsAsync()
     {
-        var customers = await _db.Customers.Include(c => c.MainAccount).Where(c => c.MainAccountId == null).ToListAsync();
+        var customers = await _db.Customers.Where(c => c.MainAccountId == null).ToListAsync();
         if (!customers.Any()) return;
 
         var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
         if (parent == null) return;
 
-        var maxCode = await _db.Accounts.Where(a => a.ParentId == parent.Id).MaxAsync(a => (string?)a.Code);
-        long nextCodeNum = 1;
-        if (maxCode != null && maxCode.Length > 4 && long.TryParse(maxCode.Substring(4), out var existingNum)) {
-            nextCodeNum = existingNum + 1;
-        }
-
-        var existingCodes = await _db.Accounts.Where(a => a.Code.StartsWith("1103")).Select(a => a.Code).ToListAsync();
-        var codeSet = new HashSet<string>(existingCodes);
-
         foreach (var c in customers)
         {
-            string newCode;
-            while (true)
-            {
-                newCode = $"1103{nextCodeNum:D4}";
-                if (!codeSet.Contains(newCode)) break;
-                nextCodeNum++;
-            }
-            codeSet.Add(newCode);
-
-            var account = new Account
-            {
-                Code = newCode,
-                NameAr = $"عميل - {c.FullName}",
-                Type = AccountType.Asset,
-                Nature = AccountNature.Debit,
-                ParentId = parent.Id,
-                Level = parent.Level + 1,
-                IsLeaf = true,
-                AllowPosting = true,
-                CreatedAt = DateTime.UtcNow
-            };
-            _db.Accounts.Add(account);
-            c.MainAccount = account;
-            nextCodeNum++;
+            c.MainAccountId = parent.Id;
         }
 
         await _db.SaveChangesAsync();

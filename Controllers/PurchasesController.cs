@@ -90,51 +90,15 @@ public class SuppliersController : ControllerBase
             AttachmentPublicId = dto.AttachmentPublicId
         };
 
-        _db.Suppliers.Add(supplier);
-        await _db.SaveChangesAsync();
-
-        // ── Auto-create Supplier Account in Chart of Accounts ──
+        // ── Use Global Control Account for Supplier ──
         var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "2101");
         if (parent != null)
         {
-            // نستخدم IgnoreQueryFilters لضمان عدم تكرار كود حتى لو كان محذوفاً
-            var query = _db.Accounts.Where(a => a.ParentId == parent.Id);
-            var maxCode = await query.MaxAsync(a => (string?)a.Code);
-
-            long nextCodeNum = 1;
-            if (maxCode != null && maxCode.Length > 4 && long.TryParse(maxCode.Substring(4), out var existingNum)) {
-                nextCodeNum = existingNum + 1;
-            }
-            
-            // تأكيد إضافي: التحقق من التكرار في حلقة للتأكد من خلو الرقم تماماً
-            string newCode;
-            while (true)
-            {
-                newCode = $"2101{nextCodeNum:D4}";
-                bool exists = await _db.Accounts.AnyAsync(a => a.Code == newCode);
-                if (!exists) break;
-                nextCodeNum++;
-            }
-
-            var account = new Account
-            {
-                Code = newCode,
-                NameAr = $"مورد - {supplier.Name}",
-                Type = AccountType.Liability,
-                Nature = AccountNature.Credit,
-                ParentId = parent.Id,
-                Level = parent.Level + 1,
-                IsLeaf = true,
-                AllowPosting = true,
-                IsSystem = false,
-                CreatedAt = DateTime.UtcNow
-            };
-            _db.Accounts.Add(account);
-            await _db.SaveChangesAsync();
-
-            supplier.MainAccountId = account.Id;
-            await _db.SaveChangesAsync();
+            supplier.MainAccountId = parent.Id;
         }
+
+        _db.Suppliers.Add(supplier);
+        await _db.SaveChangesAsync();
 
         return CreatedAtAction(nameof(GetById), new { id = supplier.Id }, supplier);
     }
