@@ -7,6 +7,7 @@ using Sportive.API.DTOs;
 using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Interfaces;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Controllers;
 
@@ -85,7 +86,7 @@ public class SuppliersController : ControllerBase
             TaxNumber   = dto.TaxNumber?.Trim(),
             Email       = dto.Email?.Trim().ToLower(),
             Address     = dto.Address?.Trim(),
-            CreatedAt   = DateTime.UtcNow,
+            CreatedAt   = TimeHelper.GetEgyptTime(),
             AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId
         };
@@ -100,7 +101,12 @@ public class SuppliersController : ControllerBase
         _db.Suppliers.Add(supplier);
         await _db.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetById), new { id = supplier.Id }, supplier);
+        return CreatedAtAction(nameof(GetById), new { id = supplier.Id }, new SupplierDto(
+            supplier.Id, supplier.Name, supplier.Phone, supplier.CompanyName,
+            supplier.TaxNumber, supplier.Email, supplier.Address, supplier.IsActive,
+            supplier.TotalPurchases, supplier.TotalPaid, 0, 0,
+            supplier.AttachmentUrl, supplier.AttachmentPublicId
+        ));
     }
 
     [HttpPut("{id}")]
@@ -119,10 +125,17 @@ public class SuppliersController : ControllerBase
         supplier.AttachmentUrl = dto.AttachmentUrl;
         supplier.AttachmentPublicId = dto.AttachmentPublicId;
         supplier.MainAccountId = dto.MainAccountId;
-        supplier.UpdatedAt   = DateTime.UtcNow;
+        supplier.UpdatedAt   = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
-        return Ok(supplier);
+        return Ok(new SupplierDto(
+            supplier.Id, supplier.Name, supplier.Phone, supplier.CompanyName,
+            supplier.TaxNumber, supplier.Email, supplier.Address, supplier.IsActive,
+            supplier.TotalPurchases, supplier.TotalPaid,
+            supplier.TotalPurchases - supplier.TotalPaid,
+            await _db.PurchaseInvoices.CountAsync(i => i.SupplierId == supplier.Id),
+            supplier.AttachmentUrl, supplier.AttachmentPublicId
+        ));
     }
 
     [HttpDelete("{id}")]
@@ -153,14 +166,18 @@ public class PurchaseInvoicesController : ControllerBase
     private readonly IProductService _productService;
     private readonly IInventoryService _inventory;
     private readonly ILogger<PurchaseInvoicesController> _logger;
+    private readonly SequenceService _seq;
+    private readonly IPdfService _pdf;
 
-    public PurchaseInvoicesController(AppDbContext db, IServiceScopeFactory scopeFactory, IProductService productService, IInventoryService inventory, ILogger<PurchaseInvoicesController> logger)
+    public PurchaseInvoicesController(AppDbContext db, IServiceScopeFactory scopeFactory, IProductService productService, IInventoryService inventory, ILogger<PurchaseInvoicesController> logger, SequenceService seq, IPdfService pdf)
     {
         _db             = db;
         _scopeFactory   = scopeFactory;
         _productService = productService;
         _inventory      = inventory;
         _logger         = logger;
+        _seq            = seq;
+        _pdf            = pdf;
     }
 
     [HttpGet]
@@ -173,6 +190,7 @@ public class PurchaseInvoicesController : ControllerBase
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
         var q = _db.PurchaseInvoices
+            .AsNoTracking()
             .Include(i => i.Supplier)
             .AsQueryable();
 
@@ -256,9 +274,15 @@ public class PurchaseInvoicesController : ControllerBase
         if (supplier == null)
             return BadRequest(new { message = "المورد غير موجود" });
 
-        var year  = DateTime.UtcNow.Year % 100;
-        var count = await _db.PurchaseInvoices.CountAsync() + 1;
-        var invNo = $"PO-{year}{count:D4}";
+        var invNo = await _seq.NextAsync("PO", async (db, pattern) =>
+        {
+            var max = await db.PurchaseInvoices
+                .Where(i => EF.Functions.Like(i.InvoiceNumber, pattern))
+                .Select(i => i.InvoiceNumber)
+                .ToListAsync();
+            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                      .DefaultIfEmpty(0).Max();
+        });
 
         var invoice = new PurchaseInvoice
         {
@@ -275,7 +299,7 @@ public class PurchaseInvoicesController : ControllerBase
             Status                = dto.PaymentTerms == PaymentTerms.Cash ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.Received,
             AttachmentUrl         = dto.AttachmentUrl,
             AttachmentPublicId    = dto.AttachmentPublicId,
-            CreatedAt             = DateTime.UtcNow,
+            CreatedAt             = TimeHelper.GetEgyptTime(),
             VendorAccountId       = dto.VendorAccountId,
             InventoryAccountId    = dto.InventoryAccountId,
             ExpenseAccountId      = dto.ExpenseAccountId,
@@ -296,7 +320,7 @@ public class PurchaseInvoicesController : ControllerBase
                 Quantity    = item.Quantity,
                 UnitCost    = item.UnitCost,
                 TotalCost   = total,
-                CreatedAt   = DateTime.UtcNow
+                CreatedAt   = TimeHelper.GetEgyptTime()
             });
             subtotal += total;
 
@@ -309,7 +333,7 @@ public class PurchaseInvoicesController : ControllerBase
                 if (product != null)
                 {
                     product.CostPrice = item.UnitCost;
-                    product.UpdatedAt = DateTime.UtcNow;
+                    product.UpdatedAt = TimeHelper.GetEgyptTime();
                 }
             }
         }
@@ -324,17 +348,25 @@ public class PurchaseInvoicesController : ControllerBase
             invoice.PaidAmount = invoice.TotalAmount;
             supplier.TotalPaid += invoice.TotalAmount;
 
-            var pCount = await _db.SupplierPayments.CountAsync() + 1;
+            var pNo = await _seq.NextAsync("SP", async (db, pattern) =>
+            {
+                var max = await db.SupplierPayments
+                    .Where(p => EF.Functions.Like(p.PaymentNumber, pattern))
+                    .Select(p => p.PaymentNumber)
+                    .ToListAsync();
+                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                          .DefaultIfEmpty(0).Max();
+            });
             invoice.Payments.Add(new SupplierPayment
             {
-                PaymentNumber = $"PV-{year}{pCount:D4}",
+                PaymentNumber = pNo,
                 SupplierId    = supplier.Id,
                 Amount        = invoice.TotalAmount,
                 PaymentDate   = invoice.InvoiceDate,
                 PaymentMethod = PaymentMethod_Purchase.Cash,
                 AccountName   = "الخزينة (آلي)",
                 Notes         = $"سداد تلقائي لفاتورة {invNo}",
-                CreatedAt     = DateTime.UtcNow
+                CreatedAt     = TimeHelper.GetEgyptTime()
             });
         }
 
@@ -424,7 +456,7 @@ public class PurchaseInvoicesController : ControllerBase
             if (product != null)
             {
                 product.CostPrice = item.UnitCost;
-                product.UpdatedAt = DateTime.UtcNow;
+                product.UpdatedAt = TimeHelper.GetEgyptTime();
             }
         }
 
@@ -538,7 +570,7 @@ public class PurchaseInvoicesController : ControllerBase
         }
 
         inv.Status = dto.Status;
-        inv.UpdatedAt = DateTime.UtcNow;
+        inv.UpdatedAt = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
         return Ok(new { id = inv.Id, status = inv.Status.ToString() });
     }
@@ -583,6 +615,23 @@ public class PurchaseInvoicesController : ControllerBase
 
     /// <summary>
     /// Posts the accounting journal for a purchase invoice in the background.
+    // ══════════════════════════════════════════════════
+    // GET /api/purchaseinvoices/{id}/pdf
+    // ══════════════════════════════════════════════════
+    [HttpGet("{id}/pdf")]
+    public async Task<IActionResult> GetPdf(int id)
+    {
+        var invoice = await _db.PurchaseInvoices
+            .Include(i => i.Supplier)
+            .Include(i => i.Items)
+            .FirstOrDefaultAsync(i => i.Id == id);
+
+        if (invoice == null) return NotFound();
+
+        var pdfBytes = await _pdf.GeneratePurchaseInvoicePdfAsync(invoice);
+        return File(pdfBytes, "application/pdf", $"purchase-{invoice.InvoiceNumber}.pdf");
+    }
+
     /// Retries up to 3 times with exponential back-off before giving up and logging an error.
     /// </summary>
     private async Task PostJournalWithRetryAsync(int invoiceId, string invoiceNumber, bool isReturn)

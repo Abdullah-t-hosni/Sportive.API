@@ -88,6 +88,10 @@ public class Order : BaseEntity
     // Target Tracking
     public string? SalesPersonId { get; set; } // The ID of the employee who made the sale using POS
 
+    // Archive
+    public bool IsArchived { get; set; } = false;
+    public DateTime? ArchivedAt { get; set; }
+
     // Navigation
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
     public ICollection<OrderStatusHistory> StatusHistory { get; set; } = new List<OrderStatusHistory>();

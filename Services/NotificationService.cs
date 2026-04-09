@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Hubs;
 using Sportive.API.Models;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Services;
 
@@ -93,7 +94,7 @@ public class NotificationService : INotificationService
         if (n != null && !n.IsRead) 
         { 
             n.IsRead = true; 
-            n.UpdatedAt = DateTime.UtcNow;
+            n.UpdatedAt = TimeHelper.GetEgyptTime();
             await _db.SaveChangesAsync(); 
 
             var unreadCount = await GetUnreadCountAsync(userId);
@@ -112,7 +113,7 @@ public class NotificationService : INotificationService
             foreach (var n in unread)
             {
                 n.IsRead = true;
-                n.UpdatedAt = DateTime.UtcNow;
+                n.UpdatedAt = TimeHelper.GetEgyptTime();
             }
             await _db.SaveChangesAsync();
             await _hubContext.Clients.Group(userId).SendAsync("ReceiveUnreadCount", 0);

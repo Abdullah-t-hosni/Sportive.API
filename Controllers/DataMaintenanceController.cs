@@ -1,3 +1,4 @@
+using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -11,7 +12,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Accountant")]
+[Authorize(Roles = "Admin")]
 public class DataMaintenanceController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -66,7 +67,8 @@ public class DataMaintenanceController : ControllerBase
 
                     foreach (var table in tablesToTruncate)
                     {
-                        try { await _db.Database.ExecuteSqlRawAsync("TRUNCATE TABLE `" + table + "`;"); } catch { }
+                        try { await _db.Database.ExecuteSqlRawAsync("TRUNCATE TABLE `" + table + "`;"); }
+                        catch (Exception ex) { _logger.LogWarning("TRUNCATE {Table} skipped: {Error}", table, ex.Message); }
                     }
 
                     var customerRole = await _db.Roles.FirstOrDefaultAsync(r => r.Name == "Customer");
@@ -180,7 +182,7 @@ public class DataMaintenanceController : ControllerBase
             var account = new Account
             {
                 Code = newCode, NameAr = $"مورد - {s.Name}", Type = AccountType.Liability, Nature = AccountNature.Credit,
-                ParentId = parent.Id, Level = parent.Level + 1, IsLeaf = true, AllowPosting = true, CreatedAt = DateTime.UtcNow
+                ParentId = parent.Id, Level = parent.Level + 1, IsLeaf = true, AllowPosting = true, CreatedAt = TimeHelper.GetEgyptTime()
             };
             _db.Accounts.Add(account);
             await _db.SaveChangesAsync();

@@ -1,3 +1,4 @@
+using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -24,8 +25,8 @@ public class CashierPerformanceController : ControllerBase
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate ?? DateTime.UtcNow.Date.AddDays(-30);
-        var to   = toDate   ?? DateTime.UtcNow;
+        var from = fromDate ?? TimeHelper.GetEgyptTime().Date.AddDays(-30);
+        var to   = toDate   ?? TimeHelper.GetEgyptTime();
 
         // ── جلب طلبات الكاشير فقط (Source = POS) ────
         var orders = await _db.Orders

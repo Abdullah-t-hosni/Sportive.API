@@ -11,6 +11,7 @@ using Sportive.API.Interfaces;
 using Sportive.API.Services;
 using Sportive.API.DTOs;
 using System.Security.Claims;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Controllers;
 
@@ -121,7 +122,7 @@ public class AccountsController : ControllerBase
             if (mapping != null)
             {
                 mapping.AccountId = kvp.Value;
-                mapping.UpdatedAt = DateTime.UtcNow;
+                mapping.UpdatedAt = TimeHelper.GetEgyptTime();
             }
             else
             {
@@ -276,10 +277,12 @@ public class ReceiptVouchersController : ControllerBase
 {
     private readonly IAccountingService _accounting;
     private readonly AppDbContext _db;
-    public ReceiptVouchersController(IAccountingService accounting, AppDbContext db)
+    private readonly SequenceService _seq;
+    public ReceiptVouchersController(IAccountingService accounting, AppDbContext db, SequenceService seq)
     {
         _accounting = accounting;
         _db = db;
+        _seq = seq;
     }
 
     [HttpGet]
@@ -307,9 +310,15 @@ public class ReceiptVouchersController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateReceiptVoucherDto dto)
     {
-        var year = DateTime.UtcNow.Year % 100;
-        var count = await _db.ReceiptVouchers.CountAsync() + 1;
-        var vNo = $"RV-{year}{count:D4}";
+        var vNo = await _seq.NextAsync("RV", async (db, pattern) =>
+        {
+            var max = await db.ReceiptVouchers
+                .Where(v => EF.Functions.Like(v.VoucherNumber, pattern))
+                .Select(v => v.VoucherNumber)
+                .ToListAsync();
+            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                      .DefaultIfEmpty(0).Max();
+        });
 
         var voucher = new ReceiptVoucher
         {
@@ -325,7 +334,7 @@ public class ReceiptVouchersController : ControllerBase
             AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = TimeHelper.GetEgyptTime()
         };
 
         _db.ReceiptVouchers.Add(voucher);
@@ -360,14 +369,14 @@ public class ReceiptVouchersController : ControllerBase
         voucher.Description = dto.Description;
         voucher.AttachmentUrl = dto.AttachmentUrl;
         voucher.AttachmentPublicId = dto.AttachmentPublicId;
-        voucher.UpdatedAt = DateTime.UtcNow;
+        voucher.UpdatedAt = TimeHelper.GetEgyptTime();
 
         // 2. Synchronize Journal Entry
         if (entry != null)
         {
             entry.EntryDate = voucher.VoucherDate;
             entry.Description = voucher.Description;
-            entry.UpdatedAt = DateTime.UtcNow;
+            entry.UpdatedAt = TimeHelper.GetEgyptTime();
 
             // Rebuild lines to reflect new accounts/amounts
             _db.JournalLines.RemoveRange(entry.Lines);
@@ -404,10 +413,12 @@ public class PaymentVouchersController : ControllerBase
 {
     private readonly IAccountingService _accounting;
     private readonly AppDbContext _db;
-    public PaymentVouchersController(IAccountingService accounting, AppDbContext db)
+    private readonly SequenceService _seq;
+    public PaymentVouchersController(IAccountingService accounting, AppDbContext db, SequenceService seq)
     {
         _accounting = accounting;
         _db = db;
+        _seq = seq;
     }
 
     [HttpGet]
@@ -435,9 +446,15 @@ public class PaymentVouchersController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreatePaymentVoucherDto dto)
     {
-        var year = DateTime.UtcNow.Year % 100;
-        var count = await _db.PaymentVouchers.CountAsync() + 1;
-        var vNo = $"PV-{year}{count:D4}";
+        var vNo = await _seq.NextAsync("PV", async (db, pattern) =>
+        {
+            var max = await db.PaymentVouchers
+                .Where(v => EF.Functions.Like(v.VoucherNumber, pattern))
+                .Select(v => v.VoucherNumber)
+                .ToListAsync();
+            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                      .DefaultIfEmpty(0).Max();
+        });
 
         var voucher = new PaymentVoucher
         {
@@ -453,7 +470,7 @@ public class PaymentVouchersController : ControllerBase
             AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = TimeHelper.GetEgyptTime()
         };
 
         _db.PaymentVouchers.Add(voucher);
@@ -487,14 +504,14 @@ public class PaymentVouchersController : ControllerBase
         voucher.Description = dto.Description;
         voucher.AttachmentUrl = dto.AttachmentUrl;
         voucher.AttachmentPublicId = dto.AttachmentPublicId;
-        voucher.UpdatedAt = DateTime.UtcNow;
+        voucher.UpdatedAt = TimeHelper.GetEgyptTime();
 
         // 2. Sync Ledger
         if (entry != null)
         {
             entry.EntryDate = voucher.VoucherDate;
             entry.Description = voucher.Description;
-            entry.UpdatedAt = DateTime.UtcNow;
+            entry.UpdatedAt = TimeHelper.GetEgyptTime();
 
             _db.JournalLines.RemoveRange(entry.Lines);
             entry.Lines.Add(new JournalLine { AccountId = voucher.ToAccountId, Debit = voucher.Amount, Credit = 0, Description = $"[تحديث] {voucher.VoucherNumber} - {voucher.Description}" });

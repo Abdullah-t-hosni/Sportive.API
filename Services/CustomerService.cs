@@ -17,6 +17,7 @@ public class CustomerService : ICustomerService
     {
         pageSize = AppConstants.ClampPrecacheSize(pageSize);
         var query = _db.Customers
+            .AsNoTracking()
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
             .Include(c => c.MainAccount)
@@ -134,9 +135,7 @@ public class CustomerService : ICustomerService
                 (!string.IsNullOrEmpty(dto.Email) && c.Email.ToLower() == dto.Email.ToLower()));
         
         if (existing != null)
-        {
-            throw new Exception("هذا العميل (أو الهاتف) مسجل بالفعل في ملفات العملاء.");
-        }
+            throw new InvalidOperationException("هذا العميل (أو الهاتف) مسجل بالفعل في ملفات العملاء.");
 
         // 3. Check for conflict in Identity Users (Even if not a customer)
         var generatedEmail = dto.Email;
@@ -150,7 +149,7 @@ public class CustomerService : ICustomerService
                 (u.PhoneNumber != null && u.PhoneNumber == dto.Phone));
             
             if (userConflict != null)
-                throw new Exception($"عذراً، هذا الهاتف ({dto.Phone ?? "غير محدد"}) مرتبط بحساب مستخدم آخر في النظام (Staff). يرجى التغيير.");
+                throw new InvalidOperationException($"عذراً، هذا الهاتف ({dto.Phone ?? "غير محدد"}) مرتبط بحساب مستخدم آخر في النظام (Staff). يرجى التغيير.");
         }
 
         // 4. Create New
@@ -159,21 +158,18 @@ public class CustomerService : ICustomerService
             FullName = dto.FullName,
             Email = generatedEmail ?? $"{Guid.NewGuid().ToString().Substring(0, 8)}@pos.com",
             Phone = dto.Phone,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = TimeHelper.GetEgyptTime(),
             IsActive = true,
             FixedDiscount = dto.FixedDiscount
         };
 
-        _db.Customers.Add(customer);
-        await _db.SaveChangesAsync();
-
         // ── Link to Global Control Account ──
         var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
         if (parent != null)
-        {
             customer.MainAccountId = parent.Id;
-            await _db.SaveChangesAsync();
-        }
+
+        _db.Customers.Add(customer);
+        await _db.SaveChangesAsync();
 
         return (await GetCustomerByIdAsync(customer.Id))!;
     }
@@ -181,7 +177,7 @@ public class CustomerService : ICustomerService
     public async Task<CustomerDetailDto> UpdateCustomerAsync(int id, UpdateCustomerDto dto)
     {
         var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == id)
-            ?? throw new Exception("Customer not found");
+            ?? throw new KeyNotFoundException($"Customer {id} not found");
 
         customer.FullName = dto.FullName;
         customer.Email = dto.Email ?? customer.Email;
@@ -189,7 +185,7 @@ public class CustomerService : ICustomerService
         customer.IsActive = dto.IsActive;
         customer.MainAccountId = dto.MainAccountId;
         customer.FixedDiscount = dto.FixedDiscount;
-        customer.UpdatedAt = DateTime.UtcNow;
+        customer.UpdatedAt = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
         return (await GetCustomerByIdAsync(customer.Id))!;
@@ -274,7 +270,7 @@ public class CustomerService : ICustomerService
         if (customer == null) return false;
         
         customer.IsActive = !customer.IsActive;
-        customer.UpdatedAt = DateTime.UtcNow;
+        customer.UpdatedAt = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
         return true;
     }
@@ -285,12 +281,17 @@ public class CustomerService : ICustomerService
         if (customer == null) return false;
 
         if (customer.Orders.Any(o => o.Status != OrderStatus.Cancelled))
-            throw new Exception("لا يمكن حذف عميل لديه طلبات نشطة بقاعدة البيانات.");
+            throw new InvalidOperationException("لا يمكن حذف عميل لديه طلبات نشطة بقاعدة البيانات.");
         
         if (!string.IsNullOrEmpty(customer.AppUserId))
         {
-            var appUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == customer.AppUserId);
-            if (appUser != null) _db.Users.Remove(appUser);
+            // Only delete the linked AppUser if they have no staff roles (not Admin/Manager/Staff/etc.)
+            var isStaff = await _db.UserRoles.AnyAsync(ur => ur.UserId == customer.AppUserId);
+            if (!isStaff)
+            {
+                var appUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == customer.AppUserId);
+                if (appUser != null) _db.Users.Remove(appUser);
+            }
         }
         
         _db.Customers.Remove(customer);

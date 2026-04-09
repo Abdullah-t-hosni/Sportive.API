@@ -1,3 +1,4 @@
+using Sportive.API.Utils;
 // ============================================================
 // Services/AuditService.cs
 // ✅ جديد — خدمة تسجيل التدقيق للعمليات الحساسة
@@ -41,7 +42,7 @@ public class AuditService : IAuditService
             UserId     = userId,
             UserName   = userName,
             IpAddress  = ip,
-            CreatedAt  = DateTime.UtcNow
+            CreatedAt  = TimeHelper.GetEgyptTime()
         });
         await _db.SaveChangesAsync();
     }
@@ -61,7 +62,7 @@ public class AuditService : IAuditService
             UserId     = userId,
             UserName   = userName,
             IpAddress  = ip,
-            CreatedAt  = DateTime.UtcNow
+            CreatedAt  = TimeHelper.GetEgyptTime()
         });
         await _db.SaveChangesAsync();
     }

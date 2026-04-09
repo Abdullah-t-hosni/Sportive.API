@@ -3,6 +3,7 @@ using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Services;
 
@@ -116,7 +117,7 @@ public class CategoryService : ICategoryService
         cat.ImageUrl      = dto.ImageUrl;
         cat.Type          = dto.Type;
         cat.ParentId      = dto.ParentId;
-        cat.UpdatedAt     = DateTime.UtcNow;
+        cat.UpdatedAt     = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
         return (await GetByIdAsync(id))!;
@@ -136,7 +137,7 @@ public class CategoryService : ICategoryService
         foreach (var child in directChildren)
         {
             child.ParentId  = cat.ParentId; // يصبح أخاً للمحذوف
-            child.UpdatedAt = DateTime.UtcNow;
+            child.UpdatedAt = TimeHelper.GetEgyptTime();
         }
         await _db.SaveChangesAsync();
 

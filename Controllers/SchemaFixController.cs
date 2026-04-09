@@ -64,9 +64,19 @@ public class SchemaFixController : ControllerBase
                 "ALTER TABLE Reviews ADD CONSTRAINT FK_Reviews_Products_ProductId FOREIGN KEY (ProductId) REFERENCES Products(Id) ON DELETE CASCADE;"
             };
 
-            foreach(var c in cmds) { try { await _db.Database.ExecuteSqlRawAsync(c); } catch { } }
+            var skipped = new List<string>();
+            foreach (var c in cmds)
+            {
+                try { await _db.Database.ExecuteSqlRawAsync(c); }
+                catch (Exception ex)
+                {
+                    // ALTER TABLE failures are expected when constraints already exist
+                    _logger.LogWarning("SchemaFix run-v5 skipped cmd (already applied?): {Error}", ex.Message);
+                    skipped.Add(ex.Message[..Math.Min(80, ex.Message.Length)]);
+                }
+            }
 
-            return Ok(new { message = "Constraints updated successfully. You can now delete products and categories freely." });
+            return Ok(new { message = "Constraints updated.", skipped });
         }
         catch (Exception ex)
         {
@@ -112,9 +122,13 @@ public class SchemaFixController : ControllerBase
             // 2. محاولة إضافة الـ FK يدوياً (لكي يجدها الـ EF ويحذفها في الخطوة القادمة من Migration)
             try {
                 await _db.Database.ExecuteSqlRawAsync(@"
-                    ALTER TABLE InventoryMovements ADD CONSTRAINT FK_InventoryMovements_ProductVariants_ProductVariantId 
+                    ALTER TABLE InventoryMovements ADD CONSTRAINT FK_InventoryMovements_ProductVariants_ProductVariantId
                     FOREIGN KEY (ProductVariantId) REFERENCES ProductVariants(Id) ON DELETE SET NULL;");
-            } catch { /* إذا كانت موجودة بالفعل لا مشكلة */ }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("run-v7 FK already exists or skipped: {Error}", ex.Message[..Math.Min(80, ex.Message.Length)]);
+            }
 
             return Ok(new { message = "Emergency fix applied successfully. Please try 'dotnet ef database update' again." });
         } catch (Exception ex) {

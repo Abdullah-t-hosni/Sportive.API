@@ -125,6 +125,106 @@ public class PdfService : IPdfService
         return Task.FromResult(document.GeneratePdf());
     }
 
+    public Task<byte[]> GeneratePurchaseInvoicePdfAsync(Sportive.API.Models.PurchaseInvoice invoice)
+    {
+        var document = Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A5);
+                page.Margin(1.5f, Unit.Centimetre);
+                page.PageColor(Colors.White);
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Segoe UI"));
+
+                page.Header().Row(row =>
+                {
+                    row.RelativeItem().Column(col =>
+                    {
+                        col.Item().Text("SPORTIVE").FontSize(18).Bold();
+                        col.Item().Text(Reshape("فاتورة مشتريات")).FontSize(10).FontColor(Colors.Grey.Medium);
+                    });
+                    row.RelativeItem().AlignRight().Column(col =>
+                    {
+                        col.Item().Text($"#{invoice.InvoiceNumber}").Bold();
+                        col.Item().Text($"{invoice.InvoiceDate:yyyy/MM/dd}").FontSize(9).FontColor(Colors.Grey.Medium);
+                        col.Item().Text(invoice.Status.ToString()).FontSize(9).FontColor(Colors.Blue.Medium);
+                    });
+                });
+
+                page.Content().PaddingVertical(8).Column(col =>
+                {
+                    // Supplier
+                    col.Item().BorderBottom(1).PaddingBottom(6).Row(row =>
+                    {
+                        row.RelativeItem().Column(c =>
+                        {
+                            c.Item().Text(Reshape($"المورد: {invoice.Supplier?.Name ?? ""}")).Bold();
+                            if (!string.IsNullOrEmpty(invoice.Supplier?.Phone))
+                                c.Item().Text(Reshape($"الهاتف: {invoice.Supplier.Phone}")).FontSize(9);
+                            if (!string.IsNullOrEmpty(invoice.Supplier?.TaxNumber))
+                                c.Item().Text(Reshape($"الرقم الضريبي: {invoice.Supplier.TaxNumber}")).FontSize(9);
+                        });
+                    });
+
+                    col.Item().PaddingTop(8).PaddingBottom(4).Text(Reshape("البنود")).Bold();
+
+                    // Items table header
+                    col.Item().Row(row =>
+                    {
+                        row.RelativeItem(3).Text(Reshape("الوصف")).Bold().FontSize(9);
+                        row.RelativeItem().AlignCenter().Text(Reshape("الكمية")).Bold().FontSize(9);
+                        row.RelativeItem().AlignRight().Text(Reshape("السعر")).Bold().FontSize(9);
+                        row.RelativeItem().AlignRight().Text(Reshape("الإجمالي")).Bold().FontSize(9);
+                    });
+
+                    col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten2);
+
+                    if (invoice.Items != null)
+                    {
+                        foreach (var item in invoice.Items)
+                        {
+                            col.Item().Row(row =>
+                            {
+                                row.RelativeItem(3).Text(Reshape(item.Description)).FontSize(9);
+                                row.RelativeItem().AlignCenter().Text(item.Quantity.ToString()).FontSize(9);
+                                row.RelativeItem().AlignRight().Text($"{item.UnitCost:N2}").FontSize(9);
+                                row.RelativeItem().AlignRight().Text($"{item.UnitCost * item.Quantity:N2}").FontSize(9);
+                            });
+                        }
+                    }
+
+                    col.Item().PaddingTop(8).LineHorizontal(1);
+
+                    // Totals
+                    col.Item().AlignRight().PaddingTop(6).Column(c =>
+                    {
+                        c.Item().Text(Reshape($"المجموع: {invoice.SubTotal:N2} ج.م")).FontSize(10);
+                        if (invoice.TaxAmount > 0)
+                            c.Item().Text(Reshape($"الضريبة ({invoice.TaxPercent:N0}%): {invoice.TaxAmount:N2} ج.م")).FontSize(10);
+                        if (invoice.DiscountAmount > 0)
+                            c.Item().Text(Reshape($"الخصم: -{invoice.DiscountAmount:N2} ج.م")).FontSize(10).FontColor(Colors.Red.Medium);
+                        c.Item().PaddingTop(4).Text(Reshape($"الإجمالي: {invoice.TotalAmount:N2} ج.م")).FontSize(13).Bold();
+                        c.Item().Text(Reshape($"المدفوع: {invoice.PaidAmount:N2} ج.م")).FontSize(10).FontColor(Colors.Green.Medium);
+                        if (invoice.RemainingAmount > 0)
+                            c.Item().Text(Reshape($"المتبقي: {invoice.RemainingAmount:N2} ج.م")).FontSize(10).FontColor(Colors.Red.Medium).Bold();
+                    });
+
+                    if (!string.IsNullOrEmpty(invoice.Notes))
+                    {
+                        col.Item().PaddingTop(10).Text(Reshape($"ملاحظات: {invoice.Notes}")).FontSize(9).Italic();
+                    }
+                });
+
+                page.Footer().AlignCenter().Text(x =>
+                {
+                    x.Span("Page "); x.CurrentPageNumber();
+                });
+            });
+        });
+
+        return Task.FromResult(document.GeneratePdf());
+    }
+
     private string Reshape(string input)
     {
         if (string.IsNullOrEmpty(input)) return "";

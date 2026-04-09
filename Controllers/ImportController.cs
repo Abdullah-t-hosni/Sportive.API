@@ -1,3 +1,4 @@
+using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -192,7 +193,7 @@ public class ImportController : ControllerBase
                     DescriptionEn = ws1.Cell(r, 9).GetString().Trim().NullIfEmpty(),
                     IsFeatured    = ws1.Cell(r, 10).GetString().Contains("نعم"),
                     Status        = ProductStatus.Active,
-                    CreatedAt     = DateTime.UtcNow,
+                    CreatedAt     = TimeHelper.GetEgyptTime(),
                 };
 
                 _db.Products.Add(product);
@@ -243,7 +244,7 @@ public class ImportController : ControllerBase
                         ColorAr         = colorAr,
                         StockQuantity   = stock,
                         PriceAdjustment = adj,
-                        CreatedAt       = DateTime.UtcNow,
+                        CreatedAt       = TimeHelper.GetEgyptTime(),
                     });
                     result.VariantsAdded++;
                 }

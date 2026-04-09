@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sportive.API.Data;
 
@@ -11,9 +12,11 @@ using Sportive.API.Data;
 namespace Sportive.API.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260409090937_AddTimeZoneIdToStoreSettings")]
+    partial class AddTimeZoneIdToStoreSettings
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1085,9 +1088,6 @@ namespace Sportive.API.Migrations
                     b.Property<string>("AdminNotes")
                         .HasColumnType("longtext");
 
-                    b.Property<DateTime?>("ArchivedAt")
-                        .HasColumnType("datetime(6)");
-
                     b.Property<string>("AttachmentPublicId")
                         .HasColumnType("longtext");
 
@@ -1126,9 +1126,6 @@ namespace Sportive.API.Migrations
                     b.Property<string>("FulfillmentType")
                         .IsRequired()
                         .HasColumnType("longtext");
-
-                    b.Property<bool>("IsArchived")
-                        .HasColumnType("tinyint(1)");
 
                     b.Property<string>("OrderNumber")
                         .IsRequired()

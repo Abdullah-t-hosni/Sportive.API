@@ -1,3 +1,4 @@
+using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -16,11 +17,17 @@ public class SupplierPaymentsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IAccountingService _accounting;
+    private readonly SequenceService _seq;
+    private readonly ILogger<SupplierPaymentsController> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public SupplierPaymentsController(AppDbContext db, IAccountingService accounting)
+    public SupplierPaymentsController(AppDbContext db, IAccountingService accounting, SequenceService seq, ILogger<SupplierPaymentsController> logger, IServiceScopeFactory scopeFactory)
     {
         _db = db;
         _accounting = accounting;
+        _seq = seq;
+        _logger = logger;
+        _scopeFactory = scopeFactory;
     }
 
     [HttpGet]
@@ -32,6 +39,7 @@ public class SupplierPaymentsController : ControllerBase
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
         var q = _db.SupplierPayments
+            .AsNoTracking()
             .Include(p => p.Supplier)
             .Include(p => p.Invoice)
             .AsQueryable();
@@ -78,16 +86,9 @@ public class SupplierPaymentsController : ControllerBase
     {
         if (dto.Amount <= 0) return BadRequest(new { message = "المبلغ يجب أن يكون أكبر من صفر" });
 
-        // Debug: Log info to see ID
-        // Note: dto.SupplierId might be 0 if parsing fails or ID is missing
         var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
-        
-        if (supplier == null) 
-        {
-            // First fallback, search by Name if ID is 0? (Not recommended but the user is blocked)
-            // Actually, just returning the error with better message
+        if (supplier == null)
             return BadRequest(new { message = $"المورد المطلوب غير موجود (ID: {dto.SupplierId})" });
-        }
 
         PurchaseInvoice? invoice = null;
         if (dto.PurchaseInvoiceId.HasValue && dto.PurchaseInvoiceId > 0)
@@ -96,9 +97,15 @@ public class SupplierPaymentsController : ControllerBase
             if (invoice == null) return BadRequest(new { message = "الفاتورة المحددة غير موجودة" });
         }
 
-        var year = DateTime.UtcNow.Year % 100;
-        var count = await _db.SupplierPayments.CountAsync() + 1;
-        var pNo = $"PV-{year}{count:D4}";
+        var pNo = await _seq.NextAsync("SP", async (db, pattern) =>
+        {
+            var max = await db.SupplierPayments
+                .Where(p => EF.Functions.Like(p.PaymentNumber, pattern))
+                .Select(p => p.PaymentNumber)
+                .ToListAsync();
+            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                      .DefaultIfEmpty(0).Max();
+        });
 
         var payment = new SupplierPayment
         {
@@ -114,7 +121,7 @@ public class SupplierPaymentsController : ControllerBase
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = TimeHelper.GetEgyptTime(),
         };
 
         _db.SupplierPayments.Add(payment);
@@ -130,18 +137,15 @@ public class SupplierPaymentsController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        // Accounting Trigger
-        try
-        {
-            await _accounting.PostSupplierPaymentAsync(payment);
-        }
-        catch (Exception ex)
-        {
-            // Log accounting error but don't stop the payment
-            Console.WriteLine($"[Accounting] Failed to post supplier payment {pNo}: {ex.Message}");
-        }
+        _ = PostSupplierPaymentWithRetryAsync(payment.Id, pNo);
 
-        return CreatedAtAction(nameof(GetById), new { id = payment.Id }, payment);
+        return CreatedAtAction(nameof(GetById), new { id = payment.Id }, new SupplierPaymentSummaryDto(
+            payment.Id, payment.PaymentNumber, supplier.Name,
+            invoice?.InvoiceNumber,
+            payment.PaymentDate, payment.Amount, payment.PaymentMethod.ToString(),
+            payment.AccountName, payment.Notes,
+            payment.AttachmentUrl, payment.AttachmentPublicId
+        ));
     }
 
     [HttpDelete("{id}")]
@@ -175,5 +179,35 @@ public class SupplierPaymentsController : ControllerBase
 
         await _db.SaveChangesAsync();
         return NoContent();
+    }
+
+    private async Task PostSupplierPaymentWithRetryAsync(int paymentId, string paymentNumber)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var payment = await db.SupplierPayments.FirstAsync(p => p.Id == paymentId);
+                await accounting.PostSupplierPaymentAsync(payment);
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogWarning(ex,
+                    "[Accounting] Supplier payment journal attempt {Attempt}/{Max} failed for {Number}. Retrying...",
+                    attempt, maxAttempts, paymentNumber);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "[Accounting] Supplier payment journal permanently failed for {Number} after {Max} attempts.",
+                    paymentNumber, maxAttempts);
+            }
+        }
     }
 }

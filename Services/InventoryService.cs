@@ -9,7 +9,13 @@ namespace Sportive.API.Services;
 public class InventoryService : IInventoryService
 {
     private readonly AppDbContext _db;
-    public InventoryService(AppDbContext db) => _db = db;
+    private readonly INotificationService _notifications;
+
+    public InventoryService(AppDbContext db, INotificationService notifications)
+    {
+        _db = db;
+        _notifications = notifications;
+    }
 
     public async Task LogMovementAsync(
         InventoryMovementType type,
@@ -97,6 +103,38 @@ public class InventoryService : IInventoryService
         });
 
         // We don't save changes here to allow the calling method to wrap it in its own transaction if needed
+
+        // 3. Low-stock alert — fire-and-forget after save (called by the parent transaction)
+        if (variantId.HasValue)
+        {
+            var variant = await _db.ProductVariants.Include(v => v.Product).FirstOrDefaultAsync(v => v.Id == variantId);
+            if (variant != null)
+            {
+                var newStock = variant.StockQuantity;
+                var reorder  = variant.ReorderLevel > 0 ? variant.ReorderLevel : variant.Product.ReorderLevel;
+                if (reorder > 0 && newStock <= reorder && newStock >= 0)
+                    await _notifications.SendAsync(
+                        null,
+                        $"تنبيه مخزون منخفض",
+                        $"Low Stock Alert",
+                        $"المنتج \"{variant.Product.NameAr}\" وصل إلى {newStock} وحدة (حد الطلب: {reorder})",
+                        $"Product \"{variant.Product.NameEn}\" reached {newStock} units (reorder level: {reorder})",
+                        "Alert");
+            }
+        }
+        else if (productId.HasValue)
+        {
+            var product = await _db.Products.FindAsync(productId);
+            if (product != null && product.ReorderLevel > 0 &&
+                product.TotalStock <= product.ReorderLevel && product.TotalStock >= 0)
+                await _notifications.SendAsync(
+                    null,
+                    "تنبيه مخزون منخفض",
+                    "Low Stock Alert",
+                    $"المنتج \"{product.NameAr}\" وصل إلى {product.TotalStock} وحدة (حد الطلب: {product.ReorderLevel})",
+                    $"Product \"{product.NameEn}\" reached {product.TotalStock} units (reorder level: {product.ReorderLevel})",
+                    "Alert");
+        }
     }
 
     public async Task<List<InventoryMovement>> GetMovementsAsync(int? productId = null, int? variantId = null)

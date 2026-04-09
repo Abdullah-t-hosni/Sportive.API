@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
@@ -18,6 +19,7 @@ public class OrderService : IOrderService
     private readonly IConfiguration _config;
     private readonly ICustomerService _customerService;
     private readonly IAccountingService _accounting;
+    private readonly ILogger<OrderService> _logger;
 
     public OrderService(
         AppDbContext db,
@@ -27,7 +29,8 @@ public class OrderService : IOrderService
         IInventoryService inventory,
         IConfiguration config,
         ICustomerService customerService,
-        IAccountingService accounting)
+        IAccountingService accounting,
+        ILogger<OrderService> logger)
     {
         _db = db;
         _notificationService = notificationService;
@@ -37,6 +40,7 @@ public class OrderService : IOrderService
         _config = config;
         _customerService = customerService;
         _accounting = accounting;
+        _logger = logger;
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
@@ -373,28 +377,7 @@ public class OrderService : IOrderService
             catch { await tx.RollbackAsync(); throw; }
         });
 
-        _ = Task.Run(async () =>
-        {
-            if (order == null) return;
-
-            using var scope = _scopeFactory.CreateScope();
-            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-            try
-            {
-                var orderInner = await db.Orders
-                    .Include(o => o.Customer)
-                    .Include(o => o.Items).ThenInclude(i => i.Product)
-                    .FirstAsync(o => o.Id == order.Id);
-
-                await accounting.PostSalesOrderAsync(orderInner);
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[Accounting] PostSalesOrder failed for {order.OrderNumber}: {ex.Message}");
-            }
-        });
+        _ = PostSalesOrderWithRetryAsync(order!.Id, order.OrderNumber);
 
         // 5. Notifications & Email
         _ = Task.Run(async () =>
@@ -432,7 +415,11 @@ public class OrderService : IOrderService
                         </a>
                     </div>";
                 foreach(var email in adminEmails) await emailService.SendEmailAsync(email.Trim(), subject, body);
-            } catch { }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[Notifications] Admin email for order {OrderNumber} failed", order.OrderNumber);
+            }
         });
 
         return result;
@@ -476,19 +463,10 @@ public class OrderService : IOrderService
 
 
         // Post accounting if paid
-        if ((dto.Status == OrderStatus.Delivered || dto.Status == OrderStatus.Confirmed) && 
+        if ((dto.Status == OrderStatus.Delivered || dto.Status == OrderStatus.Confirmed) &&
             order.Source == OrderSource.Website && order.PaymentStatus == PaymentStatus.Paid)
         {
-            _ = Task.Run(async () =>
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                try {
-                    var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == orderId);
-                    await accounting.PostOrderPaymentAsync(fullOrder);
-                } catch { }
-            });
+            _ = PostOrderPaymentWithRetryAsync(orderId);
         }
 
         if ((dto.Status == OrderStatus.Cancelled || dto.Status == OrderStatus.Returned) && 
@@ -508,16 +486,7 @@ public class OrderService : IOrderService
 
         if (dto.Status == OrderStatus.Returned || dto.Status == OrderStatus.Cancelled)
         {
-            _ = Task.Run(async () =>
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                try {
-                    var fullOrderInner = await db.Orders.Include(o => o.Customer).Include(o => o.Items).ThenInclude(i => i.Product).FirstAsync(o => o.Id == orderId);
-                    await accounting.PostSalesReturnAsync(fullOrderInner);
-                } catch { }
-            });
+            _ = PostSalesReturnWithRetryAsync(orderId);
         }
 
         return (await GetOrderByIdAsync(orderId))!;
@@ -627,20 +596,7 @@ public class OrderService : IOrderService
         });
 
         // 6. Post Accounting
-        _ = Task.Run(async () =>
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            try {
-                // We need the instances with tracking/includes in the new scope
-                var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == orderId);
-                // We must pass the returned items data correctly
-                await accounting.PostPartialSalesReturnAsync(fullOrder, returnedOrderItems, refundAmount);
-            } catch (Exception ex) {
-                Console.Error.WriteLine($"[Accounting] Partial return failed: {ex.Message}");
-            }
-        });
+        _ = PostPartialReturnWithRetryAsync(orderId, returnedOrderItems, refundAmount);
 
         return result;
     }
@@ -651,7 +607,7 @@ public class OrderService : IOrderService
         var date = TimeHelper.GetEgyptTime().ToString("yyMMdd");
         string orderNumber;
         do {
-            var random = new Random().Next(1000, 9999);
+            var random = Random.Shared.Next(1000, 9999);
             orderNumber = $"{prefix}-{date}-{random}";
         } while (await _db.Orders.AnyAsync(o => o.OrderNumber == orderNumber));
         return orderNumber;
@@ -685,7 +641,123 @@ public class OrderService : IOrderService
                     await _accounting.PostSalesOrderAsync(order);
                 }
                 if (order.PaymentStatus == PaymentStatus.Paid) await _accounting.PostOrderPaymentAsync(order);
-            } catch { }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[Accounting] SyncAllOrderAccounting failed for order {OrderNumber}", order.OrderNumber);
+            }
+        }
+    }
+
+    // ── Retry helpers ─────────────────────────────────────
+
+    private async Task PostSalesOrderWithRetryAsync(int orderId, string orderNumber)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var order = await db.Orders
+                    .Include(o => o.Customer)
+                    .Include(o => o.Items).ThenInclude(i => i.Product)
+                    .FirstAsync(o => o.Id == orderId);
+                await accounting.PostSalesOrderAsync(order);
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogWarning(ex, "[Accounting] PostSalesOrder attempt {Attempt}/{Max} failed for {Number}. Retrying...", attempt, maxAttempts, orderNumber);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Accounting] PostSalesOrder permanently failed for {Number} after {Max} attempts.", orderNumber, maxAttempts);
+            }
+        }
+    }
+
+    private async Task PostOrderPaymentWithRetryAsync(int orderId)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var order = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == orderId);
+                await accounting.PostOrderPaymentAsync(order);
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogWarning(ex, "[Accounting] PostOrderPayment attempt {Attempt}/{Max} failed for order {OrderId}. Retrying...", attempt, maxAttempts, orderId);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Accounting] PostOrderPayment permanently failed for order {OrderId} after {Max} attempts.", orderId, maxAttempts);
+            }
+        }
+    }
+
+    private async Task PostSalesReturnWithRetryAsync(int orderId)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var order = await db.Orders
+                    .Include(o => o.Customer)
+                    .Include(o => o.Items).ThenInclude(i => i.Product)
+                    .FirstAsync(o => o.Id == orderId);
+                await accounting.PostSalesReturnAsync(order);
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogWarning(ex, "[Accounting] PostSalesReturn attempt {Attempt}/{Max} failed for order {OrderId}. Retrying...", attempt, maxAttempts, orderId);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Accounting] PostSalesReturn permanently failed for order {OrderId} after {Max} attempts.", orderId, maxAttempts);
+            }
+        }
+    }
+
+    private async Task PostPartialReturnWithRetryAsync(int orderId, List<OrderItem> returnedItems, decimal refundAmount)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var order = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == orderId);
+                await accounting.PostPartialSalesReturnAsync(order, returnedItems, refundAmount);
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogWarning(ex, "[Accounting] PostPartialReturn attempt {Attempt}/{Max} failed for order {OrderId}. Retrying...", attempt, maxAttempts, orderId);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Accounting] PostPartialReturn permanently failed for order {OrderId} after {Max} attempts.", orderId, maxAttempts);
+            }
         }
     }
 }

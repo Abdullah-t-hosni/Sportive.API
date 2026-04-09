@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
 using System.Text.Json;
 using Sportive.API.Models;
@@ -36,6 +37,8 @@ public interface IAccountingService
 public class AccountingService : IAccountingService
 {
     private readonly AppDbContext _db;
+    private readonly SequenceService _seq;
+    private readonly ILogger<AccountingService> _logger;
     private static readonly ConcurrentDictionary<string, bool> _activePostings = new();
 
     // ── كودات الحسابات الثابتة من شجرة حساباتك ──────────
@@ -65,7 +68,12 @@ public class AccountingService : IAccountingService
     private const string VAT_INPUT       = "2105";   // ضريبة قيمة مضافة - مدينة (مشتريات)
     private const decimal VAT_RATE       = 0.14m;    // نسبة الضريبة (افتراضية 14%)
 
-    public AccountingService(AppDbContext db) => _db = db;
+    public AccountingService(AppDbContext db, SequenceService seq, ILogger<AccountingService> logger)
+    {
+        _db = db;
+        _seq = seq;
+        _logger = logger;
+    }
 
     // ══════════════════════════════════════════════════════
     // 1. فاتورة مبيعات
@@ -586,9 +594,15 @@ public class AccountingService : IAccountingService
 
         if (entry == null || entry.Status == JournalEntryStatus.Reversed) return;
 
-        var count  = await _db.JournalEntries.CountAsync() + 1;
-        var year   = TimeHelper.GetEgyptTime().Year % 100;
-        var revNo  = $"JE-{year}{count:D5}";
+        var revNo = await _seq.NextAsync("JE", async (db, pattern) =>
+        {
+            var max = await db.JournalEntries
+                .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
+                .Select(e => e.EntryNumber)
+                .ToListAsync();
+            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                      .DefaultIfEmpty(0).Max();
+        });
 
         var reversal = new JournalEntry
         {
@@ -627,13 +641,22 @@ public class AccountingService : IAccountingService
 
     public async Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, string? userId)
     {
-        var count = await _db.JournalEntries.CountAsync() + 1;
-        var type  = dto.Type ?? JournalEntryType.Manual;
+        var type   = dto.Type ?? JournalEntryType.Manual;
         var prefix = type == JournalEntryType.OpeningBalance ? "OPE" : "JE";
-        
+
+        var entryNumber = await _seq.NextAsync(prefix, async (db, pattern) =>
+        {
+            var max = await db.JournalEntries
+                .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
+                .Select(e => e.EntryNumber)
+                .ToListAsync();
+            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                      .DefaultIfEmpty(0).Max();
+        });
+
         var entry = new JournalEntry
         {
-            EntryNumber = $"{prefix}-{DateTime.UtcNow:yy}{count:D5}",
+            EntryNumber = entryNumber,
             EntryDate = dto.EntryDate,
             Description = dto.Description,
             Reference = dto.Reference,
@@ -845,17 +868,20 @@ public class AccountingService : IAccountingService
             throw new InvalidOperationException(
                 $"القيد غير متوازن: مدين={totalDr}, دائن={totalCr} | {reference}");
 
-        var count   = await _db.JournalEntries.CountAsync() + 1;
-        var year    = date.Year % 100;
-        
         // تمييز أرقام القيود بناءً على المصدر
-        string entryNo;
-        if (source == OrderSource.POS)
-            entryNo = $"JE-POS-{year}{count:D5}";
-        else if (source == OrderSource.Website)
-            entryNo = $"JE-WEB-{year}{count:D5}";
-        else
-            entryNo = $"JE-{year}{count:D5}";
+        var jePrefix = source == OrderSource.POS ? "JE-POS"
+                     : source == OrderSource.Website ? "JE-WEB"
+                     : "JE";
+
+        var entryNo = await _seq.NextAsync(jePrefix, async (db, pattern) =>
+        {
+            var max = await db.JournalEntries
+                .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
+                .Select(e => e.EntryNumber)
+                .ToListAsync();
+            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                      .DefaultIfEmpty(0).Max();
+        });
 
         var entry = new JournalEntry
         {
@@ -866,7 +892,7 @@ public class AccountingService : IAccountingService
             Reference   = reference,
             Description = description,
             OrderId     = orderId,
-            CreatedAt   = DateTime.UtcNow,
+            CreatedAt   = TimeHelper.GetEgyptTime(),
         };
 
         foreach (var (code, debit, credit, desc) in lines)
@@ -893,7 +919,7 @@ public class AccountingService : IAccountingService
                 CustomerId  = isReceivables ? customerId : null,
                 SupplierId  = isPayables ? supplierId : null,
                 OrderId     = orderId,
-                CreatedAt   = DateTime.UtcNow,
+                CreatedAt   = TimeHelper.GetEgyptTime(),
             });
         }
 
@@ -923,7 +949,12 @@ public class AccountingService : IAccountingService
             {
                 try {
                     await PostPurchaseInvoiceAsync(inv);
-                } catch { }
+                }
+                catch (Exception ex)
+                {
+                    // Log and continue — don't let one failure abort the entire sync
+                    _logger.LogWarning(ex, "[Accounting] SyncPurchaseAccounting failed for {InvoiceNumber}", inv.InvoiceNumber);
+                }
             }
         }
     }

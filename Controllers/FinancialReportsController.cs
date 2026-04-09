@@ -736,6 +736,77 @@ public class FinancialReportsController : ControllerBase
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         { FileDownloadName = filename };
     }
+
+    // ══════════════════════════════════════════════════════
+    // VAT Report  GET /api/financialreports/vat-report
+    // تقرير ضريبة القيمة المضافة على مستوى الأوامر والمشتريات
+    // ══════════════════════════════════════════════════════
+    [HttpGet("vat-report")]
+    public async Task<IActionResult> VatReport(
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate   = null)
+    {
+        var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+
+        // Sales VAT — from Orders
+        var salesOrders = await _db.Orders
+            .AsNoTracking()
+            .Where(o => o.CreatedAt >= from && o.CreatedAt <= to
+                     && o.Status != OrderStatus.Cancelled)
+            .Select(o => new {
+                o.Id, o.OrderNumber, o.CreatedAt,
+                o.TotalAmount, o.TotalVatAmount,
+                CustomerName = o.Customer != null ? o.Customer.FullName : "عميل متجول"
+            })
+            .OrderBy(o => o.CreatedAt)
+            .ToListAsync();
+
+        var totalSalesVat   = salesOrders.Sum(o => o.TotalVatAmount);
+        var totalSalesNet   = salesOrders.Sum(o => o.TotalAmount - o.TotalVatAmount);
+        var totalSalesGross = salesOrders.Sum(o => o.TotalAmount);
+
+        // Purchase VAT — from PurchaseInvoices
+        var purchases = await _db.PurchaseInvoices
+            .AsNoTracking()
+            .Where(p => p.InvoiceDate >= from && p.InvoiceDate <= to
+                     && p.Status != PurchaseInvoiceStatus.Cancelled)
+            .Select(p => new {
+                p.Id, p.InvoiceNumber, p.InvoiceDate,
+                p.TotalAmount, p.TaxAmount,
+                SupplierName = p.Supplier != null ? p.Supplier.Name : ""
+            })
+            .OrderBy(p => p.InvoiceDate)
+            .ToListAsync();
+
+        var totalPurchaseVat   = purchases.Sum(p => p.TaxAmount);
+        var totalPurchaseNet   = purchases.Sum(p => p.TotalAmount - p.TaxAmount);
+        var totalPurchaseGross = purchases.Sum(p => p.TotalAmount);
+
+        var netVatPosition = totalSalesVat - totalPurchaseVat; // positive = payable to authority
+
+        return Ok(new {
+            from, to,
+            sales = new {
+                totalNet   = Math.Round(totalSalesNet,   2),
+                totalVat   = Math.Round(totalSalesVat,   2),
+                totalGross = Math.Round(totalSalesGross, 2),
+                items = salesOrders
+            },
+            purchases = new {
+                totalNet   = Math.Round(totalPurchaseNet,   2),
+                totalVat   = Math.Round(totalPurchaseVat,   2),
+                totalGross = Math.Round(totalPurchaseGross, 2),
+                items = purchases
+            },
+            summary = new {
+                outputVat  = Math.Round(totalSalesVat,    2),
+                inputVat   = Math.Round(totalPurchaseVat, 2),
+                netPosition= Math.Round(netVatPosition,   2),
+                status = netVatPosition > 0 ? "payable" : netVatPosition < 0 ? "refundable" : "zero"
+            }
+        });
+    }
 }
 
 // ── Internal models (not exposed to DB) ──────────────────

@@ -915,7 +915,7 @@ public class OperationalReportsController : ControllerBase
         foreach(var p in rows)foreach(var v in p.Variants){ws2.Cell(r2,1).Value=p.NameAr;ws2.Cell(r2,2).Value=p.SKU;ws2.Cell(r2,3).Value=v.Size;ws2.Cell(r2,4).Value=v.Color;ws2.Cell(r2,5).Value=v.StockQuantity;ws2.Cell(r2,6).Value=v.Price;ws2.Cell(r2,7).Value=v.Value;ws2.Cell(r2,6).Style.NumberFormat.Format="#,##0.00";ws2.Cell(r2,7).Style.NumberFormat.Format="#,##0.00";r2++;}
         ws2.Columns().AdjustToContents();
 
-        return ExcelResult(wb, $"inventory_{DateTime.Now:yyyyMMdd}.xlsx");
+        return ExcelResult(wb, $"inventory_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
     private IActionResult ExcelSales(List<SalesRow> rows, dynamic summary, DateTime from, DateTime to)

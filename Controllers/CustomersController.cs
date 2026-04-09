@@ -24,8 +24,11 @@ public class CustomersController : ControllerBase
 
     [Authorize(Roles = "Admin,Manager")]
     [HttpPut("{id}")]
-    public async Task<IActionResult> Update(int id, [FromBody] UpdateCustomerDto dto) =>
-        Ok(await _customers.UpdateCustomerAsync(id, dto));
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateCustomerDto dto)
+    {
+        try { return Ok(await _customers.UpdateCustomerAsync(id, dto)); }
+        catch (KeyNotFoundException) { return NotFound(); }
+    }
 
     /// <summary>إضافة عميل جديد — Admin, Manager, Cashier</summary>
     [Authorize(Roles = "Admin,Manager,Cashier,sttaf")]
@@ -69,8 +72,15 @@ public class CustomersController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteCustomer(int id)
     {
-        var result = await _customers.DeleteCustomerAsync(id);
-        return result ? Ok(new { message = "Customer deleted successfully" }) : NotFound();
+        try
+        {
+            var result = await _customers.DeleteCustomerAsync(id);
+            return result ? Ok(new { message = "Customer deleted successfully" }) : NotFound();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     /// <summary>إضافة عنوان</summary>

@@ -1,3 +1,4 @@
+using Sportive.API.Utils;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
@@ -30,7 +31,7 @@ public class CouponService : ICouponService
         if (coupon == null)
             return (false, 0, "كوبون الخصم غير صحيح أو منتهي الصلاحية");
 
-        if (coupon.ExpiresAt.HasValue && coupon.ExpiresAt < DateTime.UtcNow)
+        if (coupon.ExpiresAt.HasValue && coupon.ExpiresAt < TimeHelper.GetEgyptTime())
             return (false, 0, "انتهت صلاحية كوبون الخصم");
 
         if (coupon.MaxUsageCount.HasValue && coupon.CurrentUsageCount >= coupon.MaxUsageCount)
@@ -109,7 +110,7 @@ public class CouponService : ICouponService
         coupon.MaxDiscountAmount = dto.MaxDiscountAmount;
         coupon.MaxUsageCount     = dto.MaxUsageCount;
         coupon.ExpiresAt         = dto.ExpiresAt;
-        coupon.UpdatedAt         = DateTime.UtcNow;
+        coupon.UpdatedAt         = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
 
         return new CouponListDto(
@@ -125,7 +126,7 @@ public class CouponService : ICouponService
         var coupon = await _db.Coupons.FindAsync(id);
         if (coupon == null) return false;
         coupon.IsActive  = false;
-        coupon.UpdatedAt = DateTime.UtcNow;
+        coupon.UpdatedAt = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
         return true;
     }
@@ -135,7 +136,7 @@ public class CouponService : ICouponService
         var coupon = await _db.Coupons.FindAsync(id);
         if (coupon == null) return false;
         coupon.IsActive  = !coupon.IsActive;
-        coupon.UpdatedAt = DateTime.UtcNow;
+        coupon.UpdatedAt = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
         return true;
     }

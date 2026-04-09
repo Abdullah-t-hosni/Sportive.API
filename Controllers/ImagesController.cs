@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.Services;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Controllers;
 
@@ -81,7 +82,7 @@ public class ImagesController : ControllerBase
         if (!result.Success) return BadRequest(new { message = result.Error });
 
         category.ImageUrl  = result.Url;
-        category.UpdatedAt = DateTime.UtcNow;
+        category.UpdatedAt = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
 
         return Ok(new { url = result.Url, publicId = result.PublicId });

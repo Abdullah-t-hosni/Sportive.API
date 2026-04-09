@@ -19,6 +19,7 @@ using Sportive.API.Interfaces;
 using Sportive.API.Middleware;
 using Sportive.API.Models;
 using Sportive.API.Services;
+using Sportive.API.Utils;
 using Sportive.API.Validators;
 using Sportive.API.Hubs;
 
@@ -214,6 +215,9 @@ builder.Services.AddScoped<IBackupService, BackupService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddHostedService<BackupHostedService>();
 builder.Services.AddScoped<IWishlistService, WishlistService>();
+builder.Services.AddSingleton<SequenceService>();
+builder.Services.AddSingleton<TimeService>();
+builder.Services.AddSingleton<ITimeService>(sp => sp.GetRequiredService<TimeService>());
 builder.Services.AddHttpClient("Paymob");
 builder.Services.AddSignalR();
 
@@ -276,6 +280,10 @@ builder.Services.AddControllers()
 
 // ── BUILD ─────────────────────────────────────────────
 var app = builder.Build();
+
+// Wire TimeHelper to the DI-managed TimeService so all TimeHelper.GetEgyptTime() calls
+// automatically use the timezone stored in StoreSettings.
+TimeHelper.Initialize(app.Services.GetRequiredService<ITimeService>());
 
 app.UseResponseCompression();
 
@@ -369,6 +377,9 @@ static async Task SeedAsync(WebApplication app)
 
     var customerService = scope.ServiceProvider.GetRequiredService<ICustomerService>();
     await customerService.SyncAllMissingAccountsAsync();
+
+    var productService = scope.ServiceProvider.GetRequiredService<IProductService>();
+    await productService.SyncAllProductsStatusAndStockAsync();
 
     var orderService = scope.ServiceProvider.GetRequiredService<IOrderService>();
     await orderService.SyncAllOrderAccountingAsync();

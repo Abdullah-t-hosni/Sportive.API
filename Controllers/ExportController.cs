@@ -1,3 +1,4 @@
+using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -99,7 +100,7 @@ public class ExportController : ControllerBase
         stream.Position = 0;
 
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            $"orders_{DateTime.Now:yyyyMMdd}.xlsx");
+            $"orders_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
     // ── PRODUCTS ──────────────────────────────────────────────
@@ -168,7 +169,7 @@ public class ExportController : ControllerBase
         stream.Position = 0;
 
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            $"products_{DateTime.Now:yyyyMMdd}.xlsx");
+            $"products_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
     // ── CUSTOMERS ─────────────────────────────────────────────
@@ -204,7 +205,7 @@ public class ExportController : ControllerBase
         wb.SaveAs(stream); stream.Position = 0;
 
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            $"customers_{DateTime.Now:yyyyMMdd}.xlsx");
+            $"customers_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
     // ── POS DAY REPORT ────────────────────────────────────────
@@ -213,8 +214,8 @@ public class ExportController : ControllerBase
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate   = null)
     {
-        var from  = fromDate ?? DateTime.UtcNow.Date;
-        var to    = toDate   ?? DateTime.UtcNow.Date.AddDays(1);
+        var from  = fromDate ?? TimeHelper.GetEgyptTime().Date;
+        var to    = toDate   ?? TimeHelper.GetEgyptTime().Date.AddDays(1);
 
         var orders = await _db.Orders
             .Include(o => o.Customer)
@@ -363,7 +364,7 @@ public class ExportController : ControllerBase
         wb.SaveAs(stream); stream.Position = 0;
 
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            $"inventory_full_{DateTime.Now:yyyyMMdd}.xlsx");
+            $"inventory_full_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
     // ── LOW STOCK ─────────────────────────────────────────────
@@ -421,7 +422,7 @@ public class ExportController : ControllerBase
         wb.SaveAs(stream); stream.Position = 0;
 
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            $"low_stock_{DateTime.Now:yyyyMMdd}.xlsx");
+            $"low_stock_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
     // ── VARIANTS (SIZES & COLORS) ─────────────────────────────
@@ -481,7 +482,7 @@ public class ExportController : ControllerBase
         wb.SaveAs(stream); stream.Position = 0;
 
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            $"variants_{DateTime.Now:yyyyMMdd}.xlsx");
+            $"variants_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
     // ── PURCHASE INVOICES ─────────────────────────────────────
@@ -543,7 +544,7 @@ public class ExportController : ControllerBase
         wb.SaveAs(stream); stream.Position = 0;
 
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            $"purchases_{DateTime.Now:yyyyMMdd}.xlsx");
+            $"purchases_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
     private static void StyleHeader(IXLWorksheet ws, string[] headers)

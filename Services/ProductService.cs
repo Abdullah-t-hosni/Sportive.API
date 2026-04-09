@@ -219,7 +219,7 @@ public class ProductService : IProductService
         await _db.SaveChangesAsync();
 
         return await GetProductByIdAsync(product.Id)
-            ?? throw new Exception("Product not found after creation");
+            ?? throw new InvalidOperationException($"Product {product.Id} not found after creation");
     }
 
     public async Task<ProductDetailDto> UpdateProductAsync(int id, UpdateProductDto dto)
@@ -253,12 +253,8 @@ public class ProductService : IProductService
         product.VatRate = dto.VatRate;
         product.UpdatedAt = TimeHelper.GetEgyptTime();
 
-        // إعادة حساب إجمالي المخزون للتأكد من الدقة
-        if (product.Variants.Any())
-        {
-             product.TotalStock = product.Variants.Sum(v => v.StockQuantity);
-        }
-        // If simple product (no variants), we don't zero out TotalStock as it might have manual/purchase stock
+        // إعادة حساب إجمالي المخزون وتحديث الحالة للتأكد من الدقة
+        await UpdateTotalStockAsync(id);
 
         await _db.SaveChangesAsync();
         return await GetProductByIdAsync(id) ?? throw new KeyNotFoundException($"Product {id} not found after update");
@@ -345,8 +341,10 @@ public class ProductService : IProductService
             {
                 product.TotalStock = product.Variants.Sum(v => v.StockQuantity);
             }
+            // else: For simple products, we keep TotalStock as is (managed by LogMovement)
             
             // 💡 AUTO-STATUS: Sync status with stock levels
+            // Update: Only auto-switch for Active/OutOfStock. Keep Hidden/Draft as is.
             if (product.Status == ProductStatus.Active && product.TotalStock <= 0)
             {
                 product.Status = ProductStatus.OutOfStock;
@@ -357,7 +355,28 @@ public class ProductService : IProductService
             }
 
             product.UpdatedAt = TimeHelper.GetEgyptTime();
+            await _db.SaveChangesAsync();
         }
+    }
+
+    public async Task SyncAllProductsStatusAndStockAsync()
+    {
+        var products = await _db.Products.Include(p => p.Variants).ToListAsync();
+        foreach (var p in products)
+        {
+            int oldStock = p.TotalStock;
+            if (p.Variants.Any())
+            {
+                p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
+            }
+
+            // Sync Status
+            if (p.Status == ProductStatus.Active && p.TotalStock <= 0)
+                p.Status = ProductStatus.OutOfStock;
+            else if (p.Status == ProductStatus.OutOfStock && p.TotalStock > 0)
+                p.Status = ProductStatus.Active;
+        }
+        await _db.SaveChangesAsync();
     }
 
     public async Task<ProductVariantDto> AddVariantAsync(int productId, CreateVariantDto dto)

@@ -5,6 +5,7 @@ using Sportive.API.Services;
 using Sportive.API.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Controllers;
 
@@ -79,28 +80,12 @@ public class PaymentController : ControllerBase
                 order.PaymentStatus = success ? PaymentStatus.Paid : PaymentStatus.Failed;
                 if (success && order.Status == OrderStatus.Pending)
                     order.Status = OrderStatus.Confirmed;
-                order.UpdatedAt = DateTime.UtcNow;
+                order.UpdatedAt = TimeHelper.GetEgyptTime();
                 await _db.SaveChangesAsync();
                 _logger.LogInformation("Order {OrderNumber} payment {Status}", orderRef, success ? "PAID" : "FAILED");
 
                 if (success)
-                {
-                    _ = Task.Run(async () =>
-                    {
-                        using var scope = _scopeFactory.CreateScope();
-                        try
-                        {
-                            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-                            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                            var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == order.Id);
-                            await accounting.PostOrderPaymentAsync(fullOrder);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "[Accounting] Auto-collection from PaymentCallback failed");
-                        }
-                    });
-                }
+                    _ = PostOrderPaymentWithRetryAsync(order.Id);
             }
         }
 
@@ -128,30 +113,16 @@ public class PaymentController : ControllerBase
                 order.PaymentStatus = success ? PaymentStatus.Paid : PaymentStatus.Failed;
                 if (success && order.Status == OrderStatus.Pending)
                     order.Status = OrderStatus.Confirmed;
-                order.UpdatedAt = DateTime.UtcNow;
+                order.UpdatedAt = TimeHelper.GetEgyptTime();
                 await _db.SaveChangesAsync();
 
                 if (success)
-                {
-                    _ = Task.Run(async () =>
-                    {
-                        using var scope = _scopeFactory.CreateScope();
-                        try
-                        {
-                            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-                            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                            var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == order.Id);
-                            await accounting.PostOrderPaymentAsync(fullOrder);
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.Error.WriteLine($"[Accounting] Auto-collection from PaymentCallback failed: {ex.Message}");
-                        }
-                    });
-                }
+                    _ = PostOrderPaymentWithRetryAsync(order.Id);
                 }
             }
-        } catch (Exception ex) {
+        }
+        catch (Exception ex)
+        {
             _logger.LogError(ex, "Error processing Paymob Webhook");
         }
 
@@ -175,5 +146,35 @@ public class PaymentController : ControllerBase
             : $"{frontendUrl}/order-success/{order.Id}?payment=failed";
 
         return Redirect(redirectUrl);
+    }
+
+    private async Task PostOrderPaymentWithRetryAsync(int orderId)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == orderId);
+                await accounting.PostOrderPaymentAsync(fullOrder);
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogWarning(ex,
+                    "[Accounting] Order payment journal attempt {Attempt}/{Max} failed for order {OrderId}. Retrying...",
+                    attempt, maxAttempts, orderId);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "[Accounting] Order payment journal permanently failed for order {OrderId} after {Max} attempts.",
+                    orderId, maxAttempts);
+            }
+        }
     }
 }

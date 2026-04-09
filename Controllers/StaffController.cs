@@ -1,3 +1,4 @@
+using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -89,7 +90,7 @@ public class StaffController : ControllerBase
             FullName    = dto.FullName,
             PhoneNumber = dto.Phone,
             IsActive    = true,
-            CreatedAt   = DateTime.UtcNow,
+            CreatedAt   = TimeHelper.GetEgyptTime(),
         };
 
         var result = await _users.CreateAsync(user, dto.Password);

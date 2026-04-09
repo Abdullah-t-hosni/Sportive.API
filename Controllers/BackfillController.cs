@@ -14,11 +14,13 @@ public class BackfillController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IAccountingService _accounting;
+    private readonly ILogger<BackfillController> _logger;
 
-    public BackfillController(AppDbContext db, IAccountingService accounting)
+    public BackfillController(AppDbContext db, IAccountingService accounting, ILogger<BackfillController> logger)
     {
         _db = db;
         _accounting = accounting;
+        _logger = logger;
     }
 
     /// <summary>
@@ -41,15 +43,21 @@ public class BackfillController : ControllerBase
             .ToListAsync();
 
         int count = 0;
+        var errors = new List<string>();
         foreach (var order in missingOrders)
         {
             try {
                 await _accounting.PostSalesOrderAsync(order);
                 count++;
-            } catch { }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[Backfill] PostSalesOrder failed for order {OrderNumber}", order.OrderNumber);
+                errors.Add(order.OrderNumber);
+            }
         }
 
-        return Ok(new { message = $"Successfully posted {count} orders to accounting.", totalMissingFound = missingOrders.Count });
+        return Ok(new { message = $"Posted {count}/{missingOrders.Count} orders.", failed = errors });
     }
 
     /// <summary>
@@ -70,14 +78,20 @@ public class BackfillController : ControllerBase
             .ToListAsync();
 
         int count = 0;
+        var errors = new List<string>();
         foreach (var inv in missingInvoices)
         {
             try {
                 await _accounting.PostPurchaseInvoiceAsync(inv);
                 count++;
-            } catch { }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[Backfill] PostPurchaseInvoice failed for {InvoiceNumber}", inv.InvoiceNumber);
+                errors.Add(inv.InvoiceNumber);
+            }
         }
 
-        return Ok(new { message = $"Successfully posted {count} purchases to accounting.", totalMissingFound = missingInvoices.Count });
+        return Ok(new { message = $"Posted {count}/{missingInvoices.Count} purchases.", failed = errors });
     }
 }

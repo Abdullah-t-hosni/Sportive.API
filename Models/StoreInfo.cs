@@ -77,6 +77,15 @@ public class StoreInfo
     [JsonPropertyName("backupUtcOffset")]
     public int BackupUtcOffset { get; set; } = 2; // Default for Egypt/Cairo (UTC+2)
 
+    /// <summary>
+    /// IANA or Windows timezone ID used for all business timestamps.
+    /// Examples: "Egypt Standard Time" (Windows) / "Africa/Cairo" (Linux/IANA)
+    /// Defaults to Egypt time.
+    /// </summary>
+    [MaxLength(100)]
+    [JsonPropertyName("timeZoneId")]
+    public string TimeZoneId { get; set; } = "Egypt Standard Time";
+
     [JsonPropertyName("lastUpdatedAt")]
     public DateTime LastUpdateDate { get; set; } = DateTime.UtcNow;
 }

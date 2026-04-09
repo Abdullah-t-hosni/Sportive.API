@@ -3,6 +3,7 @@ using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Services;
 
@@ -61,7 +62,7 @@ public class BrandService : IBrandService
         brand.ImageUrl = dto.ImageUrl;
         brand.IsActive = dto.IsActive;
         brand.ParentId = dto.ParentId;
-        brand.UpdatedAt = DateTime.UtcNow;
+        brand.UpdatedAt = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
         return MapToDto(brand);
@@ -78,7 +79,7 @@ public class BrandService : IBrandService
         foreach (var child in directChildren)
         {
             child.ParentId = brand.ParentId;
-            child.UpdatedAt = DateTime.UtcNow;
+            child.UpdatedAt = TimeHelper.GetEgyptTime();
         }
         await _db.SaveChangesAsync();
 

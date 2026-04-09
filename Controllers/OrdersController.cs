@@ -1,3 +1,4 @@
+using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -22,13 +23,15 @@ public class OrdersController : ControllerBase
     private readonly IPdfService _pdfService;
     private readonly AppDbContext _db;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ILogger<OrdersController> _logger;
 
-    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory)
+    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<OrdersController> logger)
     {
         _orderService = orderService;
         _pdfService   = pdfService;
         _db           = db;
         _scopeFactory = scopeFactory;
+        _logger       = logger;
     }
 
     [HttpGet]
@@ -155,7 +158,7 @@ public class OrdersController : ControllerBase
 
         var oldStatus = order.PaymentStatus;
         order.PaymentStatus = dto.PaymentStatus;
-        order.UpdatedAt     = DateTime.UtcNow;
+        order.UpdatedAt     = TimeHelper.GetEgyptTime();
 
         // ✅ IMPORTANT: Sync the numerical PaidAmount when status moves to Paid
         if (dto.PaymentStatus == PaymentStatus.Paid)
@@ -165,21 +168,7 @@ public class OrdersController : ControllerBase
 
         if (dto.PaymentStatus == PaymentStatus.Paid && oldStatus != PaymentStatus.Paid)
         {
-            _ = Task.Run(async () =>
-            {
-                using var scope = _scopeFactory.CreateScope();
-                try
-                {
-                    var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                    var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == id);
-                    await accounting.PostOrderPaymentAsync(fullOrder);
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"[Accounting] Auto-collection from UpdatePaymentStatus failed: {ex.Message}");
-                }
-            });
+            _ = PostOrderPaymentWithRetryAsync(id);
         }
 
         if (!string.IsNullOrEmpty(dto.Note))
@@ -190,7 +179,7 @@ public class OrdersController : ControllerBase
                 Status           = order.Status,
                 Note             = $"[حالة الدفع → {dto.PaymentStatus}] {dto.Note}",
                 ChangedByUserId  = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-                CreatedAt        = DateTime.UtcNow
+                CreatedAt        = TimeHelper.GetEgyptTime()
             });
         }
 
@@ -250,4 +239,108 @@ public class OrdersController : ControllerBase
         var order = await _orderService.ProcessPartialReturnAsync(id, dto, userId);
         return Ok(order);
     }
+
+    // ══════════════════════════════════════════════════
+    // POST /api/orders/{id}/archive — أرشفة أمر واحد
+    // POST /api/orders/{id}/unarchive — استرجاع من الأرشيف
+    // POST /api/orders/archive-batch — أرشفة مجموعة
+    // GET  /api/orders/archived — عرض الأوامر المؤرشفة
+    // ══════════════════════════════════════════════════
+    [HttpPost("{id}/archive")]
+    [Authorize(Roles = "Admin,Manager")]
+    public async Task<IActionResult> Archive(int id)
+    {
+        var order = await _db.Orders.FindAsync(id);
+        if (order == null) return NotFound();
+        order.IsArchived = true;
+        order.ArchivedAt = TimeHelper.GetEgyptTime();
+        await _db.SaveChangesAsync();
+        return Ok(new { message = "Archived" });
+    }
+
+    [HttpPost("{id}/unarchive")]
+    [Authorize(Roles = "Admin,Manager")]
+    public async Task<IActionResult> Unarchive(int id)
+    {
+        var order = await _db.Orders.FindAsync(id);
+        if (order == null) return NotFound();
+        order.IsArchived = false;
+        order.ArchivedAt = null;
+        await _db.SaveChangesAsync();
+        return Ok(new { message = "Unarchived" });
+    }
+
+    [HttpPost("archive-batch")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> ArchiveBatch([FromBody] ArchiveBatchDto dto)
+    {
+        if (dto.Ids == null || dto.Ids.Length == 0)
+            return BadRequest(new { message = "No order IDs provided" });
+
+        var orders = await _db.Orders
+            .Where(o => dto.Ids.Contains(o.Id) && !o.IsArchived)
+            .ToListAsync();
+
+        var now = TimeHelper.GetEgyptTime();
+        foreach (var o in orders) { o.IsArchived = true; o.ArchivedAt = now; }
+        await _db.SaveChangesAsync();
+        return Ok(new { archived = orders.Count });
+    }
+
+    [HttpGet("archived")]
+    [Authorize(Roles = "Admin,Manager,Accountant")]
+    public async Task<IActionResult> GetArchived(
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate   = null,
+        [FromQuery] int page           = 1,
+        [FromQuery] int pageSize       = 50)
+    {
+        var from = fromDate?.Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1);
+
+        var q = _db.Orders.AsNoTracking().Where(o => o.IsArchived).Include(o => o.Customer).AsQueryable();
+        if (from.HasValue) q = q.Where(o => o.ArchivedAt >= from);
+        if (to.HasValue)   q = q.Where(o => o.ArchivedAt <= to);
+
+        var total = await q.CountAsync();
+        var items = await q.OrderByDescending(o => o.ArchivedAt).Skip((page - 1) * pageSize).Take(pageSize)
+            .Select(o => new {
+                o.Id, o.OrderNumber, o.Status, o.TotalAmount, o.CreatedAt, o.ArchivedAt,
+                CustomerName = o.Customer != null ? o.Customer.FullName : ""
+            }).ToListAsync();
+
+        return Ok(new { items, totalCount = total, page, pageSize });
+    }
+
+    private async Task PostOrderPaymentWithRetryAsync(int orderId)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == orderId);
+                await accounting.PostOrderPaymentAsync(fullOrder);
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogWarning(ex,
+                    "[Accounting] Order payment journal attempt {Attempt}/{Max} failed for order {OrderId}. Retrying...",
+                    attempt, maxAttempts, orderId);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "[Accounting] Order payment journal permanently failed for order {OrderId} after {Max} attempts.",
+                    orderId, maxAttempts);
+            }
+        }
+    }
 }
+
+public record ArchiveBatchDto(int[] Ids);

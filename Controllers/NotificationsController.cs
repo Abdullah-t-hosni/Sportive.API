@@ -1,3 +1,4 @@
+using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -63,7 +64,7 @@ public class NotificationsController : ControllerBase
         if (n == null) return NotFound();
 
         n.IsRead    = true;
-        n.UpdatedAt = DateTime.UtcNow;
+        n.UpdatedAt = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
         return Ok();
     }
@@ -80,7 +81,7 @@ public class NotificationsController : ControllerBase
         foreach (var n in notifications)
         {
             n.IsRead    = true;
-            n.UpdatedAt = DateTime.UtcNow;
+            n.UpdatedAt = TimeHelper.GetEgyptTime();
         }
 
         await _db.SaveChangesAsync();

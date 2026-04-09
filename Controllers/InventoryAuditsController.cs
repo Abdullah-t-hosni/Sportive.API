@@ -1,3 +1,4 @@
+using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -71,7 +72,7 @@ public class InventoryAuditsController : ControllerBase
             Description = dto.Description,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             Status = InventoryAuditStatus.Draft,
-            AuditDate = DateTime.UtcNow
+            AuditDate = TimeHelper.GetEgyptTime()
         };
 
         decimal totalExpected = 0;
@@ -150,7 +151,7 @@ public class InventoryAuditsController : ControllerBase
         }
 
         audit.Status    = InventoryAuditStatus.Posted;
-        audit.UpdatedAt = DateTime.UtcNow;
+        audit.UpdatedAt = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
         return Ok(new { message = "تم اعتماد الجرد وتعديل المخزون بنجاح" });

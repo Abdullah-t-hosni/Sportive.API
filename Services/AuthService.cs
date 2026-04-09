@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Sportive.API.Data;
 using Sportive.API.DTOs;
+using Sportive.API.Utils;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using System.IdentityModel.Tokens.Jwt;
@@ -61,7 +62,7 @@ public class AuthService : IAuthService
             Email = !string.IsNullOrEmpty(dto.Email) ? dto.Email : null,
             PhoneNumber = dto.Phone,
             FullName = dto.FullName,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = TimeHelper.GetEgyptTime(),
             IsActive = true
         };
 
@@ -91,7 +92,7 @@ public class AuthService : IAuthService
                 customer.AppUserId = user.Id;
                 customer.Email = user.Email ?? customer.Email; // Sync email if provided
                 customer.FullName = user.FullName;
-                customer.UpdatedAt = DateTime.UtcNow;
+                customer.UpdatedAt = TimeHelper.GetEgyptTime();
             }
             else
             {
@@ -101,7 +102,7 @@ public class AuthService : IAuthService
                     FullName = user.FullName,
                     Email = user.Email ?? "",
                     Phone = user.PhoneNumber,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = TimeHelper.GetEgyptTime()
                 };
                 _db.Customers.Add(customer);
             }

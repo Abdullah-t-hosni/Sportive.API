@@ -1,3 +1,4 @@
+using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -53,7 +54,7 @@ public class DashboardKpiController : ControllerBase
     public async Task<IActionResult> ExportSales([FromQuery] DateTime? from, [FromQuery] DateTime? to)
     {
         var csvBytes = await _dashboard.ExportSalesToCsvAsync(from, to);
-        return File(csvBytes, "text/csv", $"sales-report-{DateTime.UtcNow:yyyyMMdd}.csv");
+        return File(csvBytes, "text/csv", $"sales-report-{TimeHelper.GetEgyptTime():yyyyMMdd}.csv");
     }
 
     [HttpGet("advanced-stats")]
@@ -85,7 +86,7 @@ public class DashboardKpiController : ControllerBase
     [HttpGet("kpi")]
     public async Task<IActionResult> GetKpi()
     {
-        var now       = DateTime.UtcNow;
+        var now       = TimeHelper.GetEgyptTime();
         var todayStart     = now.Date;
         var todayEnd       = todayStart.AddDays(1);
         var yesterdayStart = todayStart.AddDays(-1);

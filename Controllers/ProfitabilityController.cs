@@ -1,3 +1,4 @@
+using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -27,8 +28,8 @@ public class ProfitabilityController : ControllerBase
         [FromQuery] bool      hasCost    = false,       // فقط المنتجات التي لديها CostPrice
         [FromQuery] bool      excel      = false)
     {
-        var from = fromDate ?? new DateTime(DateTime.UtcNow.Year, 1, 1);
-        var to   = toDate   ?? DateTime.UtcNow;
+        var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
+        var to   = toDate   ?? TimeHelper.GetEgyptTime();
 
         // ── جلب كل المبيعات في الفترة ─────────────────
         var itemsQ = _db.OrderItems
@@ -167,9 +168,9 @@ public class ProfitabilityController : ControllerBase
     [HttpGet("summary")]
     public async Task<IActionResult> GetSummary([FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
     {
-        var now2 = DateTime.UtcNow;
+        var now2 = TimeHelper.GetEgyptTime();
         var from = fromDate ?? new DateTime(now2.Year, now2.Month, 1);
-        var to   = toDate   ?? DateTime.UtcNow;
+        var to   = toDate   ?? TimeHelper.GetEgyptTime();
 
         var items = await _db.OrderItems
             .Include(i => i.Order)

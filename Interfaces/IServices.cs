@@ -26,6 +26,7 @@ public interface IProductService
     Task<bool> DeleteVariantAsync(int variantId);
     Task<bool> UpdateCostPriceAsync(int productId, decimal? costPrice);
     Task UpdateTotalStockAsync(int productId);
+    Task SyncAllProductsStatusAndStockAsync();
     Task<List<ProductSummaryDto>> GetFeaturedProductsAsync(int count = 8);
     Task<List<ProductSummaryDto>> GetRelatedProductsAsync(int productId, int count = 4);
 }
@@ -104,6 +105,7 @@ public interface IDashboardService
 public interface IPdfService
 {
     Task<byte[]> GenerateOrderPdfAsync(OrderDetailDto order);
+    Task<byte[]> GeneratePurchaseInvoicePdfAsync(Sportive.API.Models.PurchaseInvoice invoice);
 }
 
 public interface IEmailService
