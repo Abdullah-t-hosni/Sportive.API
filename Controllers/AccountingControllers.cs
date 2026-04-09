@@ -347,7 +347,8 @@ public class ReceiptVouchersController : ControllerBase
             if (order != null)
             {
                 // Update Order Payment calculations
-                order.PaymentStatus = PaymentStatus.Paid;
+                order.PaidAmount += dto.Amount;
+                order.PaymentStatus = order.PaidAmount >= order.TotalAmount ? PaymentStatus.Paid : PaymentStatus.Pending;
                 order.UpdatedAt = TimeHelper.GetEgyptTime();
             }
         }
