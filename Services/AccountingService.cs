@@ -63,7 +63,7 @@ public class AccountingService : IAccountingService
     private const string DELIVERY_REVENUE = "410301"; // إيراد خدمات توصيل
     private const string COGS            = "51101";  // تكلفة البضاعة المباعة
     private const string PURCHASES_NET   = "511";    // صافي المشتريات
-    private const string PURCHASE_DISC   = "51103"; // خصم مكتسب (المشتريات)
+    private const string PURCHASE_DISC   = "420102"; // خصم مكتسب (المشتريات)
     private const string VAT_OUTPUT      = "2104";   // ضريبة قيمة مضافة - دائنة (مبيعات)
     private const string VAT_INPUT       = "2105";   // ضريبة قيمة مضافة - مدينة (مشتريات)
     private const decimal VAT_RATE       = 0.14m;    // نسبة الضريبة (افتراضية 14%)
@@ -165,7 +165,8 @@ public class AccountingService : IAccountingService
         // If we have a customer, we ALWAYS record the receivable on them first to ensure it shows in their aging/balance.
         // If it's a cash/paid sale, we will add a second part to "Collect" it.
         
-        bool isCredit = order.PaymentMethod == PaymentMethod.Credit || order.PaymentStatus == PaymentStatus.Pending;
+        bool isCredit = (order.PaymentMethod == PaymentMethod.Credit || order.PaymentStatus == PaymentStatus.Pending) 
+                      && order.PaymentMethod != PaymentMethod.Mixed;
         var note = order.AdminNotes ?? "";
 
         if (isCredit)
@@ -191,6 +192,8 @@ public class AccountingService : IAccountingService
                             var m = pm switch {
                                 "cash" => PaymentMethod.Cash,
                                 "bank" => PaymentMethod.Bank,
+                                "visa" => PaymentMethod.CreditCard,
+                                "creditcard" => PaymentMethod.CreditCard,
                                 "vodafone" => PaymentMethod.Vodafone,
                                 "instapay" => PaymentMethod.InstaPay,
                                 _ => PaymentMethod.Cash
@@ -208,7 +211,15 @@ public class AccountingService : IAccountingService
                 lines.Add((receivablesAcct, netReceivable, 0, $"إثبات مبيعات (مختلط) - {order.OrderNumber}"));
                 foreach (var (m, v) in splits) {
                     string cashAcct = await GetMappedCashAccount(m, order.Source, mapDict);
-                    lines.Add((cashAcct, v, 0, $"تحصيل ({m}) - {order.OrderNumber}"));
+                    string methodAr = m switch {
+                        PaymentMethod.Cash => "نقدي",
+                        PaymentMethod.Bank => "بنك/تحويل",
+                        PaymentMethod.CreditCard => "فيزا",
+                        PaymentMethod.Vodafone => "فودافون كاش",
+                        PaymentMethod.InstaPay => "انستاباي",
+                        _ => m.ToString()
+                    };
+                    lines.Add((cashAcct, v, 0, $"تحصيل ({methodAr}) - {order.OrderNumber}"));
                     lines.Add((receivablesAcct, 0, v, $"سداد جزئي للعميل ({m}) - {order.OrderNumber}"));
                 }
             }
