@@ -419,6 +419,19 @@ public class ReceiptVouchersController : ControllerBase
         await _db.SaveChangesAsync();
         return NoContent();
     }
+    [HttpGet("order/{orderId}")]
+    public async Task<IActionResult> GetByOrder(int orderId)
+    {
+        var vouchers = await _db.ReceiptVouchers
+            .Where(v => v.OrderId == orderId)
+            .OrderByDescending(v => v.CreatedAt)
+            .Select(v => new {
+                v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, 
+                v.Description, cashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : "حساب غير معرف"
+            })
+            .ToListAsync();
+        return Ok(vouchers);
+    }
 }
 
 // 4. PAYMENT VOUCHERS (سندات الصرف)
