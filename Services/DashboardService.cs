@@ -89,6 +89,9 @@ public class DashboardService : IDashboardService
             .Where(i => i.ReturnedQuantity > 0)
             .SumAsync(i => (decimal?)i.ReturnedQuantity * i.UnitPrice) ?? 0;
 
+        var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        int lowStockThreshold = store?.LowStockThreshold ?? 5;
+
         return new DashboardStatsDto(
             TodaySales: todaySales,
             TodaySalesGrowth: todayGrowth,
@@ -102,7 +105,7 @@ public class DashboardService : IDashboardService
             TotalCustomers: totalCustomers,
             TotalCustomersGrowth: (int)customerGrowth,
             TotalProducts: await _db.Products.CountAsync(),
-            LowStockProducts: await _db.ProductVariants.CountAsync(v => v.StockQuantity <= 5 && v.StockQuantity > 0),
+            LowStockProducts: await _db.ProductVariants.CountAsync(v => v.StockQuantity <= lowStockThreshold && v.StockQuantity > 0),
             OutOfStockProducts: await _db.ProductVariants.CountAsync(v => v.StockQuantity == 0),
             UncollectedAmount: uncollectedAmount,
             DebtAmount: debtAmount,
