@@ -49,6 +49,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<InventoryAuditItem> InventoryAuditItems => Set<InventoryAuditItem>();
     public DbSet<InventoryMovement>  InventoryMovements  => Set<InventoryMovement>();
 
+    public DbSet<CustomerInstallment>  CustomerInstallments  { get; set; }
+    public DbSet<InstallmentPayment>   InstallmentPayments   { get; set; }
+
+    public DbSet<ProductDiscount>      ProductDiscounts      { get; set; }
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
