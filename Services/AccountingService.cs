@@ -29,9 +29,9 @@ public interface IAccountingService
     Task PostPaymentVoucherAsync(PaymentVoucher voucher);
     Task<string> GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, int?>? map = null);
     Task<decimal> GetAccountBalanceAsync(string code);
-    /// <summary>بيجيب رصيد حساب الكاشير في اليوم الحالي فقط (اليوم من منتصف الليل UTC)</summary>
     Task<decimal> GetTodayDrawerBalanceAsync(string cashAccountCode);
     Task SyncAllPurchaseAccountingAsync();
+    Task SyncAllEntityIdsAsync();
 }
 
 public class AccountingService : IAccountingService
@@ -957,9 +957,67 @@ public class AccountingService : IAccountingService
                 }
                 catch (Exception ex)
                 {
-                    // Log and continue — don't let one failure abort the entire sync
                     _logger.LogWarning(ex, "[Accounting] SyncPurchaseAccounting failed for {InvoiceNumber}", inv.InvoiceNumber);
                 }
+            }
+        }
+    }
+
+    public async Task SyncAllEntityIdsAsync()
+    {
+        // 1. Fix Purchase Invoices
+        var purchaseEntries = await _db.JournalEntries
+            .Where(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference != null)
+            .ToListAsync();
+
+        foreach (var entry in purchaseEntries)
+        {
+            var inv = await _db.PurchaseInvoices
+                .AsNoTracking()
+                .FirstOrDefaultAsync(i => i.InvoiceNumber == entry.Reference);
+            
+            if (inv != null)
+            {
+                var lines = await _db.JournalLines.Where(l => l.JournalEntryId == entry.Id).ToListAsync();
+                bool changed = false;
+                foreach (var l in lines)
+                {
+                    var acct = await _db.Accounts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == l.AccountId);
+                    if (acct?.Code.StartsWith("2101") == true && l.SupplierId == null)
+                    {
+                        l.SupplierId = inv.SupplierId;
+                        changed = true;
+                    }
+                }
+                if (changed) await _db.SaveChangesAsync();
+            }
+        }
+
+        // 2. Fix Sales Orders
+        var salesEntries = await _db.JournalEntries
+            .Where(e => (e.Type == JournalEntryType.SalesInvoice || e.Type == JournalEntryType.ReceiptVoucher) && e.Reference != null)
+            .ToListAsync();
+
+        foreach (var entry in salesEntries)
+        {
+            var order = await _db.Orders
+                .AsNoTracking()
+                .FirstOrDefaultAsync(o => o.OrderNumber == entry.Reference);
+            
+            if (order != null)
+            {
+                var lines = await _db.JournalLines.Where(l => l.JournalEntryId == entry.Id).ToListAsync();
+                bool changed = false;
+                foreach (var l in lines)
+                {
+                    var acct = await _db.Accounts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == l.AccountId);
+                    if (acct?.Code.StartsWith("1103") == true && l.CustomerId == null)
+                    {
+                        l.CustomerId = order.CustomerId;
+                        changed = true;
+                    }
+                }
+                if (changed) await _db.SaveChangesAsync();
             }
         }
     }

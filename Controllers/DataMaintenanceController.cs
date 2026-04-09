@@ -324,4 +324,15 @@ public class DataMaintenanceController : ControllerBase
             return BadRequest(new { success = false, message = ex.Message });
         }
     }
+
+    [HttpPost("sync-entity-ids")]
+    public async Task<IActionResult> SyncEntityIds([FromServices] IAccountingService accounting)
+    {
+        try {
+            await accounting.SyncAllEntityIdsAsync();
+            return Ok(new { success = true, message = "تمت مزامنة كافة معرفات العملاء والموردين بنجاح." });
+        } catch (Exception ex) {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
 }
