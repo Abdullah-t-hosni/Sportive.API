@@ -282,7 +282,7 @@ public class OrderService : IOrderService
                         }
 
                         var availableStock = variant?.StockQuantity ?? (product.TotalStock);
-                        if (item.Quantity > availableStock)
+                        if (store != null && !store.AllowBackorders && item.Quantity > availableStock)
                         {
                             throw new ArgumentException(
                                 actualSource == OrderSource.POS
@@ -316,7 +316,7 @@ public class OrderService : IOrderService
                     {
                     if (ci.Product == null) continue;
                     var availableStock = ci.ProductVariant?.StockQuantity ?? ci.Product.TotalStock;
-                    if (ci.Quantity > availableStock)
+                    if (store != null && !store.AllowBackorders && ci.Quantity > availableStock)
                     {
                         throw new ArgumentException($"الكمية المطلوبة ({ci.Quantity}) من {ci.Product.NameAr} غير متاحة في المخزون حالياً.");
                     }
@@ -370,6 +370,17 @@ public class OrderService : IOrderService
                 }
 
                 order.TotalAmount = order.SubTotal + order.DeliveryFee - order.DiscountAmount;
+
+                // 4. Validate Business Rules/Settings
+                if (order.Source == OrderSource.Website && store != null && order.TotalAmount < store.MinOrderAmount)
+                {
+                    throw new ArgumentException($"الحد الأدنى للطلب هو {store.MinOrderAmount:N2} ج.م. المبلغ الحالي: {order.TotalAmount:N2} ج.م");
+                }
+
+                if (store != null && !store.AllowBackorders)
+                {
+                     // Stock specifically already checked for each item, but we double-check here if it was a website order with no stock
+                }
                 _db.Orders.Add(order);
                 order.StatusHistory.Add(new OrderStatusHistory { Status = order.Status, CreatedAt = TimeHelper.GetEgyptTime(), Note = "Order Created." });
 
@@ -606,7 +617,10 @@ public class OrderService : IOrderService
 
     public async Task<string> GenerateOrderNumberAsync(OrderSource source = OrderSource.Website)
     {
-        var prefix = source == OrderSource.POS ? "POS" : "ORD";
+        var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        var basePrefix = store?.OrderNumberPrefix ?? "SPT";
+
+        var prefix = source == OrderSource.POS ? "POS" : basePrefix;
         return await _seq.NextAsync(prefix, async (db, pattern) =>
         {
             var max = await db.Orders

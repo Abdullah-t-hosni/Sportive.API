@@ -30,6 +30,12 @@ public class ProductService : IProductService
             .Include(p => p.Reviews)
             .Include(p => p.Variants)
             .AsQueryable();
+        
+        var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        if (store != null && store.HideOutOfStock && !filter.Status.HasValue)
+        {
+            query = query.Where(p => p.TotalStock > 0);
+        }
 
         if (filter.CategoryId.HasValue)
             query = query.Where(p => p.CategoryId == filter.CategoryId);

@@ -12,14 +12,61 @@ public class StoreInfo
     [JsonPropertyName("id")]
     public int StoreConfigId { get; set; } = 1;
     
+    // --- 1. Brand & Identity ---
     [MaxLength(100)]
     [JsonPropertyName("storeName")]
     public string StoreBrandName { get; set; } = "Sportive";
     
     [MaxLength(200)]
     [JsonPropertyName("slogan")]
-    public string StoreSlogan { get; set; } = "Your Ultimate Sports Destination";
-    
+    public string StoreSlogan { get; set; } = "Beyond Performance";
+
+    [MaxLength(10)]
+    [JsonPropertyName("orderNumberPrefix")]
+    public string OrderNumberPrefix { get; set; } = "SPT";
+
+    [MaxLength(10)]
+    [JsonPropertyName("currencyCode")]
+    public string CurrencyCode { get; set; } = "EGP";
+
+    [MaxLength(500)]
+    [JsonPropertyName("logoUrl")]
+    public string? LogoUrl { get; set; }
+
+    [MaxLength(500)]
+    [JsonPropertyName("faviconUrl")]
+    public string? FaviconUrl { get; set; }
+
+    // --- 2. Appearance & UI ---
+    [JsonPropertyName("brandColorH")]
+    public int BrandColorH { get; set; } = 221; // Blue Hue
+
+    [JsonPropertyName("brandColorS")]
+    public int BrandColorS { get; set; } = 83; // Saturation
+
+    [JsonPropertyName("brandColorL")]
+    public int BrandColorL { get; set; } = 53; // Lightness
+
+    [JsonPropertyName("announcementEnabled")]
+    public bool AnnouncementEnabled { get; set; } = false;
+
+    [MaxLength(500)]
+    [JsonPropertyName("announcementText")]
+    public string? AnnouncementText { get; set; }
+
+    [MaxLength(200)]
+    [JsonPropertyName("heroTitle")]
+    public string? HeroTitle { get; set; }
+
+    [MaxLength(500)]
+    [JsonPropertyName("heroSubtitle")]
+    public string? HeroSubtitle { get; set; }
+
+    [MaxLength(1000)]
+    [JsonPropertyName("heroImageUrl")]
+    public string? HeroImageUrl { get; set; }
+
+    // --- 3. Contact Information ---
     [MaxLength(20)]
     [JsonPropertyName("phone")]
     public string StorePhoneNo { get; set; } = "";
@@ -36,6 +83,57 @@ public class StoreInfo
     [JsonPropertyName("address")]
     public string StorePhysicalAddr { get; set; } = "";
     
+    // Social Media
+    [MaxLength(500)]
+    [JsonPropertyName("facebookUrl")]
+    public string FacebookPage { get; set; } = "";
+    
+    [MaxLength(500)]
+    [JsonPropertyName("instagramUrl")]
+    public string InstagramPage { get; set; } = "";
+    
+    [MaxLength(500)]
+    [JsonPropertyName("tikTokUrl")]
+    public string TikTokPage { get; set; } = "";
+
+    [MaxLength(500)]
+    [JsonPropertyName("youtubeUrl")]
+    public string? YoutubeUrl { get; set; }
+
+    [MaxLength(500)]
+    [JsonPropertyName("twitterUrl")]
+    public string? TwitterUrl { get; set; }
+
+    // --- 4. Sales & Orders ---
+    [JsonPropertyName("minOrderAmount")]
+    public decimal MinOrderAmount { get; set; } = 0;
+
+    [JsonPropertyName("allowGuestCheckout")]
+    public bool AllowGuestCheckout { get; set; } = true;
+
+    [JsonPropertyName("enableReviews")]
+    public bool EnableReviews { get; set; } = true;
+
+    [JsonPropertyName("reviewsRequirePurchase")]
+    public bool ReviewsRequirePurchase { get; set; } = true;
+
+    [MaxLength(500)]
+    [JsonPropertyName("allowedPaymentMethods")]
+    public string AllowedPaymentMethods { get; set; } = "Cash,Vodafone,InstaPay";
+
+    [JsonPropertyName("receiptHeaderText")]
+    public string? ReceiptHeaderText { get; set; }
+
+    [JsonPropertyName("receiptFooterText")]
+    public string? ReceiptFooterText { get; set; }
+
+    [JsonPropertyName("receiptShowLogo")]
+    public bool ReceiptShowLogo { get; set; } = true;
+
+    [JsonPropertyName("receiptShowBarcode")]
+    public bool ReceiptShowBarcode { get; set; } = true;
+
+    // --- 5. Finance & VAT ---
     [JsonPropertyName("vatPercent")]
     public decimal VatRatePercent { get; set; } = 14;
     
@@ -46,42 +144,35 @@ public class StoreInfo
     public decimal FreeDeliveryAt { get; set; } = 2000;
     
     [JsonPropertyName("deliveryAccountId")]
-    public string? DeliveryAccountId { get; set; } // الربط المالي: حساب التوصيل (الرئيسي أو الوسيط)
+    public string? DeliveryAccountId { get; set; } 
 
     [JsonPropertyName("deliveryRevenueAccountId")]
-    public string? DeliveryRevenueAccountId { get; set; } // الربط المالي: حساب إيراد التوصيل
+    public string? DeliveryRevenueAccountId { get; set; } 
 
     [JsonPropertyName("storeVatAccountId")]
-    public string? StoreVatAccountId { get; set; } // الربط المالي: حساب ضريبة المبيعات
+    public string? StoreVatAccountId { get; set; } 
+
+    // --- 6. Inventory Logic ---
+    [JsonPropertyName("lowStockThreshold")]
+    public int LowStockThreshold { get; set; } = 5;
+
+    [JsonPropertyName("allowBackorders")]
+    public bool AllowBackorders { get; set; } = false;
+
+    [JsonPropertyName("hideOutOfStock")]
+    public bool HideOutOfStock { get; set; } = false;
     
-    [MaxLength(200)]
-    [JsonPropertyName("facebookUrl")]
-    public string FacebookPage { get; set; } = "";
-    
-    [MaxLength(200)]
-    [JsonPropertyName("instagramUrl")]
-    public string InstagramPage { get; set; } = "";
-    
-    [MaxLength(200)]
-    [JsonPropertyName("tikTokUrl")]
-    public string TikTokPage { get; set; } = "";
-    
+    // --- 7. System & Maintenance ---
     [JsonPropertyName("isMaintenanceMode")]
     public bool InMaintenance { get; set; } = false;
 
-    // --- Backup Schedule Configuration ---
     [MaxLength(10)]
     [JsonPropertyName("backupTime")]
-    public string BackupTime { get; set; } = "02:00"; // Local time (HH:mm)
+    public string BackupTime { get; set; } = "02:00"; 
 
     [JsonPropertyName("backupUtcOffset")]
-    public int BackupUtcOffset { get; set; } = 2; // Default for Egypt/Cairo (UTC+2)
+    public int BackupUtcOffset { get; set; } = 2; 
 
-    /// <summary>
-    /// IANA or Windows timezone ID used for all business timestamps.
-    /// Examples: "Egypt Standard Time" (Windows) / "Africa/Cairo" (Linux/IANA)
-    /// Defaults to Egypt time.
-    /// </summary>
     [MaxLength(100)]
     [JsonPropertyName("timeZoneId")]
     public string TimeZoneId { get; set; } = "Egypt Standard Time";

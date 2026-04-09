@@ -71,20 +71,52 @@ public class SettingsController : ControllerBase
 
             info.StoreBrandName          = dto.StoreBrandName;
             info.StoreSlogan             = dto.StoreSlogan;
+            info.OrderNumberPrefix       = dto.OrderNumberPrefix;
+            info.CurrencyCode            = dto.CurrencyCode;
+            info.LogoUrl                 = dto.LogoUrl;
+            info.FaviconUrl              = dto.FaviconUrl;
+
+            info.BrandColorH             = dto.BrandColorH;
+            info.BrandColorS             = dto.BrandColorS;
+            info.BrandColorL             = dto.BrandColorL;
+            info.AnnouncementEnabled     = dto.AnnouncementEnabled;
+            info.AnnouncementText        = dto.AnnouncementText;
+            info.HeroTitle               = dto.HeroTitle;
+            info.HeroSubtitle            = dto.HeroSubtitle;
+            info.HeroImageUrl            = dto.HeroImageUrl;
+
             info.StorePhoneNo            = dto.StorePhoneNo;
             info.StoreWhatsAppNo         = dto.StoreWhatsAppNo;
             info.StoreEmailAddr          = dto.StoreEmailAddr;
             info.StorePhysicalAddr       = dto.StorePhysicalAddr;
-            info.VatRatePercent          = dto.VatRatePercent;
-            info.FixedDeliveryFee        = dto.FixedDeliveryFee;
-            info.FreeDeliveryAt          = dto.FreeDeliveryAt;
             info.FacebookPage            = dto.FacebookPage;
             info.InstagramPage           = dto.InstagramPage;
             info.TikTokPage              = dto.TikTokPage;
-            info.InMaintenance           = dto.InMaintenance;
+            if (dto.YoutubeUrl != null)  info.YoutubeUrl = dto.YoutubeUrl;
+            if (dto.TwitterUrl != null)  info.TwitterUrl = dto.TwitterUrl;
+
+            info.MinOrderAmount          = dto.MinOrderAmount;
+            info.AllowGuestCheckout      = dto.AllowGuestCheckout;
+            info.EnableReviews           = dto.EnableReviews;
+            info.ReviewsRequirePurchase  = dto.ReviewsRequirePurchase;
+            info.AllowedPaymentMethods   = dto.AllowedPaymentMethods;
+            info.ReceiptHeaderText       = dto.ReceiptHeaderText;
+            info.ReceiptFooterText       = dto.ReceiptFooterText;
+            info.ReceiptShowLogo         = dto.ReceiptShowLogo;
+            info.ReceiptShowBarcode      = dto.ReceiptShowBarcode;
+
+            info.VatRatePercent          = dto.VatRatePercent;
+            info.FixedDeliveryFee        = dto.FixedDeliveryFee;
+            info.FreeDeliveryAt          = dto.FreeDeliveryAt;
             info.DeliveryAccountId       = dto.DeliveryAccountId;
             info.DeliveryRevenueAccountId = dto.DeliveryRevenueAccountId;
             info.StoreVatAccountId       = dto.StoreVatAccountId;
+
+            info.LowStockThreshold       = dto.LowStockThreshold;
+            info.AllowBackorders         = dto.AllowBackorders;
+            info.HideOutOfStock          = dto.HideOutOfStock;
+
+            info.InMaintenance           = dto.InMaintenance;
             info.BackupTime              = dto.BackupTime;
             info.BackupUtcOffset         = dto.BackupUtcOffset;
             info.LastUpdateDate          = TimeHelper.GetEgyptTime();
