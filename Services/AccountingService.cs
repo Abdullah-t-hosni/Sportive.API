@@ -220,7 +220,7 @@ public class AccountingService : IAccountingService
                         _ => m.ToString()
                     };
                     lines.Add((cashAcct, v, 0, $"تحصيل ({methodAr}) - {order.OrderNumber}"));
-                    lines.Add((receivablesAcct, 0, v, $"سداد جزئي للعميل ({m}) - {order.OrderNumber}"));
+                    lines.Add((receivablesAcct, 0, v, $"سداد جزئي للعميل ({methodAr}) - {order.OrderNumber}"));
                 }
             }
             else
@@ -711,7 +711,7 @@ public class AccountingService : IAccountingService
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>
         {
             ($"ID:{voucher.CashAccountId}", voucher.Amount, 0, $"سند قبض {voucher.VoucherNumber} - {voucher.Description}"),
-            ($"ID:{voucher.FromAccountId}", 0, voucher.Amount, $"من حساب {voucher.FromAccount?.NameAr} - {voucher.VoucherNumber}")
+            ($"ID:{voucher.FromAccountId}", 0, voucher.Amount, $"من حساب {voucher.FromAccount?.NameAr} (إلى {voucher.CashAccount?.NameAr}) - {voucher.VoucherNumber}")
         };
 
         if (orderId.HasValue)
@@ -726,8 +726,8 @@ public class AccountingService : IAccountingService
     {
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>
         {
-            ($"ID:{voucher.ToAccountId}", voucher.Amount, 0, $"سند صرف {voucher.VoucherNumber} - {voucher.Description}"),
-            ($"ID:{voucher.CashAccountId}", 0, voucher.Amount, $"من حساب {voucher.CashAccount?.NameAr} - {voucher.VoucherNumber}")
+            ($"ID:{voucher.ToAccountId}", voucher.Amount, 0, $"سند مورد {voucher.VoucherNumber} (من {voucher.CashAccount?.NameAr}) - {voucher.Description}"),
+            ($"ID:{voucher.CashAccountId}", 0, voucher.Amount, $"صرف من {voucher.CashAccount?.NameAr} - {voucher.VoucherNumber}")
         };
 
         await PostEntry(JournalEntryType.PaymentVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, supplierId: voucher.SupplierId);

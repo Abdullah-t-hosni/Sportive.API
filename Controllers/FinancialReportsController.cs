@@ -321,14 +321,34 @@ public class FinancialReportsController : ControllerBase
         if (excel) return ExcelLedger(ledgerRows, openingMap, from, to);
 
         // تجميع حسب الحساب — الحسابات مرتبة بالكود، والصفوف داخل كل حساب مرتبة بالتاريخ ثم رقم القيد
+        // تحسين: تجميع العملاء والموردين تحت حسابات رقابة إذا لم يكن هناك فلترة محددة
         var grouped = ledgerRows
-            .GroupBy(r => new { r.AccountId, r.AccountCode, r.AccountName })
-            .OrderBy(g => g.Key.AccountCode)
-            .Select(g => new {
-                g.Key.AccountId, g.Key.AccountCode, g.Key.AccountName,
-                openingBalance = openingMap.GetValueOrDefault(g.Key.AccountId, 0),
-                rows = g.OrderBy(r => r.Date).ThenBy(r => r.EntryNumber).ToList(),
-                closingBalance = g.OrderBy(r => r.Date).ThenBy(r => r.EntryNumber).LastOrDefault()?.RunningBalance ?? 0
+            .GroupBy(r => {
+                if (r.AccountCode.StartsWith("1103") && r.AccountCode.Length > 4 && !customerId.HasValue)
+                    return new { Id = 0, Code = "1103", Name = "إجمالي العملاء" };
+                if (r.AccountCode.StartsWith("2101") && r.AccountCode.Length > 4 && !supplierId.HasValue)
+                    return new { Id = 0, Code = "2101", Name = "إجمالي الموردين" };
+                return new { Id = r.AccountId, Code = r.AccountCode, Name = r.AccountName };
+            })
+            .OrderBy(g => g.Key.Code)
+            .Select(g => {
+                // حساب الرصيد الافتتاحي المجمع
+                decimal totalOpen = 0;
+                if (g.Key.Id == 0) {
+                    var ids = ledgerRows.Where(r => r.AccountCode.StartsWith(g.Key.Code)).Select(r => r.AccountId).Distinct();
+                    totalOpen = ids.Sum(id => openingMap.GetValueOrDefault(id, 0));
+                } else {
+                    totalOpen = openingMap.GetValueOrDefault(g.Key.Id, 0);
+                }
+
+                return new {
+                    AccountId = g.Key.Id,
+                    AccountCode = g.Key.Code,
+                    AccountName = g.Key.Name,
+                    openingBalance = totalOpen,
+                    rows = g.OrderBy(r => r.Date).ThenBy(r => r.EntryNumber).ToList(),
+                    closingBalance = g.OrderBy(r => r.Date).ThenBy(r => r.EntryNumber).LastOrDefault()?.RunningBalance ?? 0
+                };
             }).ToList();
 
         return Ok(new { from, to, accounts = grouped });
@@ -471,11 +491,15 @@ public class FinancialReportsController : ControllerBase
             var entryType = line.JournalEntry.Type;
             var amount    = line.Debit - line.Credit; // + = تدفق داخل، - = تدفق خارج
 
+            string displayName = line.Account.NameAr;
+            if (line.Account.Code.StartsWith("1103") && line.Account.Code.Length > 4) displayName = "إجمالي العملاء";
+            else if (line.Account.Code.StartsWith("2101") && line.Account.Code.Length > 4) displayName = "إجمالي الموردين";
+
             var item = new CashFlowItem(
                 line.JournalEntry.EntryDate,
                 line.JournalEntry.EntryNumber,
                 line.JournalEntry.Description ?? "",
-                line.Account.NameAr,
+                displayName,
                 amount
             );
 
@@ -487,8 +511,20 @@ public class FinancialReportsController : ControllerBase
                 operating += amount;
                 operatingItems.Add(item);
             }
-            // يمكن تخصيص الاستثماري والتمويلي لاحقاً حسب طبيعة الحسابات
         }
+
+        // تحسين: تجميع البنود المتشابهة في قائمة التدفقات (مثل العملاء والموردين)
+        var groupedOperating = operatingItems
+            .GroupBy(i => i.Account)
+            .Select(g => new CashFlowItem(
+                g.Max(x => x.Date),
+                "GROUP",
+                g.Count() > 1 ? $"تجميع {g.Key}" : g.First().Description,
+                g.Key,
+                g.Sum(x => x.Amount)
+            ))
+            .OrderByDescending(x => Math.Abs(x.Amount))
+            .ToList();
 
         // الرصيد الافتتاحي للنقدية
         var openCash = 0m;
@@ -509,7 +545,7 @@ public class FinancialReportsController : ControllerBase
         return Ok(new {
             from, to,
             openingCashBalance = openCash,
-            operatingActivities = new { items = operatingItems, total = operating },
+            operatingActivities = new { items = groupedOperating, total = operating },
             investingActivities = new { items = investingItems, total = investing },
             financingActivities = new { items = financingItems, total = financing },
             netCashFlow,
