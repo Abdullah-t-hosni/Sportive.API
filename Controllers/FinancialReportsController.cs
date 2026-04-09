@@ -353,16 +353,29 @@ public class FinancialReportsController : ControllerBase
         var acct = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == accountId);
         if (acct == null) return NotFound(new { message = "الحساب غير موجود" });
 
-        // الرصيد الافتتاحي
-        var openLines = await _db.JournalLines
+        // الرصيد الافتتاحي — يجب الفلترة بالمورد/العميل أيضاً إذا وجدوا
+        var openQ = _db.JournalLines
             .Include(l => l.JournalEntry)
             .Where(l => l.AccountId == accountId
                      && l.JournalEntry.Status == JournalEntryStatus.Posted
-                     && l.JournalEntry.EntryDate < from)
-            .ToListAsync();
+                     && l.JournalEntry.EntryDate < from);
 
-        var openDr  = openLines.Sum(l => l.Debit)  + (acct.Nature == AccountNature.Debit  ? acct.OpeningBalance : 0);
-        var openCr  = openLines.Sum(l => l.Credit) + (acct.Nature == AccountNature.Credit ? acct.OpeningBalance : 0);
+        if (customerId.HasValue) openQ = openQ.Where(l => l.CustomerId == customerId);
+        if (supplierId.HasValue) openQ = openQ.Where(l => l.SupplierId == supplierId);
+
+        var openLines = await openQ.ToListAsync();
+
+        var openDr  = openLines.Sum(l => l.Debit);
+        var openCr  = openLines.Sum(l => l.Credit);
+        
+        // الأرصدة الافتتاحية من شجرة الحسابات (فقط إذا لم نكن نفلتر بعميل/مورد محدد، أو إذا أردنا تضمينها)
+        // محاسبياً: إذا اخترنا عميلاً، الرصيد الافتتاحي هو فقط الحركات السابقة له.
+        if (!customerId.HasValue && !supplierId.HasValue)
+        {
+            openDr += (acct.Nature == AccountNature.Debit  ? acct.OpeningBalance : 0);
+            openCr += (acct.Nature == AccountNature.Credit ? acct.OpeningBalance : 0);
+        }
+
         var openBal = acct.Nature == AccountNature.Debit ? openDr - openCr : openCr - openDr;
 
         // حركات الفترة
@@ -372,6 +385,9 @@ public class FinancialReportsController : ControllerBase
                      && l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to);
+
+        if (customerId.HasValue) q = q.Where(l => l.CustomerId == customerId);
+        if (supplierId.HasValue) q = q.Where(l => l.SupplierId == supplierId);
 
         if (!string.IsNullOrEmpty(search))
         {
