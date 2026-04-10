@@ -386,6 +386,12 @@ public class ProductService : IProductService
         var products = await _db.Products.Include(p => p.Variants).ToListAsync();
         foreach (var p in products)
         {
+            // Sync Slug
+            if (string.IsNullOrWhiteSpace(p.Slug))
+            {
+                p.Slug = GenerateSlug(p.NameEn);
+            }
+
             int oldStock = p.TotalStock;
             if (p.Variants.Any())
             {
