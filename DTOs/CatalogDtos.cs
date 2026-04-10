@@ -95,7 +95,8 @@ public record ProductSummaryDto(
     [property: JsonPropertyName("hasTax")] bool HasTax,
     [property: JsonPropertyName("vatRate")] decimal? VatRate,
     [property: JsonPropertyName("costPrice")] decimal? CostPrice,
-    [property: JsonPropertyName("createdAt")] DateTime CreatedAt
+    [property: JsonPropertyName("createdAt")] DateTime CreatedAt,
+    [property: JsonPropertyName("activeDiscountLabel")] string? ActiveDiscountLabel = null
 );
 
 public record ProductDetailDto(
@@ -126,7 +127,8 @@ public record ProductDetailDto(
     [property: JsonPropertyName("hasTax")] bool HasTax,
     [property: JsonPropertyName("vatRate")] decimal? VatRate,
     [property: JsonPropertyName("createdAt")] DateTime CreatedAt,
-    [property: JsonPropertyName("reviews")] List<ReviewListItemDto>? Reviews = null
+    [property: JsonPropertyName("reviews")] List<ReviewListItemDto>? Reviews = null,
+    [property: JsonPropertyName("activeDiscountLabel")] string? ActiveDiscountLabel = null
 );
 
 public record ProductVariantDto(

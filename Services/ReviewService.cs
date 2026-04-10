@@ -12,9 +12,22 @@ public interface IReviewService
     Task<List<ReviewDto>> GetPendingReviewsAsync();
     Task<bool> DeleteReviewAsync(int reviewId);
     Task<bool> CanCustomerReviewAsync(int customerId, int productId);
+    Task<bool> ReplyToReviewAsync(int reviewId, string reply, string adminName);
+    Task<List<ReviewDto>> GetAllApprovedReviewsAsync();
 }
 
-public record ReviewDto(int Id, string CustomerName, int Rating, string? Comment, DateTime CreatedAt, bool IsApproved);
+public record ReviewDto(
+    int Id, 
+    string CustomerName, 
+    int Rating, 
+    string? Comment, 
+    DateTime CreatedAt, 
+    bool IsApproved,
+    string? ProductName = null,
+    string? AdminReply = null,
+    DateTime? RepliedAt = null,
+    string? RepliedBy = null
+);
 
 public class ReviewService : IReviewService
 {
@@ -27,7 +40,18 @@ public class ReviewService : IReviewService
             .Include(r => r.Customer)
             .Where(r => r.ProductId == productId && r.IsApproved)
             .OrderByDescending(r => r.CreatedAt)
-            .Select(r => new ReviewDto(r.Id, r.Customer.FullName, r.Rating, r.Comment, r.CreatedAt, r.IsApproved))
+            .Select(r => new ReviewDto(
+                r.Id, 
+                r.Customer.FullName, 
+                r.Rating, 
+                r.Comment, 
+                r.CreatedAt, 
+                r.IsApproved, 
+                null, 
+                r.AdminReply, 
+                r.RepliedAt, 
+                r.RepliedBy
+            ))
             .ToListAsync();
     }
 
@@ -79,7 +103,18 @@ public class ReviewService : IReviewService
             .Include(r => r.Customer)
             .Include(r => r.Product)
             .Where(r => !r.IsApproved)
-            .Select(r => new ReviewDto(r.Id, $"{r.Customer.FullName} ({r.Product.NameAr})", r.Rating, r.Comment, r.CreatedAt, r.IsApproved))
+            .Select(r => new ReviewDto(
+                r.Id, 
+                r.Customer.FullName, 
+                r.Rating, 
+                r.Comment, 
+                r.CreatedAt, 
+                r.IsApproved, 
+                r.Product.NameAr,
+                r.AdminReply,
+                r.RepliedAt,
+                r.RepliedBy
+            ))
             .ToListAsync();
     }
 
@@ -100,5 +135,39 @@ public class ReviewService : IReviewService
             .AnyAsync(oi => oi.ProductId == productId && 
                             oi.Order.CustomerId == customerId && 
                             oi.Order.Status == OrderStatus.Delivered);
+    }
+
+    public async Task<bool> ReplyToReviewAsync(int reviewId, string reply, string adminName)
+    {
+        var r = await _db.Reviews.FindAsync(reviewId);
+        if (r == null) return false;
+
+        r.AdminReply = reply;
+        r.RepliedAt = Utils.TimeHelper.GetEgyptTime();
+        r.RepliedBy = adminName;
+        
+        return await _db.SaveChangesAsync() > 0;
+    }
+
+    public async Task<List<ReviewDto>> GetAllApprovedReviewsAsync()
+    {
+        return await _db.Reviews
+            .Include(r => r.Customer)
+            .Include(r => r.Product)
+            .Where(r => r.IsApproved)
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(r => new ReviewDto(
+                r.Id, 
+                r.Customer.FullName, 
+                r.Rating, 
+                r.Comment, 
+                r.CreatedAt, 
+                r.IsApproved, 
+                r.Product.NameAr,
+                r.AdminReply,
+                r.RepliedAt,
+                r.RepliedBy
+            ))
+            .ToListAsync();
     }
 }

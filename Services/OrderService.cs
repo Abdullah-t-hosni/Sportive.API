@@ -186,6 +186,7 @@ public class OrderService : IOrderService
             await using var tx = await _db.Database.BeginTransactionAsync();
             try
             {
+                var now = TimeHelper.GetEgyptTime();
                 // 1. Handle Customer
                 if (!customerId.HasValue)
                 {
@@ -239,8 +240,12 @@ public class OrderService : IOrderService
                     Source = actualSource,
                     AdminNotes = dto.Note,
                     DiscountAmount = dto.DiscountAmount ?? 0,
-                    CreatedAt = TimeHelper.GetEgyptTime()
+                    CreatedAt = now
                 };
+
+                var activeDiscounts = await _db.ProductDiscounts
+                    .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now)
+                    .ToListAsync();
 
                 // 3. Handle Items
                 if (dto.Items != null && dto.Items.Any())
@@ -254,9 +259,28 @@ public class OrderService : IOrderService
                             ? product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId)
                             : null;
 
-                        var unitPrice = (actualSource == OrderSource.POS) 
-                            ? item.UnitPrice 
-                            : (product.DiscountPrice ?? (product.Price + (variant?.PriceAdjustment ?? 0)));
+                        decimal unitPrice;
+                        if (actualSource == OrderSource.POS)
+                        {
+                            unitPrice = item.UnitPrice;
+                        }
+                        else
+                        {
+                            var disc = activeDiscounts.FirstOrDefault(d => d.ProductId == product.Id);
+                            if (disc != null && item.Quantity >= disc.MinQty)
+                            {
+                                unitPrice = disc.DiscountType == DiscountType.Percentage 
+                                    ? Math.Round(product.Price - (product.Price * disc.DiscountValue / 100), 2)
+                                    : Math.Round(product.Price - disc.DiscountValue, 2);
+                            }
+                            else
+                            {
+                                unitPrice = product.DiscountPrice ?? product.Price;
+                            }
+                            
+                            if (variant?.PriceAdjustment.HasValue == true)
+                                unitPrice += variant.PriceAdjustment.Value;
+                        }
                         
                         var orderItem = new OrderItem
                         {
@@ -322,7 +346,21 @@ public class OrderService : IOrderService
                         throw new ArgumentException($"الكمية المطلوبة ({ci.Quantity}) من {ci.Product.NameAr} غير متاحة في المخزون حالياً.");
                     }
 
-                    var unitPrice = ci.Product.DiscountPrice ?? (ci.Product.Price + (ci.ProductVariant?.PriceAdjustment ?? 0));
+                        var disc = activeDiscounts.FirstOrDefault(d => d.ProductId == ci.ProductId);
+                        decimal unitPrice;
+                        if (disc != null && ci.Quantity >= disc.MinQty)
+                        {
+                            unitPrice = disc.DiscountType == DiscountType.Percentage 
+                                ? Math.Round(ci.Product.Price - (ci.Product.Price * disc.DiscountValue / 100), 2)
+                                : Math.Round(ci.Product.Price - disc.DiscountValue, 2);
+                        }
+                        else
+                        {
+                            unitPrice = ci.Product.DiscountPrice ?? ci.Product.Price;
+                        }
+                        
+                        if (ci.ProductVariant?.PriceAdjustment.HasValue == true)
+                            unitPrice += ci.ProductVariant.PriceAdjustment.Value;
 
                         var orderItem = new OrderItem
                         {

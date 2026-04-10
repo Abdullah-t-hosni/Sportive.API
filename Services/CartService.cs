@@ -15,7 +15,14 @@ public class CartService : ICartService
     {
         var items = await GetCartItemsAsync(customerId);
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
-        return BuildSummary(items, store);
+        
+        var productIds = items.Select(i => i.ProductId).Distinct().ToList();
+        var now = Utils.TimeHelper.GetEgyptTime();
+        var discounts = await _db.ProductDiscounts
+            .Where(d => productIds.Contains(d.ProductId) && d.IsActive && d.ValidFrom <= now && d.ValidTo >= now)
+            .ToListAsync();
+
+        return BuildSummary(items, store, discounts);
     }
 
     public async Task<CartSummaryDto> AddToCartAsync(int customerId, AddToCartDto dto)
@@ -76,13 +83,27 @@ public class CartService : ICartService
             .Where(c => c.CustomerId == customerId)
             .ToListAsync();
 
-    private static CartSummaryDto BuildSummary(List<CartItem> items, StoreInfo? store)
+    private static CartSummaryDto BuildSummary(List<CartItem> items, StoreInfo? store, List<ProductDiscount> discounts)
     {
         var deliveryFee = store?.FixedDeliveryFee ?? 50m;
 
         var dtos = items.Select(c =>
         {
-            var price = c.Product?.DiscountPrice ?? c.Product?.Price ?? 0;
+            var basePrice = c.Product?.Price ?? 0;
+            var disc = discounts.FirstOrDefault(d => d.ProductId == c.ProductId);
+            
+            decimal price;
+            if (disc != null && c.Quantity >= disc.MinQty)
+            {
+                price = disc.DiscountType == DiscountType.Percentage 
+                    ? Math.Round(basePrice - (basePrice * disc.DiscountValue / 100), 2)
+                    : Math.Round(basePrice - disc.DiscountValue, 2);
+            }
+            else
+            {
+                price = c.Product?.DiscountPrice ?? basePrice;
+            }
+
             if (c.ProductVariant?.PriceAdjustment.HasValue == true)
                 price += c.ProductVariant.PriceAdjustment!.Value;
 

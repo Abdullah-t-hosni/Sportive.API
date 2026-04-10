@@ -86,34 +86,42 @@ public class ProductService : IProductService
 
         var total = await query.CountAsync();
 
+        var now = TimeHelper.GetEgyptTime();
         var page = Math.Max(1, filter.Page);
         var items = await query
+            .GroupJoin(_db.ProductDiscounts.Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now),
+                p => p.Id,
+                d => d.ProductId,
+                (p, ds) => new { p, d = ds.FirstOrDefault() })
             .Skip((page - 1) * filter.PageSize)
             .Take(filter.PageSize)
-            .Select(p => new ProductSummaryDto(
-                p.Id,
-                p.NameAr,
-                p.NameEn,
-                p.Slug,
-                p.Price,
-                p.DiscountPrice ?? 0,
-                p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
-                p.Category != null ? p.Category.NameAr : "Category Missing",
-                p.Category != null ? p.Category.NameEn : "Category Missing",
-                p.Brand != null ? p.Brand.NameAr : null,
-                p.Brand != null ? p.Brand.NameEn : null,
-                p.BrandId,
-                p.Status.ToString(),
-                p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
-                p.Reviews.Count,
-                p.TotalStock,
-                p.ReorderLevel,
-                p.SKU,
-                p.Variants.Any(),
-                p.HasTax,
-                p.VatRate,
-                p.CostPrice,
-                p.CreatedAt
+            .Select(x => new ProductSummaryDto(
+                x.p.Id,
+                x.p.NameAr,
+                x.p.NameEn,
+                x.p.Slug,
+                x.p.Price,
+                x.d != null 
+                    ? (x.d.DiscountType == DiscountType.Percentage ? Math.Round(x.p.Price - (x.p.Price * x.d.DiscountValue / 100), 2) : Math.Round(x.p.Price - x.d.DiscountValue, 2)) 
+                    : (x.p.DiscountPrice ?? 0),
+                x.p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
+                x.p.Category != null ? x.p.Category.NameAr : "Category Missing",
+                x.p.Category != null ? x.p.Category.NameEn : "Category Missing",
+                x.p.Brand != null ? x.p.Brand.NameAr : null,
+                x.p.Brand != null ? x.p.Brand.NameEn : null,
+                x.p.BrandId,
+                x.p.Status.ToString(),
+                x.p.Reviews.Any() ? x.p.Reviews.Average(r => r.Rating) : 0,
+                x.p.Reviews.Count,
+                x.p.TotalStock,
+                x.p.ReorderLevel,
+                x.p.SKU,
+                x.p.Variants.Any(),
+                x.p.HasTax,
+                x.p.VatRate,
+                x.p.CostPrice,
+                x.p.CreatedAt,
+                x.d != null ? x.d.Label : null
             ))
             .ToListAsync();
 
@@ -134,7 +142,11 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (p == null) return null;
-        return MapToDetail(p);
+        var now = TimeHelper.GetEgyptTime();
+        var d = await _db.ProductDiscounts
+            .FirstOrDefaultAsync(x => x.ProductId == id && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now);
+
+        return MapToDetail(p, d);
     }
 
     public async Task<ProductDetailDto?> GetProductBySlugAsync(string slug)
@@ -148,7 +160,11 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync(x => x.Slug == slug);
 
         if (p == null) return null;
-        return MapToDetail(p);
+        var now = TimeHelper.GetEgyptTime();
+        var d = await _db.ProductDiscounts
+            .FirstOrDefaultAsync(x => x.ProductId == p.Id && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now);
+
+        return MapToDetail(p, d);
     }
 
     public async Task<ProductDetailDto> CreateProductAsync(CreateProductDto dto)
@@ -511,7 +527,8 @@ public class ProductService : IProductService
                 p.HasTax,
                 p.VatRate,
                 p.CostPrice,
-                p.CreatedAt
+                p.CreatedAt,
+                null
             ))
             .ToListAsync();
     }
@@ -547,30 +564,46 @@ public class ProductService : IProductService
                 p.HasTax,
                 p.VatRate,
                 p.CostPrice,
-                p.CreatedAt
+                p.CreatedAt,
+                null
             ))
             .ToListAsync();
     }
 
-    private static ProductDetailDto MapToDetail(Product p) => new(
-        p.Id, p.NameAr, p.NameEn, p.Slug, p.DescriptionAr, p.DescriptionEn,
-        p.Price, p.DiscountPrice ?? 0, p.CostPrice, p.SKU, 
-        p.Brand != null ? p.Brand.NameAr : null,
-        p.Brand != null ? p.Brand.NameEn : null,
-        p.BrandId,
-        p.Status.ToString(), p.IsFeatured,
-        p.CategoryId, p.Category?.NameAr ?? "Category Missing", p.Category?.NameEn ?? "Category Missing",
-        p.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList() ?? new List<ProductVariantDto>(),
-        p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr)).ToList() ?? new List<ProductImageDto>(),
-        p.Reviews?.Any(r => r.IsApproved) == true ? p.Reviews.Where(r => r.IsApproved).Average(r => r.Rating) : 0,
-        p.Reviews?.Count(r => r.IsApproved) ?? 0,
-        p.TotalStock,
-        p.ReorderLevel,
-        p.HasTax,
-        p.VatRate,
-        p.CreatedAt,
-        p.Reviews?.Where(r => r.IsApproved).OrderByDescending(r => r.CreatedAt).Select(r => new ReviewListItemDto(r.Id, r.Customer?.FullName ?? "عميل", r.Rating, r.Comment, r.CreatedAt)).ToList()
-    );
+    private static ProductDetailDto MapToDetail(Product p, ProductDiscount? d = null)
+    {
+        decimal finalDiscountPrice = p.DiscountPrice ?? 0;
+        string? activeLabel = null;
+
+        if (d != null)
+        {
+            activeLabel = d.Label;
+            finalDiscountPrice = d.DiscountType == DiscountType.Percentage 
+                ? Math.Round(p.Price - (p.Price * d.DiscountValue / 100), 2)
+                : Math.Round(p.Price - d.DiscountValue, 2);
+        }
+
+        return new ProductDetailDto(
+            p.Id, p.NameAr, p.NameEn, p.Slug, p.DescriptionAr, p.DescriptionEn,
+            p.Price, finalDiscountPrice, p.CostPrice, p.SKU,
+            p.Brand != null ? p.Brand.NameAr : null,
+            p.Brand != null ? p.Brand.NameEn : null,
+            p.BrandId,
+            p.Status.ToString(), p.IsFeatured,
+            p.CategoryId, p.Category?.NameAr ?? "Category Missing", p.Category?.NameEn ?? "Category Missing",
+            p.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList() ?? new List<ProductVariantDto>(),
+            p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr)).ToList() ?? new List<ProductImageDto>(),
+            p.Reviews?.Any(r => r.IsApproved) == true ? p.Reviews.Where(r => r.IsApproved).Average(r => r.Rating) : 0,
+            p.Reviews?.Count(r => r.IsApproved) ?? 0,
+            p.TotalStock,
+            p.ReorderLevel,
+            p.HasTax,
+            p.VatRate,
+            p.CreatedAt,
+            p.Reviews?.Where(r => r.IsApproved).OrderByDescending(r => r.CreatedAt).Select(r => new ReviewListItemDto(r.Id, r.Customer?.FullName ?? "عميل", r.Rating, r.Comment, r.CreatedAt)).ToList(),
+            activeLabel
+        );
+    }
 
     private string GenerateSlug(string name)
     {

@@ -68,4 +68,8 @@ public class Review : BaseEntity
     public int Rating { get; set; } // 1-5
     public string? Comment { get; set; }
     public bool IsApproved { get; set; } = false;
+    
+    public string? AdminReply { get; set; }
+    public DateTime? RepliedAt { get; set; }
+    public string? RepliedBy { get; set; }
 }

@@ -59,6 +59,10 @@ public class ReviewsController : ControllerBase
     public async Task<IActionResult> GetPending() => Ok(await _reviews.GetPendingReviewsAsync());
 
     [Authorize(Roles = "Admin,Manager")]
+    [HttpGet("approved")]
+    public async Task<IActionResult> GetApproved() => Ok(await _reviews.GetAllApprovedReviewsAsync());
+
+    [Authorize(Roles = "Admin,Manager")]
     [HttpPost("{id}/approve")]
     public async Task<IActionResult> Approve(int id) =>
         await _reviews.ApproveReviewAsync(id) ? Ok() : NotFound();
@@ -67,4 +71,14 @@ public class ReviewsController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id) =>
         await _reviews.DeleteReviewAsync(id) ? NoContent() : NotFound();
+
+    [Authorize(Roles = "Admin,Manager")]
+    [HttpPost("{id}/reply")]
+    public async Task<IActionResult> Reply(int id, [FromBody] ReplyDto dto)
+    {
+        var adminName = User.FindFirstValue(ClaimTypes.Name) ?? "Admin";
+        return await _reviews.ReplyToReviewAsync(id, dto.Reply, adminName) ? Ok() : NotFound();
+    }
 }
+
+public record ReplyDto(string Reply);
