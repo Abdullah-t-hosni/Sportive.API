@@ -118,5 +118,5 @@ public interface IEmailService
 
 public interface IAiAssistantService
 {
-    Task<string> ChatAsync(string userMessage, string? conversationId = null);
+    Task<string> ChatAsync(string userMessage, string? conversationId = null, bool isAdmin = false);
 }

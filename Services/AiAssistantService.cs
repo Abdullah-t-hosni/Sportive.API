@@ -59,7 +59,7 @@ public class AiAssistantService : IAiAssistantService
                 .Where(p => p.Status == Models.ProductStatus.Active)
                 .OrderByDescending(p => p.IsFeatured)
                 .Take(25)
-                .Select(p => new { p.NameAr, p.Price, p.Category.NameAr })
+                .Select(p => new { p.NameAr, p.Price, CategoryName = p.Category.NameAr })
                 .ToListAsync();
 
             var productsDescription = string.Join(", ", products.Select(p => $"{p.NameAr} ({p.Price} ج.م)"));
@@ -127,7 +127,7 @@ public class AiAssistantService : IAiAssistantService
         var lowStock = await _db.Products.CountAsync(p => p.TotalStock <= p.ReorderLevel && p.Status == Models.ProductStatus.Active);
         var custCount = await _db.Customers.CountAsync();
         var inventoryVal = await _db.Products.SumAsync(p => p.TotalStock * p.CostPrice);
-        var coupons = await _db.Coupons.Where(c => c.IsActive && (!c.ExpiryDate.HasValue || c.ExpiryDate >= egyptTime)).Select(c => c.Code).ToListAsync();
+        var coupons = await _db.Coupons.Where(c => c.IsActive && (!c.ExpiresAt.HasValue || c.ExpiresAt >= egyptTime)).Select(c => c.Code).ToListAsync();
 
         return new { 
             TodaySales = sales, 
