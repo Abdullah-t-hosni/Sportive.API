@@ -522,34 +522,45 @@ public class ProductService : IProductService
 
     public async Task<List<ProductSummaryDto>> GetFeaturedProductsAsync(int count = 8)
     {
+        var now = TimeHelper.GetEgyptTime();
         return await _db.Products
             .Include(p => p.Category)
             .Include(p => p.Brand)
             .Include(p => p.Images)
-            .Include(p => p.Reviews)
-            .Where(p => p.IsFeatured && p.Status == ProductStatus.Active)
-            .OrderByDescending(p => p.CreatedAt)
+            .Where(p => p.IsFeatured && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock))
+            .GroupJoin(_db.ProductDiscounts.Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now),
+                p => p.Id,
+                d => d.ProductId,
+                (p, ds) => new { p, d = ds.FirstOrDefault() })
+            .OrderByDescending(x => x.p.CreatedAt)
             .Take(count)
-            .Select(p => new ProductSummaryDto(
-                p.Id, p.NameAr, p.NameEn, p.Slug, p.Price, p.DiscountPrice ?? 0,
-                p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
-                p.Category != null ? p.Category.NameAr : "Category Missing", 
-                p.Category != null ? p.Category.NameEn : "Category Missing", 
-                p.Brand != null ? p.Brand.NameAr : null, 
-                p.Brand != null ? p.Brand.NameEn : null,
-                p.BrandId,
-                p.Status.ToString(),
-                p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
-                p.Reviews.Count,
-                p.TotalStock,
-                p.ReorderLevel,
-                p.SKU,
-                p.Variants != null && p.Variants.Any(),
-                p.HasTax,
-                p.VatRate,
-                p.CostPrice,
-                p.CreatedAt,
-                null
+            .Select(x => new ProductSummaryDto(
+                x.p.Id,
+                x.p.NameAr,
+                x.p.NameEn,
+                x.p.Slug,
+                x.p.Price,
+                x.d != null 
+                    ? (x.d.DiscountType == DiscountType.Percentage ? Math.Round(x.p.Price - (x.p.Price * x.d.DiscountValue / 100), 2) : Math.Round(x.p.Price - x.d.DiscountValue, 2)) 
+                    : (x.p.DiscountPrice ?? 0),
+                x.p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
+                x.p.Category != null ? x.p.Category.NameAr : "Category Missing", 
+                x.p.Category != null ? x.p.Category.NameEn : "Category Missing", 
+                x.p.Brand != null ? x.p.Brand.NameAr : null, 
+                x.p.Brand != null ? x.p.Brand.NameEn : null,
+                x.p.BrandId,
+                x.p.Status.ToString(),
+                x.p.AverageRating,
+                x.p.ReviewCount,
+                x.p.TotalStock,
+                x.p.ReorderLevel,
+                x.p.SKU,
+                x.p.Variants != null && x.p.Variants.Any(),
+                x.p.HasTax,
+                x.p.VatRate,
+                x.p.CostPrice,
+                x.p.CreatedAt,
+                x.d != null ? x.d.Label : null
             ))
             .ToListAsync();
     }
@@ -559,34 +570,41 @@ public class ProductService : IProductService
         var product = await _db.Products.FindAsync(productId);
         if (product == null) return new List<ProductSummaryDto>();
 
+        var now = TimeHelper.GetEgyptTime();
         return await _db.Products
             .Include(p => p.Category)
             .Include(p => p.Brand)
             .Include(p => p.Images)
-            .Include(p => p.Reviews)
-            .Where(p => p.CategoryId == product.CategoryId && p.Id != productId && p.Status == ProductStatus.Active)
+            .Where(p => p.CategoryId == product.CategoryId && p.Id != productId && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock))
+            .GroupJoin(_db.ProductDiscounts.Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now),
+                p => p.Id,
+                d => d.ProductId,
+                (p, ds) => new { p, d = ds.FirstOrDefault() })
             .OrderBy(_ => Guid.NewGuid())
             .Take(count)
-            .Select(p => new ProductSummaryDto(
-                p.Id, p.NameAr, p.NameEn, p.Slug, p.Price, p.DiscountPrice ?? 0,
-                p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
-                p.Category != null ? p.Category.NameAr : "Category Missing", 
-                p.Category != null ? p.Category.NameEn : "Category Missing", 
-                p.Brand != null ? p.Brand.NameAr : null, 
-                p.Brand != null ? p.Brand.NameEn : null,
-                p.BrandId,
-                p.Status.ToString(),
-                p.AverageRating,
-                p.ReviewCount,
-                p.TotalStock,
-                p.ReorderLevel,
-                p.SKU,
-                p.Variants != null && p.Variants.Any(),
-                p.HasTax,
-                p.VatRate,
-                p.CostPrice,
-                p.CreatedAt,
-                null
+            .Select(x => new ProductSummaryDto(
+                x.p.Id, x.p.NameAr, x.p.NameEn, x.p.Slug, x.p.Price, 
+                x.d != null 
+                    ? (x.d.DiscountType == DiscountType.Percentage ? Math.Round(x.p.Price - (x.p.Price * x.d.DiscountValue / 100), 2) : Math.Round(x.p.Price - x.d.DiscountValue, 2)) 
+                    : (x.p.DiscountPrice ?? 0),
+                x.p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
+                x.p.Category != null ? x.p.Category.NameAr : "Category Missing", 
+                x.p.Category != null ? x.p.Category.NameEn : "Category Missing", 
+                x.p.Brand != null ? x.p.Brand.NameAr : null, 
+                x.p.Brand != null ? x.p.Brand.NameEn : null,
+                x.p.BrandId,
+                x.p.Status.ToString(),
+                x.p.AverageRating,
+                x.p.ReviewCount,
+                x.p.TotalStock,
+                x.p.ReorderLevel,
+                x.p.SKU,
+                x.p.Variants != null && x.p.Variants.Any(),
+                x.p.HasTax,
+                x.p.VatRate,
+                x.p.CostPrice,
+                x.p.CreatedAt,
+                x.d != null ? x.d.Label : null
             ))
             .ToListAsync();
     }
