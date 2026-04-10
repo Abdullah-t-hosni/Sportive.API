@@ -94,6 +94,7 @@ public class ProductService : IProductService
                 p.Id,
                 p.NameAr,
                 p.NameEn,
+                p.Slug,
                 p.Price,
                 p.DiscountPrice ?? 0,
                 p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
@@ -136,6 +137,20 @@ public class ProductService : IProductService
         return MapToDetail(p);
     }
 
+    public async Task<ProductDetailDto?> GetProductBySlugAsync(string slug)
+    {
+        var p = await _db.Products
+            .Include(x => x.Category)
+            .Include(x => x.Brand)
+            .Include(x => x.Images.OrderBy(i => i.SortOrder))
+            .Include(x => x.Variants)
+            .Include(x => x.Reviews)
+            .FirstOrDefaultAsync(x => x.Slug == slug);
+
+        if (p == null) return null;
+        return MapToDetail(p);
+    }
+
     public async Task<ProductDetailDto> CreateProductAsync(CreateProductDto dto)
     {
         // التحقق من تكرار الكود
@@ -161,7 +176,8 @@ public class ProductService : IProductService
             ReorderLevel = dto.ReorderLevel ?? 0,
             HasTax = dto.HasTax,
             VatRate = dto.VatRate,
-            Status = ProductStatus.Active
+            Status = ProductStatus.Active,
+            Slug = GenerateSlug(dto.NameEn ?? dto.NameAr) + "-" + Guid.NewGuid().ToString().Substring(0, 4)
         };
 
         if (dto.Variants != null && dto.Variants.Any())
@@ -472,7 +488,7 @@ public class ProductService : IProductService
             .OrderByDescending(p => p.CreatedAt)
             .Take(count)
             .Select(p => new ProductSummaryDto(
-                p.Id, p.NameAr, p.NameEn, p.Price, p.DiscountPrice ?? 0,
+                p.Id, p.NameAr, p.NameEn, p.Slug, p.Price, p.DiscountPrice ?? 0,
                 p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
                 p.Category != null ? p.Category.NameAr : "Category Missing", 
                 p.Category != null ? p.Category.NameEn : "Category Missing", 
@@ -508,7 +524,7 @@ public class ProductService : IProductService
             .OrderBy(_ => Guid.NewGuid())
             .Take(count)
             .Select(p => new ProductSummaryDto(
-                p.Id, p.NameAr, p.NameEn, p.Price, p.DiscountPrice ?? 0,
+                p.Id, p.NameAr, p.NameEn, p.Slug, p.Price, p.DiscountPrice ?? 0,
                 p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
                 p.Category != null ? p.Category.NameAr : "Category Missing", 
                 p.Category != null ? p.Category.NameEn : "Category Missing", 
@@ -531,7 +547,7 @@ public class ProductService : IProductService
     }
 
     private static ProductDetailDto MapToDetail(Product p) => new(
-        p.Id, p.NameAr, p.NameEn, p.DescriptionAr, p.DescriptionEn,
+        p.Id, p.NameAr, p.NameEn, p.Slug, p.DescriptionAr, p.DescriptionEn,
         p.Price, p.DiscountPrice ?? 0, p.CostPrice, p.SKU, 
         p.Brand != null ? p.Brand.NameAr : null,
         p.Brand != null ? p.Brand.NameEn : null,
@@ -548,4 +564,14 @@ public class ProductService : IProductService
         p.VatRate,
         p.CreatedAt
     );
+
+    private string GenerateSlug(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return Guid.NewGuid().ToString().Substring(0, 8);
+        var s = name.ToLower().Trim();
+        // Remove accents and special chars
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"[^a-z0-9\u0600-\u06FF\s-]", "");
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"\s+", "-").Trim('-');
+        return s;
+    }
 }

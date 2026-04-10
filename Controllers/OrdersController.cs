@@ -136,6 +136,20 @@ public class OrdersController : ControllerBase
         return Ok(order);
     }
 
+    [HttpPatch("{id}/note")]
+    [Authorize(Roles = "Admin,Manager,Staff")]
+    public async Task<IActionResult> UpdateAdminNote(int id, [FromBody] UpdateOrderAdminNoteDto dto)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id);
+        if (order == null) return NotFound();
+
+        order.AdminNotes = dto.Note;
+        order.UpdatedAt  = TimeHelper.GetEgyptTime();
+        await _db.SaveChangesAsync();
+
+        return Ok(new { note = order.AdminNotes });
+    }
+
     [HttpGet("{id}/pdf")]
     public async Task<IActionResult> GetOrderPdf(int id)
     {

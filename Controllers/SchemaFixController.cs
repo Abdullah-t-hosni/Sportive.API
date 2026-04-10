@@ -135,4 +135,38 @@ public class SchemaFixController : ControllerBase
             return StatusCode(500, new { error = ex.Message });
         }
     }
+
+    [HttpGet("run-v8")]
+    public async Task<IActionResult> RunV8()
+    {
+        _logger.LogWarning("SchemaFix run-v8 (Product Slugs) triggered.");
+        try
+        {
+            // 1. Add Slug column if not exists
+            try { 
+                await _db.Database.ExecuteSqlRawAsync("ALTER TABLE Products ADD COLUMN Slug VARCHAR(255) DEFAULT '' NOT NULL;"); 
+            } catch (Exception ex) { _logger.LogInformation("Slug column already exists or error: {Err}", ex.Message); }
+
+            // 2. Generate slugs for all products that have empty slugs
+            var products = await _db.Products.Where(p => string.IsNullOrEmpty(p.Slug)).ToListAsync();
+            foreach (var p in products)
+            {
+                var baseSlug = GenerateSlug(p.NameEn ?? p.NameAr);
+                p.Slug = baseSlug + "-" + p.Id;
+            }
+            await _db.SaveChangesAsync();
+
+            return Ok(new { message = "Slugs generated for all products.", count = products.Count });
+        }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
+    private string GenerateSlug(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return Guid.NewGuid().ToString().Substring(0, 8);
+        var s = name.ToLower().Trim();
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"[^a-z0-9\u0600-\u06FF\s-]", "");
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"\s+", "-").Trim('-');
+        return s;
+    }
 }

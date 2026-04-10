@@ -155,6 +155,8 @@ public record OrderStatusHistoryDto(
 
 public record UpdateOrderStatusDto(OrderStatus Status, string? Note);
 public record UpdatePaymentStatusDto(PaymentStatus PaymentStatus, string? Note);
+public record UpdateOrderAdminNoteDto(string Note);
+
 
 public record PartialReturnDto(
     List<ReturnItemRequest> Items,

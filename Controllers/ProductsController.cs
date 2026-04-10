@@ -23,6 +23,13 @@ public class ProductsController : ControllerBase
         return product == null ? NotFound() : Ok(product);
     }
 
+    [HttpGet("slug/{slug}")]
+    public async Task<IActionResult> GetBySlug(string slug)
+    {
+        var product = await _products.GetProductBySlugAsync(slug);
+        return product == null ? NotFound() : Ok(product);
+    }
+
     [HttpGet("featured")]
     public async Task<IActionResult> GetFeatured([FromQuery] int count = 8) =>
         Ok(await _products.GetFeaturedProductsAsync(count));
