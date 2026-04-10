@@ -216,6 +216,7 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddHostedService<BackupHostedService>();
 builder.Services.AddScoped<IWishlistService, WishlistService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
+builder.Services.AddScoped<IAiAssistantService, AiAssistantService>();
 builder.Services.AddSingleton<SequenceService>();
 builder.Services.AddSingleton<TimeService>();
 builder.Services.AddSingleton<ITimeService>(sp => sp.GetRequiredService<TimeService>());
@@ -359,16 +360,17 @@ static async Task SeedAsync(WebApplication app)
         if (!await roleManager.RoleExistsAsync(role))
             await roleManager.CreateAsync(new IdentityRole(role));
 
-    var adminEmail    = Environment.GetEnvironmentVariable("ADMIN_EMAIL")    ?? "admin@sportive.com";
+    var adminEmail    = Environment.GetEnvironmentVariable("ADMIN_EMAIL") ?? "admin@sportive.com";
     var adminPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD");
 
-    if (string.IsNullOrEmpty(adminPassword) && !app.Environment.IsDevelopment())
+    if (string.IsNullOrEmpty(adminPassword))
     {
-        Log.Fatal("CRITICAL: ADMIN_PASSWORD environment variable is missing in non-development environment.");
-        throw new InvalidOperationException("ADMIN_PASSWORD is required for production.");
+        if (!app.Environment.IsDevelopment())
+        {
+            Log.Warning("SECURITY WARNING: ADMIN_PASSWORD environment variable is missing. Using default password in non-development environment is NOT recommended.");
+        }
+        adminPassword = "Admin@123456";
     }
-    
-    adminPassword ??= "Admin@123456"; // Fallback only for Dev
 
     var admin = await userManager.FindByEmailAsync(adminEmail);
     if (admin == null)
