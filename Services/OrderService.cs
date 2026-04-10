@@ -147,6 +147,7 @@ public class OrderService : IOrderService
             o.CreatedAt,
             o.Items.Select(i => new OrderItemDto(
                 i.Id, i.ProductNameAr, i.ProductNameEn, i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
+                i.Product?.Slug,
                 i.Size, i.Color, i.Quantity, i.UnitPrice, i.TotalPrice,
                 i.HasTax, i.VatRateApplied, i.ItemVatAmount, i.ReturnedQuantity
             )).ToList(),
@@ -488,6 +489,21 @@ public class OrderService : IOrderService
         {
             order.ActualDeliveryDate = TimeHelper.GetEgyptTime();
             if (order.PaymentMethod != PaymentMethod.Credit) order.PaymentStatus = PaymentStatus.Paid;
+
+            // Notification on Delivery
+            _ = Task.Run(async () => {
+                using var scope = _scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
+                var cust = await db.Customers.FindAsync(order.CustomerId);
+                if (cust != null && !string.IsNullOrEmpty(cust.AppUserId)) {
+                   await notificationService.SendAsync(cust.AppUserId, 
+                      "تهانينا! تم توصيل طلبك", "Order Delivered!",
+                      $"تم توصيل طلبك رقم {order.OrderNumber} بنجاح. يسعدنا تقييم تجربتك!", 
+                      $"Your order #{order.OrderNumber} has been delivered. We'd love to hear your feedback!",
+                      "Order", order.Id);
+                }
+            });
         }
 
         if (dto.Status == OrderStatus.Returned && order.Source == OrderSource.POS)

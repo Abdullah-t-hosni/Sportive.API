@@ -136,6 +136,7 @@ public record OrderItemDto(
     string ProductNameAr,
     string ProductNameEn,
     string? ProductImage,
+    string? ProductSlug,
     string? Size,
     string? Color,
     int Quantity,

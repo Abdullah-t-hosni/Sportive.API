@@ -25,7 +25,7 @@ using Sportive.API.Hubs;
 
 
 Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Debug()
+    .MinimumLevel.Is(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development" ? LogEventLevel.Debug : LogEventLevel.Information)
     .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", LogEventLevel.Information)
     .Enrich.FromLogContext()
@@ -54,10 +54,10 @@ builder.Services.AddIdentity<AppUser, IdentityRole>(options =>
 {
     options.Password.RequireDigit = true;
     options.Password.RequiredLength = 8;
-    options.Password.RequireLowercase = false;
-    options.Password.RequireUppercase = false;
-    options.Password.RequireNonAlphanumeric = false;
-    options.Password.RequiredUniqueChars = 0;
+    options.Password.RequireLowercase = true;
+    options.Password.RequireUppercase = true;
+    options.Password.RequireNonAlphanumeric = true;
+    options.Password.RequiredUniqueChars = 1;
 })
 .AddEntityFrameworkStores<AppDbContext>()
 .AddDefaultTokenProviders();
@@ -139,14 +139,14 @@ builder.Services.AddRateLimiter(options =>
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 0
             }));
 
-    // Global policy — applied to all endpoints (60 req/min per IP)
+    // Global policy — applied to all endpoints (150 req/min per IP)
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 60, Window = TimeSpan.FromMinutes(1),
-                QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 2
+                PermitLimit = 150, Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 5
             }));
 
     options.RejectionStatusCode = 429;
@@ -233,8 +233,8 @@ builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompre
     options => options.Level = System.IO.Compression.CompressionLevel.Fastest);
 
 // ── HEALTH CHECKS ─────────────────────────────────────
-// ✅ Basic health check — no extra NuGet package needed
-builder.Services.AddHealthChecks();
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<AppDbContext>();
 
 // ── SWAGGER ───────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
@@ -288,13 +288,16 @@ TimeHelper.Initialize(app.Services.GetRequiredService<ITimeService>());
 
 app.UseResponseCompression();
 
-app.UseSwagger();
-app.UseSwaggerUI(c =>
+if (app.Environment.IsDevelopment())
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Sportive API v1");
-    c.RoutePrefix = string.Empty;
-    c.DocumentTitle = "Sportive API";
-});
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Sportive API v1");
+        c.RoutePrefix = string.Empty;
+        c.DocumentTitle = "Sportive API";
+    });
+}
 
 app.UseCors("AllowReactApp");
 app.UseSerilogRequestLogging();
@@ -308,7 +311,7 @@ app.Use(async (ctx, next) =>
     ctx.Response.Headers["Referrer-Policy"]           = "strict-origin-when-cross-origin";
     ctx.Response.Headers["Permissions-Policy"]        = "camera=(), microphone=(), geolocation=()";
     ctx.Response.Headers["Content-Security-Policy"]   =
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss:";
+        "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; connect-src 'self' wss: https:; font-src 'self' data: https:;";
     if (ctx.Request.IsHttps)
         ctx.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
     await next();
@@ -357,7 +360,15 @@ static async Task SeedAsync(WebApplication app)
             await roleManager.CreateAsync(new IdentityRole(role));
 
     var adminEmail    = Environment.GetEnvironmentVariable("ADMIN_EMAIL")    ?? "admin@sportive.com";
-    var adminPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD") ?? "Admin@123456";
+    var adminPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD");
+
+    if (string.IsNullOrEmpty(adminPassword) && !app.Environment.IsDevelopment())
+    {
+        Log.Fatal("CRITICAL: ADMIN_PASSWORD environment variable is missing in non-development environment.");
+        throw new InvalidOperationException("ADMIN_PASSWORD is required for production.");
+    }
+    
+    adminPassword ??= "Admin@123456"; // Fallback only for Dev
 
     var admin = await userManager.FindByEmailAsync(adminEmail);
     if (admin == null)

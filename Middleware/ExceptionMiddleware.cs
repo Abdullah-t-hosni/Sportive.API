@@ -40,13 +40,12 @@ public class ExceptionMiddleware
         var (statusCode, message) = ex switch
         {
             KeyNotFoundException    => (HttpStatusCode.NotFound,           ex.Message),
-            UnauthorizedAccessException => (HttpStatusCode.Unauthorized,   ex.Message),
+            UnauthorizedAccessException => (HttpStatusCode.Unauthorized,   "ليس لديك صلاحية للقيام بهذا الإجراء."),
             InvalidOperationException => (HttpStatusCode.BadRequest,       ex.Message),
             ArgumentException       => (HttpStatusCode.BadRequest,         ex.Message),
             BadHttpRequestException => (HttpStatusCode.BadRequest,         ex.Message),
-            DbUpdateException       => (HttpStatusCode.BadRequest,
-                ex.InnerException != null ? ex.InnerException.Message : ex.Message),
-            _                       => (HttpStatusCode.InternalServerError, ex.InnerException != null ? ex.InnerException.Message : ex.Message)
+            DbUpdateException       => (HttpStatusCode.Conflict,          "حدث خطأ في قاعدة البيانات. يرجى مراجعة البيانات المدخلة."),
+            _                       => (HttpStatusCode.InternalServerError, "حدث خطأ داخلي في الخادم. يرجى المحاولة لاحقاً.")
         };
 
         context.Response.StatusCode = (int)statusCode;
@@ -54,13 +53,17 @@ public class ExceptionMiddleware
         var response = new
         {
             StatusCode = (int)statusCode,
-            Message    = message,
-            ExceptionType = ex.GetType().Name,
+            Message    = _env.IsDevelopment() ? (ex.InnerException?.Message ?? ex.Message) : message,
+            TraceId    = context.TraceIdentifier,
             Details    = _env.IsDevelopment() ? ex.StackTrace : null
         };
 
-        await context.Response.WriteAsync(
-            JsonSerializer.Serialize(response,
-                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+        var options = new JsonSerializerOptions 
+        { 
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+        };
+
+        await context.Response.WriteAsync(JsonSerializer.Serialize(response, options));
     }
 }
