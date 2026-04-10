@@ -77,6 +77,7 @@ public interface ICustomerService
     Task<PaginatedResult<CustomerDetailDto>> GetCustomersAsync(int page, int pageSize, string? search = null);
     Task<CustomerDetailDto?> GetCustomerByIdAsync(int id);
     Task<CustomerDetailDto?> GetCustomerByEmailAsync(string email);
+    Task<CustomerDetailDto?> GetCustomerByUserIdAsync(string userId);
     Task<CustomerDetailDto> CreateCustomerAsync(CreateCustomerDto dto);
     Task<bool> ToggleCustomerAsync(int id);
     Task<bool> DeleteCustomerAsync(int id);

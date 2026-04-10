@@ -126,6 +126,28 @@ public class CustomerService : ICustomerService
             ))
             .FirstOrDefaultAsync();
 
+    public async Task<CustomerDetailDto?> GetCustomerByUserIdAsync(string userId) =>
+        await _db.Customers
+            .Include(c => c.Addresses)
+            .Include(c => c.Orders)
+            .Include(c => c.MainAccount)
+            .Where(c => c.AppUserId == userId)
+            .Select(c => new CustomerDetailDto(
+                c.Id, c.FullName, c.Email, c.Phone,
+                c.Orders.Count,
+                c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
+                c.CreatedAt,
+                c.Addresses.Select(a => new AddressDto(
+                    a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
+                    a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
+                )).ToList(),
+                c.AppUserId,
+                (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + _db.JournalLines.Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0,
+                c.MainAccountId,
+                c.FixedDiscount
+            ))
+            .FirstOrDefaultAsync();
+
     public async Task<CustomerDetailDto> CreateCustomerAsync(CreateCustomerDto dto)
     {
         // 1. Check for existing customer

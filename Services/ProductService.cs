@@ -130,7 +130,7 @@ public class ProductService : IProductService
             .Include(x => x.Brand)
             .Include(x => x.Images.OrderBy(i => i.SortOrder))
             .Include(x => x.Variants)
-            .Include(x => x.Reviews)
+            .Include(x => x.Reviews).ThenInclude(r => r.Customer)
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (p == null) return null;
@@ -144,7 +144,7 @@ public class ProductService : IProductService
             .Include(x => x.Brand)
             .Include(x => x.Images.OrderBy(i => i.SortOrder))
             .Include(x => x.Variants)
-            .Include(x => x.Reviews)
+            .Include(x => x.Reviews).ThenInclude(r => r.Customer)
             .FirstOrDefaultAsync(x => x.Slug == slug);
 
         if (p == null) return null;
@@ -562,13 +562,14 @@ public class ProductService : IProductService
         p.CategoryId, p.Category?.NameAr ?? "Category Missing", p.Category?.NameEn ?? "Category Missing",
         p.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList() ?? new List<ProductVariantDto>(),
         p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr)).ToList() ?? new List<ProductImageDto>(),
-        p.Reviews?.Any() == true ? p.Reviews.Average(r => r.Rating) : 0,
-        p.Reviews?.Count ?? 0,
+        p.Reviews?.Any(r => r.IsApproved) == true ? p.Reviews.Where(r => r.IsApproved).Average(r => r.Rating) : 0,
+        p.Reviews?.Count(r => r.IsApproved) ?? 0,
         p.TotalStock,
         p.ReorderLevel,
         p.HasTax,
         p.VatRate,
-        p.CreatedAt
+        p.CreatedAt,
+        p.Reviews?.Where(r => r.IsApproved).OrderByDescending(r => r.CreatedAt).Select(r => new ReviewListItemDto(r.Id, r.Customer?.FullName ?? "عميل", r.Rating, r.Comment, r.CreatedAt)).ToList()
     );
 
     private string GenerateSlug(string name)

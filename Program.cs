@@ -215,6 +215,7 @@ builder.Services.AddScoped<IBackupService, BackupService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddHostedService<BackupHostedService>();
 builder.Services.AddScoped<IWishlistService, WishlistService>();
+builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddSingleton<SequenceService>();
 builder.Services.AddSingleton<TimeService>();
 builder.Services.AddSingleton<ITimeService>(sp => sp.GetRequiredService<TimeService>());

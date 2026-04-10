@@ -125,7 +125,8 @@ public record ProductDetailDto(
     [property: JsonPropertyName("reorderLevel")] int ReorderLevel,
     [property: JsonPropertyName("hasTax")] bool HasTax,
     [property: JsonPropertyName("vatRate")] decimal? VatRate,
-    [property: JsonPropertyName("createdAt")] DateTime CreatedAt
+    [property: JsonPropertyName("createdAt")] DateTime CreatedAt,
+    [property: JsonPropertyName("reviews")] List<ReviewListItemDto>? Reviews = null
 );
 
 public record ProductVariantDto(
@@ -189,6 +190,14 @@ public record CreateVariantDto(
 );
 
 // ========== REVIEWS & WISHLIST ==========
+public record ReviewListItemDto(
+    [property: JsonPropertyName("id")] int Id,
+    [property: JsonPropertyName("customerName")] string CustomerName,
+    [property: JsonPropertyName("rating")] int Rating,
+    [property: JsonPropertyName("comment")] string? Comment,
+    [property: JsonPropertyName("createdAt")] DateTime CreatedAt
+);
+
 public record AddReviewDto(int ProductId, int Rating, string? Comment);
 public record AddToWishlistDto(int ProductId);
 
