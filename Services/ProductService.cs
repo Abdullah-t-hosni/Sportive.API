@@ -21,6 +21,7 @@ public class ProductService : IProductService
         _inventory = inventory;
     }
 
+
     public async Task<PaginatedResult<ProductSummaryDto>> GetProductsAsync(ProductFilterDto filter)
     {
         var query = _db.Products
@@ -111,8 +112,8 @@ public class ProductService : IProductService
                 x.p.Brand != null ? x.p.Brand.NameEn : null,
                 x.p.BrandId,
                 x.p.Status.ToString(),
-                x.p.Reviews.Any() ? x.p.Reviews.Average(r => r.Rating) : 0,
-                x.p.Reviews.Count,
+                x.p.AverageRating,
+                x.p.ReviewCount,
                 x.p.TotalStock,
                 x.p.ReorderLevel,
                 x.p.SKU,
@@ -423,6 +424,26 @@ public class ProductService : IProductService
         await _db.SaveChangesAsync();
     }
 
+    public async Task SyncAllProductRatingsAsync()
+    {
+        var products = await _db.Products.Include(p => p.Reviews).ToListAsync();
+        foreach (var p in products)
+        {
+            var approved = p.Reviews.Where(r => r.IsApproved).ToList();
+            if (approved.Any())
+            {
+                p.AverageRating = approved.Average(r => r.Rating);
+                p.ReviewCount = approved.Count;
+            }
+            else
+            {
+                p.AverageRating = 0;
+                p.ReviewCount = 0;
+            }
+        }
+        await _db.SaveChangesAsync();
+    }
+
     public async Task<ProductVariantDto> AddVariantAsync(int productId, CreateVariantDto dto)
     {
         var v = new ProductVariant
@@ -555,8 +576,8 @@ public class ProductService : IProductService
                 p.Brand != null ? p.Brand.NameEn : null,
                 p.BrandId,
                 p.Status.ToString(),
-                p.Reviews.Any() ? p.Reviews.Average(r => r.Rating) : 0,
-                p.Reviews.Count,
+                p.AverageRating,
+                p.ReviewCount,
                 p.TotalStock,
                 p.ReorderLevel,
                 p.SKU,
@@ -593,8 +614,8 @@ public class ProductService : IProductService
             p.CategoryId, p.Category?.NameAr ?? "Category Missing", p.Category?.NameEn ?? "Category Missing",
             p.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList() ?? new List<ProductVariantDto>(),
             p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr)).ToList() ?? new List<ProductImageDto>(),
-            p.Reviews?.Any(r => r.IsApproved) == true ? p.Reviews.Where(r => r.IsApproved).Average(r => r.Rating) : 0,
-            p.Reviews?.Count(r => r.IsApproved) ?? 0,
+            p.AverageRating,
+            p.ReviewCount,
             p.TotalStock,
             p.ReorderLevel,
             p.HasTax,

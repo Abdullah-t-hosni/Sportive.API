@@ -12,6 +12,7 @@ public interface IReviewService
     Task<List<ReviewDto>> GetPendingReviewsAsync();
     Task<bool> DeleteReviewAsync(int reviewId);
     Task<bool> CanCustomerReviewAsync(int customerId, int productId);
+    Task<bool> UpdateProductRatingAsync(int productId);
     Task<bool> ReplyToReviewAsync(int reviewId, string reply, string adminName);
     Task<List<ReviewDto>> GetAllApprovedReviewsAsync();
 }
@@ -32,7 +33,13 @@ public record ReviewDto(
 public class ReviewService : IReviewService
 {
     private readonly AppDbContext _db;
-    public ReviewService(AppDbContext db) => _db = db;
+    private readonly INotificationService _notifications;
+
+    public ReviewService(AppDbContext db, INotificationService notifications)
+    {
+        _db = db;
+        _notifications = notifications;
+    }
 
     public async Task<List<ReviewDto>> GetApprovedReviewsAsync(int productId)
     {
@@ -82,6 +89,19 @@ public class ReviewService : IReviewService
         };
         _db.Reviews.Add(review);
         await _db.SaveChangesAsync();
+
+        // 🔔 ALERT ADMIN
+        var p = await _db.Products.FindAsync(productId);
+        var c = await _db.Customers.FindAsync(customerId);
+        await _notifications.SendAsync(
+            null, // Admin Group
+            "تقييم جديد بانتظار المراجعة", 
+            "New Review Pending",
+            $"العميل {c?.FullName} قام بتقييم {p?.NameAr}",
+            $"Customer {c?.FullName} reviewed {p?.NameEn}",
+            "Review"
+        );
+
         return review;
     }
 
@@ -91,10 +111,9 @@ public class ReviewService : IReviewService
         if (r == null) return false;
         r.IsApproved = true;
         
-        // Update product's average rating cached data if needed? 
-        // Our ProductDetailPage calculates it from reviews so it's fine.
-        
-        return await _db.SaveChangesAsync() > 0;
+        await _db.SaveChangesAsync();
+        await UpdateProductRatingAsync(r.ProductId);
+        return true;
     }
 
     public async Task<List<ReviewDto>> GetPendingReviewsAsync()
@@ -122,8 +141,11 @@ public class ReviewService : IReviewService
     {
         var r = await _db.Reviews.FindAsync(reviewId);
         if (r == null) return false;
+        var productId = r.ProductId;
         _db.Reviews.Remove(r);
-        return await _db.SaveChangesAsync() > 0;
+        var saved = await _db.SaveChangesAsync() > 0;
+        if (saved) await UpdateProductRatingAsync(productId);
+        return saved;
     }
 
     public async Task<bool> CanCustomerReviewAsync(int customerId, int productId)
@@ -146,7 +168,25 @@ public class ReviewService : IReviewService
         r.RepliedAt = Utils.TimeHelper.GetEgyptTime();
         r.RepliedBy = adminName;
         
-        return await _db.SaveChangesAsync() > 0;
+        var saved = await _db.SaveChangesAsync() > 0;
+        if (saved)
+        {
+            // 🔔 NOTIFY CUSTOMER
+            var customer = await _db.Customers.Include(c => c.AppUser).FirstOrDefaultAsync(c => c.Id == r.CustomerId);
+            if (customer?.AppUser != null)
+            {
+                await _notifications.SendAsync(
+                    customer.AppUser.Id,
+                    "تم الرد على تقييمك",
+                    "Reply to your review",
+                    $"قامت الإدارة بالرد على تقييمك لمنتج {r.Product?.NameAr}",
+                    $"Admin replied to your review for {r.Product?.NameEn}",
+                    "ReviewResponse"
+                );
+            }
+        }
+
+        return saved;
     }
 
     public async Task<List<ReviewDto>> GetAllApprovedReviewsAsync()
@@ -169,5 +209,28 @@ public class ReviewService : IReviewService
                 r.RepliedBy
             ))
             .ToListAsync();
+    }
+
+    public async Task<bool> UpdateProductRatingAsync(int productId)
+    {
+        var product = await _db.Products.FindAsync(productId);
+        if (product == null) return false;
+
+        var approvedReviews = await _db.Reviews
+            .Where(r => r.ProductId == productId && r.IsApproved)
+            .ToListAsync();
+
+        if (approvedReviews.Any())
+        {
+            product.AverageRating = approvedReviews.Average(r => r.Rating);
+            product.ReviewCount = approvedReviews.Count;
+        }
+        else
+        {
+            product.AverageRating = 0;
+            product.ReviewCount = 0;
+        }
+
+        return await _db.SaveChangesAsync() > 0;
     }
 }

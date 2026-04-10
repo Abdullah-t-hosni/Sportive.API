@@ -392,6 +392,7 @@ static async Task SeedAsync(WebApplication app)
 
     var productService = scope.ServiceProvider.GetRequiredService<IProductService>();
     await productService.SyncAllProductsStatusAndStockAsync();
+    await productService.SyncAllProductRatingsAsync();
 
     var orderService = scope.ServiceProvider.GetRequiredService<IOrderService>();
     await orderService.SyncAllOrderAccountingAsync();

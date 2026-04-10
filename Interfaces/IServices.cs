@@ -28,6 +28,7 @@ public interface IProductService
     Task<bool> UpdateCostPriceAsync(int productId, decimal? costPrice);
     Task UpdateTotalStockAsync(int productId);
     Task SyncAllProductsStatusAndStockAsync();
+    Task SyncAllProductRatingsAsync();
     Task<List<ProductSummaryDto>> GetFeaturedProductsAsync(int count = 8);
     Task<List<ProductSummaryDto>> GetRelatedProductsAsync(int productId, int count = 4);
 }
