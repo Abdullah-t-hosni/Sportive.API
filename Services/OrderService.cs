@@ -157,7 +157,7 @@ public class OrderService : IOrderService
             salesPersonName,
             null, 
             0, 
-            paidAmount, // ✅ Show the real paid amount
+            Math.Max(o.PaidAmount, paidAmount), // ✅ Show the real paid amount (max of stored or ledger)
             o.Source.ToString(),
             o.AttachmentUrl, 
             o.AttachmentPublicId
@@ -431,6 +431,31 @@ public class OrderService : IOrderService
                 }
 
                 order.TotalAmount = order.SubTotal + order.DeliveryFee - order.DiscountAmount;
+
+                // 💡 Initial Paid Amount calculation for POS Mixed payments
+                if (order.Source == OrderSource.POS)
+                {
+                    if (order.PaymentMethod != PaymentMethod.Credit && order.PaymentMethod != (PaymentMethod)7)
+                    {
+                        order.PaidAmount = order.TotalAmount;
+                    }
+                    else if (order.PaymentMethod == (PaymentMethod)7 && !string.IsNullOrEmpty(dto.Note))
+                    {
+                        try {
+                            using var doc = System.Text.Json.JsonDocument.Parse(dto.Note);
+                            var root = doc.RootElement;
+                            JsonElement mixedProps;
+                            if (root.TryGetProperty("mixed", out mixedProps)) { } else { mixedProps = root; }
+                            
+                            decimal totalPaid = 0;
+                            foreach (var prop in mixedProps.EnumerateObject()) {
+                                if (prop.Name.ToLower() == "credit" || prop.Name.ToLower() == "remaining") continue;
+                                if (decimal.TryParse(prop.Value.ToString(), out decimal val)) totalPaid += val;
+                            }
+                            order.PaidAmount = totalPaid;
+                        } catch { /* ignore parse error at creation */ }
+                    }
+                }
 
                 // 4. Validate Business Rules/Settings
                 if (order.Source == OrderSource.Website && store != null && order.TotalAmount < store.MinOrderAmount)

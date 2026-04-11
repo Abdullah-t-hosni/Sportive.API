@@ -155,60 +155,58 @@ public class AccountingService : IAccountingService
         if (order.DeliveryFee > 0)
             lines.Add((deliveryRevAcct, 0, order.DeliveryFee, $"إيراد توصيل - {order.OrderNumber} (دائن)"));
 
-        // ── 2. Debits (Discount + Receivables/Cash/Mixed) ────────
+        // ── 2. Debits (Discount + Receivables - All Sales Route via Customer Account) ──
         if (order.DiscountAmount > 0)
             lines.Add((salesDiscAcct, order.DiscountAmount, 0, $"خصم ممنوح - {order.OrderNumber} (مدين)"));
 
         var netReceivable = order.TotalAmount; 
         
-        // --- SMART CUSTOMER LEDGER ROUTING ---
-        // If we have a customer, we ALWAYS record the receivable on them first to ensure it shows in their aging/balance.
-        // If it's a cash/paid sale, we will add a second part to "Collect" it.
-        
-        bool isCredit = (order.PaymentMethod == PaymentMethod.Credit || order.PaymentStatus == PaymentStatus.Pending) 
-                      && order.PaymentMethod != PaymentMethod.Mixed;
-        var note = order.AdminNotes ?? "";
+        // Step A: Record the FULL receivable on the customer (Debit)
+        // This ensures the transaction activity shows in their ledger
+        lines.Add((receivablesAcct, netReceivable, 0, $"إثبات قيمة الفاتورة - {order.OrderNumber}"));
 
-        if (isCredit)
+        // Step B: Record Payments (Credit)
+        // If it's a paid sale (Cash/Mixed/etc.), we settle the paid portions immediately
+        bool isCredit = order.PaymentMethod == PaymentMethod.Credit || (order.PaymentStatus == PaymentStatus.Pending && order.PaymentMethod != PaymentMethod.Mixed);
+        
+        if (!isCredit)
         {
-            // ── Pure Credit Sale: Customer is Debited
-            lines.Add((receivablesAcct, netReceivable, 0, $"مستحق على العميل (آجل) - {order.OrderNumber}"));
-        }
-        else
-        {
-            // ── Paid Sale: Handling Mixed and 100% Cash
-            bool isJsonMixed = note.Trim().StartsWith("{") && note.Contains("mixed");
+            var note = order.AdminNotes ?? "";
+            bool isJsonMixed = note.Trim().StartsWith("{") && (note.Contains("mixed") || note.Contains("cash") || note.Contains("visa"));
             var splits = new List<(PaymentMethod method, decimal amount)>();
 
             if (isJsonMixed)
             {
                 try {
-                    using var doc = System.Text.Json.JsonDocument.Parse(note);
-                    if (doc.RootElement.TryGetProperty("mixed", out var mixedProps)) {
-                        foreach (var prop in mixedProps.EnumerateObject()) {
-                            var pm = prop.Name.ToLower();
-                            if (pm == "credit") continue; 
+                    using var doc = JsonDocument.Parse(note);
+                    var root = doc.RootElement;
+                    JsonElement mixedProps;
+                    
+                    if (root.TryGetProperty("mixed", out mixedProps)) { }
+                    else { mixedProps = root; } // Direct object
 
-                            var m = pm switch {
-                                "cash" => PaymentMethod.Cash,
-                                "bank" => PaymentMethod.Bank,
-                                "visa" => PaymentMethod.CreditCard,
-                                "creditcard" => PaymentMethod.CreditCard,
-                                "vodafone" => PaymentMethod.Vodafone,
-                                "instapay" => PaymentMethod.InstaPay,
-                                _ => PaymentMethod.Cash
-                            };
-                            if (decimal.TryParse(prop.Value.ToString(), out decimal val) && val > 0)
-                                splits.Add((m, val));
-                        }
+                    foreach (var prop in mixedProps.EnumerateObject()) {
+                        var pm = prop.Name.ToLower();
+                        if (pm == "credit" || pm == "remaining") continue; 
+
+                        var m = pm switch {
+                            "cash" => PaymentMethod.Cash,
+                            "bank" => PaymentMethod.Bank,
+                            "visa" => PaymentMethod.CreditCard,
+                            "creditcard" => PaymentMethod.CreditCard,
+                            "vodafone" => PaymentMethod.Vodafone,
+                            "instapay" => PaymentMethod.InstaPay,
+                            "fawry" => PaymentMethod.CreditCard,
+                            _ => PaymentMethod.Cash
+                        };
+                        if (decimal.TryParse(prop.Value.ToString(), out decimal val) && val > 0)
+                            splits.Add((m, val));
                     }
-                } catch { /* Fallback */ }
+                } catch { /* Fallback to 100% payment if JSON fails but method isn't credit */ }
             }
 
             if (splits.Count > 0)
             {
-                // 🔥 MIXED: We still record the FULL sale on the customer to show the transaction activity, then settle the cash parts.
-                lines.Add((receivablesAcct, netReceivable, 0, $"إثبات مبيعات (مختلط) - {order.OrderNumber}"));
                 foreach (var (m, v) in splits) {
                     string cashAcct = await GetMappedCashAccount(m, order.Source, mapDict);
                     string methodAr = m switch {
@@ -225,9 +223,10 @@ public class AccountingService : IAccountingService
             }
             else
             {
-                // 🔥 100% CASH: Directly to cash account, bypasses customer ledger entirely
+                // 100% Payment using the primary PaymentMethod
                 string cashAcct = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-                lines.Add((cashAcct, netReceivable, 0, $"مبيعات نقدية - {order.OrderNumber}"));
+                lines.Add((cashAcct, netReceivable, 0, $"تحصيل فاتورة نقدية - {order.OrderNumber}"));
+                lines.Add((receivablesAcct, 0, netReceivable, $"سداد كامل للعميل - {order.OrderNumber}"));
             }
         }
 
