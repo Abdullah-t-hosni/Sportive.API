@@ -6,6 +6,7 @@ using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using Sportive.API.Utils;
 using System.Text;
+using System.Text.Json;
 
 namespace Sportive.API.Services;
 
@@ -442,7 +443,7 @@ public class OrderService : IOrderService
                     else if (order.PaymentMethod == (PaymentMethod)7 && !string.IsNullOrEmpty(dto.Note))
                     {
                         try {
-                            using var doc = System.Text.Json.JsonDocument.Parse(dto.Note);
+                            using var doc = JsonDocument.Parse(dto.Note);
                             var root = doc.RootElement;
                             JsonElement mixedProps;
                             if (root.TryGetProperty("mixed", out mixedProps)) { } else { mixedProps = root; }
