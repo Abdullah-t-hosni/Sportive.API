@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Interfaces;
+using Serilog;
 
 namespace Sportive.API.Services;
 
@@ -70,35 +71,31 @@ public class AiAssistantService : IAiAssistantService
 أجب باختصار وذكاء.";
         }
 
-        // 3. CALL GEMINI API
-        // Endpoint: https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=YOUR_API_KEY
-        var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={apiKey}";
+        // 3. CALL GEMINI API (v1 stable)
+        var url = $"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={apiKey}";
 
         var requestBody = new
         {
             contents = new[]
             {
-                new { role = "user", parts = new[] { new { text = systemPrompt + "\nUser Message: " + userMessage } } }
-            },
-            generationConfig = new
-            {
-                temperature = 0.8,
-                maxOutputTokens = 500
+                new { parts = new[] { new { text = systemPrompt + "\n--- User Inquiry ---\n" + userMessage } } }
             }
         };
 
         try
         {
-            var content = new StringContent(JsonSerializer.Serialize(requestBody, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }), Encoding.UTF8, "application/json");
-            var response = await _http.PostAsync(url, content);
+            var jsonBody = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
             
+            var response = await _http.PostAsync(url, content);
+            var result = await response.Content.ReadAsStringAsync();
+
             if (!response.IsSuccessStatusCode)
             {
-                var error = await response.Content.ReadAsStringAsync();
+                Log.Error("AiAssistant Error: {Result}", result);
                 return "عذراً، واجهت مشكلة في التواصل مع خبير التسوق. يرجى المحاولة لاحقاً.";
             }
 
-            var result = await response.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(result);
             var aiText = doc.RootElement
                 .GetProperty("candidates")[0]
