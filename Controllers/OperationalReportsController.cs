@@ -272,13 +272,13 @@ public class OperationalReportsController : ControllerBase
         var q = _db.Products
             .Include(p => p.Category)
             .Include(p => p.Variants)
-            .Where(p => p.Status == ProductStatus.Active);
+            .Where(p => p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock || p.Status == ProductStatus.Discontinued);
 
         // --- Filtering ---
         if (!string.IsNullOrEmpty(search))
             q = q.Where(p => p.NameAr.Contains(search) || p.SKU.Contains(search));
             
-        if (categoryId.HasValue)
+        if (categoryId.HasValue && categoryId > 0)
             q = q.Where(p => p.CategoryId == categoryId.Value);
 
         if (lowStock)
@@ -634,110 +634,33 @@ public class OperationalReportsController : ControllerBase
                 return Ok(new { products = result });
             }
 
-            // 1. مبيعات (Sales) — Include everything except Cancelled
-            // We include Returned here so the initial sale shows up, and the return shows as a second entry
-            var salesQuery = _db.OrderItems
-                .Where(i => i.Order.Status != OrderStatus.Cancelled
-                         && i.Order.CreatedAt >= from && i.Order.CreatedAt <= to);
+            // 1. Fetch Movements from InventoryMovements table
+            var movementsQuery = _db.InventoryMovements
+                .Include(m => m.Product)
+                .Include(m => m.ProductVariant)
+                .Where(m => m.CreatedAt >= from && m.CreatedAt <= to);
 
-            if (productId > 0) salesQuery = salesQuery.Where(i => i.ProductId == productId);
+            if (productId > 0) movementsQuery = movementsQuery.Where(m => m.ProductId == productId);
 
-            var salesMovements = await salesQuery
-                .Select(i => new ProductMovementLine(
-                    i.Order.CreatedAt,
-                    "مبيعات",
-                    i.Order.OrderNumber ?? "N/A",
-                    i.Order.Customer.FullName,
-                    (i.ProductVariant != null ? (i.ProductVariant.Size + " / " + i.ProductVariant.ColorAr) : "أساسي"),
-                    0,
-                    i.Quantity,
-                    i.TotalPrice,
-                    i.Product != null ? i.Product.NameAr : "Deleted Product",
-                    i.Order.Source.ToString(),
-                    i.Order.Status.ToString(),
-                    i.Product != null ? i.Product.SKU : "N/A",
-                    0))
+            var dbMovements = await movementsQuery
+                .OrderBy(m => m.CreatedAt)
                 .ToListAsync();
 
-            // 2. مرتجع مبيعات (Sales Returns)
-            // Ideally we'd use StatusHistory for refined date, but using Order.UpdatedAt (standard for status change) or CreatedAt
-            var returnQuery = _db.OrderItems
-                .Where(i => i.Order.Status == OrderStatus.Returned
-                         && i.Order.UpdatedAt >= from && i.Order.UpdatedAt <= to);
-
-            if (productId > 0) returnQuery = returnQuery.Where(i => i.ProductId == productId);
-
-            var returnMovements = await returnQuery
-                .Select(i => new ProductMovementLine(
-                    i.Order.UpdatedAt ?? i.Order.CreatedAt,
-                    "مرتجع مبيعات",
-                    i.Order.OrderNumber ?? "N/A",
-                    i.Order.Customer.FullName,
-                    (i.ProductVariant != null ? (i.ProductVariant.Size + " / " + i.ProductVariant.ColorAr) : "أساسي"),
-                    i.Quantity,
-                    0,
-                    i.TotalPrice,
-                    i.Product != null ? i.Product.NameAr : "Deleted Product",
-                    i.Order.Source.ToString(),
-                    i.Order.Status.ToString(),
-                    i.Product != null ? i.Product.SKU : "N/A",
-                    0))
-                .ToListAsync();
-
-            // 3. مشتريات (Purchases) — Not Draft
-            var purchaseQuery = _db.PurchaseInvoiceItems
-                .Where(i => i.Invoice.Status != PurchaseInvoiceStatus.Draft
-                         && i.Invoice.InvoiceDate >= from && i.Invoice.InvoiceDate <= to);
-
-            if (productId > 0) purchaseQuery = purchaseQuery.Where(i => i.ProductId == productId);
-
-            var purchaseMovements = await purchaseQuery
-                .Select(i => new ProductMovementLine(
-                    i.Invoice.InvoiceDate,
-                    "مشتريات",
-                    i.Invoice.InvoiceNumber ?? "N/A",
-                    i.Invoice.Supplier.Name ?? "مورد غير معروف",
-                    (i.ProductVariant != null ? (i.ProductVariant.Size + " / " + i.ProductVariant.ColorAr) : "أساسي"),
-                    i.Quantity,
-                    0,
-                    i.TotalCost,
-                    i.Product != null ? i.Product.NameAr : "Deleted Product",
-                    "Supplier",
-                    i.Invoice.Status.ToString(),
-                    i.Product != null ? i.Product.SKU : "N/A",
-                    0))
-                .ToListAsync();
-
-            // 4. مرتجع مشتريات (Purchase Returns)
-            var purchaseReturnQuery = _db.PurchaseInvoiceItems
-                .Where(i => i.Invoice.Status == PurchaseInvoiceStatus.Returned
-                         && i.Invoice.UpdatedAt >= from && i.Invoice.UpdatedAt <= to);
-
-            if (productId > 0) purchaseReturnQuery = purchaseReturnQuery.Where(i => i.ProductId == productId);
-
-            var purchaseReturnMovements = await purchaseReturnQuery
-                .Select(i => new ProductMovementLine(
-                    i.Invoice.UpdatedAt ?? i.Invoice.InvoiceDate,
-                    "مرتجع مشتريات",
-                    i.Invoice.InvoiceNumber ?? "N/A",
-                    i.Invoice.Supplier.Name ?? "مورد غير معروف",
-                    (i.ProductVariant != null ? (i.ProductVariant.Size + " / " + i.ProductVariant.ColorAr) : "أساسي"),
-                    0,
-                    i.Quantity,
-                    i.TotalCost,
-                    i.Product != null ? i.Product.NameAr : "Deleted Product",
-                    "Supplier",
-                    i.Invoice.Status.ToString(),
-                    i.Product != null ? i.Product.SKU : "N/A",
-                    0))
-                .ToListAsync();
-
-            var movements = salesMovements
-                .Concat(returnMovements)
-                .Concat(purchaseMovements)
-                .Concat(purchaseReturnMovements)
-                .OrderBy(m => m.Date)
-                .ToList();
+            var movements = dbMovements.Select(m => new ProductMovementLine(
+                m.CreatedAt,
+                TranslateMovementType(m.Type),
+                m.Reference ?? "N/A",
+                m.Note ?? "-",
+                (m.ProductVariant != null ? (m.ProductVariant.Size + " / " + (m.ProductVariant.ColorAr ?? m.ProductVariant.Color ?? "")) : "أساسي"),
+                m.Quantity > 0 ? m.Quantity : 0,
+                m.Quantity < 0 ? Math.Abs(m.Quantity) : 0,
+                m.Quantity * m.UnitCost,
+                m.Product?.NameAr ?? "Deleted Product",
+                "System",
+                "Completed",
+                m.Product?.SKU ?? "N/A",
+                m.RemainingStock
+            )).ToList();
 
             // Summary
             decimal currentStock = 0;
@@ -750,46 +673,25 @@ public class OperationalReportsController : ControllerBase
                     .FirstOrDefaultAsync(p => p.Id == productId);
                 if (product != null)
                 {
-                    currentStock = product.Variants?
-                        .Sum(v => v.StockQuantity) ?? 0;
+                    currentStock = product.Variants?.Any() == true
+                        ? product.Variants.Sum(v => v.StockQuantity)
+                        : product.TotalStock;
                     productBrief = $"{product.NameAr} ({product.SKU})";
-                }
-
-                // Calculate exact running balance for each movement by starting from currentStock
-                // Net change after the report 'to' date until now
-                int netChangeAfterToDate = await _db.InventoryMovements
-                        .Where(m => m.ProductId == productId && m.CreatedAt > to)
-                        .SumAsync(m => m.Quantity);
-
-                int runningBalance = (int)currentStock - netChangeAfterToDate;
-
-                // Propagate backwards (from most recent to oldest in the report range)
-                for (int i = movements.Count - 1; i >= 0; i--)
-                {
-                    var m = movements[i];
-                    movements[i] = m with { Balance = runningBalance };
-                    runningBalance -= (m.In - m.Out);
                 }
             }
             else
             {
-                // All products stock
-                currentStock = await _db.ProductVariants
-                    .SumAsync(v => (decimal)v.StockQuantity);
+                currentStock = await _db.ProductVariants.SumAsync(v => (decimal)v.StockQuantity) 
+                             + await _db.Products.Where(p => !p.Variants.Any()).SumAsync(p => (decimal)p.TotalStock);
             }
 
             var summary = new
             {
-                totalSold      = salesMovements.Sum(i => i.Out),
-                totalReturned  = returnMovements.Sum(i => i.In),
-                totalPurchased = purchaseMovements.Sum(i => i.In),
-                totalPurchaseReturned = purchaseReturnMovements.Sum(i => i.Out),
-                salesRevenue   = salesMovements.Sum(i => i.Amount),
-                totalOrders    = salesMovements.Select(m => m.Reference).Distinct().Count(),
-                totalDiscount  = 0, // Placeholder if needed, but revenue is post-discount usually 
-                avgOrder       = salesMovements.Select(m => m.Reference).Distinct().Count() > 0 
-                                 ? salesMovements.Sum(i => i.Amount) / salesMovements.Select(m => m.Reference).Distinct().Count() 
-                                 : 0,
+                totalIn         = movements.Sum(i => i.In),
+                totalOut        = movements.Sum(i => i.Out),
+                totalPurchased  = dbMovements.Where(m => m.Type == InventoryMovementType.Purchase).Sum(m => m.Quantity),
+                totalSold       = dbMovements.Where(m => m.Type == InventoryMovementType.Sale).Sum(m => Math.Abs(m.Quantity)),
+                salesRevenue    = 0, // Not applicable globally in this simplified view
                 currentStock
             };
 
@@ -1052,7 +954,19 @@ public class OperationalReportsController : ControllerBase
     {
         var s = new MemoryStream(); wb.SaveAs(s); s.Position = 0;
         return new FileStreamResult(s, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") { FileDownloadName = filename };
-    }
+    }    private string TranslateMovementType(InventoryMovementType type) => type switch
+    {
+        InventoryMovementType.Purchase => "مشتريات (+)",
+        InventoryMovementType.Sale => "مبيعات (-)",
+        InventoryMovementType.ReturnOut => "مرتجع مشتريات (-)",
+        InventoryMovementType.ReturnIn => "مرتجع مبيعات (+)",
+        InventoryMovementType.Adjustment => "تسوية مخزنية",
+        InventoryMovementType.Audit => "جرد مخزني",
+        InventoryMovementType.TransferIn => "تحويل للداخل (+)",
+        InventoryMovementType.TransferOut => "تحويل للخارج (-)",
+        InventoryMovementType.OpeningBalance => "رصيد أول المدة (+)",
+        _ => type.ToString()
+    };
 }
 
 // ── Report DTOs ──────────────────────────────────────────
