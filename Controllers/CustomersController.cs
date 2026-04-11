@@ -22,6 +22,12 @@ public class CustomersController : ControllerBase
         [FromQuery] string? search = null) =>
         Ok(await _customers.GetCustomersAsync(page, pageSize, search));
 
+    /// <summary>بيانات RFM خفيفة لكل العملاء — بدون pagination أو addresses</summary>
+    [Authorize(Roles = "Admin,Manager")]
+    [HttpGet("rfm")]
+    public async Task<IActionResult> GetRfm() =>
+        Ok(await _customers.GetRfmDataAsync());
+
     [Authorize(Roles = "Admin,Manager")]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateCustomerDto dto)

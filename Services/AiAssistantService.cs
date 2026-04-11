@@ -60,7 +60,7 @@ public class AiAssistantService : IAiAssistantService
                 .Where(p => p.Status == Models.ProductStatus.Active)
                 .OrderByDescending(p => p.IsFeatured)
                 .Take(25)
-                .Select(p => new { p.NameAr, p.Price, CategoryName = p.Category.NameAr })
+                .Select(p => new { p.NameAr, p.Price, CategoryName = p.Category != null ? p.Category.NameAr : "عام" })
                 .ToListAsync();
 
             var productsDescription = string.Join(", ", products.Select(p => $"{p.NameAr} ({p.Price} ج.م)"));

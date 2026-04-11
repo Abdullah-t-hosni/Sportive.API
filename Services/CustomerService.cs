@@ -82,6 +82,20 @@ public class CustomerService : ICustomerService
             (int)Math.Ceiling((double)total / pageSize));
     }
 
+    public async Task<List<CustomerRfmDto>> GetRfmDataAsync() =>
+        await _db.Customers
+            .AsNoTracking()
+            .OrderByDescending(c => c.CreatedAt)
+            .Select(c => new CustomerRfmDto(
+                c.Id,
+                c.FullName,
+                c.Phone,
+                c.Orders.Count,
+                c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
+                c.CreatedAt
+            ))
+            .ToListAsync();
+
     public async Task<CustomerDetailDto?> GetCustomerByIdAsync(int id) =>
         await _db.Customers
             .Include(c => c.Addresses)

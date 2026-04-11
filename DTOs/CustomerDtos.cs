@@ -30,6 +30,16 @@ public record CustomerDetailDto(
     [property: JsonPropertyName("fixedDiscount")] decimal FixedDiscount = 0
 );
 
+// ========== RFM (lightweight — no addresses, no balance) ==========
+public record CustomerRfmDto(
+    [property: JsonPropertyName("id")]          int      Id,
+    [property: JsonPropertyName("fullName")]    string   FullName,
+    [property: JsonPropertyName("phone")]       string?  Phone,
+    [property: JsonPropertyName("totalOrders")] int      TotalOrders,
+    [property: JsonPropertyName("totalSpent")]  decimal  TotalSpent,
+    [property: JsonPropertyName("createdAt")]   DateTime CreatedAt
+);
+
 // ========== ADDRESS ==========
 public record AddressDto(
     int Id,
