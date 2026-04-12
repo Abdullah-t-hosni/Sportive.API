@@ -211,10 +211,7 @@ public class AccountingService : IAccountingService
                     lines.Add((receivablesAcct, 0, collectAmt, $"سداد للعميل - {order.OrderNumber}"));
                 }
 
-                if (order.TotalAmount > collectAmt)
-                {
-                    description += $" | متبقي آجل: {order.TotalAmount - collectAmt:N2}";
-                }
+
             }
         }
 
