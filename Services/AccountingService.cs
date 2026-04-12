@@ -171,42 +171,11 @@ public class AccountingService : IAccountingService
         
         if (!isCredit)
         {
-            var note = order.AdminNotes ?? "";
-            bool isJsonMixed = note.Trim().StartsWith("{") && (note.Contains("mixed") || note.Contains("cash") || note.Contains("visa"));
-            var splits = new List<(PaymentMethod method, decimal amount)>();
-
-            if (isJsonMixed)
-            {
-                try {
-                    using var doc = JsonDocument.Parse(note);
-                    var root = doc.RootElement;
-                    JsonElement mixedProps;
-                    
-                    if (root.TryGetProperty("mixed", out mixedProps)) { }
-                    else { mixedProps = root; } // Direct object
-
-                    foreach (var prop in mixedProps.EnumerateObject()) {
-                        var pm = prop.Name.ToLower();
-                        if (pm == "credit" || pm == "remaining") continue; 
-
-                        var m = pm switch {
-                            "cash" => PaymentMethod.Cash,
-                            "bank" => PaymentMethod.Bank,
-                            "visa" => PaymentMethod.CreditCard,
-                            "creditcard" => PaymentMethod.CreditCard,
-                            "vodafone" => PaymentMethod.Vodafone,
-                            "instapay" => PaymentMethod.InstaPay,
-                            "fawry" => PaymentMethod.CreditCard,
-                            _ => PaymentMethod.Cash
-                        };
-                        if (decimal.TryParse(prop.Value.ToString(), out decimal val) && val > 0)
-                            splits.Add((m, val));
-                    }
-                } catch { /* Fallback to 100% payment if JSON fails but method isn't credit */ }
-            }
+            var splits = ParseMixedPayments(order.AdminNotes);
 
             if (splits.Count > 0)
             {
+                decimal totalPaidInMixed = 0;
                 foreach (var (m, v) in splits) {
                     string cashAcct = await GetMappedCashAccount(m, order.Source, mapDict);
                     string methodAr = m switch {
@@ -219,6 +188,15 @@ public class AccountingService : IAccountingService
                     };
                     lines.Add((cashAcct, v, 0, $"تحصيل ({methodAr}) - {order.OrderNumber}"));
                     lines.Add((receivablesAcct, 0, v, $"سداد جزئي للعميل ({methodAr}) - {order.OrderNumber}"));
+                    totalPaidInMixed += v;
+                }
+
+                // Log the remaining as Credit in description if applicable
+                var remaining = order.TotalAmount - totalPaidInMixed;
+                if (remaining > 0.01m)
+                {
+                    // Optional: We can add an informational line or just ensure the description mentions it
+                    _logger.LogInformation("[Accounting] Order {OrderNum} has a deferred/credit portion of {Amount}", order.OrderNumber, remaining);
                 }
             }
             else
@@ -241,7 +219,9 @@ public class AccountingService : IAccountingService
         await PostEntry(
             type:        JournalEntryType.SalesInvoice,
             reference:   order.OrderNumber,
-            description: $"فاتورة مبيعات {order.OrderNumber} - {order.Customer?.FullName}",
+            description: $"فاتورة مبيعات {order.OrderNumber} - {order.Customer?.FullName}" + 
+                          (order.PaymentMethod == PaymentMethod.Mixed && order.TotalAmount > order.PaidAmount 
+                           ? $" (متبقي آجل: {order.TotalAmount - order.PaidAmount:N2})" : ""),
             date:        order.CreatedAt,
             lines:       lines,
             orderId:     order.Id,
@@ -402,13 +382,33 @@ public class AccountingService : IAccountingService
         string receivablesAcct = order.Customer?.MainAccountId != null 
                                ? $"ID:{order.Customer.MainAccountId}" 
                                : GetMap(mapDict, "customerAccountID", RECEIVABLES);
-        var cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
-        // القيد: من حساب النقدية/البنك إلى حساب العملاء
-        lines.Add((cashCode,        order.TotalAmount, 0,                $"تحصيل طلب {order.OrderNumber} ({order.PaymentMethod})"));
-        lines.Add((receivablesAcct, 0,                order.TotalAmount, $"إغلاق مديونية طلب {order.OrderNumber}"));
+        // 💡 Mixed Payment Support
+        var splits = ParseMixedPayments(order.AdminNotes);
+        if (splits.Count > 0)
+        {
+            foreach (var (m, v) in splits)
+            {
+                var code = await GetMappedCashAccount(m, order.Source, mapDict);
+                string methodAr = m switch {
+                    PaymentMethod.Cash => "نقدي",
+                    PaymentMethod.CreditCard => "فيزا",
+                    PaymentMethod.Vodafone => "فودافون كاش",
+                    PaymentMethod.InstaPay => "انستاباي",
+                    _ => m.ToString()
+                };
+                lines.Add((code, v, 0, $"تحصيل ({methodAr}) - {order.OrderNumber}"));
+                lines.Add((receivablesAcct, 0, v, $"إغلاق مديونية ({methodAr}) - {order.OrderNumber}"));
+            }
+        }
+        else
+        {
+            var cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+            // القيد: من حساب النقدية/البنك إلى حساب العملاء
+            lines.Add((cashCode,        order.TotalAmount, 0,                $"تحصيل طلب {order.OrderNumber} ({order.PaymentMethod})"));
+            lines.Add((receivablesAcct, 0,                order.TotalAmount, $"إغلاق مديونية طلب {order.OrderNumber}"));
+        }
 
         // 🛡️ DOUBLE-CHECK: If there's already a full or partial payment via Vouchers or other logic, skip or adjust.
         // For simplicity and safety, if ANY Credit already exists for this order in Receivables, we skip auto-PMT.
@@ -741,6 +741,53 @@ public class AccountingService : IAccountingService
         if (map.TryGetValue(key.ToLower(), out var id) && id.HasValue)
             return $"ID:{id.Value}";
         return fallback;
+    }
+
+    private List<(PaymentMethod method, decimal amount)> ParseMixedPayments(string? note)
+    {
+        var splits = new List<(PaymentMethod method, decimal amount)>();
+        if (string.IsNullOrWhiteSpace(note)) return splits;
+
+        var trimmed = note.Trim();
+        if (!trimmed.StartsWith("{")) return splits;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(trimmed);
+            var root = doc.RootElement;
+            JsonElement mixedProps;
+
+            // Handle both { "mixed": { ... } } and direct { "cash": ... }
+            if (root.TryGetProperty("mixed", out mixedProps)) { }
+            else { mixedProps = root; }
+
+            foreach (var prop in mixedProps.EnumerateObject())
+            {
+                var pm = prop.Name.ToLower();
+                // Skip non-payment keys (credit is handled by balance, change is ignored)
+                if (pm == "credit" || pm == "remaining" || pm == "deferred" || pm == "debt" || pm == "change" || pm == "date") continue;
+
+                var m = pm switch
+                {
+                    "cash" => PaymentMethod.Cash,
+                    "bank" => PaymentMethod.Bank,
+                    "visa" => PaymentMethod.CreditCard,
+                    "creditcard" => PaymentMethod.CreditCard,
+                    "vodafone" => PaymentMethod.Vodafone,
+                    "instapay" => PaymentMethod.InstaPay,
+                    "fawry" => PaymentMethod.CreditCard,
+                    _ => (PaymentMethod?)null
+                };
+
+                if (m.HasValue && decimal.TryParse(prop.Value.ToString(), out decimal val) && val > 0)
+                {
+                    splits.Add((m.Value, val));
+                }
+            }
+        }
+        catch { /* ignore parsing errors */ }
+        
+        return splits;
     }
 
     /// Choosing the cash account based on payment method, source, and stored mappings

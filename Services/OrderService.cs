@@ -450,10 +450,11 @@ public class OrderService : IOrderService
                             
                             decimal totalPaid = 0;
                             foreach (var prop in mixedProps.EnumerateObject()) {
-                                if (prop.Name.ToLower() == "credit" || prop.Name.ToLower() == "remaining") continue;
+                                if (prop.Name.ToLower() == "credit" || prop.Name.ToLower() == "remaining" || prop.Name.ToLower() == "deferred" || prop.Name.ToLower() == "debt") continue;
                                 if (decimal.TryParse(prop.Value.ToString(), out decimal val)) totalPaid += val;
                             }
                             order.PaidAmount = totalPaid;
+                            if (order.PaidAmount >= order.TotalAmount) order.PaymentStatus = PaymentStatus.Paid;
                         } catch { /* ignore parse error at creation */ }
                     }
                 }
