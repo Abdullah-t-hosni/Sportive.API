@@ -201,10 +201,20 @@ public class AccountingService : IAccountingService
             }
             else
             {
-                // 100% Payment using the primary PaymentMethod
-                string cashAcct = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-                lines.Add((cashAcct, netReceivable, 0, $"تحصيل فاتورة نقدية - {order.OrderNumber}"));
-                lines.Add((receivablesAcct, 0, netReceivable, $"سداد كامل للعميل - {order.OrderNumber}"));
+                // Single payment method or fallback: collect only the PaidAmount
+                decimal collectAmt = order.PaymentMethod == PaymentMethod.Mixed ? order.PaidAmount : order.TotalAmount;
+                
+                if (collectAmt > 0)
+                {
+                    string cashAcct = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+                    lines.Add((cashAcct, collectAmt, 0, $"تحصيل فاتورة - {order.OrderNumber}"));
+                    lines.Add((receivablesAcct, 0, collectAmt, $"سداد للعميل - {order.OrderNumber}"));
+                }
+
+                if (order.TotalAmount > collectAmt)
+                {
+                    description += $" | متبقي آجل: {order.TotalAmount - collectAmt:N2}";
+                }
             }
         }
 
@@ -765,8 +775,8 @@ public class AccountingService : IAccountingService
             foreach (var prop in mixedProps.EnumerateObject())
             {
                 var pm = prop.Name.ToLower();
-                // Skip non-payment keys (credit is handled by balance, change is ignored)
-                if (pm == "credit" || pm == "remaining" || pm == "deferred" || pm == "debt" || pm == "change" || pm == "date") continue;
+                // Skip non-payment keys
+                if (pm == "credit" || pm == "remaining" || pm == "deferred" || pm == "debt" || pm == "change" || pm == "date" || pm == "paymentmode" || pm == "manualnote") continue;
 
                 var m = pm switch
                 {
@@ -780,7 +790,17 @@ public class AccountingService : IAccountingService
                     _ => (PaymentMethod?)null
                 };
 
-                if (m.HasValue && decimal.TryParse(prop.Value.ToString(), out decimal val) && val > 0)
+                // Try to parse number from string or direct json number
+                decimal val = 0;
+                bool parsed = false;
+                if (prop.Value.ValueKind == JsonValueKind.Number) {
+                    val = prop.Value.GetDecimal();
+                    parsed = true;
+                } else if (prop.Value.ValueKind == JsonValueKind.String) {
+                    parsed = decimal.TryParse(prop.Value.GetString(), out val);
+                }
+
+                if (m.HasValue && parsed && val > 0)
                 {
                     splits.Add((m.Value, val));
                 }
