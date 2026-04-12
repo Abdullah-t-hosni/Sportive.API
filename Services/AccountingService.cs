@@ -32,6 +32,7 @@ public interface IAccountingService
     Task<decimal> GetTodayDrawerBalanceAsync(string cashAccountCode);
     Task SyncAllPurchaseAccountingAsync();
     Task SyncAllEntityIdsAsync();
+    Task ConsolidateSubAccountsToControlAsync();
 }
 
 public class AccountingService : IAccountingService
