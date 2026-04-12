@@ -199,34 +199,11 @@ public class CustomerService : ICustomerService
             FixedDiscount = dto.FixedDiscount
         };
 
-        // ── Create Unique Sub-Account under 1103 (Receivables) ──
+        // ── Point to main 1103 (Receivables) Control Account ──
         var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
         if (parent != null)
         {
-            // Next sub-account code: 1103-001, 1103-002, ...
-            var existingCodes = await _db.Accounts
-                .Where(a => a.ParentId == parent.Id)
-                .Select(a => a.Code)
-                .ToListAsync();
-            var maxSeq = existingCodes
-                .Select(c => {
-                    var parts = c.Split('-');
-                    return parts.Length == 2 && int.TryParse(parts[1], out var n) ? n : 0;
-                })
-                .DefaultIfEmpty(0).Max();
-            var subCode = $"1103-{(maxSeq + 1):D3}";
-            var subAccount = new Sportive.API.Models.Account
-            {
-                Code     = subCode,
-                NameAr   = dto.FullName,
-                NameEn   = dto.FullName,
-                ParentId = parent.Id,
-                Type     = parent.Type,
-                Nature   = parent.Nature,
-            };
-            _db.Accounts.Add(subAccount);
-            await _db.SaveChangesAsync(); // get sub-account Id
-            customer.MainAccountId = subAccount.Id;
+            customer.MainAccountId = parent.Id;
         }
 
         _db.Customers.Add(customer);
@@ -260,24 +237,11 @@ public class CustomerService : ICustomerService
         if (customer == null || customer.MainAccountId != null) return;
 
         var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
-        if (parent == null) return;
-
-        var existingCodes = await _db.Accounts
-            .Where(a => a.ParentId == parent.Id)
-            .Select(a => a.Code)
-            .ToListAsync();
-        var maxSeq = existingCodes
-            .Select(c => { var p = c.Split('-'); return p.Length == 2 && int.TryParse(p[1], out var n) ? n : 0; })
-            .DefaultIfEmpty(0).Max();
-        var sub = new Sportive.API.Models.Account
+        if (parent != null)
         {
-            Code = $"1103-{(maxSeq + 1):D3}", NameAr = customer.FullName, NameEn = customer.FullName,
-            ParentId = parent.Id, Type = parent.Type, Nature = parent.Nature,
-        };
-        _db.Accounts.Add(sub);
-        await _db.SaveChangesAsync();
-        customer.MainAccountId = sub.Id;
-        await _db.SaveChangesAsync();
+            customer.MainAccountId = parent.Id;
+            await _db.SaveChangesAsync();
+        }
     }
 
     public async Task SyncAllMissingAccountsAsync()
@@ -288,25 +252,9 @@ public class CustomerService : ICustomerService
         var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
         if (parent == null) return;
 
-        var existingCodes = await _db.Accounts
-            .Where(a => a.ParentId == parent.Id)
-            .Select(a => a.Code)
-            .ToListAsync();
-        var maxSeq = existingCodes
-            .Select(c => { var p = c.Split('-'); return p.Length == 2 && int.TryParse(p[1], out var n) ? n : 0; })
-            .DefaultIfEmpty(0).Max();
-
         foreach (var c in customers)
         {
-            maxSeq++;
-            var sub = new Sportive.API.Models.Account
-            {
-                Code = $"1103-{maxSeq:D3}", NameAr = c.FullName, NameEn = c.FullName,
-                ParentId = parent.Id, Type = parent.Type, Nature = parent.Nature,
-            };
-            _db.Accounts.Add(sub);
-            await _db.SaveChangesAsync();
-            c.MainAccountId = sub.Id;
+            c.MainAccountId = parent.Id;
         }
 
         await _db.SaveChangesAsync();

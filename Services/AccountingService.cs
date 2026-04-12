@@ -1108,4 +1108,50 @@ public class AccountingService : IAccountingService
             }
         }
     }
+
+    public async Task ConsolidateSubAccountsToControlAsync()
+    {
+        var custControl = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
+        var suppControl = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "2101");
+
+        if (custControl == null || suppControl == null) return;
+
+        // 1. Update Customers & Suppliers pointers
+        var customers = await _db.Customers.ToListAsync();
+        foreach (var c in customers) c.MainAccountId = custControl.Id;
+
+        var suppliers = await _db.Suppliers.ToListAsync();
+        foreach (var s in suppliers) s.MainAccountId = suppControl.Id;
+
+        await _db.SaveChangesAsync();
+
+        // 2. Move Journal Lines from sub-accounts to control accounts
+        var subAccountsData = await _db.Accounts
+            .Where(a => a.Code.Contains("-") && (a.Code.StartsWith("1103") || a.Code.StartsWith("2101")))
+            .Select(a => new { a.Id, a.Code })
+            .ToListAsync();
+        
+        var subIds = subAccountsData.Select(x => x.Id).ToList();
+        
+        var linesToMove = await _db.JournalLines
+            .Where(l => subIds.Contains(l.AccountId))
+            .ToListAsync();
+
+        foreach (var l in linesToMove)
+        {
+            var code = subAccountsData.First(x => x.Id == l.AccountId).Code;
+            if (code.StartsWith("1103")) l.AccountId = custControl.Id;
+            else if (code.StartsWith("2101")) l.AccountId = suppControl.Id;
+        }
+
+        await _db.SaveChangesAsync();
+        
+        // 3. Deactivate old sub-accounts to keep COA clean
+        var accountsToDeactivate = await _db.Accounts.Where(a => subIds.Contains(a.Id)).ToListAsync();
+        foreach (var a in accountsToDeactivate)
+        {
+            a.IsActive = false;
+        }
+        await _db.SaveChangesAsync();
+    }
 }

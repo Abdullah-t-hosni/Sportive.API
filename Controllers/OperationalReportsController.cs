@@ -285,9 +285,9 @@ public class OperationalReportsController : ControllerBase
             q = q.Where(p => p.TotalStock <= 5);
 
         if (stockStatus == "positive")
-            q = q.Where(p => p.TotalStock > 0);
+            q = q.Where(p => p.Variants.Any(v => v.StockQuantity > 0) || (!p.Variants.Any() && p.TotalStock > 0));
         else if (stockStatus == "zero")
-            q = q.Where(p => p.TotalStock <= 0);
+            q = q.Where(p => !p.Variants.Any(v => v.StockQuantity > 0) && (p.Variants.Any() || p.TotalStock <= 0));
 
         // --- Totals for Summary (Before Pagination) ---
         // Warning: This consumes extra resources but provides accurate summary for filtered set

@@ -197,6 +197,8 @@ public class OrderService : IOrderService
                     if (existing != null)
                     {
                         customerId = existing.Id;
+                        // ✅ ضمان وجود حساب محاسبي حتى للعملاء القدامى
+                        await _customerService.EnsureCustomerAccountAsync(customerId.Value);
                     }
                     else
                     {

@@ -335,4 +335,15 @@ public class DataMaintenanceController : ControllerBase
             return BadRequest(new { success = false, message = ex.Message });
         }
     }
+
+    [HttpPost("sync-sub-accounts")]
+    public async Task<IActionResult> SyncSubAccounts([FromServices] IAccountingService accounting)
+    {
+        try {
+            await accounting.ConsolidateSubAccountsToControlAsync();
+            return Ok(new { success = true, message = "تم توحيد الحسابات ودمج الحركات في الحسابات الرئيسية بنجاح." });
+        } catch (Exception ex) {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
 }
