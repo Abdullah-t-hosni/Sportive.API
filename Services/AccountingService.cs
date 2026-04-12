@@ -757,8 +757,9 @@ public class AccountingService : IAccountingService
             var root = doc.RootElement;
             JsonElement mixedProps;
 
-            // Handle both { "mixed": { ... } } and direct { "cash": ... }
+            // Handle both { "mixed": { ... } }, { "amounts": { ... } } and direct { "cash": ... }
             if (root.TryGetProperty("mixed", out mixedProps)) { }
+            else if (root.TryGetProperty("amounts", out mixedProps)) { }
             else { mixedProps = root; }
 
             foreach (var prop in mixedProps.EnumerateObject())

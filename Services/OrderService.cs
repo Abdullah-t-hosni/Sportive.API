@@ -446,7 +446,9 @@ public class OrderService : IOrderService
                             using var doc = JsonDocument.Parse(dto.Note);
                             var root = doc.RootElement;
                             JsonElement mixedProps;
-                            if (root.TryGetProperty("mixed", out mixedProps)) { } else { mixedProps = root; }
+                            if (root.TryGetProperty("mixed", out mixedProps)) { } 
+                            else if (root.TryGetProperty("amounts", out mixedProps)) { }
+                            else { mixedProps = root; }
                             
                             decimal totalPaid = 0;
                             foreach (var prop in mixedProps.EnumerateObject()) {
