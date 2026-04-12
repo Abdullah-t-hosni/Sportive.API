@@ -207,10 +207,11 @@ public record AddToWishlistDto(int ProductId);
 public class ProductFilterDto
 {
     public int? CategoryId { get; set; }
+    public CategoryType? Section { get; set; }
     public string? Search { get; set; }
     public decimal? MinPrice { get; set; }
     public decimal? MaxPrice { get; set; }
-    public int? BrandId { get; set; }
+        public int? BrandId { get; set; }
     public string? Size { get; set; }
     public string? Color { get; set; }
     public bool? IsFeatured { get; set; }

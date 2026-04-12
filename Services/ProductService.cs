@@ -38,8 +38,14 @@ public class ProductService : IProductService
             query = query.Where(p => p.TotalStock > 0);
         }
 
+        if (filter.Section.HasValue)
+            query = query.Where(p => p.Category != null && p.Category.Type == filter.Section.Value);
+
         if (filter.CategoryId.HasValue)
-            query = query.Where(p => p.CategoryId == filter.CategoryId);
+        {
+            var categoryIds = await GetCategoryDescendants(filter.CategoryId.Value);
+            query = query.Where(p => categoryIds.Contains(p.CategoryId ?? 0));
+        }
 
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
@@ -652,5 +658,30 @@ public class ProductService : IProductService
         s = System.Text.RegularExpressions.Regex.Replace(s, @"[^a-z0-9\u0600-\u06FF\s-]", "");
         s = System.Text.RegularExpressions.Regex.Replace(s, @"\s+", "-").Trim('-');
         return s;
+    }
+
+    private async Task<List<int>> GetCategoryDescendants(int categoryId)
+    {
+        var categoryIds = new List<int> { categoryId };
+        var allCategories = await _db.Categories.Select(c => new { c.Id, c.ParentId }).ToListAsync();
+        
+        var toProcess = new Queue<int>();
+        toProcess.Enqueue(categoryId);
+        
+        while (toProcess.Count > 0)
+        {
+            var currentId = toProcess.Dequeue();
+            var children = allCategories.Where(c => c.ParentId == currentId).Select(c => c.Id);
+            foreach (var childId in children)
+            {
+                if (!categoryIds.Contains(childId))
+                {
+                    categoryIds.Add(childId);
+                    toProcess.Enqueue(childId);
+                }
+            }
+        }
+        
+        return categoryIds;
     }
 }

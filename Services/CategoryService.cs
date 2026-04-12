@@ -68,12 +68,12 @@ public class CategoryService : ICategoryService
     // ──────────────────────────────────────────────────────────
     public async Task<CategoryDto> CreateAsync(CreateCategoryDto dto)
     {
+        var type = dto.Type;
         if (dto.ParentId.HasValue)
         {
             var parent = await _db.Categories.FindAsync(dto.ParentId.Value)
                 ?? throw new ArgumentException("القسم الرئيسي غير موجود");
-
-            _ = parent; // valid
+            type = parent.Type; // Inherit from parent
         }
 
         var cat = new Category
@@ -83,7 +83,7 @@ public class CategoryService : ICategoryService
             DescriptionAr = dto.DescriptionAr,
             DescriptionEn = dto.DescriptionEn,
             ImageUrl      = dto.ImageUrl,
-            Type          = dto.Type,
+            Type          = type,
             ParentId      = dto.ParentId,
         };
         _db.Categories.Add(cat);
@@ -99,6 +99,7 @@ public class CategoryService : ICategoryService
         var cat = await _db.Categories.FindAsync(id)
             ?? throw new KeyNotFoundException($"Category {id} not found");
 
+        var type = dto.Type;
         if (dto.ParentId.HasValue)
         {
             if (dto.ParentId.Value == id)
@@ -108,6 +109,9 @@ public class CategoryService : ICategoryService
             var allCats = await _db.Categories.ToListAsync();
             if (IsDescendant(id, dto.ParentId.Value, allCats))
                 throw new ArgumentException("لا يمكن تعيين قسم فرعي كقسم رئيسي (سيسبب حلقة دائرية)");
+
+            var parent = allCats.FirstOrDefault(x => x.Id == dto.ParentId.Value);
+            if (parent != null) type = parent.Type;
         }
 
         cat.NameAr        = dto.NameAr;
@@ -115,7 +119,7 @@ public class CategoryService : ICategoryService
         cat.DescriptionAr = dto.DescriptionAr;
         cat.DescriptionEn = dto.DescriptionEn;
         cat.ImageUrl      = dto.ImageUrl;
-        cat.Type          = dto.Type;
+        cat.Type          = type;
         cat.ParentId      = dto.ParentId;
         cat.UpdatedAt     = TimeHelper.GetEgyptTime();
 
@@ -160,6 +164,11 @@ public class CategoryService : ICategoryService
             child.Parent = current;
 
         var subDtos = children.Select(c => BuildTreeRecursive(c, all)).ToList();
+        
+        // حساب عدد المنتجات بشكل تراكمي (القسم الحالي + الأقسام الفرعية)
+        int directCount = current.Products?.Count ?? 0;
+        int childrenCount = subDtos.Sum(s => s.ProductCount);
+        int totalProductCount = directCount + childrenCount;
 
         return new CategoryDto(
             current.Id,
@@ -170,7 +179,7 @@ public class CategoryService : ICategoryService
             current.ImageUrl,
             current.IsActive,
             current.Type,
-            current.Products?.Count ?? 0,
+            totalProductCount,
             current.CreatedAt,
             current.ParentId,
             current.Parent?.NameAr,
