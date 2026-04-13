@@ -87,9 +87,8 @@ public class AccountingService : IAccountingService
         var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         var vatRate = (store?.VatRatePercent ?? 14) / 100m;
         
-        var mappings = await _db.AccountSystemMappings.ToListAsync();
-        // Force keys to lowercase for robust lookup
-        var mapDict = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
+        // جلب الإعدادات والربط المالي (بشكل آمن)
+        var mapDict = await GetSafeSystemMappingsAsync();
 
         // --- Ledger Mapping ---
         string salesRevAcct   = GetMap(mapDict, "salesAccountID", SALES_REVENUE);
@@ -245,8 +244,7 @@ public class AccountingService : IAccountingService
     {
         if (await EntryExists(JournalEntryType.SalesReturn, order.OrderNumber + "-RTN")) return;
 
-        var mappings = await _db.AccountSystemMappings.ToListAsync();
-        var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
+        var mapDict = await GetSafeSystemMappingsAsync();
 
         string salesReturnAcct = GetMap(mapDict, "salesReturnAccountID", SALES_RETURN);
         string receivablesAcct = GetMap(mapDict, "customerAccountID", RECEIVABLES);
@@ -314,8 +312,7 @@ public class AccountingService : IAccountingService
         var suffix = TimeHelper.GetEgyptTime().Ticks.ToString().Substring(10);
         var reference = $"{order.OrderNumber}-PRT-{suffix}";
 
-        var mappings = await _db.AccountSystemMappings.ToListAsync();
-        var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
+        var mapDict = await GetSafeSystemMappingsAsync();
 
         string salesReturnAcct = GetMap(mapDict, "salesReturnAccountID", SALES_RETURN);
         string salesDiscAcct   = GetMap(mapDict, "salesDiscountAccountID", SALES_DISCOUNT);
@@ -406,9 +403,8 @@ public class AccountingService : IAccountingService
         var reference = order.OrderNumber + "-PMT";
         if (await EntryExists(JournalEntryType.ReceiptVoucher, reference)) return;
 
-        // جلب الإحصائيات والربط
-        var mappings = await _db.AccountSystemMappings.ToListAsync();
-        var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
+        // جلب الإعدادات والربط المالي (بشكل آمن)
+        var mapDict = await GetSafeSystemMappingsAsync();
 
         string receivablesAcct = order.Customer?.MainAccountId != null 
                                ? $"ID:{order.Customer.MainAccountId}" 
@@ -473,8 +469,7 @@ public class AccountingService : IAccountingService
         var reference = order.OrderNumber + "-RFD";
         if (await EntryExists(JournalEntryType.PaymentVoucher, reference)) return;
 
-        var mappings = await _db.AccountSystemMappings.ToListAsync();
-        var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
+        var mapDict = await GetSafeSystemMappingsAsync();
 
         string receivablesAcct = GetMap(mapDict, "customerAccountID", RECEIVABLES);
         var cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
@@ -512,8 +507,7 @@ public class AccountingService : IAccountingService
         {
             if (await EntryExists(JournalEntryType.PurchaseInvoice, invoice.InvoiceNumber)) return;
 
-            var mappings = await _db.AccountSystemMappings.ToListAsync();
-            var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
+            var mapDict = await GetSafeSystemMappingsAsync();
 
             var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
@@ -578,8 +572,7 @@ public class AccountingService : IAccountingService
         var refNo = invoice.InvoiceNumber + "-RTN";
         if (await EntryExists(JournalEntryType.PurchaseReturn, refNo)) return;
 
-        var mappings = await _db.AccountSystemMappings.ToListAsync();
-        var mapDict  = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
+        var mapDict = await GetSafeSystemMappingsAsync();
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
@@ -766,6 +759,22 @@ public class AccountingService : IAccountingService
     // ══════════════════════════════════════════════════════
     // PRIVATE HELPERS
     // ══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// يجيب إعدادات الربط المالي مع فلترة الحسابات المحذوفة أو غير النشطة لتجنب انهيار النظام.
+    /// في حال كان الربط يشير لحساب مفقود أو معطل، سيعود النظام تلقائياً لاستخدام الكود الافتراضي (Fallback).
+    /// </summary>
+    private async Task<Dictionary<string, int?>> GetSafeSystemMappingsAsync()
+    {
+        var mappings = await _db.AccountSystemMappings
+            .AsNoTracking()
+            .Include(m => m.Account)
+            .ToListAsync();
+            
+        return mappings
+            .Where(m => m.AccountId == null || (m.Account != null && m.Account.IsActive))
+            .ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
+    }
 
     private string GetMap(Dictionary<string, int?> map, string key, string fallback)
     {

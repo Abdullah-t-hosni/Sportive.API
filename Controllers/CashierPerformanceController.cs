@@ -41,6 +41,8 @@ public class CashierPerformanceController : ControllerBase
                 o.DiscountAmount, ItemCount = o.Items.Sum(i => i.Quantity),
                 o.PaymentMethod, o.Status, o.CreatedAt,
                 o.OrderNumber,
+                // Calculate return value for this specific order
+                OrderReturnAmount = o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0)
             })
             .ToListAsync();
 
@@ -62,9 +64,11 @@ public class CashierPerformanceController : ControllerBase
                 var user       = users.GetValueOrDefault(g.Key);
                 var name       = user?.FullName?.Trim() ?? "كاشير غير معروف";
                 var allOrders  = g.ToList();
-                var revenue    = allOrders.Sum(o => o.TotalAmount);
+                var grossRevenue = allOrders.Sum(o => o.TotalAmount);
+                var returnsAmount = allOrders.Sum(o => o.OrderReturnAmount);
+                var netRevenue = grossRevenue - returnsAmount;
                 var count      = allOrders.Count;
-                var avgOrder   = count > 0 ? revenue / count : 0;
+                var avgOrder   = count > 0 ? netRevenue / count : 0;
                 var totalDisc  = allOrders.Sum(o => o.DiscountAmount);
                 var totalItems = allOrders.Sum(o => o.ItemCount);
                 var avgItems   = count > 0 ? (decimal)totalItems / count : 0;
@@ -108,7 +112,9 @@ public class CashierPerformanceController : ControllerBase
                     name,
                     phone        = user?.PhoneNumber,
                     // KPIs
-                    revenue      = Math.Round(revenue, 2),
+                    revenue      = Math.Round(netRevenue, 2),
+                    grossSales   = Math.Round(grossRevenue, 2),
+                    returnsAmount= Math.Round(returnsAmount, 2),
                     orderCount   = count,
                     avgOrder     = Math.Round(avgOrder, 2),
                     totalDiscount= Math.Round(totalDisc, 2),
@@ -129,10 +135,13 @@ public class CashierPerformanceController : ControllerBase
             .ToList();
 
         // ── ملخص إجمالي ───────────────────────────────
-        var totalRevenue = cashierStats.Sum(c => c.revenue);
+        var totalNetRevenue = cashierStats.Sum(c => c.revenue);
         var summary = new
         {
-            totalRevenue,
+            totalRevenue   = totalNetRevenue,
+            totalGrossSales = cashierStats.Sum(c => c.grossSales),
+            totalReturns   = cashierStats.Sum(c => c.returnsAmount),
+            totalDiscounts = cashierStats.Sum(c => c.totalDiscount),
             totalOrders    = cashierStats.Sum(c => c.orderCount),
             totalCashiers  = cashierStats.Count,
             avgOrderAll    = cashierStats.Any() ? Math.Round(cashierStats.Average(c => c.avgOrder), 2) : 0,
@@ -141,7 +150,7 @@ public class CashierPerformanceController : ControllerBase
             // مقارنة بالنسبة المئوية لكل كاشير
             revenueShare   = cashierStats.Select(c => new {
                 c.name,
-                share = totalRevenue > 0 ? Math.Round(c.revenue / totalRevenue * 100, 1) : 0m,
+                share = totalNetRevenue > 0 ? Math.Round(c.revenue / totalNetRevenue * 100, 1) : 0m,
             }),
         };
 
@@ -164,7 +173,7 @@ public class CashierPerformanceController : ControllerBase
         ws.Cell(1, 1).Style.Font.FontSize = 13;
         ws.Range(1, 1, 1, 8).Merge();
 
-        string[] headers = { "الكاشير", "عدد الطلبات", "إجمالي المبيعات", "متوسط الفاتورة",
+        string[] headers = { "الكاشير", "عدد الطلبات", "إجمالي المبيعات", "إجمالي المرتجعات", "الصافي المحقق", "متوسط الفاتورة",
                               "إجمالي الخصم", "إجمالي القطع", "أكبر فاتورة", "ساعة الذروة" };
         for (int c = 0; c < headers.Length; c++)
         {
@@ -179,14 +188,17 @@ public class CashierPerformanceController : ControllerBase
         foreach (var c in cashiers)
         {
             ws.Cell(r, 1).Value = c.name;
-            ws.Cell(r, 2).Value = c.orderCount;
-            ws.Cell(r, 3).Value = c.revenue;
-            ws.Cell(r, 4).Value = c.avgOrder;
-            ws.Cell(r, 5).Value = c.totalDiscount;
-            ws.Cell(r, 6).Value = c.totalItems;
-            ws.Cell(r, 7).Value = c.maxOrderAmount;
-            ws.Cell(r, 8).Value = $"{c.peakHour}:00";
-            foreach (int col in new[] { 3, 4, 5, 7 })
+            ws.Cell(r, 2).Value = (int)c.orderCount;
+            ws.Cell(r, 3).Value = (decimal)c.grossSales;
+            ws.Cell(r, 4).Value = (decimal)c.returnsAmount;
+            ws.Cell(r, 5).Value = (decimal)c.revenue;
+            ws.Cell(r, 6).Value = (decimal)c.avgOrder;
+            ws.Cell(r, 7).Value = (decimal)c.totalDiscount;
+            ws.Cell(r, 8).Value = (int)c.totalItems;
+            ws.Cell(r, 9).Value = (decimal)c.maxOrderAmount;
+            ws.Cell(r, 10).Value = $"{c.peakHour}:00";
+            
+            foreach (int col in new[] { 3, 4, 5, 6, 7, 9 })
                 ws.Cell(r, col).Style.NumberFormat.Format = "#,##0.00";
             r++;
         }

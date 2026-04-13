@@ -346,4 +346,23 @@ public class DataMaintenanceController : ControllerBase
             return BadRequest(new { success = false, message = ex.Message });
         }
     }
+
+    [HttpPost("cleanup-broken-mappings")]
+    public async Task<IActionResult> CleanupBrokenMappings()
+    {
+        try {
+            var mappings = await _db.AccountSystemMappings.Include(m => m.Account).ToListAsync();
+            int fixedCount = 0;
+            foreach (var m in mappings) {
+                if (m.AccountId != null && (m.Account == null || !m.Account.IsActive)) {
+                    m.AccountId = null;
+                    fixedCount++;
+                }
+            }
+            if (fixedCount > 0) await _db.SaveChangesAsync();
+            return Ok(new { success = true, message = $"تم العثور على {fixedCount} ربط مالي مكسور وتم تصحيحه." });
+        } catch (Exception ex) {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
 }
