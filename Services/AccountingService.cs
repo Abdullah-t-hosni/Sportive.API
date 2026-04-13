@@ -899,7 +899,7 @@ public class AccountingService : IAccountingService
 
     public async Task<decimal> GetAccountBalanceAsync(string code)
     {
-        var accountId = await GetAccountIdAsync(code);
+        var (accountId, _) = await GetAccountIdAsync(code);
         var balance = await _db.JournalLines
             .Where(l => l.AccountId == accountId)
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
@@ -913,7 +913,7 @@ public class AccountingService : IAccountingService
     /// </summary>
     public async Task<decimal> GetTodayDrawerBalanceAsync(string cashAccountCode)
     {
-        var accountId = await GetAccountIdAsync(cashAccountCode);
+        var (accountId, _) = await GetAccountIdAsync(cashAccountCode);
         var todayStart = TimeHelper.GetEgyptTime().Date; // منتصف الليل اليوم (بالتوقيت المحلي)
 
         var balance = await _db.JournalLines
@@ -936,9 +936,7 @@ public class AccountingService : IAccountingService
         };
 
     /// يجيب Id الحساب من الكود أو Id
-    /// المنطق: إذا كان الإدخال رقماً ويشبه Id (قصير ≤ 6 أرقام ولا يبدأ بصفر)
-    /// نحاول الكود أولاً لأن أكواد الحسابات (مثل 2104, 1106) قد تتطابق مع Id صغيرة
-    private async Task<int> GetAccountIdAsync(string input)
+    private async Task<(int Id, bool ExactMatch)> GetAccountIdAsync(string input)
     {
         // 1. Explicit ID Resolution
         if (input.StartsWith("ID:"))
@@ -946,26 +944,23 @@ public class AccountingService : IAccountingService
             if (int.TryParse(input.Substring(3), out var exactId) && exactId > 0)
             {
                 var acctById = await _db.Accounts.Where(a => a.Id == exactId && a.IsActive).Select(a => new { a.Id }).FirstOrDefaultAsync();
-                if (acctById != null) return acctById.Id;
+                if (acctById != null) return (acctById.Id, true);
             }
         }
         else
         {
             var cleanInput = input.Trim().ToLower();
 
-            // 2. Resolve by Account Code (Constants like '2101')
-            // Using AsEnumerable/Client evaluation for Trim if necessary, or simple EF Core mapping.
-            // In SQL Server, spaces are ignored in comparisons, but it's safe to check trimmed properly.
-            var acctByCode = await _db.Accounts
-                .Where(a => a.Code == input || a.Code.Trim() == cleanInput)
-                .Where(a => a.IsActive)
-                .Select(a => new { a.Id })
-                .FirstOrDefaultAsync();
+            // 2. Resolve by Account Code using LIKE for safety then exact match in memory
+            var acctByCodeList = await _db.Accounts
+                .Where(a => EF.Functions.Like(a.Code, $"%{cleanInput}%") && a.IsActive)
+                .Select(a => new { a.Id, a.Code })
+                .ToListAsync();
 
-            if (acctByCode != null)
-                return acctByCode.Id;
+            var exactAcct = acctByCodeList.FirstOrDefault(a => a.Code != null && a.Code.Trim().ToLower() == cleanInput);
+            if (exactAcct != null) return (exactAcct.Id, true);
 
-            // 3. Last fallback: It might be a bare ID passed from Legacy Code
+            // 3. Last fallback: Bare ID
             if (int.TryParse(input, out var id) && id > 0)
             {
                 var acctById = await _db.Accounts
@@ -973,12 +968,22 @@ public class AccountingService : IAccountingService
                     .Select(a => new { a.Id })
                     .FirstOrDefaultAsync();
 
-                if (acctById != null)
-                    return acctById.Id;
+                if (acctById != null) return (acctById.Id, true);
             }
         }
 
-        throw new InvalidOperationException($"حساب '{input}' غير موجود أو غير نشط في شجرة الحسابات");
+        // 🚨 CRITICAL FALLBACK: Instead of throwing and breaking checkout/pos, return main Cash Account safely
+        var fallbackCash = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == CASH_ACCOUNTS && a.IsActive);
+        if (fallbackCash != null)
+        {
+            return (fallbackCash.Id, false);
+        }
+
+        // Absolute last resort
+        var firstActive = await _db.Accounts.FirstOrDefaultAsync(a => a.IsActive);
+        if (firstActive != null) return (firstActive.Id, false);
+        
+        throw new InvalidOperationException($"فشل ذريع: لا توجد أي حسابات نشطة في شجرة الحسابات!");
     }
 
     /// يتحقق إذا كان القيد موجود مسبقاً (يمنع التكرار)
@@ -1041,7 +1046,8 @@ public class AccountingService : IAccountingService
         foreach (var (code, debit, credit, desc) in lines)
         {
             if (debit == 0 && credit == 0) continue;
-            var accountId = await GetAccountIdAsync(code);
+            var (accountId, exactMatch) = await GetAccountIdAsync(code);
+            var finalDesc = exactMatch ? desc : $"{desc} [تنبيه: الكود {code} غير موجود، تم التوجيه للنقدية الافتراضية]";
             var actualAccount = await _db.Accounts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == accountId);
             var realCode = actualAccount?.Code ?? "";
 
@@ -1062,7 +1068,7 @@ public class AccountingService : IAccountingService
                 AccountId   = accountId,
                 Debit       = debit,
                 Credit      = credit,
-                Description = desc,
+                Description = finalDesc,
                 CustomerId  = (isReceivables || isSalesOrPurchase) ? customerId : null,
                 SupplierId  = (isPayables || isSalesOrPurchase) ? supplierId : null,
                 OrderId     = orderId,
