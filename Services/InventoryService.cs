@@ -24,13 +24,14 @@ public class InventoryService : IInventoryService
         int? variantId = null,
         string? reference = null,
         string? note = null,
-        string? userId = null)
+        string? userId = null,
+        decimal unitCost = 0)
     {
         if (quantity == 0) return;
         if (variantId == 0) variantId = null;
         if (productId == 0) productId = null;
 
-        decimal unitCost = 0;
+        decimal effectiveUnitCost = unitCost;
         int remainingBefore = 0;
 
         // 1. Update Actual Stock levels in Product/Variant
@@ -39,7 +40,7 @@ public class InventoryService : IInventoryService
             var variant = await _db.ProductVariants.Include(v => v.Product).FirstOrDefaultAsync(v => v.Id == variantId);
             if (variant != null)
             {
-                unitCost = variant.Product.CostPrice ?? 0;
+                if (effectiveUnitCost <= 0) effectiveUnitCost = variant.Product.CostPrice ?? 0;
                 remainingBefore = variant.StockQuantity;
                 variant.StockQuantity += quantity;
                 variant.UpdatedAt = TimeHelper.GetEgyptTime();
@@ -71,7 +72,7 @@ public class InventoryService : IInventoryService
             var product = await _db.Products.FindAsync(productId);
             if (product != null)
             {
-                unitCost = product.CostPrice ?? 0;
+                if (effectiveUnitCost <= 0) effectiveUnitCost = product.CostPrice ?? 0;
                 remainingBefore = product.TotalStock;
                 product.TotalStock += quantity;
 
@@ -99,7 +100,7 @@ public class InventoryService : IInventoryService
             ProductVariantId = variantId,
             Reference        = reference,
             Note             = note,
-            UnitCost         = unitCost,
+            UnitCost         = effectiveUnitCost,
             CreatedByUserId  = userId,
             CreatedAt        = TimeHelper.GetEgyptTime()
         });

@@ -49,6 +49,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<InventoryAudit>     InventoryAudits     { get; set; }
     public DbSet<InventoryAuditItem> InventoryAuditItems => Set<InventoryAuditItem>();
     public DbSet<InventoryMovement>  InventoryMovements  => Set<InventoryMovement>();
+    public DbSet<InventoryOpeningBalance> InventoryOpeningBalances { get; set; }
+    public DbSet<InventoryOpeningBalanceItem> InventoryOpeningBalanceItems { get; set; }
 
     public DbSet<CustomerInstallment>  CustomerInstallments  { get; set; }
     public DbSet<InstallmentPayment>   InstallmentPayments   { get; set; }
@@ -292,6 +294,15 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(x => x.ProductVariant).WithMany().HasForeignKey(x => x.ProductVariantId).OnDelete(DeleteBehavior.SetNull);
             e.Property(x => x.Type).HasConversion<string>();
+        });
+
+        builder.Entity<InventoryOpeningBalance>(e => {
+            e.Property(x => x.TotalValue).HasPrecision(18, 2);
+            e.HasMany(x => x.Items).WithOne(x => x.InventoryOpeningBalance).HasForeignKey(x => x.InventoryOpeningBalanceId);
+        });
+
+        builder.Entity<InventoryOpeningBalanceItem>(e => {
+            e.Property(x => x.CostPrice).HasPrecision(18, 2);
         });
 
         builder.Entity<StoreInfo>().HasData(

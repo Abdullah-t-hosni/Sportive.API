@@ -14,7 +14,8 @@ public interface IInventoryService
         int? variantId = null,
         string? reference = null,
         string? note = null,
-        string? userId = null
+        string? userId = null,
+        decimal unitCost = 0
     );
 
     /// <summary>
