@@ -699,15 +699,47 @@ public class OperationalReportsController : ControllerBase
         // Group by sales person
         var byPerson = orders
             .GroupBy(o => o.SalesPersonId!)
-            .Select(g => new UserActivityRow(
-                g.Key,
-                userNames.GetValueOrDefault(g.Key, "System/Unknown"),
-                g.Count(),
-                g.Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned).Sum(o => o.TotalAmount),
-                g.Count(o => o.Status == OrderStatus.Returned),
-                g.Count(o => o.Status == OrderStatus.Cancelled)
-            ))
-            .OrderByDescending(r => r.TotalSales)
+            .Select(g =>
+            {
+                var ordersList = g.ToList();
+                var grossSales = ordersList.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount);
+                
+                // Calculate Total Returns Amount correctly handling partial returns
+                decimal totalReturns = 0;
+                foreach(var o in ordersList.Where(o => o.Status != OrderStatus.Cancelled))
+                {
+                    if (o.Status == OrderStatus.Returned)
+                    {
+                        totalReturns += o.TotalAmount;
+                    }
+                    else if (o.Items.Any(i => i.ReturnedQuantity > 0))
+                    {
+                        // Partial returns or orders with returned items
+                        foreach(var item in o.Items.Where(i => i.ReturnedQuantity > 0))
+                        {
+                            decimal lineReturn = (item.Quantity > 0) 
+                                ? (item.TotalPrice / item.Quantity) * item.ReturnedQuantity 
+                                : 0;
+                            totalReturns += lineReturn;
+                        }
+                    }
+                }
+
+                var totalDiscount = ordersList.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.DiscountAmount);
+                var netSales = grossSales - totalReturns;
+
+                return new UserActivityRow(
+                    g.Key,
+                    userNames.GetValueOrDefault(g.Key, "System/Unknown"),
+                    ordersList.Count,
+                    grossSales,
+                    totalReturns,
+                    totalDiscount,
+                    netSales,
+                    ordersList.Count(o => o.Status == OrderStatus.Cancelled)
+                );
+            })
+            .OrderByDescending(r => r.NetSales)
             .ToList();
 
         var detail = orders.Select(o => new {
@@ -1049,10 +1081,21 @@ public class OperationalReportsController : ControllerBase
         using var wb = new XLWorkbook();
         var ws1 = wb.Worksheets.Add("ملخص الكاشير");
         ws1.RightToLeft = true;
-        string[] h={"المستخدم","عدد الفواتير","إجمالي المبيعات","المرتجعات","الملغيات"};
-        for(int i=0;i<h.Length;i++){ws1.Cell(1,i+1).Value=h[i];ws1.Cell(1,i+1).Style.Font.Bold=true;}
-        int r=2;
-        foreach(var row in summary){ws1.Cell(r,1).Value=row.UserName;ws1.Cell(r,2).Value=row.OrderCount;ws1.Cell(r,3).Value=row.TotalSales;ws1.Cell(r,3).Style.NumberFormat.Format="#,##0.00";ws1.Cell(r,4).Value=row.Returns;ws1.Cell(r,5).Value=row.Cancellations;r++;}
+        string[] h = { "المستخدم", "عدد العمليات", "إجمالي المبيعات", "إجمالي المرتجعات", "إجمالي الخصومات", "الصافي المحقق", "الملغيات" };
+        for (int i = 0; i < h.Length; i++) { ws1.Cell(1, i + 1).Value = h[i]; ws1.Cell(1, i + 1).Style.Font.Bold = true; ws1.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#1a237e"); ws1.Cell(1, i + 1).Style.Font.FontColor = XLColor.White; }
+        int r = 2;
+        foreach (var row in summary)
+        {
+            ws1.Cell(r, 1).Value = row.UserName;
+            ws1.Cell(r, 2).Value = row.OrderCount;
+            ws1.Cell(r, 3).Value = row.GrossSales;
+            ws1.Cell(r, 4).Value = row.TotalReturns;
+            ws1.Cell(r, 5).Value = row.TotalDiscount;
+            ws1.Cell(r, 6).Value = row.NetSales;
+            ws1.Cell(r, 7).Value = row.Cancellations;
+            for (int c = 3; c <= 6; c++) ws1.Cell(r, c).Style.NumberFormat.Format = "#,##0.00";
+            r++;
+        }
         ws1.Columns().AdjustToContents();
         return ExcelResult(wb, $"user_activity_{from:yyyyMMdd}.xlsx");
     }
@@ -1126,5 +1169,5 @@ public record VariantInventoryRow(int Id, string Size, string Color, string Colo
 public record SalesRow(int Id, string OrderNumber, DateTime Date, string CustomerName, string Phone, string Source, string Status, string PaymentMethod, decimal SubTotal, decimal DiscountAmount, decimal TotalAmount, int ItemCount);
 public record PurchaseRow(int Id, string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal PaidAmount, decimal RemainingAmount);
 public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason);
-public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal TotalSales, int Returns, int Cancellations);
+public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal GrossSales, decimal TotalReturns, decimal TotalDiscount, decimal NetSales, int Cancellations);
 public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "", int Balance = 0);
