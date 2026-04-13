@@ -159,60 +159,47 @@ public class AccountingService : IAccountingService
         if (order.DiscountAmount > 0)
             lines.Add((salesDiscAcct, order.DiscountAmount, 0, $"خصم ممنوح - {order.OrderNumber} (مدين)"));
 
-        var netReceivable = order.TotalAmount; 
-        
-        // Step A: Record the FULL receivable on the customer (Debit)
-        // This ensures the transaction activity shows in their ledger
-        lines.Add((receivablesAcct, netReceivable, 0, $"إثبات قيمة الفاتورة - {order.OrderNumber}"));
+        // ── 2. Money Routing (Straightforward Direct Accounting) ──────
+        var totalSaleAmount = order.TotalAmount;
+        var splits = ParseMixedPayments(order.AdminNotes);
+        decimal handledPaidAmt = 0;
 
-        // Step B: Record Payments (Credit)
-        // If it's a paid sale (Cash/Mixed/etc.), we settle the paid portions immediately
-        bool isCredit = order.PaymentMethod == PaymentMethod.Credit || (order.PaymentStatus == PaymentStatus.Pending && order.PaymentMethod != PaymentMethod.Mixed);
-        
-        if (!isCredit)
+        // A. Handle Direct Payments (Cash, Visa, etc.)
+        if (splits.Count > 0)
         {
-            var splits = ParseMixedPayments(order.AdminNotes);
-
-            if (splits.Count > 0)
+            foreach (var (m, v) in splits)
             {
-                decimal totalPaidInMixed = 0;
-                foreach (var (m, v) in splits) {
-                    string cashAcct = await GetMappedCashAccount(m, order.Source, mapDict);
-                    string methodAr = m switch {
-                        PaymentMethod.Cash => "نقدي",
-                        PaymentMethod.Bank => "بنك/تحويل",
-                        PaymentMethod.CreditCard => "فيزا",
-                        PaymentMethod.Vodafone => "فودافون كاش",
-                        PaymentMethod.InstaPay => "انستاباي",
-                        _ => m.ToString()
-                    };
-                    lines.Add((cashAcct, v, 0, $"تحصيل ({methodAr}) - {order.OrderNumber}"));
-                    lines.Add((receivablesAcct, 0, v, $"سداد جزئي للعميل ({methodAr}) - {order.OrderNumber}"));
-                    totalPaidInMixed += v;
-                }
-
-                // Log the remaining as Credit in description if applicable
-                var remaining = order.TotalAmount - totalPaidInMixed;
-                if (remaining > 0.01m)
-                {
-                    // Optional: We can add an informational line or just ensure the description mentions it
-                    _logger.LogInformation("[Accounting] Order {OrderNum} has a deferred/credit portion of {Amount}", order.OrderNumber, remaining);
-                }
+                var cashAcct = await GetMappedCashAccount(m, order.Source, mapDict);
+                string methodAr = m switch {
+                    PaymentMethod.Cash => "نقدي",
+                    PaymentMethod.Bank => "بنك/تحويل",
+                    PaymentMethod.CreditCard => "فيزا",
+                    PaymentMethod.Vodafone => "فودافون كاش",
+                    PaymentMethod.InstaPay => "انستاباي",
+                    _ => m.ToString()
+                };
+                lines.Add((cashAcct, v, 0, $"تحصيل ({methodAr}) - {order.OrderNumber}"));
+                handledPaidAmt += v;
             }
-            else
-            {
-                // Single payment method or fallback: collect only the PaidAmount
-                decimal collectAmt = order.PaymentMethod == PaymentMethod.Mixed ? order.PaidAmount : order.TotalAmount;
-                
-                if (collectAmt > 0)
-                {
-                    string cashAcct = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-                    lines.Add((cashAcct, collectAmt, 0, $"تحصيل فاتورة - {order.OrderNumber}"));
-                    lines.Add((receivablesAcct, 0, collectAmt, $"سداد للعميل - {order.OrderNumber}"));
-                }
+        }
+        else if (order.PaymentMethod != PaymentMethod.Credit && order.PaidAmount > 0)
+        {
+            var cashAcct = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+            // If fully paid, collect total amount directly.
+            decimal payAmt = (order.PaymentStatus == PaymentStatus.Paid) ? order.TotalAmount : order.PaidAmount;
+            lines.Add((cashAcct, payAmt, 0, $"تحصيل ({order.PaymentMethod}) - {order.OrderNumber}"));
+            handledPaidAmt = payAmt;
+        }
 
-
-            }
+        // B. Handle Remaining Debt (Customer Account)
+        var remainingDebt = totalSaleAmount - handledPaidAmt;
+        if (remainingDebt > 0.01m)
+        {
+            lines.Add((receivablesAcct, remainingDebt, 0, $"إثبات مديونية متبقية (آجل) - {order.OrderNumber}"));
+        }
+        else if (remainingDebt < -0.01m)
+        {
+             // Optional: Handle overpayment if necessary, but usually ignored in simple sales.
         }
 
         // ── 3. COGS / Inventory (Continuous Inventory) ─────────
@@ -266,24 +253,17 @@ public class AccountingService : IAccountingService
             lines.Add((vatAcct, totalVatAmount, 0, $"إلغاء ضريبة مبيعات - {order.OrderNumber}"));
         }
 
-        // 3. Sub-ledger Traceability (Receivables Reversal) & Cash Refund
-        if (order.Source == OrderSource.POS)
+        // 3. Money Routing (Direct Reversal)
+        if (order.PaymentStatus == PaymentStatus.Paid || order.Source == OrderSource.POS)
         {
-            // Direct Cash Refund for POS (Clean entry)
+            // Direct Cash Refund
             var cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-            lines.Add((cashCode, 0, order.TotalAmount, $"خروج نقدية للمرتجع - {order.OrderNumber} ({order.PaymentMethod})"));
+            lines.Add((cashCode, 0, order.TotalAmount, $"رد نقدي للمرتجع - {order.OrderNumber} ({order.PaymentMethod})"));
         }
         else
         {
-            // Standard Flow: Sale -> Customer -> Refund
-            lines.Add((receivablesAcct, 0, order.TotalAmount, $"تنزيل من مديونية العميل - {order.OrderNumber}"));
-            
-            if (order.PaymentStatus == PaymentStatus.Paid)
-            {
-                var cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-                lines.Add((receivablesAcct, order.TotalAmount, 0,                $"رد مرتجع مالي للعميل - {order.OrderNumber}"));
-                lines.Add((cashCode,        0,                order.TotalAmount, $"خروج نقدية للمرتجع - {order.OrderNumber} ({order.PaymentMethod})"));
-            }
+            // Reverse Credit Debt
+            lines.Add((receivablesAcct, 0, order.TotalAmount, $"تنزيل من مديونية العميل (مرتجع آجل) - {order.OrderNumber}"));
         }
 
         // 5. Reversal of COGS (Stock back to Inventory)
@@ -350,29 +330,15 @@ public class AccountingService : IAccountingService
         else if (discountReversal < 0) lines.Add((salesDiscAcct, Math.Abs(discountReversal), 0, $"تسوية تفاوت (مرتجع جزئي) - {order.OrderNumber}"));
 
         // 💡 SMART POS FLOW: If POS, skip Customer Account sub-ledger to keep it clean (as requested)
-        if (order.Source == OrderSource.POS)
+        // 4. Money Routing (Direct Reversal)
+        if (order.PaymentStatus == PaymentStatus.Paid || order.Source == OrderSource.POS)
         {
-            // Resolve Refund Account (User Selection > Original Payment Mapping)
-            string cashCode;
-            if (refundAccountId.HasValue) 
-            {
-                cashCode = $"ID:{refundAccountId.Value}";
-            }
-            else 
-            {
-                cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-            }
-
-            lines.Add((cashCode, 0, refundAmount, $"خروج نقدية للمرتجع - {order.OrderNumber}"));
+            string cashId = refundAccountId.HasValue ? $"ID:{refundAccountId.Value}" : await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+            lines.Add((cashId, 0, refundAmount, $"رد نقدية جزئي - {order.OrderNumber}"));
         }
         else
         {
-            // Standard Website/Credit Flow: Sale -> Customer -> Refund
-            lines.Add((receivablesAcct, 0, refundAmount, $"دائن العميل (مرتجع جزئي) - {order.OrderNumber}"));
-            
-            var cashCode = refundAccountId.HasValue ? $"ID:{refundAccountId.Value}" : await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-            lines.Add((receivablesAcct, refundAmount, 0,            $"إثبات رد نقدي للعميل - {order.OrderNumber}"));
-            lines.Add((cashCode,        0,            refundAmount, $"خروج نقدية للمرتجع - {order.OrderNumber}"));
+             lines.Add((receivablesAcct, 0, refundAmount, $"تنزيل مديونية جزئي - {order.OrderNumber}"));
         }
 
         // 4. Inventory Reversal
@@ -1027,13 +993,17 @@ public class AccountingService : IAccountingService
             var actualAccount = await _db.Accounts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == accountId);
             var realCode = actualAccount?.Code ?? "";
 
-            // ⚠️ STRICT ENTITY ROUTING (User Preference):
-            // We only attach entity IDs (CustomerId/SupplierId) to their specific trade accounts.
-            // Customers -> Receivables (starts with 1103)
-            // Suppliers -> Payables (starts with 2101)
-            // This ensures clean ledgers for Revenue, Expenses, and Cash accounts.
+            // ⚠️ IMPROVED ENTITY ROUTING:
+            // For Sales/Purchases, we attach the entity ID to ALL lines of the entry.
+            // This enables "Sales per Customer" or "Inventory per Supplier" reports
+            // without impacting the specialized sub-ledger logic of trade accounts.
+            // ⚠️ IMPROVED ENTITY ROUTING:
+            // For Sales/Purchases, we attach the entity ID to ALL lines of the entry.
+            // This enables "Sales per Customer" or "Inventory per Supplier" reports
+            // without impacting the specialized sub-ledger logic of trade accounts.
             bool isReceivables = realCode.StartsWith("1103");
             bool isPayables = realCode.StartsWith("2101");
+            bool isSalesOrPurchase = type == JournalEntryType.SalesInvoice || type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseInvoice || type == JournalEntryType.PurchaseReturn;
 
             entry.Lines.Add(new JournalLine
             {
@@ -1041,8 +1011,8 @@ public class AccountingService : IAccountingService
                 Debit       = debit,
                 Credit      = credit,
                 Description = desc,
-                CustomerId  = isReceivables ? customerId : null,
-                SupplierId  = isPayables ? supplierId : null,
+                CustomerId  = (isReceivables || isSalesOrPurchase) ? customerId : null,
+                SupplierId  = (isPayables || isSalesOrPurchase) ? supplierId : null,
                 OrderId     = orderId,
                 CreatedAt   = TimeHelper.GetEgyptTime(),
             });
