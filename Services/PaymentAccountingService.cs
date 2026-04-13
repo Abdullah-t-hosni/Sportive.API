@@ -32,22 +32,39 @@ public class PaymentAccountingService
         string receivablesAcct = order.Customer?.MainAccountId != null ? $"ID:{order.Customer.MainAccountId}" : _core.GetMap(mapDict, MK.Customer, AccountingCoreService.RECEIVABLES);
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
-        var splits = _core.ParseMixedPayments(order.AdminNotes);
-        if (splits.Count > 0)
+        var payments = order.Payments?.Where(p => p.Amount > 0 && p.Method != PaymentMethod.Credit).ToList()
+                    ?? new List<OrderPayment>();
+
+        if (payments.Any())
         {
-            foreach (var (m, v) in splits)
+            foreach (var p in payments)
             {
-                var code = await _core.GetMappedCashAccountAsync(m, order.Source, mapDict);
-                lines.Add((code, v, 0, $"تحصيل ({_core.GetMethodLabel(m)}) - {order.OrderNumber}"));
-                lines.Add((receivablesAcct, 0, v, $"إغلاق مديونية ({_core.GetMethodLabel(m)}) - {order.OrderNumber}"));
+                var code = await _core.GetMappedCashAccountAsync(p.Method, order.Source, mapDict);
+                lines.Add((code, p.Amount, 0, $"تحصيل ({_core.GetMethodLabel(p.Method)}) - {order.OrderNumber}"));
+                lines.Add((receivablesAcct, 0, p.Amount, $"إغلاق مديونية ({_core.GetMethodLabel(p.Method)}) - {order.OrderNumber}"));
             }
         }
         else
         {
-            var cashCode = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
-            lines.Add((cashCode, order.TotalAmount, 0, $"تحصيل طلب {order.OrderNumber} ({_core.GetMethodLabel(order.PaymentMethod)})"));
-            lines.Add((receivablesAcct, 0, order.TotalAmount, $"إغلاق مديونية طلب {order.OrderNumber}"));
+            var splits = _core.ParseMixedPayments(order.AdminNotes);
+            if (splits.Count > 0)
+            {
+                foreach (var (m, v) in splits)
+                {
+                    var code = await _core.GetMappedCashAccountAsync(m, order.Source, mapDict);
+                    lines.Add((code, v, 0, $"تحصيل ({_core.GetMethodLabel(m)}) - {order.OrderNumber}"));
+                    lines.Add((receivablesAcct, 0, v, $"إغلاق مديونية ({_core.GetMethodLabel(m)}) - {order.OrderNumber}"));
+                }
+            }
+            else if (order.PaymentMethod != PaymentMethod.Credit && order.TotalAmount > 0)
+            {
+                var cashCode = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
+                lines.Add((cashCode, order.TotalAmount, 0, $"تحصيل طلب {order.OrderNumber} ({_core.GetMethodLabel(order.PaymentMethod)})"));
+                lines.Add((receivablesAcct, 0, order.TotalAmount, $"إغلاق مديونية طلب {order.OrderNumber}"));
+            }
         }
+
+        if (!lines.Any()) return;
 
         await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, reference, $"تحصيل تلقائي للطلب {order.OrderNumber}", TimeHelper.GetEgyptTime(), lines, orderId: order.Id, customerId: order.CustomerId, source: order.Source);
     }

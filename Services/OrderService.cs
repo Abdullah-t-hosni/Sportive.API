@@ -444,7 +444,8 @@ public class OrderService : IOrderService
                         decimal totalPaid = 0;
                         foreach (var p in dto.Payments)
                         {
-                            if (p.Amount <= 0) continue;
+                            if (p.Amount <= 0 || p.Method == PaymentMethod.Credit) continue;
+                            
                             totalPaid += p.Amount;
                             order.Payments.Add(new OrderPayment 
                             { 

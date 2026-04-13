@@ -104,7 +104,7 @@ public class SalesAccountingService
 
         // ✅ NEW: Read from OrderPayments table first, fallback to AdminNotes
         decimal handledPaidAmt = 0;
-        var payments = order.Payments?.Where(p => p.Amount > 0).ToList()
+        var payments = order.Payments?.Where(p => p.Amount > 0 && p.Method != PaymentMethod.Credit).ToList()
                     ?? new List<OrderPayment>();
 
         if (payments.Any())
