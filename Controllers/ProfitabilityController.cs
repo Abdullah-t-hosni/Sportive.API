@@ -110,6 +110,10 @@ public class ProfitabilityController : ControllerBase
                     ? Math.Round((grossProfit!.Value / totalNetRevenue) * 100, 1)
                     : (decimal?)null;
 
+                var totalSales = g.Sum(i => i.TotalPrice);
+                var totalReturnsValue = g.Sum(i => i.ReturnedQuantity * i.UnitPrice);
+                var totalDiscounts = (totalSales - totalReturnsValue) - totalNetRevenue;
+
                 return new ProductProfitRow(
                     ProductId:        g.Key,
                     ProductNameAr:    product.NameAr,
@@ -124,8 +128,9 @@ public class ProfitabilityController : ControllerBase
                     UnitsSold:        g.Sum(i => i.Quantity),
                     ReturnedUnits:    g.Sum(i => i.ReturnedQuantity),
                     NetUnits:         netUnits,
-                    GrossRevenue:     g.Sum(i => i.TotalPrice),
-                    ReturnedRevenue:  0, // تم دمجها في الحسابات الصافية
+                    TotalSales:       totalSales,
+                    TotalReturns:     totalReturnsValue,
+                    TotalDiscounts:   totalDiscounts,
                     NetRevenue:       totalNetRevenue,
                     TotalCost:        totalCost,
                     GrossProfit:      grossProfit,
@@ -153,6 +158,9 @@ public class ProfitabilityController : ControllerBase
             totalProducts    = grouped.Count,
             withCostCount    = withCost.Count,
             withoutCostCount = grouped.Count - withCost.Count,
+            totalSales       = grouped.Sum(r => r.TotalSales),
+            totalReturns     = grouped.Sum(r => r.TotalReturns),
+            totalDiscounts   = grouped.Sum(r => r.TotalDiscounts),
             totalNetRevenue  = grouped.Sum(r => r.NetRevenue),
             totalCost        = withCost.Sum(r => r.TotalCost ?? 0),
             totalGrossProfit = withCost.Sum(r => r.GrossProfit ?? 0),
@@ -243,10 +251,10 @@ public class ProfitabilityController : ControllerBase
         // Headers
         string[] h = {
             "اسم المنتج", "SKU", "الفئة",
-            "سعر الجمهور", "سعر البيع الفعلي", "سعر التكلفة",
+            "سعر الجمهور", "سعر التكلفة",
             "وحدات مباعة", "وحدات مرتجعة", "صافي الوحدات",
-            "صافي الإيرادات", "التكلفة الإجمالية",
-            "إجمالي الربح", "هامش الربح %"
+            "إجمالي المبيعات", "المرتجعات", "الخصومات", "صافي الإيراد",
+            "التكلفة الإجمالية", "إجمالي الربح", "هامش الربح %"
         };
         for (int c = 0; c < h.Length; c++)
         {
@@ -265,23 +273,25 @@ public class ProfitabilityController : ControllerBase
             ws.Cell(r,  2).Value = row.SKU;
             ws.Cell(r,  3).Value = row.CategoryName;
             ws.Cell(r,  4).Value = row.ListPrice;
-            ws.Cell(r,  5).Value = row.AvgSellingPrice;
-            ws.Cell(r,  6).Value = row.CostPrice.HasValue ? (XLCellValue)row.CostPrice.Value : (XLCellValue)"—";
-            ws.Cell(r,  7).Value = row.UnitsSold;
-            ws.Cell(r,  8).Value = row.ReturnedUnits;
-            ws.Cell(r,  9).Value = row.NetUnits;
-            ws.Cell(r, 10).Value = row.NetRevenue;
-            ws.Cell(r, 11).Value = row.TotalCost.HasValue ? (XLCellValue)row.TotalCost.Value : (XLCellValue)"لا تكلفة";
-            ws.Cell(r, 12).Value = row.GrossProfit.HasValue ? (XLCellValue)row.GrossProfit.Value : (XLCellValue)"—";
-            ws.Cell(r, 13).Value = row.MarginPct.HasValue  ? (XLCellValue)row.MarginPct.Value   : (XLCellValue)"—";
+            ws.Cell(r,  5).Value = row.CostPrice.HasValue ? (XLCellValue)row.CostPrice.Value : (XLCellValue)"—";
+            ws.Cell(r,  6).Value = row.UnitsSold;
+            ws.Cell(r,  7).Value = row.ReturnedUnits;
+            ws.Cell(r,  8).Value = row.NetUnits;
+            ws.Cell(r,  9).Value = row.TotalSales;
+            ws.Cell(r, 10).Value = row.TotalReturns;
+            ws.Cell(r, 11).Value = row.TotalDiscounts;
+            ws.Cell(r, 12).Value = row.NetRevenue;
+            ws.Cell(r, 13).Value = row.TotalCost.HasValue ? (XLCellValue)row.TotalCost.Value : (XLCellValue)"—";
+            ws.Cell(r, 14).Value = row.GrossProfit.HasValue ? (XLCellValue)row.GrossProfit.Value : (XLCellValue)"—";
+            ws.Cell(r, 15).Value = row.MarginPct.HasValue ? (XLCellValue)row.MarginPct.Value : (XLCellValue)"—";
 
             // تنسيق الأرقام
-            foreach (int col in new[] { 4, 5, 6, 10, 11, 12 })
+            foreach (int col in new[] { 4, 5, 9, 10, 11, 12, 13, 14 })
                 if (ws.Cell(r, col).Value.IsNumber)
                     ws.Cell(r, col).Style.NumberFormat.Format = "#,##0.00";
 
-            if (ws.Cell(r, 13).Value.IsNumber)
-                ws.Cell(r, 13).Style.NumberFormat.Format = "0.0\"%\"";
+            if (ws.Cell(r, 15).Value.IsNumber)
+                ws.Cell(r, 15).Style.NumberFormat.Format = "0.0\"%\"";
 
             // تلوين حسب الهامش
             if (row.MarginPct.HasValue)
@@ -289,7 +299,7 @@ public class ProfitabilityController : ControllerBase
                 var bg = row.MarginPct.Value >= 30 ? XLColor.FromHtml("#e8f5e9")
                        : row.MarginPct.Value >= 10 ? XLColor.FromHtml("#fff8e1")
                        : XLColor.FromHtml("#ffebee");
-                ws.Cell(r, 13).Style.Fill.BackgroundColor = bg;
+                ws.Cell(r, 15).Style.Fill.BackgroundColor = bg;
             }
             r++;
         }
@@ -297,13 +307,16 @@ public class ProfitabilityController : ControllerBase
         // Totals row
         ws.Cell(r, 1).Value = "الإجمالي";
         ws.Cell(r, 1).Style.Font.Bold = true;
-        ws.Cell(r, 10).Value = rows.Sum(x => x.NetRevenue);
-        ws.Cell(r, 11).Value = rows.Sum(x => x.TotalCost ?? 0);
-        ws.Cell(r, 12).Value = rows.Sum(x => x.GrossProfit ?? 0);
-        for (int col = 10; col <= 13; col++)
+        ws.Cell(r, 9).Value = rows.Sum(x => x.TotalSales);
+        ws.Cell(r, 10).Value = rows.Sum(x => x.TotalReturns);
+        ws.Cell(r, 11).Value = rows.Sum(x => x.TotalDiscounts);
+        ws.Cell(r, 12).Value = rows.Sum(x => x.NetRevenue);
+        ws.Cell(r, 13).Value = rows.Sum(x => x.TotalCost ?? 0);
+        ws.Cell(r, 14).Value = rows.Sum(x => x.GrossProfit ?? 0);
+        for (int col = 9; col <= 15; col++)
         {
             ws.Cell(r, col).Style.Font.Bold = true;
-            if (col < 13) ws.Cell(r, col).Style.NumberFormat.Format = "#,##0.00";
+            if (col < 15) ws.Cell(r, col).Style.NumberFormat.Format = "#,##0.00";
         }
         ws.Row(r).Style.Fill.BackgroundColor = XLColor.FromHtml("#e8f5e9");
 
@@ -319,12 +332,15 @@ public class ProfitabilityController : ControllerBase
 
         var summaryRows = new (string Label, object Value)[]
         {
+            ("إجمالي المبيعات (بداية)",  (decimal)summary.totalSales),
+            ("إجمالي المرتجعات",         (decimal)summary.totalReturns),
+            ("إجمالي الخصومات",          (decimal)summary.totalDiscounts),
             ("إجمالي الإيرادات الصافية", (decimal)summary.totalNetRevenue),
             ("إجمالي التكاليف",           (decimal)summary.totalCost),
             ("إجمالي الربح الإجمالي",    (decimal)summary.totalGrossProfit),
             ("هامش الربح الإجمالي %",    (decimal)summary.overallMargin),
             ("إجمالي الوحدات المباعة",   (int)summary.totalUnitsSold),
-            ("إجمالي المرتجعات",         (int)summary.totalReturned),
+            ("إجمالي المرتجعات (وحدات)", (int)summary.totalReturned),
             ("منتجات بسعر تكلفة",        (int)summary.withCostCount),
             ("منتجات بدون سعر تكلفة",   (int)summary.withoutCostCount),
         };
@@ -370,8 +386,9 @@ public record ProductProfitRow(
     int      UnitsSold,
     int      ReturnedUnits,
     int      NetUnits,
-    decimal  GrossRevenue,
-    decimal  ReturnedRevenue,
+    decimal  TotalSales,
+    decimal  TotalReturns,
+    decimal  TotalDiscounts,
     decimal  NetRevenue,
     decimal? TotalCost,
     decimal? GrossProfit,
