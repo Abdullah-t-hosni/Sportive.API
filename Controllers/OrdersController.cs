@@ -118,7 +118,8 @@ public class OrdersController : ControllerBase
             posDto.CustomerName,
             posDto.Note,
             posDto.DiscountAmount,
-            posDto.Subtotal
+            posDto.Subtotal,
+            posDto.Payments
         );
 
         var order = await _orderService.CreateOrderAsync(posDto.CustomerId, dto);

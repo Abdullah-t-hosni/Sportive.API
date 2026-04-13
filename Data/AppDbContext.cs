@@ -23,6 +23,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<OrderItem> OrderItems           => Set<OrderItem>();
     public DbSet<OrderStatusHistory> OrderStatusHistories => Set<OrderStatusHistory>();
     public DbSet<CartItem> CartItems             => Set<CartItem>();
+    public DbSet<OrderPayment> OrderPayments     => Set<OrderPayment>();
     public DbSet<Coupon> Coupons                 => Set<Coupon>();
     public DbSet<WishlistItem> WishlistItems     => Set<WishlistItem>();
     public DbSet<Notification> Notifications     => Set<Notification>();
@@ -61,9 +62,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
     {
         base.OnModelCreating(builder);
 
-        // ❌ تم إزالة فلاتر الحذف الناعم (Soft Delete) بناءً على طلب العميل
-        // النظام الآن يستخدم المسح الفعلي (Hard Delete) لضمان نظافة قاعدة البيانات
-        
         builder.Entity<AppUser>(e => {
             e.HasIndex(u => u.PhoneNumber);
         });
@@ -152,6 +150,13 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.PaymentMethod).HasConversion<string>();
             e.Property(x => x.PaymentStatus).HasConversion<string>();
             e.Property(x => x.Source).HasConversion<string>();
+        });
+
+        builder.Entity<OrderPayment>(e => {
+            e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.Property(x => x.Method).HasConversion<string>();
+            e.HasOne(x => x.Order).WithMany(o => o.Payments)
+             .HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<OrderItem>(e => {

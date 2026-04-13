@@ -435,16 +435,43 @@ public class OrderService : IOrderService
 
                 order.TotalAmount = order.SubTotal + order.DeliveryFee - order.DiscountAmount;
 
-                // 💡 Initial Paid Amount calculation for POS Mixed payments
+                // 💡 Initial Paid Amount calculation for POS Mixed payments & Structured Payment Table
                 if (order.Source == OrderSource.POS)
                 {
-                    if (order.PaymentMethod != PaymentMethod.Credit && order.PaymentMethod != (PaymentMethod)7)
+                    if (dto.Payments != null && dto.Payments.Any())
+                    {
+                        // ✅ PRO WAY: Use structured payments from DTO
+                        decimal totalPaid = 0;
+                        foreach (var p in dto.Payments)
+                        {
+                            if (p.Amount <= 0) continue;
+                            totalPaid += p.Amount;
+                            order.Payments.Add(new OrderPayment 
+                            { 
+                                Method = p.Method, 
+                                Amount = p.Amount, 
+                                CreatedAt = now 
+                            });
+                        }
+                        order.PaidAmount = totalPaid;
+                        if (order.PaidAmount >= order.TotalAmount) order.PaymentStatus = PaymentStatus.Paid;
+                    }
+                    else if (order.PaymentMethod != PaymentMethod.Credit && order.PaymentMethod != (PaymentMethod)7)
                     {
                         order.PaidAmount = order.TotalAmount;
+                        // Single payment method - record it
+                        order.Payments.Add(new OrderPayment 
+                        { 
+                            Method = order.PaymentMethod, 
+                            Amount = order.TotalAmount, 
+                            CreatedAt = now 
+                        });
                     }
                     else if (order.PaymentMethod == (PaymentMethod)7 && !string.IsNullOrEmpty(dto.Note))
                     {
-                        try {
+                        // 🔄 FALLBACK: Parse JSON from Note (Legacy Support)
+                        try 
+                        {
                             using var doc = JsonDocument.Parse(dto.Note);
                             var root = doc.RootElement;
                             JsonElement mixedProps;
@@ -453,14 +480,47 @@ public class OrderService : IOrderService
                             else { mixedProps = root; }
                             
                             decimal totalPaid = 0;
-                            foreach (var prop in mixedProps.EnumerateObject()) {
-                                if (prop.Name.ToLower() == "credit" || prop.Name.ToLower() == "remaining" || prop.Name.ToLower() == "deferred" || prop.Name.ToLower() == "debt") continue;
-                                if (decimal.TryParse(prop.Value.ToString(), out decimal val)) totalPaid += val;
+                            foreach (var prop in mixedProps.EnumerateObject()) 
+                            {
+                                var pmName = prop.Name.ToLower();
+                                if (new[] { "credit", "remaining", "deferred", "debt", "change", "date" }.Contains(pmName)) continue;
+                                
+                                if (decimal.TryParse(prop.Value.ToString(), out decimal val) && val > 0) 
+                                {
+                                    totalPaid += val;
+                                    var method = pmName switch {
+                                        "cash" => PaymentMethod.Cash,
+                                        "bank" => PaymentMethod.Bank,
+                                        "visa" or "creditcard" or "fawry" => PaymentMethod.CreditCard,
+                                        "vodafone" => PaymentMethod.Vodafone,
+                                        "instapay" => PaymentMethod.InstaPay,
+                                        _ => (PaymentMethod?)null
+                                    };
+                                    
+                                    if (method.HasValue)
+                                    {
+                                        order.Payments.Add(new OrderPayment 
+                                        { 
+                                            Method = method.Value, 
+                                            Amount = val, 
+                                            CreatedAt = now 
+                                        });
+                                    }
+                                }
                             }
                             order.PaidAmount = totalPaid;
                             if (order.PaidAmount >= order.TotalAmount) order.PaymentStatus = PaymentStatus.Paid;
-                        } catch { /* ignore parse error at creation */ }
+                        } 
+                        catch (Exception ex) 
+                        { 
+                            _logger.LogWarning(ex, "Failed to parse mixed payment JSON during order creation for {OrderNum}", order.OrderNumber);
+                        }
                     }
+                }
+                else if (order.Source == OrderSource.Website && (order.PaymentMethod == PaymentMethod.Vodafone || order.PaymentMethod == PaymentMethod.InstaPay))
+                {
+                    // For website digital payments that are "Pending" initially but will be "Paid" on confirmation
+                    // We can track them here or when confirmed.
                 }
 
                 // 4. Validate Business Rules/Settings
@@ -789,6 +849,7 @@ public class OrderService : IOrderService
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var order = await db.Orders
                     .Include(o => o.Customer)
+                    .Include(o => o.Payments) // ✅ Include structured payments
                     .Include(o => o.Items).ThenInclude(i => i.Product)
                     .FirstAsync(o => o.Id == orderId);
                 await accounting.PostSalesOrderAsync(order);
@@ -816,7 +877,10 @@ public class OrderService : IOrderService
                 using var scope = _scopeFactory.CreateScope();
                 var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var order = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == orderId);
+                var order = await db.Orders
+                    .Include(o => o.Customer)
+                    .Include(o => o.Payments)
+                    .FirstAsync(o => o.Id == orderId);
                 await accounting.PostOrderPaymentAsync(order);
                 return;
             }
@@ -844,6 +908,7 @@ public class OrderService : IOrderService
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var order = await db.Orders
                     .Include(o => o.Customer)
+                    .Include(o => o.Payments)
                     .Include(o => o.Items).ThenInclude(i => i.Product)
                     .FirstAsync(o => o.Id == orderId);
                 await accounting.PostSalesReturnAsync(order);
@@ -871,7 +936,10 @@ public class OrderService : IOrderService
                 using var scope = _scopeFactory.CreateScope();
                 var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var order = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == orderId);
+                var order = await db.Orders
+                    .Include(o => o.Customer)
+                    .Include(o => o.Payments)
+                    .FirstAsync(o => o.Id == orderId);
                 await accounting.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId);
                 return;
             }

@@ -48,8 +48,11 @@ public record CreateOrderDto(
     string? CustomerName = null,
     string? Note = null,
     decimal? DiscountAmount = null,
-    decimal? SubTotal = null
+    decimal? SubTotal = null,
+    List<OrderPaymentDto>? Payments = null
 );
+
+public record OrderPaymentDto(PaymentMethod Method, decimal Amount);
 
 public record CreateOrderItemDto(
     int ProductId,
@@ -73,7 +76,8 @@ public record CreatePOSOrderDto(
     OrderSource OrderSource,
     string? Note = null,
     decimal? DiscountAmount = null,
-    decimal? Subtotal = null
+    decimal? Subtotal = null,
+    List<OrderPaymentDto>? Payments = null
 );
 
 public record CreatePOSOrderItemDto(

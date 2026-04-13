@@ -95,6 +95,12 @@ public class Order : BaseEntity
     // Navigation
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
     public ICollection<OrderStatusHistory> StatusHistory { get; set; } = new List<OrderStatusHistory>();
+
+    /// <summary>
+    /// مدفوعات الطلب المنفصلة — بديل عن تخزين JSON في AdminNotes
+    /// يدعم حالات الدفع المتعدد (Mixed Payment) بشكل صحيح
+    /// </summary>
+    public ICollection<OrderPayment> Payments { get; set; } = new List<OrderPayment>();
 }
 
 public class OrderItem : BaseEntity
