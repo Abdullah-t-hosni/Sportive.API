@@ -24,9 +24,12 @@ public class ProfitabilityController : ControllerBase
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
         [FromQuery] int?      categoryId = null,
-        [FromQuery] int?      productId  = null,        // فلتر بمنتج محدد
-        [FromQuery] string?   sortBy     = "revenue",  // revenue | margin | units | profit
-        [FromQuery] bool      hasCost    = false,       // فقط المنتجات التي لديها CostPrice
+        [FromQuery] int?      brandId    = null,
+        [FromQuery] string?   color      = null,
+        [FromQuery] string?   size       = null,
+        [FromQuery] int?      productId  = null,
+        [FromQuery] string?   sortBy     = "revenue",
+        [FromQuery] bool      hasCost    = false,
         [FromQuery] bool      excel      = false)
     {
         // Ensure dates are parsed correctly and treated as inclusive of the Egypt timezone offset if needed
@@ -44,17 +47,42 @@ public class ProfitabilityController : ControllerBase
             .Include(i => i.Product)
                 .ThenInclude(p => p!.Category)
             .Include(i => i.Product)
+                .ThenInclude(p => p!.Brand)
+            .Include(i => i.Product)
                 .ThenInclude(p => p!.Images.Where(img => img.IsMain))
+            .Include(i => i.Product)
+                .ThenInclude(p => p!.Variants)
             .Where(i => i.Order.Status != OrderStatus.Cancelled
                      && i.Order.CreatedAt >= startRange
                      && i.Order.CreatedAt <= endRange);
 
+        // Recursive Category Filter
         if (categoryId.HasValue)
-            itemsQ = itemsQ.Where(i => i.Product != null && i.Product.CategoryId == categoryId.Value);
+        {
+            var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
+            itemsQ = itemsQ.Where(i => i.Product != null && i.Product.CategoryId.HasValue && categoryIds.Contains(i.Product.CategoryId.Value));
+        }
 
-        // فلتر بمنتج محدد — يُحسّن الأداء بشكل كبير
+        // Recursive Brand Filter
+        if (brandId.HasValue)
+        {
+            var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
+            itemsQ = itemsQ.Where(i => i.Product != null && i.Product.BrandId.HasValue && brandIds.Contains(i.Product.BrandId.Value));
+        }
+
+        // Color/Size Filter
+        if (!string.IsNullOrEmpty(color))
+            itemsQ = itemsQ.Where(i => i.Product != null && i.Product.Variants.Any(v => v.Color == color || v.ColorAr == color));
+
+        if (!string.IsNullOrEmpty(size))
+            itemsQ = itemsQ.Where(i => i.Product != null && i.Product.Variants.Any(v => v.Size == size));
+
+        // فلتر بمنتج محدد
         if (productId.HasValue)
             itemsQ = itemsQ.Where(i => i.ProductId == productId.Value);
+            
+        if (hasCost)
+            itemsQ = itemsQ.Where(i => i.Product != null && i.Product.CostPrice.HasValue);
 
         var items = await itemsQ.ToListAsync();
 

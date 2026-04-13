@@ -402,6 +402,9 @@ public class OperationalReportsController : ControllerBase
     public async Task<IActionResult> Inventory(
         [FromQuery] string? search      = null,
         [FromQuery] int?    categoryId  = null,
+        [FromQuery] int?    brandId     = null,
+        [FromQuery] string? color       = null,
+        [FromQuery] string? size        = null,
         [FromQuery] bool    lowStock    = false,
         [FromQuery] string  stockStatus = "all", // "all", "positive", "zero"
         [FromQuery] int     page        = 1,
@@ -419,9 +422,21 @@ public class OperationalReportsController : ControllerBase
             
         if (categoryId.HasValue && categoryId > 0)
         {
-            // تضمين الفئات الفرعية
-            q = q.Where(p => p.CategoryId == categoryId.Value || (p.Category != null && p.Category.ParentId == categoryId.Value));
+            var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
+            q = q.Where(p => p.CategoryId.HasValue && categoryIds.Contains(p.CategoryId.Value));
         }
+
+        if (brandId.HasValue && brandId > 0)
+        {
+            var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
+            q = q.Where(p => p.BrandId.HasValue && brandIds.Contains(p.BrandId.Value));
+        }
+
+        if (!string.IsNullOrEmpty(color))
+            q = q.Where(p => p.Variants.Any(v => v.Color == color || v.ColorAr == color));
+
+        if (!string.IsNullOrEmpty(size))
+            q = q.Where(p => p.Variants.Any(v => v.Size == size));
 
         if (lowStock)
             q = q.Where(p => p.TotalStock <= (p.ReorderLevel > 0 ? p.ReorderLevel : 5));
@@ -515,6 +530,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] OrderSource? source     = null,
         [FromQuery] int?         categoryId = null,
         [FromQuery] int?         brandId    = null,
+        [FromQuery] string?      color      = null,
+        [FromQuery] string?      size       = null,
         [FromQuery] bool         excel      = false)
     {
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
@@ -533,15 +550,23 @@ public class OperationalReportsController : ControllerBase
 
         if (source.HasValue) q = q.Where(o => o.Source == source.Value);
 
-        if (categoryId.HasValue)
+        if (categoryId.HasValue && categoryId > 0)
         {
-            q = q.Where(o => o.Items.Any(i => i.Product != null && (i.Product.CategoryId == categoryId.Value || (i.Product.Category != null && i.Product.Category.ParentId == categoryId.Value))));
+            var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
+            q = q.Where(o => o.Items.Any(i => i.Product != null && i.Product.CategoryId.HasValue && categoryIds.Contains(i.Product.CategoryId.Value)));
         }
 
-        if (brandId.HasValue)
+        if (brandId.HasValue && brandId > 0)
         {
-            q = q.Where(o => o.Items.Any(i => i.Product != null && (i.Product.BrandId == brandId.Value || (i.Product.Brand != null && i.Product.Brand.ParentId == brandId.Value))));
+            var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
+            q = q.Where(o => o.Items.Any(i => i.Product != null && i.Product.BrandId.HasValue && brandIds.Contains(i.Product.BrandId.Value)));
         }
+
+        if (!string.IsNullOrEmpty(color))
+            q = q.Where(o => o.Items.Any(i => i.Color == color || (i.ProductVariant != null && (i.ProductVariant.Color == color || i.ProductVariant.ColorAr == color))));
+
+        if (!string.IsNullOrEmpty(size))
+            q = q.Where(o => o.Items.Any(i => i.Size == size || (i.ProductVariant != null && i.ProductVariant.Size == size)));
 
         var orders = await q.OrderByDescending(o => o.CreatedAt).ToListAsync();
         
@@ -596,6 +621,10 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
         [FromQuery] int?      supplierId = null,
+        [FromQuery] int?      categoryId = null,
+        [FromQuery] int?      brandId    = null,
+        [FromQuery] string?   color      = null,
+        [FromQuery] string?   size       = null,
         [FromQuery] bool      excel      = false)
     {
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
@@ -603,10 +632,29 @@ public class OperationalReportsController : ControllerBase
 
         var q = _db.PurchaseInvoices
             .Include(i => i.Supplier)
-            .Include(i => i.Items)
+            .Include(i => i.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Category)
+            .Include(i => i.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Brand)
             .Where(i => i.InvoiceDate >= from && i.InvoiceDate <= to);
 
         if (supplierId.HasValue) q = q.Where(i => i.SupplierId == supplierId.Value);
+
+        if (categoryId.HasValue && categoryId > 0)
+        {
+            var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
+            q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && categoryIds.Contains(it.Product.CategoryId.Value)));
+        }
+
+        if (brandId.HasValue && brandId > 0)
+        {
+            var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
+            q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.BrandId.HasValue && brandIds.Contains(it.Product.BrandId.Value)));
+        }
+
+        if (!string.IsNullOrEmpty(color))
+            q = q.Where(i => i.Items.Any(it => it.ProductVariant != null && (it.ProductVariant.Color == color || it.ProductVariant.ColorAr == color) || (it.Product != null && it.Product.Variants.Any(v => v.Color == color || v.ColorAr == color))));
+
+        if (!string.IsNullOrEmpty(size))
+            q = q.Where(i => i.Items.Any(it => it.ProductVariant != null && it.ProductVariant.Size == size || (it.Product != null && it.Product.Variants.Any(v => v.Size == size))));
 
         var invoices = await q.OrderByDescending(i => i.InvoiceDate).ToListAsync();
 
@@ -637,21 +685,45 @@ public class OperationalReportsController : ControllerBase
     // ══════════════════════════════════════════════════════
     [HttpGet("sales-returns")]
     public async Task<IActionResult> SalesReturns(
-        [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate   = null,
-        [FromQuery] bool      excel    = false)
+        [FromQuery] DateTime? fromDate   = null,
+        [FromQuery] DateTime? toDate     = null,
+        [FromQuery] int?      categoryId = null,
+        [FromQuery] int?      brandId    = null,
+        [FromQuery] string?   color      = null,
+        [FromQuery] string?   size       = null,
+        [FromQuery] bool      excel      = false)
     {
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         // Get all SalesReturn journal entries
-        var returns = await _db.JournalEntries
+        var returnsQ = _db.JournalEntries
             .Include(j => j.Lines)
             .Include(j => j.Order).ThenInclude(o => o!.Customer)
+            .Include(j => j.Order).ThenInclude(o => o!.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Category)
+            .Include(j => j.Order).ThenInclude(o => o!.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Brand)
             .Where(j => j.Type == JournalEntryType.SalesReturn 
-                     && j.EntryDate >= from && j.EntryDate <= to)
-            .OrderByDescending(j => j.EntryDate)
-            .ToListAsync();
+                     && j.EntryDate >= from && j.EntryDate <= to);
+
+        if (categoryId.HasValue && categoryId > 0)
+        {
+            var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
+            returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && categoryIds.Contains(it.Product.CategoryId.Value)));
+        }
+
+        if (brandId.HasValue && brandId > 0)
+        {
+            var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
+            returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Product != null && it.Product.BrandId.HasValue && brandIds.Contains(it.Product.BrandId.Value)));
+        }
+
+        if (!string.IsNullOrEmpty(color))
+            returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Color == color || (it.Product != null && it.Product.Variants.Any(v => v.Color == color || v.ColorAr == color))));
+
+        if (!string.IsNullOrEmpty(size))
+            returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Size == size || (it.Product != null && it.Product.Variants.Any(v => v.Size == size))));
+
+        var returns = await returnsQ.OrderByDescending(j => j.EntryDate).ToListAsync();
 
         var rows = returns.Select(j => new ReturnRow(
             j.Reference ?? j.EntryNumber, j.EntryDate,
@@ -677,9 +749,13 @@ public class OperationalReportsController : ControllerBase
     // ══════════════════════════════════════════════════════
     [HttpGet("purchase-returns")]
     public async Task<IActionResult> PurchaseReturns(
-        [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate   = null,
-        [FromQuery] bool      excel    = false)
+        [FromQuery] DateTime? fromDate   = null,
+        [FromQuery] DateTime? toDate     = null,
+        [FromQuery] int?      categoryId = null,
+        [FromQuery] int?      brandId    = null,
+        [FromQuery] string?   color      = null,
+        [FromQuery] string?   size       = null,
+        [FromQuery] bool      excel      = false)
     {
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
@@ -799,11 +875,15 @@ public class OperationalReportsController : ControllerBase
     // ══════════════════════════════════════════════════════
     [HttpGet("product-movement")]
     public async Task<IActionResult> ProductMovement(
-        [FromQuery] int?      productId = null,
-        [FromQuery] string?   search    = null,
-        [FromQuery] DateTime? fromDate  = null,
-        [FromQuery] DateTime? toDate    = null,
-        [FromQuery] bool      excel     = false)
+        [FromQuery] int?      productId  = null,
+        [FromQuery] string?   search     = null,
+        [FromQuery] int?      categoryId = null,
+        [FromQuery] int?      brandId    = null,
+        [FromQuery] string?   color      = null,
+        [FromQuery] string?   size       = null,
+        [FromQuery] DateTime? fromDate   = null,
+        [FromQuery] DateTime? toDate     = null,
+        [FromQuery] bool      excel      = false)
     {
         try
         {
@@ -840,6 +920,24 @@ public class OperationalReportsController : ControllerBase
                 .Where(m => m.CreatedAt >= from && m.CreatedAt <= to);
 
             if (productId > 0) movementsQuery = movementsQuery.Where(m => m.ProductId == productId);
+
+            if (categoryId.HasValue && categoryId > 0)
+            {
+                var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
+                movementsQuery = movementsQuery.Where(m => m.Product != null && m.Product.CategoryId.HasValue && categoryIds.Contains(m.Product.CategoryId.Value));
+            }
+
+            if (brandId.HasValue && brandId > 0)
+            {
+                var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
+                movementsQuery = movementsQuery.Where(m => m.Product != null && m.Product.BrandId.HasValue && brandIds.Contains(m.Product.BrandId.Value));
+            }
+
+            if (!string.IsNullOrEmpty(color))
+                movementsQuery = movementsQuery.Where(m => (m.ProductVariant != null && (m.ProductVariant.Color == color || m.ProductVariant.ColorAr == color)) || (m.Product != null && m.Product.Variants.Any(v => v.Color == color || v.ColorAr == color)));
+
+            if (!string.IsNullOrEmpty(size))
+                movementsQuery = movementsQuery.Where(m => (m.ProductVariant != null && m.ProductVariant.Size == size) || (m.Product != null && m.Product.Variants.Any(v => v.Size == size)));
 
             var dbMovements = await movementsQuery
                 .OrderBy(m => m.CreatedAt)
