@@ -899,7 +899,7 @@ public class AccountingService : IAccountingService
 
     public async Task<decimal> GetAccountBalanceAsync(string code)
     {
-        var (accountId, _) = await GetAccountIdAsync(code);
+        var (accountId, _, _) = await GetAccountIdAsync(code);
         var balance = await _db.JournalLines
             .Where(l => l.AccountId == accountId)
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
@@ -913,7 +913,7 @@ public class AccountingService : IAccountingService
     /// </summary>
     public async Task<decimal> GetTodayDrawerBalanceAsync(string cashAccountCode)
     {
-        var (accountId, _) = await GetAccountIdAsync(cashAccountCode);
+        var (accountId, _, _) = await GetAccountIdAsync(cashAccountCode);
         var todayStart = TimeHelper.GetEgyptTime().Date; // منتصف الليل اليوم (بالتوقيت المحلي)
 
         var balance = await _db.JournalLines
@@ -936,52 +936,71 @@ public class AccountingService : IAccountingService
         };
 
     /// يجيب Id الحساب من الكود أو Id
-    private async Task<(int Id, bool ExactMatch)> GetAccountIdAsync(string input)
+    private async Task<(int Id, bool ExactMatch, string? ErrorNote)> GetAccountIdAsync(string input)
     {
+        var cleanInput = input.Trim().ToLower();
+
         // 1. Explicit ID Resolution
-        if (input.StartsWith("ID:"))
+        if (cleanInput.StartsWith("id:"))
         {
-            if (int.TryParse(input.Substring(3), out var exactId) && exactId > 0)
+            if (int.TryParse(cleanInput.Substring(3), out var exactId) && exactId > 0)
             {
-                var acctById = await _db.Accounts.Where(a => a.Id == exactId && a.IsActive).Select(a => new { a.Id }).FirstOrDefaultAsync();
-                if (acctById != null) return (acctById.Id, true);
+                var acctById = await _db.Accounts.Where(a => a.Id == exactId).Select(a => new { a.Id, a.IsActive }).FirstOrDefaultAsync();
+                if (acctById != null)
+                {
+                    if (!acctById.IsActive) return (acctById.Id, false, $"الكود {input} موجود ولكنه غير نشط");
+                    return (acctById.Id, true, null);
+                }
             }
         }
         else
         {
-            var cleanInput = input.Trim().ToLower();
-
-            // 2. Resolve by Account Code using LIKE for safety then exact match in memory
+            // 2. Resolve by Account Code (Ignoring Active status first to provide exact diagnosis)
             var acctByCodeList = await _db.Accounts
-                .Where(a => EF.Functions.Like(a.Code, $"%{cleanInput}%") && a.IsActive)
-                .Select(a => new { a.Id, a.Code })
+                .Where(a => EF.Functions.Like(a.Code, $"%{cleanInput}%"))
+                .Select(a => new { a.Id, a.Code, a.IsActive })
                 .ToListAsync();
 
             var exactAcct = acctByCodeList.FirstOrDefault(a => a.Code != null && a.Code.Trim().ToLower() == cleanInput);
-            if (exactAcct != null) return (exactAcct.Id, true);
+            if (exactAcct != null)
+            {
+                if (!exactAcct.IsActive) return (exactAcct.Id, false, $"الكود {input} موجود في شجرة الحسابات ولكنه غير نشط");
+                return (exactAcct.Id, true, null);
+            }
 
-            // 3. Last fallback: Bare ID
-            if (int.TryParse(input, out var id) && id > 0)
+            // 3. Fallback: Check if they accidentally stored the Arabic numeral equivalent
+            string arabicNum = cleanInput.Replace('0', '٠').Replace('1', '١').Replace('2', '٢').Replace('3', '٣').Replace('4', '٤').Replace('5', '٥').Replace('6', '٦').Replace('7', '٧').Replace('8', '٨').Replace('9', '٩');
+            var arabicMatch = acctByCodeList.FirstOrDefault(a => a.Code != null && a.Code.Trim() == arabicNum);
+            if (arabicMatch != null)
+            {
+                if (!arabicMatch.IsActive) return (arabicMatch.Id, false, $"الكود مسجل بأرقام عربية {arabicNum} وغير نشط");
+                return (arabicMatch.Id, true, null); // Gracefully accept the arabic numeral version!
+            }
+
+            // 4. Last fallback: Bare ID
+            if (int.TryParse(cleanInput, out var id) && id > 0)
             {
                 var acctById = await _db.Accounts
-                    .Where(a => a.Id == id && a.IsActive)
-                    .Select(a => new { a.Id })
-                    .FirstOrDefaultAsync();
+                    .Where(a => a.Id == id).Select(a => new { a.Id, a.IsActive }).FirstOrDefaultAsync();
 
-                if (acctById != null) return (acctById.Id, true);
+                if (acctById != null)
+                {
+                     if (!acctById.IsActive) return (acctById.Id, false, $"الكود {input} موجود كـ ID ولكنه غير نشط");
+                     return (acctById.Id, true, null);
+                }
             }
         }
 
-        // 🚨 CRITICAL FALLBACK: Instead of throwing and breaking checkout/pos, return main Cash Account safely
+        // 🚨 CRITICAL FALLBACK
         var fallbackCash = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == CASH_ACCOUNTS && a.IsActive);
         if (fallbackCash != null)
         {
-            return (fallbackCash.Id, false);
+            return (fallbackCash.Id, false, $"الكود {input} غير موجود تماماً في شجرة الحسابات");
         }
 
         // Absolute last resort
         var firstActive = await _db.Accounts.FirstOrDefaultAsync(a => a.IsActive);
-        if (firstActive != null) return (firstActive.Id, false);
+        if (firstActive != null) return (firstActive.Id, false, $"الكود {input} غير موجود وتم التوجيه عشوائياً");
         
         throw new InvalidOperationException($"فشل ذريع: لا توجد أي حسابات نشطة في شجرة الحسابات!");
     }
@@ -1046,8 +1065,8 @@ public class AccountingService : IAccountingService
         foreach (var (code, debit, credit, desc) in lines)
         {
             if (debit == 0 && credit == 0) continue;
-            var (accountId, exactMatch) = await GetAccountIdAsync(code);
-            var finalDesc = exactMatch ? desc : $"{desc} [تنبيه: الكود {code} غير موجود، تم التوجيه للنقدية الافتراضية]";
+            var (accountId, exactMatch, errorNote) = await GetAccountIdAsync(code);
+            var finalDesc = exactMatch ? desc : $"{desc} [تنبيه: {errorNote}]";
             var actualAccount = await _db.Accounts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == accountId);
             var realCode = actualAccount?.Code ?? "";
 
