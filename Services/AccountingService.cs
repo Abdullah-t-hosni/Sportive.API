@@ -256,9 +256,8 @@ public class AccountingService : IAccountingService
         lines.Add((salesReturnAcct, netReturnPrice, 0, $"مرتجع مبيعات (صافي) - {order.OrderNumber}"));
         if (totalVatAmount > 0)
         {
-            const string VAT_PAYABLE = "2221"; 
-            string vatAcct = GetMap(mapDict, "vatPayableAccountID", VAT_PAYABLE);
-            lines.Add((vatAcct, totalVatAmount, 0, $"إلغاء ضريبة مبيعات - {order.OrderNumber}"));
+        string vatAcct = GetMap(mapDict, "vatOutputAccountID", VAT_OUTPUT);
+        lines.Add((vatAcct, totalVatAmount, 0, $"إلغاء ضريبة مبيعات - {order.OrderNumber}"));
         }
 
         // 3. Money Routing (Direct Reversal)
@@ -335,8 +334,7 @@ public class AccountingService : IAccountingService
         lines.Add((salesReturnAcct, totalNetReturn, 0, $"مرتجع جزئي (صافي) - {order.OrderNumber}"));
         if (totalVatReturn > 0)
         {
-            const string VAT_PAYABLE = "2221";
-            string vatAcct = GetMap(mapDict, "vatPayableAccountID", VAT_PAYABLE);
+            string vatAcct = GetMap(mapDict, "vatOutputAccountID", VAT_OUTPUT);
             lines.Add((vatAcct, totalVatReturn, 0, $"إلغاء ضريبة جزئية - {order.OrderNumber}"));
         }
 
@@ -409,10 +407,11 @@ public class AccountingService : IAccountingService
             {
                 var code = await GetMappedCashAccount(m, order.Source, mapDict);
                 string methodAr = m switch {
-                    PaymentMethod.Cash => "نقدي",
-                    PaymentMethod.CreditCard => "فيزا",
-                    PaymentMethod.Vodafone => "فودافون كاش",
-                    PaymentMethod.InstaPay => "انستاباي",
+                    PaymentMethod.Cash => "نقدية الكاشير",
+                    PaymentMethod.Bank => "حوالة بنكية",
+                    PaymentMethod.CreditCard => "فيزا / شبكة",
+                    PaymentMethod.Vodafone => "محفظة كاشير - فودافون",
+                    PaymentMethod.InstaPay => "انستاباي كاشير",
                     _ => m.ToString()
                 };
                 lines.Add((code, v, 0, $"تحصيل ({methodAr}) - {order.OrderNumber}"));
@@ -422,8 +421,16 @@ public class AccountingService : IAccountingService
         else
         {
             var cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+            string methodAr = order.PaymentMethod switch {
+                PaymentMethod.Cash => "نقدية الكاشير",
+                PaymentMethod.Bank => "حوالة بنكية",
+                PaymentMethod.CreditCard => "فيزا / شبكة",
+                PaymentMethod.Vodafone => "محفظة كاشير - فودافون",
+                PaymentMethod.InstaPay => "انستاباي كاشير",
+                _ => order.PaymentMethod.ToString()
+            };
             // القيد: من حساب النقدية/البنك إلى حساب العملاء
-            lines.Add((cashCode,        order.TotalAmount, 0,                $"تحصيل طلب {order.OrderNumber} ({order.PaymentMethod})"));
+            lines.Add((cashCode,        order.TotalAmount, 0,                $"تحصيل طلب {order.OrderNumber} ({methodAr})"));
             lines.Add((receivablesAcct, 0,                order.TotalAmount, $"إغلاق مديونية طلب {order.OrderNumber}"));
         }
 
@@ -601,12 +608,14 @@ public class AccountingService : IAccountingService
     {
         if (await EntryExists(JournalEntryType.PaymentVoucher, payment.PaymentNumber)) return;
 
+        var mapDict = await GetSafeSystemMappingsAsync();
+        string payablesAcct = GetMap(mapDict, "supplierAccountID", PAYABLES);
         var cashCode = GetCashFromAccountName(payment.AccountName);
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>
         {
-            (PAYABLES,  payment.Amount, 0,              $"تسوية مورد - {payment.PaymentNumber}"),
-            (cashCode,  0,              payment.Amount, $"صرف نقدي - {payment.PaymentNumber}"),
+            (payablesAcct,  payment.Amount, 0,              $"تسوية مورد - {payment.PaymentNumber}"),
+            (cashCode,      0,              payment.Amount, $"صرف من {payment.AccountName} - {payment.PaymentNumber}"),
         };
 
         await PostEntry(
@@ -856,12 +865,8 @@ public class AccountingService : IAccountingService
         if (key != null && map.TryGetValue(key.ToLower(), out var mappedId) && mappedId.HasValue)
             return $"ID:{mappedId.Value}";
 
-        // Fallback to main cash account
-        if (map.TryGetValue("cashaccountid", out var mainCashId) && mainCashId.HasValue)
-            return $"ID:{mainCashId.Value}";
-
-        // Ultimate hardcoded fallbacks based on company standard chart of accounts
-        return (method, source) switch
+        // 2. Try method-specific hardcoded constants (Professional Fallback Level)
+        var constantFallback = (method, source) switch
         {
             (PaymentMethod.Vodafone,   OrderSource.POS)     => VODAFONE,
             (PaymentMethod.Vodafone,   OrderSource.Website) => VODAFONE_WEB,
@@ -871,9 +876,17 @@ public class AccountingService : IAccountingService
             (PaymentMethod.CreditCard, _)                   => BANK,
             (PaymentMethod.Cash,       OrderSource.Website) => CASH_WEBSITE,
             (PaymentMethod.Cash,       OrderSource.POS)     => CASH_CASHIER,
-            (_,                        OrderSource.POS)     => CASH_CASHIER,
-            _                                               => CASH_WEBSITE,
+            _                                               => null
         };
+
+        if (constantFallback != null) return constantFallback;
+
+        // 3. Last resort from Settings: Main cash account mapping
+        if (map.TryGetValue("cashaccountid", out var mainCashId) && mainCashId.HasValue)
+            return $"ID:{mainCashId.Value}";
+
+        // 4. Ultimate fallback string
+        return source == OrderSource.POS ? CASH_CASHIER : CASH_WEBSITE;
     }
 
     public async Task<decimal> GetAccountBalanceAsync(string code)
