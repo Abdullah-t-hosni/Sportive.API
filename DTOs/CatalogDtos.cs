@@ -92,10 +92,11 @@ public record ProductSummaryDto(
     [property: JsonPropertyName("reorderLevel")] int ReorderLevel,
     [property: JsonPropertyName("sku")] string SKU,
     [property: JsonPropertyName("hasVariants")] bool HasVariants,
-    [property: JsonPropertyName("hasTax")] bool HasTax,
-    [property: JsonPropertyName("vatRate")] decimal? VatRate,
-    [property: JsonPropertyName("costPrice")] decimal? CostPrice,
-    [property: JsonPropertyName("createdAt")] DateTime CreatedAt,
+    [property: JsonPropertyName("variants")] List<ProductVariantDto>? Variants = null,
+    [property: JsonPropertyName("hasTax")] bool HasTax = true,
+    [property: JsonPropertyName("vatRate")] decimal? VatRate = null,
+    [property: JsonPropertyName("costPrice")] decimal? CostPrice = null,
+    [property: JsonPropertyName("createdAt")] DateTime CreatedAt = default,
     [property: JsonPropertyName("activeDiscountLabel")] string? ActiveDiscountLabel = null
 );
 
