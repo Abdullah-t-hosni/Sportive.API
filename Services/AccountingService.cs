@@ -26,6 +26,8 @@ public interface IAccountingService
     Task<string> GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, int?>? map = null);
     Task<decimal> GetAccountBalanceAsync(string code);
     Task<decimal> GetTodayDrawerBalanceAsync(string cashAccountCode);
+    Task SyncAllOrdersAccountingAsync();
+    Task SyncAllPaymentAccountingAsync();
     Task SyncAllPurchaseAccountingAsync();
     Task SyncAllEntityIdsAsync();
     Task ConsolidateSubAccountsToControlAsync();
@@ -92,10 +94,49 @@ public class AccountingService : IAccountingService
         return await _db.JournalLines.Where(l => l.AccountId == accountId && l.JournalEntry.EntryDate >= todayStart).SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
     }
 
+    public async Task SyncAllOrdersAccountingAsync()
+    {
+        var orders = await _db.Orders
+            .Include(o => o.Customer)
+            .Include(o => o.Items).ThenInclude(i => i.Product)
+            .Include(o => o.Payments)
+            .Where(o => o.Status != OrderStatus.Cancelled)
+            .ToListAsync();
+
+        foreach (var order in orders)
+        {
+            try { await PostSalesOrderAsync(order); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to sync order {Number}", order.OrderNumber); }
+        }
+    }
+
+    public async Task SyncAllPaymentAccountingAsync()
+    {
+        // 1. Receipt Vouchers
+        var receipts = await _db.ReceiptVouchers.Where(v => v.Status == ReceiptVoucherStatus.Posted).ToListAsync();
+        foreach (var r in receipts)
+        {
+            try { await PostReceiptVoucherAsync(r, r.OrderId); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to sync receipt {Number}", r.VoucherNumber); }
+        }
+
+        // 2. Payment Vouchers
+        var payments = await _db.PaymentVouchers.Where(v => v.Status == PaymentVoucherStatus.Posted).ToListAsync();
+        foreach (var p in payments)
+        {
+            try { await PostPaymentVoucherAsync(p); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to sync payment {Number}", p.VoucherNumber); }
+        }
+    }
+
     public async Task SyncAllPurchaseAccountingAsync()
     {
         var invoices = await _db.PurchaseInvoices.Include(i => i.Supplier).Where(i => i.Status != PurchaseInvoiceStatus.Cancelled && i.Status != PurchaseInvoiceStatus.Draft).ToListAsync();
-        foreach (var inv in invoices) await PostPurchaseInvoiceAsync(inv);
+        foreach (var inv in invoices)
+        {
+            try { await PostPurchaseInvoiceAsync(inv); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to sync purchase {Number}", inv.InvoiceNumber); }
+        }
     }
 
     public async Task SyncAllEntityIdsAsync()

@@ -238,7 +238,30 @@ public class DataMaintenanceController : ControllerBase
             return Ok(new { success = true, message = $"تم العثور على {dupCodes.Count} كود مكرر. يرجى استخدام Purge Deleted أولاً." });
         } catch (Exception ex) { return BadRequest(new { success = false, message = ex.Message }); }
     }
+    [HttpPost("sync-order-accounting")]
+    public async Task<IActionResult> SyncOrderAccounting([FromServices] IAccountingService accounting)
+    {
+        try {
+            await accounting.SyncAllOrdersAccountingAsync();
+            return Ok(new { success = true, message = "تمت إعادة توليد كافة القيود المحاسبية للمبيعات بنجاح." });
+        } catch (Exception ex) {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
+    [HttpPost("sync-payment-accounting")]
+    public async Task<IActionResult> SyncPaymentAccounting([FromServices] IAccountingService accounting)
+    {
+        try {
+            await accounting.SyncAllPaymentAccountingAsync();
+            return Ok(new { success = true, message = "تمت إعادة توليد كافة قيود المقبوضات والمدفوعات بنجاح." });
+        } catch (Exception ex) {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
     [HttpPost("sync-purchase-journal-entries")]
+
     public async Task<IActionResult> SyncPurchaseJournalEntries()
     {
         try

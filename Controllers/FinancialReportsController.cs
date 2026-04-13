@@ -42,25 +42,28 @@ public class FinancialReportsController : ControllerBase
                      && l.JournalEntry.EntryDate < from)
             .ToListAsync();
 
+        // 3. التحويل لقاموس للسرعة القصوى
+        var periodDrMap = lines.GroupBy(l => l.AccountId).ToDictionary(g => g.Key, g => g.Sum(l => l.Debit));
+        var periodCrMap = lines.GroupBy(l => l.AccountId).ToDictionary(g => g.Key, g => g.Sum(l => l.Credit));
+        
+        var openDrMap = openingLines.GroupBy(l => l.AccountId).ToDictionary(g => g.Key, g => g.Sum(l => l.Debit));
+        var openCrMap = openingLines.GroupBy(l => l.AccountId).ToDictionary(g => g.Key, g => g.Sum(l => l.Credit));
+
         return accounts.Select(a =>
         {
-            var periodDr = lines.Where(l => l.AccountId == a.Id).Sum(l => l.Debit);
-            var periodCr = lines.Where(l => l.AccountId == a.Id).Sum(l => l.Credit);
+            var periodDr = periodDrMap.GetValueOrDefault(a.Id, 0);
+            var periodCr = periodCrMap.GetValueOrDefault(a.Id, 0);
 
-            var openDr = openingLines.Where(l => l.AccountId == a.Id).Sum(l => l.Debit)
+            var openDr = openDrMap.GetValueOrDefault(a.Id, 0)
                        + (a.Nature == AccountNature.Debit  ? a.OpeningBalance : 0);
-            var openCr = openingLines.Where(l => l.AccountId == a.Id).Sum(l => l.Credit)
+            var openCr = openCrMap.GetValueOrDefault(a.Id, 0)
                        + (a.Nature == AccountNature.Credit ? a.OpeningBalance : 0);
 
-            var openBal = a.Nature == AccountNature.Debit
-                ? openDr - openCr
-                : openCr - openDr;
+            var openBal = a.Nature == AccountNature.Debit ? openDr - openCr : openCr - openDr;
 
             var closingDr = openDr + periodDr;
             var closingCr = openCr + periodCr;
-            var closingBal = a.Nature == AccountNature.Debit
-                ? closingDr - closingCr
-                : closingCr - closingDr;
+            var closingBal = a.Nature == AccountNature.Debit ? closingDr - closingCr : closingCr - closingDr;
 
             return new AccountBalance
             {
