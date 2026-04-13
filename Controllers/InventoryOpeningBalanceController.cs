@@ -8,6 +8,8 @@ using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Utils;
 using System.Security.Claims;
+using ClosedXML.Excel;
+using System.IO;
 
 namespace Sportive.API.Controllers;
 
@@ -142,6 +144,106 @@ public class InventoryOpeningBalanceController : ControllerBase
         await PostJournalAsync(ob);
 
         return CreatedAtAction(nameof(GetById), new { id = ob.Id }, new { id = ob.Id, reference = ob.Reference });
+    }
+
+    [HttpGet("{id}/excel")]
+    public async Task<IActionResult> ExportToExcel(int id)
+    {
+        var ob = await _db.InventoryOpeningBalances
+            .Include(x => x.Items).ThenInclude(i => i.Product)
+            .Include(x => x.Items).ThenInclude(i => i.ProductVariant)
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        if (ob == null) return NotFound();
+
+        using (var workbook = new ClosedXML.Excel.XLWorkbook())
+        {
+            var sheet = workbook.Worksheets.Add("Opening Balance");
+            sheet.RightToLeft = true;
+
+            // Header Info
+            sheet.Cell(1, 1).Value = "مرجع الرصيد:";
+            sheet.Cell(1, 2).Value = ob.Reference;
+            sheet.Cell(2, 1).Value = "التاريخ:";
+            sheet.Cell(2, 2).Value = ob.Date.ToShortDateString();
+            sheet.Cell(3, 1).Value = "الإجمالي:";
+            sheet.Cell(3, 2).Value = ob.TotalValue;
+            sheet.Cell(3, 2).Style.NumberFormat.Format = "#,##0.00";
+
+            // Items Table
+            var tableRange = sheet.Range(5, 1, 5, 6);
+            sheet.Cell(5, 1).Value = "الصنف";
+            sheet.Cell(5, 2).Value = "باركود / SKU";
+            sheet.Cell(5, 3).Value = "المقاس/اللون";
+            sheet.Cell(5, 4).Value = "الكمية";
+            sheet.Cell(5, 5).Value = "التكلفة";
+            sheet.Cell(5, 6).Value = "الإجمالي";
+            sheet.Range(5, 1, 5, 6).Style.Font.Bold = true;
+            sheet.Range(5, 1, 5, 6).Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.LightGray;
+
+            int row = 6;
+            foreach (var item in ob.Items)
+            {
+                sheet.Cell(row, 1).Value = item.Product?.NameAr;
+                sheet.Cell(row, 2).Value = item.ProductVariant != null ? item.ProductVariant.SKU : item.Product?.SKU;
+                sheet.Cell(row, 3).Value = $"{item.ProductVariant?.Size} {item.ProductVariant?.ColorAr}".Trim();
+                sheet.Cell(row, 4).Value = item.Quantity;
+                sheet.Cell(row, 5).Value = item.CostPrice;
+                sheet.Cell(row, 6).Value = item.TotalCost;
+                row++;
+            }
+
+            sheet.Columns().AdjustToContents();
+
+            using (var stream = new System.IO.MemoryStream())
+            {
+                workbook.SaveAs(stream);
+                return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"OB-{ob.Reference}.xlsx");
+            }
+        }
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var ob = await _db.InventoryOpeningBalances
+            .Include(x => x.Items)
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        if (ob == null) return NotFound();
+
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        // 1. Reverse Inventory Movements
+        foreach (var item in ob.Items)
+        {
+            if (item.ProductId.HasValue)
+            {
+                await _inventory.LogMovementAsync(
+                    InventoryMovementType.Adjustment, // Using Adjustment to reverse
+                    -item.Quantity, 
+                    item.ProductId, 
+                    item.ProductVariantId, 
+                    ob.Reference, 
+                    $"إلغاء رصيد افتتاحي - {ob.Reference}", 
+                    userId,
+                    item.CostPrice
+                );
+            }
+        }
+
+        // 2. Void/Delete Journal Entry
+        var journal = await _db.JournalEntries.FirstOrDefaultAsync(j => j.Reference == ob.Reference);
+        if (journal != null)
+        {
+            _db.JournalEntries.Remove(journal); // Simplified: Hard delete the opening journal
+        }
+
+        // 3. Remove Opening Balance record
+        _db.InventoryOpeningBalances.Remove(ob);
+        await _db.SaveChangesAsync();
+
+        return NoContent();
     }
 
     private async Task PostJournalAsync(InventoryOpeningBalance ob)
