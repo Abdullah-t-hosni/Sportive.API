@@ -42,16 +42,17 @@ public class AccountingService : IAccountingService
     private readonly ILogger<AccountingService> _logger;
     private static readonly ConcurrentDictionary<string, bool> _activePostings = new();
 
-    // ── كودات الحسابات الثابتة من شجرة حساباتك ──────────
+    // ── كودات الحسابات الثابتة من شجرة حساباتك المحدثة ────────
     // النقدية والصناديق
     private const string CASH_CASHIER    = "110101"; // نقدية الكاشير
     private const string CASH_WEBSITE    = "110102"; // نقدية الموقع (كاش عند الاستلام)
     private const string CASH_ACCOUNTS   = "110103"; // نقدية الحسابات
-    private const string BANK            = "110201"; // حساب البنك
-    private const string VODAFONE        = "110701"; // محفظة فودافون كاش
-    private const string INSTAPAY        = "110703"; // انستاباي
-    private const string VODAFONE_WEB    = "110702"; // فودافون - الموقع
-    private const string INSTAPAY_WEB    = "110704"; // انستاباي - الموقع
+    private const string ROUNDING_DIFF    = "110104"; // العجز والزيادة (فروقات التقريب)
+    private const string BANK            = "110202"; // شبكات تحت التحصيل (البنك / الفيزا)
+    private const string VODAFONE        = "110701"; // محفظة فودافون كاش الكاشير
+    private const string INSTAPAY        = "110703"; // انستاباي الكاشير
+    private const string VODAFONE_WEB    = "110702"; // محفظة فودافون كاش (الموقع)
+    private const string INSTAPAY_WEB    = "110704"; // انستاباي (الموقع)
     // العملاء والموردين
     private const string RECEIVABLES     = "1103";   // العملاء
     private const string PAYABLES        = "2101";   // الموردين
@@ -60,8 +61,7 @@ public class AccountingService : IAccountingService
     private const string SALES_REVENUE   = "4101";   // إيرادات المبيعات
     private const string SALES_RETURN    = "4102";   // مرتجع المبيعات
     private const string SALES_DISCOUNT  = "410101"; // الخصم الممنوح
-    private const string DELIVERY_GROUP   = "4103";   // حساب التوصيل (رئيسي)
-    private const string DELIVERY_REVENUE = "410301"; // إيراد خدمات توصيل
+    private const string DELIVERY_REVENUE = "420101"; // إيراد خدمة التوصيل
     private const string COGS            = "51101";  // تكلفة البضاعة المباعة
     private const string PURCHASES_NET   = "511";    // صافي المشتريات
     private const string PURCHASE_DISC   = "420102"; // خصم مكتسب (المشتريات)
@@ -846,9 +846,11 @@ public class AccountingService : IAccountingService
         if (map == null)
         {
             var mappings = await _db.AccountSystemMappings.ToListAsync();
-            map = mappings.ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
+            // Use GroupBy to avoid duplicate key exceptions if the DB contains duplicates
+            map = mappings.GroupBy(m => m.Key.ToLower()).ToDictionary(g => g.Key, g => g.First().AccountId);
         }
 
+        // 1. Check Specific Mappings from Settings
         string? key = (method, source) switch
         {
             (PaymentMethod.Vodafone, OrderSource.POS)     => "posVodafoneAccountID",
@@ -857,6 +859,8 @@ public class AccountingService : IAccountingService
             (PaymentMethod.InstaPay, OrderSource.Website) => "webInstapayAccountID",
             (PaymentMethod.CreditCard, OrderSource.POS)   => "posBankAccountID",
             (PaymentMethod.CreditCard, OrderSource.Website) => "webBankAccountID",
+            (PaymentMethod.Bank, OrderSource.POS)         => "posBankAccountID",
+            (PaymentMethod.Bank, OrderSource.Website)     => "webBankAccountID",
             (PaymentMethod.Cash, OrderSource.POS)         => "posCashAccountID",
             (PaymentMethod.Cash, OrderSource.Website)     => "webCashAccountID",
             _ => null
@@ -865,8 +869,8 @@ public class AccountingService : IAccountingService
         if (key != null && map.TryGetValue(key.ToLower(), out var mappedId) && mappedId.HasValue)
             return $"ID:{mappedId.Value}";
 
-        // 2. Try method-specific hardcoded constants (Professional Fallback Level)
-        var constantFallback = (method, source) switch
+        // 2. Try method-specific professional constants (ONLY IF THEY EXIST IN DB)
+        var constantCode = (method, source) switch
         {
             (PaymentMethod.Vodafone,   OrderSource.POS)     => VODAFONE,
             (PaymentMethod.Vodafone,   OrderSource.Website) => VODAFONE_WEB,
@@ -879,13 +883,17 @@ public class AccountingService : IAccountingService
             _                                               => null
         };
 
-        if (constantFallback != null) return constantFallback;
+        if (constantCode != null)
+        {
+            var exists = await _db.Accounts.AnyAsync(a => a.Code == constantCode && a.IsActive);
+            if (exists) return constantCode;
+        }
 
-        // 3. Last resort from Settings: Main cash account mapping
+        // 3. Fallback to the generic main cash account from settings
         if (map.TryGetValue("cashaccountid", out var mainCashId) && mainCashId.HasValue)
             return $"ID:{mainCashId.Value}";
 
-        // 4. Ultimate fallback string
+        // 4. Extreme hardcoded fallback (Try the code directly, if this fails, the whole chain fails)
         return source == OrderSource.POS ? CASH_CASHIER : CASH_WEBSITE;
     }
 
