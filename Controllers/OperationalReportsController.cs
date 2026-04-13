@@ -360,10 +360,12 @@ public class OperationalReportsController : ControllerBase
     // ══════════════════════════════════════════════════════
     [HttpGet("sales")]
     public async Task<IActionResult> SalesReport(
-        [FromQuery] DateTime?    fromDate = null,
-        [FromQuery] DateTime?    toDate   = null,
-        [FromQuery] OrderSource? source   = null,
-        [FromQuery] bool         excel    = false)
+        [FromQuery] DateTime?    fromDate   = null,
+        [FromQuery] DateTime?    toDate     = null,
+        [FromQuery] OrderSource? source     = null,
+        [FromQuery] int?         categoryId = null,
+        [FromQuery] int?         brandId    = null,
+        [FromQuery] bool         excel      = false)
     {
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
@@ -371,10 +373,25 @@ public class OperationalReportsController : ControllerBase
         var q = _db.Orders
             .Include(o => o.Customer)
             .Include(o => o.Items)
+                .ThenInclude(i => i.Product)
+                    .ThenInclude(p => p!.Category)
+            .Include(o => o.Items)
+                .ThenInclude(i => i.Product)
+                    .ThenInclude(p => p!.Brand)
             .Where(o => o.Status != OrderStatus.Cancelled
                      && o.CreatedAt >= from && o.CreatedAt <= to);
 
         if (source.HasValue) q = q.Where(o => o.Source == source.Value);
+
+        if (categoryId.HasValue)
+        {
+            q = q.Where(o => o.Items.Any(i => i.Product != null && (i.Product.CategoryId == categoryId.Value || i.Product.Category.ParentId == categoryId.Value)));
+        }
+
+        if (brandId.HasValue)
+        {
+            q = q.Where(o => o.Items.Any(i => i.Product != null && (i.Product.BrandId == brandId.Value || i.Product.Brand.ParentId == brandId.Value)));
+        }
 
         var orders = await q.OrderByDescending(o => o.CreatedAt).ToListAsync();
         
