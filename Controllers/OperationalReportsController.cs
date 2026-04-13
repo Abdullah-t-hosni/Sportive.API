@@ -385,12 +385,12 @@ public class OperationalReportsController : ControllerBase
 
         if (categoryId.HasValue)
         {
-            q = q.Where(o => o.Items.Any(i => i.Product != null && (i.Product.CategoryId == categoryId.Value || i.Product.Category.ParentId == categoryId.Value)));
+            q = q.Where(o => o.Items.Any(i => i.Product != null && (i.Product.CategoryId == categoryId.Value || (i.Product.Category != null && i.Product.Category.ParentId == categoryId.Value))));
         }
 
         if (brandId.HasValue)
         {
-            q = q.Where(o => o.Items.Any(i => i.Product != null && (i.Product.BrandId == brandId.Value || i.Product.Brand.ParentId == brandId.Value)));
+            q = q.Where(o => o.Items.Any(i => i.Product != null && (i.Product.BrandId == brandId.Value || (i.Product.Brand != null && i.Product.Brand.ParentId == brandId.Value))));
         }
 
         var orders = await q.OrderByDescending(o => o.CreatedAt).ToListAsync();

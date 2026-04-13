@@ -185,7 +185,7 @@ public class InventoryOpeningBalanceController : ControllerBase
             foreach (var item in ob.Items)
             {
                 sheet.Cell(row, 1).Value = item.Product?.NameAr;
-                sheet.Cell(row, 2).Value = item.ProductVariant != null ? item.ProductVariant.SKU : item.Product?.SKU;
+                sheet.Cell(row, 2).Value = item.Product?.SKU;
                 sheet.Cell(row, 3).Value = $"{item.ProductVariant?.Size} {item.ProductVariant?.ColorAr}".Trim();
                 sheet.Cell(row, 4).Value = item.Quantity;
                 sheet.Cell(row, 5).Value = item.CostPrice;
