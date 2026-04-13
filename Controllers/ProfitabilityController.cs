@@ -37,7 +37,7 @@ public class ProfitabilityController : ControllerBase
         var startRange = from.Date;
         var endRange   = to.Date.AddDays(1).AddTicks(-1);
 
-        // ── جلب كل المبيعات في الفترة ─────────────────
+        // ── جلب كل المبيعات في الفترة (باستثناء الملغي فقط) ──────────
         var itemsQ = _db.OrderItems
             .Include(i => i.Order)
             .Include(i => i.Product)
@@ -45,7 +45,6 @@ public class ProfitabilityController : ControllerBase
             .Include(i => i.Product)
                 .ThenInclude(p => p!.Images.Where(img => img.IsMain))
             .Where(i => i.Order.Status != OrderStatus.Cancelled
-                     && i.Order.Status != OrderStatus.Returned
                      && i.Order.CreatedAt >= startRange
                      && i.Order.CreatedAt <= endRange);
 
@@ -54,49 +53,57 @@ public class ProfitabilityController : ControllerBase
 
         var items = await itemsQ.ToListAsync();
 
-        // ── المرتجعات (نخصمها من الإيرادات) ──────────
-        var returnedItems = await _db.OrderItems
-            .Include(i => i.Order)
-            .Where(i => i.Order.Status == OrderStatus.Returned
-                     && i.Order.CreatedAt >= from
-                     && i.Order.CreatedAt <= to)
-            .ToListAsync();
-
         // ── تجميع حسب المنتج ──────────────────────────
         var grouped = items
-            .Where(i => i.ProductId.HasValue) // ✅ Ensure ProductId is not null
-            .GroupBy(i => i.ProductId!.Value) // Now we have int
+            .Where(i => i.ProductId.HasValue)
+            .GroupBy(i => i.ProductId!.Value)
             .Select(g =>
             {
-                var firstItem    = g.First();
-                var product      = firstItem.Product;
-                if (product == null) return null; // Should be filtered but safety first
+                var firstItem = g.First();
+                var product   = firstItem.Product;
+                if (product == null) return null;
 
-                var mainImage    = product.Images.FirstOrDefault()?.ImageUrl;
-                var unitsSold    = g.Sum(i => i.Quantity);
-                var grossRevenue = g.Sum(i => i.TotalPrice);
+                var mainImage = product.Images.FirstOrDefault()?.ImageUrl;
+                
+                // في نظام "فاتورة المبيعات"، نحتاج لحساب الصافي الحقيقي لكل سطر:
+                // 1. الكمية الصافية (المباع - المرتجع)
+                var netUnits = g.Sum(i => i.Quantity - i.ReturnedQuantity);
+                if (netUnits < 0) netUnits = 0; // حماية منطقية
 
-                // المرتجعات لهذا المنتج
-                var returnedUnits   = returnedItems.Where(r => r.ProductId == g.Key).Sum(r => r.Quantity);
-                var returnedRevenue = returnedItems.Where(r => r.ProductId == g.Key).Sum(r => r.TotalPrice);
+                // 2. حساب الإيراد الصافي لكل سطر مع توزيع خصم الفاتورة (Discount Pro-rating)
+                decimal totalNetRevenue = 0;
+                foreach (var i in g)
+                {
+                    // الكمية المباعة فعلياً في هذا السطر بعد المرتجع
+                    var lineNetQty = (i.Quantity - i.ReturnedQuantity);
+                    if (lineNetQty <= 0) continue;
 
-                // صافي المبيعات
-                var netUnits   = unitsSold - returnedUnits;
-                var netRevenue = grossRevenue - returnedRevenue;
+                    // السعر قبل خصم الفاتورة (لكن بعد خصم السطر إن وجد)
+                    var lineSubtotal = i.TotalPrice;
+                    
+                    // توزيع خصم رأس الفاتورة نسبياً
+                    decimal lineOrderDiscountShare = 0;
+                    if (i.Order.SubTotal > 0 && i.Order.DiscountAmount > 0)
+                    {
+                        lineOrderDiscountShare = (lineSubtotal / i.Order.SubTotal) * i.Order.DiscountAmount;
+                    }
 
-                // التكلفة
-                var costPrice  = product.CostPrice;
-                var totalCost  = costPrice.HasValue ? costPrice.Value * netUnits : (decimal?)null;
+                    // صافي الإيراد من هذا السطر لهذه الكمية
+                    // ملاحظة: i.TotalPrice هي إجمالي السطر (UnitPrice * Qty)
+                    // نأخذ حصة الكمية المتبقية فقط من السعر والخصم
+                    decimal qtyFactor = (decimal)lineNetQty / i.Quantity;
+                    totalNetRevenue += (lineSubtotal * qtyFactor) - (lineOrderDiscountShare * qtyFactor);
+                }
 
-                // هامش الربح
-                var grossProfit    = totalCost.HasValue ? netRevenue - totalCost.Value : (decimal?)null;
-                var marginPct      = (totalCost.HasValue && netRevenue > 0)
-                    ? Math.Round((grossProfit!.Value / netRevenue) * 100, 1)
+                // التكلفة الصافية
+                var costPrice = product.CostPrice;
+                var totalCost = costPrice.HasValue ? costPrice.Value * netUnits : (decimal?)null;
+
+                // الربح والهامش
+                var grossProfit = totalCost.HasValue ? totalNetRevenue - totalCost.Value : (decimal?)null;
+                var marginPct   = (totalCost.HasValue && totalNetRevenue > 0)
+                    ? Math.Round((grossProfit!.Value / totalNetRevenue) * 100, 1)
                     : (decimal?)null;
-
-                // متوسط سعر البيع الفعلي
-                var avgSellingPrice = netUnits > 0
-                    ? Math.Round(netRevenue / netUnits, 2) : 0;
 
                 return new ProductProfitRow(
                     ProductId:        g.Key,
@@ -108,13 +115,13 @@ public class ProfitabilityController : ControllerBase
                     ListPrice:        product.Price,
                     DiscountPrice:    product.DiscountPrice,
                     CostPrice:        costPrice,
-                    AvgSellingPrice:  avgSellingPrice,
-                    UnitsSold:        unitsSold,
-                    ReturnedUnits:    returnedUnits,
+                    AvgSellingPrice:  netUnits > 0 ? Math.Round(totalNetRevenue / netUnits, 2) : 0,
+                    UnitsSold:        g.Sum(i => i.Quantity),
+                    ReturnedUnits:    g.Sum(i => i.ReturnedQuantity),
                     NetUnits:         netUnits,
-                    GrossRevenue:     grossRevenue,
-                    ReturnedRevenue:  returnedRevenue,
-                    NetRevenue:       netRevenue,
+                    GrossRevenue:     g.Sum(i => i.TotalPrice),
+                    ReturnedRevenue:  0, // تم دمجها في الحسابات الصافية
+                    NetRevenue:       totalNetRevenue,
                     TotalCost:        totalCost,
                     GrossProfit:      grossProfit,
                     MarginPct:        marginPct,
@@ -125,17 +132,12 @@ public class ProfitabilityController : ControllerBase
             .Cast<ProductProfitRow>()
             .ToList();
 
-        // فلتر المنتجات اللي عندها cost
-        if (hasCost)
-            grouped = grouped.Where(r => r.CostPrice.HasValue).ToList();
-
         // ترتيب
         grouped = sortBy switch
         {
             "margin"  => grouped.OrderByDescending(r => r.MarginPct ?? -999).ToList(),
             "units"   => grouped.OrderByDescending(r => r.NetUnits).ToList(),
             "profit"  => grouped.OrderByDescending(r => r.GrossProfit ?? -999).ToList(),
-            "returns" => grouped.OrderByDescending(r => r.ReturnedUnits).ToList(),
             _         => grouped.OrderByDescending(r => r.NetRevenue).ToList(),
         };
 
@@ -182,17 +184,37 @@ public class ProfitabilityController : ControllerBase
             .Include(i => i.Order)
             .Include(i => i.Product)
             .Where(i => i.Order.Status != OrderStatus.Cancelled
-                     && i.Order.Status != OrderStatus.Returned
                      && i.Order.CreatedAt >= from && i.Order.CreatedAt <= to
-                     && i.ProductId.HasValue) // ✅ Removed strict CostPrice check to allow revenue to show
+                     && i.ProductId.HasValue)
             .ToListAsync();
 
-        var totalRevenue = items.Sum(i => i.TotalPrice);
-        var totalCost    = items.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity);
-        var totalProfit  = totalRevenue - totalCost;
-        var margin       = totalRevenue > 0 ? Math.Round(totalProfit / totalRevenue * 100, 1) : 0;
+        decimal totalNetRevenue = 0;
+        decimal totalCost       = 0;
 
-        return Ok(new { totalRevenue, totalCost, totalProfit, marginPct = margin, from, to });
+        foreach (var i in items)
+        {
+            var netQty = i.Quantity - i.ReturnedQuantity;
+            if (netQty <= 0) continue;
+
+            // حصة الصنف من إجمالي السعر قبل خصم الفاتورة (لصافي الكمية)
+            decimal qtyFactor = (decimal)netQty / i.Quantity;
+            decimal lineShareOfSubtotal = i.TotalPrice * qtyFactor;
+
+            // حصة الصنف من خصم الفاتورة (تناسبياً)
+            decimal lineOrderDiscountShare = 0;
+            if (i.Order.SubTotal > 0 && i.Order.DiscountAmount > 0)
+            {
+                lineOrderDiscountShare = (i.TotalPrice / i.Order.SubTotal) * i.Order.DiscountAmount;
+            }
+
+            totalNetRevenue += (lineShareOfSubtotal - (lineOrderDiscountShare * qtyFactor));
+            totalCost       += (i.Product?.CostPrice ?? 0) * netQty;
+        }
+
+        var totalProfit = totalNetRevenue - totalCost;
+        var margin      = totalNetRevenue > 0 ? Math.Round(totalProfit / totalNetRevenue * 100, 1) : 0;
+
+        return Ok(new { totalRevenue = totalNetRevenue, totalCost, totalProfit, marginPct = margin, from, to });
     }
 
     // ══════════════════════════════════════════════════
