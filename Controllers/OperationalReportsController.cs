@@ -259,22 +259,28 @@ public class OperationalReportsController : ControllerBase
 
         foreach (var c in customers)
         {
-            var opening  = (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0);
-            var invoiced = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount);
-            var paid     = allReceipts.Where(r => r.CustomerId == c.Id).Sum(r => r.Amount);
+            var opening = (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0);
+
+            // فقط الطلبات حتى تاريخ asOf
+            var ordersUpToDate = c.Orders
+                .Where(o => o.Status != OrderStatus.Cancelled && o.CreatedAt <= asOf)
+                .ToList();
+
+            // فقط المقبوضات حتى تاريخ asOf
+            var receiptsUpToDate = allReceipts
+                .Where(r => r.CustomerId == c.Id && r.VoucherDate <= asOf)
+                .ToList();
+
+            var invoiced = ordersUpToDate.Sum(o => o.TotalAmount);
+            var paid     = receiptsUpToDate.Sum(r => r.Amount);
             var balance  = opening + invoiced - paid;
             if (balance <= 0) continue;
 
-            // حساب عمر الدين
-            var unpaidOrders = c.Orders
-                .Where(o => o.Status != OrderStatus.Cancelled)
-                .OrderBy(o => o.CreatedAt)
-                .ToList();
-
+            // حساب عمر الدين — توزيع الرصيد على الطلبات حسب أعمارها
             decimal rem = balance;
             decimal c30 = 0, c60 = 0, c90 = 0, c90plus = 0;
 
-            foreach (var o in unpaidOrders)
+            foreach (var o in ordersUpToDate.OrderBy(o => o.CreatedAt))
             {
                 if (rem <= 0) break;
                 var days = (asOf - o.CreatedAt).Days;
@@ -325,33 +331,54 @@ public class OperationalReportsController : ControllerBase
         if (!string.IsNullOrEmpty(search))
             suppliers = suppliers.Where(s => s.Name.Contains(search) || s.Phone.Contains(search)).ToList();
 
-        var rows = suppliers
-            .Where(s => s.Balance > 0)
-            .Select(s =>
+        // حساب رصيد المورد حتى تاريخ asOf بشكل دقيق
+        var rows = new List<SupplierAgingRow>();
+        foreach (var s in suppliers)
+        {
+            // الفواتير حتى تاريخ asOf (غير الملغاة)
+            var invoicesUpToDate = s.Invoices
+                .Where(i => i.Status != PurchaseInvoiceStatus.Cancelled
+                         && i.InvoiceDate <= asOf)
+                .ToList();
+
+            // المدفوعات حتى تاريخ asOf
+            var paymentsUpToDate = s.Payments
+                .Where(p => p.PaymentDate <= asOf)
+                .ToList();
+
+            var totalInvoiced = invoicesUpToDate.Sum(i => i.TotalAmount);
+            var totalPaid     = paymentsUpToDate.Sum(p => p.Amount);
+            var balance       = totalInvoiced - totalPaid;
+
+            if (balance <= 0) continue;
+
+            decimal b = balance;
+            decimal c30 = 0, c60 = 0, c90 = 0, c90p = 0;
+
+            // توزيع الرصيد على الفواتير بحسب عمرها
+            foreach (var inv in invoicesUpToDate
+                .Where(i => i.RemainingAmount > 0 || i.TotalAmount > 0)
+                .OrderBy(i => i.InvoiceDate))
             {
-                decimal b    = s.Balance;
-                decimal c30 = 0, c60 = 0, c90 = 0, c90p = 0;
+                if (b <= 0) break;
+                var days = (asOf - inv.InvoiceDate).Days;
+                // نستخدم المبلغ المتبقي إذا وُجد وإلا الإجمالي
+                var invAmt = inv.RemainingAmount > 0 ? inv.RemainingAmount : inv.TotalAmount;
+                var amt  = Math.Min(b, invAmt);
+                b -= amt;
+                if      (days <= 30) c30  += amt;
+                else if (days <= 60) c60  += amt;
+                else if (days <= 90) c90  += amt;
+                else                 c90p += amt;
+            }
 
-                foreach (var inv in s.Invoices.Where(i => i.RemainingAmount > 0).OrderBy(i => i.InvoiceDate))
-                {
-                    var days = (asOf - inv.InvoiceDate).Days;
-                    var amt  = Math.Min(b, inv.RemainingAmount);
-                    b -= amt;
-                    if (b < 0) break;
-                    if      (days <= 30) c30  += amt;
-                    else if (days <= 60) c60  += amt;
-                    else if (days <= 90) c90  += amt;
-                    else                 c90p += amt;
-                }
+            rows.Add(new SupplierAgingRow(
+                s.Id, s.Name, s.Phone,
+                s.CompanyName ?? "",
+                balance, c30, c60, c90, c90p));
+        }
 
-                return new SupplierAgingRow(
-                    s.Id, s.Name, s.Phone,
-                    s.CompanyName ?? "",
-                    s.Balance, c30, c60, c90, c90p);
-            })
-            .Where(r => r.Total > 0)
-            .OrderByDescending(r => r.Total)
-            .ToList();
+        rows = rows.OrderByDescending(r => r.Total).ToList();
 
         if (excel) return ExcelSupplierAging(rows, asOf);
 

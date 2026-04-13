@@ -461,14 +461,16 @@ public class FinancialReportsController : ControllerBase
         var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        // حسابات النقدية (كل ما يبدأ بـ 11)
+        // حسابات النقدية الحقيقية فقط (الخزينة 1101 والبنك 1102)
+        // نستبعد 1103 (العملاء) لأنها ليست نقدية سائلة مباشرة بالقيد المحاسبي
         var cashAccounts = await _db.Accounts
-            .Where(a => a.IsLeaf && a.Code.StartsWith("11"))
+            .Where(a => a.IsLeaf && (a.Code.StartsWith("1101") || a.Code.StartsWith("1102")))
             .ToListAsync();
 
         var cashIds = cashAccounts.Select(a => a.Id).ToHashSet();
 
-        var lines = await _db.JournalLines
+        // جلب كل الأسطر التي تخص حسابات النقدية في تلك الفترة
+        var cashLines = await _db.JournalLines
             .Include(l => l.JournalEntry)
             .Include(l => l.Account)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
@@ -478,78 +480,82 @@ public class FinancialReportsController : ControllerBase
             .OrderBy(l => l.JournalEntry.EntryDate)
             .ToListAsync();
 
-        // تصنيف: تشغيلي (المبيعات/المشتريات) / استثماري / تمويلي
-        decimal operating  = 0;
-        decimal investing  = 0;
-        decimal financing  = 0;
-        var operatingItems = new List<CashFlowItem>();
-        var investingItems = new List<CashFlowItem>();
-        var financingItems = new List<CashFlowItem>();
+        // لجلب الطرف الآخر من القيد، نحتاج كل سطور القيود المعنية
+        var entryIds = cashLines.Select(l => l.JournalEntryId).Distinct().ToList();
+        var allLines = await _db.JournalLines
+            .Include(l => l.Account)
+            .Where(l => entryIds.Contains(l.JournalEntryId))
+            .ToListAsync();
 
-        foreach (var line in lines)
+        decimal operating = 0, investing = 0, financing = 0;
+        var opItems = new List<CashFlowItem>();
+        var invItems = new List<CashFlowItem>();
+        var finItems = new List<CashFlowItem>();
+
+        foreach (var line in cashLines)
         {
-            var entryType = line.JournalEntry.Type;
-            var amount    = line.Debit - line.Credit; // + = تدفق داخل، - = تدفق خارج
-
-            string displayName = line.Account.NameAr;
-            if (line.Account.Code.StartsWith("1103")) displayName = "إجمالي العملاء";
-            else if (line.Account.Code.StartsWith("2101")) displayName = "إجمالي الموردين";
+            var amount = line.Debit - line.Credit; // + تدفق داخل، - تدفق خارج
+            
+            // البحث عن الطرف الآخر (أكبر سطر في القيد غير سطر النقدية هذا)
+            var others = allLines.Where(l => l.JournalEntryId == line.JournalEntryId && l.Id != line.Id).ToList();
+            var mainOther = others.OrderByDescending(o => Math.Abs(o.Debit - o.Credit)).FirstOrDefault();
+            
+            string otherAccount = mainOther?.Account.NameAr ?? "غير معروف";
+            string otherCode = mainOther?.Account.Code ?? "";
+            var otherType = mainOther?.Account.Type;
 
             var item = new CashFlowItem(
                 line.JournalEntry.EntryDate,
                 line.JournalEntry.EntryNumber,
-                line.JournalEntry.Description ?? "",
-                displayName,
+                line.JournalEntry.Description ?? mainOther?.Description ?? "",
+                otherAccount,
                 amount
             );
 
-            if (entryType == JournalEntryType.SalesInvoice || entryType == JournalEntryType.SalesReturn ||
-                entryType == JournalEntryType.PurchaseInvoice || entryType == JournalEntryType.PurchaseReturn ||
-                entryType == JournalEntryType.ReceiptVoucher || entryType == JournalEntryType.PaymentVoucher ||
-                entryType == JournalEntryType.Manual)
+            // تصنيف آلي بناءً على الطرف الآخر
+            if (otherCode.StartsWith("12")) // أصول ثابتة (Investing)
+            {
+                investing += amount;
+                invItems.Add(item);
+            }
+            else if (otherType == AccountType.Equity || otherCode.StartsWith("22")) // حقوق ملكية أو قروض طويلة الأجل (Financing)
+            {
+                financing += amount;
+                finItems.Add(item);
+            }
+            else // مبيعات، مشتريات، مصاريف، عملاء، موردين (Operating)
             {
                 operating += amount;
-                operatingItems.Add(item);
+                opItems.Add(item);
             }
         }
 
-        // تحسين: تجميع البنود المتشابهة في قائمة التدفقات (مثل العملاء والموردين)
-        var groupedOperating = operatingItems
-            .GroupBy(i => i.Account)
-            .Select(g => new CashFlowItem(
-                g.Max(x => x.Date),
-                "GROUP",
-                g.Count() > 1 ? $"تجميع {g.Key}" : g.First().Description,
-                g.Key,
-                g.Sum(x => x.Amount)
-            ))
-            .OrderByDescending(x => Math.Abs(x.Amount))
-            .ToList();
-
-        // الرصيد الافتتاحي للنقدية
+        // الرصيد الافتتاحي للنقدية (حتى بداية الفترة)
         var openCash = 0m;
         foreach (var ca in cashAccounts)
         {
             var ol = await _db.JournalLines
-                .Include(l => l.JournalEntry)
                 .Where(l => l.AccountId == ca.Id
                          && l.JournalEntry.Status == JournalEntryStatus.Posted
                          && l.JournalEntry.EntryDate < from)
-                .ToListAsync();
-            openCash += ol.Sum(l => l.Debit) - ol.Sum(l => l.Credit) + ca.OpeningBalance;
+                .SumAsync(l => l.Debit - l.Credit);
+            
+            openCash += ol + ca.OpeningBalance;
         }
 
-        var netCashFlow    = operating + investing + financing;
-        var closingBalance = openCash + netCashFlow;
+        var netCashFlow = operating + investing + financing;
+        var closingCash = openCash + netCashFlow;
+
+        if (excel) return ExcelCashFlow(opItems, invItems, finItems, openCash, from, to);
 
         return Ok(new {
             from, to,
             openingCashBalance = openCash,
-            operatingActivities = new { items = groupedOperating, total = operating },
-            investingActivities = new { items = investingItems, total = investing },
-            financingActivities = new { items = financingItems, total = financing },
+            operatingActivities = new { items = opItems, total = operating },
+            investingActivities = new { items = invItems, total = investing },
+            financingActivities = new { items = finItems, total = financing },
             netCashFlow,
-            closingCashBalance = closingBalance,
+            closingCashBalance = closingCash
         });
     }
 
@@ -778,6 +784,55 @@ public class FinancialReportsController : ControllerBase
 
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"account_statement_{acct.Code}_{from:yyyyMMdd}.xlsx");
+    }
+
+    private IActionResult ExcelCashFlow(List<CashFlowItem> op, List<CashFlowItem> inv, List<CashFlowItem> fin, decimal openBal, DateTime from, DateTime to)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("التدفقات النقدية");
+        ws.RightToLeft = true;
+
+        ws.Cell(1,1).Value = $"قائمة التدفقات النقدية — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(1,1).Style.Font.Bold = true; ws.Cell(1,1).Style.Font.FontSize = 13;
+
+        int r = 3;
+        ws.Cell(r, 1).Value = "الرصيد الافتتاحي للنقدية"; 
+        ws.Cell(r, 3).Value = openBal; ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
+        r += 2;
+
+        void AddSection(string title, List<CashFlowItem> items, XLColor color)
+        {
+            ws.Cell(r, 1).Value = title; ws.Cell(r, 1).Style.Font.Bold = true;
+            ws.Cell(r, 1).Style.Fill.BackgroundColor = color;
+            ws.Range(r, 1, r, 3).Merge(); r++;
+            foreach (var item in items)
+            {
+                ws.Cell(r, 1).Value = item.Date.ToString("yyyy-MM-dd");
+                ws.Cell(r, 2).Value = item.Account;
+                ws.Cell(r, 3).Value = item.Amount;
+                ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
+                r++;
+            }
+            ws.Cell(r, 2).Value = $"إجمالي {title}"; ws.Cell(r, 2).Style.Font.Bold = true;
+            ws.Cell(r, 3).Value = items.Sum(x => x.Amount); ws.Cell(r, 3).Style.Font.Bold = true;
+            ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
+            r += 2;
+        }
+
+        AddSection("الأنشطة التشغيلية", op,  XLColor.FromHtml("#e8f5e9"));
+        AddSection("الأنشطة الاستثمارية", inv, XLColor.FromHtml("#fff3e0"));
+        AddSection("الأنشطة التمويلية", fin, XLColor.FromHtml("#e1f5fe"));
+
+        ws.Cell(r, 2).Value = "صافي التدفق النقدي"; ws.Cell(r, 2).Style.Font.Bold = true;
+        ws.Cell(r, 3).Value = op.Sum(x => x.Amount) + inv.Sum(x => x.Amount) + fin.Sum(x => x.Amount);
+        ws.Cell(r, 3).Style.Font.Bold = true; ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
+        r++;
+        ws.Cell(r, 2).Value = "الرصيد الختامي للنقدية"; ws.Cell(r, 2).Style.Font.Bold = true;
+        ws.Cell(r, 3).Value = openBal + op.Sum(x => x.Amount) + inv.Sum(x => x.Amount) + fin.Sum(x => x.Amount);
+        ws.Cell(r, 3).Style.Font.Bold = true; ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
+
+        ws.Columns().AdjustToContents();
+        return ExcelResult(wb, $"cash_flow_{from:yyyyMMdd}.xlsx");
     }
 
     private static FileStreamResult ExcelResult(XLWorkbook wb, string filename)

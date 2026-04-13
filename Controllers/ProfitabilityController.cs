@@ -24,6 +24,7 @@ public class ProfitabilityController : ControllerBase
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
         [FromQuery] int?      categoryId = null,
+        [FromQuery] int?      productId  = null,        // فلتر بمنتج محدد
         [FromQuery] string?   sortBy     = "revenue",  // revenue | margin | units | profit
         [FromQuery] bool      hasCost    = false,       // فقط المنتجات التي لديها CostPrice
         [FromQuery] bool      excel      = false)
@@ -50,6 +51,10 @@ public class ProfitabilityController : ControllerBase
 
         if (categoryId.HasValue)
             itemsQ = itemsQ.Where(i => i.Product != null && i.Product.CategoryId == categoryId.Value);
+
+        // فلتر بمنتج محدد — يُحسّن الأداء بشكل كبير
+        if (productId.HasValue)
+            itemsQ = itemsQ.Where(i => i.ProductId == productId.Value);
 
         var items = await itemsQ.ToListAsync();
 
