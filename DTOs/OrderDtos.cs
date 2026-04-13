@@ -162,7 +162,8 @@ public record UpdateOrderAdminNoteDto(string Note);
 public record PartialReturnDto(
     List<ReturnItemRequest> Items,
     string? Reason,
-    string? Note
+    string? Note,
+    int? RefundAccountId = null
 );
 
 public record ReturnItemRequest(

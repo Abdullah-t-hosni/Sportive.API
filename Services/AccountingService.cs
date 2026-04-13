@@ -21,7 +21,7 @@ public interface IAccountingService
     Task PostPurchaseReturnAsync(PurchaseInvoice invoice);
     Task PostOrderPaymentAsync(Order order);
     Task PostOrderRefundAsync(Order order);
-    Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount);
+    Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null);
     Task PostSupplierPaymentAsync(SupplierPayment payment);
     Task ReverseEntryAsync(int journalEntryId, string reason);
     Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, string? userId);
@@ -268,15 +268,24 @@ public class AccountingService : IAccountingService
             lines.Add((vatAcct, totalVatAmount, 0, $"إلغاء ضريبة مبيعات - {order.OrderNumber}"));
         }
 
-        // 3. Sub-ledger Traceability (Receivables Reversal)
-        lines.Add((receivablesAcct, 0, order.TotalAmount, $"تنزيل من مديونية العميل - {order.OrderNumber}"));
-
-        // 4. Cash Refund (Unified Entry Part 2 - Only if it was paid)
-        if (order.PaymentStatus == PaymentStatus.Paid)
+        // 3. Sub-ledger Traceability (Receivables Reversal) & Cash Refund
+        if (order.Source == OrderSource.POS)
         {
+            // Direct Cash Refund for POS (Clean entry)
             var cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-            lines.Add((receivablesAcct, order.TotalAmount, 0,                $"رد مرتجع مالي للعميل - {order.OrderNumber}"));
-            lines.Add((cashCode,        0,                order.TotalAmount, $"خروج نقدية للمرتجع - {order.OrderNumber} ({order.PaymentMethod})"));
+            lines.Add((cashCode, 0, order.TotalAmount, $"خروج نقدية للمرتجع - {order.OrderNumber} ({order.PaymentMethod})"));
+        }
+        else
+        {
+            // Standard Flow: Sale -> Customer -> Refund
+            lines.Add((receivablesAcct, 0, order.TotalAmount, $"تنزيل من مديونية العميل - {order.OrderNumber}"));
+            
+            if (order.PaymentStatus == PaymentStatus.Paid)
+            {
+                var cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+                lines.Add((receivablesAcct, order.TotalAmount, 0,                $"رد مرتجع مالي للعميل - {order.OrderNumber}"));
+                lines.Add((cashCode,        0,                order.TotalAmount, $"خروج نقدية للمرتجع - {order.OrderNumber} ({order.PaymentMethod})"));
+            }
         }
 
         // 5. Reversal of COGS (Stock back to Inventory)
@@ -299,7 +308,7 @@ public class AccountingService : IAccountingService
         );
     }
 
-    public async Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount)
+    public async Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null)
     {
         // 1. Generate unique reference for this partial return
         var suffix = TimeHelper.GetEgyptTime().Ticks.ToString().Substring(10);
@@ -338,22 +347,36 @@ public class AccountingService : IAccountingService
             lines.Add((vatAcct, totalVatReturn, 0, $"إلغاء ضريبة جزئية - {order.OrderNumber}"));
         }
 
-        // Handle Discount Reversal to Balance Entry precisely
+        // Handle Discount Reversal
         decimal discountReversal = (totalNetReturn + totalVatReturn) - refundAmount;
-        if (discountReversal > 0)
+        if (discountReversal > 0) lines.Add((salesDiscAcct, 0, discountReversal, $"موازنة خصم (مرتجع جزئي) - {order.OrderNumber}"));
+        else if (discountReversal < 0) lines.Add((salesDiscAcct, Math.Abs(discountReversal), 0, $"تسوية تفاوت (مرتجع جزئي) - {order.OrderNumber}"));
+
+        // 💡 SMART POS FLOW: If POS, skip Customer Account sub-ledger to keep it clean (as requested)
+        if (order.Source == OrderSource.POS)
         {
-            lines.Add((salesDiscAcct, 0, discountReversal, $"موازنة خصم (مرتجع جزئي) - {order.OrderNumber}"));
-        } else if (discountReversal < 0) {
-            lines.Add((salesDiscAcct, Math.Abs(discountReversal), 0, $"تسوية تفاوت (مرتجع جزئي) - {order.OrderNumber}"));
+            // Resolve Refund Account (User Selection > Original Payment Mapping)
+            string cashCode;
+            if (refundAccountId.HasValue) 
+            {
+                cashCode = $"ID:{refundAccountId.Value}";
+            }
+            else 
+            {
+                cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+            }
+
+            lines.Add((cashCode, 0, refundAmount, $"خروج نقدية للمرتجع - {order.OrderNumber}"));
         }
-
-        // Sub-ledger credit to customer
-        lines.Add((receivablesAcct, 0, refundAmount, $"دائن العميل (مرتجع جزئي) - {order.OrderNumber}"));
-
-        // Cash component (The immediate refund)
-        var cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-        lines.Add((receivablesAcct, refundAmount, 0,            $"إثبات رد نقدي للعميل - {order.OrderNumber}"));
-        lines.Add((cashCode,        0,            refundAmount, $"خروج نقدية للمرتجع - {order.OrderNumber} ({order.PaymentMethod})"));
+        else
+        {
+            // Standard Website/Credit Flow: Sale -> Customer -> Refund
+            lines.Add((receivablesAcct, 0, refundAmount, $"دائن العميل (مرتجع جزئي) - {order.OrderNumber}"));
+            
+            var cashCode = refundAccountId.HasValue ? $"ID:{refundAccountId.Value}" : await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+            lines.Add((receivablesAcct, refundAmount, 0,            $"إثبات رد نقدي للعميل - {order.OrderNumber}"));
+            lines.Add((cashCode,        0,            refundAmount, $"خروج نقدية للمرتجع - {order.OrderNumber}"));
+        }
 
         // 4. Inventory Reversal
         if (totalCostReturn > 0)

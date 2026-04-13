@@ -26,7 +26,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] string?   search     = null,
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
-        [FromQuery] bool      excel      = false)
+        [FromQuery] bool      excel      = false,
+        [FromQuery] bool      unpaidOnly = false)
     {
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
@@ -47,37 +48,51 @@ public class OperationalReportsController : ControllerBase
         var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId);
         if (customer == null) return NotFound();
 
-        var orders = await _db.Orders
+        var ordersQuery = _db.Orders
             .Where(o => o.CustomerId == customerId
                      && o.CreatedAt >= from && o.CreatedAt <= to
-                     && o.Status != OrderStatus.Cancelled)
-            .OrderBy(o => o.CreatedAt)
-            .ToListAsync();
+                     && o.Status != OrderStatus.Cancelled);
 
-        // مدفوعات العميل من سندات القبض (إذا كان لديك JournalLines)
-        var receipts = await _db.ReceiptVouchers
+        if (unpaidOnly)
+        {
+            ordersQuery = ordersQuery.Where(o => o.RemainingAmount > 0 && o.PaymentMethod == PaymentMethod.Credit);
+        }
+
+        var orders = await ordersQuery.OrderBy(o => o.CreatedAt).ToListAsync();
+
+        var receiptsQuery = _db.ReceiptVouchers
             .Where(r => r.CustomerId == customerId
-                     && r.VoucherDate >= from && r.VoucherDate <= to)
-            .OrderBy(r => r.VoucherDate)
-            .ToListAsync();
+                     && r.VoucherDate >= from && r.VoucherDate <= to);
+
+        if (unpaidOnly)
+        {
+            var unpaidOrderIds = orders.Select(o => o.Id).ToList();
+            receiptsQuery = receiptsQuery.Where(r => r.OrderId != null && unpaidOrderIds.Contains(r.OrderId.Value));
+        }
+
+        var receipts = await receiptsQuery.OrderBy(r => r.VoucherDate).ToListAsync();
 
         // بناء الكشف
         var lines = new List<CustomerStatementLine>();
         
-        // 1. الرصيد قبل الفترة = (الافتتاحي للحساب) + (الفواتير السابقة) - (المقبوضات السابقة)
-        decimal initialAccountBalance = (customer.MainAccountId != null) 
-            ? (await _db.Accounts.Where(a => a.Id == customer.MainAccountId).Select(a => a.OpeningBalance).FirstOrDefaultAsync())
-            : 0;
+        decimal balance = 0;
+        if (!unpaidOnly)
+        {
+            // 1. الرصيد قبل الفترة = (الافتتاحي للحساب) + (الفواتير السابقة) - (المقبوضات السابقة)
+            decimal initialAccountBalance = (customer.MainAccountId != null) 
+                ? (await _db.Accounts.Where(a => a.Id == customer.MainAccountId).Select(a => a.OpeningBalance).FirstOrDefaultAsync())
+                : 0;
 
-        decimal priorOrders = await _db.Orders
-            .Where(o => o.CustomerId == customerId && o.CreatedAt < from && o.Status != OrderStatus.Cancelled)
-            .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
+            decimal priorOrders = await _db.Orders
+                .Where(o => o.CustomerId == customerId && o.CreatedAt < from && o.Status != OrderStatus.Cancelled)
+                .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
 
-        decimal priorReceipts = await _db.ReceiptVouchers
-            .Where(r => r.CustomerId == customerId && r.VoucherDate < from)
-            .SumAsync(r => (decimal?)r.Amount) ?? 0;
+            decimal priorReceipts = await _db.ReceiptVouchers
+                .Where(r => r.CustomerId == customerId && r.VoucherDate < from)
+                .SumAsync(r => (decimal?)r.Amount) ?? 0;
 
-        decimal balance = initialAccountBalance + priorOrders - priorReceipts;
+            balance = initialAccountBalance + priorOrders - priorReceipts;
+        }
 
         if (balance != 0)
         {
@@ -115,6 +130,103 @@ public class OperationalReportsController : ControllerBase
             from, to, lines,
             totalInvoiced, totalPaid, outstanding,
             hasBalance = outstanding > 0
+        });
+    }
+
+    // ══════════════════════════════════════════════════════
+    // 1.5 كشف حساب مورد
+    // GET /api/operationalreports/supplier-statement?supplierId=&fromDate=&toDate=
+    // ══════════════════════════════════════════════════════
+    [HttpGet("supplier-statement")]
+    public async Task<IActionResult> SupplierStatement(
+        [FromQuery] int?      supplierId = null,
+        [FromQuery] string?   search     = null,
+        [FromQuery] DateTime? fromDate   = null,
+        [FromQuery] DateTime? toDate     = null,
+        [FromQuery] bool      excel      = false,
+        [FromQuery] bool      unpaidOnly = false)
+    {
+        var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+
+        if (supplierId == null && !string.IsNullOrEmpty(search))
+        {
+            supplierId = await _db.Suppliers
+                .Where(s => s.Name.Contains(search) || s.Phone.Contains(search))
+                .Select(s => s.Id)
+                .FirstOrDefaultAsync();
+        }
+
+        if (supplierId == null)
+            return Ok(new { items = await _db.Suppliers.Select(s => new { s.Id, s.Name, s.Phone }).ToListAsync() });
+
+        var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == supplierId);
+        if (supplier == null) return NotFound();
+
+        var invoicesQuery = _db.PurchaseInvoices
+            .Where(i => i.SupplierId == supplierId
+                     && i.InvoiceDate >= from && i.InvoiceDate <= to
+                     && i.Status != PurchaseInvoiceStatus.Cancelled);
+
+        if (unpaidOnly)
+        {
+            invoicesQuery = invoicesQuery.Where(i => i.RemainingAmount > 0 && i.PaymentTerms != PaymentTerms.Cash);
+        }
+
+        var invoices = await invoicesQuery.OrderBy(i => i.InvoiceDate).ToListAsync();
+
+        var paymentsQuery = _db.SupplierPayments
+            .Where(p => p.SupplierId == supplierId
+                     && p.PaymentDate >= from && p.PaymentDate <= to);
+
+        if (unpaidOnly)
+        {
+            var unpaidInvNos = invoices.Select(i => i.InvoiceNumber).ToList();
+            paymentsQuery = paymentsQuery.Where(p => p.ReferenceNumber != null && unpaidInvNos.Contains(p.ReferenceNumber));
+        }
+
+        var payments = await paymentsQuery.OrderBy(p => p.PaymentDate).ToListAsync();
+
+        var lines = new List<CustomerStatementLine>(); // Reuse DTO
+        decimal balance = 0;
+
+        if (!unpaidOnly)
+        {
+            decimal initialBal = 0; // Suppliers usually 0 opening or from account
+            decimal priorInvoices = await _db.PurchaseInvoices
+                .Where(i => i.SupplierId == supplierId && i.InvoiceDate < from && i.Status != PurchaseInvoiceStatus.Cancelled)
+                .SumAsync(i => (decimal?)i.TotalAmount) ?? 0;
+            decimal priorPayments = await _db.SupplierPayments
+                .Where(p => p.SupplierId == supplierId && p.PaymentDate < from)
+                .SumAsync(p => (decimal?)p.Amount) ?? 0;
+            balance = initialBal + priorInvoices - priorPayments;
+
+            if (balance != 0)
+                lines.Add(new CustomerStatementLine(from.AddSeconds(-1), "رصيد", "OPENING", "رصيد مرحّل", balance, 0, balance));
+        }
+
+        foreach (var inv in invoices)
+        {
+            balance += inv.TotalAmount;
+            lines.Add(new CustomerStatementLine(inv.InvoiceDate, "فاتورة شراء", inv.InvoiceNumber, "فاتورة مشتريات", inv.TotalAmount, 0, balance));
+        }
+
+        foreach (var p in payments)
+        {
+            balance -= p.Amount;
+            lines.Add(new CustomerStatementLine(p.PaymentDate, "سند صرف", p.PaymentNumber, p.Notes ?? "دفع للمورد", 0, p.Amount, balance));
+        }
+
+        lines = lines.OrderBy(l => l.Date).ToList();
+
+        if (excel) return ExcelSupplierStatement(supplier, lines, invoices.Sum(i => i.TotalAmount), payments.Sum(p => p.Amount), from, to);
+
+        return Ok(new { 
+            supplier = new { supplier.Id, supplier.Name, supplier.Phone },
+            from, to, lines, 
+            totalInvoiced = invoices.Sum(i => i.TotalAmount), 
+            totalPaid = payments.Sum(p => p.Amount),
+            outstanding = invoices.Sum(i => i.TotalAmount) - payments.Sum(p => p.Amount)
         });
     }
 
@@ -848,6 +960,25 @@ public class OperationalReportsController : ControllerBase
         foreach(var row in rows){ws.Cell(r,1).Value=row.SupplierName;ws.Cell(r,2).Value=row.Phone;ws.Cell(r,3).Value=row.CompanyName;ws.Cell(r,4).Value=row.Total;ws.Cell(r,5).Value=row.Current;ws.Cell(r,6).Value=row.Days60;ws.Cell(r,7).Value=row.Days90;ws.Cell(r,8).Value=row.Over90;for(int c=4;c<=8;c++)ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";r++;}
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"supplier_aging_{asOf:yyyyMMdd}.xlsx");
+    }
+
+    private IActionResult ExcelSupplierStatement(Supplier s, List<CustomerStatementLine> lines, decimal invoiced, decimal paid, DateTime from, DateTime to)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("كشف حساب مورد");
+        ws.RightToLeft = true;
+        ws.Cell(1,1).Value = $"كشف حساب مورد: {s.Name} | {s.Phone}";
+        ws.Cell(1,1).Style.Font.Bold = true;
+        ws.Cell(2,1).Value = $"من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+
+        string[] h = {"التاريخ","النوع","المرجع","البيان","مدين (مشتريات)","دائن (مدفوعات)","الرصيد"};
+        for (int i=0;i<h.Length;i++){ws.Cell(3,i+1).Value=h[i];ws.Cell(3,i+1).Style.Font.Bold=true;ws.Cell(3,i+1).Style.Fill.BackgroundColor=XLColor.FromHtml("#c62828");ws.Cell(3,i+1).Style.Font.FontColor=XLColor.White;}
+
+        int r=4;
+        foreach(var l in lines){ws.Cell(r,1).Value=l.Date.ToString("yyyy-MM-dd");ws.Cell(r,2).Value=l.Type;ws.Cell(r,3).Value=l.Reference;ws.Cell(r,4).Value=l.Description;ws.Cell(r,5).Value=l.Debit;ws.Cell(r,6).Value=l.Credit;ws.Cell(r,7).Value=l.Balance;for(int c=5;c<=7;c++)ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";r++;}
+
+        ws.Columns().AdjustToContents();
+        return ExcelResult(wb, $"supplier_statement_{s.Id}_{from:yyyyMMdd}.xlsx");
     }
 
     private IActionResult ExcelInventory(List<InventoryRow> rows, dynamic summary)

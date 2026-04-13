@@ -717,7 +717,7 @@ public class OrderService : IOrderService
         });
 
         // 6. Post Accounting
-        _ = PostPartialReturnWithRetryAsync(orderId, returnedOrderItems, refundAmount);
+        _ = PostPartialReturnWithRetryAsync(orderId, returnedOrderItems, refundAmount, dto.RefundAccountId);
 
         return result;
     }
@@ -861,7 +861,7 @@ public class OrderService : IOrderService
         }
     }
 
-    private async Task PostPartialReturnWithRetryAsync(int orderId, List<OrderItem> returnedItems, decimal refundAmount)
+    private async Task PostPartialReturnWithRetryAsync(int orderId, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null)
     {
         const int maxAttempts = 3;
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
@@ -872,7 +872,7 @@ public class OrderService : IOrderService
                 var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var order = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == orderId);
-                await accounting.PostPartialSalesReturnAsync(order, returnedItems, refundAmount);
+                await accounting.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId);
                 return;
             }
             catch (Exception ex) when (attempt < maxAttempts)
