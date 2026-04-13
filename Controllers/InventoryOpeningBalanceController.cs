@@ -250,8 +250,10 @@ public class InventoryOpeningBalanceController : ControllerBase
     {
         // Get Inventory Account
         var inventoryAcct = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1106");
-        // Get Opening Balances Account (Capital or dedicated Opening Balances)
-        var openingAcct   = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "3101") 
+        // Get Opening Balances Account (Search by name or code)
+        var openingAcct = await _db.Accounts.FirstOrDefaultAsync(a => a.NameAr.Contains("أرصدة افتتاحية"))
+                        ?? await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "3999")
+                        ?? await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "3201")
                         ?? await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "3");
 
         if (inventoryAcct == null || openingAcct == null) return;
@@ -263,7 +265,7 @@ public class InventoryOpeningBalanceController : ControllerBase
             Lines:       new List<CreateJournalLineDto>
             {
                 new (inventoryAcct.Id, ob.TotalValue, 0, "إثبات قيمة المخزون الافتتاحي"),
-                new (openingAcct.Id,   0, ob.TotalValue, "حساب الأرصدة الافتتاحية / رأس المال")
+                new (openingAcct.Id,   0, ob.TotalValue, "مقابل حساب الأرصدة الافتتاحية")
             },
             Type:        JournalEntryType.OpeningBalance
         );

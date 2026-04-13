@@ -21,6 +21,7 @@ public interface IAccountingService
     Task PostSupplierPaymentAsync(SupplierPayment payment);
     Task ReverseEntryAsync(int journalEntryId, string reason);
     Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, string? userId);
+    Task<JournalEntry> UpdateManualEntryAsync(int id, UpdateJournalEntryDto dto, string? userId);
     Task PostReceiptVoucherAsync(ReceiptVoucher voucher, int? orderId = null);
     Task PostPaymentVoucherAsync(PaymentVoucher voucher);
     Task<string> GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, int?>? map = null);
@@ -77,6 +78,7 @@ public class AccountingService : IAccountingService
 
     public Task ReverseEntryAsync(int journalEntryId, string reason) => _journal.ReverseEntryAsync(journalEntryId, reason);
     public Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, string? userId) => _journal.PostManualEntryAsync(dto, userId);
+    public Task<JournalEntry> UpdateManualEntryAsync(int id, UpdateJournalEntryDto dto, string? userId) => _journal.UpdateManualEntryAsync(id, dto, userId);
 
     public Task<string> GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, int?>? map = null) 
         => _core.GetMappedCashAccountAsync(method, source, map);

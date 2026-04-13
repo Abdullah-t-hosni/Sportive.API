@@ -61,4 +61,41 @@ public class JournalAccountingService
         await _db.SaveChangesAsync();
         return entry;
     }
+
+    public async Task<JournalEntry> UpdateManualEntryAsync(int id, UpdateJournalEntryDto dto, string? userId)
+    {
+        var entry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Id == id);
+        if (entry == null) throw new KeyNotFoundException("القيد غير موجود");
+
+        // التحقق من توازن القيد الجديد
+        var totalDr = dto.Lines.Sum(l => l.Debit);
+        var totalCr = dto.Lines.Sum(l => l.Credit);
+        if (Math.Round(totalDr, 2) != Math.Round(totalCr, 2))
+            throw new InvalidOperationException($"القيد غير متوازن: مجموع المدين ({totalDr}) لا يساوي مجموع الدائن ({totalCr})");
+
+        // تحديث البيانات الأساسية
+        entry.EntryDate = dto.EntryDate;
+        entry.Description = dto.Description;
+        entry.Reference = dto.Reference;
+        entry.UpdatedAt = TimeHelper.GetEgyptTime();
+
+        // تحديث الأسطر (مسح الحالية وإعادتها)
+        _db.JournalLines.RemoveRange(entry.Lines);
+        foreach (var l in dto.Lines)
+        {
+            entry.Lines.Add(new JournalLine
+            {
+                AccountId = l.AccountId,
+                Debit = l.Debit,
+                Credit = l.Credit,
+                Description = l.Description,
+                CustomerId = l.CustomerId,
+                SupplierId = l.SupplierId,
+                CreatedAt = TimeHelper.GetEgyptTime()
+            });
+        }
+
+        await _db.SaveChangesAsync();
+        return entry;
+    }
 }

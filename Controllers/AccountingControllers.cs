@@ -174,6 +174,52 @@ public class AccountsController : ControllerBase
 
     [HttpGet("rebuild"), HttpPost("rebuild")]
     public async Task<IActionResult> Rebuild() => await FixTree();
+
+    [HttpGet("tree")]
+    public async Task<IActionResult> GetTree()
+    {
+        var all = await _db.Accounts
+            .Include(a => a.Lines)
+            .Include(a => a.Parent)
+            .OrderBy(a => a.Code)
+            .ToListAsync();
+
+        // Calculate balances for all accounts
+        var balances = all.ToDictionary(a => a.Id, a => a.Lines.Sum(l => l.Debit - l.Credit));
+
+        // Use a recursive function to build the tree
+        List<AccountDto> BuildTree(int? parentId)
+        {
+            return all
+                .Where(a => a.ParentId == parentId)
+                .Select(a => {
+                    var children = BuildTree(a.Id);
+                    var net = balances.GetValueOrDefault(a.Id, 0);
+                    var currentBal = a.Nature == AccountNature.Debit ? net : -net;
+                    
+                    // Add opening balance
+                    currentBal += a.OpeningBalance;
+
+                    // For non-leaf accounts, balance is sum of children balances + its own
+                    if (children.Any()) 
+                    {
+                        currentBal += children.Sum(c => c.CurrentBalance);
+                    }
+
+                    return new AccountDto(
+                        a.Id, a.Code, a.NameAr, a.NameEn, a.Description,
+                        a.Type.ToString(), a.Nature.ToString(), a.ParentId,
+                        a.Parent?.NameAr, a.Level, a.IsLeaf, a.AllowPosting,
+                        a.IsActive, a.IsSystem, a.OpeningBalance,
+                        currentBal, children
+                    );
+                })
+                .ToList();
+        }
+
+        var tree = BuildTree(null);
+        return Ok(tree);
+    }
 }
 
 // 2. JOURNAL ENTRIES (قيود اليومية)
@@ -254,6 +300,25 @@ public class JournalEntriesController : ControllerBase
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var entry = await _accounting.PostManualEntryAsync(dto, userId);
         return CreatedAtAction(nameof(GetById), new { id = entry.Id }, entry);
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateJournalEntryDto dto)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        try 
+        {
+            var entry = await _accounting.UpdateManualEntryAsync(id, dto, userId);
+            return Ok(entry);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
     }
 
     [HttpDelete("{id}")]
