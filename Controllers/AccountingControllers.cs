@@ -358,9 +358,18 @@ public class ReceiptVouchersController : ControllerBase
             var order = await _db.Orders.FindAsync(dto.OrderId.Value);
             if (order != null)
             {
+                // Check for double collection
+                var currentPaid = order.PaidAmount;
+                var remaining = order.TotalAmount - currentPaid;
+                
+                if (dto.Amount > remaining + 0.01m) // Allow 0.01 tolerance for precision
+                {
+                   return BadRequest($"لا يمكن تحصيل مبلغ ({dto.Amount}) وهو أكبر من المديونية المتبقية ({remaining}) للطلب رقم {order.OrderNumber}.");
+                }
+
                 // Update Order Payment calculations
                 order.PaidAmount += dto.Amount;
-                order.PaymentStatus = order.PaidAmount >= order.TotalAmount ? PaymentStatus.Paid : PaymentStatus.Pending;
+                order.PaymentStatus = order.PaidAmount >= order.TotalAmount - 0.01m ? PaymentStatus.Paid : PaymentStatus.Pending;
                 order.UpdatedAt = TimeHelper.GetEgyptTime();
             }
         }
