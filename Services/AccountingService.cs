@@ -843,33 +843,8 @@ public class AccountingService : IAccountingService
     /// Choosing the cash account based on payment method, source, and stored mappings
     public async Task<string> GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, int?>? map = null)
     {
-        if (map == null)
-        {
-            var mappings = await _db.AccountSystemMappings.ToListAsync();
-            // Use GroupBy to avoid duplicate key exceptions if the DB contains duplicates
-            map = mappings.GroupBy(m => m.Key.ToLower()).ToDictionary(g => g.Key, g => g.First().AccountId);
-        }
-
-        // 1. Check Specific Mappings from Settings
-        string? key = (method, source) switch
-        {
-            (PaymentMethod.Vodafone, OrderSource.POS)     => "posVodafoneAccountID",
-            (PaymentMethod.Vodafone, OrderSource.Website) => "webVodafoneAccountID",
-            (PaymentMethod.InstaPay, OrderSource.POS)     => "posInstapayAccountID",
-            (PaymentMethod.InstaPay, OrderSource.Website) => "webInstapayAccountID",
-            (PaymentMethod.CreditCard, OrderSource.POS)   => "posBankAccountID",
-            (PaymentMethod.CreditCard, OrderSource.Website) => "webBankAccountID",
-            (PaymentMethod.Bank, OrderSource.POS)         => "posBankAccountID",
-            (PaymentMethod.Bank, OrderSource.Website)     => "webBankAccountID",
-            (PaymentMethod.Cash, OrderSource.POS)         => "posCashAccountID",
-            (PaymentMethod.Cash, OrderSource.Website)     => "webCashAccountID",
-            _ => null
-        };
-
-        if (key != null && map.TryGetValue(key.ToLower(), out var mappedId) && mappedId.HasValue)
-            return $"ID:{mappedId.Value}";
-
-        // 2. Try method-specific professional constants (ONLY IF THEY EXIST IN DB)
+        // 1. Top Priority: Method-specific professional constants (ALWAYS used if they exist in DB)
+        // This overrides any outdated settings the user might have in the UI.
         var constantCode = (method, source) switch
         {
             (PaymentMethod.Vodafone,   OrderSource.POS)     => VODAFONE,
@@ -888,6 +863,31 @@ public class AccountingService : IAccountingService
             var exists = await _db.Accounts.AnyAsync(a => a.Code == constantCode && a.IsActive);
             if (exists) return constantCode;
         }
+
+        // 2. Fallback to System Mappings (UI Configuration)
+        if (map == null)
+        {
+            var mappings = await _db.AccountSystemMappings.ToListAsync();
+            map = mappings.GroupBy(m => m.Key.ToLower()).ToDictionary(g => g.Key, g => g.First().AccountId);
+        }
+
+        string? key = (method, source) switch
+        {
+            (PaymentMethod.Vodafone, OrderSource.POS)     => "posVodafoneAccountID",
+            (PaymentMethod.Vodafone, OrderSource.Website) => "webVodafoneAccountID",
+            (PaymentMethod.InstaPay, OrderSource.POS)     => "posInstapayAccountID",
+            (PaymentMethod.InstaPay, OrderSource.Website) => "webInstapayAccountID",
+            (PaymentMethod.CreditCard, OrderSource.POS)   => "posBankAccountID",
+            (PaymentMethod.CreditCard, OrderSource.Website) => "webBankAccountID",
+            (PaymentMethod.Bank, OrderSource.POS)         => "posBankAccountID",
+            (PaymentMethod.Bank, OrderSource.Website)     => "webBankAccountID",
+            (PaymentMethod.Cash, OrderSource.POS)         => "posCashAccountID",
+            (PaymentMethod.Cash, OrderSource.Website)     => "webCashAccountID",
+            _ => null
+        };
+
+        if (key != null && map.TryGetValue(key.ToLower(), out var mappedId) && mappedId.HasValue)
+            return $"ID:{mappedId.Value}";
 
         // 3. Fallback to the generic main cash account from settings
         if (map.TryGetValue("cashaccountid", out var mainCashId) && mainCashId.HasValue)
