@@ -171,11 +171,11 @@ public class AccountingService : IAccountingService
             {
                 var cashAcct = await GetMappedCashAccount(m, order.Source, mapDict);
                 string methodAr = m switch {
-                    PaymentMethod.Cash => "نقدي",
-                    PaymentMethod.Bank => "بنك/تحويل",
-                    PaymentMethod.CreditCard => "فيزا",
-                    PaymentMethod.Vodafone => "فودافون كاش",
-                    PaymentMethod.InstaPay => "انستاباي",
+                    PaymentMethod.Cash => "نقدية الكاشير",
+                    PaymentMethod.Bank => "حوالة بنكية",
+                    PaymentMethod.CreditCard => "فيزا / شبكة",
+                    PaymentMethod.Vodafone => "محفظة كاشير - فودافون",
+                    PaymentMethod.InstaPay => "انستاباي كاشير",
                     _ => m.ToString()
                 };
                 lines.Add((cashAcct, v, 0, $"تحصيل ({methodAr}) - {order.OrderNumber}"));
@@ -185,9 +185,17 @@ public class AccountingService : IAccountingService
         else if (order.PaymentMethod != PaymentMethod.Credit && order.PaidAmount > 0)
         {
             var cashAcct = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
+            string methodAr = order.PaymentMethod switch {
+                PaymentMethod.Cash => "نقدية الكاشير",
+                PaymentMethod.Bank => "حوالة بنكي",
+                PaymentMethod.CreditCard => "فيزا / شبكة",
+                PaymentMethod.Vodafone => "محفظة كاشير - فودافون",
+                PaymentMethod.InstaPay => "انستاباي كاشير",
+                _ => order.PaymentMethod.ToString()
+            };
             // If fully paid, collect total amount directly.
             decimal payAmt = (order.PaymentStatus == PaymentStatus.Paid) ? order.TotalAmount : order.PaidAmount;
-            lines.Add((cashAcct, payAmt, 0, $"تحصيل ({order.PaymentMethod}) - {order.OrderNumber}"));
+            lines.Add((cashAcct, payAmt, 0, $"تحصيل ({methodAr}) - {order.OrderNumber}"));
             handledPaidAmt = payAmt;
         }
 
@@ -258,7 +266,15 @@ public class AccountingService : IAccountingService
         {
             // Direct Cash Refund
             var cashCode = await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-            lines.Add((cashCode, 0, order.TotalAmount, $"رد نقدي للمرتجع - {order.OrderNumber} ({order.PaymentMethod})"));
+            string methodAr = order.PaymentMethod switch {
+                PaymentMethod.Cash => "نقدية الكاشير",
+                PaymentMethod.Bank => "حوالة بنكية",
+                PaymentMethod.CreditCard => "فيزا / شبكة",
+                PaymentMethod.Vodafone => "محفظة كاشير - فودافون",
+                PaymentMethod.InstaPay => "انستاباي كاشير",
+                _ => order.PaymentMethod.ToString()
+            };
+            lines.Add((cashCode, 0, order.TotalAmount, $"رد نقدي للمرتجع ({methodAr}) - {order.OrderNumber}"));
         }
         else
         {
@@ -334,7 +350,15 @@ public class AccountingService : IAccountingService
         if (order.PaymentStatus == PaymentStatus.Paid || order.Source == OrderSource.POS)
         {
             string cashId = refundAccountId.HasValue ? $"ID:{refundAccountId.Value}" : await GetMappedCashAccount(order.PaymentMethod, order.Source, mapDict);
-            lines.Add((cashId, 0, refundAmount, $"رد نقدية جزئي - {order.OrderNumber}"));
+            string methodAr = order.PaymentMethod switch {
+                PaymentMethod.Cash => "نقدية الكاشير",
+                PaymentMethod.Bank => "حوالة بنكية",
+                PaymentMethod.CreditCard => "فيزا / شبكة",
+                PaymentMethod.Vodafone => "محفظة كاشير - فودافون",
+                PaymentMethod.InstaPay => "انستاباي كاشير",
+                _ => order.PaymentMethod.ToString()
+            };
+            lines.Add((cashId, 0, refundAmount, $"رد نقدية جزئي ({methodAr}) - {order.OrderNumber}"));
         }
         else
         {
@@ -836,15 +860,17 @@ public class AccountingService : IAccountingService
         if (map.TryGetValue("cashaccountid", out var mainCashId) && mainCashId.HasValue)
             return $"ID:{mainCashId.Value}";
 
-        // Ultimate hardcoded fallbacks
+        // Ultimate hardcoded fallbacks based on company standard chart of accounts
         return (method, source) switch
         {
             (PaymentMethod.Vodafone,   OrderSource.POS)     => VODAFONE,
             (PaymentMethod.Vodafone,   OrderSource.Website) => VODAFONE_WEB,
             (PaymentMethod.InstaPay,   OrderSource.POS)     => INSTAPAY,
             (PaymentMethod.InstaPay,   OrderSource.Website) => INSTAPAY_WEB,
+            (PaymentMethod.Bank,       _)                   => BANK,
             (PaymentMethod.CreditCard, _)                   => BANK,
             (PaymentMethod.Cash,       OrderSource.Website) => CASH_WEBSITE,
+            (PaymentMethod.Cash,       OrderSource.POS)     => CASH_CASHIER,
             (_,                        OrderSource.POS)     => CASH_CASHIER,
             _                                               => CASH_WEBSITE,
         };
