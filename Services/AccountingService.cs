@@ -113,7 +113,7 @@ public class AccountingService : IAccountingService
     public async Task SyncAllPaymentAccountingAsync()
     {
         // 1. Receipt Vouchers
-        var receipts = await _db.ReceiptVouchers.Where(v => v.Status == ReceiptVoucherStatus.Posted).ToListAsync();
+        var receipts = await _db.ReceiptVouchers.ToListAsync();
         foreach (var r in receipts)
         {
             try { await PostReceiptVoucherAsync(r, r.OrderId); }
@@ -121,7 +121,7 @@ public class AccountingService : IAccountingService
         }
 
         // 2. Payment Vouchers
-        var payments = await _db.PaymentVouchers.Where(v => v.Status == PaymentVoucherStatus.Posted).ToListAsync();
+        var payments = await _db.PaymentVouchers.ToListAsync();
         foreach (var p in payments)
         {
             try { await PostPaymentVoucherAsync(p); }

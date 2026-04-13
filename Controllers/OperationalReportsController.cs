@@ -418,32 +418,43 @@ public class OperationalReportsController : ControllerBase
             q = q.Where(p => p.NameAr.Contains(search) || p.SKU.Contains(search));
             
         if (categoryId.HasValue && categoryId > 0)
-            q = q.Where(p => p.CategoryId == categoryId.Value);
+        {
+            // تضمين الفئات الفرعية
+            q = q.Where(p => p.CategoryId == categoryId.Value || (p.Category != null && p.Category.ParentId == categoryId.Value));
+        }
 
         if (lowStock)
-            q = q.Where(p => p.TotalStock <= 5);
+            q = q.Where(p => p.TotalStock <= (p.ReorderLevel > 0 ? p.ReorderLevel : 5));
 
         if (stockStatus == "positive")
-            q = q.Where(p => p.Variants.Any(v => v.StockQuantity > 0) || (!p.Variants.Any() && p.TotalStock > 0));
+            q = q.Where(p => p.TotalStock > 0);
         else if (stockStatus == "zero")
-            q = q.Where(p => !p.Variants.Any(v => v.StockQuantity > 0) && (p.Variants.Any() || p.TotalStock <= 0));
+            q = q.Where(p => p.TotalStock <= 0);
 
-        // --- Totals for Summary (Before Pagination) ---
-        // Warning: This consumes extra resources but provides accurate summary for filtered set
-        var summaryPre = new {
-            totalUnits     = await q.SumAsync(p => p.TotalStock),
-            lowStockCount  = await q.CountAsync(p => p.TotalStock <= 5),
-            outOfStock     = await q.CountAsync(p => p.TotalStock <= 0),
-        };
 
         // --- Pagination ---
         var totalCount = await q.CountAsync();
         
+        // جلب البيانات المطلوبة مع تفاصيلها
         var products = await q.OrderBy(p => p.CategoryId)
                              .ThenBy(p => p.NameAr)
                              .Skip((page - 1) * pageSize)
                              .Take(pageSize)
                              .ToListAsync();
+
+        // حساب القيم الإجمالية للمجموعة المفلترة بالكامل (بدون تكرار الاستعلامات المكلفة)
+        // ملاحظة: نستخدم الاستعلام q المفلتر قبل التقطيع (Skip/Take)
+        var totals = await q.Select(p => new {
+            p.TotalStock,
+            p.Price,
+            Cost = p.CostPrice ?? 0
+        }).ToListAsync();
+
+        var totalUnits     = totals.Sum(x => x.TotalStock);
+        var lowStockCount  = totals.Count(x => x.TotalStock <= 5); // أو ReorderLevel
+        var outOfStock     = totals.Count(x => x.TotalStock <= 0);
+        var totalSalesVal  = totals.Sum(x => (decimal)x.TotalStock * x.Price);
+        var totalCostVal   = totals.Sum(x => (decimal)x.TotalStock * x.Cost);
 
         var rows = products.Select(p =>
         {
@@ -455,7 +466,7 @@ public class OperationalReportsController : ControllerBase
                 v.Id, v.Size ?? "", v.Color ?? "", v.ColorAr ?? "",
                 v.StockQuantity,
                 p.Price + (v.PriceAdjustment ?? 0),
-                v.StockQuantity * (p.Price + (v.PriceAdjustment ?? 0))
+                (decimal)v.StockQuantity * (p.Price + (v.PriceAdjustment ?? 0))
             )).ToList();
 
             return new InventoryRow(
@@ -464,19 +475,19 @@ public class OperationalReportsController : ControllerBase
                 p.Price, p.DiscountPrice,
                 p.CostPrice ?? 0,
                 totalStock,
-                totalStock * p.Price, // Sales Value
-                totalStock * (p.CostPrice ?? 0),           // Cost Value
+                (decimal)totalStock * p.Price,
+                (decimal)totalStock * (p.CostPrice ?? 0),
                 variants
             );
         }).ToList();
 
         var summary = new {
             totalFilteredProducts = totalCount,
-            totalUnits            = summaryPre.totalUnits,
-            lowStockCount         = summaryPre.lowStockCount,
-            outOfStock            = summaryPre.outOfStock,
-            totalSalesValue       = await q.SumAsync(p => p.TotalStock * p.Price),
-            totalCostValue        = await q.SumAsync(p => p.TotalStock * (p.CostPrice ?? 0))
+            totalUnits            = totalUnits,
+            lowStockCount         = lowStockCount,
+            outOfStock            = outOfStock,
+            totalSalesValue       = totalSalesVal,
+            totalCostValue        = totalCostVal
         };
 
         if (excel) return ExcelInventory(rows, summary);
