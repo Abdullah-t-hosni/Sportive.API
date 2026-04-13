@@ -840,10 +840,9 @@ public class AccountingService : IAccountingService
         return splits;
     }
 
-    /// Choosing the cash account based on payment method, source, and stored mappings
     public async Task<string> GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, int?>? map = null)
     {
-        // 1. Top Priority: Method-specific professional constants (ALWAYS used if they exist in DB)
+        // 1. Top Priority: Method-specific professional constants
         // This overrides any outdated settings the user might have in the UI.
         var constantCode = (method, source) switch
         {
@@ -858,10 +857,11 @@ public class AccountingService : IAccountingService
             _                                               => null
         };
 
+        // IF we have a strictly defined constant for this method, we NEVER fallback.
+        // If it doesn't exist in the DB, it will throw a clear error rather than hiding it in "Daily Closures".
         if (constantCode != null)
         {
-            var exists = await _db.Accounts.AnyAsync(a => a.Code == constantCode && a.IsActive);
-            if (exists) return constantCode;
+            return constantCode;
         }
 
         // 2. Fallback to System Mappings (UI Configuration)
@@ -951,9 +951,14 @@ public class AccountingService : IAccountingService
         }
         else
         {
+            var cleanInput = input.Trim().ToLower();
+
             // 2. Resolve by Account Code (Constants like '2101')
+            // Using AsEnumerable/Client evaluation for Trim if necessary, or simple EF Core mapping.
+            // In SQL Server, spaces are ignored in comparisons, but it's safe to check trimmed properly.
             var acctByCode = await _db.Accounts
-                .Where(a => a.Code == input && a.IsActive)
+                .Where(a => a.Code == input || a.Code.Trim() == cleanInput)
+                .Where(a => a.IsActive)
                 .Select(a => new { a.Id })
                 .FirstOrDefaultAsync();
 
