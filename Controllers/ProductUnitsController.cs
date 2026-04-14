@@ -23,6 +23,22 @@ public class ProductUnitsController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> GetAll()
     {
+        var count = await _db.ProductUnits.CountAsync();
+        if (count == 0)
+        {
+            var defaultUnits = new List<ProductUnit>
+            {
+                new ProductUnit { NameAr = "قطعة", NameEn = "Piece", Symbol = "PC", Multiplier = 1, IsActive = true, CreatedAt = TimeHelper.GetEgyptTime() },
+                new ProductUnit { NameAr = "دستة", NameEn = "Dozen", Symbol = "DZ", Multiplier = 12, IsActive = true, CreatedAt = TimeHelper.GetEgyptTime() },
+                new ProductUnit { NameAr = "نصف دستة", NameEn = "Half Dozen", Symbol = "HDZ", Multiplier = 6, IsActive = true, CreatedAt = TimeHelper.GetEgyptTime() },
+                new ProductUnit { NameAr = "علبة", NameEn = "Box", Symbol = "BOX", Multiplier = 24, IsActive = true, CreatedAt = TimeHelper.GetEgyptTime() },
+                new ProductUnit { NameAr = "كرتونة", NameEn = "Carton", Symbol = "CTN", Multiplier = 48, IsActive = true, CreatedAt = TimeHelper.GetEgyptTime() },
+                new ProductUnit { NameAr = "طقم", NameEn = "Set", Symbol = "SET", Multiplier = 1, IsActive = true, CreatedAt = TimeHelper.GetEgyptTime() }
+            };
+            _db.ProductUnits.AddRange(defaultUnits);
+            await _db.SaveChangesAsync();
+        }
+
         var units = await _db.ProductUnits.OrderBy(u => u.NameAr).ToListAsync();
         return Ok(units);
     }
@@ -56,6 +72,7 @@ public class ProductUnitsController : ControllerBase
         unit.NameAr = dto.NameAr;
         unit.NameEn = dto.NameEn;
         unit.Symbol = dto.Symbol;
+        unit.Multiplier = dto.Multiplier;
         unit.IsActive = dto.IsActive;
         unit.UpdatedAt = TimeHelper.GetEgyptTime();
 

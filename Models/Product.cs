@@ -83,6 +83,7 @@ public class ProductUnit : BaseEntity
     public string NameAr { get; set; } = string.Empty;
     public string NameEn { get; set; } = string.Empty;
     public string? Symbol { get; set; } // e.g. "pcs", "kg"
+    public decimal Multiplier { get; set; } = 1; // العدد مقابل الوحدة الأساسية
     public bool IsActive { get; set; } = true;
 }
 
