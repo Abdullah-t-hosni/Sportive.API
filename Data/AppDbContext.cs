@@ -39,6 +39,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<PurchaseInvoice>      PurchaseInvoices     { get; set; }
     public DbSet<PurchaseInvoiceItem>  PurchaseInvoiceItems { get; set; }
     public DbSet<SupplierPayment>      SupplierPayments     { get; set; }
+    public DbSet<PurchaseReturn>       PurchaseReturns      { get; set; }
+    public DbSet<PurchaseReturnItem>   PurchaseReturnItems { get; set; }
 
     public DbSet<Account>        Accounts        { get; set; }
     public DbSet<AccountSystemMapping> AccountSystemMappings { get; set; }
@@ -237,6 +239,22 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(p => p.Invoice).WithMany(i => i.Payments)
                 .HasForeignKey(p => p.PurchaseInvoiceId).IsRequired(false);
             e.Property(p => p.PaymentMethod).HasConversion<string>();
+        });
+        
+        builder.Entity<PurchaseReturn>(e => {
+            e.Property(r => r.SubTotal).HasPrecision(18, 2);
+            e.Property(r => r.TaxAmount).HasPrecision(18, 2);
+            e.Property(r => r.DiscountAmount).HasPrecision(18, 2);
+            e.Property(r => r.TotalAmount).HasPrecision(18, 2);
+            e.HasOne(r => r.Invoice).WithMany().HasForeignKey(r => r.PurchaseInvoiceId);
+            e.HasOne(r => r.Supplier).WithMany().HasForeignKey(r => r.SupplierId);
+        });
+
+        builder.Entity<PurchaseReturnItem>(e => {
+            e.Property(ri => ri.UnitCost).HasPrecision(18, 2);
+            e.Property(ri => ri.TotalCost).HasPrecision(18, 2);
+            e.HasOne(ri => ri.PurchaseReturn).WithMany(r => r.Items).HasForeignKey(ri => ri.PurchaseReturnId);
+            e.HasOne(ri => ri.InvoiceItem).WithMany().HasForeignKey(ri => ri.PurchaseInvoiceItemId).OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<Account>(e => {

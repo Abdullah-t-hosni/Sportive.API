@@ -100,4 +100,49 @@ public class PurchaseAccountingService
 
         await _core.PostEntryAsync(JournalEntryType.PurchaseReturn, refNo, $"مرتجع مشتريات {(isPartial ? "جزئي" : "")} {invoice.InvoiceNumber}", TimeHelper.GetEgyptTime(), lines, supplierId: invoice.SupplierId);
     }
+
+    public async Task PostPurchaseReturnAsync(PurchaseReturn pReturn)
+
+    {
+        if (string.IsNullOrEmpty(pReturn.ReturnNumber)) return;
+        if (await _core.EntryExistsAsync(JournalEntryType.PurchaseReturn, pReturn.ReturnNumber)) return;
+
+        var mapDict = await _core.GetSafeSystemMappingsAsync();
+        var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
+
+        var vendorAcct = pReturn.Supplier?.MainAccountId != null ? $"ID:{pReturn.Supplier.MainAccountId}" 
+                        : _core.GetMap(mapDict, MK.Supplier, AccountingCoreService.PAYABLES);
+        var rtnAcct    = pReturn.Invoice?.InventoryAccountId != null ? $"ID:{pReturn.Invoice.InventoryAccountId}" 
+                        : _core.GetMap(mapDict, MK.Inventory, AccountingCoreService.INVENTORY);
+        var vatAcct    = pReturn.Invoice?.VatAccountId != null ? $"ID:{pReturn.Invoice.VatAccountId}" 
+                        : _core.GetMap(mapDict, MK.VatInput, AccountingCoreService.VAT_INPUT);
+
+        // Debit Supplier (Reducing liability)
+        lines.Add((vendorAcct, pReturn.TotalAmount, 0, $"مرتجع مشتريات {pReturn.ReturnNumber} - فاتورة {pReturn.Invoice?.InvoiceNumber}"));
+        
+        // Credit Inventory (Reducing asset)
+        lines.Add((rtnAcct, 0, pReturn.SubTotal, $"مرتجع مشتريات {pReturn.ReturnNumber} - قيمة أصناف ف.{pReturn.Invoice?.InvoiceNumber}"));
+
+        if (pReturn.DiscountAmount > 0)
+        {
+            var discAcct = _core.GetMap(mapDict, MK.PurchaseDiscount, AccountingCoreService.PURCHASE_DISC);
+            // Reversing the discount granted originally (Debit Discount account if it was credited)
+            // Or just reduce the cost. Standard is to debit it back if it's a dedicated account.
+            lines.Add((discAcct, pReturn.DiscountAmount, 0, $"عكس خصم مشتريات - {pReturn.ReturnNumber}"));
+        }
+
+        if (pReturn.TaxAmount > 0) 
+        {
+            lines.Add((vatAcct, 0, pReturn.TaxAmount, $"عكس ضريبة مدخلات - {pReturn.ReturnNumber}"));
+        }
+
+        await _core.PostEntryAsync(
+            JournalEntryType.PurchaseReturn, 
+            pReturn.ReturnNumber, 
+            $"مرتجع مشتريات {pReturn.ReturnNumber} للمورد {pReturn.Supplier?.Name}", 
+            pReturn.ReturnDate, 
+            lines, 
+            supplierId: pReturn.SupplierId);
+    }
 }
+

@@ -208,5 +208,9 @@ public record UpdatePurchaseStatusDto(PurchaseInvoiceStatus Status);
 public record ReturnPurchaseItemDto(int PurchaseInvoiceItemId, int Quantity);
 
 public record ReturnPurchaseInvoiceDto(
+    DateTime ReturnDate,
+    string? Notes,
+    string? ReferenceNumber,
     List<ReturnPurchaseItemDto> Items
 );
+

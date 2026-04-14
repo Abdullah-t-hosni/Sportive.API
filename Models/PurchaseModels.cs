@@ -132,3 +132,48 @@ public class SupplierPayment : BaseEntity
     public string?  AttachmentUrl   { get; set; }
     public string?  AttachmentPublicId { get; set; }
 }
+
+// ══════════════════════════════════════════════════════
+// PURCHASE RETURNS
+// ══════════════════════════════════════════════════════
+
+public class PurchaseReturn : BaseEntity
+{
+    public string ReturnNumber { get; set; } = string.Empty; // رقم مستند المرتجع (PR-xxxx)
+    public int PurchaseInvoiceId { get; set; }
+    public PurchaseInvoice Invoice { get; set; } = null!;
+
+    public int SupplierId { get; set; }
+    public Supplier Supplier { get; set; } = null!;
+
+    public DateTime ReturnDate { get; set; } = DateTime.UtcNow;
+    public decimal SubTotal { get; set; } = 0;
+    public decimal TaxAmount { get; set; } = 0;
+    public decimal DiscountAmount { get; set; } = 0;
+    public decimal TotalAmount { get; set; } = 0; // المبلغ الإجمالي المرتجع (يخصم من مديونية المورد)
+
+    public string? Notes { get; set; }
+    public string? ReferenceNumber { get; set; } // رقم مرجعي خارجي
+    public string? CreatedByUserId { get; set; }
+
+    public ICollection<PurchaseReturnItem> Items { get; set; } = new List<PurchaseReturnItem>();
+}
+
+public class PurchaseReturnItem : BaseEntity
+{
+    public int PurchaseReturnId { get; set; }
+    public PurchaseReturn PurchaseReturn { get; set; } = null!;
+
+    public int PurchaseInvoiceItemId { get; set; }
+    public PurchaseInvoiceItem InvoiceItem { get; set; } = null!;
+
+    public int? ProductId { get; set; }
+    public Product? Product { get; set; }
+    public int? ProductVariantId { get; set; }
+    public ProductVariant? ProductVariant { get; set; }
+
+    public int Quantity { get; set; } = 0; // الكمية المرتجعة في هذه العملية
+    public decimal UnitCost { get; set; } = 0; // تكلفة الوحدة وقت الشراء
+    public decimal TotalCost { get; set; } = 0;
+}
+

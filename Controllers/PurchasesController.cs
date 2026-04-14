@@ -237,7 +237,95 @@ public class PurchaseInvoicesController : ControllerBase
             (int)Math.Ceiling((double)total / pageSize)));
     }
 
+    [HttpGet("returns")]
+    public async Task<IActionResult> GetReturns(
+        [FromQuery] int? supplierId = null,
+        [FromQuery] string? search = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    {
+        var q = _db.PurchaseReturns
+            .AsNoTracking()
+            .Include(r => r.Supplier)
+            .Include(r => r.Invoice)
+            .AsQueryable();
+
+        if (supplierId.HasValue) q = q.Where(r => r.SupplierId == supplierId.Value);
+        if (fromDate.HasValue)   q = q.Where(r => r.ReturnDate >= fromDate.Value.Date);
+        if (toDate.HasValue)     q = q.Where(r => r.ReturnDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+        
+        if (!string.IsNullOrEmpty(search))
+            q = q.Where(r => r.ReturnNumber.Contains(search) 
+                           || r.Invoice.InvoiceNumber.Contains(search) 
+                           || r.Supplier.Name.Contains(search));
+
+        var total = await q.CountAsync();
+        var items = await q.OrderByDescending(r => r.ReturnDate)
+            .Skip((page-1)*pageSize).Take(pageSize)
+            .Select(r => new {
+                r.Id,
+                r.ReturnNumber,
+                r.PurchaseInvoiceId,
+                InvoiceNumber = r.Invoice.InvoiceNumber,
+                r.SupplierId,
+                SupplierName = r.Supplier.Name,
+                r.ReturnDate,
+                r.TotalAmount,
+                r.SubTotal,
+                r.TaxAmount,
+                r.DiscountAmount,
+                r.Notes
+            }).ToListAsync();
+
+        return Ok(new PaginatedResult<object>(items.Cast<object>().ToList(), total, page, pageSize,
+            (int)Math.Ceiling((double)total / pageSize)));
+    }
+
+
+    [HttpGet("returns/{id}")]
+    public async Task<IActionResult> GetReturnDetail(int id)
+    {
+        var rtn = await _db.PurchaseReturns
+            .Include(r => r.Supplier)
+            .Include(r => r.Invoice)
+            .Include(r => r.Items).ThenInclude(ri => ri.Product)
+            .Include(r => r.Items).ThenInclude(ri => ri.ProductVariant)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (rtn == null) return NotFound();
+
+        return Ok(new {
+            rtn.Id,
+            rtn.ReturnNumber,
+            rtn.PurchaseInvoiceId,
+            InvoiceNumber = rtn.Invoice.InvoiceNumber,
+            rtn.SupplierId,
+            SupplierName = rtn.Supplier.Name,
+            rtn.ReturnDate,
+            rtn.SubTotal,
+            rtn.TaxAmount,
+            rtn.DiscountAmount,
+            rtn.TotalAmount,
+            rtn.Notes,
+            rtn.ReferenceNumber,
+            Items = rtn.Items.Select(ri => new {
+                ri.Id,
+                ri.PurchaseInvoiceItemId,
+                ri.ProductId,
+                ProductName = ri.Product?.NameAr,
+                ri.ProductVariantId,
+                Size = ri.ProductVariant?.Size,
+                Color = ri.ProductVariant?.ColorAr,
+                ri.Quantity,
+                ri.UnitCost,
+                ri.TotalCost
+            }).ToList()
+        });
+    }
+
     [HttpGet("{id}")]
+
     public async Task<IActionResult> GetById(int id)
     {
         var inv = await _db.PurchaseInvoices
@@ -598,73 +686,172 @@ public class PurchaseInvoicesController : ControllerBase
     [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> ReturnPurchase(int id, [FromBody] ReturnPurchaseInvoiceDto dto)
     {
-        var inv = await _db.PurchaseInvoices
-            .Include(i => i.Supplier)
-            .Include(i => i.Items)
-            .FirstOrDefaultAsync(i => i.Id == id);
+        if (dto.Items == null || !dto.Items.Any())
+            return BadRequest(new { message = "يجب اختيار أصناف للإرجاع" });
 
-        if (inv == null) return NotFound();
-        if (inv.Status == PurchaseInvoiceStatus.Cancelled || inv.Status == PurchaseInvoiceStatus.Returned)
-            return BadRequest(new { message = "هذه الفاتورة ملغاة أو مرتجعة بالكامل مسبقاً." });
-
-        decimal returnedSubTotal = 0;
-        
-        foreach (var reqItem in dto.Items)
+        using var transaction = await _db.Database.BeginTransactionAsync();
+        try
         {
-            var item = inv.Items.FirstOrDefault(i => i.Id == reqItem.PurchaseInvoiceItemId);
-            if (item != null)
-            {
-                var availableToReturn = item.Quantity - item.ReturnedQuantity;
-                var qtyToReturn = Math.Min(reqItem.Quantity, availableToReturn);
-                if (qtyToReturn > 0)
-                {
-                    item.ReturnedQuantity += qtyToReturn;
-                    returnedSubTotal += (qtyToReturn * item.UnitCost);
+            var inv = await _db.PurchaseInvoices
+                .Include(i => i.Supplier)
+                .Include(i => i.Items)
+                .FirstOrDefaultAsync(i => i.Id == id);
 
-                    if (item.ProductId.HasValue)
-                    {
-                        await _inventory.LogMovementAsync(
-                            InventoryMovementType.ReturnOut,
-                            -qtyToReturn, // Negative for OUT
-                            item.ProductId,
-                            item.ProductVariantId,
-                            inv.InvoiceNumber + "-RTN",
-                            $"Purchase Return for Invoice {inv.InvoiceNumber}",
-                            User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                        );
-                    }
+            if (inv == null) return NotFound();
+            if (inv.Status == PurchaseInvoiceStatus.Cancelled)
+                return BadRequest(new { message = "لا يمكن عمل مرتجع لفاتورة ملغاة" });
+
+            // 1. Generate Return Document Number
+            var returnNo = await _seq.NextAsync("PR", async (db, pattern) =>
+            {
+                var max = await db.PurchaseReturns
+                    .Where(r => EF.Functions.Like(r.ReturnNumber, pattern))
+                    .Select(r => r.ReturnNumber)
+                    .ToListAsync();
+                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                          .DefaultIfEmpty(0).Max();
+            });
+
+            var pReturn = new PurchaseReturn
+            {
+                ReturnNumber      = returnNo,
+                PurchaseInvoiceId = inv.Id,
+                SupplierId        = inv.SupplierId,
+                ReturnDate        = dto.ReturnDate != default ? dto.ReturnDate : TimeHelper.GetEgyptTime(),
+                Notes             = dto.Notes,
+                ReferenceNumber   = dto.ReferenceNumber,
+                CreatedByUserId   = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            };
+
+            decimal totalSubTotal = 0;
+
+            foreach (var reqItem in dto.Items)
+            {
+                var invItem = inv.Items.FirstOrDefault(i => i.Id == reqItem.PurchaseInvoiceItemId);
+                if (invItem == null) continue;
+
+                // A. Validate against Invoice quantity remaining
+                var invRemaining = invItem.Quantity - invItem.ReturnedQuantity;
+                if (reqItem.Quantity > invRemaining)
+                    return BadRequest(new { message = $"الكمية المطلوبة ({reqItem.Quantity}) أكبر من المتبقي في الفاتورة ({invRemaining}) للصنف {invItem.Description}" });
+
+                // B. Validate against PHYSICAL STOCK (The "After Sales" requirement)
+                var physicalStock = await _inventory.GetCurrentStockAsync(invItem.ProductId, invItem.ProductVariantId);
+                if (reqItem.Quantity > physicalStock)
+                    return BadRequest(new { message = $"لا يوجد رصيد كافي في المخزن لإتمام المرتجع. الرصيد المتاح حالياً: {physicalStock} وحدة." });
+
+                // C. Update Invoice Item
+                invItem.ReturnedQuantity += reqItem.Quantity;
+
+                // D. Create Return Item
+                var subTotal = reqItem.Quantity * invItem.UnitCost;
+                pReturn.Items.Add(new PurchaseReturnItem
+                {
+                    PurchaseInvoiceItemId = invItem.Id,
+                    ProductId             = invItem.ProductId,
+                    ProductVariantId      = invItem.ProductVariantId,
+                    Quantity              = reqItem.Quantity,
+                    UnitCost              = invItem.UnitCost,
+                    TotalCost             = subTotal
+                });
+
+                totalSubTotal += subTotal;
+
+                // E. Log Inventory Movement
+                if (invItem.ProductId.HasValue)
+                {
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.ReturnOut,
+                        -reqItem.Quantity, // Outward movement
+                        invItem.ProductId,
+                        invItem.ProductVariantId,
+                        returnNo,
+                        $"Purchase Return for Inv #{inv.InvoiceNumber}",
+                        pReturn.CreatedByUserId,
+                        invItem.UnitCost
+                    );
                 }
             }
+
+            if (totalSubTotal <= 0)
+                return BadRequest(new { message = "لم يتم تحديد أي كميات صالحة للإرجاع" });
+
+            // 2. Calculate Prorated Tax & Discount
+            // Ratio = Returned Subtotal / Original Invoice Subtotal
+            decimal prorationRatio = totalSubTotal / (inv.SubTotal > 0 ? inv.SubTotal : 1);
+            pReturn.SubTotal       = totalSubTotal;
+            pReturn.TaxAmount      = Math.Round(inv.TaxAmount * prorationRatio, 2);
+            pReturn.DiscountAmount = Math.Round(inv.DiscountAmount * prorationRatio, 2);
+            pReturn.TotalAmount    = (pReturn.SubTotal + pReturn.TaxAmount) - pReturn.DiscountAmount;
+
+            // 3. Update Invoice & Supplier Ledger
+            inv.ReturnedAmount += pReturn.TotalAmount;
+            inv.Supplier.TotalPurchases -= pReturn.TotalAmount;
+
+            var totalQty = inv.Items.Sum(i => i.Quantity);
+            var totalReturnedQty = inv.Items.Sum(i => i.ReturnedQuantity);
+
+            if (totalReturnedQty >= totalQty)
+                inv.Status = PurchaseInvoiceStatus.Returned;
+            else if (totalReturnedQty > 0)
+                inv.Status = PurchaseInvoiceStatus.PartiallyReturned;
+
+            inv.UpdatedAt = TimeHelper.GetEgyptTime();
+
+            _db.PurchaseReturns.Add(pReturn);
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            // 4. Trigger Accounting Sync
+            _ = PostReturnJournalByReturnRecordWithRetryAsync(pReturn.Id, pReturn.ReturnNumber);
+
+            return Ok(new { 
+                id = inv.Id, 
+                returnId = pReturn.Id,
+                returnNumber = pReturn.ReturnNumber,
+                status = inv.Status.ToString() 
+            });
         }
-
-        if (returnedSubTotal <= 0)
-            return BadRequest(new { message = "لا يوجد كميات قابلة للارجاع أو الكمية المطلوبة صفر." });
-
-        decimal prorationRatio = returnedSubTotal / (inv.SubTotal > 0 ? inv.SubTotal : 1);
-        decimal returnedTaxAmount = Math.Round(inv.TaxAmount * prorationRatio, 2);
-        decimal returnedDiscountAmount = Math.Round(inv.DiscountAmount * prorationRatio, 2);
-        
-        decimal totalReturnedAmt = (returnedSubTotal + returnedTaxAmount) - returnedDiscountAmount;
-
-        inv.ReturnedAmount += totalReturnedAmt;
-        inv.Supplier.TotalPurchases -= totalReturnedAmt;
-
-        var totalQty = inv.Items.Sum(i => i.Quantity);
-        var totalReturnedQty = inv.Items.Sum(i => i.ReturnedQuantity);
-
-        if (totalReturnedQty >= totalQty)
-            inv.Status = PurchaseInvoiceStatus.Returned;
-        else
-            inv.Status = PurchaseInvoiceStatus.PartiallyReturned;
-
-        inv.UpdatedAt = TimeHelper.GetEgyptTime();
-        await _db.SaveChangesAsync();
-
-        // Let the background task handle accounting
-        _ = PostPartialJournalWithRetryAsync(id, inv.InvoiceNumber, returnedSubTotal, returnedTaxAmount, returnedDiscountAmount);
-
-        return Ok(new { id = inv.Id, status = inv.Status.ToString() });
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            _logger.LogError(ex, "Failed to process purchase return for invoice {Id}", id);
+            return StatusCode(500, new { message = "خطأ داخلي أثناء معالجة المرتجع" });
+        }
     }
+
+    private async Task PostReturnJournalByReturnRecordWithRetryAsync(int returnId, string returnNumber)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var acc = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var db  = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                
+                var pReturn = await db.PurchaseReturns
+                    .Include(r => r.Supplier)
+                    .Include(r => r.Invoice)
+                    .Include(r => r.Items)
+                    .FirstAsync(r => r.Id == returnId);
+
+                await acc.PostPurchaseReturnAsync(pReturn);
+                return; 
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogWarning(ex, "[Accounting] Return Journal posting attempt {Attempt}/{Max} failed for return {Number}. Retrying...", attempt, maxAttempts, returnNumber);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Accounting] Return Journal posting permanently failed for return {Number}.", returnNumber);
+            }
+        }
+    }
+
 
     private async Task PostPartialJournalWithRetryAsync(int invoiceId, string invoiceNumber, decimal returnedSubTotal, decimal returnedTaxAmount, decimal returnedDiscountAmount)
     {
