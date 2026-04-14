@@ -335,6 +335,7 @@ public class PurchaseInvoicesController : ControllerBase
 
     public async Task<IActionResult> GetById(int id)
     {
+        var pUnits = await GetUnitsListAsync();
         var inv = await _db.PurchaseInvoices
             .Include(i => i.Supplier)
             .Include(i => i.Items).ThenInclude(it => it.Product)
@@ -350,12 +351,12 @@ public class PurchaseInvoicesController : ControllerBase
             inv.PaymentTerms.ToString(), inv.Status.ToString(),
             inv.InvoiceDate, inv.DueDate,
             inv.SubTotal, inv.TaxPercent, inv.TaxAmount, inv.DiscountAmount, inv.TotalAmount,
-            inv.PaidAmount, inv.TotalAmount - inv.PaidAmount, inv.Notes,
+            inv.PaidAmount, inv.TotalAmount - inv.PaidAmount - inv.ReturnedAmount, inv.Notes,
             inv.Items.Select(it => new PurchaseItemDto(
                 it.Id, it.Description, it.ProductId, 
                 it.Product?.SKU, it.Product?.NameAr, 
                 it.ProductVariantId, it.ProductVariant?.Size, it.ProductVariant?.ColorAr,
-                it.Unit, it.Quantity, it.ReturnedQuantity, it.UnitCost, it.TotalCost
+                it.Unit, GetMultiplier(pUnits, it.Unit), it.Quantity, it.ReturnedQuantity, it.UnitCost, it.TotalCost
             )).ToList(),
             inv.Payments.Select(p => new SupplierPaymentSummaryDto(
                 p.Id, p.PaymentNumber, inv.Supplier.Name, inv.InvoiceNumber,
@@ -749,48 +750,53 @@ public class PurchaseInvoicesController : ControllerBase
                 var invItem = inv.Items.FirstOrDefault(i => i.Id == reqItem.PurchaseInvoiceItemId);
                 if (invItem == null) continue;
 
-                // A. Validate against Invoice quantity remaining
-                var invRemaining = invItem.Quantity - invItem.ReturnedQuantity;
-                if (reqItem.Quantity > invRemaining)
-                    return BadRequest(new { message = $"الكمية المطلوبة ({reqItem.Quantity}) أكبر من المتبقي في الفاتورة ({invRemaining}) للصنف {invItem.Description}" });
-
                 var multiplier = GetMultiplier(pUnits, invItem.Unit);
-                var actualReturnQty = (int)Math.Round(reqItem.Quantity * multiplier);
+                
+                // A. Validate against Invoice quantity remaining (converting to pieces for accuracy)
+                decimal invQtyInPieces = invItem.Quantity * multiplier;
+                decimal returnedInPieces = invItem.ReturnedQuantity * multiplier;
+                decimal remainingInPieces = invQtyInPieces - returnedInPieces;
 
-                // B. Validate against PHYSICAL STOCK (The "After Sales" requirement)
+                if (reqItem.Quantity > remainingInPieces)
+                    return BadRequest(new { message = $"الكمية المطلوبة ({reqItem.Quantity} قطعة) أكبر من المتبقي في الفاتورة ({remainingInPieces} قطعة) للصنف {invItem.Description}" });
+
+                // B. Validate against PHYSICAL STOCK
                 var physicalStock = await _inventory.GetCurrentStockAsync(invItem.ProductId, invItem.ProductVariantId);
-                if (actualReturnQty > physicalStock)
-                    return BadRequest(new { message = $"لا يوجد رصيد كافي في المخزن لإتمام المرتجع. الرصيد المتاح حالياً: {physicalStock} وحدة مخصوم منها المبيعات وأي حركات سابقة." });
+                if (reqItem.Quantity > physicalStock)
+                    return BadRequest(new { message = $"لا يوجد رصيد كافي في المخزن لإتمام المرتجع. الرصيد المتاح حالياً: {physicalStock} قطعة، مخصوم منها المبيعات وأي حركات سابقة." });
 
-                // C. Update Invoice Item
-                invItem.ReturnedQuantity += reqItem.Quantity;
+                // C. Update Invoice Item (Store returned portion in invoice units)
+                decimal returnedInOriginalUnits = multiplier > 0 ? (reqItem.Quantity / multiplier) : reqItem.Quantity;
+                invItem.ReturnedQuantity += returnedInOriginalUnits;
 
                 // D. Create Return Item
-                var subTotal = reqItem.Quantity * invItem.UnitCost;
+                decimal unitCostPerPiece = multiplier > 0 ? (invItem.UnitCost / multiplier) : invItem.UnitCost;
+                var itemSubTotal = Math.Round(reqItem.Quantity * unitCostPerPiece, 2);
+                
                 pReturn.Items.Add(new PurchaseReturnItem
                 {
                     PurchaseInvoiceItemId = invItem.Id,
                     ProductId             = invItem.ProductId,
                     ProductVariantId      = invItem.ProductVariantId,
                     Quantity              = reqItem.Quantity,
-                    UnitCost              = invItem.UnitCost,
-                    TotalCost             = subTotal
+                    UnitCost              = unitCostPerPiece,
+                    TotalCost             = itemSubTotal
                 });
 
-                totalSubTotal += subTotal;
+                totalSubTotal += itemSubTotal;
 
                 // E. Log Inventory Movement
                 if (invItem.ProductId.HasValue)
                 {
                     await _inventory.LogMovementAsync(
                         InventoryMovementType.ReturnOut,
-                        -actualReturnQty, // Outward movement
+                        -(int)Math.Round(reqItem.Quantity), // Outward movement
                         invItem.ProductId,
                         invItem.ProductVariantId,
                         returnNo,
                         $"Purchase Return for Inv #{inv.InvoiceNumber}",
                         pReturn.CreatedByUserId,
-                        multiplier > 0 ? Math.Round(invItem.UnitCost / multiplier, 2) : invItem.UnitCost
+                        unitCostPerPiece
                     );
                 }
             }

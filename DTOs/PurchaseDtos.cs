@@ -143,8 +143,9 @@ public record PurchaseItemDto(
     string? Size,
     string? Color,
     string? Unit,
-    int     Quantity,
-    int     ReturnedQuantity,
+    decimal UnitMultiplier, // Added to support piece-level conversion in UI
+    decimal Quantity,
+    decimal ReturnedQuantity,
     decimal UnitCost,
     decimal TotalCost
 );
@@ -205,7 +206,7 @@ public record UpdatePurchaseStatusDto(PurchaseInvoiceStatus Status);
 // PURCHASE RETURN DTOs
 // ══════════════════════════════════════════════════════
 
-public record ReturnPurchaseItemDto(int PurchaseInvoiceItemId, int Quantity);
+public record ReturnPurchaseItemDto(int PurchaseInvoiceItemId, decimal Quantity);
 
 public record ReturnPurchaseInvoiceDto(
     DateTime ReturnDate,

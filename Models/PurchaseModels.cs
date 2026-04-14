@@ -97,11 +97,11 @@ public class PurchaseInvoiceItem : BaseEntity
     
     public string  Description { get; set; } = string.Empty; // وصف الصنف
     public string? Unit        { get; set; }                  // الوحدة
-    public int     Quantity    { get; set; } = 1;
+    public decimal Quantity    { get; set; } = 1;
     public decimal UnitCost    { get; set; } = 0;
     public decimal TotalCost   { get; set; } = 0;
     
-    public int     ReturnedQuantity { get; set; } = 0;
+    public decimal ReturnedQuantity { get; set; } = 0;
 }
 
 // ══════════════════════════════════════════════════════
@@ -172,7 +172,7 @@ public class PurchaseReturnItem : BaseEntity
     public int? ProductVariantId { get; set; }
     public ProductVariant? ProductVariant { get; set; }
 
-    public int Quantity { get; set; } = 0; // الكمية المرتجعة في هذه العملية
+    public decimal Quantity { get; set; } = 0; // الكمية المرتجعة في هذه العملية
     public decimal UnitCost { get; set; } = 0; // تكلفة الوحدة وقت الشراء
     public decimal TotalCost { get; set; } = 0;
 }
