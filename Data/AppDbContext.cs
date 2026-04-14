@@ -41,6 +41,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<SupplierPayment>      SupplierPayments     { get; set; }
     public DbSet<PurchaseReturn>       PurchaseReturns      { get; set; }
     public DbSet<PurchaseReturnItem>   PurchaseReturnItems { get; set; }
+    public DbSet<ProductUnit>          ProductUnits         { get; set; }
 
     public DbSet<Account>        Accounts        { get; set; }
     public DbSet<AccountSystemMapping> AccountSystemMappings { get; set; }
