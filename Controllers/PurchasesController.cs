@@ -189,6 +189,13 @@ public class PurchaseInvoicesController : ControllerBase
         _pdf            = pdf;
     }
 
+    private async Task<List<ProductUnit>> GetUnitsListAsync() => await _db.ProductUnits.AsNoTracking().ToListAsync();
+    private decimal GetMultiplier(List<ProductUnit> units, string? unitStr)
+    {
+        if (string.IsNullOrWhiteSpace(unitStr)) return 1M;
+        return units.FirstOrDefault(u => u.Symbol == unitStr || u.NameAr == unitStr || u.NameEn == unitStr)?.Multiplier ?? 1M;
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] int?    supplierId = null,
@@ -377,6 +384,8 @@ public class PurchaseInvoicesController : ControllerBase
             }
         }
 
+        var pUnits = await GetUnitsListAsync();
+
         var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
         if (supplier == null)
             return BadRequest(new { message = "المورد غير موجود" });
@@ -433,13 +442,15 @@ public class PurchaseInvoicesController : ControllerBase
 
             if (item.ProductId.HasValue)
             {
-                await _inventory.LogMovementAsync(InventoryMovementType.Purchase, item.Quantity, item.ProductId, item.ProductVariantId, invNo, "Purchase Invoice receipt", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                var multiplier = GetMultiplier(pUnits, item.Unit);
+                var actualQty = (int)Math.Round(item.Quantity * multiplier);
+                await _inventory.LogMovementAsync(InventoryMovementType.Purchase, actualQty, item.ProductId, item.ProductVariantId, invNo, "Purchase Invoice receipt", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
                 
                 // ── Auto-update Product Cost Price ──
                 var product = await _db.Products.FindAsync(item.ProductId.Value);
                 if (product != null)
                 {
-                    product.CostPrice = item.UnitCost;
+                    product.CostPrice = multiplier > 0 ? Math.Round(item.UnitCost / multiplier, 2) : item.UnitCost;
                     product.UpdatedAt = TimeHelper.GetEgyptTime();
                 }
             }
@@ -512,10 +523,12 @@ public class PurchaseInvoicesController : ControllerBase
             }
         }
 
+        var pUnits = await GetUnitsListAsync();
+
         var oldStockMap = inv.Items
             .Where(x => x.ProductId.HasValue)
             .GroupBy(x => new { x.ProductId, x.ProductVariantId })
-            .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
+            .ToDictionary(g => g.Key, g => g.Sum(x => (int)Math.Round(x.Quantity * GetMultiplier(pUnits, x.Unit))));
 
         inv.Supplier.TotalPurchases -= inv.TotalAmount;
 
@@ -562,7 +575,8 @@ public class PurchaseInvoicesController : ControllerBase
             var product = await _db.Products.FindAsync(item.ProductId!.Value);
             if (product != null)
             {
-                product.CostPrice = item.UnitCost;
+                var multiplier = GetMultiplier(pUnits, item.Unit);
+                product.CostPrice = multiplier > 0 ? Math.Round(item.UnitCost / multiplier, 2) : item.UnitCost;
                 product.UpdatedAt = TimeHelper.GetEgyptTime();
             }
         }
@@ -572,7 +586,7 @@ public class PurchaseInvoicesController : ControllerBase
         var newStockMap = inv.Items
             .Where(x => x.ProductId.HasValue)
             .GroupBy(x => new { x.ProductId, x.ProductVariantId })
-            .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
+            .ToDictionary(g => g.Key, g => g.Sum(x => (int)Math.Round(x.Quantity * GetMultiplier(pUnits, x.Unit))));
 
         var keys = oldStockMap.Keys.Union(newStockMap.Keys).Distinct();
         foreach (var key in keys)
@@ -612,15 +626,18 @@ public class PurchaseInvoicesController : ControllerBase
         bool wasInStock = (oldStatus == PurchaseInvoiceStatus.Received || oldStatus == PurchaseInvoiceStatus.Paid || oldStatus == PurchaseInvoiceStatus.PartPaid);
         bool willBeOut  = (dto.Status == PurchaseInvoiceStatus.Cancelled || dto.Status == PurchaseInvoiceStatus.Returned);
 
+        var pUnits = await GetUnitsListAsync();
+
         if (wasInStock && willBeOut)
         {
             foreach (var item in inv.Items)
             {
                 if (item.ProductId.HasValue)
                 {
+                    var actualQty = (int)Math.Round(item.Quantity * GetMultiplier(pUnits, item.Unit));
                     await _inventory.LogMovementAsync(
                         dto.Status == PurchaseInvoiceStatus.Returned ? InventoryMovementType.ReturnOut : InventoryMovementType.Adjustment,
-                        -item.Quantity, // Reverse the previous increase
+                        -actualQty, // Reverse the previous increase
                         item.ProductId,
                         item.ProductVariantId,
                         inv.InvoiceNumber,
@@ -637,9 +654,10 @@ public class PurchaseInvoicesController : ControllerBase
              {
                 if (item.ProductId.HasValue)
                 {
+                    var actualQty = (int)Math.Round(item.Quantity * GetMultiplier(pUnits, item.Unit));
                     await _inventory.LogMovementAsync(
                         InventoryMovementType.Purchase,
-                        item.Quantity,
+                        actualQty,
                         item.ProductId,
                         item.ProductVariantId,
                         inv.InvoiceNumber,
@@ -724,6 +742,7 @@ public class PurchaseInvoicesController : ControllerBase
             };
 
             decimal totalSubTotal = 0;
+            var pUnits = await GetUnitsListAsync();
 
             foreach (var reqItem in dto.Items)
             {
@@ -735,10 +754,13 @@ public class PurchaseInvoicesController : ControllerBase
                 if (reqItem.Quantity > invRemaining)
                     return BadRequest(new { message = $"الكمية المطلوبة ({reqItem.Quantity}) أكبر من المتبقي في الفاتورة ({invRemaining}) للصنف {invItem.Description}" });
 
+                var multiplier = GetMultiplier(pUnits, invItem.Unit);
+                var actualReturnQty = (int)Math.Round(reqItem.Quantity * multiplier);
+
                 // B. Validate against PHYSICAL STOCK (The "After Sales" requirement)
                 var physicalStock = await _inventory.GetCurrentStockAsync(invItem.ProductId, invItem.ProductVariantId);
-                if (reqItem.Quantity > physicalStock)
-                    return BadRequest(new { message = $"لا يوجد رصيد كافي في المخزن لإتمام المرتجع. الرصيد المتاح حالياً: {physicalStock} وحدة." });
+                if (actualReturnQty > physicalStock)
+                    return BadRequest(new { message = $"لا يوجد رصيد كافي في المخزن لإتمام المرتجع. الرصيد المتاح حالياً: {physicalStock} وحدة مخصوم منها المبيعات وأي حركات سابقة." });
 
                 // C. Update Invoice Item
                 invItem.ReturnedQuantity += reqItem.Quantity;
@@ -762,13 +784,13 @@ public class PurchaseInvoicesController : ControllerBase
                 {
                     await _inventory.LogMovementAsync(
                         InventoryMovementType.ReturnOut,
-                        -reqItem.Quantity, // Outward movement
+                        -actualReturnQty, // Outward movement
                         invItem.ProductId,
                         invItem.ProductVariantId,
                         returnNo,
                         $"Purchase Return for Inv #{inv.InvoiceNumber}",
                         pReturn.CreatedByUserId,
-                        invItem.UnitCost
+                        multiplier > 0 ? Math.Round(invItem.UnitCost / multiplier, 2) : invItem.UnitCost
                     );
                 }
             }
