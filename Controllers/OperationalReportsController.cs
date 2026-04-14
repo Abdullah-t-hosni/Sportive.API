@@ -286,9 +286,11 @@ public class OperationalReportsController : ControllerBase
         {
             var opening = (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0);
 
-            // فقط الطلبات حتى تاريخ asOf
+            // فقط الطلبات الآجلة حتى تاريخ asOf
             var ordersUpToDate = c.Orders
-                .Where(o => o.Status != OrderStatus.Cancelled && o.CreatedAt <= asOf)
+                .Where(o => o.Status != OrderStatus.Cancelled 
+                         && o.CreatedAt <= asOf
+                         && (o.PaymentMethod == PaymentMethod.Credit || o.PaymentMethod == PaymentMethod.Mixed || o.RemainingAmount > 0))
                 .ToList();
 
             // فقط المقبوضات حتى تاريخ asOf
@@ -296,7 +298,7 @@ public class OperationalReportsController : ControllerBase
                 .Where(r => r.CustomerId == c.Id && r.VoucherDate <= asOf)
                 .ToList();
 
-            var invoiced = ordersUpToDate.Sum(o => o.TotalAmount);
+            var invoiced = ordersUpToDate.Sum(o => o.TotalAmount - o.Items.Sum(i => i.ReturnedQuantity * i.UnitPrice));
             var paid     = receiptsUpToDate.Sum(r => r.Amount);
             var balance  = opening + invoiced - paid;
             if (balance <= 0) continue;
@@ -309,7 +311,8 @@ public class OperationalReportsController : ControllerBase
             {
                 if (rem <= 0) break;
                 var days = (asOf - o.CreatedAt).Days;
-                var amt  = Math.Min(rem, o.TotalAmount);
+                var oNet = Math.Max(0, o.TotalAmount - o.Items.Sum(i => i.ReturnedQuantity * i.UnitPrice));
+                var amt  = Math.Min(rem, oNet);
                 rem -= amt;
                 if      (days <= 30) c30    += amt;
                 else if (days <= 60) c60    += amt;
@@ -360,10 +363,11 @@ public class OperationalReportsController : ControllerBase
         var rows = new List<SupplierAgingRow>();
         foreach (var s in suppliers)
         {
-            // الفواتير حتى تاريخ asOf (غير الملغاة)
+            // الفواتير الآجلة حتى تاريخ asOf
             var invoicesUpToDate = s.Invoices
                 .Where(i => i.Status != PurchaseInvoiceStatus.Cancelled
-                         && i.InvoiceDate <= asOf)
+                         && i.InvoiceDate <= asOf
+                         && i.PaymentTerms == PaymentTerms.Credit)
                 .ToList();
 
             // المدفوعات حتى تاريخ asOf
@@ -371,7 +375,7 @@ public class OperationalReportsController : ControllerBase
                 .Where(p => p.PaymentDate <= asOf)
                 .ToList();
 
-            var totalInvoiced = invoicesUpToDate.Sum(i => i.TotalAmount);
+            var totalInvoiced = invoicesUpToDate.Sum(i => i.TotalAmount - i.ReturnedAmount);
             var totalPaid     = paymentsUpToDate.Sum(p => p.Amount);
             var balance       = totalInvoiced - totalPaid;
 
@@ -387,8 +391,8 @@ public class OperationalReportsController : ControllerBase
             {
                 if (b <= 0) break;
                 var days = (asOf - inv.InvoiceDate).Days;
-                // نستخدم المبلغ المتبقي إذا وُجد وإلا الإجمالي
-                var invAmt = inv.RemainingAmount > 0 ? inv.RemainingAmount : inv.TotalAmount;
+                // نستخدم المبلغ المتبقي (الصافي بعد المرتجع والمدفوع جزئيا)
+                var invAmt = Math.Max(0, inv.TotalAmount - inv.ReturnedAmount);
                 var amt  = Math.Min(b, invAmt);
                 b -= amt;
                 if      (days <= 30) c30  += amt;
@@ -789,17 +793,38 @@ public class OperationalReportsController : ControllerBase
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        var returns = await _db.PurchaseInvoices
+        var q = _db.PurchaseInvoices
             .Include(i => i.Supplier)
-            .Where(i => i.Status == PurchaseInvoiceStatus.Returned
-                     && i.InvoiceDate >= from && i.InvoiceDate <= to)
-            .OrderByDescending(i => i.InvoiceDate)
-            .ToListAsync();
+            .Include(i => i.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Category)
+            .Include(i => i.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Brand)
+            .Where(i => (i.Status == PurchaseInvoiceStatus.Returned || i.Status == PurchaseInvoiceStatus.PartiallyReturned || i.ReturnedAmount > 0)
+                     && i.InvoiceDate >= from && i.InvoiceDate <= to);
+
+        if (categoryId.HasValue && categoryId > 0)
+        {
+            var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
+            q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && categoryIds.Contains(it.Product.CategoryId.Value)));
+        }
+
+        if (brandId.HasValue && brandId > 0)
+        {
+            var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
+            q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.BrandId.HasValue && brandIds.Contains(it.Product.BrandId.Value)));
+        }
+
+        if (!string.IsNullOrEmpty(color))
+            q = q.Where(i => i.Items.Any(it => (it.ProductVariant != null && (it.ProductVariant.Color == color || it.ProductVariant.ColorAr == color)) || (it.Product != null && it.Product.Variants.Any(v => v.Color == color || v.ColorAr == color))));
+
+        if (!string.IsNullOrEmpty(size))
+            q = q.Where(i => i.Items.Any(it => (it.ProductVariant != null && it.ProductVariant.Size == size) || (it.Product != null && it.Product.Variants.Any(v => v.Size == size))));
+
+        var returns = await q.OrderByDescending(i => i.InvoiceDate).ToListAsync();
 
         var rows = returns.Select(i => new ReturnRow(
             i.InvoiceNumber, i.InvoiceDate,
             i.Supplier.Name, i.Supplier.Phone,
-            i.TotalAmount, i.Notes ?? ""
+            i.ReturnedAmount > 0 ? i.ReturnedAmount : i.TotalAmount, 
+            i.Notes ?? ""
         )).ToList();
 
         if (excel) return ExcelReturns(rows, new { count = rows.Count, totalAmount = rows.Sum(r => r.Amount) }, from, to, "مرتجعات المشتريات");
