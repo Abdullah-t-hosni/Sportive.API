@@ -885,7 +885,7 @@ public class OperationalReportsController : ControllerBase
             .Select(g =>
             {
                 var ordersList = g.ToList();
-                var grossSales = ordersList.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount);
+                var grossSales = ordersList.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount + o.DiscountAmount);
                 
                 // Calculate Total Returns Amount correctly handling partial returns
                 decimal totalReturns = 0;
@@ -893,7 +893,7 @@ public class OperationalReportsController : ControllerBase
                 {
                     if (o.Status == OrderStatus.Returned)
                     {
-                        totalReturns += o.TotalAmount;
+                        totalReturns += (o.TotalAmount + o.DiscountAmount); // The gross returned
                     }
                     else if (o.Items.Any(i => i.ReturnedQuantity > 0))
                     {
@@ -903,13 +903,14 @@ public class OperationalReportsController : ControllerBase
                             decimal lineReturn = (item.Quantity > 0) 
                                 ? (item.TotalPrice / item.Quantity) * item.ReturnedQuantity 
                                 : 0;
+                            // Pro-rate discount return if necessary, but returning the raw line amount is roughly "Gross Returns" 
                             totalReturns += lineReturn;
                         }
                     }
                 }
 
                 var totalDiscount = ordersList.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.DiscountAmount);
-                var netSales = grossSales - totalReturns;
+                var netSales = grossSales - totalReturns - totalDiscount;
 
                 return new UserActivityRow(
                     g.Key,
