@@ -22,7 +22,7 @@ public class Customer : BaseEntity
     public bool IsActive { get; set; } = true;
     public decimal FixedDiscount { get; set; } = 0;
     public string Tags { get; set; } = "[]"; 
-
+    public string? Notes { get; set; }
     public int? MainAccountId { get; set; }
     public Account? MainAccount { get; set; }
 
