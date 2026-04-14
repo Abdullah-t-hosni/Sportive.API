@@ -925,11 +925,14 @@ public class PurchaseInvoicesController : ControllerBase
         inv.Supplier.TotalPurchases -= inv.TotalAmount;
         inv.Supplier.TotalPaid -= inv.PaidAmount;
 
+        var pUnits = await GetUnitsListAsync();
         foreach (var item in inv.Items)
         {
             if (item.ProductId.HasValue)
             {
-                await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, -item.Quantity, item.ProductId, item.ProductVariantId, inv.InvoiceNumber, "Purchase Invoice Deleted", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                var mult = GetMultiplier(pUnits, item.Unit);
+                var actualQty = (int)Math.Round(item.Quantity * mult);
+                await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, -actualQty, item.ProductId, item.ProductVariantId, inv.InvoiceNumber, "Purchase Invoice Deleted", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
             }
         }
 

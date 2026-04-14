@@ -78,7 +78,7 @@ public record CreatePurchaseItemDto(
     int?    ProductId,
     int?    ProductVariantId = null,
     string? Unit = null,
-    int     Quantity = 1,
+    decimal Quantity = 1,
     decimal UnitCost = 0
 );
 
