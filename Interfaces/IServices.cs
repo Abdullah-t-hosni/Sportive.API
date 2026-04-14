@@ -89,6 +89,7 @@ public interface ICustomerService
     Task SyncAllMissingAccountsAsync();
     Task<CustomerDetailDto> UpdateCustomerAsync(int id, UpdateCustomerDto dto);
     Task<List<CustomerRfmDto>> GetRfmDataAsync();
+    Task<int> GetOrCreateCustomerIdByUserIdAsync(string userId);
 }
 
 public interface IDashboardService

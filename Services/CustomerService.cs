@@ -353,4 +353,34 @@ public class CustomerService : ICustomerService
 
         await _db.SaveChangesAsync();
     }
+
+    public async Task<int> GetOrCreateCustomerIdByUserIdAsync(string userId)
+    {
+        var customer = await _db.Customers
+            .Select(c => new { c.Id, c.AppUserId })
+            .FirstOrDefaultAsync(c => c.AppUserId == userId);
+
+        if (customer != null) return customer.Id;
+
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null) return 0;
+
+        var newCustomer = new Customer
+        {
+            AppUserId = user.Id,
+            FullName = user.FullName,
+            Email = user.Email ?? "",
+            Phone = user.PhoneNumber,
+            CreatedAt = TimeHelper.GetEgyptTime(),
+            IsActive = true
+        };
+
+        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
+        if (parent != null) newCustomer.MainAccountId = parent.Id;
+
+        _db.Customers.Add(newCustomer);
+        await _db.SaveChangesAsync();
+
+        return newCustomer.Id;
+    }
 }

@@ -15,11 +15,13 @@ namespace Sportive.API.Controllers;
 public class CartController : ControllerBase
 {
     private readonly ICartService _cartService;
+    private readonly ICustomerService _customerService;
     private readonly AppDbContext _db;
 
-    public CartController(ICartService cartService, AppDbContext db)
+    public CartController(ICartService cartService, ICustomerService customerService, AppDbContext db)
     {
         _cartService = cartService;
+        _customerService = customerService;
         _db = db;
     }
 
@@ -28,18 +30,14 @@ public class CartController : ControllerBase
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(userId)) return 0;
 
-        var customer = await _db.Customers
-            .Select(c => new { c.Id, c.AppUserId })
-            .FirstOrDefaultAsync(c => c.AppUserId == userId);
-            
-        return customer?.Id ?? 0;
+        return await _customerService.GetOrCreateCustomerIdByUserIdAsync(userId);
     }
 
     [HttpGet]
     public async Task<ActionResult<CartSummaryDto>> GetCart()
     {
         var customerId = await GetCustomerIdAsync();
-        if (customerId == 0) return Unauthorized();
+        if (customerId == 0) return Forbid();
 
         var cart = await _cartService.GetCartAsync(customerId);
         return Ok(cart);
@@ -49,7 +47,7 @@ public class CartController : ControllerBase
     public async Task<ActionResult<CartSummaryDto>> AddItem([FromBody] AddToCartDto dto)
     {
         var customerId = await GetCustomerIdAsync();
-        if (customerId == 0) return Unauthorized();
+        if (customerId == 0) return Forbid();
 
         var cart = await _cartService.AddToCartAsync(customerId, dto);
         return Ok(cart);
@@ -59,7 +57,7 @@ public class CartController : ControllerBase
     public async Task<ActionResult<CartSummaryDto>> UpdateItem(int itemId, [FromBody] UpdateCartItemDto dto)
     {
         var customerId = await GetCustomerIdAsync();
-        if (customerId == 0) return Unauthorized();
+        if (customerId == 0) return Forbid();
 
         var cart = await _cartService.UpdateCartItemAsync(customerId, itemId, dto);
         return Ok(cart);
@@ -69,7 +67,7 @@ public class CartController : ControllerBase
     public async Task<ActionResult<CartSummaryDto>> RemoveItem(int itemId)
     {
         var customerId = await GetCustomerIdAsync();
-        if (customerId == 0) return Unauthorized();
+        if (customerId == 0) return Forbid();
 
         var cart = await _cartService.RemoveFromCartAsync(customerId, itemId);
         return Ok(cart);
@@ -79,7 +77,7 @@ public class CartController : ControllerBase
     public async Task<IActionResult> ClearCart()
     {
         var customerId = await GetCustomerIdAsync();
-        if (customerId == 0) return Unauthorized();
+        if (customerId == 0) return Forbid();
 
         await _cartService.ClearCartAsync(customerId);
         return NoContent();

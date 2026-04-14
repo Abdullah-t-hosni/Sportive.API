@@ -29,10 +29,10 @@ public class ReviewsController : ControllerBase
     public async Task<IActionResult> CanReview(int productId)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var customer = await _customers.GetCustomerByUserIdAsync(userId!);
-        if (customer == null) return Ok(false);
+        var customerId = await _customers.GetOrCreateCustomerIdByUserIdAsync(userId!);
+        if (customerId == 0) return Ok(false);
 
-        return Ok(await _reviews.CanCustomerReviewAsync(customer.Id, productId));
+        return Ok(await _reviews.CanCustomerReviewAsync(customerId, productId));
     }
 
     [Authorize]
@@ -40,12 +40,12 @@ public class ReviewsController : ControllerBase
     public async Task<IActionResult> AddReview([FromBody] AddReviewDto dto)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var customer = await _customers.GetCustomerByUserIdAsync(userId!);
-        if (customer == null) return Unauthorized();
+        var customerId = await _customers.GetOrCreateCustomerIdByUserIdAsync(userId!);
+        if (customerId == 0) return Unauthorized();
 
         try
         {
-            var review = await _reviews.AddReviewAsync(customer.Id, dto.ProductId, dto.Rating, dto.Comment);
+            var review = await _reviews.AddReviewAsync(customerId, dto.ProductId, dto.Rating, dto.Comment);
             return Ok(new { message = "Review submitted for moderation", id = review.Id });
         }
         catch (InvalidOperationException ex)
