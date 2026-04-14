@@ -92,7 +92,8 @@ public class OrderService : IOrderService
                 o.Source.ToString(),
                 o.PaymentMethod.ToString(),
                 o.PaymentStatus.ToString(),
-                o.AdminNotes
+                o.AdminNotes,
+                o.CouponCode
             ))
             .ToListAsync();
 
@@ -161,7 +162,8 @@ public class OrderService : IOrderService
             Math.Max(o.PaidAmount, paidAmount), // ✅ Show the real paid amount (max of stored or ledger)
             o.Source.ToString(),
             o.AttachmentUrl, 
-            o.AttachmentPublicId
+            o.AttachmentPublicId,
+            o.CouponCode
         );
     }
 
@@ -537,6 +539,19 @@ public class OrderService : IOrderService
                 _db.Orders.Add(order);
                 order.StatusHistory.Add(new OrderStatusHistory { Status = order.Status, CreatedAt = TimeHelper.GetEgyptTime(), Note = "Order Created." });
 
+                // ✅ UPDATE COUPON USAGE
+                if (!string.IsNullOrEmpty(order.CouponCode))
+                {
+                    var coupon = await _db.Coupons.FirstOrDefaultAsync(c => c.Code.ToUpper() == order.CouponCode.ToUpper());
+                    if (coupon != null)
+                    {
+                        if (coupon.MaxUsageCount.HasValue && coupon.CurrentUsageCount >= coupon.MaxUsageCount)
+                            throw new ArgumentException("هذا الكوبون تم استخدامه بالكامل بالحد الأقصى");
+
+                        coupon.CurrentUsageCount++;
+                    }
+                }
+
                 await _db.SaveChangesAsync();
                 await tx.CommitAsync();
                 return (await GetOrderByIdAsync(order.Id))!;
@@ -662,6 +677,16 @@ public class OrderService : IOrderService
                     item.Quantity, item.ProductId, item.ProductVariantId, order.OrderNumber, $"Order {dto.Status}", updatedByUserId
                 );
             }
+
+            // ✅ RESTORE COUPON USAGE IF CANCELLED OR FULLY RETURNED
+            if ((dto.Status == OrderStatus.Cancelled || dto.Status == OrderStatus.Returned) && !string.IsNullOrEmpty(order.CouponCode))
+            {
+                var coupon = await _db.Coupons.FirstOrDefaultAsync(c => c.Code.ToUpper() == order.CouponCode.ToUpper());
+                if (coupon != null && coupon.CurrentUsageCount > 0)
+                {
+                    coupon.CurrentUsageCount--;
+                }
+            }
         }
 
         await _db.SaveChangesAsync();
@@ -754,6 +779,16 @@ public class OrderService : IOrderService
                 {
                    order.Status = OrderStatus.Returned;
                    order.PaymentStatus = PaymentStatus.Refunded;
+
+                   // ✅ RESTORE COUPON USAGE IF FULLY RETURNED
+                   if (!string.IsNullOrEmpty(order.CouponCode))
+                   {
+                       var coupon = await _db.Coupons.FirstOrDefaultAsync(c => c.Code.ToUpper() == order.CouponCode.ToUpper());
+                       if (coupon != null && coupon.CurrentUsageCount > 0)
+                       {
+                           coupon.CurrentUsageCount--;
+                       }
+                   }
                 }
                 else if (order.Items.Any(i => i.ReturnedQuantity > 0))
                 {

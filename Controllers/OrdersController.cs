@@ -119,7 +119,8 @@ public class OrdersController : ControllerBase
             posDto.Note,
             posDto.DiscountAmount,
             posDto.Subtotal,
-            posDto.Payments
+            posDto.Payments,
+            posDto.CouponCode
         );
 
         var order = await _orderService.CreateOrderAsync(posDto.CustomerId, dto);
@@ -249,6 +250,16 @@ public class OrdersController : ControllerBase
 
         var refundEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == order.OrderNumber + "-RFD");
         if (refundEntry != null) _db.JournalEntries.Remove(refundEntry);
+
+        // ✅ RESTORE COUPON USAGE IF DELETED
+        if (!string.IsNullOrEmpty(order.CouponCode))
+        {
+            var coupon = await _db.Coupons.FirstOrDefaultAsync(c => c.Code.ToUpper() == order.CouponCode.ToUpper());
+            if (coupon != null && coupon.CurrentUsageCount > 0)
+            {
+                coupon.CurrentUsageCount--;
+            }
+        }
 
         _db.Orders.Remove(order);
         await _db.SaveChangesAsync();

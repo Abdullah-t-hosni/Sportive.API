@@ -77,7 +77,8 @@ public record CreatePOSOrderDto(
     string? Note = null,
     decimal? DiscountAmount = null,
     decimal? Subtotal = null,
-    List<OrderPaymentDto>? Payments = null
+    List<OrderPaymentDto>? Payments = null,
+    string? CouponCode = null
 );
 
 public record CreatePOSOrderItemDto(
@@ -104,7 +105,8 @@ public record OrderSummaryDto(
     string Source,
     string PaymentMethod,
     string PaymentStatus,
-    string? AdminNotes = null
+    string? AdminNotes = null,
+    string? CouponCode = null
 );
 
 public record OrderDetailDto(
@@ -132,7 +134,8 @@ public record OrderDetailDto(
     decimal PaidAmount = 0,
     string Source = "Website",
     string? AttachmentUrl = null,
-    string? AttachmentPublicId = null
+    string? AttachmentPublicId = null,
+    string? CouponCode = null
 );
 
 public record OrderItemDto(

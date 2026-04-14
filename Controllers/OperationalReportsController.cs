@@ -275,50 +275,57 @@ public class OperationalReportsController : ControllerBase
         if (!string.IsNullOrEmpty(search))
             customers = customers.Where(c => c.FullName.Contains(search) || (c.Phone != null && c.Phone.Contains(search))).ToList();
 
-        // المدفوعات
-        var allReceipts = await _db.ReceiptVouchers
-            .Where(r => r.CustomerId != null)
+        // ✅ FIX: Use Ledger (JournalLines) to get all movements accurately
+        var ledgerBalances = await _db.JournalLines
+            .Where(l => (l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1201")))
+            .Where(l => l.JournalEntry.EntryDate <= asOf && (l.JournalEntry.Status == JournalEntryStatus.Posted))
+            .GroupBy(l => l.CustomerId)
+            .Select(g => new { CustomerId = g.Key, Balance = g.Sum(l => l.Debit - l.Credit) })
             .ToListAsync();
+
+        var balanceMap = ledgerBalances
+            .Where(x => x.CustomerId != null)
+            .ToDictionary(x => x.CustomerId!.Value, x => x.Balance);
 
         var rows = new List<CustomerAgingRow>();
 
         foreach (var c in customers)
         {
-            var opening = (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0);
+            if (!balanceMap.TryGetValue(c.Id, out var balance) || balance <= 0) 
+                continue;
 
-            // فقط الطلبات الآجلة حتى تاريخ asOf
-            var ordersUpToDate = c.Orders
+            // فقط المبيعات الآجلة حتى تاريخ asOf لتوزيع عمر الدين
+            var creditOrders = c.Orders
                 .Where(o => o.Status != OrderStatus.Cancelled 
                          && o.CreatedAt <= asOf
                          && (o.PaymentMethod == PaymentMethod.Credit || o.PaymentMethod == PaymentMethod.Mixed || o.RemainingAmount > 0))
+                .OrderBy(o => o.CreatedAt)
                 .ToList();
 
-            // فقط المقبوضات حتى تاريخ asOf
-            var receiptsUpToDate = allReceipts
-                .Where(r => r.CustomerId == c.Id && r.VoucherDate <= asOf)
-                .ToList();
-
-            var invoiced = ordersUpToDate.Sum(o => o.TotalAmount - o.Items.Sum(i => i.ReturnedQuantity * i.UnitPrice));
-            var paid     = receiptsUpToDate.Sum(r => r.Amount);
-            var balance  = opening + invoiced - paid;
-            if (balance <= 0) continue;
-
-            // حساب عمر الدين — توزيع الرصيد على الطلبات حسب أعمارها
+            // حساب عمر الدين — توزيع الرصيد على الطلبات حسب أعمارها (LIFO logic for payments assumption)
             decimal rem = balance;
             decimal c30 = 0, c60 = 0, c90 = 0, c90plus = 0;
 
-            foreach (var o in ordersUpToDate.OrderBy(o => o.CreatedAt))
+            foreach (var o in creditOrders)
             {
                 if (rem <= 0) break;
                 var days = (asOf - o.CreatedAt).Days;
-                var oNet = Math.Max(0, o.TotalAmount - o.Items.Sum(i => i.ReturnedQuantity * i.UnitPrice));
-                var amt  = Math.Min(rem, oNet);
+                
+                // Calculate net order amount after returns
+                var oNet = o.TotalAmount - o.Items.Sum(i => i.ReturnedQuantity * i.UnitPrice);
+                if (oNet <= 0) continue;
+
+                var amt = Math.Min(rem, oNet);
                 rem -= amt;
+                
                 if      (days <= 30) c30    += amt;
                 else if (days <= 60) c60    += amt;
                 else if (days <= 90) c90    += amt;
                 else                 c90plus += amt;
             }
+
+            // If there's still balance left after orders, put it in the oldest bucket (Opening Balance/Adjustments)
+            if (rem > 0) c90plus += rem;
 
             rows.Add(new CustomerAgingRow(c.Id, c.FullName, c.Phone ?? "", balance, c30, c60, c90, c90plus));
         }
@@ -359,47 +366,55 @@ public class OperationalReportsController : ControllerBase
         if (!string.IsNullOrEmpty(search))
             suppliers = suppliers.Where(s => s.Name.Contains(search) || s.Phone.Contains(search)).ToList();
 
-        // حساب رصيد المورد حتى تاريخ asOf بشكل دقيق
+        // ✅ FIX: Use Ledger (JournalLines) for accurate balance
+        var ledgerBalances = await _db.JournalLines
+            .Where(l => l.SupplierId != null && l.Account.Code.StartsWith("2101"))
+            .Where(l => l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .GroupBy(l => l.SupplierId)
+            .Select(g => new { SupplierId = g.Key, Balance = g.Sum(l => l.Credit - l.Debit) })
+            .ToListAsync();
+
+        var balanceMap = ledgerBalances
+            .Where(x => x.SupplierId != null)
+            .ToDictionary(x => x.SupplierId!.Value, x => x.Balance);
+
         var rows = new List<SupplierAgingRow>();
         foreach (var s in suppliers)
         {
-            // الفواتير الآجلة حتى تاريخ asOf
-            var invoicesUpToDate = s.Invoices
+            if (!balanceMap.TryGetValue(s.Id, out var balance) || balance <= 0) 
+                continue;
+
+            // الفواتير الآجلة حتى تاريخ asOf لتوزيع عمر الدين
+            var creditInvoices = s.Invoices
                 .Where(i => i.Status != PurchaseInvoiceStatus.Cancelled
                          && i.InvoiceDate <= asOf
                          && i.PaymentTerms == PaymentTerms.Credit)
+                .OrderBy(i => i.InvoiceDate)
                 .ToList();
-
-            // المدفوعات حتى تاريخ asOf
-            var paymentsUpToDate = s.Payments
-                .Where(p => p.PaymentDate <= asOf)
-                .ToList();
-
-            var totalInvoiced = invoicesUpToDate.Sum(i => i.TotalAmount - i.ReturnedAmount);
-            var totalPaid     = paymentsUpToDate.Sum(p => p.Amount);
-            var balance       = totalInvoiced - totalPaid;
-
-            if (balance <= 0) continue;
 
             decimal b = balance;
             decimal c30 = 0, c60 = 0, c90 = 0, c90p = 0;
 
             // توزيع الرصيد على الفواتير بحسب عمرها
-            foreach (var inv in invoicesUpToDate
-                .Where(i => i.RemainingAmount > 0 || i.TotalAmount > 0)
-                .OrderBy(i => i.InvoiceDate))
+            foreach (var inv in creditInvoices)
             {
                 if (b <= 0) break;
                 var days = (asOf - inv.InvoiceDate).Days;
-                // نستخدم المبلغ المتبقي (الصافي بعد المرتجع والمدفوع جزئيا)
+                
                 var invAmt = Math.Max(0, inv.TotalAmount - inv.ReturnedAmount);
-                var amt  = Math.Min(b, invAmt);
+                if (invAmt <= 0) continue;
+
+                var amt = Math.Min(b, invAmt);
                 b -= amt;
+                
                 if      (days <= 30) c30  += amt;
                 else if (days <= 60) c60  += amt;
                 else if (days <= 90) c90  += amt;
                 else                 c90p += amt;
             }
+
+            // If balance remains, put in oldest bucket
+            if (b > 0) c90p += b;
 
             rows.Add(new SupplierAgingRow(
                 s.Id, s.Name, s.Phone,
