@@ -110,7 +110,7 @@ public class OrdersController : ControllerBase
             null,
             null,
             "POS Sale",
-            null,
+            posDto.CouponCode,
             posDto.PosEmployeeId ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             (OrderSource)posDto.OrderSource,
             posDto.Items.Select(i => new CreateOrderItemDto(i.ProductId, i.ProductVariantId, i.Quantity, i.UnitPrice, i.TotalPrice)).ToList(),
@@ -119,8 +119,7 @@ public class OrdersController : ControllerBase
             posDto.Note,
             posDto.DiscountAmount,
             posDto.Subtotal,
-            posDto.Payments,
-            posDto.CouponCode
+            posDto.Payments
         );
 
         var order = await _orderService.CreateOrderAsync(posDto.CustomerId, dto);
