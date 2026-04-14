@@ -164,7 +164,7 @@ public class SupplierPaymentsController : ControllerBase
         if (p.Invoice != null)
         {
             p.Invoice.PaidAmount -= p.Amount;
-            if (p.Invoice.PaidAmount <= 0) p.Invoice.Status = PurchaseInvoiceStatus.Draft;
+            if (p.Invoice.PaidAmount <= 0) p.Invoice.Status = PurchaseInvoiceStatus.Received;
             else if (p.Invoice.PaidAmount < p.Invoice.TotalAmount) p.Invoice.Status = PurchaseInvoiceStatus.PartPaid;
         }
 
