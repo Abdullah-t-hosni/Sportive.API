@@ -96,7 +96,22 @@ public class SalesAccountingService
         if (totalVatAmount > 0)
             lines.Add((vatAcct, 0, totalVatAmount, $"ضريبة مبيعات {store?.VatRatePercent ?? 14}% - {order.OrderNumber}"));
         if (order.DeliveryFee > 0)
+        {
             lines.Add((deliveryRevAcct, 0, order.DeliveryFee, $"إيراد توصيل - {order.OrderNumber}"));
+        }
+        else if (order.FulfillmentType == FulfillmentType.Delivery && !string.IsNullOrEmpty(order.DeliveryAddress?.City))
+        {
+            // ✅ Free Shipping Logic: record as revenue vs discount if it matched a zone
+            var city = order.DeliveryAddress.City.Trim().ToLower();
+            var matchedZone = (await _db.ShippingZones.AsNoTracking().ToListAsync())
+                .FirstOrDefault(z => z.IsActive && z.Governorates.ToLower().Split(',').Any(g => g.Trim() == city));
+            
+            if (matchedZone != null && matchedZone.Fee > 0)
+            {
+                lines.Add((deliveryRevAcct, 0, matchedZone.Fee, $"إيراد توصيل مهدي (مجاني) - {order.OrderNumber}"));
+                lines.Add((salesDiscAcct, matchedZone.Fee, 0, $"خصم شحن مجاني - {order.OrderNumber}"));
+            }
+        }
 
         // ── 2. Debits: Discount + Cash/Credit Routing ─────────
         if (order.DiscountAmount > 0)

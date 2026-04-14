@@ -885,8 +885,9 @@ public class OrderService : IOrderService
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var order = await db.Orders
                     .Include(o => o.Customer)
-                    .Include(o => o.Payments) // ✅ Include structured payments
+                    .Include(o => o.Payments)
                     .Include(o => o.Items).ThenInclude(i => i.Product)
+                    .Include(o => o.DeliveryAddress)
                     .FirstAsync(o => o.Id == orderId);
                 await accounting.PostSalesOrderAsync(order);
                 return;
@@ -946,6 +947,7 @@ public class OrderService : IOrderService
                     .Include(o => o.Customer)
                     .Include(o => o.Payments)
                     .Include(o => o.Items).ThenInclude(i => i.Product)
+                    .Include(o => o.DeliveryAddress)
                     .FirstAsync(o => o.Id == orderId);
                 await accounting.PostSalesReturnAsync(order);
                 return;
