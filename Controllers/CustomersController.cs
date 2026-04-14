@@ -19,8 +19,12 @@ public class CustomersController : ControllerBase
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        [FromQuery] string? search = null) =>
-        Ok(await _customers.GetCustomersAsync(page, pageSize, search));
+        [FromQuery] string? search = null,
+        [FromQuery] decimal? minSpent = null,
+        [FromQuery] int? minOrders = null,
+        [FromQuery] DateTime? joinStartDate = null,
+        [FromQuery] DateTime? joinEndDate = null) =>
+        Ok(await _customers.GetCustomersAsync(page, pageSize, search, minSpent, minOrders, joinStartDate, joinEndDate));
 
     /// <summary>بيانات RFM خفيفة لكل العملاء — بدون pagination أو addresses</summary>
     [Authorize(Roles = "Admin,Manager")]

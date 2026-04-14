@@ -4,6 +4,7 @@ using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using Sportive.API.Utils;
+using System.Text.Json;
 
 namespace Sportive.API.Services;
 
@@ -13,7 +14,9 @@ public class CustomerService : ICustomerService
     public CustomerService(AppDbContext db) => _db = db;
 
     public async Task<PaginatedResult<CustomerDetailDto>> GetCustomersAsync(
-        int page, int pageSize, string? search = null)
+        int page, int pageSize, string? search = null, 
+        decimal? minSpent = null, int? minOrders = null, 
+        DateTime? joinStartDate = null, DateTime? joinEndDate = null)
     {
         pageSize = AppConstants.ClampPrecacheSize(pageSize);
         var query = _db.Customers
@@ -22,6 +25,18 @@ public class CustomerService : ICustomerService
             .Include(c => c.Orders)
             .Include(c => c.MainAccount)
             .AsQueryable();
+
+        if (minSpent.HasValue) 
+            query = query.Where(c => c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) >= minSpent.Value);
+        
+        if (minOrders.HasValue)
+            query = query.Where(c => c.Orders.Count >= minOrders.Value);
+
+        if (joinStartDate.HasValue)
+            query = query.Where(c => c.CreatedAt >= joinStartDate.Value);
+
+        if (joinEndDate.HasValue)
+            query = query.Where(c => c.CreatedAt <= joinEndDate.Value);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -43,7 +58,7 @@ public class CustomerService : ICustomerService
             .Select(c => new
             {
                 c.Id, c.FullName, c.Email, c.Phone, c.AppUserId,
-                c.MainAccountId, c.FixedDiscount, c.CreatedAt,
+                c.MainAccountId, c.FixedDiscount, c.CreatedAt, c.Tags,
                 OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
                 OrderCount = c.Orders.Count,
                 OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
@@ -74,7 +89,8 @@ public class CustomerService : ICustomerService
             c.OrderCount, c.OrderTotal, c.CreatedAt,
             c.Addresses, c.AppUserId,
             c.OpeningBalance + (balanceMap.TryGetValue(c.Id, out var net) ? net : 0),
-            c.MainAccountId, c.FixedDiscount
+            c.MainAccountId, c.FixedDiscount,
+            string.IsNullOrEmpty(c.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(c.Tags)
         )).ToList();
 
         return new PaginatedResult<CustomerDetailDto>(
@@ -96,71 +112,116 @@ public class CustomerService : ICustomerService
             ))
             .ToListAsync();
 
-    public async Task<CustomerDetailDto?> GetCustomerByIdAsync(int id) =>
-        await _db.Customers
+    public async Task<CustomerDetailDto?> GetCustomerByIdAsync(int id)
+    {
+        var rawResult = await _db.Customers
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
             .Include(c => c.MainAccount)
             .Where(c => c.Id == id)
-            .Select(c => new CustomerDetailDto(
-                c.Id, c.FullName, c.Email, c.Phone,
-                c.Orders.Count,
-                c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
-                c.CreatedAt,
-                c.Addresses.Select(a => new AddressDto(
+            .Select(c => new
+            {
+                c.Id, c.FullName, c.Email, c.Phone, c.AppUserId, c.CreatedAt,
+                c.MainAccountId, c.FixedDiscount, c.Tags,
+                OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
+                OrderCount = c.Orders.Count,
+                OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
+                Addresses = c.Addresses.Select(a => new AddressDto(
                     a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
-                )).ToList(),
-                c.AppUserId,
-                (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + _db.JournalLines.Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0,
-                c.MainAccountId,
-                c.FixedDiscount
-            ))
+                )).ToList()
+            })
             .FirstOrDefaultAsync();
 
-    public async Task<CustomerDetailDto?> GetCustomerByEmailAsync(string email) =>
-        await _db.Customers
+        if (rawResult == null) return null;
+
+        var balance = rawResult.OpeningBalance + await _db.JournalLines
+            .Where(l => (l.CustomerId == rawResult.Id || (rawResult.MainAccountId != null && l.AccountId == rawResult.MainAccountId)) && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
+
+        return new CustomerDetailDto(
+            rawResult.Id, rawResult.FullName, rawResult.Email, rawResult.Phone,
+            rawResult.OrderCount, rawResult.OrderTotal, rawResult.CreatedAt,
+            rawResult.Addresses, rawResult.AppUserId,
+            balance,
+            rawResult.MainAccountId, rawResult.FixedDiscount,
+            string.IsNullOrEmpty(rawResult.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(rawResult.Tags)!
+        );
+    }
+
+    public async Task<CustomerDetailDto?> GetCustomerByEmailAsync(string email)
+    {
+        var rawResult = await _db.Customers
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
             .Include(c => c.MainAccount)
             .Where(c => c.Email == email)
-            .Select(c => new CustomerDetailDto(
-                c.Id, c.FullName, c.Email, c.Phone,
-                c.Orders.Count,
-                c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
-                c.CreatedAt,
-                c.Addresses.Select(a => new AddressDto(
+            .Select(c => new
+            {
+                c.Id, c.FullName, c.Email, c.Phone, c.AppUserId, c.CreatedAt,
+                c.MainAccountId, c.FixedDiscount, c.Tags,
+                OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
+                OrderCount = c.Orders.Count,
+                OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
+                Addresses = c.Addresses.Select(a => new AddressDto(
                     a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
-                )).ToList(),
-                c.AppUserId,
-                (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + _db.JournalLines.Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0,
-                c.MainAccountId,
-                c.FixedDiscount
-            ))
+                )).ToList()
+            })
             .FirstOrDefaultAsync();
 
-    public async Task<CustomerDetailDto?> GetCustomerByUserIdAsync(string userId) =>
-        await _db.Customers
+        if (rawResult == null) return null;
+
+        var balance = rawResult.OpeningBalance + await _db.JournalLines
+            .Where(l => (l.CustomerId == rawResult.Id || (rawResult.MainAccountId != null && l.AccountId == rawResult.MainAccountId)) && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
+
+        return new CustomerDetailDto(
+            rawResult.Id, rawResult.FullName, rawResult.Email, rawResult.Phone,
+            rawResult.OrderCount, rawResult.OrderTotal, rawResult.CreatedAt,
+            rawResult.Addresses, rawResult.AppUserId,
+            balance,
+            rawResult.MainAccountId, rawResult.FixedDiscount,
+            string.IsNullOrEmpty(rawResult.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(rawResult.Tags)!
+        );
+    }
+
+    public async Task<CustomerDetailDto?> GetCustomerByUserIdAsync(string userId)
+    {
+        var rawResult = await _db.Customers
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
             .Include(c => c.MainAccount)
             .Where(c => c.AppUserId == userId)
-            .Select(c => new CustomerDetailDto(
-                c.Id, c.FullName, c.Email, c.Phone,
-                c.Orders.Count,
-                c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
-                c.CreatedAt,
-                c.Addresses.Select(a => new AddressDto(
+            .Select(c => new
+            {
+                c.Id, c.FullName, c.Email, c.Phone, c.AppUserId, c.CreatedAt,
+                c.MainAccountId, c.FixedDiscount, c.Tags,
+                OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
+                OrderCount = c.Orders.Count,
+                OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
+                Addresses = c.Addresses.Select(a => new AddressDto(
                     a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
                     a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
-                )).ToList(),
-                c.AppUserId,
-                (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) + _db.JournalLines.Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && l.JournalEntry.Status == JournalEntryStatus.Posted).Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0,
-                c.MainAccountId,
-                c.FixedDiscount
-            ))
+                )).ToList()
+            })
             .FirstOrDefaultAsync();
+
+        if (rawResult == null) return null;
+
+        var balance = rawResult.OpeningBalance + await _db.JournalLines
+            .Where(l => (l.CustomerId == rawResult.Id || (rawResult.MainAccountId != null && l.AccountId == rawResult.MainAccountId)) && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
+
+        return new CustomerDetailDto(
+            rawResult.Id, rawResult.FullName, rawResult.Email, rawResult.Phone,
+            rawResult.OrderCount, rawResult.OrderTotal, rawResult.CreatedAt,
+            rawResult.Addresses, rawResult.AppUserId,
+            balance,
+            rawResult.MainAccountId, rawResult.FixedDiscount,
+            string.IsNullOrEmpty(rawResult.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(rawResult.Tags)!
+        );
+    }
 
     public async Task<CustomerDetailDto> CreateCustomerAsync(CreateCustomerDto dto)
     {
@@ -196,7 +257,8 @@ public class CustomerService : ICustomerService
             Phone = dto.Phone,
             CreatedAt = TimeHelper.GetEgyptTime(),
             IsActive = true,
-            FixedDiscount = dto.FixedDiscount
+            FixedDiscount = dto.FixedDiscount,
+            Tags = dto.Tags != null ? JsonSerializer.Serialize(dto.Tags) : "[]"
         };
 
         // ── Point to main 1103 (Receivables) Control Account ──
@@ -223,6 +285,7 @@ public class CustomerService : ICustomerService
         customer.IsActive = dto.IsActive;
         customer.MainAccountId = dto.MainAccountId;
         customer.FixedDiscount = dto.FixedDiscount;
+        customer.Tags = dto.Tags != null ? JsonSerializer.Serialize(dto.Tags) : customer.Tags;
         customer.UpdatedAt = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();

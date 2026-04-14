@@ -27,7 +27,8 @@ public record CustomerDetailDto(
     [property: JsonPropertyName("appUserId")] string? AppUserId = null,
     [property: JsonPropertyName("balance")] decimal Balance = 0,
     [property: JsonPropertyName("mainAccountId")] int? MainAccountId = null,
-    [property: JsonPropertyName("fixedDiscount")] decimal FixedDiscount = 0
+    [property: JsonPropertyName("fixedDiscount")] decimal FixedDiscount = 0,
+    [property: JsonPropertyName("tags")] List<string>? Tags = null
 );
 
 // ========== RFM (lightweight — no addresses, no balance) ==========
@@ -74,7 +75,8 @@ public record CreateCustomerDto(
     [property: JsonPropertyName("fullName")] string FullName,
     [property: JsonPropertyName("email")] string? Email = null,
     [property: JsonPropertyName("phone")] string? Phone = null,
-    [property: JsonPropertyName("fixedDiscount")] decimal FixedDiscount = 0
+    [property: JsonPropertyName("fixedDiscount")] decimal FixedDiscount = 0,
+    [property: JsonPropertyName("tags")] List<string>? Tags = null
 );
 
 public record UpdateCustomerDto(
@@ -83,5 +85,6 @@ public record UpdateCustomerDto(
     [property: JsonPropertyName("phone")] string? Phone,
     [property: JsonPropertyName("isActive")] bool IsActive = true,
     [property: JsonPropertyName("mainAccountId")] int? MainAccountId = null,
-    [property: JsonPropertyName("fixedDiscount")] decimal FixedDiscount = 0
+    [property: JsonPropertyName("fixedDiscount")] decimal FixedDiscount = 0,
+    [property: JsonPropertyName("tags")] List<string>? Tags = null
 );
