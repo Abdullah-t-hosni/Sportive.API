@@ -206,8 +206,18 @@ public class PurchaseInvoicesController : ControllerBase
         if (supplierId.HasValue) q = q.Where(i => i.SupplierId == supplierId.Value);
         if (fromDate.HasValue)   q = q.Where(i => i.InvoiceDate >= fromDate.Value.Date);
         if (toDate.HasValue)     q = q.Where(i => i.InvoiceDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
-        if (!string.IsNullOrEmpty(status) && Enum.TryParse<PurchaseInvoiceStatus>(status, out var st))
-            q = q.Where(i => i.Status == st);
+        if (!string.IsNullOrEmpty(status))
+        {
+            var stList = status.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            var parsedStatuses = new List<PurchaseInvoiceStatus>();
+            foreach (var s in stList)
+            {
+                if (Enum.TryParse<PurchaseInvoiceStatus>(s.Trim(), out var st))
+                    parsedStatuses.Add(st);
+            }
+            if (parsedStatuses.Count > 0)
+                q = q.Where(i => parsedStatuses.Contains(i.Status));
+        }
         if (!string.IsNullOrEmpty(search))
             q = q.Where(i => i.InvoiceNumber.Contains(search)
                            || (i.SupplierInvoiceNumber != null && i.SupplierInvoiceNumber.Contains(search))
@@ -220,7 +230,7 @@ public class PurchaseInvoicesController : ControllerBase
                 i.Id, i.InvoiceNumber, i.SupplierInvoiceNumber, i.SupplierId, i.Supplier.Name,
                 i.PaymentTerms.ToString(), i.Status.ToString(),
                 i.InvoiceDate, i.DueDate,
-                i.TotalAmount, i.PaidAmount, i.TotalAmount - i.PaidAmount
+                i.TotalAmount, i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount
             )).ToListAsync();
 
         return Ok(new PaginatedResult<PurchaseInvoiceSummaryDto>(items, total, page, pageSize,
@@ -250,7 +260,7 @@ public class PurchaseInvoicesController : ControllerBase
                 it.Id, it.Description, it.ProductId, 
                 it.Product?.SKU, it.Product?.NameAr, 
                 it.ProductVariantId, it.ProductVariant?.Size, it.ProductVariant?.ColorAr,
-                it.Unit, it.Quantity, it.UnitCost, it.TotalCost
+                it.Unit, it.Quantity, it.ReturnedQuantity, it.UnitCost, it.TotalCost
             )).ToList(),
             inv.Payments.Select(p => new SupplierPaymentSummaryDto(
                 p.Id, p.PaymentNumber, inv.Supplier.Name, inv.InvoiceNumber,
@@ -582,6 +592,107 @@ public class PurchaseInvoicesController : ControllerBase
         inv.UpdatedAt = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
         return Ok(new { id = inv.Id, status = inv.Status.ToString() });
+    }
+
+    [HttpPost("{id}/return")]
+    [Authorize(Roles = "Admin,Manager")]
+    public async Task<IActionResult> ReturnPurchase(int id, [FromBody] ReturnPurchaseInvoiceDto dto)
+    {
+        var inv = await _db.PurchaseInvoices
+            .Include(i => i.Supplier)
+            .Include(i => i.Items)
+            .FirstOrDefaultAsync(i => i.Id == id);
+
+        if (inv == null) return NotFound();
+        if (inv.Status == PurchaseInvoiceStatus.Cancelled || inv.Status == PurchaseInvoiceStatus.Returned)
+            return BadRequest(new { message = "هذه الفاتورة ملغاة أو مرتجعة بالكامل مسبقاً." });
+
+        decimal returnedSubTotal = 0;
+        
+        foreach (var reqItem in dto.Items)
+        {
+            var item = inv.Items.FirstOrDefault(i => i.Id == reqItem.PurchaseInvoiceItemId);
+            if (item != null)
+            {
+                var availableToReturn = item.Quantity - item.ReturnedQuantity;
+                var qtyToReturn = Math.Min(reqItem.Quantity, availableToReturn);
+                if (qtyToReturn > 0)
+                {
+                    item.ReturnedQuantity += qtyToReturn;
+                    returnedSubTotal += (qtyToReturn * item.UnitCost);
+
+                    if (item.ProductId.HasValue)
+                    {
+                        await _inventory.LogMovementAsync(
+                            InventoryMovementType.ReturnOut,
+                            -qtyToReturn, // Negative for OUT
+                            item.ProductId,
+                            item.ProductVariantId,
+                            inv.InvoiceNumber + "-RTN",
+                            $"Purchase Return for Invoice {inv.InvoiceNumber}",
+                            User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                        );
+                    }
+                }
+            }
+        }
+
+        if (returnedSubTotal <= 0)
+            return BadRequest(new { message = "لا يوجد كميات قابلة للارجاع أو الكمية المطلوبة صفر." });
+
+        decimal prorationRatio = returnedSubTotal / (inv.SubTotal > 0 ? inv.SubTotal : 1);
+        decimal returnedTaxAmount = Math.Round(inv.TaxAmount * prorationRatio, 2);
+        decimal returnedDiscountAmount = Math.Round(inv.DiscountAmount * prorationRatio, 2);
+        
+        decimal totalReturnedAmt = (returnedSubTotal + returnedTaxAmount) - returnedDiscountAmount;
+
+        inv.ReturnedAmount += totalReturnedAmt;
+        inv.Supplier.TotalPurchases -= totalReturnedAmt;
+
+        var totalQty = inv.Items.Sum(i => i.Quantity);
+        var totalReturnedQty = inv.Items.Sum(i => i.ReturnedQuantity);
+
+        if (totalReturnedQty >= totalQty)
+            inv.Status = PurchaseInvoiceStatus.Returned;
+        else
+            inv.Status = PurchaseInvoiceStatus.PartiallyReturned;
+
+        inv.UpdatedAt = TimeHelper.GetEgyptTime();
+        await _db.SaveChangesAsync();
+
+        // Let the background task handle accounting
+        _ = PostPartialJournalWithRetryAsync(id, inv.InvoiceNumber, returnedSubTotal, returnedTaxAmount, returnedDiscountAmount);
+
+        return Ok(new { id = inv.Id, status = inv.Status.ToString() });
+    }
+
+    private async Task PostPartialJournalWithRetryAsync(int invoiceId, string invoiceNumber, decimal returnedSubTotal, decimal returnedTaxAmount, decimal returnedDiscountAmount)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var acc = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var db  = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var inv = await db.PurchaseInvoices
+                    .Include(i => i.Supplier)
+                    .FirstAsync(i => i.Id == invoiceId);
+
+                await acc.PostPurchaseReturnAsync(inv, returnedSubTotal, returnedTaxAmount, returnedDiscountAmount);
+                return; 
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogWarning(ex, "[Accounting] Partial Return Journal posting attempt {Attempt}/{Max} failed for invoice {Number}. Retrying...", attempt, maxAttempts, invoiceNumber);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Accounting] Partial Return Journal posting permanently failed for invoice {Number}.", invoiceNumber);
+            }
+        }
     }
 
     [HttpDelete("{id}")]

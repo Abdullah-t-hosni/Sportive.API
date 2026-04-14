@@ -15,6 +15,24 @@ public class OperationalReportsController : ControllerBase
 {
     private readonly AppDbContext _db;
     public OperationalReportsController(AppDbContext db) => _db = db;
+    
+    [HttpGet("dictionaries")]
+    public async Task<IActionResult> GetDictionaries()
+    {
+        var colors = await _db.ProductVariants
+            .Where(v => v.ColorAr != null || v.Color != null)
+            .Select(v => v.ColorAr ?? v.Color)
+            .Distinct()
+            .ToListAsync();
+
+        var sizes = await _db.ProductVariants
+            .Where(v => v.Size != null)
+            .Select(v => v.Size)
+            .Distinct()
+            .ToListAsync();
+
+        return Ok(new { colors, sizes });
+    }
 
     // ══════════════════════════════════════════════════════
     // 1. كشف حساب عميل
@@ -195,7 +213,7 @@ public class OperationalReportsController : ControllerBase
             decimal initialBal = 0; // Suppliers usually 0 opening or from account
             decimal priorInvoices = await _db.PurchaseInvoices
                 .Where(i => i.SupplierId == supplierId && i.InvoiceDate < from && i.Status != PurchaseInvoiceStatus.Cancelled)
-                .SumAsync(i => (decimal?)i.TotalAmount) ?? 0;
+                .SumAsync(i => (decimal?)(i.TotalAmount - i.ReturnedAmount)) ?? 0;
             decimal priorPayments = await _db.SupplierPayments
                 .Where(p => p.SupplierId == supplierId && p.PaymentDate < from)
                 .SumAsync(p => (decimal?)p.Amount) ?? 0;
@@ -209,6 +227,12 @@ public class OperationalReportsController : ControllerBase
         {
             balance += inv.TotalAmount;
             lines.Add(new CustomerStatementLine(inv.InvoiceDate, "فاتورة شراء", inv.InvoiceNumber, "فاتورة مشتريات", inv.TotalAmount, 0, balance));
+            
+            if (inv.ReturnedAmount > 0)
+            {
+                balance -= inv.ReturnedAmount;
+                lines.Add(new CustomerStatementLine(inv.UpdatedAt ?? inv.InvoiceDate, "مرتجع مشتريات", inv.InvoiceNumber + "-RTN", "مرتجع من فاتورة", 0, inv.ReturnedAmount, balance));
+            }
         }
 
         foreach (var p in payments)
@@ -225,8 +249,9 @@ public class OperationalReportsController : ControllerBase
             supplier = new { supplier.Id, supplier.Name, supplier.Phone },
             from, to, lines, 
             totalInvoiced = invoices.Sum(i => i.TotalAmount), 
+            totalReturned = invoices.Sum(i => i.ReturnedAmount),
             totalPaid = payments.Sum(p => p.Amount),
-            outstanding = invoices.Sum(i => i.TotalAmount) - payments.Sum(p => p.Amount)
+            outstanding = (invoices.Sum(i => i.TotalAmount) - invoices.Sum(i => i.ReturnedAmount)) - payments.Sum(p => p.Amount)
         });
     }
 
@@ -663,12 +688,16 @@ public class OperationalReportsController : ControllerBase
             i.Supplier?.Name ?? "N/A", i.InvoiceDate,
             i.PaymentTerms.ToString(), i.Status.ToString(),
             i.SubTotal, i.TaxAmount, i.TotalAmount,
-            i.PaidAmount, i.TotalAmount - i.PaidAmount
+            i.ReturnedAmount,
+            i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount
         )).ToList();
 
         var summary = new {
             totalInvoices  = rows.Count,
-            totalAmount    = rows.Sum(r => r.TotalAmount),
+            totalGross     = rows.Sum(r => r.TotalAmount),
+            totalReturned  = rows.Sum(r => r.ReturnedAmount),
+            totalNet       = rows.Sum(r => r.TotalAmount - r.ReturnedAmount),
+            totalAmount    = rows.Sum(r => r.TotalAmount - r.ReturnedAmount), // Compatibility
             totalPaid      = rows.Sum(r => r.PaidAmount),
             totalRemaining = rows.Sum(r => r.RemainingAmount),
             totalTax       = rows.Sum(r => r.TaxAmount),
@@ -1303,7 +1332,7 @@ public record SupplierAgingRow(int SupplierId, string SupplierName, string Phone
 public record InventoryRow(int Id, string NameAr, string NameEn, string SKU, string CategoryName, decimal Price, decimal? DiscountPrice, decimal CostPrice, int TotalStock, decimal TotalValue, decimal TotalCostValue, List<VariantInventoryRow> Variants);
 public record VariantInventoryRow(int Id, string Size, string Color, string ColorAr, int StockQuantity, decimal Price, decimal Value);
 public record SalesRow(int Id, string OrderNumber, DateTime Date, string CustomerName, string Phone, string Source, string Status, string PaymentMethod, decimal SubTotal, decimal DiscountAmount, decimal TotalAmount, int ItemCount);
-public record PurchaseRow(int Id, string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal PaidAmount, decimal RemainingAmount);
+public record PurchaseRow(int Id, string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal ReturnedAmount, decimal PaidAmount, decimal RemainingAmount);
 public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason);
 public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal GrossSales, decimal TotalReturns, decimal TotalDiscount, decimal NetSales, int Cancellations);
 public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "", int Balance = 0);

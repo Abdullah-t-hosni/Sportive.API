@@ -42,8 +42,9 @@ public enum PurchaseInvoiceStatus
     Paid     = 3,  // مدفوعة
     PartPaid = 4,  // مدفوعة جزئياً
     Overdue  = 5,  // متأخرة
-    Returned = 6,  // مرتجعة
+    Returned = 6,  // مرتجعة كلياً
     Cancelled = 7, // ملغاة
+    PartiallyReturned = 8 // مرتجعة جزئياً
 }
 
 public class PurchaseInvoice : BaseEntity
@@ -64,9 +65,10 @@ public class PurchaseInvoice : BaseEntity
     public decimal TaxPercent    { get; set; } = 0;   // نسبة الضريبة %
     public decimal TaxAmount     { get; set; } = 0;   // مبلغ الضريبة
     public decimal DiscountAmount { get; set; } = 0;  // قيمة الخصم المكتسب
-    public decimal TotalAmount   { get; set; } = 0;
-    public decimal PaidAmount    { get; set; } = 0;
-    public decimal RemainingAmount => TotalAmount - PaidAmount;
+    public decimal TotalAmount   { get; set; } = 0; // الإجمالي النهائي
+    public decimal PaidAmount    { get; set; } = 0; // المبلغ المدفوع
+    public decimal ReturnedAmount { get; set; } = 0; // القيمة المرتجعة
+    public decimal RemainingAmount => TotalAmount - PaidAmount - ReturnedAmount;
 
     public string? Notes { get; set; }
     public string? AttachmentUrl { get; set; }
@@ -98,6 +100,8 @@ public class PurchaseInvoiceItem : BaseEntity
     public int     Quantity    { get; set; } = 1;
     public decimal UnitCost    { get; set; } = 0;
     public decimal TotalCost   { get; set; } = 0;
+    
+    public int     ReturnedQuantity { get; set; } = 0;
 }
 
 // ══════════════════════════════════════════════════════

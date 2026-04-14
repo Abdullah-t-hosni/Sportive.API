@@ -144,6 +144,7 @@ public record PurchaseItemDto(
     string? Color,
     string? Unit,
     int     Quantity,
+    int     ReturnedQuantity,
     decimal UnitCost,
     decimal TotalCost
 );
@@ -199,3 +200,13 @@ public record SupplierBalanceDto(
 );
 
 public record UpdatePurchaseStatusDto(PurchaseInvoiceStatus Status);
+
+// ══════════════════════════════════════════════════════
+// PURCHASE RETURN DTOs
+// ══════════════════════════════════════════════════════
+
+public record ReturnPurchaseItemDto(int PurchaseInvoiceItemId, int Quantity);
+
+public record ReturnPurchaseInvoiceDto(
+    List<ReturnPurchaseItemDto> Items
+);

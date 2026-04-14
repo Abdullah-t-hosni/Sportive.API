@@ -67,9 +67,15 @@ public class PurchaseAccountingService
             invoice.InvoiceDate, lines, supplierId: invoice.SupplierId);
     }
 
-    public async Task PostPurchaseReturnAsync(PurchaseInvoice invoice)
+    public async Task PostPurchaseReturnAsync(PurchaseInvoice invoice, decimal returnedSubTotal = 0, decimal returnedTaxAmount = 0, decimal returnedDiscountAmount = 0)
     {
-        var refNo = invoice.InvoiceNumber + "-RTN";
+        var isPartial = returnedSubTotal > 0;
+        var subTotal = isPartial ? returnedSubTotal : invoice.SubTotal;
+        var taxAmt   = isPartial ? returnedTaxAmount : invoice.TaxAmount;
+        var discAmt  = isPartial ? returnedDiscountAmount : invoice.DiscountAmount;
+        var totalAmt = (subTotal + taxAmt) - discAmt;
+
+        var refNo = isPartial ? $"{invoice.InvoiceNumber}-PRTN-{DateTime.UtcNow.Ticks % 10000}" : invoice.InvoiceNumber + "-RTN";
         if (await _core.EntryExistsAsync(JournalEntryType.PurchaseReturn, refNo)) return;
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
@@ -78,20 +84,20 @@ public class PurchaseAccountingService
         var vendorAcct = invoice.VendorAccountId != null ? $"ID:{invoice.VendorAccountId}" 
                         : invoice.Supplier?.MainAccountId != null ? $"ID:{invoice.Supplier.MainAccountId}" 
                         : _core.GetMap(mapDict, MK.Supplier, AccountingCoreService.PAYABLES);
-        var rtnAcct    = invoice.ExpenseAccountId != null ? $"ID:{invoice.ExpenseAccountId}" : _core.GetMap(mapDict, MK.PurchaseReturn, AccountingCoreService.PURCHASES_NET);
+        var rtnAcct    = invoice.InventoryAccountId != null ? $"ID:{invoice.InventoryAccountId}" : _core.GetMap(mapDict, MK.Inventory, AccountingCoreService.INVENTORY);
         var vatAcct    = invoice.VatAccountId != null ? $"ID:{invoice.VatAccountId}" : _core.GetMap(mapDict, MK.VatInput, AccountingCoreService.VAT_INPUT);
 
-        lines.Add((vendorAcct, invoice.TotalAmount, 0, $"رد للمورد - {invoice.InvoiceNumber}"));
-        lines.Add((rtnAcct, 0, invoice.SubTotal, $"مرتجع مشتريات - {invoice.InvoiceNumber}"));
+        lines.Add((vendorAcct, totalAmt, 0, $"رد للمورد {(isPartial ? "(جزئي)" : "")} - {invoice.InvoiceNumber}"));
+        lines.Add((rtnAcct, 0, subTotal, $"مرتجع مشتريات {(isPartial ? "(جزئي)" : "")} - {invoice.InvoiceNumber}"));
 
-        if (invoice.DiscountAmount > 0)
+        if (discAmt > 0)
         {
             var discAcct = _core.GetMap(mapDict, MK.PurchaseDiscount, AccountingCoreService.PURCHASE_DISC);
-            lines.Add((discAcct, invoice.DiscountAmount, 0, $"عكس خصم مشتريات - {invoice.InvoiceNumber}"));
+            lines.Add((discAcct, discAmt, 0, $"عكس خصم مشتريات - {invoice.InvoiceNumber}"));
         }
 
-        if (invoice.TaxAmount > 0) lines.Add((vatAcct, 0, invoice.TaxAmount, $"استرداد ضريبة - {invoice.InvoiceNumber}"));
+        if (taxAmt > 0) lines.Add((vatAcct, 0, taxAmt, $"استرداد ضريبة - {invoice.InvoiceNumber}"));
 
-        await _core.PostEntryAsync(JournalEntryType.PurchaseReturn, refNo, $"مرتجع مشتريات {invoice.InvoiceNumber}", TimeHelper.GetEgyptTime(), lines, supplierId: invoice.SupplierId);
+        await _core.PostEntryAsync(JournalEntryType.PurchaseReturn, refNo, $"مرتجع مشتريات {(isPartial ? "جزئي" : "")} {invoice.InvoiceNumber}", TimeHelper.GetEgyptTime(), lines, supplierId: invoice.SupplierId);
     }
 }
