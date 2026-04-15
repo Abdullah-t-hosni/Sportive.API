@@ -234,7 +234,7 @@ public class ImportController : ControllerBase
                         DiscountPrice = dPrice,
                         CostPrice     = cost,
                         BrandId       = brandId,
-                        UnitId        = unitId,
+                        // UnitId        = unitId, // Reverted due to missing DB column
                         DescriptionAr = descAr,
                         DescriptionEn = descEn,
                         IsFeatured    = isFeatStr.Contains("نعم"),
