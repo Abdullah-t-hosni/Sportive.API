@@ -148,32 +148,45 @@ public class ImportController : ControllerBase
             using var stream = file.OpenReadStream();
             using var wb     = new XLWorkbook(stream);
 
-            var ws = wb.Worksheets.FirstOrDefault();
-            if (ws == null) throw new Exception("الملف فارغ");
+            // Find the correct worksheet (Skip hidden "Lists" sheet)
+            var ws = wb.Worksheets.FirstOrDefault(x => x.Visibility == XLWorksheetVisibility.Visible)
+                     ?? wb.Worksheets.FirstOrDefault();
+
+            if (ws == null) throw new Exception("الملف لا يحتوي على صفحات عمل");
 
             var headers = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var firstRow = ws.Row(1);
-            for (int c = 1; c <= ws.LastColumnUsed()?.ColumnNumber(); c++)
+            
+            // Normalize header text for comparison (remove spaces, symbols, and asterisks)
+            string Normalize(string s) => new string(s.Where(c => char.IsLetterOrDigit(c)).ToArray()).ToLower();
+
+            for (int c = 1; c <= (ws.LastColumnUsed()?.ColumnNumber() ?? 20); c++)
             {
-                var hText = firstRow.Cell(c).GetString().Trim().Replace("*", "").Trim();
-                if (!string.IsNullOrEmpty(hText) && !headers.ContainsKey(hText))
-                    headers[hText] = c;
+                var hRaw = firstRow.Cell(c).GetString().Trim();
+                if (string.IsNullOrEmpty(hRaw)) continue;
+                
+                var hNorm = Normalize(hRaw);
+                if (!headers.ContainsKey(hNorm))
+                    headers[hNorm] = c;
             }
 
             int GetCol(params string[] aliases) {
-                foreach (var a in aliases) if (headers.TryGetValue(a, out var idx)) return idx;
+                foreach (var a in aliases) {
+                    var aNorm = Normalize(a);
+                    if (headers.TryGetValue(aNorm, out var idx)) return idx;
+                }
                 return -1;
             }
 
-            // Mapping columns
-            int colNameAr   = GetCol("الاسم عربي", "اسم المنتج");
-            int colNameEn   = GetCol("الاسم انجليزي", "الاسم انجليزي");
-            int colMainCat  = GetCol("التصنيف الأساسي", "الفئة", "كود الفئة");
-            int colSubCat   = GetCol("التصنيف الفرعي");
-            int colSku      = GetCol("الكود SKU", "كود SKU", "sku");
+            // Mapping columns with normalized aliases
+            int colNameAr   = GetCol("الاسم عربي", "اسم المنتج", "الاسم");
+            int colNameEn   = GetCol("الاسم انجليزي", "الاسم English");
+            int colMainCat  = GetCol("التصنيف الأساسي", "الفئة", "التصنيف", "كود الفئة");
+            int colSubCat   = GetCol("التصنيف الفرعي", "الفئة الفرعية");
+            int colSku      = GetCol("الكود SKU", "الباركود", "sku");
             int colPrice    = GetCol("السعر", "سعر البيع");
-            int colDisc     = GetCol("سعر الخصم", "الخصم");
-            int colCost     = GetCol("سعر التكلفة", "التكلفة");
+            int colDisc     = GetCol("سعر الخصم", "الخصم", "Discount");
+            int colCost     = GetCol("سعر التكلفة", "التكلفة", "Cost");
             int colBrand    = GetCol("العلامة التجارية", "الماركة", "Brand");
             int colUnit     = GetCol("الوحدة", "وحدة القياس");
             int colSize     = GetCol("المقاس");
