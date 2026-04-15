@@ -14,7 +14,12 @@ namespace Sportive.API.Controllers;
 public class OperationalReportsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public OperationalReportsController(AppDbContext db) => _db = db;
+    private readonly ILogger<OperationalReportsController> _logger;
+    public OperationalReportsController(AppDbContext db, ILogger<OperationalReportsController> logger)
+    {
+        _db = db;
+        _logger = logger;
+    }
     
     [HttpGet("dictionaries")]
     public async Task<IActionResult> GetDictionaries()
@@ -45,6 +50,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/customer-statement?customerId=&fromDate=&toDate=
     // ══════════════════════════════════════════════════════
     [HttpGet("customer-statement")]
+    [Authorize(Roles = "Admin,Manager,Accountant")]
     public async Task<IActionResult> CustomerStatement(
         [FromQuery] int?      customerId = null,
         [FromQuery] string?   search     = null,
@@ -162,6 +168,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/supplier-statement?supplierId=&fromDate=&toDate=
     // ══════════════════════════════════════════════════════
     [HttpGet("supplier-statement")]
+    [Authorize(Roles = "Admin,Manager,Accountant")]
     public async Task<IActionResult> SupplierStatement(
         [FromQuery] int?      supplierId = null,
         [FromQuery] string?   search     = null,
@@ -266,6 +273,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/customer-aging
     // ══════════════════════════════════════════════════════
     [HttpGet("customer-aging")]
+    [Authorize(Roles = "Admin,Manager,Accountant")]
     public async Task<IActionResult> CustomerAging(
         [FromQuery] string?   search  = null,
         [FromQuery] DateTime? asOfDate = null,
@@ -273,13 +281,16 @@ public class OperationalReportsController : ControllerBase
     {
         var asOf = asOfDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        var customers = await _db.Customers
+        var customersQuery = _db.Customers
             .Include(c => c.Orders)
+                .ThenInclude(o => o.Items)
             .Include(c => c.MainAccount)
-            .ToListAsync();
+            .AsQueryable();
 
         if (!string.IsNullOrEmpty(search))
-            customers = customers.Where(c => c.FullName.Contains(search) || (c.Phone != null && c.Phone.Contains(search))).ToList();
+            customersQuery = customersQuery.Where(c => c.FullName.Contains(search) || (c.Phone != null && c.Phone.Contains(search)));
+
+        var customers = await customersQuery.ToListAsync();
 
         // ✅ FIX: Use Ledger (JournalLines) to get all movements accurately
         var ledgerBalances = await _db.JournalLines
@@ -357,6 +368,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/supplier-aging
     // ══════════════════════════════════════════════════════
     [HttpGet("supplier-aging")]
+    [Authorize(Roles = "Admin,Manager,Accountant")]
     public async Task<IActionResult> SupplierAging(
         [FromQuery] string?   search   = null,
         [FromQuery] DateTime? asOfDate = null,
@@ -364,13 +376,15 @@ public class OperationalReportsController : ControllerBase
     {
         var asOf = asOfDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        var suppliers = await _db.Suppliers
+        var suppliersQuery = _db.Suppliers
             .Include(s => s.Invoices)
             .Include(s => s.Payments)
-            .ToListAsync();
+            .AsQueryable();
 
         if (!string.IsNullOrEmpty(search))
-            suppliers = suppliers.Where(s => s.Name.Contains(search) || s.Phone.Contains(search)).ToList();
+            suppliersQuery = suppliersQuery.Where(s => s.Name.Contains(search) || s.Phone.Contains(search));
+
+        var suppliers = await suppliersQuery.ToListAsync();
 
         // ✅ FIX: Use Ledger (JournalLines) for accurate balance
         var ledgerBalances = await _db.JournalLines
@@ -461,6 +475,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int     pageSize    = 50,
         [FromQuery] bool    excel       = false)
     {
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
         var q = _db.Products
             .Include(p => p.Category)
             .Include(p => p.Variants)
@@ -607,6 +623,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/sales?fromDate=&toDate=&source=
     // ══════════════════════════════════════════════════════
     [HttpGet("sales")]
+    [Authorize(Roles = "Admin,Manager,Accountant")]
     public async Task<IActionResult> SalesReport(
         [FromQuery] DateTime?    fromDate   = null,
         [FromQuery] DateTime?    toDate     = null,
@@ -700,6 +717,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/purchases?fromDate=&toDate=&supplierId=
     // ══════════════════════════════════════════════════════
     [HttpGet("purchases")]
+    [Authorize(Roles = "Admin,Manager,Accountant")]
     public async Task<IActionResult> PurchasesReport(
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
@@ -771,6 +789,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/sales-returns
     // ══════════════════════════════════════════════════════
     [HttpGet("sales-returns")]
+    [Authorize(Roles = "Admin,Manager,Accountant")]
     public async Task<IActionResult> SalesReturns(
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
@@ -835,6 +854,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/purchase-returns
     // ══════════════════════════════════════════════════════
     [HttpGet("purchase-returns")]
+    [Authorize(Roles = "Admin,Manager,Accountant")]
     public async Task<IActionResult> PurchaseReturns(
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
@@ -1117,10 +1137,8 @@ public class OperationalReportsController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { 
-                message = "Error generating product movement report", 
-                details = ex.Message
-            });
+            _logger.LogError(ex, "ProductMovement report failed");
+            return StatusCode(500, new { message = "حدث خطأ أثناء تنفيذ التقرير. يرجى المحاولة مرة أخرى." });
         }
     }
 

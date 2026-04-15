@@ -38,7 +38,8 @@ public class DataMaintenanceController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { success = false, message = ex.Message });
+            _logger.LogError(ex, "WipeCustomers failed");
+            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
         }
     }
 
@@ -108,7 +109,7 @@ public class DataMaintenanceController : ControllerBase
         {
             await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
             _logger.LogError(ex, "FACTORY RESET ERROR");
-            return BadRequest(new { success = false, message = "فشل التصفير: " + ex.Message });
+            return BadRequest(new { success = false, message = "فشل التصفير. يرجى مراجعة سجلات الخادم." });
         }
     }
 
@@ -129,7 +130,8 @@ public class DataMaintenanceController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { success = false, message = ex.Message });
+            _logger.LogError(ex, "FixTree failed");
+            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
         }
     }
 
@@ -220,7 +222,8 @@ public class DataMaintenanceController : ControllerBase
         }
         catch (Exception ex) {
             await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
-            return BadRequest(new { success = false, message = ex.Message });
+            _logger.LogError(ex, "PurgeDeleted failed");
+            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
         }
     }
 
@@ -231,7 +234,7 @@ public class DataMaintenanceController : ControllerBase
             var affected = await _db.Orders.Where(o => o.OrderNumber.StartsWith("POS") && o.Source == OrderSource.Website)
                                          .ExecuteUpdateAsync(s => s.SetProperty(o => o.Source, OrderSource.POS));
             return Ok(new { success = true, message = affected > 0 ? $"تم تصحيح {affected} طلب POS." : "كافة الطلبات سليمة." });
-        } catch (Exception ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        } catch (Exception ex) { _logger.LogError(ex, "FixPosOrders failed"); return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." }); }
     }
 
     [HttpPost("cleanup-duplicates")]
@@ -241,7 +244,7 @@ public class DataMaintenanceController : ControllerBase
             var dupCodes = await _db.Accounts.GroupBy(a => a.Code).Where(g => g.Count() > 1).Select(g => g.Key).ToListAsync();
             if (!dupCodes.Any()) return Ok(new { success = true, message = "لم يتم العثور على تكرارات في الأكواد." });
             return Ok(new { success = true, message = $"تم العثور على {dupCodes.Count} كود مكرر. يرجى استخدام Purge Deleted أولاً." });
-        } catch (Exception ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        } catch (Exception ex) { _logger.LogError(ex, "CleanupDuplicates failed"); return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." }); }
     }
     [HttpPost("sync-order-accounting")]
     public async Task<IActionResult> SyncOrderAccounting([FromServices] IAccountingService accounting)
@@ -250,7 +253,8 @@ public class DataMaintenanceController : ControllerBase
             await accounting.SyncAllOrdersAccountingAsync();
             return Ok(new { success = true, message = "تمت إعادة توليد كافة القيود المحاسبية للمبيعات بنجاح." });
         } catch (Exception ex) {
-            return BadRequest(new { success = false, message = ex.Message });
+            _logger.LogError(ex, "SyncOrderAccounting failed");
+            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
         }
     }
 
@@ -261,7 +265,8 @@ public class DataMaintenanceController : ControllerBase
             await accounting.SyncAllPaymentAccountingAsync();
             return Ok(new { success = true, message = "تمت إعادة توليد كافة قيود المقبوضات والمدفوعات بنجاح." });
         } catch (Exception ex) {
-            return BadRequest(new { success = false, message = ex.Message });
+            _logger.LogError(ex, "SyncPaymentAccounting failed");
+            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
         }
     }
 
@@ -349,7 +354,7 @@ public class DataMaintenanceController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "SYNC PURCHASE ENTRIES ERROR");
-            return BadRequest(new { success = false, message = ex.Message });
+            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
         }
     }
 
@@ -360,7 +365,8 @@ public class DataMaintenanceController : ControllerBase
             await accounting.SyncAllEntityIdsAsync();
             return Ok(new { success = true, message = "تمت مزامنة كافة معرفات العملاء والموردين بنجاح." });
         } catch (Exception ex) {
-            return BadRequest(new { success = false, message = ex.Message });
+            _logger.LogError(ex, "SyncEntityIds failed");
+            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
         }
     }
 
@@ -371,7 +377,8 @@ public class DataMaintenanceController : ControllerBase
             await accounting.ConsolidateSubAccountsToControlAsync();
             return Ok(new { success = true, message = "تم توحيد الحسابات ودمج الحركات في الحسابات الرئيسية بنجاح." });
         } catch (Exception ex) {
-            return BadRequest(new { success = false, message = ex.Message });
+            _logger.LogError(ex, "SyncSubAccounts failed");
+            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
         }
     }
 
@@ -390,7 +397,8 @@ public class DataMaintenanceController : ControllerBase
             if (fixedCount > 0) await _db.SaveChangesAsync();
             return Ok(new { success = true, message = $"تم العثور على {fixedCount} ربط مالي مكسور وتم تصحيحه." });
         } catch (Exception ex) {
-            return BadRequest(new { success = false, message = ex.Message });
+            _logger.LogError(ex, "CleanupBrokenMappings failed");
+            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
         }
     }
 }
