@@ -19,7 +19,7 @@ public class InventoryService : IInventoryService
 
     public async Task LogMovementAsync(
         InventoryMovementType type,
-        int quantity,
+        decimal quantity,
         int? productId = null,
         int? variantId = null,
         string? reference = null,
@@ -28,10 +28,14 @@ public class InventoryService : IInventoryService
         decimal unitCost = 0)
     {
         if (quantity == 0) return;
-        if (variantId == 0) variantId = null;
         if (productId == 0) productId = null;
+        if (variantId == 0) variantId = null;
 
-        decimal effectiveUnitCost = unitCost;
+        int roundedQty = (int)Math.Round(quantity, MidpointRounding.AwayFromZero);
+        if (roundedQty == 0 && quantity != 0) roundedQty = quantity > 0 ? 1 : -1;
+        
+        if (roundedQty == 0 && quantity == 0) return;
+
         int remainingBefore = 0;
 
         // 1. Update Actual Stock levels in Product/Variant
@@ -40,9 +44,8 @@ public class InventoryService : IInventoryService
             var variant = await _db.ProductVariants.Include(v => v.Product).FirstOrDefaultAsync(v => v.Id == variantId);
             if (variant != null)
             {
-                if (effectiveUnitCost <= 0) effectiveUnitCost = variant.Product.CostPrice ?? 0;
                 remainingBefore = variant.StockQuantity;
-                variant.StockQuantity += quantity;
+                variant.StockQuantity += roundedQty;
                 variant.UpdatedAt = TimeHelper.GetEgyptTime();
 
                 // Sync parent product total stock
@@ -72,9 +75,8 @@ public class InventoryService : IInventoryService
             var product = await _db.Products.FindAsync(productId);
             if (product != null)
             {
-                if (effectiveUnitCost <= 0) effectiveUnitCost = product.CostPrice ?? 0;
                 remainingBefore = product.TotalStock;
-                product.TotalStock += quantity;
+                product.TotalStock += roundedQty;
 
                 // 💡 AUTO-STATUS: Active <-> OutOfStock based on physical stock
                 if (product.Status == ProductStatus.Active && product.TotalStock <= 0)
@@ -90,12 +92,20 @@ public class InventoryService : IInventoryService
             }
         }
 
-        // 2. Create Movement Record
+        // 2. Cost Analysis
+        var effectiveUnitCost = unitCost;
+        if (effectiveUnitCost <= 0 && productId.HasValue)
+        {
+            var p = await _db.Products.FindAsync(productId.Value);
+            effectiveUnitCost = p?.CostPrice ?? 0;
+        }
+
+        // 3. Create Movement Record
         _db.InventoryMovements.Add(new InventoryMovement
         {
             Type             = type,
-            Quantity         = quantity,
-            RemainingStock   = remainingBefore + quantity,
+            Quantity         = roundedQty,
+            RemainingStock   = remainingBefore + roundedQty,
             ProductId        = productId,
             ProductVariantId = variantId,
             Reference        = reference,
@@ -105,7 +115,7 @@ public class InventoryService : IInventoryService
             CreatedAt        = TimeHelper.GetEgyptTime()
         });
 
-        // We don't save changes here to allow the calling method to wrap it in its own transaction if needed
+        await _db.SaveChangesAsync();
 
         // 3. Low-stock alert — fire-and-forget after save (called by the parent transaction)
         if (variantId.HasValue)

@@ -31,7 +31,13 @@ public class OperationalReportsController : ControllerBase
             .Distinct()
             .ToListAsync();
 
-        return Ok(new { colors, sizes });
+        var products = await _db.Products
+            .Where(p => p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock)
+            .OrderBy(p => p.NameAr)
+            .Select(p => new { p.Id, p.NameAr, p.SKU })
+            .ToListAsync();
+
+        return Ok(new { colors, sizes, products });
     }
 
     // ══════════════════════════════════════════════════════

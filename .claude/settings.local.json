@@ -11,7 +11,9 @@
       "Bash(awk '{print $2 \": \" $1}')",
       "Bash(sort -t: -k2 -rn)",
       "Bash(find /d/Sportive.API -name \"*.cs\" -path \"*/Services/*\" -type f -exec basename {} \\\\;)",
-      "Bash(ls -la /d/sportive-frontend/.env*)"
+      "Bash(ls -la /d/sportive-frontend/.env*)",
+      "Bash(xargs grep *)",
+      "Bash(grep -n \"class OrderItem\\\\|public.*Items\" /d/Sportive.API/Models/*.cs)"
     ]
   }
 }

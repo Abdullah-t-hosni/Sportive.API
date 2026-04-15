@@ -9,7 +9,7 @@ public interface IInventoryService
     /// </summary>
     Task LogMovementAsync(
         InventoryMovementType type,
-        int quantity, // (+) للزيادة، (-) للعجز
+        decimal quantity, // (+) للزيادة، (-) للعجز
         int? productId = null,
         int? variantId = null,
         string? reference = null,

@@ -445,8 +445,7 @@ public class PurchaseInvoicesController : ControllerBase
             if (item.ProductId.HasValue)
             {
                 var multiplier = GetMultiplier(pUnits, item.Unit);
-                var actualQty = (int)Math.Round(item.Quantity * multiplier);
-                await _inventory.LogMovementAsync(InventoryMovementType.Purchase, actualQty, item.ProductId, item.ProductVariantId, invNo, "Purchase Invoice receipt", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                await _inventory.LogMovementAsync(InventoryMovementType.Purchase, item.Quantity * multiplier, item.ProductId, item.ProductVariantId, invNo, "Purchase Invoice receipt", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
                 
                 // ── Auto-update and Alert on Price Changes ──
                 var product = await _db.Products.FindAsync(item.ProductId.Value);
@@ -804,7 +803,7 @@ public class PurchaseInvoicesController : ControllerBase
                 {
                     await _inventory.LogMovementAsync(
                         InventoryMovementType.ReturnOut,
-                        -(int)Math.Round(reqItem.Quantity), // Outward movement
+                        -reqItem.Quantity, // Outward movement
                         invItem.ProductId,
                         invItem.ProductVariantId,
                         returnNo,
@@ -945,8 +944,7 @@ public class PurchaseInvoicesController : ControllerBase
             if (item.ProductId.HasValue)
             {
                 var mult = GetMultiplier(pUnits, item.Unit);
-                var actualQty = (int)Math.Round(item.Quantity * mult);
-                await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, -actualQty, item.ProductId, item.ProductVariantId, inv.InvoiceNumber, "Purchase Invoice Deleted", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, -(item.Quantity * mult), item.ProductId, item.ProductVariantId, inv.InvoiceNumber, "Purchase Invoice Deleted", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
             }
         }
 
