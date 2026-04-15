@@ -548,6 +548,7 @@ public class PaymentVouchersController : ControllerBase
             .Select(v => new { 
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description,
                 v.CashAccountId,
+                ToAccountId = v.ToAccountId,
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 ToAccountName = v.ToAccount != null ? v.ToAccount.NameAr : null,
                 EntityName = v.Supplier != null ? v.Supplier.Name : null

@@ -104,7 +104,8 @@ public class ProfitabilityController : ControllerBase
                 if (netUnits < 0) netUnits = 0; // حماية منطقية
 
                 // 2. حساب الإيراد الصافي لكل سطر مع توزيع خصم الفاتورة (Discount Pro-rating)
-                decimal totalNetRevenue = 0;
+                decimal totalNetRevenue      = 0;
+                decimal totalShippingExpense = 0;
                 foreach (var i in g)
                 {
                     // الكمية المباعة فعلياً في هذا السطر بعد المرتجع
@@ -114,33 +115,42 @@ public class ProfitabilityController : ControllerBase
                     // السعر قبل خصم الفاتورة (لكن بعد خصم السطر إن وجد)
                     var lineSubtotal = i.TotalPrice;
                     
-                    // توزيع خصم رأس الفاتورة نسبياً
+                    // توزيع خصم رأس الفاتورة ورسوم الشحن وتكلفة الشحن نسبياً
                     decimal lineOrderDiscountShare = 0;
-                    if (i.Order.SubTotal > 0 && i.Order.DiscountAmount > 0)
+                    decimal lineDeliveryFeeShare    = 0;
+                    decimal lineActualCostShare     = 0;
+
+                    if (i.Order.SubTotal > 0)
                     {
-                        lineOrderDiscountShare = (lineSubtotal / i.Order.SubTotal) * i.Order.DiscountAmount;
+                        var ratio = lineSubtotal / i.Order.SubTotal;
+                        lineOrderDiscountShare = ratio * i.Order.DiscountAmount;
+                        lineDeliveryFeeShare    = ratio * i.Order.DeliveryFee;
+                        lineActualCostShare     = ratio * i.Order.ActualDeliveryCost;
                     }
 
                     // صافي الإيراد من هذا السطر لهذه الكمية
-                    // ملاحظة: i.TotalPrice هي إجمالي السطر (UnitPrice * Qty)
-                    // نأخذ حصة الكمية المتبقية فقط من السعر والخصم
                     decimal qtyFactor = (decimal)lineNetQty / i.Quantity;
-                    totalNetRevenue += (lineSubtotal * qtyFactor) - (lineOrderDiscountShare * qtyFactor);
+                    // الإيراد = سعر السطر - نصيبه من خصم الفاتورة + نصيبه من رسوم الشحن (إيراد)
+                    totalNetRevenue += (lineSubtotal * qtyFactor) - (lineOrderDiscountShare * qtyFactor) + (lineDeliveryFeeShare * qtyFactor);
+                    
+                    // التكلفة الإضافية (الشحن الفعلي كعبء)
+                    totalShippingExpense += (lineActualCostShare * qtyFactor);
                 }
 
                 // التكلفة الصافية
                 var costPrice = product.CostPrice;
-                var totalCost = costPrice.HasValue ? costPrice.Value * netUnits : (decimal?)null;
+                var baseCost  = costPrice.HasValue ? costPrice.Value * netUnits : 0;
+                var totalCost = baseCost + totalShippingExpense;
 
                 // الربح والهامش
-                var grossProfit = totalCost.HasValue ? totalNetRevenue - totalCost.Value : (decimal?)null;
-                var marginPct   = (totalCost.HasValue && totalNetRevenue > 0)
+                var grossProfit = (costPrice.HasValue || totalShippingExpense > 0) ? totalNetRevenue - totalCost : (decimal?)null;
+                var marginPct   = (totalNetRevenue > 0 && (costPrice.HasValue || totalShippingExpense > 0))
                     ? Math.Round((grossProfit!.Value / totalNetRevenue) * 100, 1)
                     : (decimal?)null;
 
                 var totalSales = g.Sum(i => i.TotalPrice);
                 var totalReturnsValue = g.Sum(i => i.ReturnedQuantity * i.UnitPrice);
-                var totalDiscounts = (totalSales - totalReturnsValue) - totalNetRevenue;
+                var totalDiscounts = (totalSales - totalReturnsValue) - (totalNetRevenue - g.Sum(i => i.Order.DeliveryFee * ((decimal)(i.Quantity - i.ReturnedQuantity) / i.Order.SubTotal)));
 
                 return new ProductProfitRow(
                     ProductId:        g.Key,

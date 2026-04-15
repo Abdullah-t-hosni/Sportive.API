@@ -467,7 +467,7 @@ public class FinancialReportsController : ControllerBase
         // حسابات النقدية الحقيقية فقط (الخزينة 1101 والبنك 1102)
         // نستبعد 1103 (العملاء) لأنها ليست نقدية سائلة مباشرة بالقيد المحاسبي
         var cashAccounts = await _db.Accounts
-            .Where(a => a.IsLeaf && (a.Code.StartsWith("1101") || a.Code.StartsWith("1102")))
+            .Where(a => a.IsLeaf && (a.Code.StartsWith("1101") || a.Code.StartsWith("1102") || a.Code.StartsWith("1107")))
             .ToListAsync();
 
         var cashIds = cashAccounts.Select(a => a.Id).ToHashSet();
@@ -495,45 +495,70 @@ public class FinancialReportsController : ControllerBase
         var invItems = new List<CashFlowItem>();
         var finItems = new List<CashFlowItem>();
 
-        foreach (var line in cashLines)
+        // نأخذ كل القيود التي تخص تلك الفترة ولها علاقة بالنقدية
+        var entriesInPeriod = await _db.JournalLines
+            .Include(l => l.Account)
+            .Include(l => l.JournalEntry)
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+                     && l.JournalEntry.EntryDate >= from
+                     && l.JournalEntry.EntryDate <= to)
+            .GroupBy(l => l.JournalEntryId)
+            .Select(g => new { 
+                EntryDate = g.First().JournalEntry.EntryDate,
+                EntryNumber = g.First().JournalEntry.EntryNumber,
+                Description = g.First().JournalEntry.Description,
+                Lines = g.Select(l => new { l.AccountId, l.Account.Code, l.Account.NameAr, l.Account.Type, l.Debit, l.Credit, l.Description }).ToList()
+            })
+            .ToListAsync();
+
+        foreach (var entry in entriesInPeriod)
         {
-            var amount = line.Debit - line.Credit; // + تدفق داخل، - تدفق خارج
-            
-            // البحث عن الطرف الآخر (أكبر سطر في القيد غير سطر النقدية هذا)
-            var others = allLines.Where(l => l.JournalEntryId == line.JournalEntryId && l.Id != line.Id).ToList();
-            var mainOther = others.OrderByDescending(o => Math.Abs(o.Debit - o.Credit)).FirstOrDefault();
-            
-            string otherAccount = mainOther?.Account.NameAr ?? "غير معروف";
-            string otherCode = mainOther?.Account.Code ?? "";
-            var otherType = mainOther?.Account.Type;
+            var cashLinesInEntry = entry.Lines.Where(l => cashIds.Contains(l.AccountId)).ToList();
+            var nonCashLinesInEntry = entry.Lines.Where(l => !cashIds.Contains(l.AccountId)).ToList();
 
-            var item = new CashFlowItem(
-                line.JournalEntry.EntryDate,
-                line.JournalEntry.EntryNumber,
-                line.JournalEntry.Description ?? mainOther?.Description ?? "",
-                otherAccount,
-                amount
-            );
+            // إذا لم يكن هناك طرف نقدي أو لم يكن هناك طرف "غير نقدي" (تحويل داخلي)، نتجاهل القيد
+            if (!cashLinesInEntry.Any() || !nonCashLinesInEntry.Any()) continue;
 
-            // تصنيف آلي بناءً على الطرف الآخر
-            if (otherCode.StartsWith("12")) // أصول ثابتة (Investing)
+            // في قائمة التدفقات النقدية (الطريقة المباشرة)، التدفق النقدي هو صافي القيد للطرف النقدي
+            // لكن لكي يكون لدينا تفصيل بالحسابات المقابلة، سنوزع هذا التدفق على الحسابات غير النقدية
+            
+            // القاعدة: التدفق لمواجهة حساب غير نقدي = (دائن - مدين) للحساب غير النقدي
+            // إذا كان الحساب غير النقدي مدين (دفعنا مصروف)، فالتدفق سالب (نقص في النقدية)
+            // إذا كان الحساب غير النقدي دائن (استلمنا مبيعات)، فالتدفق موجب (زيادة في النقدية)
+            
+            foreach (var nc in nonCashLinesInEntry)
             {
-                investing += amount;
-                invItems.Add(item);
-            }
-            else if (otherType == AccountType.Equity || otherCode.StartsWith("22")) // حقوق ملكية أو قروض طويلة الأجل (Financing)
-            {
-                financing += amount;
-                finItems.Add(item);
-            }
-            else // مبيعات، مشتريات، مصاريف، عملاء، موردين (Operating)
-            {
-                operating += amount;
-                opItems.Add(item);
+                var flowAmount = nc.Credit - nc.Debit;
+                if (flowAmount == 0) continue;
+
+                var item = new CashFlowItem(
+                    entry.EntryDate,
+                    entry.EntryNumber,
+                    nc.Description ?? entry.Description ?? "",
+                    nc.NameAr,
+                    flowAmount
+                );
+
+                // تصنيف آلي
+                if (nc.Code.StartsWith("12")) // أصول ثابتة
+                {
+                    investing += flowAmount;
+                    invItems.Add(item);
+                }
+                else if (nc.Type == AccountType.Equity || nc.Code.StartsWith("22")) // حقوق ملكية أو قروض
+                {
+                    financing += flowAmount;
+                    finItems.Add(item);
+                }
+                else // تشغيلية
+                {
+                    operating += flowAmount;
+                    opItems.Add(item);
+                }
             }
         }
 
-        // الرصيد الافتتاحي للنقدية (حتى بداية الفترة)
+        // الرصيد الافتتاحي للنقدية
         var openCash = 0m;
         foreach (var ca in cashAccounts)
         {
@@ -546,8 +571,19 @@ public class FinancialReportsController : ControllerBase
             openCash += ol + ca.OpeningBalance;
         }
 
+        // الرصيد النهائي الفعلي من الحسابات (للتحقق)
+        var actualClosingBalance = 0m;
+        foreach (var ca in cashAccounts)
+        {
+            var totalMv = await _db.JournalLines
+                .Where(l => l.AccountId == ca.Id
+                         && l.JournalEntry.Status == JournalEntryStatus.Posted
+                         && l.JournalEntry.EntryDate <= to)
+                .SumAsync(l => l.Debit - l.Credit);
+            actualClosingBalance += totalMv + ca.OpeningBalance;
+        }
+
         var netCashFlow = operating + investing + financing;
-        var closingCash = openCash + netCashFlow;
 
         if (excel) return ExcelCashFlow(opItems, invItems, finItems, openCash, from, to);
 
@@ -558,7 +594,7 @@ public class FinancialReportsController : ControllerBase
             investingActivities = new { items = invItems, total = investing },
             financingActivities = new { items = finItems, total = financing },
             netCashFlow,
-            closingCashBalance = closingCash
+            closingCashBalance = actualClosingBalance // نستخدم الرصيد الفعلي لضمان الدقة
         });
     }
 

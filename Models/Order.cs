@@ -60,6 +60,7 @@ public class Order : BaseEntity
     public int? DeliveryAddressId { get; set; }
     public Address? DeliveryAddress { get; set; }
     public decimal DeliveryFee { get; set; } = 0;
+    public decimal ActualDeliveryCost { get; set; } = 0; // What we pay the courier
     public DateTime? EstimatedDeliveryDate { get; set; }
     public DateTime? ActualDeliveryDate { get; set; }
     public string? DeliveryNotes { get; set; }

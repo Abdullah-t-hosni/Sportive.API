@@ -483,12 +483,31 @@ public class OperationalReportsController : ControllerBase
             q = q.Where(p => p.Variants.Any(v => v.Size == size));
 
         if (lowStock)
-            q = q.Where(p => p.TotalStock <= (p.ReorderLevel > 0 ? p.ReorderLevel : 5));
+            q = q.Where(p => 
+                (p.TotalStock <= (p.ReorderLevel > 0 ? p.ReorderLevel : 5)) ||
+                p.Variants.Any(v => v.StockQuantity <= (v.ReorderLevel > 0 ? v.ReorderLevel : 2))
+            );
 
         if (stockStatus == "positive")
-            q = q.Where(p => p.TotalStock > 0);
+        {
+            if (!string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size))
+                q = q.Where(p => p.Variants.Any(v => 
+                    (string.IsNullOrEmpty(color) || v.Color == color || v.ColorAr == color) &&
+                    (string.IsNullOrEmpty(size) || v.Size == size) &&
+                    v.StockQuantity > 0));
+            else
+                q = q.Where(p => p.TotalStock > 0 || p.Variants.Any(v => v.StockQuantity > 0));
+        }
         else if (stockStatus == "zero")
-            q = q.Where(p => p.TotalStock <= 0);
+        {
+            if (!string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size))
+                q = q.Where(p => p.Variants.Any(v => 
+                    (string.IsNullOrEmpty(color) || v.Color == color || v.ColorAr == color) &&
+                    (string.IsNullOrEmpty(size) || v.Size == size) &&
+                    v.StockQuantity <= 0));
+            else
+                q = q.Where(p => (p.Variants.Any() && p.Variants.Any(v => v.StockQuantity <= 0)) || (!p.Variants.Any() && p.TotalStock <= 0));
+        }
 
 
         // --- Pagination ---
@@ -504,7 +523,13 @@ public class OperationalReportsController : ControllerBase
         // حساب القيم الإجمالية للمجموعة المفلترة بالكامل (بدون تكرار الاستعلامات المكلفة)
         // ملاحظة: نستخدم الاستعلام q المفلتر قبل التقطيع (Skip/Take)
         var totals = await q.Select(p => new {
-            p.TotalStock,
+            TotalStock = p.Variants.Any() 
+                ? p.Variants.Where(v => 
+                    (string.IsNullOrEmpty(color) || v.Color == color || v.ColorAr == color) &&
+                    (string.IsNullOrEmpty(size) || v.Size == size) &&
+                    (stockStatus == "all" || (stockStatus == "positive" && v.StockQuantity > 0) || (stockStatus == "zero" && v.StockQuantity <= 0))
+                ).Sum(v => v.StockQuantity)
+                : p.TotalStock,
             p.Price,
             Cost = p.CostPrice ?? 0
         }).ToListAsync();
@@ -517,11 +542,18 @@ public class OperationalReportsController : ControllerBase
 
         var rows = products.Select(p =>
         {
-            var totalStock = p.Variants.Any()
-                ? p.Variants.Sum(v => v.StockQuantity)
-                : p.TotalStock;
+            // Filter variants based on the same criteria as the main query
+            var filteredVariants = p.Variants.Where(v => 
+                (string.IsNullOrEmpty(color) || v.Color == color || v.ColorAr == color) &&
+                (string.IsNullOrEmpty(size) || v.Size == size) &&
+                (stockStatus == "all" || (stockStatus == "positive" && v.StockQuantity > 0) || (stockStatus == "zero" && v.StockQuantity <= 0))
+            ).ToList();
 
-            var variants = p.Variants.Select(v => new VariantInventoryRow(
+            var totalStock = filteredVariants.Any()
+                ? filteredVariants.Sum(v => v.StockQuantity)
+                : (p.Variants.Any() ? 0 : p.TotalStock);
+
+            var variantRows = filteredVariants.Select(v => new VariantInventoryRow(
                 v.Id, v.Size ?? "", v.Color ?? "", v.ColorAr ?? "",
                 v.StockQuantity,
                 p.Price + (v.PriceAdjustment ?? 0),
@@ -536,7 +568,7 @@ public class OperationalReportsController : ControllerBase
                 totalStock,
                 (decimal)totalStock * p.Price,
                 (decimal)totalStock * (p.CostPrice ?? 0),
-                variants
+                variantRows
             );
         }).ToList();
 
@@ -546,7 +578,8 @@ public class OperationalReportsController : ControllerBase
             lowStockCount         = lowStockCount,
             outOfStock            = outOfStock,
             totalSalesValue       = totalSalesVal,
-            totalCostValue        = totalCostVal
+            totalCostValue        = totalCostVal,
+            agingAlerts           = totals.Count(x => x.TotalStock > 0 && x.Cost > 0) // Placeholder
         };
 
         if (excel) return ExcelInventory(rows, summary);
@@ -969,8 +1002,10 @@ public class OperationalReportsController : ControllerBase
                 if (p != null) productId = p.Id;
             }
 
-            // If productId is null, return the choices list including "All"
-            if (productId == null)
+            // If all filters are empty, return the choices list
+            bool hasFilters = categoryId.HasValue || brandId.HasValue || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size) || productId.HasValue;
+            
+            if (!hasFilters && string.IsNullOrEmpty(search))
             {
                 var pList = await _db.Products
                     .Select(p => new { p.Id, p.NameAr, p.SKU })
@@ -1351,7 +1386,49 @@ public class OperationalReportsController : ControllerBase
     {
         var s = new MemoryStream(); wb.SaveAs(s); s.Position = 0;
         return new FileStreamResult(s, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") { FileDownloadName = filename };
-    }    private string TranslateMovementType(InventoryMovementType type) => type switch
+    }    // ══════════════════════════════════════════════════════
+    // 12. تقرير الأصناف الراكدة (Stock Aging)
+    // GET /api/operationalreports/inventory-aging?days=60
+    // ══════════════════════════════════════════════════════
+    [HttpGet("inventory-aging")]
+    public async Task<IActionResult> InventoryAging([FromQuery] int days = 60)
+    {
+        var cutoff = TimeHelper.GetEgyptTime().AddDays(-days);
+
+        // نجلب المنتجات التي بها مخزون ولم تباع منذ cutoff
+        // الحركة التي تعتبر "بيع" هي Sale و ReturnOut (في حال المشتريات) ولكن هنا نركز على البيع Sale
+        var products = await _db.Products
+            .Where(p => p.TotalStock > 0 && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock))
+            .Select(p => new {
+                p.Id, p.NameAr, p.SKU, p.TotalStock, p.Price,
+                LastSaleDate = _db.InventoryMovements
+                    .Where(m => m.ProductId == p.Id && m.Type == InventoryMovementType.Sale)
+                    .OrderByDescending(m => m.CreatedAt)
+                    .Select(m => (DateTime?)m.CreatedAt)
+                    .FirstOrDefault()
+            })
+            .ToListAsync();
+
+        var agingRows = products
+            .Where(p => p.LastSaleDate == null || p.LastSaleDate <= cutoff)
+            .Select(p => new {
+                p.Id, p.NameAr, p.SKU, p.TotalStock, 
+                p.Price,
+                DaysSinceLastSale = p.LastSaleDate.HasValue ? (int)(TimeHelper.GetEgyptTime() - p.LastSaleDate.Value).TotalDays : 999, // 999 for never sold
+                Value = p.TotalStock * p.Price
+            })
+            .OrderByDescending(p => p.DaysSinceLastSale)
+            .ToList();
+
+        return Ok(new {
+            days,
+            count = agingRows.Count,
+            totalValue = agingRows.Sum(r => r.Value),
+            rows = agingRows
+        });
+    }
+
+    private string TranslateMovementType(InventoryMovementType type) => type switch
     {
         InventoryMovementType.Purchase => "مشتريات (+)",
         InventoryMovementType.Sale => "مبيعات (-)",

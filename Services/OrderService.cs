@@ -658,15 +658,52 @@ public class OrderService : IOrderService
             foreach (var it in orderWithItems.Items) it.ReturnedQuantity = it.Quantity;
         }
 
+        // ✅ REVERT: If reverting FROM Returned/Cancelled → reverse accounting & inventory
+        if ((oldStatus == OrderStatus.Returned || oldStatus == OrderStatus.Cancelled) &&
+             dto.Status != OrderStatus.Returned && dto.Status != OrderStatus.Cancelled)
+        {
+            // 1️⃣ Remove SalesReturn journal entries for this order
+            var returnEntries = await _db.JournalEntries
+                .Include(e => e.Lines)
+                .Where(e => e.Type == JournalEntryType.SalesReturn && e.Reference != null && e.Reference.StartsWith(order.OrderNumber))
+                .ToListAsync();
 
-        // Post accounting if paid
+            if (returnEntries.Any())
+            {
+                _db.JournalLines.RemoveRange(returnEntries.SelectMany(e => e.Lines));
+                _db.JournalEntries.RemoveRange(returnEntries);
+                _logger.LogInformation("[Accounting] Voided {Count} SalesReturn entries for order {Ref} on status revert.", returnEntries.Count, order.OrderNumber);
+            }
+
+            // 2️⃣ Reverse the inventory ReturnIn movements (re-deduct stock)
+            if (oldStatus == OrderStatus.Returned)
+            {
+                var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
+                foreach (var item in orderWithItems.Items)
+                {
+                    if ((item.ProductId ?? 0) > 0)
+                    {
+                        await _inventory.LogMovementAsync(
+                            InventoryMovementType.Sale,
+                            -item.Quantity, item.ProductId, item.ProductVariantId,
+                            order.OrderNumber, "Revert: Order status changed from Returned", updatedByUserId
+                        );
+                    }
+                }
+                // Reset returned quantities on items
+                foreach (var it in orderWithItems.Items) it.ReturnedQuantity = 0;
+            }
+        }
+
+        // Post accounting if paid (Website orders)
         if ((dto.Status == OrderStatus.Delivered || dto.Status == OrderStatus.Confirmed) &&
             order.Source == OrderSource.Website && order.PaymentStatus == PaymentStatus.Paid)
         {
             _ = PostOrderPaymentWithRetryAsync(orderId);
         }
 
-        if ((dto.Status == OrderStatus.Cancelled || dto.Status == OrderStatus.Returned) && 
+        // Inventory movement + Coupon restore when moving INTO Returned/Cancelled
+        if ((dto.Status == OrderStatus.Cancelled || dto.Status == OrderStatus.Returned) &&
             oldStatus != OrderStatus.Cancelled && oldStatus != OrderStatus.Returned)
         {
             var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
@@ -679,7 +716,7 @@ public class OrderService : IOrderService
             }
 
             // ✅ RESTORE COUPON USAGE IF CANCELLED OR FULLY RETURNED
-            if ((dto.Status == OrderStatus.Cancelled || dto.Status == OrderStatus.Returned) && !string.IsNullOrEmpty(order.CouponCode))
+            if (!string.IsNullOrEmpty(order.CouponCode))
             {
                 var coupon = await _db.Coupons.FirstOrDefaultAsync(c => c.Code.ToUpper() == order.CouponCode.ToUpper());
                 if (coupon != null && coupon.CurrentUsageCount > 0)

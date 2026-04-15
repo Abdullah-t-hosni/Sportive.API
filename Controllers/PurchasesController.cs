@@ -424,6 +424,7 @@ public class PurchaseInvoicesController : ControllerBase
             CashAccountId         = dto.CashAccountId
         };
 
+        var warnings = new List<string>();
         decimal subtotal = 0;
         foreach (var item in dto.Items)
         {
@@ -447,11 +448,17 @@ public class PurchaseInvoicesController : ControllerBase
                 var actualQty = (int)Math.Round(item.Quantity * multiplier);
                 await _inventory.LogMovementAsync(InventoryMovementType.Purchase, actualQty, item.ProductId, item.ProductVariantId, invNo, "Purchase Invoice receipt", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
                 
-                // ── Auto-update Product Cost Price ──
+                // ── Auto-update and Alert on Price Changes ──
                 var product = await _db.Products.FindAsync(item.ProductId.Value);
                 if (product != null)
                 {
-                    product.CostPrice = multiplier > 0 ? Math.Round(item.UnitCost / multiplier, 2) : item.UnitCost;
+                    var newCost = multiplier > 0 ? Math.Round(item.UnitCost / multiplier, 2) : item.UnitCost;
+                    if (product.CostPrice.HasValue && newCost > product.CostPrice.Value) {
+                        var diff = newCost - product.CostPrice.Value;
+                        var pct  = Math.Round((diff / product.CostPrice.Value) * 100, 1);
+                        warnings.Add($"ارتفاع سعر: {product.NameAr} بنسبة {pct}% (من {product.CostPrice.Value} إلى {newCost})");
+                    }
+                    product.CostPrice = newCost;
                     product.UpdatedAt = TimeHelper.GetEgyptTime();
                 }
             }
@@ -494,7 +501,7 @@ public class PurchaseInvoicesController : ControllerBase
 
         _ = PostJournalWithRetryAsync(invoice.Id, invoice.InvoiceNumber, isReturn: false);
 
-        return CreatedAtAction(nameof(GetById), new { id = invoice.Id }, new { id = invoice.Id, invoiceNumber = invoice.InvoiceNumber });
+        return CreatedAtAction(nameof(GetById), new { id = invoice.Id }, new { id = invoice.Id, invoiceNumber = invoice.InvoiceNumber, warnings });
     }
 
     [HttpPut("{id}")]
@@ -570,14 +577,21 @@ public class PurchaseInvoicesController : ControllerBase
         inv.TotalAmount = (subtotal + inv.TaxAmount) - inv.DiscountAmount;
         inv.Supplier.TotalPurchases += inv.TotalAmount;
 
-        // ── Auto-update Product Cost Prices from updated items ──
+        // ── Auto-update and Alert on Price Changes ──
+        var warnings = new List<string>();
         foreach (var item in inv.Items.Where(i => i.ProductId.HasValue))
         {
             var product = await _db.Products.FindAsync(item.ProductId!.Value);
             if (product != null)
             {
                 var multiplier = GetMultiplier(pUnits, item.Unit);
-                product.CostPrice = multiplier > 0 ? Math.Round(item.UnitCost / multiplier, 2) : item.UnitCost;
+                var newCost = multiplier > 0 ? Math.Round(item.UnitCost / multiplier, 2) : item.UnitCost;
+                if (product.CostPrice.HasValue && newCost > product.CostPrice.Value) {
+                    var diff = newCost - product.CostPrice.Value;
+                    var pct  = Math.Round((diff / product.CostPrice.Value) * 100, 1);
+                    warnings.Add($"ارتفاع سعر: {product.NameAr} بنسبة {pct}% (من {product.CostPrice.Value} إلى {newCost})");
+                }
+                product.CostPrice = newCost;
                 product.UpdatedAt = TimeHelper.GetEgyptTime();
             }
         }
@@ -605,7 +619,7 @@ public class PurchaseInvoicesController : ControllerBase
 
         _ = PostJournalWithRetryAsync(id, inv.InvoiceNumber, isReturn: false);
 
-        return Ok(new { id = inv.Id, invoiceNumber = inv.InvoiceNumber });
+        return Ok(new { id = inv.Id, invoiceNumber = inv.InvoiceNumber, warnings });
     }
 
     [AcceptVerbs("PATCH", "PUT")]
