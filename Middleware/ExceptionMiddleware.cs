@@ -52,10 +52,11 @@ public class ExceptionMiddleware
 
         var response = new
         {
+            Success    = false,
             StatusCode = (int)statusCode,
             Message    = _env.IsDevelopment() ? (ex.InnerException?.Message ?? ex.Message) : message,
-            TraceId    = context.TraceIdentifier,
-            Details    = _env.IsDevelopment() ? ex.StackTrace : null
+            Errors     = _env.IsDevelopment() ? new { stack = ex.StackTrace } : null,
+            TraceId    = context.TraceIdentifier
         };
 
         var options = new JsonSerializerOptions 

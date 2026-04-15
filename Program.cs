@@ -27,6 +27,7 @@ using Sportive.API.Hubs;
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Is(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development" ? LogEventLevel.Debug : LogEventLevel.Information)
     .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", LogEventLevel.Information)
     .Enrich.FromLogContext()
     .Enrich.WithEnvironmentName()
@@ -53,7 +54,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddIdentity<AppUser, IdentityRole>(options =>
 {
     options.Password.RequireDigit = false;
-    options.Password.RequiredLength = 3;
+    options.Password.RequiredLength = 8;
     options.Password.RequireLowercase = false;
     options.Password.RequireUppercase = false;
     options.Password.RequireNonAlphanumeric = false;
@@ -123,7 +124,9 @@ builder.Services.AddCors(options =>
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
         policy.WithOrigins(origins.Distinct(StringComparer.OrdinalIgnoreCase).ToArray())
-              .AllowAnyHeader().AllowAnyMethod().AllowCredentials();
+              .WithHeaders("Content-Type", "Authorization", "X-Requested-With", "Accept")
+              .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+              .AllowCredentials();
     }));
 
 // ── RATE LIMITING ─────────────────────────────────────
@@ -131,24 +134,26 @@ builder.Services.AddRateLimiter(options =>
 {
     // Per-route auth policy — strict (10 req/min per user or IP)
     options.AddPolicy("auth", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
+        RateLimitPartition.GetSlidingWindowLimiter(
             partitionKey: httpContext.User.Identity?.Name ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            factory: _ => new FixedWindowRateLimiterOptions
+            factory: _ => new SlidingWindowRateLimiterOptions
             {
                 PermitLimit = 10, Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 3,
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 0
             }));
 
     // Global policy — 150 req/min keyed by authenticated user ID, falling back to IP
     // This prevents a single shared IP (NAT/proxy) from triggering limits for all users behind it.
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
+        RateLimitPartition.GetSlidingWindowLimiter(
             partitionKey: httpContext.User.Identity?.IsAuthenticated == true
                 ? $"user:{httpContext.User.Identity.Name}"
                 : $"ip:{httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown"}",
-            factory: _ => new FixedWindowRateLimiterOptions
+            factory: _ => new SlidingWindowRateLimiterOptions
             {
                 PermitLimit = 150, Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 6,
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 5
             }));
 
@@ -192,7 +197,7 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
                     .Select(x => string.IsNullOrEmpty(x.ErrorMessage) ? x.Exception?.Message : x.ErrorMessage)
                     .Where(m => !string.IsNullOrEmpty(m))
                     .ToArray());
-        return new BadRequestObjectResult(new { message = "Validation failed", errors });
+        return new BadRequestObjectResult(new { success = false, message = "Validation failed", errors });
     };
 });
 
@@ -222,6 +227,7 @@ builder.Services.AddHttpClient<IWhatsAppApiService, WhatsAppApiService>();
 builder.Services.AddScoped<IBackupService, BackupService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddHostedService<BackupHostedService>();
+builder.Services.AddHostedService<Sportive.API.Services.BackgroundServices.StartupSyncService>();
 builder.Services.AddScoped<IWishlistService, WishlistService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<IAiAssistantService, AiAssistantService>();
@@ -320,7 +326,7 @@ app.Use(async (ctx, next) =>
     ctx.Response.Headers["Referrer-Policy"]           = "strict-origin-when-cross-origin";
     ctx.Response.Headers["Permissions-Policy"]        = "camera=(), microphone=(), geolocation=()";
     ctx.Response.Headers["Content-Security-Policy"]   =
-        "default-src 'self'; script-src 'self' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; connect-src 'self' wss: https:; font-src 'self' data: https:;";
+        "default-src 'self'; script-src 'self' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; connect-src 'self' wss: https:; font-src 'self' data: https:;"; // style-src 'unsafe-inline' kept for specific theme needs, but hardened by 'self' and https: limits
     if (ctx.Request.IsHttps)
         ctx.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
     await next();
@@ -337,7 +343,8 @@ Log.Information("Photo uploads path: {Path}", uploadsPath);
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsPath),
-    RequestPath = "/uploads"
+    RequestPath = "/uploads",
+    ServeUnknownFileTypes = false
 });
 
 app.UseRateLimiter();
@@ -398,35 +405,4 @@ static async Task SeedAsync(WebApplication app)
         admin.PhoneNumber = "01111111111";
         await userManager.UpdateAsync(admin);
     }
-
-    // ── HEAVY BACKGROUND SYNC ─────────────────────────────
-    // We run these in the background to avoid startup timeouts (OperationCanceledException)
-    // and to let the web host start listening on the PORT immediately.
-    _ = Task.Run(async () =>
-    {
-        try
-        {
-            await Task.Delay( TimeSpan.FromSeconds(5) ); // Give the host a moment to start listening
-            using var bgScope = app.Services.CreateScope();
-            
-            var customerService   = bgScope.ServiceProvider.GetRequiredService<ICustomerService>();
-            var productService    = bgScope.ServiceProvider.GetRequiredService<IProductService>();
-            var orderService      = bgScope.ServiceProvider.GetRequiredService<IOrderService>();
-            var accountingService = bgScope.ServiceProvider.GetRequiredService<IAccountingService>();
-
-            Log.Information("[BackgroundSync] Periodic accounting and stock synchronization started...");
-            
-            await customerService.SyncAllMissingAccountsAsync();
-            await productService.SyncAllProductsStatusAndStockAsync();
-            await productService.SyncAllProductRatingsAsync();
-            await orderService.SyncAllOrderAccountingAsync();
-            await accountingService.SyncAllPurchaseAccountingAsync();
-
-            Log.Information("[BackgroundSync] All synchronizations completed successfully.");
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "[BackgroundSync] Critical error during background synchronization");
-        }
-    });
 }
