@@ -148,158 +148,158 @@ public class ImportController : ControllerBase
             using var stream = file.OpenReadStream();
             using var wb     = new XLWorkbook(stream);
 
-            var ws1 = wb.Worksheets.FirstOrDefault();
-            if (ws1 == null) throw new Exception("الملف فارغ أو غير صحيح");
+            var ws = wb.Worksheets.FirstOrDefault();
+            if (ws == null) throw new Exception("الملف فارغ");
 
-            var lastRow = ws1.LastRowUsed()?.RowNumber() ?? 1;
-            var categories = await _db.Categories.ToListAsync();
-            var brands     = await _db.Brands.ToListAsync();
-            var units      = await _db.ProductUnits.ToListAsync();
-            
+            var headers = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var firstRow = ws.Row(1);
+            for (int c = 1; c <= ws.LastColumnUsed()?.ColumnNumber(); c++)
+            {
+                var hText = firstRow.Cell(c).GetString().Trim().Replace("*", "").Trim();
+                if (!string.IsNullOrEmpty(hText) && !headers.ContainsKey(hText))
+                    headers[hText] = c;
+            }
+
+            int GetCol(params string[] aliases) {
+                foreach (var a in aliases) if (headers.TryGetValue(a, out var idx)) return idx;
+                return -1;
+            }
+
+            // Mapping columns
+            int colNameAr   = GetCol("الاسم عربي", "اسم المنتج");
+            int colNameEn   = GetCol("الاسم انجليزي", "الاسم انجليزي");
+            int colMainCat  = GetCol("التصنيف الأساسي", "الفئة", "كود الفئة");
+            int colSubCat   = GetCol("التصنيف الفرعي");
+            int colSku      = GetCol("الكود SKU", "كود SKU", "sku");
+            int colPrice    = GetCol("السعر", "سعر البيع");
+            int colDisc     = GetCol("سعر الخصم", "الخصم");
+            int colCost     = GetCol("سعر التكلفة", "التكلفة");
+            int colBrand    = GetCol("العلامة التجارية", "الماركة", "Brand");
+            int colUnit     = GetCol("الوحدة", "وحدة القياس");
+            int colSize     = GetCol("المقاس");
+            int colColorEn  = GetCol("اللون (English)", "اللون English");
+            int colColorAr  = GetCol("اللون (عربي)", "اللون عربي");
+            int colStock    = GetCol("المخزون");
+            int colAdj      = GetCol("فارق السعر", "فارق السعر للمقاس");
+            int colFeat     = GetCol("مميز (نعم/لا)", "مميز");
+            int colDescAr   = GetCol("الوصف عربي");
+            int colDescEn   = GetCol("الوصف انجليزي");
+
+            if (colSku == -1 || (colNameAr == -1 && colPrice == -1))
+                return BadRequest(new { message = "تعذر التعرف على أعمدة الملف. يرجى استخدام القالب المحمل من الموقع." });
+
+            var categories   = await _db.Categories.ToListAsync();
+            var brands       = await _db.Brands.ToListAsync();
+            var units        = await _db.ProductUnits.ToListAsync();
+            var existingSkus = await _db.Products.Select(p => p.SKU).ToHashSetAsync(StringComparer.OrdinalIgnoreCase);
+
             var productsDict = new Dictionary<string, Product>(StringComparer.OrdinalIgnoreCase);
-            var existingSkusInDb = await _db.Products.Select(p => p.SKU).ToHashSetAsync(StringComparer.OrdinalIgnoreCase);
+            var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
 
             for (int r = 2; r <= lastRow; r++)
             {
-                var sku = ws1.Cell(r, 5).GetString().Trim();
+                string GetVal(int col) => col != -1 ? ws.Cell(r, col).GetString().Trim() : "";
+
+                var sku = GetVal(colSku);
                 if (string.IsNullOrEmpty(sku)) continue;
 
-                if (existingSkusInDb.Contains(sku))
+                if (existingSkus.Contains(sku))
                 {
                     if (!result.Skipped.Any(s => s.Contains($"الكود '{sku}' موجود")))
                         result.Skipped.Add($"صف {r}: الكود '{sku}' موجود مسبقاً — تم تخطيه");
                     continue;
                 }
 
-                var nameAr     = ws1.Cell(r, 1).GetString().Trim();
-                var nameEn     = ws1.Cell(r, 2).GetString().Trim();
-                var mCatStr    = ws1.Cell(r, 3).GetString().Trim();
-                var sCatStr    = ws1.Cell(r, 4).GetString().Trim();
-                var priceStr   = ws1.Cell(r, 6).GetString().Trim();
-                var discStr    = ws1.Cell(r, 7).GetString().Trim();
-                var costStr    = ws1.Cell(r, 8).GetString().Trim();
-                var brandStr   = ws1.Cell(r, 9).GetString().Trim();
-                var unitStr    = ws1.Cell(r, 10).GetString().Trim();
-                
-                var size       = ws1.Cell(r, 11).GetString().Trim().NullIfEmpty();
-                var colorEn    = ws1.Cell(r, 12).GetString().Trim().NullIfEmpty();
-                var colorAr    = ws1.Cell(r, 13).GetString().Trim().NullIfEmpty();
-                var stockStr   = ws1.Cell(r, 14).GetString().Trim();
-                var adjStr     = ws1.Cell(r, 15).GetString().Trim();
-                
-                var isFeatStr  = ws1.Cell(r, 16).GetString().Trim();
-                var descAr     = ws1.Cell(r, 17).GetString().Trim().NullIfEmpty();
-                var descEn     = ws1.Cell(r, 18).GetString().Trim().NullIfEmpty();
-
                 if (!productsDict.TryGetValue(sku, out var product))
                 {
+                    var nameAr = GetVal(colNameAr);
+                    var priceStr = GetVal(colPrice);
+
                     if (string.IsNullOrEmpty(nameAr) || string.IsNullOrEmpty(priceStr))
                     {
                         result.Errors.Add($"صف {r}: بيانات أساسية ناقصة (الاسم أو السعر) للكود {sku}");
                         continue;
                     }
-                    if (!decimal.TryParse(priceStr, out var price) || price <= 0)
+                    if (!decimal.TryParse(priceStr, out var price))
                     {
                         result.Errors.Add($"صف {r}: السعر غير صحيح '{priceStr}' للكود {sku}");
                         continue;
                     }
 
-                    int? catId = null;
-                    if (!string.IsNullOrEmpty(sCatStr))
-                        catId = categories.FirstOrDefault(c => c.NameAr.Equals(sCatStr, StringComparison.OrdinalIgnoreCase))?.Id;
-                    if (catId == null && !string.IsNullOrEmpty(mCatStr))
-                        catId = categories.FirstOrDefault(c => c.NameAr.Equals(mCatStr, StringComparison.OrdinalIgnoreCase))?.Id;
+                    // Resolve category
+                    var mCat = GetVal(colMainCat);
+                    var sCat = GetVal(colSubCat);
+                    int? catId = categories.FirstOrDefault(c => (mCat != "" && c.NameAr == mCat) || (sCat != "" && c.NameAr == sCat))?.Id;
 
-                    int? brandId = null;
-                    if (!string.IsNullOrEmpty(brandStr))
-                        brandId = brands.FirstOrDefault(b => b.NameAr.Equals(brandStr, StringComparison.OrdinalIgnoreCase))?.Id;
+                    // Resolve Brand
+                    var bStr = GetVal(colBrand);
+                    int? bId = brands.FirstOrDefault(b => b.NameAr == bStr || b.NameEn == bStr || b.Id.ToString() == bStr)?.Id;
 
-                    int? unitId = null;
-                    if (!string.IsNullOrEmpty(unitStr))
-                        unitId = units.FirstOrDefault(u => u.NameAr.Equals(unitStr, StringComparison.OrdinalIgnoreCase))?.Id;
+                    // Resolve Unit
+                    var uStr = GetVal(colUnit);
+                    int? uId = units.FirstOrDefault(u => u.NameAr == uStr)?.Id;
 
-                    decimal? cost = null;
-                    if (decimal.TryParse(costStr, out var c)) cost = c;
-
-                    decimal? dPrice = null;
-                    if (decimal.TryParse(discStr, out var dp) && dp > 0) dPrice = dp;
+                    decimal? cost = decimal.TryParse(GetVal(colCost), out var cs) ? cs : null;
+                    decimal? dP   = decimal.TryParse(GetVal(colDisc), out var dp) ? dp : null;
 
                     product = new Product
                     {
-                        NameAr        = nameAr,
-                        NameEn        = string.IsNullOrEmpty(nameEn) ? nameAr : nameEn,
-                        CategoryId    = catId ?? categories.FirstOrDefault()?.Id ?? 1,
-                        SKU           = sku,
-                        Price         = price,
-                        DiscountPrice = dPrice,
-                        CostPrice     = cost,
-                        BrandId       = brandId,
-                        // UnitId        = unitId, // Reverted due to missing DB column
-                        DescriptionAr = descAr,
-                        DescriptionEn = descEn,
-                        IsFeatured    = isFeatStr.Contains("نعم"),
-                        Status        = ProductStatus.Active,
-                        CreatedAt     = TimeHelper.GetEgyptTime(),
-                        Variants      = new List<ProductVariant>()
+                        NameAr = nameAr,
+                        NameEn = GetVal(colNameEn).NullIfEmpty() ?? nameAr,
+                        SKU = sku,
+                        Price = price,
+                        DiscountPrice = dP,
+                        CostPrice = cost,
+                        CategoryId = catId ?? categories.FirstOrDefault()?.Id ?? 1,
+                        BrandId = bId,
+                        // UnitId = uId, // Reverted until Migration
+                        DescriptionAr = GetVal(colDescAr).NullIfEmpty(),
+                        DescriptionEn = GetVal(colDescEn).NullIfEmpty(),
+                        IsFeatured    = GetVal(colFeat).Contains("نعم"),
+                        Status = ProductStatus.Active,
+                        CreatedAt = TimeHelper.GetEgyptTime()
                     };
-                    productsDict.Add(sku, product);
+                    productsDict[sku] = product;
                     _db.Products.Add(product);
                     result.Added++;
                 }
 
-                if (!string.IsNullOrEmpty(size) || !string.IsNullOrEmpty(colorEn) || !string.IsNullOrEmpty(stockStr))
-                {
-                    int vStock = 0;
-                    if (int.TryParse(stockStr, out vStock))
-                    {
-                        decimal? vAdj = null;
-                        if (decimal.TryParse(adjStr, out var va) && va != 0) vAdj = va;
+                // Add Variant
+                var stockVal = GetVal(colStock);
+                var size     = GetVal(colSize).NullIfEmpty();
+                var cEn      = GetVal(colColorEn).NullIfEmpty();
+                var cAr      = GetVal(colColorAr).NullIfEmpty();
 
-                        product.Variants.Add(new ProductVariant
-                        {
-                            Size            = size,
-                            Color           = colorEn,
-                            ColorAr         = colorAr,
-                            StockQuantity   = vStock,
-                            PriceAdjustment = vAdj,
-                            CreatedAt       = TimeHelper.GetEgyptTime()
+                if (!string.IsNullOrEmpty(stockVal))
+                {
+                    if (int.TryParse(stockVal, out var stk))
+                    {
+                        decimal? vAdj = decimal.TryParse(GetVal(colAdj), out var adj) ? adj : null;
+                        
+                        product.Variants.Add(new ProductVariant {
+                            Size = size, Color = cEn, ColorAr = cAr,
+                            StockQuantity = stk, PriceAdjustment = vAdj,
+                            CreatedAt = TimeHelper.GetEgyptTime()
                         });
                         result.VariantsAdded++;
                     }
-                    else if (!string.IsNullOrEmpty(stockStr))
-                    {
-                        result.Errors.Add($"صف {r}: المخزون غير صحيح للمقاس {size}");
-                    }
+                    else result.Errors.Add($"صف {r}: كمية المخزون غير صحيحة");
                 }
             }
 
             foreach(var p in productsDict.Values)
-            {
-                if (p.Variants.Any())
-                    p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
-                else
-                {
-                    // Logic to handle products without variants but with stock on first row if needed
-                    // Currently variants addition handles stock
-                }
-            }
+                if (p.Variants.Any()) p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
 
             await _db.SaveChangesAsync();
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = $"خطأ في قراءة الملف: {ex.Message}" });
+            return BadRequest(new { message = $"خطأ: {ex.Message}" });
         }
 
-        return Ok(new {
-            message = "تم الاستيراد بنجاح",
-            added          = result.Added,
-            variantsAdded  = result.VariantsAdded,
-            skipped        = result.Skipped.Count,
-            errors         = result.Errors.Count,
-            details        = result
-        });
+        return Ok(new { message = "تم الاستيراد بنجاح", added = result.Added, variantsAdded = result.VariantsAdded, skipped = result.Skipped.Count, errors = result.Errors.Count, details = result });
     }
+
 
     // ── INVENTORY TEMPLATE ────────────────────────────────────
     // GET /api/import/inventory-template
