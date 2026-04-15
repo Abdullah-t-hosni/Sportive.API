@@ -1397,14 +1397,42 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/inventory-aging?days=60
     // ══════════════════════════════════════════════════════
     [HttpGet("inventory-aging")]
-    public async Task<IActionResult> InventoryAging([FromQuery] int days = 60)
+    [HttpGet("/api/inventory/aging")] // Alias for legacy/varying client paths
+    public async Task<IActionResult> InventoryAging(
+        [FromQuery] int     days       = 60,
+        [FromQuery] int?    categoryId = null,
+        [FromQuery] int?    brandId    = null,
+        [FromQuery] string? color      = null,
+        [FromQuery] string? size       = null)
     {
         var cutoff = TimeHelper.GetEgyptTime().AddDays(-days);
 
-        // نجلب المنتجات التي بها مخزون ولم تباع منذ cutoff
-        // الحركة التي تعتبر "بيع" هي Sale و ReturnOut (في حال المشتريات) ولكن هنا نركز على البيع Sale
-        var products = await _db.Products
-            .Where(p => p.TotalStock > 0 && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock))
+        // 1. Get filtered product list first
+        var query = _db.Products
+            .Where(p => p.TotalStock > 0 && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock));
+
+        // 2. Apply Filters (Category/Brand family IDs)
+        if (categoryId.HasValue && categoryId > 0)
+        {
+            var catIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
+            query = query.Where(p => p.CategoryId.HasValue && catIds.Contains(p.CategoryId.Value));
+        }
+        if (brandId.HasValue && brandId > 0)
+        {
+            var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
+            query = query.Where(p => p.BrandId.HasValue && brandIds.Contains(p.BrandId.Value));
+        }
+        if (!string.IsNullOrEmpty(color))
+        {
+            query = query.Where(p => p.Variants.Any(v => v.Color == color || v.ColorAr == color));
+        }
+        if (!string.IsNullOrEmpty(size))
+        {
+            query = query.Where(p => p.Variants.Any(v => v.Size == size));
+        }
+
+        // 3. Project data and LastSaleDate
+        var productsData = await query
             .Select(p => new {
                 p.Id, p.NameAr, p.SKU, p.TotalStock, p.Price,
                 LastSaleDate = _db.InventoryMovements
@@ -1415,12 +1443,16 @@ public class OperationalReportsController : ControllerBase
             })
             .ToListAsync();
 
-        var agingRows = products
+        // 4. Filter by Aging Cutoff
+        var agingRows = productsData
             .Where(p => p.LastSaleDate == null || p.LastSaleDate <= cutoff)
             .Select(p => new {
-                p.Id, p.NameAr, p.SKU, p.TotalStock, 
+                p.Id, 
+                p.NameAr, 
+                p.SKU, 
+                p.TotalStock, 
                 p.Price,
-                DaysSinceLastSale = p.LastSaleDate.HasValue ? (int)(TimeHelper.GetEgyptTime() - p.LastSaleDate.Value).TotalDays : 999, // 999 for never sold
+                DaysSinceLastSale = p.LastSaleDate.HasValue ? (int)(TimeHelper.GetEgyptTime() - p.LastSaleDate.Value).TotalDays : 999,
                 Value = p.TotalStock * p.Price
             })
             .OrderByDescending(p => p.DaysSinceLastSale)

@@ -126,6 +126,7 @@ public class InventoryIntelligenceController : ControllerBase
     // GET /api/operationalreports/variant-reorder-alerts?threshold=2
     // ══════════════════════════════════════════════════════
     [HttpGet("variant-reorder-alerts")]
+    [HttpGet("variant-reorder")] // Alias for varying client paths
     public async Task<IActionResult> VariantReorderAlerts(
         [FromQuery] int   threshold  = 2,
         [FromQuery] int?  categoryId = null,
@@ -192,7 +193,13 @@ public class InventoryIntelligenceController : ControllerBase
     // POST /api/operationalreports/cycle-count-submit
     // ══════════════════════════════════════════════════════
     [HttpGet("cycle-count-today")]
-    public async Task<IActionResult> CycleCountToday([FromQuery] int count = 5)
+    public async Task<IActionResult> CycleCountToday(
+        [FromQuery] int     count      = 5,
+        [FromQuery] string? search     = null,
+        [FromQuery] int?    categoryId = null,
+        [FromQuery] int?    brandId    = null,
+        [FromQuery] string? color      = null,
+        [FromQuery] string? size       = null)
     {
         var today = TimeHelper.GetEgyptTime().Date;
 
@@ -206,34 +213,69 @@ public class InventoryIntelligenceController : ControllerBase
             .Distinct()
             .ToListAsync();
 
-        // seed ثابت لليوم (للاتساق في حالة إعادة الفتح)
-        var rng = new Random(today.DayOfYear + today.Month * 100 + today.Year);
-
-        var allVariants = await _db.ProductVariants
+        var q = _db.ProductVariants
             .Include(v => v.Product)
             .Where(v => v.Product != null
                      && v.Product.Status == ProductStatus.Active
-                     && !auditedToday.Contains(v.Id))
-            .Select(v => new
-            {
-                VariantId   = v.Id,
-                ProductId   = v.ProductId,
-                ProductName = v.Product!.NameAr,
-                SKU         = v.Product!.SKU,
-                Size        = v.Size,
-                Color       = v.ColorAr ?? v.Color,
-                SystemStock = v.StockQuantity,
-                CostPrice   = v.Product!.CostPrice ?? 0
-            })
-            .ToListAsync();
+                     && !auditedToday.Contains(v.Id));
 
-        var picked = allVariants.OrderBy(_ => rng.Next()).Take(count).ToList();
+        // تطبيق الفلاتر إذا وُجدت
+        if (!string.IsNullOrEmpty(search))
+        {
+            q = q.Where(v => v.Product!.NameAr.Contains(search) || v.Product.SKU.Contains(search));
+        }
+        if (categoryId.HasValue && categoryId > 0)
+        {
+            var catIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
+            q = q.Where(v => v.Product!.CategoryId.HasValue && catIds.Contains(v.Product.CategoryId.Value));
+        }
+        if (brandId.HasValue && brandId > 0)
+        {
+            var bIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
+            q = q.Where(v => v.Product!.BrandId.HasValue && bIds.Contains(v.Product.BrandId.Value));
+        }
+        if (!string.IsNullOrEmpty(color))
+        {
+            q = q.Where(v => v.Color == color || v.ColorAr == color);
+        }
+        if (!string.IsNullOrEmpty(size))
+        {
+            q = q.Where(v => v.Size == size);
+        }
+
+        var allVariants = await q.Select(v => new
+        {
+            VariantId   = v.Id,
+            ProductId   = v.ProductId,
+            ProductName = v.Product!.NameAr,
+            SKU         = v.Product!.SKU,
+            Size        = v.Size,
+            Color       = v.ColorAr ?? v.Color,
+            SystemStock = v.StockQuantity,
+            CostPrice   = v.Product!.CostPrice ?? 0
+        }).ToListAsync();
+
+        // إذا كان هناك بحث أو فلترة، نُخرج كل النتائج للسهولة، وإذا لم تكن هناك فلترة، نلتزم بالعدد العشوائي
+        var isFiltered = !string.IsNullOrEmpty(search) || categoryId.HasValue || brandId.HasValue || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size);
+        
+        IEnumerable<object> picked;
+        if (isFiltered)
+        {
+            picked = allVariants;
+        }
+        else
+        {
+            var rng = new Random(today.DayOfYear + today.Month * 100 + today.Year);
+            picked = allVariants.OrderBy(_ => rng.Next()).Take(count);
+        }
+        
+        var pickedList = picked.ToList();
 
         return Ok(new
         {
             date  = today.ToString("yyyy-MM-dd"),
-            count = picked.Count,
-            items = picked
+            count = pickedList.Count,
+            items = pickedList
         });
     }
 
