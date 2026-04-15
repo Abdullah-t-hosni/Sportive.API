@@ -130,7 +130,7 @@ builder.Services.AddCors(options =>
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
         policy.WithOrigins(origins.Distinct(StringComparer.OrdinalIgnoreCase).ToArray())
-              .WithHeaders("Content-Type", "Authorization", "X-Requested-With", "Accept")
+              .AllowAnyHeader()
               .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
               .AllowCredentials();
     }));

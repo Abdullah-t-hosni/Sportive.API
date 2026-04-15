@@ -24,49 +24,48 @@ public class ImportController : ControllerBase
     [HttpGet("template")]
     public async Task<IActionResult> GetTemplate()
     {
-        var categories = await _db.Categories.Select(c => c.NameAr).ToListAsync();
+        var mainCategories = await _db.Categories.Where(c => c.ParentId == null).Select(c => c.NameAr).ToListAsync();
+        var subCategories = await _db.Categories.Where(c => c.ParentId != null).Select(c => c.NameAr).ToListAsync();
         var brands     = await _db.Brands.Select(b => b.NameAr).ToListAsync();
         var units      = await _db.ProductUnits.Select(u => u.NameAr).ToListAsync();
         
-        // Fetch common sizes and colors for dropdowns
         var sizes    = await _db.ProductVariants.Where(v => !string.IsNullOrEmpty(v.Size)).Select(v => v.Size!).Distinct().ToListAsync();
         var colorEns = await _db.ProductVariants.Where(v => !string.IsNullOrEmpty(v.Color)).Select(v => v.Color!).Distinct().ToListAsync();
         var colorArs = await _db.ProductVariants.Where(v => !string.IsNullOrEmpty(v.ColorAr)).Select(v => v.ColorAr!).Distinct().ToListAsync();
 
         using var wb = new XLWorkbook();
-
-        // Sheet 0: Data Lists (Hidden)
         var wsL = wb.Worksheets.Add("Lists");
         wsL.Hide();
         
-        // Fill data
         void FillCol(int col, List<string> items) {
             for (int i = 0; i < items.Count; i++) wsL.Cell(i + 1, col).Value = items[i];
         }
-        FillCol(1, categories); 
-        FillCol(2, brands);     
-        FillCol(3, units);      
-        FillCol(4, sizes);      
-        FillCol(5, colorEns);   
-        FillCol(6, colorArs);   
-        FillCol(7, new List<string> { "نعم", "لا" });
+        FillCol(1, mainCategories); 
+        FillCol(2, subCategories);
+        FillCol(3, brands);     
+        FillCol(4, units);      
+        FillCol(5, sizes);      
+        FillCol(6, colorEns);   
+        FillCol(7, colorArs);   
+        FillCol(8, new List<string> { "نعم", "لا" });
 
-        var catRange   = wsL.Range(1, 1, Math.Max(1, categories.Count), 1);
-        var brandRange = wsL.Range(1, 2, Math.Max(1, brands.Count), 2);
-        var unitRange  = wsL.Range(1, 3, Math.Max(1, units.Count), 3);
-        var sizeRange  = wsL.Range(1, 4, Math.Max(1, sizes.Count), 4);
-        var cEnRange   = wsL.Range(1, 5, Math.Max(1, colorEns.Count), 5);
-        var cArRange   = wsL.Range(1, 6, Math.Max(1, colorArs.Count), 6);
-        var featRange  = wsL.Range(1, 7, 2, 7);
+        var mCatRange  = wsL.Range(1, 1, Math.Max(1, mainCategories.Count), 1);
+        var sCatRange  = wsL.Range(1, 2, Math.Max(1, subCategories.Count), 2);
+        var brandRange = wsL.Range(1, 3, Math.Max(1, brands.Count), 3);
+        var unitRange  = wsL.Range(1, 4, Math.Max(1, units.Count), 4);
+        var sizeRange  = wsL.Range(1, 5, Math.Max(1, sizes.Count), 5);
+        var cEnRange   = wsL.Range(1, 6, Math.Max(1, colorEns.Count), 6);
+        var cArRange   = wsL.Range(1, 7, Math.Max(1, colorArs.Count), 7);
+        var featRange  = wsL.Range(1, 8, 2, 8);
 
-        // Sheet 1: Products
-        var ws1 = wb.Worksheets.Add("المنتجات");
+        var ws1 = wb.Worksheets.Add("المنتجات والمقاسات");
         ws1.RightToLeft = true;
 
         var headers1 = new[] {
-            "الاسم عربي *","الاسم انجليزي *","الفئة *","الكود SKU *",
-            "السعر *","سعر الخصم","العلامة التجارية","الوحدة","الوصف عربي","الوصف انجليزي",
-            "مميز (نعم/لا)"
+            "الاسم عربي *","الاسم انجليزي","التصنيف الأساسي *","التصنيف الفرعي","الكود SKU *",
+            "السعر *","سعر الخصم","سعر التكلفة","الماركة","الوحدة",
+            "المقاس","اللون (English)","اللون (عربي)","المخزون *","فارق السعر للمقاس",
+            "مميز (نعم/لا)","الوصف عربي","الوصف انجليزي"
         };
         for (int c = 0; c < headers1.Length; c++)
         {
@@ -77,72 +76,54 @@ public class ImportController : ControllerBase
             cell.Style.Font.FontColor = XLColor.White;
         }
 
-        // Apply Data Validation (Choices)
-        // Except Name (1,2), Code (4), and Unit (8) -> These remain text
-        for (int r = 2; r <= 500; r++)
-        {
-            ws1.Cell(r, 3).CreateDataValidation().List(catRange, true);     // Category choice
-            ws1.Cell(r, 7).CreateDataValidation().List(brandRange, true);   // Brand choice
-            ws1.Cell(r, 11).CreateDataValidation().List(featRange, true);   // Featured choice
-        }
+        ws1.Column(5).Style.NumberFormat.Format = "@"; // Force text for SKU
 
-        // Sample row
-        ws1.Cell(2,1).Value = "تيشرت رياضي أزرق";
-        ws1.Cell(2,2).Value = "Blue Sports T-Shirt";
-        ws1.Cell(2,3).Value = categories.FirstOrDefault() ?? "ملابس";
-        ws1.Cell(2,4).Value = "TS-001";
-        ws1.Cell(2,5).Value = 299;
-        ws1.Cell(2,6).Value = 249;
-        ws1.Cell(2,7).Value = brands.FirstOrDefault() ?? "Nike";
-        ws1.Cell(2,8).Value = units.FirstOrDefault() ?? "قطعة";
-        ws1.Cell(2,9).Value = "تيشرت رياضي عالي الجودة";
-        ws1.Cell(2,10).Value = "High quality sports t-shirt";
-        ws1.Cell(2,11).Value = "لا";
-        ws1.Row(2).Style.Font.FontColor = XLColor.Gray;
-        ws1.Columns().AdjustToContents();
-
-        // Sheet 2: Variants
-        var ws2 = wb.Worksheets.Add("المقاسات");
-        ws2.RightToLeft = true;
-
-        var headers2 = new[] { "الكود SKU *","المقاس","اللون (English)","اللون (عربي)","المخزون *","فارق السعر" };
-        for (int c = 0; c < headers2.Length; c++)
-        {
-            var cell = ws2.Cell(1, c+1);
-            cell.Value = headers2[c];
-            cell.Style.Font.Bold = true;
-            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#0f3460");
-            cell.Style.Font.FontColor = XLColor.White;
-        }
-
-        // Data Validation for Variants
         for (int r = 2; r <= 1000; r++)
         {
-            ws2.Cell(r, 2).CreateDataValidation().List(sizeRange, true);
-            ws2.Cell(r, 3).CreateDataValidation().List(cEnRange, true);
-            ws2.Cell(r, 4).CreateDataValidation().List(cArRange, true);
+            ws1.Cell(r, 3).CreateDataValidation().List(mCatRange, true);
+            ws1.Cell(r, 4).CreateDataValidation().List(sCatRange, true);
+            ws1.Cell(r, 9).CreateDataValidation().List(brandRange, true);
+            ws1.Cell(r, 10).CreateDataValidation().List(unitRange, true);
+            ws1.Cell(r, 11).CreateDataValidation().List(sizeRange, true);
+            ws1.Cell(r, 12).CreateDataValidation().List(cEnRange, true);
+            ws1.Cell(r, 13).CreateDataValidation().List(cArRange, true);
+            ws1.Cell(r, 16).CreateDataValidation().List(featRange, true);
         }
 
-        // Sample rows
-        string[][] samples = {
-            ["TS-001","S","Blue","أزرق","10","0"],
-            ["TS-001","M","Blue","أزرق","15","0"],
-            ["TS-001","L","Blue","أزرق","8","0"],
-            ["TS-001","XL","Blue","أزرق","5","10"],
-        };
-        for (int i = 0; i < samples.Length; i++)
-        {
-            for (int j = 0; j < samples[i].Length; j++)
-                ws2.Cell(i+2, j+1).Value = samples[i][j];
-            ws2.Row(i+2).Style.Font.FontColor = XLColor.Gray;
-        }
-        ws2.Columns().AdjustToContents();
+        // Sample row 1 (Variant 1)
+        ws1.Cell(2,1).Value = "تيشرت رياضي";
+        ws1.Cell(2,2).Value = "Sports T-Shirt";
+        ws1.Cell(2,3).Value = mainCategories.FirstOrDefault() ?? "ملابس";
+        ws1.Cell(2,5).Value = "TS-001";
+        ws1.Cell(2,6).Value = 299;
+        ws1.Cell(2,8).Value = 200; // Cost
+        ws1.Cell(2,9).Value = brands.FirstOrDefault() ?? "Nike";
+        ws1.Cell(2,10).Value = units.FirstOrDefault() ?? "قطعة";
+        ws1.Cell(2,11).Value = "M";
+        ws1.Cell(2,12).Value = "Blue";
+        ws1.Cell(2,13).Value = "أزرق";
+        ws1.Cell(2,14).Value = 10;
+        ws1.Cell(2,15).Value = 0;
+        ws1.Cell(2,16).Value = "لا";
+        ws1.Row(2).Style.Font.FontColor = XLColor.Gray;
+
+        // Sample row 2 (Variant 2 - Same Product)
+        ws1.Cell(3,1).Value = "تيشرت رياضي";
+        ws1.Cell(3,5).Value = "TS-001";
+        ws1.Cell(3,6).Value = 299;
+        ws1.Cell(3,11).Value = "L";
+        ws1.Cell(3,12).Value = "Blue";
+        ws1.Cell(3,13).Value = "أزرق";
+        ws1.Cell(3,14).Value = 5;
+        ws1.Row(3).Style.Font.FontColor = XLColor.Gray;
+
+        ws1.Columns().AdjustToContents();
 
         var stream = new MemoryStream();
         wb.SaveAs(stream); stream.Position = 0;
 
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "products_import_template.xlsx");
+            "products_import_template_v2.xlsx");
     }
 
 

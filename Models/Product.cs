@@ -30,6 +30,9 @@ public class Product : BaseEntity
     public int? CategoryId { get; set; }
     public Category? Category { get; set; }
 
+    public int? UnitId { get; set; }
+    public ProductUnit? Unit { get; set; }
+
     // Navigation
     public ICollection<ProductVariant> Variants { get; set; } = new List<ProductVariant>();
     public ICollection<ProductImage> Images { get; set; } = new List<ProductImage>();
