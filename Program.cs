@@ -399,18 +399,34 @@ static async Task SeedAsync(WebApplication app)
         await userManager.UpdateAsync(admin);
     }
 
-    var customerService = scope.ServiceProvider.GetRequiredService<ICustomerService>();
-    await customerService.SyncAllMissingAccountsAsync();
+    // ── HEAVY BACKGROUND SYNC ─────────────────────────────
+    // We run these in the background to avoid startup timeouts (OperationCanceledException)
+    // and to let the web host start listening on the PORT immediately.
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            await Task.Delay( TimeSpan.FromSeconds(5) ); // Give the host a moment to start listening
+            using var bgScope = app.Services.CreateScope();
+            
+            var customerService   = bgScope.ServiceProvider.GetRequiredService<ICustomerService>();
+            var productService    = bgScope.ServiceProvider.GetRequiredService<IProductService>();
+            var orderService      = bgScope.ServiceProvider.GetRequiredService<IOrderService>();
+            var accountingService = bgScope.ServiceProvider.GetRequiredService<IAccountingService>();
 
-    var productService = scope.ServiceProvider.GetRequiredService<IProductService>();
-    await productService.SyncAllProductsStatusAndStockAsync();
-    await productService.SyncAllProductRatingsAsync();
+            Log.Information("[BackgroundSync] Periodic accounting and stock synchronization started...");
+            
+            await customerService.SyncAllMissingAccountsAsync();
+            await productService.SyncAllProductsStatusAndStockAsync();
+            await productService.SyncAllProductRatingsAsync();
+            await orderService.SyncAllOrderAccountingAsync();
+            await accountingService.SyncAllPurchaseAccountingAsync();
 
-    var orderService = scope.ServiceProvider.GetRequiredService<IOrderService>();
-    await orderService.SyncAllOrderAccountingAsync();
-
-    var accountingService = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-    await accountingService.SyncAllPurchaseAccountingAsync();
-
-    Log.Information("Seed process and accounting synchronization completed successfully.");
+            Log.Information("[BackgroundSync] All synchronizations completed successfully.");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[BackgroundSync] Critical error during background synchronization");
+        }
+    });
 }
