@@ -73,7 +73,7 @@ public class OperationalReportsController : ControllerBase
 
         if (unpaidOnly)
         {
-            ordersQuery = ordersQuery.Where(o => o.RemainingAmount > 0 && o.PaymentMethod == PaymentMethod.Credit);
+            ordersQuery = ordersQuery.Where(o => (o.TotalAmount - o.PaidAmount) > 0 && o.PaymentMethod == PaymentMethod.Credit);
         }
 
         var orders = await ordersQuery.OrderBy(o => o.CreatedAt).ToListAsync();
@@ -188,7 +188,7 @@ public class OperationalReportsController : ControllerBase
 
         if (unpaidOnly)
         {
-            invoicesQuery = invoicesQuery.Where(i => i.RemainingAmount > 0 && i.PaymentTerms != PaymentTerms.Cash);
+            invoicesQuery = invoicesQuery.Where(i => (i.TotalAmount - i.PaidAmount - i.ReturnedAmount) > 0 && i.PaymentTerms != PaymentTerms.Cash);
         }
 
         var invoices = await invoicesQuery.OrderBy(i => i.InvoiceDate).ToListAsync();
@@ -298,7 +298,7 @@ public class OperationalReportsController : ControllerBase
             var creditOrders = c.Orders
                 .Where(o => o.Status != OrderStatus.Cancelled 
                          && o.CreatedAt <= asOf
-                         && (o.PaymentMethod == PaymentMethod.Credit || o.PaymentMethod == PaymentMethod.Mixed || o.RemainingAmount > 0))
+                         && (o.PaymentMethod == PaymentMethod.Credit || o.PaymentMethod == PaymentMethod.Mixed || (o.TotalAmount - o.PaidAmount) > 0))
                 .OrderBy(o => o.CreatedAt)
                 .ToList();
 

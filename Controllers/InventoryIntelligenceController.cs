@@ -33,7 +33,7 @@ public class InventoryIntelligenceController : ControllerBase
             .Include(i => i.Supplier)
             .Where(i => i.Status != PurchaseInvoiceStatus.Cancelled
                      && i.Status != PurchaseInvoiceStatus.Returned
-                     && i.RemainingAmount > 0)
+                     && (i.TotalAmount - i.PaidAmount - i.ReturnedAmount) > 0)
             .ToListAsync();
 
         var buckets = new List<object>();

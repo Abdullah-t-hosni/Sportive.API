@@ -106,6 +106,7 @@ public class ProfitabilityController : ControllerBase
                 // 2. حساب الإيراد الصافي لكل سطر مع توزيع خصم الفاتورة (Discount Pro-rating)
                 decimal totalNetRevenue      = 0;
                 decimal totalShippingExpense = 0;
+                decimal totalItemDiscount    = 0;
                 foreach (var i in g)
                 {
                     // الكمية المباعة فعلياً في هذا السطر بعد المرتجع
@@ -135,6 +136,9 @@ public class ProfitabilityController : ControllerBase
                     
                     // التكلفة الإضافية (الشحن الفعلي كعبء)
                     totalShippingExpense += (lineActualCostShare * qtyFactor);
+                    
+                    // إجمالي الخصومات الموزعة
+                    totalItemDiscount += (lineOrderDiscountShare * qtyFactor);
                 }
 
                 // التكلفة الصافية
@@ -150,7 +154,7 @@ public class ProfitabilityController : ControllerBase
 
                 var totalSales = g.Sum(i => i.TotalPrice);
                 var totalReturnsValue = g.Sum(i => i.ReturnedQuantity * i.UnitPrice);
-                var totalDiscounts = (totalSales - totalReturnsValue) - (totalNetRevenue - g.Sum(i => i.Order.DeliveryFee * ((decimal)(i.Quantity - i.ReturnedQuantity) / i.Order.SubTotal)));
+                var totalDiscounts = totalItemDiscount;
 
                 return new ProductProfitRow(
                     ProductId:        g.Key,
