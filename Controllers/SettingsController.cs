@@ -106,6 +106,15 @@ public class SettingsController : ControllerBase
             info.ReceiptFooterText       = dto.ReceiptFooterText;
             info.ReceiptShowLogo         = dto.ReceiptShowLogo;
             info.ReceiptShowBarcode      = dto.ReceiptShowBarcode;
+            info.ReceiptTermsAndConditions = dto.ReceiptTermsAndConditions;
+            info.ReceiptShowCustomerDetails = dto.ReceiptShowCustomerDetails;
+            info.ReceiptShowAddress      = dto.ReceiptShowAddress;
+            info.ReceiptShowPhone        = dto.ReceiptShowPhone;
+            info.ReceiptComplaintsPhone  = dto.ReceiptComplaintsPhone;
+            info.ReceiptShowTotalPieceCount = dto.ReceiptShowTotalPieceCount;
+            info.ReceiptShowItemCount    = dto.ReceiptShowItemCount;
+            info.ReceiptShowBalance      = dto.ReceiptShowBalance;
+            info.ReceiptSoftwareProvider = dto.ReceiptSoftwareProvider;
 
             info.VatRatePercent          = dto.VatRatePercent;
             info.FixedDeliveryFee        = dto.FixedDeliveryFee;

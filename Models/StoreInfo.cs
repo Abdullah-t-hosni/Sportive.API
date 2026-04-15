@@ -140,6 +140,36 @@ public class StoreInfo
     [JsonPropertyName("receiptShowBarcode")]
     public bool ReceiptShowBarcode { get; set; } = true;
 
+    [MaxLength(2000)]
+    [JsonPropertyName("receiptTermsAndConditions")]
+    public string? ReceiptTermsAndConditions { get; set; }
+
+    [JsonPropertyName("receiptShowCustomerDetails")]
+    public bool ReceiptShowCustomerDetails { get; set; } = true;
+
+    [JsonPropertyName("receiptShowAddress")]
+    public bool ReceiptShowAddress { get; set; } = true;
+
+    [JsonPropertyName("receiptShowPhone")]
+    public bool ReceiptShowPhone { get; set; } = true;
+
+    [MaxLength(50)]
+    [JsonPropertyName("receiptComplaintsPhone")]
+    public string? ReceiptComplaintsPhone { get; set; }
+
+    [JsonPropertyName("receiptShowTotalPieceCount")]
+    public bool ReceiptShowTotalPieceCount { get; set; } = true;
+
+    [JsonPropertyName("receiptShowItemCount")]
+    public bool ReceiptShowItemCount { get; set; } = true;
+
+    [JsonPropertyName("receiptShowBalance")]
+    public bool ReceiptShowBalance { get; set; } = true;
+
+    [MaxLength(200)]
+    [JsonPropertyName("receiptSoftwareProvider")]
+    public string? ReceiptSoftwareProvider { get; set; } = "By Easy Store";
+
     // --- 5. Finance & VAT ---
     [JsonPropertyName("vatPercent")]
     public decimal VatRatePercent { get; set; } = 14;
