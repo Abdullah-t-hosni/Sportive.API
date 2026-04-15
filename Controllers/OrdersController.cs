@@ -37,12 +37,13 @@ public class OrdersController : ControllerBase
     [HttpGet]
     [Authorize(Roles = "Admin,Manager,Staff,Cashier")]
     public async Task<ActionResult<PaginatedResult<OrderSummaryDto>>> GetOrders(
-        [FromQuery] int page = 1, [FromQuery] int pageSize = 12, 
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 12,
         [FromQuery] OrderStatus? status = null, [FromQuery] string? search = null,
         [FromQuery] int? customerId = null, [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null, [FromQuery] string? salesPersonId = null,
         [FromQuery] OrderSource? source = null, [FromQuery] PaymentMethod? paymentMethod = null)
     {
+        pageSize = Math.Clamp(pageSize, 1, 100);
         var result = await _orderService.GetOrdersAsync(page, pageSize, status, search, customerId, fromDate, toDate, salesPersonId, source, paymentMethod);
         return Ok(result);
     }
@@ -335,6 +336,7 @@ public class OrdersController : ControllerBase
         [FromQuery] int page           = 1,
         [FromQuery] int pageSize       = 20)
     {
+        pageSize = Math.Clamp(pageSize, 1, 100);
         var from = fromDate?.Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1);
 

@@ -42,10 +42,15 @@ public class DataMaintenanceController : ControllerBase
         }
     }
 
+    public record FactoryResetRequest(string Confirmation);
+
     [HttpPost("factory-reset")]
-    public async Task<IActionResult> FactoryReset()
+    public async Task<IActionResult> FactoryReset([FromBody] FactoryResetRequest req)
     {
-        _logger.LogWarning("FACTORY RESET INITIATED.");
+        if (req?.Confirmation != "CONFIRM_FACTORY_RESET")
+            return BadRequest(new { success = false, message = "يجب إرسال { \"confirmation\": \"CONFIRM_FACTORY_RESET\" } في جسم الطلب." });
+
+        _logger.LogWarning("FACTORY RESET INITIATED by {User}.", User.Identity?.Name);
 
         try
         {

@@ -6,7 +6,12 @@
       "Bash(grep -A 5 \"ArgumentNullException\\\\|ArgumentException\" /d/Sportive.API/Services/*.cs)",
       "Read(//d/sportive-frontend/**)",
       "Bash(npx tsc:*)",
-      "Bash(npx --prefix /d/sportive-frontend tsc -p /d/sportive-frontend/tsconfig.json --noEmit)"
+      "Bash(npx --prefix /d/sportive-frontend tsc -p /d/sportive-frontend/tsconfig.json --noEmit)",
+      "Bash(find /d/Sportive.API/Controllers -type f -name \"*.cs\" -exec wc -l {} \\\\;)",
+      "Bash(awk '{print $2 \": \" $1}')",
+      "Bash(sort -t: -k2 -rn)",
+      "Bash(find /d/Sportive.API -name \"*.cs\" -path \"*/Services/*\" -type f -exec basename {} \\\\;)",
+      "Bash(ls -la /d/sportive-frontend/.env*)"
     ]
   }
 }

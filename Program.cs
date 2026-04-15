@@ -129,20 +129,23 @@ builder.Services.AddCors(options =>
 // ── RATE LIMITING ─────────────────────────────────────
 builder.Services.AddRateLimiter(options =>
 {
-    // Per-route auth policy — strict (10 req/min per IP)
+    // Per-route auth policy — strict (10 req/min per user or IP)
     options.AddPolicy("auth", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            partitionKey: httpContext.User.Identity?.Name ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 10, Window = TimeSpan.FromMinutes(1),
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 0
             }));
 
-    // Global policy — applied to all endpoints (150 req/min per IP)
+    // Global policy — 150 req/min keyed by authenticated user ID, falling back to IP
+    // This prevents a single shared IP (NAT/proxy) from triggering limits for all users behind it.
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            partitionKey: httpContext.User.Identity?.IsAuthenticated == true
+                ? $"user:{httpContext.User.Identity.Name}"
+                : $"ip:{httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown"}",
             factory: _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 150, Window = TimeSpan.FromMinutes(1),
@@ -317,7 +320,7 @@ app.Use(async (ctx, next) =>
     ctx.Response.Headers["Referrer-Policy"]           = "strict-origin-when-cross-origin";
     ctx.Response.Headers["Permissions-Policy"]        = "camera=(), microphone=(), geolocation=()";
     ctx.Response.Headers["Content-Security-Policy"]   =
-        "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; connect-src 'self' wss: https:; font-src 'self' data: https:;";
+        "default-src 'self'; script-src 'self' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; connect-src 'self' wss: https:; font-src 'self' data: https:;";
     if (ctx.Request.IsHttps)
         ctx.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
     await next();
@@ -372,7 +375,9 @@ static async Task SeedAsync(WebApplication app)
     {
         if (!app.Environment.IsDevelopment())
         {
-            Log.Warning("SECURITY WARNING: ADMIN_PASSWORD environment variable is missing. Using default password in non-development environment is NOT recommended.");
+            Log.Fatal("CRITICAL: ADMIN_PASSWORD environment variable is not set. Refusing to start with a default password in production.");
+            await app.StopAsync();
+            return;
         }
         adminPassword = "Admin@123456";
     }
