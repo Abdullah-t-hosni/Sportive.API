@@ -38,6 +38,12 @@ Log.Logger = new LoggerConfiguration()
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog();
 
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(30);
+    options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(15);
+});
+
 // ── DATABASE ──────────────────────────────────────────
 var connStr = Environment.GetEnvironmentVariable("DATABASE_URL")
     ?? builder.Configuration.GetConnectionString("DefaultConnection")
@@ -153,8 +159,8 @@ builder.Services.AddRateLimiter(options =>
             factory: _ => new SlidingWindowRateLimiterOptions
             {
                 PermitLimit = 150, Window = TimeSpan.FromMinutes(1),
-                SegmentsPerWindow = 6,
-                QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 5
+                SegmentsPerWindow = 10,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 0
             }));
 
     options.RejectionStatusCode = 429;
@@ -194,7 +200,7 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
             .ToDictionary(
                 e => e.Key,
                 e => e.Value!.Errors
-                    .Select(x => string.IsNullOrEmpty(x.ErrorMessage) ? x.Exception?.Message : x.ErrorMessage)
+                    .Select(x => x.ErrorMessage)
                     .Where(m => !string.IsNullOrEmpty(m))
                     .ToArray());
         return new BadRequestObjectResult(new { success = false, message = "Validation failed", errors });
@@ -326,7 +332,7 @@ app.Use(async (ctx, next) =>
     ctx.Response.Headers["Referrer-Policy"]           = "strict-origin-when-cross-origin";
     ctx.Response.Headers["Permissions-Policy"]        = "camera=(), microphone=(), geolocation=()";
     ctx.Response.Headers["Content-Security-Policy"]   =
-        "default-src 'self'; script-src 'self' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; connect-src 'self' wss: https:; font-src 'self' data: https:;"; // style-src 'unsafe-inline' kept for specific theme needs, but hardened by 'self' and https: limits
+        "default-src 'self'; script-src 'self' https:; style-src 'self' https:; img-src 'self' data: https:; connect-src 'self' wss: https:; font-src 'self' data: https:;";
     if (ctx.Request.IsHttps)
         ctx.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
     await next();
@@ -355,54 +361,5 @@ app.MapControllers();
 app.MapHealthChecks("/health");
 app.MapHub<NotificationHub>("/notifications-hub");
 
-await SeedAsync(app);
-
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Run($"http://0.0.0.0:{port}");
-
-// ── SEED ──────────────────────────────────────────────
-static async Task SeedAsync(WebApplication app)
-{
-    using var scope = app.Services.CreateScope();
-    var db          = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
-
-    try { await db.Database.MigrateAsync(); }
-    catch (Exception ex) { Log.Warning(ex, "Migration failed, continuing..."); }
-
-    foreach (var role in AppRoles.All)
-        if (!await roleManager.RoleExistsAsync(role))
-            await roleManager.CreateAsync(new IdentityRole(role));
-
-    var adminEmail    = Environment.GetEnvironmentVariable("ADMIN_EMAIL") ?? "admin@sportive.com";
-    var adminPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD");
-
-    if (string.IsNullOrEmpty(adminPassword))
-    {
-        if (!app.Environment.IsDevelopment())
-        {
-            Log.Fatal("CRITICAL: ADMIN_PASSWORD environment variable is not set. Refusing to start with a default password in production.");
-            await app.StopAsync();
-            return;
-        }
-        adminPassword = "Admin@123456";
-    }
-
-    var admin = await userManager.FindByEmailAsync(adminEmail);
-    if (admin == null)
-    {
-        admin = new AppUser
-        {
-            UserName = adminEmail, Email = adminEmail,
-            PhoneNumber = "01111111111", FullName = "Sport Zone", IsActive = true
-        };
-        await userManager.CreateAsync(admin, adminPassword);
-        await userManager.AddToRoleAsync(admin, "Admin");
-    }
-    else if (string.IsNullOrEmpty(admin.PhoneNumber))
-    {
-        admin.PhoneNumber = "01111111111";
-        await userManager.UpdateAsync(admin);
-    }
-}
