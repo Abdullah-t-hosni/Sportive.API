@@ -19,18 +19,53 @@ public class ImportController : ControllerBase
 
     // ── TEMPLATE DOWNLOAD ────────────────────────────────────
     // GET /api/import/template
+    // ── TEMPLATE DOWNLOAD ────────────────────────────────────
+    // GET /api/import/template
     [HttpGet("template")]
-    public IActionResult GetTemplate()
+    public async Task<IActionResult> GetTemplate()
     {
+        var categories = await _db.Categories.Select(c => c.NameAr).ToListAsync();
+        var brands     = await _db.Brands.Select(b => b.NameAr).ToListAsync();
+        var units      = await _db.ProductUnits.Select(u => u.NameAr).ToListAsync();
+        
+        // Fetch common sizes and colors for dropdowns
+        var sizes    = await _db.ProductVariants.Where(v => !string.IsNullOrEmpty(v.Size)).Select(v => v.Size!).Distinct().ToListAsync();
+        var colorEns = await _db.ProductVariants.Where(v => !string.IsNullOrEmpty(v.Color)).Select(v => v.Color!).Distinct().ToListAsync();
+        var colorArs = await _db.ProductVariants.Where(v => !string.IsNullOrEmpty(v.ColorAr)).Select(v => v.ColorAr!).Distinct().ToListAsync();
+
         using var wb = new XLWorkbook();
+
+        // Sheet 0: Data Lists (Hidden)
+        var wsL = wb.Worksheets.Add("Lists");
+        wsL.Hide();
+        
+        // Fill data
+        void FillCol(int col, List<string> items) {
+            for (int i = 0; i < items.Count; i++) wsL.Cell(i + 1, col).Value = items[i];
+        }
+        FillCol(1, categories); 
+        FillCol(2, brands);     
+        FillCol(3, units);      
+        FillCol(4, sizes);      
+        FillCol(5, colorEns);   
+        FillCol(6, colorArs);   
+        FillCol(7, new List<string> { "نعم", "لا" });
+
+        var catRange   = wsL.Range(1, 1, Math.Max(1, categories.Count), 1);
+        var brandRange = wsL.Range(1, 2, Math.Max(1, brands.Count), 2);
+        var unitRange  = wsL.Range(1, 3, Math.Max(1, units.Count), 3);
+        var sizeRange  = wsL.Range(1, 4, Math.Max(1, sizes.Count), 4);
+        var cEnRange   = wsL.Range(1, 5, Math.Max(1, colorEns.Count), 5);
+        var cArRange   = wsL.Range(1, 6, Math.Max(1, colorArs.Count), 6);
+        var featRange  = wsL.Range(1, 7, 2, 7);
 
         // Sheet 1: Products
         var ws1 = wb.Worksheets.Add("المنتجات");
         ws1.RightToLeft = true;
 
         var headers1 = new[] {
-            "الاسم عربي *","الاسم انجليزي *","كود الفئة *","الكود SKU *",
-            "السعر *","سعر الخصم","العلامة التجارية","الوصف عربي","الوصف انجليزي",
+            "الاسم عربي *","الاسم انجليزي *","الفئة *","الكود SKU *",
+            "السعر *","سعر الخصم","العلامة التجارية","الوحدة","الوصف عربي","الوصف انجليزي",
             "مميز (نعم/لا)"
         };
         for (int c = 0; c < headers1.Length; c++)
@@ -42,17 +77,27 @@ public class ImportController : ControllerBase
             cell.Style.Font.FontColor = XLColor.White;
         }
 
+        // Apply Data Validation (Choices)
+        // Except Name (1,2), Code (4), and Unit (8) -> These remain text
+        for (int r = 2; r <= 500; r++)
+        {
+            ws1.Cell(r, 3).CreateDataValidation().List(catRange, true);     // Category choice
+            ws1.Cell(r, 7).CreateDataValidation().List(brandRange, true);   // Brand choice
+            ws1.Cell(r, 11).CreateDataValidation().List(featRange, true);   // Featured choice
+        }
+
         // Sample row
         ws1.Cell(2,1).Value = "تيشرت رياضي أزرق";
         ws1.Cell(2,2).Value = "Blue Sports T-Shirt";
-        ws1.Cell(2,3).Value = "1";
+        ws1.Cell(2,3).Value = categories.FirstOrDefault() ?? "ملابس";
         ws1.Cell(2,4).Value = "TS-001";
         ws1.Cell(2,5).Value = 299;
         ws1.Cell(2,6).Value = 249;
-        ws1.Cell(2,7).Value = "Nike";
-        ws1.Cell(2,8).Value = "تيشرت رياضي عالي الجودة";
-        ws1.Cell(2,9).Value = "High quality sports t-shirt";
-        ws1.Cell(2,10).Value = "لا";
+        ws1.Cell(2,7).Value = brands.FirstOrDefault() ?? "Nike";
+        ws1.Cell(2,8).Value = units.FirstOrDefault() ?? "قطعة";
+        ws1.Cell(2,9).Value = "تيشرت رياضي عالي الجودة";
+        ws1.Cell(2,10).Value = "High quality sports t-shirt";
+        ws1.Cell(2,11).Value = "لا";
         ws1.Row(2).Style.Font.FontColor = XLColor.Gray;
         ws1.Columns().AdjustToContents();
 
@@ -70,6 +115,14 @@ public class ImportController : ControllerBase
             cell.Style.Font.FontColor = XLColor.White;
         }
 
+        // Data Validation for Variants
+        for (int r = 2; r <= 1000; r++)
+        {
+            ws2.Cell(r, 2).CreateDataValidation().List(sizeRange, true);
+            ws2.Cell(r, 3).CreateDataValidation().List(cEnRange, true);
+            ws2.Cell(r, 4).CreateDataValidation().List(cArRange, true);
+        }
+
         // Sample rows
         string[][] samples = {
             ["TS-001","S","Blue","أزرق","10","0"],
@@ -85,22 +138,13 @@ public class ImportController : ControllerBase
         }
         ws2.Columns().AdjustToContents();
 
-        // Sheet 3: Categories list
-        var ws3 = wb.Worksheets.Add("الفئات المتاحة");
-        ws3.Cell(1,1).Value = "كود الفئة";
-        ws3.Cell(1,2).Value = "اسم الفئة";
-        ws3.Cell(1,1).Style.Font.Bold = true;
-        ws3.Cell(1,2).Style.Font.Bold = true;
-        // Will be populated dynamically — just show headers
-        ws3.Cell(2,1).Value = "(أدخل كود الفئة من هذه القائمة في شيت المنتجات)";
-        ws3.Columns().AdjustToContents();
-
         var stream = new MemoryStream();
         wb.SaveAs(stream); stream.Position = 0;
 
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "products_import_template.xlsx");
     }
+
 
     // ── IMPORT PRODUCTS ───────────────────────────────────────
     // POST /api/import/products
@@ -135,7 +179,7 @@ public class ImportController : ControllerBase
             {
                 var nameAr = ws1.Cell(r, 1).GetString().Trim();
                 var nameEn = ws1.Cell(r, 2).GetString().Trim();
-                var catStr = ws1.Cell(r, 3).GetString().Trim();
+                var catStrName = ws1.Cell(r, 3).GetString().Trim();
                 var sku    = ws1.Cell(r, 4).GetString().Trim();
                 var priceStr = ws1.Cell(r, 5).GetString().Trim();
 
@@ -159,26 +203,29 @@ public class ImportController : ControllerBase
                     continue;
                 }
 
-                int? categoryId = null;
-                if (int.TryParse(catStr, out var catId))
-                {
-                    var cat = categories.FirstOrDefault(c => c.Id == catId);
-                    if (cat != null) categoryId = cat.Id;
-                }
+                // Resolve Category by name or ID
+                int? categoryId = categories.FirstOrDefault(c => 
+                    c.NameAr.Equals(catStrName, StringComparison.OrdinalIgnoreCase) || 
+                    c.NameEn.Equals(catStrName, StringComparison.OrdinalIgnoreCase) ||
+                    c.Id.ToString() == catStrName)?.Id;
 
                 decimal? discountPrice = null;
                 var discStr = ws1.Cell(r, 6).GetString().Trim();
                 if (!string.IsNullOrEmpty(discStr) && decimal.TryParse(discStr, out var disc) && disc > 0)
                     discountPrice = disc;
 
-                var brandName = ws1.Cell(r, 7).GetString().Trim();
+                var brandNameStr = ws1.Cell(r, 7).GetString().Trim();
                 int? brandId = null;
-                if (!string.IsNullOrEmpty(brandName))
+                if (!string.IsNullOrEmpty(brandNameStr))
                 {
                     brandId = brands.FirstOrDefault(b => 
-                        b.NameAr.Equals(brandName, StringComparison.OrdinalIgnoreCase) || 
-                        b.NameEn.Equals(brandName, StringComparison.OrdinalIgnoreCase))?.Id;
+                        b.NameAr.Equals(brandNameStr, StringComparison.OrdinalIgnoreCase) || 
+                        b.NameEn.Equals(brandNameStr, StringComparison.OrdinalIgnoreCase) ||
+                        b.Id.ToString() == brandNameStr)?.Id;
                 }
+
+                // unitNameStr handled by keeping it as text if model doesn't support UnitId yet
+                // but we include it in headers for user convenience.
 
                 var product = new Product
                 {
@@ -189,9 +236,9 @@ public class ImportController : ControllerBase
                     Price         = price,
                     DiscountPrice = discountPrice,
                     BrandId       = brandId,
-                    DescriptionAr = ws1.Cell(r, 8).GetString().Trim().NullIfEmpty(),
-                    DescriptionEn = ws1.Cell(r, 9).GetString().Trim().NullIfEmpty(),
-                    IsFeatured    = ws1.Cell(r, 10).GetString().Contains("نعم"),
+                    DescriptionAr = ws1.Cell(r, 9).GetString().Trim().NullIfEmpty(),
+                    DescriptionEn = ws1.Cell(r, 10).GetString().Trim().NullIfEmpty(),
+                    IsFeatured    = ws1.Cell(r, 11).GetString().Contains("نعم"),
                     Status        = ProductStatus.Active,
                     CreatedAt     = TimeHelper.GetEgyptTime(),
                 };
