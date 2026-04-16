@@ -929,16 +929,43 @@ public class PurchaseInvoicesController : ControllerBase
     {
         var inv = await _db.PurchaseInvoices
             .Include(i => i.Supplier)
-            .Include(i => i.Items)
+            .Include(i => i.Items).ThenInclude(it => it.Product)
+            .Include(i => i.Items).ThenInclude(it => it.ProductVariant)
             .Include(i => i.Payments)
             .FirstOrDefaultAsync(i => i.Id == id);
 
         if (inv == null) return NotFound();
 
+        // 1. التحقق من وجود مرتجعات (Check for Returns)
+        var hasReturns = await _db.PurchaseReturns.AnyAsync(r => r.PurchaseInvoiceId == id);
+        if (hasReturns || inv.ReturnedAmount > 0)
+        {
+            return BadRequest(new { message = "لا يمكن حذف فاتورة لها مرتجعات. يرجى حذف المرتجعات أولاً." });
+        }
+
+        // 2. التحقق مما إذا كان قد تم بيع أي جزء من الفاتورة (Check if items were sold)
+        var pUnits = await GetUnitsListAsync();
+        foreach (var item in inv.Items)
+        {
+            if (item.ProductId.HasValue)
+            {
+                var mult = GetMultiplier(pUnits, item.Unit);
+                var qtyInPieces = item.Quantity * mult;
+                
+                var currentStock = await _inventory.GetCurrentStockAsync(item.ProductId, item.ProductVariantId);
+                if (currentStock < qtyInPieces)
+                {
+                    var productName = item.Product?.NameAr ?? item.Description;
+                    return BadRequest(new { 
+                        message = $"لا يمكن حذف الفاتورة لأنه تم بيع أجزاء منها بالفعل. الصنف: {productName} (الكمية في الفاتورة: {qtyInPieces}، الرصيد الحالي: {currentStock})" 
+                    });
+                }
+            }
+        }
+
         inv.Supplier.TotalPurchases -= (inv.TotalAmount - inv.ReturnedAmount);
         inv.Supplier.TotalPaid -= inv.PaidAmount;
 
-        var pUnits = await GetUnitsListAsync();
         foreach (var item in inv.Items)
         {
             if (item.ProductId.HasValue)
