@@ -379,22 +379,37 @@ public class AccountingCoreService
 
     public async Task SyncEntityBalancesAsync()
     {
-        // 1. Sync Suppliers
+        // 1. Sync Orders PaidAmount (The root cause for dashboard debt discrepancies)
+        var orders = await _db.Orders.Where(o => o.Status != OrderStatus.Cancelled).ToListAsync();
+        foreach (var o in orders)
+        {
+            // Sum all Credits to Accounts starting with 1103 (Receivables) for this Order
+            var ledgerPaidAmount = await _db.JournalLines
+                .Where(l => l.OrderId == o.Id && l.Credit > 0)
+                .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("1103"))
+                .SumAsync(l => l.Credit);
+
+            // If the order is marked as Paid but for some reason has no ledger entries (e.g. legacy data), 
+            // we should trust the status but let the ledger be the source of truth if it exists.
+            if (o.PaymentStatus == PaymentStatus.Paid && ledgerPaidAmount == 0)
+            {
+                o.PaidAmount = o.TotalAmount;
+            }
+            else
+            {
+                o.PaidAmount = ledgerPaidAmount;
+            }
+        }
+        await _db.SaveChangesAsync();
+
+        // 2. Sync Suppliers
         var suppliers = await _db.Suppliers.ToListAsync();
         foreach (var s in suppliers)
         {
-            // Total Purchases (Net of returns)
             var purchases = await _db.PurchaseInvoices
                 .Where(i => i.SupplierId == s.Id && i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
                 .SumAsync(i => i.TotalAmount);
             
-            // Note: Returns should ideally be subtracted here if they reduce TotalPurchases property
-            // But usually TotalPurchases is the gross, and Balance is (TotalPurchases - TotalPaid - Returns)
-            // Or TotalPurchases includes the effect of returns.
-            // In this system, Balance = TotalPurchases - TotalPaid.
-            // So TotalPurchases should be THE total liabilities created.
-            
-            // Total Paid
             var p1 = await _db.SupplierPayments.Where(p => p.SupplierId == s.Id).SumAsync(p => p.Amount);
             var p2 = await _db.PaymentVouchers.Where(p => p.SupplierId == s.Id).SumAsync(p => p.Amount);
             
@@ -402,7 +417,7 @@ public class AccountingCoreService
             s.TotalPaid = p1 + p2;
         }
 
-        // 2. Sync Customers
+        // 3. Sync Customers
         var customers = await _db.Customers.ToListAsync();
         foreach (var c in customers)
         {
@@ -410,13 +425,17 @@ public class AccountingCoreService
                 .Where(o => o.CustomerId == c.Id && o.Status != OrderStatus.Cancelled)
                 .SumAsync(o => o.TotalAmount);
             
-            // Customer TotalPaid should be the sum of all receipt vouchers
-            var paid = await _db.ReceiptVouchers
-                .Where(v => v.CustomerId == c.Id)
+            // Total Paid by Customer = Sum of PaidAmount on all their orders + any Receipt Vouchers not linked to specific orders
+            var totalPaidFromOrders = await _db.Orders
+                .Where(o => o.CustomerId == c.Id && o.Status != OrderStatus.Cancelled)
+                .SumAsync(o => o.PaidAmount);
+
+            var extraReceipts = await _db.ReceiptVouchers
+                .Where(v => v.CustomerId == c.Id && v.OrderId == null)
                 .SumAsync(v => v.Amount);
             
             c.TotalSales = sales;
-            c.TotalPaid = paid;
+            c.TotalPaid = totalPaidFromOrders + extraReceipts;
         }
 
         await _db.SaveChangesAsync();
