@@ -73,9 +73,6 @@ public class ImportController : ControllerBase
 
         var brandRange = wsL.Range(1, 3, Math.Max(1, brands.Count), 3);
         var unitRange  = wsL.Range(1, 4, Math.Max(1, units.Count), 4);
-        var sizeRange  = wsL.Range(1, 5, Math.Max(1, sizes.Count), 5);
-        var cEnRange   = wsL.Range(1, 6, Math.Max(1, colorEnList.Count), 6);
-        var cArRange   = wsL.Range(1, 7, Math.Max(1, colorArList.Count), 7);
         var featRange  = wsL.Range(1, 8, 2, 8);
         var statRange  = wsL.Range(1, 9, 3, 9);
 
@@ -83,10 +80,12 @@ public class ImportController : ControllerBase
         ws1.RightToLeft = true;
 
         var headers1 = new[] {
-            "الاسم عربي *","الاسم انجليزي","التصنيف الأساسي *","التصنيف الفرعي","الكود SKU *",
-            "السعر *","سعر الخصم","سعر التكلفة","الماركة","الوحدة",
-            "المقاس","اللون (English)","اللون (عربي)","المخزون *","فارق السعر للمقاس",
-            "حد الطلب","الحالة","مميز (نعم/لا)","الوصف عربي","الوصف انجليزي"
+            "الكود SKU *", "الاسم عربي *", "الوحدة", "الاسم انجليزي",
+            "التصنيف الأساسي *", "التصنيف الفرعي", "التصنيف الفرعي 2",
+            "سعر التكلفة", "السعر *", "سعر الخصم",
+            "الماركة", "المقاس", "اللون (English)", "اللون (عربي)",
+            "المخزون *", "فارق السعر للمقاس", "حد الطلب", "الحالة",
+            "مميز (نعم/لا)", "الوصف عربي", "الوصف انجليزي"
         };
         for (int c = 0; c < headers1.Length; c++)
         {
@@ -97,51 +96,40 @@ public class ImportController : ControllerBase
             cell.Style.Font.FontColor = XLColor.White;
         }
 
-        ws1.Column(5).Style.NumberFormat.Format = "@"; 
+        ws1.Column(1).Style.NumberFormat.Format = "@"; 
 
         for (int r = 2; r <= 1000; r++)
         {
-            ws1.Cell(r, 3).CreateDataValidation().List(mCatRange, true);
-            // Dependent list for Sub-Category (Col 4) based on Main-Category (Col 3)
-            ws1.Cell(r, 4).CreateDataValidation().List("=INDIRECT(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE($C" + r + ",\" \",\"_\"),\"-\",\"_\"),\"&\",\"_\"),\"/\",\"_\"))", true);
+            // Main Category (Col 5)
+            ws1.Cell(r, 5).CreateDataValidation().List(mCatRange, true);
+            // Sub Category (Col 6) dependent on Main (Col 5)
+            ws1.Cell(r, 6).CreateDataValidation().List("=INDIRECT(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE($E" + r + ",\" \",\"_\"),\"-\",\"_\"),\"&\",\"_\"),\"/\",\"_\"))", true);
             
-            ws1.Cell(r, 9).CreateDataValidation().List(brandRange, true);
-            ws1.Cell(r, 10).CreateDataValidation().List(unitRange, true);
-            ws1.Cell(r, 11).CreateDataValidation().List(sizeRange, true);
-            ws1.Cell(r, 12).CreateDataValidation().List(cEnRange, true);
-            ws1.Cell(r, 13).CreateDataValidation().List(cArRange, true);
-            ws1.Cell(r, 17).CreateDataValidation().List(statRange, true);
-            ws1.Cell(r, 18).CreateDataValidation().List(featRange, true);
+            ws1.Cell(r, 11).CreateDataValidation().List(brandRange, true);
+            ws1.Cell(r, 3).CreateDataValidation().List(unitRange, true); // Unit is now Col 3
+            
+            ws1.Cell(r, 18).CreateDataValidation().List(statRange, true);
+            ws1.Cell(r, 19).CreateDataValidation().List(featRange, true);
         }
 
-        // Sample row 1 (Variant 1)
-        ws1.Cell(2,1).Value = "تيشرت رياضي";
-        ws1.Cell(2,2).Value = "Sports T-Shirt";
-        ws1.Cell(2,3).Value = mainCats.FirstOrDefault()?.NameAr ?? "ملابس";
-        ws1.Cell(2,5).Value = "TS-001";
-        ws1.Cell(2,6).Value = 299;
+        // Sample row 1
+        ws1.Cell(2,1).Value = "TS-001";
+        ws1.Cell(2,2).Value = "تيشرت رياضي";
+        ws1.Cell(2,3).Value = units.FirstOrDefault() ?? "قطعة";
+        ws1.Cell(2,4).Value = "Sports T-Shirt";
+        ws1.Cell(2,5).Value = mainCats.FirstOrDefault()?.NameAr ?? "ملابس";
         ws1.Cell(2,8).Value = 200; 
-        ws1.Cell(2,9).Value = brands.FirstOrDefault() ?? "Nike";
-        ws1.Cell(2,10).Value = units.FirstOrDefault() ?? "قطعة";
-        ws1.Cell(2,11).Value = "M";
-        ws1.Cell(2,12).Value = "Blue";
-        ws1.Cell(2,13).Value = "أزرق";
-        ws1.Cell(2,14).Value = 10;
-        ws1.Cell(2,15).Value = 0;
-        ws1.Cell(2,16).Value = 5; 
-        ws1.Cell(2,17).Value = "نشط";
-        ws1.Cell(2,18).Value = "لا";
+        ws1.Cell(2,9).Value = 299;
+        ws1.Cell(2,11).Value = brands.FirstOrDefault() ?? "Nike";
+        ws1.Cell(2,12).Value = "M";
+        ws1.Cell(2,13).Value = "Blue";
+        ws1.Cell(2,14).Value = "أزرق";
+        ws1.Cell(2,15).Value = 10;
+        ws1.Cell(2,16).Value = 0;
+        ws1.Cell(2,17).Value = 5; 
+        ws1.Cell(2,18).Value = "نشط";
+        ws1.Cell(2,19).Value = "لا";
         ws1.Row(2).Style.Font.FontColor = XLColor.Gray;
-
-        // Sample row 2 (Variant 2 - Same Product)
-        ws1.Cell(3,1).Value = "تيشرت رياضي";
-        ws1.Cell(3,5).Value = "TS-001";
-        ws1.Cell(3,6).Value = 299;
-        ws1.Cell(3,11).Value = "L";
-        ws1.Cell(3,12).Value = "Blue";
-        ws1.Cell(3,13).Value = "أزرق";
-        ws1.Cell(3,14).Value = 5;
-        ws1.Row(3).Style.Font.FontColor = XLColor.Gray;
 
         ws1.Columns().AdjustToContents();
 
@@ -149,7 +137,7 @@ public class ImportController : ControllerBase
         wb.SaveAs(stream); stream.Position = 0;
 
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "products_import_template_v2.xlsx");
+            "products_import_template_v3.xlsx");
     }
 
 
@@ -173,7 +161,6 @@ public class ImportController : ControllerBase
             using var stream = file.OpenReadStream();
             using var wb     = new XLWorkbook(stream);
 
-            // Find the correct worksheet (Skip hidden "Lists" sheet)
             var ws = wb.Worksheets.FirstOrDefault(x => x.Visibility == XLWorksheetVisibility.Visible)
                      ?? wb.Worksheets.FirstOrDefault();
 
@@ -182,10 +169,9 @@ public class ImportController : ControllerBase
             var headers = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var firstRow = ws.Row(1);
             
-            // Normalize header text for comparison (remove spaces, symbols, and asterisks)
             string Normalize(string s) => new string(s.Where(c => char.IsLetterOrDigit(c)).ToArray()).ToLower();
 
-            for (int c = 1; c <= (ws.LastColumnUsed()?.ColumnNumber() ?? 20); c++)
+            for (int c = 1; c <= (ws.LastColumnUsed()?.ColumnNumber() ?? 25); c++)
             {
                 var hRaw = firstRow.Cell(c).GetString().Trim();
                 if (string.IsNullOrEmpty(hRaw)) continue;
@@ -203,30 +189,31 @@ public class ImportController : ControllerBase
                 return -1;
             }
 
-            // Mapping columns with normalized aliases
-            int colNameAr   = GetCol("الاسم عربي", "اسم المنتج", "الاسم");
-            int colNameEn   = GetCol("الاسم انجليزي", "الاسم English");
-            int colMainCat  = GetCol("التصنيف الأساسي", "الفئة", "التصنيف", "كود الفئة");
-            int colSubCat   = GetCol("التصنيف الفرعي", "الفئة الفرعية");
+            // Mapping columns
             int colSku      = GetCol("الكود SKU", "الباركود", "sku");
-            int colPrice    = GetCol("السعر", "سعر البيع");
-            int colDisc     = GetCol("سعر الخصم", "الخصم", "Discount");
-            int colCost     = GetCol("سعر التكلفة", "التكلفة", "Cost");
-            int colBrand    = GetCol("العلامة التجارية", "الماركة", "Brand");
+            int colNameAr   = GetCol("الاسم عربي", "اسم المنتج", "الاسم");
             int colUnit     = GetCol("الوحدة", "وحدة القياس");
+            int colNameEn   = GetCol("الاسم انجليزي", "الاسم English");
+            int colMainCat  = GetCol("التصنيف الأساسي", "الفئة", "التصنيف");
+            int colSubCat   = GetCol("التصنيف الفرعي", "الفئة الفرعية");
+            int colSubSub   = GetCol("التصنيف الفرعي 2", "التصنيف فرع فرعي", "الفئة الفرعية 2");
+            int colCost     = GetCol("سعر التكلفة", "التكلفة", "Cost");
+            int colPrice    = GetCol("السعر", "سعر البيع");
+            int colDisc     = GetCol("سعر الخصم", "الخصم");
+            int colBrand    = GetCol("العلامة التجارية", "الماركة", "Brand");
             int colSize     = GetCol("المقاس");
             int colColorEn  = GetCol("اللون (English)", "اللون English");
             int colColorAr  = GetCol("اللون (عربي)", "اللون عربي");
             int colStock    = GetCol("المخزون");
-            int colAdj      = GetCol("فارق السعر", "فارق السعر للمقاس");
-            int colReorder  = GetCol("حد الطلب", "الحد الأدنى للمخزون");
-            int colStatus   = GetCol("الحالة", "الوضع");
-            int colFeat     = GetCol("مميز (نعم/لا)", "مميز");
+            int colAdj      = GetCol("فارق السعر للمقاس");
+            int colReorder  = GetCol("حد الطلب");
+            int colStatus   = GetCol("الحالة");
+            int colFeat     = GetCol("مميز (نعم/لا)");
             int colDescAr   = GetCol("الوصف عربي");
             int colDescEn   = GetCol("الوصف انجليزي");
 
             if (colSku == -1 || (colNameAr == -1 && colPrice == -1))
-                return BadRequest(new { message = "تعذر التعرف على أعمدة الملف. يرجى استخدام القالب المحمل من الموقع." });
+                return BadRequest(new { message = "تعذر التعرف على أعمدة الملف الأساسية (الكود، الاسم، السعر)" });
 
             var categories   = await _db.Categories.ToListAsync();
             var brands       = await _db.Brands.ToListAsync();
@@ -248,7 +235,7 @@ public class ImportController : ControllerBase
                 if (isExisting && !update)
                 {
                     if (!result.Skipped.Any(s => s.Contains($"الكود '{sku}' موجود")))
-                        result.Skipped.Add($"صف {r}: الكود '{sku}' موجود مسبقاً — تم تخطيه (فعل خيار التحديث للتعديل)");
+                        result.Skipped.Add($"صف {r}: الكود '{sku}' موجود مسبقاً — تم تخطيه");
                     continue;
                 }
 
@@ -259,7 +246,7 @@ public class ImportController : ControllerBase
 
                     if (string.IsNullOrEmpty(nameAr) || string.IsNullOrEmpty(priceStr))
                     {
-                        result.Errors.Add($"صف {r}: بيانات أساسية ناقصة (الاسم أو السعر) للكود {sku}");
+                        result.Errors.Add($"صف {r}: بيانات أساسية ناقصة للكود {sku}");
                         continue;
                     }
                     if (!decimal.TryParse(priceStr, out var price))
@@ -268,14 +255,37 @@ public class ImportController : ControllerBase
                         continue;
                     }
 
-                    // Resolve category
-                    var mCat = GetVal(colMainCat);
-                    var sCat = GetVal(colSubCat);
-                    int? catId = categories.FirstOrDefault(c => (mCat != "" && c.NameAr == mCat) || (sCat != "" && c.NameAr == sCat))?.Id;
+                    // Resolve category chain (Main -> Sub -> SubSub)
+                    var mainC = GetVal(colMainCat);
+                    var subC  = GetVal(colSubCat);
+                    var subS  = GetVal(colSubSub);
+                    
+                    int? catId = null;
+                    if (!string.IsNullOrEmpty(mainC))
+                    {
+                        var parent = categories.FirstOrDefault(c => c.NameAr == mainC && c.ParentId == null);
+                        if (parent != null)
+                        {
+                            catId = parent.Id;
+                            if (!string.IsNullOrEmpty(subC))
+                            {
+                                var sub = categories.FirstOrDefault(c => c.NameAr == subC && c.ParentId == parent.Id);
+                                if (sub != null)
+                                {
+                                    catId = sub.Id;
+                                    if (!string.IsNullOrEmpty(subS))
+                                    {
+                                        var leaf = categories.FirstOrDefault(c => c.NameAr == subS && c.ParentId == sub.Id);
+                                        if (leaf != null) catId = leaf.Id;
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     // Resolve Brand
                     var bStr = GetVal(colBrand);
-                    int? bId = brands.FirstOrDefault(b => b.NameAr == bStr || b.NameEn == bStr || b.Id.ToString() == bStr)?.Id;
+                    int? bId = brands.FirstOrDefault(b => b.NameAr == bStr || b.Id.ToString() == bStr)?.Id;
 
                     // Resolve Unit
                     var uStr = GetVal(colUnit);
@@ -285,8 +295,7 @@ public class ImportController : ControllerBase
                     decimal? dP   = decimal.TryParse(GetVal(colDisc), out var dp) ? dp : null;
                     int rL = int.TryParse(GetVal(colReorder), out var rl) ? rl : 0;
                     
-                    var statusStr = GetVal(colStatus);
-                    var status = statusStr switch {
+                    var status = GetVal(colStatus) switch {
                         "مسودة" => ProductStatus.Draft,
                         "مخفي" => ProductStatus.Hidden,
                         _ => ProductStatus.Active
@@ -339,31 +348,12 @@ public class ImportController : ControllerBase
                     }
                 }
 
-                // Add Variant
+                // Add/Update Variant
                 var stockVal = GetVal(colStock);
                 var size     = GetVal(colSize).NullIfEmpty();
                 var cEn      = GetVal(colColorEn).NullIfEmpty();
                 var cAr      = GetVal(colColorAr).NullIfEmpty();
 
-                if (!string.IsNullOrEmpty(stockVal))
-                {
-                    if (int.TryParse(stockVal, out var stk))
-                    {
-                        decimal? vAdj = decimal.TryParse(GetVal(colAdj), out var adj) ? adj : null;
-                        
-                        if (product != null)
-                        {
-                            // If updating, try to find matching variant first
-                            ProductVariant? variant = null;
-                            if (isExisting && update)
-                            {
-                                variant = product.Variants.FirstOrDefault(v => 
-                                    (v.Size ?? "").Equals(size ?? "", StringComparison.OrdinalIgnoreCase) && 
-                                    (v.ColorAr ?? "").Equals(cAr ?? "", StringComparison.OrdinalIgnoreCase));
-                            }
-
-                            if (variant != null)
-                            {
                                 variant.StockQuantity = stk;
                                 variant.PriceAdjustment = vAdj;
                             }
