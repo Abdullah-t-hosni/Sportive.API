@@ -30,6 +30,7 @@ public class ProductService : IProductService
             .Include(p => p.Images)
             .Include(p => p.Reviews)
             .Include(p => p.Variants)
+            .Include(p => p.Unit)
             .AsQueryable();
         
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
@@ -128,6 +129,10 @@ public class ProductService : IProductService
                 x.p.HasTax,
                 x.p.VatRate,
                 x.p.CostPrice,
+                x.p.UnitId,
+                x.p.Unit?.NameAr,
+                x.p.Unit?.NameEn,
+                x.p.Unit?.Symbol,
                 x.p.CreatedAt,
                 x.d != null ? x.d.Label : null
             ))
@@ -146,6 +151,7 @@ public class ProductService : IProductService
             .Include(x => x.Brand)
             .Include(x => x.Images.OrderBy(i => i.SortOrder))
             .Include(x => x.Variants)
+            .Include(x => x.Unit)
             .Include(x => x.Reviews).ThenInclude(r => r.Customer)
             .FirstOrDefaultAsync(x => x.Id == id);
 
@@ -164,6 +170,7 @@ public class ProductService : IProductService
             .Include(x => x.Brand)
             .Include(x => x.Images.OrderBy(i => i.SortOrder))
             .Include(x => x.Variants)
+            .Include(x => x.Unit)
             .Include(x => x.Reviews).ThenInclude(r => r.Customer)
             .FirstOrDefaultAsync(x => x.Slug == slug);
 
@@ -200,6 +207,7 @@ public class ProductService : IProductService
             ReorderLevel = dto.ReorderLevel ?? 0,
             HasTax = dto.HasTax,
             VatRate = dto.VatRate,
+            UnitId = dto.UnitId,
             Status = ProductStatus.Active,
             Slug = GenerateSlug(dto.NameEn ?? dto.NameAr) + "-" + Guid.NewGuid().ToString().Substring(0, 4)
         };
@@ -297,6 +305,7 @@ public class ProductService : IProductService
         product.Status = dto.Status;
         product.HasTax = dto.HasTax;
         product.VatRate = dto.VatRate;
+        product.UnitId = dto.UnitId;
         product.UpdatedAt = TimeHelper.GetEgyptTime();
 
         // إعادة حساب إجمالي المخزون وتحديث الحالة للتأكد من الدقة
@@ -534,6 +543,7 @@ public class ProductService : IProductService
             .Include(p => p.Category)
             .Include(p => p.Brand)
             .Include(p => p.Images)
+            .Include(p => p.Unit)
             .Where(p => p.IsFeatured && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock))
             .GroupJoin(_db.ProductDiscounts.Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now),
                 p => p.Id,
@@ -567,6 +577,10 @@ public class ProductService : IProductService
                 x.p.HasTax,
                 x.p.VatRate,
                 x.p.CostPrice,
+                x.p.UnitId,
+                x.p.Unit?.NameAr,
+                x.p.Unit?.NameEn,
+                x.p.Unit?.Symbol,
                 x.p.CreatedAt,
                 x.d != null ? x.d.Label : null
             ))
@@ -583,6 +597,7 @@ public class ProductService : IProductService
             .Include(p => p.Category)
             .Include(p => p.Brand)
             .Include(p => p.Images)
+            .Include(p => p.Unit)
             .Where(p => p.CategoryId == product.CategoryId && p.Id != productId && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock))
             .GroupJoin(_db.ProductDiscounts.Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now),
                 p => p.Id,
@@ -612,6 +627,10 @@ public class ProductService : IProductService
                 x.p.HasTax,
                 x.p.VatRate,
                 x.p.CostPrice,
+                x.p.UnitId,
+                x.p.Unit?.NameAr,
+                x.p.Unit?.NameEn,
+                x.p.Unit?.Symbol,
                 x.p.CreatedAt,
                 x.d != null ? x.d.Label : null
             ))
@@ -647,6 +666,10 @@ public class ProductService : IProductService
             p.ReorderLevel,
             p.HasTax,
             p.VatRate,
+            p.UnitId,
+            p.Unit?.NameAr,
+            p.Unit?.NameEn,
+            p.Unit?.Symbol,
             p.CreatedAt,
             p.Reviews?.Where(r => r.IsApproved).OrderByDescending(r => r.CreatedAt).Select(r => new ReviewListItemDto(r.Id, r.Customer?.FullName ?? "عميل", r.Rating, r.Comment, r.CreatedAt)).ToList(),
             activeLabel

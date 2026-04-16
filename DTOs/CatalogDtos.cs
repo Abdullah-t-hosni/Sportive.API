@@ -96,6 +96,10 @@ public record ProductSummaryDto(
     [property: JsonPropertyName("hasTax")] bool HasTax = true,
     [property: JsonPropertyName("vatRate")] decimal? VatRate = null,
     [property: JsonPropertyName("costPrice")] decimal? CostPrice = null,
+    [property: JsonPropertyName("unitId")] int? UnitId = null,
+    [property: JsonPropertyName("unitNameAr")] string? UnitNameAr = null,
+    [property: JsonPropertyName("unitNameEn")] string? UnitNameEn = null,
+    [property: JsonPropertyName("unitSymbol")] string? UnitSymbol = null,
     [property: JsonPropertyName("createdAt")] DateTime CreatedAt = default,
     [property: JsonPropertyName("activeDiscountLabel")] string? ActiveDiscountLabel = null
 );
@@ -127,6 +131,10 @@ public record ProductDetailDto(
     [property: JsonPropertyName("reorderLevel")] int ReorderLevel,
     [property: JsonPropertyName("hasTax")] bool HasTax,
     [property: JsonPropertyName("vatRate")] decimal? VatRate,
+    [property: JsonPropertyName("unitId")] int? UnitId,
+    [property: JsonPropertyName("unitNameAr")] string? UnitNameAr,
+    [property: JsonPropertyName("unitNameEn")] string? UnitNameEn,
+    [property: JsonPropertyName("unitSymbol")] string? UnitSymbol,
     [property: JsonPropertyName("createdAt")] DateTime CreatedAt,
     [property: JsonPropertyName("reviews")] List<ReviewListItemDto>? Reviews = null,
     [property: JsonPropertyName("activeDiscountLabel")] string? ActiveDiscountLabel = null
@@ -161,6 +169,7 @@ public record CreateProductDto(
     [property: JsonPropertyName("initialStock")] int? InitialStock = 0,
     [property: JsonPropertyName("variants")] List<CreateVariantDto>? Variants = null,
     [property: JsonPropertyName("reorderLevel")] int? ReorderLevel = 0,
+    [property: JsonPropertyName("unitId")] int? UnitId = null,
     [property: JsonPropertyName("hasTax")] bool HasTax = true,
     [property: JsonPropertyName("vatRate")] decimal? VatRate = null
 );
@@ -179,6 +188,7 @@ public record UpdateProductDto(
     [property: JsonPropertyName("isFeatured")] bool IsFeatured = false,
     [property: JsonPropertyName("reorderLevel")] int? ReorderLevel = null,
     [property: JsonPropertyName("status")] ProductStatus Status = ProductStatus.Active,
+    [property: JsonPropertyName("unitId")] int? UnitId = null,
     [property: JsonPropertyName("hasTax")] bool HasTax = true,
     [property: JsonPropertyName("vatRate")] decimal? VatRate = null
 );
