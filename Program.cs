@@ -131,7 +131,7 @@ builder.Services.AddCors(options =>
 
         policy.WithOrigins(origins.Distinct(StringComparer.OrdinalIgnoreCase).ToArray())
               .AllowAnyHeader()
-              .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+              .AllowAnyMethod()
               .AllowCredentials();
     }));
 

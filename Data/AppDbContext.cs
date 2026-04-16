@@ -128,6 +128,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Customer>(e => {
             e.Property(x => x.Email).HasMaxLength(200).IsRequired();
             e.HasIndex(x => x.Email).IsUnique();
+            e.Property(x => x.TotalSales).HasPrecision(18, 2);
+            e.Property(x => x.TotalPaid).HasPrecision(18, 2);
         });
 
         builder.Entity<Address>(e =>

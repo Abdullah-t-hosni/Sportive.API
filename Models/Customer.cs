@@ -26,6 +26,11 @@ public class Customer : BaseEntity
     public int? MainAccountId { get; set; }
     public Account? MainAccount { get; set; }
 
+    // Financial Tracking
+    public decimal TotalSales { get; set; } = 0;
+    public decimal TotalPaid  { get; set; } = 0;
+    public decimal Balance    => TotalSales - TotalPaid;
+
     // Navigation
     public ICollection<Order> Orders { get; set; } = new List<Order>();
     public ICollection<Address> Addresses { get; set; } = new List<Address>();
