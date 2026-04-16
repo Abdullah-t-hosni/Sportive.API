@@ -376,4 +376,49 @@ public class AccountingCoreService
         }
         await _db.SaveChangesAsync();
     }
+
+    public async Task SyncEntityBalancesAsync()
+    {
+        // 1. Sync Suppliers
+        var suppliers = await _db.Suppliers.ToListAsync();
+        foreach (var s in suppliers)
+        {
+            // Total Purchases (Net of returns)
+            var purchases = await _db.PurchaseInvoices
+                .Where(i => i.SupplierId == s.Id && i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
+                .SumAsync(i => i.TotalAmount);
+            
+            // Note: Returns should ideally be subtracted here if they reduce TotalPurchases property
+            // But usually TotalPurchases is the gross, and Balance is (TotalPurchases - TotalPaid - Returns)
+            // Or TotalPurchases includes the effect of returns.
+            // In this system, Balance = TotalPurchases - TotalPaid.
+            // So TotalPurchases should be THE total liabilities created.
+            
+            // Total Paid
+            var p1 = await _db.SupplierPayments.Where(p => p.SupplierId == s.Id).SumAsync(p => p.Amount);
+            var p2 = await _db.PaymentVouchers.Where(p => p.SupplierId == s.Id).SumAsync(p => p.Amount);
+            
+            s.TotalPurchases = purchases;
+            s.TotalPaid = p1 + p2;
+        }
+
+        // 2. Sync Customers
+        var customers = await _db.Customers.ToListAsync();
+        foreach (var c in customers)
+        {
+            var sales = await _db.Orders
+                .Where(o => o.CustomerId == c.Id && o.Status != OrderStatus.Cancelled)
+                .SumAsync(o => o.TotalAmount);
+            
+            // Customer TotalPaid should be the sum of all receipt vouchers
+            var paid = await _db.ReceiptVouchers
+                .Where(v => v.CustomerId == c.Id)
+                .SumAsync(v => v.Amount);
+            
+            c.TotalSales = sales;
+            c.TotalPaid = paid;
+        }
+
+        await _db.SaveChangesAsync();
+    }
 }

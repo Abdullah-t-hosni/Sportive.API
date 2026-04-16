@@ -32,6 +32,7 @@ public interface IAccountingService
     Task SyncAllPaymentAccountingAsync();
     Task SyncAllPurchaseAccountingAsync();
     Task SyncAllEntityIdsAsync();
+    Task SyncEntityBalancesAsync();
     Task ConsolidateSubAccountsToControlAsync();
 }
 
@@ -147,6 +148,12 @@ public class AccountingService : IAccountingService
     {
         _logger.LogInformation("SyncAllEntityIdsAsync called");
         await _core.SyncAllEntityIdsAsync();
+    }
+
+    public async Task SyncEntityBalancesAsync()
+    {
+        _logger.LogInformation("SyncEntityBalancesAsync called");
+        await _core.SyncEntityBalancesAsync();
     }
 
     public async Task ConsolidateSubAccountsToControlAsync()

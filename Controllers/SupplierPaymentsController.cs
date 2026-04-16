@@ -126,14 +126,24 @@ public class SupplierPaymentsController : ControllerBase
 
         _db.SupplierPayments.Add(payment);
 
-        // Update Supplier/Invoice Balances
-        supplier.TotalPaid += dto.Amount;
-        if (invoice != null)
+        PurchaseInvoice? invoice = null;
+        if (dto.PurchaseInvoiceId.HasValue)
         {
-            invoice.PaidAmount += dto.Amount;
-            if (invoice.PaidAmount >= invoice.TotalAmount) invoice.Status = PurchaseInvoiceStatus.Paid;
-            else if (invoice.PaidAmount > 0) invoice.Status = PurchaseInvoiceStatus.PartPaid;
+            invoice = await _db.PurchaseInvoices.FindAsync(dto.PurchaseInvoiceId.Value);
+            if (invoice != null)
+            {
+                var remaining = invoice.TotalAmount - invoice.PaidAmount;
+                if (dto.Amount > remaining + 0.1m)
+                {
+                    return BadRequest($"لا يمكن صرف مبلغ ({dto.Amount}) وهو أكبر من المديونية المتبقية للفاتورة ({remaining}).");
+                }
+                invoice.PaidAmount += dto.Amount;
+                invoice.Status = invoice.PaidAmount >= invoice.TotalAmount - 0.1m ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.PartPaid;
+            }
         }
+
+        // Update Supplier Balance
+        supplier.TotalPaid += dto.Amount;
 
         await _db.SaveChangesAsync();
 
@@ -169,7 +179,10 @@ public class SupplierPaymentsController : ControllerBase
         }
 
         // Search and delete linked Journal Entries
-        var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Reference == p.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher);
+        var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => 
+            e.Type == JournalEntryType.PaymentVoucher && 
+            e.Reference.Trim().ToLower() == p.PaymentNumber.Trim().ToLower());
+        
         if (entry != null)
         {
             _db.JournalEntries.Remove(entry);

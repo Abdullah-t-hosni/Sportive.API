@@ -175,6 +175,20 @@ public class AccountsController : ControllerBase
     [HttpGet("rebuild"), HttpPost("rebuild")]
     public async Task<IActionResult> Rebuild() => await FixTree();
 
+    [HttpGet("sync-balances"), HttpPost("sync-balances")]
+    public async Task<IActionResult> SyncBalances([FromServices] IAccountingService accounting)
+    {
+        try
+        {
+            await accounting.SyncEntityBalancesAsync();
+            return Ok(new { success = true, message = "تمت إعادة مزامنة أرصدة الموردين والعملاء بنجاح." });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
     [HttpGet("tree")]
     public async Task<IActionResult> GetTree()
     {
@@ -417,6 +431,16 @@ public class ReceiptVouchersController : ControllerBase
 
         _db.ReceiptVouchers.Add(voucher);
 
+        // 🏛️ SYNC: Update Customer Balance if applicable
+        if (voucher.CustomerId.HasValue)
+        {
+            var customer = await _db.Customers.FindAsync(voucher.CustomerId.Value);
+            if (customer != null)
+            {
+                customer.TotalPaid += voucher.Amount;
+            }
+        }
+
         // 🏛️ PRO-ACCOUNTING: Link to Order & Update Status if provided
         if (dto.OrderId.HasValue)
         {
@@ -460,6 +484,9 @@ public class ReceiptVouchersController : ControllerBase
             return BadRequest("لا يمكن تعديل سند مرحّل إلا من خلال الإدارة.");
 
         // 1. Update Voucher Data
+        var oldAmount = voucher.Amount;
+        var oldCustomerId = voucher.CustomerId;
+
         voucher.VoucherDate = dto.VoucherDate;
         voucher.Amount = dto.Amount;
         voucher.CashAccountId = dto.CashAccountId;
@@ -471,6 +498,18 @@ public class ReceiptVouchersController : ControllerBase
         voucher.AttachmentUrl = dto.AttachmentUrl;
         voucher.AttachmentPublicId = dto.AttachmentPublicId;
         voucher.UpdatedAt = TimeHelper.GetEgyptTime();
+
+        // 🏛️ SYNC: Adjust Customer Balances
+        if (oldCustomerId.HasValue)
+        {
+            var oldCust = await _db.Customers.FindAsync(oldCustomerId.Value);
+            if (oldCust != null) oldCust.TotalPaid -= oldAmount;
+        }
+        if (voucher.CustomerId.HasValue)
+        {
+            var newCust = await _db.Customers.FindAsync(voucher.CustomerId.Value);
+            if (newCust != null) newCust.TotalPaid += voucher.Amount;
+        }
 
         // 2. Synchronize Journal Entry
         if (entry != null)
@@ -498,6 +537,13 @@ public class ReceiptVouchersController : ControllerBase
         var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber);
         if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
             return BadRequest("لا يمكن حذف سند مرحّل إلا من خلال الإدارة.");
+
+        // 🏛️ SYNC: Revert Customer Balance
+        if (voucher.CustomerId.HasValue)
+        {
+            var cust = await _db.Customers.FindAsync(voucher.CustomerId.Value);
+            if (cust != null) cust.TotalPaid -= voucher.Amount;
+        }
 
         _db.ReceiptVouchers.Remove(voucher);
         if (entry != null) _db.JournalEntries.Remove(entry);
@@ -597,10 +643,38 @@ public class PaymentVouchersController : ControllerBase
             AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-            CreatedAt = TimeHelper.GetEgyptTime()
+            CreatedAt = TimeHelper.GetEgyptTime(),
+            PurchaseInvoiceId = dto.PurchaseInvoiceId // Ensure this is mapped if in DTO
         };
 
+        // 🏛️ PRO-ACCOUNTING: Link to Purchase Invoice & Prevent Overpayment
+        if (dto.PurchaseInvoiceId.HasValue)
+        {
+            var invoice = await _db.PurchaseInvoices.FindAsync(dto.PurchaseInvoiceId.Value);
+            if (invoice != null)
+            {
+                var remaining = invoice.TotalAmount - invoice.PaidAmount;
+                if (dto.Amount > remaining + 0.1m) // Small buffer for decimals
+                {
+                    return BadRequest($"لا يمكن صرف مبلغ ({dto.Amount}) وهو أكبر من المديونية المتبقية للفاتورة ({remaining}).");
+                }
+                invoice.PaidAmount += dto.Amount;
+                invoice.Status = invoice.PaidAmount >= invoice.TotalAmount - 0.1m ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.PartPaid;
+            }
+        }
+
         _db.PaymentVouchers.Add(voucher);
+
+        // 🏛️ SYNC: Update Supplier Balance
+        if (voucher.SupplierId.HasValue)
+        {
+            var supplier = await _db.Suppliers.FindAsync(voucher.SupplierId.Value);
+            if (supplier != null)
+            {
+                supplier.TotalPaid += voucher.Amount;
+            }
+        }
+
         await _db.SaveChangesAsync();
 
         // ترحيل تلقائي للمحاسبة
@@ -621,6 +695,9 @@ public class PaymentVouchersController : ControllerBase
             return BadRequest("لا يمكن تعديل سند مرحّل إلا من خلال الإدارة.");
 
         // 1. Update Voucher
+        var oldAmount = voucher.Amount;
+        var oldSupplierId = voucher.SupplierId;
+
         voucher.VoucherDate = dto.VoucherDate;
         voucher.Amount = dto.Amount;
         voucher.CashAccountId = dto.CashAccountId;
@@ -631,7 +708,43 @@ public class PaymentVouchersController : ControllerBase
         voucher.Description = dto.Description;
         voucher.AttachmentUrl = dto.AttachmentUrl;
         voucher.AttachmentPublicId = dto.AttachmentPublicId;
+        voucher.AttachmentPublicId = dto.AttachmentPublicId;
         voucher.UpdatedAt = TimeHelper.GetEgyptTime();
+
+        // 🏛️ SYNC: Revert old Purchase Invoice if any
+        if (voucher.PurchaseInvoiceId.HasValue && oldAmount > 0)
+        {
+            var oldInv = await _db.PurchaseInvoices.FindAsync(voucher.PurchaseInvoiceId.Value);
+            if (oldInv != null)
+            {
+                oldInv.PaidAmount -= oldAmount;
+                oldInv.Status = oldInv.PaidAmount <= 0 ? PurchaseInvoiceStatus.Received : PurchaseInvoiceStatus.PartPaid;
+            }
+        }
+
+        // 🏛️ SYNC: Apply new Purchase Invoice if any
+        voucher.PurchaseInvoiceId = dto.PurchaseInvoiceId;
+        if (voucher.PurchaseInvoiceId.HasValue)
+        {
+            var newInv = await _db.PurchaseInvoices.FindAsync(voucher.PurchaseInvoiceId.Value);
+            if (newInv != null)
+            {
+                newInv.PaidAmount += voucher.Amount;
+                newInv.Status = newInv.PaidAmount >= newInv.TotalAmount - 0.1m ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.PartPaid;
+            }
+        }
+
+        // 🏛️ SYNC: Adjust Supplier Balances
+        if (oldSupplierId.HasValue)
+        {
+            var oldSupp = await _db.Suppliers.FindAsync(oldSupplierId.Value);
+            if (oldSupp != null) oldSupp.TotalPaid -= oldAmount;
+        }
+        if (voucher.SupplierId.HasValue)
+        {
+            var newSupp = await _db.Suppliers.FindAsync(voucher.SupplierId.Value);
+            if (newSupp != null) newSupp.TotalPaid += voucher.Amount;
+        }
 
         // 2. Sync Ledger
         if (entry != null)
@@ -658,6 +771,24 @@ public class PaymentVouchersController : ControllerBase
         var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == voucher.VoucherNumber);
         if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
             return BadRequest("لا يمكن حذف سند مرحّل إلا من خلال الإدارة.");
+
+        // 🏛️ SYNC: Revert Supplier Balance
+        if (voucher.SupplierId.HasValue)
+        {
+            var supp = await _db.Suppliers.FindAsync(voucher.SupplierId.Value);
+            if (supp != null) supp.TotalPaid -= voucher.Amount;
+        }
+
+        // 🏛️ SYNC: Revert Purchase Invoice
+        if (voucher.PurchaseInvoiceId.HasValue)
+        {
+            var inv = await _db.PurchaseInvoices.FindAsync(voucher.PurchaseInvoiceId.Value);
+            if (inv != null)
+            {
+                inv.PaidAmount -= voucher.Amount;
+                inv.Status = inv.PaidAmount <= 0 ? PurchaseInvoiceStatus.Received : PurchaseInvoiceStatus.PartPaid;
+            }
+        }
 
         _db.PaymentVouchers.Remove(voucher);
         if (entry != null) _db.JournalEntries.Remove(entry);
