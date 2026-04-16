@@ -12,8 +12,8 @@ using Sportive.API.Data;
 namespace Sportive.API.Migrations.DecimalFix
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260416095953_LinkPurchasesAndOverdueAlerts")]
-    partial class LinkPurchasesAndOverdueAlerts
+    [Migration("20260416142352_AddUnitIdToProductV2")]
+    partial class AddUnitIdToProductV2
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -1671,6 +1671,9 @@ namespace Sportive.API.Migrations.DecimalFix
                     b.Property<int>("TotalStock")
                         .HasColumnType("int");
 
+                    b.Property<int?>("UnitId")
+                        .HasColumnType("int");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime(6)");
 
@@ -1686,6 +1689,8 @@ namespace Sportive.API.Migrations.DecimalFix
 
                     b.HasIndex("SKU")
                         .IsUnique();
+
+                    b.HasIndex("UnitId");
 
                     b.ToTable("Products");
                 });
@@ -3235,9 +3240,15 @@ namespace Sportive.API.Migrations.DecimalFix
                         .HasForeignKey("CategoryId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("Sportive.API.Models.ProductUnit", "Unit")
+                        .WithMany()
+                        .HasForeignKey("UnitId");
+
                     b.Navigation("Brand");
 
                     b.Navigation("Category");
+
+                    b.Navigation("Unit");
                 });
 
             modelBuilder.Entity("Sportive.API.Models.ProductDiscount", b =>

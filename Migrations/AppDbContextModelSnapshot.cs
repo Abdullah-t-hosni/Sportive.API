@@ -1668,6 +1668,9 @@ namespace Sportive.API.Migrations
                     b.Property<int>("TotalStock")
                         .HasColumnType("int");
 
+                    b.Property<int?>("UnitId")
+                        .HasColumnType("int");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime(6)");
 
@@ -1683,6 +1686,8 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("SKU")
                         .IsUnique();
+
+                    b.HasIndex("UnitId");
 
                     b.ToTable("Products");
                 });
@@ -3232,9 +3237,15 @@ namespace Sportive.API.Migrations
                         .HasForeignKey("CategoryId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("Sportive.API.Models.ProductUnit", "Unit")
+                        .WithMany()
+                        .HasForeignKey("UnitId");
+
                     b.Navigation("Brand");
 
                     b.Navigation("Category");
+
+                    b.Navigation("Unit");
                 });
 
             modelBuilder.Entity("Sportive.API.Models.ProductDiscount", b =>
