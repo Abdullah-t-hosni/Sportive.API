@@ -128,13 +128,14 @@ public class SupplierPaymentsController : ControllerBase
 
         if (invoice != null)
         {
-            var remaining = invoice.TotalAmount - invoice.PaidAmount;
+            var remaining = invoice.TotalAmount - invoice.PaidAmount - invoice.ReturnedAmount;
             if (dto.Amount > remaining + 0.1m)
             {
-                return BadRequest($"لا يمكن صرف مبلغ ({dto.Amount}) وهو أكبر من المديونية المتبقية للفاتورة ({remaining}).");
+                return BadRequest(new { message = $"لا يمكن صرف مبلغ ({dto.Amount}) وهو أكبر من المديونية المتبقية للفاتورة ({remaining})." });
             }
             invoice.PaidAmount += dto.Amount;
-            invoice.Status = invoice.PaidAmount >= invoice.TotalAmount - 0.1m ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.PartPaid;
+            var netTotal = invoice.TotalAmount - invoice.ReturnedAmount;
+            invoice.Status = invoice.PaidAmount >= netTotal - 0.1m ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.PartPaid;
         }
 
         // Update Supplier Balance

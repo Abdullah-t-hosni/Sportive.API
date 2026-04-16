@@ -685,8 +685,8 @@ public class PurchaseInvoicesController : ControllerBase
         // ── 2. Handle Accounting & Totals ──
         if (dto.Status == PurchaseInvoiceStatus.Cancelled)
         {
-            // Reverse Supplier Totals
-            inv.Supplier.TotalPurchases -= inv.TotalAmount;
+            // Reverse Supplier Totals (Net remaining of the invoice)
+            inv.Supplier.TotalPurchases -= (inv.TotalAmount - inv.ReturnedAmount);
             inv.Supplier.TotalPaid -= inv.PaidAmount;
 
             var journalEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == inv.InvoiceNumber);
@@ -935,7 +935,7 @@ public class PurchaseInvoicesController : ControllerBase
 
         if (inv == null) return NotFound();
 
-        inv.Supplier.TotalPurchases -= inv.TotalAmount;
+        inv.Supplier.TotalPurchases -= (inv.TotalAmount - inv.ReturnedAmount);
         inv.Supplier.TotalPaid -= inv.PaidAmount;
 
         var pUnits = await GetUnitsListAsync();
