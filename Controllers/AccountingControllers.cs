@@ -98,6 +98,16 @@ public class AccountsController : ControllerBase
     }
 
     [HttpGet("mappings")]
+    public async Task<IActionResult> GetMappings() => Ok(await _db.AccountMappings.ToListAsync());
+
+    // 🏛️ SYNC: Manual Trigger to fix balances and invoice statuses
+    [HttpPost("sync-balances")]
+    public async Task<IActionResult> SyncBalances([FromServices] AccountingCoreService syncService)
+    {
+        await syncService.SyncEntityBalancesAsync();
+        return Ok(new { message = "تمت مزامنة الأرصدة وحالات الفواتير بنجاح." });
+    }
+}
     public async Task<IActionResult> GetMappings()
     {
         var mappings = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);

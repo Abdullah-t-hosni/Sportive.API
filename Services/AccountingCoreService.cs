@@ -424,7 +424,8 @@ public class AccountingCoreService
             inv.PaidAmount = ledgerPaidAmount;
 
             // Auto-Update Status
-            if (inv.PaidAmount >= inv.TotalAmount && inv.TotalAmount > 0)
+            // 💡 FIX: If invoice is Cash, it's always Paid once Received
+            if (inv.PaymentTerms == PurchasePaymentTerms.Cash || (inv.PaidAmount >= inv.TotalAmount && inv.TotalAmount > 0))
             {
                 inv.Status = PurchaseInvoiceStatus.Paid;
             }
