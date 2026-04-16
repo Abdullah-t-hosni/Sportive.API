@@ -354,21 +354,34 @@ public class ImportController : ControllerBase
                 var cEn      = GetVal(colColorEn).NullIfEmpty();
                 var cAr      = GetVal(colColorAr).NullIfEmpty();
 
-                                variant.StockQuantity = stk;
-                                variant.PriceAdjustment = vAdj;
-                            }
-                            else
-                            {
-                                product.Variants.Add(new ProductVariant {
-                                    Size = size, Color = cEn, ColorAr = cAr,
-                                    StockQuantity = stk, PriceAdjustment = vAdj,
-                                    CreatedAt = TimeHelper.GetEgyptTime()
-                                });
-                                result.VariantsAdded++;
-                            }
+                if (!string.IsNullOrEmpty(stockVal) && int.TryParse(stockVal, out var stk))
+                {
+                    decimal? vAdj = decimal.TryParse(GetVal(colAdj), out var adj) ? adj : null;
+                    if (product != null)
+                    {
+                        var variant = (isExisting && update) 
+                            ? product.Variants.FirstOrDefault(v => (v.Size ?? "") == (size ?? "") && (v.ColorAr ?? "") == (cAr ?? ""))
+                            : null;
+
+                        if (variant != null)
+                        {
+                            variant.StockQuantity = stk;
+                            variant.PriceAdjustment = vAdj;
+                        }
+                        else
+                        {
+                            product.Variants.Add(new ProductVariant {
+                                Size = size, Color = cEn, ColorAr = cAr,
+                                StockQuantity = stk, PriceAdjustment = vAdj,
+                                CreatedAt = TimeHelper.GetEgyptTime()
+                            });
+                            result.VariantsAdded++;
                         }
                     }
-                    else result.Errors.Add($"صف {r}: كمية المخزون غير صحيحة");
+                }
+                else if (!string.IsNullOrEmpty(stockVal))
+                {
+                    result.Errors.Add($"صف {r}: كمية المخزون غير صحيحة للكود '{sku}'");
                 }
             }
 
