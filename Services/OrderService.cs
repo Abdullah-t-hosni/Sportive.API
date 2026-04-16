@@ -113,6 +113,11 @@ public class OrderService : IOrderService
 
         if (o == null) return null;
 
+        var customerId = o.CustomerId;
+        var customerDto = o.Customer != null 
+            ? new CustomerBasicDto(o.Customer.Id, o.Customer.FullName, o.Customer.Email, o.Customer.Phone, o.Customer.FixedDiscount)
+            : new CustomerBasicDto(customerId, "Unknown Customer", "", "");
+
         var salesPersonName = "";
         if (!string.IsNullOrEmpty(o.SalesPersonId))
         {
@@ -121,15 +126,18 @@ public class OrderService : IOrderService
         }
 
         // 💡 SMART FINANCE: Calculate actual paid amount from Journal Entries
-        var paidAmount = await _db.JournalLines
-            .Where(l => l.OrderId == id && l.Credit > 0)
-            .Where(l => l.Account.Code.StartsWith("1103")) // Credit to Receivables = Money Paid
+        // Use a safe query that handles null accounts or missing lines
+        var paidAmountQuery = _db.JournalLines
+            .Where(l => l.OrderId == id && l.Credit > 0);
+            
+        var paidAmount = await paidAmountQuery
+            .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("1103"))
             .SumAsync(l => l.Credit);
 
         return new OrderDetailDto(
             o.Id,
             o.OrderNumber,
-            new CustomerBasicDto(o.Customer.Id, o.Customer.FullName, o.Customer.Email, o.Customer.Phone),
+            customerDto,
             o.Status.ToString(),
             o.FulfillmentType.ToString(),
             o.PaymentMethod.ToString(),
