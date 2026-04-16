@@ -237,6 +237,42 @@ public class ImportController : ControllerBase
             var productsDict = new Dictionary<string, Product>(StringComparer.OrdinalIgnoreCase);
             var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
 
+            // Prepare Error Workbook for rejected rows
+            using var errorWb = new XLWorkbook();
+            var errorWs = errorWb.Worksheets.Add("الأسطر المرفوضة");
+            errorWs.RightToLeft = true;
+            
+            // Copy headers to error worksheet
+            for (int c = 1; c <= ws.LastColumnUsed().ColumnNumber(); c++)
+            {
+                var originalCell = firstRow.Cell(c);
+                var errorHeaderCell = errorWs.Cell(1, c);
+                errorHeaderCell.Value = originalCell.Value;
+                errorHeaderCell.Style.Font.Bold = true;
+                errorHeaderCell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1a1a2e");
+                errorHeaderCell.Style.Font.FontColor = XLColor.White;
+            }
+            int colErrDesc = ws.LastColumnUsed().ColumnNumber() + 1;
+            errorWs.Cell(1, colErrDesc).Value = "سبب الرفض";
+            errorWs.Cell(1, colErrDesc).Style.Font.Bold = true;
+            errorWs.Cell(1, colErrDesc).Style.Fill.BackgroundColor = XLColor.Red;
+            errorWs.Cell(1, colErrDesc).Style.Font.FontColor = XLColor.White;
+
+            int errorRowIdx = 2;
+
+            void LogRowError(int r, string message)
+            {
+                result.Errors.Add($"صف {r}: {message}");
+                // Copy the entire row from the original sheet to the error sheet
+                for (int c = 1; c <= ws.LastColumnUsed().ColumnNumber(); c++)
+                {
+                    errorWs.Cell(errorRowIdx, c).Value = ws.Cell(r, c).Value;
+                }
+                errorWs.Cell(errorRowIdx, colErrDesc).Value = message;
+                errorWs.Cell(errorRowIdx, colErrDesc).Style.Font.FontColor = XLColor.Red;
+                errorRowIdx++;
+            }
+
             for (int r = 2; r <= lastRow; r++)
             {
                 string GetVal(int col) => col != -1 ? ws.Cell(r, col).GetString().Trim() : "";
@@ -260,12 +296,12 @@ public class ImportController : ControllerBase
 
                     if (string.IsNullOrEmpty(nameAr) || string.IsNullOrEmpty(priceStr))
                     {
-                        result.Errors.Add($"صف {r}: بيانات أساسية ناقصة للكود {sku}");
+                        LogRowError(r, $"بيانات أساسية ناقصة (الاسم '{nameAr}' أو السعر '{priceStr}') للكود {sku}");
                         continue;
                     }
                     if (!decimal.TryParse(priceStr, out var price))
                     {
-                        result.Errors.Add($"صف {r}: السعر غير صحيح '{priceStr}' للكود {sku}");
+                        LogRowError(r, $"السعر غير صحيح '{priceStr}' للكود {sku}");
                         continue;
                     }
 
@@ -395,7 +431,7 @@ public class ImportController : ControllerBase
                 }
                 else if (!string.IsNullOrEmpty(stockVal))
                 {
-                    result.Errors.Add($"صف {r}: كمية المخزون غير صحيحة للكود '{sku}'");
+                    LogRowError(r, $"كمية المخزون غير صحيحة '{stockVal}'");
                 }
             }
 
@@ -403,6 +439,16 @@ public class ImportController : ControllerBase
                 if (p.Variants.Any()) p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
 
             await _db.SaveChangesAsync();
+
+            // If there were errors, return the error report file
+            if (result.Errors.Any())
+            {
+                errorWs.Columns().AdjustToContents();
+                var errStream = new MemoryStream();
+                errorWb.SaveAs(errStream);
+                errStream.Position = 0;
+                return File(errStream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"import_errors_{DateTime.Now:yyyyMMddHHmmss}.xlsx");
+            }
         }
         catch (Exception ex)
         {
