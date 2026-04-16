@@ -130,9 +130,9 @@ public class ProductService : IProductService
                 x.p.VatRate,
                 x.p.CostPrice,
                 x.p.UnitId,
-                x.p.Unit?.NameAr,
-                x.p.Unit?.NameEn,
-                x.p.Unit?.Symbol,
+                x.p.Unit != null ? x.p.Unit.NameAr : null,
+                x.p.Unit != null ? x.p.Unit.NameEn : null,
+                x.p.Unit != null ? x.p.Unit.Symbol : null,
                 x.p.CreatedAt,
                 x.d != null ? x.d.Label : null
             ))
@@ -578,9 +578,9 @@ public class ProductService : IProductService
                 x.p.VatRate,
                 x.p.CostPrice,
                 x.p.UnitId,
-                x.p.Unit?.NameAr,
-                x.p.Unit?.NameEn,
-                x.p.Unit?.Symbol,
+                x.p.Unit != null ? x.p.Unit.NameAr : null,
+                x.p.Unit != null ? x.p.Unit.NameEn : null,
+                x.p.Unit != null ? x.p.Unit.Symbol : null,
                 x.p.CreatedAt,
                 x.d != null ? x.d.Label : null
             ))
@@ -628,9 +628,9 @@ public class ProductService : IProductService
                 x.p.VatRate,
                 x.p.CostPrice,
                 x.p.UnitId,
-                x.p.Unit?.NameAr,
-                x.p.Unit?.NameEn,
-                x.p.Unit?.Symbol,
+                x.p.Unit != null ? x.p.Unit.NameAr : null,
+                x.p.Unit != null ? x.p.Unit.NameEn : null,
+                x.p.Unit != null ? x.p.Unit.Symbol : null,
                 x.p.CreatedAt,
                 x.d != null ? x.d.Label : null
             ))
