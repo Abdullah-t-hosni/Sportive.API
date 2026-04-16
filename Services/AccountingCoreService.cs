@@ -415,10 +415,11 @@ public class AccountingCoreService
         foreach (var inv in pInvoices)
         {
             // Sum all DEBITS to Payables (2101) for this PurchaseInvoice
+            // Check by ID or fallback to InvoiceNumber Reference
             var ledgerPaidAmount = await _db.JournalLines
-                .Where(l => l.PurchaseInvoiceId == inv.Id && l.Debit > 0)
+                .Where(l => (l.PurchaseInvoiceId == inv.Id || (l.JournalEntry != null && l.JournalEntry.Reference == inv.InvoiceNumber)) && l.Debit > 0)
                 .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("2101"))
-                .SumAsync(l => l.Debit);
+                .SumAsync(l => (decimal?)l.Debit) ?? 0;
 
             inv.PaidAmount = ledgerPaidAmount;
 
@@ -483,25 +484,23 @@ public class AccountingCoreService
             s.TotalPaid      = volume - debt; 
         }
 
-        // 3. Sync Customers
+        // 4. Sync Customers
         var customers = await _db.Customers.ToListAsync();
         foreach (var c in customers)
         {
-            var sales = await _db.Orders
+            // A. Volume (All non-cancelled orders)
+            var volume = await _db.Orders
                 .Where(o => o.CustomerId == c.Id && o.Status != OrderStatus.Cancelled)
-                .SumAsync(o => o.TotalAmount);
+                .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
             
-            // Total Paid by Customer = Sum of PaidAmount on all their orders + any Receipt Vouchers not linked to specific orders
-            var totalPaidFromOrders = await _db.Orders
-                .Where(o => o.CustomerId == c.Id && o.Status != OrderStatus.Cancelled)
-                .SumAsync(o => o.PaidAmount);
+            // B. DEBT (From Ledger - Account 1103/1201)
+            // Balance = Debit (Sales) - Credit (Payments/Returns)
+            var debt = await _db.JournalLines
+                .Where(l => l.CustomerId == c.Id && (l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1201")))
+                .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
-            var extraReceipts = await _db.ReceiptVouchers
-                .Where(v => v.CustomerId == c.Id && v.OrderId == null)
-                .SumAsync(v => v.Amount);
-            
-            c.TotalSales = sales;
-            c.TotalPaid = totalPaidFromOrders + extraReceipts;
+            c.TotalSales = volume;
+            c.TotalPaid  = volume - debt; 
         }
 
         await _db.SaveChangesAsync();

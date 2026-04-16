@@ -115,5 +115,8 @@ public class PaymentAccountingService
             (cashCode, 0, payment.Amount, $"صرف من {payment.AccountName}")
         };
         await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, payment.PaymentNumber, $"سند صرف مورد {payment.PaymentNumber}", payment.PaymentDate, lines, supplierId: payment.SupplierId, purchaseInvoiceId: payment.PurchaseInvoiceId);
+        
+        // Immediate status update
+        await _core.SyncEntityBalancesAsync();
     }
 }
