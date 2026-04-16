@@ -465,18 +465,22 @@ public class AccountingCoreService
         await _db.SaveChangesAsync();
 
         // 3. Sync Suppliers
-        var suppliers = await _db.Suppliers.Include(s => s.Invoices).Include(s => s.Payments).ToListAsync();
+        var suppliers = await _db.Suppliers.ToListAsync();
         foreach (var s in suppliers)
         {
-            var purchases = await _db.PurchaseInvoices
+            // A. Volume (All non-cancelled invoices)
+            var volume = await _db.PurchaseInvoices
                 .Where(i => i.SupplierId == s.Id && i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
-                .SumAsync(i => i.TotalAmount);
+                .SumAsync(i => (decimal?)i.TotalAmount) ?? 0;
             
-            var p1 = await _db.SupplierPayments.Where(p => p.SupplierId == s.Id).SumAsync(p => p.Amount);
-            var p2 = await _db.PaymentVouchers.Where(p => p.SupplierId == s.Id).SumAsync(p => p.Amount);
-            
-            s.TotalPurchases = purchases;
-            s.TotalPaid = p1 + p2;
+            // B. DEBT (From Ledger - Account 2101)
+            // Balance = Credit (Liability) - Debit (Payment/Return)
+            var debt = await _db.JournalLines
+                .Where(l => l.SupplierId == s.Id && l.Account.Code != null && l.Account.Code.StartsWith("2101"))
+                .SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0;
+
+            s.TotalPurchases = volume;
+            s.TotalPaid      = volume - debt; 
         }
 
         // 3. Sync Customers
