@@ -76,7 +76,7 @@ public class DashboardService : IDashboardService
         var customerGrowth = CalculateGrowth(totalCustomers, prevCustomersCount);
 
         var uncollectedAmount = await _db.Orders
-            .Where(o => o.Status != OrderStatus.Cancelled)
+            .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned)
             .SumAsync(o => (decimal?)(o.TotalAmount - o.PaidAmount)) ?? 0;
 
         // الديون: هي الطلبات التي لم تُدفع بعد وليست ملغاة أو مرتجعة بالكامل (تشمل الآجل وأي طلب معلق الدفع)
