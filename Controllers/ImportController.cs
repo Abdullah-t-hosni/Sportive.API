@@ -25,39 +25,59 @@ public class ImportController : ControllerBase
     [HttpGet("template")]
     public async Task<IActionResult> GetTemplate()
     {
-        var mainCategories = await _db.Categories.Where(c => c.ParentId == null).Select(c => c.NameAr).ToListAsync();
-        var subCategories = await _db.Categories.Where(c => c.ParentId != null).Select(c => c.NameAr).ToListAsync();
-        var brands     = await _db.Brands.Select(b => b.NameAr).ToListAsync();
-        var units      = await _db.ProductUnits.Select(u => u.NameAr).ToListAsync();
+        var allCats      = await _db.Categories.ToListAsync();
+        var mainCats     = allCats.Where(c => c.ParentId == null).ToList();
+        var brands       = await _db.Brands.Select(b => b.NameAr).ToListAsync();
+        var units        = await _db.ProductUnits.Select(u => u.NameAr).ToListAsync();
         
         var sizes    = await _db.ProductVariants.Where(v => !string.IsNullOrEmpty(v.Size)).Select(v => v.Size!).Distinct().ToListAsync();
-        var colorEns = await _db.ProductVariants.Where(v => !string.IsNullOrEmpty(v.Color)).Select(v => v.Color!).Distinct().ToListAsync();
-        var colorArs = await _db.ProductVariants.Where(v => !string.IsNullOrEmpty(v.ColorAr)).Select(v => v.ColorAr!).Distinct().ToListAsync();
+        var colorEnList = await _db.ProductVariants.Where(v => !string.IsNullOrEmpty(v.Color)).Select(v => v.Color!).Distinct().ToListAsync();
+        var colorArList = await _db.ProductVariants.Where(v => !string.IsNullOrEmpty(v.ColorAr)).Select(v => v.ColorAr!).Distinct().ToListAsync();
 
         using var wb = new XLWorkbook();
         var wsL = wb.Worksheets.Add("Lists");
         wsL.Hide();
         
+        string SafeName(string s) => s.Replace(" ", "_").Replace("-", "_").Replace("&", "_").Replace("/", "_");
+
+        // 1. Write Main Categories to Col 1
+        for (int i = 0; i < mainCats.Count; i++) wsL.Cell(i + 1, 1).Value = mainCats[i].NameAr;
+        var mCatRange = wsL.Range(1, 1, Math.Max(1, mainCats.Count), 1);
+        wb.DefinedNames.Add("MainCategoriesList", mCatRange);
+
+        // 2. Write Sub Categories for each Main Cat in separate columns (starting col 10)
+        int subCol = 10;
+        foreach (var mCat in mainCats)
+        {
+            var subs = allCats.Where(c => c.ParentId == mCat.Id).Select(c => c.NameAr).ToList();
+            if (subs.Any())
+            {
+                for (int i = 0; i < subs.Count; i++) wsL.Cell(i + 1, subCol).Value = subs[i];
+                var range = wsL.Range(1, subCol, subs.Count, subCol);
+                wb.DefinedNames.Add(SafeName(mCat.NameAr), range);
+                subCol++;
+            }
+        }
+
+        // 3. Extra Lists
         void FillCol(int col, List<string> items) {
             for (int i = 0; i < items.Count; i++) wsL.Cell(i + 1, col).Value = items[i];
         }
-        FillCol(1, mainCategories); 
-        FillCol(2, subCategories);
         FillCol(3, brands);     
         FillCol(4, units);      
         FillCol(5, sizes);      
-        FillCol(6, colorEns);   
-        FillCol(7, colorArs);   
+        FillCol(6, colorEnList);   
+        FillCol(7, colorArList);   
         FillCol(8, new List<string> { "نعم", "لا" });
+        FillCol(9, new List<string> { "نشط", "مسودة", "مخفي" });
 
-        var mCatRange  = wsL.Range(1, 1, Math.Max(1, mainCategories.Count), 1);
-        var sCatRange  = wsL.Range(1, 2, Math.Max(1, subCategories.Count), 2);
         var brandRange = wsL.Range(1, 3, Math.Max(1, brands.Count), 3);
         var unitRange  = wsL.Range(1, 4, Math.Max(1, units.Count), 4);
         var sizeRange  = wsL.Range(1, 5, Math.Max(1, sizes.Count), 5);
-        var cEnRange   = wsL.Range(1, 6, Math.Max(1, colorEns.Count), 6);
-        var cArRange   = wsL.Range(1, 7, Math.Max(1, colorArs.Count), 7);
+        var cEnRange   = wsL.Range(1, 6, Math.Max(1, colorEnList.Count), 6);
+        var cArRange   = wsL.Range(1, 7, Math.Max(1, colorArList.Count), 7);
         var featRange  = wsL.Range(1, 8, 2, 8);
+        var statRange  = wsL.Range(1, 9, 3, 9);
 
         var ws1 = wb.Worksheets.Add("المنتجات والمقاسات");
         ws1.RightToLeft = true;
@@ -66,7 +86,7 @@ public class ImportController : ControllerBase
             "الاسم عربي *","الاسم انجليزي","التصنيف الأساسي *","التصنيف الفرعي","الكود SKU *",
             "السعر *","سعر الخصم","سعر التكلفة","الماركة","الوحدة",
             "المقاس","اللون (English)","اللون (عربي)","المخزون *","فارق السعر للمقاس",
-            "مميز (نعم/لا)","الوصف عربي","الوصف انجليزي"
+            "حد الطلب","الحالة","مميز (نعم/لا)","الوصف عربي","الوصف انجليزي"
         };
         for (int c = 0; c < headers1.Length; c++)
         {
@@ -77,27 +97,30 @@ public class ImportController : ControllerBase
             cell.Style.Font.FontColor = XLColor.White;
         }
 
-        ws1.Column(5).Style.NumberFormat.Format = "@"; // Force text for SKU
+        ws1.Column(5).Style.NumberFormat.Format = "@"; 
 
         for (int r = 2; r <= 1000; r++)
         {
             ws1.Cell(r, 3).CreateDataValidation().List(mCatRange, true);
-            ws1.Cell(r, 4).CreateDataValidation().List(sCatRange, true);
+            // Dependent list for Sub-Category (Col 4) based on Main-Category (Col 3)
+            ws1.Cell(r, 4).CreateDataValidation().List("=INDIRECT(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE($C" + r + ",\" \",\"_\"),\"-\",\"_\"),\"&\",\"_\"),\"/\",\"_\"))", true);
+            
             ws1.Cell(r, 9).CreateDataValidation().List(brandRange, true);
             ws1.Cell(r, 10).CreateDataValidation().List(unitRange, true);
             ws1.Cell(r, 11).CreateDataValidation().List(sizeRange, true);
             ws1.Cell(r, 12).CreateDataValidation().List(cEnRange, true);
             ws1.Cell(r, 13).CreateDataValidation().List(cArRange, true);
-            ws1.Cell(r, 16).CreateDataValidation().List(featRange, true);
+            ws1.Cell(r, 17).CreateDataValidation().List(statRange, true);
+            ws1.Cell(r, 18).CreateDataValidation().List(featRange, true);
         }
 
         // Sample row 1 (Variant 1)
         ws1.Cell(2,1).Value = "تيشرت رياضي";
         ws1.Cell(2,2).Value = "Sports T-Shirt";
-        ws1.Cell(2,3).Value = mainCategories.FirstOrDefault() ?? "ملابس";
+        ws1.Cell(2,3).Value = mainCats.FirstOrDefault()?.NameAr ?? "ملابس";
         ws1.Cell(2,5).Value = "TS-001";
         ws1.Cell(2,6).Value = 299;
-        ws1.Cell(2,8).Value = 200; // Cost
+        ws1.Cell(2,8).Value = 200; 
         ws1.Cell(2,9).Value = brands.FirstOrDefault() ?? "Nike";
         ws1.Cell(2,10).Value = units.FirstOrDefault() ?? "قطعة";
         ws1.Cell(2,11).Value = "M";
@@ -105,7 +128,9 @@ public class ImportController : ControllerBase
         ws1.Cell(2,13).Value = "أزرق";
         ws1.Cell(2,14).Value = 10;
         ws1.Cell(2,15).Value = 0;
-        ws1.Cell(2,16).Value = "لا";
+        ws1.Cell(2,16).Value = 5; 
+        ws1.Cell(2,17).Value = "نشط";
+        ws1.Cell(2,18).Value = "لا";
         ws1.Row(2).Style.Font.FontColor = XLColor.Gray;
 
         // Sample row 2 (Variant 2 - Same Product)
@@ -132,7 +157,7 @@ public class ImportController : ControllerBase
     // POST /api/import/products
     [HttpPost("products")]
     [RequestSizeLimit(10 * 1024 * 1024)] // 10MB
-    public async Task<IActionResult> ImportProducts(IFormFile file)
+    public async Task<IActionResult> ImportProducts(IFormFile file, [FromQuery] bool update = false)
     {
         if (file == null || file.Length == 0)
             return BadRequest(new { message = "لم يتم رفع ملف" });
@@ -194,6 +219,8 @@ public class ImportController : ControllerBase
             int colColorAr  = GetCol("اللون (عربي)", "اللون عربي");
             int colStock    = GetCol("المخزون");
             int colAdj      = GetCol("فارق السعر", "فارق السعر للمقاس");
+            int colReorder  = GetCol("حد الطلب", "الحد الأدنى للمخزون");
+            int colStatus   = GetCol("الحالة", "الوضع");
             int colFeat     = GetCol("مميز (نعم/لا)", "مميز");
             int colDescAr   = GetCol("الوصف عربي");
             int colDescEn   = GetCol("الوصف انجليزي");
@@ -216,10 +243,12 @@ public class ImportController : ControllerBase
                 var sku = GetVal(colSku);
                 if (string.IsNullOrEmpty(sku)) continue;
 
-                if (existingSkus.Contains(sku))
+                var isExisting = existingSkus.Contains(sku);
+
+                if (isExisting && !update)
                 {
                     if (!result.Skipped.Any(s => s.Contains($"الكود '{sku}' موجود")))
-                        result.Skipped.Add($"صف {r}: الكود '{sku}' موجود مسبقاً — تم تخطيه");
+                        result.Skipped.Add($"صف {r}: الكود '{sku}' موجود مسبقاً — تم تخطيه (فعل خيار التحديث للتعديل)");
                     continue;
                 }
 
@@ -254,27 +283,60 @@ public class ImportController : ControllerBase
 
                     decimal? cost = decimal.TryParse(GetVal(colCost), out var cs) ? cs : null;
                     decimal? dP   = decimal.TryParse(GetVal(colDisc), out var dp) ? dp : null;
-
-                    product = new Product
-                    {
-                        NameAr = nameAr,
-                        NameEn = GetVal(colNameEn).NullIfEmpty() ?? nameAr,
-                        SKU = sku,
-                        Price = price,
-                        DiscountPrice = dP,
-                        CostPrice = cost,
-                        CategoryId = catId ?? categories.FirstOrDefault()?.Id ?? 1,
-                        BrandId = bId,
-                        // UnitId = uId, // Reverted until Migration
-                        DescriptionAr = GetVal(colDescAr).NullIfEmpty(),
-                        DescriptionEn = GetVal(colDescEn).NullIfEmpty(),
-                        IsFeatured    = GetVal(colFeat).Contains("نعم"),
-                        Status = ProductStatus.Active,
-                        CreatedAt = TimeHelper.GetEgyptTime()
+                    int rL = int.TryParse(GetVal(colReorder), out var rl) ? rl : 0;
+                    
+                    var statusStr = GetVal(colStatus);
+                    var status = statusStr switch {
+                        "مسودة" => ProductStatus.Draft,
+                        "مخفي" => ProductStatus.Hidden,
+                        _ => ProductStatus.Active
                     };
-                    productsDict[sku] = product;
-                    _db.Products.Add(product);
-                    result.Added++;
+
+                    if (isExisting && update)
+                    {
+                        product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.SKU == sku);
+                        if (product != null)
+                        {
+                            product.NameAr = nameAr;
+                            product.NameEn = GetVal(colNameEn).NullIfEmpty() ?? nameAr;
+                            product.Price = price;
+                            product.DiscountPrice = dP;
+                            product.CostPrice = cost;
+                            product.CategoryId = catId ?? product.CategoryId;
+                            product.BrandId = bId ?? product.BrandId;
+                            product.ReorderLevel = rL;
+                            product.Status = status;
+                            product.IsFeatured = GetVal(colFeat).Contains("نعم");
+                            product.DescriptionAr = GetVal(colDescAr).NullIfEmpty() ?? product.DescriptionAr;
+                            product.DescriptionEn = GetVal(colDescEn).NullIfEmpty() ?? product.DescriptionEn;
+                            
+                            productsDict[sku] = product;
+                            result.Updated++;
+                        }
+                    }
+                    else
+                    {
+                        product = new Product
+                        {
+                            NameAr = nameAr,
+                            NameEn = GetVal(colNameEn).NullIfEmpty() ?? nameAr,
+                            SKU = sku,
+                            Price = price,
+                            DiscountPrice = dP,
+                            CostPrice = cost,
+                            CategoryId = catId ?? categories.FirstOrDefault()?.Id ?? 1,
+                            BrandId = bId,
+                            ReorderLevel = rL,
+                            DescriptionAr = GetVal(colDescAr).NullIfEmpty(),
+                            DescriptionEn = GetVal(colDescEn).NullIfEmpty(),
+                            IsFeatured    = GetVal(colFeat).Contains("نعم"),
+                            Status = status,
+                            CreatedAt = TimeHelper.GetEgyptTime()
+                        };
+                        productsDict[sku] = product;
+                        _db.Products.Add(product);
+                        result.Added++;
+                    }
                 }
 
                 // Add Variant
@@ -289,12 +351,32 @@ public class ImportController : ControllerBase
                     {
                         decimal? vAdj = decimal.TryParse(GetVal(colAdj), out var adj) ? adj : null;
                         
-                        product.Variants.Add(new ProductVariant {
-                            Size = size, Color = cEn, ColorAr = cAr,
-                            StockQuantity = stk, PriceAdjustment = vAdj,
-                            CreatedAt = TimeHelper.GetEgyptTime()
-                        });
-                        result.VariantsAdded++;
+                        if (product != null)
+                        {
+                            // If updating, try to find matching variant first
+                            ProductVariant? variant = null;
+                            if (isExisting && update)
+                            {
+                                variant = product.Variants.FirstOrDefault(v => 
+                                    (v.Size ?? "").Equals(size ?? "", StringComparison.OrdinalIgnoreCase) && 
+                                    (v.ColorAr ?? "").Equals(cAr ?? "", StringComparison.OrdinalIgnoreCase));
+                            }
+
+                            if (variant != null)
+                            {
+                                variant.StockQuantity = stk;
+                                variant.PriceAdjustment = vAdj;
+                            }
+                            else
+                            {
+                                product.Variants.Add(new ProductVariant {
+                                    Size = size, Color = cEn, ColorAr = cAr,
+                                    StockQuantity = stk, PriceAdjustment = vAdj,
+                                    CreatedAt = TimeHelper.GetEgyptTime()
+                                });
+                                result.VariantsAdded++;
+                            }
+                        }
                     }
                     else result.Errors.Add($"صف {r}: كمية المخزون غير صحيحة");
                 }
@@ -310,7 +392,7 @@ public class ImportController : ControllerBase
             return BadRequest(new { message = $"خطأ: {ex.Message}" });
         }
 
-        return Ok(new { message = "تم الاستيراد بنجاح", added = result.Added, variantsAdded = result.VariantsAdded, skipped = result.Skipped.Count, errors = result.Errors.Count, details = result });
+        return Ok(new { message = "تم الاستيراد بنجاح", added = result.Added, updated = result.Updated, variantsAdded = result.VariantsAdded, skipped = result.Skipped.Count, errors = result.Errors.Count, details = result });
     }
 
 
@@ -500,6 +582,7 @@ public class ImportController : ControllerBase
     private class ImportResult
     {
         public int Added         { get; set; }
+        public int Updated       { get; set; }
         public int VariantsAdded { get; set; }
         public List<string> Skipped { get; set; } = new();
         public List<string> Errors  { get; set; } = new();
