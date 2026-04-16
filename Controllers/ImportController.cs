@@ -45,17 +45,32 @@ public class ImportController : ControllerBase
         var mCatRange = wsL.Range(1, 1, Math.Max(1, mainCats.Count), 1);
         wb.DefinedNames.Add("MainCategoriesList", mCatRange);
 
-        // 2. Write Sub Categories for each Main Cat in separate columns (starting col 10)
+        // 2. Write Category Hierarchy Ranges (starting col 10)
         int subCol = 10;
         foreach (var mCat in mainCats)
         {
-            var subs = allCats.Where(c => c.ParentId == mCat.Id).Select(c => c.NameAr).ToList();
+            var subs = allCats.Where(c => c.ParentId == mCat.Id).ToList();
             if (subs.Any())
             {
-                for (int i = 0; i < subs.Count; i++) wsL.Cell(i + 1, subCol).Value = subs[i];
-                var range = wsL.Range(1, subCol, subs.Count, subCol);
+                // Level 1 -> Level 2
+                var subNames = subs.Select(s => s.NameAr).ToList();
+                for (int i = 0; i < subNames.Count; i++) wsL.Cell(i + 1, subCol).Value = subNames[i];
+                var range = wsL.Range(1, subCol, subNames.Count, subCol);
                 wb.DefinedNames.Add(SafeName(mCat.NameAr), range);
                 subCol++;
+
+                // Level 2 -> Level 3
+                foreach (var sub in subs)
+                {
+                    var subSubs = allCats.Where(c => c.ParentId == sub.Id).Select(c => c.NameAr).ToList();
+                    if (subSubs.Any())
+                    {
+                        for (int i = 0; i < subSubs.Count; i++) wsL.Cell(i + 1, subCol).Value = subSubs[i];
+                        var ssRange = wsL.Range(1, subCol, subSubs.Count, subCol);
+                        wb.DefinedNames.Add(SafeName(sub.NameAr), ssRange);
+                        subCol++;
+                    }
+                }
             }
         }
 
@@ -65,9 +80,6 @@ public class ImportController : ControllerBase
         }
         FillCol(3, brands);     
         FillCol(4, units);      
-        FillCol(5, sizes);      
-        FillCol(6, colorEnList);   
-        FillCol(7, colorArList);   
         FillCol(8, new List<string> { "نعم", "لا" });
         FillCol(9, new List<string> { "نشط", "مسودة", "مخفي" });
 
@@ -104,6 +116,8 @@ public class ImportController : ControllerBase
             ws1.Cell(r, 5).CreateDataValidation().List(mCatRange, true);
             // Sub Category (Col 6) dependent on Main (Col 5)
             ws1.Cell(r, 6).CreateDataValidation().List("=INDIRECT(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE($E" + r + ",\" \",\"_\"),\"-\",\"_\"),\"&\",\"_\"),\"/\",\"_\"))", true);
+            // Sub-Sub Category (Col 7) dependent on Sub (Col 6)
+            ws1.Cell(r, 7).CreateDataValidation().List("=INDIRECT(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE($F" + r + ",\" \",\"_\"),\"-\",\"_\"),\"&\",\"_\"),\"/\",\"_\"))", true);
             
             ws1.Cell(r, 11).CreateDataValidation().List(brandRange, true);
             ws1.Cell(r, 3).CreateDataValidation().List(unitRange, true); // Unit is now Col 3
