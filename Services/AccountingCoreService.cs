@@ -425,7 +425,7 @@ public class AccountingCoreService
 
             // Auto-Update Status
             // 💡 FIX: If invoice is Cash, it's always Paid once Received
-            if (inv.PaymentTerms == PurchasePaymentTerms.Cash || (inv.PaidAmount >= inv.TotalAmount && inv.TotalAmount > 0))
+            if (inv.PaymentTerms == PaymentTerms.Cash || (inv.PaidAmount >= inv.TotalAmount && inv.TotalAmount > 0))
             {
                 inv.Status = PurchaseInvoiceStatus.Paid;
             }
