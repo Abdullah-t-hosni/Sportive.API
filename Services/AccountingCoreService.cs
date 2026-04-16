@@ -16,6 +16,7 @@ public class AccountingCoreService
     private readonly AppDbContext _db;
     private readonly SequenceService _seq;
     private readonly ILogger<AccountingCoreService> _logger;
+    private readonly INotificationService _notifications;
 
     // كودات الحسابات الافتتاحية (Fallback)
     public const string CASH_CASHIER  = "110101";
@@ -39,11 +40,12 @@ public class AccountingCoreService
     public const string VAT_OUTPUT    = "2104";
     public const string VAT_INPUT     = "2105";
 
-    public AccountingCoreService(AppDbContext db, SequenceService seq, ILogger<AccountingCoreService> logger)
+    public AccountingCoreService(AppDbContext db, SequenceService seq, ILogger<AccountingCoreService> logger, INotificationService notifications)
     {
         _db = db;
         _seq = seq;
         _logger = logger;
+        _notifications = notifications;
     }
 
     public async Task<Dictionary<string, int?>> GetSafeSystemMappingsAsync()
@@ -83,6 +85,7 @@ public class AccountingCoreService
         int? orderId    = null,
         int? customerId = null,
         int? supplierId = null,
+        int? purchaseInvoiceId = null,
         OrderSource? source = null)
     {
         var totalDr = lines.Sum(l => l.debit);
@@ -109,6 +112,7 @@ public class AccountingCoreService
             Reference   = reference,
             Description = description,
             OrderId     = orderId,
+            PurchaseInvoiceId = purchaseInvoiceId,
             CreatedAt   = TimeHelper.GetEgyptTime(),
         };
 
@@ -148,6 +152,7 @@ public class AccountingCoreService
                 CustomerId  = (isReceivables || isSalesOrPurchase) ? customerId : null,
                 SupplierId  = (isPayables || isSalesOrPurchase) ? supplierId : null,
                 OrderId     = orderId,
+                PurchaseInvoiceId = purchaseInvoiceId,
                 CreatedAt   = TimeHelper.GetEgyptTime(),
             });
         }
@@ -402,8 +407,65 @@ public class AccountingCoreService
         }
         await _db.SaveChangesAsync();
 
-        // 2. Sync Suppliers
-        var suppliers = await _db.Suppliers.ToListAsync();
+        // 2. Sync Purchase Invoices
+        var pInvoices = await _db.PurchaseInvoices
+            .Include(i => i.Supplier)
+            .Where(i => i.Status != PurchaseInvoiceStatus.Cancelled && i.Status != PurchaseInvoiceStatus.Draft)
+            .ToListAsync();
+        foreach (var inv in pInvoices)
+        {
+            // Sum all DEBITS to Payables (2101) for this PurchaseInvoice
+            var ledgerPaidAmount = await _db.JournalLines
+                .Where(l => l.PurchaseInvoiceId == inv.Id && l.Debit > 0)
+                .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("2101"))
+                .SumAsync(l => l.Debit);
+
+            inv.PaidAmount = ledgerPaidAmount;
+
+            // Auto-Update Status
+            if (inv.PaidAmount >= inv.TotalAmount && inv.TotalAmount > 0)
+            {
+                inv.Status = PurchaseInvoiceStatus.Paid;
+            }
+            else if (inv.PaidAmount > 0)
+            {
+                inv.Status = PurchaseInvoiceStatus.PartPaid;
+            }
+            else if (inv.Status == PurchaseInvoiceStatus.Paid || inv.Status == PurchaseInvoiceStatus.PartPaid)
+            {
+                // Reset to Received if PaidAmount is 0 but it was marked paid
+                inv.Status = PurchaseInvoiceStatus.Received;
+            }
+
+            // 3. Auto-Overdue & Notifications
+            if (inv.Status != PurchaseInvoiceStatus.Paid && inv.DueDate.HasValue)
+            {
+                var today = TimeHelper.GetEgyptTime().Date;
+                var due = inv.DueDate.Value.Date;
+
+                if (due < today && inv.Status != PurchaseInvoiceStatus.Overdue)
+                {
+                    inv.Status = PurchaseInvoiceStatus.Overdue;
+                    await _notifications.SendAsync(null, 
+                        "تأخير سداد فاتورة مورد", "Supplier Payment Overdue",
+                        $"الفاتورة رقم {inv.InvoiceNumber} للمورد {inv.Supplier?.Name} تجاوزت موعد الاستحقاق ({due:yyyy-MM-dd})",
+                        $"Invoice #{inv.InvoiceNumber} for {inv.Supplier?.Name} is overdue since {due:yyyy-MM-dd}",
+                        "Alert", null);
+                }
+                else if (due == today)
+                {
+                    await _notifications.SendAsync(null,
+                        "موعد استحقاق دفع", "Payment Due Today",
+                        $"اليوم هو موعد سداد الفاتورة رقم {inv.InvoiceNumber} للمورد {inv.Supplier?.Name}",
+                        $"Today is the due date for Invoice #{inv.InvoiceNumber} from {inv.Supplier?.Name}",
+                        "Alert", null);
+                }
+            }
+        }
+        await _db.SaveChangesAsync();
+
+        // 3. Sync Suppliers
+        var suppliers = await _db.Suppliers.Include(s => s.Invoices).Include(s => s.Payments).ToListAsync();
         foreach (var s in suppliers)
         {
             var purchases = await _db.PurchaseInvoices

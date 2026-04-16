@@ -78,6 +78,8 @@ public class JournalEntry : BaseEntity
     
     public int?               OrderId { get; set; }
     public Order?             Order   { get; set; }
+    public int?               PurchaseInvoiceId { get; set; }
+    public PurchaseInvoice?  PurchaseInvoice   { get; set; }
 
     public ICollection<JournalLine> Lines { get; set; } = new List<JournalLine>();
 
@@ -102,6 +104,8 @@ public class JournalLine : BaseEntity
     public int?          SupplierId     { get; set; }
     public Supplier?     Supplier       { get; set; }  // Nav Property
     public int?          OrderId        { get; set; }
+    public int?          PurchaseInvoiceId { get; set; }
+    public PurchaseInvoice? PurchaseInvoice { get; set; }
 }
 
 // ══════════════════════════════════════════════════════

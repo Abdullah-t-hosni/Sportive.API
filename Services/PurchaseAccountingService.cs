@@ -64,7 +64,7 @@ public class PurchaseAccountingService
         await _core.PostEntryAsync(
             JournalEntryType.PurchaseInvoice, invoice.InvoiceNumber,
             $"فاتورة مشتريات {typeStr} {invoice.InvoiceNumber} - {invoice.Supplier?.Name}",
-            invoice.InvoiceDate, lines, supplierId: invoice.SupplierId);
+            invoice.InvoiceDate, lines, supplierId: invoice.SupplierId, purchaseInvoiceId: invoice.Id);
     }
 
     public async Task PostPurchaseReturnAsync(PurchaseInvoice invoice, decimal returnedSubTotal = 0, decimal returnedTaxAmount = 0, decimal returnedDiscountAmount = 0)
@@ -142,7 +142,8 @@ public class PurchaseAccountingService
             $"مرتجع مشتريات {pReturn.ReturnNumber} للمورد {pReturn.Supplier?.Name}", 
             pReturn.ReturnDate, 
             lines, 
-            supplierId: pReturn.SupplierId);
+            supplierId: pReturn.SupplierId,
+            purchaseInvoiceId: pReturn.PurchaseInvoiceId);
     }
 }
 

@@ -100,7 +100,7 @@ public class PaymentAccountingService
             ($"ID:{voucher.ToAccountId}", voucher.Amount, 0, $"سند دفع {voucher.VoucherNumber}"),
             ($"ID:{voucher.CashAccountId}", 0, voucher.Amount, $"صرف من {voucher.CashAccount?.NameAr}")
         };
-        await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, supplierId: voucher.SupplierId);
+        await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, supplierId: voucher.SupplierId, purchaseInvoiceId: voucher.PurchaseInvoiceId);
     }
 
     public async Task PostSupplierPaymentAsync(SupplierPayment payment)
@@ -114,6 +114,6 @@ public class PaymentAccountingService
             (payablesAcct, payment.Amount, 0, $"تسوية مورد - {payment.PaymentNumber}"),
             (cashCode, 0, payment.Amount, $"صرف من {payment.AccountName}")
         };
-        await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, payment.PaymentNumber, $"سند صرف مورد {payment.PaymentNumber}", payment.PaymentDate, lines, supplierId: payment.SupplierId);
+        await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, payment.PaymentNumber, $"سند صرف مورد {payment.PaymentNumber}", payment.PaymentDate, lines, supplierId: payment.SupplierId, purchaseInvoiceId: payment.PurchaseInvoiceId);
     }
 }
