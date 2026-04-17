@@ -10,16 +10,17 @@ public record CreateEmployeeDto(
     string        Name,
     DateTime      HireDate,
     decimal       BaseSalary,
-    string?       Phone          = null,
-    string?       Email          = null,
-    string?       NationalId     = null,
-    string?       JobTitle       = null,
-    string?       Department     = null,
-    string?       BankAccount    = null,
-    string?       Notes          = null,
-    string?       AttachmentUrl  = null,
+    string?       Phone              = null,
+    string?       Email              = null,
+    string?       NationalId         = null,
+    string?       JobTitle           = null,
+    string?       Department         = null,
+    string?       BankAccount        = null,
+    string?       Notes              = null,
+    string?       AttachmentUrl      = null,
     string?       AttachmentPublicId = null,
-    int?          AccountId      = null
+    int?          AccountId          = null,
+    string?       AppUserId          = null   // ربط اختياري بحساب النظام
 );
 
 public record UpdateEmployeeDto(
@@ -59,7 +60,9 @@ public record EmployeeDto(
     string?        AttachmentPublicId,
     int?           AccountId,
     string?        AccountName,
-    DateTime       CreatedAt
+    DateTime       CreatedAt,
+    string?        AppUserId    = null,
+    string?        AppUserName  = null
 );
 
 public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, string? Department, decimal BaseSalary, EmployeeStatus Status);

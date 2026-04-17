@@ -358,6 +358,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => x.EmployeeNumber).IsUnique();
             e.HasOne(x => x.Account).WithMany()
              .HasForeignKey(x => x.AccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            // ربط اختياري بحساب النظام — SetNull عند حذف المستخدم لحفظ سجل الـ HR
+            e.HasOne(x => x.AppUser).WithMany()
+             .HasForeignKey(x => x.AppUserId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(x => x.AppUserId).IsUnique();
         });
 
         builder.Entity<PayrollRun>(e => {

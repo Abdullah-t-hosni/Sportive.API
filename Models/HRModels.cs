@@ -65,6 +65,10 @@ public class Employee : BaseEntity
     public EmployeeStatus Status   { get; set; } = EmployeeStatus.Active;
     public string? CreatedByUserId { get; set; }
 
+    // ربط بحساب النظام (AppUser) — اختياري، للموظفين اللي عندهم login
+    public string? AppUserId { get; set; }
+    public AppUser? AppUser  { get; set; }
+
     // ربط محاسبي — حساب الموظف في دليل الحسابات (للكشف)
     public int?    AccountId { get; set; }
     public Account? Account  { get; set; }

@@ -3,17 +3,20 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sportive.API.Data;
 
 #nullable disable
 
-namespace Sportive.API.Migrations
+namespace Sportive.API.Migrations.DecimalFix
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260417120113_AddAccountingLockDate")]
+    partial class AddAccountingLockDate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -990,9 +993,6 @@ namespace Sportive.API.Migrations
                     b.Property<int?>("AccountId")
                         .HasColumnType("int");
 
-                    b.Property<string>("AppUserId")
-                        .HasColumnType("varchar(255)");
-
                     b.Property<string>("AttachmentPublicId")
                         .HasColumnType("longtext");
 
@@ -1054,9 +1054,6 @@ namespace Sportive.API.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AccountId");
-
-                    b.HasIndex("AppUserId")
-                        .IsUnique();
 
                     b.HasIndex("EmployeeNumber")
                         .IsUnique();
@@ -3784,14 +3781,7 @@ namespace Sportive.API.Migrations
                         .HasForeignKey("AccountId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("Sportive.API.Models.AppUser", "AppUser")
-                        .WithMany()
-                        .HasForeignKey("AppUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.Navigation("Account");
-
-                    b.Navigation("AppUser");
                 });
 
             modelBuilder.Entity("Sportive.API.Models.EmployeeAdvance", b =>

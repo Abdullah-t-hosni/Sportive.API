@@ -109,6 +109,7 @@ builder.Services.AddAuthentication(opt =>
 });
 
 builder.Services.AddAuthorization();
+builder.Services.AddScoped<Sportive.API.Services.StaffPermissionService>();
 
 // ── CORS ──────────────────────────────────────────────
 builder.Services.AddCors(options =>

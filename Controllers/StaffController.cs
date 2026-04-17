@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using Sportive.API.Services;
 
 namespace Sportive.API.Controllers;
 
@@ -13,18 +14,21 @@ namespace Sportive.API.Controllers;
 [Authorize(Roles = "Admin,Manager")]
 public class StaffController : ControllerBase
 {
-    private readonly UserManager<AppUser>     _users;
-    private readonly RoleManager<IdentityRole>_roles;
-    private readonly AppDbContext             _db;
+    private readonly UserManager<AppUser>      _users;
+    private readonly RoleManager<IdentityRole> _roles;
+    private readonly AppDbContext              _db;
+    private readonly StaffPermissionService    _permService;
 
     public StaffController(
-        UserManager<AppUser>     users,
-        RoleManager<IdentityRole>roles,
-        AppDbContext             db)
+        UserManager<AppUser>      users,
+        RoleManager<IdentityRole> roles,
+        AppDbContext              db,
+        StaffPermissionService    permService)
     {
-        _users = users;
-        _roles = roles;
-        _db    = db;
+        _users       = users;
+        _roles       = roles;
+        _db          = db;
+        _permService = permService;
     }
 
     // ══════════════════════════════════════════════════
@@ -37,22 +41,31 @@ public class StaffController : ControllerBase
         var staffRoles = AppRoles.StaffRoles.ToList();
 
         // جلب كل يوزر عنده دور موظف
-        var staffUsers = new List<object>();
-        foreach (var user in await _users.Users.Where(u => u.IsActive || !u.IsActive).ToListAsync())
+        var staffUsers    = new List<object>();
+        var employeeLinks = await _db.Employees
+            .Where(e => e.AppUserId != null)
+            .Select(e => new { e.AppUserId, e.Id, e.EmployeeNumber })
+            .ToListAsync();
+
+        foreach (var user in await _users.Users.ToListAsync())
         {
             var userRoles = await _users.GetRolesAsync(user);
             if (!userRoles.Any(r => staffRoles.Contains(r) && r != AppRoles.Customer))
                 continue;
 
+            var link = employeeLinks.FirstOrDefault(e => e.AppUserId == user.Id);
+
             staffUsers.Add(new {
-                id          = user.Id,
-                fullName    = user.FullName,
-                email       = user.Email,
-                phone       = user.PhoneNumber,
-                isActive    = user.IsActive,
-                roles       = userRoles.Where(r => r != AppRoles.Customer).ToList(),
-                primaryRole = GetPrimaryRole(userRoles),
-                createdAt   = user.CreatedAt,
+                id             = user.Id,
+                fullName       = user.FullName,
+                email          = user.Email,
+                phone          = user.PhoneNumber,
+                isActive       = user.IsActive,
+                roles          = userRoles.Where(r => r != AppRoles.Customer).ToList(),
+                primaryRole    = GetPrimaryRole(userRoles),
+                createdAt      = user.CreatedAt,
+                employeeId     = link?.Id,
+                employeeNumber = link?.EmployeeNumber,
             });
         }
 
@@ -99,6 +112,9 @@ public class StaffController : ControllerBase
 
         await _users.AddToRoleAsync(user, dto.Role);
 
+        // زرع الصلاحيات الافتراضية بناءً على الدور
+        await _permService.SeedDefaultPermissionsAsync(user.Id, dto.Role);
+
         return Ok(new {
             id       = user.Id,
             fullName = user.FullName,
@@ -134,11 +150,14 @@ public class StaffController : ControllerBase
             await _users.RemoveFromRolesAsync(user, staffRoles);
         await _users.AddToRoleAsync(user, dto.Role);
 
+        // إعادة زرع الصلاحيات الافتراضية للدور الجديد
+        await _permService.SeedDefaultPermissionsAsync(user.Id, dto.Role);
+
         return Ok(new {
             id,
             newRole  = dto.Role,
             roleAr   = GetRoleAr(dto.Role),
-            message  = "تم تغيير الدور بنجاح"
+            message  = "تم تغيير الدور وإعادة تعيين الصلاحيات الافتراضية"
         });
     }
 
@@ -199,6 +218,19 @@ public class StaffController : ControllerBase
             return Ok(new { message = "تم تعطيل الحساب بدلاً من الحذف لوجود سجلات مبيعات مرتبطة به" });
         }
 
+        // فك الربط مع سجل الـ HR (مع الحفاظ على السجل)
+        var linkedEmployee = await _db.Employees.FirstOrDefaultAsync(e => e.AppUserId == id);
+        if (linkedEmployee != null)
+        {
+            linkedEmployee.AppUserId = null;
+            linkedEmployee.UpdatedAt = TimeHelper.GetEgyptTime();
+        }
+
+        // حذف الصلاحيات
+        var perms = await _db.UserModulePermissions.Where(p => p.UserAccountID == id).ToListAsync();
+        _db.UserModulePermissions.RemoveRange(perms);
+        await _db.SaveChangesAsync();
+
         var result = await _users.DeleteAsync(user);
         return result.Succeeded
             ? Ok(new { message = "تم حذف الموظف بنجاح" })
@@ -251,6 +283,57 @@ public class StaffController : ControllerBase
 
         await _db.SaveChangesAsync();
         return Ok(new { message = "تم تحديث الصلاحيات بنجاح" });
+    }
+
+    // ══════════════════════════════════════════════════
+    // GET /api/staff/{id}/profile
+    // بروفايل كامل: بيانات المستخدم + HR + الصلاحيات
+    // ══════════════════════════════════════════════════
+    [HttpGet("{id}/profile")]
+    public async Task<IActionResult> GetProfile(string id)
+    {
+        var user = await _users.FindByIdAsync(id);
+        if (user == null) return NotFound();
+
+        var roles = await _users.GetRolesAsync(user);
+
+        var employee = await _db.Employees
+            .Where(e => e.AppUserId == id)
+            .Select(e => new {
+                e.Id, e.EmployeeNumber, e.Name, e.JobTitle, e.Department,
+                e.BaseSalary, e.HireDate, e.Status, e.Phone, e.Email
+            })
+            .FirstOrDefaultAsync();
+
+        var perms = await _db.UserModulePermissions
+            .Where(p => p.UserAccountID == id)
+            .Select(p => new { p.ModuleKey, p.CanView, p.CanEdit })
+            .ToListAsync();
+
+        return Ok(new {
+            id          = user.Id,
+            fullName    = user.FullName,
+            email       = user.Email,
+            phone       = user.PhoneNumber,
+            isActive    = user.IsActive,
+            createdAt   = user.CreatedAt,
+            roles       = roles.Where(r => r != AppRoles.Customer).ToList(),
+            primaryRole = GetPrimaryRole(roles),
+            employee,
+            permissions = perms,
+        });
+    }
+
+    // ══════════════════════════════════════════════════
+    // POST /api/staff/backfill-permissions
+    // زرع الصلاحيات الافتراضية للمستخدمين القدامى
+    // ══════════════════════════════════════════════════
+    [HttpPost("backfill-permissions")]
+    [Authorize(Roles = AppRoles.Admin)]
+    public async Task<IActionResult> BackfillPermissions()
+    {
+        await _permService.BackfillMissingPermissionsAsync(_users);
+        return Ok(new { message = "تم زرع الصلاحيات الافتراضية للمستخدمين." });
     }
 
     // ══════════════════════════════════════════════════

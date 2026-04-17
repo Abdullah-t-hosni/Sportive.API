@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using Sportive.API.Authorization;
 using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Models;
@@ -28,13 +29,14 @@ public class EmployeesController : ControllerBase
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
     [HttpGet]
+    [RequireModulePermission(ModuleKeys.Hr)]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? search     = null,
         [FromQuery] string? department = null,
         [FromQuery] EmployeeStatus? status = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var q = _db.Employees.Include(e => e.Account).AsQueryable();
+        var q = _db.Employees.Include(e => e.Account).Include(e => e.AppUser).AsQueryable();
 
         if (status.HasValue)     q = q.Where(e => e.Status == status.Value);
         if (!string.IsNullOrWhiteSpace(department)) q = q.Where(e => e.Department == department);
@@ -51,7 +53,8 @@ public class EmployeesController : ControllerBase
                 e.BaseSalary, e.BankAccount, e.Status, e.Notes,
                 e.AttachmentUrl, e.AttachmentPublicId,
                 e.AccountId, e.Account != null ? e.Account.NameAr : null,
-                e.CreatedAt
+                e.CreatedAt,
+                e.AppUserId, e.AppUser != null ? e.AppUser.FullName : null
             )).ToListAsync();
 
         return Ok(new PaginatedResult<EmployeeDto>(items, total, page, pageSize,
@@ -70,23 +73,35 @@ public class EmployeesController : ControllerBase
     }
 
     [HttpGet("{id}")]
+    [RequireModulePermission(ModuleKeys.Hr)]
     public async Task<IActionResult> GetById(int id)
     {
-        var e = await _db.Employees.Include(x => x.Account).FirstOrDefaultAsync(x => x.Id == id);
+        var e = await _db.Employees
+            .Include(x => x.Account)
+            .Include(x => x.AppUser)
+            .FirstOrDefaultAsync(x => x.Id == id);
         if (e == null) return NotFound();
         return Ok(new EmployeeDto(
             e.Id, e.EmployeeNumber, e.Name, e.Phone, e.Email, e.NationalId,
             e.JobTitle, e.Department, e.HireDate, e.TerminationDate,
             e.BaseSalary, e.BankAccount, e.Status, e.Notes,
             e.AttachmentUrl, e.AttachmentPublicId,
-            e.AccountId, e.Account?.NameAr, e.CreatedAt));
+            e.AccountId, e.Account?.NameAr, e.CreatedAt,
+            e.AppUserId, e.AppUser?.FullName));
     }
 
     [HttpPost]
+    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
     public async Task<IActionResult> Create([FromBody] CreateEmployeeDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Name))
             return BadRequest("اسم الموظف مطلوب.");
+
+        if (!string.IsNullOrEmpty(dto.AppUserId))
+        {
+            var conflict = await _db.Employees.AnyAsync(e => e.AppUserId == dto.AppUserId);
+            if (conflict) return BadRequest(new { message = "هذا الحساب مرتبط بموظف آخر بالفعل." });
+        }
 
         var empNo = await _seq.NextAsync("EMP", async (db, pattern) =>
         {
@@ -113,6 +128,7 @@ public class EmployeesController : ControllerBase
             AttachmentUrl    = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
             AccountId        = dto.AccountId,
+            AppUserId        = string.IsNullOrEmpty(dto.AppUserId) ? null : dto.AppUserId,
             Status           = EmployeeStatus.Active,
             CreatedAt        = TimeHelper.GetEgyptTime(),
             CreatedByUserId  = UserId
@@ -123,7 +139,34 @@ public class EmployeesController : ControllerBase
         return Ok(new { id = emp.Id, employeeNumber = emp.EmployeeNumber });
     }
 
+    // PATCH /api/employees/{id}/link-user — ربط/فك الربط مع حساب النظام
+    [HttpPatch("{id}/link-user")]
+    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
+    public async Task<IActionResult> LinkUser(int id, [FromBody] LinkUserDto dto)
+    {
+        var emp = await _db.Employees.FindAsync(id);
+        if (emp == null) return NotFound();
+
+        if (!string.IsNullOrEmpty(dto.AppUserId))
+        {
+            var userExists = await _db.Users.AnyAsync(u => u.Id == dto.AppUserId);
+            if (!userExists) return BadRequest(new { message = "حساب المستخدم غير موجود." });
+
+            var conflict = await _db.Employees
+                .AnyAsync(e => e.AppUserId == dto.AppUserId && e.Id != id);
+            if (conflict)
+                return BadRequest(new { message = "هذا الحساب مرتبط بموظف آخر بالفعل." });
+        }
+
+        emp.AppUserId = string.IsNullOrEmpty(dto.AppUserId) ? null : dto.AppUserId;
+        emp.UpdatedAt = TimeHelper.GetEgyptTime();
+        await _db.SaveChangesAsync();
+
+        return Ok(new { message = dto.AppUserId != null ? "تم ربط الحساب بنجاح." : "تم فك ربط الحساب." });
+    }
+
     [HttpPut("{id}")]
+    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateEmployeeDto dto)
     {
         var emp = await _db.Employees.FindAsync(id);
@@ -151,6 +194,7 @@ public class EmployeesController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
     public async Task<IActionResult> Delete(int id)
     {
         var emp = await _db.Employees
@@ -753,3 +797,6 @@ public class EmployeeDeductionsController : ControllerBase
         return NoContent();
     }
 }
+
+// ── DTOs إضافية ──────────────────────────────────────────
+public record LinkUserDto(string? AppUserId);
