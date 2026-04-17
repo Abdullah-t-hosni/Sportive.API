@@ -161,6 +161,7 @@ public record CreateSupplierPaymentDto(
     decimal  Amount,
     PaymentMethod_Purchase PaymentMethod,
     string   AccountName,   // اسم الحساب (الخزينة / البنك)
+    int?     CashAccountId, // ID الحساب المختار
     string?  Notes,         // البيان
     string?  ReferenceNumber,
     string?  AttachmentUrl = null,

@@ -243,16 +243,20 @@ public class ImportController : ControllerBase
             errorWs.RightToLeft = true;
             
             // Copy headers to error worksheet
-            for (int c = 1; c <= ws.LastColumnUsed().ColumnNumber(); c++)
+            var lastCol = ws.LastColumnUsed();
+            if (lastCol != null)
             {
-                var originalCell = firstRow.Cell(c);
-                var errorHeaderCell = errorWs.Cell(1, c);
-                errorHeaderCell.Value = originalCell.Value;
-                errorHeaderCell.Style.Font.Bold = true;
-                errorHeaderCell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1a1a2e");
-                errorHeaderCell.Style.Font.FontColor = XLColor.White;
+                for (int c = 1; c <= lastCol.ColumnNumber(); c++)
+                {
+                    var originalCell = firstRow.Cell(c);
+                    var errorHeaderCell = errorWs.Cell(1, c);
+                    errorHeaderCell.Value = originalCell.Value;
+                    errorHeaderCell.Style.Font.Bold = true;
+                    errorHeaderCell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1a1a2e");
+                    errorHeaderCell.Style.Font.FontColor = XLColor.White;
+                }
             }
-            int colErrDesc = ws.LastColumnUsed().ColumnNumber() + 1;
+            int colErrDesc = (lastCol?.ColumnNumber() ?? 20) + 1;
             errorWs.Cell(1, colErrDesc).Value = "سبب الرفض";
             errorWs.Cell(1, colErrDesc).Style.Font.Bold = true;
             errorWs.Cell(1, colErrDesc).Style.Fill.BackgroundColor = XLColor.Red;
@@ -264,9 +268,13 @@ public class ImportController : ControllerBase
             {
                 result.Errors.Add($"صف {r}: {message}");
                 // Copy the entire row from the original sheet to the error sheet
-                for (int c = 1; c <= ws.LastColumnUsed().ColumnNumber(); c++)
+                var lastColThisRow = ws.LastColumnUsed();
+                if (lastColThisRow != null)
                 {
-                    errorWs.Cell(errorRowIdx, c).Value = ws.Cell(r, c).Value;
+                    for (int c = 1; c <= lastColThisRow.ColumnNumber(); c++)
+                    {
+                        errorWs.Cell(errorRowIdx, c).Value = ws.Cell(r, c).Value;
+                    }
                 }
                 errorWs.Cell(errorRowIdx, colErrDesc).Value = message;
                 errorWs.Cell(errorRowIdx, colErrDesc).Style.Font.FontColor = XLColor.Red;

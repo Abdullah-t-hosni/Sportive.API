@@ -128,6 +128,8 @@ public class SupplierPayment : BaseEntity
     public string   AccountName  { get; set; } = string.Empty; // اسم الحساب (الخزينة / البنك)
     public string?  Notes        { get; set; }                  // البيان
     public string?  ReferenceNumber { get; set; }               // رقم مرجعي
+    public int?     CashAccountId   { get; set; }               // الربط المحاسبي (خزينة/بنك)
+    public Account? CashAccount      { get; set; }
     public string?  CreatedByUserId { get; set; }
     public string?  AttachmentUrl   { get; set; }
     public string?  AttachmentPublicId { get; set; }

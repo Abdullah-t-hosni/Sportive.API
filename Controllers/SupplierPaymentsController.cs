@@ -116,6 +116,7 @@ public class SupplierPaymentsController : ControllerBase
             PaymentDate = dto.PaymentDate,
             PaymentMethod = dto.PaymentMethod,
             AccountName = dto.AccountName,
+            CashAccountId = (dto.CashAccountId > 0) ? dto.CashAccountId : null,
             Notes = dto.Notes ?? $"سند دفع للمورد {supplier.Name}",
             ReferenceNumber = dto.ReferenceNumber,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
@@ -143,6 +144,7 @@ public class SupplierPaymentsController : ControllerBase
 
         await _db.SaveChangesAsync();
 
+        // 💡 Ensure accounting sync gets the correct ID
         _ = PostSupplierPaymentWithRetryAsync(payment.Id, pNo);
 
         return CreatedAtAction(nameof(GetById), new { id = payment.Id }, new SupplierPaymentSummaryDto(

@@ -693,7 +693,18 @@ public class OperationalReportsController : ControllerBase
             o.Status.ToString(),
             o.PaymentMethod.ToString(),
             o.SubTotal, o.DiscountAmount, o.TotalAmount,
-            o.Items.Sum(i => i.Quantity)
+            o.Items.Sum(i => i.Quantity),
+            o.Items.Select(i => new ReportItemDto(
+                i.Product?.SKU ?? "",
+                i.Product?.NameAr ?? i.ProductNameAr,
+                i.Size ?? "",
+                i.Color ?? "",
+                i.Quantity,
+                i.UnitPrice,
+                0,
+                0, // DiscountAmount not on OrderItem
+                i.TotalPrice
+            )).ToList()
         )).ToList();
 
         var summary = new {
@@ -765,7 +776,18 @@ public class OperationalReportsController : ControllerBase
             i.PaymentTerms.ToString(), i.Status.ToString(),
             i.SubTotal, i.TaxAmount, i.TotalAmount,
             i.ReturnedAmount,
-            i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount
+            i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
+            i.Items.Select(it => new ReportItemDto(
+                it.Product?.SKU ?? "",
+                it.Product?.NameAr ?? "",
+                it.ProductVariant?.Size ?? "",
+                it.ProductVariant?.ColorAr ?? it.ProductVariant?.Color ?? "",
+                it.Quantity,
+                0,
+                it.UnitCost,
+                0,
+                it.TotalCost
+            )).ToList()
         )).ToList();
 
         var summary = new {
@@ -835,8 +857,19 @@ public class OperationalReportsController : ControllerBase
             j.Reference ?? j.EntryNumber, j.EntryDate,
             j.Order?.Customer?.FullName ?? "Walk-in",
             j.Order?.Customer?.Phone ?? "",
-            j.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit), // The return amount (Revenue reversal part)
-            j.Description ?? ""
+            j.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit),
+            j.Description ?? "",
+            j.Order?.Items.Select(i => new ReportItemDto(
+                i.Product?.SKU ?? "",
+                i.Product?.NameAr ?? i.ProductNameAr,
+                i.Size ?? "",
+                i.Color ?? "",
+                i.Quantity,
+                i.UnitPrice,
+                0,
+                0, // DiscountAmount not on OrderItem
+                i.TotalPrice
+            )).ToList()
         )).ToList();
 
         var summary = new {
@@ -898,7 +931,18 @@ public class OperationalReportsController : ControllerBase
             i.InvoiceNumber, i.InvoiceDate,
             i.Supplier.Name, i.Supplier.Phone,
             i.ReturnedAmount > 0 ? i.ReturnedAmount : i.TotalAmount, 
-            i.Notes ?? ""
+            i.Notes ?? "",
+            i.Items.Select(it => new ReportItemDto(
+                it.Product?.SKU ?? "",
+                it.Product?.NameAr ?? "",
+                it.ProductVariant?.Size ?? "",
+                it.ProductVariant?.ColorAr ?? it.ProductVariant?.Color ?? "",
+                it.Quantity,
+                0,
+                it.UnitCost,
+                0,
+                it.TotalCost
+            )).ToList()
         )).ToList();
 
         if (excel) return ExcelReturns(rows, new { count = rows.Count, totalAmount = rows.Sum(r => r.Amount) }, from, to, "مرتجعات المشتريات");
@@ -1303,28 +1347,118 @@ public class OperationalReportsController : ControllerBase
     private IActionResult ExcelSales(List<SalesRow> rows, dynamic summary, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("تقرير المبيعات");
+        var ws = wb.Worksheets.Add("تقرير المبيعات بالتفاصيل");
         ws.RightToLeft = true;
-        ws.Cell(1,1).Value=$"تقرير المبيعات — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";ws.Cell(1,1).Style.Font.Bold=true;
-        string[] h={"رقم الطلب","التاريخ","العميل","التليفون","المصدر","الحالة","الدفع","المجموع","الخصم","الإجمالي","عدد القطع"};
-        for(int i=0;i<h.Length;i++){ws.Cell(2,i+1).Value=h[i];ws.Cell(2,i+1).Style.Font.Bold=true;ws.Cell(2,i+1).Style.Fill.BackgroundColor=XLColor.FromHtml("#1a237e");ws.Cell(2,i+1).Style.Font.FontColor=XLColor.White;}
+        ws.Cell(1,1).Value=$"تقرير المبيعات التفصيلي — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(1,1).Style.Font.Bold=true;
+        
+        string[] h={"رقم الطلب","التاريخ","العميل","التليفون","المصدر","الحالة","الدفع","كود الصنف","اسم الصنف","المقاس","اللون","الكمية","سعر البيع","الخصم","الإجمالي"};
+        for(int i=0;i<h.Length;i++){
+            var cell = ws.Cell(2,i+1);
+            cell.Value=h[i];
+            cell.Style.Font.Bold=true;
+            cell.Style.Fill.BackgroundColor=XLColor.FromHtml("#1a237e");
+            cell.Style.Font.FontColor=XLColor.White;
+        }
+
         int r=3;
-        foreach(var row in rows){ws.Cell(r,1).Value=row.OrderNumber;ws.Cell(r,2).Value=row.Date.ToString("yyyy-MM-dd");ws.Cell(r,3).Value=row.CustomerName;ws.Cell(r,4).Value=row.Phone;ws.Cell(r,5).Value=row.Source;ws.Cell(r,6).Value=row.Status;ws.Cell(r,7).Value=row.PaymentMethod;ws.Cell(r,8).Value=row.SubTotal;ws.Cell(r,9).Value=row.DiscountAmount;ws.Cell(r,10).Value=row.TotalAmount;ws.Cell(r,11).Value=row.ItemCount;ws.Cell(r,8).Style.NumberFormat.Format="#,##0.00";ws.Cell(r,9).Style.NumberFormat.Format="#,##0.00";ws.Cell(r,10).Style.NumberFormat.Format="#,##0.00";r++;}
+        foreach(var order in rows)
+        {
+            if (order.Items == null || order.Items.Count == 0)
+            {
+                ws.Cell(r, 1).Value = order.OrderNumber;
+                ws.Cell(r, 2).Value = order.Date.ToString("yyyy-MM-dd");
+                ws.Cell(r, 3).Value = order.CustomerName;
+                ws.Cell(r, 4).Value = order.Phone;
+                ws.Cell(r, 5).Value = order.Source;
+                ws.Cell(r, 6).Value = order.Status;
+                ws.Cell(r, 7).Value = order.PaymentMethod;
+                ws.Cell(r, 15).Value = order.TotalAmount;
+                r++;
+                continue;
+            }
+
+            foreach(var item in order.Items)
+            {
+                ws.Cell(r, 1).Value = order.OrderNumber;
+                ws.Cell(r, 2).Value = order.Date.ToString("yyyy-MM-dd");
+                ws.Cell(r, 3).Value = order.CustomerName;
+                ws.Cell(r, 4).Value = order.Phone;
+                ws.Cell(r, 5).Value = order.Source;
+                ws.Cell(r, 6).Value = order.Status;
+                ws.Cell(r, 7).Value = order.PaymentMethod;
+                
+                ws.Cell(r, 8).Value = item.SKU;
+                ws.Cell(r, 9).Value = item.ProductName;
+                ws.Cell(r, 10).Value = item.Size;
+                ws.Cell(r, 11).Value = item.Color;
+                ws.Cell(r, 12).Value = item.Quantity;
+                ws.Cell(r, 13).Value = item.UnitPrice;
+                ws.Cell(r, 14).Value = item.Discount;
+                ws.Cell(r, 15).Value = item.LineTotal;
+                
+                for(int c=13; c<=15; c++) ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";
+                r++;
+            }
+        }
         ws.Columns().AdjustToContents();
-        return ExcelResult(wb, $"sales_{from:yyyyMMdd}_{to:yyyyMMdd}.xlsx");
+        return ExcelResult(wb, $"detailed_sales_{from:yyyyMMdd}_{to:yyyyMMdd}.xlsx");
     }
 
     private IActionResult ExcelPurchases(List<PurchaseRow> rows, dynamic summary, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("تقرير المشتريات");
+        var ws = wb.Worksheets.Add("تقرير المشتريات بالتفاصيل");
         ws.RightToLeft = true;
-        string[] h={"رقم الفاتورة","فاتورة المورد","المورد","التاريخ","شروط الدفع","الحالة","المجموع","الضريبة","الإجمالي","المدفوع","المتبقي"};
-        for(int i=0;i<h.Length;i++){ws.Cell(1,i+1).Value=h[i];ws.Cell(1,i+1).Style.Font.Bold=true;ws.Cell(1,i+1).Style.Fill.BackgroundColor=XLColor.FromHtml("#e65100");ws.Cell(1,i+1).Style.Font.FontColor=XLColor.White;}
+        
+        string[] h={"رقم الفاتورة","فاتورة المورد","المورد","التاريخ","شروط الدفع","الحالة","كود الصنف","اسم الصنف","المقاس","اللون","الكمية","التكلفة","الإجمالي"};
+        for(int i=0;i<h.Length;i++){
+            var cell = ws.Cell(1,i+1);
+            cell.Value=h[i];
+            cell.Style.Font.Bold=true;
+            cell.Style.Fill.BackgroundColor=XLColor.FromHtml("#e65100");
+            cell.Style.Font.FontColor=XLColor.White;
+        }
+
         int r=2;
-        foreach(var row in rows){ws.Cell(r,1).Value=row.InvoiceNumber;ws.Cell(r,2).Value=row.SupplierInvoiceNumber;ws.Cell(r,3).Value=row.SupplierName;ws.Cell(r,4).Value=row.InvoiceDate.ToString("yyyy-MM-dd");ws.Cell(r,5).Value=row.PaymentTerms;ws.Cell(r,6).Value=row.Status;ws.Cell(r,7).Value=row.SubTotal;ws.Cell(r,8).Value=row.TaxAmount;ws.Cell(r,9).Value=row.TotalAmount;ws.Cell(r,10).Value=row.PaidAmount;ws.Cell(r,11).Value=row.RemainingAmount;for(int c=7;c<=11;c++)ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";r++;}
+        foreach(var inv in rows)
+        {
+            if (inv.Items == null || inv.Items.Count == 0)
+            {
+                ws.Cell(r, 1).Value = inv.InvoiceNumber;
+                ws.Cell(r, 2).Value = inv.SupplierInvoiceNumber;
+                ws.Cell(r, 3).Value = inv.SupplierName;
+                ws.Cell(r, 4).Value = inv.InvoiceDate.ToString("yyyy-MM-dd");
+                ws.Cell(r, 5).Value = inv.PaymentTerms;
+                ws.Cell(r, 6).Value = inv.Status;
+                ws.Cell(r, 13).Value = inv.TotalAmount;
+                r++;
+                continue;
+            }
+
+            foreach(var item in inv.Items)
+            {
+                ws.Cell(r, 1).Value = inv.InvoiceNumber;
+                ws.Cell(r, 2).Value = inv.SupplierInvoiceNumber;
+                ws.Cell(r, 3).Value = inv.SupplierName;
+                ws.Cell(r, 4).Value = inv.InvoiceDate.ToString("yyyy-MM-dd");
+                ws.Cell(r, 5).Value = inv.PaymentTerms;
+                ws.Cell(r, 6).Value = inv.Status;
+
+                ws.Cell(r, 7).Value = item.SKU;
+                ws.Cell(r, 8).Value = item.ProductName;
+                ws.Cell(r, 9).Value = item.Size;
+                ws.Cell(r, 10).Value = item.Color;
+                ws.Cell(r, 11).Value = item.Quantity;
+                ws.Cell(r, 12).Value = item.UnitCost;
+                ws.Cell(r, 13).Value = item.LineTotal;
+                
+                for(int c=12; c<=13; c++) ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";
+                r++;
+            }
+        }
         ws.Columns().AdjustToContents();
-        return ExcelResult(wb, $"purchases_{from:yyyyMMdd}_{to:yyyyMMdd}.xlsx");
+        return ExcelResult(wb, $"detailed_purchases_{from:yyyyMMdd}_{to:yyyyMMdd}.xlsx");
     }
 
     private IActionResult ExcelReturns(List<ReturnRow> rows, dynamic summary, DateTime from, DateTime to, string title)
@@ -1332,13 +1466,54 @@ public class OperationalReportsController : ControllerBase
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add(title);
         ws.RightToLeft = true;
-        ws.Cell(1,1).Value=$"{title} — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";ws.Cell(1,1).Style.Font.Bold=true;
-        string[] h={"الرقم","التاريخ","الاسم","التليفون","المبلغ","السبب"};
-        for(int i=0;i<h.Length;i++){ws.Cell(2,i+1).Value=h[i];ws.Cell(2,i+1).Style.Font.Bold=true;}
+        ws.Cell(1,1).Value=$"{title} التفصيلي — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(1,1).Style.Font.Bold=true;
+        
+        string[] h={"الرقم","التاريخ","الاسم","التليفون","كود الصنف","اسم الصنف","المقاس","اللون","الكمية","المبلغ","السبب"};
+        for(int i=0;i<h.Length;i++){
+            var cell = ws.Cell(2,i+1);
+            cell.Value=h[i];
+            cell.Style.Font.Bold=true;
+            cell.Style.Fill.BackgroundColor=XLColor.FromHtml("#c62828");
+            cell.Style.Font.FontColor=XLColor.White;
+        }
+
         int r=3;
-        foreach(var row in rows){ws.Cell(r,1).Value=row.Reference;ws.Cell(r,2).Value=row.Date.ToString("yyyy-MM-dd");ws.Cell(r,3).Value=row.Name;ws.Cell(r,4).Value=row.Phone;ws.Cell(r,5).Value=row.Amount;ws.Cell(r,5).Style.NumberFormat.Format="#,##0.00";ws.Cell(r,6).Value=row.Reason;r++;}
+        foreach(var ret in rows)
+        {
+            if (ret.Items == null || ret.Items.Count == 0)
+            {
+                ws.Cell(r, 1).Value = ret.Reference;
+                ws.Cell(r, 2).Value = ret.Date.ToString("yyyy-MM-dd");
+                ws.Cell(r, 3).Value = ret.Name;
+                ws.Cell(r, 4).Value = ret.Phone;
+                ws.Cell(r, 10).Value = ret.Amount;
+                ws.Cell(r, 11).Value = ret.Reason;
+                r++;
+                continue;
+            }
+
+            foreach(var item in ret.Items)
+            {
+                ws.Cell(r, 1).Value = ret.Reference;
+                ws.Cell(r, 2).Value = ret.Date.ToString("yyyy-MM-dd");
+                ws.Cell(r, 3).Value = ret.Name;
+                ws.Cell(r, 4).Value = ret.Phone;
+
+                ws.Cell(r, 5).Value = item.SKU;
+                ws.Cell(r, 6).Value = item.ProductName;
+                ws.Cell(r, 7).Value = item.Size;
+                ws.Cell(r, 8).Value = item.Color;
+                ws.Cell(r, 9).Value = item.Quantity;
+                ws.Cell(r, 10).Value = item.LineTotal;
+                ws.Cell(r, 11).Value = ret.Reason;
+                
+                ws.Cell(r, 10).Style.NumberFormat.Format="#,##0.00";
+                r++;
+            }
+        }
         ws.Columns().AdjustToContents();
-        return ExcelResult(wb, $"returns_{from:yyyyMMdd}.xlsx");
+        return ExcelResult(wb, $"detailed_returns_{from:yyyyMMdd}.xlsx");
     }
 
     private IActionResult ExcelUserActivity(List<UserActivityRow> summary, dynamic detail, DateTime from, DateTime to)
@@ -1452,7 +1627,7 @@ public class OperationalReportsController : ControllerBase
         // 3. Project data and LastSaleDate
         var productsData = await query
             .Select(p => new {
-                p.Id, p.NameAr, p.SKU, p.TotalStock, p.Price,
+                p.Id, p.NameAr, p.SKU, p.TotalStock, p.Price, p.CreatedAt,
                 LastSaleDate = _db.InventoryMovements
                     .Where(m => m.ProductId == p.Id && m.Type == InventoryMovementType.Sale)
                     .OrderByDescending(m => m.CreatedAt)
@@ -1463,15 +1638,18 @@ public class OperationalReportsController : ControllerBase
 
         // 4. Filter by Aging Cutoff
         var agingRows = productsData
-            .Where(p => p.LastSaleDate == null || p.LastSaleDate <= cutoff)
-            .Select(p => new {
-                p.Id, 
-                p.NameAr, 
-                p.SKU, 
-                p.TotalStock, 
-                p.Price,
-                DaysSinceLastSale = p.LastSaleDate.HasValue ? (int)(TimeHelper.GetEgyptTime() - p.LastSaleDate.Value).TotalDays : 999,
-                Value = p.TotalStock * p.Price
+            .Where(p => (p.LastSaleDate ?? p.CreatedAt) <= cutoff)
+            .Select(p => {
+                var effectiveDate = p.LastSaleDate ?? p.CreatedAt;
+                return new {
+                    p.Id, 
+                    p.NameAr, 
+                    p.SKU, 
+                    p.TotalStock, 
+                    p.Price,
+                    DaysSinceLastSale = (int)(TimeHelper.GetEgyptTime() - effectiveDate).TotalDays,
+                    Value = p.TotalStock * p.Price
+                };
             })
             .OrderByDescending(p => p.DaysSinceLastSale)
             .ToList();
@@ -1505,8 +1683,9 @@ public record CustomerAgingRow(int CustomerId, string CustomerName, string Phone
 public record SupplierAgingRow(int SupplierId, string SupplierName, string Phone, string CompanyName, decimal Total, decimal Current, decimal Days60, decimal Days90, decimal Over90);
 public record InventoryRow(int Id, string NameAr, string NameEn, string SKU, string CategoryName, decimal Price, decimal? DiscountPrice, decimal CostPrice, int TotalStock, decimal TotalValue, decimal TotalCostValue, List<VariantInventoryRow> Variants);
 public record VariantInventoryRow(int Id, string Size, string Color, string ColorAr, int StockQuantity, decimal Price, decimal Value);
-public record SalesRow(int Id, string OrderNumber, DateTime Date, string CustomerName, string Phone, string Source, string Status, string PaymentMethod, decimal SubTotal, decimal DiscountAmount, decimal TotalAmount, int ItemCount);
-public record PurchaseRow(int Id, string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal ReturnedAmount, decimal PaidAmount, decimal RemainingAmount);
-public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason);
+public record SalesRow(int Id, string OrderNumber, DateTime Date, string CustomerName, string Phone, string Source, string Status, string PaymentMethod, decimal SubTotal, decimal DiscountAmount, decimal TotalAmount, int ItemCount, List<ReportItemDto>? Items = null);
+public record PurchaseRow(int Id, string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal ReturnedAmount, decimal PaidAmount, decimal RemainingAmount, List<ReportItemDto>? Items = null);
+public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason, List<ReportItemDto>? Items = null);
+public record ReportItemDto(string SKU, string ProductName, string Size, string Color, decimal Quantity, decimal UnitPrice = 0, decimal UnitCost = 0, decimal Discount = 0, decimal LineTotal = 0);
 public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal GrossSales, decimal TotalReturns, decimal TotalDiscount, decimal NetSales, int Cancellations);
 public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "", int Balance = 0);

@@ -49,7 +49,9 @@ public record CreateOrderDto(
     string? Note = null,
     decimal? DiscountAmount = null,
     decimal? SubTotal = null,
-    List<OrderPaymentDto>? Payments = null
+    List<OrderPaymentDto>? Payments = null,
+    string? AttachmentUrl = null,
+    string? AttachmentPublicId = null
 );
 
 public record OrderPaymentDto(PaymentMethod Method, decimal Amount);
@@ -78,7 +80,9 @@ public record CreatePOSOrderDto(
     decimal? DiscountAmount = null,
     decimal? Subtotal = null,
     List<OrderPaymentDto>? Payments = null,
-    string? CouponCode = null
+    string? CouponCode = null,
+    string? AttachmentUrl = null,
+    string? AttachmentPublicId = null
 );
 
 public record CreatePOSOrderItemDto(

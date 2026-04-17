@@ -27,7 +27,7 @@ public class FinancialReportsController : ControllerBase
             .OrderBy(a => a.Code)
             .ToListAsync();
 
-        // كل القيود المرحّلة في الفترة
+        // 1. Get transaction movements for the period
         var lines = await _db.JournalLines
             .Include(l => l.JournalEntry)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
@@ -35,52 +35,68 @@ public class FinancialReportsController : ControllerBase
                      && l.JournalEntry.EntryDate <= to)
             .ToListAsync();
 
-        // القيود قبل الفترة (للرصيد الافتتاحي)
+        // 2. Get opening movements (before the period)
         var openingLines = await _db.JournalLines
             .Include(l => l.JournalEntry)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate < from)
             .ToListAsync();
 
-        // 3. التحويل لقاموس للسرعة القصوى
+        // 3. Create dictionaries for fast lookup of direct postings
         var periodDrMap = lines.GroupBy(l => l.AccountId).ToDictionary(g => g.Key, g => g.Sum(l => l.Debit));
         var periodCrMap = lines.GroupBy(l => l.AccountId).ToDictionary(g => g.Key, g => g.Sum(l => l.Credit));
-        
         var openDrMap = openingLines.GroupBy(l => l.AccountId).ToDictionary(g => g.Key, g => g.Sum(l => l.Debit));
         var openCrMap = openingLines.GroupBy(l => l.AccountId).ToDictionary(g => g.Key, g => g.Sum(l => l.Credit));
 
-        return accounts.Select(a =>
+        // 4. Initialize balance objects with direct postings only
+        var balanceList = accounts.Select(a => new AccountBalance
         {
-            var periodDr = periodDrMap.GetValueOrDefault(a.Id, 0);
-            var periodCr = periodCrMap.GetValueOrDefault(a.Id, 0);
-
-            var openDr = openDrMap.GetValueOrDefault(a.Id, 0)
-                       + (a.Nature == AccountNature.Debit  ? a.OpeningBalance : 0);
-            var openCr = openCrMap.GetValueOrDefault(a.Id, 0)
-                       + (a.Nature == AccountNature.Credit ? a.OpeningBalance : 0);
-
-            var openBal = a.Nature == AccountNature.Debit ? openDr - openCr : openCr - openDr;
-
-            var closingDr = openDr + periodDr;
-            var closingCr = openCr + periodCr;
-            var closingBal = a.Nature == AccountNature.Debit ? closingDr - closingCr : closingCr - closingDr;
-
-            return new AccountBalance
-            {
-                Id          = a.Id,
-                Code        = a.Code,
-                NameAr      = a.NameAr,
-                Type        = a.Type,
-                Nature      = a.Nature,
-                ParentId    = a.ParentId,
-                Level       = a.Level,
-                IsLeaf      = a.IsLeaf,
-                OpenBalance = openBal,
-                PeriodDebit = periodDr,
-                PeriodCredit= periodCr,
-                ClosingBal  = closingBal,
-            };
+            Id           = a.Id,
+            Code         = a.Code,
+            NameAr       = a.NameAr,
+            Type         = a.Type,
+            Nature       = a.Nature,
+            ParentId     = a.ParentId,
+            Level        = a.Level,
+            IsLeaf       = a.IsLeaf,
+            // Opening balance from initial setup
+            OpenDebit    = (a.Nature == AccountNature.Debit  ? a.OpeningBalance : 0) + openDrMap.GetValueOrDefault(a.Id, 0),
+            OpenCredit   = (a.Nature == AccountNature.Credit ? a.OpeningBalance : 0) + openCrMap.GetValueOrDefault(a.Id, 0),
+            PeriodDebit  = periodDrMap.GetValueOrDefault(a.Id, 0),
+            PeriodCredit = periodCrMap.GetValueOrDefault(a.Id, 0)
         }).ToList();
+
+        // 5. 🔥 HIERARCHICAL ROLL-UP 🔥
+        // Process accounts from bottom-up (longest codes to shortest) to aggregate children into parents
+        var balancesByCode = balanceList.OrderByDescending(b => b.Code.Length).ToList();
+        foreach (var b in balancesByCode)
+        {
+            if (b.ParentId.HasValue)
+            {
+                var parent = balanceList.FirstOrDefault(p => p.Id == b.ParentId.Value);
+                if (parent != null)
+                {
+                    parent.OpenDebit    += b.OpenDebit;
+                    parent.OpenCredit   += b.OpenCredit;
+                    parent.PeriodDebit  += b.PeriodDebit;
+                    parent.PeriodCredit += b.PeriodCredit;
+                }
+            }
+        }
+
+        // 6. Calculate net balances for each account after roll-up
+        foreach (var b in balanceList)
+        {
+            // Opening Balance Calculation
+            b.OpenBalance = b.Nature == AccountNature.Debit ? b.OpenDebit - b.OpenCredit : b.OpenCredit - b.OpenDebit;
+            
+            // Closing Balance Calculation: (Opening Dr + Period Dr) - (Opening Cr + Period Cr)
+            var closingDr = b.OpenDebit + b.PeriodDebit;
+            var closingCr = b.OpenCredit + b.PeriodCredit;
+            b.ClosingBal = b.Nature == AccountNature.Debit ? closingDr - closingCr : closingCr - closingDr;
+        }
+
+        return balanceList;
     }
 
     // helper: مجموع نوع حسابات معين
@@ -116,12 +132,12 @@ public class FinancialReportsController : ControllerBase
         return Ok(new {
             from, to,
             rows,
-            totalOpenDebit    = rows.Sum(r => r.OpenDebit),
-            totalOpenCredit   = rows.Sum(r => r.OpenCredit),
-            totalPeriodDebit  = rows.Sum(r => r.PeriodDebit),
-            totalPeriodCredit = rows.Sum(r => r.PeriodCredit),
-            totalClosingDebit = rows.Sum(r => r.ClosingDebit),
-            totalClosingCredit= rows.Sum(r => r.ClosingCredit),
+            totalOpenDebit    = rows.Where(r => r.Level == 1).Sum(r => r.OpenDebit),
+            totalOpenCredit   = rows.Where(r => r.Level == 1).Sum(r => r.OpenCredit),
+            totalPeriodDebit  = rows.Where(r => r.Level == 1).Sum(r => r.PeriodDebit),
+            totalPeriodCredit = rows.Where(r => r.Level == 1).Sum(r => r.PeriodCredit),
+            totalClosingDebit = rows.Where(r => r.Level == 1).Sum(r => r.ClosingDebit),
+            totalClosingCredit= rows.Where(r => r.Level == 1).Sum(r => r.ClosingCredit),
         });
     }
 
@@ -140,15 +156,17 @@ public class FinancialReportsController : ControllerBase
         var balances = await GetBalances(from, to);
 
         // الإيرادات (طبيعتها دائن → الرصيد موجب = إيراد)
+        // ✅ تصحيح: ضم أي حساب يبدأ بكود 4 للإيرادات (مثل إيراد التوصيل) حتى لو كان مصنفاً خطأ في الداتابيز
         var revenues = balances
-            .Where(b => b.Type == AccountType.Revenue && b.IsLeaf && b.ClosingBal != 0)
+            .Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.IsLeaf && b.ClosingBal != 0)
             .OrderBy(b => b.Code)
             .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
             .ToList();
 
         // المصاريف (طبيعتها مدين → الرصيد موجب = مصروف)
+        // ✅ تصحيح: استثناء أي حساب يبدأ بكود 4 من المصاريف
         var expenses = balances
-            .Where(b => b.Type == AccountType.Expense && b.IsLeaf && b.ClosingBal != 0)
+            .Where(b => b.Type == AccountType.Expense && !b.Code.StartsWith("4") && b.IsLeaf && b.ClosingBal != 0)
             .OrderBy(b => b.Code)
             .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
             .ToList();
@@ -966,6 +984,8 @@ internal class AccountBalance
     public int?          ParentId     { get; set; }
     public int           Level        { get; set; }
     public bool          IsLeaf       { get; set; }
+    public decimal       OpenDebit    { get; set; }
+    public decimal       OpenCredit   { get; set; }
     public decimal       OpenBalance  { get; set; }
     public decimal       PeriodDebit  { get; set; }
     public decimal       PeriodCredit { get; set; }

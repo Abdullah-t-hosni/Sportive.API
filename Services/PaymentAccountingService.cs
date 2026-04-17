@@ -108,7 +108,11 @@ public class PaymentAccountingService
         if (await _core.EntryExistsAsync(JournalEntryType.PaymentVoucher, payment.PaymentNumber)) return;
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         string payablesAcct = _core.GetMap(mapDict, MK.Supplier, AccountingCoreService.PAYABLES);
-        var cashCode = payment.AccountName.Contains("كاشير") ? AccountingCoreService.CASH_CASHIER : AccountingCoreService.CASH_ACCOUNTS;
+        
+        // Prefer specific CashAccountId selected by user, fallback to name-based logic, then to default accounts
+        string cashCode = payment.CashAccountId.HasValue 
+            ? $"ID:{payment.CashAccountId.Value}" 
+            : (payment.AccountName.Contains("كاشير") ? AccountingCoreService.CASH_CASHIER : AccountingCoreService.CASH_ACCOUNTS);
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)> {
             (payablesAcct, payment.Amount, 0, $"تسوية مورد - {payment.PaymentNumber}"),

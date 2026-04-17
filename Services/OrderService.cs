@@ -253,6 +253,8 @@ public class OrderService : IOrderService
                     Source = actualSource,
                     AdminNotes = dto.Note,
                     DiscountAmount = dto.DiscountAmount ?? 0,
+                    AttachmentUrl = dto.AttachmentUrl,
+                    AttachmentPublicId = dto.AttachmentPublicId,
                     CreatedAt = now
                 };
 
