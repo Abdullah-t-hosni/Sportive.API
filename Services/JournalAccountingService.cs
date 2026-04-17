@@ -57,6 +57,13 @@ public class JournalAccountingService
         foreach (var l in dto.Lines) {
             entry.Lines.Add(new JournalLine { AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit, Description = l.Description, CustomerId = l.CustomerId, SupplierId = l.SupplierId });
         }
+
+        // التحقق من التوازن قبل الحفظ
+        var totalDr = entry.Lines.Sum(l => l.Debit);
+        var totalCr = entry.Lines.Sum(l => l.Credit);
+        if (Math.Round(totalDr, 2) != Math.Round(totalCr, 2))
+            throw new InvalidOperationException($"القيد غير متوازن: مجموع المدين ({totalDr}) لا يساوي مجموع الدائن ({totalCr})");
+
         _db.JournalEntries.Add(entry);
         await _db.SaveChangesAsync();
         return entry;

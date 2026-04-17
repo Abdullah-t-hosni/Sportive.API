@@ -372,12 +372,73 @@ public class FinancialReportsController : ControllerBase
                     closingBalance = g.OrderBy(r => r.Date).ThenBy(r => r.EntryNumber).LastOrDefault()?.RunningBalance ?? 0
                 };
             }).ToList();
-
         return Ok(new { from, to, accounts = grouped });
     }
 
     // ══════════════════════════════════════════════════════
-    // 5. كشف حساب  GET /api/financialreports/account-statement
+    // 5. تشخيص الصحة المحاسبية (Accounting Health Check)
+    // ══════════════════════════════════════════════════════
+    [HttpGet("health-check")]
+    public async Task<IActionResult> AccountingHealthCheck()
+    {
+        // 1. البحث عن القيود غير المتوازنة
+        var unbalancedEntries = await _db.JournalEntries
+            .Include(e => e.Lines)
+            .OrderByDescending(e => e.EntryDate)
+            .Select(e => new {
+                e.Id,
+                e.EntryNumber,
+                e.EntryDate,
+                e.Description,
+                e.Type,
+                TotalDebit = e.Lines.Sum(l => l.Debit),
+                TotalCredit = e.Lines.Sum(l => l.Credit),
+                Difference = Math.Abs(e.Lines.Sum(l => l.Debit) - e.Lines.Sum(l => l.Credit))
+            })
+            .Where(e => e.Difference > 0.009m) // سماحية 1 قرش
+            .Take(100)
+            .ToListAsync();
+
+        // 2. البحث عن حركات تشير لحسابات غير نشطة
+        var inactiveAccountLines = await _db.JournalLines
+            .Include(l => l.Account)
+            .Include(l => l.JournalEntry)
+            .Where(l => l.Account != null && !l.Account.IsActive)
+            .Select(l => new {
+                l.Id,
+                l.JournalEntryId,
+                EntryNumber = l.JournalEntry.EntryNumber,
+                AccountCode = l.Account.Code,
+                AccountName = l.Account.NameAr,
+                l.Debit,
+                l.Credit
+            })
+            .Take(100)
+            .ToListAsync();
+
+        // 3. البحث عن حركات بدون حسابات (Orphans)
+        var orphanLines = await _db.JournalLines
+            .Include(l => l.JournalEntry)
+            .Where(l => l.AccountId == 0 || l.Account == null)
+            .Select(l => new {
+                l.Id,
+                l.JournalEntryId,
+                EntryNumber = l.JournalEntry != null ? l.JournalEntry.EntryNumber : "N/A",
+                l.Debit,
+                l.Credit
+            })
+            .ToListAsync();
+
+        return Ok(new {
+            isHealthy = !unbalancedEntries.Any() && !inactiveAccountLines.Any() && !orphanLines.Any(),
+            unbalancedEntries,
+            inactiveAccountLines,
+            orphanLines
+        });
+    }
+
+    // ══════════════════════════════════════════════════════
+    // 6. كشف حساب  GET /api/financialreports/account-statement
     // ══════════════════════════════════════════════════════
     [HttpGet("account-statement")]
     public async Task<IActionResult> AccountStatement(

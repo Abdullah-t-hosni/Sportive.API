@@ -147,7 +147,12 @@ public class FixedAssetsController : ControllerBase
         [FromQuery] int pageSize = 20)
     {
         var q = _db.FixedAssets
-            .Include(a => a.Category)
+            .Include(a => a.Category).ThenInclude(c => c.AssetAccount)
+            .Include(a => a.Category).ThenInclude(c => c.AccumDepreciationAccount)
+            .Include(a => a.Category).ThenInclude(c => c.DepreciationExpenseAccount)
+            .Include(a => a.AssetAccount)
+            .Include(a => a.AccumDepreciationAccount)
+            .Include(a => a.DepreciationExpenseAccount)
             .AsQueryable();
 
         if (categoryId.HasValue) q = q.Where(a => a.CategoryId == categoryId.Value);
@@ -168,7 +173,12 @@ public class FixedAssetsController : ControllerBase
                 a.AccumulatedDepreciation, a.PurchaseCost - a.AccumulatedDepreciation,
                 a.Status, a.Location, a.SerialNumber, a.Supplier,
                 a.PurchaseInvoiceId, a.Notes, a.AttachmentUrl, a.AttachmentPublicId,
-                a.AssetAccountId, a.AccumDepreciationAccountId, a.DepreciationExpenseAccountId,
+                a.AssetAccountId ?? a.Category.AssetAccountId,
+                a.AssetAccount != null ? a.AssetAccount.NameAr : (a.Category.AssetAccount != null ? a.Category.AssetAccount.NameAr : null),
+                a.AccumDepreciationAccountId ?? a.Category.AccumDepreciationAccountId,
+                a.AccumDepreciationAccount != null ? a.AccumDepreciationAccount.NameAr : (a.Category.AccumDepreciationAccount != null ? a.Category.AccumDepreciationAccount.NameAr : null),
+                a.DepreciationExpenseAccountId ?? a.Category.DepreciationExpenseAccountId,
+                a.DepreciationExpenseAccount != null ? a.DepreciationExpenseAccount.NameAr : (a.Category.DepreciationExpenseAccount != null ? a.Category.DepreciationExpenseAccount.NameAr : null),
                 a.CreatedAt
             )).ToListAsync();
 
@@ -182,7 +192,12 @@ public class FixedAssetsController : ControllerBase
     public async Task<IActionResult> GetById(int id)
     {
         var a = await _db.FixedAssets
-            .Include(x => x.Category)
+            .Include(x => x.Category).ThenInclude(c => c.AssetAccount)
+            .Include(x => x.Category).ThenInclude(c => c.AccumDepreciationAccount)
+            .Include(x => x.Category).ThenInclude(c => c.DepreciationExpenseAccount)
+            .Include(x => x.AssetAccount)
+            .Include(x => x.AccumDepreciationAccount)
+            .Include(x => x.DepreciationExpenseAccount)
             .Include(x => x.Depreciations.OrderBy(d => d.DepreciationDate))
             .Include(x => x.Disposals)
             .FirstOrDefaultAsync(x => x.Id == id);
@@ -699,7 +714,12 @@ public class FixedAssetsController : ControllerBase
         a.AccumulatedDepreciation, a.PurchaseCost - a.AccumulatedDepreciation,
         a.Status, a.Location, a.SerialNumber, a.Supplier,
         a.PurchaseInvoiceId, a.Notes, a.AttachmentUrl, a.AttachmentPublicId,
-        a.AssetAccountId, a.AccumDepreciationAccountId, a.DepreciationExpenseAccountId,
+        a.AssetAccountId ?? a.Category?.AssetAccountId,
+        a.AssetAccount != null ? a.AssetAccount.NameAr : (a.Category?.AssetAccount != null ? a.Category.AssetAccount.NameAr : null),
+        a.AccumDepreciationAccountId ?? a.Category?.AccumDepreciationAccountId,
+        a.AccumDepreciationAccount != null ? a.AccumDepreciationAccount.NameAr : (a.Category?.AccumDepreciationAccount != null ? a.Category.AccumDepreciationAccount.NameAr : null),
+        a.DepreciationExpenseAccountId ?? a.Category?.DepreciationExpenseAccountId,
+        a.DepreciationExpenseAccount != null ? a.DepreciationExpenseAccount.NameAr : (a.Category?.DepreciationExpenseAccount != null ? a.Category.DepreciationExpenseAccount.NameAr : null),
         a.CreatedAt
     );
 

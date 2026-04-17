@@ -110,8 +110,11 @@ public record FixedAssetDto(
     string?           AttachmentUrl,
     string?           AttachmentPublicId,
     int?              AssetAccountId,
+    string?           AssetAccountName,
     int?              AccumDepreciationAccountId,
+    string?           AccumDepreciationAccountName,
     int?              DepreciationExpenseAccountId,
+    string?           DepreciationExpenseAccountName,
     DateTime          CreatedAt
 );
 
