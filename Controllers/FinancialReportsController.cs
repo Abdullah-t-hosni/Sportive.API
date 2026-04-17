@@ -60,11 +60,11 @@ public class FinancialReportsController : ControllerBase
             ParentId     = a.ParentId,
             Level        = a.Level,
             IsLeaf       = a.IsLeaf,
-            // Opening balance from initial setup
-            OpenDebit    = (a.Nature == AccountNature.Debit  ? a.OpeningBalance : 0) + openDrMap.GetValueOrDefault(a.Id, 0),
-            OpenCredit   = (a.Nature == AccountNature.Credit ? a.OpeningBalance : 0) + openCrMap.GetValueOrDefault(a.Id, 0),
-            PeriodDebit  = periodDrMap.GetValueOrDefault(a.Id, 0),
-            PeriodCredit = periodCrMap.GetValueOrDefault(a.Id, 0)
+            // Opening balance from initial setup (Rounded to 2 decimals)
+            OpenDebit    = Math.Round((a.Nature == AccountNature.Debit  ? a.OpeningBalance : 0) + openDrMap.GetValueOrDefault(a.Id, 0), 2),
+            OpenCredit   = Math.Round((a.Nature == AccountNature.Credit ? a.OpeningBalance : 0) + openCrMap.GetValueOrDefault(a.Id, 0), 2),
+            PeriodDebit  = Math.Round(periodDrMap.GetValueOrDefault(a.Id, 0), 2),
+            PeriodCredit = Math.Round(periodCrMap.GetValueOrDefault(a.Id, 0), 2)
         }).ToList();
 
         // 5. 🔥 HIERARCHICAL ROLL-UP 🔥
@@ -77,10 +77,10 @@ public class FinancialReportsController : ControllerBase
                 var parent = balanceList.FirstOrDefault(p => p.Id == b.ParentId.Value);
                 if (parent != null)
                 {
-                    parent.OpenDebit    += b.OpenDebit;
-                    parent.OpenCredit   += b.OpenCredit;
-                    parent.PeriodDebit  += b.PeriodDebit;
-                    parent.PeriodCredit += b.PeriodCredit;
+                    parent.OpenDebit    = Math.Round(parent.OpenDebit + b.OpenDebit, 2);
+                    parent.OpenCredit   = Math.Round(parent.OpenCredit + b.OpenCredit, 2);
+                    parent.PeriodDebit  = Math.Round(parent.PeriodDebit + b.PeriodDebit, 2);
+                    parent.PeriodCredit = Math.Round(parent.PeriodCredit + b.PeriodCredit, 2);
                 }
             }
         }
@@ -88,13 +88,13 @@ public class FinancialReportsController : ControllerBase
         // 6. Calculate net balances for each account after roll-up
         foreach (var b in balanceList)
         {
-            // Opening Balance Calculation
-            b.OpenBalance = b.Nature == AccountNature.Debit ? b.OpenDebit - b.OpenCredit : b.OpenCredit - b.OpenDebit;
+            // Opening Balance Calculation (Rounded)
+            b.OpenBalance = Math.Round(b.Nature == AccountNature.Debit ? b.OpenDebit - b.OpenCredit : b.OpenCredit - b.OpenDebit, 2);
             
             // Closing Balance Calculation: (Opening Dr + Period Dr) - (Opening Cr + Period Cr)
-            var closingDr = b.OpenDebit + b.PeriodDebit;
-            var closingCr = b.OpenCredit + b.PeriodCredit;
-            b.ClosingBal = b.Nature == AccountNature.Debit ? closingDr - closingCr : closingCr - closingDr;
+            var closingDr = Math.Round(b.OpenDebit + b.PeriodDebit, 2);
+            var closingCr = Math.Round(b.OpenCredit + b.PeriodCredit, 2);
+            b.ClosingBal = Math.Round(b.Nature == AccountNature.Debit ? closingDr - closingCr : closingCr - closingDr, 2);
         }
 
         return balanceList;
@@ -133,12 +133,12 @@ public class FinancialReportsController : ControllerBase
         return Ok(new {
             from, to,
             rows,
-            totalOpenDebit    = rows.Where(r => r.Level == 1).Sum(r => r.OpenDebit),
-            totalOpenCredit   = rows.Where(r => r.Level == 1).Sum(r => r.OpenCredit),
-            totalPeriodDebit  = rows.Where(r => r.Level == 1).Sum(r => r.PeriodDebit),
-            totalPeriodCredit = rows.Where(r => r.Level == 1).Sum(r => r.PeriodCredit),
-            totalClosingDebit = rows.Where(r => r.Level == 1).Sum(r => r.ClosingDebit),
-            totalClosingCredit= rows.Where(r => r.Level == 1).Sum(r => r.ClosingCredit),
+            totalOpenDebit    = Math.Round(rows.Where(r => r.Level == 1).Sum(r => r.OpenDebit), 2),
+            totalOpenCredit   = Math.Round(rows.Where(r => r.Level == 1).Sum(r => r.OpenCredit), 2),
+            totalPeriodDebit  = Math.Round(rows.Where(r => r.Level == 1).Sum(r => r.PeriodDebit), 2),
+            totalPeriodCredit = Math.Round(rows.Where(r => r.Level == 1).Sum(r => r.PeriodCredit), 2),
+            totalClosingDebit = Math.Round(rows.Where(r => r.Level == 1).Sum(r => r.ClosingDebit), 2),
+            totalClosingCredit= Math.Round(rows.Where(r => r.Level == 1).Sum(r => r.ClosingCredit), 2),
         });
     }
 
