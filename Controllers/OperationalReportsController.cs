@@ -1031,6 +1031,7 @@ public class OperationalReportsController : ControllerBase
 
         var detail = orders.Select(o => new {
             o.OrderNumber, o.CreatedAt, o.SalesPersonId,
+            SalesPersonName = (o.SalesPersonId != null && userNames.TryGetValue(o.SalesPersonId, out var name)) ? name : "Unknown",
             CustomerName = o.Customer?.FullName ?? "",
             o.TotalAmount,
             Status = o.Status.ToString(),

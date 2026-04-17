@@ -107,10 +107,12 @@ public class PurchaseInvoiceItem : BaseEntity
 // ══════════════════════════════════════════════════════
 public enum PaymentMethod_Purchase
 {
-    Cash       = 1,  // نقدي
-    BankTransfer = 2, // تحويل بنكي
-    Check      = 3,  // شيك
-    Other      = 4,  // أخرى
+    Cash         = 1,  // نقدي
+    BankTransfer = 2,  // تحويل بنكي
+    Check        = 3,  // شيك
+    Vodafone     = 4,  // فودافون كاش
+    InstaPay     = 5,  // انستاباي
+    Other        = 6,  // أخرى
 }
 
 public class SupplierPayment : BaseEntity
