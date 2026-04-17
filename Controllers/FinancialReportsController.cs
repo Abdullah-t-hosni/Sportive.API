@@ -257,6 +257,7 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] int?      accountId  = null,
         [FromQuery] int?      customerId = null,
         [FromQuery] int?      supplierId = null,
+        [FromQuery] int?      employeeId = null,
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
         [FromQuery] string?   search     = null,
@@ -287,6 +288,9 @@ public class FinancialReportsController : ControllerBase
             
         if (supplierId.HasValue)
             q = q.Where(l => l.SupplierId == supplierId.Value);
+
+        if (employeeId.HasValue)
+            q = q.Where(l => l.EmployeeId == employeeId.Value);
 
         var lines = await q.OrderBy(l => l.JournalEntry.EntryDate)
                            .ThenBy(l => l.JournalEntry.Id)
@@ -509,15 +513,16 @@ public class FinancialReportsController : ControllerBase
 
         if (customerId.HasValue) openQ = openQ.Where(l => l.CustomerId == customerId);
         if (supplierId.HasValue) openQ = openQ.Where(l => l.SupplierId == supplierId);
+        if (employeeId.HasValue) openQ = openQ.Where(l => l.EmployeeId == employeeId);
 
         var openLines = await openQ.ToListAsync();
 
         var openDr  = openLines.Sum(l => l.Debit);
         var openCr  = openLines.Sum(l => l.Credit);
         
-        // الأرصدة الافتتاحية من شجرة الحسابات (فقط إذا لم نكن نفلتر بعميل/مورد محدد، أو إذا أردنا تضمينها)
+        // الأرصدة الافتتاحية من شجرة الحسابات (فقط إذا لم نكن نفلتر بعميل/مورد/موظف محدد، أو إذا أردنا تضمينها)
         // محاسبياً: إذا اخترنا عميلاً، الرصيد الافتتاحي هو فقط الحركات السابقة له.
-        if (!customerId.HasValue && !supplierId.HasValue)
+        if (!customerId.HasValue && !supplierId.HasValue && !employeeId.HasValue)
         {
             openDr += (acct.Nature == AccountNature.Debit  ? acct.OpeningBalance : 0);
             openCr += (acct.Nature == AccountNature.Credit ? acct.OpeningBalance : 0);
@@ -535,6 +540,7 @@ public class FinancialReportsController : ControllerBase
 
         if (customerId.HasValue) q = q.Where(l => l.CustomerId == customerId);
         if (supplierId.HasValue) q = q.Where(l => l.SupplierId == supplierId);
+        if (employeeId.HasValue) q = q.Where(l => l.EmployeeId == employeeId);
 
         if (!string.IsNullOrEmpty(search))
         {
