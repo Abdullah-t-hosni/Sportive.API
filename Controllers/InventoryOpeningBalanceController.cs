@@ -22,17 +22,20 @@ public class InventoryOpeningBalanceController : ControllerBase
     private readonly SequenceService _seq;
     private readonly IAccountingService _accounting;
     private readonly IInventoryService _inventory;
+    private readonly AccountingCoreService _core;
 
     public InventoryOpeningBalanceController(
         AppDbContext db, 
         SequenceService seq, 
         IAccountingService accounting,
-        IInventoryService inventory)
+        IInventoryService inventory,
+        AccountingCoreService core)
     {
         _db = db;
         _seq = seq;
         _accounting = accounting;
         _inventory = inventory;
+        _core = core;
     }
 
     [HttpGet]
@@ -75,6 +78,12 @@ public class InventoryOpeningBalanceController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateOpeningBalanceDto dto)
     {
+        await _core.CheckDateLockAsync(dto.Date, User);
+
+        // 🚨 PREVENT DUPLICATES: التأكد من عدم وجود رصيد افتتاحي سابق للمخزون في هذه الفترة
+        if (await _db.InventoryOpeningBalances.AnyAsync(x => x.Date.Year == dto.Date.Year))
+            return BadRequest(new { message = "يوجد رصيد افتتاحي مسجل بالفعل لهذا العام. لا يمكن إضافة أكثر من رصيد افتتاحي واحد." });
+
         if (dto.Items == null || !dto.Items.Any())
             return BadRequest(new { message = "يجب إضافة صنف واحد على الأقل" });
 
@@ -126,9 +135,9 @@ public class InventoryOpeningBalanceController : ControllerBase
                     item.CostPrice
                 );
 
-                // 2. Update Product Cost Price if provided
+                // 2. Update Product Cost Price if requested
                 var product = await _db.Products.FindAsync(item.ProductId.Value);
-                if (product != null && item.CostPrice > 0)
+                if (product != null && dto.UpdateProductCost && item.CostPrice > 0)
                 {
                     product.CostPrice = item.CostPrice;
                     product.UpdatedAt = TimeHelper.GetEgyptTime();
@@ -212,7 +221,23 @@ public class InventoryOpeningBalanceController : ControllerBase
 
         if (ob == null) return NotFound();
 
+        await _core.CheckDateLockAsync(ob.Date, User);
+
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        // 🚨 PRO-ACCOUNTING: لا يجوز حذف قيد مرحل، يجب عكسه
+        var journal = await _db.JournalEntries.FirstOrDefaultAsync(j => j.Reference == ob.Reference);
+        if (journal != null)
+        {
+            if (User.IsInRole("Admin")) 
+            {
+                _db.JournalEntries.Remove(journal); // الأدمن يحق له الحذف النهائي
+            }
+            else 
+            {
+                await _accounting.ReverseEntryAsync(journal.Id, $"إلغاء رصيد افتتاحي للمخزون - {ob.Reference}");
+            }
+        }
 
         // 1. Reverse Inventory Movements
         foreach (var item in ob.Items)
@@ -232,12 +257,7 @@ public class InventoryOpeningBalanceController : ControllerBase
             }
         }
 
-        // 2. Void/Delete Journal Entry
-        var journal = await _db.JournalEntries.FirstOrDefaultAsync(j => j.Reference == ob.Reference);
-        if (journal != null)
-        {
-            _db.JournalEntries.Remove(journal); // Simplified: Hard delete the opening journal
-        }
+        // 2. Void/Delete Journal Entry - Handled above in pro-accounting block
 
         // 3. Remove Opening Balance record
         _db.InventoryOpeningBalances.Remove(ob);
@@ -248,15 +268,11 @@ public class InventoryOpeningBalanceController : ControllerBase
 
     private async Task PostJournalAsync(InventoryOpeningBalance ob)
     {
-        // Get Inventory Account
-        var inventoryAcct = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1106");
-        // Get Opening Balances Account (Search by name or code)
-        var openingAcct = await _db.Accounts.FirstOrDefaultAsync(a => a.NameAr.Contains("أرصدة افتتاحية"))
-                        ?? await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "3999")
-                        ?? await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "3201")
-                        ?? await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "3");
+        // Get Mapped Accounts instead of hardcoded strings
+        var (inventoryId, _, _) = await _core.GetAccountIdAsync(MappingKeys.Inventory);
+        var (openingId, _, _)   = await _core.GetAccountIdAsync(MappingKeys.OpeningEquity);
 
-        if (inventoryAcct == null || openingAcct == null) return;
+        if (inventoryId == 0 || openingId == 0) return;
 
         var dto = new CreateJournalEntryDto(
             EntryDate:   ob.Date,
@@ -264,12 +280,12 @@ public class InventoryOpeningBalanceController : ControllerBase
             Description: $"قيد إثبات أرصدة افتتاحية للمخزون - {ob.Reference}",
             Lines:       new List<CreateJournalLineDto>
             {
-                new (inventoryAcct.Id, ob.TotalValue, 0, "إثبات قيمة المخزون الافتتاحي"),
-                new (openingAcct.Id,   0, ob.TotalValue, "مقابل حساب الأرصدة الافتتاحية")
+                new (inventoryId, ob.TotalValue, 0, "إثبات قيمة المخزون الافتتاحي"),
+                new (openingId,   0, ob.TotalValue, "مقابل حساب الأرصدة الافتتاحية")
             },
             Type:        JournalEntryType.OpeningBalance
         );
 
-        await _accounting.PostManualEntryAsync(dto, User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+        await _accounting.PostManualEntryAsync(dto, User);
     }
 }

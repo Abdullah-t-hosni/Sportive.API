@@ -5,6 +5,7 @@ using Sportive.API.Models;
 using Sportive.API.Utils;
 using System.Text.Json;
 using Sportive.API.DTOs;
+using System.Security.Claims;
 
 namespace Sportive.API.Services;
 
@@ -46,6 +47,17 @@ public class AccountingCoreService
         _seq = seq;
         _logger = logger;
         _notifications = notifications;
+    }
+
+    public async Task CheckDateLockAsync(DateTime date, ClaimsPrincipal? user)
+    {
+        if (user != null && user.IsInRole("Admin")) return; // Admin bypass
+
+        var settings = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync();
+        if (settings?.AccountingLockDate != null && date.Date <= settings.AccountingLockDate.Value.Date)
+        {
+            throw new InvalidOperationException($"الفترة المحاسبية (حتى {settings.AccountingLockDate.Value:yyyy-MM-dd}) مغلقة. لا يمكن الإضافة أو التعديل في فترة مغلقة.");
+        }
     }
 
     public async Task<Dictionary<string, int?>> GetSafeSystemMappingsAsync()

@@ -214,6 +214,9 @@ public class StoreInfo
     [JsonPropertyName("timeZoneId")]
     public string TimeZoneId { get; set; } = "Egypt Standard Time";
 
+    [JsonPropertyName("accountingLockDate")]
+    public DateTime? AccountingLockDate { get; set; }
+
     [JsonPropertyName("lastUpdatedAt")]
     public DateTime LastUpdateDate { get; set; } = DateTime.UtcNow;
 }

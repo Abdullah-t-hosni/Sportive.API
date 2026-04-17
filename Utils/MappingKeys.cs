@@ -38,4 +38,7 @@ public static class MappingKeys
     public const string WebBank           = "webBankAccountID";
     public const string WebVodafone       = "webVodafoneAccountID";
     public const string WebInstaPay       = "webInstapayAccountID";
+
+    // ── حقوق ملكية / افتتاحي ────────────────────────────
+    public const string OpeningEquity     = "openingEquityAccountID";
 }

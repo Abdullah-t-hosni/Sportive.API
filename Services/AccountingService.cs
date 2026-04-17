@@ -5,6 +5,7 @@ using Sportive.API.Models;
 using Sportive.API.Utils;
 using System.Collections.Concurrent;
 using Sportive.API.DTOs;
+using System.Security.Claims;
 using MK = Sportive.API.Utils.MappingKeys;
 
 namespace Sportive.API.Services;
@@ -21,8 +22,8 @@ public interface IAccountingService
     Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null);
     Task PostSupplierPaymentAsync(SupplierPayment payment);
     Task ReverseEntryAsync(int journalEntryId, string reason);
-    Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, string? userId);
-    Task<JournalEntry> UpdateManualEntryAsync(int id, UpdateJournalEntryDto dto, string? userId);
+    Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, ClaimsPrincipal? user);
+    Task<JournalEntry> UpdateManualEntryAsync(int id, UpdateJournalEntryDto dto, ClaimsPrincipal? user);
     Task PostReceiptVoucherAsync(ReceiptVoucher voucher, int? orderId = null);
     Task PostPaymentVoucherAsync(PaymentVoucher voucher);
     Task<string> GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, int?>? map = null);
@@ -80,8 +81,8 @@ public class AccountingService : IAccountingService
     public Task PostSupplierPaymentAsync(SupplierPayment payment) => _payment.PostSupplierPaymentAsync(payment);
 
     public Task ReverseEntryAsync(int journalEntryId, string reason) => _journal.ReverseEntryAsync(journalEntryId, reason);
-    public Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, string? userId) => _journal.PostManualEntryAsync(dto, userId);
-    public Task<JournalEntry> UpdateManualEntryAsync(int id, UpdateJournalEntryDto dto, string? userId) => _journal.UpdateManualEntryAsync(id, dto, userId);
+    public Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, ClaimsPrincipal? user) => _journal.PostManualEntryAsync(dto, user);
+    public Task<JournalEntry> UpdateManualEntryAsync(int id, UpdateJournalEntryDto dto, ClaimsPrincipal? user) => _journal.UpdateManualEntryAsync(id, dto, user);
 
     public Task<string> GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, int?>? map = null) 
         => _core.GetMappedCashAccountAsync(method, source, map);

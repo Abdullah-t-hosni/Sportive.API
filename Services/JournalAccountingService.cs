@@ -3,6 +3,7 @@ using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.Utils;
 using Sportive.API.DTOs;
+using System.Security.Claims;
 
 namespace Sportive.API.Services;
 
@@ -44,8 +45,11 @@ public class JournalAccountingService
         await _db.SaveChangesAsync();
     }
 
-    public async Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, string? userId)
+    public async Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, ClaimsPrincipal? user)
     {
+        await _core.CheckDateLockAsync(dto.EntryDate, user);
+        
+        var userId = user?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var type = dto.Type ?? JournalEntryType.Manual;
         var prefix = type == JournalEntryType.OpeningBalance ? "OPE" : "JE";
         var entryNumber = await _seq.NextAsync(prefix, async (db, pattern) => {
@@ -69,10 +73,17 @@ public class JournalAccountingService
         return entry;
     }
 
-    public async Task<JournalEntry> UpdateManualEntryAsync(int id, UpdateJournalEntryDto dto, string? userId)
+    public async Task<JournalEntry> UpdateManualEntryAsync(int id, UpdateJournalEntryDto dto, ClaimsPrincipal? user)
     {
         var entry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Id == id);
         if (entry == null) throw new KeyNotFoundException("القيد غير موجود");
+
+        // 🚨 PRO-ACCOUNTING: لا يجوز تعديل قيد مرحل
+        if (entry.Status == JournalEntryStatus.Posted && !(user?.IsInRole("Admin") ?? false))
+            throw new InvalidOperationException("لا يمكن تعديل قيد مرحل. يرجى عمل قيد عكسي ثم قيد جديد.");
+
+        await _core.CheckDateLockAsync(entry.EntryDate, user); // Check old date
+        await _core.CheckDateLockAsync(dto.EntryDate, user);   // Check new date
 
         // التحقق من توازن القيد الجديد
         var totalDr = dto.Lines.Sum(l => l.Debit);

@@ -493,6 +493,7 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] int       accountId,
         [FromQuery] int?      customerId = null,
         [FromQuery] int?      supplierId = null,
+        [FromQuery] int?      employeeId = null,
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
         [FromQuery] string?   search     = null,
@@ -520,6 +521,8 @@ public class FinancialReportsController : ControllerBase
         var openDr  = openLines.Sum(l => l.Debit);
         var openCr  = openLines.Sum(l => l.Credit);
         
+        // الأرصدة الافتتاحية من شجرة الحسابات (فقط إذا لم نكن نفلتر بعميل/مورد/موظف محدد، أو إذا أردنا تضمينها)
+        // محاسبياً: إذا اخترنا عميلاً، الرصيد الافتتاحي هو فقط الحركات السابقة له.
         // الأرصدة الافتتاحية من شجرة الحسابات (فقط إذا لم نكن نفلتر بعميل/مورد/موظف محدد، أو إذا أردنا تضمينها)
         // محاسبياً: إذا اخترنا عميلاً، الرصيد الافتتاحي هو فقط الحركات السابقة له.
         if (!customerId.HasValue && !supplierId.HasValue && !employeeId.HasValue)

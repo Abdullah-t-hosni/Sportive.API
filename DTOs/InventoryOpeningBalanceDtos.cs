@@ -6,7 +6,8 @@ namespace Sportive.API.DTOs;
 public record CreateOpeningBalanceDto(
     DateTime Date,
     string? Notes,
-    List<CreateOpeningBalanceItemDto> Items
+    List<CreateOpeningBalanceItemDto> Items,
+    bool UpdateProductCost = false
 );
 
 public record CreateOpeningBalanceItemDto(

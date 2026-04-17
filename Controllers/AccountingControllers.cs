@@ -1,6 +1,6 @@
 // ============================================================
 // Controllers/AccountingControllers.cs
-// تم دمج ملفات المحاسبة (Accounts, Journal, Vouchers) في ملف واحد منظم لتجنب مشاكل Swagger
+// تم دمج ملفات المحاسبة واستعادة المحتوى مع تصحيح الـ Double Counting
 // ============================================================
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -21,7 +21,11 @@ namespace Sportive.API.Controllers;
 public class AccountsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public AccountsController(AppDbContext db) => _db = db;
+    private readonly IAccountingService _accounting;
+    public AccountsController(AppDbContext db, IAccountingService accounting) {
+        _db = db;
+        _accounting = accounting;
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] bool onlyActive = false)
@@ -44,9 +48,11 @@ public class AccountsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateAccountDto dto)
     {
-        // التحقق من تكرار الكود
         if (await _db.Accounts.AnyAsync(a => a.Code == dto.Code))
             return BadRequest("كود الحساب موجود مسبقاً.");
+
+        if (dto.OpeningBalance != 0 && !dto.IsLeaf)
+            return BadRequest("لا يمكن إضافة رصيد افتتاحي لحساب أب. الأرصدة الافتتاحية تضاف للحسابات النهائية فقط.");
 
         var account = new Account
         {
@@ -73,6 +79,9 @@ public class AccountsController : ControllerBase
         var account = await _db.Accounts.FindAsync(id);
         if (account == null) return NotFound();
 
+        if (dto.OpeningBalance != 0 && !account.IsLeaf)
+            return BadRequest("لا يمكن إضافة رصيد افتتاحي لحساب أب.");
+
         account.NameAr         = dto.NameAr;
         account.NameEn         = dto.NameEn;
         account.IsActive       = dto.IsActive;
@@ -88,7 +97,6 @@ public class AccountsController : ControllerBase
         var account = await _db.Accounts.FindAsync(id);
         if (account == null) return NotFound();
 
-        // منع الحذف إذا كان هناك حركات
         if (await _db.JournalLines.AnyAsync(l => l.AccountId == id))
             return BadRequest("لا يمكن حذف حساب يحتوي على حركات مالية.");
 
@@ -97,8 +105,6 @@ public class AccountsController : ControllerBase
         return NoContent();
     }
 
-    // 🏛️ SYNC: Manual Trigger to fix balances and invoice statuses
-    // (Moved/Consolidated below)
     [HttpGet("mappings")]
     public async Task<IActionResult> GetMappings()
     {
@@ -142,15 +148,12 @@ public class AccountsController : ControllerBase
         try
         {
             var allAccounts = await _db.Accounts.ToListAsync();
-            
-            // 1. Reset all first to be safe
             foreach (var a in allAccounts)
             {
                 a.Level = 1;
                 a.IsLeaf = true;
             }
 
-            // 2. Recursive level calculation
             void UpdateLevels(int? parentId, int level)
             {
                 var children = allAccounts.Where(a => a.ParentId == parentId).ToList();
@@ -164,7 +167,6 @@ public class AccountsController : ControllerBase
             }
 
             UpdateLevels(null, 1);
-
             await _db.SaveChangesAsync();
             return Ok(new { success = true, message = "تم إصلاح شجرة الحسابات بنجاح.", count = allAccounts.Count });
         }
@@ -178,11 +180,11 @@ public class AccountsController : ControllerBase
     public async Task<IActionResult> Rebuild() => await FixTree();
 
     [HttpGet("sync-balances"), HttpPost("sync-balances")]
-    public async Task<IActionResult> SyncBalances([FromServices] IAccountingService accounting)
+    public async Task<IActionResult> SyncBalances()
     {
         try
         {
-            await accounting.SyncEntityBalancesAsync();
+            await _accounting.SyncEntityBalancesAsync();
             return Ok(new { success = true, message = "تمت إعادة مزامنة أرصدة الموردين والعملاء بنجاح." });
         }
         catch (Exception ex)
@@ -200,26 +202,33 @@ public class AccountsController : ControllerBase
             .OrderBy(a => a.Code)
             .ToListAsync();
 
-        // Calculate balances for all accounts
         var balances = all.ToDictionary(a => a.Id, a => a.Lines.Sum(l => l.Debit - l.Credit));
 
-        // Use a recursive function to build the tree
         List<AccountDto> BuildTree(int? parentId)
         {
             return all
                 .Where(a => a.ParentId == parentId)
                 .Select(a => {
                     var children = BuildTree(a.Id);
-                    var net = balances.GetValueOrDefault(a.Id, 0);
-                    var currentBal = a.Nature == AccountNature.Debit ? net : -net;
+                    var netLinesAmount = balances.GetValueOrDefault(a.Id, 0);
                     
-                    // Add opening balance
-                    currentBal += a.OpeningBalance;
-
-                    // For non-leaf accounts, balance is sum of children balances + its own
+                    // تحويل الصافي بناءً على طبيعة الحساب
+                    var directCurrentBal = a.Nature == AccountNature.Debit ? netLinesAmount : -netLinesAmount;
+                    
+                    // 🚨 ADVANCED FIX:
+                    // الحساب الأب توازنه = (مجموع أرصدة أبنائه الحالية) + (حركاته المباشرة).
+                    // ممارسة فضلى: لا يوجد OpeningBalance للأب، هو فقط مرآة لأبنائه.
+                    
+                    decimal totalCurrentBalance = directCurrentBal;
+                    
                     if (children.Any()) 
                     {
-                        currentBal += children.Sum(c => c.CurrentBalance);
+                        totalCurrentBalance += children.Sum(c => c.CurrentBalance);
+                    }
+                    else 
+                    {
+                        // فقط الحسابات النهائية (Leaf) تأخذ رصيداً افتتاحياً
+                        totalCurrentBalance += a.OpeningBalance;
                     }
 
                     return new AccountDto(
@@ -227,7 +236,7 @@ public class AccountsController : ControllerBase
                         a.Type.ToString(), a.Nature.ToString(), a.ParentId,
                         a.Parent?.NameAr, a.Level, a.IsLeaf, a.AllowPosting,
                         a.IsActive, a.IsSystem, a.OpeningBalance,
-                        currentBal, children
+                        totalCurrentBalance, children
                     );
                 })
                 .ToList();
@@ -255,7 +264,6 @@ public class JournalEntriesController : ControllerBase
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null, [FromQuery] bool includeLines = false)
     {
         var q = _db.JournalEntries.AsNoTracking();
-
         if (includeLines) q = q.Include(e => e.Lines).ThenInclude(l => l.Account);
 
         if (!string.IsNullOrEmpty(search))
@@ -268,11 +276,7 @@ public class JournalEntriesController : ControllerBase
         var entries = await q.OrderByDescending(e => e.Id)
             .Skip((page-1)*pageSize).Take(pageSize)
             .Select(e => new {
-                Id = e.Id,
-                EntryNumber = e.EntryNumber,
-                EntryDate = e.EntryDate,
-                Description = e.Description,
-                Reference = e.Reference,
+                e.Id, e.EntryNumber, e.EntryDate, e.Description, e.Reference,
                 Status = e.Status.ToString(),
                 Type = e.Type.ToString(),
                 LineCount = includeLines ? e.Lines.Count : _db.JournalLines.Count(l => l.JournalEntryId == e.Id),
@@ -295,7 +299,6 @@ public class JournalEntriesController : ControllerBase
             
         if (e == null) return NotFound();
 
-        // 🏛️ Projection to DTO with Entity Resolution
         return Ok(new JournalEntryDto(
             e.Id, e.EntryNumber, e.EntryDate, e.Type.ToString(), e.Status.ToString(),
             e.Reference, e.Description, e.TotalDebit, e.TotalCredit, e.IsBalanced, e.CreatedAt,
@@ -304,46 +307,41 @@ public class JournalEntriesController : ControllerBase
                 l.Debit, l.Credit, l.Description, l.CustomerId, l.SupplierId,
                 l.Supplier?.Name ?? l.Customer?.FullName ?? null
             )).ToList(),
-            e.AttachmentUrl, e.AttachmentPublicId,
-            null, // Global CustomerId
-            null  // Global SupplierId
+            e.AttachmentUrl, e.AttachmentPublicId, null, null
         ));
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateJournalEntryDto dto)
     {
-        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var entry = await _accounting.PostManualEntryAsync(dto, userId);
+        var entry = await _accounting.PostManualEntryAsync(dto, User);
         return CreatedAtAction(nameof(GetById), new { id = entry.Id }, entry);
     }
 
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateJournalEntryDto dto)
     {
-        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        try 
-        {
-            var entry = await _accounting.UpdateManualEntryAsync(id, dto, userId);
+        try {
+            var entry = await _accounting.UpdateManualEntryAsync(id, dto, User);
             return Ok(entry);
-        }
-        catch (InvalidOperationException ex)
-        {
+        } catch (InvalidOperationException ex) {
             return BadRequest(new { message = ex.Message });
-        }
-        catch (KeyNotFoundException)
-        {
+        } catch (KeyNotFoundException) {
             return NotFound();
         }
     }
 
     [HttpDelete("{id}")]
-    public async Task<IActionResult> Delete(int id)
+    public async Task<IActionResult> Delete(int id, [FromQuery] string reason = "حذف يدوي")
     {
         var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Id == id);
         if (entry == null) return NotFound();
+
         if (entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
-            return BadRequest("لا يمكن حذف قيد مرحّل إلا من خلال الإدارة.");
+        {
+            await _accounting.ReverseEntryAsync(id, reason);
+            return Ok(new { message = "تم عكس القيد بنجاح بدلاً من الحذف." });
+        }
 
         _db.JournalEntries.Remove(entry);
         await _db.SaveChangesAsync();
@@ -359,8 +357,7 @@ public class ReceiptVouchersController : ControllerBase
     private readonly IAccountingService _accounting;
     private readonly AppDbContext _db;
     private readonly SequenceService _seq;
-    public ReceiptVouchersController(IAccountingService accounting, AppDbContext db, SequenceService seq)
-    {
+    public ReceiptVouchersController(IAccountingService accounting, AppDbContext db, SequenceService seq) {
         _accounting = accounting;
         _db = db;
         _seq = seq;
@@ -392,9 +389,7 @@ public class ReceiptVouchersController : ControllerBase
     public async Task<IActionResult> GetById(int id)
     {
         var v = await _db.ReceiptVouchers
-            .Include(v => v.CashAccount)
-            .Include(v => v.FromAccount)
-            .Include(v => v.Customer)
+            .Include(v => v.CashAccount).Include(v => v.FromAccount).Include(v => v.Customer)
             .FirstOrDefaultAsync(v => v.Id == id);
         if (v == null) return NotFound();
         return Ok(v);
@@ -403,62 +398,26 @@ public class ReceiptVouchersController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateReceiptVoucherDto dto)
     {
-        var vNo = await _seq.NextAsync("RV", async (db, pattern) =>
-        {
-            var max = await db.ReceiptVouchers
-                .Where(v => EF.Functions.Like(v.VoucherNumber, pattern))
-                .Select(v => v.VoucherNumber)
-                .ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
+        var vNo = await _seq.NextAsync("RV", async (db, pattern) => {
+            var max = await db.ReceiptVouchers.Where(v => EF.Functions.Like(v.VoucherNumber, pattern)).Select(v => v.VoucherNumber).ToListAsync();
+            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0).DefaultIfEmpty(0).Max();
         });
 
-        var voucher = new ReceiptVoucher
-        {
-            VoucherNumber = vNo,
-            VoucherDate = dto.VoucherDate,
-            Amount = dto.Amount,
-            CashAccountId = dto.CashAccountId,
-            FromAccountId = dto.FromAccountId,
-            CustomerId = dto.CustomerId,
-            PaymentMethod = dto.PaymentMethod,
-            Reference = dto.Reference,
-            Description = dto.Description,
-            AttachmentUrl = dto.AttachmentUrl,
+        var voucher = new ReceiptVoucher {
+            VoucherNumber = vNo, VoucherDate = dto.VoucherDate, Amount = dto.Amount, CashAccountId = dto.CashAccountId,
+            FromAccountId = dto.FromAccountId, CustomerId = dto.CustomerId, PaymentMethod = dto.PaymentMethod,
+            Reference = dto.Reference, Description = dto.Description, AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
-            CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-            CreatedAt = TimeHelper.GetEgyptTime(),
-            OrderId = dto.OrderId
+            CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value, CreatedAt = TimeHelper.GetEgyptTime(), OrderId = dto.OrderId
         };
 
         _db.ReceiptVouchers.Add(voucher);
 
-        // 🏛️ SYNC: Update Customer Balance if applicable
-        if (voucher.CustomerId.HasValue)
-        {
-            var customer = await _db.Customers.FindAsync(voucher.CustomerId.Value);
-            if (customer != null)
-            {
-                customer.TotalPaid += voucher.Amount;
-            }
-        }
-
-        // 🏛️ PRO-ACCOUNTING: Link to Order & Update Status if provided
-        if (dto.OrderId.HasValue)
-        {
+        if (dto.OrderId.HasValue) {
             var order = await _db.Orders.FindAsync(dto.OrderId.Value);
-            if (order != null)
-            {
-                // Check for double collection
-                var currentPaid = order.PaidAmount;
-                var remaining = order.TotalAmount - currentPaid;
-                
-                if (dto.Amount > remaining + 0.01m) // Allow 0.01 tolerance for precision
-                {
-                   return BadRequest($"لا يمكن تحصيل مبلغ ({dto.Amount}) وهو أكبر من المديونية المتبقية ({remaining}) للطلب رقم {order.OrderNumber}.");
-                }
-
-                // Update Order Payment calculations
+            if (order != null) {
+                var remaining = order.TotalAmount - order.PaidAmount;
+                if (dto.Amount > remaining + 0.01m) return BadRequest($"المبلغ أكبر من المديونية المتبقية ({remaining})");
                 order.PaidAmount += dto.Amount;
                 order.PaymentStatus = order.PaidAmount >= order.TotalAmount - 0.01m ? PaymentStatus.Paid : PaymentStatus.Pending;
                 order.UpdatedAt = TimeHelper.GetEgyptTime();
@@ -466,9 +425,8 @@ public class ReceiptVouchersController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
-
-        // ترحيل تلقائي للمحاسبة
         await _accounting.PostReceiptVoucherAsync(voucher, dto.OrderId);
+        await _accounting.SyncEntityBalancesAsync();
         return Ok(voucher);
     }
 
@@ -478,16 +436,11 @@ public class ReceiptVouchersController : ControllerBase
         var voucher = await _db.ReceiptVouchers.Include(v => v.FromAccount).FirstOrDefaultAsync(v => v.Id == id);
         if (voucher == null) return NotFound();
 
-        // Check if there's a posted journal entry
         var entry = await _db.JournalEntries.Include(e => e.Lines)
             .FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber);
         
         if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
             return BadRequest("لا يمكن تعديل سند مرحّل إلا من خلال الإدارة.");
-
-        // 1. Update Voucher Data
-        var oldAmount = voucher.Amount;
-        var oldCustomerId = voucher.CustomerId;
 
         voucher.VoucherDate = dto.VoucherDate;
         voucher.Amount = dto.Amount;
@@ -501,32 +454,15 @@ public class ReceiptVouchersController : ControllerBase
         voucher.AttachmentPublicId = dto.AttachmentPublicId;
         voucher.UpdatedAt = TimeHelper.GetEgyptTime();
 
-        // 🏛️ SYNC: Adjust Customer Balances
-        if (oldCustomerId.HasValue)
-        {
-            var oldCust = await _db.Customers.FindAsync(oldCustomerId.Value);
-            if (oldCust != null) oldCust.TotalPaid -= oldAmount;
-        }
-        if (voucher.CustomerId.HasValue)
-        {
-            var newCust = await _db.Customers.FindAsync(voucher.CustomerId.Value);
-            if (newCust != null) newCust.TotalPaid += voucher.Amount;
-        }
-
-        // 2. Synchronize Journal Entry
-        if (entry != null)
-        {
-            entry.EntryDate = voucher.VoucherDate;
-            entry.Description = voucher.Description;
-            entry.UpdatedAt = TimeHelper.GetEgyptTime();
-
-            // Rebuild lines to reflect new accounts/amounts
+        if (entry != null) {
+            entry.EntryDate = voucher.VoucherDate; entry.Description = voucher.Description; entry.UpdatedAt = TimeHelper.GetEgyptTime();
             _db.JournalLines.RemoveRange(entry.Lines);
-            entry.Lines.Add(new JournalLine { AccountId = voucher.CashAccountId, Debit = voucher.Amount, Credit = 0, Description = $"[تحديث] {voucher.VoucherNumber} - {voucher.Description}" });
-            entry.Lines.Add(new JournalLine { AccountId = voucher.FromAccountId, Debit = 0, Credit = voucher.Amount, Description = $"[تحديث] من ح/ {voucher.FromAccount?.NameAr} - {voucher.VoucherNumber}" });
+            entry.Lines.Add(new JournalLine { AccountId = voucher.CashAccountId, Debit = voucher.Amount, Credit = 0, Description = $"[تحديث] {voucher.VoucherNumber}" });
+            entry.Lines.Add(new JournalLine { AccountId = voucher.FromAccountId, Debit = 0, Credit = voucher.Amount, Description = $"من ح/ {voucher.FromAccount?.NameAr}" });
         }
 
         await _db.SaveChangesAsync();
+        await _accounting.SyncEntityBalancesAsync();
         return Ok(voucher);
     }
 
@@ -537,34 +473,17 @@ public class ReceiptVouchersController : ControllerBase
         if (voucher == null) return NotFound();
 
         var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber);
-        if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
-            return BadRequest("لا يمكن حذف سند مرحّل إلا من خلال الإدارة.");
-
-        // 🏛️ SYNC: Revert Customer Balance
-        if (voucher.CustomerId.HasValue)
-        {
-            var cust = await _db.Customers.FindAsync(voucher.CustomerId.Value);
-            if (cust != null) cust.TotalPaid -= voucher.Amount;
+        
+        if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin")) {
+            await _accounting.ReverseEntryAsync(entry.Id, "إلغاء سند قبض");
+            return Ok(new { message = "تم إلغاء السند وعكس القيد." });
         }
 
         _db.ReceiptVouchers.Remove(voucher);
         if (entry != null) _db.JournalEntries.Remove(entry);
-
         await _db.SaveChangesAsync();
+        await _accounting.SyncEntityBalancesAsync();
         return NoContent();
-    }
-    [HttpGet("order/{orderId}")]
-    public async Task<IActionResult> GetByOrder(int orderId)
-    {
-        var vouchers = await _db.ReceiptVouchers
-            .Where(v => v.OrderId == orderId)
-            .OrderByDescending(v => v.CreatedAt)
-            .Select(v => new {
-                v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, 
-                v.Description, cashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : "حساب غير معرف"
-            })
-            .ToListAsync();
-        return Ok(vouchers);
     }
 }
 
@@ -576,8 +495,7 @@ public class PaymentVouchersController : ControllerBase
     private readonly IAccountingService _accounting;
     private readonly AppDbContext _db;
     private readonly SequenceService _seq;
-    public PaymentVouchersController(IAccountingService accounting, AppDbContext db, SequenceService seq)
-    {
+    public PaymentVouchersController(IAccountingService accounting, AppDbContext db, SequenceService seq) {
         _accounting = accounting;
         _db = db;
         _seq = seq;
@@ -591,17 +509,14 @@ public class PaymentVouchersController : ControllerBase
         if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
 
         var total = await q.CountAsync();
-        var items = await q.OrderByDescending(v => v.VoucherDate)
-            .Skip((page-1)*pageSize).Take(pageSize)
+        var items = await q.OrderByDescending(v => v.VoucherDate).Skip((page-1)*pageSize).Take(pageSize)
             .Select(v => new { 
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description,
-                v.CashAccountId,
-                ToAccountId = v.ToAccountId,
+                v.CashAccountId, v.ToAccountId,
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 ToAccountName = v.ToAccount != null ? v.ToAccount.NameAr : null,
                 EntityName = v.Supplier != null ? v.Supplier.Name : null
-            })
-            .ToListAsync();
+            }).ToListAsync();
 
         return Ok(new { items, total, page, pageSize, totalPages = (int)Math.Ceiling(total/(double)pageSize) });
     }
@@ -610,9 +525,7 @@ public class PaymentVouchersController : ControllerBase
     public async Task<IActionResult> GetById(int id)
     {
         var v = await _db.PaymentVouchers
-            .Include(v => v.CashAccount)
-            .Include(v => v.ToAccount)
-            .Include(v => v.Supplier)
+            .Include(v => v.CashAccount).Include(v => v.ToAccount).Include(v => v.Supplier)
             .FirstOrDefaultAsync(v => v.Id == id);
         if (v == null) return NotFound();
         return Ok(v);
@@ -621,66 +534,33 @@ public class PaymentVouchersController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreatePaymentVoucherDto dto)
     {
-        var vNo = await _seq.NextAsync("PV", async (db, pattern) =>
-        {
-            var max = await db.PaymentVouchers
-                .Where(v => EF.Functions.Like(v.VoucherNumber, pattern))
-                .Select(v => v.VoucherNumber)
-                .ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
+        var vNo = await _seq.NextAsync("PV", async (db, pattern) => {
+            var max = await db.PaymentVouchers.Where(v => EF.Functions.Like(v.VoucherNumber, pattern)).Select(v => v.VoucherNumber).ToListAsync();
+            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0).DefaultIfEmpty(0).Max();
         });
 
-        var voucher = new PaymentVoucher
-        {
-            VoucherNumber = vNo,
-            VoucherDate = dto.VoucherDate,
-            Amount = dto.Amount,
-            CashAccountId = dto.CashAccountId,
-            ToAccountId = dto.ToAccountId,
-            SupplierId = dto.SupplierId,
-            PaymentMethod = dto.PaymentMethod,
-            Reference = dto.Reference,
-            Description = dto.Description,
-            AttachmentUrl = dto.AttachmentUrl,
+        var voucher = new PaymentVoucher {
+            VoucherNumber = vNo, VoucherDate = dto.VoucherDate, Amount = dto.Amount, CashAccountId = dto.CashAccountId,
+            ToAccountId = dto.ToAccountId, SupplierId = dto.SupplierId, PaymentMethod = dto.PaymentMethod,
+            Reference = dto.Reference, Description = dto.Description, AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
-            CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-            CreatedAt = TimeHelper.GetEgyptTime(),
-            PurchaseInvoiceId = dto.PurchaseInvoiceId // Ensure this is mapped if in DTO
+            CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value, CreatedAt = TimeHelper.GetEgyptTime(), PurchaseInvoiceId = dto.PurchaseInvoiceId
         };
 
-        // 🏛️ PRO-ACCOUNTING: Link to Purchase Invoice & Prevent Overpayment
-        if (dto.PurchaseInvoiceId.HasValue)
-        {
+        if (dto.PurchaseInvoiceId.HasValue) {
             var invoice = await _db.PurchaseInvoices.FindAsync(dto.PurchaseInvoiceId.Value);
-            if (invoice != null)
-            {
+            if (invoice != null) {
                 var remaining = invoice.TotalAmount - invoice.PaidAmount;
-                if (dto.Amount > remaining + 0.1m) // Small buffer for decimals
-                {
-                    return BadRequest($"لا يمكن صرف مبلغ ({dto.Amount}) وهو أكبر من المديونية المتبقية للفاتورة ({remaining}).");
-                }
+                if (dto.Amount > remaining + 0.1m) return BadRequest($"المبلغ أكبر من مديونية الفاتورة ({remaining})");
                 invoice.PaidAmount += dto.Amount;
                 invoice.Status = invoice.PaidAmount >= invoice.TotalAmount - 0.1m ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.PartPaid;
             }
         }
 
         _db.PaymentVouchers.Add(voucher);
-
-        // 🏛️ SYNC: Update Supplier Balance
-        if (voucher.SupplierId.HasValue)
-        {
-            var supplier = await _db.Suppliers.FindAsync(voucher.SupplierId.Value);
-            if (supplier != null)
-            {
-                supplier.TotalPaid += voucher.Amount;
-            }
-        }
-
         await _db.SaveChangesAsync();
-
-        // ترحيل تلقائي للمحاسبة
         await _accounting.PostPaymentVoucherAsync(voucher);
+        await _accounting.SyncEntityBalancesAsync();
         return Ok(voucher);
     }
 
@@ -690,77 +570,23 @@ public class PaymentVouchersController : ControllerBase
         var voucher = await _db.PaymentVouchers.Include(v => v.CashAccount).FirstOrDefaultAsync(v => v.Id == id);
         if (voucher == null) return NotFound();
 
-        var entry = await _db.JournalEntries.Include(e => e.Lines)
-            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == voucher.VoucherNumber);
-        
+        var entry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == voucher.VoucherNumber);
         if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
-            return BadRequest("لا يمكن تعديل سند مرحّل إلا من خلال الإدارة.");
+            return BadRequest("لا يمكن تعديل سند مرحّل.");
 
-        // 1. Update Voucher
-        var oldAmount = voucher.Amount;
-        var oldSupplierId = voucher.SupplierId;
+        voucher.VoucherDate = dto.VoucherDate; voucher.Amount = dto.Amount; voucher.CashAccountId = dto.CashAccountId;
+        voucher.ToAccountId = dto.ToAccountId; voucher.SupplierId = dto.SupplierId; voucher.Description = dto.Description;
+        voucher.PurchaseInvoiceId = dto.PurchaseInvoiceId; voucher.UpdatedAt = TimeHelper.GetEgyptTime();
 
-        voucher.VoucherDate = dto.VoucherDate;
-        voucher.Amount = dto.Amount;
-        voucher.CashAccountId = dto.CashAccountId;
-        voucher.ToAccountId = dto.ToAccountId;
-        voucher.SupplierId = dto.SupplierId;
-        voucher.PaymentMethod = dto.PaymentMethod;
-        voucher.Reference = dto.Reference;
-        voucher.Description = dto.Description;
-        voucher.AttachmentUrl = dto.AttachmentUrl;
-        voucher.AttachmentPublicId = dto.AttachmentPublicId;
-        voucher.AttachmentPublicId = dto.AttachmentPublicId;
-        voucher.UpdatedAt = TimeHelper.GetEgyptTime();
-
-        // 🏛️ SYNC: Revert old Purchase Invoice if any
-        if (voucher.PurchaseInvoiceId.HasValue && oldAmount > 0)
-        {
-            var oldInv = await _db.PurchaseInvoices.FindAsync(voucher.PurchaseInvoiceId.Value);
-            if (oldInv != null)
-            {
-                oldInv.PaidAmount -= oldAmount;
-                oldInv.Status = oldInv.PaidAmount <= 0 ? PurchaseInvoiceStatus.Received : PurchaseInvoiceStatus.PartPaid;
-            }
-        }
-
-        // 🏛️ SYNC: Apply new Purchase Invoice if any
-        voucher.PurchaseInvoiceId = dto.PurchaseInvoiceId;
-        if (voucher.PurchaseInvoiceId.HasValue)
-        {
-            var newInv = await _db.PurchaseInvoices.FindAsync(voucher.PurchaseInvoiceId.Value);
-            if (newInv != null)
-            {
-                newInv.PaidAmount += voucher.Amount;
-                newInv.Status = newInv.PaidAmount >= newInv.TotalAmount - 0.1m ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.PartPaid;
-            }
-        }
-
-        // 🏛️ SYNC: Adjust Supplier Balances
-        if (oldSupplierId.HasValue)
-        {
-            var oldSupp = await _db.Suppliers.FindAsync(oldSupplierId.Value);
-            if (oldSupp != null) oldSupp.TotalPaid -= oldAmount;
-        }
-        if (voucher.SupplierId.HasValue)
-        {
-            var newSupp = await _db.Suppliers.FindAsync(voucher.SupplierId.Value);
-            if (newSupp != null) newSupp.TotalPaid += voucher.Amount;
-        }
-
-        // 2. Sync Ledger
-        if (entry != null)
-        {
-            entry.EntryDate = voucher.VoucherDate;
-            entry.Description = voucher.Description;
-            entry.UpdatedAt = TimeHelper.GetEgyptTime();
-
+        if (entry != null) {
+            entry.EntryDate = voucher.VoucherDate; entry.Description = voucher.Description;
             _db.JournalLines.RemoveRange(entry.Lines);
-            entry.Lines.Add(new JournalLine { AccountId = voucher.ToAccountId, Debit = voucher.Amount, Credit = 0, Description = $"[تحديث] {voucher.VoucherNumber} - {voucher.Description}" });
-            entry.Lines.Add(new JournalLine { AccountId = voucher.CashAccountId, Debit = 0, Credit = voucher.Amount, Description = $"[تحديث] من ح/ {voucher.CashAccount?.NameAr} - {voucher.VoucherNumber}" });
+            entry.Lines.Add(new JournalLine { AccountId = voucher.ToAccountId, Debit = voucher.Amount, Credit = 0, Description = $"[تحديث] {voucher.VoucherNumber}" });
+            entry.Lines.Add(new JournalLine { AccountId = voucher.CashAccountId, Debit = 0, Credit = voucher.Amount, Description = $"من ح/ {voucher.CashAccount?.NameAr}" });
         }
 
         await _db.SaveChangesAsync();
+        await _accounting.SyncEntityBalancesAsync();
         return Ok(voucher);
     }
 
@@ -771,31 +597,15 @@ public class PaymentVouchersController : ControllerBase
         if (voucher == null) return NotFound();
 
         var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == voucher.VoucherNumber);
-        if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
-            return BadRequest("لا يمكن حذف سند مرحّل إلا من خلال الإدارة.");
-
-        // 🏛️ SYNC: Revert Supplier Balance
-        if (voucher.SupplierId.HasValue)
-        {
-            var supp = await _db.Suppliers.FindAsync(voucher.SupplierId.Value);
-            if (supp != null) supp.TotalPaid -= voucher.Amount;
-        }
-
-        // 🏛️ SYNC: Revert Purchase Invoice
-        if (voucher.PurchaseInvoiceId.HasValue)
-        {
-            var inv = await _db.PurchaseInvoices.FindAsync(voucher.PurchaseInvoiceId.Value);
-            if (inv != null)
-            {
-                inv.PaidAmount -= voucher.Amount;
-                inv.Status = inv.PaidAmount <= 0 ? PurchaseInvoiceStatus.Received : PurchaseInvoiceStatus.PartPaid;
-            }
+        if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin")) {
+            await _accounting.ReverseEntryAsync(entry.Id, "إلغاء سند صرف");
+            return Ok(new { message = "تم إلغاء السند وعكس القيد." });
         }
 
         _db.PaymentVouchers.Remove(voucher);
         if (entry != null) _db.JournalEntries.Remove(entry);
-
         await _db.SaveChangesAsync();
+        await _accounting.SyncEntityBalancesAsync();
         return NoContent();
     }
 }
