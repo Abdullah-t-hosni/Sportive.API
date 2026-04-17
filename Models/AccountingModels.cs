@@ -53,6 +53,10 @@ public enum JournalEntryType
     ReceiptVoucher  = 6,   // سند قبض
     PaymentVoucher  = 7,   // سند دفع
     OpeningBalance  = 8,   // قيد الأرصدة الافتتاحية
+    AssetDepreciation = 9, // إهلاك أصول ثابتة
+    AssetDisposal     = 10,// استبعاد أصول ثابتة
+    Payroll           = 11,// مسير رواتب
+    AdvancePayment    = 12,// صرف سلفة
 }
 
 public enum JournalEntryStatus
@@ -106,6 +110,8 @@ public class JournalLine : BaseEntity
     public int?          OrderId        { get; set; }
     public int?          PurchaseInvoiceId { get; set; }
     public PurchaseInvoice? PurchaseInvoice { get; set; }
+    public int?          EmployeeId    { get; set; }
+    public Employee?     Employee      { get; set; }
 }
 
 // ══════════════════════════════════════════════════════

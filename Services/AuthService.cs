@@ -176,10 +176,16 @@ public class AuthService : IAuthService
             signingCredentials: creds
         );
 
+        // توليد refresh token وتخزينه في DB
+        var refreshToken = GenerateSecureRefreshToken();
+        user.RefreshToken       = refreshToken;
+        user.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
+        await _userManager.UpdateAsync(user);
+
         return new AuthResponseDto(
             user.Id,
             new JwtSecurityTokenHandler().WriteToken(token),
-            GenerateSecureRefreshToken(), // ✅ FIX: Cryptographically secure refresh token
+            refreshToken,
             user.Email ?? "",
             user.FullName,
             roles,
@@ -189,6 +195,30 @@ public class AuthService : IAuthService
             addresses,
             permissions
         );
+    }
+
+    /// <summary>تجديد الـ access token باستخدام refresh token صالح</summary>
+    public async Task<AuthResponseDto> RefreshTokenAsync(string refreshToken)
+    {
+        var user = await _userManager.Users
+            .FirstOrDefaultAsync(u => u.RefreshToken == refreshToken);
+
+        if (user == null || !user.IsActive
+            || user.RefreshTokenExpiry == null
+            || user.RefreshTokenExpiry < DateTime.UtcNow)
+            throw new UnauthorizedAccessException("رمز التجديد غير صالح أو منتهي الصلاحية.");
+
+        return await LoginInternalAsync(user);
+    }
+
+    /// <summary>إلغاء الـ refresh token (تسجيل خروج)</summary>
+    public async Task RevokeRefreshTokenAsync(string userId)
+    {
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user == null) return;
+        user.RefreshToken       = null;
+        user.RefreshTokenExpiry = null;
+        await _userManager.UpdateAsync(user);
     }
 
     /// <summary>

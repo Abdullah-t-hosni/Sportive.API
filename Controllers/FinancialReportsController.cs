@@ -6,6 +6,7 @@ using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.DTOs;
 using Sportive.API.Utils;
+using Sportive.API.Services;
 
 namespace Sportive.API.Controllers;
 
@@ -892,6 +893,49 @@ public class FinancialReportsController : ControllerBase
         return ExcelResult(wb, $"cash_flow_{from:yyyyMMdd}.xlsx");
     }
 
+    private IActionResult ExcelEmployeeStatement(Employee emp, List<EmployeeStatementRowDto> rows, decimal openBal, DateTime from, DateTime to)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("كشف حساب موظف");
+        ws.RightToLeft = true;
+
+        ws.Cell(1,1).Value = $"كشف حساب: {emp.EmployeeNumber} — {emp.Name}";
+        ws.Cell(1,1).Style.Font.Bold = true; ws.Cell(1,1).Style.Font.FontSize = 13;
+        ws.Range(1,1,1,6).Merge();
+        ws.Cell(2,1).Value = $"من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(2,1).Style.Font.FontColor = XLColor.Gray;
+
+        string[] hdrs = { "التاريخ","رقم القيد","نوع العملية","البيان","مدين","دائن","الرصيد" };
+        for (int c = 0; c < hdrs.Length; c++) { ws.Cell(3,c+1).Value = hdrs[c]; ws.Cell(3,c+1).Style.Font.Bold = true; }
+
+        ws.Cell(4,4).Value = "رصيد افتتاحي"; ws.Cell(4,7).Value = openBal;
+        ws.Cell(4,7).Style.NumberFormat.Format = "#,##0.00";
+
+        int r = 5;
+        foreach (var row in rows)
+        {
+            ws.Cell(r,1).Value = row.Date.ToString("yyyy-MM-dd");
+            ws.Cell(r,2).Value = row.Reference;
+            ws.Cell(r,3).Value = row.Type;
+            ws.Cell(r,4).Value = row.Description;
+            ws.Cell(r,5).Value = row.Debit;
+            ws.Cell(r,6).Value = row.Credit;
+            ws.Cell(r,7).Value = row.Balance;
+            ws.Cell(r,5).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(r,6).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(r,7).Style.NumberFormat.Format = "#,##0.00";
+            r++;
+        }
+        ws.Cell(r,4).Value = "الإجمالي"; ws.Cell(r,4).Style.Font.Bold = true;
+        ws.Cell(r,5).Value = rows.Sum(x=>x.Debit); ws.Cell(r,5).Style.Font.Bold = true;
+        ws.Cell(r,6).Value = rows.Sum(x=>x.Credit); ws.Cell(r,6).Style.Font.Bold = true;
+        ws.Cell(r,5).Style.NumberFormat.Format = "#,##0.00";
+        ws.Cell(r,6).Style.NumberFormat.Format = "#,##0.00";
+
+        ws.Columns().AdjustToContents();
+        return ExcelResult(wb, $"employee_statement_{emp.EmployeeNumber}_{from:yyyyMMdd}.xlsx");
+    }
+
     private static FileStreamResult ExcelResult(XLWorkbook wb, string filename)
     {
         var stream = new MemoryStream();
@@ -899,6 +943,109 @@ public class FinancialReportsController : ControllerBase
         return new FileStreamResult(stream,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         { FileDownloadName = filename };
+    }
+
+    // ══════════════════════════════════════════════════════
+    // 7. كشف حساب الموظف  GET /api/financialreports/employee-statement
+    // ══════════════════════════════════════════════════════
+    [HttpGet("employee-statement")]
+    public async Task<IActionResult> EmployeeStatement(
+        [FromQuery] int       employeeId,
+        [FromQuery] DateTime? fromDate  = null,
+        [FromQuery] DateTime? toDate    = null,
+        [FromQuery] bool      excel     = false)
+    {
+        var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+
+        var emp = await _db.Employees.FirstOrDefaultAsync(e => e.Id == employeeId);
+        if (emp == null) return NotFound(new { message = "الموظف غير موجود" });
+
+        // ─── سطور القيود المرتبطة بالموظف ────────────────────
+        var jeLines = await _db.JournalLines
+            .Include(l => l.JournalEntry)
+            .Include(l => l.Account)
+            .Where(l => l.EmployeeId == employeeId
+                     && l.JournalEntry.Status == JournalEntryStatus.Posted
+                     && l.JournalEntry.EntryDate >= from
+                     && l.JournalEntry.EntryDate <= to)
+            .OrderBy(l => l.JournalEntry.EntryDate).ThenBy(l => l.JournalEntry.Id)
+            .ToListAsync();
+
+        // رصيد افتتاحي من القيود السابقة للفترة
+        var openLines = await _db.JournalLines
+            .Include(l => l.JournalEntry)
+            .Where(l => l.EmployeeId == employeeId
+                     && l.JournalEntry.Status == JournalEntryStatus.Posted
+                     && l.JournalEntry.EntryDate < from)
+            .ToListAsync();
+
+        // طبيعة حساب الموظف مدين (السلف مدينة، الرواتب دائنة)
+        // الرصيد = مدين - دائن: موجب = له سلف غير مخصومة، سالب = له رواتب مستحقة
+        var openBal = openLines.Sum(l => l.Debit) - openLines.Sum(l => l.Credit);
+
+        var runBal = openBal;
+        var rows   = new List<EmployeeStatementRowDto>();
+
+        foreach (var l in jeLines)
+        {
+            runBal += l.Debit - l.Credit;
+            rows.Add(new EmployeeStatementRowDto(
+                l.JournalEntry.EntryDate,
+                l.JournalEntry.EntryNumber,
+                l.JournalEntry.Type.ToString(),
+                l.JournalEntry.Description ?? l.Description ?? "",
+                l.Debit,
+                l.Credit,
+                runBal
+            ));
+        }
+
+        // ─── بيانات إضافية من جداول HR ───────────────────────
+        var advances = await _db.EmployeeAdvances
+            .Where(a => a.EmployeeId == employeeId && a.AdvanceDate >= from && a.AdvanceDate <= to)
+            .OrderBy(a => a.AdvanceDate)
+            .Select(a => new { a.AdvanceDate, a.AdvanceNumber, a.Amount, a.Status, a.Reason })
+            .ToListAsync();
+
+        var bonuses = await _db.EmployeeBonuses
+            .Where(b => b.EmployeeId == employeeId && b.BonusDate >= from && b.BonusDate <= to)
+            .OrderBy(b => b.BonusDate)
+            .Select(b => new { b.BonusDate, b.BonusNumber, b.Amount, b.BonusType, b.Reason })
+            .ToListAsync();
+
+        var deductions = await _db.EmployeeDeductions
+            .Where(d => d.EmployeeId == employeeId && d.DeductionDate >= from && d.DeductionDate <= to)
+            .OrderBy(d => d.DeductionDate)
+            .Select(d => new { d.DeductionDate, d.DeductionNumber, d.Amount, d.DeductionType, d.Reason })
+            .ToListAsync();
+
+        var payrollItems = await _db.PayrollItems
+            .Include(i => i.PayrollRun)
+            .Where(i => i.EmployeeId == employeeId
+                     && i.PayrollRun.Status == PayrollStatus.Posted
+                     && i.PayrollRun.PeriodYear * 100 + i.PayrollRun.PeriodMonth
+                        >= from.Year * 100 + from.Month
+                     && i.PayrollRun.PeriodYear * 100 + i.PayrollRun.PeriodMonth
+                        <= to.Year * 100 + to.Month)
+            .OrderBy(i => i.PayrollRun.PeriodYear).ThenBy(i => i.PayrollRun.PeriodMonth)
+            .Select(i => new {
+                i.PayrollRun.PeriodYear, i.PayrollRun.PeriodMonth,
+                i.PayrollRun.PayrollNumber,
+                i.BasicSalary, i.BonusAmount, i.DeductionAmount,
+                i.AdvanceDeducted, NetPayable = i.BasicSalary + i.BonusAmount - i.DeductionAmount - i.AdvanceDeducted
+            })
+            .ToListAsync();
+
+        if (excel) return ExcelEmployeeStatement(emp, rows, openBal, from, to);
+
+        return Ok(new EmployeeStatementDto(
+            emp.Id, emp.Name, emp.EmployeeNumber, emp.JobTitle,
+            from, to, openBal, rows,
+            rows.Sum(r => r.Debit),
+            rows.Sum(r => r.Credit),
+            rows.LastOrDefault()?.Balance ?? openBal
+        ) with { });
     }
 
     // ══════════════════════════════════════════════════════

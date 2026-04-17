@@ -14,7 +14,9 @@
       "Bash(ls -la /d/sportive-frontend/.env*)",
       "Bash(xargs grep *)",
       "Bash(grep -n \"class OrderItem\\\\|public.*Items\" /d/Sportive.API/Models/*.cs)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(dotnet build *)",
+      "Bash(dotnet ef *)"
     ]
   }
 }

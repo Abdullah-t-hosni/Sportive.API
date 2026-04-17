@@ -121,6 +121,8 @@ public class OrderItem : BaseEntity
     public int ReturnedQuantity { get; set; } = 0; // The amount returned back to stock
     public decimal UnitPrice { get; set; }
     public decimal TotalPrice { get; set; }
+    public decimal OriginalUnitPrice { get; set; } // السعر الأصلي قبل أي خصم
+    public decimal DiscountAmount { get; set; }     // إجمالي الخصم على هذا السطر (الفرق بين السعر الأصلي والسعر الحالي مضروباً في الكمية)
     public bool HasTax { get; set; } = true;
     public decimal? VatRateApplied { get; set; }
     public decimal ItemVatAmount { get; set; } = 0;

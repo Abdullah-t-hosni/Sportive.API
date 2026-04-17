@@ -28,6 +28,8 @@ public class ProductDiscountsController : ControllerBase
         var q = _db.ProductDiscounts
             .AsNoTracking()
             .Include(d => d.Product)
+            .Include(d => d.Category)
+            .Include(d => d.Brand)
             .AsQueryable();
 
         if (productId.HasValue)
@@ -40,8 +42,14 @@ public class ProductDiscountsController : ControllerBase
             .OrderByDescending(d => d.ValidFrom)
             .Select(d => new {
                 d.Id, d.ProductId,
-                ProductNameAr = d.Product.NameAr,
-                ProductNameEn = d.Product.NameEn,
+                ProductNameAr = d.Product != null ? d.Product.NameAr : null,
+                ProductNameEn = d.Product != null ? d.Product.NameEn : null,
+                d.CategoryId,
+                CategoryNameAr = d.Category != null ? d.Category.NameAr : null,
+                CategoryNameEn = d.Category != null ? d.Category.NameEn : null,
+                d.BrandId,
+                BrandNameAr = d.Brand != null ? d.Brand.NameAr : null,
+                BrandNameEn = d.Brand != null ? d.Brand.NameEn : null,
                 d.DiscountType, d.DiscountValue, d.MinQty,
                 d.ValidFrom, d.ValidTo, d.IsActive, d.Label,
                 IsCurrentlyActive = d.IsActive && d.ValidFrom <= now && d.ValidTo >= now
@@ -63,10 +71,16 @@ public class ProductDiscountsController : ControllerBase
             .AsNoTracking()
             .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now)
             .Include(d => d.Product)
+            .Include(d => d.Category)
+            .Include(d => d.Brand)
             .Select(d => new {
                 d.Id, d.ProductId,
-                ProductNameAr = d.Product.NameAr,
-                ProductNameEn = d.Product.NameEn,
+                ProductNameAr = d.Product != null ? d.Product.NameAr : null,
+                ProductNameEn = d.Product != null ? d.Product.NameEn : null,
+                d.CategoryId,
+                CategoryNameAr = d.Category != null ? d.Category.NameAr : null,
+                d.BrandId,
+                BrandNameAr = d.Brand != null ? d.Brand.NameAr : null,
                 d.DiscountType, d.DiscountValue, d.MinQty,
                 d.ValidFrom, d.ValidTo, d.Label
             })
@@ -81,8 +95,17 @@ public class ProductDiscountsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] ProductDiscountDto dto)
     {
-        if (!await _db.Products.AnyAsync(p => p.Id == dto.ProductId))
+        if (dto.ProductId.HasValue && !await _db.Products.AnyAsync(p => p.Id == dto.ProductId))
             return BadRequest(new { message = "المنتج غير موجود" });
+
+        if (dto.CategoryId.HasValue && !await _db.Categories.AnyAsync(c => c.Id == dto.CategoryId))
+            return BadRequest(new { message = "القسم غير موجود" });
+
+        if (dto.BrandId.HasValue && !await _db.Brands.AnyAsync(b => b.Id == dto.BrandId))
+            return BadRequest(new { message = "الماركة غير موجودة" });
+
+        if (!dto.ProductId.HasValue && !dto.CategoryId.HasValue && !dto.BrandId.HasValue)
+            return BadRequest(new { message = "يجب اختيار منتج أو قسم أو ماركة" });
 
         if (dto.ValidFrom >= dto.ValidTo)
             return BadRequest(new { message = "تاريخ البداية يجب أن يكون قبل تاريخ النهاية" });
@@ -93,6 +116,8 @@ public class ProductDiscountsController : ControllerBase
         var discount = new ProductDiscount
         {
             ProductId     = dto.ProductId,
+            CategoryId    = dto.CategoryId,
+            BrandId       = dto.BrandId,
             DiscountType  = dto.DiscountType,
             DiscountValue = dto.DiscountValue,
             MinQty        = dto.MinQty,
@@ -116,6 +141,9 @@ public class ProductDiscountsController : ControllerBase
         var discount = await _db.ProductDiscounts.FindAsync(id);
         if (discount == null) return NotFound();
 
+        discount.ProductId     = dto.ProductId;
+        discount.CategoryId    = dto.CategoryId;
+        discount.BrandId       = dto.BrandId;
         discount.DiscountType  = dto.DiscountType;
         discount.DiscountValue = dto.DiscountValue;
         discount.MinQty        = dto.MinQty;
@@ -145,7 +173,9 @@ public class ProductDiscountsController : ControllerBase
 }
 
 public record ProductDiscountDto(
-    int ProductId,
+    int? ProductId,
+    int? CategoryId,
+    int? BrandId,
     DiscountType DiscountType,
     decimal DiscountValue,
     int MinQty,

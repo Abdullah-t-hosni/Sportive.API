@@ -159,6 +159,7 @@ public class OrderService : IOrderService
                 i.Id, i.ProductNameAr, i.ProductNameEn, i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
                 i.Product?.Slug,
                 i.Size, i.Color, i.Quantity, i.UnitPrice, i.TotalPrice,
+                i.OriginalUnitPrice, i.DiscountAmount,
                 i.HasTax, i.VatRateApplied, i.ItemVatAmount, i.ReturnedQuantity
             )).ToList(),
             o.StatusHistory.OrderByDescending(h => h.CreatedAt).Select(h => new OrderStatusHistoryDto(
@@ -274,6 +275,10 @@ public class OrderService : IOrderService
                             ? product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId)
                             : null;
 
+                        decimal originalUnitPrice = product.Price;
+                        if (variant?.PriceAdjustment.HasValue == true)
+                            originalUnitPrice += variant.PriceAdjustment.Value;
+
                         decimal unitPrice;
                         if (actualSource == OrderSource.POS)
                         {
@@ -281,20 +286,20 @@ public class OrderService : IOrderService
                         }
                         else
                         {
-                            var disc = activeDiscounts.FirstOrDefault(d => d.ProductId == product.Id);
+                            var disc = activeDiscounts.FirstOrDefault(d => d.ProductId == product.Id)
+                                    ?? activeDiscounts.FirstOrDefault(d => d.CategoryId == product.CategoryId)
+                                    ?? activeDiscounts.FirstOrDefault(d => d.BrandId == product.BrandId);
+
                             if (disc != null && item.Quantity >= disc.MinQty)
                             {
                                 unitPrice = disc.DiscountType == DiscountType.Percentage 
-                                    ? Math.Round(product.Price - (product.Price * disc.DiscountValue / 100), 2)
-                                    : Math.Round(product.Price - disc.DiscountValue, 2);
+                                    ? Math.Round(originalUnitPrice - (originalUnitPrice * disc.DiscountValue / 100), 2)
+                                    : Math.Round(originalUnitPrice - disc.DiscountValue, 2);
                             }
                             else
                             {
-                                unitPrice = product.DiscountPrice ?? product.Price;
+                                unitPrice = product.DiscountPrice ?? originalUnitPrice;
                             }
-                            
-                            if (variant?.PriceAdjustment.HasValue == true)
-                                unitPrice += variant.PriceAdjustment.Value;
                         }
                         
                         var orderItem = new OrderItem
@@ -307,6 +312,8 @@ public class OrderService : IOrderService
                             Color = variant?.Color,
                             Quantity = item.Quantity,
                             UnitPrice = unitPrice,
+                            OriginalUnitPrice = originalUnitPrice,
+                            DiscountAmount = (originalUnitPrice - unitPrice) * item.Quantity,
                             TotalPrice = (actualSource == OrderSource.POS) ? item.TotalPrice : (unitPrice * item.Quantity),
                             HasTax = item.HasTax ?? product.HasTax,
                             VatRateApplied = item.VatRate ?? product.VatRate ?? (store?.VatRatePercent ?? 14),
@@ -331,7 +338,8 @@ public class OrderService : IOrderService
                         }
 
                         order.Items.Add(orderItem);
-                        order.SubTotal += orderItem.TotalPrice;
+                        order.SubTotal += (orderItem.OriginalUnitPrice * orderItem.Quantity);
+                        order.DiscountAmount += orderItem.DiscountAmount;
 
                         await _inventory.LogMovementAsync(
                             InventoryMovementType.Sale,
@@ -361,22 +369,26 @@ public class OrderService : IOrderService
                         throw new ArgumentException($"الكمية المطلوبة ({ci.Quantity}) من {ci.Product.NameAr} غير متاحة في المخزون حالياً.");
                     }
 
-                        var disc = activeDiscounts.FirstOrDefault(d => d.ProductId == ci.ProductId);
+                        decimal originalUnitPrice = ci.Product.Price;
+                        if (ci.ProductVariant?.PriceAdjustment.HasValue == true)
+                            originalUnitPrice += ci.ProductVariant.PriceAdjustment.Value;
+
+                        var disc = activeDiscounts.FirstOrDefault(d => d.ProductId == ci.ProductId)
+                                ?? activeDiscounts.FirstOrDefault(d => d.CategoryId == ci.Product.CategoryId)
+                                ?? activeDiscounts.FirstOrDefault(d => d.BrandId == ci.Product.BrandId);
+
                         decimal unitPrice;
                         if (disc != null && ci.Quantity >= disc.MinQty)
                         {
                             unitPrice = disc.DiscountType == DiscountType.Percentage 
-                                ? Math.Round(ci.Product.Price - (ci.Product.Price * disc.DiscountValue / 100), 2)
-                                : Math.Round(ci.Product.Price - disc.DiscountValue, 2);
+                                ? Math.Round(originalUnitPrice - (originalUnitPrice * disc.DiscountValue / 100), 2)
+                                : Math.Round(originalUnitPrice - disc.DiscountValue, 2);
                         }
                         else
                         {
-                            unitPrice = ci.Product.DiscountPrice ?? ci.Product.Price;
+                            unitPrice = ci.Product.DiscountPrice ?? originalUnitPrice;
                         }
                         
-                        if (ci.ProductVariant?.PriceAdjustment.HasValue == true)
-                            unitPrice += ci.ProductVariant.PriceAdjustment.Value;
-
                         var orderItem = new OrderItem
                         {
                             ProductId = ci.ProductId,
@@ -387,6 +399,8 @@ public class OrderService : IOrderService
                             Color = ci.ProductVariant?.Color,
                             Quantity = ci.Quantity,
                             UnitPrice = unitPrice,
+                            OriginalUnitPrice = originalUnitPrice,
+                            DiscountAmount = (originalUnitPrice - unitPrice) * ci.Quantity,
                             TotalPrice = unitPrice * ci.Quantity,
                             HasTax = ci.Product.HasTax,
                             VatRateApplied = ci.Product.VatRate ?? (store?.VatRatePercent ?? 14),
@@ -402,7 +416,8 @@ public class OrderService : IOrderService
                         }
 
                         order.Items.Add(orderItem);
-                        order.SubTotal += orderItem.TotalPrice;
+                        order.SubTotal += (orderItem.OriginalUnitPrice * orderItem.Quantity);
+                        order.DiscountAmount += orderItem.DiscountAmount;
 
                         await _inventory.LogMovementAsync(
                             InventoryMovementType.Sale,
@@ -416,6 +431,16 @@ public class OrderService : IOrderService
                         
                         _db.CartItems.Remove(ci);
                     }
+                }
+
+                // ✅ FIX: مسح السلة دايماً بعد أي طلب Website — سواء جه من dto.Items أو من السلة مباشرة
+                if (order.Source == OrderSource.Website && customerId.HasValue)
+                {
+                    var remainingCart = await _db.CartItems
+                        .Where(c => c.CustomerId == customerId.Value)
+                        .ToListAsync();
+                    if (remainingCart.Any())
+                        _db.CartItems.RemoveRange(remainingCart);
                 }
 
                 if (order.Source == OrderSource.Website && order.FulfillmentType == FulfillmentType.Delivery)
@@ -445,6 +470,7 @@ public class OrderService : IOrderService
                     order.DeliveryFee = (threshold.HasValue && order.SubTotal >= threshold.Value) ? 0 : fee;
                 }
 
+                order.DiscountAmount += (dto.DiscountAmount ?? 0);
                 order.TotalAmount = order.SubTotal + order.DeliveryFee - order.DiscountAmount;
 
                 // 💡 Initial Paid Amount calculation for POS Mixed payments & Structured Payment Table

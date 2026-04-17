@@ -153,6 +153,8 @@ public record OrderItemDto(
     int Quantity,
     decimal UnitPrice,
     decimal TotalPrice,
+    decimal OriginalUnitPrice = 0,
+    decimal DiscountAmount = 0,
     bool HasTax = true,
     decimal? VatRateApplied = null,
     decimal ItemVatAmount = 0,

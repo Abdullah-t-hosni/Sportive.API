@@ -10,6 +10,8 @@ public interface IAuthService
     Task<AuthResponseDto> LoginAsync(LoginDto dto);
     Task<bool> ChangePasswordAsync(string userId, ChangePasswordDto dto);
     Task<bool> AssignRoleAsync(string userId, string role);
+    Task<AuthResponseDto> RefreshTokenAsync(string refreshToken);
+    Task RevokeRefreshTokenAsync(string userId);
 }
 
 public interface IProductService

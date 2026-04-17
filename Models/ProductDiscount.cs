@@ -6,8 +6,14 @@ namespace Sportive.API.Models;
 /// </summary>
 public class ProductDiscount : BaseEntity
 {
-    public int ProductId { get; set; }
-    public Product Product { get; set; } = null!;
+    public int? ProductId { get; set; }
+    public Product? Product { get; set; }
+
+    public int? CategoryId { get; set; }
+    public Category? Category { get; set; }
+
+    public int? BrandId { get; set; }
+    public Brand? Brand { get; set; }
 
     /// <summary>نوع الخصم: مبلغ ثابت أو نسبة مئوية</summary>
     public DiscountType DiscountType { get; set; } = DiscountType.Percentage;

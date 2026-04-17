@@ -68,33 +68,43 @@ public class SalesAccountingService
 
         // ── 1. Credits: Revenue + VAT + Delivery ─────────────
         decimal totalVatAmount  = 0;
-        decimal totalNetRevenue = 0;
+        decimal totalGrossRevenue = 0;
+        decimal totalItemDiscounts = 0;
 
         if (order.Items != null && order.Items.Any())
         {
             foreach (var item in order.Items)
             {
-                decimal itemNet = item.TotalPrice;
-                decimal itemVat = 0;
-                if (item.HasTax)
-                {
-                    var rate = (item.VatRateApplied ?? 14) / 100m;
-                    itemNet = Math.Round(item.TotalPrice / (1 + rate), 2);
-                    itemVat = item.TotalPrice - itemNet;
-                }
-                totalNetRevenue += itemNet;
-                totalVatAmount  += itemVat;
+                decimal rate = (item.VatRateApplied ?? 14) / 100m;
+                
+                // Gross Revenue (before any discount, but Net of VAT calculation)
+                // However, the cleanest way: TotalGross = sum(OriginalUnitPrice * Qty) - sum(Vat on original if needed?)
+                // Actually, the user wants Gross Price as revenue.
+                // Revenue (Credit) + VAT (Credit) = OriginalPrice * Qty + (Vat on Discounted Price?)
+                // No, let's keep it simple:
+                // Credit Revenue (Gross Net) = (OriginalTotalPrice) / (1 + rate)
+                // Credit VAT = item.ItemVatAmount
+                
+                decimal itemOriginalTotal = item.OriginalUnitPrice * item.Quantity;
+                decimal itemGrossNet = item.HasTax 
+                    ? Math.Round(itemOriginalTotal / (1 + rate), 2)
+                    : itemOriginalTotal;
+                
+                totalGrossRevenue += itemGrossNet;
+                totalVatAmount    += item.ItemVatAmount;
+                totalItemDiscounts += item.DiscountAmount;
             }
         }
         else
         {
-            totalNetRevenue = Math.Round(order.SubTotal / (1 + vatRate), 2);
-            totalVatAmount  = order.SubTotal - totalNetRevenue;
+            totalGrossRevenue = Math.Round(order.SubTotal / (1 + vatRate), 2);
+            totalVatAmount    = order.SubTotal - totalGrossRevenue;
         }
 
-        lines.Add((salesRevAcct, 0, totalNetRevenue, $"مبيعات - {order.OrderNumber} (الإيراد)"));
+        lines.Add((salesRevAcct, 0, totalGrossRevenue, $"مبيعات - {order.OrderNumber} (إجمالي الإيراد)"));
         if (totalVatAmount > 0)
             lines.Add((vatAcct, 0, totalVatAmount, $"ضريبة مبيعات {store?.VatRatePercent ?? 14}% - {order.OrderNumber}"));
+        
         if (order.DeliveryFee > 0)
         {
             lines.Add((deliveryRevAcct, 0, order.DeliveryFee, $"إيراد توصيل - {order.OrderNumber}"));
@@ -114,8 +124,9 @@ public class SalesAccountingService
         }
 
         // ── 2. Debits: Discount + Cash/Credit Routing ─────────
+        // In our new OrderService, order.DiscountAmount already includes item-level discounts
         if (order.DiscountAmount > 0)
-            lines.Add((salesDiscAcct, order.DiscountAmount, 0, $"خصم ممنوح - {order.OrderNumber}"));
+            lines.Add((salesDiscAcct, order.DiscountAmount, 0, $"إجمالي الخصومات - {order.OrderNumber}"));
 
         // ✅ NEW: Read from OrderPayments table first, fallback to AdminNotes
         decimal handledPaidAmt = 0;

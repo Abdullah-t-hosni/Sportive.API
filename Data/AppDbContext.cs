@@ -61,6 +61,20 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
     public DbSet<ProductDiscount>      ProductDiscounts      { get; set; }
 
+    // ── الموارد البشرية والرواتب ──────────────────────────
+    public DbSet<Employee>           Employees           { get; set; }
+    public DbSet<PayrollRun>         PayrollRuns         { get; set; }
+    public DbSet<PayrollItem>        PayrollItems        { get; set; }
+    public DbSet<EmployeeAdvance>    EmployeeAdvances    { get; set; }
+    public DbSet<EmployeeBonus>      EmployeeBonuses     { get; set; }
+    public DbSet<EmployeeDeduction>  EmployeeDeductions  { get; set; }
+
+    // ── الأصول الثابتة ────────────────────────────────────
+    public DbSet<FixedAssetCategory> FixedAssetCategories { get; set; }
+    public DbSet<FixedAsset>         FixedAssets          { get; set; }
+    public DbSet<AssetDepreciation>  AssetDepreciations   { get; set; }
+    public DbSet<AssetDisposal>      AssetDisposals       { get; set; }
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -329,6 +343,144 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<InventoryOpeningBalanceItem>(e => {
             e.Property(x => x.CostPrice).HasPrecision(18, 2);
+        });
+
+        // ── JournalLine — EmployeeId ──────────────────────────
+        builder.Entity<JournalLine>(e => {
+            e.HasOne(l => l.Employee).WithMany()
+             .HasForeignKey(l => l.EmployeeId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ── الموارد البشرية والرواتب ──────────────────────────
+        builder.Entity<Employee>(e => {
+            e.Property(x => x.BaseSalary).HasPrecision(18, 2);
+            e.Property(x => x.Status).HasConversion<string>();
+            e.HasIndex(x => x.EmployeeNumber).IsUnique();
+            e.HasOne(x => x.Account).WithMany()
+             .HasForeignKey(x => x.AccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<PayrollRun>(e => {
+            e.Property(x => x.TotalBasicSalary).HasPrecision(18, 2);
+            e.Property(x => x.TotalBonuses).HasPrecision(18, 2);
+            e.Property(x => x.TotalDeductions).HasPrecision(18, 2);
+            e.Property(x => x.TotalAdvancesDeducted).HasPrecision(18, 2);
+            e.Property(x => x.TotalNetPayable).HasPrecision(18, 2);
+            e.Property(x => x.Status).HasConversion<string>();
+            e.HasIndex(x => x.PayrollNumber).IsUnique();
+            e.HasOne(x => x.JournalEntry).WithMany()
+             .HasForeignKey(x => x.JournalEntryId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.WagesExpenseAccount).WithMany()
+             .HasForeignKey(x => x.WagesExpenseAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.AccruedSalariesAccount).WithMany()
+             .HasForeignKey(x => x.AccruedSalariesAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.DeductionRevenueAccount).WithMany()
+             .HasForeignKey(x => x.DeductionRevenueAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.AdvancesAccount).WithMany()
+             .HasForeignKey(x => x.AdvancesAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<PayrollItem>(e => {
+            e.Property(x => x.BasicSalary).HasPrecision(18, 2);
+            e.Property(x => x.BonusAmount).HasPrecision(18, 2);
+            e.Property(x => x.DeductionAmount).HasPrecision(18, 2);
+            e.Property(x => x.AdvanceDeducted).HasPrecision(18, 2);
+            e.HasOne(x => x.PayrollRun).WithMany(p => p.Items)
+             .HasForeignKey(x => x.PayrollRunId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Employee).WithMany(emp => emp.PayrollItems)
+             .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<EmployeeAdvance>(e => {
+            e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.Property(x => x.DeductedAmount).HasPrecision(18, 2);
+            e.Property(x => x.Status).HasConversion<string>();
+            e.HasIndex(x => x.AdvanceNumber).IsUnique();
+            e.HasOne(x => x.Employee).WithMany(emp => emp.Advances)
+             .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.CashAccount).WithMany()
+             .HasForeignKey(x => x.CashAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.JournalEntry).WithMany()
+             .HasForeignKey(x => x.JournalEntryId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<EmployeeBonus>(e => {
+            e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.Property(x => x.BonusType).HasConversion<string>();
+            e.HasIndex(x => x.BonusNumber).IsUnique();
+            e.HasOne(x => x.Employee).WithMany(emp => emp.Bonuses)
+             .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.PayrollRun).WithMany()
+             .HasForeignKey(x => x.PayrollRunId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<EmployeeDeduction>(e => {
+            e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.Property(x => x.DeductionType).HasConversion<string>();
+            e.HasIndex(x => x.DeductionNumber).IsUnique();
+            e.HasOne(x => x.Employee).WithMany(emp => emp.Deductions)
+             .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.PayrollRun).WithMany()
+             .HasForeignKey(x => x.PayrollRunId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ── الأصول الثابتة ────────────────────────────────────
+        builder.Entity<FixedAssetCategory>(e => {
+            e.HasMany(c => c.Assets).WithOne(a => a.Category)
+             .HasForeignKey(a => a.CategoryId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(c => c.AssetAccount).WithMany()
+             .HasForeignKey(c => c.AssetAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(c => c.AccumDepreciationAccount).WithMany()
+             .HasForeignKey(c => c.AccumDepreciationAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(c => c.DepreciationExpenseAccount).WithMany()
+             .HasForeignKey(c => c.DepreciationExpenseAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<FixedAsset>(e => {
+            e.Property(a => a.PurchaseCost).HasPrecision(18, 2);
+            e.Property(a => a.SalvageValue).HasPrecision(18, 2);
+            e.Property(a => a.AccumulatedDepreciation).HasPrecision(18, 2);
+            e.Property(a => a.DepreciationMethod).HasConversion<string>();
+            e.Property(a => a.Status).HasConversion<string>();
+            e.HasIndex(a => a.AssetNumber).IsUnique();
+            e.HasOne(a => a.PurchaseInvoice).WithMany()
+             .HasForeignKey(a => a.PurchaseInvoiceId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(a => a.AssetAccount).WithMany()
+             .HasForeignKey(a => a.AssetAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(a => a.AccumDepreciationAccount).WithMany()
+             .HasForeignKey(a => a.AccumDepreciationAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(a => a.DepreciationExpenseAccount).WithMany()
+             .HasForeignKey(a => a.DepreciationExpenseAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<AssetDepreciation>(e => {
+            e.Property(d => d.DepreciationAmount).HasPrecision(18, 2);
+            e.Property(d => d.AccumulatedBefore).HasPrecision(18, 2);
+            e.Property(d => d.AccumulatedAfter).HasPrecision(18, 2);
+            e.Property(d => d.BookValueAfter).HasPrecision(18, 2);
+            e.HasOne(d => d.FixedAsset).WithMany(a => a.Depreciations)
+             .HasForeignKey(d => d.FixedAssetId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(d => d.JournalEntry).WithMany()
+             .HasForeignKey(d => d.JournalEntryId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(d => d.DepreciationNumber).IsUnique();
+        });
+
+        builder.Entity<AssetDisposal>(e => {
+            e.Property(d => d.BookValueAtDisposal).HasPrecision(18, 2);
+            e.Property(d => d.AccumulatedAtDisposal).HasPrecision(18, 2);
+            e.Property(d => d.SaleProceeds).HasPrecision(18, 2);
+            e.Property(d => d.DisposalType).HasConversion<string>();
+            e.HasOne(d => d.FixedAsset).WithMany(a => a.Disposals)
+             .HasForeignKey(d => d.FixedAssetId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(d => d.JournalEntry).WithMany()
+             .HasForeignKey(d => d.JournalEntryId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(d => d.ProceedsAccount).WithMany()
+             .HasForeignKey(d => d.ProceedsAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(d => d.GainAccount).WithMany()
+             .HasForeignKey(d => d.GainAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(d => d.LossAccount).WithMany()
+             .HasForeignKey(d => d.LossAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(d => d.DisposalNumber).IsUnique();
         });
 
         builder.Entity<StoreInfo>().HasData(

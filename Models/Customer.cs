@@ -9,6 +9,10 @@ public class AppUser : IdentityUser
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public bool IsActive { get; set; } = true;
     public decimal FixedDiscount { get; set; } = 0;
+
+    // Refresh Token — مخزن في DB لدعم التجديد والإلغاء
+    public string?   RefreshToken       { get; set; }
+    public DateTime? RefreshTokenExpiry { get; set; }
 }
 
 public class Customer : BaseEntity

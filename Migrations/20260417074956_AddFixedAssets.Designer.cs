@@ -3,17 +3,20 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sportive.API.Data;
 
 #nullable disable
 
-namespace Sportive.API.Migrations
+namespace Sportive.API.Migrations.DecimalFix
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260417074956_AddFixedAssets")]
+    partial class AddFixedAssets
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -375,12 +378,6 @@ namespace Sportive.API.Migrations
 
                     b.Property<string>("ProfileImageUrl")
                         .HasColumnType("longtext");
-
-                    b.Property<string>("RefreshToken")
-                        .HasColumnType("longtext");
-
-                    b.Property<DateTime?>("RefreshTokenExpiry")
-                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("longtext");
@@ -979,262 +976,6 @@ namespace Sportive.API.Migrations
                     b.ToTable("CustomerInstallments");
                 });
 
-            modelBuilder.Entity("Sportive.API.Models.Employee", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int?>("AccountId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("AttachmentPublicId")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("AttachmentUrl")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("BankAccount")
-                        .HasColumnType("longtext");
-
-                    b.Property<decimal>("BaseSalary")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("CreatedByUserId")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("Department")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("Email")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("EmployeeNumber")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<DateTime>("HireDate")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("JobTitle")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("NationalId")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("Phone")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<DateTime?>("TerminationDate")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AccountId");
-
-                    b.HasIndex("EmployeeNumber")
-                        .IsUnique();
-
-                    b.ToTable("Employees");
-                });
-
-            modelBuilder.Entity("Sportive.API.Models.EmployeeAdvance", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("AdvanceDate")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("AdvanceNumber")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<decimal>("Amount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<int?>("CashAccountId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("CreatedByUserId")
-                        .HasColumnType("longtext");
-
-                    b.Property<decimal>("DeductedAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<int>("EmployeeId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("JournalEntryId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("Reason")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AdvanceNumber")
-                        .IsUnique();
-
-                    b.HasIndex("CashAccountId");
-
-                    b.HasIndex("EmployeeId");
-
-                    b.HasIndex("JournalEntryId");
-
-                    b.ToTable("EmployeeAdvances");
-                });
-
-            modelBuilder.Entity("Sportive.API.Models.EmployeeBonus", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<decimal>("Amount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("BonusDate")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("BonusNumber")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<string>("BonusType")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("CreatedByUserId")
-                        .HasColumnType("longtext");
-
-                    b.Property<int>("EmployeeId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("longtext");
-
-                    b.Property<int?>("PayrollRunId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Reason")
-                        .HasColumnType("longtext");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BonusNumber")
-                        .IsUnique();
-
-                    b.HasIndex("EmployeeId");
-
-                    b.HasIndex("PayrollRunId");
-
-                    b.ToTable("EmployeeBonuses");
-                });
-
-            modelBuilder.Entity("Sportive.API.Models.EmployeeDeduction", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<decimal>("Amount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("CreatedByUserId")
-                        .HasColumnType("longtext");
-
-                    b.Property<DateTime>("DeductionDate")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("DeductionNumber")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<string>("DeductionType")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<int>("EmployeeId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("longtext");
-
-                    b.Property<int?>("PayrollRunId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Reason")
-                        .HasColumnType("longtext");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DeductionNumber")
-                        .IsUnique();
-
-                    b.HasIndex("EmployeeId");
-
-                    b.HasIndex("PayrollRunId");
-
-                    b.ToTable("EmployeeDeductions");
-                });
-
             modelBuilder.Entity("Sportive.API.Models.FixedAsset", b =>
                 {
                     b.Property<int>("Id")
@@ -1733,9 +1474,6 @@ namespace Sportive.API.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("longtext");
 
-                    b.Property<int?>("EmployeeId")
-                        .HasColumnType("int");
-
                     b.Property<int>("JournalEntryId")
                         .HasColumnType("int");
 
@@ -1756,8 +1494,6 @@ namespace Sportive.API.Migrations
                     b.HasIndex("AccountId");
 
                     b.HasIndex("CustomerId");
-
-                    b.HasIndex("EmployeeId");
 
                     b.HasIndex("JournalEntryId");
 
@@ -1957,9 +1693,6 @@ namespace Sportive.API.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<decimal>("DiscountAmount")
-                        .HasColumnType("decimal(65,30)");
-
                     b.Property<bool>("HasTax")
                         .HasColumnType("tinyint(1)");
 
@@ -1969,9 +1702,6 @@ namespace Sportive.API.Migrations
 
                     b.Property<int>("OrderId")
                         .HasColumnType("int");
-
-                    b.Property<decimal>("OriginalUnitPrice")
-                        .HasColumnType("decimal(65,30)");
 
                     b.Property<int?>("ProductId")
                         .HasColumnType("int");
@@ -2171,141 +1901,6 @@ namespace Sportive.API.Migrations
                     b.ToTable("PaymentVouchers");
                 });
 
-            modelBuilder.Entity("Sportive.API.Models.PayrollItem", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<decimal>("AdvanceDeducted")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("BasicSalary")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("BonusAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<decimal>("DeductionAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<int>("EmployeeId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("longtext");
-
-                    b.Property<int>("PayrollRunId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("EmployeeId");
-
-                    b.HasIndex("PayrollRunId");
-
-                    b.ToTable("PayrollItems");
-                });
-
-            modelBuilder.Entity("Sportive.API.Models.PayrollRun", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int?>("AccruedSalariesAccountId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("AdvancesAccountId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("CreatedByUserId")
-                        .HasColumnType("longtext");
-
-                    b.Property<int?>("DeductionRevenueAccountId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("JournalEntryId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("PayrollNumber")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<int>("PeriodMonth")
-                        .HasColumnType("int");
-
-                    b.Property<int>("PeriodYear")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<decimal>("TotalAdvancesDeducted")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("TotalBasicSalary")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("TotalBonuses")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("TotalDeductions")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("TotalNetPayable")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<int?>("WagesExpenseAccountId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AccruedSalariesAccountId");
-
-                    b.HasIndex("AdvancesAccountId");
-
-                    b.HasIndex("DeductionRevenueAccountId");
-
-                    b.HasIndex("JournalEntryId");
-
-                    b.HasIndex("PayrollNumber")
-                        .IsUnique();
-
-                    b.HasIndex("WagesExpenseAccountId");
-
-                    b.ToTable("PayrollRuns");
-                });
-
             modelBuilder.Entity("Sportive.API.Models.Product", b =>
                 {
                     b.Property<int>("Id")
@@ -2412,12 +2007,6 @@ namespace Sportive.API.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<int?>("BrandId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("CategoryId")
-                        .HasColumnType("int");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
@@ -2436,7 +2025,7 @@ namespace Sportive.API.Migrations
                     b.Property<int>("MinQty")
                         .HasColumnType("int");
 
-                    b.Property<int?>("ProductId")
+                    b.Property<int>("ProductId")
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("UpdatedAt")
@@ -2449,10 +2038,6 @@ namespace Sportive.API.Migrations
                         .HasColumnType("datetime(6)");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("BrandId");
-
-                    b.HasIndex("CategoryId");
 
                     b.HasIndex("ProductId");
 
@@ -3767,77 +3352,6 @@ namespace Sportive.API.Migrations
                     b.Navigation("Order");
                 });
 
-            modelBuilder.Entity("Sportive.API.Models.Employee", b =>
-                {
-                    b.HasOne("Sportive.API.Models.Account", "Account")
-                        .WithMany()
-                        .HasForeignKey("AccountId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Account");
-                });
-
-            modelBuilder.Entity("Sportive.API.Models.EmployeeAdvance", b =>
-                {
-                    b.HasOne("Sportive.API.Models.Account", "CashAccount")
-                        .WithMany()
-                        .HasForeignKey("CashAccountId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Sportive.API.Models.Employee", "Employee")
-                        .WithMany("Advances")
-                        .HasForeignKey("EmployeeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Sportive.API.Models.JournalEntry", "JournalEntry")
-                        .WithMany()
-                        .HasForeignKey("JournalEntryId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("CashAccount");
-
-                    b.Navigation("Employee");
-
-                    b.Navigation("JournalEntry");
-                });
-
-            modelBuilder.Entity("Sportive.API.Models.EmployeeBonus", b =>
-                {
-                    b.HasOne("Sportive.API.Models.Employee", "Employee")
-                        .WithMany("Bonuses")
-                        .HasForeignKey("EmployeeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Sportive.API.Models.PayrollRun", "PayrollRun")
-                        .WithMany()
-                        .HasForeignKey("PayrollRunId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Employee");
-
-                    b.Navigation("PayrollRun");
-                });
-
-            modelBuilder.Entity("Sportive.API.Models.EmployeeDeduction", b =>
-                {
-                    b.HasOne("Sportive.API.Models.Employee", "Employee")
-                        .WithMany("Deductions")
-                        .HasForeignKey("EmployeeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Sportive.API.Models.PayrollRun", "PayrollRun")
-                        .WithMany()
-                        .HasForeignKey("PayrollRunId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Employee");
-
-                    b.Navigation("PayrollRun");
-                });
-
             modelBuilder.Entity("Sportive.API.Models.FixedAsset", b =>
                 {
                     b.HasOne("Sportive.API.Models.Account", "AccumDepreciationAccount")
@@ -4017,11 +3531,6 @@ namespace Sportive.API.Migrations
                         .WithMany()
                         .HasForeignKey("CustomerId");
 
-                    b.HasOne("Sportive.API.Models.Employee", "Employee")
-                        .WithMany()
-                        .HasForeignKey("EmployeeId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("Sportive.API.Models.JournalEntry", "JournalEntry")
                         .WithMany("Lines")
                         .HasForeignKey("JournalEntryId")
@@ -4039,8 +3548,6 @@ namespace Sportive.API.Migrations
                     b.Navigation("Account");
 
                     b.Navigation("Customer");
-
-                    b.Navigation("Employee");
 
                     b.Navigation("JournalEntry");
 
@@ -4150,63 +3657,6 @@ namespace Sportive.API.Migrations
                     b.Navigation("ToAccount");
                 });
 
-            modelBuilder.Entity("Sportive.API.Models.PayrollItem", b =>
-                {
-                    b.HasOne("Sportive.API.Models.Employee", "Employee")
-                        .WithMany("PayrollItems")
-                        .HasForeignKey("EmployeeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Sportive.API.Models.PayrollRun", "PayrollRun")
-                        .WithMany("Items")
-                        .HasForeignKey("PayrollRunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Employee");
-
-                    b.Navigation("PayrollRun");
-                });
-
-            modelBuilder.Entity("Sportive.API.Models.PayrollRun", b =>
-                {
-                    b.HasOne("Sportive.API.Models.Account", "AccruedSalariesAccount")
-                        .WithMany()
-                        .HasForeignKey("AccruedSalariesAccountId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Sportive.API.Models.Account", "AdvancesAccount")
-                        .WithMany()
-                        .HasForeignKey("AdvancesAccountId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Sportive.API.Models.Account", "DeductionRevenueAccount")
-                        .WithMany()
-                        .HasForeignKey("DeductionRevenueAccountId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Sportive.API.Models.JournalEntry", "JournalEntry")
-                        .WithMany()
-                        .HasForeignKey("JournalEntryId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Sportive.API.Models.Account", "WagesExpenseAccount")
-                        .WithMany()
-                        .HasForeignKey("WagesExpenseAccountId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("AccruedSalariesAccount");
-
-                    b.Navigation("AdvancesAccount");
-
-                    b.Navigation("DeductionRevenueAccount");
-
-                    b.Navigation("JournalEntry");
-
-                    b.Navigation("WagesExpenseAccount");
-                });
-
             modelBuilder.Entity("Sportive.API.Models.Product", b =>
                 {
                     b.HasOne("Sportive.API.Models.Brand", "Brand")
@@ -4232,21 +3682,11 @@ namespace Sportive.API.Migrations
 
             modelBuilder.Entity("Sportive.API.Models.ProductDiscount", b =>
                 {
-                    b.HasOne("Sportive.API.Models.Brand", "Brand")
-                        .WithMany()
-                        .HasForeignKey("BrandId");
-
-                    b.HasOne("Sportive.API.Models.Category", "Category")
-                        .WithMany()
-                        .HasForeignKey("CategoryId");
-
                     b.HasOne("Sportive.API.Models.Product", "Product")
                         .WithMany()
-                        .HasForeignKey("ProductId");
-
-                    b.Navigation("Brand");
-
-                    b.Navigation("Category");
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Product");
                 });
@@ -4512,17 +3952,6 @@ namespace Sportive.API.Migrations
                     b.Navigation("Payments");
                 });
 
-            modelBuilder.Entity("Sportive.API.Models.Employee", b =>
-                {
-                    b.Navigation("Advances");
-
-                    b.Navigation("Bonuses");
-
-                    b.Navigation("Deductions");
-
-                    b.Navigation("PayrollItems");
-                });
-
             modelBuilder.Entity("Sportive.API.Models.FixedAsset", b =>
                 {
                     b.Navigation("Depreciations");
@@ -4557,11 +3986,6 @@ namespace Sportive.API.Migrations
                     b.Navigation("Payments");
 
                     b.Navigation("StatusHistory");
-                });
-
-            modelBuilder.Entity("Sportive.API.Models.PayrollRun", b =>
-                {
-                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("Sportive.API.Models.Product", b =>

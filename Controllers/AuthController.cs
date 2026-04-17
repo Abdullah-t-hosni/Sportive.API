@@ -50,6 +50,26 @@ public class AuthController : ControllerBase
         catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
     }
 
+    /// <summary>تجديد الـ access token — الفرونت يبعت refreshToken يجيب access token جديد</summary>
+    [HttpPost("refresh")]
+    public async Task<IActionResult> Refresh([FromBody] RefreshTokenRequestDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.RefreshToken))
+            return BadRequest(new { message = "refreshToken مطلوب" });
+        try { return Ok(await _auth.RefreshTokenAsync(dto.RefreshToken)); }
+        catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+    }
+
+    /// <summary>تسجيل خروج — يُلغي الـ refresh token</summary>
+    [Authorize]
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout()
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
+        await _auth.RevokeRefreshTokenAsync(userId);
+        return Ok(new { message = "تم تسجيل الخروج بنجاح" });
+    }
+
     [HttpPost("forgot-password")]
     [EnableRateLimiting("auth")]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto)
