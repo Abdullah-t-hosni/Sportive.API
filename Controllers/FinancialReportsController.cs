@@ -438,6 +438,50 @@ public class FinancialReportsController : ControllerBase
     }
 
     // ══════════════════════════════════════════════════════
+    // 5.1. إصلاح الصحة المحاسبية (Heal Accounting)
+    // ══════════════════════════════════════════════════════
+    [HttpPost("heal-accounting")]
+    public async Task<IActionResult> HealAccounting()
+    {
+        var fixedCount = 0;
+
+        // 1. معالجة الحسابات غير النشطة (نقل حركاتها للأب النشط)
+        var inactiveLines = await _db.JournalLines
+            .Include(l => l.Account)
+            .Where(l => l.Account != null && !l.Account.IsActive)
+            .ToListAsync();
+
+        foreach (var line in inactiveLines)
+        {
+            // محاولة إيجاد أول أب نشط
+            var parent = await _db.Accounts
+                .Where(a => a.Id == line.Account.ParentId && a.IsActive)
+                .FirstOrDefaultAsync();
+            
+            if (parent == null) {
+                // إذا لم يوجد أب مباشر نشط، نبحث عن الحساب الرئيسي (Level 1)
+                var codeRoot = line.Account.Code.Substring(0, 1);
+                parent = await _db.Accounts
+                    .Where(a => a.Code.StartsWith(codeRoot) && a.Level == 1 && a.IsActive)
+                    .FirstOrDefaultAsync();
+            }
+
+            if (parent != null)
+            {
+                line.AccountId = parent.Id;
+                fixedCount++;
+            }
+        }
+
+        if (fixedCount > 0) await _db.SaveChangesAsync();
+
+        return Ok(new { 
+            message = $"تم إصلاح {fixedCount} حركة بنجاح بنقلها للحسابات الرئيسية النشطة.",
+            fixedCount 
+        });
+    }
+
+    // ══════════════════════════════════════════════════════
     // 6. كشف حساب  GET /api/financialreports/account-statement
     // ══════════════════════════════════════════════════════
     [HttpGet("account-statement")]
