@@ -54,7 +54,7 @@ public record EmployeeDto(
     DateTime?      TerminationDate,
     decimal        BaseSalary,
     string?        BankAccount,
-    EmployeeStatus Status,
+    int            Status,
     string?        Notes,
     string?        AttachmentUrl,
     string?        AttachmentPublicId,
@@ -65,7 +65,7 @@ public record EmployeeDto(
     string?        AppUserName  = null
 );
 
-public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, string? Department, decimal BaseSalary, EmployeeStatus Status);
+public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, string? Department, decimal BaseSalary, int Status);
 
 // ══════════════════════════════════════════════════════
 // PAYROLL RUN DTOs
@@ -101,7 +101,7 @@ public record PayrollRunDto(
     decimal       TotalDeductions,
     decimal       TotalAdvancesDeducted,
     decimal       TotalNetPayable,
-    PayrollStatus Status,
+    int           Status,
     string?       Notes,
     int?          JournalEntryId,
     DateTime      CreatedAt,
@@ -129,7 +129,7 @@ public record PayrollRunSummaryDto(
     int           PeriodMonth,
     decimal       TotalNetPayable,
     int           EmployeeCount,
-    PayrollStatus Status,
+    int           Status,
     int?          JournalEntryId,
     DateTime      CreatedAt
 );
@@ -156,7 +156,7 @@ public record EmployeeAdvanceDto(
     decimal        Amount,
     decimal        DeductedAmount,
     decimal        RemainingAmount,
-    AdvanceStatus  Status,
+    int            Status,
     string?        Reason,
     string?        Notes,
     int?           CashAccountId,
@@ -185,7 +185,7 @@ public record EmployeeBonusDto(
     string    EmployeeName,
     DateTime  BonusDate,
     decimal   Amount,
-    BonusType BonusType,
+    int       BonusType,
     string?   Reason,
     string?   Notes,
     int?      PayrollRunId,
@@ -212,7 +212,7 @@ public record EmployeeDeductionDto(
     string        EmployeeName,
     DateTime      DeductionDate,
     decimal       Amount,
-    DeductionType DeductionType,
+    int           DeductionType,
     string?       Reason,
     string?       Notes,
     int?          PayrollRunId,

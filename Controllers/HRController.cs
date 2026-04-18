@@ -50,7 +50,7 @@ public class EmployeesController : ControllerBase
             .Select(e => new EmployeeDto(
                 e.Id, e.EmployeeNumber, e.Name, e.Phone, e.Email, e.NationalId,
                 e.JobTitle, e.Department, e.HireDate, e.TerminationDate,
-                e.BaseSalary, e.BankAccount, e.Status, e.Notes,
+                e.BaseSalary, e.BankAccount, (int)e.Status, e.Notes,
                 e.AttachmentUrl, e.AttachmentPublicId,
                 e.AccountId, e.Account != null ? e.Account.NameAr : null,
                 e.CreatedAt,
@@ -67,7 +67,7 @@ public class EmployeesController : ControllerBase
         var list = await _db.Employees
             .Where(e => e.Status == EmployeeStatus.Active)
             .OrderBy(e => e.Name)
-            .Select(e => new EmployeeBasicDto(e.Id, e.EmployeeNumber, e.Name, e.JobTitle, e.Department, e.BaseSalary, e.Status))
+            .Select(e => new EmployeeBasicDto(e.Id, e.EmployeeNumber, e.Name, e.JobTitle, e.Department, e.BaseSalary, (int)e.Status))
             .ToListAsync();
         return Ok(list);
     }
@@ -84,7 +84,7 @@ public class EmployeesController : ControllerBase
         return Ok(new EmployeeDto(
             e.Id, e.EmployeeNumber, e.Name, e.Phone, e.Email, e.NationalId,
             e.JobTitle, e.Department, e.HireDate, e.TerminationDate,
-            e.BaseSalary, e.BankAccount, e.Status, e.Notes,
+            e.BaseSalary, e.BankAccount, (int)e.Status, e.Notes,
             e.AttachmentUrl, e.AttachmentPublicId,
             e.AccountId, e.Account?.NameAr, e.CreatedAt,
             e.AppUserId, e.AppUser?.FullName));
@@ -242,7 +242,7 @@ public class PayrollController : ControllerBase
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(p => new PayrollRunSummaryDto(
                 p.Id, p.PayrollNumber, p.PeriodYear, p.PeriodMonth,
-                p.TotalNetPayable, p.Items.Count, p.Status, p.JournalEntryId, p.CreatedAt))
+                p.TotalNetPayable, p.Items.Count, (int)p.Status, p.JournalEntryId, p.CreatedAt))
             .ToListAsync();
 
         return Ok(new PaginatedResult<PayrollRunSummaryDto>(items, total, page, pageSize,
@@ -488,7 +488,7 @@ public class PayrollController : ControllerBase
     private static PayrollRunDto ToDto(PayrollRun run) => new(
         run.Id, run.PayrollNumber, run.PeriodYear, run.PeriodMonth,
         run.TotalBasicSalary, run.TotalBonuses, run.TotalDeductions,
-        run.TotalAdvancesDeducted, run.TotalNetPayable, run.Status, run.Notes,
+        run.TotalAdvancesDeducted, run.TotalNetPayable, (int)run.Status, run.Notes,
         run.JournalEntryId, run.CreatedAt,
         run.Items.Select(i => new PayrollItemDto(
             i.Id, i.EmployeeId, i.Employee.Name, i.Employee.EmployeeNumber,
@@ -535,7 +535,7 @@ public class EmployeeAdvancesController : ControllerBase
             .Select(a => new EmployeeAdvanceDto(
                 a.Id, a.AdvanceNumber, a.EmployeeId, a.Employee.Name,
                 a.AdvanceDate, a.Amount, a.DeductedAmount, a.Amount - a.DeductedAmount,
-                a.Status, a.Reason, a.Notes,
+                (int)a.Status, a.Reason, a.Notes,
                 a.CashAccountId, a.CashAccount != null ? a.CashAccount.NameAr : null,
                 a.JournalEntryId, a.CreatedAt
             )).ToListAsync();
@@ -658,7 +658,7 @@ public class EmployeeBonusesController : ControllerBase
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(b => new EmployeeBonusDto(
                 b.Id, b.BonusNumber, b.EmployeeId, b.Employee.Name,
-                b.BonusDate, b.Amount, b.BonusType, b.Reason, b.Notes,
+                b.BonusDate, b.Amount, (int)b.BonusType, b.Reason, b.Notes,
                 b.PayrollRunId, b.CreatedAt
             )).ToListAsync();
 
@@ -743,7 +743,7 @@ public class EmployeeDeductionsController : ControllerBase
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(d => new EmployeeDeductionDto(
                 d.Id, d.DeductionNumber, d.EmployeeId, d.Employee.Name,
-                d.DeductionDate, d.Amount, d.DeductionType, d.Reason, d.Notes,
+                d.DeductionDate, d.Amount, (int)d.DeductionType, d.Reason, d.Notes,
                 d.PayrollRunId, d.CreatedAt
             )).ToListAsync();
 

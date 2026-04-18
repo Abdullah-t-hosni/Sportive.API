@@ -299,15 +299,63 @@ public class CustomerService : ICustomerService
         if (isEmployee)
         {
             var emp = await _db.Employees.FindAsync(employeeId);
-            if (emp == null || emp.AccountId != null) return;
+            if (emp == null) return;
 
-            // 💡 Staff/Employees use 1104 (Employees Receivables) by default
-            var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1104");
-            if (parent != null)
+            // 1. Get the control account for employees (1104 - مدينو موظفون)
+            var employeeRoot = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1104") 
+                            ?? await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103"); // Fallback to Receivables
+            
+            if (employeeRoot == null) return;
+
+            // 2. Check if sub-account already exists OR if they are pointing to a parent (which they shouldn't)
+            var existingSub = await _db.Accounts.FirstOrDefaultAsync(a => a.ParentId == employeeRoot.Id && a.NameAr == emp.Name);
+            
+            // If they are pointing to a parent account, we need to move them to a child
+            bool isPointingToParent = emp.AccountId != null && (emp.AccountId == employeeRoot.Id || (_db.Accounts.Any(a => a.Id == emp.AccountId && !a.AllowPosting)));
+
+            if (existingSub != null)
             {
-                emp.AccountId = parent.Id;
-                await _db.SaveChangesAsync();
+                emp.AccountId = existingSub.Id;
             }
+            else if (emp.AccountId == null || isPointingToParent)
+            {
+                // 3. Generate next code
+                var lastCode = await _db.Accounts
+                    .Where(a => a.ParentId == employeeRoot.Id)
+                    .OrderByDescending(a => a.Code)
+                    .Select(a => a.Code)
+                    .FirstOrDefaultAsync();
+
+                string nextCode;
+                if (string.IsNullOrEmpty(lastCode))
+                {
+                    nextCode = employeeRoot.Code + "0001";
+                }
+                else if (long.TryParse(lastCode, out var val))
+                {
+                    nextCode = (val + 1).ToString();
+                }
+                else
+                {
+                    nextCode = employeeRoot.Code + "_" + Guid.NewGuid().ToString().Substring(0, 4);
+                }
+
+                var subAccount = new Account
+                {
+                    NameAr = emp.Name,
+                    NameEn = emp.Name,
+                    Code = nextCode,
+                    ParentId = employeeRoot.Id,
+                    Type = employeeRoot.Type,
+                    Nature = employeeRoot.Nature,
+                    AllowPosting = true,
+                    CreatedAt = TimeHelper.GetEgyptTime()
+                };
+                _db.Accounts.Add(subAccount);
+                await _db.SaveChangesAsync();
+                emp.AccountId = subAccount.Id;
+            }
+            await _db.SaveChangesAsync();
         }
         else
         {
