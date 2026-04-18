@@ -385,6 +385,26 @@ public class ReceiptVouchersController : ControllerBase
         return Ok(new { items, total, page, pageSize, totalPages = (int)Math.Ceiling(total/(double)pageSize) });
     }
 
+    [HttpGet("order/{orderId}")]
+    public async Task<IActionResult> GetByOrderId(int orderId)
+    {
+        var items = await _db.ReceiptVouchers
+            .Where(v => v.OrderId == orderId)
+            .Include(v => v.CashAccount)
+            .Include(v => v.FromAccount)
+            .Include(v => v.Customer)
+            .OrderByDescending(v => v.VoucherDate)
+            .Select(v => new { 
+                v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description,
+                v.CashAccountId,
+                CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
+                FromAccountName = v.FromAccount != null ? v.FromAccount.NameAr : null,
+                EntityName = v.Customer != null ? v.Customer.FullName : null
+            })
+            .ToListAsync();
+        return Ok(items);
+    }
+
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
