@@ -35,7 +35,8 @@ public class InventoryAuditsController : ControllerBase
             .Skip((page-1)*pageSize).Take(pageSize)
             .Select(a => new InventoryAuditSummaryDto(
                 a.Id, a.Title, a.AuditDate, (int)a.Status,
-                a.TotalExpectedValue, a.TotalActualValue, a.ValueDifference,
+                a.TotalExpectedValue, a.TotalActualValue, 
+                a.TotalActualValue - a.TotalExpectedValue,
                 a.Items.Count
             )).ToListAsync();
 
@@ -54,11 +55,11 @@ public class InventoryAuditsController : ControllerBase
 
         return Ok(new InventoryAuditDetailDto(
             a.Id, a.Title, a.AuditDate, a.Description, (int)a.Status,
-            a.TotalExpectedValue, a.TotalActualValue, a.ValueDifference,
+            a.TotalExpectedValue, a.TotalActualValue, a.TotalActualValue - a.TotalExpectedValue,
             a.Items.Select(i => new InventoryAuditItemDto(
                 i.Id, i.ProductId, i.Product?.NameAr, i.Product?.SKU,
                 i.ProductVariantId, i.ProductVariant?.Size ?? i.ProductVariant?.ColorAr,
-                i.ExpectedQuantity, i.ActualQuantity, i.Difference, i.UnitCost,
+                i.ExpectedQuantity, i.ActualQuantity, i.ActualQuantity - i.ExpectedQuantity, i.UnitCost,
                 i.ExpectedQuantity * i.UnitCost, i.ActualQuantity * i.UnitCost,
                 i.Note
             )).ToList(),
