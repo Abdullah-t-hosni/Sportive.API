@@ -59,9 +59,9 @@ public class MappingSeederController : ControllerBase
         {
             var match = accounts.FirstOrDefault(a => 
                 item.Value.Any(keyword => 
-                    a.Code == keyword || 
-                    a.NameAr.Contains(keyword, StringComparison.OrdinalIgnoreCase) || 
-                    a.NameEn.Contains(keyword, StringComparison.OrdinalIgnoreCase)
+                    (a.Code != null && a.Code.Equals(keyword, StringComparison.OrdinalIgnoreCase)) || 
+                    (a.NameAr != null && a.NameAr.Contains(keyword, StringComparison.OrdinalIgnoreCase)) || 
+                    (a.NameEn != null && a.NameEn.Contains(keyword, StringComparison.OrdinalIgnoreCase))
                 )
             );
 
