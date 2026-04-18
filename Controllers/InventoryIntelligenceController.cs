@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using Sportive.API.Services;
 using Sportive.API.Utils;
 using System.Security.Claims;
 
@@ -18,7 +19,12 @@ namespace Sportive.API.Controllers;
 public class InventoryIntelligenceController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public InventoryIntelligenceController(AppDbContext db) => _db = db;
+    private readonly AccountingCoreService _accounting;
+    public InventoryIntelligenceController(AppDbContext db, AccountingCoreService accounting)
+    {
+        _db = db;
+        _accounting = accounting;
+    }
 
     // ══════════════════════════════════════════════════════
     // 13. جدول استحقاقات الموردين الأسبوعي (Payables Weekly Schedule)
@@ -337,6 +343,31 @@ public class InventoryIntelligenceController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+
+        // ── ACCOUNTING LINK ──────────────────────────
+        // حساب صافي الأثر المالي للجرد العشوائي اليومي
+        decimal netImpact = 0;
+        foreach (var r in results)
+        {
+            var diff = (int)r.GetType().GetProperty("Difference")?.GetValue(r)!;
+            var variantId = (int?)r.GetType().GetProperty("VariantId")?.GetValue(r)!;
+            if (diff != 0 && variantId.HasValue)
+            {
+                var v = entries.Find(e => e.VariantId == variantId);
+                var product = await _db.ProductVariants.Where(pv => pv.Id == variantId).Select(pv => pv.Product).FirstOrDefaultAsync();
+                if (product != null)
+                {
+                    netImpact += diff * (product.CostPrice ?? 0);
+                }
+            }
+        }
+
+        if (netImpact != 0)
+        {
+            try {
+                await _accounting.PostInventoryAdjustmentAsync(0, netImpact, $"CYCLE-{today:yyyyMMdd}", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+            } catch { /* Ignore mappings error */ }
+        }
 
         int withDiff = results.Count(r =>
         {

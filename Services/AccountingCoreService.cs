@@ -173,6 +173,55 @@ public class AccountingCoreService
         await _db.SaveChangesAsync();
     }
 
+    public async Task<int?> PostInventoryAdjustmentAsync(int auditId, decimal netImpact, string reference, string? userId)
+    {
+        if (netImpact == 0) return null;
+
+        var mappings = await GetSafeSystemMappingsAsync();
+        var inventoryId = GetMap(mappings, "inventoryAccountID", INVENTORY);
+        var varianceId  = GetMap(mappings, "inventoryVarianceAccountID", COGS);
+
+        var isIncrease = netImpact > 0;
+        var absVal = Math.Abs(netImpact);
+
+        var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
+        
+        // 1. Inventory Account
+        lines.Add((inventoryId, isIncrease ? absVal : 0, isIncrease ? 0 : absVal, $"تسوية مخزون - جرد #{auditId}"));
+        
+        // 2. Variance Account
+        lines.Add((varianceId, isIncrease ? 0 : absVal, isIncrease ? absVal : 0, $"فروقات جرد مخزون #{auditId}"));
+
+        var jePrefix = "JE-ADJ";
+        var entryNo = await _seq.NextAsync(jePrefix, async (db, pattern) =>
+        {
+            var max = await db.JournalEntries.Where(e => EF.Functions.Like(e.EntryNumber, pattern)).Select(e => e.EntryNumber).ToListAsync();
+            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0).DefaultIfEmpty(0).Max();
+        });
+
+        var entry = new JournalEntry
+        {
+            EntryNumber = entryNo,
+            EntryDate   = TimeHelper.GetEgyptTime(),
+            Type        = JournalEntryType.Manual,
+            Status      = JournalEntryStatus.Posted,
+            Reference   = reference,
+            Description = $"تسوية جرد آلي رقم {auditId}",
+            CreatedByUserId = userId,
+            CreatedAt   = TimeHelper.GetEgyptTime()
+        };
+
+        foreach (var (code, debit, credit, desc) in lines)
+        {
+            var res = await GetAccountIdAsync(code);
+            entry.Lines.Add(new JournalLine { AccountId = res.Id, Debit = debit, Credit = credit, Description = desc, CreatedAt = TimeHelper.GetEgyptTime() });
+        }
+
+        _db.JournalEntries.Add(entry);
+        await _db.SaveChangesAsync();
+        return entry.Id;
+    }
+
     public async Task<(int Id, bool ExactMatch, string? ErrorNote)> GetAccountIdAsync(string input)
     {
         var cleanInput = input.Trim().ToLower();
