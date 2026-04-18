@@ -516,8 +516,14 @@ public class FixedAssetsController : ControllerBase
             _db.AssetDepreciations.Add(dep);
 
             // قيد محاسبي
-            var (_, accumAccId, expenseAccId) = ResolveAccounts(asset, asset.Category);
-            if (accumAccId.HasValue && expenseAccId.HasValue)
+            var (assetAccId, accumAccId, expenseAccId) = ResolveAccounts(asset, asset.Category);
+            
+            // جلب الربط العام في حال عدم وجود ربط مخصص للأصل/الفئة
+            var mapDict = await _core.GetSafeSystemMappingsAsync();
+            var finalAccumAcc   = accumAccId   ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.AccumulatedDepreciation, mapDict);
+            var finalExpenseAcc = expenseAccId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.DepreciationExpense, mapDict);
+
+            if (finalAccumAcc > 0 && finalExpenseAcc > 0)
             {
                 var jeNo = await _seq.NextAsync("JE", async (db, pattern) =>
                 {
@@ -540,8 +546,8 @@ public class FixedAssetsController : ControllerBase
                     CreatedAt       = TimeHelper.GetEgyptTime(),
                     Lines = new List<JournalLine>
                     {
-                        new() { AccountId = expenseAccId.Value, Debit  = amount, Credit = 0,      Description = $"مصروف إهلاك — {asset.Name}" },
-                        new() { AccountId = accumAccId.Value,   Debit  = 0,      Credit = amount, Description = $"مجمع إهلاك — {asset.Name}" }
+                        new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"مصروف إهلاك — {asset.Name}" },
+                        new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"مجمع إهلاك — {asset.Name}" }
                     }
                 };
                 _db.JournalEntries.Add(je);

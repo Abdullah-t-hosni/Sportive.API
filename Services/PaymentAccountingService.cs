@@ -26,7 +26,16 @@ public class PaymentAccountingService
     public async Task PostOrderPaymentAsync(Order order)
     {
         var reference = order.OrderNumber + "-PMT";
-        if (await _core.EntryExistsAsync(JournalEntryType.ReceiptVoucher, reference)) return;
+        
+        // 🚨 AUTO-UPDATE: حذف القيد القديم إن وجد للسماح بالتعديل
+        var existing = await _db.JournalEntries
+            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == reference);
+        
+        if (existing != null)
+        {
+            _db.JournalEntries.Remove(existing);
+            await _db.SaveChangesAsync();
+        }
 
         // ✅ NEW: Prevent double-accounting for POS orders where payments are already merged into the SalesInvoice
         var invoiceEntry = await _db.JournalEntries
@@ -116,7 +125,7 @@ public class PaymentAccountingService
             ($"ID:{voucher.CashAccountId}", voucher.Amount, 0, $"سند قبض {voucher.VoucherNumber}"),
             ($"ID:{voucher.FromAccountId}", 0, voucher.Amount, $"من حساب {voucher.FromAccount?.NameAr}")
         };
-        await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, customerId: voucher.CustomerId, orderId: orderId);
+        await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, customerId: voucher.CustomerId, orderId: orderId, source: voucher.CostCenter);
     }
 
     public async Task PostPaymentVoucherAsync(PaymentVoucher voucher)
@@ -125,12 +134,20 @@ public class PaymentAccountingService
             ($"ID:{voucher.ToAccountId}", voucher.Amount, 0, $"سند دفع {voucher.VoucherNumber}"),
             ($"ID:{voucher.CashAccountId}", 0, voucher.Amount, $"صرف من {voucher.CashAccount?.NameAr}")
         };
-        await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, supplierId: voucher.SupplierId, purchaseInvoiceId: voucher.PurchaseInvoiceId);
+        await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, supplierId: voucher.SupplierId, purchaseInvoiceId: voucher.PurchaseInvoiceId, source: voucher.CostCenter);
     }
 
     public async Task PostSupplierPaymentAsync(SupplierPayment payment)
     {
-        if (await _core.EntryExistsAsync(JournalEntryType.PaymentVoucher, payment.PaymentNumber)) return;
+        // 🚨 AUTO-UPDATE: حذف القيد القديم إن وجد للسماح بالتعديل
+        var existing = await _db.JournalEntries
+            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == payment.PaymentNumber);
+        if (existing != null)
+        {
+            _db.JournalEntries.Remove(existing);
+            await _db.SaveChangesAsync();
+        }
+
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         string payablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Supplier, mapDict)}";
         

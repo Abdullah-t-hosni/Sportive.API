@@ -2,6 +2,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
+using Sportive.API.Data;
+using Sportive.API.Utils;
+using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 
 namespace Sportive.API.Controllers;
@@ -135,5 +138,62 @@ public class CustomersController : ControllerBase
 
         var currentCustomerId = User.FindFirst("CustomerId")?.Value;
         return currentCustomerId != null && int.Parse(currentCustomerId) == customerId;
+    }
+
+    [Authorize(Roles = "Admin,Manager")]
+    [HttpPost("import-opening-balances")]
+    public async Task<IActionResult> ImportOpeningBalances(IFormFile file, [FromServices] AppDbContext db)
+    {
+        if (file == null || file.Length == 0) return BadRequest(new { message = "لم يتم رفع ملف" });
+
+        var successCount = 0;
+        var errors = new List<string>();
+
+        try
+        {
+            using var stream = file.OpenReadStream();
+            using var wb = new ClosedXML.Excel.XLWorkbook(stream);
+            var ws = wb.Worksheets.First();
+            var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
+
+            var allCustomers = await db.Customers.Include(c => c.MainAccount).ToListAsync();
+
+            for (int r = 2; r <= lastRow; r++)
+            {
+                var identifier = ws.Cell(r, 1).GetString().Trim(); // Name or Phone
+                if (string.IsNullOrEmpty(identifier)) continue;
+
+                var balStr = ws.Cell(r, 2).GetString().Trim();
+                if (!decimal.TryParse(balStr, out var balance))
+                {
+                    errors.Add($"سطر {r}: الرصيد غير صحيح للعميل '{identifier}'");
+                    continue;
+                }
+
+                var customer = allCustomers.FirstOrDefault(c => c.FullName == identifier || c.Phone == identifier);
+                if (customer == null)
+                {
+                    errors.Add($"سطر {r}: العميل '{identifier}' غير موجود");
+                    continue;
+                }
+
+                if (customer.MainAccount != null)
+                {
+                    customer.MainAccount.OpeningBalance = balance;
+                    customer.MainAccount.UpdatedAt = TimeHelper.GetEgyptTime();
+                }
+                
+                customer.UpdatedAt = TimeHelper.GetEgyptTime();
+                successCount++;
+            }
+
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = $"خطأ في المعالجة: {ex.Message}" });
+        }
+
+        return Ok(new { success = true, successCount, errors });
     }
 }

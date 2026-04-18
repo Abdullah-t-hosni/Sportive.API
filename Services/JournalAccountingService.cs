@@ -34,11 +34,11 @@ public class JournalAccountingService
         });
 
         var reversal = new JournalEntry {
-            EntryNumber = revNo, EntryDate = TimeHelper.GetEgyptTime(), Type = entry.Type, Status = JournalEntryStatus.Posted, Reference = entry.EntryNumber, Description = $"عكس: {entry.EntryNumber} — {reason}", ReversalOfId = entry.Id, CreatedAt = TimeHelper.GetEgyptTime()
+            EntryNumber = revNo, EntryDate = TimeHelper.GetEgyptTime(), Type = entry.Type, Status = JournalEntryStatus.Posted, Reference = entry.EntryNumber, Description = $"عكس: {entry.EntryNumber} — {reason}", ReversalOfId = entry.Id, CostCenter = entry.CostCenter, CreatedAt = TimeHelper.GetEgyptTime()
         };
 
         foreach (var line in entry.Lines) {
-            reversal.Lines.Add(new JournalLine { AccountId = line.AccountId, Debit = line.Credit, Credit = line.Debit, Description = line.Description, CustomerId = line.CustomerId, SupplierId = line.SupplierId, CreatedAt = TimeHelper.GetEgyptTime() });
+            reversal.Lines.Add(new JournalLine { AccountId = line.AccountId, Debit = line.Credit, Credit = line.Debit, Description = line.Description, CustomerId = line.CustomerId, SupplierId = line.SupplierId, CostCenter = line.CostCenter, CreatedAt = TimeHelper.GetEgyptTime() });
         }
         entry.Status = JournalEntryStatus.Reversed;
         _db.JournalEntries.Add(reversal);
@@ -57,9 +57,9 @@ public class JournalAccountingService
             return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0).DefaultIfEmpty(0).Max();
         });
 
-        var entry = new JournalEntry { EntryNumber = entryNumber, EntryDate = dto.EntryDate, Description = dto.Description, Reference = dto.Reference, Type = type, Status = JournalEntryStatus.Posted, CreatedByUserId = userId };
+        var entry = new JournalEntry { EntryNumber = entryNumber, EntryDate = dto.EntryDate, Description = dto.Description, Reference = dto.Reference, Type = type, Status = JournalEntryStatus.Posted, CreatedByUserId = userId, CostCenter = dto.CostCenter };
         foreach (var l in dto.Lines) {
-            entry.Lines.Add(new JournalLine { AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit, Description = l.Description, CustomerId = l.CustomerId, SupplierId = l.SupplierId });
+            entry.Lines.Add(new JournalLine { AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit, Description = l.Description, CustomerId = l.CustomerId, SupplierId = l.SupplierId, CostCenter = l.CostCenter ?? dto.CostCenter });
         }
 
         // التحقق من التوازن قبل الحفظ
@@ -95,6 +95,7 @@ public class JournalAccountingService
         entry.EntryDate = dto.EntryDate;
         entry.Description = dto.Description;
         entry.Reference = dto.Reference;
+        entry.CostCenter = dto.CostCenter;
         entry.UpdatedAt = TimeHelper.GetEgyptTime();
 
         // تحديث الأسطر (مسح الحالية وإعادتها)
@@ -109,6 +110,7 @@ public class JournalAccountingService
                 Description = l.Description,
                 CustomerId = l.CustomerId,
                 SupplierId = l.SupplierId,
+                CostCenter = l.CostCenter ?? dto.CostCenter,
                 CreatedAt = TimeHelper.GetEgyptTime()
             });
         }

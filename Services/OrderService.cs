@@ -692,7 +692,11 @@ public class OrderService : IOrderService
         if (dto.Status == OrderStatus.Delivered)
         {
             order.ActualDeliveryDate = TimeHelper.GetEgyptTime();
-            if (order.PaymentMethod != PaymentMethod.Credit) order.PaymentStatus = PaymentStatus.Paid;
+            if (order.PaymentMethod != PaymentMethod.Credit)
+            {
+                order.PaymentStatus = PaymentStatus.Paid;
+                order.PaidAmount = order.TotalAmount; // ✅ تحديث المبلغ المدفوع عند التسليم الفعلي (للكاش والوسائل الأخرى)
+            }
 
             // Notification on Delivery
             _ = Task.Run(async () => {

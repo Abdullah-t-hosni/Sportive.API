@@ -120,6 +120,7 @@ public class AccountingCoreService
             Description = description,
             OrderId     = orderId,
             PurchaseInvoiceId = purchaseInvoiceId,
+            CostCenter  = source, // 🎯 حفظ مركز التكلفة على رأس القيد
             CreatedAt   = TimeHelper.GetEgyptTime(),
         };
 
@@ -160,6 +161,7 @@ public class AccountingCoreService
                 SupplierId  = (isPayables || isSalesOrPurchase) ? supplierId : null,
                 OrderId     = orderId,
                 PurchaseInvoiceId = purchaseInvoiceId,
+                CostCenter  = source, // 🎯 حفظ مركز التكلفة على كل سطر محاسبي
                 CreatedAt   = TimeHelper.GetEgyptTime(),
             });
         }
@@ -433,6 +435,15 @@ public class AccountingCoreService
             a.IsActive = false;
         }
         await _db.SaveChangesAsync();
+
+        // 4. Employees Consolidation
+        var mappings = await GetSafeSystemMappingsAsync();
+        if (mappings.TryGetValue(MappingKeys.SalariesPayable.ToLower(), out var empControlId) && empControlId.HasValue)
+        {
+            var employees = await _db.Employees.ToListAsync();
+            foreach (var e in employees) e.AccountId = empControlId.Value;
+            await _db.SaveChangesAsync();
+        }
     }
 
     public async Task SyncEntityBalancesAsync()
@@ -441,15 +452,14 @@ public class AccountingCoreService
         var orders = await _db.Orders.Where(o => o.Status != OrderStatus.Cancelled).ToListAsync();
         foreach (var o in orders)
         {
-            // Sum all Credits to Accounts starting with 1103 (Receivables) for this Order
-            var ledgerPaidAmount = await _db.JournalLines
-                .Where(l => l.OrderId == o.Id && l.Credit > 0)
-                .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("1103"))
-                .SumAsync(l => l.Credit);
+            // 💡 REFINED LOGIC: PaidAmount = TotalAmount - CurrentReceivableBalance
+            // CurrentReceivableBalance is (Sum of Debits to 1103 - Sum of Credits to 1103) for this Order
+            var ledgerBalance = await _db.JournalLines
+                .Where(l => l.OrderId == o.Id && l.Account.Code != null && (l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1201")))
+                .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
-            // 💡 SOURCE OF TRUTH: The ledger (Journal Entries) is the only source for syncing balances.
-            // If the ledger is wrong, it must be fixed via Journal Entries, not auto-adjusted here.
-            o.PaidAmount = ledgerPaidAmount;
+            // If ledger balance is 100, then (1500 - 100) = 1400 paid. Perfect!
+            o.PaidAmount = Math.Max(0, o.TotalAmount - ledgerBalance);
         }
         await _db.SaveChangesAsync();
 
@@ -552,6 +562,28 @@ public class AccountingCoreService
 
             c.TotalSales = volume;
             c.TotalPaid  = volume - debt; 
+        }
+
+        // 5. Sync Employees
+        var empControlAccId = await _db.AccountSystemMappings
+            .Where(m => m.Key == MappingKeys.SalariesPayable)
+            .Select(m => m.AccountId)
+            .FirstOrDefaultAsync();
+
+        if (empControlAccId.HasValue)
+        {
+            var activeEmployees = await _db.Employees.ToListAsync();
+            foreach (var e in activeEmployees)
+            {
+                // Balance = Credit (Salary/Bonus) - Debit (Advances/Deductions/Payments)
+                // We check all lines linked to THIS employee on the Salaries Payable account
+                var balance = await _db.JournalLines
+                    .Where(l => l.EmployeeId == e.Id && l.AccountId == empControlAccId.Value)
+                    .SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0;
+                
+                // You can add logic here if you want to store this balance in Employee model
+                // For now, it's computed in statements.
+            }
         }
 
         await _db.SaveChangesAsync();

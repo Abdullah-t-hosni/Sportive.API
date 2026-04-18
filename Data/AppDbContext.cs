@@ -61,6 +61,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
     public DbSet<ProductDiscount>      ProductDiscounts      { get; set; }
 
+    public DbSet<Department>           Departments           { get; set; }
+
     // ── الموارد البشرية والرواتب ──────────────────────────
     public DbSet<Employee>           Employees           { get; set; }
     public DbSet<PayrollRun>         PayrollRuns         { get; set; }
@@ -354,10 +356,14 @@ public class AppDbContext : IdentityDbContext<AppUser>
         // ── الموارد البشرية والرواتب ──────────────────────────
         builder.Entity<Employee>(e => {
             e.Property(x => x.BaseSalary).HasPrecision(18, 2);
+            e.Property(x => x.FixedAllowance).HasPrecision(18, 2);
+            e.Property(x => x.FixedDeduction).HasPrecision(18, 2);
             e.Property(x => x.Status).HasConversion<string>();
             e.HasIndex(x => x.EmployeeNumber).IsUnique();
             e.HasOne(x => x.Account).WithMany()
              .HasForeignKey(x => x.AccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.Department).WithMany(d => d.Employees)
+             .HasForeignKey(x => x.DepartmentId).OnDelete(DeleteBehavior.SetNull);
             // ربط اختياري بحساب النظام — SetNull عند حذف المستخدم لحفظ سجل الـ HR
             e.HasOne(x => x.AppUser).WithMany()
              .HasForeignKey(x => x.AppUserId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
@@ -416,6 +422,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.PayrollRun).WithMany()
              .HasForeignKey(x => x.PayrollRunId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.CashAccount).WithMany()
+             .HasForeignKey(x => x.CashAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.JournalEntry).WithMany()
+             .HasForeignKey(x => x.JournalEntryId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<EmployeeDeduction>(e => {
@@ -426,6 +436,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.PayrollRun).WithMany()
              .HasForeignKey(x => x.PayrollRunId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.CashAccount).WithMany()
+             .HasForeignKey(x => x.CashAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.JournalEntry).WithMany()
+             .HasForeignKey(x => x.JournalEntryId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── الأصول الثابتة ────────────────────────────────────

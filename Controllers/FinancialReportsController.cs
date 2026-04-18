@@ -21,7 +21,7 @@ public class FinancialReportsController : ControllerBase
     // ══════════════════════════════════════════════════════
     // SHARED: حساب أرصدة كل الحسابات في فترة زمنية
     // ══════════════════════════════════════════════════════
-    private async Task<List<AccountBalance>> GetBalances(DateTime from, DateTime to)
+    private async Task<List<AccountBalance>> GetBalances(DateTime from, DateTime to, OrderSource? source = null)
     {
         var accounts = await _db.Accounts
             .Where(a => a.IsActive)
@@ -29,19 +29,25 @@ public class FinancialReportsController : ControllerBase
             .ToListAsync();
 
         // 1. Get transaction movements for the period
-        var lines = await _db.JournalLines
+        var query = _db.JournalLines
             .Include(l => l.JournalEntry)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
-                     && l.JournalEntry.EntryDate <= to)
-            .ToListAsync();
+                     && l.JournalEntry.EntryDate <= to);
 
-        // 2. Get opening movements (before the period)
-        var openingLines = await _db.JournalLines
+        var openingQuery = _db.JournalLines
             .Include(l => l.JournalEntry)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
-                     && l.JournalEntry.EntryDate < from)
-            .ToListAsync();
+                     && l.JournalEntry.EntryDate < from);
+
+        if (source.HasValue)
+        {
+            query = query.Where(l => l.CostCenter == source.Value);
+            openingQuery = openingQuery.Where(l => l.CostCenter == source.Value);
+        }
+
+        var lines = await query.ToListAsync();
+        var openingLines = await openingQuery.ToListAsync();
 
         // 3. Create dictionaries for fast lookup of direct postings
         var periodDrMap = lines.GroupBy(l => l.AccountId).ToDictionary(g => g.Key, g => g.Sum(l => l.Debit));
@@ -169,19 +175,20 @@ public class FinancialReportsController : ControllerBase
     public async Task<IActionResult> IncomeStatement(
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate   = null,
+        [FromQuery] OrderSource? source = null,
         [FromQuery] bool      excel    = false)
     {
         var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        var balances = await GetBalances(from, to);
+        var balances = await GetBalances(from, to, source);
 
         // الإيرادات (طبيعتها دائن → الرصيد موجب = إيراد)
-        // ✅ تصحيح: ضم أي حساب يبدأ بكود 4 للإيرادات (مثل إيراد التوصيل) حتى لو كان مصنفاً خطأ في الداتابيز
+        // ✅ تصحيح: ضم أي حساب يبدأ بكود 4 للإيرادات (مثل إيراد التوصيل)
         var revenues = balances
             .Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.IsLeaf && b.ClosingBal != 0)
             .OrderBy(b => b.Code)
-            .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
+            .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.ClosingBal)) // ✅ POSITIVE for Credit balance
             .ToList();
 
         // المصاريف (طبيعتها مدين → الرصيد موجب = مصروف)
@@ -692,7 +699,6 @@ public class FinancialReportsController : ControllerBase
                     flowAmount
                 );
 
-                // تصنيف آلي
                 if (nc.Code.StartsWith("12")) // أصول ثابتة
                 {
                     investing += flowAmount;

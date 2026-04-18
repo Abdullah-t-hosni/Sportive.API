@@ -13,11 +13,12 @@ public class Supplier : BaseEntity
     public string? Email        { get; set; }               // البريد الإلكتروني
     public string? Address      { get; set; }               // العنوان
     public bool   IsActive      { get; set; } = true;
+    public decimal OpeningBalance { get; set; } = 0;
 
     // حساب تلقائي
     public decimal TotalPurchases { get; set; } = 0;
     public decimal TotalPaid      { get; set; } = 0;
-    public decimal Balance        => TotalPurchases - TotalPaid; // المديونية
+    public decimal Balance        => OpeningBalance + TotalPurchases - TotalPaid; // المديونية (رصيد أول + مشتريات - مدفوعات)
     public string? AttachmentUrl { get; set; }
     public string? AttachmentPublicId { get; set; }
 

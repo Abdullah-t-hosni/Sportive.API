@@ -79,6 +79,7 @@ public class JournalEntry : BaseEntity
     public JournalEntry?      ReversalOf      { get; set; }
     public string?            AttachmentUrl   { get; set; }
     public string?            AttachmentPublicId { get; set; }
+    public OrderSource?       CostCenter { get; set; } // مركز التكلفة (Website/POS)
     
     public int?               OrderId { get; set; }
     public Order?             Order   { get; set; }
@@ -112,6 +113,7 @@ public class JournalLine : BaseEntity
     public PurchaseInvoice? PurchaseInvoice { get; set; }
     public int?          EmployeeId    { get; set; }
     public Employee?     Employee      { get; set; }
+    public OrderSource?  CostCenter    { get; set; } // مركز التكلفة للسطر
 }
 
 // ══════════════════════════════════════════════════════
@@ -148,6 +150,7 @@ public class ReceiptVoucher : BaseEntity
     public string?  AttachmentPublicId { get; set; }
     public int?     OrderId         { get; set; }
     public Order?   Order           { get; set; }
+    public OrderSource? CostCenter   { get; set; } // مركز التكلفة للسند
 }
 
 // ══════════════════════════════════════════════════════
@@ -175,4 +178,5 @@ public class PaymentVoucher : BaseEntity
     public string?  AttachmentPublicId { get; set; }
     public int?     PurchaseInvoiceId { get; set; }
     public PurchaseInvoice? PurchaseInvoice { get; set; }
+    public OrderSource? CostCenter   { get; set; } // مركز التكلفة للسند
 }

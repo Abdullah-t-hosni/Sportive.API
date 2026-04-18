@@ -32,14 +32,18 @@ public class EmployeesController : ControllerBase
     [RequireModulePermission(ModuleKeys.Hr)]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? search     = null,
-        [FromQuery] string? department = null,
+        [FromQuery] int?    departmentId = null,
         [FromQuery] EmployeeStatus? status = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var q = _db.Employees.Include(e => e.Account).Include(e => e.AppUser).AsQueryable();
+        var q = _db.Employees
+            .Include(e => e.Account)
+            .Include(e => e.AppUser)
+            .Include(e => e.Department)
+            .AsQueryable();
 
-        if (status.HasValue)     q = q.Where(e => e.Status == status.Value);
-        if (!string.IsNullOrWhiteSpace(department)) q = q.Where(e => e.Department == department);
+        if (status.HasValue)             q = q.Where(e => e.Status == status.Value);
+        if (departmentId.HasValue)       q = q.Where(e => e.DepartmentId == departmentId.Value);
         if (!string.IsNullOrWhiteSpace(search))
             q = q.Where(e => e.Name.Contains(search) || e.EmployeeNumber.Contains(search)
                            || (e.Phone != null && e.Phone.Contains(search))
@@ -49,8 +53,10 @@ public class EmployeesController : ControllerBase
         var items = await q.OrderBy(e => e.Name).Skip((page - 1) * pageSize).Take(pageSize)
             .Select(e => new EmployeeDto(
                 e.Id, e.EmployeeNumber, e.Name, e.Phone, e.Email, e.NationalId,
-                e.JobTitle, e.Department, e.HireDate, e.TerminationDate,
-                e.BaseSalary, e.BankAccount, (int)e.Status, e.Notes,
+                e.JobTitle, e.DepartmentId, e.Department != null ? e.Department.Name : null,
+                e.HireDate, e.TerminationDate,
+                e.BaseSalary, e.FixedAllowance, e.FixedDeduction,
+                e.BankAccount, (int)e.Status, e.Notes,
                 e.AttachmentUrl, e.AttachmentPublicId,
                 e.AccountId, e.Account != null ? e.Account.NameAr : null,
                 e.CreatedAt,
@@ -67,7 +73,7 @@ public class EmployeesController : ControllerBase
         var list = await _db.Employees
             .Where(e => e.Status == EmployeeStatus.Active)
             .OrderBy(e => e.Name)
-            .Select(e => new EmployeeBasicDto(e.Id, e.EmployeeNumber, e.Name, e.JobTitle, e.Department, e.BaseSalary, (int)e.Status))
+            .Select(e => new EmployeeBasicDto(e.Id, e.EmployeeNumber, e.Name, e.JobTitle, e.DepartmentId, e.Department != null ? e.Department.Name : null, e.BaseSalary, (int)e.Status))
             .ToListAsync();
         return Ok(list);
     }
@@ -79,12 +85,13 @@ public class EmployeesController : ControllerBase
         var e = await _db.Employees
             .Include(x => x.Account)
             .Include(x => x.AppUser)
+            .Include(x => x.Department)
             .FirstOrDefaultAsync(x => x.Id == id);
         if (e == null) return NotFound();
         return Ok(new EmployeeDto(
             e.Id, e.EmployeeNumber, e.Name, e.Phone, e.Email, e.NationalId,
-            e.JobTitle, e.Department, e.HireDate, e.TerminationDate,
-            e.BaseSalary, e.BankAccount, (int)e.Status, e.Notes,
+            e.JobTitle, e.DepartmentId, e.Department?.Name, e.HireDate, e.TerminationDate,
+            e.BaseSalary, e.FixedAllowance, e.FixedDeduction, e.BankAccount, (int)e.Status, e.Notes,
             e.AttachmentUrl, e.AttachmentPublicId,
             e.AccountId, e.Account?.NameAr, e.CreatedAt,
             e.AppUserId, e.AppUser?.FullName));
@@ -112,6 +119,10 @@ public class EmployeesController : ControllerBase
                       .DefaultIfEmpty(0).Max();
         });
 
+        var core = (AccountingCoreService)HttpContext.RequestServices.GetService(typeof(AccountingCoreService))!;
+        var maps = await core.GetSafeSystemMappingsAsync();
+        var defaultAccId = maps.TryGetValue(MappingKeys.SalariesPayable.ToLower(), out var accId) ? accId : null;
+
         var emp = new Employee
         {
             EmployeeNumber   = empNo,
@@ -120,14 +131,16 @@ public class EmployeesController : ControllerBase
             Email            = dto.Email?.Trim().ToLower(),
             NationalId       = dto.NationalId?.Trim(),
             JobTitle         = dto.JobTitle?.Trim(),
-            Department       = dto.Department?.Trim(),
+            DepartmentId     = dto.DepartmentId,
             HireDate         = dto.HireDate,
             BaseSalary       = dto.BaseSalary,
+            FixedAllowance   = dto.FixedAllowance,
+            FixedDeduction   = dto.FixedDeduction,
             BankAccount      = dto.BankAccount?.Trim(),
             Notes            = dto.Notes?.Trim(),
             AttachmentUrl    = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
-            AccountId        = dto.AccountId,
+            AccountId        = dto.AccountId ?? defaultAccId,
             AppUserId        = string.IsNullOrEmpty(dto.AppUserId) ? null : dto.AppUserId,
             Status           = EmployeeStatus.Active,
             CreatedAt        = TimeHelper.GetEgyptTime(),
@@ -177,10 +190,12 @@ public class EmployeesController : ControllerBase
         emp.Email             = dto.Email?.Trim().ToLower();
         emp.NationalId        = dto.NationalId?.Trim();
         emp.JobTitle          = dto.JobTitle?.Trim();
-        emp.Department        = dto.Department?.Trim();
+        emp.DepartmentId      = dto.DepartmentId;
         emp.HireDate          = dto.HireDate;
         emp.TerminationDate   = dto.TerminationDate;
         emp.BaseSalary        = dto.BaseSalary;
+        emp.FixedAllowance    = dto.FixedAllowance;
+        emp.FixedDeduction    = dto.FixedDeduction;
         emp.BankAccount       = dto.BankAccount?.Trim();
         emp.Notes             = dto.Notes?.Trim();
         emp.AttachmentUrl     = dto.AttachmentUrl;
@@ -653,7 +668,11 @@ public class EmployeeBonusesController : ControllerBase
         [FromQuery] int? employeeId = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var q = _db.EmployeeBonuses.Include(b => b.Employee).AsQueryable();
+        var q = _db.EmployeeBonuses
+            .Include(b => b.Employee)
+            .Include(b => b.CashAccount)
+            .AsQueryable();
+
         if (employeeId.HasValue) q = q.Where(b => b.EmployeeId == employeeId.Value);
 
         var total = await q.CountAsync();
@@ -662,7 +681,8 @@ public class EmployeeBonusesController : ControllerBase
             .Select(b => new EmployeeBonusDto(
                 b.Id, b.BonusNumber, b.EmployeeId, b.Employee.Name,
                 b.BonusDate, b.Amount, (int)b.BonusType, b.Reason, b.Notes,
-                b.PayrollRunId, b.CreatedAt
+                b.PayrollRunId, b.CashAccountId, b.CashAccount != null ? b.CashAccount.NameAr : null,
+                b.JournalEntryId, b.CreatedAt
             )).ToListAsync();
 
         return Ok(new PaginatedResult<EmployeeBonusDto>(items, total, page, pageSize,
@@ -672,8 +692,8 @@ public class EmployeeBonusesController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateBonusDto dto)
     {
-        if (!await _db.Employees.AnyAsync(e => e.Id == dto.EmployeeId))
-            return NotFound("الموظف غير موجود.");
+        var emp = await _db.Employees.FindAsync(dto.EmployeeId);
+        if (emp == null) return NotFound("الموظف غير موجود.");
 
         var bonNo = await _seq.NextAsync("BON", async (db, pattern) =>
         {
@@ -693,13 +713,54 @@ public class EmployeeBonusesController : ControllerBase
             BonusType       = dto.BonusType,
             Reason          = dto.Reason?.Trim(),
             Notes           = dto.Notes?.Trim(),
+            CashAccountId   = dto.CashAccountId,
             CreatedAt       = TimeHelper.GetEgyptTime(),
             CreatedByUserId = UserId
         };
 
         _db.EmployeeBonuses.Add(bonus);
+
+        // قيد: مدين مصروف رواتب (مكافآت)، دائن الخزينة
+        JournalEntry? je = null;
+        if (dto.CashAccountId.HasValue)
+        {
+            var jeNo = await _seq.NextAsync("JE", async (db, pattern) =>
+            {
+                var max = await db.JournalEntries
+                    .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
+                    .Select(e => e.EntryNumber).ToListAsync();
+                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                          .DefaultIfEmpty(0).Max();
+            });
+
+            // الحصول على حساب مصروف المكافآت من الربط
+            var core = (AccountingCoreService)HttpContext.RequestServices.GetService(typeof(AccountingCoreService))!;
+            var mapDict = await core.GetSafeSystemMappingsAsync();
+            var bonusExpenseAccId = await core.GetRequiredMappedAccountAsync(MappingKeys.SalaryExpense, mapDict);
+
+            je = new JournalEntry
+            {
+                EntryNumber     = jeNo,
+                EntryDate       = dto.BonusDate,
+                Type            = JournalEntryType.Payroll,
+                Status          = JournalEntryStatus.Posted,
+                Description     = $"مكافأة فورية — {emp.Name}",
+                Reference       = bonNo,
+                CreatedByUserId = UserId,
+                CreatedAt       = TimeHelper.GetEgyptTime(),
+                Lines = new List<JournalLine>
+                {
+                    new() { AccountId = bonusExpenseAccId,       Debit = dto.Amount, Credit = 0,           Description = $"مكافأة {emp.Name}", EmployeeId = emp.Id },
+                    new() { AccountId = dto.CashAccountId.Value, Debit = 0,          Credit = dto.Amount,  Description = $"صرف مكافأة {emp.Name}" }
+                }
+            };
+            _db.JournalEntries.Add(je);
+        }
+
         await _db.SaveChangesAsync();
-        return Ok(new { id = bonus.Id, bonusNumber = bonus.BonusNumber });
+        if (je != null) { bonus.JournalEntryId = je.Id; await _db.SaveChangesAsync(); }
+
+        return Ok(new { id = bonus.Id, bonusNumber = bonus.BonusNumber, journalEntryId = je?.Id });
     }
 
     [HttpDelete("{id}")]
@@ -738,7 +799,10 @@ public class EmployeeDeductionsController : ControllerBase
         [FromQuery] int? employeeId = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var q = _db.EmployeeDeductions.Include(d => d.Employee).AsQueryable();
+        var q = _db.EmployeeDeductions
+            .Include(d => d.Employee)
+            .Include(d => d.CashAccount)
+            .AsQueryable();
         if (employeeId.HasValue) q = q.Where(d => d.EmployeeId == employeeId.Value);
 
         var total = await q.CountAsync();
@@ -747,7 +811,8 @@ public class EmployeeDeductionsController : ControllerBase
             .Select(d => new EmployeeDeductionDto(
                 d.Id, d.DeductionNumber, d.EmployeeId, d.Employee.Name,
                 d.DeductionDate, d.Amount, (int)d.DeductionType, d.Reason, d.Notes,
-                d.PayrollRunId, d.CreatedAt
+                d.PayrollRunId, d.CashAccountId, d.CashAccount != null ? d.CashAccount.NameAr : null,
+                d.JournalEntryId, d.CreatedAt
             )).ToListAsync();
 
         return Ok(new PaginatedResult<EmployeeDeductionDto>(items, total, page, pageSize,
@@ -757,8 +822,8 @@ public class EmployeeDeductionsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateDeductionDto dto)
     {
-        if (!await _db.Employees.AnyAsync(e => e.Id == dto.EmployeeId))
-            return NotFound("الموظف غير موجود.");
+        var emp = await _db.Employees.FindAsync(dto.EmployeeId);
+        if (emp == null) return NotFound("الموظف غير موجود.");
 
         var dedNo = await _seq.NextAsync("DED", async (db, pattern) =>
         {
@@ -778,13 +843,53 @@ public class EmployeeDeductionsController : ControllerBase
             DeductionType   = dto.DeductionType,
             Reason          = dto.Reason?.Trim(),
             Notes           = dto.Notes?.Trim(),
+            CashAccountId   = dto.CashAccountId,
             CreatedAt       = TimeHelper.GetEgyptTime(),
             CreatedByUserId = UserId
         };
 
         _db.EmployeeDeductions.Add(ded);
+
+        // قيد: مدين الخزينة، دائن إيراد خصومات موظفين (إذا تم دفعه نقداً فوراً)
+        JournalEntry? je = null;
+        if (dto.CashAccountId.HasValue)
+        {
+            var jeNo = await _seq.NextAsync("JE", async (db, pattern) =>
+            {
+                var max = await db.JournalEntries
+                    .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
+                    .Select(e => e.EntryNumber).ToListAsync();
+                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                          .DefaultIfEmpty(0).Max();
+            });
+
+            var core = (AccountingCoreService)HttpContext.RequestServices.GetService(typeof(AccountingCoreService))!;
+            var mapDict = await core.GetSafeSystemMappingsAsync();
+            var deductionRevenueAccId = await core.GetRequiredMappedAccountAsync(MappingKeys.EmployeeDeductions, mapDict);
+
+            je = new JournalEntry
+            {
+                EntryNumber     = jeNo,
+                EntryDate       = dto.DeductionDate,
+                Type            = JournalEntryType.Payroll,
+                Status          = JournalEntryStatus.Posted,
+                Description     = $"تحصيل خصم فوري — {emp.Name}",
+                Reference       = dedNo,
+                CreatedByUserId = UserId,
+                CreatedAt       = TimeHelper.GetEgyptTime(),
+                Lines = new List<JournalLine>
+                {
+                    new() { AccountId = dto.CashAccountId.Value,  Debit = dto.Amount, Credit = 0,           Description = $"تحصيل خصم {emp.Name}" },
+                    new() { AccountId = deductionRevenueAccId,   Debit = 0,          Credit = dto.Amount,  Description = $"خصم {emp.Name}", EmployeeId = emp.Id }
+                }
+            };
+            _db.JournalEntries.Add(je);
+        }
+
         await _db.SaveChangesAsync();
-        return Ok(new { id = ded.Id, deductionNumber = ded.DeductionNumber });
+        if (je != null) { ded.JournalEntryId = je.Id; await _db.SaveChangesAsync(); }
+
+        return Ok(new { id = ded.Id, deductionNumber = ded.DeductionNumber, journalEntryId = je?.Id });
     }
 
     [HttpDelete("{id}")]
@@ -796,6 +901,61 @@ public class EmployeeDeductionsController : ControllerBase
             return BadRequest("لا يمكن حذف خصم مرتبط بمسير رواتب.");
 
         _db.EmployeeDeductions.Remove(ded);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+}
+
+// ══════════════════════════════════════════════════════
+// 6. DEPARTMENTS (الأقسام / الفئات)
+// ══════════════════════════════════════════════════════
+
+[ApiController]
+[Route("api/departments")]
+[Authorize(Roles = "Admin,Manager,Accountant")]
+public class DepartmentsController : ControllerBase
+{
+    private readonly AppDbContext _db;
+    public DepartmentsController(AppDbContext db) => _db = db;
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll()
+    {
+        var list = await _db.Departments
+            .Include(d => d.Employees)
+            .OrderBy(d => d.Name)
+            .Select(d => new DepartmentDto(d.Id, d.Name, d.Description, d.Employees.Count))
+            .ToListAsync();
+        return Ok(list);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreateDepartmentDto dto)
+    {
+        var dept = new Department { Name = dto.Name.Trim(), Description = dto.Description?.Trim() };
+        _db.Departments.Add(dept);
+        await _db.SaveChangesAsync();
+        return Ok(new { id = dept.Id });
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] CreateDepartmentDto dto)
+    {
+        var dept = await _db.Departments.FindAsync(id);
+        if (dept == null) return NotFound();
+        dept.Name = dto.Name.Trim();
+        dept.Description = dto.Description?.Trim();
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var dept = await _db.Departments.Include(d => d.Employees).FirstOrDefaultAsync(d => d.Id == id);
+        if (dept == null) return NotFound();
+        if (dept.Employees.Any()) return BadRequest("لا يمكن حذف قسم به موظفين.");
+        _db.Departments.Remove(dept);
         await _db.SaveChangesAsync();
         return NoContent();
     }

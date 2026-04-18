@@ -82,20 +82,22 @@ public class ImportController : ControllerBase
         FillCol(4, units);      
         FillCol(8, new List<string> { "نعم", "لا" });
         FillCol(9, new List<string> { "نشط", "مسودة", "مخفي" });
+        FillCol(11, new List<string> { "نعم", "لا" }); // Taxable?
 
         var brandRange = wsL.Range(1, 3, Math.Max(1, brands.Count), 3);
         var unitRange  = wsL.Range(1, 4, Math.Max(1, units.Count), 4);
         var featRange  = wsL.Range(1, 8, 2, 8);
         var statRange  = wsL.Range(1, 9, 3, 9);
+        var taxRange   = wsL.Range(1, 11, 2, 11);
 
         var ws1 = wb.Worksheets.Add("المنتجات والمقاسات");
         ws1.RightToLeft = true;
 
         var headers1 = new[] {
-            "الكود SKU *", "الاسم عربي *", "الوحدة", "الاسم انجليزي",
+            "الكود SKU *", "الاسم عربي *", "الوحدة *", "الاسم انجليزي",
             "التصنيف الأساسي *", "التصنيف الفرعي", "التصنيف الفرعي 2",
             "سعر التكلفة", "السعر *", "سعر الخصم",
-            "الماركة", "المقاس", "اللون (English)", "اللون (عربي)",
+            "خاضع للضريبة؟ *", "الماركة", "المقاس", "اللون (English)", "اللون (عربي)",
             "المخزون *", "فارق السعر للمقاس", "حد الطلب", "الحالة",
             "مميز (نعم/لا)", "الوصف عربي", "الوصف انجليزي"
         };
@@ -119,11 +121,12 @@ public class ImportController : ControllerBase
             // Sub-Sub Category (Col 7) dependent on Sub (Col 6)
             ws1.Cell(r, 7).CreateDataValidation().List("=INDIRECT(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE($F" + r + ",\" \",\"_\"),\"-\",\"_\"),\"&\",\"_\"),\"/\",\"_\"))", true);
             
-            ws1.Cell(r, 11).CreateDataValidation().List(brandRange, true);
-            ws1.Cell(r, 3).CreateDataValidation().List(unitRange, true); // Unit is now Col 3
+            ws1.Cell(r, 12).CreateDataValidation().List(brandRange, true); // Brand shifted to 12
+            ws1.Cell(r, 3).CreateDataValidation().List(unitRange, true);
             
-            ws1.Cell(r, 18).CreateDataValidation().List(statRange, true);
-            ws1.Cell(r, 19).CreateDataValidation().List(featRange, true);
+            ws1.Cell(r, 11).CreateDataValidation().List(taxRange, true); // Tax shifted to 11
+            ws1.Cell(r, 19).CreateDataValidation().List(statRange, true); // Status shifted to 19
+            ws1.Cell(r, 20).CreateDataValidation().List(featRange, true); // Feature shifted to 20
         }
 
         // Sample row 1
@@ -134,15 +137,16 @@ public class ImportController : ControllerBase
         ws1.Cell(2,5).Value = mainCats.FirstOrDefault()?.NameAr ?? "ملابس";
         ws1.Cell(2,8).Value = 200; 
         ws1.Cell(2,9).Value = 299;
-        ws1.Cell(2,11).Value = brands.FirstOrDefault() ?? "Nike";
-        ws1.Cell(2,12).Value = "M";
-        ws1.Cell(2,13).Value = "Blue";
-        ws1.Cell(2,14).Value = "أزرق";
-        ws1.Cell(2,15).Value = 10;
-        ws1.Cell(2,16).Value = 0;
-        ws1.Cell(2,17).Value = 5; 
-        ws1.Cell(2,18).Value = "نشط";
-        ws1.Cell(2,19).Value = "لا";
+        ws1.Cell(2,11).Value = "نعم";
+        ws1.Cell(2,12).Value = brands.FirstOrDefault() ?? "Nike";
+        ws1.Cell(2,13).Value = "M";
+        ws1.Cell(2,14).Value = "Blue";
+        ws1.Cell(2,15).Value = "أزرق";
+        ws1.Cell(2,16).Value = 10;
+        ws1.Cell(2,17).Value = 0;
+        ws1.Cell(2,18).Value = 5; 
+        ws1.Cell(2,19).Value = "نشط";
+        ws1.Cell(2,20).Value = "لا";
         ws1.Row(2).Style.Font.FontColor = XLColor.Gray;
 
         ws1.Columns().AdjustToContents();
@@ -214,6 +218,7 @@ public class ImportController : ControllerBase
             int colCost     = GetCol("سعر التكلفة", "التكلفة", "Cost");
             int colPrice    = GetCol("السعر", "سعر البيع");
             int colDisc     = GetCol("سعر الخصم", "الخصم");
+            int colHasTax   = GetCol("خاضع للضريبة", "taxable", "الضريبة"); 
             int colBrand    = GetCol("العلامة التجارية", "الماركة", "Brand");
             int colSize     = GetCol("المقاس");
             int colColorEn  = GetCol("اللون (English)", "اللون English");
@@ -226,8 +231,8 @@ public class ImportController : ControllerBase
             int colDescAr   = GetCol("الوصف عربي");
             int colDescEn   = GetCol("الوصف انجليزي");
 
-            if (colSku == -1 || (colNameAr == -1 && colPrice == -1))
-                return BadRequest(new { message = "تعذر التعرف على أعمدة الملف الأساسية (الكود، الاسم، السعر)" });
+            if (colSku == -1 || colNameAr == -1 || colPrice == -1 || colUnit == -1 || colMainCat == -1)
+                return BadRequest(new { message = "الأعمدة الإلزامية ناقصة (الكود، الاسم، السعر، الوحدة، التصنيف الأساسي)" });
 
             var categories   = await _db.Categories.ToListAsync();
             var brands       = await _db.Brands.ToListAsync();
@@ -268,13 +273,10 @@ public class ImportController : ControllerBase
             {
                 result.Errors.Add($"صف {r}: {message}");
                 // Copy the entire row from the original sheet to the error sheet
-                var lastColThisRow = ws.LastColumnUsed();
-                if (lastColThisRow != null)
+                var lCol = ws.LastColumnUsed()?.ColumnNumber() ?? 20;
+                for (int c = 1; c <= lCol; c++)
                 {
-                    for (int c = 1; c <= lastColThisRow.ColumnNumber(); c++)
-                    {
-                        errorWs.Cell(errorRowIdx, c).Value = ws.Cell(r, c).Value;
-                    }
+                    errorWs.Cell(errorRowIdx, c).Value = ws.Cell(r, c).Value;
                 }
                 errorWs.Cell(errorRowIdx, colErrDesc).Value = message;
                 errorWs.Cell(errorRowIdx, colErrDesc).Style.Font.FontColor = XLColor.Red;
@@ -299,14 +301,18 @@ public class ImportController : ControllerBase
 
                 if (!productsDict.TryGetValue(sku, out var product))
                 {
-                    var nameAr = GetVal(colNameAr);
+                    var nameAr   = GetVal(colNameAr);
                     var priceStr = GetVal(colPrice);
+                    var unitStr  = GetVal(colUnit);
+                    var mainC    = GetVal(colMainCat);
 
-                    if (string.IsNullOrEmpty(nameAr) || string.IsNullOrEmpty(priceStr))
+                    // Mandatory checks for all product information
+                    if (string.IsNullOrEmpty(nameAr) || string.IsNullOrEmpty(priceStr) || string.IsNullOrEmpty(unitStr) || string.IsNullOrEmpty(mainC))
                     {
-                        LogRowError(r, $"بيانات أساسية ناقصة (الاسم '{nameAr}' أو السعر '{priceStr}') للكود {sku}");
+                        LogRowError(r, $"بيانات إلزامية ناقصة (الاسم '{nameAr}', السعر '{priceStr}', الوحدة '{unitStr}', التصنيف '{mainC}') — يجب ملء كافة المعلومات الأساسية");
                         continue;
                     }
+
                     if (!decimal.TryParse(priceStr, out var price))
                     {
                         LogRowError(r, $"السعر غير صحيح '{priceStr}' للكود {sku}");
@@ -314,31 +320,32 @@ public class ImportController : ControllerBase
                     }
 
                     // Resolve category chain (Main -> Sub -> SubSub)
-                    var mainC = GetVal(colMainCat);
                     var subC  = GetVal(colSubCat);
                     var subS  = GetVal(colSubSub);
                     
                     int? catId = null;
-                    if (!string.IsNullOrEmpty(mainC))
+                    var parent = categories.FirstOrDefault(c => c.NameAr == mainC && c.ParentId == null);
+                    if (parent != null)
                     {
-                        var parent = categories.FirstOrDefault(c => c.NameAr == mainC && c.ParentId == null);
-                        if (parent != null)
+                        catId = parent.Id;
+                        if (!string.IsNullOrEmpty(subC))
                         {
-                            catId = parent.Id;
-                            if (!string.IsNullOrEmpty(subC))
+                            var sub = categories.FirstOrDefault(c => c.NameAr == subC && c.ParentId == parent.Id);
+                            if (sub != null)
                             {
-                                var sub = categories.FirstOrDefault(c => c.NameAr == subC && c.ParentId == parent.Id);
-                                if (sub != null)
+                                catId = sub.Id;
+                                if (!string.IsNullOrEmpty(subS))
                                 {
-                                    catId = sub.Id;
-                                    if (!string.IsNullOrEmpty(subS))
-                                    {
-                                        var leaf = categories.FirstOrDefault(c => c.NameAr == subS && c.ParentId == sub.Id);
-                                        if (leaf != null) catId = leaf.Id;
-                                    }
+                                    var leaf = categories.FirstOrDefault(c => c.NameAr == subS && c.ParentId == sub.Id);
+                                    if (leaf != null) catId = leaf.Id;
                                 }
                             }
                         }
+                    }
+                    else
+                    {
+                        LogRowError(r, $"التصنيف الأساسي '{mainC}' غير موجود في النظام");
+                        continue;
                     }
 
                     // Resolve Brand
@@ -346,8 +353,12 @@ public class ImportController : ControllerBase
                     int? bId = brands.FirstOrDefault(b => b.NameAr == bStr || b.Id.ToString() == bStr)?.Id;
 
                     // Resolve Unit
-                    var uStr = GetVal(colUnit);
-                    int? uId = units.FirstOrDefault(u => u.NameAr == uStr)?.Id;
+                    int? uId = units.FirstOrDefault(u => u.NameAr == unitStr)?.Id;
+                    if (uId == null)
+                    {
+                        LogRowError(r, $"وحدة القياس '{unitStr}' غير موجودة في النظام — يجب اختيار الوحدة من القائمة");
+                        continue;
+                    }
 
                     decimal? cost = decimal.TryParse(GetVal(colCost), out var cs) ? cs : null;
                     decimal? dP   = decimal.TryParse(GetVal(colDisc), out var dp) ? dp : null;
@@ -358,6 +369,8 @@ public class ImportController : ControllerBase
                         "مخفي" => ProductStatus.Hidden,
                         _ => ProductStatus.Active
                     };
+
+                    bool hasTax = !GetVal(colHasTax).Contains("لا"); // Default to Yes (true) unless specified "No"
 
                     if (isExisting && update)
                     {
@@ -371,6 +384,8 @@ public class ImportController : ControllerBase
                             product.CostPrice = cost;
                             product.CategoryId = catId ?? product.CategoryId;
                             product.BrandId = bId ?? product.BrandId;
+                            product.UnitId = uId;
+                            product.HasTax = hasTax;
                             product.ReorderLevel = rL;
                             product.Status = status;
                             product.IsFeatured = GetVal(colFeat).Contains("نعم");
@@ -391,8 +406,10 @@ public class ImportController : ControllerBase
                             Price = price,
                             DiscountPrice = dP,
                             CostPrice = cost,
-                            CategoryId = catId ?? categories.FirstOrDefault()?.Id ?? 1,
+                            CategoryId = catId.Value,
                             BrandId = bId,
+                            UnitId = uId,
+                            HasTax = hasTax,
                             ReorderLevel = rL,
                             DescriptionAr = GetVal(colDescAr).NullIfEmpty(),
                             DescriptionEn = GetVal(colDescEn).NullIfEmpty(),
@@ -448,22 +465,30 @@ public class ImportController : ControllerBase
 
             await _db.SaveChangesAsync();
 
-            // If there were errors, return the error report file
+            string? errorReportBase64 = null;
             if (result.Errors.Any())
             {
                 errorWs.Columns().AdjustToContents();
-                var errStream = new MemoryStream();
+                using var errStream = new MemoryStream();
                 errorWb.SaveAs(errStream);
-                errStream.Position = 0;
-                return File(errStream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"import_errors_{DateTime.Now:yyyyMMddHHmmss}.xlsx");
+                errorReportBase64 = Convert.ToBase64String(errStream.ToArray());
             }
+
+            return Ok(new { 
+                message = result.Errors.Any() ? "تم الاستيراد مع وجود بعض الأخطاء" : "تم الاستيراد بنجاح", 
+                added = result.Added, 
+                updated = result.Updated, 
+                variantsAdded = result.VariantsAdded, 
+                skipped = result.Skipped.Count, 
+                errors = result.Errors.Count, 
+                details = result,
+                errorReportFile = errorReportBase64
+            });
         }
         catch (Exception ex)
         {
             return BadRequest(new { message = $"خطأ: {ex.Message}" });
         }
-
-        return Ok(new { message = "تم الاستيراد بنجاح", added = result.Added, updated = result.Updated, variantsAdded = result.VariantsAdded, skipped = result.Skipped.Count, errors = result.Errors.Count, details = result });
     }
 
 

@@ -75,6 +75,7 @@ public record CreateJournalEntryDto(
     JournalEntryType? Type = JournalEntryType.Manual,
     string?           AttachmentUrl = null,
     string?           AttachmentPublicId = null,
+    OrderSource?      CostCenter = null,
     bool              AsDraft = false
 );
 
@@ -85,6 +86,7 @@ public record UpdateJournalEntryDto(
     List<CreateJournalLineDto> Lines,
     string?           AttachmentUrl = null,
     string?           AttachmentPublicId = null,
+    OrderSource?      CostCenter = null,
     bool              PostAfterUpdate = false
 );
 
@@ -94,7 +96,8 @@ public record CreateJournalLineDto(
     decimal Credit,
     string? Description,
     int?    CustomerId  = null,
-    int?    SupplierId  = null
+    int?    SupplierId  = null,
+    OrderSource? CostCenter = null
 );
 
 public record JournalEntryDto(
@@ -168,7 +171,8 @@ public record CreateReceiptVoucherDto(
     string?  Reference,
     string?  Description,
     string?  AttachmentUrl = null,
-    string?  AttachmentPublicId = null
+    string?  AttachmentPublicId = null,
+    OrderSource? CostCenter = null
 );
 
 public record UpdateReceiptVoucherDto(
@@ -182,7 +186,8 @@ public record UpdateReceiptVoucherDto(
     string?  Reference,
     string?  Description,
     string?  AttachmentUrl = null,
-    string?  AttachmentPublicId = null
+    string?  AttachmentPublicId = null,
+    OrderSource? CostCenter = null
 );
 
 public record VoucherSummaryDto(
@@ -214,7 +219,8 @@ public record CreatePaymentVoucherDto(
     string?  Reference,
     string?  Description,
     string?  AttachmentUrl = null,
-    string?  AttachmentPublicId = null
+    string?  AttachmentPublicId = null,
+    OrderSource? CostCenter = null
 );
 
 public record UpdatePaymentVoucherDto(
@@ -228,7 +234,8 @@ public record UpdatePaymentVoucherDto(
     string?  Reference,
     string?  Description,
     string?  AttachmentUrl = null,
-    string?  AttachmentPublicId = null
+    string?  AttachmentPublicId = null,
+    OrderSource? CostCenter = null
 );
 
 // ══════════════════════════════════════════════════════

@@ -3,6 +3,13 @@ using Sportive.API.Models;
 namespace Sportive.API.DTOs;
 
 // ══════════════════════════════════════════════════════
+// DEPARTMENT DTOs
+// ══════════════════════════════════════════════════════
+
+public record DepartmentDto(int Id, string Name, string? Description, int EmployeeCount);
+public record CreateDepartmentDto(string Name, string? Description);
+
+// ══════════════════════════════════════════════════════
 // EMPLOYEE DTOs
 // ══════════════════════════════════════════════════════
 
@@ -10,11 +17,13 @@ public record CreateEmployeeDto(
     string        Name,
     DateTime      HireDate,
     decimal       BaseSalary,
+    decimal       FixedAllowance     = 0,
+    decimal       FixedDeduction     = 0,
     string?       Phone              = null,
     string?       Email              = null,
     string?       NationalId         = null,
     string?       JobTitle           = null,
-    string?       Department         = null,
+    int?          DepartmentId       = null,
     string?       BankAccount        = null,
     string?       Notes              = null,
     string?       AttachmentUrl      = null,
@@ -28,17 +37,19 @@ public record UpdateEmployeeDto(
     DateTime      HireDate,
     decimal       BaseSalary,
     EmployeeStatus Status,
-    string?       Phone          = null,
-    string?       Email          = null,
-    string?       NationalId     = null,
-    string?       JobTitle       = null,
-    string?       Department     = null,
-    string?       BankAccount    = null,
-    DateTime?     TerminationDate = null,
-    string?       Notes          = null,
-    string?       AttachmentUrl  = null,
+    decimal       FixedAllowance     = 0,
+    decimal       FixedDeduction     = 0,
+    string?       Phone              = null,
+    string?       Email              = null,
+    string?       NationalId         = null,
+    string?       JobTitle           = null,
+    int?          DepartmentId       = null,
+    string?       BankAccount        = null,
+    DateTime?     TerminationDate    = null,
+    string?       Notes              = null,
+    string?       AttachmentUrl      = null,
     string?       AttachmentPublicId = null,
-    int?          AccountId      = null
+    int?          AccountId          = null
 );
 
 public record EmployeeDto(
@@ -49,10 +60,13 @@ public record EmployeeDto(
     string?        Email,
     string?        NationalId,
     string?        JobTitle,
-    string?        Department,
+    int?           DepartmentId,
+    string?        DepartmentName,
     DateTime       HireDate,
     DateTime?      TerminationDate,
     decimal        BaseSalary,
+    decimal        FixedAllowance,
+    decimal        FixedDeduction,
     string?        BankAccount,
     int            Status,
     string?        Notes,
@@ -65,7 +79,7 @@ public record EmployeeDto(
     string?        AppUserName  = null
 );
 
-public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, string? Department, decimal BaseSalary, int Status);
+public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, int? DepartmentId, string? DepartmentName, decimal BaseSalary, int Status);
 
 // ══════════════════════════════════════════════════════
 // PAYROLL RUN DTOs
@@ -173,9 +187,10 @@ public record CreateBonusDto(
     int       EmployeeId,
     DateTime  BonusDate,
     decimal   Amount,
-    BonusType BonusType = BonusType.Other,
-    string?   Reason    = null,
-    string?   Notes     = null
+    BonusType BonusType     = BonusType.Other,
+    string?   Reason        = null,
+    string?   Notes         = null,
+    int?      CashAccountId = null
 );
 
 public record EmployeeBonusDto(
@@ -189,6 +204,9 @@ public record EmployeeBonusDto(
     string?   Reason,
     string?   Notes,
     int?      PayrollRunId,
+    int?      CashAccountId,
+    string?   CashAccountName,
+    int?      JournalEntryId,
     DateTime  CreatedAt
 );
 
@@ -202,7 +220,8 @@ public record CreateDeductionDto(
     decimal       Amount,
     DeductionType DeductionType = DeductionType.Other,
     string?       Reason        = null,
-    string?       Notes         = null
+    string?       Notes         = null,
+    int?          CashAccountId = null
 );
 
 public record EmployeeDeductionDto(
@@ -216,6 +235,9 @@ public record EmployeeDeductionDto(
     string?       Reason,
     string?       Notes,
     int?          PayrollRunId,
+    int?          CashAccountId,
+    string?       CashAccountName,
+    int?          JournalEntryId,
     DateTime      CreatedAt
 );
 

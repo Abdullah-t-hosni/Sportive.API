@@ -32,7 +32,15 @@ public class SalesAccountingService
     // ══════════════════════════════════════════════════════
     public async Task PostSalesOrderAsync(Order order)
     {
-        if (await _core.EntryExistsAsync(JournalEntryType.SalesInvoice, order.OrderNumber)) return;
+        // 🚨 AUTO-UPDATE: حذف القيد القديم إن وجد للسماح بالتحديث التلقائي عند تعديل الطلب
+        var existing = await _db.JournalEntries
+            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.SalesInvoice && e.Reference == order.OrderNumber);
+        
+        if (existing != null)
+        {
+            _db.JournalEntries.Remove(existing);
+            await _db.SaveChangesAsync();
+        }
 
         var store  = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         var vatRate = (store?.VatRatePercent ?? 14) / 100m;

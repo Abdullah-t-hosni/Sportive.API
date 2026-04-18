@@ -26,7 +26,16 @@ public class PurchaseAccountingService
     public async Task PostPurchaseInvoiceAsync(PurchaseInvoice invoice)
     {
         if (string.IsNullOrEmpty(invoice.InvoiceNumber)) return;
-        if (await _core.EntryExistsAsync(JournalEntryType.PurchaseInvoice, invoice.InvoiceNumber)) return;
+
+        // 🚨 AUTO-UPDATE: حذف القيد القديم إن وجد للسماح بالتحديث التلقائي عند تعديل الفاتورة
+        var existing = await _db.JournalEntries
+            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == invoice.InvoiceNumber);
+        
+        if (existing != null)
+        {
+            _db.JournalEntries.Remove(existing);
+            await _db.SaveChangesAsync();
+        }
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
@@ -102,10 +111,18 @@ public class PurchaseAccountingService
     }
 
     public async Task PostPurchaseReturnAsync(PurchaseReturn pReturn)
-
     {
         if (string.IsNullOrEmpty(pReturn.ReturnNumber)) return;
-        if (await _core.EntryExistsAsync(JournalEntryType.PurchaseReturn, pReturn.ReturnNumber)) return;
+
+        // 🚨 AUTO-UPDATE: حذف القيد القديم إن وجد للسماح بالتعديل
+        var existing = await _db.JournalEntries
+            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseReturn && e.Reference == pReturn.ReturnNumber);
+        
+        if (existing != null)
+        {
+            _db.JournalEntries.Remove(existing);
+            await _db.SaveChangesAsync();
+        }
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();

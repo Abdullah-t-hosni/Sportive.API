@@ -12,6 +12,7 @@ using Sportive.API.Services;
 using Sportive.API.DTOs;
 using System.Security.Claims;
 using Sportive.API.Utils;
+using ClosedXML.Excel;
 
 namespace Sportive.API.Controllers;
 
@@ -28,10 +29,15 @@ public class AccountsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] bool onlyActive = false)
+    public async Task<IActionResult> GetAll(
+        [FromQuery] bool onlyActive   = false,
+        [FromQuery] bool? isLeaf      = null,
+        [FromQuery] bool? allowPosting = null)
     {
         var q = _db.Accounts.AsQueryable();
         if (onlyActive) q = q.Where(a => a.IsActive);
+        if (isLeaf.HasValue) q = q.Where(a => a.IsLeaf == isLeaf.Value);
+        if (allowPosting.HasValue) q = q.Where(a => a.AllowPosting == allowPosting.Value);
         
         var accounts = await q.OrderBy(a => a.Code).ToListAsync();
         return Ok(accounts);
@@ -103,6 +109,64 @@ public class AccountsController : ControllerBase
         _db.Accounts.Remove(account);
         await _db.SaveChangesAsync();
         return NoContent();
+    }
+
+    [HttpPost("import-opening-balances")]
+    public async Task<IActionResult> ImportOpeningBalances(IFormFile file)
+    {
+        if (file == null || file.Length == 0) return BadRequest(new { message = "لم يتم رفع ملف" });
+
+        var successCount = 0;
+        var errors = new List<string>();
+
+        try
+        {
+            using var stream = file.OpenReadStream();
+            using var wb = new XLWorkbook(stream);
+            var ws = wb.Worksheets.First();
+            var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
+
+            var allAccounts = await _db.Accounts.ToListAsync();
+
+            for (int r = 2; r <= lastRow; r++)
+            {
+                var code = ws.Cell(r, 1).GetString().Trim();
+                if (string.IsNullOrEmpty(code)) continue;
+
+                var balStr = ws.Cell(r, 2).GetString().Trim();
+                if (!decimal.TryParse(balStr, out var balance))
+                {
+                    errors.Add($"سطر {r}: الرصيد غير صحيح للحساب '{code}'");
+                    continue;
+                }
+
+                var account = allAccounts.FirstOrDefault(a => a.Code == code);
+                if (account == null)
+                {
+                    errors.Add($"سطر {r}: كود الحساب '{code}' غير موجود");
+                    continue;
+                }
+
+                if (!account.IsLeaf)
+                {
+                    errors.Add($"سطر {r}: الحساب '{code}' ليس حساباً فرعياً (Leaf). لا يمكن إضافة رصيد افتتاحي إلا للحسابات الفرعية.");
+                    continue;
+                }
+
+                account.OpeningBalance = balance;
+                account.UpdatedAt = TimeHelper.GetEgyptTime();
+                successCount++;
+            }
+
+            await _db.SaveChangesAsync();
+            await _accounting.SyncEntityBalancesAsync();
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = $"خطأ في المعالجة: {ex.Message}" });
+        }
+
+        return Ok(new { success = true, successCount, errors });
     }
 
     [HttpGet("mapping-registry")]
@@ -474,6 +538,7 @@ public class ReceiptVouchersController : ControllerBase
             FromAccountId = dto.FromAccountId, CustomerId = dto.CustomerId, PaymentMethod = dto.PaymentMethod,
             Reference = dto.Reference, Description = dto.Description, AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
+            CostCenter = dto.CostCenter,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value, CreatedAt = TimeHelper.GetEgyptTime(), OrderId = dto.OrderId
         };
 
@@ -610,6 +675,7 @@ public class PaymentVouchersController : ControllerBase
             ToAccountId = dto.ToAccountId, SupplierId = dto.SupplierId, PaymentMethod = dto.PaymentMethod,
             Reference = dto.Reference, Description = dto.Description, AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
+            CostCenter = dto.CostCenter,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value, CreatedAt = TimeHelper.GetEgyptTime(), PurchaseInvoiceId = dto.PurchaseInvoiceId
         };
 

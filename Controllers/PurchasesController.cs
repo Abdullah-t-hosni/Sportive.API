@@ -10,6 +10,7 @@ using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Interfaces;
 using Sportive.API.Utils;
+using ClosedXML.Excel;
 
 namespace Sportive.API.Controllers;
 
@@ -161,6 +162,57 @@ public class SuppliersController : ControllerBase
         _db.Suppliers.Remove(supplier);
         await _db.SaveChangesAsync();
         return NoContent();
+    }
+
+    [HttpPost("import-opening-balances")]
+    public async Task<IActionResult> ImportOpeningBalances(IFormFile file)
+    {
+        if (file == null || file.Length == 0) return BadRequest(new { message = "لم يتم رفع ملف" });
+
+        var successCount = 0;
+        var errors = new List<string>();
+
+        try
+        {
+            using var stream = file.OpenReadStream();
+            using var wb = new XLWorkbook(stream);
+            var ws = wb.Worksheets.First();
+            var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
+
+            var allSuppliers = await _db.Suppliers.ToListAsync();
+
+            for (int r = 2; r <= lastRow; r++)
+            {
+                var identifier = ws.Cell(r, 1).GetString().Trim(); // Name or Phone
+                if (string.IsNullOrEmpty(identifier)) continue;
+
+                var balStr = ws.Cell(r, 2).GetString().Trim();
+                if (!decimal.TryParse(balStr, out var balance))
+                {
+                    errors.Add($"سطر {r}: الرصيد غير صحيح للمورد '{identifier}'");
+                    continue;
+                }
+
+                var supplier = allSuppliers.FirstOrDefault(s => s.Name == identifier || s.Phone == identifier);
+                if (supplier == null)
+                {
+                    errors.Add($"سطر {r}: المورد '{identifier}' غير موجود");
+                    continue;
+                }
+
+                supplier.OpeningBalance = balance;
+                supplier.UpdatedAt = TimeHelper.GetEgyptTime();
+                successCount++;
+            }
+
+            await _db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = $"خطأ في المعالجة: {ex.Message}" });
+        }
+
+        return Ok(new { success = true, successCount, errors });
     }
 }
 

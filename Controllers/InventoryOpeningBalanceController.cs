@@ -266,17 +266,123 @@ public class InventoryOpeningBalanceController : ControllerBase
         return NoContent();
     }
 
+    [HttpGet("template")]
+    public IActionResult GetTemplate()
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("الأرصدة الافتتاحية");
+        ws.RightToLeft = true;
+
+        var headers = new[] { "الكود / SKU *", "الكمية *", "سعر التكلفة *", "اسم الصنف (اختياري)" };
+        for (int c = 0; c < headers.Length; c++)
+        {
+            var cell = ws.Cell(1, c + 1);
+            cell.Value = headers[c];
+            cell.Style.Font.Bold = true;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1a1a2e");
+            cell.Style.Font.FontColor = XLColor.White;
+        }
+
+        // Sample Data
+        ws.Cell(2, 1).Value = "PROD-001";
+        ws.Cell(2, 2).Value = 10;
+        ws.Cell(2, 3).Value = 150.50;
+        ws.Cell(2, 4).Value = "مثال لمنتج";
+        ws.Row(2).Style.Font.FontColor = XLColor.Gray;
+
+        ws.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "InventoryOpeningBalance_Template.xlsx");
+    }
+
+    [HttpPost("import")]
+    public async Task<IActionResult> Import(IFormFile file)
+    {
+        if (file == null || file.Length == 0) return BadRequest(new { message = "لم يتم رفع ملف" });
+
+        var items = new List<dynamic>();
+        var errors = new List<string>();
+
+        try
+        {
+            using var stream = file.OpenReadStream();
+            using var wb = new XLWorkbook(stream);
+            var ws = wb.Worksheets.First();
+            var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
+
+            for (int r = 2; r <= lastRow; r++)
+            {
+                var sku = ws.Cell(r, 1).GetString().Trim();
+                if (string.IsNullOrEmpty(sku)) continue;
+
+                var qtyStr = ws.Cell(r, 2).GetString().Trim();
+                var costStr = ws.Cell(r, 3).GetString().Trim();
+
+                if (!decimal.TryParse(qtyStr, out var qty) || qty <= 0)
+                {
+                    errors.Add($"سطر {r}: الكمية غير صحيحة للكود '{sku}'");
+                    continue;
+                }
+
+                if (!decimal.TryParse(costStr, out var cost) || cost < 0)
+                {
+                    errors.Add($"سطر {r}: التكلفة غير صحيحة للكود '{sku}'");
+                    continue;
+                }
+
+                // Find Product or Variant
+                var variant = await _db.ProductVariants.Include(v => v.Product).FirstOrDefaultAsync(v => v.Product.SKU == sku || v.Product.NameAr == sku);
+                var product = await _db.Products.FirstOrDefaultAsync(p => p.SKU == sku || p.NameAr == sku);
+
+                if (variant != null)
+                {
+                    items.Add(new {
+                        id = $"v{variant.Id}",
+                        productId = variant.ProductId,
+                        variantId = variant.Id,
+                        name = variant.Product.NameAr,
+                        sku = variant.Product.SKU,
+                        size = variant.Size,
+                        color = variant.ColorAr,
+                        image = variant.ImageUrl ?? variant.Product.NameAr, // Placeholder for simplicity
+                        quantity = qty,
+                        costPrice = cost
+                    });
+                }
+                else if (product != null)
+                {
+                    items.Add(new {
+                        id = $"p{product.Id}",
+                        productId = product.Id,
+                        variantId = (int?)null,
+                        name = product.NameAr,
+                        sku = product.SKU,
+                        image = product.NameAr,
+                        quantity = qty,
+                        costPrice = cost
+                    });
+                }
+                else
+                {
+                    errors.Add($"سطر {r}: الكود '{sku}' غير موجود في النظام");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = $"خطأ في قراءة ملف الإكسل: {ex.Message}" });
+        }
+
+        return Ok(new { items, errors });
+    }
+
     private async Task PostJournalAsync(InventoryOpeningBalance ob)
     {
         // Get Mapped Accounts - STRICT CHECK
-        var (inventoryId, exactInv, invError) = await _core.GetAccountIdAsync(MappingKeys.Inventory);
-        var (openingId, exactOpe, opeError)   = await _core.GetAccountIdAsync(MappingKeys.OpeningEquity);
-
-        if (!exactInv || inventoryId == 0)
-            throw new InvalidOperationException($"فشل ترحيل القيد: حساب المخزون غير مربوط بشكل صحيح في الإعدادات. ({invError})");
-
-        if (!exactOpe || openingId == 0)
-            throw new InvalidOperationException($"فشل ترحيل القيد: حساب الأرصدة الافتتاحية غير مربوط بشكل صحيح في الإعدادات. ({opeError})");
+        var inventoryId = await _core.GetRequiredMappedAccountAsync(MappingKeys.Inventory);
+        var openingId   = await _core.GetRequiredMappedAccountAsync(MappingKeys.OpeningEquity);
 
         var dto = new CreateJournalEntryDto(
             EntryDate:   ob.Date,

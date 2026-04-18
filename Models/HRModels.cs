@@ -42,6 +42,13 @@ public enum BonusType
     Other       = 4,  // أخرى
 }
 
+public class Department : BaseEntity
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public ICollection<Employee> Employees { get; set; } = new List<Employee>();
+}
+
 // ══════════════════════════════════════════════════════
 // تبويبة الموظفين — Employee
 // ══════════════════════════════════════════════════════
@@ -54,10 +61,18 @@ public class Employee : BaseEntity
     public string? Email           { get; set; }
     public string? NationalId      { get; set; }
     public string? JobTitle        { get; set; }  // المسمى الوظيفي
-    public string? Department      { get; set; }  // القسم
+    
+    // القسم (كفئة)
+    public int?    DepartmentId    { get; set; }
+    public Department? Department  { get; set; }
+
     public DateTime HireDate       { get; set; }
     public DateTime? TerminationDate { get; set; }
+    
     public decimal BaseSalary      { get; set; } = 0;
+    public decimal FixedAllowance  { get; set; } = 0; // البدلات الثابتة
+    public decimal FixedDeduction  { get; set; } = 0; // الاستقطاعات الثابتة (مثل التأمينات)
+
     public string? BankAccount     { get; set; }  // رقم الحساب البنكي
     public string? Notes           { get; set; }
     public string? AttachmentUrl   { get; set; }
@@ -181,6 +196,12 @@ public class EmployeeBonus : BaseEntity
     // مرتبط بمسير رواتب (اختياري)
     public int?        PayrollRunId { get; set; }
     public PayrollRun? PayrollRun   { get; set; }
+    // الحساب الدائن عند صرف المكافأة (إن كانت فورية)
+    public int?    CashAccountId { get; set; }
+    public Account? CashAccount  { get; set; }
+
+    public int?          JournalEntryId { get; set; }
+    public JournalEntry? JournalEntry   { get; set; }
 }
 
 // ══════════════════════════════════════════════════════
@@ -203,4 +224,11 @@ public class EmployeeDeduction : BaseEntity
     // مرتبط بمسير رواتب (اختياري)
     public int?        PayrollRunId { get; set; }
     public PayrollRun? PayrollRun   { get; set; }
+
+    // الحساب المدين عند تحصيل الخصم (إن كان فورياً)
+    public int?    CashAccountId { get; set; }
+    public Account? CashAccount  { get; set; }
+
+    public int?          JournalEntryId { get; set; }
+    public JournalEntry? JournalEntry   { get; set; }
 }
