@@ -435,9 +435,13 @@ public class AccountingCoreService
 
             inv.PaidAmount = ledgerPaidAmount;
 
-            // Auto-Update Status
-            // 💡 FIX: If invoice is Cash, it's always Paid once Received
-            if (inv.PaymentTerms == PaymentTerms.Cash || (inv.PaidAmount >= inv.TotalAmount && inv.TotalAmount > 0))
+            // 💡 FIX: For Cash purchases, there's no liability in the 2101 account, so we set PaidAmount = TotalAmount to show 0 remaining in UI
+            if (inv.PaymentTerms == PaymentTerms.Cash)
+            {
+                inv.PaidAmount = inv.TotalAmount;
+                inv.Status = PurchaseInvoiceStatus.Paid;
+            }
+            else if (inv.PaidAmount >= inv.TotalAmount && inv.TotalAmount > 0)
             {
                 inv.Status = PurchaseInvoiceStatus.Paid;
             }
