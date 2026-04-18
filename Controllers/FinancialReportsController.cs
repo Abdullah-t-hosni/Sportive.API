@@ -119,14 +119,34 @@ public class FinancialReportsController : ControllerBase
         var balances = await GetBalances(from, to);
         var rows = balances
             .OrderBy(b => b.Code)
-            .Select(b => new TrialBalanceRow(
-                b.Code, b.NameAr, b.Level,
-                b.OpenBalance > 0 ? b.OpenBalance : 0,
-                b.OpenBalance < 0 ? -b.OpenBalance : 0,
-                b.PeriodDebit, b.PeriodCredit,
-                b.ClosingBal > 0 ? b.ClosingBal : 0,
-                b.ClosingBal < 0 ? -b.ClosingBal : 0
-            )).ToList();
+            .Select(b => {
+                // حساب الرصيد الافتتاحي (مدين/دائن) بناءً على الطبيعة والفرق
+                decimal oDr = 0, oCr = 0;
+                if (b.Nature == AccountNature.Debit) {
+                    oDr = b.OpenBalance > 0 ? b.OpenBalance : 0;
+                    oCr = b.OpenBalance < 0 ? -b.OpenBalance : 0;
+                } else {
+                    oCr = b.OpenBalance > 0 ? b.OpenBalance : 0;
+                    oDr = b.OpenBalance < 0 ? -b.OpenBalance : 0;
+                }
+
+                // حساب الرصيد الختامي (مدين/دائن) بناءً على الطبيعة والفرق
+                decimal cDr = 0, cCr = 0;
+                if (b.Nature == AccountNature.Debit) {
+                    cDr = b.ClosingBal > 0 ? b.ClosingBal : 0;
+                    cCr = b.ClosingBal < 0 ? -b.ClosingBal : 0;
+                } else {
+                    cCr = b.ClosingBal > 0 ? b.ClosingBal : 0;
+                    cDr = b.ClosingBal < 0 ? -b.ClosingBal : 0;
+                }
+
+                return new TrialBalanceRow(
+                    b.Code, b.NameAr, b.Level,
+                    oDr, oCr,
+                    b.PeriodDebit, b.PeriodCredit,
+                    cDr, cCr
+                );
+            }).ToList();
 
         if (excel) return ExcelTrialBalance(rows, from, to);
 
