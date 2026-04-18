@@ -266,10 +266,12 @@ public class AccountingCoreService
             (PaymentMethod.Vodafone, OrderSource.Website) => MappingKeys.WebVodafone,
             (PaymentMethod.InstaPay, OrderSource.POS)     => MappingKeys.PosInstaPay,
             (PaymentMethod.InstaPay, OrderSource.Website) => MappingKeys.WebInstaPay,
-            (PaymentMethod.CreditCard, _)                 => MappingKeys.PosBank,
-            (PaymentMethod.Bank, _)                       => MappingKeys.PosBank,
-            (PaymentMethod.Cash, OrderSource.POS)         => MappingKeys.PosCash,
-            (PaymentMethod.Cash, OrderSource.Website)     => MappingKeys.WebCash,
+            (PaymentMethod.CreditCard, OrderSource.POS)     => MappingKeys.PosBank,
+            (PaymentMethod.CreditCard, OrderSource.Website) => MappingKeys.WebBank,
+            (PaymentMethod.Bank, OrderSource.POS)           => MappingKeys.PosBank,
+            (PaymentMethod.Bank, OrderSource.Website)       => MappingKeys.WebBank,
+            (PaymentMethod.Cash, OrderSource.POS)           => MappingKeys.PosCash,
+            (PaymentMethod.Cash, OrderSource.Website)       => MappingKeys.WebCash,
             _ => null
         };
 

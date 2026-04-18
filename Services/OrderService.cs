@@ -983,6 +983,18 @@ public class OrderService : IOrderService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[Accounting] PostSalesOrder permanently failed for {Number} after {Max} attempts.", orderNumber, maxAttempts);
+                
+                // ✅ ALERT ADMIN: Send a system notification so they can fix the mapping
+                using var scope = _scopeFactory.CreateScope();
+                var notify = scope.ServiceProvider.GetRequiredService<INotificationService>();
+                await notify.SendAsync(
+                    null,
+                    "فشل إنشاء قيد محاسبي",
+                    "Accounting Post Failed",
+                    $"حدث خطأ أثناء ترحيل الطلب {orderNumber} محاسبياً. يرجى مراجعة صفحة الربط المالي. الخطأ: {ex.Message}",
+                    $"Error posting journal entry for order {orderNumber}. Please check financial mappings. Error: {ex.Message}",
+                    "Alert"
+                );
             }
         }
     }
@@ -1012,6 +1024,18 @@ public class OrderService : IOrderService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[Accounting] PostOrderPayment permanently failed for order {OrderId} after {Max} attempts.", orderId, maxAttempts);
+
+                // ✅ ALERT ADMIN: Fixed logic to get notification service correctly
+                using var scope = _scopeFactory.CreateScope();
+                var notify = scope.ServiceProvider.GetRequiredService<INotificationService>();
+                await notify.SendAsync(
+                    null,
+                    "فشل إنشاء قيد تحصيل",
+                    "Payment Post Failed",
+                    $"فشل نظام التحصيل التلقائي للطلب (معرف:{orderId}). يرجى مراجعة الربط المالي. الخطأ: {ex.Message}",
+                    $"Automated payment collection failed for order ID:{orderId}. Please check financial mappings. Error: {ex.Message}",
+                    "Alert"
+                );
             }
         }
     }
