@@ -28,15 +28,13 @@ public class FinancialReportsController : ControllerBase
             .OrderBy(a => a.Code)
             .ToListAsync();
 
-        // 1. Get transaction movements for the period
+        // 1. Get transaction movements for the period (Server-side GroupBy)
         var query = _db.JournalLines
-            .Include(l => l.JournalEntry)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to);
 
         var openingQuery = _db.JournalLines
-            .Include(l => l.JournalEntry)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate < from);
 
@@ -46,16 +44,23 @@ public class FinancialReportsController : ControllerBase
             openingQuery = openingQuery.Where(l => l.CostCenter == source.Value);
         }
 
-        var lines = await query.ToListAsync();
-        var openingLines = await openingQuery.ToListAsync();
+        var periodBalances = await query
+            .GroupBy(l => l.AccountId)
+            .Select(g => new { AccountId = g.Key, Dr = g.Sum(l => l.Debit), Cr = g.Sum(l => l.Credit) })
+            .ToListAsync();
 
-        // 3. Create dictionaries for fast lookup of direct postings
-        var periodDrMap = lines.GroupBy(l => l.AccountId).ToDictionary(g => g.Key, g => g.Sum(l => l.Debit));
-        var periodCrMap = lines.GroupBy(l => l.AccountId).ToDictionary(g => g.Key, g => g.Sum(l => l.Credit));
-        var openDrMap = openingLines.GroupBy(l => l.AccountId).ToDictionary(g => g.Key, g => g.Sum(l => l.Debit));
-        var openCrMap = openingLines.GroupBy(l => l.AccountId).ToDictionary(g => g.Key, g => g.Sum(l => l.Credit));
+        var openingBalances = await openingQuery
+            .GroupBy(l => l.AccountId)
+            .Select(g => new { AccountId = g.Key, Dr = g.Sum(l => l.Debit), Cr = g.Sum(l => l.Credit) })
+            .ToListAsync();
 
-        // 4. Initialize balance objects with direct postings only
+        // 3. Create dictionaries for fast lookup
+        var periodDrMap = periodBalances.ToDictionary(x => x.AccountId, x => x.Dr);
+        var periodCrMap = periodBalances.ToDictionary(x => x.AccountId, x => x.Cr);
+        var openDrMap   = openingBalances.ToDictionary(x => x.AccountId, x => x.Dr);
+        var openCrMap   = openingBalances.ToDictionary(x => x.AccountId, x => x.Cr);
+
+        // 4. Initialize balance objects
         var balanceList = accounts.Select(a => new AccountBalance
         {
             Id           = a.Id,
@@ -66,7 +71,6 @@ public class FinancialReportsController : ControllerBase
             ParentId     = a.ParentId,
             Level        = a.Level,
             IsLeaf       = a.IsLeaf,
-            // Opening balance from initial setup (Rounded to 2 decimals)
             OpenDebit    = Math.Round((a.Nature == AccountNature.Debit  ? a.OpeningBalance : 0) + openDrMap.GetValueOrDefault(a.Id, 0), 2),
             OpenCredit   = Math.Round((a.Nature == AccountNature.Credit ? a.OpeningBalance : 0) + openCrMap.GetValueOrDefault(a.Id, 0), 2),
             PeriodDebit  = Math.Round(periodDrMap.GetValueOrDefault(a.Id, 0), 2),
@@ -74,30 +78,24 @@ public class FinancialReportsController : ControllerBase
         }).ToList();
 
         // 5. 🔥 HIERARCHICAL ROLL-UP 🔥
-        // Process accounts from bottom-up (longest codes to shortest) to aggregate children into parents
-        var balancesByCode = balanceList.OrderByDescending(b => b.Code.Length).ToList();
-        foreach (var b in balancesByCode)
+        var balanceDict = balanceList.ToDictionary(b => b.Id);
+        var itemsToRollUp = balanceList.OrderByDescending(b => b.Code.Length).ToList();
+        
+        foreach (var b in itemsToRollUp)
         {
-            if (b.ParentId.HasValue)
+            if (b.ParentId.HasValue && balanceDict.TryGetValue(b.ParentId.Value, out var parent))
             {
-                var parent = balanceList.FirstOrDefault(p => p.Id == b.ParentId.Value);
-                if (parent != null)
-                {
-                    parent.OpenDebit    = Math.Round(parent.OpenDebit + b.OpenDebit, 2);
-                    parent.OpenCredit   = Math.Round(parent.OpenCredit + b.OpenCredit, 2);
-                    parent.PeriodDebit  = Math.Round(parent.PeriodDebit + b.PeriodDebit, 2);
-                    parent.PeriodCredit = Math.Round(parent.PeriodCredit + b.PeriodCredit, 2);
-                }
+                parent.OpenDebit    = Math.Round(parent.OpenDebit + b.OpenDebit, 2);
+                parent.OpenCredit   = Math.Round(parent.OpenCredit + b.OpenCredit, 2);
+                parent.PeriodDebit  = Math.Round(parent.PeriodDebit + b.PeriodDebit, 2);
+                parent.PeriodCredit = Math.Round(parent.PeriodCredit + b.PeriodCredit, 2);
             }
         }
 
-        // 6. Calculate net balances for each account after roll-up
+        // 6. Calculate net balances
         foreach (var b in balanceList)
         {
-            // Opening Balance Calculation (Rounded)
             b.OpenBalance = Math.Round(b.Nature == AccountNature.Debit ? b.OpenDebit - b.OpenCredit : b.OpenCredit - b.OpenDebit, 2);
-            
-            // Closing Balance Calculation: (Opening Dr + Period Dr) - (Opening Cr + Period Cr)
             var closingDr = Math.Round(b.OpenDebit + b.PeriodDebit, 2);
             var closingCr = Math.Round(b.OpenCredit + b.PeriodCredit, 2);
             b.ClosingBal = Math.Round(b.Nature == AccountNature.Debit ? closingDr - closingCr : closingCr - closingDr, 2);
@@ -117,12 +115,13 @@ public class FinancialReportsController : ControllerBase
     public async Task<IActionResult> TrialBalance(
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate   = null,
+        [FromQuery] OrderSource? source = null,
         [FromQuery] bool      excel    = false)
     {
         var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        var balances = await GetBalances(from, to);
+        var balances = await GetBalances(from, to, source);
         var rows = balances
             .OrderBy(b => b.Code)
             .Select(b => {
@@ -157,7 +156,7 @@ public class FinancialReportsController : ControllerBase
         if (excel) return ExcelTrialBalance(rows, from, to);
 
         return Ok(new {
-            from, to,
+            from, to, source,
             rows,
             totalOpenDebit    = Math.Round(rows.Where(r => r.Level == 1).Sum(r => r.OpenDebit), 2),
             totalOpenCredit   = Math.Round(rows.Where(r => r.Level == 1).Sum(r => r.OpenCredit), 2),
@@ -206,7 +205,7 @@ public class FinancialReportsController : ControllerBase
         if (excel) return ExcelIncomeStatement(revenues, expenses, totalRevenues, totalExpenses, netProfit, from, to);
 
         return Ok(new {
-            from, to,
+            from, to, source,
             revenues,
             expenses,
             totalRevenues,
@@ -222,12 +221,13 @@ public class FinancialReportsController : ControllerBase
     [HttpGet("balance-sheet")]
     public async Task<IActionResult> BalanceSheet(
         [FromQuery] DateTime? toDate = null,
+        [FromQuery] OrderSource? source = null,
         [FromQuery] bool      excel  = false)
     {
         var from = new DateTime(2000, 1, 1).Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        var balances = await GetBalances(from, to);
+        var balances = await GetBalances(from, to, source);
 
         // الأصول — طبيعة مدين (closingBal = Dr - Cr)
         var assets = balances
