@@ -29,48 +29,61 @@ public class InventoryAuditsController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var q = _db.InventoryAudits.Include(a => a.Items).AsNoTracking();
-        var total = await q.CountAsync();
-        
-        // Fetch to memory first to avoid projection issues with computed properties
-        var auditNodes = await q.OrderByDescending(a => a.AuditDate)
-            .Skip((page-1)*pageSize).Take(pageSize)
-            .ToListAsync();
+        try 
+        {
+            var q = _db.InventoryAudits.Include(a => a.Items).AsNoTracking();
+            var total = await q.CountAsync();
+            
+            var auditNodes = await q.OrderByDescending(a => a.AuditDate)
+                .Skip((page-1)*pageSize).Take(pageSize)
+                .ToListAsync();
 
-        var items = auditNodes.Select(a => new InventoryAuditSummaryDto(
-            a.Id, a.Title, a.AuditDate, (int)a.Status,
-            a.TotalExpectedValue, a.TotalActualValue, 
-            a.TotalActualValue - a.TotalExpectedValue,
-            a.Items.Count
-        )).ToList();
+            var items = auditNodes.Select(a => new InventoryAuditSummaryDto(
+                a.Id, a.Title, a.AuditDate, (int)a.Status,
+                a.TotalExpectedValue, a.TotalActualValue, 
+                a.TotalActualValue - a.TotalExpectedValue,
+                a.Items.Count
+            )).ToList();
 
-        return Ok(new PaginatedResult<InventoryAuditSummaryDto>(items, total, page, pageSize, (int)Math.Ceiling(total/(double)pageSize)));
+            return Ok(new PaginatedResult<InventoryAuditSummaryDto>(items, total, page, pageSize, (int)Math.Ceiling(total/(double)pageSize)));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Diagnostic Error", detail = ex.Message, stack = ex.StackTrace });
+        }
     }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var a = await _db.InventoryAudits
-            .Include(a => a.Items).ThenInclude(i => i.Product)
-            .Include(a => a.Items).ThenInclude(i => i.ProductVariant)
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == id);
+        try
+        {
+            var a = await _db.InventoryAudits
+                .Include(a => a.Items).ThenInclude(i => i.Product)
+                .Include(a => a.Items).ThenInclude(i => i.ProductVariant)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == id);
 
-        if (a == null) return NotFound();
+            if (a == null) return NotFound();
 
-        // Mapping in memory
-        return Ok(new InventoryAuditDetailDto(
-            a.Id, a.Title, a.AuditDate, a.Description, (int)a.Status,
-            a.TotalExpectedValue, a.TotalActualValue, a.TotalActualValue - a.TotalExpectedValue,
-            a.Items.Select(i => new InventoryAuditItemDto(
-                i.Id, i.ProductId, i.Product?.NameAr, i.Product?.SKU,
-                i.ProductVariantId, i.ProductVariant?.Size ?? i.ProductVariant?.ColorAr,
-                i.ExpectedQuantity, i.ActualQuantity, i.ActualQuantity - i.ExpectedQuantity, i.UnitCost,
-                i.ExpectedQuantity * i.UnitCost, i.ActualQuantity * i.UnitCost,
-                i.Note
-            )).ToList(),
-            a.JournalEntryId
-        ));
+            // Mapping in memory
+            return Ok(new InventoryAuditDetailDto(
+                a.Id, a.Title, a.AuditDate, a.Description, (int)a.Status,
+                a.TotalExpectedValue, a.TotalActualValue, a.TotalActualValue - a.TotalExpectedValue,
+                a.Items.Select(i => new InventoryAuditItemDto(
+                    i.Id, i.ProductId, i.Product?.NameAr, i.Product?.SKU,
+                    i.ProductVariantId, i.ProductVariant?.Size ?? i.ProductVariant?.ColorAr,
+                    i.ExpectedQuantity, i.ActualQuantity, i.ActualQuantity - i.ExpectedQuantity, i.UnitCost,
+                    i.ExpectedQuantity * i.UnitCost, i.ActualQuantity * i.UnitCost,
+                    i.Note
+                )).ToList(),
+                a.JournalEntryId
+            ));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Diagnostic Error", detail = ex.Message });
+        }
     }
 
     [HttpPost]
