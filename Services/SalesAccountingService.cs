@@ -131,7 +131,7 @@ public class SalesAccountingService
         // We must debit each component separately to keep the journal balanced:
         //   (a) totalItemDiscounts  → auto item/time-based discounts
         //   (b) manualDiscount      → cashier manual discount (على مستوى الفاتورة)
-        decimal manualDiscount = Math.Max(0m, order.DiscountAmount - totalItemDiscounts);
+        decimal manualDiscount = Math.Round(Math.Max(0m, order.DiscountAmount - totalItemDiscounts), 2);
 
         if (totalItemDiscounts > 0)
             lines.Add((salesDiscAcct, totalItemDiscounts, 0, $"خصم الأصناف التلقائي - {order.OrderNumber}"));
@@ -177,9 +177,26 @@ public class SalesAccountingService
         }
 
         // Remaining debt → Receivables
-        var remainingDebt = order.TotalAmount - handledPaidAmt;
-        if (remainingDebt > 0.01m)
+        var remainingDebt = Math.Round(order.TotalAmount - handledPaidAmt, 2);
+        if (Math.Abs(remainingDebt) > 0.01m)
             lines.Add((receivablesAcct, remainingDebt, 0, $"إثبات مديونية متبقية (آجل) - {order.OrderNumber}"));
+
+        // ── 2.5 Final Balancing Check ────────────────────────
+        // Ensure mathematically balanced entry (absorb tiny rounding diffs into revenue if any)
+        decimal sumDr = lines.Sum(l => l.debit);
+        decimal sumCr = lines.Sum(l => l.credit);
+        decimal diff = sumDr - sumCr;
+        
+        if (Math.Abs(diff) > 0 && Math.Abs(diff) < 0.1m)
+        {
+            // Adjust the sales revenue line by the diff to ensure perfect balance
+            var revLineIdx = lines.FindIndex(l => l.code == salesRevAcct);
+            if (revLineIdx != -1)
+            {
+                var target = lines[revLineIdx];
+                lines[revLineIdx] = (target.code, target.debit, target.credit + diff, target.desc);
+            }
+        }
 
         // ── 3. COGS / Inventory ───────────────────────────────
         var totalCost = order.Items?.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity) ?? 0;
