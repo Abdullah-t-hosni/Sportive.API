@@ -14,6 +14,7 @@ public static class MappingKeys
     public const string DeliveryRevenue   = "webDeliveryRevenueAccountID";
 
     // ── مشتريات ─────────────────────────────────────────
+    public const string Purchase          = "purchaseAccountID";
     public const string Supplier          = "supplierAccountID";
     public const string PurchaseDiscount  = "purchaseDiscountAccountID";
     public const string PurchaseReturn    = "purchaseReturnAccountID";
