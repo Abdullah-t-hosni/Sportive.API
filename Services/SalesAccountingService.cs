@@ -39,30 +39,29 @@ public class SalesAccountingService
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
 
-        string salesRevAcct  = _core.GetMap(mapDict, MK.Sales,         AccountingCoreService.SALES_REVENUE);
-        string salesDiscAcct = _core.GetMap(mapDict, MK.SalesDiscount, AccountingCoreService.SALES_DISCOUNT);
-        string inventoryAcct = _core.GetMap(mapDict, MK.Inventory,     AccountingCoreService.INVENTORY);
-        string cogsAcct      = _core.GetMap(mapDict, MK.COGS,          AccountingCoreService.COGS);
+        string salesRevAcct  = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Sales, mapDict)}";
+        string salesDiscAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesDiscount, mapDict)}";
+        string inventoryAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Inventory, mapDict)}";
+        string cogsAcct      = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.COGS, mapDict)}";
 
         // ── Customer Account ─────────────────────────────────
-        string receivablesAcct = AccountingCoreService.RECEIVABLES;
+        string receivablesAcct;
         if (order.Customer?.MainAccountId != null)
         {
-            var acc = await _db.Accounts.FindAsync(order.Customer.MainAccountId);
-            if (acc != null) receivablesAcct = acc.Code;
+            receivablesAcct = $"ID:{order.Customer.MainAccountId}";
         }
         else
         {
-            receivablesAcct = _core.GetMap(mapDict, MK.Customer, AccountingCoreService.RECEIVABLES);
+            receivablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
         }
 
         string deliveryRevAcct = !string.IsNullOrEmpty(store?.DeliveryRevenueAccountId)
-            ? store.DeliveryRevenueAccountId
-            : _core.GetMap(mapDict, MK.DeliveryRevenue, AccountingCoreService.DELIVERY_REVENUE);
+            ? $"ID:{store.DeliveryRevenueAccountId}"
+            : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.DeliveryRevenue, mapDict)}";
 
         string vatAcct = !string.IsNullOrEmpty(store?.StoreVatAccountId)
-            ? store.StoreVatAccountId
-            : _core.GetMap(mapDict, MK.VatOutput, AccountingCoreService.VAT_OUTPUT);
+            ? $"ID:{store.StoreVatAccountId}"
+            : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatOutput, mapDict)}";
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
@@ -237,10 +236,10 @@ public class SalesAccountingService
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
 
-        string salesReturnAcct = _core.GetMap(mapDict, MK.SalesReturn, AccountingCoreService.SALES_RETURN);
-        string receivablesAcct = _core.GetMap(mapDict, MK.Customer,    AccountingCoreService.RECEIVABLES);
-        string inventoryAcct   = _core.GetMap(mapDict, MK.Inventory,   AccountingCoreService.INVENTORY);
-        string cogsAcct        = _core.GetMap(mapDict, MK.COGS,        AccountingCoreService.COGS);
+        string salesReturnAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesReturn, mapDict)}";
+        string receivablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer,    mapDict)}";
+        string inventoryAcct   = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Inventory,   mapDict)}";
+        string cogsAcct        = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.COGS,        mapDict)}";
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
@@ -250,7 +249,7 @@ public class SalesAccountingService
         lines.Add((salesReturnAcct, netReturnPrice, 0, $"مرتجع مبيعات (صافي) - {order.OrderNumber}"));
         if (totalVatAmount > 0)
         {
-            string vatAcct = _core.GetMap(mapDict, MK.VatOutput, AccountingCoreService.VAT_OUTPUT);
+            string vatAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatOutput, mapDict)}";
             lines.Add((vatAcct, totalVatAmount, 0, $"إلغاء ضريبة مبيعات - {order.OrderNumber}"));
         }
 
@@ -293,11 +292,11 @@ public class SalesAccountingService
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
 
-        string salesReturnAcct = _core.GetMap(mapDict, MK.SalesReturn,    AccountingCoreService.SALES_RETURN);
-        string salesDiscAcct   = _core.GetMap(mapDict, MK.SalesDiscount,  AccountingCoreService.SALES_DISCOUNT);
-        string receivablesAcct = _core.GetMap(mapDict, MK.Customer,       AccountingCoreService.RECEIVABLES);
-        string inventoryAcct   = _core.GetMap(mapDict, MK.Inventory,      AccountingCoreService.INVENTORY);
-        string cogsAcct        = _core.GetMap(mapDict, MK.COGS,           AccountingCoreService.COGS);
+        string salesReturnAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesReturn,    mapDict)}";
+        string salesDiscAcct   = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesDiscount,  mapDict)}";
+        string receivablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer,       mapDict)}";
+        string inventoryAcct   = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Inventory,      mapDict)}";
+        string cogsAcct        = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.COGS,           mapDict)}";
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
@@ -316,7 +315,7 @@ public class SalesAccountingService
         lines.Add((salesReturnAcct, totalNetReturn, 0, $"مرتجع جزئي (صافي) - {order.OrderNumber}"));
         if (totalVatReturn > 0)
         {
-            string vatAcct = _core.GetMap(mapDict, MK.VatOutput, AccountingCoreService.VAT_OUTPUT);
+            string vatAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatOutput, mapDict)}";
             lines.Add((vatAcct, totalVatReturn, 0, $"إلغاء ضريبة جزئية - {order.OrderNumber}"));
         }
 

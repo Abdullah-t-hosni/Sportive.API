@@ -29,7 +29,9 @@ public class PaymentAccountingService
         if (await _core.EntryExistsAsync(JournalEntryType.ReceiptVoucher, reference)) return;
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
-        string receivablesAcct = order.Customer?.MainAccountId != null ? $"ID:{order.Customer.MainAccountId}" : _core.GetMap(mapDict, MK.Customer, AccountingCoreService.RECEIVABLES);
+        string receivablesAcct = order.Customer?.MainAccountId != null 
+            ? $"ID:{order.Customer.MainAccountId}" 
+            : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
         decimal handledPaidAmt = 0;
 
@@ -85,7 +87,7 @@ public class PaymentAccountingService
         if (await _core.EntryExistsAsync(JournalEntryType.PaymentVoucher, reference)) return;
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
-        string receivablesAcct = _core.GetMap(mapDict, MK.Customer, AccountingCoreService.RECEIVABLES);
+        string receivablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
         var cashCode = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
@@ -117,12 +119,12 @@ public class PaymentAccountingService
     {
         if (await _core.EntryExistsAsync(JournalEntryType.PaymentVoucher, payment.PaymentNumber)) return;
         var mapDict = await _core.GetSafeSystemMappingsAsync();
-        string payablesAcct = _core.GetMap(mapDict, MK.Supplier, AccountingCoreService.PAYABLES);
+        string payablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Supplier, mapDict)}";
         
-        // Prefer specific CashAccountId selected by user, fallback to name-based logic, then to default accounts
+        // Prefer specific CashAccountId selected by user, fallback to system mappings
         string cashCode = payment.CashAccountId.HasValue 
             ? $"ID:{payment.CashAccountId.Value}" 
-            : (payment.AccountName.Contains("كاشير") ? AccountingCoreService.CASH_CASHIER : AccountingCoreService.CASH_ACCOUNTS);
+            : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.PaymentVoucherCash, mapDict)}";
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)> {
             (payablesAcct, payment.Amount, 0, $"تسوية مورد - {payment.PaymentNumber}"),

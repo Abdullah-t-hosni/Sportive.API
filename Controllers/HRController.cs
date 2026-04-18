@@ -222,9 +222,10 @@ public class PayrollController : ControllerBase
 {
     private readonly AppDbContext    _db;
     private readonly SequenceService _seq;
+    private readonly AccountingCoreService _core;
 
-    public PayrollController(AppDbContext db, SequenceService seq)
-        => (_db, _seq) = (db, seq);
+    public PayrollController(AppDbContext db, SequenceService seq, AccountingCoreService core)
+        => (_db, _seq, _core) = (db, seq, core);
 
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
@@ -341,14 +342,16 @@ public class PayrollController : ControllerBase
             return BadRequest("المسير مرحّل بالفعل.");
 
         // ── توليد القيد المحاسبي ─────────────────────────────
-        var wagesAccId    = run.WagesExpenseAccountId;
-        var accrualAccId  = run.AccruedSalariesAccountId;
-        var dedAccId      = run.DeductionRevenueAccountId;
-        var advAccId      = run.AdvancesAccountId;
+        var mapDict = await _core.GetSafeSystemMappingsAsync();
+
+        var wagesAccId   = run.WagesExpenseAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.SalaryExpense, mapDict);
+        var accrualAccId = run.AccruedSalariesAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.SalariesPayable, mapDict);
+        var dedAccId     = run.DeductionRevenueAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.EmployeeDeductions, mapDict);
+        var advAccId     = run.AdvancesAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.EmployeeAdvances, mapDict);
 
         JournalEntry? je = null;
 
-        if (wagesAccId.HasValue && accrualAccId.HasValue)
+        if (true) // Always proceed with strict mappings
         {
             var jeNo = await _seq.NextAsync("JE", async (db, pattern) =>
             {

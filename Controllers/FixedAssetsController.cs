@@ -107,11 +107,13 @@ public class FixedAssetsController : ControllerBase
 {
     private readonly AppDbContext    _db;
     private readonly SequenceService _seq;
+    private readonly AccountingCoreService _core;
 
-    public FixedAssetsController(AppDbContext db, SequenceService seq)
+    public FixedAssetsController(AppDbContext db, SequenceService seq, AccountingCoreService core)
     {
         _db  = db;
         _seq = seq;
+        _core = core;
     }
 
     // ─── helpers ──────────────────────────────────────
@@ -408,37 +410,37 @@ public class FixedAssetsController : ControllerBase
 
         // ── قيد محاسبي ───────────────────────────────────
         var (_, accumAccId, expenseAccId) = ResolveAccounts(asset, asset.Category);
-        JournalEntry? je = null;
+        var mapDict = await _core.GetSafeSystemMappingsAsync();
+        
+        var finalAccumAcc    = accumAccId   ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.AccumulatedDepreciation, mapDict);
+        var finalExpenseAcc  = expenseAccId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.DepreciationExpense, mapDict);
 
-        if (accumAccId.HasValue && expenseAccId.HasValue)
+        var jeNo = await _seq.NextAsync("JE", async (db, pattern) =>
         {
-            var jeNo = await _seq.NextAsync("JE", async (db, pattern) =>
-            {
-                var max = await db.JournalEntries
-                    .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
-                    .Select(e => e.EntryNumber).ToListAsync();
-                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                          .DefaultIfEmpty(0).Max();
-            });
+            var max = await db.JournalEntries
+                .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
+                .Select(e => e.EntryNumber).ToListAsync();
+            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                      .DefaultIfEmpty(0).Max();
+        });
 
-            je = new JournalEntry
+        var je = new JournalEntry
+        {
+            EntryNumber     = jeNo,
+            EntryDate       = dto.DepreciationDate,
+            Type            = JournalEntryType.AssetDepreciation,
+            Status          = JournalEntryStatus.Posted,
+            Description     = $"إهلاك {asset.Name} — {dto.PeriodMonth}/{dto.PeriodYear}",
+            Reference       = depNo,
+            CreatedByUserId = UserId,
+            CreatedAt       = TimeHelper.GetEgyptTime(),
+            Lines = new List<JournalLine>
             {
-                EntryNumber     = jeNo,
-                EntryDate       = dto.DepreciationDate,
-                Type            = JournalEntryType.AssetDepreciation,
-                Status          = JournalEntryStatus.Posted,
-                Description     = $"إهلاك {asset.Name} — {dto.PeriodMonth}/{dto.PeriodYear}",
-                Reference       = depNo,
-                CreatedByUserId = UserId,
-                CreatedAt       = TimeHelper.GetEgyptTime(),
-                Lines = new List<JournalLine>
-                {
-                    new() { AccountId = expenseAccId.Value, Debit  = amount, Credit = 0,      Description = $"مصروف إهلاك — {asset.Name}" },
-                    new() { AccountId = accumAccId.Value,   Debit  = 0,      Credit = amount, Description = $"مجمع إهلاك — {asset.Name}" }
-                }
-            };
-            _db.JournalEntries.Add(je);
-        }
+                new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"مصروف إهلاك — {asset.Name}" },
+                new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"مجمع إهلاك — {asset.Name}" }
+            }
+        };
+        _db.JournalEntries.Add(je);
 
         await _db.SaveChangesAsync();
 

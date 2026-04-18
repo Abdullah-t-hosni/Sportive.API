@@ -105,6 +105,52 @@ public class AccountsController : ControllerBase
         return NoContent();
     }
 
+    [HttpGet("mapping-registry")]
+    public IActionResult GetMappingRegistry()
+    {
+        var registry = new List<object>
+        {
+            // --- Sales & POS ---
+            new { key = MappingKeys.Sales, description = "حساب إيرادات المبيعات (الرئيسي)" },
+            new { key = MappingKeys.SalesReturn, description = "حساب مردودات المبيعات" },
+            new { key = MappingKeys.SalesDiscount, description = "حساب مسموحات وخصومات المبيعات" },
+            new { key = MappingKeys.Customer, description = "حساب وسيط العملاء (المدينون) - افتراضي" },
+            
+            // --- Cash & Payments (POS) ---
+            new { key = MappingKeys.PosCash, description = "خزينة الكاشير (نقدي)" },
+            new { key = MappingKeys.PosBank, description = "حساب البنك / فيزا (POS)" },
+            new { key = MappingKeys.PosVodafone, description = "فودافون كاش (POS)" },
+            new { key = MappingKeys.PosInstaPay, description = "انستاباي (POS)" },
+            
+            // --- Cash & Payments (Website) ---
+            new { key = MappingKeys.WebCash, description = "تحصيلات الموقع (نقدي عند الاستلام)" },
+            new { key = MappingKeys.WebVodafone, description = "فودافون كاش (الموقع)" },
+            new { key = MappingKeys.WebInstaPay, description = "انستاباي (الموقع)" },
+            
+            // --- Purchases & Inventory ---
+            new { key = MappingKeys.Inventory, description = "حساب المخزون (الأصول المتداولة)" },
+            new { key = MappingKeys.InventoryVariance, description = "حساب فروقات جرد المخزون (خسارة/ربح)" },
+            new { key = MappingKeys.Supplier, description = "حساب الموردين (الدائنون) - افتراضي" },
+            new { key = MappingKeys.PurchaseDiscount, description = "حساب الخصم المكتسب (مشتريات)" },
+            new { key = MappingKeys.VatInput, description = "ضريبة المدخلات (مشتريات)" },
+            new { key = MappingKeys.VatOutput, description = "ضريبة المخرجات (مبيعات)" },
+            new { key = MappingKeys.DeliveryRevenue, description = "حساب إيرادات التوصيل" },
+            new { key = MappingKeys.PaymentVoucherCash, description = "الخزينة الافتراضية لسندات الصرف للموردين" },
+
+            // --- HR & Payroll ---
+            new { key = MappingKeys.SalaryExpense, description = "حساب مصاريف الرواتب والأجور" },
+            new { key = MappingKeys.SalariesPayable, description = "حساب الرواتب المستحقة" },
+            new { key = MappingKeys.EmployeeAdvances, description = "حساب سلف الموظفين" },
+            new { key = MappingKeys.EmployeeBonuses, description = "حساب مكافآت الموظفين" },
+            new { key = MappingKeys.EmployeeDeductions, description = "حساب جزاءات وخصومات الموظفين (إيراد)" },
+
+            // --- Fixed Assets ---
+            new { key = MappingKeys.DepreciationExpense, description = "حساب مصروف الإهلاك" },
+            new { key = MappingKeys.AccumulatedDepreciation, description = "حساب مجمع الإهلاك (أصول ثروات)" },
+        };
+        return Ok(registry);
+    }
+
     [HttpGet("mappings")]
     public async Task<IActionResult> GetMappings()
     {

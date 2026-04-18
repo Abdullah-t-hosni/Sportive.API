@@ -180,11 +180,11 @@ public class AccountingCoreService
         var mappings = await GetSafeSystemMappingsAsync();
         
         // STRICT MAPPING: Fail if keys are missing in AccountSystemMappings table
-        if (!mappings.TryGetValue("inventoryaccountid", out var iId) || iId == null)
-            throw new InvalidOperationException("فشل الترحيل المحاسبي: حساب المخزون (inventoryAccountID) غير مربوط في الإعدادات.");
+        if (!mappings.TryGetValue(MappingKeys.Inventory.ToLower(), out var iId) || iId == null)
+            throw new InvalidOperationException($"فشل الترحيل المحاسبي: حساب المخزون ({MappingKeys.Inventory}) غير مربوط في الإعدادات.");
 
-        if (!mappings.TryGetValue("inventoryvarianceaccountid", out var vId) || vId == null)
-            throw new InvalidOperationException("فشل الترحيل المحاسبي: حساب فروقات الجرد (inventoryVarianceAccountID) غير مربوط في الإعدادات.");
+        if (!mappings.TryGetValue(MappingKeys.InventoryVariance.ToLower(), out var vId) || vId == null)
+            throw new InvalidOperationException($"فشل الترحيل المحاسبي: حساب فروقات الجرد ({MappingKeys.InventoryVariance}) غير مربوط في الإعدادات.");
 
         var inventoryId = iId.Value;
         var varianceId  = vId.Value;
@@ -237,54 +237,50 @@ public class AccountingCoreService
         {
             var acctByCodeList = await _db.Accounts.Where(a => EF.Functions.Like(a.Code, $"%{cleanInput}%")).Select(a => new { a.Id, a.Code, a.IsActive }).ToListAsync();
             var exactAcct = acctByCodeList.FirstOrDefault(a => a.Code?.Trim().ToLower() == cleanInput);
-            if (exactAcct != null) return (exactAcct.Id, exactAcct.IsActive, !exactAcct.IsActive ? $"الحساب {input} غير نشط" : null);
+        if (exactAcct != null)
+        {
+            if (!exactAcct.IsActive)
+                throw new InvalidOperationException($"الحساب ( {input} ) غير نشط حالياً. يرجى تفعيله من دليل الحسابات.");
+            return (exactAcct.Id, true, null);
         }
 
-        var fallbackCash = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == CASH_ACCOUNTS && a.IsActive);
-        if (fallbackCash != null) return (fallbackCash.Id, false, $"الحساب {input} غير موجود");
-        
-        var firstActive = await _db.Accounts.FirstOrDefaultAsync(a => a.IsActive);
-        if (firstActive != null) return (firstActive.Id, false, $"توجيه عشوائي");
-        
-        throw new InvalidOperationException("لا توجد حسابات نشطة!");
+        throw new InvalidOperationException($"فشل العملية: الحساب المطلوب ( {input} ) غير موجود في النظام. يرجى التأكد من دليل الحسابات أو صفحة الربط المالي.");
+    }
+}
+
+    public async Task<int> GetRequiredMappedAccountAsync(string key, Dictionary<string, int?>? map = null)
+    {
+        if (map == null) map = await GetSafeSystemMappingsAsync();
+        if (map.TryGetValue(key.ToLower(), out var id) && id.HasValue)
+            return id.Value;
+            
+        throw new InvalidOperationException($"فشل العملية: لم يتم تحديد حساب ( {key} ) في صفحة الربط المالي.");
     }
 
     public async Task<string> GetMappedCashAccountAsync(PaymentMethod method, OrderSource source, Dictionary<string, int?>? map = null)
     {
-        var constantCode = (method, source) switch
-        {
-            (PaymentMethod.Vodafone, OrderSource.POS)     => VODAFONE,
-            (PaymentMethod.Vodafone, OrderSource.Website) => VODAFONE_WEB,
-            (PaymentMethod.InstaPay, OrderSource.POS)     => INSTAPAY,
-            (PaymentMethod.InstaPay, OrderSource.Website) => INSTAPAY_WEB,
-            (PaymentMethod.Bank, _)                       => BANK,
-            (PaymentMethod.CreditCard, _)                 => BANK,
-            (PaymentMethod.Cash, OrderSource.Website)     => CASH_WEBSITE,
-            (PaymentMethod.Cash, OrderSource.POS)         => CASH_CASHIER,
-            _ => null
-        };
-
-        if (constantCode != null) return constantCode;
-
         if (map == null) map = await GetSafeSystemMappingsAsync();
 
         string? key = (method, source) switch
         {
-            (PaymentMethod.Vodafone, OrderSource.POS)     => "posVodafoneAccountID",
-            (PaymentMethod.Vodafone, OrderSource.Website) => "webVodafoneAccountID",
-            (PaymentMethod.InstaPay, OrderSource.POS)     => "posInstapayAccountID",
-            (PaymentMethod.InstaPay, OrderSource.Website) => "webInstapayAccountID",
-            (PaymentMethod.CreditCard, _)                 => "posBankAccountID",
-            (PaymentMethod.Bank, _)                       => "posBankAccountID",
-            (PaymentMethod.Cash, OrderSource.POS)         => "posCashAccountID",
-            (PaymentMethod.Cash, OrderSource.Website)     => "webCashAccountID",
+            (PaymentMethod.Vodafone, OrderSource.POS)     => MappingKeys.PosVodafone,
+            (PaymentMethod.Vodafone, OrderSource.Website) => MappingKeys.WebVodafone,
+            (PaymentMethod.InstaPay, OrderSource.POS)     => MappingKeys.PosInstaPay,
+            (PaymentMethod.InstaPay, OrderSource.Website) => MappingKeys.WebInstaPay,
+            (PaymentMethod.CreditCard, _)                 => MappingKeys.PosBank,
+            (PaymentMethod.Bank, _)                       => MappingKeys.PosBank,
+            (PaymentMethod.Cash, OrderSource.POS)         => MappingKeys.PosCash,
+            (PaymentMethod.Cash, OrderSource.Website)     => MappingKeys.WebCash,
             _ => null
         };
 
-        if (key != null && map.TryGetValue(key.ToLower(), out var mappedId) && mappedId.HasValue)
-            return $"ID:{mappedId.Value}";
+        if (key != null)
+        {
+            var accountId = await GetRequiredMappedAccountAsync(key, map);
+            return $"ID:{accountId}";
+        }
 
-        return source == OrderSource.POS ? CASH_CASHIER : CASH_WEBSITE;
+        throw new InvalidOperationException($"فشل العملية: لم يتم تحديد حساب لوسيلة الدفع ({GetMethodLabel(method)}) للمصدر ({source}) في صفحة الربط المالي.");
     }
 
     public string GetMethodLabel(PaymentMethod method) => method switch {

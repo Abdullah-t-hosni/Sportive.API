@@ -32,18 +32,18 @@ public class PurchaseAccountingService
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
         var typeStr = invoice.PaymentTerms == PaymentTerms.Cash ? "نقدي" : "آجل";
-        var invAcct = invoice.InventoryAccountId != null ? $"ID:{invoice.InventoryAccountId}" : _core.GetMap(mapDict, MK.Inventory, AccountingCoreService.INVENTORY);
+        var invAcct = invoice.InventoryAccountId != null ? $"ID:{invoice.InventoryAccountId}" : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Inventory, mapDict)}";
         lines.Add((invAcct, invoice.SubTotal, 0, $"مشتريات {typeStr} - {invoice.InvoiceNumber}"));
 
         if (invoice.TaxAmount > 0)
         {
-            var vatAcct = invoice.VatAccountId != null ? $"ID:{invoice.VatAccountId}" : _core.GetMap(mapDict, MK.VatInput, AccountingCoreService.VAT_INPUT);
+            var vatAcct = invoice.VatAccountId != null ? $"ID:{invoice.VatAccountId}" : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatInput, mapDict)}";
             lines.Add((vatAcct, invoice.TaxAmount, 0, $"ضريبة قيمة مضافة {typeStr} - {invoice.InvoiceNumber}"));
         }
 
         var vendorAcct = invoice.VendorAccountId != null ? $"ID:{invoice.VendorAccountId}" 
                         : invoice.Supplier?.MainAccountId != null ? $"ID:{invoice.Supplier.MainAccountId}" 
-                        : _core.GetMap(mapDict, MK.Supplier, AccountingCoreService.PAYABLES);
+                        : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Supplier, mapDict)}";
         
         if (invoice.PaymentTerms != PaymentTerms.Cash)
         {
@@ -51,13 +51,13 @@ public class PurchaseAccountingService
         }
         else
         {
-            var cashAcct = invoice.CashAccountId != null ? $"ID:{invoice.CashAccountId}" : _core.GetMap(mapDict, MK.Cash, AccountingCoreService.CASH_ACCOUNTS);
+            var cashAcct = invoice.CashAccountId != null ? $"ID:{invoice.CashAccountId}" : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Cash, mapDict)}";
             lines.Add((cashAcct, 0, invoice.TotalAmount, $"صرف نقدية مشتريات فورية - {invoice.InvoiceNumber}"));
         }
 
         if (invoice.DiscountAmount > 0)
         {
-            var discAcct = _core.GetMap(mapDict, MK.PurchaseDiscount, AccountingCoreService.PURCHASE_DISC);
+            var discAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.PurchaseDiscount, mapDict)}";
             lines.Add((discAcct, 0, invoice.DiscountAmount, $"خصم مكتسب ({typeStr}) - {invoice.InvoiceNumber}"));
         }
 
@@ -83,16 +83,16 @@ public class PurchaseAccountingService
 
         var vendorAcct = invoice.VendorAccountId != null ? $"ID:{invoice.VendorAccountId}" 
                         : invoice.Supplier?.MainAccountId != null ? $"ID:{invoice.Supplier.MainAccountId}" 
-                        : _core.GetMap(mapDict, MK.Supplier, AccountingCoreService.PAYABLES);
-        var rtnAcct    = invoice.InventoryAccountId != null ? $"ID:{invoice.InventoryAccountId}" : _core.GetMap(mapDict, MK.Inventory, AccountingCoreService.INVENTORY);
-        var vatAcct    = invoice.VatAccountId != null ? $"ID:{invoice.VatAccountId}" : _core.GetMap(mapDict, MK.VatInput, AccountingCoreService.VAT_INPUT);
+                        : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Supplier, mapDict)}";
+        var rtnAcct    = invoice.InventoryAccountId != null ? $"ID:{invoice.InventoryAccountId}" : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Inventory, mapDict)}";
+        var vatAcct    = invoice.VatAccountId != null ? $"ID:{invoice.VatAccountId}" : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatInput, mapDict)}";
 
         lines.Add((vendorAcct, totalAmt, 0, $"رد للمورد {(isPartial ? "(جزئي)" : "")} - {invoice.InvoiceNumber}"));
         lines.Add((rtnAcct, 0, subTotal, $"مرتجع مشتريات {(isPartial ? "(جزئي)" : "")} - {invoice.InvoiceNumber}"));
 
         if (discAmt > 0)
         {
-            var discAcct = _core.GetMap(mapDict, MK.PurchaseDiscount, AccountingCoreService.PURCHASE_DISC);
+            var discAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.PurchaseDiscount, mapDict)}";
             lines.Add((discAcct, discAmt, 0, $"عكس خصم مشتريات - {invoice.InvoiceNumber}"));
         }
 
@@ -111,11 +111,11 @@ public class PurchaseAccountingService
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
         var vendorAcct = pReturn.Supplier?.MainAccountId != null ? $"ID:{pReturn.Supplier.MainAccountId}" 
-                        : _core.GetMap(mapDict, MK.Supplier, AccountingCoreService.PAYABLES);
+                        : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Supplier, mapDict)}";
         var rtnAcct    = pReturn.Invoice?.InventoryAccountId != null ? $"ID:{pReturn.Invoice.InventoryAccountId}" 
-                        : _core.GetMap(mapDict, MK.Inventory, AccountingCoreService.INVENTORY);
+                        : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Inventory, mapDict)}";
         var vatAcct    = pReturn.Invoice?.VatAccountId != null ? $"ID:{pReturn.Invoice.VatAccountId}" 
-                        : _core.GetMap(mapDict, MK.VatInput, AccountingCoreService.VAT_INPUT);
+                        : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatInput, mapDict)}";
 
         // Debit Supplier (Reducing liability)
         lines.Add((vendorAcct, pReturn.TotalAmount, 0, $"مرتجع مشتريات {pReturn.ReturnNumber} - فاتورة {pReturn.Invoice?.InvoiceNumber}"));
@@ -125,7 +125,7 @@ public class PurchaseAccountingService
 
         if (pReturn.DiscountAmount > 0)
         {
-            var discAcct = _core.GetMap(mapDict, MK.PurchaseDiscount, AccountingCoreService.PURCHASE_DISC);
+            var discAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.PurchaseDiscount, mapDict)}";
             // Reversing the discount granted originally (Debit Discount account if it was credited)
             // Or just reduce the cost. Standard is to debit it back if it's a dedicated account.
             lines.Add((discAcct, pReturn.DiscountAmount, 0, $"عكس خصم مشتريات - {pReturn.ReturnNumber}"));

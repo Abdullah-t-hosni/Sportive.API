@@ -18,6 +18,7 @@ public static class MappingKeys
     public const string PurchaseDiscount  = "purchaseDiscountAccountID";
     public const string PurchaseReturn    = "purchaseReturnAccountID";
     public const string Cash              = "cashAccountID";
+    public const string PaymentVoucherCash = "paymentVoucherCashAccountID";
 
     // ── مخزون / تكلفة ───────────────────────────────────
     public const string Inventory         = "inventoryAccountID";
@@ -41,4 +42,18 @@ public static class MappingKeys
 
     // ── حقوق ملكية / افتتاحي ────────────────────────────
     public const string OpeningEquity     = "openingEquityAccountID";
+
+    // ── تسويات المخزون ──────────────────────────────────
+    public const string InventoryVariance = "inventoryVarianceAccountID";
+
+    // ── موديول الموارد البشرية (HR & Payroll) ────────────
+    public const string SalaryExpense     = "salaryExpenseAccountID";
+    public const string SalariesPayable   = "salariesPayableAccountID";
+    public const string EmployeeAdvances  = "employeeAdvancesAccountID";
+    public const string EmployeeBonuses   = "employeeBonusesAccountID";
+    public const string EmployeeDeductions= "employeeDeductionsAccountID";
+
+    // ── الأصول الثابتة ───────────────────────────────────
+    public const string DepreciationExpense      = "depreciationExpenseAccountID";
+    public const string AccumulatedDepreciation = "accumulatedDepreciationAccountID";
 }
