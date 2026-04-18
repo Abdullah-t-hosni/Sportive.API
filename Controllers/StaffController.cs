@@ -69,14 +69,14 @@ public class StaffController : ControllerBase
                 phone          = user.PhoneNumber,
                 isActive       = user.IsActive,
                 roles          = userRoles.Where(r => r != AppRoles.Customer).ToList(),
-                primaryRole    = GetPrimaryRole(userRoles),
+                role           = GetPrimaryRole(userRoles),
                 createdAt      = user.CreatedAt,
                 employeeId     = link?.Id,
                 employeeNumber = link?.EmployeeNumber,
             });
         }
 
-        return Ok(staffUsers.OrderBy(s => ((dynamic)s).primaryRole));
+        return Ok(staffUsers.OrderBy(s => ((dynamic)s).role));
     }
 
     // ══════════════════════════════════════════════════
