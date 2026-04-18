@@ -26,7 +26,12 @@ public class InventoryAuditsController : ControllerBase
         _accounting = accounting;
     }
 
+    [HttpGet("ping")]
+    [AllowAnonymous]
+    public IActionResult Ping() => Ok("Audit Controller is Alive");
+
     [HttpGet]
+    [AllowAnonymous]
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
         try 
