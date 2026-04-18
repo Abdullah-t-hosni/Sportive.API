@@ -672,6 +672,7 @@ public class OrderService : IOrderService
                 order.PaymentMethod == PaymentMethod.CreditCard)
             {
                 order.PaymentStatus = PaymentStatus.Paid;
+                order.PaidAmount = order.TotalAmount;
             }
         }
 
