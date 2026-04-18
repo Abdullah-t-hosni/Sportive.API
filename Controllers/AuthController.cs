@@ -249,18 +249,21 @@ public class AuthController : ControllerBase
     [HttpGet("staff")]
     public async Task<IActionResult> GetStaff()
     {
-        var staffRoles = new[] { "Admin", "Staff", "Cashier" };
+        var staffRoles = new[] { "Admin", "Staff", "Cashier", "Manager", "Accountant" };
         
         var users = await (from u in _db.Users
                           join ur in _db.UserRoles on u.Id equals ur.UserId
                           join r in _db.Roles on ur.RoleId equals r.Id
+                          join e in _db.Employees on u.Id equals e.AppUserId into empJoin
+                          from e in empJoin.DefaultIfEmpty()
                           where u.IsActive && staffRoles.Contains(r.Name)
                           select new {
                               u.Id,
                               u.FullName,
                               u.Email,
                               u.PhoneNumber,
-                              Role = r.Name
+                              Role = r.Name,
+                              EmployeeNumber = e != null ? e.EmployeeNumber : null
                           }).ToListAsync();
 
         return Ok(users);
@@ -399,9 +402,11 @@ public class AuthController : ControllerBase
     private static List<string> GetDefaultRolePermissions(IList<string> roles)
     {
         var perms = new HashSet<string>();
+        // Use case-insensitive check
+        bool Is(string role) => roles.Any(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase));
         
         // ── Admin & Manager: Full Access Baseline ──
-        if (roles.Contains("Admin") || roles.Contains("Manager"))
+        if (Is("Admin") || Is("Manager"))
         {
             perms.Add("dashboard"); 
             perms.Add("orders"); perms.Add("orders.edit"); perms.Add("orders.delete");
@@ -422,7 +427,7 @@ public class AuthController : ControllerBase
         }
 
         // ── Admin Exclusive ──
-        if (roles.Contains("Admin"))
+        if (Is("Admin"))
         {
             perms.Add("staff"); perms.Add("staff.edit");
             perms.Add("settings"); perms.Add("settings.edit");
@@ -431,7 +436,7 @@ public class AuthController : ControllerBase
         }
 
         // ── Cashier: POS & Orders Operations ──
-        if (roles.Contains("Cashier"))
+        if (Is("Cashier"))
         {
             perms.Add("pos");
             perms.Add("pos.returns");
@@ -441,7 +446,7 @@ public class AuthController : ControllerBase
         }
 
         // ── Accountant: Financial & Reporting ──
-        if (roles.Contains("Accountant"))
+        if (Is("Accountant"))
         {
             perms.Add("dashboard");
             perms.Add("accounting"); perms.Add("accounting.edit");
@@ -453,7 +458,7 @@ public class AuthController : ControllerBase
         }
 
         // ── Staff (Store Keeper / Sales): Inventory & Orders ──
-        if (roles.Contains("Staff"))
+        if (Is("Staff"))
         {
             perms.Add("orders");
             perms.Add("orders.edit");
