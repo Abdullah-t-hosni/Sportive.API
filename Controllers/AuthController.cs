@@ -369,35 +369,7 @@ public class AuthController : ControllerBase
         var customerService = HttpContext.RequestServices.GetRequiredService<ICustomerService>();
         await customerService.EnsureCustomerAccountAsync(0, isEmployee: true, employeeId: employee.Id);
     }
-    /// <summary>تعديل صلاحيات الموظف (للمدير)</summary>
-    [Authorize(Roles = "Admin")]
-    [HttpPut("staff/{id}/role")]
-    public async Task<IActionResult> UpdateStaffRole(string id, [FromQuery] string role)
-    {
-        var user = await _userManager.FindByIdAsync(id);
-        if (user == null || !user.IsActive) return NotFound(new { message = "Staff not found" });
-
-        var currentRoles = await _userManager.GetRolesAsync(user);
-        await _userManager.RemoveFromRolesAsync(user, currentRoles);
-        await _userManager.AddToRoleAsync(user, role);
-
-        return Ok(new { message = "Role updated successfully" });
-    }
-
-    /// <summary>حذف الموظف (للمدير)</summary>
-    [Authorize(Roles = "Admin")]
-    [HttpDelete("staff/{id}")]
-    public async Task<IActionResult> DeleteStaff(string id)
-    {
-        var user = await _userManager.FindByIdAsync(id);
-        if (user == null || !user.IsActive) return NotFound(new { message = "Staff not found" });
-
-        var result = await _userManager.DeleteAsync(user);
-        if (!result.Succeeded) 
-            return BadRequest(new { message = "Failed to delete staff: " + result.Errors.FirstOrDefault()?.Description });
-
-        return Ok(new { message = "Staff deleted permanently" });
-    }
+    // Role management and staff deletion have been moved to StaffController for consistency.
 
     private static List<string> GetDefaultRolePermissions(IList<string> roles)
     {

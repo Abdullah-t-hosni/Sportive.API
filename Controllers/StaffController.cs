@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.Services;
+using Sportive.API.Interfaces;
 
 namespace Sportive.API.Controllers;
 
@@ -18,17 +19,23 @@ public class StaffController : ControllerBase
     private readonly RoleManager<IdentityRole> _roles;
     private readonly AppDbContext              _db;
     private readonly StaffPermissionService    _permService;
+    private readonly SequenceService           _sequence;
+    private readonly ICustomerService          _customerService;
 
     public StaffController(
         UserManager<AppUser>      users,
         RoleManager<IdentityRole> roles,
         AppDbContext              db,
-        StaffPermissionService    permService)
+        StaffPermissionService    permService,
+        SequenceService           sequence,
+        ICustomerService          customerService)
     {
-        _users       = users;
-        _roles       = roles;
-        _db          = db;
-        _permService = permService;
+        _users           = users;
+        _roles           = roles;
+        _db              = db;
+        _permService     = permService;
+        _sequence        = sequence;
+        _customerService = customerService;
     }
 
     // ══════════════════════════════════════════════════
@@ -115,11 +122,14 @@ public class StaffController : ControllerBase
         // زرع الصلاحيات الافتراضية بناءً على الدور
         await _permService.SeedDefaultPermissionsAsync(user.Id, dto.Role);
 
+        // ✅ ربط أو إنشاء سجل HR وتحضير الحسابات المحاسبية
+        await EnsureEmployeeLinkAsync(user, dto.Role);
+
         return Ok(new {
             id       = user.Id,
             fullName = user.FullName,
             role     = dto.Role,
-            message  = $"تم إنشاء {GetRoleAr(dto.Role)} بنجاح"
+            message  = $"تم إنشاء {GetRoleAr(dto.Role)} بنجاح ومزامنته مع الـ HR"
         });
     }
 
@@ -148,17 +158,75 @@ public class StaffController : ControllerBase
         // احذف الأدوار القديمة وأضف الجديد
         if (staffRoles.Any())
             await _users.RemoveFromRolesAsync(user, staffRoles);
-        await _users.AddToRoleAsync(user, dto.Role);
+        
+        var result = await _users.AddToRoleAsync(user, dto.Role);
+        if (!result.Succeeded)
+            return BadRequest(new { message = "فشل في تغيير الدور: " + result.Errors.FirstOrDefault()?.Description });
 
         // إعادة زرع الصلاحيات الافتراضية للدور الجديد
         await _permService.SeedDefaultPermissionsAsync(user.Id, dto.Role);
+
+        // ✅ ربط أو تحديث سجل HR
+        await EnsureEmployeeLinkAsync(user, dto.Role);
 
         return Ok(new {
             id,
             newRole  = dto.Role,
             roleAr   = GetRoleAr(dto.Role),
-            message  = "تم تغيير الدور وإعادة تعيين الصلاحيات الافتراضية"
+            message  = "تم تغيير الدور وتحديث سجل الموارد البشرية بنجاح"
         });
+    }
+
+    private async Task EnsureEmployeeLinkAsync(AppUser user, string role)
+    {
+        // 1. ابحث عن موظف مرتبط بهذا المستخدم
+        var employee = await _db.Employees.FirstOrDefaultAsync(e => e.AppUserId == user.Id);
+        
+        if (employee == null)
+        {
+            // 2. إذا لم يوجد، ابحث عن موظف بنفس الهاتف وغير مرتبط بمستخدم (حالة استيراد بيانات قديمة)
+            employee = await _db.Employees.FirstOrDefaultAsync(e => e.Phone == user.PhoneNumber && (e.AppUserId == null || e.AppUserId == ""));
+            
+            if (employee != null)
+            {
+                employee.AppUserId = user.Id;
+            }
+            else
+            {
+                // 3. إنشاء سجل جديد
+                var empNo = await _sequence.NextAsync("EMP", async (db, pattern) =>
+                {
+                    var max = await db.Employees
+                        .Where(e => EF.Functions.Like(e.EmployeeNumber, pattern))
+                        .Select(e => e.EmployeeNumber).ToListAsync();
+                    return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                              .DefaultIfEmpty(0).Max();
+                });
+
+                employee = new Employee
+                {
+                    EmployeeNumber = empNo,
+                    Name = user.FullName,
+                    Email = user.Email,
+                    Phone = user.PhoneNumber,
+                    AppUserId = user.Id,
+                    JobTitle = role,
+                    HireDate = TimeHelper.GetEgyptTime(),
+                    Status = EmployeeStatus.Active,
+                    CreatedAt = TimeHelper.GetEgyptTime()
+                };
+                _db.Employees.Add(employee);
+            }
+        }
+        
+        // تحديث البيانات الأساسية لضمان التطابق
+        employee.Name = user.FullName;
+        employee.Email = user.Email;
+        employee.Phone = user.PhoneNumber;
+        employee.JobTitle = role; // المسمى الوظيفي يتبع الدور
+
+        await _db.SaveChangesAsync();
+        await _customerService.EnsureCustomerAccountAsync(0, isEmployee: true, employeeId: employee.Id);
     }
 
     // ══════════════════════════════════════════════════

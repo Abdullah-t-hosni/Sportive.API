@@ -17,25 +17,42 @@ public class StaffPermissionService
     /// </summary>
     public async Task SeedDefaultPermissionsAsync(string userId, string role)
     {
+        var defaults = DefaultPermissions.ForRole(role);
         var existing = await _db.UserModulePermissions
             .Where(p => p.UserAccountID == userId)
             .ToListAsync();
-        _db.UserModulePermissions.RemoveRange(existing);
-
-        var defaults = DefaultPermissions.ForRole(role);
+        
+        var existingMap = existing.ToDictionary(p => p.ModuleKey);
         var now = TimeHelper.GetEgyptTime();
 
-        foreach (var (moduleKey, canView, canEdit) in defaults)
+        foreach (var def in defaults)
         {
-            _db.UserModulePermissions.Add(new UserModulePermission
+            if (existingMap.TryGetValue(def.ModuleKey, out var p))
             {
-                UserAccountID = userId,
-                ModuleKey     = moduleKey,
-                CanView       = canView,
-                CanEdit       = canEdit,
-                CreatedAt     = now,
-            });
+                // Only update if changed to avoid unnecessary DB writes and audit noise
+                if (p.CanView != def.CanView || p.CanEdit != def.CanEdit)
+                {
+                    p.CanView = def.CanView;
+                    p.CanEdit = def.CanEdit;
+                }
+                existingMap.Remove(def.ModuleKey);
+            }
+            else
+            {
+                _db.UserModulePermissions.Add(new UserModulePermission
+                {
+                    UserAccountID = userId,
+                    ModuleKey     = def.ModuleKey,
+                    CanView       = def.CanView,
+                    CanEdit       = def.CanEdit,
+                    CreatedAt     = now,
+                });
+            }
         }
+
+        // Remove permissions that are no longer part of the default set for this role
+        if (existingMap.Any())
+            _db.UserModulePermissions.RemoveRange(existingMap.Values);
 
         await _db.SaveChangesAsync();
     }
