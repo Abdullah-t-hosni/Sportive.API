@@ -34,7 +34,7 @@ public class InventoryAuditsController : ControllerBase
         var items = await q.OrderByDescending(a => a.AuditDate)
             .Skip((page-1)*pageSize).Take(pageSize)
             .Select(a => new InventoryAuditSummaryDto(
-                a.Id, a.Title, a.AuditDate, a.Status.ToString(),
+                a.Id, a.Title, a.AuditDate, (int)a.Status,
                 a.TotalExpectedValue, a.TotalActualValue, a.ValueDifference,
                 a.Items.Count
             )).ToListAsync();
@@ -53,7 +53,7 @@ public class InventoryAuditsController : ControllerBase
         if (a == null) return NotFound();
 
         return Ok(new InventoryAuditDetailDto(
-            a.Id, a.Title, a.AuditDate, a.Description, a.Status.ToString(),
+            a.Id, a.Title, a.AuditDate, a.Description, (int)a.Status,
             a.TotalExpectedValue, a.TotalActualValue, a.ValueDifference,
             a.Items.Select(i => new InventoryAuditItemDto(
                 i.Id, i.ProductId, i.Product?.NameAr, i.Product?.SKU,
