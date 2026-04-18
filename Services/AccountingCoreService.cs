@@ -222,7 +222,7 @@ public class AccountingCoreService
         return entry.Id;
     }
 
-    public async Task<(int Id, bool ExactMatch, string? ErrorNote)> GetAccountIdAsync(string input)
+    public async Task<(int Id, bool IsActive, string? ErrorNote)> GetAccountIdAsync(string input)
     {
         var cleanInput = input.Trim().ToLower();
         if (cleanInput.StartsWith("id:"))
@@ -232,11 +232,11 @@ public class AccountingCoreService
                 var acctById = await _db.Accounts.Where(a => a.Id == exactId).Select(a => new { a.Id, a.IsActive }).FirstOrDefaultAsync();
                 if (acctById != null) return (acctById.Id, acctById.IsActive, !acctById.IsActive ? $"الحساب غير نشط" : null);
             }
+            throw new InvalidOperationException($"فشل العملية: الحساب المعرف بـ ID ( {input} ) غير موجود حالياً.");
         }
-        else
-        {
-            var acctByCodeList = await _db.Accounts.Where(a => EF.Functions.Like(a.Code, $"%{cleanInput}%")).Select(a => new { a.Id, a.Code, a.IsActive }).ToListAsync();
-            var exactAcct = acctByCodeList.FirstOrDefault(a => a.Code?.Trim().ToLower() == cleanInput);
+
+        var acctByCodeList = await _db.Accounts.Where(a => EF.Functions.Like(a.Code, $"%{cleanInput}%")).Select(a => new { a.Id, a.Code, a.IsActive }).ToListAsync();
+        var exactAcct = acctByCodeList.FirstOrDefault(a => a.Code?.Trim().ToLower() == cleanInput);
         if (exactAcct != null)
         {
             if (!exactAcct.IsActive)
@@ -246,7 +246,6 @@ public class AccountingCoreService
 
         throw new InvalidOperationException($"فشل العملية: الحساب المطلوب ( {input} ) غير موجود في النظام. يرجى التأكد من دليل الحسابات أو صفحة الربط المالي.");
     }
-}
 
     public async Task<int> GetRequiredMappedAccountAsync(string key, Dictionary<string, int?>? map = null)
     {

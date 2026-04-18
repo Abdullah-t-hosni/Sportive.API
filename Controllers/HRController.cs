@@ -380,7 +380,7 @@ public class PayrollController : ControllerBase
             // مدين: رواتب وأجور — الإجمالي (أساسي + مكافآت)
             je.Lines.Add(new JournalLine
             {
-                AccountId   = wagesAccId.Value,
+                AccountId   = wagesAccId,
                 Debit       = totalGross,
                 Credit      = 0,
                 Description = $"رواتب وأجور — {run.PeriodMonth}/{run.PeriodYear}"
@@ -389,27 +389,27 @@ public class PayrollController : ControllerBase
             // دائن: رواتب مستحقة — الصافي (بعد خصم الخصومات والسلف)
             je.Lines.Add(new JournalLine
             {
-                AccountId   = accrualAccId.Value,
+                AccountId   = accrualAccId,
                 Debit       = 0,
                 Credit      = run.TotalNetPayable,
                 Description = $"رواتب مستحقة صافي — {run.PeriodMonth}/{run.PeriodYear}"
             });
 
             // دائن: إيرادات الخصومات (إن وجدت)
-            if (run.TotalDeductions > 0 && dedAccId.HasValue)
+            if (run.TotalDeductions > 0)
                 je.Lines.Add(new JournalLine
                 {
-                    AccountId   = dedAccId.Value,
+                    AccountId   = dedAccId,
                     Debit       = 0,
                     Credit      = run.TotalDeductions,
                     Description = $"خصومات موظفين — {run.PeriodMonth}/{run.PeriodYear}"
                 });
 
             // دائن: سلف الموظفين (إن وجدت خصومات سلف)
-            if (run.TotalAdvancesDeducted > 0 && advAccId.HasValue)
+            if (run.TotalAdvancesDeducted > 0)
                 je.Lines.Add(new JournalLine
                 {
-                    AccountId   = advAccId.Value,
+                    AccountId   = advAccId,
                     Debit       = 0,
                     Credit      = run.TotalAdvancesDeducted,
                     Description = $"خصم سلف موظفين — {run.PeriodMonth}/{run.PeriodYear}"
@@ -420,11 +420,11 @@ public class PayrollController : ControllerBase
             // لكن نضيف سطوراً تفصيلية مرتبطة بكل موظف على حساب الرواتب المستحقة
             foreach (var item in run.Items)
             {
-                if (accrualAccId.HasValue && item.Employee.AccountId.HasValue)
+                if (item.Employee.AccountId.HasValue)
                 {
                     je.Lines.Add(new JournalLine
                     {
-                        AccountId   = accrualAccId.Value,
+                        AccountId   = accrualAccId,
                         Debit       = item.NetPayable,
                         Credit      = 0,
                         Description = $"راتب {item.Employee.Name} — {run.PeriodMonth}/{run.PeriodYear}",
