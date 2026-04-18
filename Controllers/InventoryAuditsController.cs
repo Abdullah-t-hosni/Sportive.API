@@ -29,16 +29,20 @@ public class InventoryAuditsController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var q = _db.InventoryAudits.Include(a => a.Items).AsQueryable();
+        var q = _db.InventoryAudits.Include(a => a.Items).AsNoTracking();
         var total = await q.CountAsync();
-        var items = await q.OrderByDescending(a => a.AuditDate)
+        
+        // Fetch to memory first to avoid projection issues with computed properties
+        var auditNodes = await q.OrderByDescending(a => a.AuditDate)
             .Skip((page-1)*pageSize).Take(pageSize)
-            .Select(a => new InventoryAuditSummaryDto(
-                a.Id, a.Title, a.AuditDate, (int)a.Status,
-                a.TotalExpectedValue, a.TotalActualValue, 
-                a.TotalActualValue - a.TotalExpectedValue,
-                a.Items.Count
-            )).ToListAsync();
+            .ToListAsync();
+
+        var items = auditNodes.Select(a => new InventoryAuditSummaryDto(
+            a.Id, a.Title, a.AuditDate, (int)a.Status,
+            a.TotalExpectedValue, a.TotalActualValue, 
+            a.TotalActualValue - a.TotalExpectedValue,
+            a.Items.Count
+        )).ToList();
 
         return Ok(new PaginatedResult<InventoryAuditSummaryDto>(items, total, page, pageSize, (int)Math.Ceiling(total/(double)pageSize)));
     }
@@ -49,10 +53,12 @@ public class InventoryAuditsController : ControllerBase
         var a = await _db.InventoryAudits
             .Include(a => a.Items).ThenInclude(i => i.Product)
             .Include(a => a.Items).ThenInclude(i => i.ProductVariant)
+            .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (a == null) return NotFound();
 
+        // Mapping in memory
         return Ok(new InventoryAuditDetailDto(
             a.Id, a.Title, a.AuditDate, a.Description, (int)a.Status,
             a.TotalExpectedValue, a.TotalActualValue, a.TotalActualValue - a.TotalExpectedValue,
