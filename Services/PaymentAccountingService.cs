@@ -28,6 +28,19 @@ public class PaymentAccountingService
         var reference = order.OrderNumber + "-PMT";
         if (await _core.EntryExistsAsync(JournalEntryType.ReceiptVoucher, reference)) return;
 
+        // ✅ NEW: Prevent double-accounting for POS orders where payments are already merged into the SalesInvoice
+        var invoiceEntry = await _db.JournalEntries
+            .Include(e => e.Lines)
+                .ThenInclude(l => l.Account)
+            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.SalesInvoice && e.Reference == order.OrderNumber);
+            
+        if (invoiceEntry != null && invoiceEntry.Lines.Any(l => l.Debit > 0 && l.Account != null && 
+            (l.Account.Code.StartsWith("1101") || l.Account.Code.StartsWith("1102") || l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1105"))))
+        {
+            _logger.LogInformation("[Accounting] Skipping separate PaymentVoucher for order {OrderNum}; already merged in SalesInvoice.", order.OrderNumber);
+            return;
+        }
+
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         string receivablesAcct = order.Customer?.MainAccountId != null 
             ? $"ID:{order.Customer.MainAccountId}" 
