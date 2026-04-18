@@ -124,9 +124,20 @@ public class SalesAccountingService
         }
 
         // ── 2. Debits: Discount + Cash/Credit Routing ─────────
-        // In our new OrderService, order.DiscountAmount already includes item-level discounts
-        if (order.DiscountAmount > 0)
-            lines.Add((salesDiscAcct, order.DiscountAmount, 0, $"إجمالي الخصومات - {order.OrderNumber}"));
+        // ⚠️ FIX: Prevent double-counting of discounts in the journal.
+        // order.DiscountAmount = itemDiscounts + manualCashierDiscount
+        // But totalGrossRevenue is computed from OriginalUnitPrice (before item discounts),
+        // so item discounts are already reflected as the gap between gross revenue and actual price.
+        // We must debit each component separately to keep the journal balanced:
+        //   (a) totalItemDiscounts  → auto item/time-based discounts
+        //   (b) manualDiscount      → cashier manual discount (على مستوى الفاتورة)
+        decimal manualDiscount = Math.Max(0m, order.DiscountAmount - totalItemDiscounts);
+
+        if (totalItemDiscounts > 0)
+            lines.Add((salesDiscAcct, totalItemDiscounts, 0, $"خصم الأصناف التلقائي - {order.OrderNumber}"));
+
+        if (manualDiscount > 0)
+            lines.Add((salesDiscAcct, manualDiscount, 0, $"خصم يدوي (كاشير) - {order.OrderNumber}"));
 
         // ✅ NEW: Read from OrderPayments table first, fallback to AdminNotes
         decimal handledPaidAmt = 0;
