@@ -236,6 +236,20 @@ public class OrderService : IOrderService
                     throw new ArgumentException("معرف البائع مطلوب لعمليات الـ POS");
                 }
 
+                // 🔎 CREDIT POLICY: No credit for anonymous customers
+                bool isCreditOrder = dto.PaymentMethod == PaymentMethod.Credit || (dto.Payments != null && dto.Payments.Any(p => p.Method == PaymentMethod.Credit));
+                if (isCreditOrder)
+                {
+                    var customer = await _db.Customers.FindAsync(customerId.Value);
+                    if (customer == null || 
+                        customer.FullName == "Walk-in Customer" || 
+                        customer.Phone == "0000000000" || 
+                        string.IsNullOrEmpty(customer.Phone))
+                    {
+                        throw new ArgumentException("عفواً، لا يمكن البيع الآجل لعميل نقدي مجهول. يرجى اختيار أو تسجيل عميل باسم ورقم هاتف أولاً لإثبات المديونية.");
+                    }
+                }
+
                 var actualSource = (int)dto.Source == 0 ? OrderSource.Website : dto.Source;
                 order = new Order
                 {
@@ -494,15 +508,14 @@ public class OrderService : IOrderService
                             });
                         }
                         
-                        // 💎 STRICT VALIDATION: Verify the breakdown matches the total
-                        var finalPaidAmount = dto.PaidAmount ?? totalPaid;
-                        if (Math.Abs(finalPaidAmount - totalPaid) > 0.01m && dto.Payments.Any(p => p.Method != PaymentMethod.Credit))
-                        {
-                            throw new ArgumentException($"خطأ في بيانات الدفع: مجموع بنود الدفع التفصيلية ({totalPaid}) لا يتطابق مع المبلغ المدفوع الكلي ({finalPaidAmount}).");
-                        }
-
-                        order.PaidAmount = finalPaidAmount;
-                        if (order.PaidAmount >= order.TotalAmount - 0.01m) order.PaymentStatus = PaymentStatus.Paid;
+                        // 💎 STRICT VALUATION: PaidAmount must ONLY be the sum of REAL (Non-Credit) payments
+                        order.PaidAmount = totalPaid;
+                        
+                        // Set status based on total paid vs total amount
+                        if (order.PaidAmount >= order.TotalAmount - 0.01m) 
+                            order.PaymentStatus = PaymentStatus.Paid;
+                        else
+                            order.PaymentStatus = PaymentStatus.Pending;
                     }
                     else if (order.PaymentMethod != PaymentMethod.Credit && order.PaymentMethod != (PaymentMethod)7)
                     {
