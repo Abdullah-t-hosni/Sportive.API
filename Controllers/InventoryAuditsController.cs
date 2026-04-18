@@ -212,21 +212,13 @@ public class InventoryAuditsController : ControllerBase
         audit.UpdatedAt = TimeHelper.GetEgyptTime();
 
         // 3. Post Accounting Journal Entry for the variance
-        try
-        {
-            var jeId = await _accounting.PostInventoryAdjustmentAsync(
-                audit.Id, 
-                audit.ValueDifference, 
-                $"AUDIT-{audit.Id}", 
-                User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-            );
-            audit.JournalEntryId = jeId;
-        }
-        catch (Exception ex)
-        {
-            // Log error but don't fail the whole audit if accounting mapping is missing
-            // The audit is still physically correct
-        }
+        var jeId = await _accounting.PostInventoryAdjustmentAsync(
+            auditId: audit.Id, 
+            netImpact: audit.ValueDifference, 
+            reference: $"AUDIT-{audit.Id}", 
+            userId: User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+        );
+        audit.JournalEntryId = jeId;
 
         await _db.SaveChangesAsync();
         return Ok(new { message = "تم اعتماد الجرد وتعديل المخزون وترحيل القيد المحاسبي بنجاح" });

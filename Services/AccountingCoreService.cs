@@ -178,19 +178,19 @@ public class AccountingCoreService
         if (netImpact == 0) return null;
 
         var mappings = await GetSafeSystemMappingsAsync();
-        var inventoryId = GetMap(mappings, "inventoryAccountID", INVENTORY);
-        var varianceId  = GetMap(mappings, "inventoryVarianceAccountID", COGS);
+        
+        // STRICT MAPPING: Fail if keys are missing in AccountSystemMappings table
+        if (!mappings.TryGetValue("inventoryaccountid", out var iId) || iId == null)
+            throw new InvalidOperationException("فشل الترحيل المحاسبي: حساب المخزون (inventoryAccountID) غير مربوط في الإعدادات.");
+
+        if (!mappings.TryGetValue("inventoryvarianceaccountid", out var vId) || vId == null)
+            throw new InvalidOperationException("فشل الترحيل المحاسبي: حساب فروقات الجرد (inventoryVarianceAccountID) غير مربوط في الإعدادات.");
+
+        var inventoryId = iId.Value;
+        var varianceId  = vId.Value;
 
         var isIncrease = netImpact > 0;
         var absVal = Math.Abs(netImpact);
-
-        var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
-        
-        // 1. Inventory Account
-        lines.Add((inventoryId, isIncrease ? absVal : 0, isIncrease ? 0 : absVal, $"تسوية مخزون - جرد #{auditId}"));
-        
-        // 2. Variance Account
-        lines.Add((varianceId, isIncrease ? 0 : absVal, isIncrease ? absVal : 0, $"فروقات جرد مخزون #{auditId}"));
 
         var jePrefix = "JE-ADJ";
         var entryNo = await _seq.NextAsync(jePrefix, async (db, pattern) =>
@@ -211,11 +211,11 @@ public class AccountingCoreService
             CreatedAt   = TimeHelper.GetEgyptTime()
         };
 
-        foreach (var (code, debit, credit, desc) in lines)
-        {
-            var res = await GetAccountIdAsync(code);
-            entry.Lines.Add(new JournalLine { AccountId = res.Id, Debit = debit, Credit = credit, Description = desc, CreatedAt = TimeHelper.GetEgyptTime() });
-        }
+        // 1. Inventory Account
+        entry.Lines.Add(new JournalLine { AccountId = inventoryId, Debit = isIncrease ? absVal : 0, Credit = isIncrease ? 0 : absVal, Description = $"تسوية مخزون - جرد #{auditId}", CreatedAt = TimeHelper.GetEgyptTime() });
+        
+        // 2. Variance Account
+        entry.Lines.Add(new JournalLine { AccountId = varianceId, Debit = isIncrease ? 0 : absVal, Credit = isIncrease ? absVal : 0, Description = $"فروقات جرد مخزون #{auditId}", CreatedAt = TimeHelper.GetEgyptTime() });
 
         _db.JournalEntries.Add(entry);
         await _db.SaveChangesAsync();

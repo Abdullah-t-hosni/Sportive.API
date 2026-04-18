@@ -268,11 +268,15 @@ public class InventoryOpeningBalanceController : ControllerBase
 
     private async Task PostJournalAsync(InventoryOpeningBalance ob)
     {
-        // Get Mapped Accounts instead of hardcoded strings
-        var (inventoryId, _, _) = await _core.GetAccountIdAsync(MappingKeys.Inventory);
-        var (openingId, _, _)   = await _core.GetAccountIdAsync(MappingKeys.OpeningEquity);
+        // Get Mapped Accounts - STRICT CHECK
+        var (inventoryId, exactInv, invError) = await _core.GetAccountIdAsync(MappingKeys.Inventory);
+        var (openingId, exactOpe, opeError)   = await _core.GetAccountIdAsync(MappingKeys.OpeningEquity);
 
-        if (inventoryId == 0 || openingId == 0) return;
+        if (!exactInv || inventoryId == 0)
+            throw new InvalidOperationException($"فشل ترحيل القيد: حساب المخزون غير مربوط بشكل صحيح في الإعدادات. ({invError})");
+
+        if (!exactOpe || openingId == 0)
+            throw new InvalidOperationException($"فشل ترحيل القيد: حساب الأرصدة الافتتاحية غير مربوط بشكل صحيح في الإعدادات. ({opeError})");
 
         var dto = new CreateJournalEntryDto(
             EntryDate:   ob.Date,
