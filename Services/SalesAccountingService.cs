@@ -138,7 +138,12 @@ public class SalesAccountingService
         if (manualDiscount > 0)
             lines.Add((salesDiscAcct, manualDiscount, 0, $"خصم يدوي (كاشير) - {order.OrderNumber}"));
 
-        // ✅ NEW: Read from OrderPayments table first, fallback to AdminNotes
+        // ✅ ROBUSTNESS: Ensure payments are loaded and fresh
+        if (order.Payments == null || !order.Payments.Any())
+        {
+            await _db.Entry(order).Collection(o => o.Payments).LoadAsync();
+        }
+
         decimal handledPaidAmt = 0;
         var payments = order.Payments?.Where(p => p.Amount > 0 && p.Method != PaymentMethod.Credit).ToList()
                     ?? new List<OrderPayment>();

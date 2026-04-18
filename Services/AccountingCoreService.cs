@@ -62,14 +62,9 @@ public class AccountingCoreService
 
     public async Task<Dictionary<string, int?>> GetSafeSystemMappingsAsync()
     {
-        var mappings = await _db.AccountSystemMappings
+        return await _db.AccountSystemMappings
             .AsNoTracking()
-            .Include(m => m.Account)
-            .ToListAsync();
-            
-        return mappings
-            .Where(m => m.AccountId == null || (m.Account != null && m.Account.IsActive))
-            .ToDictionary(m => m.Key.ToLower(), m => m.AccountId);
+            .ToDictionaryAsync(m => m.Key, m => m.AccountId, StringComparer.OrdinalIgnoreCase);
     }
 
     public string GetMap(Dictionary<string, int?> map, string key, string fallback)
