@@ -121,6 +121,7 @@ public class OrdersController : ControllerBase
             posDto.DiscountAmount,
             posDto.Subtotal,
             posDto.Payments,
+            posDto.PaidAmount,
             posDto.AttachmentUrl,
             posDto.AttachmentPublicId
         );

@@ -50,6 +50,7 @@ public record CreateOrderDto(
     decimal? DiscountAmount = null,
     decimal? SubTotal = null,
     List<OrderPaymentDto>? Payments = null,
+    decimal? PaidAmount = null,
     string? AttachmentUrl = null,
     string? AttachmentPublicId = null
 );
@@ -80,6 +81,7 @@ public record CreatePOSOrderDto(
     decimal? DiscountAmount = null,
     decimal? Subtotal = null,
     List<OrderPaymentDto>? Payments = null,
+    decimal? PaidAmount = null,
     string? CouponCode = null,
     string? AttachmentUrl = null,
     string? AttachmentPublicId = null

@@ -493,8 +493,9 @@ public class OrderService : IOrderService
                                 CreatedAt = now 
                             });
                         }
-                        order.PaidAmount = totalPaid;
-                        if (order.PaidAmount >= order.TotalAmount) order.PaymentStatus = PaymentStatus.Paid;
+                        // 💎 HIGH INTEGRITY: Use explicit PaidAmount from DTO if provided (avoids issues if Payments list parsing had mismatches like casing)
+                        order.PaidAmount = dto.PaidAmount ?? totalPaid;
+                        if (order.PaidAmount >= order.TotalAmount - 0.01m) order.PaymentStatus = PaymentStatus.Paid;
                     }
                     else if (order.PaymentMethod != PaymentMethod.Credit && order.PaymentMethod != (PaymentMethod)7)
                     {

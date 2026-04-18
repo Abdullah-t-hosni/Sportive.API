@@ -154,6 +154,13 @@ public class SalesAccountingService
                 handledPaidAmt += p.Amount;
             }
         }
+        else if (order.PaymentMethod == (PaymentMethod)7 && order.PaidAmount > 0)
+        {
+            // 💎 HIGH INTEGRITY FALLBACK: If mixed payment was recorded but structured payments are missing
+            var cashAcct = await _core.GetMappedCashAccountAsync(PaymentMethod.Cash, order.Source, mapDict);
+            lines.Add((cashAcct, order.PaidAmount, 0, $"تحصيل (دفع مركب غير مفصل) - {order.OrderNumber}"));
+            handledPaidAmt = order.PaidAmount;
+        }
         else
         {
             // Fallback: legacy AdminNotes JSON or single payment method
@@ -178,6 +185,15 @@ public class SalesAccountingService
 
         // Remaining debt → Receivables
         var remainingDebt = Math.Round(order.TotalAmount - handledPaidAmt, 2);
+        
+        // 💎 SELF-REPAIR: Ensure the Order record reflects the actual paid amount handled in accounting
+        if (order.PaidAmount < handledPaidAmt - 0.01m)
+        {
+            order.PaidAmount = handledPaidAmt;
+            if (order.PaidAmount >= order.TotalAmount - 0.01m) order.PaymentStatus = PaymentStatus.Paid;
+            _db.Orders.Update(order);
+        }
+
         if (Math.Abs(remainingDebt) > 0.01m)
             lines.Add((receivablesAcct, remainingDebt, 0, $"إثبات مديونية متبقية (آجل) - {order.OrderNumber}"));
 
