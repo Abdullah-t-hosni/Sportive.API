@@ -109,9 +109,11 @@ public record OrderSummaryDto(
     string Source,
     string PaymentMethod,
     string PaymentStatus,
+    int? CustomerId = null,
     string? AdminNotes = null,
     string? CouponCode = null
 );
+
 
 public record OrderDetailDto(
     int Id,

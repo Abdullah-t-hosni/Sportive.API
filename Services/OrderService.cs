@@ -92,6 +92,7 @@ public class OrderService : IOrderService
                 o.Source.ToString(),
                 o.PaymentMethod.ToString(),
                 o.PaymentStatus.ToString(),
+                o.CustomerId,
                 o.AdminNotes,
                 o.CouponCode
             ))
