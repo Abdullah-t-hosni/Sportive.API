@@ -31,6 +31,7 @@ public class PaymentAccountingService
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         string receivablesAcct = order.Customer?.MainAccountId != null ? $"ID:{order.Customer.MainAccountId}" : _core.GetMap(mapDict, MK.Customer, AccountingCoreService.RECEIVABLES);
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
+        decimal handledPaidAmt = 0;
 
         var payments = order.Payments?.Where(p => p.Amount > 0 && p.Method != PaymentMethod.Credit).ToList()
                     ?? new List<OrderPayment>();
@@ -42,6 +43,7 @@ public class PaymentAccountingService
                 var code = await _core.GetMappedCashAccountAsync(p.Method, order.Source, mapDict);
                 lines.Add((code, p.Amount, 0, $"تحصيل ({_core.GetMethodLabel(p.Method)}) - {order.OrderNumber}"));
                 lines.Add((receivablesAcct, 0, p.Amount, $"إغلاق مديونية ({_core.GetMethodLabel(p.Method)}) - {order.OrderNumber}"));
+                handledPaidAmt += p.Amount;
             }
         }
         else
@@ -54,6 +56,7 @@ public class PaymentAccountingService
                     var code = await _core.GetMappedCashAccountAsync(m, order.Source, mapDict);
                     lines.Add((code, v, 0, $"تحصيل ({_core.GetMethodLabel(m)}) - {order.OrderNumber}"));
                     lines.Add((receivablesAcct, 0, v, $"إغلاق مديونية ({_core.GetMethodLabel(m)}) - {order.OrderNumber}"));
+                    handledPaidAmt += v;
                 }
             }
             else if (order.PaymentMethod != PaymentMethod.Credit && order.TotalAmount > 0)
@@ -61,10 +64,17 @@ public class PaymentAccountingService
                 var cashCode = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
                 lines.Add((cashCode, order.TotalAmount, 0, $"تحصيل طلب {order.OrderNumber} ({_core.GetMethodLabel(order.PaymentMethod)})"));
                 lines.Add((receivablesAcct, 0, order.TotalAmount, $"إغلاق مديونية طلب {order.OrderNumber}"));
+                handledPaidAmt = order.TotalAmount;
             }
         }
 
+        // ⚠️ STRICT VALIDATION: Ensure ledger entries match order records
         if (!lines.Any()) return;
+        
+        if (order.PaidAmount > 0 && Math.Abs(handledPaidAmt - order.PaidAmount) > 0.01m)
+        {
+            throw new InvalidOperationException($"خطأ في مطابقة تحصيل الطلب: المبلغ المسجل في سجلات الطلب ({order.PaidAmount}) لا يطابق واقع القيود ({handledPaidAmt}) للطلب {order.OrderNumber}");
+        }
 
         await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, reference, $"تحصيل تلقائي للطلب {order.OrderNumber}", TimeHelper.GetEgyptTime(), lines, orderId: order.Id, customerId: order.CustomerId, source: order.Source);
     }

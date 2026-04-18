@@ -493,8 +493,15 @@ public class OrderService : IOrderService
                                 CreatedAt = now 
                             });
                         }
-                        // 💎 HIGH INTEGRITY: Use explicit PaidAmount from DTO if provided (avoids issues if Payments list parsing had mismatches like casing)
-                        order.PaidAmount = dto.PaidAmount ?? totalPaid;
+                        
+                        // 💎 STRICT VALIDATION: Verify the breakdown matches the total
+                        var finalPaidAmount = dto.PaidAmount ?? totalPaid;
+                        if (Math.Abs(finalPaidAmount - totalPaid) > 0.01m && dto.Payments.Any(p => p.Method != PaymentMethod.Credit))
+                        {
+                            throw new ArgumentException($"خطأ في بيانات الدفع: مجموع بنود الدفع التفصيلية ({totalPaid}) لا يتطابق مع المبلغ المدفوع الكلي ({finalPaidAmount}).");
+                        }
+
+                        order.PaidAmount = finalPaidAmount;
                         if (order.PaidAmount >= order.TotalAmount - 0.01m) order.PaymentStatus = PaymentStatus.Paid;
                     }
                     else if (order.PaymentMethod != PaymentMethod.Credit && order.PaymentMethod != (PaymentMethod)7)

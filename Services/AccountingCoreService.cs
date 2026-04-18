@@ -406,16 +406,9 @@ public class AccountingCoreService
                 .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("1103"))
                 .SumAsync(l => l.Credit);
 
-            // If the order is marked as Paid but for some reason has no ledger entries (e.g. legacy data), 
-            // we should trust the status but let the ledger be the source of truth if it exists.
-            if (o.PaymentStatus == PaymentStatus.Paid && ledgerPaidAmount == 0)
-            {
-                o.PaidAmount = o.TotalAmount;
-            }
-            else
-            {
-                o.PaidAmount = ledgerPaidAmount;
-            }
+            // 💡 SOURCE OF TRUTH: The ledger (Journal Entries) is the only source for syncing balances.
+            // If the ledger is wrong, it must be fixed via Journal Entries, not auto-adjusted here.
+            o.PaidAmount = ledgerPaidAmount;
         }
         await _db.SaveChangesAsync();
 

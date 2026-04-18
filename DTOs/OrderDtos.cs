@@ -50,8 +50,11 @@ public record CreateOrderDto(
     decimal? DiscountAmount = null,
     decimal? SubTotal = null,
     List<OrderPaymentDto>? Payments = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("paidAmount")]
     decimal? PaidAmount = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("attachmentUrl")]
     string? AttachmentUrl = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("attachmentPublicId")]
     string? AttachmentPublicId = null
 );
 
@@ -80,10 +83,15 @@ public record CreatePOSOrderDto(
     string? Note = null,
     decimal? DiscountAmount = null,
     decimal? Subtotal = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("payments")]
     List<OrderPaymentDto>? Payments = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("paidAmount")]
     decimal? PaidAmount = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("couponCode")]
     string? CouponCode = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("attachmentUrl")]
     string? AttachmentUrl = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("attachmentPublicId")]
     string? AttachmentPublicId = null
 );
 
