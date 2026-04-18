@@ -991,8 +991,8 @@ public class OrderService : IOrderService
                     null,
                     "فشل إنشاء قيد محاسبي",
                     "Accounting Post Failed",
-                    $"حدث خطأ أثناء ترحيل الطلب {orderNumber} محاسبياً. يرجى مراجعة صفحة الربط المالي. الخطأ: {ex.Message}",
-                    $"Error posting journal entry for order {orderNumber}. Please check financial mappings. Error: {ex.Message}",
+                    $"حدث خطأ أثناء ترحيل الطلب {orderNumber} محاسبياً. يرجى مراجعة صفحة الربط المالي. السبب: {ex.Message}",
+                    $"Error posting journal entry for order {orderNumber}. Reason: {ex.Message}",
                     "Alert"
                 );
             }
@@ -1032,8 +1032,8 @@ public class OrderService : IOrderService
                     null,
                     "فشل إنشاء قيد تحصيل",
                     "Payment Post Failed",
-                    $"فشل نظام التحصيل التلقائي للطلب (معرف:{orderId}). يرجى مراجعة الربط المالي. الخطأ: {ex.Message}",
-                    $"Automated payment collection failed for order ID:{orderId}. Please check financial mappings. Error: {ex.Message}",
+                    $"فشل نظام التحصيل التلقائي للطلب (ID:{orderId}). يرجى مراجعة الربط المالي. السبب: {ex.Message}",
+                    $"Automated payment collection failed for order ID:{orderId}. Reason: {ex.Message}",
                     "Alert"
                 );
             }
