@@ -87,7 +87,7 @@ public interface ICustomerService
     Task<AddressDto> AddAddressAsync(int customerId, CreateAddressDto dto);
     Task DeleteAddressAsync(int customerId, int addressId);
     Task SetDefaultAddressAsync(int customerId, int addressId);
-    Task EnsureCustomerAccountAsync(int customerId);
+    Task EnsureCustomerAccountAsync(int customerId, bool isEmployee = false, int? employeeId = null);
     Task SyncAllMissingAccountsAsync();
     Task<CustomerDetailDto> UpdateCustomerAsync(int id, UpdateCustomerDto dto);
     Task<List<CustomerRfmDto>> GetRfmDataAsync();

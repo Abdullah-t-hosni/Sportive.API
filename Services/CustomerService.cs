@@ -294,16 +294,32 @@ public class CustomerService : ICustomerService
 
 
 
-    public async Task EnsureCustomerAccountAsync(int customerId)
+    public async Task EnsureCustomerAccountAsync(int customerId, bool isEmployee = false, int? employeeId = null)
     {
-        var customer = await _db.Customers.FindAsync(customerId);
-        if (customer == null || customer.MainAccountId != null) return;
-
-        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
-        if (parent != null)
+        if (isEmployee)
         {
-            customer.MainAccountId = parent.Id;
-            await _db.SaveChangesAsync();
+            var emp = await _db.Employees.FindAsync(employeeId);
+            if (emp == null || emp.AccountId != null) return;
+
+            // 💡 Staff/Employees use 1104 (Employees Receivables) by default
+            var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1104");
+            if (parent != null)
+            {
+                emp.AccountId = parent.Id;
+                await _db.SaveChangesAsync();
+            }
+        }
+        else
+        {
+            var customer = await _db.Customers.FindAsync(customerId);
+            if (customer == null || customer.MainAccountId != null) return;
+
+            var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
+            if (parent != null)
+            {
+                customer.MainAccountId = parent.Id;
+                await _db.SaveChangesAsync();
+            }
         }
     }
 

@@ -10,6 +10,8 @@ using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using Microsoft.Extensions.Caching.Memory;
+using Sportive.API.Services;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Controllers;
 
@@ -281,10 +283,14 @@ public class AuthController : ControllerBase
                 await _userManager.UpdateAsync(existingUser);
                 
                 // Reset password if provided (optional but good for re-activation)
-                var token = await _userManager.GeneratePasswordResetTokenAsync(existingUser);
-                await _userManager.ResetPasswordAsync(existingUser, token, dto.Password);
+                if (!string.IsNullOrEmpty(dto.Password))
+                {
+                    var token = await _userManager.GeneratePasswordResetTokenAsync(existingUser);
+                    await _userManager.ResetPasswordAsync(existingUser, token, dto.Password);
+                }
 
                 await _auth.AssignRoleAsync(existingUser.Id, role);
+                await EnsureEmployeeLinkAsync(existingUser, role);
 
                 return Ok(new { message = "Staff reactivated and updated successfully" });
             }
@@ -292,14 +298,73 @@ public class AuthController : ControllerBase
             var authResult = await _auth.RegisterAsync(dto, isCustomer: false);
 
             // Assign role
-            var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == dto.Email || u.PhoneNumber == dto.Phone);
             if (user != null)
+            {
                 await _auth.AssignRoleAsync(user.Id, role);
+                await EnsureEmployeeLinkAsync(user, role);
+            }
 
             return Ok(new { message = "Staff created successfully" }); 
         }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
+    private async Task EnsureEmployeeLinkAsync(AppUser user, string role)
+    {
+        // 1. Check if employee record already exists for this user
+        var employee = await _db.Employees.FirstOrDefaultAsync(e => e.AppUserId == user.Id);
+        if (employee == null)
+        {
+            // 2. Try to find by phone if not linked by ID
+            employee = await _db.Employees.FirstOrDefaultAsync(e => e.Phone == user.PhoneNumber && e.AppUserId == null);
+            if (employee != null)
+            {
+                employee.AppUserId = user.Id;
+            }
+            else
+            {
+                // 3. Create new HR profile
+                var sequence = HttpContext.RequestServices.GetRequiredService<SequenceService>();
+                var empNo = await sequence.NextAsync("EMP", async (db, pattern) =>
+                {
+                    var max = await db.Employees
+                        .Where(e => EF.Functions.Like(e.EmployeeNumber, pattern))
+                        .Select(e => e.EmployeeNumber).ToListAsync();
+                    return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                              .DefaultIfEmpty(0).Max();
+                });
+
+                employee = new Employee
+                {
+                    EmployeeNumber = empNo,
+                    Name = user.FullName,
+                    Email = user.Email,
+                    Phone = user.PhoneNumber,
+                    AppUserId = user.Id,
+                    JobTitle = role, // Use role as initial job title
+                    HireDate = TimeHelper.GetEgyptTime(),
+                    Status = EmployeeStatus.Active,
+                    CreatedAt = TimeHelper.GetEgyptTime()
+                };
+                _db.Employees.Add(employee);
+            }
+        }
+        else
+        {
+            // Update existing record with the new user info if needed
+            employee.Name = user.FullName;
+            employee.Email = user.Email;
+            employee.Phone = user.PhoneNumber;
+            employee.Status = EmployeeStatus.Active;
+        }
+
+        await _db.SaveChangesAsync();
+
+        // 4. Ensure Employee has a ledger account for HR operations
+        var customerService = HttpContext.RequestServices.GetRequiredService<ICustomerService>();
+        await customerService.EnsureCustomerAccountAsync(0, isEmployee: true, employeeId: employee.Id);
     }
     /// <summary>تعديل صلاحيات الموظف (للمدير)</summary>
     [Authorize(Roles = "Admin")]
@@ -334,34 +399,70 @@ public class AuthController : ControllerBase
     private static List<string> GetDefaultRolePermissions(IList<string> roles)
     {
         var perms = new HashSet<string>();
+        
+        // ── Admin & Manager: Full Access Baseline ──
         if (roles.Contains("Admin") || roles.Contains("Manager"))
         {
-            perms.Add("dashboard"); perms.Add("orders"); perms.Add("products");
-            perms.Add("customers"); perms.Add("categories"); perms.Add("coupons");
-            perms.Add("reports"); perms.Add("purchases"); perms.Add("accounting");
-            perms.Add("pos"); perms.Add("backup"); perms.Add("whatsapp");
+            perms.Add("dashboard"); 
+            perms.Add("orders"); perms.Add("orders.edit"); perms.Add("orders.delete");
+            perms.Add("returns"); perms.Add("returns.edit");
+            perms.Add("products"); perms.Add("products.edit");
+            perms.Add("categories"); perms.Add("categories.edit");
+            perms.Add("customers"); perms.Add("customers.edit");
+            perms.Add("coupons"); perms.Add("coupons.edit");
+            perms.Add("purchases"); perms.Add("purchases.edit");
+            perms.Add("accounting"); perms.Add("accounting.edit");
+            perms.Add("hr"); perms.Add("hr.edit");
+            perms.Add("fixed-assets"); perms.Add("fixed-assets.edit");
+            perms.Add("inventory-count"); perms.Add("inventory-count.edit");
+            perms.Add("inventory-opening"); perms.Add("inventory-opening.edit");
+            perms.Add("pos"); perms.Add("pos.verify"); perms.Add("pos.returns"); perms.Add("pos.discount");
+            perms.Add("reports");
+            perms.Add("import");
         }
+
+        // ── Admin Exclusive ──
         if (roles.Contains("Admin"))
         {
-            perms.Add("staff"); perms.Add("settings"); perms.Add("backup");
+            perms.Add("staff"); perms.Add("staff.edit");
+            perms.Add("settings"); perms.Add("settings.edit");
+            perms.Add("backup");
+            perms.Add("whatsapp");
         }
+
+        // ── Cashier: POS & Orders Operations ──
         if (roles.Contains("Cashier"))
         {
             perms.Add("pos");
-            // ✅ إضافة "orders" و"orders.read" معاً لضمان التوافق مع الفرونت إند
-            // بعض الـ route guards بتشيك على "orders" والبعض على "orders.read"
+            perms.Add("pos.returns");
             perms.Add("orders");
             perms.Add("orders.read");
+            perms.Add("customers"); // To add/select customers during sale
         }
+
+        // ── Accountant: Financial & Reporting ──
         if (roles.Contains("Accountant"))
         {
-            perms.Add("reports"); perms.Add("accounting"); perms.Add("purchases");
+            perms.Add("dashboard");
+            perms.Add("accounting"); perms.Add("accounting.edit");
+            perms.Add("purchases"); perms.Add("purchases.edit");
+            perms.Add("hr"); // To see payroll
+            perms.Add("reports");
             perms.Add("orders.read");
+            perms.Add("products.read");
         }
+
+        // ── Staff (Store Keeper / Sales): Inventory & Orders ──
         if (roles.Contains("Staff"))
         {
-            perms.Add("orders"); perms.Add("products.read"); perms.Add("customers.read");
+            perms.Add("orders");
+            perms.Add("orders.edit");
+            perms.Add("products"); 
+            perms.Add("products.edit");
+            perms.Add("inventory-count");
+            perms.Add("customers");
         }
+
         return perms.ToList();
     }
 }
