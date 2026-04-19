@@ -216,3 +216,24 @@ public record ReturnPurchaseInvoiceDto(
     List<ReturnPurchaseItemDto> Items
 );
 
+public record CreateStandaloneReturnDto(
+    int SupplierId,
+    DateTime ReturnDate,
+    decimal TaxPercent,
+    string? Notes,
+    string? ReferenceNumber,
+    List<CreateStandaloneReturnItemDto> Items,
+    decimal DiscountAmount = 0,
+    PaymentTerms PaymentTerms = PaymentTerms.Credit,
+    int? CashAccountId = null
+);
+
+public record CreateStandaloneReturnItemDto(
+    string Description,
+    int? ProductId,
+    int? ProductVariantId = null,
+    string? Unit = null,
+    decimal Quantity = 1,
+    decimal UnitCost = 0
+);
+

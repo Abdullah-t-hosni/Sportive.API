@@ -267,15 +267,15 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(r => r.TaxAmount).HasPrecision(18, 2);
             e.Property(r => r.DiscountAmount).HasPrecision(18, 2);
             e.Property(r => r.TotalAmount).HasPrecision(18, 2);
-            e.HasOne(r => r.Invoice).WithMany().HasForeignKey(r => r.PurchaseInvoiceId);
-            e.HasOne(r => r.Supplier).WithMany().HasForeignKey(r => r.SupplierId);
+            e.HasOne(r => r.Invoice).WithMany().HasForeignKey(r => r.PurchaseInvoiceId).IsRequired(false);
+            e.HasOne(r => r.Supplier).WithMany().HasForeignKey(r => r.SupplierId).IsRequired();
         });
 
         builder.Entity<PurchaseReturnItem>(e => {
             e.Property(ri => ri.UnitCost).HasPrecision(18, 2);
             e.Property(ri => ri.TotalCost).HasPrecision(18, 2);
-            e.HasOne(ri => ri.PurchaseReturn).WithMany(r => r.Items).HasForeignKey(ri => ri.PurchaseReturnId);
-            e.HasOne(ri => ri.InvoiceItem).WithMany().HasForeignKey(ri => ri.PurchaseInvoiceItemId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(ri => ri.PurchaseReturn).WithMany(r => r.Items).HasForeignKey(ri => ri.PurchaseReturnId).IsRequired();
+            e.HasOne(ri => ri.InvoiceItem).WithMany().HasForeignKey(ri => ri.PurchaseInvoiceItemId).IsRequired(false).OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<Account>(e => {

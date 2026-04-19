@@ -768,6 +768,107 @@ public class PurchaseInvoicesController : ControllerBase
         return Ok(new { id = inv.Id, status = inv.Status.ToString() });
     }
 
+    [HttpPost("returns/standalone")]
+    [Authorize(Roles = "Admin,Manager")]
+    public async Task<IActionResult> CreateStandaloneReturn([FromBody] CreateStandaloneReturnDto dto)
+    {
+        if (dto == null || dto.Items == null || !dto.Items.Any())
+            return BadRequest(new { message = "يجب إضافة صنف واحد على الأقل للمرتجع" });
+
+        var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
+        if (supplier == null)
+            return BadRequest(new { message = "المورد غير موجود" });
+
+        var pUnits = await GetUnitsListAsync();
+        var returnNo = await _seq.NextAsync("PR", async (db, pattern) =>
+        {
+            var max = await db.PurchaseReturns
+                .Where(r => EF.Functions.Like(r.ReturnNumber, pattern))
+                .Select(r => r.ReturnNumber)
+                .ToListAsync();
+            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                      .DefaultIfEmpty(0).Max();
+        });
+
+        using var transaction = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            var pReturn = new PurchaseReturn
+            {
+                ReturnNumber = returnNo,
+                SupplierId = dto.SupplierId,
+                ReturnDate = dto.ReturnDate != default ? dto.ReturnDate : TimeHelper.GetEgyptTime(),
+                Notes = dto.Notes,
+                ReferenceNumber = dto.ReferenceNumber,
+                CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                CreatedAt = TimeHelper.GetEgyptTime(),
+                DiscountAmount = dto.DiscountAmount,
+                PaymentTerms = dto.PaymentTerms,
+                CashAccountId = dto.CashAccountId > 0 ? dto.CashAccountId : null
+            };
+
+            decimal subtotal = 0;
+            foreach (var item in dto.Items)
+            {
+                var total = item.Quantity * item.UnitCost;
+                var multiplier = GetMultiplier(pUnits, item.Unit);
+                
+                pReturn.Items.Add(new PurchaseReturnItem
+                {
+                    ProductId = item.ProductId,
+                    ProductVariantId = item.ProductVariantId,
+                    Quantity = item.Quantity,
+                    UnitCost = item.UnitCost,
+                    TotalCost = total,
+                    CreatedAt = TimeHelper.GetEgyptTime()
+                });
+                subtotal += total;
+
+                if (item.ProductId.HasValue)
+                {
+                    // For returns, we decrease stock (negative quantity)
+                    var actualQty = item.Quantity * multiplier;
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.ReturnOut,
+                        -actualQty,
+                        item.ProductId,
+                        item.ProductVariantId,
+                        returnNo,
+                        "Standalone Purchase Return",
+                        pReturn.CreatedByUserId,
+                        item.UnitCost / (multiplier > 0 ? multiplier : 1)
+                    );
+                }
+            }
+
+            pReturn.SubTotal = subtotal;
+            pReturn.TaxAmount = Math.Round(subtotal * (dto.TaxPercent / 100), 2);
+            pReturn.TotalAmount = (subtotal + pReturn.TaxAmount) - dto.DiscountAmount;
+
+            // Update Supplier Ledger
+            supplier.TotalPurchases -= pReturn.TotalAmount;
+
+            _db.PurchaseReturns.Add(pReturn);
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            // Trigger Accounting Sync
+            var returnId = pReturn.Id;
+            var returnNum = pReturn.ReturnNumber;
+            _ = Task.Run(async () => {
+                await PostReturnJournalByReturnRecordWithRetryAsync(returnId, returnNum);
+            });
+
+            return Ok(new { id = pReturn.Id, returnNumber = pReturn.ReturnNumber, totalAmount = pReturn.TotalAmount });
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            _logger.LogError(ex, "Error in CreateStandaloneReturn");
+            return StatusCode(500, new { message = "خطأ داخلي أثناء معالجة المرتجع", error = ex.Message });
+        }
+    }
+
     [HttpPost("{id}/return")]
     [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> ReturnPurchase(int id, [FromBody] ReturnPurchaseInvoiceDto dto)

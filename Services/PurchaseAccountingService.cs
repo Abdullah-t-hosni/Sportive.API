@@ -134,11 +134,19 @@ public class PurchaseAccountingService
         var vatAcct    = pReturn.Invoice?.VatAccountId != null ? $"ID:{pReturn.Invoice.VatAccountId}" 
                         : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatInput, mapDict)}";
 
-        // Debit Supplier (Reducing liability)
-        lines.Add((vendorAcct, pReturn.TotalAmount, 0, $"مرتجع مشتريات {pReturn.ReturnNumber} - فاتورة {pReturn.Invoice?.InvoiceNumber}"));
+        // Debit Target (Reducing liability or increasing cash)
+        if (pReturn.PaymentTerms == PaymentTerms.Cash)
+        {
+            var cashAcct = pReturn.CashAccountId != null ? $"ID:{pReturn.CashAccountId}" : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Cash, mapDict)}";
+            lines.Add((cashAcct, pReturn.TotalAmount, 0, $"استرداد نقدي مرتجع {pReturn.ReturnNumber}"));
+        }
+        else
+        {
+            lines.Add((vendorAcct, pReturn.TotalAmount, 0, $"مرتجع آجل {pReturn.ReturnNumber} - تخفيض مديونية"));
+        }
         
         // Credit Inventory (Reducing asset)
-        lines.Add((rtnAcct, 0, pReturn.SubTotal, $"مرتجع مشتريات {pReturn.ReturnNumber} - قيمة أصناف ف.{pReturn.Invoice?.InvoiceNumber}"));
+        lines.Add((rtnAcct, 0, pReturn.SubTotal, $"مرتجع مشتريات {pReturn.ReturnNumber} - قيمة أصناف"));
 
         if (pReturn.DiscountAmount > 0)
         {

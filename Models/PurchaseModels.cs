@@ -146,8 +146,8 @@ public class SupplierPayment : BaseEntity
 public class PurchaseReturn : BaseEntity
 {
     public string ReturnNumber { get; set; } = string.Empty; // رقم مستند المرتجع (PR-xxxx)
-    public int PurchaseInvoiceId { get; set; }
-    public PurchaseInvoice Invoice { get; set; } = null!;
+    public int? PurchaseInvoiceId { get; set; }
+    public PurchaseInvoice? Invoice { get; set; }
 
     public int SupplierId { get; set; }
     public Supplier Supplier { get; set; } = null!;
@@ -162,6 +162,10 @@ public class PurchaseReturn : BaseEntity
     public string? ReferenceNumber { get; set; } // رقم مرجعي خارجي
     public string? CreatedByUserId { get; set; }
 
+    public PaymentTerms PaymentTerms { get; set; } = PaymentTerms.Credit;
+    public int? CashAccountId { get; set; }
+    public Account? CashAccount { get; set; }
+
     public ICollection<PurchaseReturnItem> Items { get; set; } = new List<PurchaseReturnItem>();
 }
 
@@ -170,8 +174,8 @@ public class PurchaseReturnItem : BaseEntity
     public int PurchaseReturnId { get; set; }
     public PurchaseReturn PurchaseReturn { get; set; } = null!;
 
-    public int PurchaseInvoiceItemId { get; set; }
-    public PurchaseInvoiceItem InvoiceItem { get; set; } = null!;
+    public int? PurchaseInvoiceItemId { get; set; }
+    public PurchaseInvoiceItem? InvoiceItem { get; set; }
 
     public int? ProductId { get; set; }
     public Product? Product { get; set; }
