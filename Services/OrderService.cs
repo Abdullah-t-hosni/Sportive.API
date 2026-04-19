@@ -159,7 +159,7 @@ public class OrderService : IOrderService
 
         // 💡 SMART FINANCE: Also include payments made via Receipt Vouchers for this order
         var vouchers = await _db.ReceiptVouchers
-            .Where(v => v.OrderId == id && v.Status == "Posted")
+            .Where(v => v.OrderId == id && v.JournalEntryId != null)
             .Select(v => new OrderDetailPaymentDto(
                 v.PaymentMethod.ToString(),
                 v.Amount,

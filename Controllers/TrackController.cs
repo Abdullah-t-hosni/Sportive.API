@@ -87,6 +87,7 @@ public class TrackController : ControllerBase
             }),
             timeline,
             customerName = order.Customer?.FullName,
+            attachmentUrl = order.AttachmentUrl,
         });
     }
 
@@ -163,6 +164,7 @@ public class TrackController : ControllerBase
             }),
             timeline = BuildTimeline(order),
             customerName = order.Customer?.FullName,
+            attachmentUrl = order.AttachmentUrl,
         }));
     }
 
