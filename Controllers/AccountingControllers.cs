@@ -397,6 +397,7 @@ public class JournalEntriesController : ControllerBase
                 e.Id, e.EntryNumber, e.EntryDate, e.Description, e.Reference, e.CreatedAt,
                 Status = e.Status.ToString(),
                 Type = e.Type.ToString(),
+                CostCenter = (int?)e.CostCenter,
                 LineCount = includeLines ? e.Lines.Count : _db.JournalLines.Count(l => l.JournalEntryId == e.Id),
                 TotalAmount = includeLines ? e.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit) : (_db.JournalLines.AsNoTracking().Where(l => l.JournalEntryId == e.Id && l.Debit > 0).Sum(l => (decimal?)l.Debit) ?? 0),
                 Lines = includeLines ? (object)e.Lines.Select(l => new { l.AccountId, l.Credit, l.Debit, AccountName = l.Account != null ? l.Account.NameAr : null }).ToList() : null
@@ -500,6 +501,7 @@ public class ReceiptVouchersController : ControllerBase
             .Select(v => new { 
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description,
                 v.CashAccountId,
+                CostCenter = (int?)v.CostCenter,
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 FromAccountName = v.FromAccount != null ? v.FromAccount.NameAr : null,
                 EntityName = v.Customer != null ? v.Customer.FullName : null
@@ -521,6 +523,7 @@ public class ReceiptVouchersController : ControllerBase
             .Select(v => new { 
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description,
                 v.CashAccountId,
+                CostCenter = (int?)v.CostCenter,
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 FromAccountName = v.FromAccount != null ? v.FromAccount.NameAr : null,
                 EntityName = v.Customer != null ? v.Customer.FullName : null
@@ -664,6 +667,7 @@ public class PaymentVouchersController : ControllerBase
             .Select(v => new { 
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description,
                 v.CashAccountId, v.ToAccountId,
+                CostCenter = (int?)v.CostCenter,
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 ToAccountName = v.ToAccount != null ? v.ToAccount.NameAr : null,
                 EntityName = v.Supplier != null ? v.Supplier.Name : null
