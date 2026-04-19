@@ -625,6 +625,7 @@ public class OperationalReportsController : ControllerBase
             .Include(o => o.Customer)
             .Include(o => o.Items).ThenInclude(i => i.Product)
             .Include(o => o.JournalEntries).ThenInclude(j => j.Lines)
+            .Include(o => o.Payments) // ✅ Added
             .Where(o => o.CreatedAt >= from && o.CreatedAt <= to)
             .Where(o => o.JournalEntries.Any(j => j.Status == JournalEntryStatus.Posted))
             .OrderByDescending(o => o.CreatedAt)
@@ -644,6 +645,9 @@ public class OperationalReportsController : ControllerBase
                 .Where(l => l.AccountId == salesAccId)
                 .Sum(l => l.Credit);
 
+            // ✅ Detailed payment string
+            var paySummary = string.Join(", ", o.Payments.Select(p => $"{p.Method}: {p.Amount:N0}"));
+
             return new SalesRow(
                 o.Id, o.OrderNumber, o.CreatedAt,
                 o.Customer?.FullName ?? "Walk-in",
@@ -662,7 +666,8 @@ public class OperationalReportsController : ControllerBase
                     i.Quantity,
                     i.UnitPrice,
                     0, 0, i.TotalPrice
-                )).ToList()
+                )).ToList(),
+                paySummary // ✅ New Field
             );
         }).ToList();
 
@@ -1122,6 +1127,7 @@ public class OperationalReportsController : ControllerBase
                 from,
                 to,
                 rows = movements,
+                movements,
                 summary
             });
         }
@@ -1176,7 +1182,12 @@ public class OperationalReportsController : ControllerBase
             totalValue = m.Quantity * m.UnitCost
         }).ToList();
 
-        return Ok(new { from, to, rows });
+        return Ok(new { 
+            from, 
+            to, 
+            rows, 
+            movements = rows // Duplicate for compatibility with different report versions
+        });
     }
 
     private string GetMovementTypeAr(InventoryMovementType type) => type switch
@@ -1299,7 +1310,7 @@ public class OperationalReportsController : ControllerBase
         ws.Cell(1,1).Value=$"تقرير المبيعات التفصيلي — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
         ws.Cell(1,1).Style.Font.Bold=true;
         
-        string[] h={"رقم الطلب","التاريخ","العميل","التليفون","المصدر","الحالة","الدفع","كود الصنف","اسم الصنف","المقاس","اللون","الكمية","سعر البيع","الخصم","الإجمالي"};
+        string[] h={"رقم الطلب","التاريخ","العميل","التليفون","المصدر","الحالة","الدفع","تفاصيل الدفع","كود الصنف","اسم الصنف","المقاس","اللون","الكمية","سعر البيع","الخصم","الإجمالي"};
         for(int i=0;i<h.Length;i++){
             var cell = ws.Cell(2,i+1);
             cell.Value=h[i];
@@ -1320,7 +1331,8 @@ public class OperationalReportsController : ControllerBase
                 ws.Cell(r, 5).Value = order.Source;
                 ws.Cell(r, 6).Value = order.Status;
                 ws.Cell(r, 7).Value = order.PaymentMethod;
-                ws.Cell(r, 15).Value = order.TotalAmount;
+                ws.Cell(r, 8).Value = order.PaymentDetails; // ✅ Added
+                ws.Cell(r, 16).Value = order.TotalAmount;
                 r++;
                 continue;
             }
@@ -1334,17 +1346,18 @@ public class OperationalReportsController : ControllerBase
                 ws.Cell(r, 5).Value = order.Source;
                 ws.Cell(r, 6).Value = order.Status;
                 ws.Cell(r, 7).Value = order.PaymentMethod;
+                ws.Cell(r, 8).Value = order.PaymentDetails; // ✅ Added
                 
-                ws.Cell(r, 8).Value = item.SKU;
-                ws.Cell(r, 9).Value = item.ProductName;
-                ws.Cell(r, 10).Value = item.Size;
-                ws.Cell(r, 11).Value = item.Color;
-                ws.Cell(r, 12).Value = item.Quantity;
-                ws.Cell(r, 13).Value = item.UnitPrice;
-                ws.Cell(r, 14).Value = item.Discount;
-                ws.Cell(r, 15).Value = item.LineTotal;
+                ws.Cell(r, 9).Value = item.SKU;
+                ws.Cell(r, 10).Value = item.ProductName;
+                ws.Cell(r, 11).Value = item.Size;
+                ws.Cell(r, 12).Value = item.Color;
+                ws.Cell(r, 13).Value = item.Quantity;
+                ws.Cell(r, 14).Value = item.UnitPrice;
+                ws.Cell(r, 15).Value = item.Discount;
+                ws.Cell(r, 16).Value = item.LineTotal;
                 
-                for(int c=13; c<=15; c++) ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";
+                for(int c=14; c<=16; c++) ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";
                 r++;
             }
         }
@@ -1630,7 +1643,7 @@ public record CustomerAgingRow(int CustomerId, string CustomerName, string Phone
 public record SupplierAgingRow(int SupplierId, string SupplierName, string Phone, string CompanyName, decimal Total, decimal Current, decimal Days60, decimal Days90, decimal Over90);
 public record InventoryRow(int Id, string NameAr, string NameEn, string SKU, string CategoryName, decimal Price, decimal? DiscountPrice, decimal CostPrice, int TotalStock, decimal TotalValue, decimal TotalCostValue, List<VariantInventoryRow> Variants);
 public record VariantInventoryRow(int Id, string Size, string Color, string ColorAr, int StockQuantity, decimal Price, decimal Value);
-public record SalesRow(int Id, string OrderNumber, DateTime Date, string CustomerName, string Phone, string Source, string Status, string PaymentMethod, decimal SubTotal, decimal DiscountAmount, decimal TotalAmount, int ItemCount, List<ReportItemDto>? Items = null);
+public record SalesRow(int Id, string OrderNumber, DateTime Date, string CustomerName, string Phone, string Source, string Status, string PaymentMethod, decimal SubTotal, decimal DiscountAmount, decimal TotalAmount, int ItemCount, List<ReportItemDto>? Items = null, string? PaymentDetails = null);
 public record PurchaseRow(int Id, string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal ReturnedAmount, decimal PaidAmount, decimal RemainingAmount, List<ReportItemDto>? Items = null);
 public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason, List<ReportItemDto>? Items = null);
 public record ReportItemDto(string SKU, string ProductName, string Size, string Color, decimal Quantity, decimal UnitPrice = 0, decimal UnitCost = 0, decimal Discount = 0, decimal LineTotal = 0);

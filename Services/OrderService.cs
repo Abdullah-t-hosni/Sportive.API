@@ -110,6 +110,7 @@ public class OrderService : IOrderService
                 .ThenInclude(i => i.Product!)
                     .ThenInclude(p => p.Images)
             .Include(o => o.StatusHistory)
+            .Include(o => o.Payments) // ✅ Added
             .FirstOrDefaultAsync(o => o.Id == id);
 
         if (o == null) return null;
@@ -165,6 +166,13 @@ public class OrderService : IOrderService
             )).ToList(),
             o.StatusHistory.OrderByDescending(h => h.CreatedAt).Select(h => new OrderStatusHistoryDto(
                 h.Status.ToString(), h.Note, h.CreatedAt
+            )).ToList(),
+            o.Payments.Select(p => new OrderDetailPaymentDto( // ✅ Populate Payments
+                p.Method.ToString(),
+                p.Amount,
+                p.Reference,
+                p.Notes,
+                p.CreatedAt
             )).ToList(),
             salesPersonName,
             null, 

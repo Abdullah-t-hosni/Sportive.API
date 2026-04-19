@@ -144,6 +144,7 @@ public record OrderDetailDto(
     DateTime CreatedAt,
     List<OrderItemDto> Items,
     List<OrderStatusHistoryDto> StatusHistory,
+    List<OrderDetailPaymentDto>? Payments = null,
     string? SalesPersonName = null,
     string? TotalAmountInWords = null,
     decimal PreviousBalance = 0,
@@ -152,6 +153,14 @@ public record OrderDetailDto(
     string? AttachmentUrl = null,
     string? AttachmentPublicId = null,
     string? CouponCode = null
+);
+
+public record OrderDetailPaymentDto(
+    string Method,
+    decimal Amount,
+    string? Reference = null,
+    string? Notes = null,
+    DateTime? CreatedAt = null
 );
 
 public record OrderItemDto(
