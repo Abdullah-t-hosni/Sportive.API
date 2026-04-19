@@ -406,7 +406,9 @@ public class AccountingCoreService
 
         // 2. Move Journal Lines from sub-accounts to control accounts
         var subAccountsData = await _db.Accounts
-            .Where(a => a.Code != null && a.Code.Contains("-") && (a.Code.StartsWith("1103") || a.Code.StartsWith("2101")))
+            .Where(a => a.Code != null && 
+                       (a.Code.StartsWith("1103") || a.Code.StartsWith("2101")) && 
+                       a.Code != "1103" && a.Code != "2101")
             .Select(a => new { a.Id, a.Code })
             .ToListAsync();
         
@@ -434,6 +436,13 @@ public class AccountingCoreService
         {
             a.IsActive = false;
         }
+
+        // تحويل الحسابات الرئيسية إلى حسابات نهائية (Leaf) للسماح بالترحيل المباشر
+        custControl.IsLeaf = true;
+        custControl.AllowPosting = true;
+        suppControl.IsLeaf = true;
+        suppControl.AllowPosting = true;
+
         await _db.SaveChangesAsync();
 
         // 4. Employees Consolidation
@@ -445,7 +454,9 @@ public class AccountingCoreService
             
             // إضافة أكواد الموظفين للدمج (2201، 1201)
             var empSubAccounts = await _db.Accounts
-                .Where(a => a.Code != null && a.Code.Contains("-") && (a.Code.StartsWith("2201") || a.Code.StartsWith("1201")))
+                .Where(a => a.Code != null && 
+                           (a.Code.StartsWith("2201") || a.Code.StartsWith("1201")) &&
+                           a.Code != "2201" && a.Code != "1201")
                 .ToListAsync();
             
             var empSubIds = empSubAccounts.Select(x => x.Id).ToList();
@@ -474,7 +485,7 @@ public class AccountingCoreService
     {
         // 1. استحضار كل الحسابات غير النشطة
         var inactiveAccounts = await _db.Accounts
-            .Where(a => !a.IsActive && !a.IsSystem)
+            .Where(a => !a.IsActive)
             .ToListAsync();
 
         if (!inactiveAccounts.Any()) return 0;
