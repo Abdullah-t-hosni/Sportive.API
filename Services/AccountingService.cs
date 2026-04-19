@@ -98,7 +98,13 @@ public class AccountingService : IAccountingService
     {
         var (accountId, _, _) = await _core.GetAccountIdAsync(cashAccountCode);
         var todayStart = TimeHelper.GetEgyptTime().Date;
-        return await _db.JournalLines.Where(l => l.AccountId == accountId && l.JournalEntry.EntryDate >= todayStart).SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
+        
+        // 🚨 FIX: Filter by CostCenter == POS to isolate drawer cash from website online orders (COD)
+        return await _db.JournalLines
+            .Where(l => l.AccountId == accountId 
+                     && l.JournalEntry.EntryDate >= todayStart 
+                     && l.CostCenter == OrderSource.POS)
+            .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
     }
 
     public async Task SyncAllOrdersAccountingAsync()

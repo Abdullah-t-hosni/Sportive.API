@@ -621,15 +621,20 @@ public class OperationalReportsController : ControllerBase
         var salesAccId = maps.GetValueOrDefault(MappingKeys.Sales);
         
         // 1. Fetch Orders joined with their POSTED Journal Entries
-        var orders = await _db.Orders
+        var ordersQ = _db.Orders
             .Include(o => o.Customer)
             .Include(o => o.Items).ThenInclude(i => i.Product)
             .Include(o => o.JournalEntries).ThenInclude(j => j.Lines)
-            .Include(o => o.Payments) // ✅ Added
+            .Include(o => o.Payments)
             .Where(o => o.CreatedAt >= from && o.CreatedAt <= to)
-            .Where(o => o.JournalEntries.Any(j => j.Status == JournalEntryStatus.Posted))
-            .OrderByDescending(o => o.CreatedAt)
-            .ToListAsync();
+            .Where(o => o.JournalEntries.Any(j => j.Status == JournalEntryStatus.Posted));
+
+        if (source.HasValue)
+        {
+            ordersQ = ordersQ.Where(o => o.Source == source.Value);
+        }
+
+        var orders = await ordersQ.OrderByDescending(o => o.CreatedAt).ToListAsync();
 
         // 2. Fetch Returns from Ledger specifically (SalesReturn account debits)
         var salesReturnAccId = maps.GetValueOrDefault(MappingKeys.SalesReturn);
