@@ -869,6 +869,123 @@ public class PurchaseInvoicesController : ControllerBase
         }
     }
 
+    [HttpPut("returns/standalone/{id}")]
+    [Authorize(Roles = "Admin,Manager")]
+    public async Task<IActionResult> UpdateStandaloneReturn(int id, [FromBody] CreateStandaloneReturnDto dto)
+    {
+        if (dto == null || dto.Items == null || !dto.Items.Any())
+            return BadRequest(new { message = "يجب إضافة صنف واحد على الأقل للمرتجع" });
+
+        var pReturn = await _db.PurchaseReturns
+            .Include(r => r.Items)
+            .Include(r => r.Supplier)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (pReturn == null) return NotFound();
+
+        var pUnits = await GetUnitsListAsync();
+        
+        using var transaction = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            // 1. Reverse old stock movements
+            foreach (var item in pReturn.Items)
+            {
+                if (item.ProductId.HasValue)
+                {
+                    var mult = GetMultiplier(pUnits, item.Unit);
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.Adjustment,
+                        item.Quantity * mult, // Add back what was returned
+                        item.ProductId,
+                        item.ProductVariantId,
+                        pReturn.ReturnNumber,
+                        $"Edit Return #{pReturn.ReturnNumber} (Reversal)",
+                        User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    );
+                }
+            }
+
+            // 2. Adjust supplier balance (Add back old return amount)
+            var supplier = await _db.Suppliers.FindAsync(pReturn.SupplierId);
+            if (supplier != null)
+                supplier.TotalPurchases += pReturn.TotalAmount;
+
+            // 3. Update basic info
+            pReturn.ReturnDate = dto.ReturnDate;
+            pReturn.Notes = dto.Notes;
+            pReturn.ReferenceNumber = dto.ReferenceNumber;
+            pReturn.DiscountAmount = dto.DiscountAmount;
+            pReturn.PaymentTerms = dto.PaymentTerms;
+            pReturn.CashAccountId = dto.CashAccountId > 0 ? dto.CashAccountId : null;
+            pReturn.UpdatedAt = TimeHelper.GetEgyptTime();
+
+            // 4. Update Items
+            _db.PurchaseReturnItems.RemoveRange(pReturn.Items);
+            pReturn.Items.Clear();
+
+            decimal subtotal = 0;
+            foreach (var item in dto.Items)
+            {
+                var total = item.Quantity * item.UnitCost;
+                var multiplier = GetMultiplier(pUnits, item.Unit);
+                
+                pReturn.Items.Add(new PurchaseReturnItem
+                {
+                    ProductId = item.ProductId,
+                    ProductVariantId = item.ProductVariantId,
+                    Quantity = item.Quantity,
+                    Unit = item.Unit,
+                    UnitCost = item.UnitCost,
+                    TotalCost = total,
+                    CreatedAt = TimeHelper.GetEgyptTime()
+                });
+                subtotal += total;
+
+                if (item.ProductId.HasValue)
+                {
+                    var actualQty = item.Quantity * multiplier;
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.ReturnOut,
+                        -actualQty,
+                        item.ProductId,
+                        item.ProductVariantId,
+                        pReturn.ReturnNumber,
+                        "Updated Standalone Return",
+                        User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                        item.UnitCost / (multiplier > 0 ? multiplier : 1)
+                    );
+                }
+            }
+
+            pReturn.SubTotal = subtotal;
+            pReturn.TaxAmount = Math.Round(subtotal * (dto.TaxPercent / 100), 2);
+            pReturn.TotalAmount = (subtotal + pReturn.TaxAmount) - dto.DiscountAmount;
+
+            // Update Supplier Ledger with new total
+            if (supplier != null)
+                supplier.TotalPurchases -= pReturn.TotalAmount;
+
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            // Trigger Accounting Sync
+            var returnId = pReturn.Id;
+            var returnNum = pReturn.ReturnNumber;
+            _ = Task.Run(async () => {
+                await PostReturnJournalByReturnRecordWithRetryAsync(returnId, returnNum);
+            });
+
+            return Ok(new { id = pReturn.Id, returnNumber = pReturn.ReturnNumber, totalAmount = pReturn.TotalAmount });
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            _logger.LogError(ex, "Error in UpdateStandaloneReturn");
+            return StatusCode(500, new { message = "خطأ داخلي أثناء تعديل المرتجع", error = ex.Message });
+        }
+    }
+
     [HttpPost("{id}/return")]
     [Authorize(Roles = "Admin,Manager")]
     public async Task<IActionResult> ReturnPurchase(int id, [FromBody] ReturnPurchaseInvoiceDto dto)
