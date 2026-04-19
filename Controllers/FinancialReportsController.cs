@@ -24,7 +24,6 @@ public class FinancialReportsController : ControllerBase
     private async Task<List<AccountBalance>> GetBalances(DateTime from, DateTime to, OrderSource? source = null)
     {
         var accounts = await _db.Accounts
-            .Where(a => a.IsActive)
             .OrderBy(a => a.Code)
             .ToListAsync();
 
