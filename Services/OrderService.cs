@@ -136,6 +136,41 @@ public class OrderService : IOrderService
             .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("1103"))
             .SumAsync(l => l.Credit);
 
+        var itemDtos = o.Items.Select(i => new OrderItemDto(
+            i.Id, i.ProductNameAr, i.ProductNameEn, i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
+            i.Product?.Slug,
+            i.Size, i.Color, i.Quantity, i.UnitPrice, i.TotalPrice,
+            i.OriginalUnitPrice, i.DiscountAmount,
+            i.HasTax, i.VatRateApplied, i.ItemVatAmount, i.ReturnedQuantity
+        )).ToList();
+
+        var historyDtos = o.StatusHistory.OrderByDescending(h => h.CreatedAt).Select(h => new OrderStatusHistoryDto(
+            h.Status.ToString(), h.Note, h.CreatedAt
+        )).ToList();
+
+        // ✅ Populate Payments from Order.Payments
+        var payments = o.Payments.Select(p => new OrderDetailPaymentDto(
+            p.Method.ToString(),
+            p.Amount,
+            p.Reference,
+            p.Notes,
+            p.CreatedAt
+        )).ToList();
+
+        // 💡 SMART FINANCE: Also include payments made via Receipt Vouchers for this order
+        var vouchers = await _db.ReceiptVouchers
+            .Where(v => v.OrderId == id && v.Status == "Posted")
+            .Select(v => new OrderDetailPaymentDto(
+                v.PaymentMethod.ToString(),
+                v.Amount,
+                v.VoucherNumber,
+                v.Description,
+                v.VoucherDate
+            ))
+            .ToListAsync();
+
+        payments.AddRange(vouchers);
+
         return new OrderDetailDto(
             o.Id,
             o.OrderNumber,
@@ -157,27 +192,13 @@ public class OrderService : IOrderService
             o.CustomerNotes,
             o.AdminNotes,
             o.CreatedAt,
-            o.Items.Select(i => new OrderItemDto(
-                i.Id, i.ProductNameAr, i.ProductNameEn, i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
-                i.Product?.Slug,
-                i.Size, i.Color, i.Quantity, i.UnitPrice, i.TotalPrice,
-                i.OriginalUnitPrice, i.DiscountAmount,
-                i.HasTax, i.VatRateApplied, i.ItemVatAmount, i.ReturnedQuantity
-            )).ToList(),
-            o.StatusHistory.OrderByDescending(h => h.CreatedAt).Select(h => new OrderStatusHistoryDto(
-                h.Status.ToString(), h.Note, h.CreatedAt
-            )).ToList(),
-            o.Payments.Select(p => new OrderDetailPaymentDto( // ✅ Populate Payments
-                p.Method.ToString(),
-                p.Amount,
-                p.Reference,
-                p.Notes,
-                p.CreatedAt
-            )).ToList(),
+            itemDtos,
+            historyDtos,
+            payments, 
             salesPersonName,
             null, 
             0, 
-            Math.Max(o.PaidAmount, paidAmount), // ✅ Show the real paid amount (max of stored or ledger)
+            Math.Max(o.PaidAmount, paidAmount), 
             o.Source.ToString(),
             o.AttachmentUrl, 
             o.AttachmentPublicId,

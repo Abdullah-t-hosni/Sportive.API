@@ -44,7 +44,7 @@ public class PaymentAccountingService
             .FirstOrDefaultAsync(e => e.Type == JournalEntryType.SalesInvoice && e.Reference == order.OrderNumber);
             
         if (invoiceEntry != null && invoiceEntry.Lines.Any(l => l.Debit > 0 && l.Account != null && 
-            (l.Account.Code.StartsWith("1101") || l.Account.Code.StartsWith("1102") || l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1105"))))
+            (l.Account.Code.StartsWith("1101") || l.Account.Code.StartsWith("1102") || l.Account.Code.StartsWith("1105"))))
         {
             _logger.LogInformation("[Accounting] Skipping separate PaymentVoucher for order {OrderNum}; already merged in SalesInvoice.", order.OrderNumber);
             return;
