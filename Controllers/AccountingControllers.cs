@@ -383,7 +383,7 @@ public class JournalEntriesController : ControllerBase
         if (toDate.HasValue) q = q.Where(e => e.EntryDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
 
         var total = await q.CountAsync();
-        var entries = await q.OrderByDescending(e => e.Id)
+        var entries = await q.OrderByDescending(e => e.EntryDate).ThenByDescending(e => e.Id)
             .Skip((page-1)*pageSize).Take(pageSize)
             .Select(e => new {
                 e.Id, e.EntryNumber, e.EntryDate, e.Description, e.Reference,
@@ -481,7 +481,7 @@ public class ReceiptVouchersController : ControllerBase
         if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
         
         var total = await q.CountAsync();
-        var items = await q.OrderByDescending(v => v.VoucherDate)
+        var items = await q.OrderByDescending(v => v.VoucherDate).ThenByDescending(v => v.Id)
             .Skip((page-1)*pageSize).Take(pageSize)
             .Select(v => new { 
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description,
@@ -640,7 +640,7 @@ public class PaymentVouchersController : ControllerBase
         if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
 
         var total = await q.CountAsync();
-        var items = await q.OrderByDescending(v => v.VoucherDate).Skip((page-1)*pageSize).Take(pageSize)
+        var items = await q.OrderByDescending(v => v.VoucherDate).ThenByDescending(v => v.Id).Skip((page-1)*pageSize).Take(pageSize)
             .Select(v => new { 
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description,
                 v.CashAccountId, v.ToAccountId,
