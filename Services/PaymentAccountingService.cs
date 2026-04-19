@@ -125,7 +125,11 @@ public class PaymentAccountingService
             ($"ID:{voucher.CashAccountId}", voucher.Amount, 0, $"سند قبض {voucher.VoucherNumber}"),
             ($"ID:{voucher.FromAccountId}", 0, voucher.Amount, $"من حساب {voucher.FromAccount?.NameAr}")
         };
-        await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, customerId: voucher.CustomerId, orderId: orderId, source: voucher.CostCenter);
+        var entry = await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, customerId: voucher.CustomerId, orderId: orderId, source: voucher.CostCenter);
+        
+        // Update voucher with Entry ID to prevent broken links
+        voucher.JournalEntryId = entry.Id;
+        await _db.SaveChangesAsync();
     }
 
     public async Task PostPaymentVoucherAsync(PaymentVoucher voucher)
@@ -134,7 +138,10 @@ public class PaymentAccountingService
             ($"ID:{voucher.ToAccountId}", voucher.Amount, 0, $"سند دفع {voucher.VoucherNumber}"),
             ($"ID:{voucher.CashAccountId}", 0, voucher.Amount, $"صرف من {voucher.CashAccount?.NameAr}")
         };
-        await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, supplierId: voucher.SupplierId, purchaseInvoiceId: voucher.PurchaseInvoiceId, source: voucher.CostCenter);
+        var entry = await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, supplierId: voucher.SupplierId, purchaseInvoiceId: voucher.PurchaseInvoiceId, source: voucher.CostCenter);
+        
+        voucher.JournalEntryId = entry.Id;
+        await _db.SaveChangesAsync();
     }
 
     public async Task PostSupplierPaymentAsync(SupplierPayment payment)

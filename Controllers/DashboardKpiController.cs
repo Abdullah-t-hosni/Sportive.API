@@ -27,8 +27,8 @@ public class DashboardKpiController : ControllerBase
     }
 
     [HttpGet("stats")]
-    public async Task<IActionResult> GetStats([FromQuery] OrderSource? source = null) =>
-        Ok(await _dashboard.GetStatsAsync(source));
+    public async Task<IActionResult> GetStats([FromQuery] OrderSource? source = null, [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null) =>
+        Ok(await _dashboard.GetStatsAsync(source, fromDate, toDate));
 
     [HttpGet("sales-chart")]
     public async Task<IActionResult> GetSalesChart([FromQuery] string period = "monthly") =>

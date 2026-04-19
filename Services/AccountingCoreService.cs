@@ -83,7 +83,7 @@ public class AccountingCoreService
                          && e.Reference.Trim().ToLower() == reference.Trim().ToLower());
     }
 
-    public async Task PostEntryAsync(
+    public async Task<JournalEntry> PostEntryAsync(
         JournalEntryType type,
         string reference,
         string description,
@@ -168,6 +168,7 @@ public class AccountingCoreService
 
         _db.JournalEntries.Add(entry);
         await _db.SaveChangesAsync();
+        return entry;
     }
 
     public async Task<int?> PostInventoryAdjustmentAsync(int auditId, decimal netImpact, string reference, string? userId)

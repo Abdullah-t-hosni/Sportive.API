@@ -228,7 +228,7 @@ public class SalesAccountingService
             lines.Add((inventoryAcct, 0,         totalCost, $"خروج مخزون - {order.OrderNumber}"));
         }
 
-        await _core.PostEntryAsync(
+        var entry = await _core.PostEntryAsync(
             type:        JournalEntryType.SalesInvoice,
             reference:   order.OrderNumber,
             description: $"فاتورة مبيعات {order.OrderNumber} - {order.Customer?.FullName}",

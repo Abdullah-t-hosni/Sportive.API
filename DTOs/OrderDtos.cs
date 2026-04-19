@@ -121,7 +121,9 @@ public record OrderSummaryDto(
     string PaymentStatus,
     int? CustomerId = null,
     string? AdminNotes = null,
-    string? CouponCode = null
+    string? CouponCode = null,
+    List<OrderDetailPaymentDto>? Payments = null,
+    decimal? ReturnedAmount = 0
 );
 
 

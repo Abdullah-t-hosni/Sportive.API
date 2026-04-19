@@ -94,7 +94,9 @@ public class OrderService : IOrderService
                 o.PaymentStatus.ToString(),
                 o.CustomerId,
                 o.AdminNotes,
-                o.CouponCode
+                o.CouponCode,
+                o.Payments.Select(p => new OrderDetailPaymentDto(p.Method.ToString(), p.Amount, null, null, p.CreatedAt)).ToList(),
+                o.Items.Sum(i => (decimal?)i.ReturnedQuantity * i.UnitPrice) ?? 0
             ))
             .ToListAsync();
 
@@ -743,7 +745,7 @@ public class OrderService : IOrderService
             });
         }
 
-        if (dto.Status == OrderStatus.Returned && order.Source == OrderSource.POS)
+        if (dto.Status == OrderStatus.Returned)
         {
             // Mark all items as returned (inventory handled below)
             var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);

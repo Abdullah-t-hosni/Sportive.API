@@ -96,7 +96,7 @@ public interface ICustomerService
 
 public interface IDashboardService
 {
-    Task<DashboardStatsDto> GetStatsAsync(OrderSource? source = null);
+    Task<DashboardStatsDto> GetStatsAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null);
     Task<List<SalesChartDto>> GetSalesChartAsync(string period);
     Task<List<TopProductDto>> GetTopProductsAsync(int count = 10);
     Task<List<OrderStatusStatsDto>> GetOrderStatusStatsAsync();

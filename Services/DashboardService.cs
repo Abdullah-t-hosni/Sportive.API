@@ -24,13 +24,16 @@ public class DashboardService : IDashboardService
         _userManager = userManager;
     }
 
-    public async Task<DashboardStatsDto> GetStatsAsync(OrderSource? source = null)
+    public async Task<DashboardStatsDto> GetStatsAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null)
     {
         var now        = TimeHelper.GetEgyptTime();
         var todayStart = now.Date;
         var todayEnd   = todayStart.AddDays(1);
-        var yesterdayStart = todayStart.AddDays(-1);
         
+        // Determine the targeted range for "Today" stats (used in Orders page)
+        var targetStart = fromDate ?? todayStart;
+        var targetEnd   = (toDate?.Date.AddDays(1)) ?? (fromDate?.Date.AddDays(1)) ?? todayEnd;
+
         var monthStart = new DateTime(now.Year, now.Month, 1);
         var lastMonthStart = monthStart.AddMonths(-1);
 
@@ -41,11 +44,12 @@ public class DashboardService : IDashboardService
             query = query.Where(o => o.Source == source.Value);
         }
 
-        // --- Current Stats ---
-        var todaySales = await query
-            .Where(o => o.CreatedAt >= todayStart && o.CreatedAt < todayEnd)
+        // --- Target Period Stats (Displays as 'Today Sales' in UI) ---
+        var periodSales = await query
+            .Where(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd)
             .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
 
+        // --- Monthly & Global Stats ---
         var monthSales = await query
             .Where(o => o.CreatedAt >= monthStart)
             .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
@@ -53,60 +57,61 @@ public class DashboardService : IDashboardService
         var totalOrders = await query.CountAsync();
         var totalCustomers = await _db.Customers.CountAsync();
 
-        // --- Growth Calculation (Previous Periods) ---
+        // --- Growth Calculation (Standard Today vs Yesterday) ---
         var yesterdayStartDate = todayStart.AddDays(-1);
-        var yesterdayOrders = await query
-            .CountAsync(o => o.CreatedAt >= yesterdayStartDate && o.CreatedAt < todayStart);
-
-        var lastMonthStartMonth = monthStart.AddMonths(-1);
-        var prevMonthOrders = await query
-            .CountAsync(o => o.CreatedAt >= lastMonthStartMonth && o.CreatedAt < monthStart);
-
         var yesterdaySales = await query
             .Where(o => o.CreatedAt >= yesterdayStartDate && o.CreatedAt < todayStart)
             .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
 
         var lastMonthSales = await query
-            .Where(o => o.CreatedAt >= lastMonthStartMonth && o.CreatedAt < monthStart)
+            .Where(o => o.CreatedAt >= lastMonthStart && o.CreatedAt < monthStart)
             .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
 
+        var prevMonthOrders = await query
+            .CountAsync(o => o.CreatedAt >= lastMonthStart && o.CreatedAt < monthStart);
+            
         var prevCustomersCount = await _db.Customers
             .CountAsync(c => c.CreatedAt < monthStart);
 
-        // Growth Rates
         decimal CalculateGrowth(decimal current, decimal previous) => 
             previous == 0 ? (current > 0 ? 100 : 0) : Math.Round(((current - previous) / previous) * 100, 1);
 
-        var todayGrowth = CalculateGrowth(todaySales, yesterdaySales);
+        var todayGrowth = CalculateGrowth(periodSales, yesterdaySales); // Growth relative to what's in the primary box
         var monthSalesGrowth = CalculateGrowth(monthSales, lastMonthSales);
-        var orderGrowth = CalculateGrowth(totalOrders, prevMonthOrders); // Comparing current total to last month's start total (Simplified but better than 0)
+        var orderGrowth = CalculateGrowth(totalOrders, prevMonthOrders);
         var customerGrowth = CalculateGrowth(totalCustomers, prevCustomersCount);
 
-        var uncollectedAmount = await query
-            .Where(o => o.Status != OrderStatus.Returned)
+        // --- Debt & Uncollected ---
+        // Uncollected logic: Only orders NOT fully returned/cancelled. Subtract paid from total.
+        var debtQuery = query.Where(o => o.Status != OrderStatus.Returned && o.Status != OrderStatus.Cancelled);
+        
+        // If filtering by date, we focus debt on THAT period's orders? 
+        // Usually "Uncollected" in Orders page means of ALL shown orders.
+        var uncollectedAmount = await debtQuery
+            .Where(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd)
             .SumAsync(o => (decimal?)(o.TotalAmount - o.PaidAmount)) ?? 0;
 
-        // الديون
-        var debtAmount = await query
-            .Where(o => o.Status != OrderStatus.Returned)
-            .SumAsync(o => (decimal?)(o.TotalAmount - o.PaidAmount)) ?? 0;
-
-        // المرتجعات: قيمة كل السلع التي تم إرجاعها (سواء مرتجع كامل أو جزئي)
+        // --- Returns Calculation ---
+        // ✅ حتي لو الـ ReturnedQuantity مش مسجل (حالات قديمة للموقع)، نعتمد علي حالة الطلب
         var returnAmountQuery = _db.OrderItems
-            .Where(i => i.ReturnedQuantity > 0)
-            .Where(i => i.Order!.Status != OrderStatus.Cancelled);
+            .Where(i => i.Order!.Status != OrderStatus.Cancelled && 
+                        (i.ReturnedQuantity > 0 || i.Order!.Status == OrderStatus.Returned || i.Order!.Status == OrderStatus.PartiallyReturned));
 
         if (source.HasValue)
         {
             returnAmountQuery = returnAmountQuery.Where(i => i.Order!.Source == source.Value);
         }
 
-        var totalReturnAmount = await returnAmountQuery
-            .SumAsync(i => (decimal?)i.ReturnedQuantity * i.UnitPrice) ?? 0;
+        // Returns filtered by date: we look at orders that were Returned/Modified in THIS period
+        // OR orders CREATED in this period that are returned.
+        // User's context is "Today's sales have a return", so CreatedAt is suitable for simple dashboard.
+        var periodReturnAmount = await returnAmountQuery
+            .Where(i => i.Order!.CreatedAt >= targetStart && i.Order!.CreatedAt < targetEnd)
+            .SumAsync(i => (decimal?)(i.Order!.Status == OrderStatus.Returned ? i.Quantity : i.ReturnedQuantity) * i.UnitPrice) ?? 0;
 
-        // التحصيلات اليومية (سندات القبض)
+        // التحصيلات (سندات القبض)
         var collectionQuery = _db.ReceiptVouchers
-            .Where(v => v.VoucherDate >= todayStart && v.VoucherDate < todayEnd);
+            .Where(v => v.VoucherDate >= targetStart && v.VoucherDate < targetEnd);
 
         if (source.HasValue)
         {
@@ -120,7 +125,7 @@ public class DashboardService : IDashboardService
         int lowStockThreshold = store?.LowStockThreshold ?? 5;
 
         return new DashboardStatsDto(
-            TodaySales: todaySales,
+            TodaySales: periodSales,
             TodaySalesGrowth: todayGrowth,
             ThisMonthSales: monthSales,
             ThisMonthSalesGrowth: monthSalesGrowth,
@@ -128,15 +133,15 @@ public class DashboardService : IDashboardService
             TotalOrders: totalOrders,
             TotalOrdersGrowth: (int)orderGrowth,
             PendingOrders: await query.CountAsync(o => o.Status == OrderStatus.Pending || o.Status == OrderStatus.Confirmed),
-            TodayOrders: await query.CountAsync(o => o.CreatedAt >= todayStart && o.CreatedAt < todayEnd),
+            TodayOrders: await query.CountAsync(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd),
             TotalCustomers: totalCustomers,
             TotalCustomersGrowth: (int)customerGrowth,
             TotalProducts: await _db.Products.CountAsync(),
             LowStockProducts: await _db.ProductVariants.CountAsync(v => v.StockQuantity <= lowStockThreshold && v.StockQuantity > 0),
             OutOfStockProducts: await _db.ProductVariants.CountAsync(v => v.StockQuantity == 0),
             UncollectedAmount: uncollectedAmount,
-            DebtAmount: debtAmount,
-            ReturnAmount: totalReturnAmount,
+            DebtAmount: uncollectedAmount, // Simplified consistency
+            ReturnAmount: periodReturnAmount,
             TodayCollections: todayCollections
         );
     }
@@ -741,11 +746,23 @@ public class DashboardService : IDashboardService
     {
         return await _db.Orders.Include(o => o.Customer).Include(o => o.Items).OrderByDescending(o => o.CreatedAt).Take(count)
             .Select(o => new OrderSummaryDto(
-                o.Id, o.OrderNumber, o.Customer.FullName, 
-                o.Customer.Phone ?? "", o.Status.ToString(), o.FulfillmentType.ToString(), 
-                o.TotalAmount, o.CreatedAt, o.Items.Sum(i => i.Quantity), 
-                o.Source.ToString(), o.PaymentMethod.ToString(), o.PaymentStatus.ToString(), 
-                o.CustomerId, o.AdminNotes, o.CouponCode))
+                o.Id, 
+                o.OrderNumber, 
+                o.Customer.FullName, 
+                o.Customer.Phone ?? "", 
+                o.Status.ToString(), 
+                o.FulfillmentType.ToString(), 
+                o.TotalAmount, 
+                o.CreatedAt, 
+                o.Items.Sum(i => i.Quantity), 
+                o.Source.ToString(), 
+                o.PaymentMethod.ToString(), 
+                o.PaymentStatus.ToString(), 
+                o.CustomerId, 
+                o.AdminNotes, 
+                o.CouponCode,
+                null,
+                0))
             .ToListAsync();
     }
 }
