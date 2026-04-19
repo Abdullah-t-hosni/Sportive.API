@@ -62,7 +62,6 @@ public class OperationalReportsController : ControllerBase
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        // إذا بحث بالاسم ابحث أول
         if (customerId == null && !string.IsNullOrEmpty(search))
         {
             var found = await _db.Customers
@@ -78,88 +77,56 @@ public class OperationalReportsController : ControllerBase
         var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId);
         if (customer == null) return NotFound();
 
-        var ordersQuery = _db.Orders
-            .Where(o => o.CustomerId == customerId
-                     && o.CreatedAt >= from && o.CreatedAt <= to
-                     && o.Status != OrderStatus.Cancelled);
+        // ✅ REFACTORED TO LEDGER-BASED (Source of Truth)
+        // 1. Calculate Prior Balance
+        decimal priorBalance = await _db.JournalLines
+            .Where(l => l.CustomerId == customerId && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
 
-        if (unpaidOnly)
-        {
-            ordersQuery = ordersQuery.Where(o => (o.TotalAmount - o.PaidAmount) > 0 && o.PaymentMethod == PaymentMethod.Credit);
-        }
+        // 2. Fetch Movements in Period
+        var entries = await _db.JournalLines
+            .Include(l => l.JournalEntry)
+            .Where(l => l.CustomerId == customerId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .OrderBy(l => l.JournalEntry.EntryDate)
+            .ToListAsync();
 
-        var orders = await ordersQuery.OrderBy(o => o.CreatedAt).ToListAsync();
-
-        var receiptsQuery = _db.ReceiptVouchers
-            .Where(r => r.CustomerId == customerId
-                     && r.VoucherDate >= from && r.VoucherDate <= to);
-
-        if (unpaidOnly)
-        {
-            var unpaidOrderIds = orders.Select(o => o.Id).ToList();
-            receiptsQuery = receiptsQuery.Where(r => r.OrderId != null && unpaidOrderIds.Contains(r.OrderId.Value));
-        }
-
-        var receipts = await receiptsQuery.OrderBy(r => r.VoucherDate).ToListAsync();
-
-        // بناء الكشف
         var lines = new List<CustomerStatementLine>();
-        
-        decimal balance = 0;
-        if (!unpaidOnly)
-        {
-            // 1. الرصيد قبل الفترة = (الافتتاحي للحساب) + (الفواتير السابقة) - (المقبوضات السابقة)
-            decimal initialAccountBalance = (customer.MainAccountId != null) 
-                ? (await _db.Accounts.Where(a => a.Id == customer.MainAccountId).Select(a => a.OpeningBalance).FirstOrDefaultAsync())
-                : 0;
-
-            decimal priorOrders = await _db.Orders
-                .Where(o => o.CustomerId == customerId && o.CreatedAt < from && o.Status != OrderStatus.Cancelled)
-                .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
-
-            decimal priorReceipts = await _db.ReceiptVouchers
-                .Where(r => r.CustomerId == customerId && r.VoucherDate < from)
-                .SumAsync(r => (decimal?)r.Amount) ?? 0;
-
-            balance = initialAccountBalance + priorOrders - priorReceipts;
-        }
+        decimal balance = priorBalance;
 
         if (balance != 0)
         {
-            lines.Add(new CustomerStatementLine(
-                from.AddSeconds(-1), "رصيد", "OPENING",
-                "رصيد مرحّل من الفترة السابقة", balance, 0, balance));
+            lines.Add(new CustomerStatementLine(from.AddSeconds(-1), "رصيد", "OPENING", "رصيد مرحّل من الفترة السابقة", balance > 0 ? balance : 0, balance < 0 ? Math.Abs(balance) : 0, balance));
         }
 
-        foreach (var o in orders)
+        foreach (var l in entries)
         {
-            balance += o.TotalAmount;
+            balance += (l.Debit - l.Credit);
+            var typeStr = l.JournalEntry.Type switch {
+                JournalEntryType.Sales => "فاتورة",
+                JournalEntryType.ReceiptVoucher => "سند قبض",
+                JournalEntryType.SalesReturn => "مرتجع",
+                _ => "قيد"
+            };
             lines.Add(new CustomerStatementLine(
-                o.CreatedAt, "فاتورة", o.OrderNumber,
-                $"طلب {o.FulfillmentType}", o.TotalAmount, 0, balance));
+                l.JournalEntry.EntryDate, typeStr, l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber,
+                l.Description ?? l.JournalEntry.Description ?? "حركة حساب",
+                l.Debit, l.Credit, balance));
         }
 
-        foreach (var r in receipts)
-        {
-            balance -= r.Amount;
-            lines.Add(new CustomerStatementLine(
-                r.VoucherDate, "سند قبض", r.VoucherNumber,
-                r.Description ?? "دفعة", 0, r.Amount, balance));
+        if (unpaidOnly) {
+            lines = lines.Where(l => l.Debit > 0 && l.Balance > 0).ToList();
         }
 
-        lines = lines.OrderBy(l => l.Date).ToList();
-
-        var totalInvoiced = orders.Sum(o => o.TotalAmount);
-        var totalPaid     = receipts.Sum(r => r.Amount);
-        var outstanding   = totalInvoiced - totalPaid;
-
-        if (excel) return ExcelCustomerStatement(customer, lines, totalInvoiced, totalPaid, outstanding, from, to);
+        var totalDebit  = lines.Where(l => l.Reference != "OPENING").Sum(l => l.Debit);
+        var totalCredit = lines.Where(l => l.Reference != "OPENING").Sum(l => l.Credit);
+        
+        if (excel) return ExcelCustomerStatement(customer, lines, totalDebit, totalCredit, balance, from, to);
 
         return Ok(new {
             customer = new { customer.Id, customer.FullName, customer.Phone, customer.Email },
             from, to, lines,
-            totalInvoiced, totalPaid, outstanding,
-            hasBalance = outstanding > 0
+            totalDebit, totalCredit, outstanding = balance,
+            hasBalance = Math.Abs(balance) > 0.01
         });
     }
 
@@ -194,77 +161,51 @@ public class OperationalReportsController : ControllerBase
         var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == supplierId);
         if (supplier == null) return NotFound();
 
-        var invoicesQuery = _db.PurchaseInvoices
-            .Where(i => i.SupplierId == supplierId
-                     && i.InvoiceDate >= from && i.InvoiceDate <= to
-                     && i.Status != PurchaseInvoiceStatus.Cancelled);
+        // ✅ REFACTORED TO LEDGER-BASED
+        decimal priorBalance = await _db.JournalLines
+            .Where(l => l.SupplierId == supplierId && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .SumAsync(l => (decimal?)(l.Credit - l.Debit)) ?? 0;
 
-        if (unpaidOnly)
+        var entries = await _db.JournalLines
+            .Include(l => l.JournalEntry)
+            .Where(l => l.SupplierId == supplierId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .OrderBy(l => l.JournalEntry.EntryDate)
+            .ToListAsync();
+
+        var lines = new List<CustomerStatementLine>();
+        decimal balance = priorBalance;
+
+        if (balance != 0)
+            lines.Add(new CustomerStatementLine(from.AddSeconds(-1), "رصيد", "OPENING", "رصيد مرحّل", balance > 0 ? balance : 0, balance < 0 ? Math.Abs(balance) : 0, balance));
+        
+        foreach (var l in entries)
         {
-            invoicesQuery = invoicesQuery.Where(i => (i.TotalAmount - i.PaidAmount - i.ReturnedAmount) > 0 && i.PaymentTerms != PaymentTerms.Cash);
+            balance += (l.Credit - l.Debit); // For suppliers, Credit increases balance (debt to them)
+            var typeStr = l.JournalEntry.Type switch {
+                JournalEntryType.Purchases => "فاتورة شراء",
+                JournalEntryType.PaymentVoucher => "سند صرف",
+                JournalEntryType.PurchaseReturn => "مرتجع",
+                _ => "قيد"
+            };
+            lines.Add(new CustomerStatementLine(
+                l.JournalEntry.EntryDate, typeStr, l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber,
+                l.Description ?? l.JournalEntry.Description ?? "حركة حساب",
+                l.Credit, l.Debit, balance));
         }
 
-        var invoices = await invoicesQuery.OrderBy(i => i.InvoiceDate).ToListAsync();
+        if (unpaidOnly) lines = lines.Where(l => l.Credit > 0 && l.Balance > 0).ToList();
 
-        var paymentsQuery = _db.SupplierPayments
-            .Where(p => p.SupplierId == supplierId
-                     && p.PaymentDate >= from && p.PaymentDate <= to);
+        var totalCredit = lines.Where(l => l.Reference != "OPENING").Sum(l => l.Debit); // Debit side here
+        var totalDebt   = lines.Where(l => l.Reference != "OPENING").Sum(l => l.Credit);
 
-        if (unpaidOnly)
-        {
-            var unpaidInvNos = invoices.Select(i => i.InvoiceNumber).ToList();
-            paymentsQuery = paymentsQuery.Where(p => p.ReferenceNumber != null && unpaidInvNos.Contains(p.ReferenceNumber));
-        }
-
-        var payments = await paymentsQuery.OrderBy(p => p.PaymentDate).ToListAsync();
-
-        var lines = new List<CustomerStatementLine>(); // Reuse DTO
-        decimal balance = 0;
-
-        if (!unpaidOnly)
-        {
-            decimal initialBal = 0; // Suppliers usually 0 opening or from account
-            decimal priorInvoices = await _db.PurchaseInvoices
-                .Where(i => i.SupplierId == supplierId && i.InvoiceDate < from && i.Status != PurchaseInvoiceStatus.Cancelled)
-                .SumAsync(i => (decimal?)(i.TotalAmount - i.ReturnedAmount)) ?? 0;
-            decimal priorPayments = await _db.SupplierPayments
-                .Where(p => p.SupplierId == supplierId && p.PaymentDate < from)
-                .SumAsync(p => (decimal?)p.Amount) ?? 0;
-            balance = initialBal + priorInvoices - priorPayments;
-
-            if (balance != 0)
-                lines.Add(new CustomerStatementLine(from.AddSeconds(-1), "رصيد", "OPENING", "رصيد مرحّل", balance, 0, balance));
-        }
-
-        foreach (var inv in invoices)
-        {
-            balance += inv.TotalAmount;
-            lines.Add(new CustomerStatementLine(inv.InvoiceDate, "فاتورة شراء", inv.InvoiceNumber, "فاتورة مشتريات", inv.TotalAmount, 0, balance));
-            
-            if (inv.ReturnedAmount > 0)
-            {
-                balance -= inv.ReturnedAmount;
-                lines.Add(new CustomerStatementLine(inv.UpdatedAt ?? inv.InvoiceDate, "مرتجع مشتريات", inv.InvoiceNumber + "-RTN", "مرتجع من فاتورة", 0, inv.ReturnedAmount, balance));
-            }
-        }
-
-        foreach (var p in payments)
-        {
-            balance -= p.Amount;
-            lines.Add(new CustomerStatementLine(p.PaymentDate, "سند صرف", p.PaymentNumber, p.Notes ?? "دفع للمورد", 0, p.Amount, balance));
-        }
-
-        lines = lines.OrderBy(l => l.Date).ToList();
-
-        if (excel) return ExcelSupplierStatement(supplier, lines, invoices.Sum(i => i.TotalAmount), payments.Sum(p => p.Amount), from, to);
+        if (excel) return ExcelSupplierStatement(supplier, lines, totalDebt, totalCredit, from, to);
 
         return Ok(new { 
             supplier = new { supplier.Id, supplier.Name, supplier.Phone },
             from, to, lines, 
-            totalInvoiced = invoices.Sum(i => i.TotalAmount), 
-            totalReturned = invoices.Sum(i => i.ReturnedAmount),
-            totalPaid = payments.Sum(p => p.Amount),
-            outstanding = (invoices.Sum(i => i.TotalAmount) - invoices.Sum(i => i.ReturnedAmount)) - payments.Sum(p => p.Amount)
+            totalInvoiced = totalDebt, 
+            totalPaid = totalCredit,
+            outstanding = balance
         });
     }
 
@@ -294,7 +235,7 @@ public class OperationalReportsController : ControllerBase
 
         // ✅ FIX: Use Ledger (JournalLines) to get all movements accurately
         var ledgerBalances = await _db.JournalLines
-            .Where(l => (l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1201")))
+            .Where(l => (l.Account.Code.StartsWith("1104") || l.Account.Code.StartsWith("1201")))
             .Where(l => l.JournalEntry.EntryDate <= asOf && (l.JournalEntry.Status == JournalEntryStatus.Posted))
             .GroupBy(l => l.CustomerId)
             .Select(g => new { CustomerId = g.Key, Balance = g.Sum(l => l.Debit - l.Credit) })
@@ -620,6 +561,16 @@ public class OperationalReportsController : ControllerBase
             );
         }).ToList();
 
+        // ✅ LEDGER RECONCILIATION FOR INVENTORY
+        var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
+        var inventoryAccId = maps.GetValueOrDefault(MappingKeys.Inventory);
+        decimal ledgerInventoryValue = 0;
+        if (inventoryAccId != null) {
+            ledgerInventoryValue = await _db.JournalLines
+                .Where(l => l.AccountId == inventoryAccId && l.JournalEntry.Status == JournalEntryStatus.Posted)
+                .SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
+        }
+
         var summary = new {
             totalFilteredProducts = totalCount,
             totalUnits            = totalUnits,
@@ -627,7 +578,9 @@ public class OperationalReportsController : ControllerBase
             outOfStock            = outOfStock,
             totalSalesValue       = totalSalesVal,
             totalCostValue        = totalCostVal,
-            agingAlerts           = totals.Count(x => x.TotalStock > 0 && x.Cost > 0) // Placeholder
+            ledgerInventoryValue  = ledgerInventoryValue, // Absolute Financial Truth
+            valuationDifference   = ledgerInventoryValue - totalCostVal, // Gap between physical and books
+            agingAlerts           = totals.Count(x => x.TotalStock > 0 && x.Cost > 0)
         };
 
         if (excel) return ExcelInventory(rows, summary);
@@ -663,85 +616,64 @@ public class OperationalReportsController : ControllerBase
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        var q = _db.Orders
+        // ✅ LEDGER-BASED RECONCILIATION
+        var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
+        var salesAccId = maps.GetValueOrDefault(MappingKeys.Sales);
+        
+        // 1. Fetch Orders joined with their POSTED Journal Entries
+        var orders = await _db.Orders
             .Include(o => o.Customer)
-            .Include(o => o.Items)
-                .ThenInclude(i => i.Product)
-                    .ThenInclude(p => p!.Category)
-            .Include(o => o.Items)
-                .ThenInclude(i => i.Product)
-                    .ThenInclude(p => p!.Brand)
-            .Where(o => o.Status != OrderStatus.Cancelled
-                     && o.CreatedAt >= from && o.CreatedAt <= to);
-
-        if (source.HasValue) q = q.Where(o => o.Source == source.Value);
-
-        if (categoryId.HasValue && categoryId > 0)
-        {
-            var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
-            q = q.Where(o => o.Items.Any(i => i.Product != null && i.Product.CategoryId.HasValue && categoryIds.Contains(i.Product.CategoryId.Value)));
-        }
-
-        if (brandId.HasValue && brandId > 0)
-        {
-            var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
-            q = q.Where(o => o.Items.Any(i => i.Product != null && i.Product.BrandId.HasValue && brandIds.Contains(i.Product.BrandId.Value)));
-        }
-
-        if (!string.IsNullOrEmpty(color))
-            q = q.Where(o => o.Items.Any(i => i.Color == color || (i.ProductVariant != null && (i.ProductVariant.Color == color || i.ProductVariant.ColorAr == color))));
-
-        if (!string.IsNullOrEmpty(size))
-            q = q.Where(o => o.Items.Any(i => i.Size == size || (i.ProductVariant != null && i.ProductVariant.Size == size)));
-
-        var orders = await q.OrderByDescending(o => o.CreatedAt).ToListAsync();
-        
-        // 🚨 GET RETURNS IN THE SAME PERIOD
-        var returns = await _db.JournalEntries
-            .Include(j => j.Lines)
-            .Where(j => j.Type == JournalEntryType.SalesReturn && j.EntryDate >= from && j.EntryDate <= to)
+            .Include(o => o.Items).ThenInclude(i => i.Product)
+            .Include(o => o.JournalEntries).ThenInclude(j => j.Lines)
+            .Where(o => o.CreatedAt >= from && o.CreatedAt <= to)
+            .Where(o => o.JournalEntries.Any(j => j.Status == JournalEntryStatus.Posted))
+            .OrderByDescending(o => o.CreatedAt)
             .ToListAsync();
-        
-        decimal totalReturnAmount = 0;
-        foreach(var ret in returns)
-        {
-            // Sum all SalesReturn account debits
-            // or just the total amount of the entry
-            // Usually the SalesReturn line is the one we want to track as "Loss of Revenue"
-             totalReturnAmount += ret.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit);
-        }
 
-        var rows = orders.Select(o => new SalesRow(
-            o.Id, o.OrderNumber, o.CreatedAt,
-            o.Customer?.FullName ?? "",
-            o.Customer?.Phone ?? "",
-            o.Source.ToString(),
-            o.Status.ToString(),
-            o.PaymentMethod.ToString(),
-            o.SubTotal, o.DiscountAmount, o.TotalAmount,
-            o.Items.Sum(i => i.Quantity),
-            o.Items.Select(i => new ReportItemDto(
-                i.Product?.SKU ?? "",
-                i.Product?.NameAr ?? i.ProductNameAr,
-                i.Size ?? "",
-                i.Color ?? "",
-                i.Quantity,
-                i.UnitPrice,
-                0,
-                0, // DiscountAmount not on OrderItem
-                i.TotalPrice
-            )).ToList()
-        )).ToList();
+        // 2. Fetch Returns from Ledger specifically (SalesReturn account debits)
+        var salesReturnAccId = maps.GetValueOrDefault(MappingKeys.SalesReturn);
+        decimal ledgerReturns = await _db.JournalLines
+            .Where(l => l.AccountId == salesReturnAccId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .SumAsync(l => (decimal?)l.Debit) ?? 0;
+
+        var rows = orders.Select(o => {
+            // Get actual posted sales amount from the JV (Sum of credits to sales account)
+            var postedSales = o.JournalEntries
+                .Where(j => j.Status == JournalEntryStatus.Posted)
+                .SelectMany(j => j.Lines)
+                .Where(l => l.AccountId == salesAccId)
+                .Sum(l => l.Credit);
+
+            return new SalesRow(
+                o.Id, o.OrderNumber, o.CreatedAt,
+                o.Customer?.FullName ?? "Walk-in",
+                o.Customer?.Phone ?? "",
+                o.Source.ToString(),
+                o.Status.ToString(),
+                o.PaymentMethod.ToString(),
+                o.SubTotal, o.DiscountAmount, 
+                postedSales > 0 ? postedSales : o.TotalAmount, // Use Ledger amount if possible
+                o.Items.Sum(i => i.Quantity),
+                o.Items.Select(i => new ReportItemDto(
+                    i.Product?.SKU ?? "",
+                    i.Product?.NameAr ?? i.ProductNameAr,
+                    i.Size ?? "",
+                    i.Color ?? "",
+                    i.Quantity,
+                    i.UnitPrice,
+                    0, 0, i.TotalPrice
+                )).ToList()
+            );
+        }).ToList();
 
         var summary = new {
             totalOrders   = rows.Count,
             totalGrossRevenue  = rows.Sum(r => r.TotalAmount),
-            totalReturns       = totalReturnAmount,
-            totalNetRevenue    = rows.Sum(r => r.TotalAmount) - totalReturnAmount,
-            totalDiscount = rows.Sum(r => r.DiscountAmount),
-            avgOrder      = rows.Count > 0 ? (rows.Sum(r => r.TotalAmount) - totalReturnAmount) / rows.Count : 0,
-            website       = rows.Count(r => r.Source == "Website"),
+            totalReturns       = ledgerReturns,
+            totalNetRevenue    = rows.Sum(r => r.TotalAmount) - ledgerReturns,
+            avgOrder      = rows.Count > 0 ? (rows.Sum(r => r.TotalAmount) - ledgerReturns) / rows.Count : 0,
             pos           = rows.Count(r => r.Source == "POS"),
+            website       = rows.Count(r => r.Source == "Website")
         };
 
         if (excel) return ExcelSales(rows, summary, from, to);
@@ -771,66 +703,51 @@ public class OperationalReportsController : ControllerBase
 
         try
         {
+            var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
+            var purchaseAccId = maps.GetValueOrDefault(MappingKeys.Purchase);
+
+            // 1. Fetch Invoices joined with Posted JVs
             var q = _db.PurchaseInvoices
-                .AsNoTracking()
                 .Include(i => i.Supplier)
-                .Include(i => i.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Category)
-                .Include(i => i.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Brand)
-                .Include(i => i.Items).ThenInclude(it => it.ProductVariant) // Added missing include
-                .Where(i => i.InvoiceDate >= from && i.InvoiceDate <= to);
+                .Include(i => i.Items).ThenInclude(it => it.Product)
+                .Include(i => i.JournalEntries).ThenInclude(j => j.Lines)
+                .Where(i => i.InvoiceDate >= from && i.InvoiceDate <= to)
+                .Where(i => i.JournalEntries.Any(j => j.Status == JournalEntryStatus.Posted));
 
             if (supplierId.HasValue) q = q.Where(i => i.SupplierId == supplierId.Value);
 
-            if (categoryId.HasValue && categoryId > 0)
-            {
-                var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
-                q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && categoryIds.Contains(it.Product.CategoryId.Value)));
-            }
-
-            if (brandId.HasValue && brandId > 0)
-            {
-                var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
-                q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.BrandId.HasValue && brandIds.Contains(it.Product.BrandId.Value)));
-            }
-
-            if (!string.IsNullOrEmpty(color))
-                q = q.Where(i => i.Items.Any(it => it.ProductVariant != null && (it.ProductVariant.Color == color || it.ProductVariant.ColorAr == color) || (it.Product != null && it.Product.Variants.Any(v => v.Color == color || v.ColorAr == color))));
-
-            if (!string.IsNullOrEmpty(size))
-                q = q.Where(i => i.Items.Any(it => it.ProductVariant != null && it.ProductVariant.Size == size || (it.Product != null && it.Product.Variants.Any(v => v.Size == size))));
-
             var invoices = await q.OrderByDescending(i => i.InvoiceDate).ToListAsync();
 
-        var rows = invoices.Select(i => new PurchaseRow(
-            i.Id, i.InvoiceNumber, i.SupplierInvoiceNumber ?? "",
-            i.Supplier?.Name ?? "N/A", i.InvoiceDate,
-            i.PaymentTerms.ToString(), i.Status.ToString(),
-            i.SubTotal, i.TaxAmount, i.TotalAmount,
-            i.ReturnedAmount,
-            i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
-            i.Items.Select(it => new ReportItemDto(
-                it.Product?.SKU ?? "",
-                it.Product?.NameAr ?? "",
-                it.ProductVariant?.Size ?? "",
-                it.ProductVariant?.ColorAr ?? it.ProductVariant?.Color ?? "",
-                it.Quantity,
-                0,
-                it.UnitCost,
-                0,
-                it.TotalCost
-            )).ToList()
-        )).ToList();
+            var rows = invoices.Select(i => {
+                var ledgerPostedAmount = i.JournalEntries
+                    .Where(j => j.Status == JournalEntryStatus.Posted)
+                    .SelectMany(j => j.Lines)
+                    .Where(l => l.AccountId == purchaseAccId)
+                    .Sum(l => l.Debit); // Purchases are Debits
 
-        var summary = new {
-            totalInvoices  = rows.Count,
-            totalGross     = rows.Sum(r => r.TotalAmount),
-            totalReturned  = rows.Sum(r => r.ReturnedAmount),
-            totalNet       = rows.Sum(r => r.TotalAmount - r.ReturnedAmount),
-            totalAmount    = rows.Sum(r => r.TotalAmount - r.ReturnedAmount), // Compatibility
-            totalPaid      = rows.Sum(r => r.PaidAmount),
-            totalRemaining = rows.Sum(r => r.RemainingAmount),
-            totalTax       = rows.Sum(r => r.TaxAmount),
-        };
+                return new PurchaseRow(
+                    i.Id, i.InvoiceNumber, i.SupplierInvoiceNumber ?? "",
+                    i.Supplier?.Name ?? "N/A", i.InvoiceDate,
+                    i.PaymentTerms.ToString(), i.Status.ToString(),
+                    i.SubTotal, i.TaxAmount, 
+                    ledgerPostedAmount > 0 ? ledgerPostedAmount : i.TotalAmount,
+                    i.ReturnedAmount,
+                    i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
+                    i.Items.Select(it => new ReportItemDto(
+                        it.Product?.SKU ?? "", it.Product?.NameAr ?? "", "", "",
+                        it.Quantity, 0, it.UnitCost, 0, it.TotalCost
+                    )).ToList()
+                );
+            }).ToList();
+
+            var summary = new {
+                totalInvoices  = rows.Count,
+                totalGross     = rows.Sum(r => r.TotalAmount),
+                totalReturned  = rows.Sum(r => r.ReturnedAmount),
+                totalNet       = rows.Sum(r => r.TotalAmount - r.ReturnedAmount),
+                totalPaid      = rows.Sum(r => r.PaidAmount),
+                totalRemaining = rows.Sum(r => r.RemainingAmount),
+            };
 
             if (excel) return ExcelPurchases(rows, summary, from, to);
 
