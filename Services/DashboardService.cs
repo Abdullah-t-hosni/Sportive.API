@@ -425,9 +425,22 @@ public class DashboardService : IDashboardService
             .Select(o => new {
                 o.Id, o.CreatedAt, o.TotalAmount, o.SubTotal,
                 o.DiscountAmount, o.Status, o.Source,
-                o.PaymentMethod, o.CustomerId,
+                o.PaymentMethod, o.CustomerId, o.PaidAmount,
                 ItemCount = o.Items.Sum(i => i.Quantity)
             })
+            .ToListAsync();
+
+        // ── جلب المدفوعات (Order Payments) ──────────
+        var allPaymentsQuery = _db.OrderPayments
+            .Where(p => p.Order.Status != OrderStatus.Cancelled && p.Order.CreatedAt >= lastMonthStart);
+        
+        if (source.HasValue)
+        {
+            allPaymentsQuery = allPaymentsQuery.Where(p => p.Order.Source == source.Value);
+        }
+
+        var allPayments = await allPaymentsQuery
+            .Select(p => new { p.Order.CreatedAt, p.Amount, p.Method, p.OrderId })
             .ToListAsync();
 
         // ── جلب التحصيلات (سندات القبض) ──────────
@@ -442,6 +455,18 @@ public class DashboardService : IDashboardService
         var allCollections = await allCollectionsQuery
             .Select(v => new { v.VoucherDate, v.Amount, v.PaymentMethod })
             .ToListAsync();
+
+        // ── جلب المصروفات (سندات الصرف) ──────────
+        var allExpensesQuery = _db.PaymentVouchers
+            .Where(v => v.VoucherDate >= todayStart && v.PaymentMethod == VoucherPaymentMethod.Cash);
+        
+        if (source.HasValue)
+        {
+            allExpensesQuery = allExpensesQuery.Where(v => v.CostCenter == source.Value);
+        }
+
+        var todayExpenses = await allExpensesQuery
+            .SumAsync(v => (decimal?)v.Amount) ?? 0;
 
         // ── KPI 1: إيرادات اليوم ──────────────────────
         var todayOrders     = allOrders.Where(o => o.CreatedAt >= todayStart && o.CreatedAt < todayEnd).ToList();
@@ -531,17 +556,46 @@ public class DashboardService : IDashboardService
             };
         }).ToList();
 
-        // ── PAYMENT METHOD BREAKDOWN ──────────────────
-        var paymentBreakdown = thisMonthOrders
-            .GroupBy(o => o.PaymentMethod.ToString())
+        // ── توزيع طرق الدفع لليوم (دقيق) ────────────────
+        var todayPayments = allPayments.Where(p => p.CreatedAt >= todayStart && p.CreatedAt < todayEnd).ToList();
+        var todayPaidTotal = todayPayments.Sum(p => p.Amount);
+        var todayCreditAmount = todayRevenue - todayPaidTotal;
+        
+        var todayPaymentBreakdown = todayPayments
+            .GroupBy(p => p.Method.ToString())
+            .Select(g => new {
+                method = g.Key,
+                amount = g.Sum(p => p.Amount)
+            }).ToList();
+        
+        // إضافة خانة الأجل إذا وجدت
+        if (todayCreditAmount > 0) {
+            todayPaymentBreakdown.Add(new { method = "Credit", amount = todayCreditAmount });
+        }
+
+        // ── PAYMENT METHOD BREAKDOWN (This Month) ──────────────────
+        var monthPayments = allPayments.Where(p => p.CreatedAt >= monthStart).ToList();
+        var monthPaidTotal = monthPayments.Sum(p => p.Amount);
+        var monthCreditAmount = thisMonthRevenue - monthPaidTotal;
+
+        var paymentBreakdown = monthPayments
+            .GroupBy(p => p.Method.ToString())
             .Select(g => new {
                 method  = g.Key,
                 count   = g.Count(),
-                revenue = g.Sum(o => o.TotalAmount),
-                pct     = totalCount > 0 ? Math.Round((decimal)g.Count() / thisMonthOrders.Count * 100, 1) : 0
+                amount  = g.Sum(p => p.Amount),
+                pct     = thisMonthRevenue > 0 ? Math.Round((decimal)g.Sum(p => p.Amount) / thisMonthRevenue * 100, 1) : 0
             })
-            .OrderByDescending(x => x.revenue)
             .ToList();
+        
+        if (monthCreditAmount > 0) {
+            paymentBreakdown.Add(new { 
+                method = "Credit", 
+                count = 0, 
+                amount = monthCreditAmount, 
+                pct = thisMonthRevenue > 0 ? Math.Round(monthCreditAmount / thisMonthRevenue * 100, 1) : 0 
+            });
+        }
 
         // ── NEW vs RETURNING CUSTOMERS ────────────────
         var thisMonthCustomers = thisMonthOrders.Select(o => o.CustomerId).Distinct().Count();
@@ -560,15 +614,18 @@ public class DashboardService : IDashboardService
             today = new {
                 revenue     = todayRevenue,
                 collections = todayCollections,
+                expenses    = todayExpenses,
                 orders      = todayOrders.Count,
                 avgOrder    = todayOrders.Count > 0 ? Math.Round(todayRevenue / todayOrders.Count, 2) : 0,
+                expectedInDrawer = todayPayments.Where(p => p.Method == PaymentMethod.Cash).Sum(p => p.Amount) + todayCollections - todayExpenses,
                 vsYesterday = new {
                     revenue  = yesterdayRevenue,
                     collections = yesterdayCollections,
                     growth   = GrowthPct(todayRevenue, yesterdayRevenue),
                     orders   = yesterdayOrders.Count,
                     isUp     = todayRevenue >= yesterdayRevenue
-                }
+                },
+                paymentBreakdown = todayPaymentBreakdown
             },
 
             // هذا الأسبوع مقارنة بالأسبوع الماضي
