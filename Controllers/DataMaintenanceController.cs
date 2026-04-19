@@ -382,23 +382,26 @@ public class DataMaintenanceController : ControllerBase
         }
     }
 
-    [HttpPost("cleanup-broken-mappings")]
-    public async Task<IActionResult> CleanupBrokenMappings()
+    [HttpPost("sync-ledger-source")]
+    public async Task<IActionResult> SyncLedgerSource()
     {
         try {
-            var mappings = await _db.AccountSystemMappings.Include(m => m.Account).ToListAsync();
-            int fixedCount = 0;
-            foreach (var m in mappings) {
-                if (m.AccountId != null && (m.Account == null || !m.Account.IsActive)) {
-                    m.AccountId = null;
-                    fixedCount++;
-                }
-            }
-            if (fixedCount > 0) await _db.SaveChangesAsync();
-            return Ok(new { success = true, message = $"تم العثور على {fixedCount} ربط مالي مكسور وتم تصحيحه." });
+            var today = TimeHelper.GetEgyptTime().Date;
+            
+            // 1. Fix JournalEntries
+            var updatedEntries = await _db.JournalEntries
+                .Where(e => e.CostCenter == null && e.OrderId != null)
+                .ExecuteUpdateAsync(s => s.SetProperty(e => e.CostCenter, e => _db.Orders.Where(o => o.Id == e.OrderId).Select(o => o.Source).FirstOrDefault()));
+
+            // 2. Fix JournalLines
+            var updatedLines = await _db.JournalLines
+                .Where(l => l.CostCenter == null && l.OrderId != null)
+                .ExecuteUpdateAsync(s => s.SetProperty(l => l.CostCenter, l => _db.Orders.Where(o => o.Id == l.OrderId).Select(o => o.Source).FirstOrDefault()));
+
+            return Ok(new { success = true, message = $"تم تحديث المصدر لـ {updatedEntries} قيد و {updatedLines} بند." });
         } catch (Exception ex) {
-            _logger.LogError(ex, "CleanupBrokenMappings failed");
-            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
+            _logger.LogError(ex, "SyncLedgerSource failed");
+            return BadRequest(new { success = false, message = ex.Message });
         }
     }
 }

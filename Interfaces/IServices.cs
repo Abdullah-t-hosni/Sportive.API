@@ -96,7 +96,7 @@ public interface ICustomerService
 
 public interface IDashboardService
 {
-    Task<DashboardStatsDto> GetStatsAsync();
+    Task<DashboardStatsDto> GetStatsAsync(OrderSource? source = null);
     Task<List<SalesChartDto>> GetSalesChartAsync(string period);
     Task<List<TopProductDto>> GetTopProductsAsync(int count = 10);
     Task<List<OrderStatusStatsDto>> GetOrderStatusStatsAsync();
@@ -105,7 +105,7 @@ public interface IDashboardService
     Task<byte[]> ExportSalesToCsvAsync(DateTime? from, DateTime? to);
     Task<AdvancedDashboardStatsDto> GetAdvancedStatsAsync();
     Task<StaffPerformanceDto> GetStaffStatsAsync(string staffId);
-    Task<object> GetKpiAsync();
+    Task<object> GetKpiAsync(OrderSource? source = null);
     Task TriggerLiveUpdateAsync(); // Pushes to all Admins via SignalR
 }
 

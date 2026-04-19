@@ -287,17 +287,21 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
         [FromQuery] string?   search     = null,
+        [FromQuery] OrderSource? source  = null,
         [FromQuery] bool      excel      = false)
     {
         var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
-
+ 
         var q = _db.JournalLines
             .Include(l => l.JournalEntry)
             .Include(l => l.Account)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to);
+ 
+        if (source.HasValue)
+            q = q.Where(l => l.CostCenter == source.Value);
 
         if (!string.IsNullOrEmpty(search))
         {
@@ -523,21 +527,23 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
         [FromQuery] string?   search     = null,
+        [FromQuery] OrderSource? source  = null,
         [FromQuery] bool      excel      = false)
     {
         var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
-
+ 
         var acct = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == accountId);
         if (acct == null) return NotFound(new { message = "الحساب غير موجود" });
-
+ 
         // الرصيد الافتتاحي — يجب الفلترة بالمورد/العميل أيضاً إذا وجدوا
         var openQ = _db.JournalLines
             .Include(l => l.JournalEntry)
             .Where(l => l.AccountId == accountId
                      && l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate < from);
-
+ 
+        if (source.HasValue) openQ = openQ.Where(l => l.CostCenter == source.Value);
         if (customerId.HasValue) openQ = openQ.Where(l => l.CustomerId == customerId);
         if (supplierId.HasValue) openQ = openQ.Where(l => l.SupplierId == supplierId);
         if (employeeId.HasValue) openQ = openQ.Where(l => l.EmployeeId == employeeId);
@@ -570,6 +576,7 @@ public class FinancialReportsController : ControllerBase
         if (customerId.HasValue) q = q.Where(l => l.CustomerId == customerId);
         if (supplierId.HasValue) q = q.Where(l => l.SupplierId == supplierId);
         if (employeeId.HasValue) q = q.Where(l => l.EmployeeId == employeeId);
+        if (source.HasValue) q = q.Where(l => l.CostCenter == source.Value);
 
         if (!string.IsNullOrEmpty(search))
         {

@@ -636,11 +636,16 @@ public class OperationalReportsController : ControllerBase
 
         var orders = await ordersQ.OrderByDescending(o => o.CreatedAt).ToListAsync();
 
-        // 2. Fetch Returns from Ledger specifically (SalesReturn account debits)
         var salesReturnAccId = maps.GetValueOrDefault(MappingKeys.SalesReturn);
-        decimal ledgerReturns = await _db.JournalLines
-            .Where(l => l.AccountId == salesReturnAccId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
-            .SumAsync(l => (decimal?)l.Debit) ?? 0;
+        var returnsQ = _db.JournalLines
+            .Where(l => l.AccountId == salesReturnAccId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted);
+        
+        if (source.HasValue)
+        {
+            returnsQ = returnsQ.Where(l => l.CostCenter == source.Value);
+        }
+
+        decimal ledgerReturns = await returnsQ.SumAsync(l => (decimal?)l.Debit) ?? 0;
 
         var rows = orders.Select(o => {
             // Get actual posted sales amount from the JV (Sum of credits to sales account)

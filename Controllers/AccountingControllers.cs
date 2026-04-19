@@ -371,7 +371,14 @@ public class JournalEntriesController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null, [FromQuery] bool includeLines = false)
+    public async Task<IActionResult> GetAll(
+        [FromQuery] int page = 1, 
+        [FromQuery] int pageSize = 20, 
+        [FromQuery] string? search = null, 
+        [FromQuery] DateTime? fromDate = null, 
+        [FromQuery] DateTime? toDate = null, 
+        [FromQuery] bool includeLines = false,
+        [FromQuery] OrderSource? source = null)
     {
         var q = _db.JournalEntries.AsNoTracking();
         if (includeLines) q = q.Include(e => e.Lines).ThenInclude(l => l.Account);
@@ -381,6 +388,7 @@ public class JournalEntriesController : ControllerBase
         
         if (fromDate.HasValue) q = q.Where(e => e.EntryDate >= fromDate.Value.Date);
         if (toDate.HasValue) q = q.Where(e => e.EntryDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+        if (source.HasValue) q = q.Where(e => e.CostCenter == source.Value);
 
         var total = await q.CountAsync();
         var entries = await q.OrderByDescending(e => e.EntryDate).ThenByDescending(e => e.Id)
@@ -474,11 +482,17 @@ public class ReceiptVouchersController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
+    public async Task<IActionResult> GetAll(
+        [FromQuery] int page = 1, 
+        [FromQuery] int pageSize = 20, 
+        [FromQuery] DateTime? fromDate = null, 
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] OrderSource? source = null)
     {
         var q = _db.ReceiptVouchers.AsQueryable();
         if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value.Date);
         if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+        if (source.HasValue) q = q.Where(v => v.CostCenter == source.Value);
         
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(v => v.VoucherDate).ThenByDescending(v => v.Id)
@@ -633,11 +647,17 @@ public class PaymentVouchersController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
+    public async Task<IActionResult> GetAll(
+        [FromQuery] int page = 1, 
+        [FromQuery] int pageSize = 20, 
+        [FromQuery] DateTime? fromDate = null, 
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] OrderSource? source = null)
     {
         var q = _db.PaymentVouchers.AsQueryable();
         if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value.Date);
         if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+        if (source.HasValue) q = q.Where(v => v.CostCenter == source.Value);
 
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(v => v.VoucherDate).ThenByDescending(v => v.Id).Skip((page-1)*pageSize).Take(pageSize)
