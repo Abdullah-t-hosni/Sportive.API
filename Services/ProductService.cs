@@ -84,6 +84,17 @@ public class ProductService : IProductService
         if (filter.Status.HasValue)
             query = query.Where(p => p.Status == filter.Status);
 
+        if (filter.OnlyInStock == true)
+            query = query.Where(p => p.TotalStock > 0);
+
+        if (filter.SupplierId.HasValue)
+        {
+            var supplierId = filter.SupplierId.Value;
+            // 💡 STRATEGY: Filter products that have been purchased from this supplier at least once
+            query = query.Where(p => _db.PurchaseInvoiceItems
+                .Any(pi => pi.ProductId == p.Id && pi.Invoice.SupplierId == supplierId));
+        }
+
         // Sorting
         query = filter.SortBy switch
         {

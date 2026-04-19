@@ -229,6 +229,8 @@ public class ProductFilterDto
     public ProductStatus? Status { get; set; }
     public string SortBy { get; set; } = "createdAt";
     public string SortDir { get; set; } = "desc";
+    public int? SupplierId { get; set; }
+    public bool? OnlyInStock { get; set; }
     public int Page { get; set; } = 1;
 
     private int _pageSize = 12;
