@@ -102,6 +102,7 @@ public class Order : BaseEntity
     /// يدعم حالات الدفع المتعدد (Mixed Payment) بشكل صحيح
     /// </summary>
     public ICollection<OrderPayment> Payments { get; set; } = new List<OrderPayment>();
+    public ICollection<JournalEntry> JournalEntries { get; set; } = new List<JournalEntry>();
 }
 
 public class OrderItem : BaseEntity

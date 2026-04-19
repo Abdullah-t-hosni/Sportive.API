@@ -84,6 +84,7 @@ public class PurchaseInvoice : BaseEntity
 
     public ICollection<PurchaseInvoiceItem> Items    { get; set; } = new List<PurchaseInvoiceItem>();
     public ICollection<SupplierPayment>     Payments { get; set; } = new List<SupplierPayment>();
+    public ICollection<JournalEntry>        JournalEntries { get; set; } = new List<JournalEntry>();
 }
 
 public class PurchaseInvoiceItem : BaseEntity

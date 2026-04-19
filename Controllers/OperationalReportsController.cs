@@ -126,7 +126,7 @@ public class OperationalReportsController : ControllerBase
             customer = new { customer.Id, customer.FullName, customer.Phone, customer.Email },
             from, to, lines,
             totalDebit, totalCredit, outstanding = balance,
-            hasBalance = Math.Abs(balance) > 0.01
+            hasBalance = Math.Abs(balance) > 0.01M
         });
     }
 

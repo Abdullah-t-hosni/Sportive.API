@@ -47,8 +47,10 @@ public enum JournalEntryType
 {
     Manual          = 1,   // قيد يدوي
     SalesInvoice    = 2,   // فاتورة مبيعات
+    Sales           = 2,   // Alias
     SalesReturn     = 3,   // مرتجع مبيعات
     PurchaseInvoice = 4,   // فاتورة مشتريات
+    Purchases       = 4,   // Alias
     PurchaseReturn  = 5,   // مرتجع مشتريات
     ReceiptVoucher  = 6,   // سند قبض
     PaymentVoucher  = 7,   // سند دفع
