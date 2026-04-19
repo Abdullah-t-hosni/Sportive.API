@@ -304,9 +304,28 @@ builder.Services.AddControllers()
 // ── BUILD ─────────────────────────────────────────────
 var app = builder.Build();
 
-// Wire TimeHelper to the DI-managed TimeService so all TimeHelper.GetEgyptTime() calls
-// automatically use the timezone stored in StoreSettings.
+// Wire TimeHelper to the DI-managed TimeService
 TimeHelper.Initialize(app.Services.GetRequiredService<ITimeService>());
+
+// ── AUTOMATIC MIGRATIONS (Production Sync) ────────────
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<AppDbContext>();
+        if (context.Database.IsRelational())
+        {
+            Log.Information("Applying pending migrations...");
+            context.Database.Migrate();
+            Log.Information("Database is up to date.");
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "An error occurred while migrating the database.");
+    }
+}
 
 app.UseResponseCompression();
 
