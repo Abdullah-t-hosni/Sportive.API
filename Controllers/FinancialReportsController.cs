@@ -249,9 +249,9 @@ public class FinancialReportsController : ControllerBase
             .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
             .ToList();
 
-        // صافي الربح للسنة يضاف لحقوق الملكية ونظهره في القائمة للشفافية
-        var incomeFrom = new DateTime(to.Year, 1, 1);
-        var incomeBals = await GetBalances(incomeFrom, to);
+        // صافي الربح للفترة يضاف لحقوق الملكية ونظهره في القائمة للشفافية
+        var incomeFrom = from; 
+        var incomeBals = await GetBalances(incomeFrom, to, source);
         var netProfit  = incomeBals.Where(b => b.Type == AccountType.Revenue && b.IsLeaf).Sum(b => b.ClosingBal)
                        - incomeBals.Where(b => b.Type == AccountType.Expense && b.IsLeaf).Sum(b => b.ClosingBal);
 
