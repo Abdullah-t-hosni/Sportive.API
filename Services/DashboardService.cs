@@ -104,6 +104,18 @@ public class DashboardService : IDashboardService
         var totalReturnAmount = await returnAmountQuery
             .SumAsync(i => (decimal?)i.ReturnedQuantity * i.UnitPrice) ?? 0;
 
+        // التحصيلات اليومية (سندات القبض)
+        var collectionQuery = _db.ReceiptVouchers
+            .Where(v => v.VoucherDate >= todayStart && v.VoucherDate < todayEnd);
+
+        if (source.HasValue)
+        {
+            collectionQuery = collectionQuery.Where(v => v.CostCenter == source.Value);
+        }
+
+        var todayCollections = await collectionQuery
+            .SumAsync(v => (decimal?)v.Amount) ?? 0;
+
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         int lowStockThreshold = store?.LowStockThreshold ?? 5;
 
@@ -124,7 +136,8 @@ public class DashboardService : IDashboardService
             OutOfStockProducts: await _db.ProductVariants.CountAsync(v => v.StockQuantity == 0),
             UncollectedAmount: uncollectedAmount,
             DebtAmount: debtAmount,
-            ReturnAmount: totalReturnAmount
+            ReturnAmount: totalReturnAmount,
+            TodayCollections: todayCollections
         );
     }
 
@@ -417,23 +430,42 @@ public class DashboardService : IDashboardService
             })
             .ToListAsync();
 
+        // ── جلب التحصيلات (سندات القبض) ──────────
+        var allCollectionsQuery = _db.ReceiptVouchers
+            .Where(v => v.VoucherDate >= lastMonthStart);
+        
+        if (source.HasValue)
+        {
+            allCollectionsQuery = allCollectionsQuery.Where(v => v.CostCenter == source.Value);
+        }
+
+        var allCollections = await allCollectionsQuery
+            .Select(v => new { v.VoucherDate, v.Amount, v.PaymentMethod })
+            .ToListAsync();
+
         // ── KPI 1: إيرادات اليوم ──────────────────────
         var todayOrders     = allOrders.Where(o => o.CreatedAt >= todayStart && o.CreatedAt < todayEnd).ToList();
         var yesterdayOrders = allOrders.Where(o => o.CreatedAt >= yesterdayStart && o.CreatedAt < todayStart).ToList();
         var todayRevenue    = todayOrders.Sum(o => o.TotalAmount);
         var yesterdayRevenue= yesterdayOrders.Sum(o => o.TotalAmount);
+        var todayCollections = allCollections.Where(v => v.VoucherDate >= todayStart && v.VoucherDate < todayEnd).Sum(v => v.Amount);
+        var yesterdayCollections = allCollections.Where(v => v.VoucherDate >= yesterdayStart && v.VoucherDate < todayStart).Sum(v => v.Amount);
 
         // ── KPI 2: هذا الأسبوع vs الأسبوع الماضي ─────
         var thisWeekOrders  = allOrders.Where(o => o.CreatedAt >= weekStart).ToList();
         var lastWeekOrders  = allOrders.Where(o => o.CreatedAt >= lastWeekStart && o.CreatedAt < lastWeekEnd).ToList();
         var thisWeekRevenue = thisWeekOrders.Sum(o => o.TotalAmount);
         var lastWeekRevenue = lastWeekOrders.Sum(o => o.TotalAmount);
+        var thisWeekCollections = allCollections.Where(v => v.VoucherDate >= weekStart).Sum(v => v.Amount);
+        var lastWeekCollections = allCollections.Where(v => v.VoucherDate >= lastWeekStart && v.VoucherDate < lastWeekEnd).Sum(v => v.Amount);
 
         // ── KPI 3: هذا الشهر ─────────────────────────
         var thisMonthOrders = allOrders.Where(o => o.CreatedAt >= monthStart).ToList();
         var lastMonthOrders = allOrders.Where(o => o.CreatedAt >= lastMonthStart && o.CreatedAt < lastMonthEnd).ToList();
         var thisMonthRevenue= thisMonthOrders.Sum(o => o.TotalAmount);
         var lastMonthRevenue= lastMonthOrders.Sum(o => o.TotalAmount);
+        var thisMonthCollections = allCollections.Where(v => v.VoucherDate >= monthStart).Sum(v => v.Amount);
+        var lastMonthCollections = allCollections.Where(v => v.VoucherDate >= lastMonthStart && v.VoucherDate < lastMonthEnd).Sum(v => v.Amount);
 
         // ── KPI 4: متوسط قيمة الطلب ──────────────────
         var avgOrderThisWeek = thisWeekOrders.Count > 0 ? thisWeekOrders.Average(o => o.TotalAmount) : 0;
@@ -527,10 +559,12 @@ public class DashboardService : IDashboardService
             // اليوم مقارنة بالأمس
             today = new {
                 revenue     = todayRevenue,
+                collections = todayCollections,
                 orders      = todayOrders.Count,
                 avgOrder    = todayOrders.Count > 0 ? Math.Round(todayRevenue / todayOrders.Count, 2) : 0,
                 vsYesterday = new {
                     revenue  = yesterdayRevenue,
+                    collections = yesterdayCollections,
                     growth   = GrowthPct(todayRevenue, yesterdayRevenue),
                     orders   = yesterdayOrders.Count,
                     isUp     = todayRevenue >= yesterdayRevenue
@@ -540,6 +574,7 @@ public class DashboardService : IDashboardService
             // هذا الأسبوع مقارنة بالأسبوع الماضي
             thisWeek = new {
                 revenue     = thisWeekRevenue,
+                collections = thisWeekCollections,
                 orders      = thisWeekOrders.Count,
                 avgOrder    = Math.Round(avgOrderThisWeek, 2),
                 posOrders   = posCount,
@@ -548,6 +583,7 @@ public class DashboardService : IDashboardService
                 webRevenue  = thisWeekOrders.Where(o => o.Source == OrderSource.Website).Sum(o => o.TotalAmount),
                 vsLastWeek  = new {
                     revenue  = lastWeekRevenue,
+                    collections = lastWeekCollections,
                     growth   = GrowthPct(thisWeekRevenue, lastWeekRevenue),
                     orders   = lastWeekOrders.Count,
                     avgOrder = Math.Round(avgOrderLastWeek, 2),
@@ -558,6 +594,7 @@ public class DashboardService : IDashboardService
             // هذا الشهر
             thisMonth = new {
                 revenue        = thisMonthRevenue,
+                collections    = thisMonthCollections,
                 orders         = thisMonthOrders.Count,
                 customers      = thisMonthCustomers,
                 newCustomers,
@@ -567,6 +604,7 @@ public class DashboardService : IDashboardService
                 totalDiscount  = thisMonthOrders.Sum(o => o.DiscountAmount),
                 vsLastMonth    = new {
                     revenue = lastMonthRevenue,
+                    collections = lastMonthCollections,
                     growth  = GrowthPct(thisMonthRevenue, lastMonthRevenue),
                     orders  = lastMonthOrders.Count,
                     isUp    = thisMonthRevenue >= lastMonthRevenue
