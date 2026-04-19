@@ -386,7 +386,7 @@ public class JournalEntriesController : ControllerBase
         var entries = await q.OrderByDescending(e => e.EntryDate).ThenByDescending(e => e.Id)
             .Skip((page-1)*pageSize).Take(pageSize)
             .Select(e => new {
-                e.Id, e.EntryNumber, e.EntryDate, e.Description, e.Reference,
+                e.Id, e.EntryNumber, e.EntryDate, e.Description, e.Reference, e.CreatedAt,
                 Status = e.Status.ToString(),
                 Type = e.Type.ToString(),
                 LineCount = includeLines ? e.Lines.Count : _db.JournalLines.Count(l => l.JournalEntryId == e.Id),
