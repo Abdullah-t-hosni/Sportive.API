@@ -171,6 +171,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.PaymentMethod).HasConversion<string>();
             e.Property(x => x.PaymentStatus).HasConversion<string>();
             e.Property(x => x.Source).HasConversion<string>();
+            e.HasIndex(x => x.CreatedAt); // For reports
         });
 
         builder.Entity<OrderPayment>(e => {
@@ -245,6 +246,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(i => i.Supplier).WithMany(s => s.Invoices).HasForeignKey(i => i.SupplierId);
             e.Property(i => i.PaymentTerms).HasConversion<string>();
             e.Property(i => i.Status).HasConversion<string>();
+            e.HasIndex(x => x.InvoiceDate); // For reports
         });
 
         builder.Entity<PurchaseInvoiceItem>(e => {
@@ -294,6 +296,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(j => j.ReversalOf).WithMany().HasForeignKey(j => j.ReversalOfId).IsRequired(false);
             e.Property(j => j.Type).HasConversion<string>();
             e.Property(j => j.Status).HasConversion<string>();
+            e.HasIndex(x => x.EntryDate); // For reports
         });
 
         builder.Entity<StoreInfo>(e => {

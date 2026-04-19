@@ -375,87 +375,100 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] bool      excel    = false)
     {
         var asOf = asOfDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+        _logger.LogInformation("Generating Supplier Aging report as of {AsOf}", asOf);
 
-        var suppliersQuery = _db.Suppliers
-            .Include(s => s.Invoices)
-            .Include(s => s.Payments)
-            .AsQueryable();
-
-        if (!string.IsNullOrEmpty(search))
-            suppliersQuery = suppliersQuery.Where(s => s.Name.Contains(search) || s.Phone.Contains(search));
-
-        var suppliers = await suppliersQuery.ToListAsync();
-
-        // ✅ FIX: Use Ledger (JournalLines) for accurate balance
-        var ledgerBalances = await _db.JournalLines
-            .Where(l => l.SupplierId != null && l.Account.Code.StartsWith("2101"))
-            .Where(l => l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status == JournalEntryStatus.Posted)
-            .GroupBy(l => l.SupplierId)
-            .Select(g => new { SupplierId = g.Key, Balance = g.Sum(l => l.Credit - l.Debit) })
-            .ToListAsync();
-
-        var balanceMap = ledgerBalances
-            .Where(x => x.SupplierId != null)
-            .ToDictionary(x => x.SupplierId!.Value, x => x.Balance);
-
-        var rows = new List<SupplierAgingRow>();
-        foreach (var s in suppliers)
+        try
         {
-            if (!balanceMap.TryGetValue(s.Id, out var balance) || balance <= 0) 
-                continue;
+            var suppliersQuery = _db.Suppliers
+                .AsNoTracking()
+                .Include(s => s.Invoices)
+                .Include(s => s.Payments)
+                .AsQueryable();
 
-            // الفواتير الآجلة حتى تاريخ asOf لتوزيع عمر الدين
-            var creditInvoices = s.Invoices
-                .Where(i => i.Status != PurchaseInvoiceStatus.Cancelled
-                         && i.InvoiceDate <= asOf
-                         && i.PaymentTerms == PaymentTerms.Credit)
-                .OrderBy(i => i.InvoiceDate)
-                .ToList();
+            if (!string.IsNullOrEmpty(search))
+                suppliersQuery = suppliersQuery.Where(s => s.Name.Contains(search) || s.Phone.Contains(search));
 
-            decimal b = balance;
-            decimal c30 = 0, c60 = 0, c90 = 0, c90p = 0;
+            var suppliers = await suppliersQuery.ToListAsync();
 
-            // توزيع الرصيد على الفواتير بحسب عمرها
-            foreach (var inv in creditInvoices)
+            // ✅ FIX: Use Ledger (JournalLines) for accurate balance
+            var ledgerBalances = await _db.JournalLines
+                .AsNoTracking()
+                .Where(l => l.SupplierId != null && l.Account.Code.StartsWith("2101"))
+                .Where(l => l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status == JournalEntryStatus.Posted)
+                .GroupBy(l => l.SupplierId)
+                .Select(g => new { SupplierId = g.Key, Balance = g.Sum(l => l.Credit - l.Debit) })
+                .ToListAsync();
+
+            var balanceMap = ledgerBalances
+                .Where(x => x.SupplierId != null)
+                .GroupBy(x => x.SupplierId!.Value)
+                .ToDictionary(g => g.Key, g => g.First().Balance);
+
+            var rows = new List<SupplierAgingRow>();
+            foreach (var s in suppliers)
             {
-                if (b <= 0) break;
-                var days = (asOf - inv.InvoiceDate).Days;
-                
-                var invAmt = Math.Max(0, inv.TotalAmount - inv.ReturnedAmount);
-                if (invAmt <= 0) continue;
+                if (!balanceMap.TryGetValue(s.Id, out var balance) || balance <= 0) 
+                    continue;
 
-                var amt = Math.Min(b, invAmt);
-                b -= amt;
-                
-                if      (days <= 30) c30  += amt;
-                else if (days <= 60) c60  += amt;
-                else if (days <= 90) c90  += amt;
-                else                 c90p += amt;
+                // الفواتير الآجلة حتى تاريخ asOf لتوزيع عمر الدين
+                var creditInvoices = s.Invoices
+                    .Where(i => i.Status != PurchaseInvoiceStatus.Cancelled
+                             && i.InvoiceDate <= asOf
+                             && i.PaymentTerms == PaymentTerms.Credit)
+                    .OrderBy(i => i.InvoiceDate)
+                    .ToList();
+
+                decimal b = balance;
+                decimal c30 = 0, c60 = 0, c90 = 0, c90p = 0;
+
+                // توزيع الرصيد على الفواتير بحسب عمرها
+                foreach (var inv in creditInvoices)
+                {
+                    if (b <= 0) break;
+                    var days = (asOf - inv.InvoiceDate).Days;
+                    
+                    var invAmt = Math.Max(0, inv.TotalAmount - inv.ReturnedAmount);
+                    if (invAmt <= 0) continue;
+
+                    var amt = Math.Min(b, invAmt);
+                    b -= amt;
+                    
+                    if      (days <= 30) c30  += amt;
+                    else if (days <= 60) c60  += amt;
+                    else if (days <= 90) c90  += amt;
+                    else                 c90p += amt;
+                }
+
+                // If balance remains, put in oldest bucket
+                if (b > 0) c90p += b;
+
+                rows.Add(new SupplierAgingRow(
+                    s.Id, s.Name, s.Phone,
+                    s.CompanyName ?? "",
+                    balance, c30, c60, c90, c90p));
             }
 
-            // If balance remains, put in oldest bucket
-            if (b > 0) c90p += b;
+            rows = rows.OrderByDescending(r => r.Total).ToList();
 
-            rows.Add(new SupplierAgingRow(
-                s.Id, s.Name, s.Phone,
-                s.CompanyName ?? "",
-                balance, c30, c60, c90, c90p));
+            if (excel) return ExcelSupplierAging(rows, asOf);
+
+            return Ok(new {
+                asOf, rows,
+                summary = new {
+                    totalBalance  = rows.Sum(r => r.Total),
+                    totalCurrent  = rows.Sum(r => r.Current),
+                    totalOver30   = rows.Sum(r => r.Days60),
+                    totalOver60   = rows.Sum(r => r.Days90),
+                    totalOver90   = rows.Sum(r => r.Over90),
+                    supplierCount = rows.Count
+                }
+            });
         }
-
-        rows = rows.OrderByDescending(r => r.Total).ToList();
-
-        if (excel) return ExcelSupplierAging(rows, asOf);
-
-        return Ok(new {
-            asOf, rows,
-            totals = new {
-                total   = rows.Sum(r => r.Total),
-                current = rows.Sum(r => r.Current),
-                days60  = rows.Sum(r => r.Days60),
-                days90  = rows.Sum(r => r.Days90),
-                over90  = rows.Sum(r => r.Over90),
-            }
-        });
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in SupplierAging report");
+            return StatusCode(500, new { message = "Error generating report", detail = ex.Message });
+        }
     }
 
     // ══════════════════════════════════════════════════════
@@ -741,34 +754,39 @@ public class OperationalReportsController : ControllerBase
     {
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+        _logger.LogInformation("Generating Purchases report from {From} to {To}", from, to);
 
-        var q = _db.PurchaseInvoices
-            .Include(i => i.Supplier)
-            .Include(i => i.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Category)
-            .Include(i => i.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Brand)
-            .Where(i => i.InvoiceDate >= from && i.InvoiceDate <= to);
-
-        if (supplierId.HasValue) q = q.Where(i => i.SupplierId == supplierId.Value);
-
-        if (categoryId.HasValue && categoryId > 0)
+        try
         {
-            var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
-            q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && categoryIds.Contains(it.Product.CategoryId.Value)));
-        }
+            var q = _db.PurchaseInvoices
+                .AsNoTracking()
+                .Include(i => i.Supplier)
+                .Include(i => i.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Category)
+                .Include(i => i.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Brand)
+                .Include(i => i.Items).ThenInclude(it => it.ProductVariant) // Added missing include
+                .Where(i => i.InvoiceDate >= from && i.InvoiceDate <= to);
 
-        if (brandId.HasValue && brandId > 0)
-        {
-            var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
-            q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.BrandId.HasValue && brandIds.Contains(it.Product.BrandId.Value)));
-        }
+            if (supplierId.HasValue) q = q.Where(i => i.SupplierId == supplierId.Value);
 
-        if (!string.IsNullOrEmpty(color))
-            q = q.Where(i => i.Items.Any(it => it.ProductVariant != null && (it.ProductVariant.Color == color || it.ProductVariant.ColorAr == color) || (it.Product != null && it.Product.Variants.Any(v => v.Color == color || v.ColorAr == color))));
+            if (categoryId.HasValue && categoryId > 0)
+            {
+                var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
+                q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && categoryIds.Contains(it.Product.CategoryId.Value)));
+            }
 
-        if (!string.IsNullOrEmpty(size))
-            q = q.Where(i => i.Items.Any(it => it.ProductVariant != null && it.ProductVariant.Size == size || (it.Product != null && it.Product.Variants.Any(v => v.Size == size))));
+            if (brandId.HasValue && brandId > 0)
+            {
+                var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
+                q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.BrandId.HasValue && brandIds.Contains(it.Product.BrandId.Value)));
+            }
 
-        var invoices = await q.OrderByDescending(i => i.InvoiceDate).ToListAsync();
+            if (!string.IsNullOrEmpty(color))
+                q = q.Where(i => i.Items.Any(it => it.ProductVariant != null && (it.ProductVariant.Color == color || it.ProductVariant.ColorAr == color) || (it.Product != null && it.Product.Variants.Any(v => v.Color == color || v.ColorAr == color))));
+
+            if (!string.IsNullOrEmpty(size))
+                q = q.Where(i => i.Items.Any(it => it.ProductVariant != null && it.ProductVariant.Size == size || (it.Product != null && it.Product.Variants.Any(v => v.Size == size))));
+
+            var invoices = await q.OrderByDescending(i => i.InvoiceDate).ToListAsync();
 
         var rows = invoices.Select(i => new PurchaseRow(
             i.Id, i.InvoiceNumber, i.SupplierInvoiceNumber ?? "",
@@ -801,9 +819,15 @@ public class OperationalReportsController : ControllerBase
             totalTax       = rows.Sum(r => r.TaxAmount),
         };
 
-        if (excel) return ExcelPurchases(rows, summary, from, to);
+            if (excel) return ExcelPurchases(rows, summary, from, to);
 
-        return Ok(new { from, to, rows, summary });
+            return Ok(new { from, to, rows, summary });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in PurchasesReport action");
+            return StatusCode(500, new { message = "Error generating report", detail = ex.Message });
+        }
     }
 
     // ══════════════════════════════════════════════════════
