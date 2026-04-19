@@ -43,6 +43,16 @@ public class AccountsController : ControllerBase
         return Ok(accounts);
     }
 
+    [HttpPost("bulk-delete-inactive")]
+    public async Task<IActionResult> BulkDeleteInactive()
+    {
+        var deletedCount = await _accounting.PurgeInactiveSubAccountsAsync();
+        return Ok(new { 
+            message = $"تم حذف {deletedCount} حساب غير نشط بنجاح (الحسابات التي ليس لها حركات مالية ومدمجة بالفعل).",
+            deletedCount 
+        });
+    }
+
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {

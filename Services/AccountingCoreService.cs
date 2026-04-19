@@ -442,8 +442,62 @@ public class AccountingCoreService
         {
             var employees = await _db.Employees.ToListAsync();
             foreach (var e in employees) e.AccountId = empControlId.Value;
+            
+            // إضافة أكواد الموظفين للدمج (2201، 1201)
+            var empSubAccounts = await _db.Accounts
+                .Where(a => a.Code != null && a.Code.Contains("-") && (a.Code.StartsWith("2201") || a.Code.StartsWith("1201")))
+                .ToListAsync();
+            
+            var empSubIds = empSubAccounts.Select(x => x.Id).ToList();
+            var empLines = await _db.JournalLines.Where(l => empSubIds.Contains(l.AccountId)).ToListAsync();
+            
+            foreach (var l in empLines)
+            {
+                var code = empSubAccounts.First(x => x.Id == l.AccountId).Code;
+                if (code != null)
+                {
+                    if (code.StartsWith("2201")) l.AccountId = empControlId.Value;
+                    else if (code.StartsWith("1201") && mappings.TryGetValue(MappingKeys.EmployeeAdvances.ToLower(), out var advId) && advId.HasValue)
+                        l.AccountId = advId.Value;
+                }
+            }
+
+            foreach (var a in empSubAccounts) a.IsActive = false;
             await _db.SaveChangesAsync();
         }
+    }
+
+    /// <summary>
+    /// حذف الحسابات غير النشطة (التي تم دمجها بالفعل) بشرط عدم وجود حركات مالية عليها
+    /// </summary>
+    public async Task<int> PurgeInactiveSubAccountsAsync()
+    {
+        // 1. استحضار كل الحسابات غير النشطة
+        var inactiveAccounts = await _db.Accounts
+            .Where(a => !a.IsActive && !a.IsSystem)
+            .ToListAsync();
+
+        if (!inactiveAccounts.Any()) return 0;
+
+        var deletedCount = 0;
+        foreach (var acc in inactiveAccounts)
+        {
+            // التأكد أن الحساب لا يحتوي على أي حركات مالية
+            bool hasLines = await _db.JournalLines.AnyAsync(l => l.AccountId == acc.Id);
+            if (hasLines) continue;
+
+            // التأكد أن الحساب غير مربوط بعميل أو مورد أو موظف كحساب رئيسي
+            bool isReferenced = await _db.Customers.AnyAsync(c => c.MainAccountId == acc.Id)
+                             || await _db.Suppliers.AnyAsync(s => s.MainAccountId == acc.Id)
+                             || await _db.Employees.AnyAsync(e => e.AccountId == acc.Id);
+            if (isReferenced) continue;
+
+            _db.Accounts.Remove(acc);
+            deletedCount++;
+        }
+
+        await _db.SaveChangesAsync();
+        return deletedCount;
     }
 
     public async Task SyncEntityBalancesAsync()

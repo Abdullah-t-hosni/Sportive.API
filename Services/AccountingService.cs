@@ -35,6 +35,7 @@ public interface IAccountingService
     Task SyncAllEntityIdsAsync();
     Task SyncEntityBalancesAsync();
     Task ConsolidateSubAccountsToControlAsync();
+    Task<int> PurgeInactiveSubAccountsAsync();
 }
 
 public class AccountingService : IAccountingService
@@ -161,5 +162,11 @@ public class AccountingService : IAccountingService
     {
         _logger.LogInformation("ConsolidateSubAccountsToControlAsync called");
         await _core.ConsolidateSubAccountsToControlAsync();
+    }
+
+    public async Task<int> PurgeInactiveSubAccountsAsync()
+    {
+        _logger.LogInformation("PurgeInactiveSubAccountsAsync called");
+        return await _core.PurgeInactiveSubAccountsAsync();
     }
 }
