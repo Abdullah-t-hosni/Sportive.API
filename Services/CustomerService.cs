@@ -288,6 +288,35 @@ public class CustomerService : ICustomerService
         customer.Tags = dto.Tags != null ? JsonSerializer.Serialize(dto.Tags) : customer.Tags;
         customer.UpdatedAt = TimeHelper.GetEgyptTime();
 
+        // 🔗 Sync with AppUser if exists
+        if (!string.IsNullOrEmpty(customer.AppUserId))
+        {
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == customer.AppUserId);
+            if (user != null)
+            {
+                user.FullName = customer.FullName;
+                user.PhoneNumber = customer.Phone;
+                
+                if (!string.IsNullOrEmpty(customer.Email))
+                {
+                    user.Email = customer.Email;
+                    user.NormalizedEmail = customer.Email.ToUpperInvariant();
+                }
+
+                // If UserName is tied to Phone or Email, sync it too
+                if (!string.IsNullOrEmpty(customer.Phone))
+                {
+                    user.UserName = customer.Phone;
+                    user.NormalizedUserName = customer.Phone.ToUpperInvariant();
+                }
+                else if (!string.IsNullOrEmpty(customer.Email))
+                {
+                    user.UserName = customer.Email;
+                    user.NormalizedUserName = customer.Email.ToUpperInvariant();
+                }
+            }
+        }
+
         await _db.SaveChangesAsync();
         return (await GetCustomerByIdAsync(customer.Id))!;
     }

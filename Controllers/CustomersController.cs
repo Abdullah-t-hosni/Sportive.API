@@ -35,10 +35,13 @@ public class CustomersController : ControllerBase
     public async Task<IActionResult> GetRfm() =>
         Ok(await _customers.GetRfmDataAsync());
 
-    [Authorize(Roles = "Admin,Manager")]
+    [Authorize]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateCustomerDto dto)
     {
+        // 🛡️ Security Check: Owner or Admin?
+        if (!IsOwnerOrAdmin(id)) return Forbid();
+
         try { return Ok(await _customers.UpdateCustomerAsync(id, dto)); }
         catch (KeyNotFoundException) { return NotFound(); }
     }
