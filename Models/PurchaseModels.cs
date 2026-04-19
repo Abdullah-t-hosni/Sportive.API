@@ -183,6 +183,7 @@ public class PurchaseReturnItem : BaseEntity
     public ProductVariant? ProductVariant { get; set; }
 
     public decimal Quantity { get; set; } = 0; // الكمية المرتجعة في هذه العملية
+    public string? Unit { get; set; } // الوحدة المستخدمة في المرتجع
     public decimal UnitCost { get; set; } = 0; // تكلفة الوحدة وقت الشراء
     public decimal TotalCost { get; set; } = 0;
 }

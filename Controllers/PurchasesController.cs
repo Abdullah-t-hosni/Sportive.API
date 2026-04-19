@@ -818,6 +818,7 @@ public class PurchaseInvoicesController : ControllerBase
                     ProductId = item.ProductId,
                     ProductVariantId = item.ProductVariantId,
                     Quantity = item.Quantity,
+                    Unit = item.Unit,
                     UnitCost = item.UnitCost,
                     TotalCost = total,
                     CreatedAt = TimeHelper.GetEgyptTime()
