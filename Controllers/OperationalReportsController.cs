@@ -1130,7 +1130,7 @@ public class OperationalReportsController : ControllerBase
                 productName = productBrief,
                 from,
                 to,
-                movements,
+                rows = movements,
                 summary
             });
         }
@@ -1145,7 +1145,7 @@ public class OperationalReportsController : ControllerBase
     // 11. سجل حركات المخزن الشامل (Advanced Movement Ledger)
     // GET /api/operationalreports/stock-movements?productId=&fromDate=&toDate=&type=
     // ══════════════════════════════════════════════════════
-    [HttpGet("stock-movements")]
+    [HttpGet("stock-movement")]
     public async Task<IActionResult> StockMovementsLedger(
         [FromQuery] int?      productId = null,
         [FromQuery] int?      variantId = null,
