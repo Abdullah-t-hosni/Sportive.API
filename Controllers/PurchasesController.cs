@@ -778,10 +778,22 @@ public class PurchaseInvoicesController : ControllerBase
         if (dto.Items == null || !dto.Items.Any())
             return BadRequest(new { message = "يجب اختيار أصناف للإرجاع" });
 
+        // 1. Generate Return Document Number BEFORE starting transaction to avoid deadlocks
+        // (SequenceService uses its own scope/connection)
+        var returnNo = await _seq.NextAsync("PR", async (db, pattern) =>
+        {
+            var max = await db.PurchaseReturns
+                .Where(r => EF.Functions.Like(r.ReturnNumber, pattern))
+                .Select(r => r.ReturnNumber)
+                .ToListAsync();
+            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                      .DefaultIfEmpty(0).Max();
+        });
+
         using var transaction = await _db.Database.BeginTransactionAsync();
         try
         {
-            _logger.LogInformation("Processing purchase return for invoice {Id}", id);
+            _logger.LogInformation("Processing purchase return {ReturnNo} for invoice {Id}", returnNo, id);
 
             var inv = await _db.PurchaseInvoices
                 .Include(i => i.Supplier)
@@ -794,19 +806,8 @@ public class PurchaseInvoicesController : ControllerBase
             if (inv.Status == PurchaseInvoiceStatus.Cancelled)
                 return BadRequest(new { message = "لا يمكن عمل مرتجع لفاتورة ملغاة" });
 
-            if (inv.Status == PurchaseInvoiceStatus.Draft || inv.Status == 0) // Treat 0 or null as draft
+            if (inv.Status == PurchaseInvoiceStatus.Draft || (int)inv.Status == 0) 
                 return BadRequest(new { message = "لا يمكن عمل مرتجع لفاتورة لم يتم استلامها بعد (مسودة)" });
-
-            // 1. Generate Return Document Number
-            var returnNo = await _seq.NextAsync("PR", async (db, pattern) =>
-            {
-                var max = await db.PurchaseReturns
-                    .Where(r => EF.Functions.Like(r.ReturnNumber, pattern))
-                    .Select(r => r.ReturnNumber)
-                    .ToListAsync();
-                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                          .DefaultIfEmpty(0).Max();
-            });
 
             var pReturn = new PurchaseReturn
             {
@@ -816,7 +817,7 @@ public class PurchaseInvoicesController : ControllerBase
                 ReturnDate        = dto.ReturnDate != default ? dto.ReturnDate : TimeHelper.GetEgyptTime(),
                 Notes             = dto.Notes,
                 ReferenceNumber   = dto.ReferenceNumber,
-                CreatedByUserId   = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                CreatedByUserId   = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
             };
 
             decimal totalSubTotal = 0;
@@ -918,12 +919,17 @@ public class PurchaseInvoicesController : ControllerBase
             _logger.LogInformation("Purchase return {ReturnNo} committed successfully.", returnNo);
 
             // 4. Trigger Accounting Sync (Safely in background)
+            // 5. Fire-and-forget accounting sync in background 
+            // We capture logger and _scopeFactory locally to ensure they remain accessible 
+            // even after the controller instance is disposed.
+            var backgroundLogger = _logger;
+            var backgroundScopeFactory = _scopeFactory;
+
+            // 4. Trigger Accounting Sync (Safely in background with retries)
+            var returnId = pReturn.Id;
+            var returnNum = pReturn.ReturnNumber;
             _ = Task.Run(async () => {
-                try {
-                    await PostReturnJournalByReturnRecordWithRetryAsync(pReturn.Id, pReturn.ReturnNumber);
-                } catch (Exception ex) {
-                    _logger.LogError(ex, "Background accounting sync failed for return {Id}", pReturn.Id);
-                }
+                await PostReturnJournalByReturnRecordWithRetryAsync(returnId, returnNum);
             });
 
             return Ok(new { 

@@ -351,16 +351,23 @@ public class OperationalReportsController : ControllerBase
 
         if (excel) return ExcelCustomerAging(rows, asOf);
 
-        return Ok(new {
-            asOf, rows,
-            totals = new {
-                total   = rows.Sum(r => r.Total),
-                current = rows.Sum(r => r.Current),
-                days60  = rows.Sum(r => r.Days60),
-                days90  = rows.Sum(r => r.Days90),
-                over90  = rows.Sum(r => r.Over90),
-            }
-        });
+        var summary = new {
+            total   = rows.Sum(r => r.Total),
+            current = rows.Sum(r => r.Current),
+            days60  = rows.Sum(r => r.Days60),
+            days90  = rows.Sum(r => r.Days90),
+            over90  = rows.Sum(r => r.Over90),
+            count   = rows.Count,
+            // Compatibility aliases
+            totalBalance  = rows.Sum(r => r.Total),
+            totalCurrent  = rows.Sum(r => r.Current),
+            totalOver30   = rows.Sum(r => r.Days60),
+            totalOver60   = rows.Sum(r => r.Days90),
+            totalOver90   = rows.Sum(r => r.Over90),
+            customerCount = rows.Count
+        };
+
+        return Ok(new { asOf, rows, totals = summary, summary });
     }
 
     // ══════════════════════════════════════════════════════
@@ -452,17 +459,23 @@ public class OperationalReportsController : ControllerBase
 
             if (excel) return ExcelSupplierAging(rows, asOf);
 
-            return Ok(new {
-                asOf, rows,
-                summary = new {
-                    totalBalance  = rows.Sum(r => r.Total),
-                    totalCurrent  = rows.Sum(r => r.Current),
-                    totalOver30   = rows.Sum(r => r.Days60),
-                    totalOver60   = rows.Sum(r => r.Days90),
-                    totalOver90   = rows.Sum(r => r.Over90),
-                    supplierCount = rows.Count
-                }
-            });
+            var summary = new {
+                total   = rows.Sum(r => r.Total),
+                current = rows.Sum(r => r.Current),
+                days60  = rows.Sum(r => r.Days60),
+                days90  = rows.Sum(r => r.Days90),
+                over90  = rows.Sum(r => r.Over90),
+                count   = rows.Count,
+                // Compatibility aliases
+                totalBalance  = rows.Sum(r => r.Total),
+                totalCurrent  = rows.Sum(r => r.Current),
+                totalOver30   = rows.Sum(r => r.Days60),
+                totalOver60   = rows.Sum(r => r.Days90),
+                totalOver90   = rows.Sum(r => r.Over90),
+                supplierCount = rows.Count
+            };
+
+            return Ok(new { asOf, rows, totals = summary, summary });
         }
         catch (Exception ex)
         {
