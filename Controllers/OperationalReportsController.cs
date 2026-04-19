@@ -1027,23 +1027,14 @@ public class OperationalReportsController : ControllerBase
                 if (p != null) productId = p.Id;
             }
 
-            // If all filters are empty, return the choices list
-            bool hasFilters = categoryId.HasValue || brandId.HasValue || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size) || productId.HasValue;
-            
-            if (!hasFilters && string.IsNullOrEmpty(search))
+            // Logic: If productId is 0 or null, we might either show choices OR show all movements.
+            // Let's change it so that if it's called with productId=0 or similar, it fetches all.
+            if (productId == null && !string.IsNullOrEmpty(search))
             {
-                var pList = await _db.Products
-                    .Select(p => new { p.Id, p.NameAr, p.SKU })
-                    .ToListAsync();
-                
-                // Add "All" option
-                var result = new List<object> { new { Id = 0, NameAr = "الكل (جميع الأصناف)", SKU = "ALL" } };
-                result.AddRange(pList.Cast<object>());
-                
-                return Ok(new { products = result });
+                // handled above
             }
 
-            // 1. Fetch Movements from InventoryMovements table
+            // Fetch Movements from InventoryMovements table
             var movementsQuery = _db.InventoryMovements
                 .Include(m => m.Product)
                 .Include(m => m.ProductVariant)
@@ -1146,6 +1137,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/stock-movements?productId=&fromDate=&toDate=&type=
     // ══════════════════════════════════════════════════════
     [HttpGet("stock-movement")]
+    [HttpGet("stock-movements")] // Alias for different frontend versions
     public async Task<IActionResult> StockMovementsLedger(
         [FromQuery] int?      productId = null,
         [FromQuery] int?      variantId = null,
