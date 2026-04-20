@@ -516,12 +516,19 @@ public class ReceiptVouchersController : ControllerBase
         [FromQuery] int pageSize = 20, 
         [FromQuery] DateTime? fromDate = null, 
         [FromQuery] DateTime? toDate = null,
-        [FromQuery] OrderSource? source = null)
+        [FromQuery] OrderSource? source = null,
+        [FromQuery] int? employeeId = null,
+        [FromQuery] bool? onlyEmployees = null)
     {
         var q = _db.ReceiptVouchers.AsQueryable();
         if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value.Date);
         if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
         if (source.HasValue) q = q.Where(v => v.CostCenter == source.Value);
+
+        if (employeeId.HasValue)
+            q = q.Where(v => _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId == employeeId.Value));
+        else if (onlyEmployees == true)
+            q = q.Where(v => _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId != null));
         
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(v => v.VoucherDate).ThenByDescending(v => v.Id)
@@ -683,12 +690,19 @@ public class PaymentVouchersController : ControllerBase
         [FromQuery] int pageSize = 20, 
         [FromQuery] DateTime? fromDate = null, 
         [FromQuery] DateTime? toDate = null,
-        [FromQuery] OrderSource? source = null)
+        [FromQuery] OrderSource? source = null,
+        [FromQuery] int? employeeId = null,
+        [FromQuery] bool? onlyEmployees = null)
     {
         var q = _db.PaymentVouchers.AsQueryable();
         if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value.Date);
         if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
         if (source.HasValue) q = q.Where(v => v.CostCenter == source.Value);
+
+        if (employeeId.HasValue)
+            q = q.Where(v => _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId == employeeId.Value));
+        else if (onlyEmployees == true)
+            q = q.Where(v => _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId != null));
 
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(v => v.VoucherDate).ThenByDescending(v => v.Id).Skip((page-1)*pageSize).Take(pageSize)

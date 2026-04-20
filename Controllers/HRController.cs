@@ -224,6 +224,52 @@ public class EmployeesController : ControllerBase
         await _db.SaveChangesAsync();
         return NoContent();
     }
+
+    [HttpGet("{id}/statement")]
+    public async Task<IActionResult> GetStatement(int id, [FromQuery] DateTime from, [FromQuery] DateTime to)
+    {
+        var emp = await _db.Employees.FindAsync(id);
+        if (emp == null) return NotFound();
+
+        // 1. الرصيد الافتتاحي (كل القيود قبل التاريخ المطلوب)
+        // ملاحظات: المدين سلف، دائن رواتب
+        var preEntries = await _db.JournalLines
+            .Where(l => l.EmployeeId == id && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Select(l => new { l.Debit, l.Credit })
+            .ToListAsync();
+        
+        var openingBalance = preEntries.Sum(e => e.Debit - e.Credit);
+
+        // 2. الحركات في الفترة
+        var lines = await _db.JournalLines
+            .Include(l => l.JournalEntry)
+            .Where(l => l.EmployeeId == id && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .OrderBy(l => l.JournalEntry.EntryDate)
+            .ToListAsync();
+
+        var rows = new List<EmployeeStatementRowDto>();
+        var runningBalance = openingBalance;
+
+        foreach (var l in lines)
+        {
+            runningBalance += (l.Debit - l.Credit);
+            rows.Add(new EmployeeStatementRowDto(
+                l.JournalEntry.EntryDate,
+                l.JournalEntry.EntryNumber,
+                l.JournalEntry.Type.ToString(),
+                l.Description ?? l.JournalEntry.Description ?? "",
+                l.Debit,
+                l.Credit,
+                runningBalance
+            ));
+        }
+
+        return Ok(new EmployeeStatementDto(
+            emp.Id, emp.Name, emp.EmployeeNumber, emp.JobTitle,
+            from, to, openingBalance, rows,
+            rows.Sum(r => r.Debit), rows.Sum(r => r.Credit), runningBalance
+        ));
+    }
 }
 
 // ══════════════════════════════════════════════════════

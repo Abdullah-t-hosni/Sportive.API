@@ -133,6 +133,12 @@ public class ImagesController : ControllerBase
                 sup.AttachmentUrl = result.Url;
                 sup.AttachmentPublicId = result.PublicId;
                 break;
+            case "employee":
+                var emp = await _db.Employees.FindAsync(id);
+                if (emp == null) return NotFound();
+                emp.AttachmentUrl = result.Url;
+                emp.AttachmentPublicId = result.PublicId;
+                break;
             default:
                 return BadRequest(new { message = "Entity type not supported" });
         }

@@ -362,10 +362,27 @@ public class DashboardService : IDashboardService
             .ToListAsync();
 
         var staffPerformanceItems = new List<StaffPerformanceDto>();
+        // Pre-fetch all employees to avoid N+1 issues in this dashboard loop if IDs are numeric
+        var employees = await _db.Employees.Select(e => new { e.Id, e.Name }).ToListAsync();
+
         foreach (var s in staffOrders)
         {
-            var user = await _userManager.FindByIdAsync(s.StaffId!);
-            var name = user?.FullName ?? "Unknown Staff";
+            string name = "Unknown Staff";
+            
+            // Try HR Employee first (Numeric IDs are likely HR)
+            if (int.TryParse(s.StaffId, out var empId))
+            {
+                var emp = employees.FirstOrDefault(e => e.Id == empId);
+                if (emp != null) name = emp.Name;
+            }
+            
+            // Fallback to User System if not found or not numeric
+            if (name == "Unknown Staff")
+            {
+                var user = await _userManager.FindByIdAsync(s.StaffId!);
+                if (user != null) name = user.FullName;
+            }
+
             staffPerformanceItems.Add(new StaffPerformanceDto(s.StaffId!, name, s.Count, s.Total));
         }
 
@@ -386,8 +403,18 @@ public class DashboardService : IDashboardService
             .Where(o => o.SalesPersonId == staffId && o.Status != OrderStatus.Cancelled)
             .ToListAsync();
 
-        var user = await _userManager.FindByIdAsync(staffId);
-        var name = user?.FullName ?? "Unknown Staff";
+        string name = "Unknown Staff";
+        if (int.TryParse(staffId, out var empId))
+        {
+            var emp = await _db.Employees.FindAsync(empId);
+            if (emp != null) name = emp.Name;
+        }
+
+        if (name == "Unknown Staff")
+        {
+            var user = await _userManager.FindByIdAsync(staffId);
+            if (user != null) name = user.FullName;
+        }
 
         return new StaffPerformanceDto(
             staffId,

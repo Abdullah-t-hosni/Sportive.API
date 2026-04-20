@@ -966,11 +966,22 @@ public class OperationalReportsController : ControllerBase
 
         var orders = await q.OrderByDescending(o => o.CreatedAt).ToListAsync();
 
-        // 🛡️ REFINEMENT: Fetch User Names for the summary
-        var userIds = orders.Select(o => o.SalesPersonId).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
-        var userNames = await _db.Users
-            .Where(u => userIds.Contains(u.Id))
+        // 🛡️ REFINEMENT: Resolve staff names from HR Employees or System Users
+        var personIds = orders.Select(o => o.SalesPersonId).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
+        var numericIds = personIds.Where(id => int.TryParse(id, out _)).Select(id => int.Parse(id!)).ToList();
+        
+        var empNames = await _db.Employees
+            .Where(e => numericIds.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id.ToString(), e => e.Name);
+
+        var remainingIds = personIds.Where(id => id != null && !empNames.ContainsKey(id)).ToList();
+        var userNamesResult = await _db.Users
+            .Where(u => remainingIds.Contains(u.Id))
             .ToDictionaryAsync(u => u.Id, u => u.FullName);
+
+        // Merge maps (Priority: Employees > Users)
+        var personNamesMap = empNames;
+        foreach (var un in userNamesResult) if (!personNamesMap.ContainsKey(un.Key)) personNamesMap[un.Key] = un.Value;
 
         // Group by sales person
         var byPerson = orders
@@ -1007,7 +1018,7 @@ public class OperationalReportsController : ControllerBase
 
                 return new UserActivityRow(
                     g.Key,
-                    userNames.GetValueOrDefault(g.Key, "System/Unknown"),
+                    personNamesMap.GetValueOrDefault(g.Key, "System/Unknown"),
                     ordersList.Count,
                     grossSales,
                     totalReturns,
@@ -1021,7 +1032,7 @@ public class OperationalReportsController : ControllerBase
 
         var detail = orders.Select(o => new {
             o.OrderNumber, o.CreatedAt, o.SalesPersonId,
-            SalesPersonName = (o.SalesPersonId != null && userNames.TryGetValue(o.SalesPersonId, out var name)) ? name : "Unknown",
+            SalesPersonName = (o.SalesPersonId != null && personNamesMap.TryGetValue(o.SalesPersonId, out var name)) ? name : "Unknown",
             CustomerName = o.Customer?.FullName ?? "",
             o.TotalAmount,
             Status = o.Status.ToString(),
@@ -1106,6 +1117,15 @@ public class OperationalReportsController : ControllerBase
             var orderMap = await _db.Orders.AsNoTracking().Where(o => orderRefs.Contains(o.OrderNumber)).ToDictionaryAsync(o => o.OrderNumber, o => o.Id);
             var purchaseMap = await _db.PurchaseInvoices.AsNoTracking().Where(i => purchaseRefs.Contains(i.InvoiceNumber)).ToDictionaryAsync(i => i.InvoiceNumber, i => i.Id);
 
+            // 🛡️ REFINEMENT: Resolve staff names for the report
+            var personIds = dbMovements.Select(m => m.CreatedByUserId).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
+            var numericIds = personIds.Where(id => int.TryParse(id, out _)).Select(id => int.Parse(id!)).ToList();
+            var empNames = await _db.Employees.Where(e => numericIds.Contains(e.Id)).ToDictionaryAsync(e => e.Id.ToString(), e => e.Name);
+            var remainingIds = personIds.Where(id => id != null && !empNames.ContainsKey(id)).ToList();
+            var userNamesResult = await _db.Users.Where(u => remainingIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.FullName);
+            var personNamesMap = empNames;
+            foreach (var un in userNamesResult) if (!personNamesMap.ContainsKey(un.Key)) personNamesMap[un.Key] = un.Value;
+
             var movements = dbMovements.Select(m => {
                 int? sourceId = null;
                 if ((m.Type == InventoryMovementType.Sale || m.Type == InventoryMovementType.ReturnIn) && m.Reference != null)
@@ -1129,7 +1149,7 @@ public class OperationalReportsController : ControllerBase
                     m.Quantity < 0 ? Math.Abs(m.Quantity) : 0,
                     m.Quantity * m.UnitCost,
                     m.Product?.NameAr ?? "Deleted Product",
-                    "System",
+                    (m.CreatedByUserId != null && personNamesMap.TryGetValue(m.CreatedByUserId, out var creator)) ? creator : "System",
                     "Completed",
                     m.Product?.SKU ?? "N/A",
                     m.RemainingStock,

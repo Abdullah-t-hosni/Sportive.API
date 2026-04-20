@@ -125,8 +125,17 @@ public class OrderService : IOrderService
         var salesPersonName = "";
         if (!string.IsNullOrEmpty(o.SalesPersonId))
         {
-            var sp = await _db.Users.FirstOrDefaultAsync(u => u.Id == o.SalesPersonId);
-            salesPersonName = sp?.FullName ?? "";
+            if (int.TryParse(o.SalesPersonId, out var empId))
+            {
+                var emp = await _db.Employees.AsNoTracking().FirstOrDefaultAsync(e => e.Id == empId);
+                salesPersonName = emp?.Name ?? "";
+            }
+            
+            if (string.IsNullOrEmpty(salesPersonName))
+            {
+                var sp = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == o.SalesPersonId);
+                salesPersonName = sp?.FullName ?? "";
+            }
         }
 
         // 💡 SMART FINANCE: Calculate actual paid amount from Journal Entries
