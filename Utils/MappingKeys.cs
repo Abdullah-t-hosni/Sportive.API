@@ -57,4 +57,7 @@ public static class MappingKeys
     // ── الأصول الثابتة ───────────────────────────────────
     public const string DepreciationExpense      = "depreciationExpenseAccountID";
     public const string AccumulatedDepreciation = "accumulatedDepreciationAccountID";
+
+    // ── تقفيلات الـ POS ──────────────────────────────────
+    public const string PosDailyClosure        = "posDailyClosureAccountID";
 }

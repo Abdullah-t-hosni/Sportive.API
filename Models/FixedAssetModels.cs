@@ -49,6 +49,8 @@ public class FixedAssetCategory : BaseEntity
     public int?    DepreciationExpenseAccountId { get; set; } // حساب مصروف الإهلاك (مدين)
     public Account? DepreciationExpenseAccount { get; set; }
 
+    public OrderSource? CostCenter { get; set; } // مركز التكلفة الافتراضي (موقع أو POS)
+
     public ICollection<FixedAsset> Assets { get; set; } = new List<FixedAsset>();
 }
 
@@ -99,6 +101,8 @@ public class FixedAsset : BaseEntity
     public Account? AccumDepreciationAccount  { get; set; }
     public int?    DepreciationExpenseAccountId { get; set; }
     public Account? DepreciationExpenseAccount { get; set; }
+
+    public OrderSource? CostCenter { get; set; } // مركز التكلفة للأصل (يسمع في القيود)
 
     public ICollection<AssetDepreciation> Depreciations { get; set; } = new List<AssetDepreciation>();
     public ICollection<AssetDisposal>     Disposals     { get; set; } = new List<AssetDisposal>();

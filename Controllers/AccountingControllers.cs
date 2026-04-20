@@ -211,6 +211,9 @@ public class AccountsController : ControllerBase
             // --- Fixed Assets ---
             new { key = MappingKeys.DepreciationExpense, description = "حساب مصروف الإهلاك" },
             new { key = MappingKeys.AccumulatedDepreciation, description = "حساب مجمع الإهلاك (أصول ثروات)" },
+
+            // --- POS Closures ---
+            new { key = MappingKeys.PosDailyClosure, description = "حساب تقفيلات اليومية (POS)" },
         };
         return Ok(registry);
     }
@@ -258,11 +261,35 @@ public class AccountsController : ControllerBase
         try
         {
             var allAccounts = await _db.Accounts.ToListAsync();
-            foreach (var a in allAccounts)
+            
+            // 1. 🔥 AUTO-LINK BY CODES 🔥
+            // We sort by length to ensure parents are processed in a way that doesn't create cycles 
+            // and we find the most specific parent (longest matching prefix).
+            foreach (var a in allAccounts.OrderBy(x => x.Code.Length))
             {
-                a.Level = 1;
-                a.IsLeaf = true;
+                var code = a.Code;
+                if (string.IsNullOrEmpty(code) || code.Length <= 1) {
+                    a.ParentId = null;
+                    continue;
+                }
+
+                // Find the longest existing prefix: 1101 -> 110 -> 11 -> 1
+                for (int len = code.Length - 1; len >= 1; len--)
+                {
+                    var prefix = code.Substring(0, len);
+                    var parentCandidate = allAccounts.FirstOrDefault(p => p.Code == prefix && p.Id != a.Id);
+                    if (parentCandidate != null)
+                    {
+                        a.ParentId = parentCandidate.Id;
+                        break;
+                    }
+                }
             }
+
+            await _db.SaveChangesAsync();
+
+            // 2. RECURE_STRUCTURE_METRICS (Levels and Leaves)
+            foreach (var a in allAccounts) { a.Level = 1; a.IsLeaf = true; }
 
             void UpdateLevels(int? parentId, int level)
             {
@@ -278,7 +305,8 @@ public class AccountsController : ControllerBase
 
             UpdateLevels(null, 1);
             await _db.SaveChangesAsync();
-            return Ok(new { success = true, message = "تم إصلاح شجرة الحسابات بنجاح.", count = allAccounts.Count });
+
+            return Ok(new { success = true, message = "تم إصلاح شجرة الحسابات وربط الأكواد تلقائياً بنجاح.", count = allAccounts.Count });
         }
         catch (Exception ex)
         {

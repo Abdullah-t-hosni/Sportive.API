@@ -675,6 +675,139 @@ public class ImportController : ControllerBase
         });
     }
 
+    // ── ACCOUNTS TEMPLATE ─────────────────────────────────────
+    [HttpGet("accounts-template")]
+    public IActionResult GetAccountsTemplate()
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("شجرة الحسابات");
+        ws.RightToLeft = true;
+
+        var headers = new[] { "كود الحساب *", "الاسم عربي *", "الاسم انجليزي", "النوع (Asset/Liability/Equity/Revenue/Expense)", "الطبيعة (Debit/Credit)", "كود الأب", "يقبل ترحيل (نعم/لا)" };
+        for (int c = 0; c < headers.Length; c++)
+        {
+            var cell = ws.Cell(1, c + 1);
+            cell.Value = headers[c];
+            cell.Style.Font.Bold = true;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1a1a2e");
+            cell.Style.Font.FontColor = XLColor.White;
+        }
+
+        // Example Row
+        ws.Cell(2,1).Value = "110101";
+        ws.Cell(2,2).Value = "خزينة المكتب";
+        ws.Cell(2,3).Value = "Office Cash";
+        ws.Cell(2,4).Value = "Asset";
+        ws.Cell(2,5).Value = "Debit";
+        ws.Cell(2,6).Value = "1101";
+        ws.Cell(2,7).Value = "نعم";
+
+        ws.Columns().AdjustToContents();
+        var stream = new MemoryStream();
+        wb.SaveAs(stream); stream.Position = 0;
+        return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "accounts_import_template.xlsx");
+    }
+
+    // ── IMPORT ACCOUNTS ───────────────────────────────────────
+    [HttpPost("accounts")]
+    public async Task<IActionResult> ImportAccounts(IFormFile file)
+    {
+        if (file == null || file.Length == 0) return BadRequest(new { message = "لم يتم رفع ملف" });
+
+        try
+        {
+            using var stream = file.OpenReadStream();
+            using var wb = new XLWorkbook(stream);
+            var ws = wb.Worksheets.First();
+            var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
+
+            var added = 0;
+            var updated = 0;
+            var errors = new List<string>();
+
+            var allAccounts = await _db.Accounts.ToListAsync();
+            var accountMap = allAccounts.ToDictionary(a => a.Code, a => a, StringComparer.OrdinalIgnoreCase);
+
+            var rows = new List<dynamic>();
+            for (int r = 2; r <= lastRow; r++)
+            {
+                var code = ws.Cell(r, 1).GetString().Trim();
+                if (string.IsNullOrEmpty(code)) continue;
+
+                rows.Add(new {
+                    Row = r, Code = code,
+                    NameAr = ws.Cell(r, 2).GetString().Trim(),
+                    NameEn = ws.Cell(r, 3).GetString().Trim(),
+                    TypeStr = ws.Cell(r, 4).GetString().Trim(),
+                    NatureStr = ws.Cell(r, 5).GetString().Trim(),
+                    ParentCode = ws.Cell(r, 6).GetString().Trim(),
+                    AllowPosting = ws.Cell(r, 7).GetString().Trim().Contains("نعم")
+                });
+            }
+
+            // Pass 1: Upsert
+            foreach (var row in rows)
+            {
+                if (string.IsNullOrEmpty(row.NameAr)) { errors.Add($"صف {row.Row}: الاسم مطلوب"); continue; }
+                
+                if (!Enum.TryParse<AccountType>(row.TypeStr as string, true, out AccountType type)) type = AccountType.Asset;
+                if (!Enum.TryParse<AccountNature>(row.NatureStr as string, true, out AccountNature nature)) nature = AccountNature.Debit;
+
+                if (accountMap.TryGetValue(row.Code as string ?? "", out var existing))
+                {
+                    existing.NameAr = row.NameAr;
+                    existing.NameEn = row.NameEn;
+                    existing.Type = type;
+                    existing.Nature = nature;
+                    existing.AllowPosting = row.AllowPosting;
+                    updated++;
+                }
+                else
+                {
+                    var newAcc = new Account {
+                        Code = row.Code, NameAr = row.NameAr, NameEn = row.NameEn,
+                        Type = type, Nature = nature, AllowPosting = row.AllowPosting,
+                        IsActive = true, CreatedAt = TimeHelper.GetEgyptTime()
+                    };
+                    _db.Accounts.Add(newAcc);
+                    accountMap[row.Code] = newAcc;
+                    added++;
+                }
+            }
+            await _db.SaveChangesAsync();
+
+            // Pass 2: Parents
+            foreach (var row in rows)
+            {
+                if (string.IsNullOrEmpty(row.ParentCode as string)) continue;
+                if (accountMap.TryGetValue(row.Code as string ?? "", out var acc) && accountMap.TryGetValue(row.ParentCode as string ?? "", out var parent))
+                {
+                    acc.ParentId = parent.Id;
+                }
+            }
+            await _db.SaveChangesAsync();
+
+            // Fix Tree Structure (Levels, IsLeaf)
+            var accountsToFix = await _db.Accounts.ToListAsync();
+            void UpdateLevels(int? pId, int lvl) {
+                var kids = accountsToFix.Where(a => a.ParentId == pId).ToList();
+                foreach (var k in kids) {
+                    k.Level = lvl;
+                    k.IsLeaf = !accountsToFix.Any(a => a.ParentId == k.Id);
+                    UpdateLevels(k.Id, lvl + 1);
+                }
+            }
+            UpdateLevels(null, 1);
+            await _db.SaveChangesAsync();
+
+            return Ok(new { success = true, added, updated, errors });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = $"خطأ في المعالجة: {ex.Message}" });
+        }
+    }
+
     private class ImportResult
     {
         public int Added         { get; set; }

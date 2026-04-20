@@ -161,6 +161,25 @@ public class SchemaFixController : ControllerBase
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
+    [HttpGet("run-v9")]
+    public async Task<IActionResult> RunV9()
+    {
+        _logger.LogWarning("SchemaFix run-v9 (Fixed Asset CostCenter) triggered.");
+        try
+        {
+            try { 
+                await _db.Database.ExecuteSqlRawAsync("ALTER TABLE FixedAssetCategories ADD COLUMN CostCenter INT NULL;"); 
+            } catch (Exception ex) { _logger.LogInformation("CostCenter col already in Categories: {Err}", ex.Message); }
+
+            try { 
+                await _db.Database.ExecuteSqlRawAsync("ALTER TABLE FixedAssets ADD COLUMN CostCenter INT NULL;"); 
+            } catch (Exception ex) { _logger.LogInformation("CostCenter col already in FixedAssets: {Err}", ex.Message); }
+
+            return Ok(new { message = "Fixed Asset CostCenter columns added." });
+        }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
     private string GenerateSlug(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return Guid.NewGuid().ToString().Substring(0, 8);

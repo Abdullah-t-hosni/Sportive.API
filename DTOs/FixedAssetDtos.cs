@@ -11,7 +11,8 @@ public record CreateFixedAssetCategoryDto(
     string? Description                    = null,
     int?    AssetAccountId                 = null,
     int?    AccumDepreciationAccountId     = null,
-    int?    DepreciationExpenseAccountId   = null
+    int?    DepreciationExpenseAccountId   = null,
+    OrderSource? CostCenter                = null
 );
 
 public record UpdateFixedAssetCategoryDto(
@@ -20,7 +21,8 @@ public record UpdateFixedAssetCategoryDto(
     bool    IsActive                       = true,
     int?    AssetAccountId                 = null,
     int?    AccumDepreciationAccountId     = null,
-    int?    DepreciationExpenseAccountId   = null
+    int?    DepreciationExpenseAccountId   = null,
+    OrderSource? CostCenter                = null
 );
 
 public record FixedAssetCategoryDto(
@@ -34,6 +36,7 @@ public record FixedAssetCategoryDto(
     string? AccumDepreciationAccountName,
     int?    DepreciationExpenseAccountId,
     string? DepreciationExpenseAccountName,
+    OrderSource? CostCenter,
     int     AssetCount
 );
 
@@ -61,7 +64,8 @@ public record CreateFixedAssetDto(
     // ربط محاسبي (يلغي افتراضي الفئة)
     int?              AssetAccountId               = null,
     int?              AccumDepreciationAccountId   = null,
-    int?              DepreciationExpenseAccountId = null
+    int?              DepreciationExpenseAccountId = null,
+    OrderSource?      CostCenter                   = null
 );
 
 public record UpdateFixedAssetDto(
@@ -83,7 +87,8 @@ public record UpdateFixedAssetDto(
     string?           AttachmentPublicId       = null,
     int?              AssetAccountId               = null,
     int?              AccumDepreciationAccountId   = null,
-    int?              DepreciationExpenseAccountId = null
+    int?              DepreciationExpenseAccountId = null,
+    OrderSource?      CostCenter                   = null
 );
 
 public record FixedAssetDto(
@@ -115,6 +120,7 @@ public record FixedAssetDto(
     string?           AccumDepreciationAccountName,
     int?              DepreciationExpenseAccountId,
     string?           DepreciationExpenseAccountName,
+    OrderSource?      CostCenter,
     DateTime          CreatedAt
 );
 

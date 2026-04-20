@@ -77,8 +77,9 @@ public class FinancialReportsController : ControllerBase
         }).ToList();
 
         // 5. 🔥 HIERARCHICAL ROLL-UP 🔥
+        // We sort by Level descending to ensure children are processed before parents
         var balanceDict = balanceList.ToDictionary(b => b.Id);
-        var itemsToRollUp = balanceList.OrderByDescending(b => b.Code.Length).ToList();
+        var itemsToRollUp = balanceList.OrderByDescending(b => b.Level).ToList();
         
         foreach (var b in itemsToRollUp)
         {
@@ -157,12 +158,12 @@ public class FinancialReportsController : ControllerBase
         return Ok(new {
             from, to, source,
             rows,
-            totalOpenDebit    = Math.Round(rows.Where(r => r.Level == 1).Sum(r => r.OpenDebit), 2),
-            totalOpenCredit   = Math.Round(rows.Where(r => r.Level == 1).Sum(r => r.OpenCredit), 2),
-            totalPeriodDebit  = Math.Round(rows.Where(r => r.Level == 1).Sum(r => r.PeriodDebit), 2),
-            totalPeriodCredit = Math.Round(rows.Where(r => r.Level == 1).Sum(r => r.PeriodCredit), 2),
-            totalClosingDebit = Math.Round(rows.Where(r => r.Level == 1).Sum(r => r.ClosingDebit), 2),
-            totalClosingCredit= Math.Round(rows.Where(r => r.Level == 1).Sum(r => r.ClosingCredit), 2),
+            totalOpenDebit    = Math.Round(balances.Where(b => b.ParentId == null).Sum(b => b.OpenDebit), 2),
+            totalOpenCredit   = Math.Round(balances.Where(b => b.ParentId == null).Sum(b => b.OpenCredit), 2),
+            totalPeriodDebit  = Math.Round(balances.Where(b => b.ParentId == null).Sum(b => b.PeriodDebit), 2),
+            totalPeriodCredit = Math.Round(balances.Where(b => b.ParentId == null).Sum(b => b.PeriodCredit), 2),
+            totalClosingDebit = Math.Round(balances.Where(b => b.ParentId == null).Sum(b => b.ClosingBal > 0 && b.Nature == AccountNature.Debit ? b.ClosingBal : (b.ClosingBal < 0 && b.Nature == AccountNature.Credit ? -b.ClosingBal : 0)), 2),
+            totalClosingCredit= Math.Round(balances.Where(b => b.ParentId == null).Sum(b => b.ClosingBal > 0 && b.Nature == AccountNature.Credit ? b.ClosingBal : (b.ClosingBal < 0 && b.Nature == AccountNature.Debit ? -b.ClosingBal : 0)), 2),
         });
     }
 
@@ -184,21 +185,19 @@ public class FinancialReportsController : ControllerBase
         // الإيرادات (طبيعتها دائن → الرصيد موجب = إيراد)
         // ✅ تصحيح: ضم أي حساب يبدأ بكود 4 للإيرادات (مثل إيراد التوصيل)
         var revenues = balances
-            .Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.IsLeaf && b.ClosingBal != 0)
+            .Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.ClosingBal != 0)
             .OrderBy(b => b.Code)
-            .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.ClosingBal)) // ✅ POSITIVE for Credit balance
+            .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.ClosingBal)) 
             .ToList();
 
-        // المصاريف (طبيعتها مدين → الرصيد موجب = مصروف)
-        // ✅ تصحيح: استثناء أي حساب يبدأ بكود 4 من المصاريف
         var expenses = balances
-            .Where(b => b.Type == AccountType.Expense && !b.Code.StartsWith("4") && b.IsLeaf && b.ClosingBal != 0)
+            .Where(b => b.Type == AccountType.Expense && !b.Code.StartsWith("4") && b.ClosingBal != 0)
             .OrderBy(b => b.Code)
             .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
             .ToList();
 
-        var totalRevenues = revenues.Sum(r => r.Amount);
-        var totalExpenses = expenses.Sum(r => r.Amount);
+        var totalRevenues = balances.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.ParentId == null).Sum(b => b.ClosingBal);
+        var totalExpenses = balances.Where(b => b.Type == AccountType.Expense && !b.Code.StartsWith("4") && b.ParentId == null).Sum(b => b.ClosingBal);
         var netProfit     = totalRevenues - totalExpenses;
 
         if (excel) return ExcelIncomeStatement(revenues, expenses, totalRevenues, totalExpenses, netProfit, from, to);
@@ -230,21 +229,19 @@ public class FinancialReportsController : ControllerBase
 
         // الأصول — طبيعة مدين (closingBal = Dr - Cr)
         var assets = balances
-            .Where(b => b.Type == AccountType.Asset && b.IsLeaf && b.ClosingBal != 0)
+            .Where(b => b.Type == AccountType.Asset && b.ClosingBal != 0)
             .OrderBy(b => b.Code)
             .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
             .ToList();
 
-        // الالتزامات — طبيعة دائن (closingBal = Cr - Dr)
         var liabilities = balances
-            .Where(b => b.Type == AccountType.Liability && b.IsLeaf && b.ClosingBal != 0)
+            .Where(b => b.Type == AccountType.Liability && b.ClosingBal != 0)
             .OrderBy(b => b.Code)
             .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
             .ToList();
 
-        // حقوق الملكية — طبيعة دائن
         var equity = balances
-            .Where(b => b.Type == AccountType.Equity && b.IsLeaf && b.ClosingBal != 0)
+            .Where(b => b.Type == AccountType.Equity && b.ClosingBal != 0)
             .OrderBy(b => b.Code)
             .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
             .ToList();
@@ -252,18 +249,19 @@ public class FinancialReportsController : ControllerBase
         // صافي الربح للفترة يضاف لحقوق الملكية ونظهره في القائمة للشفافية
         var incomeFrom = from; 
         var incomeBals = await GetBalances(incomeFrom, to, source);
-        var netProfit  = incomeBals.Where(b => b.Type == AccountType.Revenue && b.IsLeaf).Sum(b => b.ClosingBal)
-                       - incomeBals.Where(b => b.Type == AccountType.Expense && b.IsLeaf).Sum(b => b.ClosingBal);
+        var totalRev   = incomeBals.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.ParentId == null).Sum(b => b.ClosingBal);
+        var totalExp   = incomeBals.Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && b.ParentId == null).Sum(b => b.ClosingBal);
+        var netProfit  = totalRev - totalExp;
 
         if (netProfit != 0)
         {
             equity.Add(new BalanceSheetRow("N/P", "صافي ربح / (خسارة) العام", 1, netProfit));
         }
 
-        var totalAssets      = assets.Sum(a => a.Amount);
-        var totalLiabilities = liabilities.Sum(l => l.Amount);
-        var totalEquity      = equity.Sum(e => e.Amount);
-        var totalLiabEquity  = totalLiabilities + totalEquity;
+        var totalAssets      = balances.Where(b => b.Type == AccountType.Asset && b.ParentId == null).Sum(b => b.ClosingBal);
+        var totalLiabilities = balances.Where(b => b.Type == AccountType.Liability && b.ParentId == null).Sum(b => b.ClosingBal);
+        var totalEquity      = balances.Where(b => b.Type == AccountType.Equity && b.ParentId == null).Sum(b => b.ClosingBal);
+        var totalLiabEquity  = totalLiabilities + totalEquity + netProfit;
 
         if (excel) return ExcelBalanceSheet(assets, liabilities, equity, netProfit,
             totalAssets, totalLiabilities, totalEquity, to);
@@ -323,6 +321,7 @@ public class FinancialReportsController : ControllerBase
             q = q.Where(l => l.EmployeeId == employeeId.Value);
 
         var lines = await q.OrderBy(l => l.JournalEntry.EntryDate)
+                           .ThenBy(l => l.JournalEntry.Type)
                            .ThenBy(l => l.JournalEntry.Id)
                            .ToListAsync();
 
@@ -402,8 +401,18 @@ public class FinancialReportsController : ControllerBase
                     AccountCode = g.Key.Code,
                     AccountName = g.Key.Name,
                     openingBalance = totalOpen,
-                    rows = g.OrderBy(r => r.Date).ThenBy(r => r.EntryNumber).ToList(),
-                    closingBalance = g.OrderBy(r => r.Date).ThenBy(r => r.EntryNumber).LastOrDefault()?.RunningBalance ?? 0
+                    rows = g.OrderBy(r => r.Date)
+                            .ThenBy(r => {
+                                if (Enum.TryParse<JournalEntryType>(r.EntryType, out var t)) return (int)t;
+                                return 99;
+                            })
+                            .ThenBy(r => r.JournalEntryId).ToList(),
+                    closingBalance = g.OrderBy(r => r.Date)
+                                      .ThenBy(r => {
+                                          if (Enum.TryParse<JournalEntryType>(r.EntryType, out var t)) return (int)t;
+                                          return 99;
+                                      })
+                                      .ThenBy(r => r.JournalEntryId).LastOrDefault()?.RunningBalance ?? 0
                 };
             }).ToList();
         return Ok(new { from, to, accounts = grouped });
@@ -585,7 +594,9 @@ public class FinancialReportsController : ControllerBase
                           || (l.JournalEntry.Reference != null && l.JournalEntry.Reference.Contains(search)));
         }
 
-        var periodLines = await q.OrderBy(l => l.JournalEntry.EntryDate).ThenBy(l => l.JournalEntry.Id)
+        var periodLines = await q.OrderBy(l => l.JournalEntry.EntryDate)
+            .ThenBy(l => l.JournalEntry.Type)
+            .ThenBy(l => l.JournalEntry.Id)
             .ToListAsync();
 
         var runBal = openBal;

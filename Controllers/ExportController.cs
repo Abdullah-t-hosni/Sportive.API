@@ -485,55 +485,31 @@ public class ExportController : ControllerBase
             $"variants_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
-    // ── PURCHASE INVOICES ─────────────────────────────────────
-    [HttpGet("purchase-invoices")]
-    public async Task<IActionResult> ExportPurchaseInvoices(
-        [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate   = null)
+    // ── ACCOUNTS ──────────────────────────────────────────────
+    [HttpGet("accounts")]
+    public async Task<IActionResult> ExportAccounts()
     {
-        var query = _db.PurchaseInvoices
-            .Include(i => i.Supplier)
-            .OrderByDescending(i => i.CreatedAt)
-            .AsQueryable();
-
-        if (fromDate.HasValue) query = query.Where(i => i.InvoiceDate >= fromDate.Value.Date);
-        if (toDate.HasValue)   query = query.Where(i => i.InvoiceDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
-
-        var invoices = await query.ToListAsync();
+        var accounts = await _db.Accounts
+            .Include(a => a.Parent)
+            .OrderBy(a => a.Code)
+            .ToListAsync();
 
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("فواتير المشتريات");
+        var ws = wb.Worksheets.Add("شجرة الحسابات");
 
-        var headers = new[] {
-            "رقم الفاتورة","المورد","رقم فاتورة المورد","الحالة",
-            "طريقة الدفع","التاريخ","تاريخ الاستحقاق",
-            "المجموع","الخصم","الضريبة","الإجمالي","المدفوع","المتبقي"
-        };
+        var headers = new[] { "كود الحساب", "الاسم عربي", "الاسم انجليزي", "النوع", "الطبيعة", "كود الأب", "يقبل ترحيل" };
         StyleHeader(ws, headers);
 
         int row = 2;
-        foreach (var i in invoices)
+        foreach (var a in accounts)
         {
-            ws.Cell(row, 1).Value  = i.InvoiceNumber;
-            ws.Cell(row, 2).Value  = i.Supplier?.Name ?? "";
-            ws.Cell(row, 3).Value  = i.SupplierInvoiceNumber ?? "";
-            ws.Cell(row, 4).Value  = i.Status.ToString();
-            ws.Cell(row, 5).Value  = i.PaymentTerms.ToString();
-            ws.Cell(row, 6).Value  = i.InvoiceDate.ToString("yyyy-MM-dd");
-            ws.Cell(row, 7).Value  = i.DueDate?.ToString("yyyy-MM-dd") ?? "";
-            ws.Cell(row, 8).Value  = i.SubTotal;
-            ws.Cell(row, 9).Value  = i.DiscountAmount;
-            ws.Cell(row, 10).Value = i.TaxAmount;
-            ws.Cell(row, 11).Value = i.TotalAmount;
-            ws.Cell(row, 12).Value = i.PaidAmount;
-            ws.Cell(row, 13).Value = i.RemainingAmount;
-
-            ws.Cell(row, 8).Style.NumberFormat.Format  = "#,##0.00";
-            ws.Cell(row, 9).Style.NumberFormat.Format  = "#,##0.00";
-            ws.Cell(row, 10).Style.NumberFormat.Format = "#,##0.00";
-            ws.Cell(row, 11).Style.NumberFormat.Format = "#,##0.00";
-            ws.Cell(row, 12).Style.NumberFormat.Format = "#,##0.00";
-            ws.Cell(row, 13).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 1).Value = a.Code;
+            ws.Cell(row, 2).Value = a.NameAr;
+            ws.Cell(row, 3).Value = a.NameEn ?? "";
+            ws.Cell(row, 4).Value = a.Type.ToString();
+            ws.Cell(row, 5).Value = a.Nature.ToString();
+            ws.Cell(row, 6).Value = a.Parent?.Code ?? "";
+            ws.Cell(row, 7).Value = a.AllowPosting ? "نعم" : "لا";
             row++;
         }
 
@@ -541,10 +517,11 @@ public class ExportController : ControllerBase
         ws.RightToLeft = true;
 
         var stream = new MemoryStream();
-        wb.SaveAs(stream); stream.Position = 0;
+        wb.SaveAs(stream);
+        stream.Position = 0;
 
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            $"purchases_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
+            $"chart_of_accounts_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
     private static void StyleHeader(IXLWorksheet ws, string[] headers)

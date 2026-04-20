@@ -36,6 +36,7 @@ public class FixedAssetCategoriesController : ControllerBase
                 c.AssetAccountId,              c.AssetAccount != null              ? c.AssetAccount.NameAr              : null,
                 c.AccumDepreciationAccountId,  c.AccumDepreciationAccount != null  ? c.AccumDepreciationAccount.NameAr  : null,
                 c.DepreciationExpenseAccountId,c.DepreciationExpenseAccount != null ? c.DepreciationExpenseAccount.NameAr : null,
+                c.CostCenter,
                 c.Assets.Count
             )).ToListAsync();
 
@@ -55,6 +56,7 @@ public class FixedAssetCategoriesController : ControllerBase
             AssetAccountId               = dto.AssetAccountId,
             AccumDepreciationAccountId   = dto.AccumDepreciationAccountId,
             DepreciationExpenseAccountId = dto.DepreciationExpenseAccountId,
+            CostCenter                   = dto.CostCenter,
             CreatedAt                    = TimeHelper.GetEgyptTime()
         };
         _db.FixedAssetCategories.Add(cat);
@@ -74,6 +76,7 @@ public class FixedAssetCategoriesController : ControllerBase
         cat.AssetAccountId               = dto.AssetAccountId;
         cat.AccumDepreciationAccountId   = dto.AccumDepreciationAccountId;
         cat.DepreciationExpenseAccountId = dto.DepreciationExpenseAccountId;
+        cat.CostCenter                   = dto.CostCenter;
         cat.UpdatedAt                    = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
@@ -136,6 +139,9 @@ public class FixedAssetsController : ControllerBase
             a.DepreciationExpenseAccountId ?? cat.DepreciationExpenseAccountId
         );
 
+    private OrderSource? ResolveCostCenter(FixedAsset a, FixedAssetCategory cat)
+        => a.CostCenter ?? cat.CostCenter;
+
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
     // ─── GET /api/fixed-assets ────────────────────────
@@ -181,6 +187,7 @@ public class FixedAssetsController : ControllerBase
                 a.AccumDepreciationAccount != null ? a.AccumDepreciationAccount.NameAr : (a.Category.AccumDepreciationAccount != null ? a.Category.AccumDepreciationAccount.NameAr : null),
                 a.DepreciationExpenseAccountId ?? a.Category.DepreciationExpenseAccountId,
                 a.DepreciationExpenseAccount != null ? a.DepreciationExpenseAccount.NameAr : (a.Category.DepreciationExpenseAccount != null ? a.Category.DepreciationExpenseAccount.NameAr : null),
+                a.CostCenter ?? a.Category.CostCenter,
                 a.CreatedAt
             )).ToListAsync();
 
@@ -254,6 +261,7 @@ public class FixedAssetsController : ControllerBase
             AssetAccountId               = dto.AssetAccountId,
             AccumDepreciationAccountId   = dto.AccumDepreciationAccountId,
             DepreciationExpenseAccountId = dto.DepreciationExpenseAccountId,
+            CostCenter                   = dto.CostCenter,
             Status                       = AssetStatus.Active,
             CreatedAt                    = TimeHelper.GetEgyptTime(),
             CreatedByUserId              = UserId
@@ -295,6 +303,7 @@ public class FixedAssetsController : ControllerBase
         asset.AssetAccountId               = dto.AssetAccountId;
         asset.AccumDepreciationAccountId   = dto.AccumDepreciationAccountId;
         asset.DepreciationExpenseAccountId = dto.DepreciationExpenseAccountId;
+        asset.CostCenter                   = dto.CostCenter;
         asset.UpdatedAt                    = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
@@ -432,6 +441,7 @@ public class FixedAssetsController : ControllerBase
             Status          = JournalEntryStatus.Posted,
             Description     = $"إهلاك {asset.Name} — {dto.PeriodMonth}/{dto.PeriodYear}",
             Reference       = depNo,
+            CostCenter      = ResolveCostCenter(asset, asset.Category),
             CreatedByUserId = UserId,
             CreatedAt       = TimeHelper.GetEgyptTime(),
             Lines = new List<JournalLine>
@@ -542,6 +552,7 @@ public class FixedAssetsController : ControllerBase
                     Status          = JournalEntryStatus.Posted,
                     Description     = $"إهلاك {asset.Name} — {dto.PeriodMonth}/{dto.PeriodYear}",
                     Reference       = depNo,
+                    CostCenter      = ResolveCostCenter(asset, asset.Category),
                     CreatedByUserId = UserId,
                     CreatedAt       = TimeHelper.GetEgyptTime(),
                     Lines = new List<JournalLine>
@@ -677,6 +688,7 @@ public class FixedAssetsController : ControllerBase
                 Status          = JournalEntryStatus.Posted,
                 Description     = $"استبعاد {asset.Name} ({dto.DisposalType})",
                 Reference       = disNo,
+                CostCenter      = ResolveCostCenter(asset, asset.Category),
                 CreatedByUserId = UserId,
                 CreatedAt       = TimeHelper.GetEgyptTime(),
                 Lines           = new List<JournalLine>()
@@ -728,6 +740,7 @@ public class FixedAssetsController : ControllerBase
         a.AccumDepreciationAccount != null ? a.AccumDepreciationAccount.NameAr : (a.Category?.AccumDepreciationAccount != null ? a.Category.AccumDepreciationAccount.NameAr : null),
         a.DepreciationExpenseAccountId ?? a.Category?.DepreciationExpenseAccountId,
         a.DepreciationExpenseAccount != null ? a.DepreciationExpenseAccount.NameAr : (a.Category?.DepreciationExpenseAccount != null ? a.Category.DepreciationExpenseAccount.NameAr : null),
+        a.CostCenter ?? a.Category?.CostCenter,
         a.CreatedAt
     );
 
