@@ -682,7 +682,7 @@ public class OperationalReportsController : ControllerBase
                 o.Source.ToString(),
                 o.Status.ToString(),
                 o.PaymentMethod.ToString(),
-                o.SubTotal, o.DiscountAmount, 
+                o.SubTotal, o.DiscountAmount + o.TemporalDiscount, 
                 postedSales > 0 ? postedSales : o.TotalAmount, // Use Ledger amount if possible
                 o.Items.Sum(i => i.Quantity),
                 o.Items.Select(i => new ReportItemDto(
@@ -692,7 +692,7 @@ public class OperationalReportsController : ControllerBase
                     i.Color ?? "",
                     i.Quantity,
                     i.UnitPrice,
-                    0, 0, i.TotalPrice
+                    0, i.DiscountAmount, i.TotalPrice
                 )).ToList(),
                 paySummary // ✅ New Field
             );
