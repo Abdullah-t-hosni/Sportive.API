@@ -97,6 +97,7 @@ public record CreateJournalLineDto(
     string? Description,
     int?    CustomerId  = null,
     int?    SupplierId  = null,
+    int?    EmployeeId  = null,
     int?    OrderId     = null,
     OrderSource? CostCenter = null
 );

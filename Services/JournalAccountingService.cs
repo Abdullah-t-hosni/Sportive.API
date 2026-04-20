@@ -76,7 +76,7 @@ public class JournalAccountingService
         }
 
         foreach (var l in dto.Lines) {
-            entry.Lines.Add(new JournalLine { AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit, Description = l.Description, CustomerId = l.CustomerId, SupplierId = l.SupplierId, OrderId = l.OrderId, CostCenter = l.CostCenter ?? entry.CostCenter });
+            entry.Lines.Add(new JournalLine { AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit, Description = l.Description, CustomerId = l.CustomerId, SupplierId = l.SupplierId, EmployeeId = l.EmployeeId, OrderId = l.OrderId, CostCenter = l.CostCenter ?? entry.CostCenter });
         }
 
         // التحقق من التوازن قبل الحفظ
