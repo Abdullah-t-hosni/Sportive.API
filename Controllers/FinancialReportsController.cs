@@ -978,31 +978,32 @@ public class FinancialReportsController : ControllerBase
         ws.Cell(2,1).Value = $"من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
         ws.Cell(2,1).Style.Font.FontColor = XLColor.Gray;
 
-        string[] hdrs = { "التاريخ","القيد","البيان","مدين","دائن","الرصيد" };
-        for (int c = 0; c < hdrs.Length; c++) { ws.Cell(3,c+1).Value = hdrs[c]; ws.Cell(3,c+1).Style.Font.Bold = true; }
+        string[] hdrs = { "التاريخ", "القيد", "المورد/العميل", "البيان", "مدين", "دائن", "الرصيد" };
+        for (int c = 0; c < hdrs.Length; c++) { ws.Cell(3, c + 1).Value = hdrs[c]; ws.Cell(3, c + 1).Style.Font.Bold = true; }
 
-        ws.Cell(4,3).Value = "رصيد افتتاحي"; ws.Cell(4,6).Value = openBal;
-        ws.Cell(4,6).Style.NumberFormat.Format = "#,##0.00";
+        ws.Cell(4, 4).Value = "رصيد افتتاحي"; ws.Cell(4, 7).Value = openBal;
+        ws.Cell(4, 7).Style.NumberFormat.Format = "#,##0.00";
 
         int r = 5;
         foreach (var row in rows)
         {
-            ws.Cell(r,1).Value = row.Date.ToString("yyyy-MM-dd");
-            ws.Cell(r,2).Value = row.EntryNumber;
-            ws.Cell(r,3).Value = row.Description;
-            ws.Cell(r,4).Value = row.Debit;
-            ws.Cell(r,5).Value = row.Credit;
-            ws.Cell(r,6).Value = row.RunningBalance;
-            ws.Cell(r,4).Style.NumberFormat.Format = "#,##0.00";
-            ws.Cell(r,5).Style.NumberFormat.Format = "#,##0.00";
-            ws.Cell(r,6).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(r, 1).Value = row.Date.ToString("yyyy-MM-dd");
+            ws.Cell(r, 2).Value = row.EntryNumber;
+            ws.Cell(r, 3).Value = row.PartnerName ?? "—";
+            ws.Cell(r, 4).Value = row.Description;
+            ws.Cell(r, 5).Value = row.Debit;
+            ws.Cell(r, 6).Value = row.Credit;
+            ws.Cell(r, 7).Value = row.RunningBalance;
+            ws.Cell(r, 5).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(r, 6).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(r, 7).Style.NumberFormat.Format = "#,##0.00";
             r++;
         }
-        ws.Cell(r,3).Value = "الإجمالي"; ws.Cell(r,3).Style.Font.Bold = true;
-        ws.Cell(r,4).Value = rows.Sum(x=>x.Debit); ws.Cell(r,4).Style.Font.Bold = true;
-        ws.Cell(r,5).Value = rows.Sum(x=>x.Credit); ws.Cell(r,5).Style.Font.Bold = true;
-        ws.Cell(r,4).Style.NumberFormat.Format = "#,##0.00";
-        ws.Cell(r,5).Style.NumberFormat.Format = "#,##0.00";
+        ws.Cell(r, 4).Value = "الإجمالي"; ws.Cell(r, 4).Style.Font.Bold = true;
+        ws.Cell(r, 5).Value = rows.Sum(x => x.Debit); ws.Cell(r, 5).Style.Font.Bold = true;
+        ws.Cell(r, 6).Value = rows.Sum(x => x.Credit); ws.Cell(r, 6).Style.Font.Bold = true;
+        ws.Cell(r, 5).Style.NumberFormat.Format = "#,##0.00";
+        ws.Cell(r, 6).Style.NumberFormat.Format = "#,##0.00";
 
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"account_statement_{acct.Code}_{from:yyyyMMdd}.xlsx");

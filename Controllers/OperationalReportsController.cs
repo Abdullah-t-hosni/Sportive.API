@@ -1035,8 +1035,19 @@ public class OperationalReportsController : ControllerBase
             SalesPersonName = (o.SalesPersonId != null && personNamesMap.TryGetValue(o.SalesPersonId, out var name)) ? name : "Unknown",
             CustomerName = o.Customer?.FullName ?? "",
             o.TotalAmount,
+            o.DiscountAmount,
             Status = o.Status.ToString(),
-            ItemCount = o.Items.Sum(i => i.Quantity)
+            ItemCount = o.Items.Sum(i => i.Quantity),
+            Items = o.Items.Select(it => new {
+                it.Product?.SKU,
+                ProductName = it.Product?.NameAr ?? it.ProductNameAr,
+                it.Size,
+                it.Color,
+                it.Quantity,
+                it.UnitPrice,
+                it.DiscountAmount,
+                it.TotalPrice
+            }).ToList()
         }).ToList();
 
         if (excel) return ExcelUserActivity(byPerson, detail, from, to);
@@ -1575,22 +1586,49 @@ public class OperationalReportsController : ControllerBase
         // 2. Details Sheet
         var ws2 = wb.Worksheets.Add("تفاصيل العمليات");
         ws2.RightToLeft = true;
-        string[] h2 = { "رقم الطلب", "التاريخ", "الكاشير", "العميل", "الحالة", "القطع", "الإجمالي" };
+        string[] h2 = { "رقم الطلب", "التاريخ", "الكاشير", "العميل", "الحالة", "كود الصنف", "اسم الصنف", "المقاس", "اللون", "الكمية", "السعر", "الخصم", "الإجمالي" };
         for (int i = 0; i < h2.Length; i++) { ws2.Cell(1, i + 1).Value = h2[i]; ws2.Cell(1, i + 1).Style.Font.Bold = true; ws2.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#1a237e"); ws2.Cell(1, i + 1).Style.Font.FontColor = XLColor.White; }
         
         int r2 = 2;
         var detailList = (IEnumerable<dynamic>)detail;
         foreach (var d in detailList)
         {
-            ws2.Cell(r2, 1).Value = d.OrderNumber;
-            ws2.Cell(r2, 2).Value = ((DateTime)d.CreatedAt).ToString("yyyy-MM-dd HH:mm");
-            ws2.Cell(r2, 3).Value = d.SalesPersonName;
-            ws2.Cell(r2, 4).Value = d.CustomerName;
-            ws2.Cell(r2, 5).Value = d.Status;
-            ws2.Cell(r2, 6).Value = d.ItemCount;
-            ws2.Cell(r2, 7).Value = d.TotalAmount;
-            ws2.Cell(r2, 7).Style.NumberFormat.Format = "#,##0.00";
-            r2++;
+            var items = (IEnumerable<dynamic>)d.Items;
+            if (items == null || !items.Any())
+            {
+                ws2.Cell(r2, 1).Value = d.OrderNumber;
+                ws2.Cell(r2, 2).Value = ((DateTime)d.CreatedAt).ToString("yyyy-MM-dd HH:mm");
+                ws2.Cell(r2, 3).Value = d.SalesPersonName;
+                ws2.Cell(r2, 4).Value = d.CustomerName;
+                ws2.Cell(r2, 5).Value = d.Status;
+                ws2.Cell(r2, 12).Value = d.DiscountAmount;
+                ws2.Cell(r2, 13).Value = d.TotalAmount;
+                ws2.Cell(r2, 12).Style.NumberFormat.Format = "#,##0.00";
+                ws2.Cell(r2, 13).Style.NumberFormat.Format = "#,##0.00";
+                r2++;
+                continue;
+            }
+
+            foreach(var it in items)
+            {
+                ws2.Cell(r2, 1).Value = d.OrderNumber;
+                ws2.Cell(r2, 2).Value = ((DateTime)d.CreatedAt).ToString("yyyy-MM-dd HH:mm");
+                ws2.Cell(r2, 3).Value = d.SalesPersonName;
+                ws2.Cell(r2, 4).Value = d.CustomerName;
+                ws2.Cell(r2, 5).Value = d.Status;
+
+                ws2.Cell(r2, 6).Value = it.SKU;
+                ws2.Cell(r2, 7).Value = it.ProductName;
+                ws2.Cell(r2, 8).Value = it.Size;
+                ws2.Cell(r2, 9).Value = it.Color;
+                ws2.Cell(r2, 10).Value = it.Quantity;
+                ws2.Cell(r2, 11).Value = it.UnitPrice;
+                ws2.Cell(r2, 12).Value = it.DiscountAmount;
+                ws2.Cell(r2, 13).Value = it.TotalPrice;
+
+                for (int c = 11; c <= 13; c++) ws2.Cell(r2, c).Style.NumberFormat.Format = "#,##0.00";
+                r2++;
+            }
         }
         ws2.Columns().AdjustToContents();
 
