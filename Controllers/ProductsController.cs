@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
+using Sportive.API.Models;
 
 namespace Sportive.API.Controllers;
 
@@ -17,16 +18,16 @@ public class ProductsController : ControllerBase
         Ok(await _products.GetProductsAsync(filter));
 
     [HttpGet("{id}")]
-    public async Task<IActionResult> GetById(int id)
+    public async Task<IActionResult> GetById(int id, [FromQuery] DiscountApplyTo? source = null)
     {
-        var product = await _products.GetProductByIdAsync(id);
+        var product = await _products.GetProductByIdAsync(id, source);
         return product == null ? NotFound() : Ok(product);
     }
 
     [HttpGet("slug/{slug}")]
-    public async Task<IActionResult> GetBySlug(string slug)
+    public async Task<IActionResult> GetBySlug(string slug, [FromQuery] DiscountApplyTo? source = null)
     {
-        var product = await _products.GetProductBySlugAsync(slug);
+        var product = await _products.GetProductBySlugAsync(slug, source);
         return product == null ? NotFound() : Ok(product);
     }
 

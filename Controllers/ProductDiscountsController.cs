@@ -51,7 +51,7 @@ public class ProductDiscountsController : ControllerBase
                 BrandNameAr = d.Brand != null ? d.Brand.NameAr : null,
                 BrandNameEn = d.Brand != null ? d.Brand.NameEn : null,
                 d.DiscountType, d.DiscountValue, d.MinQty,
-                d.ValidFrom, d.ValidTo, d.IsActive, d.Label,
+                d.ValidFrom, d.ValidTo, d.IsActive, d.Label, d.ApplyTo,
                 IsCurrentlyActive = d.IsActive && d.ValidFrom <= now && d.ValidTo >= now
             })
             .ToListAsync();
@@ -79,10 +79,12 @@ public class ProductDiscountsController : ControllerBase
                 ProductNameEn = d.Product != null ? d.Product.NameEn : null,
                 d.CategoryId,
                 CategoryNameAr = d.Category != null ? d.Category.NameAr : null,
+                CategoryNameEn = d.Category != null ? d.Category.NameEn : null,
                 d.BrandId,
                 BrandNameAr = d.Brand != null ? d.Brand.NameAr : null,
+                BrandNameEn = d.Brand != null ? d.Brand.NameEn : null,
                 d.DiscountType, d.DiscountValue, d.MinQty,
-                d.ValidFrom, d.ValidTo, d.Label
+                d.ValidFrom, d.ValidTo, d.Label, d.ApplyTo
             })
             .ToListAsync();
 
@@ -125,6 +127,7 @@ public class ProductDiscountsController : ControllerBase
             ValidTo       = dto.ValidTo,
             IsActive      = dto.IsActive,
             Label         = dto.Label,
+            ApplyTo       = dto.ApplyTo
         };
 
         _db.ProductDiscounts.Add(discount);
@@ -151,6 +154,7 @@ public class ProductDiscountsController : ControllerBase
         discount.ValidTo       = dto.ValidTo;
         discount.IsActive      = dto.IsActive;
         discount.Label         = dto.Label;
+        discount.ApplyTo       = dto.ApplyTo;
         discount.UpdatedAt     = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
@@ -182,5 +186,6 @@ public record ProductDiscountDto(
     DateTime ValidFrom,
     DateTime ValidTo,
     bool IsActive,
-    string? Label
+    string? Label,
+    DiscountApplyTo ApplyTo
 );

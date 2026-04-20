@@ -310,7 +310,7 @@ public class OrderService : IOrderService
                     Source = actualSource,
                     AdminNotes = dto.Note,
                     DiscountAmount = 0,
-                    TemporalDiscount = dto.TemporalDiscount ?? 0,
+                    TemporalDiscount = 0,
                     AttachmentUrl = dto.AttachmentUrl,
                     AttachmentPublicId = dto.AttachmentPublicId,
                     CreatedAt = now
@@ -559,7 +559,6 @@ public class OrderService : IOrderService
                 }
 
                 order.DiscountAmount += (dto.DiscountAmount ?? 0);
-                order.TemporalDiscount += (dto.TemporalDiscount ?? 0);
                 order.TotalAmount = order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount;
 
                 // 💡 Initial Paid Amount calculation for POS Mixed payments & Structured Payment Table

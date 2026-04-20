@@ -42,7 +42,13 @@ public class EmployeesController : ControllerBase
             .Include(e => e.Department)
             .AsQueryable();
 
-        if (status.HasValue)             q = q.Where(e => e.Status == status.Value);
+        if (status.HasValue)
+        {
+            if (status.Value == EmployeeStatus.Active)
+                q = q.Where(e => e.Status == EmployeeStatus.Active || (int)e.Status == 0);
+            else
+                q = q.Where(e => e.Status == status.Value);
+        }
         if (departmentId.HasValue)       q = q.Where(e => e.DepartmentId == departmentId.Value);
         if (!string.IsNullOrWhiteSpace(search))
             q = q.Where(e => e.Name.Contains(search) || e.EmployeeNumber.Contains(search)
@@ -71,7 +77,7 @@ public class EmployeesController : ControllerBase
     public async Task<IActionResult> GetBasic()
     {
         var list = await _db.Employees
-            .Where(e => e.Status == EmployeeStatus.Active)
+            .Where(e => e.Status == EmployeeStatus.Active || (int)e.Status == 0)
             .OrderBy(e => e.Name)
             .Select(e => new EmployeeBasicDto(e.Id, e.EmployeeNumber, e.Name, e.JobTitle, e.DepartmentId, e.Department != null ? e.Department.Name : null, e.BaseSalary, (int)e.Status))
             .ToListAsync();

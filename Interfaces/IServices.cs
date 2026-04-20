@@ -17,8 +17,8 @@ public interface IAuthService
 public interface IProductService
 {
     Task<PaginatedResult<ProductSummaryDto>> GetProductsAsync(ProductFilterDto filter);
-    Task<ProductDetailDto?> GetProductByIdAsync(int id);
-    Task<ProductDetailDto?> GetProductBySlugAsync(string slug);
+    Task<ProductDetailDto?> GetProductByIdAsync(int id, DiscountApplyTo? source = null);
+    Task<ProductDetailDto?> GetProductBySlugAsync(string slug, DiscountApplyTo? source = null);
     Task<ProductDetailDto> CreateProductAsync(CreateProductDto dto);
     Task<ProductDetailDto> UpdateProductAsync(int id, UpdateProductDto dto);
     Task DeleteProductAsync(int id);
