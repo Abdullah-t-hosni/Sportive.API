@@ -153,6 +153,8 @@ public class ReceiptVoucher : BaseEntity
     public int?     OrderId         { get; set; }
     public Order?   Order           { get; set; }
     public OrderSource? CostCenter   { get; set; } // مركز التكلفة للسند
+    public int?     EmployeeId       { get; set; }
+    public Employee? Employee        { get; set; }
 }
 
 // ══════════════════════════════════════════════════════
@@ -181,4 +183,6 @@ public class PaymentVoucher : BaseEntity
     public int?     PurchaseInvoiceId { get; set; }
     public PurchaseInvoice? PurchaseInvoice { get; set; }
     public OrderSource? CostCenter   { get; set; } // مركز التكلفة للسند
+    public int?     EmployeeId       { get; set; }
+    public Employee? Employee        { get; set; }
 }

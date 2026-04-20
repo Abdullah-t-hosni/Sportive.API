@@ -58,8 +58,25 @@ public class JournalAccountingService
         });
 
         var entry = new JournalEntry { EntryNumber = entryNumber, EntryDate = dto.EntryDate, Description = dto.Description, Reference = dto.Reference, Type = type, Status = JournalEntryStatus.Posted, CreatedByUserId = userId, CostCenter = dto.CostCenter };
+        
+        // 🎯 AUTO-RESOLVE COST CENTER: If not provided, try to infer from the first line that has an OrderId
+        if (entry.CostCenter == null)
+        {
+            var firstOrderLine = dto.Lines.FirstOrDefault(l => l.OrderId.HasValue);
+            if (firstOrderLine != null)
+            {
+                entry.CostCenter = await _db.Orders.Where(o => o.Id == firstOrderLine.OrderId.Value).Select(o => (OrderSource?)o.Source).FirstOrDefaultAsync();
+            }
+        }
+        
+        // If still null, default based on User Role (Cashiers -> POS, Others -> Website)
+        if (entry.CostCenter == null)
+        {
+            entry.CostCenter = user?.IsInRole("Cashier") == true ? OrderSource.POS : OrderSource.Website;
+        }
+
         foreach (var l in dto.Lines) {
-            entry.Lines.Add(new JournalLine { AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit, Description = l.Description, CustomerId = l.CustomerId, SupplierId = l.SupplierId, CostCenter = l.CostCenter ?? dto.CostCenter });
+            entry.Lines.Add(new JournalLine { AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit, Description = l.Description, CustomerId = l.CustomerId, SupplierId = l.SupplierId, OrderId = l.OrderId, CostCenter = l.CostCenter ?? entry.CostCenter });
         }
 
         // التحقق من التوازن قبل الحفظ

@@ -526,9 +526,9 @@ public class ReceiptVouchersController : ControllerBase
         if (source.HasValue) q = q.Where(v => v.CostCenter == source.Value);
 
         if (employeeId.HasValue)
-            q = q.Where(v => _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId == employeeId.Value));
+            q = q.Where(v => v.EmployeeId == employeeId.Value || _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId == employeeId.Value));
         else if (onlyEmployees == true)
-            q = q.Where(v => _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId != null));
+            q = q.Where(v => v.EmployeeId != null || _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId != null));
         
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(v => v.VoucherDate).ThenByDescending(v => v.Id)
@@ -539,7 +539,7 @@ public class ReceiptVouchersController : ControllerBase
                 CostCenter = (int?)v.CostCenter,
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 FromAccountName = v.FromAccount != null ? v.FromAccount.NameAr : null,
-                EntityName = v.Customer != null ? v.Customer.FullName : null
+                EntityName = v.Customer != null ? v.Customer.FullName : (v.Employee != null ? v.Employee.Name : null)
             })
             .ToListAsync();
 
@@ -561,7 +561,7 @@ public class ReceiptVouchersController : ControllerBase
                 CostCenter = (int?)v.CostCenter,
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 FromAccountName = v.FromAccount != null ? v.FromAccount.NameAr : null,
-                EntityName = v.Customer != null ? v.Customer.FullName : null
+                EntityName = v.Customer != null ? v.Customer.FullName : (v.Employee != null ? v.Employee.Name : null)
             })
             .ToListAsync();
         return Ok(items);
@@ -591,8 +591,15 @@ public class ReceiptVouchersController : ControllerBase
             Reference = dto.Reference, Description = dto.Description, AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
             CostCenter = dto.CostCenter,
+            EmployeeId = dto.EmployeeId,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value, CreatedAt = TimeHelper.GetEgyptTime(), OrderId = dto.OrderId
         };
+
+        // 🎯 AUTO-RESOLVE COST CENTER: If not provided, try to infer from the order
+        if (voucher.CostCenter == null && dto.OrderId.HasValue)
+        {
+            voucher.CostCenter = await _db.Orders.Where(o => o.Id == dto.OrderId.Value).Select(o => (OrderSource?)o.Source).FirstOrDefaultAsync();
+        }
 
         _db.ReceiptVouchers.Add(voucher);
 
@@ -630,6 +637,7 @@ public class ReceiptVouchersController : ControllerBase
         voucher.CashAccountId = dto.CashAccountId;
         voucher.FromAccountId = dto.FromAccountId;
         voucher.CustomerId = dto.CustomerId;
+        voucher.EmployeeId = dto.EmployeeId;
         voucher.PaymentMethod = dto.PaymentMethod;
         voucher.Reference = dto.Reference;
         voucher.Description = dto.Description;
@@ -700,9 +708,9 @@ public class PaymentVouchersController : ControllerBase
         if (source.HasValue) q = q.Where(v => v.CostCenter == source.Value);
 
         if (employeeId.HasValue)
-            q = q.Where(v => _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId == employeeId.Value));
+            q = q.Where(v => v.EmployeeId == employeeId.Value || _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId == employeeId.Value));
         else if (onlyEmployees == true)
-            q = q.Where(v => _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId != null));
+            q = q.Where(v => v.EmployeeId != null || _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId != null));
 
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(v => v.VoucherDate).ThenByDescending(v => v.Id).Skip((page-1)*pageSize).Take(pageSize)
@@ -712,7 +720,7 @@ public class PaymentVouchersController : ControllerBase
                 CostCenter = (int?)v.CostCenter,
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 ToAccountName = v.ToAccount != null ? v.ToAccount.NameAr : null,
-                EntityName = v.Supplier != null ? v.Supplier.Name : null
+                EntityName = v.Supplier != null ? v.Supplier.Name : (v.Employee != null ? v.Employee.Name : null)
             }).ToListAsync();
 
         return Ok(new { items, total, page, pageSize, totalPages = (int)Math.Ceiling(total/(double)pageSize) });
@@ -742,8 +750,15 @@ public class PaymentVouchersController : ControllerBase
             Reference = dto.Reference, Description = dto.Description, AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
             CostCenter = dto.CostCenter,
+            EmployeeId = dto.EmployeeId,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value, CreatedAt = TimeHelper.GetEgyptTime(), PurchaseInvoiceId = dto.PurchaseInvoiceId
         };
+
+        // 🎯 AUTO-RESOLVE COST CENTER: If not provided, default to Website (Admin) for purchases
+        if (voucher.CostCenter == null)
+        {
+            voucher.CostCenter = OrderSource.Website;
+        }
 
         if (dto.PurchaseInvoiceId.HasValue) {
             var invoice = await _db.PurchaseInvoices.FindAsync(dto.PurchaseInvoiceId.Value);
@@ -773,7 +788,7 @@ public class PaymentVouchersController : ControllerBase
             return BadRequest("لا يمكن تعديل سند مرحّل.");
 
         voucher.VoucherDate = dto.VoucherDate; voucher.Amount = dto.Amount; voucher.CashAccountId = dto.CashAccountId;
-        voucher.ToAccountId = dto.ToAccountId; voucher.SupplierId = dto.SupplierId; voucher.Description = dto.Description;
+        voucher.ToAccountId = dto.ToAccountId; voucher.SupplierId = dto.SupplierId; voucher.EmployeeId = dto.EmployeeId; voucher.Description = dto.Description;
         voucher.PurchaseInvoiceId = dto.PurchaseInvoiceId; voucher.UpdatedAt = TimeHelper.GetEgyptTime();
 
         if (entry != null) {

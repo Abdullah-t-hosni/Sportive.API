@@ -93,12 +93,22 @@ public class AccountingCoreService
         int? customerId = null,
         int? supplierId = null,
         int? purchaseInvoiceId = null,
-        OrderSource? source = null)
+        OrderSource? source = null,
+        int? employeeId = null)
     {
         var totalDr = lines.Sum(l => l.debit);
         var totalCr = lines.Sum(l => l.credit);
         if (Math.Round(totalDr, 2) != Math.Round(totalCr, 2))
             throw new InvalidOperationException($"القيد غير متوازن: مدين={totalDr}, دائن={totalCr} | {reference}");
+
+        // 🎯 AUTO-RESOLVE COST CENTER: If not provided, try to infer from the order
+        if (source == null && orderId.HasValue)
+        {
+            source = await _db.Orders.Where(o => o.Id == orderId.Value).Select(o => (OrderSource?)o.Source).FirstOrDefaultAsync();
+        }
+
+        // If still null, default to Website (General/Admin)
+        if (source == null) source = OrderSource.Website;
 
         var jePrefix = source == OrderSource.POS ? "JE-POS" : source == OrderSource.Website ? "JE-WEB" : "JE";
         var entryNo = await _seq.NextAsync(jePrefix, async (db, pattern) =>
@@ -151,6 +161,8 @@ public class AccountingCoreService
             bool isPayables = realCode.StartsWith("2101");
             bool isSalesOrPurchase = type == JournalEntryType.SalesInvoice || type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseInvoice || type == JournalEntryType.PurchaseReturn;
 
+            bool isEmployeeAccount = realCode.StartsWith("2201") || realCode.StartsWith("1201") || realCode.StartsWith("5202");
+            
             entry.Lines.Add(new JournalLine
             {
                 AccountId   = accountId,
@@ -159,6 +171,7 @@ public class AccountingCoreService
                 Description = finalDesc,
                 CustomerId  = (isReceivables || isSalesOrPurchase) ? customerId : null,
                 SupplierId  = (isPayables || isSalesOrPurchase) ? supplierId : null,
+                EmployeeId  = (isEmployeeAccount) ? employeeId : (type == JournalEntryType.Payroll ? employeeId : null),
                 OrderId     = orderId,
                 PurchaseInvoiceId = purchaseInvoiceId,
                 CostCenter  = source, // 🎯 حفظ مركز التكلفة على كل سطر محاسبي

@@ -131,8 +131,10 @@ public class SalesAccountingService
         }
 
         // ── 2. Debits: Discount + Cash/Credit Routing ─────────
-        if (order.TemporalDiscount > 0)
-            lines.Add((salesDiscAcct, Math.Round(order.TemporalDiscount, 2), 0, $"خصومات زمنية (عروض تلقائية) - {order.OrderNumber}"));
+        decimal effectiveTemporalDiscount = Math.Max(order.TemporalDiscount, totalItemDiscounts);
+        
+        if (effectiveTemporalDiscount > 0)
+            lines.Add((salesDiscAcct, Math.Round(effectiveTemporalDiscount, 2), 0, $"خصومات زمنية (عروض تلقائية) - {order.OrderNumber}"));
 
         if (order.DiscountAmount > 0)
             lines.Add((salesDiscAcct, Math.Round(order.DiscountAmount, 2), 0, $"خصم كوبونات / يدوي - {order.OrderNumber}"));

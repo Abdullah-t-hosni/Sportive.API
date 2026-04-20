@@ -73,7 +73,8 @@ public class PurchaseAccountingService
         await _core.PostEntryAsync(
             JournalEntryType.PurchaseInvoice, invoice.InvoiceNumber,
             $"فاتورة مشتريات {typeStr} {invoice.InvoiceNumber} - {invoice.Supplier?.Name}",
-            invoice.InvoiceDate, lines, supplierId: invoice.SupplierId, purchaseInvoiceId: invoice.Id);
+            invoice.InvoiceDate, lines, supplierId: invoice.SupplierId, purchaseInvoiceId: invoice.Id,
+            source: invoice.CostCenter);
     }
 
     public async Task PostPurchaseReturnAsync(PurchaseInvoice invoice, decimal returnedSubTotal = 0, decimal returnedTaxAmount = 0, decimal returnedDiscountAmount = 0)
@@ -107,7 +108,7 @@ public class PurchaseAccountingService
 
         if (taxAmt > 0) lines.Add((vatAcct, 0, taxAmt, $"استرداد ضريبة - {invoice.InvoiceNumber}"));
 
-        await _core.PostEntryAsync(JournalEntryType.PurchaseReturn, refNo, $"مرتجع مشتريات {(isPartial ? "جزئي" : "")} {invoice.InvoiceNumber}", TimeHelper.GetEgyptTime(), lines, supplierId: invoice.SupplierId);
+        await _core.PostEntryAsync(JournalEntryType.PurchaseReturn, refNo, $"مرتجع مشتريات {(isPartial ? "جزئي" : "")} {invoice.InvoiceNumber}", TimeHelper.GetEgyptTime(), lines, supplierId: invoice.SupplierId, source: invoice.CostCenter);
     }
 
     public async Task PostPurchaseReturnAsync(PurchaseReturn pReturn)
@@ -168,7 +169,8 @@ public class PurchaseAccountingService
             pReturn.ReturnDate, 
             lines, 
             supplierId: pReturn.SupplierId,
-            purchaseInvoiceId: pReturn.PurchaseInvoiceId);
+            purchaseInvoiceId: pReturn.PurchaseInvoiceId,
+            source: pReturn.CostCenter);
     }
 }
 

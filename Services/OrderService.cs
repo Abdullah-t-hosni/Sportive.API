@@ -558,8 +558,18 @@ public class OrderService : IOrderService
                     order.DeliveryFee = (threshold.HasValue && order.SubTotal >= threshold.Value) ? 0 : fee;
                 }
 
-                order.DiscountAmount += (dto.DiscountAmount ?? 0);
-                order.TotalAmount = order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount;
+                // 🛡️ Priority Logic: Temporal Discount (Offers) > Manual/Coupon Discount
+                if (order.TemporalDiscount > 0)
+                {
+                    order.DiscountAmount = 0;
+                    order.CouponCode = null;
+                }
+                else
+                {
+                    order.DiscountAmount += (dto.DiscountAmount ?? 0);
+                }
+
+                order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount);
 
                 // 💡 Initial Paid Amount calculation for POS Mixed payments & Structured Payment Table
                 if (order.Source == OrderSource.POS)

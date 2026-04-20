@@ -70,7 +70,8 @@ public record CreatePurchaseInvoiceDto(
     int? InventoryAccountId = null,
     int? ExpenseAccountId = null,
     int? VatAccountId = null,
-    int? CashAccountId = null
+    int? CashAccountId = null,
+    OrderSource? CostCenter = null
 );
 
 public record CreatePurchaseItemDto(
@@ -92,7 +93,8 @@ public record UpdatePurchaseInvoiceDto(
     List<CreatePurchaseItemDto> Items,
     decimal  DiscountAmount = 0,
     string?  AttachmentUrl = null,
-    string?  AttachmentPublicId = null
+    string?  AttachmentPublicId = null,
+    OrderSource? CostCenter = null
 );
 
 public record PurchaseInvoiceSummaryDto(
@@ -107,7 +109,8 @@ public record PurchaseInvoiceSummaryDto(
     DateTime? DueDate,
     decimal  TotalAmount,
     decimal  PaidAmount,
-    decimal  RemainingAmount
+    decimal  RemainingAmount,
+    OrderSource? CostCenter = null
 );
 
 public record PurchaseInvoiceDetailDto(
@@ -130,7 +133,8 @@ public record PurchaseInvoiceDetailDto(
     List<PurchaseItemDto> Items,
     List<SupplierPaymentSummaryDto> Payments,
     string?  AttachmentUrl = null,
-    string?  AttachmentPublicId = null
+    string?  AttachmentPublicId = null,
+    OrderSource? CostCenter = null
 );
 
 public record PurchaseItemDto(
@@ -213,7 +217,8 @@ public record ReturnPurchaseInvoiceDto(
     DateTime ReturnDate,
     string? Notes,
     string? ReferenceNumber,
-    List<ReturnPurchaseItemDto> Items
+    List<ReturnPurchaseItemDto> Items,
+    OrderSource? CostCenter = null
 );
 
 public record CreateStandaloneReturnDto(
@@ -225,7 +230,8 @@ public record CreateStandaloneReturnDto(
     List<CreateStandaloneReturnItemDto> Items,
     decimal DiscountAmount = 0,
     PaymentTerms PaymentTerms = PaymentTerms.Credit,
-    int? CashAccountId = null
+    int? CashAccountId = null,
+    OrderSource? CostCenter = null
 );
 
 public record CreateStandaloneReturnItemDto(

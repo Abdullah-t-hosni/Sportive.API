@@ -81,6 +81,7 @@ public class PurchaseInvoice : BaseEntity
     public int? ExpenseAccountId   { get; set; } // الحساب المدين (المشتريات)
     public int? VatAccountId       { get; set; } // حساب الضريبة
     public int? CashAccountId      { get; set; } // حساب الخزينة (لو نقدي)
+    public OrderSource? CostCenter   { get; set; } // مركز التكلفة (Website/POS)
 
     public ICollection<PurchaseInvoiceItem> Items    { get; set; } = new List<PurchaseInvoiceItem>();
     public ICollection<SupplierPayment>     Payments { get; set; } = new List<SupplierPayment>();
@@ -165,6 +166,7 @@ public class PurchaseReturn : BaseEntity
     public PaymentTerms PaymentTerms { get; set; } = PaymentTerms.Credit;
     public int? CashAccountId { get; set; }
     public Account? CashAccount { get; set; }
+    public OrderSource? CostCenter  { get; set; } // مركز التكلفة (Website/POS)
 
     public ICollection<PurchaseReturnItem> Items { get; set; } = new List<PurchaseReturnItem>();
 }

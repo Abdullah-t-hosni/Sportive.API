@@ -257,12 +257,15 @@ public class PurchaseInvoicesController : ControllerBase
         [FromQuery] string? search     = null,
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate   = null,
+        [FromQuery] OrderSource? costCenter = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
         var q = _db.PurchaseInvoices
             .AsNoTracking()
             .Include(i => i.Supplier)
             .AsQueryable();
+
+        if (costCenter.HasValue) q = q.Where(i => i.CostCenter == costCenter.Value);
 
         if (supplierId.HasValue) q = q.Where(i => i.SupplierId == supplierId.Value);
         if (fromDate.HasValue)   q = q.Where(i => i.InvoiceDate >= fromDate.Value.Date);
@@ -291,7 +294,8 @@ public class PurchaseInvoicesController : ControllerBase
                 i.Id, i.InvoiceNumber, i.SupplierInvoiceNumber, i.SupplierId, i.Supplier.Name,
                 i.PaymentTerms.ToString(), i.Status.ToString(),
                 i.InvoiceDate, i.DueDate,
-                i.TotalAmount, i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount
+                i.TotalAmount, i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
+                i.CostCenter
             )).ToListAsync();
 
         return Ok(new PaginatedResult<PurchaseInvoiceSummaryDto>(items, total, page, pageSize,
@@ -304,6 +308,7 @@ public class PurchaseInvoicesController : ControllerBase
         [FromQuery] string? search = null,
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null,
+        [FromQuery] OrderSource? costCenter = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
         var q = _db.PurchaseReturns
@@ -311,6 +316,8 @@ public class PurchaseInvoicesController : ControllerBase
             .Include(r => r.Supplier)
             .Include(r => r.Invoice)
             .AsQueryable();
+
+        if (costCenter.HasValue) q = q.Where(r => r.CostCenter == costCenter.Value);
 
         if (supplierId.HasValue) q = q.Where(r => r.SupplierId == supplierId.Value);
         if (fromDate.HasValue)   q = q.Where(r => r.ReturnDate >= fromDate.Value.Date);
@@ -417,7 +424,8 @@ public class PurchaseInvoicesController : ControllerBase
                 p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes,
                 p.AttachmentUrl, p.AttachmentPublicId
             )).ToList(),
-            inv.AttachmentUrl, inv.AttachmentPublicId
+            inv.AttachmentUrl, inv.AttachmentPublicId,
+            inv.CostCenter
         ));
     }
 
@@ -475,7 +483,8 @@ public class PurchaseInvoicesController : ControllerBase
             InventoryAccountId    = dto.InventoryAccountId > 0 ? dto.InventoryAccountId : null,
             ExpenseAccountId      = dto.ExpenseAccountId > 0 ? dto.ExpenseAccountId : null,
             VatAccountId          = dto.VatAccountId > 0 ? dto.VatAccountId : null,
-            CashAccountId         = dto.CashAccountId > 0 ? dto.CashAccountId : null
+            CashAccountId         = dto.CashAccountId > 0 ? dto.CashAccountId : null,
+            CostCenter            = dto.CostCenter
         };
 
         var warnings = new List<string>();
@@ -600,6 +609,7 @@ public class PurchaseInvoicesController : ControllerBase
         inv.TaxPercent = dto.TaxPercent;
         inv.DiscountAmount = dto.DiscountAmount;
         inv.Notes = dto.Notes;
+        inv.CostCenter = dto.CostCenter;
         if (dto.SupplierInvoiceNumber != null) inv.SupplierInvoiceNumber = dto.SupplierInvoiceNumber;
 
         _db.PurchaseInvoiceItems.RemoveRange(inv.Items);
@@ -804,7 +814,8 @@ public class PurchaseInvoicesController : ControllerBase
                 CreatedAt = TimeHelper.GetEgyptTime(),
                 DiscountAmount = dto.DiscountAmount,
                 PaymentTerms = dto.PaymentTerms,
-                CashAccountId = dto.CashAccountId > 0 ? dto.CashAccountId : null
+                CashAccountId = dto.CashAccountId > 0 ? dto.CashAccountId : null,
+                CostCenter = dto.CostCenter
             };
 
             decimal subtotal = 0;

@@ -97,6 +97,7 @@ public record CreateJournalLineDto(
     string? Description,
     int?    CustomerId  = null,
     int?    SupplierId  = null,
+    int?    OrderId     = null,
     OrderSource? CostCenter = null
 );
 
@@ -172,7 +173,8 @@ public record CreateReceiptVoucherDto(
     string?  Description,
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    int?     EmployeeId = null
 );
 
 public record UpdateReceiptVoucherDto(
@@ -187,7 +189,8 @@ public record UpdateReceiptVoucherDto(
     string?  Description,
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    int?     EmployeeId = null
 );
 
 public record VoucherSummaryDto(
@@ -220,7 +223,8 @@ public record CreatePaymentVoucherDto(
     string?  Description,
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    int?     EmployeeId = null
 );
 
 public record UpdatePaymentVoucherDto(
@@ -235,7 +239,8 @@ public record UpdatePaymentVoucherDto(
     string?  Description,
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    int?     EmployeeId = null
 );
 
 // ══════════════════════════════════════════════════════

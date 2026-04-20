@@ -579,9 +579,10 @@ public class EmployeeAdvancesController : ControllerBase
 {
     private readonly AppDbContext    _db;
     private readonly SequenceService _seq;
+    private readonly IAccountingService _accounting;
 
-    public EmployeeAdvancesController(AppDbContext db, SequenceService seq)
-        => (_db, _seq) = (db, seq);
+    public EmployeeAdvancesController(AppDbContext db, SequenceService seq, IAccountingService accounting)
+        => (_db, _seq, _accounting) = (db, seq, accounting);
 
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
@@ -646,42 +647,36 @@ public class EmployeeAdvancesController : ControllerBase
 
         _db.EmployeeAdvances.Add(advance);
 
-        // قيد: مدين سلف الموظفين، دائن الخزينة
-        JournalEntry? je = null;
-        if (emp.AccountId.HasValue && dto.CashAccountId.HasValue)
+        // 🎯 UNIFIED VOUCHER SYSTEM: Create a PaymentVoucher record for this advance
+        var mapDict = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId, StringComparer.OrdinalIgnoreCase);
+        var advAccId = mapDict.TryGetValue(MappingKeys.EmployeeAdvances.ToLower(), out var aAccId) && aAccId.HasValue 
+            ? aAccId.Value 
+            : emp.AccountId.Value;
+
+        var voucher = new PaymentVoucher
         {
-            var jeNo = await _seq.NextAsync("JE", async (db, pattern) =>
-            {
-                var max = await db.JournalEntries
-                    .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
-                    .Select(e => e.EntryNumber).ToListAsync();
-                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                          .DefaultIfEmpty(0).Max();
-            });
-
-            je = new JournalEntry
-            {
-                EntryNumber     = jeNo,
-                EntryDate       = dto.AdvanceDate,
-                Type            = JournalEntryType.AdvancePayment,
-                Status          = JournalEntryStatus.Posted,
-                Description     = $"سلفة — {emp.Name}",
-                Reference       = advNo,
-                CreatedByUserId = UserId,
-                CreatedAt       = TimeHelper.GetEgyptTime(),
-                Lines = new List<JournalLine>
-                {
-                    new() { AccountId = emp.AccountId.Value,     Debit = dto.Amount, Credit = 0,           Description = $"سلفة {emp.Name}", EmployeeId = emp.Id },
-                    new() { AccountId = dto.CashAccountId.Value, Debit = 0,          Credit = dto.Amount,  Description = $"صرف سلفة {emp.Name}" }
-                }
-            };
-            _db.JournalEntries.Add(je);
-        }
-
+            VoucherNumber = advance.AdvanceNumber,
+            VoucherDate = advance.AdvanceDate,
+            Amount = advance.Amount,
+            CashAccountId = advance.CashAccountId.Value,
+            ToAccountId = advAccId,
+            EmployeeId = emp.Id,
+            PaymentMethod = VoucherPaymentMethod.Cash,
+            Description = $"سلفة موظف — {emp.Name}",
+            Reference = advance.AdvanceNumber,
+            CreatedAt = TimeHelper.GetEgyptTime(),
+            CreatedByUserId = UserId,
+            CostCenter = OrderSource.Website
+        };
+        _db.PaymentVouchers.Add(voucher);
         await _db.SaveChangesAsync();
-        if (je != null) { advance.JournalEntryId = je.Id; await _db.SaveChangesAsync(); }
 
-        return Ok(new { id = advance.Id, advanceNumber = advance.AdvanceNumber, journalEntryId = je?.Id });
+        // قيد: مدين سلف الموظفين، دائن الخزينة
+        await _accounting.PostPaymentVoucherAsync(voucher);
+        advance.JournalEntryId = voucher.JournalEntryId;
+        await _db.SaveChangesAsync();
+
+        return Ok(new { id = advance.Id, advanceNumber = advance.AdvanceNumber, journalEntryId = advance.JournalEntryId });
     }
 
     [HttpDelete("{id}")]
@@ -709,9 +704,10 @@ public class EmployeeBonusesController : ControllerBase
 {
     private readonly AppDbContext    _db;
     private readonly SequenceService _seq;
+    private readonly IAccountingService _accounting;
 
-    public EmployeeBonusesController(AppDbContext db, SequenceService seq)
-        => (_db, _seq) = (db, seq);
+    public EmployeeBonusesController(AppDbContext db, SequenceService seq, IAccountingService accounting)
+        => (_db, _seq, _accounting) = (db, seq, accounting);
 
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
@@ -772,47 +768,34 @@ public class EmployeeBonusesController : ControllerBase
 
         _db.EmployeeBonuses.Add(bonus);
 
-        // قيد: مدين مصروف رواتب (مكافآت)، دائن الخزينة
-        JournalEntry? je = null;
-        if (dto.CashAccountId.HasValue)
+        var mapDict = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
+        if (!mapDict.TryGetValue(MappingKeys.SalaryExpense, out var bonusExpenseAccId) || bonusExpenseAccId == null)
+            return BadRequest("لم يتم ضبط حساب مصروف الرواتب (للمكافآت) في الإعدادات.");
+
+        // 🎯 UNIFIED VOUCHER SYSTEM: Create a PaymentVoucher record for this bonus
+        var voucher = new PaymentVoucher
         {
-            var jeNo = await _seq.NextAsync("JE", async (db, pattern) =>
-            {
-                var max = await db.JournalEntries
-                    .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
-                    .Select(e => e.EntryNumber).ToListAsync();
-                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                          .DefaultIfEmpty(0).Max();
-            });
-
-            // الحصول على حساب مصروف المكافآت من الربط
-            var core = (AccountingCoreService)HttpContext.RequestServices.GetService(typeof(AccountingCoreService))!;
-            var mapDict = await core.GetSafeSystemMappingsAsync();
-            var bonusExpenseAccId = await core.GetRequiredMappedAccountAsync(MappingKeys.SalaryExpense, mapDict);
-
-            je = new JournalEntry
-            {
-                EntryNumber     = jeNo,
-                EntryDate       = dto.BonusDate,
-                Type            = JournalEntryType.Payroll,
-                Status          = JournalEntryStatus.Posted,
-                Description     = $"مكافأة فورية — {emp.Name}",
-                Reference       = bonNo,
-                CreatedByUserId = UserId,
-                CreatedAt       = TimeHelper.GetEgyptTime(),
-                Lines = new List<JournalLine>
-                {
-                    new() { AccountId = bonusExpenseAccId,       Debit = dto.Amount, Credit = 0,           Description = $"مكافأة {emp.Name}", EmployeeId = emp.Id },
-                    new() { AccountId = dto.CashAccountId.Value, Debit = 0,          Credit = dto.Amount,  Description = $"صرف مكافأة {emp.Name}" }
-                }
-            };
-            _db.JournalEntries.Add(je);
-        }
-
+            VoucherNumber = bonus.BonusNumber,
+            VoucherDate = bonus.BonusDate,
+            Amount = bonus.Amount,
+            CashAccountId = bonus.CashAccountId.Value,
+            ToAccountId = bonusExpenseAccId.Value,
+            EmployeeId = emp.Id,
+            PaymentMethod = VoucherPaymentMethod.Cash,
+            Description = $"مكافأة فورية — {emp.Name}",
+            Reference = bonus.BonusNumber,
+            CreatedAt = TimeHelper.GetEgyptTime(),
+            CreatedByUserId = UserId,
+            CostCenter = OrderSource.Website
+        };
+        _db.PaymentVouchers.Add(voucher);
         await _db.SaveChangesAsync();
-        if (je != null) { bonus.JournalEntryId = je.Id; await _db.SaveChangesAsync(); }
 
-        return Ok(new { id = bonus.Id, bonusNumber = bonus.BonusNumber, journalEntryId = je?.Id });
+        await _accounting.PostPaymentVoucherAsync(voucher);
+        bonus.JournalEntryId = voucher.JournalEntryId;
+        await _db.SaveChangesAsync();
+
+        return Ok(new { id = bonus.Id, bonusNumber = bonus.BonusNumber, journalEntryId = bonus.JournalEntryId });
     }
 
     [HttpDelete("{id}")]
@@ -840,9 +823,10 @@ public class EmployeeDeductionsController : ControllerBase
 {
     private readonly AppDbContext    _db;
     private readonly SequenceService _seq;
+    private readonly IAccountingService _accounting;
 
-    public EmployeeDeductionsController(AppDbContext db, SequenceService seq)
-        => (_db, _seq) = (db, seq);
+    public EmployeeDeductionsController(AppDbContext db, SequenceService seq, IAccountingService accounting)
+        => (_db, _seq, _accounting) = (db, seq, accounting);
 
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
@@ -902,46 +886,41 @@ public class EmployeeDeductionsController : ControllerBase
 
         _db.EmployeeDeductions.Add(ded);
 
-        // قيد: مدين الخزينة، دائن إيراد خصومات موظفين (إذا تم دفعه نقداً فوراً)
-        JournalEntry? je = null;
+        // 🎯 UNIFIED VOUCHER SYSTEM: Create a ReceiptVoucher record for this deduction (if cash)
         if (dto.CashAccountId.HasValue)
         {
-            var jeNo = await _seq.NextAsync("JE", async (db, pattern) =>
-            {
-                var max = await db.JournalEntries
-                    .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
-                    .Select(e => e.EntryNumber).ToListAsync();
-                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                          .DefaultIfEmpty(0).Max();
-            });
+            var mapDict = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
+            if (!mapDict.TryGetValue(MappingKeys.EmployeeDeductions, out var deductionRevenueAccId) || deductionRevenueAccId == null)
+                return BadRequest("لم يتم ضبط حساب إيراد خصومات الموظفين في الإعدادات.");
 
-            var core = (AccountingCoreService)HttpContext.RequestServices.GetService(typeof(AccountingCoreService))!;
-            var mapDict = await core.GetSafeSystemMappingsAsync();
-            var deductionRevenueAccId = await core.GetRequiredMappedAccountAsync(MappingKeys.EmployeeDeductions, mapDict);
-
-            je = new JournalEntry
+            var voucher = new ReceiptVoucher
             {
-                EntryNumber     = jeNo,
-                EntryDate       = dto.DeductionDate,
-                Type            = JournalEntryType.Payroll,
-                Status          = JournalEntryStatus.Posted,
-                Description     = $"تحصيل خصم فوري — {emp.Name}",
-                Reference       = dedNo,
+                VoucherNumber = ded.DeductionNumber,
+                VoucherDate = ded.DeductionDate,
+                Amount = ded.Amount,
+                CashAccountId = ded.CashAccountId.Value,
+                FromAccountId = deductionRevenueAccId.Value,
+                EmployeeId = emp.Id,
+                PaymentMethod = VoucherPaymentMethod.Cash,
+                Description = $"تحصيل خصم فوري — {emp.Name}",
+                Reference = ded.DeductionNumber,
+                CreatedAt = TimeHelper.GetEgyptTime(),
                 CreatedByUserId = UserId,
-                CreatedAt       = TimeHelper.GetEgyptTime(),
-                Lines = new List<JournalLine>
-                {
-                    new() { AccountId = dto.CashAccountId.Value,  Debit = dto.Amount, Credit = 0,           Description = $"تحصيل خصم {emp.Name}" },
-                    new() { AccountId = deductionRevenueAccId,   Debit = 0,          Credit = dto.Amount,  Description = $"خصم {emp.Name}", EmployeeId = emp.Id }
-                }
+                CostCenter = OrderSource.Website
             };
-            _db.JournalEntries.Add(je);
+            _db.ReceiptVouchers.Add(voucher);
+            await _db.SaveChangesAsync();
+
+            await _accounting.PostReceiptVoucherAsync(voucher);
+            ded.JournalEntryId = voucher.JournalEntryId;
+            await _db.SaveChangesAsync();
+        }
+        else
+        {
+            await _db.SaveChangesAsync();
         }
 
-        await _db.SaveChangesAsync();
-        if (je != null) { ded.JournalEntryId = je.Id; await _db.SaveChangesAsync(); }
-
-        return Ok(new { id = ded.Id, deductionNumber = ded.DeductionNumber, journalEntryId = je?.Id });
+        return Ok(new { id = ded.Id, deductionNumber = ded.DeductionNumber, journalEntryId = ded.JournalEntryId });
     }
 
     [HttpDelete("{id}")]
