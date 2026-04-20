@@ -423,6 +423,7 @@ public class FixedAssetsController : ControllerBase
         
         var finalAccumAcc    = accumAccId   ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.AccumulatedDepreciation, mapDict);
         var finalExpenseAcc  = expenseAccId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.DepreciationExpense, mapDict);
+        var costCenter       = ResolveCostCenter(asset, asset.Category);
 
         var jeNo = await _seq.NextAsync("JE", async (db, pattern) =>
         {
@@ -441,13 +442,13 @@ public class FixedAssetsController : ControllerBase
             Status          = JournalEntryStatus.Posted,
             Description     = $"إهلاك {asset.Name} — {dto.PeriodMonth}/{dto.PeriodYear}",
             Reference       = depNo,
-            CostCenter      = ResolveCostCenter(asset, asset.Category),
+            CostCenter      = costCenter,
             CreatedByUserId = UserId,
             CreatedAt       = TimeHelper.GetEgyptTime(),
             Lines = new List<JournalLine>
             {
-                new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"مصروف إهلاك — {asset.Name}" },
-                new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"مجمع إهلاك — {asset.Name}" }
+                new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"مصروف إهلاك — {asset.Name}", CostCenter = costCenter, CreatedAt = TimeHelper.GetEgyptTime() },
+                new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"مجمع إهلاك — {asset.Name}",   CostCenter = costCenter, CreatedAt = TimeHelper.GetEgyptTime() }
             }
         };
         _db.JournalEntries.Add(je);
@@ -472,6 +473,7 @@ public class FixedAssetsController : ControllerBase
 
         int posted = 0, skipped = 0;
         var details = new List<object>();
+        var comboKey = $"BATCH-{dto.PeriodYear}-{dto.PeriodMonth}";
 
         foreach (var asset in assets)
         {
@@ -526,7 +528,8 @@ public class FixedAssetsController : ControllerBase
             _db.AssetDepreciations.Add(dep);
 
             // قيد محاسبي
-            var (assetAccId, accumAccId, expenseAccId) = ResolveAccounts(asset, asset.Category);
+            var (_, accumAccId, expenseAccId) = ResolveAccounts(asset, asset.Category);
+            var batchSource = ResolveCostCenter(asset, asset.Category);
             
             // جلب الربط العام في حال عدم وجود ربط مخصص للأصل/الفئة
             var mapDict = await _core.GetSafeSystemMappingsAsync();
@@ -552,13 +555,13 @@ public class FixedAssetsController : ControllerBase
                     Status          = JournalEntryStatus.Posted,
                     Description     = $"إهلاك {asset.Name} — {dto.PeriodMonth}/{dto.PeriodYear}",
                     Reference       = depNo,
-                    CostCenter      = ResolveCostCenter(asset, asset.Category),
+                    CostCenter      = batchSource,
                     CreatedByUserId = UserId,
                     CreatedAt       = TimeHelper.GetEgyptTime(),
                     Lines = new List<JournalLine>
                     {
-                        new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"مصروف إهلاك — {asset.Name}" },
-                        new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"مجمع إهلاك — {asset.Name}" }
+                        new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"مصروف إهلاك — {asset.Name}", CostCenter = batchSource, CreatedAt = TimeHelper.GetEgyptTime() },
+                        new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"مجمع إهلاك — {asset.Name}",   CostCenter = batchSource, CreatedAt = TimeHelper.GetEgyptTime() }
                     }
                 };
                 _db.JournalEntries.Add(je);

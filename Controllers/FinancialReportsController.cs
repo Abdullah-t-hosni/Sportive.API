@@ -149,7 +149,8 @@ public class FinancialReportsController : ControllerBase
                     b.Code, b.NameAr, b.Level,
                     oDr, oCr,
                     b.PeriodDebit, b.PeriodCredit,
-                    cDr, cCr
+                    cDr, cCr,
+                    b.Id
                 );
             }).ToList();
 
@@ -294,6 +295,8 @@ public class FinancialReportsController : ControllerBase
         var q = _db.JournalLines
             .Include(l => l.JournalEntry)
             .Include(l => l.Account)
+            .Include(l => l.Customer)
+            .Include(l => l.Supplier)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to);
@@ -369,7 +372,8 @@ public class FinancialReportsController : ControllerBase
                 line.JournalEntry.Type.ToString(),
                 line.JournalEntry.Description ?? line.Description ?? "",
                 line.Debit, line.Credit, balanceMap[line.AccountId],
-                line.JournalEntry.Reference, line.JournalEntry.Id
+                line.JournalEntry.Reference, line.JournalEntry.Id,
+                line.Supplier?.Name ?? line.Customer?.FullName
             ));
         }
 
@@ -577,6 +581,8 @@ public class FinancialReportsController : ControllerBase
         // حركات الفترة
         var q = _db.JournalLines
             .Include(l => l.JournalEntry)
+            .Include(l => l.Customer)
+            .Include(l => l.Supplier)
             .Where(l => l.AccountId == accountId
                      && l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
@@ -612,7 +618,8 @@ public class FinancialReportsController : ControllerBase
                 l.JournalEntry.Type.ToString(),
                 l.JournalEntry.Description ?? l.Description ?? "",
                 l.Debit, l.Credit, runBal,
-                l.JournalEntry.Reference, l.JournalEntry.Id
+                l.JournalEntry.Reference, l.JournalEntry.Id,
+                l.Supplier?.Name ?? l.Customer?.FullName
             );
         }).ToList();
 
@@ -1301,7 +1308,8 @@ public record TrialBalanceRow(
     string Code, string NameAr, int Level,
     decimal OpenDebit, decimal OpenCredit,
     decimal PeriodDebit, decimal PeriodCredit,
-    decimal ClosingDebit, decimal ClosingCredit);
+    decimal ClosingDebit, decimal ClosingCredit,
+    int? AccountId = null);
 
 public record IncomeRow(string Code, string NameAr, int Level, decimal Amount);
 public record BalanceSheetRow(string Code, string NameAr, int Level, decimal Amount);
@@ -1309,5 +1317,6 @@ public record LedgerRow(
     int AccountId, string AccountCode, string AccountName,
     DateTime Date, string EntryNumber, string EntryType, string Description,
     decimal Debit, decimal Credit, decimal RunningBalance,
-    string? Reference = null, int JournalEntryId = 0);
+    string? Reference = null, int JournalEntryId = 0,
+    string? PartnerName = null);
 public record CashFlowItem(DateTime Date, string EntryNumber, string Description, string Account, decimal Amount);

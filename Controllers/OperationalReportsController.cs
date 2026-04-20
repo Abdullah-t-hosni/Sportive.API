@@ -21,6 +21,23 @@ public class OperationalReportsController : ControllerBase
         _logger = logger;
     }
     
+    [HttpPost("reset-supplier-balances")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> ResetSupplierBalances()
+    {
+        try 
+        {
+            var suppliers = await _db.Suppliers.ToListAsync();
+            foreach(var s in suppliers) s.OpeningBalance = 0;
+            await _db.SaveChangesAsync();
+            return Ok(new { message = "All supplier opening balances reset to 0" });
+        }
+        catch(Exception ex)
+        {
+            return StatusCode(500, new { message = ex.Message });
+        }
+    }
+
     [HttpGet("dictionaries")]
     public async Task<IActionResult> GetDictionaries()
     {
@@ -725,6 +742,7 @@ public class OperationalReportsController : ControllerBase
             var q = _db.PurchaseInvoices
                 .Include(i => i.Supplier)
                 .Include(i => i.Items).ThenInclude(it => it.Product)
+                .Include(i => i.Items).ThenInclude(it => it.ProductVariant)
                 .Include(i => i.JournalEntries).ThenInclude(j => j.Lines)
                 .Where(i => i.InvoiceDate >= from && i.InvoiceDate <= to)
                 .Where(i => i.JournalEntries.Any(j => j.Status == JournalEntryStatus.Posted));
@@ -749,7 +767,10 @@ public class OperationalReportsController : ControllerBase
                     i.ReturnedAmount,
                     i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
                     i.Items.Select(it => new ReportItemDto(
-                        it.Product?.SKU ?? "", it.Product?.NameAr ?? "", "", "",
+                        it.Product?.SKU ?? "", 
+                        it.Product?.NameAr ?? it.Description, 
+                        it.ProductVariant?.Size ?? "", 
+                        it.ProductVariant?.ColorAr ?? it.ProductVariant?.Color ?? "",
                         it.Quantity, 0, it.UnitCost, 0, it.TotalCost
                     )).ToList()
                 );
@@ -1079,21 +1100,42 @@ public class OperationalReportsController : ControllerBase
                 .OrderBy(m => m.CreatedAt)
                 .ToListAsync();
 
-            var movements = dbMovements.Select(m => new ProductMovementLine(
-                m.CreatedAt,
-                TranslateMovementType(m.Type),
-                m.Reference ?? "N/A",
-                m.Note ?? "-",
-                (m.ProductVariant != null ? (m.ProductVariant.Size + " / " + (m.ProductVariant.ColorAr ?? m.ProductVariant.Color ?? "")) : "أساسي"),
-                m.Quantity > 0 ? m.Quantity : 0,
-                m.Quantity < 0 ? Math.Abs(m.Quantity) : 0,
-                m.Quantity * m.UnitCost,
-                m.Product?.NameAr ?? "Deleted Product",
-                "System",
-                "Completed",
-                m.Product?.SKU ?? "N/A",
-                m.RemainingStock
-            )).ToList();
+            var orderRefs = dbMovements.Where(m => m.Type == InventoryMovementType.Sale || m.Type == InventoryMovementType.ReturnIn).Select(m => m.Reference).Distinct().ToList();
+            var purchaseRefs = dbMovements.Where(m => m.Type == InventoryMovementType.Purchase || m.Type == InventoryMovementType.ReturnOut).Select(m => m.Reference).Distinct().ToList();
+
+            var orderMap = await _db.Orders.AsNoTracking().Where(o => orderRefs.Contains(o.OrderNumber)).ToDictionaryAsync(o => o.OrderNumber, o => o.Id);
+            var purchaseMap = await _db.PurchaseInvoices.AsNoTracking().Where(i => purchaseRefs.Contains(i.InvoiceNumber)).ToDictionaryAsync(i => i.InvoiceNumber, i => i.Id);
+
+            var movements = dbMovements.Select(m => {
+                int? sourceId = null;
+                if ((m.Type == InventoryMovementType.Sale || m.Type == InventoryMovementType.ReturnIn) && m.Reference != null)
+                {
+                    if (orderMap.TryGetValue(m.Reference, out var orderId))
+                        sourceId = orderId;
+                }
+                else if ((m.Type == InventoryMovementType.Purchase || m.Type == InventoryMovementType.ReturnOut) && m.Reference != null)
+                {
+                    if (purchaseMap.TryGetValue(m.Reference, out var purchaseId))
+                        sourceId = purchaseId;
+                }
+
+                return new ProductMovementLine(
+                    m.CreatedAt,
+                    TranslateMovementType(m.Type),
+                    m.Reference ?? "N/A",
+                    m.Note ?? "-",
+                    (m.ProductVariant != null ? (m.ProductVariant.Size + " / " + (m.ProductVariant.ColorAr ?? m.ProductVariant.Color ?? "")) : "أساسي"),
+                    m.Quantity > 0 ? m.Quantity : 0,
+                    m.Quantity < 0 ? Math.Abs(m.Quantity) : 0,
+                    m.Quantity * m.UnitCost,
+                    m.Product?.NameAr ?? "Deleted Product",
+                    "System",
+                    "Completed",
+                    m.Product?.SKU ?? "N/A",
+                    m.RemainingStock,
+                    sourceId
+                );
+            }).ToList();
 
             // Summary
             decimal currentStock = 0;
@@ -1248,7 +1290,7 @@ public class OperationalReportsController : ControllerBase
         for(int i=0;i<h.Length;i++){ws.Cell(2,i+1).Value=h[i];ws.Cell(2,i+1).Style.Font.Bold=true;ws.Cell(2,i+1).Style.Fill.BackgroundColor=XLColor.FromHtml("#1a237e");ws.Cell(2,i+1).Style.Font.FontColor=XLColor.White;}
 
         int r=3;
-        foreach(var row in rows){ws.Cell(r,1).Value=row.CustomerName;ws.Cell(r,2).Value=row.Phone;ws.Cell(r,3).Value=row.Total;ws.Cell(r,4).Value=row.Current;ws.Cell(r,5).Value=row.Days60;ws.Cell(r,6).Value=row.Days90;ws.Cell(r,7).Value=row.Over90;for(int c=3;c<=7;c++)ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";if(row.Over90>0)ws.Row(r).Style.Font.FontColor=XLColor.Red;r++;}
+        foreach(var row in rows){ws.Cell(r,1).Value=row.Name;ws.Cell(r,2).Value=row.Phone;ws.Cell(r,3).Value=row.Total;ws.Cell(r,4).Value=row.Current;ws.Cell(r,5).Value=row.Days60;ws.Cell(r,6).Value=row.Days90;ws.Cell(r,7).Value=row.Over90;for(int c=3;c<=7;c++)ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";if(row.Over90>0)ws.Row(r).Style.Font.FontColor=XLColor.Red;r++;}
 
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"customer_aging_{asOf:yyyyMMdd}.xlsx");
@@ -1266,7 +1308,7 @@ public class OperationalReportsController : ControllerBase
         for(int i=0;i<h.Length;i++){ws.Cell(2,i+1).Value=h[i];ws.Cell(2,i+1).Style.Font.Bold=true;ws.Cell(2,i+1).Style.Fill.BackgroundColor=XLColor.FromHtml("#c62828");ws.Cell(2,i+1).Style.Font.FontColor=XLColor.White;}
 
         int r=3;
-        foreach(var row in rows){ws.Cell(r,1).Value=row.SupplierName;ws.Cell(r,2).Value=row.Phone;ws.Cell(r,3).Value=row.CompanyName;ws.Cell(r,4).Value=row.Total;ws.Cell(r,5).Value=row.Current;ws.Cell(r,6).Value=row.Days60;ws.Cell(r,7).Value=row.Days90;ws.Cell(r,8).Value=row.Over90;for(int c=4;c<=8;c++)ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";r++;}
+        foreach(var row in rows){ws.Cell(r,1).Value=row.Name;ws.Cell(r,2).Value=row.Phone;ws.Cell(r,3).Value=row.CompanyName;ws.Cell(r,4).Value=row.Total;ws.Cell(r,5).Value=row.Current;ws.Cell(r,6).Value=row.Days60;ws.Cell(r,7).Value=row.Days90;ws.Cell(r,8).Value=row.Over90;for(int c=4;c<=8;c++)ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";r++;}
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"supplier_aging_{asOf:yyyyMMdd}.xlsx");
     }
@@ -1489,6 +1531,8 @@ public class OperationalReportsController : ControllerBase
     private IActionResult ExcelUserActivity(List<UserActivityRow> summary, dynamic detail, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
+        
+        // 1. Summary Sheet
         var ws1 = wb.Worksheets.Add("ملخص الكاشير");
         ws1.RightToLeft = true;
         string[] h = { "المستخدم", "عدد العمليات", "إجمالي المبيعات", "إجمالي المرتجعات", "إجمالي الخصومات", "الصافي المحقق", "الملغيات" };
@@ -1507,7 +1551,30 @@ public class OperationalReportsController : ControllerBase
             r++;
         }
         ws1.Columns().AdjustToContents();
-        return ExcelResult(wb, $"user_activity_{from:yyyyMMdd}.xlsx");
+
+        // 2. Details Sheet
+        var ws2 = wb.Worksheets.Add("تفاصيل العمليات");
+        ws2.RightToLeft = true;
+        string[] h2 = { "رقم الطلب", "التاريخ", "الكاشير", "العميل", "الحالة", "القطع", "الإجمالي" };
+        for (int i = 0; i < h2.Length; i++) { ws2.Cell(1, i + 1).Value = h2[i]; ws2.Cell(1, i + 1).Style.Font.Bold = true; ws2.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#1a237e"); ws2.Cell(1, i + 1).Style.Font.FontColor = XLColor.White; }
+        
+        int r2 = 2;
+        var detailList = (IEnumerable<dynamic>)detail;
+        foreach (var d in detailList)
+        {
+            ws2.Cell(r2, 1).Value = d.OrderNumber;
+            ws2.Cell(r2, 2).Value = ((DateTime)d.CreatedAt).ToString("yyyy-MM-dd HH:mm");
+            ws2.Cell(r2, 3).Value = d.SalesPersonName;
+            ws2.Cell(r2, 4).Value = d.CustomerName;
+            ws2.Cell(r2, 5).Value = d.Status;
+            ws2.Cell(r2, 6).Value = d.ItemCount;
+            ws2.Cell(r2, 7).Value = d.TotalAmount;
+            ws2.Cell(r2, 7).Style.NumberFormat.Format = "#,##0.00";
+            r2++;
+        }
+        ws2.Columns().AdjustToContents();
+
+        return ExcelResult(wb, $"user_performance_{from:yyyyMMdd}.xlsx");
     }
 
     private IActionResult ExcelProductMovement(Product? p, List<ProductMovementLine> movements, dynamic summary, DateTime from, DateTime to)
@@ -1649,8 +1716,8 @@ public class OperationalReportsController : ControllerBase
 
 // ── Report DTOs ──────────────────────────────────────────
 public record CustomerStatementLine(DateTime Date, string Type, string Reference, string Description, decimal Debit, decimal Credit, decimal Balance);
-public record CustomerAgingRow(int CustomerId, string CustomerName, string Phone, decimal Total, decimal Current, decimal Days60, decimal Days90, decimal Over90);
-public record SupplierAgingRow(int SupplierId, string SupplierName, string Phone, string CompanyName, decimal Total, decimal Current, decimal Days60, decimal Days90, decimal Over90);
+public record CustomerAgingRow(int CustomerId, string Name, string Phone, decimal Total, decimal Current, decimal Days60, decimal Days90, decimal Over90);
+public record SupplierAgingRow(int SupplierId, string Name, string Phone, string CompanyName, decimal Total, decimal Current, decimal Days60, decimal Days90, decimal Over90);
 public record InventoryRow(int Id, string NameAr, string NameEn, string SKU, string CategoryName, decimal Price, decimal? DiscountPrice, decimal CostPrice, int TotalStock, decimal TotalValue, decimal TotalCostValue, List<VariantInventoryRow> Variants);
 public record VariantInventoryRow(int Id, string Size, string Color, string ColorAr, int StockQuantity, decimal Price, decimal Value);
 public record SalesRow(int Id, string OrderNumber, DateTime Date, string CustomerName, string Phone, string Source, string Status, string PaymentMethod, decimal SubTotal, decimal DiscountAmount, decimal TotalAmount, int ItemCount, List<ReportItemDto>? Items = null, string? PaymentDetails = null);
@@ -1658,4 +1725,4 @@ public record PurchaseRow(int Id, string InvoiceNumber, string SupplierInvoiceNu
 public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason, List<ReportItemDto>? Items = null);
 public record ReportItemDto(string SKU, string ProductName, string Size, string Color, decimal Quantity, decimal UnitPrice = 0, decimal UnitCost = 0, decimal Discount = 0, decimal LineTotal = 0);
 public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal GrossSales, decimal TotalReturns, decimal TotalDiscount, decimal NetSales, int Cancellations);
-public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "", int Balance = 0);
+public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "", int Balance = 0, int? SourceId = null);

@@ -611,9 +611,78 @@ public class DashboardService : IDashboardService
         // ── HOURLY PEAK (أوقات الذروة) ────────────────
         var peakHour = salesByHour.OrderByDescending(h => h.revenue).First();
 
+        // ── 7. أعمار الديون (Aging) ────────────────────
+        // Sales Aging (Customers)
+        var customerLedger = allOrders.GroupBy(o => o.CustomerId)
+            .Select(g => new { CustomerId = g.Key, Balance = g.Sum(o => o.TotalAmount - o.PaidAmount) })
+            .Where(x => x.Balance > 0)
+            .OrderByDescending(x => x.Balance)
+            .ToList();
+
+        var topDebtors = new List<object>();
+        foreach (var cId in customerLedger.Take(5).Select(x => x.CustomerId))
+        {
+            var cust = await _db.Customers.FindAsync(cId);
+            if (cust != null) topDebtors.Add(new { cust.Id, cust.FullName, cust.Phone, balance = customerLedger.First(x => x.CustomerId == cId).Balance });
+        }
+
+        // Purchase Aging (Suppliers)
+        var allPurchases = await _db.PurchaseInvoices
+            .Where(i => i.Status != PurchaseInvoiceStatus.Cancelled)
+            .Select(i => new { i.SupplierId, i.TotalAmount, i.PaidAmount, i.InvoiceDate })
+            .ToListAsync();
+
+        var supplierLedger = allPurchases.GroupBy(i => i.SupplierId)
+            .Select(g => new { SupplierId = g.Key, Balance = g.Sum(i => i.TotalAmount - i.PaidAmount) })
+            .Where(x => x.Balance > 0)
+            .OrderByDescending(x => x.Balance)
+            .ToList();
+
+        var topCreditors = new List<object>();
+        foreach (var sId in supplierLedger.Take(5).Select(x => x.SupplierId))
+        {
+            var supp = await _db.Suppliers.FindAsync(sId);
+            if (supp != null) topCreditors.Add(new { supp.Id, supp.Name, supp.Phone, balance = supplierLedger.First(x => x.SupplierId == sId).Balance });
+        }
+
+        // Aging Buckets (Simplified for Dashboard)
+        var salesAgingBuckets = new {
+            current = customerLedger.Where(x => x.Balance > 0).Sum(x => x.Balance),
+            over30 = 0, // Placeholder for simplicity unless detailed loop is needed
+            total = customerLedger.Sum(x => x.Balance)
+        };
+
+        var purchaseAgingBuckets = new {
+            current = supplierLedger.Where(x => x.Balance > 0).Sum(x => x.Balance),
+            total = supplierLedger.Sum(x => x.Balance)
+        };
+
+        // ── 8. مخطط الإيرادات والمصروفات (12 شهر) ─────────
+        var incomeChartData = new List<object>();
+        for (int i = 11; i >= 0; i--)
+        {
+            var mStart = monthStart.AddMonths(-i);
+            var mEnd = mStart.AddMonths(1);
+
+            var rev = allOrders.Where(o => o.CreatedAt >= mStart && o.CreatedAt < mEnd).Sum(o => o.TotalAmount);
+            
+            // Expenses from purchases + payment vouchers
+            var pur = allPurchases.Where(p => p.InvoiceDate >= mStart && p.InvoiceDate < mEnd).Sum(p => p.TotalAmount);
+            var expVouchers = await _db.PaymentVouchers
+                .Where(v => v.VoucherDate >= mStart && v.VoucherDate < mEnd)
+                .SumAsync(v => (decimal?)v.Amount) ?? 0;
+
+            incomeChartData.Add(new {
+                label = mStart.ToString("MMM yy"),
+                revenue = rev,
+                expenses = pur + expVouchers
+            });
+        }
+
         // ── ASSEMBLE RESPONSE ─────────────────────────
         return new {
             generatedAt = now,
+            newCustomersToday = await _db.Customers.CountAsync(c => c.CreatedAt >= todayStart),
 
             // اليوم مقارنة بالأمس
             today = new {
@@ -633,24 +702,12 @@ public class DashboardService : IDashboardService
                 paymentBreakdown = todayPaymentBreakdown
             },
 
-            // هذا الأسبوع مقارنة بالأسبوع الماضي
-            thisWeek = new {
-                revenue     = thisWeekRevenue,
-                collections = thisWeekCollections,
-                orders      = thisWeekOrders.Count,
-                avgOrder    = Math.Round(avgOrderThisWeek, 2),
-                posOrders   = posCount,
-                webOrders   = webCount,
-                posRevenue  = thisWeekOrders.Where(o => o.Source == OrderSource.POS).Sum(o => o.TotalAmount),
-                webRevenue  = thisWeekOrders.Where(o => o.Source == OrderSource.Website).Sum(o => o.TotalAmount),
-                vsLastWeek  = new {
-                    revenue  = lastWeekRevenue,
-                    collections = lastWeekCollections,
-                    growth   = GrowthPct(thisWeekRevenue, lastWeekRevenue),
-                    orders   = lastWeekOrders.Count,
-                    avgOrder = Math.Round(avgOrderLastWeek, 2),
-                    isUp     = thisWeekRevenue >= lastWeekRevenue
-                }
+            // ديون وأرصدة
+            aging = new {
+                sales = salesAgingBuckets,
+                purchases = purchaseAgingBuckets,
+                topDebtors,
+                topCreditors
             },
 
             // هذا الشهر
@@ -677,24 +734,14 @@ public class DashboardService : IDashboardService
             topProducts = topProducts.Select(p => new {
                 p.ProductId, p.ProductNameAr, p.ProductNameEn,
                 p.TotalSold, p.TotalRevenue, p.OrderCount,
-                image = images.GetValueOrDefault(p.ProductId), // Works now if ProductId is forced to int above
+                image = images.GetValueOrDefault(p.ProductId),
             }),
 
-            // مخطط المبيعات
+            // مخططات
             charts = new {
                 byHour = salesByHour,
                 byDay  = salesByDay,
-            },
-
-            // توزيع طرق الدفع
-            paymentBreakdown,
-
-            // إحصائيات إضافية
-            insights = new {
-                peakHour       = peakHour.hour,
-                peakHourRevenue= peakHour.revenue,
-                bestDayThisWeek= salesByDay.TakeLast(7).OrderByDescending(d => d.revenue).First().date,
-                totalYearRevenue = allOrders.Where(o => o.CreatedAt >= yearStart).Sum(o => o.TotalAmount),
+                income = incomeChartData
             }
         };
     }

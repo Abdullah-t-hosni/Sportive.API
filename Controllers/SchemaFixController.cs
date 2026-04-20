@@ -180,6 +180,54 @@ public class SchemaFixController : ControllerBase
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
+    [HttpGet("run-v10")]
+    public async Task<IActionResult> RunV10()
+    {
+        _logger.LogWarning("SchemaFix run-v10 (Inventory Audits Tables) triggered.");
+        try
+        {
+            var cmds = new[] {
+                @"CREATE TABLE IF NOT EXISTS InventoryAudits (
+                    Id INT AUTO_INCREMENT PRIMARY KEY,
+                    Title VARCHAR(255) NOT NULL,
+                    AuditDate DATETIME NOT NULL,
+                    Description TEXT,
+                    CreatedByUserId VARCHAR(255),
+                    Status INT NOT NULL DEFAULT 1,
+                    TotalExpectedValue DECIMAL(18,2) NOT NULL DEFAULT 0,
+                    TotalActualValue DECIMAL(18,2) NOT NULL DEFAULT 0,
+                    JournalEntryId INT,
+                    CreatedAt DATETIME NOT NULL,
+                    UpdatedAt DATETIME NULL
+                );",
+                @"CREATE TABLE IF NOT EXISTS InventoryAuditItems (
+                    Id INT AUTO_INCREMENT PRIMARY KEY,
+                    InventoryAuditId INT NOT NULL,
+                    ProductId INT,
+                    ProductVariantId INT,
+                    ExpectedQuantity INT NOT NULL DEFAULT 0,
+                    ActualQuantity INT NOT NULL DEFAULT 0,
+                    UnitCost DECIMAL(18,2) NOT NULL DEFAULT 0,
+                    Note TEXT,
+                    CreatedAt DATETIME NOT NULL,
+                    UpdatedAt DATETIME NULL,
+                    FOREIGN KEY (InventoryAuditId) REFERENCES InventoryAudits(Id) ON DELETE CASCADE
+                );",
+                // Ensure InventoryMovements has RemainingStock (it was added recently in logic but maybe not in DB)
+                @"ALTER TABLE InventoryMovements ADD COLUMN IF NOT EXISTS RemainingStock INT NOT NULL DEFAULT 0;"
+            };
+
+            foreach (var c in cmds)
+            {
+                try { await _db.Database.ExecuteSqlRawAsync(c); }
+                catch (Exception ex) { _logger.LogWarning("Cmd failed: {Err}", ex.Message); }
+            }
+
+            return Ok(new { message = "Inventory Audit tables checked/created." });
+        }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
     private string GenerateSlug(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return Guid.NewGuid().ToString().Substring(0, 8);

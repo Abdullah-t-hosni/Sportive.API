@@ -25,20 +25,30 @@ public class ImportController : ControllerBase
     [HttpGet("template")]
     public async Task<IActionResult> GetTemplate()
     {
-        var allCats      = await _db.Categories.ToListAsync();
+        var allCats      = await _db.Categories.Where(c => c.NameAr != null).ToListAsync();
         var mainCats     = allCats.Where(c => c.ParentId == null).ToList();
-        var brands       = await _db.Brands.Select(b => b.NameAr).ToListAsync();
-        var units        = await _db.ProductUnits.Select(u => u.NameAr).ToListAsync();
+        var brands       = await _db.Brands.Where(b => b.NameAr != null).Select(b => b.NameAr!).ToListAsync();
+        var units        = await _db.ProductUnits.Where(u => u.NameAr != null).Select(u => u.NameAr!).ToListAsync();
         
-        var sizes    = await _db.ProductVariants.Where(v => !string.IsNullOrEmpty(v.Size)).Select(v => v.Size!).Distinct().ToListAsync();
-        var colorEnList = await _db.ProductVariants.Where(v => !string.IsNullOrEmpty(v.Color)).Select(v => v.Color!).Distinct().ToListAsync();
-        var colorArList = await _db.ProductVariants.Where(v => !string.IsNullOrEmpty(v.ColorAr)).Select(v => v.ColorAr!).Distinct().ToListAsync();
-
         using var wb = new XLWorkbook();
         var wsL = wb.Worksheets.Add("Lists");
         wsL.Hide();
         
-        string SafeName(string s) => s.Replace(" ", "_").Replace("-", "_").Replace("&", "_").Replace("/", "_");
+        string SafeName(string s) {
+            if (string.IsNullOrWhiteSpace(s)) return "List_" + Guid.NewGuid().ToString("N").Substring(0, 8);
+            var res = s.Replace(" ", "_").Replace("-", "_").Replace("&", "_").Replace("/", "_")
+                       .Replace("(", "_").Replace(")", "_").Replace(".", "_").Replace(",", "_")
+                       .Replace("!", "_").Replace("@", "_").Replace("#", "_").Replace("$", "_");
+            if (res.Length > 0 && char.IsDigit(res[0])) res = "C_" + res;
+            return res;
+        }
+
+        void TryAddDefinedName(string name, IXLRange range) {
+            var safe = SafeName(name);
+            if (!wb.DefinedNames.Any(x => x.Name.Equals(safe, StringComparison.OrdinalIgnoreCase))) {
+                wb.DefinedNames.Add(safe, range);
+            }
+        }
 
         // 1. Write Main Categories to Col 1
         for (int i = 0; i < mainCats.Count; i++) wsL.Cell(i + 1, 1).Value = mainCats[i].NameAr;
@@ -56,7 +66,7 @@ public class ImportController : ControllerBase
                 var subNames = subs.Select(s => s.NameAr).ToList();
                 for (int i = 0; i < subNames.Count; i++) wsL.Cell(i + 1, subCol).Value = subNames[i];
                 var range = wsL.Range(1, subCol, subNames.Count, subCol);
-                wb.DefinedNames.Add(SafeName(mCat.NameAr), range);
+                TryAddDefinedName(mCat.NameAr, range);
                 subCol++;
 
                 // Level 2 -> Level 3
@@ -67,7 +77,7 @@ public class ImportController : ControllerBase
                     {
                         for (int i = 0; i < subSubs.Count; i++) wsL.Cell(i + 1, subCol).Value = subSubs[i];
                         var ssRange = wsL.Range(1, subCol, subSubs.Count, subCol);
-                        wb.DefinedNames.Add(SafeName(sub.NameAr), ssRange);
+                        TryAddDefinedName(sub.NameAr, ssRange);
                         subCol++;
                     }
                 }
@@ -112,7 +122,7 @@ public class ImportController : ControllerBase
 
         ws1.Column(1).Style.NumberFormat.Format = "@"; 
 
-        for (int r = 2; r <= 1000; r++)
+        for (int r = 2; r <= 300; r++) // Reduced to 300 rows for performance
         {
             // Main Category (Col 5)
             ws1.Cell(r, 5).CreateDataValidation().List(mCatRange, true);
@@ -121,30 +131,22 @@ public class ImportController : ControllerBase
             // Sub-Sub Category (Col 7) dependent on Sub (Col 6)
             ws1.Cell(r, 7).CreateDataValidation().List("=INDIRECT(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE($F" + r + ",\" \",\"_\"),\"-\",\"_\"),\"&\",\"_\"),\"/\",\"_\"))", true);
             
-            ws1.Cell(r, 12).CreateDataValidation().List(brandRange, true); // Brand shifted to 12
+            ws1.Cell(r, 12).CreateDataValidation().List(brandRange, true);
             ws1.Cell(r, 3).CreateDataValidation().List(unitRange, true);
             
-            ws1.Cell(r, 11).CreateDataValidation().List(taxRange, true); // Tax shifted to 11
-            ws1.Cell(r, 19).CreateDataValidation().List(statRange, true); // Status shifted to 19
-            ws1.Cell(r, 20).CreateDataValidation().List(featRange, true); // Feature shifted to 20
+            ws1.Cell(r, 11).CreateDataValidation().List(taxRange, true);
+            ws1.Cell(r, 19).CreateDataValidation().List(statRange, true);
+            ws1.Cell(r, 20).CreateDataValidation().List(featRange, true);
         }
 
         // Sample row 1
         ws1.Cell(2,1).Value = "TS-001";
         ws1.Cell(2,2).Value = "تيشرت رياضي";
         ws1.Cell(2,3).Value = units.FirstOrDefault() ?? "قطعة";
-        ws1.Cell(2,4).Value = "Sports T-Shirt";
-        ws1.Cell(2,5).Value = mainCats.FirstOrDefault()?.NameAr ?? "ملابس";
+        ws1.Cell(2,5).Value = mainCats.FirstOrDefault()?.NameAr;
         ws1.Cell(2,8).Value = 200; 
         ws1.Cell(2,9).Value = 299;
         ws1.Cell(2,11).Value = "نعم";
-        ws1.Cell(2,12).Value = brands.FirstOrDefault() ?? "Nike";
-        ws1.Cell(2,13).Value = "M";
-        ws1.Cell(2,14).Value = "Blue";
-        ws1.Cell(2,15).Value = "أزرق";
-        ws1.Cell(2,16).Value = 10;
-        ws1.Cell(2,17).Value = 0;
-        ws1.Cell(2,18).Value = 5; 
         ws1.Cell(2,19).Value = "نشط";
         ws1.Cell(2,20).Value = "لا";
         ws1.Row(2).Style.Font.FontColor = XLColor.Gray;

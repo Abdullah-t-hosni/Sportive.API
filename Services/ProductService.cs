@@ -25,7 +25,7 @@ public class ProductService : IProductService
     public async Task<PaginatedResult<ProductSummaryDto>> GetProductsAsync(ProductFilterDto filter)
     {
         var query = _db.Products
-            .Include(p => p.Category)
+            .Include(p => p.Category).ThenInclude(c => c.Parent).ThenInclude(c => c.Parent)
             .Include(p => p.Brand)
             .Include(p => p.Images)
             .Include(p => p.Reviews)
@@ -108,10 +108,16 @@ public class ProductService : IProductService
         var now = TimeHelper.GetEgyptTime();
         var page = Math.Max(1, filter.Page);
         var items = await query
-            .GroupJoin(_db.ProductDiscounts.Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now),
-                p => p.Id,
-                d => d.ProductId,
-                (p, ds) => new { p, d = ds.FirstOrDefault() })
+            .Select(p => new {
+                p,
+                d = _db.ProductDiscounts
+                    .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now &&
+                        (d.ProductId == p.Id || 
+                         (p.CategoryId != null && (d.CategoryId == p.CategoryId || d.CategoryId == p.Category.ParentId || (p.Category.Parent != null && d.CategoryId == p.Category.Parent.ParentId))) || 
+                         (p.BrandId != null && d.BrandId == p.BrandId)))
+                    .OrderByDescending(d => d.ProductId != null ? 3 : (d.CategoryId != null ? 2 : 1))
+                    .FirstOrDefault()
+            })
             .Skip((page - 1) * filter.PageSize)
             .Take(filter.PageSize)
             .Select(x => new ProductSummaryDto(
@@ -166,10 +172,14 @@ public class ProductService : IProductService
             .Include(x => x.Reviews).ThenInclude(r => r.Customer)
             .FirstOrDefaultAsync(x => x.Id == id);
 
-        if (p == null) return null;
         var now = TimeHelper.GetEgyptTime();
         var d = await _db.ProductDiscounts
-            .FirstOrDefaultAsync(x => x.ProductId == id && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now);
+            .Where(x => (x.ProductId == id || 
+                         (p.CategoryId != null && (x.CategoryId == p.CategoryId || x.CategoryId == p.Category.ParentId || (p.Category.Parent != null && x.CategoryId == p.Category.Parent.ParentId))) || 
+                         (p.BrandId != null && x.BrandId == p.BrandId)) 
+                    && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
+            .OrderByDescending(d => d.ProductId != null ? 3 : (d.CategoryId != null ? 2 : 1))
+            .FirstOrDefaultAsync();
 
         return MapToDetail(p, d);
     }
@@ -185,10 +195,14 @@ public class ProductService : IProductService
             .Include(x => x.Reviews).ThenInclude(r => r.Customer)
             .FirstOrDefaultAsync(x => x.Slug == slug);
 
-        if (p == null) return null;
         var now = TimeHelper.GetEgyptTime();
         var d = await _db.ProductDiscounts
-            .FirstOrDefaultAsync(x => x.ProductId == p.Id && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now);
+            .Where(x => (x.ProductId == p.Id || 
+                         (p.CategoryId != null && (x.CategoryId == p.CategoryId || x.CategoryId == p.Category.ParentId || (p.Category.Parent != null && x.CategoryId == p.Category.Parent.ParentId))) || 
+                         (p.BrandId != null && x.BrandId == p.BrandId)) 
+                    && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
+            .OrderByDescending(d => d.ProductId != null ? 3 : (d.CategoryId != null ? 2 : 1))
+            .FirstOrDefaultAsync();
 
         return MapToDetail(p, d);
     }
@@ -546,7 +560,6 @@ public class ProductService : IProductService
         await _notifications.BroadcastStockUpdateAsync(productId, variantId, 0);
         return true;
     }
-
     public async Task<List<ProductSummaryDto>> GetFeaturedProductsAsync(int count = 8)
     {
         var now = TimeHelper.GetEgyptTime();
@@ -556,10 +569,16 @@ public class ProductService : IProductService
             .Include(p => p.Images)
             .Include(p => p.Unit)
             .Where(p => p.IsFeatured && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock))
-            .GroupJoin(_db.ProductDiscounts.Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now),
-                p => p.Id,
-                d => d.ProductId,
-                (p, ds) => new { p, d = ds.FirstOrDefault() })
+            .Select(p => new {
+                p,
+                d = _db.ProductDiscounts
+                    .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now &&
+                        (d.ProductId == p.Id || 
+                         (p.CategoryId != null && (d.CategoryId == p.CategoryId || d.CategoryId == p.Category.ParentId || (p.Category.Parent != null && d.CategoryId == p.Category.Parent.ParentId))) || 
+                         (d.BrandId != null && d.BrandId == p.BrandId)))
+                    .OrderByDescending(d => d.ProductId != null ? 3 : (d.CategoryId != null ? 2 : 1))
+                    .FirstOrDefault()
+            })
             .OrderByDescending(x => x.p.CreatedAt)
             .Take(count)
             .Select(x => new ProductSummaryDto(
@@ -610,10 +629,16 @@ public class ProductService : IProductService
             .Include(p => p.Images)
             .Include(p => p.Unit)
             .Where(p => p.CategoryId == product.CategoryId && p.Id != productId && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock))
-            .GroupJoin(_db.ProductDiscounts.Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now),
-                p => p.Id,
-                d => d.ProductId,
-                (p, ds) => new { p, d = ds.FirstOrDefault() })
+            .Select(p => new {
+                p,
+                d = _db.ProductDiscounts
+                    .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now &&
+                        (d.ProductId == p.Id || 
+                         (p.CategoryId != null && (d.CategoryId == p.CategoryId || d.CategoryId == p.Category.ParentId || (p.Category.Parent != null && d.CategoryId == p.Category.Parent.ParentId))) || 
+                         (p.BrandId != null && d.BrandId == p.BrandId)))
+                    .OrderByDescending(d => d.ProductId != null ? 3 : (d.CategoryId != null ? 2 : 1))
+                    .FirstOrDefault()
+            })
             .OrderBy(_ => Guid.NewGuid())
             .Take(count)
             .Select(x => new ProductSummaryDto(
@@ -646,6 +671,16 @@ public class ProductService : IProductService
                 x.d != null ? x.d.Label : null
             ))
             .ToListAsync();
+    }
+
+    private async Task<ProductDiscount?> GetProductDiscountAsync(Product p)
+    {
+        var now = TimeHelper.GetEgyptTime();
+        return await _db.ProductDiscounts
+            .Where(x => (x.ProductId == p.Id || (p.CategoryId != null && x.CategoryId == p.CategoryId) || (p.BrandId != null && x.BrandId == p.BrandId)) 
+                    && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
+            .OrderByDescending(d => d.ProductId != null ? 3 : (d.CategoryId != null ? 2 : 1))
+            .FirstOrDefaultAsync();
     }
 
     private static ProductDetailDto MapToDetail(Product p, ProductDiscount? d = null)

@@ -15,29 +15,37 @@ public static class DefaultPermissions
 
             AppRoles.Cashier => new[]
             {
-                (ModuleKeys.Pos,       true, true),
-                (ModuleKeys.Orders,    true, true),
-                (ModuleKeys.Customers, true, false),
-                (ModuleKeys.Products,  true, false),
-                (ModuleKeys.Dashboard, true, false),
+                (ModuleKeys.Pos,            true, true),
+                (ModuleKeys.Orders,         true, true),
+                (ModuleKeys.ReturnsFull,    true, true),
+                (ModuleKeys.ReturnsPartial, true, true),
+                (ModuleKeys.Customers,      true, false),
+                (ModuleKeys.Products,       true, false),
+                (ModuleKeys.Dashboard,      true, false),
             },
 
             AppRoles.Accountant => new[]
             {
-                (ModuleKeys.Accounting, true, true),
-                (ModuleKeys.Payroll,    true, true),
-                (ModuleKeys.Hr,         true, false),
-                (ModuleKeys.Reports,    true, false),
-                (ModuleKeys.Purchases,  true, false),
-                (ModuleKeys.Dashboard,  true, false),
+                (ModuleKeys.AccountingMain, true, true),
+                (ModuleKeys.Chart,          true, true),
+                (ModuleKeys.Journal,        true, true),
+                (ModuleKeys.Receipts,       true, true),
+                (ModuleKeys.Payments,       true, true),
+                (ModuleKeys.HrPayroll,      true, true),
+                (ModuleKeys.HrAdvances,     true, true),
+                (ModuleKeys.ReportsMain,    true, false),
+                (ModuleKeys.Suppliers,      true, false),
+                (ModuleKeys.Purchases,      true, false),
+                (ModuleKeys.Dashboard,      true, false),
             },
 
             AppRoles.Staff => new[]
             {
-                (ModuleKeys.Orders,    true, false),
-                (ModuleKeys.Products,  true, false),
-                (ModuleKeys.Customers, true, false),
-                (ModuleKeys.Dashboard, true, false),
+                (ModuleKeys.Orders,         true, false),
+                (ModuleKeys.Products,       true, false),
+                (ModuleKeys.Customers,      true, false),
+                (ModuleKeys.Inventory,      true, true),
+                (ModuleKeys.Dashboard,      true, false),
             },
 
             _ => Array.Empty<(string, bool, bool)>()

@@ -19,11 +19,29 @@ public class InventoryAuditsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IInventoryService _inventory;
     private readonly AccountingCoreService _accounting;
-    public InventoryAuditsController(AppDbContext db, IInventoryService inventory, AccountingCoreService accounting)
+    private readonly ILogger<InventoryAuditsController> _logger;
+
+    public InventoryAuditsController(AppDbContext db, IInventoryService inventory, AccountingCoreService accounting, ILogger<InventoryAuditsController> logger)
     {
         _db = db;
         _inventory = inventory;
         _accounting = accounting;
+        _logger = logger;
+    }
+
+    private async Task<bool> CheckPerms(string perm, bool edit = false)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userId)) return false;
+        
+        // Admins bypass
+        if (User.IsInRole("Admin")) return true;
+
+        var userPerm = await _db.UserModulePermissions
+            .FirstOrDefaultAsync(p => p.UserAccountID == userId && p.ModuleKey == perm);
+        
+        if (userPerm == null) return false;
+        return edit ? userPerm.CanEdit : userPerm.CanView;
     }
 
     [HttpGet("ping")]
@@ -31,9 +49,10 @@ public class InventoryAuditsController : ControllerBase
     public IActionResult Ping() => Ok("Audit Controller is Alive");
 
     [HttpGet]
-    [AllowAnonymous]
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
+        if (!await CheckPerms(ModuleKeys.InventoryCount)) return Forbid();
+
         try 
         {
             var q = _db.InventoryAudits.Include(a => a.Items).AsNoTracking();
@@ -54,13 +73,16 @@ public class InventoryAuditsController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { message = "Diagnostic Error", detail = ex.Message, stack = ex.StackTrace });
+            _logger.LogError(ex, "Error in GetAll InventoryAudits");
+            return StatusCode(500, new { message = "خطأ في تحميل سجلات الجرد", detail = ex.Message });
         }
     }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
+        if (!await CheckPerms(ModuleKeys.InventoryCount)) return Forbid();
+
         try
         {
             var a = await _db.InventoryAudits
@@ -71,29 +93,33 @@ public class InventoryAuditsController : ControllerBase
 
             if (a == null) return NotFound();
 
-            // Mapping in memory
             return Ok(new InventoryAuditDetailDto(
                 a.Id, a.Title, a.AuditDate, a.Description, (int)a.Status,
-                a.TotalExpectedValue, a.TotalActualValue, a.TotalActualValue - a.TotalExpectedValue,
-                a.Items.Select(i => new InventoryAuditItemDto(
-                    i.Id, i.ProductId, i.Product?.NameAr, i.Product?.SKU,
-                    i.ProductVariantId, i.ProductVariant?.Size ?? i.ProductVariant?.ColorAr,
-                    i.ExpectedQuantity, i.ActualQuantity, i.ActualQuantity - i.ExpectedQuantity, i.UnitCost,
-                    i.ExpectedQuantity * i.UnitCost, i.ActualQuantity * i.UnitCost,
-                    i.Note
-                )).ToList(),
+                a.TotalExpectedValue, a.TotalActualValue, a.ValueDifference,
+                a.Items.Select(i => {
+                    var variantName = i.ProductVariant != null ? $"{i.ProductVariant.Size} {i.ProductVariant.ColorAr}".Trim() : null;
+                    return new InventoryAuditItemDto(
+                        i.Id, i.ProductId, i.Product?.NameAr, i.Product?.SKU,
+                        i.ProductVariantId, variantName,
+                        i.ExpectedQuantity, i.ActualQuantity, i.Difference, i.UnitCost,
+                        i.ExpectedQuantity * i.UnitCost, i.ActualQuantity * i.UnitCost,
+                        i.Note
+                    );
+                }).ToList(),
                 a.JournalEntryId
             ));
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { message = "Diagnostic Error", detail = ex.Message });
+            _logger.LogError(ex, "Error in GetById InventoryAudit {Id}", id);
+            return StatusCode(500, new { message = "خطأ في تحميل تفاصيل الجرد", detail = ex.Message });
         }
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateInventoryAuditDto dto)
     {
+        if (!await CheckPerms(ModuleKeys.InventoryCount, true)) return Forbid();
         var audit = new InventoryAudit
         {
             Title = string.IsNullOrWhiteSpace(dto.Title) ? $"جرد مخزن - {TimeHelper.GetEgyptTime():yyyy-MM-dd HH:mm}" : dto.Title,
@@ -117,6 +143,7 @@ public class InventoryAuditsController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateInventoryAuditDto dto)
     {
+        if (!await CheckPerms(ModuleKeys.InventoryCount, true)) return Forbid();
         var audit = await _db.InventoryAudits.Include(a => a.Items).FirstOrDefaultAsync(a => a.Id == id);
         if (audit == null) return NotFound();
         if (audit.Status != InventoryAuditStatus.Draft) return BadRequest("يمكن تعديل المسودات فقط");
@@ -186,6 +213,7 @@ public class InventoryAuditsController : ControllerBase
     [HttpPatch("{id}/post")]
     public async Task<IActionResult> PostAudit(int id)
     {
+        if (!await CheckPerms(ModuleKeys.InventoryCount, true)) return Forbid();
         var audit = await _db.InventoryAudits
             .Include(a => a.Items)
             .FirstOrDefaultAsync(a => a.Id == id);
@@ -227,6 +255,7 @@ public class InventoryAuditsController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
+        if (!await CheckPerms(ModuleKeys.InventoryCount, true)) return Forbid();
         var audit = await _db.InventoryAudits.FindAsync(id);
         if (audit == null) return NotFound();
         if (audit.Status == InventoryAuditStatus.Posted) return BadRequest("لا يمكن حذف جرد معتمد");
