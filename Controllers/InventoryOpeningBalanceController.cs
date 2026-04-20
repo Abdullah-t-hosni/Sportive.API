@@ -23,19 +23,32 @@ public class InventoryOpeningBalanceController : ControllerBase
     private readonly IAccountingService _accounting;
     private readonly IInventoryService _inventory;
     private readonly AccountingCoreService _core;
+    private readonly IPdfService _pdf;
 
     public InventoryOpeningBalanceController(
         AppDbContext db, 
         SequenceService seq, 
         IAccountingService accounting,
         IInventoryService inventory,
-        AccountingCoreService core)
+        AccountingCoreService core,
+        IPdfService pdf)
     {
         _db = db;
         _seq = seq;
         _accounting = accounting;
         _inventory = inventory;
         _core = core;
+        _pdf = pdf;
+    }
+
+    [HttpGet("{id}/pdf")]
+    public async Task<IActionResult> GetPdf(int id)
+    {
+        var op = await _db.InventoryOpeningBalances.Include(x => x.Items).FirstOrDefaultAsync(x => x.Id == id);
+        if (op == null) return NotFound();
+
+        var pdfBytes = await _pdf.GenerateOpeningBalancePdfAsync(op);
+        return File(pdfBytes, "application/pdf", $"OpeningBalance-{op.Reference}.pdf");
     }
 
     [HttpGet]

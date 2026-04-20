@@ -392,6 +392,22 @@ public class PurchaseInvoicesController : ControllerBase
         });
     }
 
+    [HttpGet("returns/{id}/pdf")]
+    public async Task<IActionResult> GetReturnPdf(int id)
+    {
+        var rtn = await _db.PurchaseReturns
+            .Include(r => r.Supplier)
+            .Include(r => r.Invoice)
+            .Include(r => r.Items).ThenInclude(ri => ri.Product)
+            .Include(r => r.Items).ThenInclude(ri => ri.ProductVariant)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (rtn == null) return NotFound();
+
+        var pdfBytes = await _pdf.GeneratePurchaseReturnPdfAsync(rtn);
+        return File(pdfBytes, "application/pdf", $"Return-{rtn.ReturnNumber}.pdf");
+    }
+
     [HttpGet("{id}")]
 
     public async Task<IActionResult> GetById(int id)

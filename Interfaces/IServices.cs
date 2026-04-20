@@ -113,6 +113,10 @@ public interface IPdfService
 {
     Task<byte[]> GenerateOrderPdfAsync(OrderDetailDto order);
     Task<byte[]> GeneratePurchaseInvoicePdfAsync(Sportive.API.Models.PurchaseInvoice invoice);
+    Task<byte[]> GenerateVoucherPdfAsync(ReceiptVoucher? receiptVoucher, PaymentVoucher? paymentVoucher);
+    Task<byte[]> GenerateOpeningBalancePdfAsync(InventoryOpeningBalance openingBalance);
+    Task<byte[]> GeneratePurchaseReturnPdfAsync(PurchaseReturn pReturn);
+    Task<byte[]> GenerateJournalEntryPdfAsync(JournalEntry entry);
 }
 
 public interface IEmailService

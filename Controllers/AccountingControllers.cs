@@ -392,10 +392,28 @@ public class JournalEntriesController : ControllerBase
 {
     private readonly IAccountingService _accounting;
     private readonly AppDbContext _db;
-    public JournalEntriesController(IAccountingService accounting, AppDbContext db)
+    private readonly IPdfService _pdf;
+    public JournalEntriesController(IAccountingService accounting, AppDbContext db, IPdfService pdf)
     {
         _accounting = accounting;
         _db = db;
+        _pdf = pdf;
+    }
+
+    [HttpGet("{id}/pdf")]
+    public async Task<IActionResult> GetPdf(int id)
+    {
+        var entry = await _db.JournalEntries
+            .Include(x => x.Lines).ThenInclude(l => l.Account)
+            .Include(x => x.Lines).ThenInclude(l => l.Supplier)
+            .Include(x => x.Lines).ThenInclude(l => l.Customer)
+            .Include(x => x.Lines).ThenInclude(l => l.Employee)
+            .FirstOrDefaultAsync(x => x.Id == id);
+            
+        if (entry == null) return NotFound();
+
+        var pdfBytes = await _pdf.GenerateJournalEntryPdfAsync(entry);
+        return File(pdfBytes, "application/pdf", $"JV-{entry.EntryNumber}.pdf");
     }
 
     [HttpGet]
@@ -504,10 +522,28 @@ public class ReceiptVouchersController : ControllerBase
     private readonly IAccountingService _accounting;
     private readonly AppDbContext _db;
     private readonly SequenceService _seq;
-    public ReceiptVouchersController(IAccountingService accounting, AppDbContext db, SequenceService seq) {
+    private readonly IPdfService _pdf;
+    public ReceiptVouchersController(IAccountingService accounting, AppDbContext db, SequenceService seq, IPdfService pdf) {
         _accounting = accounting;
         _db = db;
         _seq = seq;
+        _pdf = pdf;
+    }
+
+    [HttpGet("{id}/pdf")]
+    public async Task<IActionResult> GetPdf(int id)
+    {
+        var voucher = await _db.ReceiptVouchers
+            .Include(v => v.CashAccount)
+            .Include(v => v.FromAccount)
+            .Include(v => v.Customer)
+            .Include(v => v.Employee)
+            .FirstOrDefaultAsync(v => v.Id == id);
+
+        if (voucher == null) return NotFound();
+
+        var pdfBytes = await _pdf.GenerateVoucherPdfAsync(voucher, null);
+        return File(pdfBytes, "application/pdf", $"Receipt-{voucher.VoucherNumber}.pdf");
     }
 
     [HttpGet]
@@ -686,10 +722,28 @@ public class PaymentVouchersController : ControllerBase
     private readonly IAccountingService _accounting;
     private readonly AppDbContext _db;
     private readonly SequenceService _seq;
-    public PaymentVouchersController(IAccountingService accounting, AppDbContext db, SequenceService seq) {
+    private readonly IPdfService _pdf;
+    public PaymentVouchersController(IAccountingService accounting, AppDbContext db, SequenceService seq, IPdfService pdf) {
         _accounting = accounting;
         _db = db;
         _seq = seq;
+        _pdf = pdf;
+    }
+
+    [HttpGet("{id}/pdf")]
+    public async Task<IActionResult> GetPdf(int id)
+    {
+        var voucher = await _db.PaymentVouchers
+            .Include(v => v.CashAccount)
+            .Include(v => v.ToAccount)
+            .Include(v => v.Supplier)
+            .Include(v => v.Employee)
+            .FirstOrDefaultAsync(v => v.Id == id);
+
+        if (voucher == null) return NotFound();
+
+        var pdfBytes = await _pdf.GenerateVoucherPdfAsync(null, voucher);
+        return File(pdfBytes, "application/pdf", $"Payment-{voucher.VoucherNumber}.pdf");
     }
 
     [HttpGet]
