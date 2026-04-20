@@ -44,7 +44,7 @@ public class CouponService : ICouponService
         if (coupon.DiscountType == DiscountType.Percentage)
         {
             discount = orderTotal * (coupon.DiscountValue / 100);
-            if (coupon.MaxDiscountAmount.HasValue)
+            if (coupon.MaxDiscountAmount.HasValue && coupon.MaxDiscountAmount.Value > 0)
                 discount = Math.Min(discount, coupon.MaxDiscountAmount.Value);
         }
         else
