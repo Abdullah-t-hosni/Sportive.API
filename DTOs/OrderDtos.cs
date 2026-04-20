@@ -48,6 +48,7 @@ public record CreateOrderDto(
     string? CustomerName = null,
     string? Note = null,
     decimal? DiscountAmount = null,
+    decimal? TemporalDiscount = null,
     decimal? SubTotal = null,
     List<OrderPaymentDto>? Payments = null,
     [property: System.Text.Json.Serialization.JsonPropertyName("paidAmount")]
@@ -82,6 +83,7 @@ public record CreatePOSOrderDto(
     OrderSource OrderSource,
     string? Note = null,
     decimal? DiscountAmount = null,
+    decimal? TemporalDiscount = null,
     decimal? Subtotal = null,
     [property: System.Text.Json.Serialization.JsonPropertyName("payments")]
     List<OrderPaymentDto>? Payments = null,
@@ -139,6 +141,7 @@ public record OrderDetailDto(
     DateTime? PickupScheduledAt,
     decimal SubTotal,
     decimal DiscountAmount,
+    decimal TemporalDiscount,
     decimal DeliveryFee,
     decimal TotalAmount,
     string? CustomerNotes,

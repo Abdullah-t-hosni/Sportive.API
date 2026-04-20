@@ -72,6 +72,7 @@ public class Order : BaseEntity
     // Pricing
     public decimal SubTotal { get; set; }
     public decimal DiscountAmount { get; set; } = 0;
+    public decimal TemporalDiscount { get; set; } = 0; // خصومات زمنية (عروض تلقائية)
     public string? CouponCode { get; set; }
     public decimal TotalAmount { get; set; }
     public decimal TotalVatAmount { get; set; } = 0;

@@ -119,6 +119,7 @@ public class OrdersController : ControllerBase
             posDto.CustomerName,
             posDto.Note,
             posDto.DiscountAmount,
+            posDto.TemporalDiscount,
             posDto.Subtotal,
             posDto.Payments,
             posDto.PaidAmount,

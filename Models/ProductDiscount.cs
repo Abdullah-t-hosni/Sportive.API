@@ -30,4 +30,12 @@ public class ProductDiscount : BaseEntity
     public bool IsActive { get; set; } = true;
 
     public string? Label { get; set; } // e.g. "عرض العيد", "Black Friday"
+    public DiscountApplyTo ApplyTo { get; set; } = DiscountApplyTo.All;
+}
+
+public enum DiscountApplyTo
+{
+    All = 0,
+    Store = 1, // Website/Online
+    POS = 2    // In-store
 }

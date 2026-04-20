@@ -198,6 +198,7 @@ public class OrderService : IOrderService
             o.PickupScheduledAt,
             o.SubTotal,
             o.DiscountAmount,
+            o.TemporalDiscount,
             o.DeliveryFee,
             o.TotalAmount,
             o.CustomerNotes,
@@ -309,6 +310,7 @@ public class OrderService : IOrderService
                     Source = actualSource,
                     AdminNotes = dto.Note,
                     DiscountAmount = 0,
+                    TemporalDiscount = dto.TemporalDiscount ?? 0,
                     AttachmentUrl = dto.AttachmentUrl,
                     AttachmentPublicId = dto.AttachmentPublicId,
                     CreatedAt = now
@@ -316,6 +318,9 @@ public class OrderService : IOrderService
 
                 var activeDiscounts = await _db.ProductDiscounts
                     .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now)
+                    .Where(d => d.ApplyTo == DiscountApplyTo.All || 
+                               (actualSource == OrderSource.POS && d.ApplyTo == DiscountApplyTo.POS) ||
+                               (actualSource == OrderSource.Website && d.ApplyTo == DiscountApplyTo.Store))
                     .ToListAsync();
 
                 // 3. Handle Items
@@ -341,9 +346,23 @@ public class OrderService : IOrderService
                         }
                         else
                         {
-                            var disc = activeDiscounts.FirstOrDefault(d => d.ProductId == product.Id)
-                                    ?? activeDiscounts.FirstOrDefault(d => d.CategoryId == product.CategoryId)
-                                    ?? activeDiscounts.FirstOrDefault(d => d.BrandId == product.BrandId);
+                            // 🔍 RECURSIVE DISCOUNT LOOKUP: Product -> Category Tree -> Brand
+                            var disc = activeDiscounts.FirstOrDefault(d => d.ProductId == product.Id);
+                            if (disc == null)
+                            {
+                                int? currentCatId = product.CategoryId;
+                                while (currentCatId.HasValue && disc == null)
+                                {
+                                    int lookupId = currentCatId.Value;
+                                    disc = activeDiscounts.FirstOrDefault(d => d.CategoryId == lookupId);
+                                    if (disc == null)
+                                    {
+                                        var cat = await _db.Categories.AsNoTracking().FirstOrDefaultAsync(c => c.Id == lookupId);
+                                        currentCatId = cat?.ParentId;
+                                    }
+                                }
+                            }
+                            if (disc == null) disc = activeDiscounts.FirstOrDefault(d => d.BrandId == product.BrandId);
 
                             if (disc != null && item.Quantity >= disc.MinQty)
                             {
@@ -394,7 +413,7 @@ public class OrderService : IOrderService
 
                         order.Items.Add(orderItem);
                         order.SubTotal += (orderItem.OriginalUnitPrice * orderItem.Quantity);
-                        order.DiscountAmount += orderItem.DiscountAmount;
+                        order.TemporalDiscount += orderItem.DiscountAmount;
 
                         await _inventory.LogMovementAsync(
                             InventoryMovementType.Sale,
@@ -428,12 +447,26 @@ public class OrderService : IOrderService
                         if (ci.ProductVariant?.PriceAdjustment.HasValue == true)
                             originalUnitPrice += ci.ProductVariant.PriceAdjustment.Value;
 
-                        var disc = activeDiscounts.FirstOrDefault(d => d.ProductId == ci.ProductId)
-                                ?? activeDiscounts.FirstOrDefault(d => d.CategoryId == ci.Product.CategoryId)
-                                ?? activeDiscounts.FirstOrDefault(d => d.BrandId == ci.Product.BrandId);
+                            // 🔍 RECURSIVE DISCOUNT LOOKUP: Product -> Category Tree -> Brand
+                            var disc = activeDiscounts.FirstOrDefault(d => d.ProductId == ci.ProductId);
+                            if (disc == null)
+                            {
+                                int? currentCatId = ci.Product.CategoryId;
+                                while (currentCatId.HasValue && disc == null)
+                                {
+                                    int lookupId = currentCatId.Value;
+                                    disc = activeDiscounts.FirstOrDefault(d => d.CategoryId == lookupId);
+                                    if (disc == null)
+                                    {
+                                        var cat = await _db.Categories.AsNoTracking().FirstOrDefaultAsync(c => c.Id == lookupId);
+                                        currentCatId = cat?.ParentId;
+                                    }
+                                }
+                            }
+                            if (disc == null) disc = activeDiscounts.FirstOrDefault(d => d.BrandId == ci.Product.BrandId);
 
-                        decimal unitPrice;
-                        if (disc != null && ci.Quantity >= disc.MinQty)
+                            decimal unitPrice;
+                            if (disc != null && ci.Quantity >= disc.MinQty)
                         {
                             unitPrice = disc.DiscountType == DiscountType.Percentage 
                                 ? Math.Round(originalUnitPrice - (originalUnitPrice * disc.DiscountValue / 100), 2)
@@ -472,7 +505,7 @@ public class OrderService : IOrderService
 
                         order.Items.Add(orderItem);
                         order.SubTotal += (orderItem.OriginalUnitPrice * orderItem.Quantity);
-                        order.DiscountAmount += orderItem.DiscountAmount;
+                        order.TemporalDiscount += orderItem.DiscountAmount;
 
                         await _inventory.LogMovementAsync(
                             InventoryMovementType.Sale,
@@ -526,7 +559,8 @@ public class OrderService : IOrderService
                 }
 
                 order.DiscountAmount += (dto.DiscountAmount ?? 0);
-                order.TotalAmount = order.SubTotal + order.DeliveryFee - order.DiscountAmount;
+                order.TemporalDiscount += (dto.TemporalDiscount ?? 0);
+                order.TotalAmount = order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount;
 
                 // 💡 Initial Paid Amount calculation for POS Mixed payments & Structured Payment Table
                 if (order.Source == OrderSource.POS)
