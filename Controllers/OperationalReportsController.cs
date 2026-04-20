@@ -701,6 +701,7 @@ public class OperationalReportsController : ControllerBase
         var summary = new {
             totalOrders   = rows.Count,
             totalGrossRevenue  = rows.Sum(r => r.TotalAmount),
+            totalDiscount      = rows.Sum(r => r.DiscountAmount),
             totalReturns       = ledgerReturns,
             totalNetRevenue    = rows.Sum(r => r.TotalAmount) - ledgerReturns,
             avgOrder      = rows.Count > 0 ? (rows.Sum(r => r.TotalAmount) - ledgerReturns) / rows.Count : 0,
@@ -1563,76 +1564,83 @@ public class OperationalReportsController : ControllerBase
     {
         using var wb = new XLWorkbook();
         
-        // 1. Summary Sheet
-        var ws1 = wb.Worksheets.Add("ملخص الكاشير");
-        ws1.RightToLeft = true;
-        string[] h = { "المستخدم", "عدد العمليات", "إجمالي المبيعات", "إجمالي المرتجعات", "إجمالي الخصومات", "الصافي المحقق", "الملغيات" };
-        for (int i = 0; i < h.Length; i++) { ws1.Cell(1, i + 1).Value = h[i]; ws1.Cell(1, i + 1).Style.Font.Bold = true; ws1.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#1a237e"); ws1.Cell(1, i + 1).Style.Font.FontColor = XLColor.White; }
-        int r = 2;
-        foreach (var row in summary)
-        {
-            ws1.Cell(r, 1).Value = row.UserName;
-            ws1.Cell(r, 2).Value = row.OrderCount;
-            ws1.Cell(r, 3).Value = row.GrossSales;
-            ws1.Cell(r, 4).Value = row.TotalReturns;
-            ws1.Cell(r, 5).Value = row.TotalDiscount;
-            ws1.Cell(r, 6).Value = row.NetSales;
-            ws1.Cell(r, 7).Value = row.Cancellations;
-            for (int c = 3; c <= 6; c++) ws1.Cell(r, c).Style.NumberFormat.Format = "#,##0.00";
-            r++;
-        }
-        ws1.Columns().AdjustToContents();
-
-        // 2. Details Sheet
-        var ws2 = wb.Worksheets.Add("تفاصيل العمليات");
-        ws2.RightToLeft = true;
-        string[] h2 = { "رقم الطلب", "التاريخ", "الكاشير", "العميل", "الحالة", "كود الصنف", "اسم الصنف", "المقاس", "اللون", "الكمية", "السعر", "الخصم", "الإجمالي" };
-        for (int i = 0; i < h2.Length; i++) { ws2.Cell(1, i + 1).Value = h2[i]; ws2.Cell(1, i + 1).Style.Font.Bold = true; ws2.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#1a237e"); ws2.Cell(1, i + 1).Style.Font.FontColor = XLColor.White; }
+        // Unified Report Sheet
+        var ws = wb.Worksheets.Add("أداء الكاشير التفصيلي");
+        ws.RightToLeft = true;
         
-        int r2 = 2;
-        var detailList = (IEnumerable<dynamic>)detail;
-        foreach (var d in detailList)
-        {
-            var items = (IEnumerable<dynamic>)d.Items;
-            if (items == null || !items.Any())
-            {
-                ws2.Cell(r2, 1).Value = d.OrderNumber;
-                ws2.Cell(r2, 2).Value = ((DateTime)d.CreatedAt).ToString("yyyy-MM-dd HH:mm");
-                ws2.Cell(r2, 3).Value = d.SalesPersonName;
-                ws2.Cell(r2, 4).Value = d.CustomerName;
-                ws2.Cell(r2, 5).Value = d.Status;
-                ws2.Cell(r2, 12).Value = d.DiscountAmount;
-                ws2.Cell(r2, 13).Value = d.TotalAmount;
-                ws2.Cell(r2, 12).Style.NumberFormat.Format = "#,##0.00";
-                ws2.Cell(r2, 13).Style.NumberFormat.Format = "#,##0.00";
-                r2++;
-                continue;
-            }
+        ws.Cell(1,1).Value=$"تقرير أداء الموظفين التفصيلي — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(1,1).Style.Font.Bold=true;
 
-            foreach(var it in items)
-            {
-                ws2.Cell(r2, 1).Value = d.OrderNumber;
-                ws2.Cell(r2, 2).Value = ((DateTime)d.CreatedAt).ToString("yyyy-MM-dd HH:mm");
-                ws2.Cell(r2, 3).Value = d.SalesPersonName;
-                ws2.Cell(r2, 4).Value = d.CustomerName;
-                ws2.Cell(r2, 5).Value = d.Status;
-
-                ws2.Cell(r2, 6).Value = it.SKU;
-                ws2.Cell(r2, 7).Value = it.ProductName;
-                ws2.Cell(r2, 8).Value = it.Size;
-                ws2.Cell(r2, 9).Value = it.Color;
-                ws2.Cell(r2, 10).Value = it.Quantity;
-                ws2.Cell(r2, 11).Value = it.UnitPrice;
-                ws2.Cell(r2, 12).Value = it.DiscountAmount;
-                ws2.Cell(r2, 13).Value = it.TotalPrice;
-
-                for (int c = 11; c <= 13; c++) ws2.Cell(r2, c).Style.NumberFormat.Format = "#,##0.00";
-                r2++;
-            }
+        string[] h = { "الموظف/الكاشير", "رقم الطلب", "التاريخ", "العميل", "الحالة", "كود الصنف", "اسم الصنف", "المقاس", "اللون", "الكمية", "السعر", "الخصم", "الإجمالي" };
+        for (int i = 0; i < h.Length; i++) { 
+            var cell = ws.Cell(2, i + 1);
+            cell.Value = h[i]; 
+            cell.Style.Font.Bold = true; 
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1a237e"); 
+            cell.Style.Font.FontColor = XLColor.White; 
         }
-        ws2.Columns().AdjustToContents();
 
-        return ExcelResult(wb, $"user_performance_{from:yyyyMMdd}.xlsx");
+        int r = 3;
+        var detailList = (IEnumerable<dynamic>)detail;
+
+        foreach (var user in summary)
+        {
+            // Cashier Header Row
+            ws.Cell(r, 1).Value = user.UserName;
+            ws.Cell(r, 1).Style.Font.Bold = true;
+            ws.Cell(r, 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#e8eaf6");
+            ws.Range(r, 1, r, 5).Merge();
+            
+            ws.Cell(r, 6).Value = "إجماليات:";
+            ws.Cell(r, 7).Value = $"مبيعات: {user.GrossSales:N2} | مرتجعات: {user.TotalReturns:N2} | خصومات: {user.TotalDiscount:N2} | صافي: {user.NetSales:N2}";
+            ws.Range(r, 7, r, 13).Merge();
+            ws.Row(r).Style.Font.Bold = true;
+            r++;
+
+            var userOrders = detailList.Where(d => d.SalesPersonId == user.UserId);
+            foreach (var d in userOrders)
+            {
+                var items = (IEnumerable<dynamic>)d.Items;
+                if (items == null || !items.Any())
+                {
+                    ws.Cell(r, 2).Value = d.OrderNumber;
+                    ws.Cell(r, 3).Value = ((DateTime)d.CreatedAt).ToString("yyyy-MM-dd HH:mm");
+                    ws.Cell(r, 4).Value = d.CustomerName;
+                    ws.Cell(r, 5).Value = d.Status;
+                    ws.Cell(r, 12).Value = d.DiscountAmount;
+                    ws.Cell(r, 13).Value = d.TotalAmount;
+                    ws.Cell(r, 12).Style.NumberFormat.Format = "#,##0.00";
+                    ws.Cell(r, 13).Style.NumberFormat.Format = "#,##0.00";
+                    r++;
+                }
+                else
+                {
+                    foreach(var it in items)
+                    {
+                        ws.Cell(r, 2).Value = d.OrderNumber;
+                        ws.Cell(r, 3).Value = ((DateTime)d.CreatedAt).ToString("yyyy-MM-dd HH:mm");
+                        ws.Cell(r, 4).Value = d.CustomerName;
+                        ws.Cell(r, 5).Value = d.Status;
+
+                        ws.Cell(r, 6).Value = it.SKU;
+                        ws.Cell(r, 7).Value = it.ProductName;
+                        ws.Cell(r, 8).Value = it.Size;
+                        ws.Cell(r, 9).Value = it.Color;
+                        ws.Cell(r, 10).Value = it.Quantity;
+                        ws.Cell(r, 11).Value = it.UnitPrice;
+                        ws.Cell(r, 12).Value = it.DiscountAmount;
+                        ws.Cell(r, 13).Value = it.TotalPrice;
+
+                        for (int c = 11; c <= 13; c++) ws.Cell(r, c).Style.NumberFormat.Format = "#,##0.00";
+                        r++;
+                    }
+                }
+            }
+            r++; // Space between cashiers
+        }
+
+        ws.Columns().AdjustToContents();
+        return ExcelResult(wb, $"cashier_performance_{from:yyyyMMdd}.xlsx");
     }
 
     private IActionResult ExcelProductMovement(Product? p, List<ProductMovementLine> movements, dynamic summary, DateTime from, DateTime to)

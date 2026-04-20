@@ -108,7 +108,7 @@ public class ImportController : ControllerBase
             "التصنيف الأساسي *", "التصنيف الفرعي", "التصنيف الفرعي 2",
             "سعر التكلفة", "السعر *", "سعر الخصم",
             "خاضع للضريبة؟ *", "الماركة", "المقاس", "اللون (English)", "اللون (عربي)",
-            "المخزون *", "فارق السعر للمقاس", "حد الطلب", "الحالة",
+            "المخزون", "فارق السعر للمقاس", "حد الطلب", "الحالة",
             "مميز (نعم/لا)", "الوصف عربي", "الوصف انجليزي"
         };
         for (int c = 0; c < headers1.Length; c++)
@@ -326,19 +326,19 @@ public class ImportController : ControllerBase
                     var subS  = GetVal(colSubSub);
                     
                     int? catId = null;
-                    var parent = categories.FirstOrDefault(c => c.NameAr == mainC && c.ParentId == null);
+                    var parent = categories.FirstOrDefault(c => string.Equals(c.NameAr?.Trim(), mainC, StringComparison.OrdinalIgnoreCase) && c.ParentId == null);
                     if (parent != null)
                     {
                         catId = parent.Id;
                         if (!string.IsNullOrEmpty(subC))
                         {
-                            var sub = categories.FirstOrDefault(c => c.NameAr == subC && c.ParentId == parent.Id);
+                            var sub = categories.FirstOrDefault(c => string.Equals(c.NameAr?.Trim(), subC, StringComparison.OrdinalIgnoreCase) && c.ParentId == parent.Id);
                             if (sub != null)
                             {
                                 catId = sub.Id;
                                 if (!string.IsNullOrEmpty(subS))
                                 {
-                                    var leaf = categories.FirstOrDefault(c => c.NameAr == subS && c.ParentId == sub.Id);
+                                    var leaf = categories.FirstOrDefault(c => string.Equals(c.NameAr?.Trim(), subS, StringComparison.OrdinalIgnoreCase) && c.ParentId == sub.Id);
                                     if (leaf != null) catId = leaf.Id;
                                 }
                             }
@@ -352,10 +352,10 @@ public class ImportController : ControllerBase
 
                     // Resolve Brand
                     var bStr = GetVal(colBrand);
-                    int? bId = brands.FirstOrDefault(b => b.NameAr == bStr || b.Id.ToString() == bStr)?.Id;
+                    int? bId = brands.FirstOrDefault(b => string.Equals(b.NameAr?.Trim(), bStr, StringComparison.OrdinalIgnoreCase) || b.Id.ToString() == bStr)?.Id;
 
                     // Resolve Unit
-                    int? uId = units.FirstOrDefault(u => u.NameAr == unitStr)?.Id;
+                    int? uId = units.FirstOrDefault(u => string.Equals(u.NameAr?.Trim(), unitStr, StringComparison.OrdinalIgnoreCase))?.Id;
                     if (uId == null)
                     {
                         LogRowError(r, $"وحدة القياس '{unitStr}' غير موجودة في النظام — يجب اختيار الوحدة من القائمة");
@@ -430,10 +430,17 @@ public class ImportController : ControllerBase
                 var size     = GetVal(colSize).NullIfEmpty();
                 var cEn      = GetVal(colColorEn).NullIfEmpty();
                 var cAr      = GetVal(colColorAr).NullIfEmpty();
+                var adjStr   = GetVal(colAdj);
 
-                if (!string.IsNullOrEmpty(stockVal) && int.TryParse(stockVal, out var stk))
+                bool hasVariantInfo = !string.IsNullOrEmpty(stockVal) || !string.IsNullOrEmpty(size) || 
+                                     !string.IsNullOrEmpty(cEn) || !string.IsNullOrEmpty(cAr) ||
+                                     !string.IsNullOrEmpty(adjStr);
+
+                if (hasVariantInfo)
                 {
-                    decimal? vAdj = decimal.TryParse(GetVal(colAdj), out var adj) ? adj : null;
+                    int stk = int.TryParse(stockVal, out var sVal) ? sVal : 0;
+                    decimal? vAdj = decimal.TryParse(adjStr, out var adj) ? adj : null;
+
                     if (product != null)
                     {
                         var variant = (isExisting && update) 
@@ -455,10 +462,6 @@ public class ImportController : ControllerBase
                             result.VariantsAdded++;
                         }
                     }
-                }
-                else if (!string.IsNullOrEmpty(stockVal))
-                {
-                    LogRowError(r, $"كمية المخزون غير صحيحة '{stockVal}'");
                 }
             }
 

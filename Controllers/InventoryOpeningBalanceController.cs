@@ -273,7 +273,7 @@ public class InventoryOpeningBalanceController : ControllerBase
         var ws = wb.Worksheets.Add("الأرصدة الافتتاحية");
         ws.RightToLeft = true;
 
-        var headers = new[] { "الكود / SKU *", "الكمية *", "سعر التكلفة *", "اسم الصنف (اختياري)" };
+        var headers = new[] { "الكود / SKU *", "الكمية *", "سعر التكلفة *", "المقاس", "اللون", "اسم الصنف (اختياري)" };
         for (int c = 0; c < headers.Length; c++)
         {
             var cell = ws.Cell(1, c + 1);
@@ -311,14 +311,17 @@ public class InventoryOpeningBalanceController : ControllerBase
             using var wb = new XLWorkbook(stream);
             var ws = wb.Worksheets.First();
             var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
+            var products = await _db.Products.Include(p => p.Variants).ToListAsync();
 
             for (int r = 2; r <= lastRow; r++)
             {
-                var sku = ws.Cell(r, 1).GetString().Trim();
+                var sku   = ws.Cell(r, 1).GetString().Trim();
                 if (string.IsNullOrEmpty(sku)) continue;
 
-                var qtyStr = ws.Cell(r, 2).GetString().Trim();
+                var qtyStr  = ws.Cell(r, 2).GetString().Trim();
                 var costStr = ws.Cell(r, 3).GetString().Trim();
+                var size    = ws.Cell(r, 4).GetString().Trim();
+                var color   = ws.Cell(r, 5).GetString().Trim();
 
                 if (!decimal.TryParse(qtyStr, out var qty) || qty <= 0)
                 {
@@ -332,42 +335,94 @@ public class InventoryOpeningBalanceController : ControllerBase
                     continue;
                 }
 
-                // Find Product or Variant
-                var variant = await _db.ProductVariants.Include(v => v.Product).FirstOrDefaultAsync(v => v.Product.SKU == sku || v.Product.NameAr == sku);
-                var product = await _db.Products.FirstOrDefaultAsync(p => p.SKU == sku || p.NameAr == sku);
+                // Find Product by SKU or Name (Robust)
+                var product = products.FirstOrDefault(p => 
+                    string.Equals(p.SKU?.Trim(), sku, StringComparison.OrdinalIgnoreCase) || 
+                    string.Equals(p.NameAr?.Trim(), sku, StringComparison.OrdinalIgnoreCase));
 
-                if (variant != null)
+                if (product == null)
                 {
-                    items.Add(new {
-                        id = $"v{variant.Id}",
-                        productId = variant.ProductId,
-                        variantId = variant.Id,
-                        name = variant.Product.NameAr,
-                        sku = variant.Product.SKU,
-                        size = variant.Size,
-                        color = variant.ColorAr,
-                        image = variant.ImageUrl ?? variant.Product.NameAr, // Placeholder for simplicity
-                        quantity = qty,
-                        costPrice = cost
-                    });
+                    errors.Add($"سطر {r}: الكود أو اسم الصنف '{sku}' غير موجود في النظام");
+                    continue;
                 }
-                else if (product != null)
+
+                if (product.Variants.Any())
                 {
-                    items.Add(new {
-                        id = $"p{product.Id}",
-                        productId = product.Id,
-                        variantId = (int?)null,
-                        name = product.NameAr,
-                        sku = product.SKU,
-                        image = product.NameAr,
-                        quantity = qty,
-                        costPrice = cost
-                    });
+                    // If product has variants, we MUST match by size/color or indicate error
+                    var variant = product.Variants.FirstOrDefault(v => 
+                        (string.IsNullOrEmpty(size) || string.Equals(v.Size?.Trim(), size, StringComparison.OrdinalIgnoreCase)) &&
+                        (string.IsNullOrEmpty(color) || string.Equals(v.ColorAr?.Trim(), color, StringComparison.OrdinalIgnoreCase) || string.Equals(v.Color?.Trim(), color, StringComparison.OrdinalIgnoreCase)));
+
+                    if (variant != null)
+                    {
+                        var vImg = variant.ImageUrl ?? 
+                                   product.Images.FirstOrDefault(i => i.IsMain)?.ImageUrl ?? 
+                                   product.Images.FirstOrDefault()?.ImageUrl;
+
+                        items.Add(new {
+                            id        = $"v{variant.Id}",
+                            productId = variant.ProductId,
+                            variantId = variant.Id,
+                            name      = product.NameAr,
+                            sku       = product.SKU,
+                            size      = variant.Size,
+                            color     = variant.ColorAr,
+                            image     = vImg,
+                            quantity  = qty,
+                            costPrice = cost
+                        });
+                    }
+                    else
+                    {
+                        errors.Add($"سطر {r}: الصنف '{sku}' له مقاسات، ولكن لم يتم العثور على المقاس '{size}' واللون '{color}' المدخلين");
+                    }
                 }
                 else
                 {
-                    errors.Add($"سطر {r}: الكود '{sku}' غير موجود في النظام");
+                    // Basic product without variants
+                    var pImg = product.Images.FirstOrDefault(i => i.IsMain)?.ImageUrl ?? 
+                               product.Images.FirstOrDefault()?.ImageUrl;
+
+                    items.Add(new {
+                        id        = $"p{product.Id}",
+                        productId = product.Id,
+                        variantId = (int?)null,
+                        name      = product.NameAr,
+                        sku       = product.SKU,
+                        image     = pImg,
+                        quantity  = qty,
+                        costPrice = cost
+                    });
                 }
+            }
+
+            if (errors.Any())
+            {
+                using var errorWb = new XLWorkbook();
+                var errorWs = errorWb.Worksheets.Add("أخطاء الاستيراد");
+                errorWs.RightToLeft = true;
+                
+                errorWs.Cell(1, 1).Value = "رقم السطر";
+                errorWs.Cell(1, 2).Value = "وصف الخطأ";
+                errorWs.Range(1, 1, 1, 2).Style.Font.Bold = true;
+                errorWs.Range(1, 1, 1, 2).Style.Fill.BackgroundColor = XLColor.FromHtml("#1a1a2e");
+                errorWs.Range(1, 1, 1, 2).Style.Font.FontColor = XLColor.White;
+
+                for (int i = 0; i < errors.Count; i++)
+                {
+                    errorWs.Cell(i + 2, 1).Value = "سطر";
+                    errorWs.Cell(i + 2, 2).Value = errors[i];
+                }
+                errorWs.Columns().AdjustToContents();
+                
+                using var errStream = new MemoryStream();
+                errorWb.SaveAs(errStream);
+                return Ok(new { 
+                    items, 
+                    errors = errors.Count, 
+                    details = errors,
+                    errorReportFile = Convert.ToBase64String(errStream.ToArray()) 
+                });
             }
         }
         catch (Exception ex)
@@ -375,7 +430,7 @@ public class InventoryOpeningBalanceController : ControllerBase
             return BadRequest(new { message = $"خطأ في قراءة ملف الإكسل: {ex.Message}" });
         }
 
-        return Ok(new { items, errors });
+        return Ok(new { items, errors = 0 });
     }
 
     private async Task PostJournalAsync(InventoryOpeningBalance ob)

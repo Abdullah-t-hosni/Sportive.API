@@ -428,109 +428,52 @@ public class FinancialReportsController : ControllerBase
     [HttpGet("health-check")]
     public async Task<IActionResult> AccountingHealthCheck()
     {
-        // 1. البحث عن القيود غير المتوازنة
         var unbalancedEntries = await _db.JournalEntries
             .Include(e => e.Lines)
             .OrderByDescending(e => e.EntryDate)
             .Select(e => new {
-                e.Id,
-                e.EntryNumber,
-                e.EntryDate,
-                e.Description,
-                e.Type,
+                e.Id, e.EntryNumber, e.EntryDate, e.Description, e.Type,
                 TotalDebit = e.Lines.Sum(l => l.Debit),
                 TotalCredit = e.Lines.Sum(l => l.Credit),
                 Difference = Math.Abs(e.Lines.Sum(l => l.Debit) - e.Lines.Sum(l => l.Credit))
             })
-            .Where(e => e.Difference > 0.009m) // سماحية 1 قرش
+            .Where(e => e.Difference > 0.009m)
             .Take(100)
             .ToListAsync();
 
-        // 2. البحث عن حركات تشير لحسابات غير نشطة
         var inactiveAccountLines = await _db.JournalLines
-            .Include(l => l.Account)
-            .Include(l => l.JournalEntry)
+            .Include(l => l.Account).Include(l => l.JournalEntry)
             .Where(l => l.Account != null && !l.Account.IsActive)
-            .Select(l => new {
-                l.Id,
-                l.JournalEntryId,
-                EntryNumber = l.JournalEntry.EntryNumber,
-                AccountCode = l.Account.Code,
-                AccountName = l.Account.NameAr,
-                l.Debit,
-                l.Credit
-            })
-            .Take(100)
-            .ToListAsync();
+            .Select(l => new { l.Id, l.JournalEntryId, EntryNumber = l.JournalEntry.EntryNumber, AccountCode = l.Account.Code, AccountName = l.Account.NameAr, l.Debit, l.Credit })
+            .Take(100).ToListAsync();
 
-        // 3. البحث عن حركات بدون حسابات (Orphans)
         var orphanLines = await _db.JournalLines
             .Include(l => l.JournalEntry)
             .Where(l => l.AccountId == 0 || l.Account == null)
-            .Select(l => new {
-                l.Id,
-                l.JournalEntryId,
-                EntryNumber = l.JournalEntry != null ? l.JournalEntry.EntryNumber : "N/A",
-                l.Debit,
-                l.Credit
-            })
+            .Select(l => new { l.Id, l.JournalEntryId, EntryNumber = l.JournalEntry != null ? l.JournalEntry.EntryNumber : "N/A", l.Debit, l.Credit })
             .ToListAsync();
 
-        return Ok(new {
-            isHealthy = !unbalancedEntries.Any() && !inactiveAccountLines.Any() && !orphanLines.Any(),
-            unbalancedEntries,
-            inactiveAccountLines,
-            orphanLines
-        });
+        return Ok(new { isHealthy = !unbalancedEntries.Any() && !inactiveAccountLines.Any() && !orphanLines.Any(), unbalancedEntries, inactiveAccountLines, orphanLines });
     }
 
-    // ══════════════════════════════════════════════════════
-    // 5.1. إصلاح الصحة المحاسبية (Heal Accounting)
-    // ══════════════════════════════════════════════════════
     [HttpPost("heal-accounting")]
     public async Task<IActionResult> HealAccounting()
     {
         var fixedCount = 0;
-
-        // 1. معالجة الحسابات غير النشطة (نقل حركاتها للأب النشط)
-        var inactiveLines = await _db.JournalLines
-            .Include(l => l.Account)
-            .Where(l => l.Account != null && !l.Account.IsActive)
-            .ToListAsync();
-
+        var inactiveLines = await _db.JournalLines.Include(l => l.Account).Where(l => l.Account != null && !l.Account.IsActive).ToListAsync();
         foreach (var line in inactiveLines)
         {
-            // محاولة إيجاد أول أب نشط
-            var parent = await _db.Accounts
-                .Where(a => a.Id == line.Account.ParentId && a.IsActive)
-                .FirstOrDefaultAsync();
-            
+            var parent = await _db.Accounts.Where(a => a.Id == line.Account.ParentId && a.IsActive).FirstOrDefaultAsync();
             if (parent == null) {
-                // إذا لم يوجد أب مباشر نشط، نبحث عن الحساب الرئيسي (Level 1)
                 var codeRoot = line.Account.Code.Substring(0, 1);
-                parent = await _db.Accounts
-                    .Where(a => a.Code.StartsWith(codeRoot) && a.Level == 1 && a.IsActive)
-                    .FirstOrDefaultAsync();
+                parent = await _db.Accounts.Where(a => a.Code.StartsWith(codeRoot) && a.Level == 1 && a.IsActive).FirstOrDefaultAsync();
             }
-
-            if (parent != null)
-            {
-                line.AccountId = parent.Id;
-                fixedCount++;
-            }
+            if (parent != null) { line.AccountId = parent.Id; fixedCount++; }
         }
-
         if (fixedCount > 0) await _db.SaveChangesAsync();
-
-        return Ok(new { 
-            message = $"تم إصلاح {fixedCount} حركة بنجاح بنقلها للحسابات الرئيسية النشطة.",
-            fixedCount 
-        });
+        return Ok(new { message = $"تم إصلاح {fixedCount} حركة بنجاح.", fixedCount });
     }
 
-    // ══════════════════════════════════════════════════════
-    // 6. كشف حساب  GET /api/financialreports/account-statement
-    // ══════════════════════════════════════════════════════
     [HttpGet("account-statement")]
     public async Task<IActionResult> AccountStatement(
         [FromQuery] int       accountId,
@@ -548,93 +491,56 @@ public class FinancialReportsController : ControllerBase
  
         var acct = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == accountId);
         if (acct == null) return NotFound(new { message = "الحساب غير موجود" });
+
+        var targetAccountIds = new List<int> { accountId };
+        if (!acct.IsLeaf)
+        {
+            targetAccountIds = await _db.Accounts.Where(a => a.Code.StartsWith(acct.Code)).Select(a => a.Id).ToListAsync();
+        }
  
-        // الرصيد الافتتاحي — يجب الفلترة بالمورد/العميل أيضاً إذا وجدوا
-        var openQ = _db.JournalLines
-            .Include(l => l.JournalEntry)
-            .Where(l => l.AccountId == accountId
-                     && l.JournalEntry.Status == JournalEntryStatus.Posted
-                     && l.JournalEntry.EntryDate < from);
- 
+        var openQ = _db.JournalLines.Include(l => l.JournalEntry)
+            .Where(l => targetAccountIds.Contains(l.AccountId) && l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate < from);
+  
         if (source.HasValue) openQ = openQ.Where(l => l.CostCenter == source.Value);
         if (customerId.HasValue) openQ = openQ.Where(l => l.CustomerId == customerId);
         if (supplierId.HasValue) openQ = openQ.Where(l => l.SupplierId == supplierId);
         if (employeeId.HasValue) openQ = openQ.Where(l => l.EmployeeId == employeeId);
-
+ 
         var openLines = await openQ.ToListAsync();
-
         var openDr  = openLines.Sum(l => l.Debit);
         var openCr  = openLines.Sum(l => l.Credit);
         
-        // الأرصدة الافتتاحية من شجرة الحسابات (فقط إذا لم نكن نفلتر بعميل/مورد/موظف محدد، أو إذا أردنا تضمينها)
-        // محاسبياً: إذا اخترنا عميلاً، الرصيد الافتتاحي هو فقط الحركات السابقة له.
-        // الأرصدة الافتتاحية من شجرة الحسابات (فقط إذا لم نكن نفلتر بعميل/مورد/موظف محدد، أو إذا أردنا تضمينها)
-        // محاسبياً: إذا اخترنا عميلاً، الرصيد الافتتاحي هو فقط الحركات السابقة له.
         if (!customerId.HasValue && !supplierId.HasValue && !employeeId.HasValue)
         {
-            openDr += (acct.Nature == AccountNature.Debit  ? acct.OpeningBalance : 0);
-            openCr += (acct.Nature == AccountNature.Credit ? acct.OpeningBalance : 0);
+             var openingSum = await _db.Accounts.Where(a => a.Code.StartsWith(acct.Code))
+                .SumAsync(a => acct.Nature == AccountNature.Debit ? (decimal?)a.OpeningBalance : (decimal?)-a.OpeningBalance) ?? 0;
+            if (acct.Nature == AccountNature.Debit) openDr += (openingSum > 0 ? openingSum : 0);
+            else openCr += (openingSum > 0 ? openingSum : 0);
         }
 
         var openBal = acct.Nature == AccountNature.Debit ? openDr - openCr : openCr - openDr;
 
-        // حركات الفترة
-        var q = _db.JournalLines
-            .Include(l => l.JournalEntry)
-            .Include(l => l.Customer)
-            .Include(l => l.Supplier)
-            .Where(l => l.AccountId == accountId
-                     && l.JournalEntry.Status == JournalEntryStatus.Posted
-                     && l.JournalEntry.EntryDate >= from
-                     && l.JournalEntry.EntryDate <= to);
+        var q = _db.JournalLines.Include(l => l.JournalEntry).Include(l => l.Customer).Include(l => l.Supplier)
+            .Where(l => targetAccountIds.Contains(l.AccountId) && l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to);
 
         if (customerId.HasValue) q = q.Where(l => l.CustomerId == customerId);
         if (supplierId.HasValue) q = q.Where(l => l.SupplierId == supplierId);
         if (employeeId.HasValue) q = q.Where(l => l.EmployeeId == employeeId);
         if (source.HasValue) q = q.Where(l => l.CostCenter == source.Value);
 
-        if (!string.IsNullOrEmpty(search))
-        {
-            q = q.Where(l => (l.Description != null && l.Description.Contains(search))
-                          || (l.JournalEntry.Description != null && l.JournalEntry.Description.Contains(search))
-                          || (l.JournalEntry.Reference != null && l.JournalEntry.Reference.Contains(search)));
-        }
+        if (!string.IsNullOrEmpty(search)) q = q.Where(l => (l.Description != null && l.Description.Contains(search)) || (l.JournalEntry.Description != null && l.JournalEntry.Description.Contains(search)));
 
-        var periodLines = await q.OrderBy(l => l.JournalEntry.EntryDate)
-            .ThenBy(l => l.JournalEntry.Type)
-            .ThenBy(l => l.JournalEntry.Id)
-            .ToListAsync();
-
+        var periodLines = await q.OrderBy(l => l.JournalEntry.EntryDate).ThenBy(l => l.JournalEntry.Id).ToListAsync();
         var runBal = openBal;
         var rows = periodLines.Select(l => {
-            if (acct.Nature == AccountNature.Debit)
-                runBal += l.Debit - l.Credit;
-            else
-                runBal += l.Credit - l.Debit;
-
-            return new LedgerRow(
-                accountId, acct.Code, acct.NameAr,
-                l.JournalEntry.EntryDate, l.JournalEntry.EntryNumber,
-                l.JournalEntry.Type.ToString(),
-                l.JournalEntry.Description ?? l.Description ?? "",
-                l.Debit, l.Credit, runBal,
-                l.JournalEntry.Reference, l.JournalEntry.Id,
-                l.Supplier?.Name ?? l.Customer?.FullName
-            );
+            if (acct.Nature == AccountNature.Debit) runBal += l.Debit - l.Credit; else runBal += l.Credit - l.Debit;
+            return new LedgerRow(accountId, acct.Code, acct.NameAr, l.JournalEntry.EntryDate, l.JournalEntry.EntryNumber, l.JournalEntry.Type.ToString(), l.JournalEntry.Description ?? l.Description ?? "", l.Debit, l.Credit, runBal, l.JournalEntry.Reference, l.JournalEntry.Id, l.Supplier?.Name ?? l.Customer?.FullName);
         }).ToList();
 
         if (excel) return ExcelAccountStatement(acct, rows, openBal, from, to);
-
-        return Ok(new {
-            from, to,
-            account = new { acct.Id, acct.Code, acct.NameAr, Nature = acct.Nature.ToString() },
-            openingBalance  = openBal,
-            rows,
-            totalDebit      = rows.Sum(r => r.Debit),
-            totalCredit     = rows.Sum(r => r.Credit),
-            closingBalance  = rows.LastOrDefault()?.RunningBalance ?? openBal
-        });
+        return Ok(new { from, to, account = new { acct.Id, acct.Code, acct.NameAr, Nature = acct.Nature.ToString() }, openingBalance = openBal, rows, totalDebit = rows.Sum(r => r.Debit), totalCredit = rows.Sum(r => r.Credit), closingBalance = rows.LastOrDefault()?.RunningBalance ?? openBal });
     }
+
 
     // ══════════════════════════════════════════════════════
     // 6. قائمة التدفقات النقدية  GET /api/financialreports/cash-flow
