@@ -55,26 +55,25 @@ public class InventoryAuditsController : ControllerBase
 
         try 
         {
-            var q = _db.InventoryAudits.Include(a => a.Items).AsNoTracking();
+            var q = _db.InventoryAudits.AsNoTracking();
             var total = await q.CountAsync();
             
-            var auditNodes = await q.OrderByDescending(a => a.AuditDate)
+            var items = await q.OrderByDescending(a => a.AuditDate)
                 .Skip((page-1)*pageSize).Take(pageSize)
+                .Select(a => new InventoryAuditSummaryDto(
+                    a.Id, a.Title, a.AuditDate, (int)a.Status,
+                    a.TotalExpectedValue, a.TotalActualValue, 
+                    a.TotalActualValue - a.TotalExpectedValue,
+                    a.Items.Count
+                ))
                 .ToListAsync();
-
-            var items = auditNodes.Select(a => new InventoryAuditSummaryDto(
-                a.Id, a.Title, a.AuditDate, (int)a.Status,
-                a.TotalExpectedValue, a.TotalActualValue, 
-                a.TotalActualValue - a.TotalExpectedValue,
-                a.Items.Count
-            )).ToList();
 
             return Ok(new PaginatedResult<InventoryAuditSummaryDto>(items, total, page, pageSize, (int)Math.Ceiling(total/(double)pageSize)));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in GetAll InventoryAudits");
-            return StatusCode(500, new { message = "خطأ في تحميل سجلات الجرد", detail = ex.Message });
+            _logger.LogError(ex, "Error in GetAll InventoryAudits: {Message}", ex.Message);
+            return StatusCode(500, $"خطأ في تحميل سجلات الجرد: {ex.Message} {ex.InnerException?.Message}");
         }
     }
 

@@ -710,6 +710,11 @@ public class DashboardService : IDashboardService
         return new {
             generatedAt = now,
             newCustomersToday = await _db.Customers.CountAsync(c => c.CreatedAt >= todayStart),
+            newCustomersList = await _db.Customers
+                .Where(c => c.CreatedAt >= todayStart)
+                .OrderByDescending(c => c.CreatedAt)
+                .Select(c => new { c.Id, c.FullName, c.Phone, c.Email, c.CreatedAt })
+                .ToListAsync(),
 
             // اليوم مقارنة بالأمس
             today = new {
