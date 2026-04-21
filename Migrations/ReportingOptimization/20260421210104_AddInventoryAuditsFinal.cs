@@ -1,15 +1,16 @@
-using System;
-using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace Sportive.API.Migrations.ReportingOptimization
 {
-    public partial class CreateInventoryAuditsTable : Migration
+    /// <inheritdoc />
+    public partial class AddInventoryAuditsFinal : Migration
     {
+        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // Force table creation since they are missing in production but present in snapshot
             migrationBuilder.CreateTable(
                 name: "InventoryAudits",
                 columns: table => new
@@ -62,18 +63,6 @@ namespace Sportive.API.Migrations.ReportingOptimization
                         principalTable: "InventoryAudits",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_InventoryAuditItems_Products_ProductId",
-                        column: x => x.ProductId,
-                        principalTable: "Products",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_InventoryAuditItems_ProductVariants_ProductVariantId",
-                        column: x => x.ProductVariantId,
-                        principalTable: "ProductVariants",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
                 })
                 .Annotation("MySql:CharSet", "utf8mb4");
 
@@ -83,28 +72,65 @@ namespace Sportive.API.Migrations.ReportingOptimization
                 column: "InventoryAuditId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_InventoryAuditItems_ProductId",
-                table: "InventoryAuditItems",
-                column: "ProductId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_InventoryAuditItems_ProductVariantId",
-                table: "InventoryAuditItems",
-                column: "ProductVariantId");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_InventoryAudits_JournalEntryId",
                 table: "InventoryAudits",
                 column: "JournalEntryId");
         }
 
+        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "InventoryAuditItems");
+            migrationBuilder.DropForeignKey(
+                name: "FK_InventoryAuditItems_ProductVariants_ProductVariantId",
+                table: "InventoryAuditItems");
 
-            migrationBuilder.DropTable(
-                name: "InventoryAudits");
+            migrationBuilder.DropForeignKey(
+                name: "FK_InventoryAuditItems_Products_ProductId",
+                table: "InventoryAuditItems");
+
+            migrationBuilder.AlterColumn<decimal>(
+                name: "TotalExpectedValue",
+                table: "InventoryAudits",
+                type: "decimal(65,30)",
+                nullable: false,
+                oldClrType: typeof(decimal),
+                oldType: "decimal(18,2)",
+                oldPrecision: 18,
+                oldScale: 2);
+
+            migrationBuilder.AlterColumn<decimal>(
+                name: "TotalActualValue",
+                table: "InventoryAudits",
+                type: "decimal(65,30)",
+                nullable: false,
+                oldClrType: typeof(decimal),
+                oldType: "decimal(18,2)",
+                oldPrecision: 18,
+                oldScale: 2);
+
+            migrationBuilder.AlterColumn<decimal>(
+                name: "UnitCost",
+                table: "InventoryAuditItems",
+                type: "decimal(65,30)",
+                nullable: false,
+                oldClrType: typeof(decimal),
+                oldType: "decimal(18,2)",
+                oldPrecision: 18,
+                oldScale: 2);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_InventoryAuditItems_ProductVariants_ProductVariantId",
+                table: "InventoryAuditItems",
+                column: "ProductVariantId",
+                principalTable: "ProductVariants",
+                principalColumn: "Id");
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_InventoryAuditItems_Products_ProductId",
+                table: "InventoryAuditItems",
+                column: "ProductId",
+                principalTable: "Products",
+                principalColumn: "Id");
         }
     }
 }
