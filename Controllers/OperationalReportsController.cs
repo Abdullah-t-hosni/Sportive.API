@@ -984,9 +984,9 @@ public class OperationalReportsController : ControllerBase
         var personNamesMap = empNames;
         foreach (var un in userNamesResult) if (!personNamesMap.ContainsKey(un.Key)) personNamesMap[un.Key] = un.Value;
 
-        // Group by sales person
+        // Group by sales person (bundle unknowns together)
         var byPerson = orders
-            .GroupBy(o => o.SalesPersonId!)
+            .GroupBy(o => o.SalesPersonId != null && personNamesMap.ContainsKey(o.SalesPersonId) ? o.SalesPersonId : "Unknown")
             .Select(g =>
             {
                 var ordersList = g.ToList();
