@@ -476,7 +476,7 @@ public class FinancialReportsController : ControllerBase
 
     [HttpGet("account-statement")]
     public async Task<IActionResult> AccountStatement(
-        [FromQuery] int       accountId,
+        [FromQuery] int?      accountId  = null,
         [FromQuery] int?      customerId = null,
         [FromQuery] int?      supplierId = null,
         [FromQuery] int?      employeeId = null,
@@ -489,10 +489,25 @@ public class FinancialReportsController : ControllerBase
         var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
  
-        var acct = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == accountId);
+        int targetId = accountId ?? 0;
+        
+        // If accountId is missing but we have an entity ID, resolve the control account
+        if (targetId == 0)
+        {
+            if (customerId.HasValue) 
+                targetId = await _db.Accounts.Where(a => a.Code.StartsWith("1103")).Select(a => a.Id).FirstOrDefaultAsync();
+            else if (supplierId.HasValue)
+                targetId = await _db.Accounts.Where(a => a.Code.StartsWith("2101")).Select(a => a.Id).FirstOrDefaultAsync();
+            else if (employeeId.HasValue)
+                targetId = await _db.Accounts.Where(a => a.Code.StartsWith("2103") || a.Code.StartsWith("1108")).Select(a => a.Id).FirstOrDefaultAsync();
+        }
+
+        if (targetId == 0) return BadRequest(new { message = "يجب تحديد رقم الحساب أو اختيار عميل/مورد/موظف" });
+
+        var acct = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == targetId);
         if (acct == null) return NotFound(new { message = "الحساب غير موجود" });
 
-        var targetAccountIds = new List<int> { accountId };
+        var targetAccountIds = new List<int> { targetId };
         if (!acct.IsLeaf)
         {
             targetAccountIds = await _db.Accounts.Where(a => a.Code.StartsWith(acct.Code)).Select(a => a.Id).ToListAsync();
@@ -534,7 +549,7 @@ public class FinancialReportsController : ControllerBase
         var runBal = openBal;
         var rows = periodLines.Select(l => {
             if (acct.Nature == AccountNature.Debit) runBal += l.Debit - l.Credit; else runBal += l.Credit - l.Debit;
-            return new LedgerRow(accountId, acct.Code, acct.NameAr, l.JournalEntry.EntryDate, l.JournalEntry.EntryNumber, l.JournalEntry.Type.ToString(), l.JournalEntry.Description ?? l.Description ?? "", l.Debit, l.Credit, runBal, l.JournalEntry.Reference, l.JournalEntry.Id, l.Supplier?.Name ?? l.Customer?.FullName);
+            return new LedgerRow(targetId, acct.Code, acct.NameAr, l.JournalEntry.EntryDate, l.JournalEntry.EntryNumber, l.JournalEntry.Type.ToString(), l.JournalEntry.Description ?? l.Description ?? "", l.Debit, l.Credit, runBal, l.JournalEntry.Reference, l.JournalEntry.Id, l.Supplier?.Name ?? l.Customer?.FullName);
         }).ToList();
 
         if (excel) return ExcelAccountStatement(acct, rows, openBal, from, to);
