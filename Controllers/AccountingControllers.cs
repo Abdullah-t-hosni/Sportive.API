@@ -437,7 +437,7 @@ public class JournalEntriesController : ControllerBase
         if (source.HasValue) q = q.Where(e => e.CostCenter == source.Value);
 
         var total = await q.CountAsync();
-        var entries = await q.OrderByDescending(e => e.CreatedAt).ThenByDescending(e => e.Id)
+        var entries = await q.OrderByDescending(e => e.EntryDate).ThenByDescending(e => e.CreatedAt).ThenByDescending(e => e.Id)
             .Skip((page-1)*pageSize).Take(pageSize)
             .Select(e => new {
                 e.Id, e.EntryNumber, e.EntryDate, e.Description, e.Reference, e.CreatedAt,
@@ -568,7 +568,7 @@ public class ReceiptVouchersController : ControllerBase
             q = q.Where(v => v.EmployeeId != null || _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId != null));
         
         var total = await q.CountAsync();
-        var items = await q.OrderByDescending(v => v.CreatedAt).ThenByDescending(v => v.Id)
+        var items = await q.OrderByDescending(v => v.VoucherDate).ThenByDescending(v => v.CreatedAt).ThenByDescending(v => v.Id)
             .Skip((page-1)*pageSize).Take(pageSize)
             .Select(v => new { 
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description,
@@ -768,7 +768,7 @@ public class PaymentVouchersController : ControllerBase
             q = q.Where(v => v.EmployeeId != null || _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId != null));
 
         var total = await q.CountAsync();
-        var items = await q.OrderByDescending(v => v.CreatedAt).ThenByDescending(v => v.Id).Skip((page-1)*pageSize).Take(pageSize)
+        var items = await q.OrderByDescending(v => v.VoucherDate).ThenByDescending(v => v.CreatedAt).ThenByDescending(v => v.Id).Skip((page-1)*pageSize).Take(pageSize)
             .Select(v => new { 
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description,
                 v.CashAccountId, v.ToAccountId,
