@@ -877,11 +877,16 @@ public class PurchaseInvoicesController : ControllerBase
                     }
                 }
 
-                pReturn.SubTotal = subtotal;
-                pReturn.TaxAmount = Math.Round(subtotal * (dto.TaxPercent / 100), 2);
-                pReturn.TotalAmount = (subtotal + pReturn.TaxAmount) - dto.DiscountAmount;
+                pReturn.SubTotal    = subtotal;
+                pReturn.TaxAmount   = Math.Round(subtotal * (dto.TaxPercent / 100), 2);
+                pReturn.TotalAmount = Math.Round((pReturn.SubTotal + pReturn.TaxAmount) - pReturn.DiscountAmount, 2);
 
+                // Update supplier stats
                 supplier.TotalPurchases -= pReturn.TotalAmount;
+                if (pReturn.PaymentTerms == PaymentTerms.Cash)
+                {
+                    supplier.TotalPaid -= pReturn.TotalAmount;
+                }
 
                 _db.PurchaseReturns.Add(pReturn);
                 await _db.SaveChangesAsync();
@@ -948,10 +953,16 @@ public class PurchaseInvoicesController : ControllerBase
                     }
                 }
 
-                // 2. Adjust supplier balance (Add back old return amount)
+                // 2. Adjust supplier balance (Reverse old return impact)
                 var supplier = await _db.Suppliers.FindAsync(pReturn.SupplierId);
                 if (supplier != null)
+                {
                     supplier.TotalPurchases += pReturn.TotalAmount;
+                    if (pReturn.PaymentTerms == PaymentTerms.Cash)
+                    {
+                        supplier.TotalPaid += pReturn.TotalAmount;
+                    }
+                }
 
                 // 3. Update basic info
                 pReturn.ReturnDate = dto.ReturnDate;
@@ -1003,11 +1014,17 @@ public class PurchaseInvoicesController : ControllerBase
 
                 pReturn.SubTotal = subtotal;
                 pReturn.TaxAmount = Math.Round(subtotal * (dto.TaxPercent / 100), 2);
-                pReturn.TotalAmount = (subtotal + pReturn.TaxAmount) - dto.DiscountAmount;
+                pReturn.TotalAmount = Math.Round((pReturn.SubTotal + pReturn.TaxAmount) - pReturn.DiscountAmount, 2);
 
                 // Update Supplier Ledger with new total
                 if (supplier != null)
+                {
                     supplier.TotalPurchases -= pReturn.TotalAmount;
+                    if (pReturn.PaymentTerms == PaymentTerms.Cash)
+                    {
+                        supplier.TotalPaid -= pReturn.TotalAmount;
+                    }
+                }
 
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();

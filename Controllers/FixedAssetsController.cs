@@ -440,15 +440,15 @@ public class FixedAssetsController : ControllerBase
             EntryDate       = dto.DepreciationDate,
             Type            = JournalEntryType.AssetDepreciation,
             Status          = JournalEntryStatus.Posted,
-            Description     = $"إهلاك {asset.Name} — {dto.PeriodMonth}/{dto.PeriodYear}",
-            Reference       = depNo,
+            Description     = $"إهلاك [{asset.AssetNumber}] {asset.Name} — {dto.PeriodMonth}/{dto.PeriodYear}",
+            Reference       = asset.AssetNumber,
             CostCenter      = costCenter,
             CreatedByUserId = UserId,
             CreatedAt       = TimeHelper.GetEgyptTime(),
             Lines = new List<JournalLine>
             {
-                new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"مصروف إهلاك — {asset.Name}", CostCenter = costCenter, CreatedAt = TimeHelper.GetEgyptTime() },
-                new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"مجمع إهلاك — {asset.Name}",   CostCenter = costCenter, CreatedAt = TimeHelper.GetEgyptTime() }
+                new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"مصروف إهلاك [{asset.AssetNumber}] — {asset.Name}", CostCenter = costCenter, CreatedAt = TimeHelper.GetEgyptTime() },
+                new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"مجمع إهلاك [{asset.AssetNumber}] — {asset.Name}",   CostCenter = costCenter, CreatedAt = TimeHelper.GetEgyptTime() }
             }
         };
         _db.JournalEntries.Add(je);
@@ -553,15 +553,15 @@ public class FixedAssetsController : ControllerBase
                     EntryDate       = dto.AsOfDate,
                     Type            = JournalEntryType.AssetDepreciation,
                     Status          = JournalEntryStatus.Posted,
-                    Description     = $"إهلاك {asset.Name} — {dto.PeriodMonth}/{dto.PeriodYear}",
-                    Reference       = depNo,
+                    Description     = $"إهلاك دفعي [{asset.AssetNumber}] {asset.Name} — {dto.PeriodMonth}/{dto.PeriodYear}",
+                    Reference       = asset.AssetNumber,
                     CostCenter      = batchSource,
                     CreatedByUserId = UserId,
                     CreatedAt       = TimeHelper.GetEgyptTime(),
                     Lines = new List<JournalLine>
                     {
-                        new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"مصروف إهلاك — {asset.Name}", CostCenter = batchSource, CreatedAt = TimeHelper.GetEgyptTime() },
-                        new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"مجمع إهلاك — {asset.Name}",   CostCenter = batchSource, CreatedAt = TimeHelper.GetEgyptTime() }
+                        new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"مصروف إهلاك [{asset.AssetNumber}] — {asset.Name}", CostCenter = batchSource, CreatedAt = TimeHelper.GetEgyptTime() },
+                        new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"مجمع إهلاك [{asset.AssetNumber}] — {asset.Name}",   CostCenter = batchSource, CreatedAt = TimeHelper.GetEgyptTime() }
                     }
                 };
                 _db.JournalEntries.Add(je);

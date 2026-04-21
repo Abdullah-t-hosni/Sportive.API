@@ -163,11 +163,13 @@ public class AccountingCoreService
             accountIdCache.TryGetValue(accountId, out var actualAccount);
             var realCode = actualAccount?.Code ?? "";
 
-            bool isReceivables = realCode.StartsWith("1103");
-            bool isPayables = realCode.StartsWith("2101");
+            bool isReceivables = realCode.StartsWith("1103") || realCode.StartsWith("1202");
+            bool isPayables = realCode.StartsWith("2101") || realCode.StartsWith("2102");
             bool isSalesOrPurchase = type == JournalEntryType.SalesInvoice || type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseInvoice || type == JournalEntryType.PurchaseReturn;
 
-            bool isEmployeeAccount = realCode.StartsWith("22") || realCode.StartsWith("12") || realCode.StartsWith("52") || realCode.StartsWith("4109");
+            bool isEmployeeAccount = realCode.StartsWith("22") || realCode.StartsWith("12") || realCode.StartsWith("52") || realCode.StartsWith("4109") ||
+                                     actualAccount?.NameAr?.Contains("موظف") == true || actualAccount?.NameEn?.ToLower().Contains("employee") == true ||
+                                     actualAccount?.NameAr?.Contains("سلف") == true || actualAccount?.NameAr?.Contains("أجور") == true || actualAccount?.NameAr?.Contains("رواتب") == true;
             
             entry.Lines.Add(new JournalLine
             {
