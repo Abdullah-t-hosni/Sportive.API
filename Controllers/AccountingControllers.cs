@@ -38,11 +38,11 @@ public class AccountsController : ControllerBase
         if (onlyActive) q = q.Where(a => a.IsActive);
         if (isLeaf.HasValue) q = q.Where(a => a.IsLeaf == isLeaf.Value);
         if (allowPosting.HasValue) q = q.Where(a => a.AllowPosting == allowPosting.Value);
-        if (Request.Query.ContainsKey("canReceivePayment"))
+        if (Request.Query.TryGetValue("canReceivePayment", out var cv) && bool.TryParse(cv, out var canVal))
         {
-            var canVal = bool.Parse(Request.Query["canReceivePayment"]!);
             q = q.Where(a => a.CanReceivePayment == canVal);
         }
+
         
         var accounts = await q.OrderBy(a => a.Code).ToListAsync();
         return Ok(accounts);
