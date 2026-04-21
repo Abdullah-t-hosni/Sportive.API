@@ -127,6 +127,8 @@ public class JournalAccountingService
                 Description = l.Description,
                 CustomerId = l.CustomerId,
                 SupplierId = l.SupplierId,
+                EmployeeId = l.EmployeeId,
+                OrderId = l.OrderId,
                 CostCenter = l.CostCenter ?? dto.CostCenter,
                 CreatedAt = TimeHelper.GetEgyptTime()
             });

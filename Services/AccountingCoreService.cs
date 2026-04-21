@@ -167,7 +167,7 @@ public class AccountingCoreService
             bool isPayables = realCode.StartsWith("2101");
             bool isSalesOrPurchase = type == JournalEntryType.SalesInvoice || type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseInvoice || type == JournalEntryType.PurchaseReturn;
 
-            bool isEmployeeAccount = realCode.StartsWith("2201") || realCode.StartsWith("1201") || realCode.StartsWith("5202");
+            bool isEmployeeAccount = realCode.StartsWith("22") || realCode.StartsWith("12") || realCode.StartsWith("52") || realCode.StartsWith("4109");
             
             entry.Lines.Add(new JournalLine
             {

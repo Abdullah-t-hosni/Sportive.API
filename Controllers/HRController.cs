@@ -666,7 +666,7 @@ public class EmployeeAdvancesController : ControllerBase
             Reference = advance.AdvanceNumber,
             CreatedAt = TimeHelper.GetEgyptTime(),
             CreatedByUserId = UserId,
-            CostCenter = OrderSource.Website
+            CostCenter = null
         };
         _db.PaymentVouchers.Add(voucher);
         await _db.SaveChangesAsync();
@@ -786,7 +786,7 @@ public class EmployeeBonusesController : ControllerBase
             Reference = bonus.BonusNumber,
             CreatedAt = TimeHelper.GetEgyptTime(),
             CreatedByUserId = UserId,
-            CostCenter = OrderSource.Website
+            CostCenter = null
         };
         _db.PaymentVouchers.Add(voucher);
         await _db.SaveChangesAsync();
