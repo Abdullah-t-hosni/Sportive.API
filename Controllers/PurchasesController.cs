@@ -892,8 +892,12 @@ public class PurchaseInvoicesController : ControllerBase
         catch (Exception ex)
         {
             await transaction.RollbackAsync();
-            _logger.LogError(ex, "Error in CreateStandaloneReturn");
-            return StatusCode(500, new { message = "خطأ داخلي أثناء معالجة المرتجع", error = ex.Message });
+            _logger.LogError(ex, "Error in CreateStandaloneReturn - {Message} - Inner: {InnerMessage}", ex.Message, ex.InnerException?.Message);
+            return StatusCode(500, new { 
+                message = "خطأ داخلي أثناء معالجة المرتجع", 
+                error = ex.Message,
+                detail = ex.InnerException?.Message 
+            });
         }
     }
 
@@ -946,6 +950,7 @@ public class PurchaseInvoicesController : ControllerBase
             pReturn.DiscountAmount = dto.DiscountAmount;
             pReturn.PaymentTerms = dto.PaymentTerms;
             pReturn.CashAccountId = dto.CashAccountId > 0 ? dto.CashAccountId : null;
+            pReturn.CostCenter = dto.CostCenter;
             pReturn.UpdatedAt = TimeHelper.GetEgyptTime();
 
             // 4. Update Items
@@ -1009,8 +1014,12 @@ public class PurchaseInvoicesController : ControllerBase
         catch (Exception ex)
         {
             await transaction.RollbackAsync();
-            _logger.LogError(ex, "Error in UpdateStandaloneReturn");
-            return StatusCode(500, new { message = "خطأ داخلي أثناء تعديل المرتجع", error = ex.Message });
+            _logger.LogError(ex, "Error in UpdateStandaloneReturn - {Message} - Inner: {InnerMessage}", ex.Message, ex.InnerException?.Message);
+            return StatusCode(500, new { 
+                message = "خطأ داخلي أثناء تعديل المرتجع", 
+                error = ex.Message,
+                detail = ex.InnerException?.Message 
+            });
         }
     }
 
