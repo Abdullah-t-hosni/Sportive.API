@@ -891,39 +891,41 @@ public class OperationalReportsController : ControllerBase
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        var q = _db.PurchaseInvoices
-            .Include(i => i.Supplier)
-            .Include(i => i.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Category)
-            .Include(i => i.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Brand)
-            .Where(i => (i.Status == PurchaseInvoiceStatus.Returned || i.Status == PurchaseInvoiceStatus.PartiallyReturned || i.ReturnedAmount > 0)
-                     && i.InvoiceDate >= from && i.InvoiceDate <= to);
+        // 🎯 FIX: Fetch from PurchaseReturns table to include Standalone returns
+        var q = _db.PurchaseReturns
+            .Include(r => r.Supplier)
+            .Include(r => r.Invoice)
+            .Include(r => r.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Category)
+            .Include(r => r.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Brand)
+            .Include(r => r.Items).ThenInclude(it => it.ProductVariant)
+            .Where(r => r.ReturnDate >= from && r.ReturnDate <= to);
 
         if (categoryId.HasValue && categoryId > 0)
         {
             var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
-            q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && categoryIds.Contains(it.Product.CategoryId.Value)));
+            q = q.Where(r => r.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && categoryIds.Contains(it.Product.CategoryId.Value)));
         }
 
         if (brandId.HasValue && brandId > 0)
         {
             var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
-            q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.BrandId.HasValue && brandIds.Contains(it.Product.BrandId.Value)));
+            q = q.Where(r => r.Items.Any(it => it.Product != null && it.Product.BrandId.HasValue && brandIds.Contains(it.Product.BrandId.Value)));
         }
 
         if (!string.IsNullOrEmpty(color))
-            q = q.Where(i => i.Items.Any(it => (it.ProductVariant != null && (it.ProductVariant.Color == color || it.ProductVariant.ColorAr == color)) || (it.Product != null && it.Product.Variants.Any(v => v.Color == color || v.ColorAr == color))));
+            q = q.Where(r => r.Items.Any(it => (it.ProductVariant != null && (it.ProductVariant.Color == color || it.ProductVariant.ColorAr == color)) || (it.Product != null && it.Product.Variants.Any(v => v.Color == color || v.ColorAr == color))));
 
         if (!string.IsNullOrEmpty(size))
-            q = q.Where(i => i.Items.Any(it => (it.ProductVariant != null && it.ProductVariant.Size == size) || (it.Product != null && it.Product.Variants.Any(v => v.Size == size))));
+            q = q.Where(r => r.Items.Any(it => (it.ProductVariant != null && it.ProductVariant.Size == size) || (it.Product != null && it.Product.Variants.Any(v => v.Size == size))));
 
-        var returns = await q.OrderByDescending(i => i.InvoiceDate).ToListAsync();
+        var returns = await q.OrderByDescending(r => r.ReturnDate).ToListAsync();
 
-        var rows = returns.Select(i => new ReturnRow(
-            i.InvoiceNumber, i.InvoiceDate,
-            i.Supplier.Name, i.Supplier.Phone,
-            i.ReturnedAmount > 0 ? i.ReturnedAmount : i.TotalAmount, 
-            i.Notes ?? "",
-            i.Items.Select(it => new ReportItemDto(
+        var rows = returns.Select(r => new ReturnRow(
+            r.ReturnNumber, r.ReturnDate,
+            r.Supplier?.Name ?? "N/A", r.Supplier?.Phone ?? "",
+            r.TotalAmount, 
+            r.Notes ?? (r.Invoice != null ? $"مرتجع للفاتورة #{r.Invoice.InvoiceNumber}" : "مرتجع مستقل"),
+            r.Items.Select(it => new ReportItemDto(
                 it.Product?.SKU ?? "",
                 it.Product?.NameAr ?? "",
                 it.ProductVariant?.Size ?? "",
