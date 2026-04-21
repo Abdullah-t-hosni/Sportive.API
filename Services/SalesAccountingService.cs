@@ -74,9 +74,10 @@ public class SalesAccountingService
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
         // ── 1. Credits: Revenue + VAT + Delivery ─────────────
-        decimal totalVatAmount  = 0;
-        decimal totalGrossRevenue = 0;
-        decimal totalItemDiscounts = 0;
+        decimal totalOriginalNetRevenue = 0;
+        decimal totalActualVatAmount    = 0;
+        decimal totalNetDiscount        = 0;
+        decimal totalGrossDiscount      = 0;
 
         if (order.Items != null && order.Items.Any())
         {
@@ -84,33 +85,35 @@ public class SalesAccountingService
             {
                 decimal rate = (item.VatRateApplied ?? 14) / 100m;
                 
-                // Gross Revenue (before any discount, but Net of VAT calculation)
-                // However, the cleanest way: TotalGross = sum(OriginalUnitPrice * Qty) - sum(Vat on original if needed?)
-                // Actually, the user wants Gross Price as revenue.
-                // Revenue (Credit) + VAT (Credit) = OriginalPrice * Qty + (Vat on Discounted Price?)
-                // No, let's keep it simple:
-                // Credit Revenue (Gross Net) = (OriginalTotalPrice) / (1 + rate)
-                // Credit VAT = item.ItemVatAmount
-                
+                // Original Gross & Net
                 decimal itemOriginalTotal = item.OriginalUnitPrice * item.Quantity;
-                decimal itemGrossNet = item.HasTax 
+                decimal itemOriginalNet   = item.HasTax 
                     ? Math.Round(itemOriginalTotal / (1 + rate), 2)
                     : itemOriginalTotal;
                 
-                totalGrossRevenue += itemGrossNet;
-                totalVatAmount    += item.ItemVatAmount;
-                totalItemDiscounts += item.DiscountAmount;
+                // Actual Gross & Net (After discount)
+                decimal itemActualTotal   = item.UnitPrice * item.Quantity;
+                decimal itemActualNet     = item.HasTax
+                    ? Math.Round(itemActualTotal / (1 + rate), 2)
+                    : itemActualTotal;
+
+                totalOriginalNetRevenue += itemOriginalNet;
+                totalActualVatAmount    += item.ItemVatAmount;
+                totalNetDiscount        += (itemOriginalNet - itemActualNet);
+                totalGrossDiscount      += (itemOriginalTotal - itemActualTotal);
             }
         }
         else
         {
-            totalGrossRevenue = Math.Round(order.SubTotal / (1 + vatRate), 2);
-            totalVatAmount    = order.SubTotal - totalGrossRevenue;
+            // Fallback for items-less orders (unlikely in new flow)
+            totalOriginalNetRevenue = Math.Round(order.SubTotal / (1 + vatRate), 2);
+            totalActualVatAmount    = order.SubTotal - totalOriginalNetRevenue;
         }
 
-        lines.Add((salesRevAcct, 0, totalGrossRevenue, $"مبيعات - {order.OrderNumber} (إجمالي الإيراد)"));
-        if (totalVatAmount > 0)
-            lines.Add((vatAcct, 0, totalVatAmount, $"ضريبة مبيعات {store?.VatRatePercent ?? 14}% - {order.OrderNumber}"));
+        lines.Add((salesRevAcct, 0, totalOriginalNetRevenue, $"مبيعات - {order.OrderNumber} (إيراد إجمالي قبل الخصم)"));
+        
+        if (totalActualVatAmount > 0)
+            lines.Add((vatAcct, 0, totalActualVatAmount, $"ضريبة مبيعات {store?.VatRatePercent ?? 14}% - {order.OrderNumber}"));
         
         if (order.DeliveryFee > 0)
         {
@@ -118,26 +121,33 @@ public class SalesAccountingService
         }
         else if (order.FulfillmentType == FulfillmentType.Delivery && !string.IsNullOrEmpty(order.DeliveryAddress?.City))
         {
-            // ✅ Free Shipping Logic: record as revenue vs discount if it matched a zone
+            // ✅ Free Shipping Logic: record as revenue vs discount
             var city = order.DeliveryAddress.City.Trim().ToLower();
-            var matchedZone = (await _db.ShippingZones.AsNoTracking().ToListAsync())
-                .FirstOrDefault(z => z.IsActive && z.Governorates.ToLower().Split(',').Any(g => g.Trim() == city));
+            var zones = await _db.ShippingZones.AsNoTracking().ToListAsync();
+            var matchedZone = zones.FirstOrDefault(z => z.IsActive && z.Governorates.ToLower().Split(',').Any(g => g.Trim() == city));
             
             if (matchedZone != null && matchedZone.Fee > 0)
             {
-                lines.Add((deliveryRevAcct, 0, matchedZone.Fee, $"إيراد توصيل مهدي (مجاني) - {order.OrderNumber}"));
-                lines.Add((salesDiscAcct, matchedZone.Fee, 0, $"خصم شحن مجاني - {order.OrderNumber}"));
+                lines.Add((deliveryRevAcct, 0, matchedZone.Fee, $"إيراد توصيل (مجاني) - {order.OrderNumber}"));
+                lines.Add((salesDiscAcct, matchedZone.Fee, 0, $"تغطية خصم شحن مجاني - {order.OrderNumber}"));
             }
         }
 
         // ── 2. Debits: Discount + Cash/Credit Routing ─────────
-        decimal effectiveTemporalDiscount = Math.Max(order.TemporalDiscount, totalItemDiscounts);
         
-        if (effectiveTemporalDiscount > 0)
-            lines.Add((salesDiscAcct, Math.Round(effectiveTemporalDiscount, 2), 0, $"خصومات زمنية (عروض تلقائية) - {order.OrderNumber}"));
-
+        // Manual/Coupon discount handling
         if (order.DiscountAmount > 0)
-            lines.Add((salesDiscAcct, Math.Round(order.DiscountAmount, 2), 0, $"خصم كوبونات / يدوي - {order.OrderNumber}"));
+        {
+             // If order has a global discount (manual), we net-ify it to keep math perfect
+             decimal manualNetDisc = Math.Round(order.DiscountAmount / (1 + vatRate), 2);
+             lines.Add((salesDiscAcct, manualNetDisc, 0, $"خصم يدوي / كوبون (صافي) - {order.OrderNumber} [إجمالي: {order.DiscountAmount}]"));
+             // Note: The difference between Gross and Net manual discount is reflected in lower VAT collection anyway.
+        }
+
+        if (totalNetDiscount > 0)
+        {
+            lines.Add((salesDiscAcct, Math.Round(totalNetDiscount, 2), 0, $"خصم عروض / أصناف (صافي) - {order.OrderNumber} [إجمالي: {totalGrossDiscount}]"));
+        }
 
         // ✅ ROBUSTNESS: Ensure payments are loaded and fresh
         if (order.Payments == null || !order.Payments.Any())

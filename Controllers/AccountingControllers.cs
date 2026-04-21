@@ -443,10 +443,10 @@ public class JournalEntriesController : ControllerBase
                 e.Id, e.EntryNumber, e.EntryDate, e.Description, e.Reference, e.CreatedAt,
                 Status = e.Status.ToString(),
                 Type = e.Type.ToString(),
-                CostCenter = (int?)e.CostCenter,
+                CostCenter = e.CostCenter,
                 LineCount = includeLines ? e.Lines.Count : _db.JournalLines.Count(l => l.JournalEntryId == e.Id),
                 TotalAmount = includeLines ? e.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit) : (_db.JournalLines.AsNoTracking().Where(l => l.JournalEntryId == e.Id && l.Debit > 0).Sum(l => (decimal?)l.Debit) ?? 0),
-                Lines = includeLines ? (object)e.Lines.Select(l => new { l.AccountId, l.Credit, l.Debit, AccountName = l.Account != null ? l.Account.NameAr : null }).ToList() : null
+                Lines = includeLines ? (object)e.Lines.Select(l => new { l.AccountId, l.Credit, l.Debit, AccountName = l.Account != null ? l.Account.NameAr : null, CostCenter = l.CostCenter }).ToList() : null
             })
             .ToListAsync();
 
@@ -470,9 +470,10 @@ public class JournalEntriesController : ControllerBase
             e.Lines.Select(l => new JournalLineDto(
                 l.Id, l.AccountId, l.Account?.Code ?? "", l.Account?.NameAr ?? "",
                 l.Debit, l.Credit, l.Description, l.CustomerId, l.SupplierId,
-                l.Supplier?.Name ?? l.Customer?.FullName ?? null
+                l.Supplier?.Name ?? l.Customer?.FullName ?? null,
+                l.CostCenter
             )).ToList(),
-            e.AttachmentUrl, e.AttachmentPublicId, null, null
+            e.AttachmentUrl, e.AttachmentPublicId, null, null, e.CostCenter
         ));
     }
 
