@@ -124,12 +124,14 @@ public class InventoryAuditsController : ControllerBase
                 a.TotalExpectedValue, a.TotalActualValue, a.ValueDifference,
                 a.Items.Select(i => {
                     var variantName = i.ProductVariant != null ? $"{i.ProductVariant.Size} {i.ProductVariant.ColorAr}".Trim() : null;
+                    var imageUrl = i.ProductVariant?.ImageUrl ?? i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? i.Product?.Images?.FirstOrDefault()?.ImageUrl;
+                    
                     return new InventoryAuditItemDto(
                         i.Id, i.ProductId, i.Product?.NameAr, i.Product?.SKU,
                         i.ProductVariantId, variantName,
                         i.ExpectedQuantity, i.ActualQuantity, i.Difference, i.UnitCost,
                         i.ExpectedQuantity * i.UnitCost, i.ActualQuantity * i.UnitCost,
-                        i.Note
+                        i.Note, imageUrl
                     );
                 }).ToList(),
                 a.JournalEntryId

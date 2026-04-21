@@ -60,5 +60,6 @@ public record InventoryAuditItemDto(
     decimal UnitCost,
     decimal TotalExpectedValue,
     decimal TotalActualValue,
-    string? Note
+    string? Note,
+    string? ImageUrl = null
 );

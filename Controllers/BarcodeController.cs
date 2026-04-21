@@ -23,7 +23,7 @@ public class BarcodeController : ControllerBase
         bool isInt = int.TryParse(queryVal, out int id);
         bool isDecimal = decimal.TryParse(queryVal, out decimal price);
 
-        // البحث عن المنتج بالـ SKU أو الـ ID أو السعر
+        // البحث عن المنتج بالـ SKU أو الـ ID أو البحث في المتغيرات
         var product = await _db.Products
             .Include(p => p.Images)
             .Include(p => p.Variants)
@@ -33,7 +33,8 @@ public class BarcodeController : ControllerBase
                 (isInt && p.Id == id) ||
                 (isDecimal && (p.Price == price || p.DiscountPrice == price)) ||
                 p.NameAr.ToLower().Contains(queryVal) ||
-                p.NameEn.ToLower().Contains(queryVal)
+                // البحث في المتغيرات (مثلاً لو كان الكود هو SKU-Size-Color)
+                p.Variants.Any(v => (p.SKU + "-" + v.Size + "-" + v.Color).ToLower() == queryVal)
             );
 
         if (product == null) return NotFound(new { message = $"لا يوجد منتج بالكود: {q}" });
