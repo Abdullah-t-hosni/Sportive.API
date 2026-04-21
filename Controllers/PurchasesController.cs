@@ -1022,6 +1022,56 @@ public class PurchaseInvoicesController : ControllerBase
             });
         }
     }
+    
+    [HttpGet("returns/{id}")]
+    [Authorize(Roles = "Admin,Manager,Accountant")]
+    public async Task<IActionResult> GetReturnById(int id)
+    {
+        var pReturn = await _db.PurchaseReturns
+            .Include(r => r.Supplier)
+            .Include(r => r.Items).ThenInclude(i => i.Product)
+            .Include(r => r.Items).ThenInclude(i => i.ProductVariant)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (pReturn == null) return NotFound();
+
+        var result = new
+        {
+            pReturn.Id,
+            pReturn.ReturnNumber,
+            pReturn.PurchaseInvoiceId,
+            pReturn.SupplierId,
+            Supplier = pReturn.Supplier != null ? new { pReturn.Supplier.Id, Name = pReturn.Supplier.Name } : null,
+            pReturn.ReturnDate,
+            pReturn.SubTotal,
+            pReturn.TaxAmount,
+            pReturn.DiscountAmount,
+            pReturn.TotalAmount,
+            pReturn.Notes,
+            pReturn.ReferenceNumber,
+            pReturn.PaymentTerms,
+            pReturn.CashAccountId,
+            pReturn.CostCenter,
+            Items = pReturn.Items.Select(i => new
+            {
+                i.Id,
+                i.PurchaseInvoiceItemId,
+                i.ProductId,
+                i.ProductVariantId,
+                ProductName = i.Product?.NameAr,
+                Sku = i.Product?.SKU ?? "",
+                i.Quantity,
+                i.Unit,
+                i.UnitCost,
+                i.TotalCost,
+                Size = i.ProductVariant?.Size,
+                Color = i.ProductVariant?.ColorAr
+            }).ToList()
+        };
+
+        return Ok(result);
+    }
+
 
     [HttpPost("{id}/return")]
     [Authorize(Roles = "Admin,Manager")]
