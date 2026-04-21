@@ -367,9 +367,10 @@ public class PurchaseInvoicesController : ControllerBase
             rtn.Id,
             rtn.ReturnNumber,
             rtn.PurchaseInvoiceId,
-            InvoiceNumber = rtn.Invoice.InvoiceNumber,
+            InvoiceNumber = rtn.Invoice?.InvoiceNumber,
             rtn.SupplierId,
-            SupplierName = rtn.Supplier.Name,
+            SupplierName = rtn.Supplier?.Name,
+            Supplier = rtn.Supplier != null ? new { rtn.Supplier.Id, Name = rtn.Supplier.Name } : null,
             rtn.ReturnDate,
             rtn.SubTotal,
             rtn.TaxAmount,
@@ -377,15 +378,20 @@ public class PurchaseInvoicesController : ControllerBase
             rtn.TotalAmount,
             rtn.Notes,
             rtn.ReferenceNumber,
+            rtn.PaymentTerms,
+            rtn.CashAccountId,
+            rtn.CostCenter,
             Items = rtn.Items.Select(ri => new {
                 ri.Id,
                 ri.PurchaseInvoiceItemId,
                 ri.ProductId,
                 ProductName = ri.Product?.NameAr,
+                Sku = ri.Product?.SKU ?? "",
                 ri.ProductVariantId,
                 Size = ri.ProductVariant?.Size,
                 Color = ri.ProductVariant?.ColorAr,
                 ri.Quantity,
+                ri.Unit,
                 ri.UnitCost,
                 ri.TotalCost
             }).ToList()
@@ -1023,54 +1029,6 @@ public class PurchaseInvoicesController : ControllerBase
         }
     }
     
-    [HttpGet("returns/{id}")]
-    [Authorize(Roles = "Admin,Manager,Accountant")]
-    public async Task<IActionResult> GetReturnById(int id)
-    {
-        var pReturn = await _db.PurchaseReturns
-            .Include(r => r.Supplier)
-            .Include(r => r.Items).ThenInclude(i => i.Product)
-            .Include(r => r.Items).ThenInclude(i => i.ProductVariant)
-            .FirstOrDefaultAsync(r => r.Id == id);
-
-        if (pReturn == null) return NotFound();
-
-        var result = new
-        {
-            pReturn.Id,
-            pReturn.ReturnNumber,
-            pReturn.PurchaseInvoiceId,
-            pReturn.SupplierId,
-            Supplier = pReturn.Supplier != null ? new { pReturn.Supplier.Id, Name = pReturn.Supplier.Name } : null,
-            pReturn.ReturnDate,
-            pReturn.SubTotal,
-            pReturn.TaxAmount,
-            pReturn.DiscountAmount,
-            pReturn.TotalAmount,
-            pReturn.Notes,
-            pReturn.ReferenceNumber,
-            pReturn.PaymentTerms,
-            pReturn.CashAccountId,
-            pReturn.CostCenter,
-            Items = pReturn.Items.Select(i => new
-            {
-                i.Id,
-                i.PurchaseInvoiceItemId,
-                i.ProductId,
-                i.ProductVariantId,
-                ProductName = i.Product?.NameAr,
-                Sku = i.Product?.SKU ?? "",
-                i.Quantity,
-                i.Unit,
-                i.UnitCost,
-                i.TotalCost,
-                Size = i.ProductVariant?.Size,
-                Color = i.ProductVariant?.ColorAr
-            }).ToList()
-        };
-
-        return Ok(result);
-    }
 
 
     [HttpPost("{id}/return")]
