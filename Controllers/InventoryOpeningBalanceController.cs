@@ -280,9 +280,24 @@ public class InventoryOpeningBalanceController : ControllerBase
     }
 
     [HttpGet("template")]
-    public IActionResult GetTemplate()
+    public async Task<IActionResult> GetTemplate()
     {
+        var existingSizes  = await _db.ProductVariants.Where(v => v.Size != null).Select(v => v.Size!).Distinct().ToListAsync();
+        var existingColors = await _db.ProductVariants.Where(v => v.ColorAr != null).Select(v => v.ColorAr!).Distinct().ToListAsync();
+
         using var wb = new XLWorkbook();
+        var wsL = wb.Worksheets.Add("Lists");
+        wsL.Hide();
+
+        void FillCol(int col, List<string> items, string name) {
+            if (!items.Any()) items.Add("—");
+            for (int i = 0; i < items.Count; i++) wsL.Cell(i + 1, col).Value = items[i];
+            var range = wsL.Range(1, col, items.Count, col);
+            wb.DefinedNames.Add(name, range);
+        }
+        FillCol(1, existingSizes, "SizesList");
+        FillCol(2, existingColors, "ColorsList");
+
         var ws = wb.Worksheets.Add("الأرصدة الافتتاحية");
         ws.RightToLeft = true;
 
@@ -294,16 +309,28 @@ public class InventoryOpeningBalanceController : ControllerBase
             cell.Style.Font.Bold = true;
             cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1a1a2e");
             cell.Style.Font.FontColor = XLColor.White;
+            cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+
+        // Add Data Validation for 500 rows
+        for (int r = 2; r <= 501; r++)
+        {
+            ws.Cell(r, 4).GetDataValidation().List("=SizesList");
+            ws.Cell(r, 5).GetDataValidation().List("=ColorsList");
         }
 
         // Sample Data
-        ws.Cell(2, 1).Value = "PROD-001";
+        ws.Cell(2, 1).Value = "SKU-XYZ";
         ws.Cell(2, 2).Value = 10;
-        ws.Cell(2, 3).Value = 150.50;
-        ws.Cell(2, 4).Value = "مثال لمنتج";
+        ws.Cell(2, 3).Value = 150.00;
+        ws.Cell(2, 4).Value = existingSizes.FirstOrDefault() ?? "XL";
+        ws.Cell(2, 5).Value = existingColors.FirstOrDefault() ?? "Black";
+        ws.Cell(2, 6).Value = "اسم توضيحي للمنتج";
         ws.Row(2).Style.Font.FontColor = XLColor.Gray;
 
         ws.Columns().AdjustToContents();
+        ws.Column(1).Width = 20;
+        ws.Column(6).Width = 30;
 
         using var stream = new MemoryStream();
         wb.SaveAs(stream);
@@ -324,17 +351,48 @@ public class InventoryOpeningBalanceController : ControllerBase
             using var wb = new XLWorkbook(stream);
             var ws = wb.Worksheets.First();
             var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
-            var products = await _db.Products.Include(p => p.Variants).ToListAsync();
+
+            var products = await _db.Products.Include(p => p.Variants).Include(p => p.Images).ToListAsync();
+            
+            var headers = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var firstRow = ws.Row(1);
+            string Normalize(string s) => new string(s.Where(c => char.IsLetterOrDigit(c)).ToArray()).ToLower();
+
+            var lastCol = ws.LastColumnUsed()?.ColumnNumber() ?? 0;
+            for (int c = 1; c <= lastCol; c++)
+            {
+                var hRaw = firstRow.Cell(c).GetString().Trim();
+                if (string.IsNullOrEmpty(hRaw)) continue;
+                headers[Normalize(hRaw)] = c;
+            }
+
+            int GetCol(params string[] aliases) {
+                foreach (var a in aliases) {
+                    if (headers.TryGetValue(Normalize(a), out var idx)) return idx;
+                }
+                return -1;
+            }
+
+            int colSku   = GetCol("الكود", "SKU", "Code");
+            int colQty   = GetCol("الكمية", "Quantity", "Qty");
+            int colCost  = GetCol("التكلفة", "Cost", "Price", "سعر التكلفة");
+            int colSize  = GetCol("المقاس", "Size");
+            int colColor = GetCol("اللون", "Color");
+
+            if (colSku == -1 || colQty == -1 || colCost == -1)
+                return BadRequest(new { message = "الأعمدة الإلزامية (الكود، الكمية، التكلفة) غير موجودة في الملف." });
 
             for (int r = 2; r <= lastRow; r++)
             {
-                var sku   = ws.Cell(r, 1).GetString().Trim();
+                string GetVal(int col) => col != -1 ? ws.Cell(r, col).GetString().Trim() : "";
+
+                var sku   = GetVal(colSku);
                 if (string.IsNullOrEmpty(sku)) continue;
 
-                var qtyStr  = ws.Cell(r, 2).GetString().Trim();
-                var costStr = ws.Cell(r, 3).GetString().Trim();
-                var size    = ws.Cell(r, 4).GetString().Trim();
-                var color   = ws.Cell(r, 5).GetString().Trim();
+                var qtyStr  = GetVal(colQty);
+                var costStr = GetVal(colCost);
+                var size    = GetVal(colSize);
+                var color   = GetVal(colColor);
 
                 if (!decimal.TryParse(qtyStr, out var qty) || qty <= 0)
                 {
@@ -348,20 +406,17 @@ public class InventoryOpeningBalanceController : ControllerBase
                     continue;
                 }
 
-                // Find Product by SKU or Name (Robust)
                 var product = products.FirstOrDefault(p => 
-                    string.Equals(p.SKU?.Trim(), sku, StringComparison.OrdinalIgnoreCase) || 
-                    string.Equals(p.NameAr?.Trim(), sku, StringComparison.OrdinalIgnoreCase));
+                    string.Equals(p.SKU?.Trim(), sku, StringComparison.OrdinalIgnoreCase));
 
                 if (product == null)
                 {
-                    errors.Add($"سطر {r}: الكود أو اسم الصنف '{sku}' غير موجود في النظام");
+                    errors.Add($"سطر {r}: الكود '{sku}' غير موجود في النظام");
                     continue;
                 }
 
                 if (product.Variants.Any())
                 {
-                    // If product has variants, we MUST match by size/color or indicate error
                     var variant = product.Variants.FirstOrDefault(v => 
                         (string.IsNullOrEmpty(size) || string.Equals(v.Size?.Trim(), size, StringComparison.OrdinalIgnoreCase)) &&
                         (string.IsNullOrEmpty(color) || string.Equals(v.ColorAr?.Trim(), color, StringComparison.OrdinalIgnoreCase) || string.Equals(v.Color?.Trim(), color, StringComparison.OrdinalIgnoreCase)));
@@ -381,7 +436,7 @@ public class InventoryOpeningBalanceController : ControllerBase
                             size      = variant.Size,
                             color     = variant.ColorAr,
                             image     = vImg,
-                            quantity  = qty,
+                            quantity  = (int)qty,
                             costPrice = cost
                         });
                     }
@@ -392,7 +447,6 @@ public class InventoryOpeningBalanceController : ControllerBase
                 }
                 else
                 {
-                    // Basic product without variants
                     var pImg = product.Images.FirstOrDefault(i => i.IsMain)?.ImageUrl ?? 
                                product.Images.FirstOrDefault()?.ImageUrl;
 
@@ -403,7 +457,7 @@ public class InventoryOpeningBalanceController : ControllerBase
                         name      = product.NameAr,
                         sku       = product.SKU,
                         image     = pImg,
-                        quantity  = qty,
+                        quantity  = (int)qty,
                         costPrice = cost
                     });
                 }
@@ -414,7 +468,6 @@ public class InventoryOpeningBalanceController : ControllerBase
                 using var errorWb = new XLWorkbook();
                 var errorWs = errorWb.Worksheets.Add("أخطاء الاستيراد");
                 errorWs.RightToLeft = true;
-                
                 errorWs.Cell(1, 1).Value = "رقم السطر";
                 errorWs.Cell(1, 2).Value = "وصف الخطأ";
                 errorWs.Range(1, 1, 1, 2).Style.Font.Bold = true;
@@ -423,7 +476,7 @@ public class InventoryOpeningBalanceController : ControllerBase
 
                 for (int i = 0; i < errors.Count; i++)
                 {
-                    errorWs.Cell(i + 2, 1).Value = "سطر";
+                    errorWs.Cell(i + 2, 1).Value = $"سطر {i+2}";
                     errorWs.Cell(i + 2, 2).Value = errors[i];
                 }
                 errorWs.Columns().AdjustToContents();

@@ -487,7 +487,7 @@ public class PayrollController : ControllerBase
             // لكن نضيف سطوراً تفصيلية مرتبطة بكل موظف على حساب الرواتب المستحقة
             foreach (var item in run.Items)
             {
-                if (item.Employee.AccountId.HasValue)
+                if (item.Employee != null && item.Employee.AccountId.HasValue)
                 {
                     je.Lines.Add(new JournalLine
                     {
@@ -649,16 +649,16 @@ public class EmployeeAdvancesController : ControllerBase
 
         // 🎯 UNIFIED VOUCHER SYSTEM: Create a PaymentVoucher record for this advance
         var mapDict = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId, StringComparer.OrdinalIgnoreCase);
-        var advAccId = mapDict.TryGetValue(MappingKeys.EmployeeAdvances.ToLower(), out var aAccId) && aAccId.HasValue 
+        var advAccId = (mapDict.TryGetValue(MappingKeys.EmployeeAdvances.ToLower(), out var aAccId) && aAccId.HasValue) 
             ? aAccId.Value 
-            : emp.AccountId.Value;
+            : (emp.AccountId ?? 0);
 
         var voucher = new PaymentVoucher
         {
             VoucherNumber = advance.AdvanceNumber,
             VoucherDate = advance.AdvanceDate,
             Amount = advance.Amount,
-            CashAccountId = advance.CashAccountId.Value,
+            CashAccountId = advance.CashAccountId ?? 0,
             ToAccountId = advAccId,
             EmployeeId = emp.Id,
             PaymentMethod = VoucherPaymentMethod.Cash,
@@ -778,7 +778,7 @@ public class EmployeeBonusesController : ControllerBase
             VoucherNumber = bonus.BonusNumber,
             VoucherDate = bonus.BonusDate,
             Amount = bonus.Amount,
-            CashAccountId = bonus.CashAccountId.Value,
+            CashAccountId = bonus.CashAccountId ?? 0,
             ToAccountId = bonusExpenseAccId.Value,
             EmployeeId = emp.Id,
             PaymentMethod = VoucherPaymentMethod.Cash,
@@ -898,7 +898,7 @@ public class EmployeeDeductionsController : ControllerBase
                 VoucherNumber = ded.DeductionNumber,
                 VoucherDate = ded.DeductionDate,
                 Amount = ded.Amount,
-                CashAccountId = ded.CashAccountId.Value,
+                CashAccountId = ded.CashAccountId ?? 0,
                 FromAccountId = deductionRevenueAccId.Value,
                 EmployeeId = emp.Id,
                 PaymentMethod = VoucherPaymentMethod.Cash,

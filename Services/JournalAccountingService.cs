@@ -65,7 +65,7 @@ public class JournalAccountingService
             var firstOrderLine = dto.Lines.FirstOrDefault(l => l.OrderId.HasValue);
             if (firstOrderLine != null)
             {
-                entry.CostCenter = await _db.Orders.Where(o => o.Id == firstOrderLine.OrderId.Value).Select(o => (OrderSource?)o.Source).FirstOrDefaultAsync();
+                entry.CostCenter = await _db.Orders.Where(o => o.Id == firstOrderLine.OrderId!.Value).Select(o => (OrderSource?)o.Source).FirstOrDefaultAsync();
             }
         }
         

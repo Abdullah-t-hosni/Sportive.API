@@ -111,6 +111,49 @@ public class AccountsController : ControllerBase
         return NoContent();
     }
 
+    [HttpGet("template-opening-balances")]
+    public async Task<IActionResult> GetOpeningBalancesTemplate()
+    {
+        var accounts = await _db.Accounts.Where(a => a.AllowPosting && a.IsActive).OrderBy(a => a.Code).ToListAsync();
+
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("الأرصدة الافتتاحية");
+        ws.RightToLeft = true;
+
+        var headers = new[] { "كود الحساب *", "اسم الحساب", "الرصيد الافتتاحي *", "الطبيعة", "النوع" };
+        for (int c = 0; c < headers.Length; c++)
+        {
+            var cell = ws.Cell(1, c + 1);
+            cell.Value = headers[c];
+            cell.Style.Font.Bold = true;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1a1a2e");
+            cell.Style.Font.FontColor = XLColor.White;
+        }
+
+        int row = 2;
+        foreach (var a in accounts)
+        {
+            ws.Cell(row, 1).Value = a.Code;
+            ws.Cell(row, 2).Value = a.NameAr;
+            ws.Cell(row, 3).Value = a.OpeningBalance;
+            ws.Cell(row, 4).Value = a.Nature == AccountNature.Debit ? "مدين" : "دائن";
+            ws.Cell(row, 5).Value = a.Type.ToString();
+            
+            // Format existing data to look like reference
+            ws.Row(row).Style.Font.FontColor = XLColor.Gray;
+            row++;
+        }
+
+        ws.Columns().AdjustToContents();
+        ws.Column(1).Width = 15;
+        ws.Column(2).Width = 35;
+        ws.Column(3).Width = 20;
+
+        using var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "OpeningBalances_Template.xlsx");
+    }
+
     [HttpPost("import-opening-balances")]
     public async Task<IActionResult> ImportOpeningBalances(IFormFile file)
     {
@@ -123,17 +166,43 @@ public class AccountsController : ControllerBase
         {
             using var stream = file.OpenReadStream();
             using var wb = new XLWorkbook(stream);
-            var ws = wb.Worksheets.First();
+            var ws = wb.Worksheets.FirstOrDefault() ?? throw new Exception("الملف فارغ");
             var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
 
             var allAccounts = await _db.Accounts.ToListAsync();
+            
+            var headers = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var firstRow = ws.Row(1);
+            string Normalize(string s) => new string(s.Where(c => char.IsLetterOrDigit(c)).ToArray()).ToLower();
+
+            var lastColUsed = ws.LastColumnUsed();
+            var lastCol = lastColUsed?.ColumnNumber() ?? 0;
+            for (int c = 1; c <= lastCol; c++)
+            {
+                var hRaw = firstRow.Cell(c).GetString().Trim();
+                if (string.IsNullOrEmpty(hRaw)) continue;
+                headers[Normalize(hRaw)] = c;
+            }
+
+            int GetCol(params string[] aliases) {
+                foreach (var a in aliases) {
+                    if (headers.TryGetValue(Normalize(a), out var idx)) return idx;
+                }
+                return -1;
+            }
+
+            int colCode = GetCol("كود الحساب", "Code", "Account Code", "كود");
+            int colBal  = GetCol("الرصيد", "Balance", "Opening Balance", "الرصيد الافتتاحي");
+
+            if (colCode == -1 || colBal == -1)
+                return BadRequest(new { message = "الأعمدة الإلزامية (كود الحساب، الرصيد) غير موجودة." });
 
             for (int r = 2; r <= lastRow; r++)
             {
-                var code = ws.Cell(r, 1).GetString().Trim();
+                var code = ws.Cell(r, colCode).GetString().Trim();
                 if (string.IsNullOrEmpty(code)) continue;
 
-                var balStr = ws.Cell(r, 2).GetString().Trim();
+                var balStr = ws.Cell(r, colBal).GetString().Trim();
                 if (!decimal.TryParse(balStr, out var balance))
                 {
                     errors.Add($"سطر {r}: الرصيد غير صحيح للحساب '{code}'");
@@ -149,7 +218,7 @@ public class AccountsController : ControllerBase
 
                 if (!account.IsLeaf)
                 {
-                    errors.Add($"سطر {r}: الحساب '{code}' ليس حساباً فرعياً (Leaf). لا يمكن إضافة رصيد افتتاحي إلا للحسابات الفرعية.");
+                    errors.Add($"سطر {r}: الحساب '{code}' ليس حساباً فرعياً (Leaf)..");
                     continue;
                 }
 
@@ -430,7 +499,9 @@ public class JournalEntriesController : ControllerBase
         if (includeLines) q = q.Include(e => e.Lines).ThenInclude(l => l.Account);
 
         if (!string.IsNullOrEmpty(search))
-            q = q.Where(e => e.EntryNumber.Contains(search) || (e.Description != null && e.Description.Contains(search)) || (e.Reference != null && e.Reference.Contains(search)));
+            q = q.Where(r => r.EntryNumber.Contains(search) 
+                           || (r.Description != null && r.Description.Contains(search)) 
+                           || (r.Reference != null && r.Reference.Contains(search)));
         
         if (fromDate.HasValue) q = q.Where(e => e.EntryDate >= fromDate.Value.Date);
         if (toDate.HasValue) q = q.Where(e => e.EntryDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));

@@ -325,7 +325,7 @@ public class PurchaseInvoicesController : ControllerBase
         
         if (!string.IsNullOrEmpty(search))
             q = q.Where(r => r.ReturnNumber.Contains(search) 
-                           || r.Invoice.InvoiceNumber.Contains(search) 
+                           || (r.Invoice != null && r.Invoice.InvoiceNumber.Contains(search)) 
                            || r.Supplier.Name.Contains(search));
 
         var total = await q.CountAsync();
@@ -335,7 +335,7 @@ public class PurchaseInvoicesController : ControllerBase
                 r.Id,
                 r.ReturnNumber,
                 r.PurchaseInvoiceId,
-                InvoiceNumber = r.Invoice.InvoiceNumber,
+                InvoiceNumber = r.Invoice != null ? r.Invoice.InvoiceNumber : "بدون فاتورة",
                 r.SupplierId,
                 SupplierName = r.Supplier.Name,
                 r.ReturnDate,

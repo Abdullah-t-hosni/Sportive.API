@@ -115,7 +115,7 @@ public class ProductService : IProductService
                         (d.ApplyTo == DiscountApplyTo.All || 
                          (filter.Source.HasValue ? d.ApplyTo == filter.Source.Value : d.ApplyTo == DiscountApplyTo.Store)) &&
                         (d.ProductId == p.Id || 
-                         (p.CategoryId != null && (d.CategoryId == p.CategoryId || d.CategoryId == p.Category.ParentId || (p.Category.Parent != null && d.CategoryId == p.Category.Parent.ParentId))) || 
+                         (p.CategoryId != null && (d.CategoryId == p.CategoryId || d.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && d.CategoryId == p.Category!.Parent!.ParentId))) || 
                          (p.BrandId != null && d.BrandId == p.BrandId)))
                     .OrderByDescending(d => d.ProductId != null ? 3 : (d.CategoryId != null ? 2 : 1))
                     .FirstOrDefault()
@@ -179,7 +179,7 @@ public class ProductService : IProductService
         var now = TimeHelper.GetEgyptTime();
         var d = await _db.ProductDiscounts
             .Where(x => (x.ProductId == id || 
-                         (p.CategoryId != null && (x.CategoryId == p.CategoryId || x.CategoryId == p.Category.ParentId || (p.Category.Parent != null && x.CategoryId == p.Category.Parent.ParentId))) || 
+                         (p.CategoryId != null && (x.CategoryId == p.CategoryId || x.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && x.CategoryId == p.Category!.Parent!.ParentId))) || 
                          (p.BrandId != null && x.BrandId == p.BrandId)) 
                     && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
             .Where(x => x.ApplyTo == DiscountApplyTo.All || (source.HasValue ? x.ApplyTo == source.Value : x.ApplyTo == DiscountApplyTo.Store))
@@ -205,7 +205,7 @@ public class ProductService : IProductService
         var now = TimeHelper.GetEgyptTime();
         var d = await _db.ProductDiscounts
             .Where(x => (x.ProductId == p.Id || 
-                         (p.CategoryId != null && (x.CategoryId == p.CategoryId || x.CategoryId == p.Category.ParentId || (p.Category.Parent != null && x.CategoryId == p.Category.Parent.ParentId))) || 
+                         (p.CategoryId != null && (x.CategoryId == p.CategoryId || x.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && x.CategoryId == p.Category!.Parent!.ParentId))) || 
                          (p.BrandId != null && x.BrandId == p.BrandId)) 
                     && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
             .Where(x => x.ApplyTo == DiscountApplyTo.All || (source.HasValue ? x.ApplyTo == source.Value : x.ApplyTo == DiscountApplyTo.Store))
@@ -583,7 +583,7 @@ public class ProductService : IProductService
                     .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now &&
                         (d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == DiscountApplyTo.Store) &&
                         (d.ProductId == p.Id || 
-                         (p.CategoryId != null && (d.CategoryId == p.CategoryId || d.CategoryId == p.Category.ParentId || (p.Category.Parent != null && d.CategoryId == p.Category.Parent.ParentId))) || 
+                         (p.CategoryId != null && (d.CategoryId == p.CategoryId || d.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && d.CategoryId == p.Category!.Parent!.ParentId))) || 
                          (d.BrandId != null && d.BrandId == p.BrandId)))
                     .OrderByDescending(d => d.ProductId != null ? 3 : (d.CategoryId != null ? 2 : 1))
                     .FirstOrDefault()
@@ -644,7 +644,7 @@ public class ProductService : IProductService
                     .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now &&
                         (d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == DiscountApplyTo.Store) &&
                         (d.ProductId == p.Id || 
-                         (p.CategoryId != null && (d.CategoryId == p.CategoryId || d.CategoryId == p.Category.ParentId || (p.Category.Parent != null && d.CategoryId == p.Category.Parent.ParentId))) || 
+                         (p.CategoryId != null && (d.CategoryId == p.CategoryId || d.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && d.CategoryId == p.Category!.Parent!.ParentId))) || 
                          (p.BrandId != null && d.BrandId == p.BrandId)))
                     .OrderByDescending(d => d.ProductId != null ? 3 : (d.CategoryId != null ? 2 : 1))
                     .FirstOrDefault()
