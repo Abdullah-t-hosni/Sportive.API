@@ -382,9 +382,9 @@ public class InventoryIntelligenceController : ControllerBase
         {
             try {
                 var je = await _accounting.PostInventoryAdjustmentAsync(0, netImpact, $"AUDIT-{audit.Id}", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
-                if (je != null)
+                if (je.HasValue)
                 {
-                    audit.JournalEntryId = je.Id;
+                    audit.JournalEntryId = je.Value;
                     await _db.SaveChangesAsync();
                 }
             } catch { /* Ignore mappings error */ }
