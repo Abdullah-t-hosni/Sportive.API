@@ -884,7 +884,7 @@ public class FinancialReportsController : ControllerBase
         ws.Cell(2,1).Value = $"من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
         ws.Cell(2,1).Style.Font.FontColor = XLColor.Gray;
 
-        string[] hdrs = { "التاريخ", "القيد", "المورد/العميل", "البيان", "مدين", "دائن", "الرصيد" };
+        string[] hdrs = { "التاريخ", "القيد", "اسم المورد", "البيان", "مدين", "دائن", "الرصيد" };
         for (int c = 0; c < hdrs.Length; c++) { ws.Cell(3, c + 1).Value = hdrs[c]; ws.Cell(3, c + 1).Style.Font.Bold = true; }
 
         ws.Cell(4, 4).Value = "رصيد افتتاحي"; ws.Cell(4, 7).Value = openBal;
