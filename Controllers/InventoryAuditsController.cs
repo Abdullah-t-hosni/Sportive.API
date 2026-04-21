@@ -51,29 +51,40 @@ public class InventoryAuditsController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        if (!await CheckPerms(ModuleKeys.InventoryCount)) return Forbid();
-
         try 
         {
+            if (!await CheckPerms(ModuleKeys.InventoryCount)) return Forbid();
+
+            if (page < 1) page = 1;
+            if (pageSize < 1) pageSize = 20;
+
             var q = _db.InventoryAudits.AsNoTracking();
             var total = await q.CountAsync();
             
             var items = await q.OrderByDescending(a => a.AuditDate)
                 .Skip((page-1)*pageSize).Take(pageSize)
-                .Select(a => new InventoryAuditSummaryDto(
-                    a.Id, a.Title, a.AuditDate, (int)a.Status,
-                    a.TotalExpectedValue, a.TotalActualValue, 
-                    a.TotalActualValue - a.TotalExpectedValue,
-                    a.Items.Count
-                ))
+                .Select(a => new {
+                    a.Id, a.Title, a.AuditDate, a.Status,
+                    a.TotalExpectedValue, a.TotalActualValue,
+                    ItemCount = a.Items.Count
+                })
                 .ToListAsync();
 
-            return Ok(new PaginatedResult<InventoryAuditSummaryDto>(items, total, page, pageSize, (int)Math.Ceiling(total/(double)pageSize)));
+            var dtos = items.Select(a => new InventoryAuditSummaryDto(
+                a.Id, a.Title, a.AuditDate, (int)a.Status,
+                a.TotalExpectedValue, a.TotalActualValue, 
+                a.TotalActualValue - a.TotalExpectedValue,
+                a.ItemCount
+            )).ToList();
+
+            return Ok(new PaginatedResult<InventoryAuditSummaryDto>(dtos, total, page, pageSize, total == 0 ? 0 : (int)Math.Ceiling(total/(double)pageSize)));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in GetAll InventoryAudits: {Message}", ex.Message);
-            return StatusCode(500, $"خطأ في تحميل سجلات الجرد: {ex.Message} {ex.InnerException?.Message}");
+            // Return inner exception for better debugging in prod if possible
+            var msg = ex.InnerException != null ? $"{ex.Message} -> {ex.InnerException.Message}" : ex.Message;
+            return StatusCode(500, new { success = false, message = "خطأ في تحميل سجلات الجرد", detail = msg });
         }
     }
 
