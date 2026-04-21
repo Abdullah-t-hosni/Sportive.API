@@ -21,6 +21,7 @@ public record AccountDto(
     bool    AllowPosting,
     bool    IsActive,
     bool    IsSystem,
+    bool    CanReceivePayment,
     decimal OpeningBalance,
     decimal CurrentBalance,
     List<AccountDto> Children
@@ -51,7 +52,8 @@ public record CreateAccountDto(
     decimal OpeningBalance = 0,
     int     Level = 1,
     bool    IsLeaf = true,
-    bool    AllowPosting = true
+    bool    AllowPosting = true,
+    bool    CanReceivePayment = false
 );
 
 public record UpdateAccountDto(
@@ -59,6 +61,7 @@ public record UpdateAccountDto(
     string? NameEn,
     string? Description,
     bool    AllowPosting,
+    bool    CanReceivePayment,
     bool    IsActive,
     decimal OpeningBalance
 );

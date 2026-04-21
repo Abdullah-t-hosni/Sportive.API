@@ -34,6 +34,7 @@ public class Account : BaseEntity
     public bool     AllowPosting{ get; set; } = true;          // يقبل قيود مباشرة
     public bool     IsActive    { get; set; } = true;
     public bool     IsSystem    { get; set; } = false;         // لا يمكن حذفه
+    public bool     CanReceivePayment { get; set; } = false;   // يقبل التحصيل
     public decimal  OpeningBalance { get; set; } = 0;          // الرصيد الافتتاحي
     public ICollection<Account>      Children { get; set; } = new List<Account>();
     public ICollection<JournalLine>  Lines    { get; set; } = new List<JournalLine>();

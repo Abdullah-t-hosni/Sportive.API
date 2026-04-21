@@ -76,6 +76,11 @@ public class JournalAccountingService
         }
 
         foreach (var l in dto.Lines) {
+            var account = await _db.Accounts.FindAsync(l.AccountId);
+            if (account == null) throw new InvalidOperationException($"الحساب رقم {l.AccountId} غير موجود.");
+            if (!account.AllowPosting && !user.IsInRole("Admin"))
+                throw new InvalidOperationException($"الحساب '{account.NameAr}' لا يقبل الترحيل المباشر.");
+
             entry.Lines.Add(new JournalLine { AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit, Description = l.Description, CustomerId = l.CustomerId, SupplierId = l.SupplierId, EmployeeId = l.EmployeeId, OrderId = l.OrderId, CostCenter = l.CostCenter ?? entry.CostCenter });
         }
 
@@ -119,6 +124,11 @@ public class JournalAccountingService
         _db.JournalLines.RemoveRange(entry.Lines);
         foreach (var l in dto.Lines)
         {
+            var account = await _db.Accounts.FindAsync(l.AccountId);
+            if (account == null) throw new InvalidOperationException($"الحساب رقم {l.AccountId} غير موجود.");
+            if (!account.AllowPosting && !(user?.IsInRole("Admin") ?? false))
+                throw new InvalidOperationException($"الحساب '{account.NameAr}' لا يقبل الترحيل المباشر.");
+
             entry.Lines.Add(new JournalLine
             {
                 AccountId = l.AccountId,

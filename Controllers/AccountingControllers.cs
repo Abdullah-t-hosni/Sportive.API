@@ -38,6 +38,11 @@ public class AccountsController : ControllerBase
         if (onlyActive) q = q.Where(a => a.IsActive);
         if (isLeaf.HasValue) q = q.Where(a => a.IsLeaf == isLeaf.Value);
         if (allowPosting.HasValue) q = q.Where(a => a.AllowPosting == allowPosting.Value);
+        if (Request.Query.ContainsKey("canReceivePayment"))
+        {
+            var canVal = bool.Parse(Request.Query["canReceivePayment"]!);
+            q = q.Where(a => a.CanReceivePayment == canVal);
+        }
         
         var accounts = await q.OrderBy(a => a.Code).ToListAsync();
         return Ok(accounts);
@@ -71,7 +76,9 @@ public class AccountsController : ControllerBase
             OpeningBalance = dto.OpeningBalance,
             IsActive       = true,
             Level          = dto.Level,
-            IsLeaf         = dto.IsLeaf
+            IsLeaf         = dto.IsLeaf,
+            AllowPosting   = dto.AllowPosting,
+            CanReceivePayment = dto.CanReceivePayment
         };
 
         _db.Accounts.Add(account);
@@ -88,10 +95,12 @@ public class AccountsController : ControllerBase
         if (dto.OpeningBalance != 0 && !account.IsLeaf)
             return BadRequest("لا يمكن إضافة رصيد افتتاحي لحساب أب.");
 
-        account.NameAr         = dto.NameAr;
-        account.NameEn         = dto.NameEn;
-        account.IsActive       = dto.IsActive;
-        account.OpeningBalance = dto.OpeningBalance;
+        account.NameAr            = dto.NameAr;
+        account.NameEn            = dto.NameEn;
+        account.IsActive          = dto.IsActive;
+        account.AllowPosting      = dto.AllowPosting;
+        account.CanReceivePayment = dto.CanReceivePayment;
+        account.OpeningBalance    = dto.OpeningBalance;
 
         await _db.SaveChangesAsync();
         return Ok(account);
@@ -442,7 +451,7 @@ public class AccountsController : ControllerBase
                         a.Id, a.Code, a.NameAr, a.NameEn, a.Description,
                         a.Type.ToString(), a.Nature.ToString(), a.ParentId,
                         a.Parent?.NameAr, a.Level, a.IsLeaf, a.AllowPosting,
-                        a.IsActive, a.IsSystem, a.OpeningBalance,
+                        a.IsActive, a.IsSystem, a.CanReceivePayment, a.OpeningBalance,
                         totalCurrentBalance, children
                     );
                 })
@@ -451,6 +460,38 @@ public class AccountsController : ControllerBase
 
         var tree = BuildTree(null);
         return Ok(tree);
+    }
+
+    [HttpPost("initialize-payment-flags")]
+    public async Task<IActionResult> InitializePaymentFlags()
+    {
+        var accounts = await _db.Accounts.ToListAsync();
+        
+        // 1. Reset all to false first
+        foreach (var a in accounts) a.CanReceivePayment = false;
+
+        // 2. Definitive list of names from user
+        var allowList = new[] {
+            "نقدية الكاشير", "فودافون كاش الكاشير", "انستاباي الكاشير",
+            "حساب البنك", "نقدية الموقع", "فودافون كاش الموقع", "انستاباي الموقع",
+            "نقدية الحسابات", "فودافون كاش الحسابات", "انستاباي الحسابات",
+            "جاري الدكتور", "جاري ابراهيم", "جاري حتاته"
+        };
+
+        var results = new List<string>();
+
+        foreach (var name in allowList)
+        {
+            var match = accounts.FirstOrDefault(a => a.NameAr.Contains(name, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                match.CanReceivePayment = true;
+                results.Add($"Allowed: {match.NameAr}");
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { message = "تم تفعيل خاصية التحصيل للحسابات المحددة.", details = results });
     }
 }
 
@@ -692,6 +733,11 @@ public class ReceiptVouchersController : ControllerBase
             var max = await db.ReceiptVouchers.Where(v => EF.Functions.Like(v.VoucherNumber, pattern)).Select(v => v.VoucherNumber).ToListAsync();
             return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0).DefaultIfEmpty(0).Max();
         });
+        
+        var cashAccount = await _db.Accounts.FindAsync(dto.CashAccountId);
+        if (cashAccount == null) return BadRequest("حساب التحصيل غير موجود.");
+        if (!cashAccount.CanReceivePayment && !User.IsInRole("Admin"))
+            return BadRequest($"الحساب '{cashAccount.NameAr}' لا يقبل عمليات التحصيل/الدفع.");
 
         var voucher = new ReceiptVoucher {
             VoucherNumber = vNo, VoucherDate = dto.VoucherDate, Amount = dto.Amount, CashAccountId = dto.CashAccountId,
@@ -869,6 +915,11 @@ public class PaymentVouchersController : ControllerBase
             var max = await db.PaymentVouchers.Where(v => EF.Functions.Like(v.VoucherNumber, pattern)).Select(v => v.VoucherNumber).ToListAsync();
             return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0).DefaultIfEmpty(0).Max();
         });
+
+        var cashAccount = await _db.Accounts.FindAsync(dto.CashAccountId);
+        if (cashAccount == null) return BadRequest("حساب الدفع غير موجود.");
+        if (!cashAccount.CanReceivePayment && !User.IsInRole("Admin"))
+            return BadRequest($"الحساب '{cashAccount.NameAr}' لا يقبل عمليات التحصيل/الدفع.");
 
         var voucher = new PaymentVoucher {
             VoucherNumber = vNo, VoucherDate = dto.VoucherDate, Amount = dto.Amount, CashAccountId = dto.CashAccountId,
