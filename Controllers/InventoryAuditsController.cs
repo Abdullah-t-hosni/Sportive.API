@@ -13,7 +13,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Accountant")]
+[Authorize(Roles = "Admin,Manager,Accountant,Staff,Cashier")]
 public class InventoryAuditsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -71,27 +71,35 @@ public class InventoryAuditsController : ControllerBase
             
             _logger.LogInformation("InventoryAudits: Fetching items (Skip={Skip}, Take={Take})...", (page - 1) * pageSize, pageSize);
             
-            var rawItems = await itemsQuery.OrderByDescending(a => a.AuditDate)
-                .Include(a => a.Items)
+            var items = await itemsQuery.OrderByDescending(a => a.AuditDate)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
+                .Select(a => new {
+                    a.Id, 
+                    Title = a.Title ?? "جرد بدون عنوان", 
+                    a.AuditDate, 
+                    StatusInt = (int)a.Status,
+                    a.TotalExpectedValue, 
+                    a.TotalActualValue,
+                    ItemCount = a.Items.Count
+                })
                 .ToListAsync();
-
-            var items = rawItems.Select(a => new InventoryAuditSummaryDto(
-                a.Id, 
-                a.Title ?? "جرد بدون عنوان", 
-                a.AuditDate, 
-                (int)a.Status,
-                a.TotalExpectedValue, 
-                a.TotalActualValue, 
-                a.TotalActualValue - a.TotalExpectedValue,
-                a.Items?.Count ?? 0
-            )).ToList();
 
             _logger.LogInformation("Fetched {Count} items for InventoryAudits", items.Count);
 
+            var result = items.Select(a => new InventoryAuditSummaryDto(
+                a.Id, 
+                a.Title, 
+                a.AuditDate, 
+                a.StatusInt,
+                a.TotalExpectedValue, 
+                a.TotalActualValue, 
+                a.TotalActualValue - a.TotalExpectedValue,
+                a.ItemCount
+            )).ToList();
+
             var totalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)pageSize);
-            return Ok(new PaginatedResult<InventoryAuditSummaryDto>(items, total, page, pageSize, totalPages));
+            return Ok(new PaginatedResult<InventoryAuditSummaryDto>(result, total, page, pageSize, totalPages));
         }
         catch (Exception ex)
         {
