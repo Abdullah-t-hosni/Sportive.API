@@ -341,6 +341,19 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.Type).HasConversion<string>();
         });
 
+        builder.Entity<InventoryAudit>(e => {
+            e.Property(x => x.TotalExpectedValue).HasPrecision(18, 2);
+            e.Property(x => x.TotalActualValue).HasPrecision(18, 2);
+            // Default enum mapping to int is fine here as it matches the migration designer
+            e.HasMany(a => a.Items).WithOne(i => i.InventoryAudit).HasForeignKey(i => i.InventoryAuditId);
+        });
+
+        builder.Entity<InventoryAuditItem>(e => {
+            e.Property(x => x.UnitCost).HasPrecision(18, 2);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.ProductVariant).WithMany().HasForeignKey(x => x.ProductVariantId).OnDelete(DeleteBehavior.SetNull);
+        });
+
         builder.Entity<InventoryOpeningBalance>(e => {
             e.Property(x => x.TotalValue).HasPrecision(18, 2);
             e.HasMany(x => x.Items).WithOne(x => x.InventoryOpeningBalance).HasForeignKey(x => x.InventoryOpeningBalanceId);

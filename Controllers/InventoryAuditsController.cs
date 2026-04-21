@@ -53,38 +53,54 @@ public class InventoryAuditsController : ControllerBase
     {
         try 
         {
-            if (!await CheckPerms(ModuleKeys.InventoryCount)) return Forbid();
+            _logger.LogInformation("InventoryAudits: GetAll called. Page={Page}, PageSize={PageSize}", page, pageSize);
+
+            if (!await CheckPerms(ModuleKeys.InventoryCount)) 
+            {
+                _logger.LogWarning("InventoryAudits: Permission denied for user.");
+                return Forbid();
+            }
 
             if (page < 1) page = 1;
-            if (pageSize < 1) pageSize = 20;
+            if (pageSize < 1) pageSize = 50; // Cap at 50
 
-            var q = _db.InventoryAudits.AsNoTracking();
-            var total = await q.CountAsync();
+            var query = _db.InventoryAudits.AsNoTracking();
             
-            var items = await q.OrderByDescending(a => a.AuditDate)
-                .Skip((page-1)*pageSize).Take(pageSize)
-                .Select(a => new {
-                    a.Id, a.Title, a.AuditDate, a.Status,
-                    a.TotalExpectedValue, a.TotalActualValue,
-                    ItemCount = a.Items.Count
-                })
+            _logger.LogInformation("InventoryAudits: Counting records...");
+            var total = await query.CountAsync();
+            
+            _logger.LogInformation("InventoryAudits: Fetching items (Skip={Skip}, Take={Take})...", (page - 1) * pageSize, pageSize);
+            var items = await query.OrderByDescending(a => a.AuditDate)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(a => new InventoryAuditSummaryDto(
+                    a.Id, 
+                    a.Title ?? "جرد بدون عنوان", 
+                    a.AuditDate, 
+                    (int)a.Status,
+                    a.TotalExpectedValue, 
+                    a.TotalActualValue, 
+                    a.TotalActualValue - a.TotalExpectedValue,
+                    a.Items.Count
+                ))
                 .ToListAsync();
 
-            var dtos = items.Select(a => new InventoryAuditSummaryDto(
-                a.Id, a.Title, a.AuditDate, (int)a.Status,
-                a.TotalExpectedValue, a.TotalActualValue, 
-                a.TotalActualValue - a.TotalExpectedValue,
-                a.ItemCount
-            )).ToList();
+            _logger.LogInformation("Fetched {Count} items for InventoryAudits", items.Count);
 
-            return Ok(new PaginatedResult<InventoryAuditSummaryDto>(dtos, total, page, pageSize, total == 0 ? 0 : (int)Math.Ceiling(total/(double)pageSize)));
+            var totalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)pageSize);
+            return Ok(new PaginatedResult<InventoryAuditSummaryDto>(items, total, page, pageSize, totalPages));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in GetAll InventoryAudits: {Message}", ex.Message);
-            // Return inner exception for better debugging in prod if possible
-            var msg = ex.InnerException != null ? $"{ex.Message} -> {ex.InnerException.Message}" : ex.Message;
-            return StatusCode(500, new { success = false, message = "خطأ في تحميل سجلات الجرد", detail = msg });
+            var fullMsg = ex.InnerException != null ? $"{ex.Message} -> {ex.InnerException.Message}" : ex.Message;
+            return StatusCode(500, new { 
+                success = false, 
+                message = "خطأ في تحميل سجلات الجرد", 
+                detail = fullMsg,
+                type = ex.GetType().Name,
+                stack = ex.StackTrace 
+            });
         }
     }
 
