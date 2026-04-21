@@ -292,8 +292,21 @@ public class InventoryIntelligenceController : ControllerBase
         if (entries == null || !entries.Any())
             return BadRequest(new { message = "لا توجد بيانات للجرد" });
 
-        var today   = TimeHelper.GetEgyptTime();
+        var today = TimeHelper.GetEgyptTime();
         var results = new List<object>();
+        
+        // 1. Create a Master Audit Record for this cycle count
+        var audit = new InventoryAudit
+        {
+            Title = $"جرد يومي عشوائي - {today:yyyy/MM/dd}",
+            Description = "جرد سريع للأصناف المجدولة اليوم",
+            AuditDate = today,
+            Status = InventoryAuditStatus.Posted,
+            Items = new List<InventoryAuditItem>()
+        };
+
+        decimal totalExpectedValue = 0;
+        decimal totalActualValue = 0;
 
         foreach (var entry in entries)
         {
@@ -304,21 +317,36 @@ public class InventoryIntelligenceController : ControllerBase
             if (variant == null) continue;
 
             var oldStock = variant.StockQuantity;
-            var diff     = entry.ActualCount - oldStock;
+            var diff = entry.ActualCount - oldStock;
+            var unitCost = variant.Product?.CostPrice ?? 0;
+
+            totalExpectedValue += oldStock * unitCost;
+            totalActualValue += entry.ActualCount * unitCost;
+
+            // Add to Audit Items
+            audit.Items.Add(new InventoryAuditItem
+            {
+                ProductId = variant.ProductId,
+                ProductVariantId = variant.Id,
+                ExpectedQuantity = oldStock,
+                ActualQuantity = entry.ActualCount,
+                UnitCost = unitCost,
+                Note = entry.Notes
+            });
 
             if (diff != 0)
             {
                 _db.InventoryMovements.Add(new InventoryMovement
                 {
-                    ProductId        = variant.ProductId,
+                    ProductId = variant.ProductId,
                     ProductVariantId = variant.Id,
-                    Type             = InventoryMovementType.Audit,
-                    Quantity         = diff,
-                    RemainingStock   = entry.ActualCount,
-                    Reference        = $"CYCLE-{today:yyyyMMdd}",
-                    Note             = entry.Notes ?? "جرد جزئي يومي تلقائي",
-                    UnitCost         = variant.Product?.CostPrice ?? 0,
-                    CreatedAt        = today
+                    Type = InventoryMovementType.Audit,
+                    Quantity = diff,
+                    RemainingStock = entry.ActualCount,
+                    Reference = $"CYCLE-{today:yyyyMMdd}",
+                    Note = entry.Notes ?? "جرد جزئي يومي تلقائي",
+                    UnitCost = unitCost,
+                    CreatedAt = today
                 });
 
                 variant.StockQuantity = entry.ActualCount;
@@ -335,37 +363,30 @@ public class InventoryIntelligenceController : ControllerBase
             results.Add(new
             {
                 entry.VariantId,
-                OldStock      = oldStock,
-                ActualCount   = entry.ActualCount,
-                Difference    = diff,
+                OldStock = oldStock,
+                ActualCount = entry.ActualCount,
+                Difference = diff,
                 HasDifference = diff != 0
             });
         }
 
+        audit.TotalExpectedValue = totalExpectedValue;
+        audit.TotalActualValue = totalActualValue;
+        _db.InventoryAudits.Add(audit);
+
         await _db.SaveChangesAsync();
 
         // ── ACCOUNTING LINK ──────────────────────────
-        // حساب صافي الأثر المالي للجرد العشوائي اليومي
-        decimal netImpact = 0;
-        foreach (var r in results)
-        {
-            var diff = (int)r.GetType().GetProperty("Difference")?.GetValue(r)!;
-            var variantId = (int?)r.GetType().GetProperty("VariantId")?.GetValue(r)!;
-            if (diff != 0 && variantId.HasValue)
-            {
-                var v = entries.Find(e => e.VariantId == variantId);
-                var product = await _db.ProductVariants.Where(pv => pv.Id == variantId).Select(pv => pv.Product).FirstOrDefaultAsync();
-                if (product != null)
-                {
-                    netImpact += diff * (product.CostPrice ?? 0);
-                }
-            }
-        }
-
+        decimal netImpact = audit.TotalActualValue - audit.TotalExpectedValue;
         if (netImpact != 0)
         {
             try {
-                await _accounting.PostInventoryAdjustmentAsync(0, netImpact, $"CYCLE-{today:yyyyMMdd}", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                var je = await _accounting.PostInventoryAdjustmentAsync(0, netImpact, $"AUDIT-{audit.Id}", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                if (je != null)
+                {
+                    audit.JournalEntryId = je.Id;
+                    await _db.SaveChangesAsync();
+                }
             } catch { /* Ignore mappings error */ }
         }
 
@@ -377,8 +398,9 @@ public class InventoryIntelligenceController : ControllerBase
 
         return Ok(new
         {
-            submittedAt     = today.ToString("yyyy-MM-dd HH:mm"),
-            totalItems      = entries.Count,
+            auditId = audit.Id,
+            submittedAt = today.ToString("yyyy-MM-dd HH:mm"),
+            totalItems = entries.Count,
             withDifferences = withDiff,
             results
         });

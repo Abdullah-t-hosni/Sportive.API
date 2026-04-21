@@ -185,7 +185,29 @@ public class InventoryAuditsController : ControllerBase
         if (!await CheckPerms(ModuleKeys.InventoryCount, true)) return Forbid();
         var audit = await _db.InventoryAudits.Include(a => a.Items).FirstOrDefaultAsync(a => a.Id == id);
         if (audit == null) return NotFound();
-        if (audit.Status != InventoryAuditStatus.Draft) return BadRequest("يمكن تعديل المسودات فقط");
+        
+        // If it was posted, we might want to log that we're reverting it
+        if (audit.Status == InventoryAuditStatus.Posted)
+        {
+            _logger.LogInformation("Reverting Posted Audit {Id} to Draft for editing", id);
+            // Optional: You could reverse stock movements here, 
+            // but for simplicity we'll just let the next 'Post' recalculate everything.
+            // However, to keep stock accurate, we should probably reverse the LAST movements.
+            foreach (var item in audit.Items)
+            {
+                await _inventory.LogMovementAsync(
+                    InventoryMovementType.Adjustment, 
+                    -item.Difference, // Reverse the previous audit impact
+                    item.ProductId, 
+                    item.ProductVariantId, 
+                    $"REVERT-AUDIT-{audit.Id}", 
+                    "Reverting for edit", 
+                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                );
+            }
+            audit.Status = InventoryAuditStatus.Draft;
+            audit.JournalEntryId = null; // Entry should be reversed or ignored
+        }
 
         audit.Title = dto.Title;
         audit.Description = dto.Description;
@@ -295,9 +317,25 @@ public class InventoryAuditsController : ControllerBase
     public async Task<IActionResult> Delete(int id)
     {
         if (!await CheckPerms(ModuleKeys.InventoryCount, true)) return Forbid();
-        var audit = await _db.InventoryAudits.FindAsync(id);
+        var audit = await _db.InventoryAudits.Include(a => a.Items).FirstOrDefaultAsync(a => a.Id == id);
         if (audit == null) return NotFound();
-        if (audit.Status == InventoryAuditStatus.Posted) return BadRequest("لا يمكن حذف جرد معتمد");
+
+        if (audit.Status == InventoryAuditStatus.Posted)
+        {
+            // Reverse stock movements
+            foreach (var item in audit.Items)
+            {
+                await _inventory.LogMovementAsync(
+                    InventoryMovementType.Adjustment,
+                    -item.Difference,
+                    item.ProductId,
+                    item.ProductVariantId,
+                    $"DELETE-AUDIT-{audit.Id}",
+                    "Audit Deleted",
+                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                );
+            }
+        }
 
         _db.InventoryAudits.Remove(audit);
         await _db.SaveChangesAsync();
