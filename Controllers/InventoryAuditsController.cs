@@ -64,26 +64,29 @@ public class InventoryAuditsController : ControllerBase
             if (page < 1) page = 1;
             if (pageSize < 1) pageSize = 50; // Cap at 50
 
-            var query = _db.InventoryAudits.AsNoTracking();
+            var itemsQuery = _db.InventoryAudits.AsNoTracking();
             
             _logger.LogInformation("InventoryAudits: Counting records...");
-            var total = await query.CountAsync();
+            var total = await itemsQuery.CountAsync();
             
             _logger.LogInformation("InventoryAudits: Fetching items (Skip={Skip}, Take={Take})...", (page - 1) * pageSize, pageSize);
-            var items = await query.OrderByDescending(a => a.AuditDate)
+            
+            var rawItems = await itemsQuery.OrderByDescending(a => a.AuditDate)
+                .Include(a => a.Items)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Select(a => new InventoryAuditSummaryDto(
-                    a.Id, 
-                    a.Title ?? "جرد بدون عنوان", 
-                    a.AuditDate, 
-                    (int)a.Status,
-                    a.TotalExpectedValue, 
-                    a.TotalActualValue, 
-                    a.TotalActualValue - a.TotalExpectedValue,
-                    a.Items.Count
-                ))
                 .ToListAsync();
+
+            var items = rawItems.Select(a => new InventoryAuditSummaryDto(
+                a.Id, 
+                a.Title ?? "جرد بدون عنوان", 
+                a.AuditDate, 
+                (int)a.Status,
+                a.TotalExpectedValue, 
+                a.TotalActualValue, 
+                a.TotalActualValue - a.TotalExpectedValue,
+                a.Items?.Count ?? 0
+            )).ToList();
 
             _logger.LogInformation("Fetched {Count} items for InventoryAudits", items.Count);
 

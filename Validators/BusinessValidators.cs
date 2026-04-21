@@ -193,7 +193,7 @@ public class CreateInventoryAuditValidator : AbstractValidator<CreateInventoryAu
             .MaximumLength(200).WithMessage("العنوان لا يتجاوز 200 حرف");
 
         RuleFor(x => x.Items)
-            .NotNull().NotEmpty().WithMessage("يجب إضافة بند واحد على الأقل للجرد");
+            .NotNull().WithMessage("قائمة البنود مطلوبة");
 
         RuleForEach(x => x.Items)
             .SetValidator(new CreateInventoryAuditItemValidator());
@@ -212,7 +212,7 @@ public class UpdateInventoryAuditValidator : AbstractValidator<UpdateInventoryAu
             .IsInEnum().WithMessage("حالة الجرد غير صحيحة");
 
         RuleFor(x => x.Items)
-            .NotNull().NotEmpty().WithMessage("يجب إضافة بند واحد على الأقل للجرد");
+            .NotNull().WithMessage("قائمة البنود مطلوبة");
 
         RuleForEach(x => x.Items)
             .SetValidator(new CreateInventoryAuditItemValidator());
