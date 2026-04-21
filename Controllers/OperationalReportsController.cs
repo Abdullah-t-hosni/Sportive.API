@@ -692,9 +692,11 @@ public class OperationalReportsController : ControllerBase
                     i.Color ?? "",
                     i.Quantity,
                     i.UnitPrice,
-                    0, i.DiscountAmount, i.TotalPrice
+                    0, // UnitCost (optional in sales)
+                    i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1), // Per unit discount
+                    i.TotalPrice
                 )).ToList(),
-                paySummary // ✅ New Field
+                paySummary
             );
         }).ToList();
 
@@ -858,7 +860,7 @@ public class OperationalReportsController : ControllerBase
                 i.Quantity,
                 i.UnitPrice,
                 0,
-                0, // DiscountAmount not on OrderItem
+                i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1),
                 i.TotalPrice
             )).ToList()
         )).ToList();
@@ -1396,7 +1398,7 @@ public class OperationalReportsController : ControllerBase
         ws.Cell(1,1).Value=$"تقرير المبيعات التفصيلي — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
         ws.Cell(1,1).Style.Font.Bold=true;
         
-        string[] h={"رقم الطلب","التاريخ","العميل","التليفون","المصدر","الحالة","الدفع","تفاصيل الدفع","كود الصنف","اسم الصنف","المقاس","اللون","الكمية","سعر البيع","الخصم","الإجمالي"};
+        string[] h={"رقم الطلب","التاريخ","العميل","التليفون","المصدر","الحالة","الدفع","تفاصيل الدفع","كود الصنف","اسم الصنف","المقاس","اللون","الكمية","سعر الوحدة","خصم البند","إجمالي البند","خصم الفاتورة (كوبون)","إجمالي الفاتورة"};
         for(int i=0;i<h.Length;i++){
             var cell = ws.Cell(2,i+1);
             cell.Value=h[i];
@@ -1440,10 +1442,12 @@ public class OperationalReportsController : ControllerBase
                 ws.Cell(r, 12).Value = item.Color;
                 ws.Cell(r, 13).Value = item.Quantity;
                 ws.Cell(r, 14).Value = item.UnitPrice;
-                ws.Cell(r, 15).Value = item.Discount;
+                ws.Cell(r, 15).Value = item.Discount * item.Quantity; // Total discount for this line
                 ws.Cell(r, 16).Value = item.LineTotal;
+                ws.Cell(r, 17).Value = order.DiscountAmount; // Total Order-level discount
+                ws.Cell(r, 18).Value = order.TotalAmount; // Total Final for Order
                 
-                for(int c=14; c<=16; c++) ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";
+                for(int c=14; c<=18; c++) ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";
                 r++;
             }
         }
