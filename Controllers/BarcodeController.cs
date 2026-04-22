@@ -48,6 +48,7 @@ public class BarcodeController : ControllerBase
             sku = product.SKU,
             price = product.Price,
             discountPrice = product.DiscountPrice,
+            costPrice = product.CostPrice,
             image = product.Images.FirstOrDefault(i => i.IsMain)?.ImageUrl ?? product.Images.FirstOrDefault()?.ImageUrl,
             totalStock = product.Variants.Sum(v => v.StockQuantity),
             variants = product.Variants.Select(v => new

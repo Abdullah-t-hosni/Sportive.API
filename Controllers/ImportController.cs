@@ -37,21 +37,6 @@ public class ImportController : ControllerBase
         using var wb = new XLWorkbook();
         var wsL = wb.Worksheets.Add("Lists");
         wsL.Hide();
-        
-        string SafeName(string s) {
-            if (string.IsNullOrWhiteSpace(s)) return "List_" + Guid.NewGuid().ToString("N").Substring(0, 8);
-            var res = s.Replace(" ", "_").Replace("-", "_").Replace("&", "_").Replace("/", "_")
-                       .Replace("(", "_").Replace(")", "_").Replace(".", "_").Replace(",", "_")
-                       .Replace("!", "_").Replace("@", "_").Replace("#", "_").Replace("$", "_");
-            return "C_" + res;
-        }
-
-        void TryAddDefinedName(string name, IXLRange range) {
-            var safe = SafeName(name);
-            if (!wb.DefinedNames.Any(x => x.Name.Equals(safe, StringComparison.OrdinalIgnoreCase))) {
-                wb.DefinedNames.Add(safe, range);
-            }
-        }
 
         // 1. Write Main Categories to Col 1
         for (int i = 0; i < mainCats.Count; i++) wsL.Cell(i + 1, 1).Value = mainCats[i].NameAr;
@@ -80,32 +65,36 @@ public class ImportController : ControllerBase
         var sizeRange  = wsL.Range(1, 6, Math.Max(1, existingSizes.Count), 6);
         var colorRange = wsL.Range(1, 7, Math.Max(1, existingColors.Count), 7);
 
-        // 3. Dynamic Category Hierarchy (Starting Col 50 to avoid any collision)
-        int subCol = 50;
+        // 3. Category Mapping (Cols 10-11) - Robust OFFSET/MATCH approach
+        var mapping = new List<(string Parent, string Child)>();
         foreach (var mCat in mainCats)
         {
             var subs = allCats.Where(c => c.ParentId == mCat.Id).ToList();
-            if (subs.Any())
+            foreach (var sub in subs)
             {
-                var subNames = subs.Select(s => s.NameAr).ToList();
-                for (int i = 0; i < subNames.Count; i++) wsL.Cell(i + 1, subCol).Value = subNames[i];
-                var range = wsL.Range(1, subCol, Math.Max(1, subNames.Count), subCol);
-                TryAddDefinedName(mCat.NameAr, range);
-                subCol++;
-
-                foreach (var sub in subs)
+                mapping.Add((mCat.NameAr!, sub.NameAr!));
+                var subSubs = allCats.Where(c => c.ParentId == sub.Id).ToList();
+                foreach (var ss in subSubs)
                 {
-                    var subSubs = allCats.Where(c => c.ParentId == sub.Id).Select(c => c.NameAr).ToList();
-                    if (subSubs.Any())
-                    {
-                        for (int i = 0; i < subSubs.Count; i++) wsL.Cell(i + 1, subCol).Value = subSubs[i];
-                        var ssRange = wsL.Range(1, subCol, Math.Max(1, subSubs.Count), subCol);
-                        TryAddDefinedName(sub.NameAr, ssRange);
-                        subCol++;
-                    }
+                    mapping.Add((sub.NameAr!, ss.NameAr!));
                 }
             }
         }
+        
+        // Group by parent to ensure children are contiguous for OFFSET/MATCH
+        mapping = mapping.OrderBy(m => m.Parent).ToList();
+        
+        for (int i = 0; i < mapping.Count; i++)
+        {
+            wsL.Cell(i + 1, 10).Value = mapping[i].Parent;
+            wsL.Cell(i + 1, 11).Value = mapping[i].Child;
+        }
+        
+        // Define Names for mapping columns to keep formulas clean
+        var parentRange = wsL.Range(1, 10, Math.Max(1, mapping.Count), 10);
+        var childRange  = wsL.Range(1, 11, Math.Max(1, mapping.Count), 11);
+        wb.DefinedNames.Add("MapParent", parentRange);
+        wb.DefinedNames.Add("MapChild", childRange);
 
         var ws1 = wb.Worksheets.Add("المنتجات والمقاسات");
         ws1.RightToLeft = true;
@@ -129,15 +118,16 @@ public class ImportController : ControllerBase
 
         ws1.Column(1).Style.NumberFormat.Format = "@"; 
 
-        for (int r = 2; r <= 300; r++)
+        for (int r = 2; r <= 500; r++)
         {
             ws1.Cell(r, 5).CreateDataValidation().List(mCatRange, true);
-            // SubCategory logic with robust character substitution
-            string cleanFormula(string cell) => 
-                $"=IFERROR(INDIRECT(\"C_\" & SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE({cell},\" \",\"_\"),\"-\",\"_\"),\"&\",\"_\"),\"/\",\"_\"),\"(\",\"_\"),\")\",\"_\"),\".\",\"_\"),\",\",\"_\")),\"\")";
-
-            ws1.Cell(r, 6).CreateDataValidation().List(cleanFormula("$E" + r), true);
-            ws1.Cell(r, 7).CreateDataValidation().List(cleanFormula("$F" + r), true);
+            
+            // SubCategory (Col 6) based on MainCategory (Col 5)
+            // =OFFSET(Lists!$K$1, MATCH($E2, Lists!$J:$J, 0)-1, 0, COUNTIF(Lists!$J:$J, $E2), 1)
+            ws1.Cell(r, 6).CreateDataValidation().List("=OFFSET(Lists!$K$1, MATCH($E" + r + ", Lists!$J:$J, 0)-1, 0, COUNTIF(Lists!$J:$J, $E" + r + "), 1)", true);
+            
+            // SubSubCategory (Col 7) based on SubCategory (Col 6)
+            ws1.Cell(r, 7).CreateDataValidation().List("=OFFSET(Lists!$K$1, MATCH($F" + r + ", Lists!$J:$J, 0)-1, 0, COUNTIF(Lists!$J:$J, $F" + r + "), 1)", true);
             
             ws1.Cell(r, 12).CreateDataValidation().List(brandRange, true);
             ws1.Cell(r, 3).CreateDataValidation().List(unitRange, true);
