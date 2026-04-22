@@ -572,6 +572,7 @@ public class JournalEntriesController : ControllerBase
             .Include(x => x.Lines).ThenInclude(l => l.Account)
             .Include(x => x.Lines).ThenInclude(l => l.Supplier)
             .Include(x => x.Lines).ThenInclude(l => l.Customer)
+            .Include(x => x.Lines).ThenInclude(l => l.Employee)
             .FirstOrDefaultAsync(x => x.Id == id);
             
         if (e == null) return NotFound();
@@ -581,8 +582,8 @@ public class JournalEntriesController : ControllerBase
             e.Reference, e.Description, e.TotalDebit, e.TotalCredit, e.IsBalanced, e.CreatedAt,
             e.Lines.Select(l => new JournalLineDto(
                 l.Id, l.AccountId, l.Account?.Code ?? "", l.Account?.NameAr ?? "",
-                l.Debit, l.Credit, l.Description, l.CustomerId, l.SupplierId,
-                l.Supplier?.Name ?? l.Customer?.FullName ?? null,
+                l.Debit, l.Credit, l.Description, l.CustomerId, l.SupplierId, l.EmployeeId,
+                l.Supplier?.Name ?? l.Customer?.FullName ?? l.Employee?.Name ?? null,
                 l.CostCenter
             )).ToList(),
             e.AttachmentUrl, e.AttachmentPublicId, null, null, e.CostCenter
