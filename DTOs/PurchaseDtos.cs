@@ -169,7 +169,8 @@ public record CreateSupplierPaymentDto(
     string?  Notes,         // البيان
     string?  ReferenceNumber,
     string?  AttachmentUrl = null,
-    string?  AttachmentPublicId = null
+    string?  AttachmentPublicId = null,
+    OrderSource? CostCenter = null
 );
 
 public record SupplierPaymentSummaryDto(

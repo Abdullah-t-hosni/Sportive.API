@@ -123,6 +123,7 @@ public class SupplierPaymentsController : ControllerBase
             AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
             CreatedAt = TimeHelper.GetEgyptTime(),
+            CostCenter = dto.CostCenter
         };
 
         _db.SupplierPayments.Add(payment);

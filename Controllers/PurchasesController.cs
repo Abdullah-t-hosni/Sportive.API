@@ -576,7 +576,8 @@ public class PurchaseInvoicesController : ControllerBase
                 PaymentMethod = PaymentMethod_Purchase.Cash,
                 AccountName   = "الخزينة (آلي)",
                 Notes         = $"سداد تلقائي لفاتورة {invNo}",
-                CreatedAt     = TimeHelper.GetEgyptTime()
+                CreatedAt     = TimeHelper.GetEgyptTime(),
+                CostCenter    = invoice.CostCenter
             });
         }
 
@@ -1105,7 +1106,8 @@ public class PurchaseInvoicesController : ControllerBase
                     ReturnDate        = dto.ReturnDate != default ? dto.ReturnDate : TimeHelper.GetEgyptTime(),
                     Notes             = dto.Notes,
                     ReferenceNumber   = dto.ReferenceNumber,
-                    CreatedByUserId   = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                    CreatedByUserId   = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
+                    CostCenter        = dto.CostCenter ?? inv.CostCenter
                 };
 
                 decimal totalSubTotal = 0;

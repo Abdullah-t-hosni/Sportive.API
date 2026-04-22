@@ -138,6 +138,7 @@ public class SupplierPayment : BaseEntity
     public string?  CreatedByUserId { get; set; }
     public string?  AttachmentUrl   { get; set; }
     public string?  AttachmentPublicId { get; set; }
+    public OrderSource? CostCenter  { get; set; } // مركز التكلفة (Website/POS)
 }
 
 // ══════════════════════════════════════════════════════

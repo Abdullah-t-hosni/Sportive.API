@@ -931,11 +931,8 @@ public class PaymentVouchersController : ControllerBase
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value, CreatedAt = TimeHelper.GetEgyptTime(), PurchaseInvoiceId = dto.PurchaseInvoiceId
         };
 
-        // 🎯 AUTO-RESOLVE COST CENTER: If not provided, default to Website (Admin) for purchases
-        if (voucher.CostCenter == null)
-        {
-            voucher.CostCenter = OrderSource.Website;
-        }
+        // 🎯 FIX: Honor the selected cost center (Admin/General should remain null/general, not forced to Website)
+        // If it's null, it stays null (General/Administration).
 
         if (dto.PurchaseInvoiceId.HasValue) {
             var invoice = await _db.PurchaseInvoices.FindAsync(dto.PurchaseInvoiceId.Value);

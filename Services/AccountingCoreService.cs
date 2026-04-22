@@ -107,13 +107,8 @@ public class AccountingCoreService
             source = await _db.Orders.Where(o => o.Id == orderId.Value).Select(o => (OrderSource?)o.Source).FirstOrDefaultAsync();
         }
 
-        // If still null, default based on common patterns or Website
-        if (source == null) 
-        {
-            // If it's a manual entry from a cashier, assume POS
-            // However, here we don't have user context easily.
-            source = OrderSource.Website; 
-        }
+        // If still null, it remains null (General / Administration)
+        // We removed the default to Website (0) to prevent mislabeling General/Admin entries.
 
         // Generate Prefix based on resolved source
         var jePrefix = source == OrderSource.POS ? "JE-POS" : "JE-WEB";

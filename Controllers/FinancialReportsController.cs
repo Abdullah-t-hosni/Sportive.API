@@ -372,8 +372,9 @@ public class FinancialReportsController : ControllerBase
                 line.JournalEntry.Type.ToString(),
                 line.JournalEntry.Description ?? line.Description ?? "",
                 line.Debit, line.Credit, balanceMap[line.AccountId],
-                line.JournalEntry.Reference, line.JournalEntry.Id,
-                line.Supplier?.Name ?? line.Customer?.FullName
+                line.JournalEntry.Type == JournalEntryType.AssetDepreciation || line.JournalEntry.Type == JournalEntryType.AssetDisposal
+                    ? line.JournalEntry.Reference
+                    : (line.Supplier?.Name ?? line.Customer?.FullName)
             ));
         }
 
@@ -528,9 +529,9 @@ public class FinancialReportsController : ControllerBase
         if (!customerId.HasValue && !supplierId.HasValue && !employeeId.HasValue)
         {
              var openingSum = await _db.Accounts.Where(a => a.Code.StartsWith(acct.Code))
-                .SumAsync(a => acct.Nature == AccountNature.Debit ? (decimal?)a.OpeningBalance : (decimal?)-a.OpeningBalance) ?? 0;
-            if (acct.Nature == AccountNature.Debit) openDr += (openingSum > 0 ? openingSum : 0);
-            else openCr += (openingSum > 0 ? openingSum : 0);
+                .SumAsync(a => (decimal?)a.OpeningBalance) ?? 0;
+            if (acct.Nature == AccountNature.Debit) openDr += openingSum;
+            else openCr += openingSum;
         }
 
         var openBal = acct.Nature == AccountNature.Debit ? openDr - openCr : openCr - openDr;
@@ -549,7 +550,10 @@ public class FinancialReportsController : ControllerBase
         var runBal = openBal;
         var rows = periodLines.Select(l => {
             if (acct.Nature == AccountNature.Debit) runBal += l.Debit - l.Credit; else runBal += l.Credit - l.Debit;
-            return new LedgerRow(targetId, acct.Code, acct.NameAr, l.JournalEntry.EntryDate, l.JournalEntry.EntryNumber, l.JournalEntry.Type.ToString(), l.JournalEntry.Description ?? l.Description ?? "", l.Debit, l.Credit, runBal, l.JournalEntry.Reference, l.JournalEntry.Id, l.Supplier?.Name ?? l.Customer?.FullName);
+            return new LedgerRow(targetId, acct.Code, acct.NameAr, l.JournalEntry.EntryDate, l.JournalEntry.EntryNumber, l.JournalEntry.Type.ToString(), l.JournalEntry.Description ?? l.Description ?? "", l.Debit, l.Credit, runBal, l.JournalEntry.Reference, l.JournalEntry.Id, 
+                l.JournalEntry.Type == JournalEntryType.AssetDepreciation || l.JournalEntry.Type == JournalEntryType.AssetDisposal 
+                    ? l.JournalEntry.Reference 
+                    : (l.Supplier?.Name ?? l.Customer?.FullName));
         }).ToList();
 
         if (excel) return ExcelAccountStatement(acct, rows, openBal, from, to);

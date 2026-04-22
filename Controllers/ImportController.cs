@@ -138,11 +138,11 @@ public class ImportController : ControllerBase
             ws1.Cell(r, 5).CreateDataValidation().List(mCatRange, true);
             
             // SubCategory (Col 6) based on MainCategory (Col 5)
-            // =OFFSET(Lists!$K$1, MATCH($E2, Lists!$J:$J, 0)-1, 0, COUNTIF(Lists!$J:$J, $E2), 1)
-            ws1.Cell(r, 6).CreateDataValidation().List("=OFFSET(Lists!$K$1, MATCH($E" + r + ", Lists!$J:$J, 0)-1, 0, COUNTIF(Lists!$J:$J, $E" + r + "), 1)", true);
+            // Using Named Ranges for better Excel compatibility
+            ws1.Cell(r, 6).CreateDataValidation().List("=IFERROR(OFFSET(MapChild, MATCH($E" + r + ", MapParent, 0)-1, 0, COUNTIF(MapParent, $E" + r + "), 1), \"\")", true);
             
             // SubSubCategory (Col 7) based on SubCategory (Col 6)
-            ws1.Cell(r, 7).CreateDataValidation().List("=OFFSET(Lists!$K$1, MATCH($F" + r + ", Lists!$J:$J, 0)-1, 0, COUNTIF(Lists!$J:$J, $F" + r + "), 1)", true);
+            ws1.Cell(r, 7).CreateDataValidation().List("=IFERROR(OFFSET(MapChild, MATCH($F" + r + ", MapParent, 0)-1, 0, COUNTIF(MapParent, $F" + r + "), 1), \"\")", true);
             
             ws1.Cell(r, 12).CreateDataValidation().List(brandRange, true);
             ws1.Cell(r, 3).CreateDataValidation().List(unitRange, true);
