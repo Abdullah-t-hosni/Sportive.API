@@ -453,15 +453,6 @@ public class PayrollController : ControllerBase
                 Description = $"رواتب وأجور — {run.PeriodMonth}/{run.PeriodYear}"
             });
 
-            // Note: Total Gross (Basic + Bonus) goes to Wages Expense (Debit)
-            je.Lines.Add(new JournalLine
-            {
-                AccountId   = wagesAccId,
-                Debit       = totalGross,
-                Credit      = 0,
-                Description = $"رواتب وأجور — {run.PeriodMonth}/{run.PeriodYear}"
-            });
-
             // Note: Deductions and Advances go to their respective accounts (Credit)
             if (run.TotalDeductions > 0)
                 je.Lines.Add(new JournalLine
