@@ -58,8 +58,30 @@ public class ImportController : ControllerBase
         var mCatRange = wsL.Range(1, 1, Math.Max(1, mainCats.Count), 1);
         wb.DefinedNames.Add("MainCategoriesList", mCatRange);
 
-        // 2. Write Category Hierarchy Ranges (starting col 10)
-        int subCol = 10;
+        // 2. Extra Lists (Fixed Columns 2-10)
+        void FillCol(int col, List<string> items) {
+            for (int i = 0; i < items.Count; i++) wsL.Cell(i + 1, col).Value = items[i];
+        }
+
+        if (!existingSizes.Any()) existingSizes = new List<string> { "S", "M", "L", "XL", "XXL", "3XL", "Free Size" };
+        if (!existingColors.Any()) existingColors = new List<string> { "أبيض", "أسود", "أحمر", "أزرق", "أخضر", "رمادي", "كحلي", "بني" };
+
+        FillCol(2, brands);     
+        FillCol(3, units);      
+        FillCol(4, new List<string> { "نعم", "لا" });
+        FillCol(5, new List<string> { "نشط", "مسودة", "مخفي" });
+        FillCol(6, existingSizes);
+        FillCol(7, existingColors);
+
+        var brandRange = wsL.Range(1, 2, Math.Max(1, brands.Count), 2);
+        var unitRange  = wsL.Range(1, 3, Math.Max(1, units.Count), 3);
+        var yesNoRange = wsL.Range(1, 4, 2, 4);
+        var statRange  = wsL.Range(1, 5, 3, 5);
+        var sizeRange  = wsL.Range(1, 6, Math.Max(1, existingSizes.Count), 6);
+        var colorRange = wsL.Range(1, 7, Math.Max(1, existingColors.Count), 7);
+
+        // 3. Dynamic Category Hierarchy (Starting Col 50 to avoid any collision)
+        int subCol = 50;
         foreach (var mCat in mainCats)
         {
             var subs = allCats.Where(c => c.ParentId == mCat.Id).ToList();
@@ -84,26 +106,6 @@ public class ImportController : ControllerBase
                 }
             }
         }
-
-        // 3. Extra Lists
-        void FillCol(int col, List<string> items) {
-            for (int i = 0; i < items.Count; i++) wsL.Cell(i + 1, col).Value = items[i];
-        }
-        FillCol(3, brands);     
-        FillCol(4, units);      
-        FillCol(8, new List<string> { "نعم", "لا" });
-        FillCol(9, new List<string> { "نشط", "مسودة", "مخفي" });
-        FillCol(11, new List<string> { "نعم", "لا" });
-        FillCol(12, existingSizes);
-        FillCol(13, existingColors);
-
-        var brandRange = wsL.Range(1, 3, Math.Max(1, brands.Count), 3);
-        var unitRange  = wsL.Range(1, 4, Math.Max(1, units.Count), 4);
-        var featRange  = wsL.Range(1, 8, 2, 8);
-        var statRange  = wsL.Range(1, 9, 3, 9);
-        var taxRange   = wsL.Range(1, 11, 2, 11);
-        var sizeRange  = wsL.Range(1, 12, Math.Max(1, existingSizes.Count), 12);
-        var colorRange = wsL.Range(1, 13, Math.Max(1, existingColors.Count), 13);
 
         var ws1 = wb.Worksheets.Add("المنتجات والمقاسات");
         ws1.RightToLeft = true;
@@ -139,9 +141,9 @@ public class ImportController : ControllerBase
             
             ws1.Cell(r, 12).CreateDataValidation().List(brandRange, true);
             ws1.Cell(r, 3).CreateDataValidation().List(unitRange, true);
-            ws1.Cell(r, 11).CreateDataValidation().List(taxRange, true);
+            ws1.Cell(r, 11).CreateDataValidation().List(yesNoRange, true);
             ws1.Cell(r, 19).CreateDataValidation().List(statRange, true);
-            ws1.Cell(r, 20).CreateDataValidation().List(featRange, true);
+            ws1.Cell(r, 20).CreateDataValidation().List(yesNoRange, true);
 
             ws1.Cell(r, 13).CreateDataValidation().List(sizeRange, true);
             ws1.Cell(r, 15).CreateDataValidation().List(colorRange, true);
