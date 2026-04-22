@@ -94,7 +94,12 @@ public record UpdatePurchaseInvoiceDto(
     decimal  DiscountAmount = 0,
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    int? SupplierId = null,
+    int? CashAccountId = null,
+    int? VendorAccountId = null,
+    int? InventoryAccountId = null,
+    int? VatAccountId = null
 );
 
 public record PurchaseInvoiceSummaryDto(
@@ -134,7 +139,9 @@ public record PurchaseInvoiceDetailDto(
     List<SupplierPaymentSummaryDto> Payments,
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    int?     CashAccountId = null,
+    int?     SupplierId = null
 );
 
 public record PurchaseItemDto(

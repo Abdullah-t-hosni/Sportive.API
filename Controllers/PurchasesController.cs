@@ -447,8 +447,11 @@ public class PurchaseInvoicesController : ControllerBase
                 p.AttachmentUrl, p.AttachmentPublicId
             )).ToList(),
             inv.AttachmentUrl, inv.AttachmentPublicId,
-            inv.CostCenter
+            inv.CostCenter,
+            inv.CashAccountId,
+            inv.SupplierId
         ));
+
     }
 
     [HttpPost]
@@ -634,6 +637,10 @@ public class PurchaseInvoicesController : ControllerBase
         inv.Notes = dto.Notes;
         inv.CostCenter = dto.CostCenter;
         if (dto.SupplierInvoiceNumber != null) inv.SupplierInvoiceNumber = dto.SupplierInvoiceNumber;
+        if (dto.CashAccountId.HasValue && dto.CashAccountId.Value > 0) inv.CashAccountId = dto.CashAccountId.Value;
+        if (dto.VendorAccountId.HasValue && dto.VendorAccountId.Value > 0) inv.VendorAccountId = dto.VendorAccountId.Value;
+        if (dto.InventoryAccountId.HasValue && dto.InventoryAccountId.Value > 0) inv.InventoryAccountId = dto.InventoryAccountId.Value;
+        if (dto.VatAccountId.HasValue && dto.VatAccountId.Value > 0) inv.VatAccountId = dto.VatAccountId.Value;
 
         _db.PurchaseInvoiceItems.RemoveRange(inv.Items);
         inv.Items.Clear();
