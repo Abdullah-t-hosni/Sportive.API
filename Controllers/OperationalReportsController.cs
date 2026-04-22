@@ -852,16 +852,16 @@ public class OperationalReportsController : ControllerBase
             j.Order?.Customer?.Phone ?? "",
             j.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit),
             j.Description ?? "",
-            j.Order?.Items.Select(i => new ReportItemDto(
+            j.Order?.Items.Where(i => i.ReturnedQuantity > 0).Select(i => new ReportItemDto(
                 i.Product?.SKU ?? "",
                 i.Product?.NameAr ?? i.ProductNameAr,
                 i.Size ?? "",
                 i.Color ?? "",
-                i.Quantity,
+                i.ReturnedQuantity,
                 i.UnitPrice,
                 0,
                 i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1),
-                i.TotalPrice
+                (i.UnitPrice - (i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1))) * i.ReturnedQuantity
             )).ToList()
         )).ToList();
 
