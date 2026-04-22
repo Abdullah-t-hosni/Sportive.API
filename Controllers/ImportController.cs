@@ -32,7 +32,22 @@ public class ImportController : ControllerBase
         
         // Fetch existing sizes and colors to provide as options
         var existingSizes  = await _db.ProductVariants.Where(v => v.Size != null).Select(v => v.Size!).Distinct().ToListAsync();
-        var existingColors = await _db.ProductVariants.Where(v => v.ColorAr != null).Select(v => v.ColorAr!).Distinct().ToListAsync();
+        var catNames = allCats.Select(c => c.NameAr).Where(n => n != null).ToHashSet();
+        var existingColors = await _db.ProductVariants
+            .Where(v => v.ColorAr != null)
+            .Select(v => v.ColorAr!)
+            .Distinct()
+            .ToListAsync();
+        
+        // Filter out colors that are actually category names or too long
+        existingColors = existingColors
+            .Where(c => !catNames.Contains(c) && c.Length < 25)
+            .ToList();
+
+        var standardColors = new List<string> { 
+            "أبيض", "أسود", "أحمر", "أزرق", "أخضر", "أصفر", "رمادي", "كحلي", "بني", "بيج", "برتقالي", "بنفسجي", "سماوي", "ذهبي", "فضي" 
+        };
+        existingColors = existingColors.Concat(standardColors).Distinct().ToList();
 
         using var wb = new XLWorkbook();
         var wsL = wb.Worksheets.Add("Lists");
@@ -218,10 +233,10 @@ public class ImportController : ControllerBase
             int colPrice    = GetCol("السعر", "سعر البيع", "Price");
             int colDisc     = GetCol("سعر الخصم", "الخصم", "Discount");
             int colHasTax   = GetCol("خاضع للضريبة", "taxable", "الضريبة", "Is Taxable"); 
-            int colBrand    = GetCol("العلامة التجارية", "الماركة", "Brand");
-            int colSize     = GetCol("المقاس", "المراكز", "Size", "القياس", "المقاسات");
-            int colColorEn  = GetCol("اللون (English)", "اللون English", "Color En");
-            int colColorAr  = GetCol("اللون (عربي)", "اللون عربي", "Color Ar", "اللون");
+            int colBrand    = GetCol("العلامة التجارية", "الماركة", "Brand", "الماركه");
+            int colSize     = GetCol("المقاس", "Size", "القياس", "المقاسات", "size");
+            int colColorEn  = GetCol("اللون (English)", "اللون English", "Color En", "Color");
+            int colColorAr  = GetCol("اللون (عربي)", "اللون عربي", "Color Ar", "اللون", "الوان");
             int colStock    = GetCol("المخزون", "Stock", "الكمية");
             int colAdj      = GetCol("فارق السعر للمقاس", "Price Adjustment");
             int colReorder  = GetCol("حد الطلب", "Reorder Level");

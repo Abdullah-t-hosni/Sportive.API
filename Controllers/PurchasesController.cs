@@ -389,7 +389,7 @@ public class PurchaseInvoicesController : ControllerBase
                 Sku = ri.Product?.SKU ?? "",
                 ri.ProductVariantId,
                 Size = ri.ProductVariant?.Size,
-                Color = ri.ProductVariant?.ColorAr,
+                Color = ri.ProductVariant?.ColorAr ?? ri.ProductVariant?.Color,
                 ri.Quantity,
                 ri.Unit,
                 ri.UnitCost,
@@ -438,7 +438,7 @@ public class PurchaseInvoicesController : ControllerBase
             inv.Items.Select(it => new PurchaseItemDto(
                 it.Id, it.Description, it.ProductId, 
                 it.Product?.SKU, it.Product?.NameAr, 
-                it.ProductVariantId, it.ProductVariant?.Size, it.ProductVariant?.ColorAr,
+                it.ProductVariantId, it.ProductVariant?.Size, it.ProductVariant?.ColorAr ?? it.ProductVariant?.Color,
                 it.Unit, GetMultiplier(pUnits, it.Unit), it.Quantity, it.ReturnedQuantity, it.UnitCost, it.TotalCost
             )).ToList(),
             inv.Payments.Select(p => new SupplierPaymentSummaryDto(
