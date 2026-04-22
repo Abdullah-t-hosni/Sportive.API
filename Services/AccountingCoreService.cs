@@ -110,8 +110,12 @@ public class AccountingCoreService
         // If still null, it remains null (General / Administration)
         // We removed the default to Website (0) to prevent mislabeling General/Admin entries.
 
-        // Generate Prefix based on resolved source
-        var jePrefix = source == OrderSource.POS ? "JE-POS" : "JE-WEB";
+        // 📝 Journal Numbering (JE-POS-xxxx, JE-WEB-xxxx, JE-GEN-xxxx)
+        var jePrefix = source switch {
+            OrderSource.POS     => "JE-POS",
+            OrderSource.Website => "JE-WEB",
+            _                   => "JE-GEN"
+        };
         var entryNo = await _seq.NextAsync(jePrefix, async (db, pattern) =>
         {
             var max = await db.JournalEntries

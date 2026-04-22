@@ -246,6 +246,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(i => i.Supplier).WithMany(s => s.Invoices).HasForeignKey(i => i.SupplierId);
             e.Property(i => i.PaymentTerms).HasConversion<string>();
             e.Property(i => i.Status).HasConversion<string>();
+            e.Property(i => i.CostCenter).HasConversion<string>();
             e.HasIndex(x => x.InvoiceDate); // For reports
         });
 
@@ -260,6 +261,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(p => p.Invoice).WithMany(i => i.Payments)
                 .HasForeignKey(p => p.PurchaseInvoiceId).IsRequired(false);
             e.Property(p => p.PaymentMethod).HasConversion<string>();
+            e.Property(p => p.CostCenter).HasConversion<string>();
         });
         
         builder.Entity<PurchaseReturn>(e => {
@@ -269,6 +271,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(r => r.TotalAmount).HasPrecision(18, 2);
             e.HasOne(r => r.Invoice).WithMany().HasForeignKey(r => r.PurchaseInvoiceId).IsRequired(false);
             e.HasOne(r => r.Supplier).WithMany().HasForeignKey(r => r.SupplierId).IsRequired();
+            e.Property(r => r.CostCenter).HasConversion<string>();
         });
 
         builder.Entity<PurchaseReturnItem>(e => {
