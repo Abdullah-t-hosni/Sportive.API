@@ -453,16 +453,16 @@ public class PayrollController : ControllerBase
                 Description = $"رواتب وأجور — {run.PeriodMonth}/{run.PeriodYear}"
             });
 
-            // دائن: رواتب مستحقة — الصافي (بعد خصم الخصومات والسلف)
+            // Note: Total Gross (Basic + Bonus) goes to Wages Expense (Debit)
             je.Lines.Add(new JournalLine
             {
-                AccountId   = accrualAccId,
-                Debit       = 0,
-                Credit      = run.TotalNetPayable,
-                Description = $"رواتب مستحقة صافي — {run.PeriodMonth}/{run.PeriodYear}"
+                AccountId   = wagesAccId,
+                Debit       = totalGross,
+                Credit      = 0,
+                Description = $"رواتب وأجور — {run.PeriodMonth}/{run.PeriodYear}"
             });
 
-            // دائن: إيرادات الخصومات (إن وجدت)
+            // Note: Deductions and Advances go to their respective accounts (Credit)
             if (run.TotalDeductions > 0)
                 je.Lines.Add(new JournalLine
                 {
@@ -472,7 +472,6 @@ public class PayrollController : ControllerBase
                     Description = $"خصومات موظفين — {run.PeriodMonth}/{run.PeriodYear}"
                 });
 
-            // دائن: سلف الموظفين (إن وجدت خصومات سلف)
             if (run.TotalAdvancesDeducted > 0)
                 je.Lines.Add(new JournalLine
                 {
@@ -482,27 +481,21 @@ public class PayrollController : ControllerBase
                     Description = $"خصم سلف موظفين — {run.PeriodMonth}/{run.PeriodYear}"
                 });
 
-            // ربط كل سطر بالموظف المعني (للكشف)
-            // ملاحظة: السطر الإجمالي لا يُربط بموظف واحد — يبقى عاماً
-            // لكن نضيف سطوراً تفصيلية مرتبطة بكل موظف على حساب الرواتب المستحقة
+            // Note: The Net Payable for each employee goes to Accrued Salaries (Credit)
+            // We split this by employee so it shows up in their statement
             foreach (var item in run.Items)
             {
-                if (item.Employee != null && item.Employee.AccountId.HasValue)
+                if (item.NetPayable > 0)
                 {
+                    // If the employee has a specific account, use it, otherwise use the general Accrued Salaries account
+                    var targetAccId = item.Employee?.AccountId ?? accrualAccId;
+                    
                     je.Lines.Add(new JournalLine
                     {
-                        AccountId   = accrualAccId,
-                        Debit       = item.NetPayable,
-                        Credit      = 0,
-                        Description = $"راتب {item.Employee.Name} — {run.PeriodMonth}/{run.PeriodYear}",
-                        EmployeeId  = item.EmployeeId
-                    });
-                    je.Lines.Add(new JournalLine
-                    {
-                        AccountId   = item.Employee.AccountId.Value,
+                        AccountId   = targetAccId,
                         Debit       = 0,
                         Credit      = item.NetPayable,
-                        Description = $"راتب {item.Employee.Name} — {run.PeriodMonth}/{run.PeriodYear}",
+                        Description = $"راتب مستحق: {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}",
                         EmployeeId  = item.EmployeeId
                     });
                 }
