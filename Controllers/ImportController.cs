@@ -43,8 +43,7 @@ public class ImportController : ControllerBase
             var res = s.Replace(" ", "_").Replace("-", "_").Replace("&", "_").Replace("/", "_")
                        .Replace("(", "_").Replace(")", "_").Replace(".", "_").Replace(",", "_")
                        .Replace("!", "_").Replace("@", "_").Replace("#", "_").Replace("$", "_");
-            if (res.Length > 0 && char.IsDigit(res[0])) res = "C_" + res;
-            return res;
+            return "C_" + res;
         }
 
         void TryAddDefinedName(string name, IXLRange range) {
@@ -131,8 +130,12 @@ public class ImportController : ControllerBase
         for (int r = 2; r <= 300; r++)
         {
             ws1.Cell(r, 5).CreateDataValidation().List(mCatRange, true);
-            ws1.Cell(r, 6).CreateDataValidation().List("=IFERROR(INDIRECT(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE($E" + r + ",\" \",\"_\"),\"-\",\"_\"),\"&\",\"_\"),\"/\",\"_\")),\"\")", true);
-            ws1.Cell(r, 7).CreateDataValidation().List("=IFERROR(INDIRECT(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE($F" + r + ",\" \",\"_\"),\"-\",\"_\"),\"&\",\"_\"),\"/\",\"_\")),\"\")", true);
+            // SubCategory logic with robust character substitution
+            string cleanFormula(string cell) => 
+                $"=IFERROR(INDIRECT(\"C_\" & SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE({cell},\" \",\"_\"),\"-\",\"_\"),\"&\",\"_\"),\"/\",\"_\"),\"(\",\"_\"),\")\",\"_\"),\".\",\"_\"),\",\",\"_\")),\"\")";
+
+            ws1.Cell(r, 6).CreateDataValidation().List(cleanFormula("$E" + r), true);
+            ws1.Cell(r, 7).CreateDataValidation().List(cleanFormula("$F" + r), true);
             
             ws1.Cell(r, 12).CreateDataValidation().List(brandRange, true);
             ws1.Cell(r, 3).CreateDataValidation().List(unitRange, true);
@@ -140,8 +143,8 @@ public class ImportController : ControllerBase
             ws1.Cell(r, 19).CreateDataValidation().List(statRange, true);
             ws1.Cell(r, 20).CreateDataValidation().List(featRange, true);
 
-            if (existingSizes.Any())  ws1.Cell(r, 13).CreateDataValidation().List(sizeRange, true);
-            if (existingColors.Any()) ws1.Cell(r, 15).CreateDataValidation().List(colorRange, true);
+            ws1.Cell(r, 13).CreateDataValidation().List(sizeRange, true);
+            ws1.Cell(r, 15).CreateDataValidation().List(colorRange, true);
         }
 
         ws1.Cell(2,1).Value = "TS-001";
