@@ -146,6 +146,7 @@ public record JournalLineDto(
     string?  Description,
     int?     CustomerId = null,
     int?     SupplierId = null,
+    int?     EmployeeId = null,
     string?  EntityName = null,
     OrderSource? CostCenter = null
 );
