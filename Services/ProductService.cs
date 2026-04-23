@@ -25,7 +25,7 @@ public class ProductService : IProductService
     public async Task<PaginatedResult<ProductSummaryDto>> GetProductsAsync(ProductFilterDto filter)
     {
         var query = _db.Products
-            .Include(p => p.Category).ThenInclude(c => c.Parent).ThenInclude(c => c.Parent)
+            .Include(p => p.Category!).ThenInclude(c => c.Parent!).ThenInclude(c => c.Parent!)
             .Include(p => p.Brand)
             .Include(p => p.Images)
             .Include(p => p.Reviews)
