@@ -25,10 +25,11 @@ public class PdfService : IPdfService
             container.Page(page =>
             {
                 // Logic: 80mm is standard for Thermal Receipt Printers
-                page.Size(80, 297, Unit.Millimetre); // Fixed width, large potential height (A4 height is 297mm)
+                page.Size(80, 297, Unit.Millimetre);
                 page.Margin(5, Unit.Millimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(8).FontFamily("Segoe UI"));
+                page.DefaultTextStyle(x => x.FontSize(8).FontFamily("Arial"));
+                page.ContentFromRightToLeft();
 
                 page.Header().Column(col =>
                 {
@@ -176,7 +177,8 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Segoe UI"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Arial"));
+                page.ContentFromRightToLeft();
 
                 page.Header().Row(row =>
                 {
@@ -272,7 +274,8 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Segoe UI"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Arial"));
+                page.ContentFromRightToLeft();
 
                 page.Header().Row(row =>
                 {
@@ -400,7 +403,8 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A5.Landscape());
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(11).FontFamily("Segoe UI"));
+                page.DefaultTextStyle(x => x.FontSize(11).FontFamily("Arial"));
+                page.ContentFromRightToLeft();
 
                 page.Header().Border(1).Padding(5).Row(row =>
                 {
@@ -470,7 +474,8 @@ public class PdfService : IPdfService
             {
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Segoe UI"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Arial"));
+                page.ContentFromRightToLeft();
 
                 page.Header().Row(row =>
                 {
@@ -541,7 +546,8 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Segoe UI"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Arial"));
+                page.ContentFromRightToLeft();
 
                 page.Header().Row(row =>
                 {
@@ -640,22 +646,26 @@ public class PdfService : IPdfService
     {
         if (string.IsNullOrEmpty(input)) return "";
 
-        // Check if contains Arabic characters
         bool hasArabic = Regex.IsMatch(input, @"\p{IsArabic}");
         if (!hasArabic) return input;
 
-        // Simple Arabic Reshaper + BiDi reverse (using local Utils/ArabicReshaper.cs)
+        // 1. Handle glyph shaping for Arabic
         var reshaped = ArabicAdapter.Reshape(input);
         
-        // Split and reverse for correct RTL display in most PDF viewers
-        var lines = reshaped.Split('\n');
-        for (int i = 0; i < lines.Length; i++)
-        {
-            char[] charArray = lines[i].ToCharArray();
-            Array.Reverse(charArray);
-            lines[i] = new string(charArray);
-        }
+        // 2. SMART BIDI: Split the string and only reverse segments that are Arabic
+        // For QuestPDF without native shaping, we usually reverse the WHOLE line
+        // but we can restore English words/Numbers to their original order.
         
-        return string.Join('\n', lines);
+        char[] charArray = reshaped.ToCharArray();
+        Array.Reverse(charArray);
+        string reversed = new string(charArray);
+
+        // 3. FIX: Restore English words and numbers that were reversed
+        // Regex to find segments that were originally English/Numbers and are now reversed
+        return Regex.Replace(reversed, @"[a-zA-Z0-9\-\.\/]+", m => {
+            char[] a = m.Value.ToCharArray();
+            Array.Reverse(a);
+            return new string(a);
+        });
     }
 }

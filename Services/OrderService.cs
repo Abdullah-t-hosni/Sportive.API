@@ -593,6 +593,13 @@ public class OrderService : IOrderService
                         
                         // 💎 STRICT VALUATION: PaidAmount must ONLY be the sum of REAL (Non-Credit) payments
                         order.PaidAmount = totalPaid;
+
+                        // 📝 SMART NOTES: Append payment breakdown to AdminNotes for easier visibility
+                        if (dto.Payments.Count > 1 || (dto.Payments.Any(p => p.Method == PaymentMethod.Credit)))
+                        {
+                            var breakdown = string.Join(" | ", dto.Payments.Select(p => $"{p.Method}: {p.Amount}"));
+                            order.AdminNotes = string.IsNullOrEmpty(order.AdminNotes) ? breakdown : $"{order.AdminNotes} | {breakdown}";
+                        }
                         
                         if (order.PaidAmount > order.TotalAmount + 0.1m)
                             throw new ArgumentException($"عفواً، لا يمكن تحصيل مبلغ أكبر من قيمة الفاتورة. (المدفوع: {order.PaidAmount} | المطلوب: {order.TotalAmount})");
