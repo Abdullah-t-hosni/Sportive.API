@@ -170,6 +170,8 @@ public class AccountingCoreService
                                      actualAccount?.NameAr?.Contains("موظف") == true || actualAccount?.NameEn?.ToLower().Contains("employee") == true ||
                                      actualAccount?.NameAr?.Contains("سلف") == true || actualAccount?.NameAr?.Contains("أجور") == true || actualAccount?.NameAr?.Contains("رواتب") == true;
             
+            bool isDiscountAccount = actualAccount?.NameAr?.Contains("خصم") == true || actualAccount?.NameEn?.ToLower().Contains("discount") == true;
+            
             entry.Lines.Add(new JournalLine
             {
                 AccountId   = accountId,
@@ -178,7 +180,7 @@ public class AccountingCoreService
                 Description = finalDesc,
                 CustomerId  = (isReceivables || isSalesOrPurchase) ? customerId : null,
                 SupplierId  = (isPayables || isSalesOrPurchase) ? supplierId : null,
-                EmployeeId  = (isEmployeeAccount || type == JournalEntryType.SalesInvoice || type == JournalEntryType.SalesReturn) ? employeeId : (type == JournalEntryType.Payroll ? employeeId : null),
+                EmployeeId  = (isEmployeeAccount || ((type == JournalEntryType.SalesInvoice || type == JournalEntryType.SalesReturn) && isDiscountAccount)) ? employeeId : (type == JournalEntryType.Payroll ? employeeId : null),
                 OrderId     = orderId,
                 PurchaseInvoiceId = purchaseInvoiceId,
                 CostCenter  = source, // 🎯 حفظ مركز التكلفة على كل سطر محاسبي
