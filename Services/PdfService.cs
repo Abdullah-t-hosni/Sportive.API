@@ -8,6 +8,8 @@ using ArabicReshaper;
 using System.Text.RegularExpressions;
 using Sportive.API.Interfaces;
 using Sportive.API.Utils;
+using System.IO;
+using System.Net.Http;
 
 namespace Sportive.API.Services;
 
