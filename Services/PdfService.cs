@@ -15,40 +15,20 @@ namespace Sportive.API.Services;
 
 public class PdfService : IPdfService
 {
-    private static string _activeFont = "Arial";
+    private static string _activeFont = "sans-serif";
 
     static PdfService()
     {
         QuestPDF.Settings.License = LicenseType.Community;
         
         try {
-            // 🚀 THE ULTIMATE FIX: Download from Google Fonts CDN (Most reliable)
-            string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Cairo-Regular.ttf");
-            if (!File.Exists(fontPath))
+            // Try to find ANY ttf in the app folder
+            var files = Directory.GetFiles(AppDomain.CurrentDomain.BaseDirectory, "*.ttf", SearchOption.AllDirectories);
+            if (files.Length > 0)
             {
-                using var client = new HttpClient();
-                client.Timeout = TimeSpan.FromSeconds(30);
-                // Direct link to Cairo-Regular from Google Fonts Static CDN
-                var bytes = client.GetByteArrayAsync("https://fonts.gstatic.com/s/cairo/v28/SLXGc1j9F06llidS9ax7.ttf").Result;
-                File.WriteAllBytes(fontPath, bytes);
-            }
-
-            if (File.Exists(fontPath))
-            {
-                using var s = File.OpenRead(fontPath);
+                using var s = File.OpenRead(files[0]);
                 QuestPDF.Drawing.FontManager.RegisterFont(s);
-                _activeFont = "Cairo";
-                return;
-            }
-        } catch { }
-
-        // Fallback for Windows local development
-        try {
-            if (File.Exists(@"C:\Windows\Fonts\tahoma.ttf"))
-            {
-                using var s = File.OpenRead(@"C:\Windows\Fonts\tahoma.ttf");
-                QuestPDF.Drawing.FontManager.RegisterFont(s);
-                _activeFont = "Tahoma";
+                _activeFont = Path.GetFileNameWithoutExtension(files[0]);
             }
         } catch { }
     }
@@ -202,9 +182,11 @@ public class PdfService : IPdfService
                     });
                 });
 
-                page.Footer().PaddingBottom(5).AlignCenter().Text(x => {
-                    x.Span("POS Terminal • ").FontSize(6);
-                    x.CurrentPageNumber();
+                page.Footer().PaddingBottom(5).AlignCenter().Column(c => {
+                    c.Item().Text(x => {
+                        x.Span($"Engine: QuestPDF • Font: {_activeFont} • ").FontSize(5);
+                        x.CurrentPageNumber();
+                    });
                 });
             });
         });
