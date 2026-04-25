@@ -28,7 +28,7 @@ public class WaMeService : IWaMeService
 {
     private readonly IConfiguration _config;
     private string StoreName => _config["Store:Name"] ?? "Sportive";
-    private string StorePhone => _config["Store:Phone"] ?? "201000000000";
+    private string StorePhone => _config["Store:Phone"] ?? "201002076641";
     private string StoreUrl => _config["Store:Url"] ?? "https://sportive-sportwear.com";
 
     public WaMeService(IConfiguration config) => _config = config;
