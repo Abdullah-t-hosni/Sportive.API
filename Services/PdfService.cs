@@ -15,6 +15,8 @@ namespace Sportive.API.Services;
 
 public class PdfService : IPdfService
 {
+    private static string _activeFont = "Arial";
+
     static PdfService()
     {
         QuestPDF.Settings.License = LicenseType.Community;
@@ -36,7 +38,7 @@ public class PdfService : IPdfService
             {
                 using var fontStream = File.OpenRead(fontPath);
                 QuestPDF.Drawing.FontManager.RegisterFont(fontStream);
-                QuestPDF.Settings.DefaultFont = fontName;
+                _activeFont = fontName;
             }
         } catch {
             // Fallback for Windows local development
@@ -45,7 +47,7 @@ public class PdfService : IPdfService
                 {
                     using var s = File.OpenRead(@"C:\Windows\Fonts\tahoma.ttf");
                     QuestPDF.Drawing.FontManager.RegisterFont(s);
-                    QuestPDF.Settings.DefaultFont = "Tahoma";
+                    _activeFont = "Tahoma";
                 }
             } catch {}
         }
@@ -61,7 +63,7 @@ public class PdfService : IPdfService
                 page.Size(80, 297, Unit.Millimetre);
                 page.Margin(5, Unit.Millimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(8).FontFamily(QuestPDF.Settings.DefaultFont ?? "Arial"));
+                page.DefaultTextStyle(x => x.FontSize(8).FontFamily(_activeFont));
                 page.ContentFromRightToLeft();
 
                 page.Header().Column(col =>
@@ -219,7 +221,7 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily(QuestPDF.Settings.DefaultFont ?? "Arial"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily(_activeFont));
                 page.ContentFromRightToLeft();
 
                 page.Header().Row(row =>
@@ -316,7 +318,7 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily(QuestPDF.Settings.DefaultFont ?? "Arial"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily(_activeFont));
                 page.ContentFromRightToLeft();
 
                 page.Header().Row(row =>
@@ -445,7 +447,7 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A5.Landscape());
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(11).FontFamily(QuestPDF.Settings.DefaultFont ?? "Arial"));
+                page.DefaultTextStyle(x => x.FontSize(11).FontFamily(_activeFont));
                 page.ContentFromRightToLeft();
 
                 page.Header().Border(1).Padding(5).Row(row =>
@@ -516,7 +518,7 @@ public class PdfService : IPdfService
             {
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily(QuestPDF.Settings.DefaultFont ?? "Arial"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily(_activeFont));
                 page.ContentFromRightToLeft();
 
                 page.Header().Row(row =>
@@ -588,7 +590,7 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily(QuestPDF.Settings.DefaultFont ?? "Arial"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily(_activeFont));
                 page.ContentFromRightToLeft();
 
                 page.Header().Row(row =>
