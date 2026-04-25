@@ -21,36 +21,55 @@ public class PdfService : IPdfService
     {
         QuestPDF.Settings.License = LicenseType.Community;
         
-        // 🌍 UNIVERSAL FIX (Linux/Railway): Download Arabic font if not found
         try {
-            string fontName = "Cairo";
+            // 1. Try to use Cairo (Download if needed)
             string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Cairo.ttf");
-            
             if (!File.Exists(fontPath))
             {
-                using var client = new System.Net.Http.HttpClient();
-                // Download Cairo-Regular from a reliable source (GitHub/Google)
+                using var client = new HttpClient();
                 var bytes = client.GetByteArrayAsync("https://github.com/Gue3bara/Cairo/raw/master/Cairo-Regular.ttf").Result;
                 File.WriteAllBytes(fontPath, bytes);
             }
 
             if (File.Exists(fontPath))
             {
-                using var fontStream = File.OpenRead(fontPath);
-                QuestPDF.Drawing.FontManager.RegisterFont(fontStream);
-                _activeFont = fontName;
+                using var s = File.OpenRead(fontPath);
+                QuestPDF.Drawing.FontManager.RegisterFont(s);
+                _activeFont = "Cairo";
+                return;
             }
-        } catch {
-            // Fallback for Windows local development
-            try {
-                if (File.Exists(@"C:\Windows\Fonts\tahoma.ttf"))
-                {
-                    using var s = File.OpenRead(@"C:\Windows\Fonts\tahoma.ttf");
+        } catch { }
+
+        // 2. Fallback: Search for ANY common Linux font that supports Arabic
+        string[] linuxFonts = { 
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+            "/usr/share/fonts/noto/NotoSansArabic-Regular.ttf"
+        };
+
+        foreach (var path in linuxFonts)
+        {
+            if (File.Exists(path))
+            {
+                try {
+                    using var s = File.OpenRead(path);
                     QuestPDF.Drawing.FontManager.RegisterFont(s);
-                    _activeFont = "Tahoma";
-                }
-            } catch {}
+                    _activeFont = Path.GetFileNameWithoutExtension(path);
+                    return;
+                } catch { }
+            }
         }
+
+        // 3. Last resort: Windows paths
+        try {
+            if (File.Exists(@"C:\Windows\Fonts\tahoma.ttf"))
+            {
+                using var s = File.OpenRead(@"C:\Windows\Fonts\tahoma.ttf");
+                QuestPDF.Drawing.FontManager.RegisterFont(s);
+                _activeFont = "Tahoma";
+            }
+        } catch { }
     }
 
     public Task<byte[]> GenerateOrderPdfAsync(OrderDetailDto order)
