@@ -52,6 +52,16 @@ public class SalesAccountingService
         string inventoryAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Inventory, mapDict)}";
         string cogsAcct      = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.COGS, mapDict)}";
 
+        // ── Employee (Sales Person) ──────────────────────────
+        int? employeeId = null;
+        if (!string.IsNullOrEmpty(order.SalesPersonId))
+        {
+            employeeId = await _db.Employees
+                .Where(e => e.AppUserId == order.SalesPersonId)
+                .Select(e => (int?)e.Id)
+                .FirstOrDefaultAsync();
+        }
+
         // ── Customer Account ─────────────────────────────────
         string receivablesAcct;
         if (order.Customer?.MainAccountId != null)
@@ -239,7 +249,8 @@ public class SalesAccountingService
             lines:       lines,
             orderId:     order.Id,
             customerId:  order.CustomerId,
-            source:      order.Source
+            source:      order.Source,
+            employeeId:  employeeId
         );
     }
 

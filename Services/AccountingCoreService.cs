@@ -178,7 +178,7 @@ public class AccountingCoreService
                 Description = finalDesc,
                 CustomerId  = (isReceivables || isSalesOrPurchase) ? customerId : null,
                 SupplierId  = (isPayables || isSalesOrPurchase) ? supplierId : null,
-                EmployeeId  = (isEmployeeAccount) ? employeeId : (type == JournalEntryType.Payroll ? employeeId : null),
+                EmployeeId  = (isEmployeeAccount || type == JournalEntryType.SalesInvoice || type == JournalEntryType.SalesReturn) ? employeeId : (type == JournalEntryType.Payroll ? employeeId : null),
                 OrderId     = orderId,
                 PurchaseInvoiceId = purchaseInvoiceId,
                 CostCenter  = source, // 🎯 حفظ مركز التكلفة على كل سطر محاسبي
@@ -391,21 +391,39 @@ public class AccountingCoreService
                 .AsNoTracking()
                 .FirstOrDefaultAsync(o => o.OrderNumber == entry.Reference);
             
-            if (order != null)
-            {
-                var lines = await _db.JournalLines.Where(l => l.JournalEntryId == entry.Id).ToListAsync();
-                bool changed = false;
-                foreach (var l in lines)
+                if (order != null)
                 {
-                    var acct = await _db.Accounts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == l.AccountId);
-                    if (acct?.Code != null && acct.Code.StartsWith("1103") && l.CustomerId == null)
+                    int? employeeId = null;
+                    if (!string.IsNullOrEmpty(order.SalesPersonId))
                     {
-                        l.CustomerId = order.CustomerId;
-                        changed = true;
+                        employeeId = await _db.Employees
+                            .Where(e => e.AppUserId == order.SalesPersonId)
+                            .Select(e => (int?)e.Id)
+                            .FirstOrDefaultAsync();
                     }
+
+                    var lines = await _db.JournalLines.Where(l => l.JournalEntryId == entry.Id).ToListAsync();
+                    bool changed = false;
+                    foreach (var l in lines)
+                    {
+                        var acct = await _db.Accounts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == l.AccountId);
+                        
+                        // Sync Customer
+                        if (acct?.Code != null && acct.Code.StartsWith("1103") && l.CustomerId == null)
+                        {
+                            l.CustomerId = order.CustomerId;
+                            changed = true;
+                        }
+
+                        // Sync Employee (New)
+                        if (employeeId.HasValue && l.EmployeeId == null)
+                        {
+                            l.EmployeeId = employeeId;
+                            changed = true;
+                        }
+                    }
+                    if (changed) await _db.SaveChangesAsync();
                 }
-                if (changed) await _db.SaveChangesAsync();
-            }
         }
     }
 
