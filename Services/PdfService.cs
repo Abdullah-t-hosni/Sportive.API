@@ -16,6 +16,20 @@ public class PdfService : IPdfService
     static PdfService()
     {
         QuestPDF.Settings.License = LicenseType.Community;
+        
+        // 🚀 RADICAL FIX: Manually register the font from the system if on Windows
+        try {
+            string[] fonts = { @"C:\Windows\Fonts\tahoma.ttf", @"C:\Windows\Fonts\tahomabd.ttf" };
+            foreach (var path in fonts)
+            {
+                if (System.IO.File.Exists(path))
+                {
+                    using var fontStream = System.IO.File.OpenRead(path);
+                    QuestPDF.Settings.FontManager.RegisterFont(fontStream);
+                }
+            }
+            QuestPDF.Settings.DefaultFont = "Tahoma";
+        } catch {}
     }
 
     public Task<byte[]> GenerateOrderPdfAsync(OrderDetailDto order)
@@ -143,7 +157,16 @@ public class PdfService : IPdfService
                         col.Item().PaddingTop(10).Column(c => {
                             c.Item().Text(Reshape("تفاصيل السداد:")).FontSize(8).Bold();
                             foreach (var p in order.Payments)
-                                c.Item().Text(Reshape($"- {p.Method}: {p.Amount:N0} L.E ({p.CreatedAt:yyyy/MM/dd})")).FontSize(7);
+                            {
+                                var method = p.Method;
+                                if (method == "Cash") method = "نقدي";
+                                else if (method == "Bank" || method == "CreditCard") method = "شبكة / فيزا";
+                                else if (method == "InstaPay") method = "إنستا باي";
+                                else if (method == "Vodafone") method = "فودافون كاش";
+                                else if (method == "Credit") method = "آجل";
+
+                                c.Item().Text(Reshape($"- {method}: {p.Amount:N0} ج.م")).FontSize(7);
+                            }
                         });
                     }
 
