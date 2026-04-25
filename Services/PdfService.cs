@@ -22,12 +22,14 @@ public class PdfService : IPdfService
         QuestPDF.Settings.License = LicenseType.Community;
         
         try {
-            // 1. Try to use Cairo (Download if needed)
-            string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Cairo.ttf");
+            // 🚀 THE ULTIMATE FIX: Download from Google Fonts CDN (Most reliable)
+            string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Cairo-Regular.ttf");
             if (!File.Exists(fontPath))
             {
                 using var client = new HttpClient();
-                var bytes = client.GetByteArrayAsync("https://github.com/Gue3bara/Cairo/raw/master/Cairo-Regular.ttf").Result;
+                client.Timeout = TimeSpan.FromSeconds(30);
+                // Direct link to Cairo-Regular from Google Fonts Static CDN
+                var bytes = client.GetByteArrayAsync("https://fonts.gstatic.com/s/cairo/v28/SLXGc1j9F06llidS9ax7.ttf").Result;
                 File.WriteAllBytes(fontPath, bytes);
             }
 
@@ -40,28 +42,7 @@ public class PdfService : IPdfService
             }
         } catch { }
 
-        // 2. Fallback: Search for ANY common Linux font that supports Arabic
-        string[] linuxFonts = { 
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-            "/usr/share/fonts/noto/NotoSansArabic-Regular.ttf"
-        };
-
-        foreach (var path in linuxFonts)
-        {
-            if (File.Exists(path))
-            {
-                try {
-                    using var s = File.OpenRead(path);
-                    QuestPDF.Drawing.FontManager.RegisterFont(s);
-                    _activeFont = Path.GetFileNameWithoutExtension(path);
-                    return;
-                } catch { }
-            }
-        }
-
-        // 3. Last resort: Windows paths
+        // Fallback for Windows local development
         try {
             if (File.Exists(@"C:\Windows\Fonts\tahoma.ttf"))
             {
