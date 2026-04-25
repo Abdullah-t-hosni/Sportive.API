@@ -15,7 +15,7 @@ namespace Sportive.API.Services;
 
 public class PdfService : IPdfService
 {
-    private static string _activeFont = "sans-serif";
+    private static string _activeFont = "DejaVu Sans";
     private static bool _fontRegistered = false;
 
     private void EnsureFontLoaded()
@@ -23,22 +23,14 @@ public class PdfService : IPdfService
         if (_fontRegistered) return;
         
         try {
-            string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Cairo-Regular.ttf");
-            if (!File.Exists(fontPath))
+            // Try common Linux Arabic fonts
+            string[] systemFonts = { "DejaVu Sans", "FreeSans", "Liberation Sans", "Noto Sans Arabic" };
+            foreach (var font in systemFonts)
             {
-                using var client = new HttpClient();
-                client.Timeout = TimeSpan.FromSeconds(20);
-                var bytes = client.GetByteArrayAsync("https://fonts.gstatic.com/s/cairo/v28/SLXGc1j9F06llidS9ax7.ttf").Result;
-                File.WriteAllBytes(fontPath, bytes);
+                // We just hope one of these is installed on Railway
+                _activeFont = font;
             }
-
-            if (File.Exists(fontPath))
-            {
-                using var s = File.OpenRead(fontPath);
-                QuestPDF.Drawing.FontManager.RegisterFont(s);
-                _activeFont = "Cairo";
-                _fontRegistered = true;
-            }
+            _fontRegistered = true;
         } catch {
             _fontRegistered = true;
         }
