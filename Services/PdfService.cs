@@ -28,7 +28,7 @@ public class PdfService : IPdfService
                 page.Size(80, 297, Unit.Millimetre);
                 page.Margin(5, Unit.Millimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(8).FontFamily("Arial"));
+                page.DefaultTextStyle(x => x.FontSize(8).FontFamily("Tahoma"));
                 page.ContentFromRightToLeft();
 
                 page.Header().Column(col =>
@@ -177,7 +177,7 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Arial"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Tahoma"));
                 page.ContentFromRightToLeft();
 
                 page.Header().Row(row =>
@@ -274,7 +274,7 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Arial"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Tahoma"));
                 page.ContentFromRightToLeft();
 
                 page.Header().Row(row =>
@@ -403,7 +403,7 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A5.Landscape());
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(11).FontFamily("Arial"));
+                page.DefaultTextStyle(x => x.FontSize(11).FontFamily("Tahoma"));
                 page.ContentFromRightToLeft();
 
                 page.Header().Border(1).Padding(5).Row(row =>
@@ -474,7 +474,7 @@ public class PdfService : IPdfService
             {
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Arial"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Tahoma"));
                 page.ContentFromRightToLeft();
 
                 page.Header().Row(row =>
@@ -546,7 +546,7 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Arial"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Tahoma"));
                 page.ContentFromRightToLeft();
 
                 page.Header().Row(row =>
