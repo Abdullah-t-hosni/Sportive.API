@@ -56,10 +56,32 @@ public class SalesAccountingService
         int? employeeId = null;
         if (!string.IsNullOrEmpty(order.SalesPersonId))
         {
-            employeeId = await _db.Employees
-                .Where(e => e.AppUserId == order.SalesPersonId)
-                .Select(e => (int?)e.Id)
-                .FirstOrDefaultAsync();
+            // 1. Check if it's a direct Employee ID (numeric)
+            if (int.TryParse(order.SalesPersonId, out int parsedId))
+            {
+                employeeId = parsedId;
+            }
+            else 
+            {
+                // 2. Try direct AppUserId link
+                employeeId = await _db.Employees
+                    .Where(e => e.AppUserId == order.SalesPersonId)
+                    .Select(e => (int?)e.Id)
+                    .FirstOrDefaultAsync();
+
+                // 3. Fallback: Try matching by Email if user has one
+                if (employeeId == null)
+                {
+                    var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == order.SalesPersonId);
+                    if (user != null && !string.IsNullOrEmpty(user.Email))
+                    {
+                        employeeId = await _db.Employees
+                            .Where(e => e.Email == user.Email)
+                            .Select(e => (int?)e.Id)
+                            .FirstOrDefaultAsync();
+                    }
+                }
+            }
         }
 
         // ── Customer Account ─────────────────────────────────

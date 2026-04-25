@@ -396,10 +396,32 @@ public class AccountingCoreService
                     int? employeeId = null;
                     if (!string.IsNullOrEmpty(order.SalesPersonId))
                     {
-                        employeeId = await _db.Employees
-                            .Where(e => e.AppUserId == order.SalesPersonId)
-                            .Select(e => (int?)e.Id)
-                            .FirstOrDefaultAsync();
+                        // 1. Direct Employee ID (numeric)
+                        if (int.TryParse(order.SalesPersonId, out int parsedId))
+                        {
+                            employeeId = parsedId;
+                        }
+                        else 
+                        {
+                            // 2. Direct AppUser Link
+                            employeeId = await _db.Employees
+                                .Where(e => e.AppUserId == order.SalesPersonId)
+                                .Select(e => (int?)e.Id)
+                                .FirstOrDefaultAsync();
+
+                            // 3. Fallback by Email
+                            if (employeeId == null)
+                            {
+                                var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == order.SalesPersonId);
+                                if (user != null && !string.IsNullOrEmpty(user.Email))
+                                {
+                                    employeeId = await _db.Employees
+                                        .Where(e => e.Email == user.Email)
+                                        .Select(e => (int?)e.Id)
+                                        .FirstOrDefaultAsync();
+                                }
+                            }
+                        }
                     }
 
                     var lines = await _db.JournalLines.Where(l => l.JournalEntryId == entry.Id).ToListAsync();
