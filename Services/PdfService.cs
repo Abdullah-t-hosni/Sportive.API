@@ -17,19 +17,36 @@ public class PdfService : IPdfService
     {
         QuestPDF.Settings.License = LicenseType.Community;
         
-        // 🚀 RADICAL FIX: Manually register the font from the system if on Windows
+        // 🌍 UNIVERSAL FIX (Linux/Railway): Download Arabic font if not found
         try {
-            string[] fonts = { @"C:\Windows\Fonts\tahoma.ttf", @"C:\Windows\Fonts\tahomabd.ttf" };
-            foreach (var path in fonts)
+            string fontName = "Cairo";
+            string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Cairo.ttf");
+            
+            if (!File.Exists(fontPath))
             {
-                if (System.IO.File.Exists(path))
-                {
-                    using var fontStream = System.IO.File.OpenRead(path);
-                    QuestPDF.Drawing.FontManager.RegisterFont(fontStream);
-                }
+                using var client = new System.Net.Http.HttpClient();
+                // Download Cairo-Regular from a reliable source (GitHub/Google)
+                var bytes = client.GetByteArrayAsync("https://github.com/Gue3bara/Cairo/raw/master/Cairo-Regular.ttf").Result;
+                File.WriteAllBytes(fontPath, bytes);
             }
-            // If DefaultFont is missing in this version, we will set it per-page
-        } catch {}
+
+            if (File.Exists(fontPath))
+            {
+                using var fontStream = File.OpenRead(fontPath);
+                QuestPDF.Drawing.FontManager.RegisterFont(fontStream);
+                QuestPDF.Settings.DefaultFont = fontName;
+            }
+        } catch {
+            // Fallback for Windows local development
+            try {
+                if (File.Exists(@"C:\Windows\Fonts\tahoma.ttf"))
+                {
+                    using var s = File.OpenRead(@"C:\Windows\Fonts\tahoma.ttf");
+                    QuestPDF.Drawing.FontManager.RegisterFont(s);
+                    QuestPDF.Settings.DefaultFont = "Tahoma";
+                }
+            } catch {}
+        }
     }
 
     public Task<byte[]> GenerateOrderPdfAsync(OrderDetailDto order)
@@ -42,7 +59,7 @@ public class PdfService : IPdfService
                 page.Size(80, 297, Unit.Millimetre);
                 page.Margin(5, Unit.Millimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(8).FontFamily("Tahoma"));
+                page.DefaultTextStyle(x => x.FontSize(8).FontFamily(QuestPDF.Settings.DefaultFont ?? "Arial"));
                 page.ContentFromRightToLeft();
 
                 page.Header().Column(col =>
@@ -200,7 +217,7 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Tahoma"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily(QuestPDF.Settings.DefaultFont ?? "Arial"));
                 page.ContentFromRightToLeft();
 
                 page.Header().Row(row =>
@@ -297,7 +314,7 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Tahoma"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily(QuestPDF.Settings.DefaultFont ?? "Arial"));
                 page.ContentFromRightToLeft();
 
                 page.Header().Row(row =>
@@ -426,7 +443,7 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A5.Landscape());
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(11).FontFamily("Tahoma"));
+                page.DefaultTextStyle(x => x.FontSize(11).FontFamily(QuestPDF.Settings.DefaultFont ?? "Arial"));
                 page.ContentFromRightToLeft();
 
                 page.Header().Border(1).Padding(5).Row(row =>
@@ -497,7 +514,7 @@ public class PdfService : IPdfService
             {
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Tahoma"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily(QuestPDF.Settings.DefaultFont ?? "Arial"));
                 page.ContentFromRightToLeft();
 
                 page.Header().Row(row =>
@@ -569,7 +586,7 @@ public class PdfService : IPdfService
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Tahoma"));
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily(QuestPDF.Settings.DefaultFont ?? "Arial"));
                 page.ContentFromRightToLeft();
 
                 page.Header().Row(row =>
