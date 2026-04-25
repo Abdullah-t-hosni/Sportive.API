@@ -139,9 +139,10 @@ public class PdfService : IPdfService
 
                         col.Item().PaddingTop(10).AlignRight().Column(c =>
                         {
-                            c.Item().Text(Reshape($"الإجمالي: {order.GrossSubtotal:N0} ج.م")).FontSize(9).Bold();
-                            if (order.DiscountTotal > 0)
-                                c.Item().Text(Reshape($"الخصم: {order.DiscountTotal:N0} ج.م")).FontSize(8).FontColor(Colors.Red.Medium);
+                            c.Item().Text(Reshape($"الإجمالي: {order.SubTotal:N0} ج.م")).FontSize(9).Bold();
+                            var totalDisc = order.DiscountAmount + order.TemporalDiscount;
+                            if (totalDisc > 0)
+                                c.Item().Text(Reshape($"الخصم: {totalDisc:N0} ج.م")).FontSize(8).FontColor(Colors.Red.Medium);
                             
                             c.Item().Text(Reshape($"الصافي: {order.TotalAmount:N0} ج.م")).FontSize(12).Bold().FontColor(Colors.Black);
                         });
@@ -175,15 +176,16 @@ public class PdfService : IPdfService
                         });
                     });
                 });
-            });
+            }).GeneratePdf();
         });
     }
 
-    public async Task<byte[]> GenerateJournalPdfAsync(JournalEntryDto journal) { return await Task.FromResult(new byte[0]); }
-    public async Task<byte[]> GenerateAccountStatementPdfAsync(List<AccountTransactionDto> transactions, string accountName, decimal openingBalance) { return await Task.FromResult(new byte[0]); }
-    public async Task<byte[]> GenerateVoucherPdfAsync(AccountTransactionDto voucher) { return await Task.FromResult(new byte[0]); }
-    public async Task<byte[]> GenerateOpeningBalancePdfAsync(List<OpeningBalanceDto> items) { return await Task.FromResult(new byte[0]); }
-    public async Task<byte[]> GenerateJournalListPdfAsync(List<JournalEntryDto> journals, string reportTitle) { return await Task.FromResult(new byte[0]); }
+    // ✅ FIXED SIGNATURES
+    public async Task<byte[]> GeneratePurchaseInvoicePdfAsync(PurchaseInvoice invoice) { return await Task.FromResult(new byte[0]); }
+    public async Task<byte[]> GenerateVoucherPdfAsync(ReceiptVoucher? receiptVoucher, PaymentVoucher? paymentVoucher) { return await Task.FromResult(new byte[0]); }
+    public async Task<byte[]> GenerateOpeningBalancePdfAsync(InventoryOpeningBalance openingBalance) { return await Task.FromResult(new byte[0]); }
+    public async Task<byte[]> GeneratePurchaseReturnPdfAsync(PurchaseReturn pReturn) { return await Task.FromResult(new byte[0]); }
+    public async Task<byte[]> GenerateJournalEntryPdfAsync(JournalEntry entry) { return await Task.FromResult(new byte[0]); }
 
     private string Reshape(string input)
     {
