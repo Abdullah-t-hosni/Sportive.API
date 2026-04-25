@@ -181,6 +181,8 @@ public class OrdersController : ControllerBase
         if (order == null) return NotFound("Invoice not found.");
 
         var dto = await _orderService.GetOrderByIdAsync(order.Id);
+        if (dto == null) return NotFound("Invoice details not found.");
+
         var pdfBytes = await _pdfService.GenerateOrderPdfAsync(dto);
         return File(pdfBytes, "application/pdf", $"Invoice-{orderNumber}.pdf");
     }

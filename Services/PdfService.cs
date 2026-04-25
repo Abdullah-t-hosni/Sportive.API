@@ -25,10 +25,10 @@ public class PdfService : IPdfService
                 if (System.IO.File.Exists(path))
                 {
                     using var fontStream = System.IO.File.OpenRead(path);
-                    QuestPDF.Settings.FontManager.RegisterFont(fontStream);
+                    QuestPDF.Drawing.FontManager.RegisterFont(fontStream);
                 }
             }
-            QuestPDF.Settings.DefaultFont = "Tahoma";
+            // If DefaultFont is missing in this version, we will set it per-page
         } catch {}
     }
 
