@@ -762,10 +762,36 @@ public class ReceiptVouchersController : ControllerBase
             var order = await _db.Orders.FindAsync(dto.OrderId.Value);
             if (order != null) {
                 var remaining = order.TotalAmount - order.PaidAmount;
-                if (dto.Amount > remaining + 0.01m) return BadRequest($"المبلغ أكبر من المديونية المتبقية ({remaining})");
+                if (dto.Amount > remaining + 0.01m) return BadRequest($"عفواً، المبلغ ({dto.Amount}) أكبر من المديونية المتبقية على الفاتورة ({remaining})");
                 order.PaidAmount += dto.Amount;
                 order.PaymentStatus = order.PaidAmount >= order.TotalAmount - 0.01m ? PaymentStatus.Paid : PaymentStatus.Pending;
                 order.UpdatedAt = TimeHelper.GetEgyptTime();
+            }
+        }
+        else if (dto.CustomerId.HasValue)
+        {
+            // التحقق من مديونية العميل الإجمالية (إذا لم يكن تحصيل لفاتورة محددة)
+            var customer = await _db.Customers.FindAsync(dto.CustomerId.Value);
+            if (customer != null)
+            {
+                // الحصول على رصيد العميل الحالي من الحسابات
+                var customerAccountId = await _db.AccountSystemMappings
+                    .Where(m => m.Key == MappingKeys.Customer.ToLower())
+                    .Select(m => m.AccountId)
+                    .FirstOrDefaultAsync();
+
+                if (customerAccountId.HasValue)
+                {
+                    // حساب الرصيد الحالي للعميل (مدين - دائن)
+                    var currentBalance = await _db.JournalLines
+                        .Where(l => l.AccountId == customerAccountId.Value && l.CustomerId == dto.CustomerId.Value)
+                        .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
+
+                    if (dto.Amount > currentBalance + 0.1m)
+                    {
+                        return BadRequest($"عفواً، لا يمكن تحصيل مبلغ أكبر من مديونية العميل الإجمالية. المديونية الحالية: {currentBalance:N2}");
+                    }
+                }
             }
         }
 

@@ -594,6 +594,9 @@ public class OrderService : IOrderService
                         // 💎 STRICT VALUATION: PaidAmount must ONLY be the sum of REAL (Non-Credit) payments
                         order.PaidAmount = totalPaid;
                         
+                        if (order.PaidAmount > order.TotalAmount + 0.1m)
+                            throw new ArgumentException($"عفواً، لا يمكن تحصيل مبلغ أكبر من قيمة الفاتورة. (المدفوع: {order.PaidAmount} | المطلوب: {order.TotalAmount})");
+
                         // Set status based on total paid vs total amount
                         if (order.PaidAmount >= order.TotalAmount - 0.01m) 
                             order.PaymentStatus = PaymentStatus.Paid;
