@@ -186,6 +186,21 @@ public class OrdersController : ControllerBase
         var pdfBytes = await _pdfService.GenerateOrderPdfAsync(dto);
         return File(pdfBytes, "application/pdf", $"Invoice-{orderNumber}.pdf");
     }
+    [AllowAnonymous]
+    [HttpGet("public-data/{orderNumber}")]
+    public async Task<IActionResult> GetPublicOrderData(string orderNumber)
+    {
+        var order = await _db.Orders
+            .Include(o => o.Customer)
+            .FirstOrDefaultAsync(o => o.OrderNumber == orderNumber);
+
+        if (order == null) return NotFound("Invoice not found.");
+
+        var dto = await _orderService.GetOrderByIdAsync(order.Id);
+        if (dto == null) return NotFound("Invoice details not found.");
+
+        return Ok(dto);
+    }
 
     [Authorize(Roles = "Admin,Manager,Staff")]
     [HttpPatch("{id}/payment-status")]

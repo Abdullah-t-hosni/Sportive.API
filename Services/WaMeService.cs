@@ -54,6 +54,8 @@ public class WaMeService : IWaMeService
 📍 النوع: *{FulfillmentAr(order.FulfillmentType)}*
 
 سنتواصل معك قريباً لتأكيد التسليم 🙏
+📄 فاتورتك الإلكترونية: {StoreUrl}/invoice/{order.OrderNumber}
+
 _{StoreName}_
 """;
         return Build(order.Customer?.Phone, msg);
