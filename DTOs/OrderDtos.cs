@@ -121,12 +121,12 @@ public record OrderSummaryDto(
     string Source,
     string PaymentMethod,
     string PaymentStatus,
-    int? CustomerId = null,
-    string? AdminNotes = null,
-    string? CouponCode = null,
-    List<OrderDetailPaymentDto>? Payments = null,
-    decimal? ReturnedAmount = 0,
-    string? SalesPersonId = null
+    int? CustomerId,
+    string? AdminNotes,
+    string? CouponCode,
+    List<OrderDetailPaymentDto>? Payments,
+    decimal? ReturnedAmount,
+    string? SalesPersonId
 );
 
 

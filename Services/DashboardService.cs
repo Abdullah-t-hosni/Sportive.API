@@ -841,7 +841,8 @@ public class DashboardService : IDashboardService
                 o.AdminNotes, 
                 o.CouponCode,
                 null,
-                0))
+                0,
+                o.SalesPersonId))
             .ToListAsync();
     }
 }
