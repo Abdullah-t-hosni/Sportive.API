@@ -170,6 +170,57 @@ public class StoreInfo
     [JsonPropertyName("receiptSoftwareProvider")]
     public string? ReceiptSoftwareProvider { get; set; } = "By Easy Store";
 
+    [MaxLength(20)]
+    [JsonPropertyName("receiptPaperSize")]
+    public string ReceiptPaperSize { get; set; } = "Receipt";
+
+    [JsonPropertyName("receiptWidth")]
+    public int ReceiptWidth { get; set; } = 80;
+
+    [JsonPropertyName("receiptFontSize")]
+    public int ReceiptFontSize { get; set; } = 11;
+
+    [MaxLength(50)]
+    [JsonPropertyName("receiptFontFamily")]
+    public string ReceiptFontFamily { get; set; } = "Alexandria";
+
+    [MaxLength(20)]
+    [JsonPropertyName("receiptLogoPosition")]
+    public string ReceiptLogoPosition { get; set; } = "center";
+
+    [JsonPropertyName("receiptLogoWidth")]
+    public int ReceiptLogoWidth { get; set; } = 80;
+
+    [MaxLength(50)]
+    [JsonPropertyName("orderStatusAfterPrint")]
+    public string? OrderStatusAfterPrint { get; set; }
+
+    [MaxLength(100)]
+    [JsonPropertyName("qzReceiptPrinter")]
+    public string? QzReceiptPrinter { get; set; }
+
+    [MaxLength(100)]
+    [JsonPropertyName("qzA4Printer")]
+    public string? QzA4Printer { get; set; }
+
+    [MaxLength(100)]
+    [JsonPropertyName("qzBarcodePrinter")]
+    public string? QzBarcodePrinter { get; set; }
+
+    [MaxLength(10)]
+    [JsonPropertyName("receiptLineStyle")]
+    public string ReceiptLineStyle { get; set; } = "dashed";
+
+    [JsonPropertyName("receiptDensity")]
+    public int ReceiptDensity { get; set; } = 2;
+
+    [JsonPropertyName("receiptBarcodeHeight")]
+    public int ReceiptBarcodeHeight { get; set; } = 10;
+
+    [MaxLength(1000)]
+    [JsonPropertyName("receiptSectionsOrder")]
+    public string ReceiptSectionsOrder { get; set; } = "header,order_info,items_table,totals_area,tafqeet,payment_info,footer_text,terms_conditions,barcode";
+
     // --- 5. Finance & VAT ---
     [JsonPropertyName("vatPercent")]
     public decimal VatRatePercent { get; set; } = 14;

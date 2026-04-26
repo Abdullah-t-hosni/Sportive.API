@@ -3,17 +3,20 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sportive.API.Data;
 
 #nullable disable
 
-namespace Sportive.API.Migrations
+namespace Sportive.API.Migrations.ReportingOptimization
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260426121305_AddReceiptLogoSettings")]
+    partial class AddReceiptLogoSettings
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3366,18 +3369,10 @@ namespace Sportive.API.Migrations
                         .HasColumnType("varchar(100)")
                         .HasAnnotation("Relational:JsonPropertyName", "qzReceiptPrinter");
 
-                    b.Property<int>("ReceiptBarcodeHeight")
-                        .HasColumnType("int")
-                        .HasAnnotation("Relational:JsonPropertyName", "receiptBarcodeHeight");
-
                     b.Property<string>("ReceiptComplaintsPhone")
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)")
                         .HasAnnotation("Relational:JsonPropertyName", "receiptComplaintsPhone");
-
-                    b.Property<int>("ReceiptDensity")
-                        .HasColumnType("int")
-                        .HasAnnotation("Relational:JsonPropertyName", "receiptDensity");
 
                     b.Property<int>("ReceiptExtraCopies")
                         .HasColumnType("int")
@@ -3401,12 +3396,6 @@ namespace Sportive.API.Migrations
                         .HasColumnType("longtext")
                         .HasAnnotation("Relational:JsonPropertyName", "receiptHeaderText");
 
-                    b.Property<string>("ReceiptLineStyle")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("varchar(10)")
-                        .HasAnnotation("Relational:JsonPropertyName", "receiptLineStyle");
-
                     b.Property<string>("ReceiptLogoPosition")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -3422,12 +3411,6 @@ namespace Sportive.API.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("varchar(20)")
                         .HasAnnotation("Relational:JsonPropertyName", "receiptPaperSize");
-
-                    b.Property<string>("ReceiptSectionsOrder")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("varchar(1000)")
-                        .HasAnnotation("Relational:JsonPropertyName", "receiptSectionsOrder");
 
                     b.Property<bool>("ReceiptShowAddress")
                         .HasColumnType("tinyint(1)")
@@ -3608,16 +3591,12 @@ namespace Sportive.API.Migrations
                             OrderNumberPrefix = "SPT",
                             OrderSuccessMessageAr = "شكراً لتسوقك معنا! سيقوم فريقنا بالتواصل معك قريباً لتأكيد الطلب.",
                             OrderSuccessMessageEn = "Thank you for shopping with us! Our team will contact you soon to confirm your order.",
-                            ReceiptBarcodeHeight = 10,
-                            ReceiptDensity = 2,
                             ReceiptExtraCopies = 0,
                             ReceiptFontFamily = "Alexandria",
                             ReceiptFontSize = 11,
-                            ReceiptLineStyle = "dashed",
                             ReceiptLogoPosition = "center",
                             ReceiptLogoWidth = 80,
                             ReceiptPaperSize = "Receipt",
-                            ReceiptSectionsOrder = "header,order_info,items_table,totals_area,tafqeet,payment_info,footer_text,terms_conditions,barcode",
                             ReceiptShowAddress = true,
                             ReceiptShowBalance = true,
                             ReceiptShowBarcode = true,

@@ -149,6 +149,21 @@ public class SettingsController : ControllerBase
             info.BarcodeShowSize          = dto.BarcodeShowSize;
             info.BarcodeShowColor         = dto.BarcodeShowColor;
 
+            info.ReceiptPaperSize         = dto.ReceiptPaperSize ?? "Receipt";
+            info.ReceiptWidth             = dto.ReceiptWidth;
+            info.ReceiptFontSize          = dto.ReceiptFontSize;
+            info.ReceiptFontFamily        = dto.ReceiptFontFamily ?? "Alexandria";
+            info.ReceiptLogoPosition      = dto.ReceiptLogoPosition ?? "center";
+            info.ReceiptLogoWidth         = dto.ReceiptLogoWidth;
+            info.OrderStatusAfterPrint    = dto.OrderStatusAfterPrint;
+            info.QzReceiptPrinter         = dto.QzReceiptPrinter;
+            info.QzA4Printer              = dto.QzA4Printer;
+            info.QzBarcodePrinter         = dto.QzBarcodePrinter;
+            info.ReceiptLineStyle         = dto.ReceiptLineStyle ?? "dashed";
+            info.ReceiptDensity           = dto.ReceiptDensity;
+            info.ReceiptBarcodeHeight     = dto.ReceiptBarcodeHeight;
+            info.ReceiptSectionsOrder     = dto.ReceiptSectionsOrder ?? "header,order_info,items_table,totals_area,tafqeet,payment_info,footer_text,terms_conditions,barcode";
+
             info.LastUpdateDate          = TimeHelper.GetEgyptTime();
 
             if (!string.IsNullOrWhiteSpace(dto.TimeZoneId))

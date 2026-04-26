@@ -3,17 +3,20 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sportive.API.Data;
 
 #nullable disable
 
-namespace Sportive.API.Migrations
+namespace Sportive.API.Migrations.ReportingOptimization
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260426121831_AddMoreReceiptControls")]
+    partial class AddMoreReceiptControls
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3423,12 +3426,6 @@ namespace Sportive.API.Migrations
                         .HasColumnType("varchar(20)")
                         .HasAnnotation("Relational:JsonPropertyName", "receiptPaperSize");
 
-                    b.Property<string>("ReceiptSectionsOrder")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("varchar(1000)")
-                        .HasAnnotation("Relational:JsonPropertyName", "receiptSectionsOrder");
-
                     b.Property<bool>("ReceiptShowAddress")
                         .HasColumnType("tinyint(1)")
                         .HasAnnotation("Relational:JsonPropertyName", "receiptShowAddress");
@@ -3617,7 +3614,6 @@ namespace Sportive.API.Migrations
                             ReceiptLogoPosition = "center",
                             ReceiptLogoWidth = 80,
                             ReceiptPaperSize = "Receipt",
-                            ReceiptSectionsOrder = "header,order_info,items_table,totals_area,tafqeet,payment_info,footer_text,terms_conditions,barcode",
                             ReceiptShowAddress = true,
                             ReceiptShowBalance = true,
                             ReceiptShowBarcode = true,
