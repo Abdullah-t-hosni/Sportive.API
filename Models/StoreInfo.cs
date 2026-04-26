@@ -217,6 +217,59 @@ public class StoreInfo
     [JsonPropertyName("accountingLockDate")]
     public DateTime? AccountingLockDate { get; set; }
 
+    // --- 8. WhatsApp Quick Replies ---
+    [JsonPropertyName("whatsAppOrderTemplate")]
+    public string? WhatsAppOrderTemplate { get; set; } = "أهلاً {customerName}، تم استلام طلبك رقم #{orderNumber} وجاري التجهيز.";
+
+    [JsonPropertyName("whatsAppShippingTemplate")]
+    public string? WhatsAppShippingTemplate { get; set; } = "طلبك #{orderNumber} في الطريق مع المندوب، سيصلك قريباً.";
+
+    [JsonPropertyName("whatsAppReturnTemplate")]
+    public string? WhatsAppReturnTemplate { get; set; } = "تم استلام طلب المرتجع الخاص بك رقم #{orderNumber}، وجاري مراجعته.";
+
+    // --- 9. Order Success Page ---
+    [JsonPropertyName("orderSuccessMessageAr")]
+    public string? OrderSuccessMessageAr { get; set; } = "شكراً لتسوقك معنا! سيقوم فريقنا بالتواصل معك قريباً لتأكيد الطلب.";
+
+    [JsonPropertyName("orderSuccessMessageEn")]
+    public string? OrderSuccessMessageEn { get; set; } = "Thank you for shopping with us! Our team will contact you soon to confirm your order.";
+
+    // --- 10. Smart Printing & POS ---
+    [JsonPropertyName("autoPrintReceipt")]
+    public bool AutoPrintReceipt { get; set; } = false;
+
+    [JsonPropertyName("receiptExtraCopies")]
+    public int ReceiptExtraCopies { get; set; } = 0;
+
+    // --- 11. SEO & Analytics ---
+    [JsonPropertyName("googleAnalyticsId")]
+    public string? GoogleAnalyticsId { get; set; }
+
+    [JsonPropertyName("facebookPixelId")]
+    public string? FacebookPixelId { get; set; }
+
+    [JsonPropertyName("siteMetaDescriptionAr")]
+    public string? SiteMetaDescriptionAr { get; set; }
+
+    [JsonPropertyName("siteMetaDescriptionEn")]
+    public string? SiteMetaDescriptionEn { get; set; }
+
+    [JsonPropertyName("siteKeywords")]
+    public string? SiteKeywords { get; set; }
+
+    // --- 12. Barcode Customization ---
+    [JsonPropertyName("barcodeShowPrice")]
+    public bool BarcodeShowPrice { get; set; } = true;
+
+    [JsonPropertyName("barcodeShowName")]
+    public bool BarcodeShowName { get; set; } = true;
+
+    [JsonPropertyName("barcodeShowSize")]
+    public bool BarcodeShowSize { get; set; } = true;
+
+    [JsonPropertyName("barcodeShowColor")]
+    public bool BarcodeShowColor { get; set; } = true;
+
     [JsonPropertyName("lastUpdatedAt")]
     public DateTime LastUpdateDate { get; set; } = DateTime.UtcNow;
 }

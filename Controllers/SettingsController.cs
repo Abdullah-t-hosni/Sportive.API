@@ -130,6 +130,25 @@ public class SettingsController : ControllerBase
             info.InMaintenance           = dto.InMaintenance;
             info.BackupTime              = dto.BackupTime;
             info.BackupUtcOffset         = dto.BackupUtcOffset;
+
+            // New fields
+            info.WhatsAppOrderTemplate    = dto.WhatsAppOrderTemplate;
+            info.WhatsAppShippingTemplate = dto.WhatsAppShippingTemplate;
+            info.WhatsAppReturnTemplate   = dto.WhatsAppReturnTemplate;
+            info.OrderSuccessMessageAr    = dto.OrderSuccessMessageAr;
+            info.OrderSuccessMessageEn    = dto.OrderSuccessMessageEn;
+            info.AutoPrintReceipt         = dto.AutoPrintReceipt;
+            info.ReceiptExtraCopies       = dto.ReceiptExtraCopies;
+            info.GoogleAnalyticsId        = dto.GoogleAnalyticsId;
+            info.FacebookPixelId          = dto.FacebookPixelId;
+            info.SiteMetaDescriptionAr    = dto.SiteMetaDescriptionAr;
+            info.SiteMetaDescriptionEn    = dto.SiteMetaDescriptionEn;
+            info.SiteKeywords             = dto.SiteKeywords;
+            info.BarcodeShowPrice         = dto.BarcodeShowPrice;
+            info.BarcodeShowName          = dto.BarcodeShowName;
+            info.BarcodeShowSize          = dto.BarcodeShowSize;
+            info.BarcodeShowColor         = dto.BarcodeShowColor;
+
             info.LastUpdateDate          = TimeHelper.GetEgyptTime();
 
             if (!string.IsNullOrWhiteSpace(dto.TimeZoneId))
