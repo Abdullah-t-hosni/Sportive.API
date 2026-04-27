@@ -839,6 +839,7 @@ public class DashboardService : IDashboardService
             o.Status.ToString(),
             o.FulfillmentType.ToString(),
             o.TotalAmount,
+            o.PaidAmount,
             o.CreatedAt,
             o.Items.Sum(i => i.Quantity),
             o.Source.ToString(),
