@@ -122,8 +122,11 @@ public class StaffController : ControllerBase
         // زرع الصلاحيات الافتراضية بناءً على الدور
         await _permService.SeedDefaultPermissionsAsync(user.Id, dto.Role);
 
-        // ✅ ربط أو إنشاء سجل HR وتحضير الحسابات المحاسبية
-        await EnsureEmployeeLinkAsync(user, dto.Role);
+        // ✅ ربط أو إنشاء سجل HR وتحضير الحسابات المحاسبية (اختياري)
+        if (dto.IsEmployee)
+        {
+            await EnsureEmployeeLinkAsync(user, dto.Role);
+        }
 
         return Ok(new {
             id       = user.Id,
@@ -166,8 +169,12 @@ public class StaffController : ControllerBase
         // إعادة زرع الصلاحيات الافتراضية للدور الجديد
         await _permService.SeedDefaultPermissionsAsync(user.Id, dto.Role);
 
-        // ✅ ربط أو تحديث سجل HR
-        await EnsureEmployeeLinkAsync(user, dto.Role);
+        // ✅ تحديث سجل HR المرتبط إن وجد
+        var hasEmployee = await _db.Employees.AnyAsync(e => e.AppUserId == user.Id);
+        if (hasEmployee)
+        {
+            await EnsureEmployeeLinkAsync(user, dto.Role);
+        }
 
         return Ok(new {
             id,
@@ -227,6 +234,23 @@ public class StaffController : ControllerBase
 
         await _db.SaveChangesAsync();
         await _customerService.EnsureCustomerAccountAsync(0, isEmployee: true, employeeId: employee.Id);
+    }
+
+    // ══════════════════════════════════════════════════
+    // POST /api/staff/{id}/link-employee
+    // ربط مستخدم حالي بسجل موظف (يدوياً)
+    // ══════════════════════════════════════════════════
+    [HttpPost("{id}/link-employee")]
+    public async Task<IActionResult> LinkEmployee(string id)
+    {
+        var user = await _users.FindByIdAsync(id);
+        if (user == null) return NotFound();
+
+        var roles = await _users.GetRolesAsync(user);
+        var role = GetPrimaryRole(roles);
+
+        await EnsureEmployeeLinkAsync(user, role);
+        return Ok(new { message = "تم ربط المستخدم بسجل الموظفين والمحاسبة بنجاح" });
     }
 
     // ══════════════════════════════════════════════════
@@ -453,7 +477,8 @@ public record CreateStaffDto(
     string Email,
     string Phone,
     string Password,
-    string Role
+    string Role,
+    bool IsEmployee = true
 );
 
 public record ChangeRoleDto(string Role);

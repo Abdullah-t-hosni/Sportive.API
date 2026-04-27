@@ -77,7 +77,12 @@ public interface ICartService
 
 public interface ICustomerService
 {
-    Task<PaginatedResult<CustomerDetailDto>> GetCustomersAsync(int page, int pageSize, string? search = null, decimal? minSpent = null, int? minOrders = null, DateTime? joinStartDate = null, DateTime? joinEndDate = null);
+    Task<PaginatedResult<CustomerDetailDto>> GetCustomersAsync(
+        int page, int pageSize, string? search = null, 
+        decimal? minSpent = null, int? minOrders = null, 
+        DateTime? joinStartDate = null, DateTime? joinEndDate = null,
+        int? categoryId = null, bool? hasDebt = null,
+        string? orderBy = null, bool isDescending = true);
     Task<CustomerDetailDto?> GetCustomerByIdAsync(int id);
     Task<CustomerDetailDto?> GetCustomerByEmailAsync(string email);
     Task<CustomerDetailDto?> GetCustomerByUserIdAsync(string userId);

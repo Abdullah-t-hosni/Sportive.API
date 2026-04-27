@@ -26,8 +26,12 @@ public class CustomersController : ControllerBase
         [FromQuery] decimal? minSpent = null,
         [FromQuery] int? minOrders = null,
         [FromQuery] DateTime? joinStartDate = null,
-        [FromQuery] DateTime? joinEndDate = null) =>
-        Ok(await _customers.GetCustomersAsync(page, pageSize, search, minSpent, minOrders, joinStartDate, joinEndDate));
+        [FromQuery] DateTime? joinEndDate = null,
+        [FromQuery] int? categoryId = null,
+        [FromQuery] bool? hasDebt = null,
+        [FromQuery] string? orderBy = null,
+        [FromQuery] bool isDescending = true) =>
+        Ok(await _customers.GetCustomersAsync(page, pageSize, search, minSpent, minOrders, joinStartDate, joinEndDate, categoryId, hasDebt, orderBy, isDescending));
 
     /// <summary>بيانات RFM خفيفة لكل العملاء — بدون pagination أو addresses</summary>
     [Authorize(Roles = "Admin,Manager")]

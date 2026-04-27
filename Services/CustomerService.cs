@@ -16,16 +16,20 @@ public class CustomerService : ICustomerService
     public async Task<PaginatedResult<CustomerDetailDto>> GetCustomersAsync(
         int page, int pageSize, string? search = null, 
         decimal? minSpent = null, int? minOrders = null, 
-        DateTime? joinStartDate = null, DateTime? joinEndDate = null)
+        DateTime? joinStartDate = null, DateTime? joinEndDate = null,
+        int? categoryId = null, bool? hasDebt = null,
+        string? orderBy = null, bool isDescending = true)
     {
         pageSize = AppConstants.ClampPrecacheSize(pageSize);
         var query = _db.Customers
             .AsNoTracking()
-            .Include(c => c.Addresses)
-            .Include(c => c.Orders)
             .Include(c => c.MainAccount)
             .Include(c => c.Category)
             .AsQueryable();
+
+        // 1. Basic Filters
+        if (categoryId.HasValue)
+            query = query.Where(c => c.CategoryId == categoryId.Value);
 
         if (minSpent.HasValue) 
             query = query.Where(c => c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) >= minSpent.Value);
@@ -48,57 +52,71 @@ public class CustomerService : ICustomerService
                 (c.Phone != null && c.Phone.Contains(s)));
         }
 
-        query = query.OrderByDescending(c => c.CreatedAt);
+        // 2. Map to a rich projection for filtering and sorting
+        // We include Balance calculation directly in SQL projection
+        var projectedQuery = query.Select(c => new
+        {
+            c.Id, c.FullName, c.Email, c.Phone, c.AppUserId,
+            c.MainAccountId, c.CategoryId, 
+            CategoryNameAr = c.Category != null ? c.Category.NameAr : null,
+            CategoryNameEn = c.Category != null ? c.Category.NameEn : null,
+            c.FixedDiscount, c.CreatedAt, c.Tags,
+            OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
+            OrderCount = c.Orders.Count,
+            OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
+            // Calculate Net Balance in SQL
+            JournalNet = _db.JournalLines
+                .Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && l.JournalEntry.Status == JournalEntryStatus.Posted)
+                .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
+        }).Select(x => new {
+            x.Id, x.FullName, x.Email, x.Phone, x.AppUserId,
+            x.MainAccountId, x.CategoryId, x.CategoryNameAr, x.CategoryNameEn,
+            x.FixedDiscount, x.CreatedAt, x.Tags, x.OrderCount, x.OrderTotal,
+            Balance = x.OpeningBalance + x.JournalNet
+        });
 
-        var total = await query.CountAsync();
+        // 3. Conditional Debt Filter
+        if (hasDebt.HasValue && hasDebt.Value)
+            projectedQuery = projectedQuery.Where(x => x.Balance > 0);
 
-        // 1. Fetch the page of customers (no balance sub-query here — avoids N+1)
-        var rawCustomers = await query
+        // 4. Dynamic Sorting
+        projectedQuery = orderBy?.ToLower() switch
+        {
+            "balance"    => isDescending ? projectedQuery.OrderByDescending(x => x.Balance) : projectedQuery.OrderBy(x => x.Balance),
+            "spent"      => isDescending ? projectedQuery.OrderByDescending(x => x.OrderTotal) : projectedQuery.OrderBy(x => x.OrderTotal),
+            "orders"     => isDescending ? projectedQuery.OrderByDescending(x => x.OrderCount) : projectedQuery.OrderBy(x => x.OrderCount),
+            "name"       => isDescending ? projectedQuery.OrderByDescending(x => x.FullName) : projectedQuery.OrderBy(x => x.FullName),
+            _            => isDescending ? projectedQuery.OrderByDescending(x => x.CreatedAt) : projectedQuery.OrderBy(x => x.CreatedAt)
+        };
+
+        var total = await projectedQuery.CountAsync();
+
+        var rawCustomers = await projectedQuery
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(c => new
-            {
-                c.Id, c.FullName, c.Email, c.Phone, c.AppUserId,
-                c.MainAccountId, c.CategoryId, 
-                CategoryNameAr = c.Category != null ? c.Category.NameAr : null,
-                CategoryNameEn = c.Category != null ? c.Category.NameEn : null,
-                c.FixedDiscount, c.CreatedAt, c.Tags,
-                OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
-                OrderCount = c.Orders.Count,
-                OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
-                Addresses = c.Addresses.Select(a => new AddressDto(
-                    a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
-                    a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
-                )).ToList()
-            })
             .ToListAsync();
 
-        // 2. Fetch all balances for this page in a single query (one round-trip instead of N)
-        var customerIds = rawCustomers.Select(c => c.Id).ToList();
-        var accountIds  = rawCustomers.Where(c => c.MainAccountId.HasValue)
-                                      .Select(c => c.MainAccountId!.Value).ToList();
+        // 5. Hydrate DTOs
+        // We need addresses separately or joined (let's fetch them in a single batch for the page)
+        var pageIds = rawCustomers.Select(c => c.Id).ToList();
+        var addressMap = await _db.Addresses
+            .Where(a => pageIds.Contains(a.CustomerId))
+            .ToListAsync();
 
-        var balanceMap = await _db.JournalLines
-            .Where(l =>
-                (l.CustomerId != null && customerIds.Contains(l.CustomerId.Value) ||
-                 accountIds.Contains(l.AccountId)) &&
-                l.JournalEntry.Status == JournalEntryStatus.Posted)
-            .GroupBy(l => l.CustomerId ?? 0)
-            .Select(g => new { CustomerId = g.Key, Net = g.Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0 })
-            .ToDictionaryAsync(x => x.CustomerId, x => x.Net);
-
-        // 3. Map to DTOs — balance = opening + journal net
         var items = rawCustomers.Select(c => new CustomerDetailDto(
             Id: c.Id, 
             FullName: c.FullName, 
             Email: c.Email, 
             Phone: c.Phone,
             TotalOrders: c.OrderCount, 
-            TotalSpent: c.OrderTotal, 
+            TotalSpent: (decimal)c.OrderTotal, 
             CreatedAt: c.CreatedAt,
-            Addresses: c.Addresses, 
+            Addresses: addressMap.Where(a => a.CustomerId == c.Id).Select(a => new AddressDto(
+                    a.Id, a.TitleAr, a.TitleEn, a.Street, a.City,
+                    a.District, a.BuildingNo, a.Floor, a.ApartmentNo, a.IsDefault, a.Latitude, a.Longitude
+                )).ToList(), 
             AppUserId: c.AppUserId,
-            Balance: c.OpeningBalance + (balanceMap.TryGetValue(c.Id, out var net) ? net : 0),
+            Balance: c.Balance,
             MainAccountId: c.MainAccountId, 
             CategoryId: c.CategoryId, 
             CategoryName: c.CategoryNameAr,
