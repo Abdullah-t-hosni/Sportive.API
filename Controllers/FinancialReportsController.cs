@@ -515,12 +515,18 @@ public class FinancialReportsController : ControllerBase
         }
  
         var openQ = _db.JournalLines.Include(l => l.JournalEntry)
-            .Where(l => targetAccountIds.Contains(l.AccountId) && l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate < from);
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate < from);
   
         if (source.HasValue) openQ = openQ.Where(l => l.CostCenter == source.Value);
-        if (customerId.HasValue) openQ = openQ.Where(l => l.CustomerId == customerId);
-        if (supplierId.HasValue) openQ = openQ.Where(l => l.SupplierId == supplierId);
-        if (employeeId.HasValue) openQ = openQ.Where(l => l.EmployeeId == employeeId);
+        
+        if (customerId.HasValue) 
+            openQ = openQ.Where(l => l.CustomerId == customerId);
+        else if (supplierId.HasValue) 
+            openQ = openQ.Where(l => l.SupplierId == supplierId);
+        else if (employeeId.HasValue) 
+            openQ = openQ.Where(l => l.EmployeeId == employeeId);
+        else
+            openQ = openQ.Where(l => targetAccountIds.Contains(l.AccountId));
  
         var openLines = await openQ.ToListAsync();
         var openDr  = openLines.Sum(l => l.Debit);
@@ -537,11 +543,17 @@ public class FinancialReportsController : ControllerBase
         var openBal = acct.Nature == AccountNature.Debit ? openDr - openCr : openCr - openDr;
 
         var q = _db.JournalLines.Include(l => l.JournalEntry).Include(l => l.Customer).Include(l => l.Supplier)
-            .Where(l => targetAccountIds.Contains(l.AccountId) && l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to);
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to);
 
-        if (customerId.HasValue) q = q.Where(l => l.CustomerId == customerId);
-        if (supplierId.HasValue) q = q.Where(l => l.SupplierId == supplierId);
-        if (employeeId.HasValue) q = q.Where(l => l.EmployeeId == employeeId);
+        if (customerId.HasValue) 
+            q = q.Where(l => l.CustomerId == customerId);
+        else if (supplierId.HasValue) 
+            q = q.Where(l => l.SupplierId == supplierId);
+        else if (employeeId.HasValue) 
+            q = q.Where(l => l.EmployeeId == employeeId);
+        else
+            q = q.Where(l => targetAccountIds.Contains(l.AccountId));
+
         if (source.HasValue) q = q.Where(l => l.CostCenter == source.Value);
 
         if (!string.IsNullOrEmpty(search)) q = q.Where(l => (l.Description != null && l.Description.Contains(search)) || (l.JournalEntry.Description != null && l.JournalEntry.Description.Contains(search)));
