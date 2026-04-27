@@ -173,6 +173,10 @@ public class OrderService : IOrderService
                     name = allEmps.FirstOrDefault(e => e.Id == eid)?.Name;
                 }
             }
+            if (string.IsNullOrEmpty(name) && (h.Note == "تم إنشاء الطلب" || h.Note == "Order Created"))
+            {
+                name = salesPersonName;
+            }
             historyDtos.Add(new OrderStatusHistoryDto(h.Status.ToString(), h.Note, h.CreatedAt, name));
         }
 
@@ -705,7 +709,12 @@ public class OrderService : IOrderService
                      // Stock specifically already checked for each item, but we double-check here if it was a website order with no stock
                 }
                 _db.Orders.Add(order);
-                order.StatusHistory.Add(new OrderStatusHistory { Status = order.Status, CreatedAt = TimeHelper.GetEgyptTime(), Note = "تم إنشاء الطلب" });
+                order.StatusHistory.Add(new OrderStatusHistory { 
+                    Status = order.Status, 
+                    CreatedAt = TimeHelper.GetEgyptTime(), 
+                    Note = "تم إنشاء الطلب",
+                    ChangedByUserId = dto.SalesPersonId
+                });
 
                 // ✅ UPDATE COUPON USAGE
                 if (!string.IsNullOrEmpty(order.CouponCode))
