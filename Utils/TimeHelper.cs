@@ -27,6 +27,8 @@ public static class TimeHelper
 
     public static TimeZoneInfo GetStoreTimeZone()
     {
+        if (_service != null) return _service.GetTimeZone();
+        
         try { return TimeZoneInfo.FindSystemTimeZoneById("Egypt Standard Time"); }
         catch { }
         try { return TimeZoneInfo.FindSystemTimeZoneById("Africa/Cairo"); }

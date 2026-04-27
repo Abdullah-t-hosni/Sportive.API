@@ -3,6 +3,7 @@
 // ✅ جديد — سجل تدقيق لتتبع التغييرات الحساسة
 // ============================================================
 using System.ComponentModel.DataAnnotations;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Models;
 
@@ -51,5 +52,5 @@ public class AuditLog
     public string? IpAddress { get; set; }
 
     /// <summary>وقت الحدث — دائماً UTC</summary>
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = TimeHelper.GetEgyptTime();
 }

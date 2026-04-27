@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Models;
 
@@ -6,7 +7,7 @@ public class AppUser : IdentityUser
 {
     public string FullName { get; set; } = string.Empty;
     public string? ProfileImageUrl { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = TimeHelper.GetEgyptTime();
     public bool IsActive { get; set; } = true;
     public decimal FixedDiscount { get; set; } = 0;
 

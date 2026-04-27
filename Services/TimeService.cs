@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
 
 namespace Sportive.API.Services;
@@ -11,6 +12,9 @@ public interface ITimeService
 
     /// <summary>Returns today's date (no time component) in the store's timezone.</summary>
     DateTime Today { get; }
+    
+    /// <summary>Returns the current TimeZoneInfo configured for the store.</summary>
+    TimeZoneInfo GetTimeZone();
 }
 
 /// <summary>
@@ -21,12 +25,14 @@ public class TimeService : ITimeService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IMemoryCache _cache;
+    private readonly ILogger<TimeService> _logger;
     private const string CacheKey = "store_timezone";
 
-    public TimeService(IServiceScopeFactory scopeFactory, IMemoryCache cache)
+    public TimeService(IServiceScopeFactory scopeFactory, IMemoryCache cache, ILogger<TimeService> logger)
     {
         _scopeFactory = scopeFactory;
         _cache = cache;
+        _logger = logger;
     }
 
     public DateTime Now => ConvertToStoreTime(DateTime.UtcNow);
@@ -38,13 +44,14 @@ public class TimeService : ITimeService
         return TimeZoneInfo.ConvertTimeFromUtc(utc, tz);
     }
 
-    private TimeZoneInfo GetTimeZone()
+    public TimeZoneInfo GetTimeZone()
     {
         if (_cache.TryGetValue(CacheKey, out TimeZoneInfo? cached) && cached != null)
             return cached;
 
         var tz = LoadTimeZoneFromDb() ?? FallbackEgyptZone();
 
+        _logger.LogInformation("Resolved Store TimeZone: {TzId} ({Offset})", tz.Id, tz.BaseUtcOffset);
         _cache.Set(CacheKey, tz, TimeSpan.FromMinutes(10));
         return tz;
     }
