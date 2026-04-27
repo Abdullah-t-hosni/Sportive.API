@@ -11,6 +11,9 @@ public interface ITimeService
 
     /// <summary>Returns today's date (no time component) in the store's timezone.</summary>
     DateTime Today { get; }
+    
+    /// <summary>Returns the current TimeZoneInfo configured for the store.</summary>
+    TimeZoneInfo GetTimeZone();
 }
 
 /// <summary>
@@ -38,7 +41,7 @@ public class TimeService : ITimeService
         return TimeZoneInfo.ConvertTimeFromUtc(utc, tz);
     }
 
-    private TimeZoneInfo GetTimeZone()
+    public TimeZoneInfo GetTimeZone()
     {
         if (_cache.TryGetValue(CacheKey, out TimeZoneInfo? cached) && cached != null)
             return cached;

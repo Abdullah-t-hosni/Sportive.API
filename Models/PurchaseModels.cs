@@ -1,3 +1,5 @@
+using Sportive.API.Utils;
+
 namespace Sportive.API.Models;
 
 // ══════════════════════════════════════════════════════
@@ -58,7 +60,7 @@ public class PurchaseInvoice : BaseEntity
     public PaymentTerms          PaymentTerms { get; set; } = PaymentTerms.Cash;
     public PurchaseInvoiceStatus Status       { get; set; } = PurchaseInvoiceStatus.Draft;
 
-    public DateTime  InvoiceDate  { get; set; } = DateTime.UtcNow;
+    public DateTime  InvoiceDate  { get; set; } = TimeHelper.GetEgyptTime();
     public int?      PaymentTermDays { get; set; }                   // دورة الدفع بالأيام (30، 60، إلخ)
     public DateTime? DueDate      { get; set; }
 
@@ -127,7 +129,7 @@ public class SupplierPayment : BaseEntity
     public int?            PurchaseInvoiceId { get; set; }    // اختياري — مرتبط بفاتورة
     public PurchaseInvoice? Invoice          { get; set; }
 
-    public DateTime PaymentDate  { get; set; } = DateTime.UtcNow;
+    public DateTime PaymentDate  { get; set; } = TimeHelper.GetEgyptTime();
     public decimal  Amount       { get; set; } = 0;
     public PaymentMethod_Purchase PaymentMethod { get; set; } = PaymentMethod_Purchase.Cash;
     public string   AccountName  { get; set; } = string.Empty; // اسم الحساب (الخزينة / البنك)
@@ -154,7 +156,7 @@ public class PurchaseReturn : BaseEntity
     public int SupplierId { get; set; }
     public Supplier Supplier { get; set; } = null!;
 
-    public DateTime ReturnDate { get; set; } = DateTime.UtcNow;
+    public DateTime ReturnDate { get; set; } = TimeHelper.GetEgyptTime();
     public decimal SubTotal { get; set; } = 0;
     public decimal TaxAmount { get; set; } = 0;
     public decimal DiscountAmount { get; set; } = 0;
