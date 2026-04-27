@@ -157,9 +157,24 @@ public class OrderService : IOrderService
             i.HasTax, i.VatRateApplied, i.ItemVatAmount, i.ReturnedQuantity
         )).ToList();
 
-        var historyDtos = o.StatusHistory.OrderByDescending(h => h.CreatedAt).Select(h => new OrderStatusHistoryDto(
-            h.Status.ToString(), h.Note, h.CreatedAt
-        )).ToList();
+        // 💡 FETCH HISTORY WITH NAMES
+        var historyDtos = new List<OrderStatusHistoryDto>();
+        var allUsers = await _db.Users.AsNoTracking().Select(u => new { u.Id, u.FullName }).ToListAsync();
+        var allEmps = await _db.Employees.AsNoTracking().Select(e => new { e.Id, e.Name }).ToListAsync();
+
+        foreach (var h in o.StatusHistory.OrderByDescending(h => h.CreatedAt))
+        {
+            string? name = null;
+            if (!string.IsNullOrEmpty(h.ChangedByUserId))
+            {
+                name = allUsers.FirstOrDefault(u => u.Id == h.ChangedByUserId)?.FullName;
+                if (string.IsNullOrEmpty(name) && int.TryParse(h.ChangedByUserId, out var eid))
+                {
+                    name = allEmps.FirstOrDefault(e => e.Id == eid)?.Name;
+                }
+            }
+            historyDtos.Add(new OrderStatusHistoryDto(h.Status.ToString(), h.Note, h.CreatedAt, name));
+        }
 
         // ✅ Populate Payments from Order.Payments
         var payments = o.Payments.Select(p => new OrderDetailPaymentDto(

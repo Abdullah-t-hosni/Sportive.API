@@ -192,7 +192,8 @@ public record OrderItemDto(
 public record OrderStatusHistoryDto(
     string Status,
     string? Note,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    string? ChangedByName = null
 );
 
 public record UpdateOrderStatusDto(OrderStatus Status, string? Note);
