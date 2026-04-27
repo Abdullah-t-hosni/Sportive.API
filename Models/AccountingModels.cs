@@ -1,3 +1,4 @@
+using Sportive.API.Utils;
 namespace Sportive.API.Models;
 
 // ══════════════════════════════════════════════════════
