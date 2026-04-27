@@ -705,7 +705,7 @@ public class OrderService : IOrderService
                      // Stock specifically already checked for each item, but we double-check here if it was a website order with no stock
                 }
                 _db.Orders.Add(order);
-                order.StatusHistory.Add(new OrderStatusHistory { Status = order.Status, CreatedAt = TimeHelper.GetEgyptTime(), Note = "Order Created." });
+                order.StatusHistory.Add(new OrderStatusHistory { Status = order.Status, CreatedAt = TimeHelper.GetEgyptTime(), Note = "تم إنشاء الطلب" });
 
                 // ✅ UPDATE COUPON USAGE
                 if (!string.IsNullOrEmpty(order.CouponCode))
