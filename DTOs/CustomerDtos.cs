@@ -6,6 +6,35 @@ using System.Text.Json.Serialization;
 
 namespace Sportive.API.DTOs;
 
+// ========== CUSTOMER CATEGORY ==========
+public record CustomerCategoryDto(
+    int Id,
+    string NameAr,
+    string NameEn,
+    string? Description,
+    decimal DefaultDiscount,
+    decimal MinimumSpending,
+    bool IsActive,
+    int CustomerCount
+);
+
+public record CreateCustomerCategoryDto(
+    string NameAr,
+    string NameEn,
+    string? Description,
+    decimal DefaultDiscount = 0,
+    decimal MinimumSpending = 0
+);
+
+public record UpdateCustomerCategoryDto(
+    string NameAr,
+    string NameEn,
+    string? Description,
+    decimal DefaultDiscount,
+    decimal MinimumSpending,
+    bool IsActive
+);
+
 // ========== CUSTOMER ==========
 public record CustomerBasicDto(
     int Id,
@@ -27,6 +56,8 @@ public record CustomerDetailDto(
     [property: JsonPropertyName("appUserId")] string? AppUserId = null,
     [property: JsonPropertyName("balance")] decimal Balance = 0,
     [property: JsonPropertyName("mainAccountId")] int? MainAccountId = null,
+    [property: JsonPropertyName("categoryId")] int? CategoryId = null,
+    [property: JsonPropertyName("categoryName")] string? CategoryName = null,
     [property: JsonPropertyName("fixedDiscount")] decimal FixedDiscount = 0,
     [property: JsonPropertyName("tags")] List<string>? Tags = null
 );

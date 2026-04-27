@@ -712,6 +712,7 @@ public class OrderService : IOrderService
         });
 
         _ = PostSalesOrderWithRetryAsync(order!.Id, order.OrderNumber);
+        _ = _customerService.EvaluateCustomerCategoryAsync(order.CustomerId);
 
         // 5. Notifications & Email
         _ = Task.Run(async () =>
@@ -791,6 +792,9 @@ public class OrderService : IOrderService
                 order.PaymentStatus = PaymentStatus.Paid;
                 order.PaidAmount = order.TotalAmount; // ✅ تحديث المبلغ المدفوع عند التسليم الفعلي (للكاش والوسائل الأخرى)
             }
+            
+            // ✅ Evaluate customer category after delivery
+            _ = _customerService.EvaluateCustomerCategoryAsync(order.CustomerId);
 
             // Notification on Delivery
             _ = Task.Run(async () => {

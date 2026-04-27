@@ -18,6 +18,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<ProductImage> ProductImages     => Set<ProductImage>();
     public DbSet<Review> Reviews                 => Set<Review>();
     public DbSet<Customer> Customers             => Set<Customer>();
+    public DbSet<CustomerCategory> CustomerCategories => Set<CustomerCategory>();
     public DbSet<Address> Addresses              => Set<Address>();
     public DbSet<Order> Orders                   => Set<Order>();
     public DbSet<OrderItem> OrderItems           => Set<OrderItem>();
@@ -146,6 +147,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => x.Email).IsUnique();
             e.Property(x => x.TotalSales).HasPrecision(18, 2);
             e.Property(x => x.TotalPaid).HasPrecision(18, 2);
+            e.HasOne(x => x.Category).WithMany(c => c.Customers).HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<CustomerCategory>(e => {
+            e.Property(x => x.DefaultDiscount).HasPrecision(18, 2);
         });
 
         builder.Entity<Address>(e =>

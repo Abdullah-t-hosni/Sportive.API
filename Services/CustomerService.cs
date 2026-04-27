@@ -24,6 +24,7 @@ public class CustomerService : ICustomerService
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
             .Include(c => c.MainAccount)
+            .Include(c => c.Category)
             .AsQueryable();
 
         if (minSpent.HasValue) 
@@ -58,7 +59,10 @@ public class CustomerService : ICustomerService
             .Select(c => new
             {
                 c.Id, c.FullName, c.Email, c.Phone, c.AppUserId,
-                c.MainAccountId, c.FixedDiscount, c.CreatedAt, c.Tags,
+                c.MainAccountId, c.CategoryId, 
+                CategoryNameAr = c.Category != null ? c.Category.NameAr : null,
+                CategoryNameEn = c.Category != null ? c.Category.NameEn : null,
+                c.FixedDiscount, c.CreatedAt, c.Tags,
                 OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
                 OrderCount = c.Orders.Count,
                 OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
@@ -85,12 +89,21 @@ public class CustomerService : ICustomerService
 
         // 3. Map to DTOs — balance = opening + journal net
         var items = rawCustomers.Select(c => new CustomerDetailDto(
-            c.Id, c.FullName, c.Email, c.Phone,
-            c.OrderCount, c.OrderTotal, c.CreatedAt,
-            c.Addresses, c.AppUserId,
-            c.OpeningBalance + (balanceMap.TryGetValue(c.Id, out var net) ? net : 0),
-            c.MainAccountId, c.FixedDiscount,
-            string.IsNullOrEmpty(c.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(c.Tags)
+            Id: c.Id, 
+            FullName: c.FullName, 
+            Email: c.Email, 
+            Phone: c.Phone,
+            TotalOrders: c.OrderCount, 
+            TotalSpent: c.OrderTotal, 
+            CreatedAt: c.CreatedAt,
+            Addresses: c.Addresses, 
+            AppUserId: c.AppUserId,
+            Balance: c.OpeningBalance + (balanceMap.TryGetValue(c.Id, out var net) ? net : 0),
+            MainAccountId: c.MainAccountId, 
+            CategoryId: c.CategoryId, 
+            CategoryName: c.CategoryNameAr,
+            FixedDiscount: c.FixedDiscount,
+            Tags: string.IsNullOrEmpty(c.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(c.Tags)!
         )).ToList();
 
         return new PaginatedResult<CustomerDetailDto>(
@@ -118,11 +131,14 @@ public class CustomerService : ICustomerService
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
             .Include(c => c.MainAccount)
+            .Include(c => c.Category)
             .Where(c => c.Id == id)
             .Select(c => new
             {
                 c.Id, c.FullName, c.Email, c.Phone, c.AppUserId, c.CreatedAt,
-                c.MainAccountId, c.FixedDiscount, c.Tags,
+                c.MainAccountId, c.CategoryId,
+                CategoryNameAr = c.Category != null ? c.Category.NameAr : null,
+                c.FixedDiscount, c.Tags,
                 OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
                 OrderCount = c.Orders.Count,
                 OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
@@ -140,12 +156,21 @@ public class CustomerService : ICustomerService
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
         return new CustomerDetailDto(
-            rawResult.Id, rawResult.FullName, rawResult.Email, rawResult.Phone,
-            rawResult.OrderCount, rawResult.OrderTotal, rawResult.CreatedAt,
-            rawResult.Addresses, rawResult.AppUserId,
-            balance,
-            rawResult.MainAccountId, rawResult.FixedDiscount,
-            string.IsNullOrEmpty(rawResult.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(rawResult.Tags)!
+            Id: rawResult.Id, 
+            FullName: rawResult.FullName, 
+            Email: rawResult.Email, 
+            Phone: rawResult.Phone,
+            TotalOrders: rawResult.OrderCount, 
+            TotalSpent: rawResult.OrderTotal, 
+            CreatedAt: rawResult.CreatedAt,
+            Addresses: rawResult.Addresses, 
+            AppUserId: rawResult.AppUserId,
+            Balance: balance,
+            MainAccountId: rawResult.MainAccountId, 
+            CategoryId: rawResult.CategoryId, 
+            CategoryName: rawResult.CategoryNameAr,
+            FixedDiscount: rawResult.FixedDiscount,
+            Tags: string.IsNullOrEmpty(rawResult.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(rawResult.Tags)!
         );
     }
 
@@ -159,7 +184,9 @@ public class CustomerService : ICustomerService
             .Select(c => new
             {
                 c.Id, c.FullName, c.Email, c.Phone, c.AppUserId, c.CreatedAt,
-                c.MainAccountId, c.FixedDiscount, c.Tags,
+                c.MainAccountId, c.CategoryId,
+                CategoryNameAr = c.Category != null ? c.Category.NameAr : null,
+                c.FixedDiscount, c.Tags,
                 OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
                 OrderCount = c.Orders.Count,
                 OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
@@ -177,12 +204,21 @@ public class CustomerService : ICustomerService
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
         return new CustomerDetailDto(
-            rawResult.Id, rawResult.FullName, rawResult.Email, rawResult.Phone,
-            rawResult.OrderCount, rawResult.OrderTotal, rawResult.CreatedAt,
-            rawResult.Addresses, rawResult.AppUserId,
-            balance,
-            rawResult.MainAccountId, rawResult.FixedDiscount,
-            string.IsNullOrEmpty(rawResult.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(rawResult.Tags)!
+            Id: rawResult.Id, 
+            FullName: rawResult.FullName, 
+            Email: rawResult.Email, 
+            Phone: rawResult.Phone,
+            TotalOrders: rawResult.OrderCount, 
+            TotalSpent: rawResult.OrderTotal, 
+            CreatedAt: rawResult.CreatedAt,
+            Addresses: rawResult.Addresses, 
+            AppUserId: rawResult.AppUserId,
+            Balance: balance,
+            MainAccountId: rawResult.MainAccountId, 
+            CategoryId: rawResult.CategoryId, 
+            CategoryName: rawResult.CategoryNameAr,
+            FixedDiscount: rawResult.FixedDiscount,
+            Tags: string.IsNullOrEmpty(rawResult.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(rawResult.Tags)!
         );
     }
 
@@ -196,7 +232,9 @@ public class CustomerService : ICustomerService
             .Select(c => new
             {
                 c.Id, c.FullName, c.Email, c.Phone, c.AppUserId, c.CreatedAt,
-                c.MainAccountId, c.FixedDiscount, c.Tags,
+                c.MainAccountId, c.CategoryId,
+                CategoryNameAr = c.Category != null ? c.Category.NameAr : null,
+                c.FixedDiscount, c.Tags,
                 OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
                 OrderCount = c.Orders.Count,
                 OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
@@ -214,12 +252,21 @@ public class CustomerService : ICustomerService
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
         return new CustomerDetailDto(
-            rawResult.Id, rawResult.FullName, rawResult.Email, rawResult.Phone,
-            rawResult.OrderCount, rawResult.OrderTotal, rawResult.CreatedAt,
-            rawResult.Addresses, rawResult.AppUserId,
-            balance,
-            rawResult.MainAccountId, rawResult.FixedDiscount,
-            string.IsNullOrEmpty(rawResult.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(rawResult.Tags)!
+            Id: rawResult.Id, 
+            FullName: rawResult.FullName, 
+            Email: rawResult.Email, 
+            Phone: rawResult.Phone,
+            TotalOrders: rawResult.OrderCount, 
+            TotalSpent: rawResult.OrderTotal, 
+            CreatedAt: rawResult.CreatedAt,
+            Addresses: rawResult.Addresses, 
+            AppUserId: rawResult.AppUserId,
+            Balance: balance,
+            MainAccountId: rawResult.MainAccountId, 
+            CategoryId: rawResult.CategoryId, 
+            CategoryName: rawResult.CategoryNameAr,
+            FixedDiscount: rawResult.FixedDiscount,
+            Tags: string.IsNullOrEmpty(rawResult.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(rawResult.Tags)!
         );
     }
 
@@ -528,5 +575,40 @@ public class CustomerService : ICustomerService
         await _db.SaveChangesAsync();
 
         return newCustomer.Id;
+    }
+
+    public async Task EvaluateCustomerCategoryAsync(int customerId)
+    {
+        var customer = await _db.Customers
+            .Include(c => c.Orders)
+            .FirstOrDefaultAsync(c => c.Id == customerId);
+        
+        if (customer == null) return;
+
+        // 1. Calculate Total Spent (only Completed/Paid orders)
+        // Note: You might want to adjust this logic depending on if you count Cancelled/Returned orders.
+        var totalSpent = await _db.Orders
+            .Where(o => o.CustomerId == customerId && o.Status != OrderStatus.Cancelled)
+            .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
+
+        // 2. Find the qualifying category with the highest threshold
+        var bestCategory = await _db.CustomerCategories
+            .Where(cat => cat.IsActive && cat.MinimumSpending <= totalSpent)
+            .OrderByDescending(cat => cat.MinimumSpending)
+            .FirstOrDefaultAsync();
+
+        if (bestCategory != null && customer.CategoryId != bestCategory.Id)
+        {
+            customer.CategoryId = bestCategory.Id;
+            customer.FixedDiscount = bestCategory.DefaultDiscount;
+            await _db.SaveChangesAsync();
+        }
+        else if (bestCategory == null && customer.CategoryId != null)
+        {
+            // If they no longer qualify for any category (rare, but possible if thresholds change)
+            customer.CategoryId = null;
+            customer.FixedDiscount = 0;
+            await _db.SaveChangesAsync();
+        }
     }
 }

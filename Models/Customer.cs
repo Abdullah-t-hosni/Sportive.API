@@ -30,6 +30,9 @@ public class Customer : BaseEntity
     public int? MainAccountId { get; set; }
     public Account? MainAccount { get; set; }
 
+    public int? CategoryId { get; set; }
+    public CustomerCategory? Category { get; set; }
+
     // Financial Tracking
     public decimal TotalSales { get; set; } = 0;
     public decimal TotalPaid  { get; set; } = 0;
