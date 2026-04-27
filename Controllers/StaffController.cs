@@ -93,19 +93,19 @@ public class StaffController : ControllerBase
         dto = dto with { Role = validRole };
 
         // تحقق من التكرار
-        if (await _users.FindByEmailAsync(dto.Email) != null)
-            return BadRequest(new { message = "الإيميل مستخدم بالفعل" });
+        if (await _users.Users.AnyAsync(u => u.Email == dto.Email && u.UserName!.StartsWith("staff_")))
+            return BadRequest(new { message = "الإيميل مستخدم بالفعل لموظف آخر" });
 
-        var phoneExists = await _users.Users.AnyAsync(u => u.PhoneNumber == dto.Phone);
+        var phoneExists = await _users.Users.AnyAsync(u => u.PhoneNumber == dto.Phone && u.UserName!.StartsWith("staff_"));
         if (phoneExists)
-            return BadRequest(new { message = "رقم التليفون مستخدم بالفعل" });
+            return BadRequest(new { message = "رقم التليفون مستخدم بالفعل لموظف آخر" });
 
         // إنشاء الأدوار لو مش موجودة
         await EnsureRolesAsync();
 
         var user = new AppUser
         {
-            UserName    = dto.Email,
+            UserName    = "staff_" + (!string.IsNullOrEmpty(dto.Phone) ? dto.Phone : dto.Email),
             Email       = dto.Email,
             FullName    = dto.FullName,
             PhoneNumber = dto.Phone,

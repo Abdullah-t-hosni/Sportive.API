@@ -12,7 +12,7 @@ public record RegisterDto(
     string? Phone
 );
 
-public record LoginDto(string Identifier, string Password);
+public record LoginDto(string Identifier, string Password, bool IsStaff = false);
 
 public record AuthResponseDto(
     string UserId,

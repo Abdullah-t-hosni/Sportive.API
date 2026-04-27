@@ -234,20 +234,10 @@ public class CustomerService : ICustomerService
         if (existing != null)
             throw new InvalidOperationException("هذا العميل (أو الهاتف) مسجل بالفعل في ملفات العملاء.");
 
-        // 3. Check for conflict in Identity Users (Even if not a customer)
+        // 3. (REMOVED) Identity Users Conflict Check (Staff and Customers are now separated)
         var generatedEmail = dto.Email;
         if (string.IsNullOrWhiteSpace(generatedEmail) && !string.IsNullOrWhiteSpace(dto.Phone))
             generatedEmail = $"{dto.Phone}@sportive.com";
-
-        if (!string.IsNullOrEmpty(generatedEmail))
-        {
-            var userConflict = await _db.Users.FirstOrDefaultAsync(u => 
-                (u.Email != null && !string.IsNullOrEmpty(generatedEmail) && u.Email.ToLower() == generatedEmail.ToLower()) || 
-                (u.PhoneNumber != null && u.PhoneNumber == dto.Phone));
-            
-            if (userConflict != null)
-                throw new InvalidOperationException($"عذراً، هذا الهاتف ({dto.Phone ?? "غير محدد"}) مرتبط بحساب مستخدم آخر في النظام (Staff). يرجى التغيير.");
-        }
 
         // 4. Create New
         var customer = new Customer

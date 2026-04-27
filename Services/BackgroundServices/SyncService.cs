@@ -53,7 +53,7 @@ public class StartupSyncService : BackgroundService
             {
                 admin = new Sportive.API.Models.AppUser
                 {
-                    UserName = adminEmail, Email = adminEmail,
+                    UserName = "staff_" + adminEmail, Email = adminEmail,
                     PhoneNumber = "01111111111", FullName = "Sport Zone", IsActive = true
                 };
                 await userManager.CreateAsync(admin, adminPassword);
