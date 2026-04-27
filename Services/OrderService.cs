@@ -173,7 +173,7 @@ public class OrderService : IOrderService
                     name = allEmps.FirstOrDefault(e => e.Id == eid)?.Name;
                 }
             }
-            if (string.IsNullOrEmpty(name) && (h.Note == "تم إنشاء الطلب" || h.Note == "Order Created"))
+            if (string.IsNullOrEmpty(name) && h.Note != null && (h.Note.Contains("تم إنشاء الطلب") || h.Note.Contains("Order Created")))
             {
                 name = salesPersonName;
             }
