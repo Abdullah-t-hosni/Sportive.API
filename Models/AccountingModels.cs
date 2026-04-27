@@ -72,7 +72,7 @@ public enum JournalEntryStatus
 public class JournalEntry : BaseEntity
 {
     public string             EntryNumber { get; set; } = string.Empty;  // رقم القيد
-    public DateTime           EntryDate   { get; set; } = DateTime.UtcNow;
+    public DateTime           EntryDate   { get; set; } = TimeHelper.GetEgyptTime();
     public JournalEntryType   Type        { get; set; } = JournalEntryType.Manual;
     public JournalEntryStatus Status      { get; set; } = JournalEntryStatus.Draft;
     public string?            Reference   { get; set; }  // مرجع (رقم فاتورة، سند، ...)
@@ -135,7 +135,7 @@ public enum VoucherPaymentMethod
 public class ReceiptVoucher : BaseEntity
 {
     public string   VoucherNumber   { get; set; } = string.Empty;
-    public DateTime VoucherDate     { get; set; } = DateTime.UtcNow;
+    public DateTime VoucherDate     { get; set; } = TimeHelper.GetEgyptTime();
     public decimal  Amount          { get; set; }
     public int      CashAccountId   { get; set; }   // حساب النقدية (مدين)
     public Account  CashAccount     { get; set; } = null!;
@@ -165,7 +165,7 @@ public class ReceiptVoucher : BaseEntity
 public class PaymentVoucher : BaseEntity
 {
     public string   VoucherNumber   { get; set; } = string.Empty;
-    public DateTime VoucherDate     { get; set; } = DateTime.UtcNow;
+    public DateTime VoucherDate     { get; set; } = TimeHelper.GetEgyptTime();
     public decimal  Amount          { get; set; }
     public int      CashAccountId   { get; set; }   // حساب النقدية (دائن)
     public Account  CashAccount     { get; set; } = null!;
