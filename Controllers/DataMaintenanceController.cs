@@ -404,4 +404,57 @@ public class DataMaintenanceController : ControllerBase
             return BadRequest(new { success = false, message = ex.Message });
         }
     }
+
+    [HttpPost("fix-utc-times")]
+    public async Task<IActionResult> FixUtcTimes()
+    {
+        try {
+            // 1. تصحيح سندات القبض
+            var rvs = await _db.ReceiptVouchers
+                .Where(v => v.VoucherDate.Date == v.CreatedAt.Date) 
+                .ToListAsync();
+                
+            int affectedRvs = 0;
+            foreach(var v in rvs) {
+                // إذا كان الفرق بين وقت الإنشاء (المحلي) ووقت السند (الذي كان UTC) يقترب من 3 ساعات
+                if (Math.Abs((v.CreatedAt - v.VoucherDate).TotalHours - 3) < 0.2) {
+                    v.VoucherDate = v.VoucherDate.AddHours(3);
+                    affectedRvs++;
+                }
+            }
+
+            // 2. تصحيح سندات الصرف
+            var pvs = await _db.PaymentVouchers
+                .Where(v => v.VoucherDate.Date == v.CreatedAt.Date)
+                .ToListAsync();
+                
+            int affectedPvs = 0;
+            foreach(var v in pvs) {
+                if (Math.Abs((v.CreatedAt - v.VoucherDate).TotalHours - 3) < 0.2) {
+                    v.VoucherDate = v.VoucherDate.AddHours(3);
+                    affectedPvs++;
+                }
+            }
+
+            // 3. تصحيح القيود المحاسبية
+            var jes = await _db.JournalEntries
+                .Where(e => e.EntryDate.Date == e.CreatedAt.Date)
+                .ToListAsync();
+                
+            int affectedJes = 0;
+            foreach(var e in jes) {
+                if (Math.Abs((e.CreatedAt - e.EntryDate).TotalHours - 3) < 0.2) {
+                    e.EntryDate = e.EntryDate.AddHours(3);
+                    affectedJes++;
+                }
+            }
+
+            await _db.SaveChangesAsync();
+            return Ok(new { success = true, message = $"تم تصحيح {affectedRvs} سند قبض، {affectedPvs} سند صرف، و {affectedJes} قيد محاسبي." });
+        } 
+        catch (Exception ex) { 
+            _logger.LogError(ex, "FixUtcTimes failed");
+            return BadRequest(new { success = false, message = ex.Message }); 
+        }
+    }
 }
