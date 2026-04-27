@@ -741,7 +741,7 @@ public class ReceiptVouchersController : ControllerBase
             return BadRequest($"الحساب '{cashAccount.NameAr}' لا يقبل عمليات التحصيل/الدفع.");
 
         var voucher = new ReceiptVoucher {
-            VoucherNumber = vNo, VoucherDate = dto.VoucherDate, Amount = dto.Amount, CashAccountId = dto.CashAccountId,
+            VoucherNumber = vNo, VoucherDate = dto.VoucherDate.ToStoreTime(), Amount = dto.Amount, CashAccountId = dto.CashAccountId,
             FromAccountId = dto.FromAccountId, CustomerId = dto.CustomerId, PaymentMethod = dto.PaymentMethod,
             Reference = dto.Reference, Description = dto.Description, AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
@@ -825,7 +825,7 @@ public class ReceiptVouchersController : ControllerBase
         if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
             return BadRequest("لا يمكن تعديل سند مرحّل إلا من خلال الإدارة.");
 
-        voucher.VoucherDate = dto.VoucherDate;
+        voucher.VoucherDate = dto.VoucherDate.ToStoreTime();
         voucher.Amount = dto.Amount;
         voucher.CashAccountId = dto.CashAccountId;
         voucher.FromAccountId = dto.FromAccountId;
@@ -961,7 +961,7 @@ public class PaymentVouchersController : ControllerBase
             return BadRequest($"الحساب '{cashAccount.NameAr}' لا يقبل عمليات التحصيل/الدفع.");
 
         var voucher = new PaymentVoucher {
-            VoucherNumber = vNo, VoucherDate = dto.VoucherDate, Amount = dto.Amount, CashAccountId = dto.CashAccountId,
+            VoucherNumber = vNo, VoucherDate = dto.VoucherDate.ToStoreTime(), Amount = dto.Amount, CashAccountId = dto.CashAccountId,
             ToAccountId = dto.ToAccountId, SupplierId = dto.SupplierId, PaymentMethod = dto.PaymentMethod,
             Reference = dto.Reference, Description = dto.Description, AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
@@ -1000,7 +1000,7 @@ public class PaymentVouchersController : ControllerBase
         if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
             return BadRequest("لا يمكن تعديل سند مرحّل.");
 
-        voucher.VoucherDate = dto.VoucherDate; voucher.Amount = dto.Amount; voucher.CashAccountId = dto.CashAccountId;
+        voucher.VoucherDate = dto.VoucherDate.ToStoreTime(); voucher.Amount = dto.Amount; voucher.CashAccountId = dto.CashAccountId;
         voucher.ToAccountId = dto.ToAccountId; voucher.SupplierId = dto.SupplierId; voucher.EmployeeId = dto.EmployeeId; voucher.Description = dto.Description;
         voucher.PurchaseInvoiceId = dto.PurchaseInvoiceId; voucher.UpdatedAt = TimeHelper.GetEgyptTime();
 

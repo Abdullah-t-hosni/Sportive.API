@@ -57,7 +57,7 @@ public class JournalAccountingService
             return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0).DefaultIfEmpty(0).Max();
         });
 
-        var entry = new JournalEntry { EntryNumber = entryNumber, EntryDate = dto.EntryDate, Description = dto.Description, Reference = dto.Reference, Type = type, Status = JournalEntryStatus.Posted, CreatedByUserId = userId, CostCenter = dto.CostCenter };
+        var entry = new JournalEntry { EntryNumber = entryNumber, EntryDate = dto.EntryDate.ToStoreTime(), Description = dto.Description, Reference = dto.Reference, Type = type, Status = JournalEntryStatus.Posted, CreatedByUserId = userId, CostCenter = dto.CostCenter };
         
         // 🎯 AUTO-RESOLVE COST CENTER: If not provided, try to infer from the first line that has an OrderId
         if (entry.CostCenter == null)
@@ -114,7 +114,7 @@ public class JournalAccountingService
             throw new InvalidOperationException($"القيد غير متوازن: مجموع المدين ({totalDr}) لا يساوي مجموع الدائن ({totalCr})");
 
         // تحديث البيانات الأساسية
-        entry.EntryDate = dto.EntryDate;
+        entry.EntryDate = dto.EntryDate.ToStoreTime();
         entry.Description = dto.Description;
         entry.Reference = dto.Reference;
         entry.CostCenter = dto.CostCenter;

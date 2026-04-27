@@ -14,16 +14,29 @@ public static class TimeHelper
     /// <summary>Called once at startup by Program.cs after building the service provider.</summary>
     public static void Initialize(ITimeService service) => _service = service;
 
-    /// <summary>Returns the current time in the store's configured timezone.</summary>
     public static DateTime GetEgyptTime() => _service?.Now ?? FallbackEgyptTime();
+
+    public static DateTime ToStoreTime(this DateTime dt)
+    {
+        if (dt.Kind == DateTimeKind.Utc)
+        {
+            return TimeZoneInfo.ConvertTimeFromUtc(dt, GetStoreTimeZone());
+        }
+        return dt;
+    }
+
+    public static TimeZoneInfo GetStoreTimeZone()
+    {
+        try { return TimeZoneInfo.FindSystemTimeZoneById("Egypt Standard Time"); }
+        catch { }
+        try { return TimeZoneInfo.FindSystemTimeZoneById("Africa/Cairo"); }
+        catch { }
+        return TimeZoneInfo.CreateCustomTimeZone("Egypt+3", TimeSpan.FromHours(3), "Egypt", "Egypt");
+    }
 
     private static DateTime FallbackEgyptTime()
     {
         var utc = DateTime.UtcNow;
-        try { return TimeZoneInfo.ConvertTimeFromUtc(utc, TimeZoneInfo.FindSystemTimeZoneById("Egypt Standard Time")); }
-        catch { }
-        try { return TimeZoneInfo.ConvertTimeFromUtc(utc, TimeZoneInfo.FindSystemTimeZoneById("Africa/Cairo")); }
-        catch { }
-        return utc.AddHours(2);
+        return TimeZoneInfo.ConvertTimeFromUtc(utc, GetStoreTimeZone());
     }
 }

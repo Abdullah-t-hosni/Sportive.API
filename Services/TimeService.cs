@@ -77,7 +77,7 @@ public class TimeService : ITimeService
         catch { }
         try { return TimeZoneInfo.FindSystemTimeZoneById("Africa/Cairo"); }
         catch { }
-        return TimeZoneInfo.CreateCustomTimeZone("Egypt+2", TimeSpan.FromHours(2), "Egypt", "Egypt");
+        return TimeZoneInfo.CreateCustomTimeZone("Egypt+3", TimeSpan.FromHours(3), "Egypt", "Egypt");
     }
 
     /// <summary>
