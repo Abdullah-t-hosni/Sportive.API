@@ -549,7 +549,7 @@ public class JournalEntriesController : ControllerBase
         if (source.HasValue) q = q.Where(e => e.CostCenter == source.Value);
 
         var total = await q.CountAsync();
-        var entries = await q.OrderByDescending(e => e.EntryDate).ThenByDescending(e => e.Id)
+        var entries = await q.OrderByDescending(e => e.EntryDate.Date).ThenByDescending(e => e.CreatedAt).ThenByDescending(e => e.Id)
             .Skip((page-1)*pageSize).Take(pageSize)
             .Select(e => new {
                 e.Id, e.EntryNumber, e.EntryDate, e.Description, e.Reference, e.CreatedAt,
