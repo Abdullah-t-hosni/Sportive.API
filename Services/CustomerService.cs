@@ -64,9 +64,9 @@ public class CustomerService : ICustomerService
             OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
             OrderCount = c.Orders.Count,
             OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
-            // Calculate Net Balance in SQL
+            // Calculate Net Balance in SQL - ONLY for this Customer ID
             JournalNet = _db.JournalLines
-                .Where(l => (l.CustomerId == c.Id || (c.MainAccountId != null && l.AccountId == c.MainAccountId)) && l.JournalEntry.Status == JournalEntryStatus.Posted)
+                .Where(l => l.CustomerId == c.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
                 .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
         }).Select(x => new {
             x.Id, x.FullName, x.Email, x.Phone, x.AppUserId,
@@ -170,7 +170,7 @@ public class CustomerService : ICustomerService
         if (rawResult == null) return null;
 
         var balance = rawResult.OpeningBalance + await _db.JournalLines
-            .Where(l => (l.CustomerId == rawResult.Id || (rawResult.MainAccountId != null && l.AccountId == rawResult.MainAccountId)) && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.CustomerId == rawResult.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
         return new CustomerDetailDto(
@@ -218,7 +218,7 @@ public class CustomerService : ICustomerService
         if (rawResult == null) return null;
 
         var balance = rawResult.OpeningBalance + await _db.JournalLines
-            .Where(l => (l.CustomerId == rawResult.Id || (rawResult.MainAccountId != null && l.AccountId == rawResult.MainAccountId)) && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.CustomerId == rawResult.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
         return new CustomerDetailDto(
@@ -266,7 +266,7 @@ public class CustomerService : ICustomerService
         if (rawResult == null) return null;
 
         var balance = rawResult.OpeningBalance + await _db.JournalLines
-            .Where(l => (l.CustomerId == rawResult.Id || (rawResult.MainAccountId != null && l.AccountId == rawResult.MainAccountId)) && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.CustomerId == rawResult.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
         return new CustomerDetailDto(
