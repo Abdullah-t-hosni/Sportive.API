@@ -823,26 +823,33 @@ public class DashboardService : IDashboardService
 
     public async Task<List<OrderSummaryDto>> GetRecentOrdersAsync(int count = 10)
     {
-        return await _db.Orders.Include(o => o.Customer).Include(o => o.Items).OrderByDescending(o => o.CreatedAt).Take(count)
-            .Select(o => new OrderSummaryDto(
-                o.Id, 
-                o.OrderNumber, 
-                o.Customer.FullName, 
-                o.Customer.Phone ?? "", 
-                o.Status.ToString(), 
-                o.FulfillmentType.ToString(), 
-                o.TotalAmount, 
-                o.CreatedAt, 
-                o.Items.Sum(i => i.Quantity), 
-                o.Source.ToString(), 
-                o.PaymentMethod.ToString(), 
-                o.PaymentStatus.ToString(), 
-                o.CustomerId, 
-                o.AdminNotes, 
-                o.CouponCode,
-                null,
-                0,
-                o.SalesPersonId))
+        var orders = await _db.Orders
+            .Include(o => o.Customer)
+            .Include(o => o.Items)
+            .Include(o => o.Payments)
+            .OrderByDescending(o => o.CreatedAt)
+            .Take(count)
             .ToListAsync();
+
+        return orders.Select(o => new OrderSummaryDto(
+            o.Id,
+            o.OrderNumber,
+            o.Customer?.FullName ?? "عميل كاشير",
+            o.Customer?.Phone ?? "",
+            o.Status.ToString(),
+            o.FulfillmentType.ToString(),
+            o.TotalAmount,
+            o.CreatedAt,
+            o.Items.Sum(i => i.Quantity),
+            o.Source.ToString(),
+            o.PaymentMethod.ToString(),
+            o.PaymentStatus.ToString(),
+            o.CustomerId,
+            o.AdminNotes,
+            o.CouponCode,
+            o.Payments?.Select(p => new OrderDetailPaymentDto(p.Method.ToString(), p.Amount, p.Reference, p.Notes, p.CreatedAt)).ToList(),
+            o.Items.Where(i => i.ReturnedQuantity > 0).Sum(i => i.ReturnedQuantity * i.UnitPrice),
+            o.SalesPersonId))
+            .ToList();
     }
 }
