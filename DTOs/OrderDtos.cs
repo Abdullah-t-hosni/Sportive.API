@@ -196,8 +196,8 @@ public record OrderStatusHistoryDto(
     string? ChangedByName = null
 );
 
-public record UpdateOrderStatusDto(OrderStatus Status, string? Note);
-public record UpdatePaymentStatusDto(PaymentStatus PaymentStatus, string? Note);
+public record UpdateOrderStatusDto(OrderStatus Status, string? Note, int? PerformedByEmployeeId = null);
+public record UpdatePaymentStatusDto(PaymentStatus PaymentStatus, string? Note, int? PerformedByEmployeeId = null);
 public record UpdateOrderAdminNoteDto(string Note);
 
 
@@ -205,7 +205,8 @@ public record PartialReturnDto(
     List<ReturnItemRequest> Items,
     string? Reason,
     string? Note,
-    int? RefundAccountId = null
+    int? RefundAccountId = null,
+    int? PerformedByEmployeeId = null
 );
 
 public record ReturnItemRequest(

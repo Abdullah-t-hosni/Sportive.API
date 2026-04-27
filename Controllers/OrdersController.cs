@@ -240,7 +240,7 @@ public class OrdersController : ControllerBase
                 OrderId          = id,
                 Status           = order.Status,
                 Note             = $"[حالة الدفع → {dto.PaymentStatus}] {dto.Note}",
-                ChangedByUserId  = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                ChangedByUserId  = dto.PerformedByEmployeeId?.ToString() ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                 CreatedAt        = TimeHelper.GetEgyptTime()
             });
         }

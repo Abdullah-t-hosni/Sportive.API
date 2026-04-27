@@ -763,9 +763,21 @@ public class ReceiptVouchersController : ControllerBase
             if (order != null) {
                 var remaining = order.TotalAmount - order.PaidAmount;
                 if (dto.Amount > remaining + 0.01m) return BadRequest($"عفواً، المبلغ ({dto.Amount}) أكبر من المديونية المتبقية على الفاتورة ({remaining})");
+                
+                var oldPaid = order.PaidAmount;
                 order.PaidAmount += dto.Amount;
                 order.PaymentStatus = order.PaidAmount >= order.TotalAmount - 0.01m ? PaymentStatus.Paid : PaymentStatus.Pending;
                 order.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                // 📝 LOG TO ORDER HISTORY: Who collected the debt?
+                _db.OrderStatusHistories.Add(new OrderStatusHistory
+                {
+                    OrderId = order.Id,
+                    Status = order.Status, // Keep same status
+                    Note = $"[تحصيل مديونية] تم تحصيل مبلغ {dto.Amount:N2} ج.م ({dto.PaymentMethod})",
+                    ChangedByUserId = dto.EmployeeId?.ToString() ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                    CreatedAt = TimeHelper.GetEgyptTime()
+                });
             }
         }
         else if (dto.CustomerId.HasValue)

@@ -785,7 +785,10 @@ public class OrderService : IOrderService
         order.Status = dto.Status;
         order.UpdatedAt = TimeHelper.GetEgyptTime();
         order.StatusHistory.Add(new OrderStatusHistory {
-            Status = dto.Status, Note = dto.Note, ChangedByUserId = updatedByUserId, CreatedAt = TimeHelper.GetEgyptTime()
+            Status = dto.Status, 
+            Note = dto.Note, 
+            ChangedByUserId = dto.PerformedByEmployeeId?.ToString() ?? updatedByUserId, 
+            CreatedAt = TimeHelper.GetEgyptTime()
         });
 
         // 💡 AUTO-FLOW: For Website orders, Digital Payments (Vodafone, InstaPay, Visa) are paid upon Confirmation. Cash is paid ONLY upon Delivery.
@@ -1015,7 +1018,7 @@ public class OrderService : IOrderService
                 order.StatusHistory.Add(new OrderStatusHistory {
                     Status = order.Status,
                     Note = $"[مرتجع جزئي] {dto.Reason}: {dto.Note}",
-                    ChangedByUserId = updatedByUserId,
+                    ChangedByUserId = dto.PerformedByEmployeeId?.ToString() ?? updatedByUserId,
                     CreatedAt = TimeHelper.GetEgyptTime()
                 });
 
