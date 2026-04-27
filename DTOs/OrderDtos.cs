@@ -116,6 +116,7 @@ public record OrderSummaryDto(
     string Status,
     string FulfillmentType,
     decimal TotalAmount,
+    decimal PaidAmount,
     DateTime CreatedAt,
     int ItemCount,
     string Source,

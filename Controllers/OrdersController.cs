@@ -390,7 +390,7 @@ public class OrdersController : ControllerBase
             .Select(o => new {
                 o.Id, o.OrderNumber,
                 Status = o.Status.ToString(),
-                o.TotalAmount, o.CreatedAt, o.ArchivedAt,
+                o.TotalAmount, o.PaidAmount, o.CreatedAt, o.ArchivedAt,
                 CustomerId = o.CustomerId,
                 CustomerName  = o.Customer != null ? o.Customer.FullName : null,
                 CustomerPhone = o.Customer != null ? o.Customer.Phone    : null,
