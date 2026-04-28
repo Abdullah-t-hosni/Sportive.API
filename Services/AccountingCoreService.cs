@@ -96,12 +96,13 @@ public class AccountingCoreService
         OrderSource? source = null,
         int? employeeId = null)
     {
-        // 🛡️ IDEMPOTENCY GUARD: Prevent double posting
+        // 🛡️ SMART SYNC: If entry exists, update it instead of returning early
+        JournalEntry? existing = null;
         if (!string.IsNullOrEmpty(reference))
         {
-            var existing = await _db.JournalEntries
+            existing = await _db.JournalEntries
+                .Include(e => e.Lines)
                 .FirstOrDefaultAsync(e => e.Type == type && e.Reference == reference);
-            if (existing != null) return existing;
         }
 
         var totalDr = lines.Sum(l => l.debit);
@@ -109,43 +110,59 @@ public class AccountingCoreService
         if (Math.Round(totalDr, 2) != Math.Round(totalCr, 2))
             throw new InvalidOperationException($"القيد غير متوازن: مدين={totalDr}, دائن={totalCr} | {reference}");
 
-        // 🎯 AUTO-RESOLVE COST CENTER: If not provided, try to infer from the order
-        if (source == null && orderId.HasValue)
+        JournalEntry entry;
+        if (existing != null)
         {
-            source = await _db.Orders.Where(o => o.Id == orderId.Value).Select(o => (OrderSource?)o.Source).FirstOrDefaultAsync();
+            entry = existing;
+            entry.Description = description;
+            entry.EntryDate = date;
+            entry.UpdatedAt = TimeHelper.GetEgyptTime();
+            entry.OrderId = orderId;
+            entry.PurchaseInvoiceId = purchaseInvoiceId;
+            entry.CostCenter = source;
+
+            // Clear old lines
+            _db.JournalLines.RemoveRange(entry.Lines);
+            entry.Lines.Clear();
         }
-
-        // If still null, it remains null (General / Administration)
-        // We removed the default to Website (0) to prevent mislabeling General/Admin entries.
-
-        // 📝 Journal Numbering (JE-POS-xxxx, JE-WEB-xxxx, JE-GEN-xxxx)
-        var jePrefix = source switch {
-            OrderSource.POS     => "JE-POS",
-            OrderSource.Website => "JE-WEB",
-            _                   => "JE-GEN"
-        };
-        var entryNo = await _seq.NextAsync(jePrefix, async (db, pattern) =>
+        else
         {
-            var max = await db.JournalEntries
-                .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
-                .Select(e => e.EntryNumber)
-                .ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0).DefaultIfEmpty(0).Max();
-        });
+            // 🎯 AUTO-RESOLVE COST CENTER: If not provided, try to infer from the order
+            if (source == null && orderId.HasValue)
+            {
+                source = await _db.Orders.Where(o => o.Id == orderId.Value).Select(o => (OrderSource?)o.Source).FirstOrDefaultAsync();
+            }
 
-        var entry = new JournalEntry
-        {
-            EntryNumber = entryNo,
-            EntryDate   = date,
-            Type        = type,
-            Status      = JournalEntryStatus.Posted,
-            Reference   = reference,
-            Description = description,
-            OrderId     = orderId,
-            PurchaseInvoiceId = purchaseInvoiceId,
-            CostCenter  = source, // 🎯 حفظ مركز التكلفة على رأس القيد
-            CreatedAt   = TimeHelper.GetEgyptTime(),
-        };
+            // 📝 Journal Numbering (JE-POS-xxxx, JE-WEB-xxxx, JE-GEN-xxxx)
+            var jePrefix = source switch {
+                OrderSource.POS     => "JE-POS",
+                OrderSource.Website => "JE-WEB",
+                _                   => "JE-GEN"
+            };
+            var entryNo = await _seq.NextAsync(jePrefix, async (db, pattern) =>
+            {
+                var max = await db.JournalEntries
+                    .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
+                    .Select(e => e.EntryNumber)
+                    .ToListAsync();
+                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0).DefaultIfEmpty(0).Max();
+            });
+
+            entry = new JournalEntry
+            {
+                EntryNumber = entryNo,
+                EntryDate   = date,
+                Type        = type,
+                Status      = JournalEntryStatus.Posted,
+                Reference   = reference,
+                Description = description,
+                OrderId     = orderId,
+                PurchaseInvoiceId = purchaseInvoiceId,
+                CostCenter  = source,
+                CreatedAt   = TimeHelper.GetEgyptTime(),
+            };
+            _db.JournalEntries.Add(entry);
+        }
 
         var resolvedAccounts = new Dictionary<string, (int Id, bool ExactMatch, string? ErrorNote)>();
         var accountIdCache   = new Dictionary<int, Account>();

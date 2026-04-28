@@ -27,16 +27,6 @@ public class PaymentAccountingService
     {
         var reference = order.OrderNumber + "-PMT";
         
-        // 🚨 AUTO-UPDATE: حذف القيد القديم إن وجد للسماح بالتعديل
-        var existing = await _db.JournalEntries
-            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == reference);
-        
-        if (existing != null)
-        {
-            _db.JournalEntries.Remove(existing);
-            await _db.SaveChangesAsync();
-        }
-
         // ✅ NEW: Prevent double-accounting for POS orders where payments are already merged into the SalesInvoice
         var invoiceEntry = await _db.JournalEntries
             .Include(e => e.Lines)
@@ -106,7 +96,6 @@ public class PaymentAccountingService
     public async Task PostOrderRefundAsync(Order order)
     {
         var reference = order.OrderNumber + "-RFD";
-        if (await _core.EntryExistsAsync(JournalEntryType.PaymentVoucher, reference)) return;
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         string receivablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
@@ -146,15 +135,6 @@ public class PaymentAccountingService
 
     public async Task PostSupplierPaymentAsync(SupplierPayment payment)
     {
-        // 🚨 AUTO-UPDATE: حذف القيد القديم إن وجد للسماح بالتعديل
-        var existing = await _db.JournalEntries
-            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == payment.PaymentNumber);
-        if (existing != null)
-        {
-            _db.JournalEntries.Remove(existing);
-            await _db.SaveChangesAsync();
-        }
-
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         string payablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Supplier, mapDict)}";
         

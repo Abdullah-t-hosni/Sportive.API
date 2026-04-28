@@ -32,9 +32,6 @@ public class SalesAccountingService
     // ══════════════════════════════════════════════════════
     public async Task PostSalesOrderAsync(Order order)
     {
-        if (await _db.JournalEntries.AnyAsync(e => e.OrderId == order.Id))
-            return;
-
         var store  = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         var vatRate = (store?.VatRatePercent ?? 14) / 100m;
 
