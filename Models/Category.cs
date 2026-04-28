@@ -1,6 +1,6 @@
 namespace Sportive.API.Models;
 
-public enum CategoryType { Men = 1, Women = 2, Kids = 3, Equipment = 4 }
+public enum CategoryType { Men = 1, Women = 2, Kids = 3, Equipment = 4, Shoes = 5 }
 
 public class Category : BaseEntity
 {

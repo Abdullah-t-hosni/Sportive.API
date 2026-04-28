@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
+using Sportive.API.Models;
 
 namespace Sportive.API.Controllers;
 
@@ -237,23 +238,27 @@ public class SchemaFixController : ControllerBase
             var allCats = await _db.Categories.ToListAsync();
             int fixedCount = 0;
 
-            // 1. Identify roots
-            var roots = allCats.Where(c => c.ParentId == null).ToList();
-            
-            // Ensure system roots (1-4) have correct types
-            var root1 = roots.FirstOrDefault(r => r.Id == 1);
-            if (root1 != null && root1.Type != CategoryType.Men) { root1.Type = CategoryType.Men; fixedCount++; }
-            
-            var root2 = roots.FirstOrDefault(r => r.Id == 2);
-            if (root2 != null && root2.Type != CategoryType.Women) { root2.Type = CategoryType.Women; fixedCount++; }
-            
-            var root3 = roots.FirstOrDefault(r => r.Id == 3);
-            if (root3 != null && root3.Type != CategoryType.Kids) { root3.Type = CategoryType.Kids; fixedCount++; }
-            
-            var root4 = roots.FirstOrDefault(r => r.Id == 4);
-            if (root4 != null && root4.Type != CategoryType.Equipment) { root4.Type = CategoryType.Equipment; fixedCount++; }
+            // 1. Identify and Fix Roots by name or ID
+            foreach (var cat in allCats)
+            {
+                CategoryType? targetType = null;
+                bool shouldBeRoot = false;
 
-            // 2. Recursively update all descendants to match their root's type
+                if (cat.Id == 1 || cat.NameAr == "رجالي" || cat.NameEn == "Men") { targetType = CategoryType.Men; shouldBeRoot = true; }
+                else if (cat.Id == 2 || cat.NameAr == "حريمي" || cat.NameEn == "Women") { targetType = CategoryType.Women; shouldBeRoot = true; }
+                else if (cat.Id == 3 || cat.NameAr == "أطفال" || cat.NameEn == "Kids") { targetType = CategoryType.Kids; shouldBeRoot = true; }
+                else if (cat.Id == 4 || cat.NameAr == "أدوات ومعدات" || cat.NameEn == "Equipment") { targetType = CategoryType.Equipment; shouldBeRoot = true; }
+                else if (cat.Id == 5 || cat.NameAr == "أحذية" || cat.NameEn == "Shoes") { targetType = CategoryType.Shoes; shouldBeRoot = true; }
+
+                if (shouldBeRoot)
+                {
+                    if (cat.ParentId != null) { cat.ParentId = null; fixedCount++; }
+                    if (targetType.HasValue && cat.Type != targetType.Value) { cat.Type = targetType.Value; fixedCount++; }
+                }
+            }
+
+            // 2. Synchronize descendants with their roots
+            var roots = allCats.Where(c => c.ParentId == null).ToList();
             foreach (var root in roots)
             {
                 fixedCount += FixDescendantsInternal(root.Id, root.Type, allCats);
