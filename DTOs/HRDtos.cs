@@ -261,7 +261,11 @@ public record EmployeeStatementRowDto(
     string   Description,
     decimal  Debit,    // مبالغ على الموظف (سلف مستحقة)
     decimal  Credit,   // مبالغ للموظف (رواتب)
-    decimal  Balance
+    decimal  Balance,
+    int?     PeriodYear    = null,
+    int?     PeriodMonth   = null,
+    string?  PayrollNumber = null,
+    decimal? NetPayable    = null
 );
 
 public record EmployeeStatementDto(

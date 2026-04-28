@@ -8,6 +8,8 @@ using Sportive.API.DTOs;
 using Sportive.API.Utils;
 using Sportive.API.Services;
 
+using Microsoft.Extensions.DependencyInjection;
+
 namespace Sportive.API.Controllers;
 
 [ApiController]
@@ -16,7 +18,13 @@ namespace Sportive.API.Controllers;
 public class FinancialReportsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public FinancialReportsController(AppDbContext db) => _db = db;
+    private readonly IServiceScopeFactory _scopeFactory;
+
+    public FinancialReportsController(AppDbContext db, IServiceScopeFactory scopeFactory)
+    {
+        _db = db;
+        _scopeFactory = scopeFactory;
+    }
 
     // ══════════════════════════════════════════════════════
     // SHARED: حساب أرصدة كل الحسابات في فترة زمنية
@@ -297,6 +305,7 @@ public class FinancialReportsController : ControllerBase
             .Include(l => l.Account)
             .Include(l => l.Customer)
             .Include(l => l.Supplier)
+            .Include(l => l.Employee)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to);
@@ -374,7 +383,7 @@ public class FinancialReportsController : ControllerBase
                 line.Debit, line.Credit, balanceMap[line.AccountId],
                 line.JournalEntry.Type == JournalEntryType.AssetDepreciation || line.JournalEntry.Type == JournalEntryType.AssetDisposal
                     ? line.JournalEntry.Reference
-                    : (line.Supplier?.Name ?? line.Customer?.FullName)
+                    : (line.Supplier?.Name ?? line.Customer?.FullName ?? line.Employee?.Name)
             ));
         }
 
@@ -472,7 +481,13 @@ public class FinancialReportsController : ControllerBase
             if (parent != null) { line.AccountId = parent.Id; fixedCount++; }
         }
         if (fixedCount > 0) await _db.SaveChangesAsync();
-        return Ok(new { message = $"تم إصلاح {fixedCount} حركة بنجاح.", fixedCount });
+
+        // 2. Sync Entity IDs (Ensure SupplierId/CustomerId/EmployeeId are set on relevant lines)
+        using var scope = _scopeFactory.CreateScope();
+        var core = scope.ServiceProvider.GetRequiredService<AccountingCoreService>();
+        await core.SyncAllEntityIdsAsync();
+
+        return Ok(new { message = $"تم إصلاح {fixedCount} حركة وتحديث ربط الكيانات بنجاح.", fixedCount });
     }
 
     [HttpGet("account-statement")]
@@ -520,11 +535,11 @@ public class FinancialReportsController : ControllerBase
         if (source.HasValue) openQ = openQ.Where(l => l.CostCenter == source.Value);
         
         if (customerId.HasValue) 
-            openQ = openQ.Where(l => l.CustomerId == customerId);
+            openQ = openQ.Where(l => l.CustomerId == customerId && targetAccountIds.Contains(l.AccountId));
         else if (supplierId.HasValue) 
-            openQ = openQ.Where(l => l.SupplierId == supplierId);
+            openQ = openQ.Where(l => l.SupplierId == supplierId && targetAccountIds.Contains(l.AccountId));
         else if (employeeId.HasValue) 
-            openQ = openQ.Where(l => l.EmployeeId == employeeId);
+            openQ = openQ.Where(l => l.EmployeeId == employeeId && targetAccountIds.Contains(l.AccountId));
         else
             openQ = openQ.Where(l => targetAccountIds.Contains(l.AccountId));
  
@@ -542,15 +557,15 @@ public class FinancialReportsController : ControllerBase
 
         var openBal = acct.Nature == AccountNature.Debit ? openDr - openCr : openCr - openDr;
 
-        var q = _db.JournalLines.Include(l => l.JournalEntry).Include(l => l.Customer).Include(l => l.Supplier)
+        var q = _db.JournalLines.Include(l => l.JournalEntry).Include(l => l.Customer).Include(l => l.Supplier).Include(l => l.Employee)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to);
 
         if (customerId.HasValue) 
-            q = q.Where(l => l.CustomerId == customerId);
+            q = q.Where(l => l.CustomerId == customerId && targetAccountIds.Contains(l.AccountId));
         else if (supplierId.HasValue) 
-            q = q.Where(l => l.SupplierId == supplierId);
+            q = q.Where(l => l.SupplierId == supplierId && targetAccountIds.Contains(l.AccountId));
         else if (employeeId.HasValue) 
-            q = q.Where(l => l.EmployeeId == employeeId);
+            q = q.Where(l => l.EmployeeId == employeeId && targetAccountIds.Contains(l.AccountId));
         else
             q = q.Where(l => targetAccountIds.Contains(l.AccountId));
 
@@ -565,7 +580,7 @@ public class FinancialReportsController : ControllerBase
             return new LedgerRow(targetId, acct.Code, acct.NameAr, l.JournalEntry.EntryDate, l.JournalEntry.EntryNumber, l.JournalEntry.Type.ToString(), l.JournalEntry.Description ?? l.Description ?? "", l.Debit, l.Credit, runBal, l.JournalEntry.Reference, l.JournalEntry.Id, 
                 l.JournalEntry.Type == JournalEntryType.AssetDepreciation || l.JournalEntry.Type == JournalEntryType.AssetDisposal 
                     ? l.JournalEntry.Reference 
-                    : (l.Supplier?.Name ?? l.Customer?.FullName));
+                    : (l.Supplier?.Name ?? l.Customer?.FullName ?? l.Employee?.Name));
         }).ToList();
 
         if (excel) return ExcelAccountStatement(acct, rows, openBal, from, to);
@@ -875,7 +890,7 @@ public class FinancialReportsController : ControllerBase
         var ws = wb.Worksheets.Add("دفتر الأستاذ");
         ws.RightToLeft = true;
 
-        string[] hdrs = { "الكود","اسم الحساب","التاريخ","القيد","البيان","مدين","دائن","الرصيد" };
+        string[] hdrs = { "الكود","اسم الحساب","التاريخ","القيد","الاسم","البيان","مدين","دائن","الرصيد" };
         for (int c = 0; c < hdrs.Length; c++)
         {
             var cell = ws.Cell(1, c+1); cell.Value = hdrs[c];
@@ -890,13 +905,14 @@ public class FinancialReportsController : ControllerBase
             ws.Cell(r,2).Value = row.AccountName;
             ws.Cell(r,3).Value = row.Date.ToString("yyyy-MM-dd");
             ws.Cell(r,4).Value = row.EntryNumber;
-            ws.Cell(r,5).Value = row.Description;
-            ws.Cell(r,6).Value = row.Debit;
-            ws.Cell(r,7).Value = row.Credit;
-            ws.Cell(r,8).Value = row.RunningBalance;
-            ws.Cell(r,6).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(r,5).Value = row.PartnerName ?? "—";
+            ws.Cell(r,6).Value = row.Description;
+            ws.Cell(r,7).Value = row.Debit;
+            ws.Cell(r,8).Value = row.Credit;
+            ws.Cell(r,9).Value = row.RunningBalance;
             ws.Cell(r,7).Style.NumberFormat.Format = "#,##0.00";
             ws.Cell(r,8).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(r,9).Style.NumberFormat.Format = "#,##0.00";
             r++;
         }
         ws.Columns().AdjustToContents();
@@ -915,7 +931,7 @@ public class FinancialReportsController : ControllerBase
         ws.Cell(2,1).Value = $"من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
         ws.Cell(2,1).Style.Font.FontColor = XLColor.Gray;
 
-        string[] hdrs = { "التاريخ", "القيد", "اسم المورد", "البيان", "مدين", "دائن", "الرصيد" };
+        string[] hdrs = { "التاريخ", "القيد", "الاسم", "البيان", "مدين", "دائن", "الرصيد" };
         for (int c = 0; c < hdrs.Length; c++) { ws.Cell(3, c + 1).Value = hdrs[c]; ws.Cell(3, c + 1).Style.Font.Bold = true; }
 
         ws.Cell(4, 4).Value = "رصيد افتتاحي"; ws.Cell(4, 7).Value = openBal;
@@ -1048,6 +1064,7 @@ public class FinancialReportsController : ControllerBase
     }
 
     // ══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════
     // 7. كشف حساب الموظف  GET /api/financialreports/employee-statement
     // ══════════════════════════════════════════════════════
     [HttpGet("employee-statement")]
@@ -1141,15 +1158,19 @@ public class FinancialReportsController : ControllerBase
 
         if (excel) return ExcelEmployeeStatement(emp, rows, openBal, from, to);
 
-        var statementRows = rows.Select(r => new EmployeeStatementRowDto(
-            new DateTime(r.PeriodYear, r.PeriodMonth, 1),
-            r.PayrollNumber,
+        var statementRows = rows.Concat(payrollItems.Select(p => new EmployeeStatementRowDto(
+            new DateTime(p.PeriodYear, p.PeriodMonth, 1),
+            p.PayrollNumber,
             "Payroll",
-            $"Salary - {r.PeriodMonth}/{r.PeriodYear}",
+            $"Salary - {p.PeriodMonth}/{p.PeriodYear}",
             0,
-            r.NetPayable,
-            0 // Balance will be handled if needed, or just use 0 for now as it's a summary
-        )).ToList();
+            p.NetPayable,
+            0,
+            p.PeriodYear,
+            p.PeriodMonth,
+            p.PayrollNumber,
+            p.NetPayable
+        ))).OrderBy(r => r.Date).ToList();
 
         // Calculate running balance
         decimal currentBal = openBal;

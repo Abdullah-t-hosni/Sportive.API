@@ -50,6 +50,15 @@ public static class MappingKeys
     public const string DepreciationExpense      = "depreciationExpenseAccountID";
     public const string AccumulatedDepreciation = "accumulatedDepreciationAccountID";
 
+    // ── حسابات الرواتب (HR) ───────────────────────────────
+    public const string SalaryExpense          = "salaryExpenseAccountID";
+    public const string SalariesPayable        = "salariesPayableAccountID";
+    public const string EmployeeAdvances       = "employeeAdvancesAccountID";
+    public const string EmployeeBonuses        = "employeeBonusesAccountID";
+    public const string EmployeeDeductions     = "employeeDeductionsAccountID";
+    public const string TransportationAllowanceExpense = "transportationAllowanceExpenseAccountID";
+    public const string CommunicationAllowanceExpense  = "communicationAllowanceExpenseAccountID";
+
     // ── تقفيلات الـ POS ──────────────────────────────────
     public const string PosDailyClosure        = "posDailyClosureAccountID";
 }

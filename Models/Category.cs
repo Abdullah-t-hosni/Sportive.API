@@ -12,6 +12,9 @@ public class Category : BaseEntity
     public bool IsActive { get; set; } = true;
     public CategoryType Type { get; set; } = CategoryType.Men;
 
+    public int? SizeGroupId { get; set; }
+    public SizeGroup? SizeGroup { get; set; }
+
     // Subcategory support
     public int? ParentId { get; set; }
     public Category? Parent { get; set; }

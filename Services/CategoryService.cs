@@ -19,6 +19,7 @@ public class CategoryService : ICategoryService
     {
         var cats = await _db.Categories
             .Include(c => c.Parent)
+            .Include(c => c.SizeGroup)
             .Include(c => c.Products)
             .OrderBy(c => c.ParentId).ThenBy(c => c.NameAr)
             .ToListAsync();
@@ -32,6 +33,7 @@ public class CategoryService : ICategoryService
     public async Task<List<CategoryDto>> GetTreeAsync()
     {
         var allCats = await _db.Categories
+            .Include(c => c.SizeGroup)
             .Include(c => c.Products)
             .ToListAsync();
 
@@ -50,6 +52,7 @@ public class CategoryService : ICategoryService
     {
         // نجيب الكل ونبني الشجرة في الذاكرة (أسرع من Include المتداخل)
         var allCats = await _db.Categories
+            .Include(c => c.SizeGroup)
             .Include(c => c.Products)
             .ToListAsync();
 
@@ -85,6 +88,7 @@ public class CategoryService : ICategoryService
             ImageUrl      = dto.ImageUrl,
             Type          = type,
             ParentId      = dto.ParentId,
+            SizeGroupId   = dto.SizeGroupId
         };
         _db.Categories.Add(cat);
         await _db.SaveChangesAsync();
@@ -121,6 +125,7 @@ public class CategoryService : ICategoryService
         cat.ImageUrl      = dto.ImageUrl;
         cat.Type          = type;
         cat.ParentId      = dto.ParentId;
+        cat.SizeGroupId   = dto.SizeGroupId;
         cat.UpdatedAt     = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
@@ -182,6 +187,8 @@ public class CategoryService : ICategoryService
             totalProductCount,
             current.CreatedAt,
             current.ParentId,
+            current.SizeGroupId,
+            current.SizeGroup?.Name,
             current.Parent?.NameAr,
             current.Parent?.NameEn,
             subDtos.Count > 0 ? subDtos : null
@@ -199,6 +206,8 @@ public class CategoryService : ICategoryService
             c.Type,
             c.Products?.Count ?? 0, c.CreatedAt,
             c.ParentId,
+            c.SizeGroupId,
+            c.SizeGroup?.Name,
             c.Parent?.NameAr,
             c.Parent?.NameEn,
             null  // لا نُرجع الأبناء في القائمة المسطحة

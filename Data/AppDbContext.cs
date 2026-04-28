@@ -1,5 +1,5 @@
 // ============================================================
-// Data/AppDbContext.cs — تم إضافة AuditLogs DbSet
+// Data/AppDbContext.cs — تم إضافة AuditLogs DbSet وتحديث التصنيفات والمقاسات
 // ============================================================
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -32,8 +32,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<UserModulePermission> UserModulePermissions => Set<UserModulePermission>();
     public DbSet<StoreInfo> StoreInfo           => Set<StoreInfo>();
     public DbSet<ShippingZone> ShippingZones    => Set<ShippingZone>();
+    public DbSet<SizeGroup>    SizeGroups       => Set<SizeGroup>();
+    public DbSet<SizeValue>    SizeValues       => Set<SizeValue>();
 
-    // ✅ جديد — سجل التدقيق للعمليات الحساسة
     public DbSet<AuditLog> AuditLogs            => Set<AuditLog>();
 
     public DbSet<Supplier>             Suppliers            { get; set; }
@@ -64,7 +65,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
     public DbSet<Department>           Departments           { get; set; }
 
-    // ── الموارد البشرية والرواتب ──────────────────────────
     public DbSet<Employee>           Employees           { get; set; }
     public DbSet<PayrollRun>         PayrollRuns         { get; set; }
     public DbSet<PayrollItem>        PayrollItems        { get; set; }
@@ -72,7 +72,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<EmployeeBonus>      EmployeeBonuses     { get; set; }
     public DbSet<EmployeeDeduction>  EmployeeDeductions  { get; set; }
 
-    // ── الأصول الثابتة ────────────────────────────────────
     public DbSet<FixedAssetCategory> FixedAssetCategories { get; set; }
     public DbSet<FixedAsset>         FixedAssets          { get; set; }
     public DbSet<AssetDepreciation>  AssetDepreciations   { get; set; }
@@ -93,18 +92,28 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Category>(e => {
             e.Property(x => x.NameAr).HasMaxLength(150).IsRequired();
             e.Property(x => x.NameEn).HasMaxLength(150).IsRequired();
-            // Self-referencing hierarchy — قسم رئيسي → أقسام فرعية (أي عمق)
             e.HasOne(x => x.Parent)
              .WithMany(x => x.Children)
              .HasForeignKey(x => x.ParentId)
              .IsRequired(false)
              .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.SizeGroup).WithMany()
+             .HasForeignKey(x => x.SizeGroupId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<SizeGroup>(e => {
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            e.HasMany(x => x.Values).WithOne(v => v.SizeGroup)
+             .HasForeignKey(v => v.SizeGroupId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<SizeValue>(e => {
+            e.Property(x => x.Value).HasMaxLength(50).IsRequired();
         });
 
         builder.Entity<Brand>(e => {
             e.Property(x => x.NameAr).HasMaxLength(150).IsRequired();
             e.Property(x => x.NameEn).HasMaxLength(150).IsRequired();
-            // Self-referencing hierarchy
             e.HasOne(x => x.Parent)
              .WithMany(x => x.SubBrands)
              .HasForeignKey(x => x.ParentId)
@@ -171,13 +180,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.DeliveryAddress).WithMany()
              .HasForeignKey(x => x.DeliveryAddressId).OnDelete(DeleteBehavior.SetNull);
-            // String representation for enums in the database
             e.Property(x => x.Status).HasConversion<string>();
             e.Property(x => x.FulfillmentType).HasConversion<string>();
             e.Property(x => x.PaymentMethod).HasConversion<string>();
             e.Property(x => x.PaymentStatus).HasConversion<string>();
             e.Property(x => x.Source).HasConversion<string>();
-            e.HasIndex(x => x.CreatedAt); // For reports
+            e.HasIndex(x => x.CreatedAt);
         });
 
         builder.Entity<OrderPayment>(e => {
@@ -229,7 +237,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => new { x.UserId, x.IsRead });
         });
 
-        // ── AUDIT LOG ─────────────────────────────────────────
         builder.Entity<AuditLog>(e => {
             e.HasIndex(x => x.UserId);
             e.HasIndex(x => x.EntityType);
@@ -237,7 +244,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => new { x.EntityType, x.EntityId });
         });
 
-        // ── PURCHASE & SUPPLIERS ──────────────────────────────
         builder.Entity<Supplier>(e => {
             e.Property(s => s.TotalPurchases).HasPrecision(18, 2);
             e.Property(s => s.TotalPaid).HasPrecision(18, 2);
@@ -253,7 +259,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(i => i.PaymentTerms).HasConversion<string>();
             e.Property(i => i.Status).HasConversion<string>();
             e.Property(i => i.CostCenter).HasConversion<string>();
-            e.HasIndex(x => x.InvoiceDate); // For reports
+            e.HasIndex(x => x.InvoiceDate);
         });
 
         builder.Entity<PurchaseInvoiceItem>(e => {
@@ -305,7 +311,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(j => j.ReversalOf).WithMany().HasForeignKey(j => j.ReversalOfId).IsRequired(false);
             e.Property(j => j.Type).HasConversion<string>();
             e.Property(j => j.Status).HasConversion<string>();
-            e.HasIndex(x => x.EntryDate); // For reports
+            e.HasIndex(x => x.EntryDate);
             e.HasIndex(x => new { x.Reference, x.Type }).IsUnique();
         });
 
@@ -326,6 +332,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(l => l.Credit).HasPrecision(18,2);
             e.HasOne(l => l.JournalEntry).WithMany(j => j.Lines).HasForeignKey(l => l.JournalEntryId);
             e.HasOne(l => l.Account).WithMany(a => a.Lines).HasForeignKey(l => l.AccountId);
+            e.HasOne(l => l.Employee).WithMany()
+             .HasForeignKey(l => l.EmployeeId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<ReceiptVoucher>(e => {
@@ -354,7 +362,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<InventoryAudit>(e => {
             e.Property(x => x.TotalExpectedValue).HasPrecision(18, 2);
             e.Property(x => x.TotalActualValue).HasPrecision(18, 2);
-            // Default enum mapping to int is fine here as it matches the migration designer
             e.HasMany(a => a.Items).WithOne(i => i.InventoryAudit).HasForeignKey(i => i.InventoryAuditId);
         });
 
@@ -373,13 +380,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.CostPrice).HasPrecision(18, 2);
         });
 
-        // ── JournalLine — EmployeeId ──────────────────────────
-        builder.Entity<JournalLine>(e => {
-            e.HasOne(l => l.Employee).WithMany()
-             .HasForeignKey(l => l.EmployeeId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-        });
-
-        // ── الموارد البشرية والرواتب ──────────────────────────
         builder.Entity<Employee>(e => {
             e.Property(x => x.BaseSalary).HasPrecision(18, 2);
             e.Property(x => x.FixedAllowance).HasPrecision(18, 2);
@@ -390,7 +390,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(x => x.AccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(x => x.Department).WithMany(d => d.Employees)
              .HasForeignKey(x => x.DepartmentId).OnDelete(DeleteBehavior.SetNull);
-            // ربط اختياري بحساب النظام — SetNull عند حذف المستخدم لحفظ سجل الـ HR
             e.HasOne(x => x.AppUser).WithMany()
              .HasForeignKey(x => x.AppUserId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(x => x.AppUserId).IsUnique();
@@ -406,14 +405,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => x.PayrollNumber).IsUnique();
             e.HasOne(x => x.JournalEntry).WithMany()
              .HasForeignKey(x => x.JournalEntryId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(x => x.WagesExpenseAccount).WithMany()
-             .HasForeignKey(x => x.WagesExpenseAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(x => x.AccruedSalariesAccount).WithMany()
-             .HasForeignKey(x => x.AccruedSalariesAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(x => x.DeductionRevenueAccount).WithMany()
-             .HasForeignKey(x => x.DeductionRevenueAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(x => x.AdvancesAccount).WithMany()
-             .HasForeignKey(x => x.AdvancesAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<PayrollItem>(e => {
@@ -434,10 +425,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => x.AdvanceNumber).IsUnique();
             e.HasOne(x => x.Employee).WithMany(emp => emp.Advances)
              .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
-            e.HasOne(x => x.CashAccount).WithMany()
-             .HasForeignKey(x => x.CashAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(x => x.JournalEntry).WithMany()
-             .HasForeignKey(x => x.JournalEntryId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<EmployeeBonus>(e => {
@@ -446,12 +433,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => x.BonusNumber).IsUnique();
             e.HasOne(x => x.Employee).WithMany(emp => emp.Bonuses)
              .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
-            e.HasOne(x => x.PayrollRun).WithMany()
-             .HasForeignKey(x => x.PayrollRunId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(x => x.CashAccount).WithMany()
-             .HasForeignKey(x => x.CashAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(x => x.JournalEntry).WithMany()
-             .HasForeignKey(x => x.JournalEntryId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<EmployeeDeduction>(e => {
@@ -460,24 +441,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => x.DeductionNumber).IsUnique();
             e.HasOne(x => x.Employee).WithMany(emp => emp.Deductions)
              .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
-            e.HasOne(x => x.PayrollRun).WithMany()
-             .HasForeignKey(x => x.PayrollRunId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(x => x.CashAccount).WithMany()
-             .HasForeignKey(x => x.CashAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(x => x.JournalEntry).WithMany()
-             .HasForeignKey(x => x.JournalEntryId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
         });
 
-        // ── الأصول الثابتة ────────────────────────────────────
         builder.Entity<FixedAssetCategory>(e => {
             e.HasMany(c => c.Assets).WithOne(a => a.Category)
              .HasForeignKey(a => a.CategoryId).OnDelete(DeleteBehavior.Restrict);
-            e.HasOne(c => c.AssetAccount).WithMany()
-             .HasForeignKey(c => c.AssetAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(c => c.AccumDepreciationAccount).WithMany()
-             .HasForeignKey(c => c.AccumDepreciationAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(c => c.DepreciationExpenseAccount).WithMany()
-             .HasForeignKey(c => c.DepreciationExpenseAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<FixedAsset>(e => {
@@ -487,14 +455,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(a => a.DepreciationMethod).HasConversion<string>();
             e.Property(a => a.Status).HasConversion<string>();
             e.HasIndex(a => a.AssetNumber).IsUnique();
-            e.HasOne(a => a.PurchaseInvoice).WithMany()
-             .HasForeignKey(a => a.PurchaseInvoiceId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(a => a.AssetAccount).WithMany()
-             .HasForeignKey(a => a.AssetAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(a => a.AccumDepreciationAccount).WithMany()
-             .HasForeignKey(a => a.AccumDepreciationAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(a => a.DepreciationExpenseAccount).WithMany()
-             .HasForeignKey(a => a.DepreciationExpenseAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<AssetDepreciation>(e => {
@@ -504,8 +464,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(d => d.BookValueAfter).HasPrecision(18, 2);
             e.HasOne(d => d.FixedAsset).WithMany(a => a.Depreciations)
              .HasForeignKey(d => d.FixedAssetId).OnDelete(DeleteBehavior.Cascade);
-            e.HasOne(d => d.JournalEntry).WithMany()
-             .HasForeignKey(d => d.JournalEntryId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(d => d.DepreciationNumber).IsUnique();
         });
 
@@ -516,14 +474,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(d => d.DisposalType).HasConversion<string>();
             e.HasOne(d => d.FixedAsset).WithMany(a => a.Disposals)
              .HasForeignKey(d => d.FixedAssetId).OnDelete(DeleteBehavior.Cascade);
-            e.HasOne(d => d.JournalEntry).WithMany()
-             .HasForeignKey(d => d.JournalEntryId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(d => d.ProceedsAccount).WithMany()
-             .HasForeignKey(d => d.ProceedsAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(d => d.GainAccount).WithMany()
-             .HasForeignKey(d => d.GainAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
-            e.HasOne(d => d.LossAccount).WithMany()
-             .HasForeignKey(d => d.LossAccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(d => d.DisposalNumber).IsUnique();
         });
 

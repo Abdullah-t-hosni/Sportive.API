@@ -116,6 +116,42 @@ public class ImportController : ControllerBase
             wsL.Cell(i + 2, 11).Value = mapping[i].Child;
         }
         
+        // ── 4. Size Mapping based on Categories ──
+        var sizeGroups = await _db.SizeGroups.Include(g => g.Values).ToListAsync();
+        var catSizeMapping = new List<(string CatName, string SizeValue)>();
+        
+        foreach (var cat in allCats)
+        {
+            var targetGroupId = cat.SizeGroupId;
+            var current = cat;
+            while (targetGroupId == null && current.ParentId != null)
+            {
+                current = allCats.FirstOrDefault(c => c.Id == current.ParentId);
+                if (current == null) break;
+                targetGroupId = current.SizeGroupId;
+            }
+            
+            if (targetGroupId != null)
+            {
+                var group = sizeGroups.FirstOrDefault(g => g.Id == targetGroupId);
+                if (group != null)
+                {
+                    foreach (var val in group.Values.OrderBy(v => v.SortOrder))
+                        catSizeMapping.Add((cat.NameAr!, val.Value));
+                }
+            }
+        }
+
+        wsL.Cell(1, 14).Value = "__DUMMY__";
+        wsL.Cell(1, 15).Value = "(اختر التصنيف أولاً)";
+        for (int i = 0; i < catSizeMapping.Count; i++)
+        {
+            wsL.Cell(i + 2, 14).Value = catSizeMapping[i].CatName;
+            wsL.Cell(i + 2, 15).Value = catSizeMapping[i].SizeValue;
+        }
+        wb.DefinedNames.Add("SizeParent", wsL.Range(1, 14, catSizeMapping.Count + 1, 14));
+        wb.DefinedNames.Add("SizeChild",  wsL.Range(1, 15, catSizeMapping.Count + 1, 15));
+        
         // Define Names for mapping columns (including the dummy row)
         var parentRange = wsL.Range(1, 10, mapping.Count + 1, 10);
         var childRange  = wsL.Range(1, 11, mapping.Count + 1, 11);
@@ -160,9 +196,14 @@ public class ImportController : ControllerBase
             ws1.Cell(r, 11).CreateDataValidation().List("=YesNoList", true);
             ws1.Cell(r, 19).CreateDataValidation().List("=StatusList", true);
             ws1.Cell(r, 20).CreateDataValidation().List("=YesNoList", true);
-
-            ws1.Cell(r, 13).CreateDataValidation().List("=SizesList", true);
             ws1.Cell(r, 15).CreateDataValidation().List("=ColorsList", true);
+
+            // Dynamic Size List: Checks SubSub(G), then Sub(F), then Main(E)
+            var sizeFormula = "=IF($G" + r + "<>\"\", IF(COUNTIF(SizeParent, $G" + r + ")>0, OFFSET(SizeChild, MATCH($G" + r + ", SizeParent, 0)-1, 0, COUNTIF(SizeParent, $G" + r + "), 1), SizesList), " +
+                             "IF($F" + r + "<>\"\", IF(COUNTIF(SizeParent, $F" + r + ")>0, OFFSET(SizeChild, MATCH($F" + r + ", SizeParent, 0)-1, 0, COUNTIF(SizeParent, $F" + r + "), 1), SizesList), " +
+                             "IF($E" + r + "<>\"\", IF(COUNTIF(SizeParent, $E" + r + ")>0, OFFSET(SizeChild, MATCH($E" + r + ", SizeParent, 0)-1, 0, COUNTIF(SizeParent, $E" + r + "), 1), SizesList), SizesList)))";
+            
+            ws1.Cell(r, 13).CreateDataValidation().List(sizeFormula, true);
         }
 
         ws1.Cell(2,1).Value = "TS-001";

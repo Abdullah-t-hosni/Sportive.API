@@ -21,6 +21,8 @@ public record CategoryDto(
     [property: JsonPropertyName("productCount")] int ProductCount,
     [property: JsonPropertyName("createdAt")] DateTime CreatedAt,
     [property: JsonPropertyName("parentId")] int? ParentId = null,
+    [property: JsonPropertyName("sizeGroupId")] int? SizeGroupId = null,
+    [property: JsonPropertyName("sizeGroupName")] string? SizeGroupName = null,
     [property: JsonPropertyName("parentCategoryNameAr")] string? ParentCategoryNameAr = null,
     [property: JsonPropertyName("parentCategoryNameEn")] string? ParentCategoryNameEn = null,
     [property: JsonPropertyName("subCategories")] List<CategoryDto>? SubCategories = null
@@ -33,7 +35,8 @@ public record CreateCategoryDto(
     [property: JsonPropertyName("descriptionEn")] string? DescriptionEn,
     [property: JsonPropertyName("imageUrl")] string? ImageUrl,
     [property: JsonPropertyName("type")] CategoryType Type = CategoryType.Men,
-    [property: JsonPropertyName("parentId")] int? ParentId = null
+    [property: JsonPropertyName("parentId")] int? ParentId = null,
+    [property: JsonPropertyName("sizeGroupId")] int? SizeGroupId = null
 );
 
 // ========== BRAND ==========

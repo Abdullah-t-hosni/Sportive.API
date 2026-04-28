@@ -379,8 +379,7 @@ public class AccountingCoreService
                 bool changed = false;
                 foreach (var l in lines)
                 {
-                    var acct = await _db.Accounts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == l.AccountId);
-                    if (acct?.Code != null && acct.Code.StartsWith("2101") && l.SupplierId == null)
+                    if (l.SupplierId == null)
                     {
                         l.SupplierId = inv.SupplierId;
                         changed = true;
@@ -438,21 +437,18 @@ public class AccountingCoreService
                     bool changed = false;
                     foreach (var l in lines)
                     {
-                        var acct = await _db.Accounts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == l.AccountId);
-                        
-                        // Sync Customer
-                        if (acct?.Code != null && acct.Code.StartsWith("1103") && l.CustomerId == null)
+                        bool lineChanged = false;
+                        if (l.CustomerId == null)
                         {
                             l.CustomerId = order.CustomerId;
-                            changed = true;
+                            lineChanged = true;
                         }
-
-                        // Sync Employee (New)
                         if (employeeId.HasValue && l.EmployeeId == null)
                         {
                             l.EmployeeId = employeeId;
-                            changed = true;
+                            lineChanged = true;
                         }
+                        if (lineChanged) changed = true;
                     }
                     if (changed) await _db.SaveChangesAsync();
                 }
