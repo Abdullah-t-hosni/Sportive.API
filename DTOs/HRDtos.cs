@@ -84,7 +84,7 @@ public record EmployeeDto(
     string?        AppUserName  = null
 );
 
-public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, int? DepartmentId, string? DepartmentName, decimal BaseSalary, decimal TransportationAllowance, decimal CommunicationAllowance, decimal BonusAmount, decimal FixedAllowance, decimal FixedDeduction, int Status);
+public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, int? DepartmentId, string? DepartmentName, decimal BaseSalary, decimal TransportationAllowance, decimal CommunicationAllowance, decimal BonusAmount, decimal FixedAllowance, int Status);
 
 // ══════════════════════════════════════════════════════
 // PAYROLL RUN DTOs
@@ -108,7 +108,6 @@ public record CreatePayrollItemDto(
     decimal  CommunicationAllowance  = 0,
     decimal  BonusAmount             = 0,
     decimal  FixedAllowance          = 0,
-    decimal  FixedDeduction          = 0,
     decimal  DeductionAmount         = 0,
     decimal  AdvanceDeducted         = 0,
     string?  Notes               = null
@@ -124,7 +123,6 @@ public record PayrollRunDto(
     decimal       TotalCommunication,
     decimal       TotalBonuses,
     decimal       TotalFixedAllowances,
-    decimal       TotalFixedDeductions,
     decimal       TotalDeductions,
     decimal       TotalAdvancesDeducted,
     decimal       TotalNetPayable,
@@ -146,7 +144,6 @@ public record PayrollItemDto(
     decimal CommunicationAllowance,
     decimal BonusAmount,
     decimal FixedAllowance,
-    decimal FixedDeduction,
     decimal DeductionAmount,
     decimal AdvanceDeducted,
     decimal NetPayable,

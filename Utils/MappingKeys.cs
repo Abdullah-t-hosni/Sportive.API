@@ -59,7 +59,6 @@ public static class MappingKeys
     public const string TransportationAllowanceExpense = "transportationAllowanceExpenseAccountID";
     public const string CommunicationAllowanceExpense  = "communicationAllowanceExpenseAccountID";
     public const string FixedAllowanceExpense          = "fixedAllowanceExpenseAccountID";
-    public const string FixedDeductionRevenue          = "fixedDeductionRevenueAccountID";
 
     // ── تقفيلات الـ POS ──────────────────────────────────
     public const string PosDailyClosure        = "posDailyClosureAccountID";

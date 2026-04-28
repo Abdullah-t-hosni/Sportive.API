@@ -60,7 +60,6 @@ public class MappingSeederController : ControllerBase
             { MappingKeys.TransportationAllowanceExpense, new[] { "5204", "انتقال", "بدل انتقال", "Transportation" } },
             { MappingKeys.CommunicationAllowanceExpense, new[] { "5205", "اتصال", "بدل اتصال", "Communication" } },
             { MappingKeys.FixedAllowanceExpense, new[] { "5206", "بدلات ثابتة", "Fixed Allowances" } },
-            { MappingKeys.FixedDeductionRevenue, new[] { "4110", "خصومات ثابتة", "Fixed Deductions" } },
             { MappingKeys.OpeningEquity, new[] { "3103", "افتتاحي", "Opening Balance" } },
             { MappingKeys.InventoryVariance, new[] { "5201", "فروقات جرد", "Inventory Variance" } }
         };

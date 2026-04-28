@@ -113,10 +113,9 @@ public class PayrollRun : BaseEntity
     public decimal TotalCommunication        { get; set; } = 0;
     public decimal TotalBonuses              { get; set; } = 0;
     public decimal TotalFixedAllowances      { get; set; } = 0;
-    public decimal TotalFixedDeductions      { get; set; } = 0;
     public decimal TotalDeductions           { get; set; } = 0;
     public decimal TotalAdvancesDeducted     { get; set; } = 0;
-    public decimal TotalNetPayable           { get; set; } = 0;  // = Basic + Trans + Comm + Bonuses + FixedAllowance - TotalDeductions - FixedDeduction - Advances
+    public decimal TotalNetPayable           { get; set; } = 0;  // = Basic + Trans + Comm + Bonuses + FixedAllowance - TotalDeductions - Advances
 
     public PayrollStatus Status { get; set; } = PayrollStatus.Draft;
     public string?  Notes           { get; set; }
@@ -151,10 +150,9 @@ public class PayrollItem : BaseEntity
     public decimal CommunicationAllowance  { get; set; } = 0;
     public decimal BonusAmount             { get; set; } = 0;
     public decimal FixedAllowance          { get; set; } = 0;
-    public decimal FixedDeduction          { get; set; } = 0;
     public decimal DeductionAmount         { get; set; } = 0;
     public decimal AdvanceDeducted         { get; set; } = 0;
-    public decimal NetPayable => BasicSalary + TransportationAllowance + CommunicationAllowance + BonusAmount + FixedAllowance - DeductionAmount - FixedDeduction - AdvanceDeducted;
+    public decimal NetPayable => BasicSalary + TransportationAllowance + CommunicationAllowance + BonusAmount + FixedAllowance - DeductionAmount - AdvanceDeducted;
 
     public string? Notes { get; set; }
 }
