@@ -746,7 +746,7 @@ public class OrderService : IOrderService
             }
         });
 
-        _ = _customerService.EvaluateCustomerCategoryAsync(order.CustomerId);
+        await _customerService.EvaluateCustomerCategoryAsync(order.CustomerId);
 
         // 5. Notifications & Email
         _ = Task.Run(async () =>
@@ -831,7 +831,7 @@ public class OrderService : IOrderService
             }
             
             // ✅ Evaluate customer category after delivery
-            _ = _customerService.EvaluateCustomerCategoryAsync(order.CustomerId);
+            await _customerService.EvaluateCustomerCategoryAsync(order.CustomerId);
 
             // Notification on Delivery
             _ = Task.Run(async () => {

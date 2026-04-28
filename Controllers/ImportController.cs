@@ -300,10 +300,11 @@ public class ImportController : ControllerBase
             if (colSku == -1 || colNameAr == -1 || colPrice == -1 || colUnit == -1 || colMainCat == -1)
                 return BadRequest(new { message = "الأعمدة الإلزامية ناقصة (الكود، الاسم، السعر، الوحدة، التصنيف الأساسي)" });
 
-            var categories   = await _db.Categories.ToListAsync();
-            var brands       = await _db.Brands.ToListAsync();
-            var units        = await _db.ProductUnits.ToListAsync();
-            var existingSkus = await _db.Products.Select(p => p.SKU).ToHashSetAsync(StringComparer.OrdinalIgnoreCase);
+            var categories   = await _db.Categories.AsNoTracking().ToListAsync();
+            var brands       = await _db.Brands.AsNoTracking().ToListAsync();
+            var units        = await _db.ProductUnits.AsNoTracking().ToListAsync();
+            var skuList      = await _db.Products.AsNoTracking().Select(p => p.SKU).ToListAsync();
+            var existingSkus = skuList.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             var productsDict = new Dictionary<string, Product>(StringComparer.OrdinalIgnoreCase);
             var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
@@ -556,7 +557,7 @@ public class ImportController : ControllerBase
             string? errorReportBase64 = null;
             if (result.Errors.Any())
             {
-                errorWs.Columns().AdjustToContents();
+                // Removed AdjustToContents for Linux stability
                 using var errStream = new MemoryStream();
                 errorWb.SaveAs(errStream);
                 errorReportBase64 = Convert.ToBase64String(errStream.ToArray());
@@ -644,7 +645,7 @@ public class ImportController : ControllerBase
             }
         }
 
-        ws.Columns().AdjustToContents();
+        // Removed AdjustToContents for Linux stability
 
         var stream = new MemoryStream();
         wb.SaveAs(stream);
@@ -790,7 +791,7 @@ public class ImportController : ControllerBase
         ws.Cell(2,6).Value = "1101";
         ws.Cell(2,7).Value = "نعم";
 
-        ws.Columns().AdjustToContents();
+        // Removed AdjustToContents for Linux stability
         var stream = new MemoryStream();
         wb.SaveAs(stream); stream.Position = 0;
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "accounts_import_template.xlsx");
