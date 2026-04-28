@@ -1,203 +1,89 @@
-using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using System.Diagnostics;
-using Sportive.API.Data;
-using Sportive.API.Services;
-using System.IO;
+using Sportive.API.Interfaces;
 using Sportive.API.Models;
+using Microsoft.AspNetCore.Identity;
 
 namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[Authorize(Policy = "AdminOnly")]
 public class DataMaintenanceController : ControllerBase
 {
-    private readonly AppDbContext _db;
-    private readonly ILogger<DataMaintenanceController> _logger;
+    private readonly IDataMaintenanceService _service;
+    private readonly IWebHostEnvironment _env;
+    private readonly UserManager<AppUser> _userManager;
 
-    public DataMaintenanceController(AppDbContext db, ILogger<DataMaintenanceController> logger)
+    public DataMaintenanceController(IDataMaintenanceService service, IWebHostEnvironment env, UserManager<AppUser> userManager)
     {
-        _db = db;
-        _logger = logger;
+        _service = service;
+        _env = env;
+        _userManager = userManager;
     }
 
     [HttpPost("wipe-customers")]
+    [Authorize(Policy = "SuperAdminOnly")]
     public async Task<IActionResult> WipeCustomers()
     {
-        try
-        {
-            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 0;");
-            await _db.Addresses.ExecuteDeleteAsync();
-            await _db.Customers.ExecuteDeleteAsync();
-            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
+        if (!_env.IsDevelopment()) return StatusCode(403, new { success = false, message = "هذه الخاصية متاحة فقط في بيئة التطوير." });
 
-            return Ok(new { success = true, message = "تم مسح كافة سجلات العملاء." });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "WipeCustomers failed");
-            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
-        }
+        var (success, message) = await _service.WipeCustomersAsync(User.Identity?.Name);
+        return success ? Ok(new { success, message }) : BadRequest(new { success, message });
     }
 
-    public record FactoryResetRequest(string Confirmation);
+    [HttpPost("factory-reset/request-otp")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> RequestFactoryResetOtp()
+    {
+        if (!_env.IsDevelopment()) return StatusCode(403, new { success = false, message = "هذه الخاصية متاحة فقط في بيئة التطوير." });
+
+        var user = await _userManager.GetUserAsync(User);
+        if (user == null) return Unauthorized(new { success = false, message = "User not found" });
+
+        var (success, message) = await _service.RequestFactoryResetOtpAsync(user);
+        return success ? Ok(new { success, message }) : BadRequest(new { success, message });
+    }
+
+    public record FactoryResetRequest(string Password, string Otp, string Confirmation);
 
     [HttpPost("factory-reset")]
+    [Authorize(Policy = "SuperAdminOnly")]
     public async Task<IActionResult> FactoryReset([FromBody] FactoryResetRequest req)
     {
-        if (req?.Confirmation != "CONFIRM_FACTORY_RESET")
-            return BadRequest(new { success = false, message = "يجب إرسال { \"confirmation\": \"CONFIRM_FACTORY_RESET\" } في جسم الطلب." });
+        if (!_env.IsDevelopment()) return StatusCode(403, new { success = false, message = "هذه الخاصية متاحة فقط في بيئة التطوير." });
 
-        _logger.LogWarning("FACTORY RESET INITIATED by {User}.", User.Identity?.Name);
+        var user = await _userManager.GetUserAsync(User);
+        if (user == null) return Unauthorized(new { success = false, message = "User not found" });
 
-        try
-        {
-            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 0;");
-
-            var strategy = _db.Database.CreateExecutionStrategy();
-            await strategy.ExecuteAsync(async () =>
-            {
-                using var transaction = await _db.Database.BeginTransactionAsync();
-                try
-                {
-                    var tablesToTruncate = new[] {
-                        "OrderItemAttributes", "InventoryAuditItems", "InventoryMovements", "PurchaseInvoiceItems",
-                        "SupplierPayments", "JournalLines", "ReceiptVouchers", "PaymentVouchers", "JournalEntries",
-                        "Orders", "InventoryAudits", "PurchaseInvoices", "Suppliers", "ProductImages",
-                        "ProductVariants", "Products", "Coupons", "Addresses", "Customers", "Notifications",
-                        "CartItems", "WishlistItems", "Reviews", "OrderStatusHistories", "OrderItems", "ShippingZones"
-                    };
-
-                    foreach (var table in tablesToTruncate)
-                    {
-                        try { await _db.Database.ExecuteSqlRawAsync("TRUNCATE TABLE `" + table + "`;"); }
-                        catch (Exception ex) { _logger.LogWarning("TRUNCATE {Table} skipped: {Error}", table, ex.Message); }
-                    }
-
-                    var customerRole = await _db.Roles.FirstOrDefaultAsync(r => r.Name == "Customer");
-                    if (customerRole != null)
-                    {
-                        var customerUserIds = await _db.UserRoles.Where(ur => ur.RoleId == customerRole.Id).Select(ur => ur.UserId).ToListAsync();
-                        var idsToDelete = await _db.Users
-                            .Where(u => customerUserIds.Contains(u.Id))
-                            .Where(u => u.Email != "admin@sportive.com" && u.Email != "abdullah@sportive.com")
-                            .Select(u => u.Id).ToListAsync();
-
-                        if (idsToDelete.Any())
-                        {
-                             await _db.Users.Where(u => idsToDelete.Contains(u.Id))
-                                            .ExecuteDeleteAsync();
-                        }
-                    }
-
-                    await transaction.CommitAsync();
-                }
-                catch (Exception)
-                {
-                    await transaction.RollbackAsync();
-                    throw;
-                }
-            });
-            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
-            _logger.LogCritical("FACTORY RESET COMPLETED.");
-            return Ok(new { success = true, message = "تم تصفير النظام بنجاح وبدء تسلسل المعرفات من 1." });
-        }
-        catch (Exception ex)
-        {
-            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
-            _logger.LogError(ex, "FACTORY RESET ERROR");
-            return BadRequest(new { success = false, message = "فشل التصفير. يرجى مراجعة سجلات الخادم." });
-        }
+        var (success, message) = await _service.FactoryResetAsync(user, req.Password, req.Otp, req.Confirmation, User.Identity?.Name);
+        return success ? Ok(new { success, message }) : BadRequest(new { success, message });
     }
 
     [HttpGet("fix-tree"), HttpPost("fix-tree")]
     public async Task<IActionResult> FixTree()
     {
-        try
-        {
-            var allAccounts = await _db.Accounts.ToListAsync();
-            foreach (var a in allAccounts)
-            {
-                a.Level = 1;
-                a.IsLeaf = true;
-            }
-            UpdateLevelsRecursively(allAccounts, null, 1);
-            await _db.SaveChangesAsync();
-            return Ok(new { success = true, message = "تم إصلاح شجرة الحسابات بنجاح.", count = allAccounts.Count });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "FixTree failed");
-            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
-        }
-    }
-
-    private void UpdateLevelsRecursively(List<Account> allAccounts, int? parentId, int level)
-    {
-        var children = allAccounts.Where(a => a.ParentId == parentId).ToList();
-        foreach (var child in children)
-        {
-            child.Level = level;
-            var hasChildren = allAccounts.Any(a => a.ParentId == child.Id);
-            child.IsLeaf = !hasChildren;
-            UpdateLevelsRecursively(allAccounts, child.Id, level + 1);
-        }
+        var (success, message, count) = await _service.FixTreeAsync(User.Identity?.Name);
+        return success ? Ok(new { success, message, count }) : BadRequest(new { success, message });
     }
 
     [HttpGet("debug-account/{code}")]
-    public async Task<IActionResult> DebugAccount(string code)
+    public IActionResult DebugAccount(string code)
     {
-        var acc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == code);
-        if (acc == null) return NotFound(new { message = $"لم يتم العثور على أي حساب بالكود {code}" });
-        return Ok(new { id = acc.Id, code = acc.Code, name = acc.NameAr, parentId = acc.ParentId, level = acc.Level, type = acc.Type.ToString() });
+        return BadRequest(new { message = "هذا الـ Endpoint تم تعطيله مؤقتاً." });
     }
 
     [HttpGet("debug-supplier/{id}")]
-    public async Task<IActionResult> DebugSupplier(int id)
+    public IActionResult DebugSupplier(int id)
     {
-        var s = await _db.Suppliers.Include(s => s.MainAccount).FirstOrDefaultAsync(x => x.Id == id);
-        if (s == null) return NotFound(new { message = "المورد غير موجود نهائياً." });
-        return Ok(new { s.Id, s.Name, s.Phone, s.MainAccountId, accountCode = s.MainAccount?.Code });
+        return BadRequest(new { message = "هذا الـ Endpoint تم تعطيله مؤقتاً." });
     }
 
     [HttpGet("sync-accounts")]
     public async Task<IActionResult> SyncAccounts()
     {
-        int count = 0;
-        var suppliers = await _db.Suppliers.Where(s => s.MainAccountId == null).ToListAsync();
-        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "2101");
-        if (parent == null) return BadRequest("حساب الموردين الرئيسي (2101) غير موجود.");
-
-        foreach (var s in suppliers)
-        {
-            var query = _db.Accounts.Where(a => a.ParentId == parent.Id);
-            var maxCode = await query.MaxAsync(a => (string?)a.Code);
-            long nextCodeNum = 1;
-            if (maxCode != null && maxCode.Length > 4 && long.TryParse(maxCode.Substring(4), out var existingNum)) {
-                nextCodeNum = existingNum + 1;
-            }
-            string newCode;
-            while (true)
-            {
-                newCode = $"2101{nextCodeNum:D4}";
-                if (!await _db.Accounts.AnyAsync(a => a.Code == newCode)) break;
-                nextCodeNum++;
-            }
-            var account = new Account
-            {
-                Code = newCode, NameAr = $"مورد - {s.Name}", Type = AccountType.Liability, Nature = AccountNature.Credit,
-                ParentId = parent.Id, Level = parent.Level + 1, IsLeaf = true, AllowPosting = true, CreatedAt = TimeHelper.GetEgyptTime()
-            };
-            _db.Accounts.Add(account);
-            await _db.SaveChangesAsync();
-            s.MainAccountId = account.Id;
-            count++;
-        }
-        await _db.SaveChangesAsync();
-        return Ok(new { message = $"تم تعميد {count} حساب مورد بنجاح." });
+        var (success, message) = await _service.SyncAccountsAsync(User.Identity?.Name);
+        return success ? Ok(new { message }) : BadRequest(new { message });
     }
 
     [HttpGet("rebuild"), HttpPost("rebuild")]
@@ -206,255 +92,72 @@ public class DataMaintenanceController : ControllerBase
     [HttpGet("purge-deleted"), HttpPost("purge-deleted")]
     public async Task<IActionResult> PurgeDeleted()
     {
-        try {
-            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 0;");
-            var counts = new Dictionary<string, int>();
-            counts["Accounts"] = 0;
-            counts["Journals"] = 0;
-            counts["Suppliers"] = 0;
-            counts["Customers"] = 0;
-            counts["Orders"] = 0;
-            counts["Products"] = 0;
-            counts["Variants"] = 0;
-            counts["Purchases"] = 0;
-            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
-            return Ok(new { success = true, purged = counts });
-        }
-        catch (Exception ex) {
-            await _db.Database.ExecuteSqlRawAsync("SET FOREIGN_KEY_CHECKS = 1;");
-            _logger.LogError(ex, "PurgeDeleted failed");
-            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
-        }
+        if (!_env.IsDevelopment()) return StatusCode(403, new { success = false, message = "هذه الخاصية متاحة فقط في بيئة التطوير." });
+
+        var (success, purged, message) = await _service.PurgeDeletedAsync(User.Identity?.Name);
+        return success ? Ok(new { success, purged }) : BadRequest(new { success, message });
     }
 
     [HttpPost("fix-pos-orders")]
     public async Task<IActionResult> FixPosOrders()
     {
-        try {
-            var affected = await _db.Orders.Where(o => o.OrderNumber.StartsWith("POS") && o.Source == OrderSource.Website)
-                                         .ExecuteUpdateAsync(s => s.SetProperty(o => o.Source, OrderSource.POS));
-            return Ok(new { success = true, message = affected > 0 ? $"تم تصحيح {affected} طلب POS." : "كافة الطلبات سليمة." });
-        } catch (Exception ex) { _logger.LogError(ex, "FixPosOrders failed"); return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." }); }
+        var (success, message) = await _service.FixPosOrdersAsync();
+        return success ? Ok(new { success, message }) : BadRequest(new { success, message });
     }
 
     [HttpPost("cleanup-duplicates")]
     public async Task<IActionResult> CleanupDuplicates()
     {
-        try {
-            var dupCodes = await _db.Accounts.GroupBy(a => a.Code).Where(g => g.Count() > 1).Select(g => g.Key).ToListAsync();
-            if (!dupCodes.Any()) return Ok(new { success = true, message = "لم يتم العثور على تكرارات في الأكواد." });
-            return Ok(new { success = true, message = $"تم العثور على {dupCodes.Count} كود مكرر. يرجى استخدام Purge Deleted أولاً." });
-        } catch (Exception ex) { _logger.LogError(ex, "CleanupDuplicates failed"); return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." }); }
+        var (success, message) = await _service.CleanupDuplicatesAsync();
+        return success ? Ok(new { success, message }) : BadRequest(new { success, message });
     }
+
     [HttpPost("sync-order-accounting")]
-    public async Task<IActionResult> SyncOrderAccounting([FromServices] IAccountingService accounting)
+    public async Task<IActionResult> SyncOrderAccounting()
     {
-        try {
-            await accounting.SyncAllOrdersAccountingAsync();
-            return Ok(new { success = true, message = "تمت إعادة توليد كافة القيود المحاسبية للمبيعات بنجاح." });
-        } catch (Exception ex) {
-            _logger.LogError(ex, "SyncOrderAccounting failed");
-            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
-        }
+        var (success, message) = await _service.SyncOrderAccountingAsync();
+        return success ? Ok(new { success, message }) : BadRequest(new { success, message });
     }
 
     [HttpPost("sync-payment-accounting")]
-    public async Task<IActionResult> SyncPaymentAccounting([FromServices] IAccountingService accounting)
+    public async Task<IActionResult> SyncPaymentAccounting()
     {
-        try {
-            await accounting.SyncAllPaymentAccountingAsync();
-            return Ok(new { success = true, message = "تمت إعادة توليد كافة قيود المقبوضات والمدفوعات بنجاح." });
-        } catch (Exception ex) {
-            _logger.LogError(ex, "SyncPaymentAccounting failed");
-            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
-        }
+        var (success, message) = await _service.SyncPaymentAccountingAsync();
+        return success ? Ok(new { success, message }) : BadRequest(new { success, message });
     }
 
     [HttpPost("sync-purchase-journal-entries")]
-
     public async Task<IActionResult> SyncPurchaseJournalEntries()
     {
-        try
-        {
-            int updatedEntries = 0;
-            int updatedLines = 0;
-
-            // 1. Process Purchase Invoices
-            var invoiceEntries = await _db.JournalEntries
-                .Include(e => e.Lines)
-                .Where(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference != null)
-                .ToListAsync();
-
-            foreach (var entry in invoiceEntries)
-            {
-                var invoice = await _db.PurchaseInvoices.FirstOrDefaultAsync(i => i.InvoiceNumber == entry.Reference);
-                if (invoice != null)
-                {
-                    bool entryChanged = false;
-                    foreach (var line in entry.Lines.Where(l => l.SupplierId == null))
-                    {
-                        line.SupplierId = invoice.SupplierId;
-                        updatedLines++;
-                        entryChanged = true;
-                    }
-                    if (entryChanged) updatedEntries++;
-                }
-            }
-
-            // 2. Process Supplier Payments (Payment Vouchers)
-            var paymentEntries = await _db.JournalEntries
-                .Include(e => e.Lines)
-                .Where(e => (e.Type == JournalEntryType.PaymentVoucher || e.Type == JournalEntryType.ReceiptVoucher) && e.Reference != null)
-                .ToListAsync();
-
-            foreach (var entry in paymentEntries)
-            {
-                // Try to find in SupplierPayments
-                var payment = await _db.SupplierPayments.FirstOrDefaultAsync(p => p.PaymentNumber == entry.Reference);
-                if (payment != null)
-                {
-                    bool entryChanged = false;
-                    foreach (var line in entry.Lines.Where(l => l.SupplierId == null && l.CustomerId == null))
-                    {
-                        line.SupplierId = payment.SupplierId;
-                        updatedLines++;
-                        entryChanged = true;
-                    }
-                    if (entryChanged) updatedEntries++;
-                }
-                else 
-                {
-                    // Try to find in ReceiptVouchers (for Customer returns/payments if needed)
-                    var rv = await _db.ReceiptVouchers.FirstOrDefaultAsync(v => v.VoucherNumber == entry.Reference);
-                    if (rv != null && rv.CustomerId != null)
-                    {
-                        bool entryChanged = false;
-                        foreach (var line in entry.Lines.Where(l => l.CustomerId == null && l.SupplierId == null))
-                        {
-                            line.CustomerId = rv.CustomerId;
-                            updatedLines++;
-                            entryChanged = true;
-                        }
-                        if (entryChanged) updatedEntries++;
-                    }
-                }
-            }
-
-            if (updatedLines > 0)
-            {
-                await _db.SaveChangesAsync();
-            }
-
-            return Ok(new { 
-                success = true, 
-                message = $"تم تحديث {updatedLines} سطر محاسبي في {updatedEntries} قيد بنجاح.",
-                details = new { entries = updatedEntries, lines = updatedLines }
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "SYNC PURCHASE ENTRIES ERROR");
-            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
-        }
+        var (success, message, details) = await _service.SyncPurchaseJournalEntriesAsync();
+        return success ? Ok(new { success, message, details }) : BadRequest(new { success, message });
     }
 
     [HttpPost("sync-entity-ids")]
-    public async Task<IActionResult> SyncEntityIds([FromServices] IAccountingService accounting)
+    public async Task<IActionResult> SyncEntityIds()
     {
-        try {
-            await accounting.SyncAllEntityIdsAsync();
-            return Ok(new { success = true, message = "تمت مزامنة كافة معرفات العملاء والموردين بنجاح." });
-        } catch (Exception ex) {
-            _logger.LogError(ex, "SyncEntityIds failed");
-            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
-        }
+        var (success, message) = await _service.SyncEntityIdsAsync();
+        return success ? Ok(new { success, message }) : BadRequest(new { success, message });
     }
 
     [HttpPost("sync-sub-accounts")]
-    public async Task<IActionResult> SyncSubAccounts([FromServices] IAccountingService accounting)
+    public async Task<IActionResult> SyncSubAccounts()
     {
-        try {
-            await accounting.ConsolidateSubAccountsToControlAsync();
-            return Ok(new { success = true, message = "تم توحيد الحسابات ودمج الحركات في الحسابات الرئيسية بنجاح." });
-        } catch (Exception ex) {
-            _logger.LogError(ex, "SyncSubAccounts failed");
-            return BadRequest(new { success = false, message = "العملية فشلت. يرجى المحاولة مرة أخرى." });
-        }
+        var (success, message) = await _service.SyncSubAccountsAsync();
+        return success ? Ok(new { success, message }) : BadRequest(new { success, message });
     }
 
     [HttpPost("sync-ledger-source")]
     public async Task<IActionResult> SyncLedgerSource()
     {
-        try {
-            var today = TimeHelper.GetEgyptTime().Date;
-            
-            // 1. Fix JournalEntries
-            var updatedEntries = await _db.JournalEntries
-                .Where(e => e.CostCenter == null && e.OrderId != null)
-                .ExecuteUpdateAsync(s => s.SetProperty(e => e.CostCenter, e => _db.Orders.Where(o => o.Id == e.OrderId).Select(o => o.Source).FirstOrDefault()));
-
-            // 2. Fix JournalLines
-            var updatedLines = await _db.JournalLines
-                .Where(l => l.CostCenter == null && l.OrderId != null)
-                .ExecuteUpdateAsync(s => s.SetProperty(l => l.CostCenter, l => _db.Orders.Where(o => o.Id == l.OrderId).Select(o => o.Source).FirstOrDefault()));
-
-            return Ok(new { success = true, message = $"تم تحديث المصدر لـ {updatedEntries} قيد و {updatedLines} بند." });
-        } catch (Exception ex) {
-            _logger.LogError(ex, "SyncLedgerSource failed");
-            return BadRequest(new { success = false, message = ex.Message });
-        }
+        var (success, message) = await _service.SyncLedgerSourceAsync();
+        return success ? Ok(new { success, message }) : BadRequest(new { success, message });
     }
 
     [HttpPost("fix-utc-times")]
     public async Task<IActionResult> FixUtcTimes()
     {
-        try {
-            // 1. تصحيح سندات القبض
-            var rvs = await _db.ReceiptVouchers
-                .Where(v => v.VoucherDate.Date == v.CreatedAt.Date) 
-                .ToListAsync();
-                
-            int affectedRvs = 0;
-            foreach(var v in rvs) {
-                // إذا كان الفرق بين وقت الإنشاء (المحلي) ووقت السند (الذي كان UTC) يقترب من 3 ساعات
-                if (Math.Abs((v.CreatedAt - v.VoucherDate).TotalHours - 3) < 0.2) {
-                    v.VoucherDate = v.VoucherDate.AddHours(3);
-                    affectedRvs++;
-                }
-            }
-
-            // 2. تصحيح سندات الصرف
-            var pvs = await _db.PaymentVouchers
-                .Where(v => v.VoucherDate.Date == v.CreatedAt.Date)
-                .ToListAsync();
-                
-            int affectedPvs = 0;
-            foreach(var v in pvs) {
-                if (Math.Abs((v.CreatedAt - v.VoucherDate).TotalHours - 3) < 0.2) {
-                    v.VoucherDate = v.VoucherDate.AddHours(3);
-                    affectedPvs++;
-                }
-            }
-
-            // 3. تصحيح القيود المحاسبية
-            var jes = await _db.JournalEntries
-                .Where(e => e.EntryDate.Date == e.CreatedAt.Date)
-                .ToListAsync();
-                
-            int affectedJes = 0;
-            foreach(var e in jes) {
-                if (Math.Abs((e.CreatedAt - e.EntryDate).TotalHours - 3) < 0.2) {
-                    e.EntryDate = e.EntryDate.AddHours(3);
-                    affectedJes++;
-                }
-            }
-
-            await _db.SaveChangesAsync();
-            return Ok(new { success = true, message = $"تم تصحيح {affectedRvs} سند قبض، {affectedPvs} سند صرف، و {affectedJes} قيد محاسبي." });
-        } 
-        catch (Exception ex) { 
-            _logger.LogError(ex, "FixUtcTimes failed");
-            return BadRequest(new { success = false, message = ex.Message }); 
-        }
+        var (success, message) = await _service.FixUtcTimesAsync();
+        return success ? Ok(new { success, message }) : BadRequest(new { success, message });
     }
 }

@@ -13,10 +13,11 @@ namespace Sportive.API.Services;
 // ══════════════════════════════════════════════════════
 public interface IBackupService
 {
-    Task<BackupResult> RunBackupAsync(CancellationToken ct = default);
+    Task<BackupResult> RunBackupAsync(string triggerType = "Manual", CancellationToken ct = default);
     Task<List<BackupRecord>> GetHistoryAsync(int limit = 30);
+    Task<BackupRecord?> GetByIdAsync(int id);
     Task DeleteOldBackupsAsync(int keepDays = 30);
-    Task<BackupResult> RestoreAsync(Stream fileStream, string fileName, CancellationToken ct = default);
+    Task<BackupResult> RestoreAsync(Stream fileStream, string fileName, string? currentUserName, CancellationToken ct = default);
 }
 
 public record BackupResult(
@@ -24,6 +25,7 @@ public record BackupResult(
     string   FileName,
     long     FileSizeBytes,
     TimeSpan Duration,
+    int?     Id = null,
     string?  Error = null
 );
 
@@ -50,7 +52,7 @@ public class BackupService : IBackupService
     // ══════════════════════════════════════════════════
     // Run Backup
     // ══════════════════════════════════════════════════
-    public async Task<BackupResult> RunBackupAsync(CancellationToken ct = default)
+    public async Task<BackupResult> RunBackupAsync(string triggerType = "Manual", CancellationToken ct = default)
     {
         var sw       = Stopwatch.StartNew();
         var stamp    = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
@@ -59,7 +61,7 @@ public class BackupService : IBackupService
 
         try
         {
-            _log.LogInformation("[Backup] Starting backup {stamp}", stamp);
+            _log.LogInformation("[Backup] Starting backup {stamp} triggered by {trigger}", stamp, triggerType);
 
             // ── 1. mysqldump ──────────────────────────
             await DumpDatabaseAsync(sqlFile, ct);
@@ -89,33 +91,35 @@ public class BackupService : IBackupService
                 DurationMs   = sw.ElapsedMilliseconds,
                 EmailSent    = emailEnabled && emailError == null,
                 EmailError   = emailError,
+                TriggerType  = triggerType,
                 CreatedAt    = DateTime.UtcNow,
             };
             _db.BackupRecords.Add(record);
             await _db.SaveChangesAsync(ct);
 
             sw.Stop();
-            _log.LogInformation("[Backup] Done in {ms}ms", sw.ElapsedMilliseconds);
+            _log.LogInformation("[Backup] Done in {ms}ms. ID: {id}", sw.ElapsedMilliseconds, record.Id);
 
-            return new BackupResult(true, record.FileName, fileSize, sw.Elapsed);
+            return new BackupResult(true, record.FileName, fileSize, sw.Elapsed, record.Id);
         }
         catch (Exception ex)
         {
             sw.Stop();
             _log.LogError(ex, "[Backup] Failed");
 
-            // سجّل الفشل
-            _db.BackupRecords.Add(new BackupRecord
+            var record = new BackupRecord
             {
                 FileName     = $"FAILED_{stamp}",
                 DurationMs   = sw.ElapsedMilliseconds,
                 Success      = false,
                 Error        = ex.Message,
+                TriggerType  = triggerType,
                 CreatedAt    = DateTime.UtcNow,
-            });
+            };
+            _db.BackupRecords.Add(record);
             await _db.SaveChangesAsync(CancellationToken.None);
 
-            return new BackupResult(false, string.Empty, 0, sw.Elapsed, ex.Message);
+            return new BackupResult(false, string.Empty, 0, sw.Elapsed, record.Id, ex.Message);
         }
     }
 
@@ -245,9 +249,13 @@ public class BackupService : IBackupService
     // ══════════════════════════════════════════════════
     public async Task<List<BackupRecord>> GetHistoryAsync(int limit = 30)
         => await _db.BackupRecords
+            .AsNoTracking()
             .OrderByDescending(r => r.CreatedAt)
             .Take(limit)
             .ToListAsync();
+
+    public async Task<BackupRecord?> GetByIdAsync(int id)
+        => await _db.BackupRecords.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id);
 
     public async Task DeleteOldBackupsAsync(int keepDays = 30)
     {
@@ -270,9 +278,14 @@ public class BackupService : IBackupService
     // ══════════════════════════════════════════════════
     // Restore Database
     // ══════════════════════════════════════════════════
-    public async Task<BackupResult> RestoreAsync(Stream fileStream, string fileName, CancellationToken ct = default)
+    public async Task<BackupResult> RestoreAsync(Stream fileStream, string fileName, string? currentUserName, CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
+
+        // 🚨 PRE-RESTORE SAFETY BACKUP
+        _log.LogWarning("[Restore] Initiating safety backup before restoration for user {user}", currentUserName);
+        await RunBackupAsync("Auto_Before_Restore", ct);
+
         var tempFile = Path.Combine(BackupDir, $"restore_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{fileName}");
         var finalSql = tempFile;
 
@@ -305,7 +318,7 @@ public class BackupService : IBackupService
         {
             sw.Stop();
             _log.LogError(ex, "[Restore] Failed");
-            return new BackupResult(false, fileName, 0, sw.Elapsed, ex.Message);
+            return new BackupResult(false, fileName, 0, sw.Elapsed, null, ex.Message);
         }
         finally
         {

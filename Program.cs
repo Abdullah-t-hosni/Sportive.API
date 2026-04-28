@@ -22,6 +22,9 @@ using Sportive.API.Services;
 using Sportive.API.Utils;
 using Sportive.API.Validators;
 using Sportive.API.Hubs;
+using Hangfire;
+using Hangfire.MySql;
+using System.Transactions;
 
 
 Log.Logger = new LoggerConfiguration()
@@ -108,7 +111,14 @@ builder.Services.AddAuthentication(opt =>
     };
 });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("Orders.Create", p => p.RequireClaim("Permission", "Orders.Create"));
+    options.AddPolicy("Orders.View",   p => p.RequireClaim("Permission", "Orders.View"));
+    options.AddPolicy("AdminOnly",     p => p.RequireRole("Admin", "SuperAdmin"));
+    options.AddPolicy("SuperAdminOnly", p => p.RequireRole("SuperAdmin"));
+});
+
 builder.Services.AddScoped<Sportive.API.Services.StaffPermissionService>();
 
 // ── CORS ──────────────────────────────────────────────
@@ -234,6 +244,8 @@ builder.Services.AddScoped<IWaMeService, WaMeService>();
 builder.Services.AddHttpClient<IWhatsAppApiService, WhatsAppApiService>();
 builder.Services.AddScoped<IBackupService, BackupService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IDataMaintenanceService, DataMaintenanceService>();
+builder.Services.AddScoped<IBackfillService, BackfillService>();
 builder.Services.AddHostedService<BackupHostedService>();
 builder.Services.AddHostedService<Sportive.API.Services.BackgroundServices.StartupSyncService>();
 builder.Services.AddScoped<IWishlistService, WishlistService>();
@@ -244,6 +256,25 @@ builder.Services.AddSingleton<TimeService>();
 builder.Services.AddSingleton<ITimeService>(sp => sp.GetRequiredService<TimeService>());
 builder.Services.AddHttpClient("Paymob");
 builder.Services.AddSignalR();
+
+// ── HANGFIRE (Background Jobs) ────────────────────────
+builder.Services.AddHangfire(config => config
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings()
+    .UseStorage(new MySqlStorage(connStr, new MySqlStorageOptions
+    {
+        TransactionIsolationLevel = (IsolationLevel)System.Data.IsolationLevel.ReadCommitted,
+        QueuePollInterval = TimeSpan.FromSeconds(15),
+        JobExpirationCheckInterval = TimeSpan.FromHours(1),
+        CountersAggregateInterval = TimeSpan.FromMinutes(5),
+        PrepareSchemaIfNecessary = true,
+        DashboardJobListLimit = 50000,
+        TransactionTimeout = TimeSpan.FromMinutes(1),
+        TablesPrefix = "Hangfire"
+    })));
+
+builder.Services.AddHangfireServer();
 
 // ── RESPONSE COMPRESSION ──────────────────────────────
 builder.Services.AddResponseCompression(options =>
@@ -377,6 +408,11 @@ app.UseStaticFiles(new StaticFileOptions
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseHangfireDashboard("/jobs", new DashboardOptions
+{
+    Authorization = new[] { new HangfireAdminFilter() }
+});
 
 app.MapControllers();
 app.MapHealthChecks("/health");

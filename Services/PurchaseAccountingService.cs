@@ -27,15 +27,8 @@ public class PurchaseAccountingService
     {
         if (string.IsNullOrEmpty(invoice.InvoiceNumber)) return;
 
-        // 🚨 AUTO-UPDATE: حذف القيد القديم إن وجد للسماح بالتحديث التلقائي عند تعديل الفاتورة
-        var existing = await _db.JournalEntries
-            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == invoice.InvoiceNumber);
-        
-        if (existing != null)
-        {
-            _db.JournalEntries.Remove(existing);
-            await _db.SaveChangesAsync();
-        }
+        if (await _db.JournalEntries.AnyAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == invoice.InvoiceNumber))
+            return;
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();

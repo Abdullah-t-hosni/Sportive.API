@@ -306,6 +306,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(j => j.Type).HasConversion<string>();
             e.Property(j => j.Status).HasConversion<string>();
             e.HasIndex(x => x.EntryDate); // For reports
+            e.HasIndex(x => new { x.Reference, x.Type }).IsUnique();
         });
 
         builder.Entity<StoreInfo>(e => {

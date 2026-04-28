@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Data;
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using Sportive.API.Utils;
@@ -77,6 +78,9 @@ public class PaymentController : ControllerBase
             var order = await _db.Orders.FirstOrDefaultAsync(o => o.OrderNumber == orderRef);
             if (order != null)
             {
+                if (order.PaymentStatus == PaymentStatus.Paid && success)
+                    return Ok(); // Already processed
+
                 order.PaymentStatus = success ? PaymentStatus.Paid : PaymentStatus.Failed;
                 if (success && order.Status == OrderStatus.Pending)
                     order.Status = OrderStatus.Confirmed;
@@ -85,7 +89,7 @@ public class PaymentController : ControllerBase
                 _logger.LogInformation("Order {OrderNumber} payment {Status}", orderRef, success ? "PAID" : "FAILED");
 
                 if (success)
-                    _ = PostOrderPaymentWithRetryAsync(order.Id);
+                    BackgroundJob.Enqueue<IAccountingService>(a => a.PostOrderPaymentByIdAsync(order.Id));
             }
         }
 
@@ -103,21 +107,20 @@ public class PaymentController : ControllerBase
             var success     = obj.GetProperty("success").GetBoolean();
             var orderRef    = obj.GetProperty("order").GetProperty("merchant_order_id").GetString();
             
-            // HMAC Verification (Optional for Webhook but recommended)
-            // Note: Webhook structure is slightly different from Callback.
-            // For now we trust and log. You should check if you want to verify HMAC here too.
-
             if (!string.IsNullOrEmpty(orderRef)) {
                 var order = await _db.Orders.FirstOrDefaultAsync(o => o.OrderNumber == orderRef);
                 if (order != null) {
-                order.PaymentStatus = success ? PaymentStatus.Paid : PaymentStatus.Failed;
-                if (success && order.Status == OrderStatus.Pending)
-                    order.Status = OrderStatus.Confirmed;
-                order.UpdatedAt = TimeHelper.GetEgyptTime();
-                await _db.SaveChangesAsync();
+                    if (order.PaymentStatus == PaymentStatus.Paid && success)
+                        return Ok();
 
-                if (success)
-                    _ = PostOrderPaymentWithRetryAsync(order.Id);
+                    order.PaymentStatus = success ? PaymentStatus.Paid : PaymentStatus.Failed;
+                    if (success && order.Status == OrderStatus.Pending)
+                        order.Status = OrderStatus.Confirmed;
+                    order.UpdatedAt = TimeHelper.GetEgyptTime();
+                    await _db.SaveChangesAsync();
+
+                    if (success)
+                        BackgroundJob.Enqueue<IAccountingService>(a => a.PostOrderPaymentByIdAsync(order.Id));
                 }
             }
         }
@@ -125,7 +128,6 @@ public class PaymentController : ControllerBase
         {
             _logger.LogError(ex, "Error processing Paymob Webhook");
         }
-
         return Ok();
     }
 
@@ -146,35 +148,5 @@ public class PaymentController : ControllerBase
             : $"{frontendUrl}/order-success/{order.Id}?payment=failed";
 
         return Redirect(redirectUrl);
-    }
-
-    private async Task PostOrderPaymentWithRetryAsync(int orderId)
-    {
-        const int maxAttempts = 3;
-        for (int attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == orderId);
-                await accounting.PostOrderPaymentAsync(fullOrder);
-                return;
-            }
-            catch (Exception ex) when (attempt < maxAttempts)
-            {
-                _logger.LogWarning(ex,
-                    "[Accounting] Order payment journal attempt {Attempt}/{Max} failed for order {OrderId}. Retrying...",
-                    attempt, maxAttempts, orderId);
-                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "[Accounting] Order payment journal permanently failed for order {OrderId} after {Max} attempts.",
-                    orderId, maxAttempts);
-            }
-        }
     }
 }

@@ -11,6 +11,7 @@ using System.Security.Claims;
 using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
+using Hangfire;
 
 namespace Sportive.API.Controllers;
 
@@ -134,7 +135,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPatch("{id}/status")]
-    [Authorize(Roles = "Admin,Manager,Staff")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<OrderDetailDto>> UpdateStatus(int id, [FromBody] UpdateOrderStatusDto dto)
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
@@ -143,7 +144,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPatch("{id}/note")]
-    [Authorize(Roles = "Admin,Manager,Staff")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> UpdateAdminNote(int id, [FromBody] UpdateOrderAdminNoteDto dto)
     {
         var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id);
@@ -202,7 +203,7 @@ public class OrdersController : ControllerBase
         return Ok(dto);
     }
 
-    [Authorize(Roles = "Admin,Manager,Staff")]
+    [Authorize(Policy = "AdminOnly")]
     [HttpPatch("{id}/payment-status")]
     public async Task<IActionResult> UpdatePaymentStatus(int id, [FromBody] UpdatePaymentStatusDto dto)
     {
@@ -230,7 +231,7 @@ public class OrdersController : ControllerBase
 
         if (dto.PaymentStatus == PaymentStatus.Paid && oldStatus != PaymentStatus.Paid)
         {
-            _ = PostOrderPaymentWithRetryAsync(id);
+            BackgroundJob.Enqueue<IAccountingService>(a => a.PostOrderPaymentByIdAsync(id));
         }
 
         if (!string.IsNullOrEmpty(dto.Note))
@@ -250,7 +251,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin,Manager")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> Delete(int id)
     {
         var order = await _db.Orders
@@ -397,36 +398,6 @@ public class OrdersController : ControllerBase
             }).ToListAsync();
 
         return Ok(new { items, totalCount = total, totalPages = (int)Math.Ceiling((double)total / pageSize), page, pageSize });
-    }
-
-    private async Task PostOrderPaymentWithRetryAsync(int orderId)
-    {
-        const int maxAttempts = 3;
-        for (int attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var fullOrder = await db.Orders.Include(o => o.Customer).FirstAsync(o => o.Id == orderId);
-                await accounting.PostOrderPaymentAsync(fullOrder);
-                return;
-            }
-            catch (Exception ex) when (attempt < maxAttempts)
-            {
-                _logger.LogWarning(ex,
-                    "[Accounting] Order payment journal attempt {Attempt}/{Max} failed for order {OrderId}. Retrying...",
-                    attempt, maxAttempts, orderId);
-                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "[Accounting] Order payment journal permanently failed for order {OrderId} after {Max} attempts.",
-                    orderId, maxAttempts);
-            }
-        }
     }
 }
 

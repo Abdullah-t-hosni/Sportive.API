@@ -96,6 +96,14 @@ public class AccountingCoreService
         OrderSource? source = null,
         int? employeeId = null)
     {
+        // 🛡️ IDEMPOTENCY GUARD: Prevent double posting
+        if (!string.IsNullOrEmpty(reference))
+        {
+            var existing = await _db.JournalEntries
+                .FirstOrDefaultAsync(e => e.Type == type && e.Reference == reference);
+            if (existing != null) return existing;
+        }
+
         var totalDr = lines.Sum(l => l.debit);
         var totalCr = lines.Sum(l => l.credit);
         if (Math.Round(totalDr, 2) != Math.Round(totalCr, 2))

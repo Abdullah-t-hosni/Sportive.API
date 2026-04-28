@@ -60,7 +60,7 @@ public class BackupHostedService : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var svc = scope.ServiceProvider.GetRequiredService<IBackupService>();
-        var result = await svc.RunBackupAsync(ct);
+        var result = await svc.RunBackupAsync("Scheduled", ct);
         if (result.Success)
             _log.LogInformation("[Backup] Auto backup succeeded: {file} ({size}KB)",
                 result.FileName, result.FileSizeBytes / 1024);

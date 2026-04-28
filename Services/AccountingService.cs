@@ -13,11 +13,13 @@ namespace Sportive.API.Services;
 public interface IAccountingService
 {
     Task PostSalesOrderAsync(Order order);
+    Task PostSalesOrderByIdAsync(int orderId);
     Task PostSalesReturnAsync(Order order);
     Task PostPurchaseInvoiceAsync(PurchaseInvoice invoice);
     Task PostPurchaseReturnAsync(PurchaseInvoice invoice, decimal returnedSubTotal = 0, decimal returnedTaxAmount = 0, decimal returnedDiscountAmount = 0);
     Task PostPurchaseReturnAsync(PurchaseReturn pReturn);
     Task PostOrderPaymentAsync(Order order);
+    Task PostOrderPaymentByIdAsync(int orderId);
     Task PostOrderRefundAsync(Order order);
     Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null);
     Task PostSupplierPaymentAsync(SupplierPayment payment);
@@ -76,6 +78,25 @@ public class AccountingService : IAccountingService
     public Task PostPurchaseReturnAsync(PurchaseReturn pReturn) => _purchase.PostPurchaseReturnAsync(pReturn);
 
     public Task PostOrderPaymentAsync(Order order) => _payment.PostOrderPaymentAsync(order);
+
+    public async Task PostSalesOrderByIdAsync(int orderId)
+    {
+        var order = await _db.Orders
+            .Include(o => o.Customer)
+            .Include(o => o.Items).ThenInclude(i => i.Product)
+            .Include(o => o.Payments)
+            .FirstOrDefaultAsync(o => o.Id == orderId);
+        if (order != null) await PostSalesOrderAsync(order);
+    }
+
+    public async Task PostOrderPaymentByIdAsync(int orderId)
+    {
+        var order = await _db.Orders
+            .Include(o => o.Customer)
+            .Include(o => o.Payments)
+            .FirstOrDefaultAsync(o => o.Id == orderId);
+        if (order != null) await PostOrderPaymentAsync(order);
+    }
     public Task PostOrderRefundAsync(Order order) => _payment.PostOrderRefundAsync(order);
     public Task PostReceiptVoucherAsync(ReceiptVoucher voucher, int? orderId = null) => _payment.PostReceiptVoucherAsync(voucher, orderId);
     public Task PostPaymentVoucherAsync(PaymentVoucher voucher) => _payment.PostPaymentVoucherAsync(voucher);

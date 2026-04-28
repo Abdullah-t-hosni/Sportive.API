@@ -258,7 +258,7 @@ public class OrderService : IOrderService
         var strategy = _db.Database.CreateExecutionStrategy();
         var result = await strategy.ExecuteAsync(async () =>
         {
-            await using var tx = await _db.Database.BeginTransactionAsync();
+            await using var tx = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
                 var now = TimeHelper.GetEgyptTime();
@@ -730,13 +730,22 @@ public class OrderService : IOrderService
                 }
 
                 await _db.SaveChangesAsync();
+
+                // 💳 ATOMIC ACCOUNTING: Post to ledger BEFORE committing the transaction
+                // This ensures order and accounting are 1:1 and either both succeed or both fail.
+                await _accounting.PostSalesOrderAsync(order);
+
                 await tx.CommitAsync();
                 return (await GetOrderByIdAsync(order.Id))!;
             }
-            catch { await tx.RollbackAsync(); throw; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Atomic order creation failed for {OrderNo}", order?.OrderNumber);
+                await tx.RollbackAsync(); 
+                throw; 
+            }
         });
 
-        _ = PostSalesOrderWithRetryAsync(order!.Id, order.OrderNumber);
         _ = _customerService.EvaluateCustomerCategoryAsync(order.CustomerId);
 
         // 5. Notifications & Email
