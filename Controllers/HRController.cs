@@ -275,7 +275,7 @@ public class EmployeesController : ControllerBase
         }
 
         return Ok(new EmployeeStatementDto(
-            emp.Id, emp.Name, emp.EmployeeNumber, emp.JobTitle, emp.Account?.NameAr ?? "رواتب مستحقة",
+            emp.Id, emp.Name, emp.EmployeeNumber, emp.JobTitle, emp.Account?.NameAr ?? "رواتب مستحقة موظفين",
             from, to, openingBalance, rows,
             rows.Sum(r => r.Debit), rows.Sum(r => r.Credit), runningBalance
         ));
@@ -318,7 +318,7 @@ public class EmployeesController : ControllerBase
         }
 
         return Ok(new EmployeeStatementDto(
-            0, "الكل / ALL", "000", "GENERAL_REPORT", acc?.NameAr ?? "رواتب مستحقة",
+            0, "الكل / ALL", "000", "GENERAL_REPORT", acc?.NameAr ?? "رواتب مستحقة موظفين",
             from, to, openingBalance, rows,
             rows.Sum(r => r.Debit), rows.Sum(r => r.Credit), runningBalance
         ));
