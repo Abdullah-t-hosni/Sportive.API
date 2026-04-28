@@ -63,6 +63,8 @@ public class ImportController : ControllerBase
             for (int i = 0; i < items.Count; i++) wsL.Cell(i + 1, col).Value = items[i];
         }
 
+        if (!brands.Any()) brands.Add("عام");
+        if (!units.Any()) units.Add("قطعة");
         if (!existingSizes.Any()) existingSizes = new List<string> { "S", "M", "L", "XL", "XXL", "3XL", "Free Size" };
         if (!existingColors.Any()) existingColors = new List<string> { "أبيض", "أسود", "أحمر", "أزرق", "أخضر", "رمادي", "كحلي", "بني" };
 
@@ -73,12 +75,12 @@ public class ImportController : ControllerBase
         FillCol(6, existingSizes);
         FillCol(7, existingColors);
 
-        var brandRange = wsL.Range(1, 2, Math.Max(1, brands.Count), 2);
-        var unitRange  = wsL.Range(1, 3, Math.Max(1, units.Count), 3);
-        var yesNoRange = wsL.Range(1, 4, 2, 4);
-        var statRange  = wsL.Range(1, 5, 3, 5);
-        var sizeRange  = wsL.Range(1, 6, Math.Max(1, existingSizes.Count), 6);
-        var colorRange = wsL.Range(1, 7, Math.Max(1, existingColors.Count), 7);
+        wb.DefinedNames.Add("BrandsList", wsL.Range(1, 2, Math.Max(1, brands.Count), 2));
+        wb.DefinedNames.Add("UnitsList",  wsL.Range(1, 3, Math.Max(1, units.Count), 3));
+        wb.DefinedNames.Add("YesNoList",  wsL.Range(1, 4, 2, 4));
+        wb.DefinedNames.Add("StatusList", wsL.Range(1, 5, 3, 5));
+        wb.DefinedNames.Add("SizesList",  wsL.Range(1, 6, Math.Max(1, existingSizes.Count), 6));
+        wb.DefinedNames.Add("ColorsList", wsL.Range(1, 7, Math.Max(1, existingColors.Count), 7));
 
         // 3. Category Mapping (Cols 10-11) - Robust OFFSET/MATCH approach
         var mapping = new List<(string Parent, string Child)>();
@@ -133,25 +135,24 @@ public class ImportController : ControllerBase
 
         ws1.Column(1).Style.NumberFormat.Format = "@"; 
 
-        for (int r = 2; r <= 500; r++)
+        for (int r = 2; r <= 1000; r++)
         {
-            ws1.Cell(r, 5).CreateDataValidation().List(mCatRange, true);
+            ws1.Cell(r, 5).CreateDataValidation().List("=MainCategoriesList", true);
             
             // SubCategory (Col 6) based on MainCategory (Col 5)
-            // Using Named Ranges for better Excel compatibility
             ws1.Cell(r, 6).CreateDataValidation().List("=IFERROR(OFFSET(MapChild, MATCH($E" + r + ", MapParent, 0)-1, 0, COUNTIF(MapParent, $E" + r + "), 1), \"\")", true);
             
             // SubSubCategory (Col 7) based on SubCategory (Col 6)
             ws1.Cell(r, 7).CreateDataValidation().List("=IFERROR(OFFSET(MapChild, MATCH($F" + r + ", MapParent, 0)-1, 0, COUNTIF(MapParent, $F" + r + "), 1), \"\")", true);
             
-            ws1.Cell(r, 12).CreateDataValidation().List(brandRange, true);
-            ws1.Cell(r, 3).CreateDataValidation().List(unitRange, true);
-            ws1.Cell(r, 11).CreateDataValidation().List(yesNoRange, true);
-            ws1.Cell(r, 19).CreateDataValidation().List(statRange, true);
-            ws1.Cell(r, 20).CreateDataValidation().List(yesNoRange, true);
+            ws1.Cell(r, 12).CreateDataValidation().List("=BrandsList", true);
+            ws1.Cell(r, 3).CreateDataValidation().List("=UnitsList", true);
+            ws1.Cell(r, 11).CreateDataValidation().List("=YesNoList", true);
+            ws1.Cell(r, 19).CreateDataValidation().List("=StatusList", true);
+            ws1.Cell(r, 20).CreateDataValidation().List("=YesNoList", true);
 
-            ws1.Cell(r, 13).CreateDataValidation().List(sizeRange, true);
-            ws1.Cell(r, 15).CreateDataValidation().List(colorRange, true);
+            ws1.Cell(r, 13).CreateDataValidation().List("=SizesList", true);
+            ws1.Cell(r, 15).CreateDataValidation().List("=ColorsList", true);
         }
 
         ws1.Cell(2,1).Value = "TS-001";
