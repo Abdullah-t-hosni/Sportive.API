@@ -62,7 +62,7 @@ public class EmployeesController : ControllerBase
                 e.Id, e.EmployeeNumber, e.Name, e.Phone, e.Email, e.NationalId,
                 e.JobTitle, e.DepartmentId, e.Department != null ? e.Department.Name : null,
                 e.HireDate, e.TerminationDate,
-                e.BaseSalary, e.TransportationAllowance, e.CommunicationAllowance, e.BonusAmount, e.FixedAllowance, e.FixedDeduction,
+                e.BaseSalary, e.TransportationAllowance, e.CommunicationAllowance, e.BonusAmount, e.FixedAllowance,
                 e.BankAccount, (int)e.Status, e.Notes,
                 e.AttachmentUrl, e.AttachmentPublicId,
                 e.CreatedAt,
@@ -79,7 +79,14 @@ public class EmployeesController : ControllerBase
         var list = await _db.Employees
             .Where(e => e.Status == EmployeeStatus.Active || (int)e.Status == 0)
             .OrderBy(e => e.Name)
-            .Select(e => new EmployeeBasicDto(e.Id, e.EmployeeNumber, e.Name, e.JobTitle, e.DepartmentId, e.Department != null ? e.Department.Name : null, e.BaseSalary, e.TransportationAllowance, e.CommunicationAllowance, e.BonusAmount, e.FixedAllowance, (int)e.Status))
+            .Select(e => new EmployeeBasicDto(
+                e.Id, e.EmployeeNumber, e.Name, e.JobTitle, e.DepartmentId, 
+                e.Department != null ? e.Department.Name : null, 
+                e.BaseSalary, e.TransportationAllowance, e.CommunicationAllowance, e.BonusAmount, e.FixedAllowance,
+                e.Advances.Where(a => a.Status != AdvanceStatus.FullyDeducted).Sum(a => a.Amount - a.DeductedAmount),
+                e.Bonuses.Where(b => b.PayrollRunId == null && b.CashAccountId == null).Sum(b => b.Amount),
+                e.Deductions.Where(d => d.PayrollRunId == null && d.CashAccountId == null).Sum(d => d.Amount),
+                (int)e.Status))
             .ToListAsync();
         return Ok(list);
     }
@@ -97,7 +104,7 @@ public class EmployeesController : ControllerBase
         return Ok(new EmployeeDto(
             e.Id, e.EmployeeNumber, e.Name, e.Phone, e.Email, e.NationalId,
             e.JobTitle, e.DepartmentId, e.Department?.Name, e.HireDate, e.TerminationDate,
-            e.BaseSalary, e.TransportationAllowance, e.CommunicationAllowance, e.BonusAmount, e.FixedAllowance, e.FixedDeduction, e.BankAccount, (int)e.Status, e.Notes,
+            e.BaseSalary, e.TransportationAllowance, e.CommunicationAllowance, e.BonusAmount, e.FixedAllowance, e.BankAccount, (int)e.Status, e.Notes,
             e.AttachmentUrl, e.AttachmentPublicId,
             e.CreatedAt,
             e.AppUserId, e.AppUser?.FullName));
@@ -144,7 +151,6 @@ public class EmployeesController : ControllerBase
             CommunicationAllowance  = dto.CommunicationAllowance,
             BonusAmount             = dto.BonusAmount,
             FixedAllowance          = dto.FixedAllowance,
-            FixedDeduction          = dto.FixedDeduction,
             BankAccount      = dto.BankAccount?.Trim(),
             Notes            = dto.Notes?.Trim(),
             AttachmentUrl    = dto.AttachmentUrl,
@@ -207,7 +213,6 @@ public class EmployeesController : ControllerBase
         emp.CommunicationAllowance  = dto.CommunicationAllowance;
         emp.BonusAmount             = dto.BonusAmount;
         emp.FixedAllowance    = dto.FixedAllowance;
-        emp.FixedDeduction    = dto.FixedDeduction;
         emp.BankAccount       = dto.BankAccount?.Trim();
         emp.Notes             = dto.Notes?.Trim();
         emp.AttachmentUrl     = dto.AttachmentUrl;
@@ -626,6 +631,19 @@ public class PayrollController : ControllerBase
                     adv.UpdatedAt = TimeHelper.GetEgyptTime();
                 }
             }
+
+            // ربط المكافآت والخصومات المعلقة بهذا المسير (لإغلاقها)
+            var empIds = run.Items.Select(i => i.EmployeeId).ToList();
+            
+            var pendingBonuses = await _db.EmployeeBonuses
+                .Where(b => empIds.Contains(b.EmployeeId) && b.PayrollRunId == null && b.CashAccountId == null)
+                .ToListAsync();
+            foreach (var b in pendingBonuses) b.PayrollRunId = run.Id;
+
+            var pendingDeductions = await _db.EmployeeDeductions
+                .Where(d => empIds.Contains(d.EmployeeId) && d.PayrollRunId == null && d.CashAccountId == null)
+                .ToListAsync();
+            foreach (var d in pendingDeductions) d.PayrollRunId = run.Id;
         }
 
         run.Status    = PayrollStatus.Posted;
@@ -722,11 +740,13 @@ public class EmployeeAdvancesController : ControllerBase
         if (emp == null) return NotFound("الموظف غير موجود.");
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
-        if (!mapDict.TryGetValue(MappingKeys.EmployeeAdvances, out var advAccId) || advAccId == null)
-            return BadRequest("لم يتم ضبط حساب سلف الموظفين في الإعدادات.");
 
-        if (!dto.CashAccountId.HasValue || dto.CashAccountId == 0)
-            return BadRequest("يجب اختيار حساب الخزينة/البنك للصرف.");
+        // 🎯 UNIFIED VOUCHER SYSTEM: Create a PaymentVoucher record for this advance (if cash disbursement)
+        if (dto.CashAccountId.HasValue && dto.CashAccountId > 0)
+        {
+            if (!mapDict.TryGetValue(MappingKeys.EmployeeAdvances, out var advAccId) || advAccId == null)
+                return BadRequest("لم يتم ضبط حساب سلف الموظفين في الإعدادات.");
+        }
 
         // Retry logic for sequence generation to handle race conditions
         for (int retry = 0; retry < 3; retry++)
@@ -758,26 +778,36 @@ public class EmployeeAdvancesController : ControllerBase
 
                 _db.EmployeeAdvances.Add(advance);
 
-                var voucher = new PaymentVoucher
+                if (dto.CashAccountId.HasValue && dto.CashAccountId > 0)
                 {
-                    VoucherNumber = advance.AdvanceNumber,
-                    VoucherDate = advance.AdvanceDate,
-                    Amount = advance.Amount,
-                    CashAccountId = advance.CashAccountId.Value,
-                    ToAccountId = advAccId.Value,
-                    EmployeeId = emp.Id,
-                    PaymentMethod = VoucherPaymentMethod.Cash,
-                    Description = $"سلفة موظف — {emp.Name}",
-                    Reference = advance.AdvanceNumber,
-                    CreatedAt = TimeHelper.GetEgyptTime(),
-                    CreatedByUserId = UserId
-                };
-                _db.PaymentVouchers.Add(voucher);
-                await _db.SaveChangesAsync();
+                    // Get account again from dict (safe because we checked above)
+                    mapDict.TryGetValue(MappingKeys.EmployeeAdvances, out var advAccId);
 
-                await _accounting.PostPaymentVoucherAsync(voucher);
-                advance.JournalEntryId = voucher.JournalEntryId;
-                await _db.SaveChangesAsync();
+                    var voucher = new PaymentVoucher
+                    {
+                        VoucherNumber = advance.AdvanceNumber,
+                        VoucherDate = advance.AdvanceDate,
+                        Amount = advance.Amount,
+                        CashAccountId = advance.CashAccountId.Value,
+                        ToAccountId = advAccId.Value,
+                        EmployeeId = emp.Id,
+                        PaymentMethod = VoucherPaymentMethod.Cash,
+                        Description = $"سلفة موظف — {emp.Name}",
+                        Reference = advance.AdvanceNumber,
+                        CreatedAt = TimeHelper.GetEgyptTime(),
+                        CreatedByUserId = UserId
+                    };
+                    _db.PaymentVouchers.Add(voucher);
+                    await _db.SaveChangesAsync();
+
+                    await _accounting.PostPaymentVoucherAsync(voucher);
+                    advance.JournalEntryId = voucher.JournalEntryId;
+                    await _db.SaveChangesAsync();
+                }
+                else
+                {
+                    await _db.SaveChangesAsync();
+                }
 
                 return Ok(new { id = advance.Id, advanceNumber = advance.AdvanceNumber, journalEntryId = advance.JournalEntryId });
             }
@@ -906,11 +936,13 @@ public class EmployeeBonusesController : ControllerBase
         if (emp == null) return NotFound("الموظف غير موجود.");
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
-        if (!mapDict.TryGetValue(MappingKeys.SalaryExpense, out var bonusExpenseAccId) || bonusExpenseAccId == null)
-            return BadRequest("لم يتم ضبط حساب مصروف الرواتب (للمكافآت) في الإعدادات.");
 
-        if (!dto.CashAccountId.HasValue || dto.CashAccountId == 0)
-            return BadRequest("يجب اختيار حساب الخزينة/البنك للصرف.");
+        // 🎯 UNIFIED VOUCHER SYSTEM: Create a PaymentVoucher record for this bonus (if cash disbursement)
+        if (dto.CashAccountId.HasValue && dto.CashAccountId > 0)
+        {
+            if (!mapDict.TryGetValue(MappingKeys.SalaryExpense, out var bonusExpenseAccId) || bonusExpenseAccId == null)
+                return BadRequest("لم يتم ضبط حساب مصروف الرواتب (للمكافآت) في الإعدادات.");
+        }
 
         // Retry logic for sequence generation
         for (int retry = 0; retry < 3; retry++)
@@ -942,26 +974,36 @@ public class EmployeeBonusesController : ControllerBase
 
                 _db.EmployeeBonuses.Add(bonus);
 
-                var voucher = new PaymentVoucher
+                if (dto.CashAccountId.HasValue && dto.CashAccountId > 0)
                 {
-                    VoucherNumber = bonus.BonusNumber,
-                    VoucherDate = bonus.BonusDate,
-                    Amount = bonus.Amount,
-                    CashAccountId = bonus.CashAccountId.Value,
-                    ToAccountId = bonusExpenseAccId.Value,
-                    EmployeeId = emp.Id,
-                    PaymentMethod = VoucherPaymentMethod.Cash,
-                    Description = $"مكافأة فورية — {emp.Name}",
-                    Reference = bonus.BonusNumber,
-                    CreatedAt = TimeHelper.GetEgyptTime(),
-                    CreatedByUserId = UserId
-                };
-                _db.PaymentVouchers.Add(voucher);
-                await _db.SaveChangesAsync();
+                    // Get account again from dict
+                    mapDict.TryGetValue(MappingKeys.SalaryExpense, out var bonusExpenseAccId);
 
-                await _accounting.PostPaymentVoucherAsync(voucher);
-                bonus.JournalEntryId = voucher.JournalEntryId;
-                await _db.SaveChangesAsync();
+                    var voucher = new PaymentVoucher
+                    {
+                        VoucherNumber = bonus.BonusNumber,
+                        VoucherDate = bonus.BonusDate,
+                        Amount = bonus.Amount,
+                        CashAccountId = bonus.CashAccountId.Value,
+                        ToAccountId = bonusExpenseAccId.Value,
+                        EmployeeId = emp.Id,
+                        PaymentMethod = VoucherPaymentMethod.Cash,
+                        Description = $"مكافأة موظف — {emp.Name}",
+                        Reference = bonus.BonusNumber,
+                        CreatedAt = TimeHelper.GetEgyptTime(),
+                        CreatedByUserId = UserId
+                    };
+                    _db.PaymentVouchers.Add(voucher);
+                    await _db.SaveChangesAsync();
+
+                    await _accounting.PostPaymentVoucherAsync(voucher);
+                    bonus.JournalEntryId = voucher.JournalEntryId;
+                    await _db.SaveChangesAsync();
+                }
+                else
+                {
+                    await _db.SaveChangesAsync();
+                }
 
                 return Ok(new { id = bonus.Id, bonusNumber = bonus.BonusNumber, journalEntryId = bonus.JournalEntryId });
             }

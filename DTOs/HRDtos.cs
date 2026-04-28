@@ -21,7 +21,6 @@ public record CreateEmployeeDto(
     decimal       CommunicationAllowance  = 0,
     decimal       BonusAmount             = 0,
     decimal       FixedAllowance          = 0,
-    decimal       FixedDeduction          = 0,
     string?       Phone              = null,
     string?       Email              = null,
     string?       NationalId         = null,
@@ -43,7 +42,6 @@ public record UpdateEmployeeDto(
     decimal       CommunicationAllowance  = 0,
     decimal       BonusAmount             = 0,
     decimal       FixedAllowance          = 0,
-    decimal       FixedDeduction          = 0,
     string?       Phone              = null,
     string?       Email              = null,
     string?       NationalId         = null,
@@ -73,7 +71,6 @@ public record EmployeeDto(
     decimal        CommunicationAllowance,
     decimal        BonusAmount,
     decimal        FixedAllowance,
-    decimal        FixedDeduction,
     string?        BankAccount,
     int            Status,
     string?        Notes,
@@ -84,7 +81,7 @@ public record EmployeeDto(
     string?        AppUserName  = null
 );
 
-public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, int? DepartmentId, string? DepartmentName, decimal BaseSalary, decimal TransportationAllowance, decimal CommunicationAllowance, decimal BonusAmount, decimal FixedAllowance, int Status);
+public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, int? DepartmentId, string? DepartmentName, decimal BaseSalary, decimal TransportationAllowance, decimal CommunicationAllowance, decimal BonusAmount, decimal FixedAllowance, decimal PendingAdvancesAmount, decimal PendingBonusesAmount, decimal PendingDeductionsAmount, int Status);
 
 // ══════════════════════════════════════════════════════
 // PAYROLL RUN DTOs
