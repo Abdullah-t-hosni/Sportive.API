@@ -100,9 +100,17 @@ public class AccountingCoreService
         JournalEntry? existing = null;
         if (!string.IsNullOrEmpty(reference))
         {
+            var cleanRef = reference.Trim().ToLower();
+            _logger.LogInformation("[Accounting] Searching for existing entry Type={Type}, Ref={Ref}", type, cleanRef);
+            
             existing = await _db.JournalEntries
                 .Include(e => e.Lines)
-                .FirstOrDefaultAsync(e => e.Type == type && e.Reference == reference);
+                .FirstOrDefaultAsync(e => e.Type == type && e.Reference != null && e.Reference.Trim().ToLower() == cleanRef);
+
+            if (existing != null)
+                _logger.LogInformation("[Accounting] Found existing entry ID={Id}, Number={Num} to update.", existing.Id, existing.EntryNumber);
+            else
+                _logger.LogWarning("[Accounting] No existing entry found for Ref={Ref}. A new one will be created.", cleanRef);
         }
 
         var totalDr = lines.Sum(l => l.debit);
