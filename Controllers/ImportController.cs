@@ -99,17 +99,26 @@ public class ImportController : ControllerBase
         }
         
         // Group by parent to ensure children are contiguous for OFFSET/MATCH
-        mapping = mapping.OrderBy(m => m.Parent).ToList();
+        mapping = mapping
+            .Where(m => !string.IsNullOrWhiteSpace(m.Parent) && !string.IsNullOrWhiteSpace(m.Child))
+            .Select(m => (Parent: m.Parent.Trim(), Child: m.Child.Trim()))
+            .Distinct()
+            .OrderBy(m => m.Parent)
+            .ToList();
         
+        // Add a dummy entry to ensure the range is never empty and provide feedback
+        wsL.Cell(1, 10).Value = "__DUMMY__";
+        wsL.Cell(1, 11).Value = "(اختر التصنيف أولاً)";
+
         for (int i = 0; i < mapping.Count; i++)
         {
-            wsL.Cell(i + 1, 10).Value = mapping[i].Parent;
-            wsL.Cell(i + 1, 11).Value = mapping[i].Child;
+            wsL.Cell(i + 2, 10).Value = mapping[i].Parent;
+            wsL.Cell(i + 2, 11).Value = mapping[i].Child;
         }
         
-        // Define Names for mapping columns to keep formulas clean
-        var parentRange = wsL.Range(1, 10, Math.Max(1, mapping.Count), 10);
-        var childRange  = wsL.Range(1, 11, Math.Max(1, mapping.Count), 11);
+        // Define Names for mapping columns (including the dummy row)
+        var parentRange = wsL.Range(1, 10, mapping.Count + 1, 10);
+        var childRange  = wsL.Range(1, 11, mapping.Count + 1, 11);
         wb.DefinedNames.Add("MapParent", parentRange);
         wb.DefinedNames.Add("MapChild", childRange);
 
@@ -140,10 +149,11 @@ public class ImportController : ControllerBase
             ws1.Cell(r, 5).CreateDataValidation().List("=MainCategoriesList", true);
             
             // SubCategory (Col 6) based on MainCategory (Col 5)
-            ws1.Cell(r, 6).CreateDataValidation().List("=IFERROR(OFFSET(MapChild, MATCH($E" + r + ", MapParent, 0)-1, 0, COUNTIF(MapParent, $E" + r + "), 1), \"\")", true);
+            // Using a more robust formula: IF cell is empty, show nothing; otherwise OFFSET from MATCH
+            ws1.Cell(r, 6).CreateDataValidation().List("=IF($E" + r + "=\"\", MapChild, OFFSET(MapChild, MATCH($E" + r + ", MapParent, 0)-1, 0, MAX(1, COUNTIF(MapParent, $E" + r + ")), 1))", true);
             
             // SubSubCategory (Col 7) based on SubCategory (Col 6)
-            ws1.Cell(r, 7).CreateDataValidation().List("=IFERROR(OFFSET(MapChild, MATCH($F" + r + ", MapParent, 0)-1, 0, COUNTIF(MapParent, $F" + r + "), 1), \"\")", true);
+            ws1.Cell(r, 7).CreateDataValidation().List("=IF($F" + r + "=\"\", MapChild, OFFSET(MapChild, MATCH($F" + r + ", MapParent, 0)-1, 0, MAX(1, COUNTIF(MapParent, $F" + r + ")), 1))", true);
             
             ws1.Cell(r, 12).CreateDataValidation().List("=BrandsList", true);
             ws1.Cell(r, 3).CreateDataValidation().List("=UnitsList", true);
