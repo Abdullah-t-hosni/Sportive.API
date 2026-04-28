@@ -193,9 +193,9 @@ public class ImportController : ControllerBase
                 ws1.Cell(r, 20).CreateDataValidation().List("=YesNoList", true);
                 ws1.Cell(r, 15).CreateDataValidation().List("=ColorsList", true);
 
-                var sizeFormula = "=IF($G" + r + "<>\"\", IF(COUNTIF(SizeParent, $G" + r + ")>0, OFFSET(SizeChild, MATCH($G" + r + ", SizeParent, 0)-1, 0, COUNTIF(SizeParent, $G" + r + "), 1), SizesList), " +
-                                 "IF($F" + r + "<>\"\", IF(COUNTIF(SizeParent, $F" + r + ")>0, OFFSET(SizeChild, MATCH($F" + r + ", SizeParent, 0)-1, 0, COUNTIF(SizeParent, $F" + r + "), 1), SizesList), " +
-                                 "IF($E" + r + "<>\"\", IF(COUNTIF(SizeParent, $E" + r + ")>0, OFFSET(SizeChild, MATCH($E" + r + ", SizeParent, 0)-1, 0, COUNTIF(SizeParent, $E" + r + "), 1), SizesList), SizesList)))";
+                var sizeFormula = "=IF(COUNTIF(SizeParent,IF($G" + r + "<>\"\",$G" + r + ",IF($F" + r + "<>\"\",$F" + r + ",$E" + r + ")))>0," +
+                                 "OFFSET(SizeChild,MATCH(IF($G" + r + "<>\"\",$G" + r + ",IF($F" + r + "<>\"\",$F" + r + ",$E" + r + ")),SizeParent,0)-1,0," +
+                                 "COUNTIF(SizeParent,IF($G" + r + "<>\"\",$G" + r + ",IF($F" + r + "<>\"\",$F" + r + ",$E" + r + "))),1),SizesList)";
                 
                 ws1.Cell(r, 13).CreateDataValidation().List(sizeFormula, true);
             }
