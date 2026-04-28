@@ -14,7 +14,7 @@ public interface IAccountingService
 {
     Task PostSalesOrderAsync(Order order);
     Task PostSalesOrderByIdAsync(int orderId);
-    Task PostSalesReturnAsync(Order order);
+    Task PostSalesReturnAsync(Order order, int? refundAccountId = null);
     Task PostPurchaseInvoiceAsync(PurchaseInvoice invoice);
     Task PostPurchaseReturnAsync(PurchaseInvoice invoice, decimal returnedSubTotal = 0, decimal returnedTaxAmount = 0, decimal returnedDiscountAmount = 0);
     Task PostPurchaseReturnAsync(PurchaseReturn pReturn);
@@ -69,7 +69,7 @@ public class AccountingService : IAccountingService
     }
 
     public Task PostSalesOrderAsync(Order order) => _sales.PostSalesOrderAsync(order);
-    public Task PostSalesReturnAsync(Order order) => _sales.PostSalesReturnAsync(order);
+    public Task PostSalesReturnAsync(Order order, int? refundAccountId = null) => _sales.PostSalesReturnAsync(order, refundAccountId);
     public Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null) 
         => _sales.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId);
 

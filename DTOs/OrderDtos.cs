@@ -196,7 +196,7 @@ public record OrderStatusHistoryDto(
     string? ChangedByName = null
 );
 
-public record UpdateOrderStatusDto(OrderStatus Status, string? Note, int? PerformedByEmployeeId = null);
+public record UpdateOrderStatusDto(OrderStatus Status, string? Note, int? PerformedByEmployeeId = null, int? RefundAccountId = null);
 public record UpdatePaymentStatusDto(PaymentStatus PaymentStatus, string? Note, int? PerformedByEmployeeId = null);
 public record UpdateOrderAdminNoteDto(string Note);
 

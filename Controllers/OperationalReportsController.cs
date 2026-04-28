@@ -1169,7 +1169,9 @@ public class OperationalReportsController : ControllerBase
                     "Completed",
                     m.Product?.SKU ?? "N/A",
                     m.RemainingStock,
-                    sourceId
+                    sourceId,
+                    m.ProductVariant?.Size ?? "أساسي",
+                    m.ProductVariant?.ColorAr ?? m.ProductVariant?.Color ?? "-"
                 );
             }).ToList();
 
@@ -1797,4 +1799,4 @@ public record PurchaseRow(int Id, string InvoiceNumber, string SupplierInvoiceNu
 public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason, List<ReportItemDto>? Items = null);
 public record ReportItemDto(string SKU, string ProductName, string Size, string Color, decimal Quantity, decimal UnitPrice = 0, decimal UnitCost = 0, decimal Discount = 0, decimal LineTotal = 0);
 public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal GrossSales, decimal TotalReturns, decimal TotalDiscount, decimal NetSales, int Cancellations);
-public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "", int Balance = 0, int? SourceId = null);
+public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "", int Balance = 0, int? SourceId = null, string Size = "", string Color = "");

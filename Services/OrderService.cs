@@ -928,7 +928,7 @@ public class OrderService : IOrderService
 
         if (dto.Status == OrderStatus.Returned || dto.Status == OrderStatus.Cancelled)
         {
-            _ = PostSalesReturnWithRetryAsync(orderId);
+            _ = PostSalesReturnWithRetryAsync(orderId, dto.RefundAccountId);
         }
 
         return (await GetOrderByIdAsync(orderId))!;
@@ -1192,7 +1192,7 @@ public class OrderService : IOrderService
         }
     }
 
-    private async Task PostSalesReturnWithRetryAsync(int orderId)
+    private async Task PostSalesReturnWithRetryAsync(int orderId, int? refundAccountId = null)
     {
         const int maxAttempts = 3;
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
@@ -1208,7 +1208,7 @@ public class OrderService : IOrderService
                     .Include(o => o.Items).ThenInclude(i => i.Product)
                     .Include(o => o.DeliveryAddress)
                     .FirstAsync(o => o.Id == orderId);
-                await accounting.PostSalesReturnAsync(order);
+                await accounting.PostSalesReturnAsync(order, refundAccountId);
                 return;
             }
             catch (Exception ex) when (attempt < maxAttempts)

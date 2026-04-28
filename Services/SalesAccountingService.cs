@@ -269,50 +269,66 @@ public class SalesAccountingService
     // ══════════════════════════════════════════════════════
     // مرتجع مبيعات كامل
     // ══════════════════════════════════════════════════════
-    public async Task PostSalesReturnAsync(Order order)
+    public async Task PostSalesReturnAsync(Order order, int? refundAccountId = null)
     {
         if (await _core.EntryExistsAsync(JournalEntryType.SalesReturn, order.OrderNumber + "-RTN")) return;
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
+        var store   = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
 
         string salesReturnAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesReturn, mapDict)}";
-        string receivablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer,    mapDict)}";
         string inventoryAcct   = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Inventory,   mapDict)}";
         string cogsAcct        = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.COGS,        mapDict)}";
+
+        // ── Customer Account ─────────────────────────────────
+        string receivablesAcct;
+        if (order.Customer?.MainAccountId != null)
+            receivablesAcct = $"ID:{order.Customer.MainAccountId}";
+        else
+            receivablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
         var totalVatAmount = order.TotalVatAmount;
         var netReturnPrice = order.TotalAmount - totalVatAmount;
 
-        lines.Add((salesReturnAcct, netReturnPrice, 0, $"مرتجع مبيعات (صافي) - {order.OrderNumber}"));
+        lines.Add((salesReturnAcct, netReturnPrice, 0, $"مرتجع مبيعات - {order.OrderNumber}"));
         if (totalVatAmount > 0)
         {
-            string vatAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatOutput, mapDict)}";
-            lines.Add((vatAcct, totalVatAmount, 0, $"إلغاء ضريبة مبيعات - {order.OrderNumber}"));
+            string vatAcct = !string.IsNullOrEmpty(store?.StoreVatAccountId)
+                ? $"ID:{store.StoreVatAccountId}"
+                : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatOutput, mapDict)}";
+            lines.Add((vatAcct, totalVatAmount, 0, $"مرتجع ضريبة مبيعات - {order.OrderNumber}"));
         }
 
+        // ── Refund Routing ────────────────────────────────────
+        // Image logic: "لو دفع" -> Cash/Treasury, "لو لم يدفع" -> Customer
         if (order.PaymentStatus == PaymentStatus.Paid || order.Source == OrderSource.POS)
         {
-            var cashCode = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
-            lines.Add((cashCode, 0, order.TotalAmount, $"رد نقدي للمرتجع ({_core.GetMethodLabel(order.PaymentMethod)}) - {order.OrderNumber}"));
+            string cashId = refundAccountId.HasValue
+                ? $"ID:{refundAccountId.Value}"
+                : await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
+
+            string methodLabel = _core.GetMethodLabel(order.PaymentMethod);
+            lines.Add((cashId, 0, order.TotalAmount, $"رد نقدية للمرتجع ({methodLabel}) - {order.OrderNumber}"));
         }
         else
         {
-            lines.Add((receivablesAcct, 0, order.TotalAmount, $"تنزيل من مديونية العميل (مرتجع آجل) - {order.OrderNumber}"));
+            lines.Add((receivablesAcct, 0, order.TotalAmount, $"تنزيل مديونية (مرتجع آجل) - {order.Customer?.FullName}"));
         }
 
+        // ── Stock Reversal ────────────────────────────────────
         var totalCost = order.Items?.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity) ?? 0;
         if (totalCost > 0)
         {
-            lines.Add((inventoryAcct, totalCost, 0,         $"إعادة للمخزون - {order.OrderNumber}"));
-            lines.Add((cogsAcct,      0,         totalCost, $"تخفيض تكلفة المبيعات - {order.OrderNumber}"));
+            lines.Add((inventoryAcct, totalCost, 0,         "المخزون (إعادة)"));
+            lines.Add((cogsAcct,      0,         totalCost, "تكلفة البضاعة المباعة (تخفيض)"));
         }
 
         await _core.PostEntryAsync(
             type:        JournalEntryType.SalesReturn,
             reference:   order.OrderNumber + "-RTN",
-            description: $"مرتجع مبيعات موحد {order.OrderNumber}",
+            description: $"مرتجع مبيعات {order.OrderNumber} - {order.Customer?.FullName}",
             date:        TimeHelper.GetEgyptTime(),
             lines:       lines,
             orderId:     order.Id,
@@ -378,8 +394,8 @@ public class SalesAccountingService
 
         if (totalCostReturn > 0)
         {
-            lines.Add((inventoryAcct, totalCostReturn, 0,              $"إعادة للمخزون (جزئي) - {order.OrderNumber}"));
-            lines.Add((cogsAcct,      0,               totalCostReturn, $"تخفيض تكلفة (جزئي) - {order.OrderNumber}"));
+            lines.Add((inventoryAcct, totalCostReturn, 0,              "المخزون (إعادة جزئي)"));
+            lines.Add((cogsAcct,      0,               totalCostReturn, "تكلفة البضاعة المباعة (تخفيض جزئي)"));
         }
 
         await _core.PostEntryAsync(
