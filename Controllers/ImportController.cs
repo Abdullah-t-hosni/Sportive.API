@@ -25,203 +25,203 @@ public class ImportController : ControllerBase
     [HttpGet("template")]
     public async Task<IActionResult> GetTemplate()
     {
-        var allCats      = await _db.Categories.Where(c => c.NameAr != null).ToListAsync();
-        var mainCats     = allCats.Where(c => c.ParentId == null).ToList();
-        var brands       = await _db.Brands.Where(b => b.NameAr != null).Select(b => b.NameAr!).ToListAsync();
-        var units        = await _db.ProductUnits.Where(u => u.NameAr != null).Select(u => u.NameAr!).ToListAsync();
-        
-        // Fetch existing sizes and colors to provide as options
-        var existingSizes  = await _db.ProductVariants.Where(v => v.Size != null).Select(v => v.Size!).Distinct().ToListAsync();
-        var catNames = allCats.Select(c => c.NameAr).Where(n => n != null).ToHashSet();
-        var existingColors = await _db.ProductVariants
-            .Where(v => v.ColorAr != null)
-            .Select(v => v.ColorAr!)
-            .Distinct()
-            .ToListAsync();
-        
-        // Filter out colors that are actually category names or too long
-        existingColors = existingColors
-            .Where(c => !catNames.Contains(c) && c.Length < 25)
-            .ToList();
-
-        var standardColors = new List<string> { 
-            "أبيض", "أسود", "أحمر", "أزرق", "أخضر", "أصفر", "رمادي", "كحلي", "بني", "بيج", "برتقالي", "بنفسجي", "سماوي", "ذهبي", "فضي" 
-        };
-        existingColors = existingColors.Concat(standardColors).Distinct().ToList();
-
-        using var wb = new XLWorkbook();
-        var wsL = wb.Worksheets.Add("Lists");
-        wsL.Hide();
-
-        // 1. Write Main Categories to Col 1
-        for (int i = 0; i < mainCats.Count; i++) wsL.Cell(i + 1, 1).Value = mainCats[i].NameAr;
-        var mCatRange = wsL.Range(1, 1, Math.Max(1, mainCats.Count), 1);
-        wb.DefinedNames.Add("MainCategoriesList", mCatRange);
-
-        // 2. Extra Lists (Fixed Columns 2-10)
-        void FillCol(int col, List<string> items) {
-            for (int i = 0; i < items.Count; i++) wsL.Cell(i + 1, col).Value = items[i];
-        }
-
-        if (!brands.Any()) brands.Add("عام");
-        if (!units.Any()) units.Add("قطعة");
-        if (!existingSizes.Any()) existingSizes = new List<string> { "S", "M", "L", "XL", "XXL", "3XL", "Free Size" };
-        if (!existingColors.Any()) existingColors = new List<string> { "أبيض", "أسود", "أحمر", "أزرق", "أخضر", "رمادي", "كحلي", "بني" };
-
-        FillCol(2, brands);     
-        FillCol(3, units);      
-        FillCol(4, new List<string> { "نعم", "لا" });
-        FillCol(5, new List<string> { "نشط", "مسودة", "مخفي" });
-        FillCol(6, existingSizes);
-        FillCol(7, existingColors);
-
-        wb.DefinedNames.Add("BrandsList", wsL.Range(1, 2, Math.Max(1, brands.Count), 2));
-        wb.DefinedNames.Add("UnitsList",  wsL.Range(1, 3, Math.Max(1, units.Count), 3));
-        wb.DefinedNames.Add("YesNoList",  wsL.Range(1, 4, 2, 4));
-        wb.DefinedNames.Add("StatusList", wsL.Range(1, 5, 3, 5));
-        wb.DefinedNames.Add("SizesList",  wsL.Range(1, 6, Math.Max(1, existingSizes.Count), 6));
-        wb.DefinedNames.Add("ColorsList", wsL.Range(1, 7, Math.Max(1, existingColors.Count), 7));
-
-        // 3. Category Mapping (Cols 10-11) - Robust OFFSET/MATCH approach
-        var mapping = new List<(string Parent, string Child)>();
-        foreach (var mCat in mainCats)
+        try
         {
-            var subs = allCats.Where(c => c.ParentId == mCat.Id).ToList();
-            foreach (var sub in subs)
+            var allCats      = await _db.Categories.Where(c => c.NameAr != null).ToListAsync();
+            var mainCats     = allCats.Where(c => c.ParentId == null).ToList();
+            var brands       = await _db.Brands.Where(b => b.NameAr != null).Select(b => b.NameAr!).ToListAsync();
+            var units        = await _db.ProductUnits.Where(u => u.NameAr != null).Select(u => u.NameAr!).ToListAsync();
+            
+            // Fetch existing sizes and colors to provide as options
+            var existingSizes  = await _db.ProductVariants.Where(v => v.Size != null).Select(v => v.Size!).Distinct().ToListAsync();
+            var catNames = allCats.Select(c => c.NameAr).Where(n => n != null).ToHashSet();
+            var existingColors = await _db.ProductVariants
+                .Where(v => v.ColorAr != null)
+                .Select(v => v.ColorAr!)
+                .Distinct()
+                .ToListAsync();
+            
+            // Filter out colors that are actually category names or too long
+            existingColors = existingColors
+                .Where(c => !catNames.Contains(c) && c.Length < 25)
+                .ToList();
+
+            var standardColors = new List<string> { 
+                "أبيض", "أسود", "أحمر", "أزرق", "أخضر", "أصفر", "رمادي", "كحلي", "بني", "بيج", "برتقالي", "بنفسجي", "سماوي", "ذهبي", "فضي" 
+            };
+            existingColors = existingColors.Concat(standardColors).Distinct().ToList();
+
+            using var wb = new XLWorkbook();
+            var wsL = wb.Worksheets.Add("Lists");
+            wsL.Hide();
+
+            // 1. Write Main Categories to Col 1
+            for (int i = 0; i < mainCats.Count; i++) wsL.Cell(i + 1, 1).Value = mainCats[i].NameAr;
+            var mCatRange = wsL.Range(1, 1, Math.Max(1, mainCats.Count), 1);
+            wb.DefinedNames.Add("MainCategoriesList", mCatRange);
+
+            // 2. Extra Lists (Fixed Columns 2-10)
+            void FillCol(int col, List<string> items) {
+                for (int i = 0; i < items.Count; i++) wsL.Cell(i + 1, col).Value = items[i];
+            }
+
+            if (!brands.Any()) brands.Add("عام");
+            if (!units.Any()) units.Add("قطعة");
+            if (!existingSizes.Any()) existingSizes = new List<string> { "S", "M", "L", "XL", "XXL", "3XL", "Free Size" };
+            if (!existingColors.Any()) existingColors = new List<string> { "أبيض", "أسود", "أحمر", "أزرق", "أخضر", "رمادي", "كحلي", "بني" };
+
+            FillCol(2, brands);     
+            FillCol(3, units);      
+            FillCol(4, new List<string> { "نعم", "لا" });
+            FillCol(5, new List<string> { "نشط", "مسودة", "مخفي" });
+            FillCol(6, existingSizes);
+            FillCol(7, existingColors);
+
+            wb.DefinedNames.Add("BrandsList", wsL.Range(1, 2, Math.Max(1, brands.Count), 2));
+            wb.DefinedNames.Add("UnitsList",  wsL.Range(1, 3, Math.Max(1, units.Count), 3));
+            wb.DefinedNames.Add("YesNoList",  wsL.Range(1, 4, 2, 4));
+            wb.DefinedNames.Add("StatusList", wsL.Range(1, 5, 3, 5));
+            wb.DefinedNames.Add("SizesList",  wsL.Range(1, 6, Math.Max(1, existingSizes.Count), 6));
+            wb.DefinedNames.Add("ColorsList", wsL.Range(1, 7, Math.Max(1, existingColors.Count), 7));
+
+            // 3. Category Mapping (Cols 10-11)
+            var mapping = new List<(string Parent, string Child)>();
+            foreach (var mCat in mainCats)
             {
-                mapping.Add((mCat.NameAr!, sub.NameAr!));
-                var subSubs = allCats.Where(c => c.ParentId == sub.Id).ToList();
-                foreach (var ss in subSubs)
+                var subs = allCats.Where(c => c.ParentId == mCat.Id).ToList();
+                foreach (var sub in subs)
                 {
-                    mapping.Add((sub.NameAr!, ss.NameAr!));
+                    mapping.Add((mCat.NameAr!, sub.NameAr!));
+                    var subSubs = allCats.Where(c => c.ParentId == sub.Id).ToList();
+                    foreach (var ss in subSubs)
+                    {
+                        mapping.Add((sub.NameAr!, ss.NameAr!));
+                    }
                 }
             }
-        }
-        
-        // Group by parent to ensure children are contiguous for OFFSET/MATCH
-        mapping = mapping
-            .Where(m => !string.IsNullOrWhiteSpace(m.Parent) && !string.IsNullOrWhiteSpace(m.Child))
-            .Select(m => (Parent: m.Parent.Trim(), Child: m.Child.Trim()))
-            .Distinct()
-            .OrderBy(m => m.Parent)
-            .ToList();
-        
-        // Add a dummy entry to ensure the range is never empty and provide feedback
-        wsL.Cell(1, 10).Value = "__DUMMY__";
-        wsL.Cell(1, 11).Value = "(اختر التصنيف أولاً)";
+            
+            mapping = mapping
+                .Where(m => !string.IsNullOrWhiteSpace(m.Parent) && !string.IsNullOrWhiteSpace(m.Child))
+                .Select(m => (Parent: m.Parent.Trim(), Child: m.Child.Trim()))
+                .Distinct()
+                .OrderBy(m => m.Parent)
+                .ToList();
+            
+            wsL.Cell(1, 10).Value = "__DUMMY__";
+            wsL.Cell(1, 11).Value = "(اختر التصنيف أولاً)";
 
-        for (int i = 0; i < mapping.Count; i++)
-        {
-            wsL.Cell(i + 2, 10).Value = mapping[i].Parent;
-            wsL.Cell(i + 2, 11).Value = mapping[i].Child;
-        }
-        
-        // ── 4. Size Mapping based on Categories ──
-        var sizeGroups = await _db.SizeGroups.Include(g => g.Values).ToListAsync();
-        var catSizeMapping = new List<(string CatName, string SizeValue)>();
-        
-        foreach (var cat in allCats)
-        {
-            var targetGroupId = cat.SizeGroupId;
-            var current = cat;
-            while (targetGroupId == null && current.ParentId != null)
+            for (int i = 0; i < mapping.Count; i++)
             {
-                current = allCats.FirstOrDefault(c => c.Id == current.ParentId);
-                if (current == null) break;
-                targetGroupId = current.SizeGroupId;
+                wsL.Cell(i + 2, 10).Value = mapping[i].Parent;
+                wsL.Cell(i + 2, 11).Value = mapping[i].Child;
             }
             
-            if (targetGroupId != null)
+            // 4. Size Mapping
+            var sizeGroups = await _db.SizeGroups.Include(g => g.Values).ToListAsync();
+            var catSizeMapping = new List<(string CatName, string SizeValue)>();
+            
+            foreach (var cat in allCats)
             {
-                var group = sizeGroups.FirstOrDefault(g => g.Id == targetGroupId);
-                if (group != null)
+                var targetGroupId = cat.SizeGroupId;
+                var current = cat;
+                while (targetGroupId == null && current.ParentId != null)
                 {
-                    foreach (var val in group.Values.OrderBy(v => v.SortOrder))
-                        catSizeMapping.Add((cat.NameAr!, val.Value));
+                    current = allCats.FirstOrDefault(c => c.Id == current.ParentId);
+                    if (current == null) break;
+                    targetGroupId = current.SizeGroupId;
+                }
+                
+                if (targetGroupId != null)
+                {
+                    var group = sizeGroups.FirstOrDefault(g => g.Id == targetGroupId);
+                    if (group != null)
+                    {
+                        foreach (var val in group.Values.OrderBy(v => v.SortOrder))
+                            catSizeMapping.Add((cat.NameAr!, val.Value));
+                    }
                 }
             }
-        }
 
-        wsL.Cell(1, 14).Value = "__DUMMY__";
-        wsL.Cell(1, 15).Value = "(اختر التصنيف أولاً)";
-        for (int i = 0; i < catSizeMapping.Count; i++)
+            wsL.Cell(1, 14).Value = "__DUMMY__";
+            wsL.Cell(1, 15).Value = "(اختر التصنيف أولاً)";
+            for (int i = 0; i < catSizeMapping.Count; i++)
+            {
+                wsL.Cell(i + 2, 14).Value = catSizeMapping[i].CatName;
+                wsL.Cell(i + 2, 15).Value = catSizeMapping[i].SizeValue;
+            }
+            wb.DefinedNames.Add("SizeParent", wsL.Range(1, 14, catSizeMapping.Count + 1, 14));
+            wb.DefinedNames.Add("SizeChild",  wsL.Range(1, 15, catSizeMapping.Count + 1, 15));
+            
+            var parentRange = wsL.Range(1, 10, mapping.Count + 1, 10);
+            var childRange  = wsL.Range(1, 11, mapping.Count + 1, 11);
+            wb.DefinedNames.Add("MapParent", parentRange);
+            wb.DefinedNames.Add("MapChild", childRange);
+
+            var ws1 = wb.Worksheets.Add("المنتجات والمقاسات");
+            ws1.RightToLeft = true;
+
+            var headers1 = new[] {
+                "الكود SKU *", "الاسم عربي *", "الوحدة *", "الاسم انجليزي",
+                "التصنيف الأساسي *", "التصنيف الفرعي", "التصنيف الفرعي 2",
+                "سعر التكلفة", "السعر *", "سعر الخصم",
+                "خاضع للضريبة؟ *", "الماركة", "المقاس", "اللون (English)", "اللون (عربي)",
+                "المخزون", "فارق السعر للمقاس", "حد الطلب", "الحالة",
+                "مميز (نعم/لا)", "الوصف عربي", "الوصف انجليزي"
+            };
+            for (int c = 0; c < headers1.Length; c++)
+            {
+                var cell = ws1.Cell(1, c+1);
+                cell.Value = headers1[c];
+                cell.Style.Font.Bold = true;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1a1a2e");
+                cell.Style.Font.FontColor = XLColor.White;
+            }
+
+            ws1.Column(1).Style.NumberFormat.Format = "@"; 
+
+            for (int r = 2; r <= 500; r++) // Reduced to 500 for better performance and reliability
+            {
+                ws1.Cell(r, 5).CreateDataValidation().List("=MainCategoriesList", true);
+                ws1.Cell(r, 6).CreateDataValidation().List("=IF($E" + r + "=\"\", MapChild, OFFSET(MapChild, MATCH($E" + r + ", MapParent, 0)-1, 0, MAX(1, COUNTIF(MapParent, $E" + r + ")), 1))", true);
+                ws1.Cell(r, 7).CreateDataValidation().List("=IF($F" + r + "=\"\", MapChild, OFFSET(MapChild, MATCH($F" + r + ", MapParent, 0)-1, 0, MAX(1, COUNTIF(MapParent, $F" + r + ")), 1))", true);
+                
+                ws1.Cell(r, 12).CreateDataValidation().List("=BrandsList", true);
+                ws1.Cell(r, 3).CreateDataValidation().List("=UnitsList", true);
+                ws1.Cell(r, 11).CreateDataValidation().List("=YesNoList", true);
+                ws1.Cell(r, 19).CreateDataValidation().List("=StatusList", true);
+                ws1.Cell(r, 20).CreateDataValidation().List("=YesNoList", true);
+                ws1.Cell(r, 15).CreateDataValidation().List("=ColorsList", true);
+
+                var sizeFormula = "=IF($G" + r + "<>\"\", IF(COUNTIF(SizeParent, $G" + r + ")>0, OFFSET(SizeChild, MATCH($G" + r + ", SizeParent, 0)-1, 0, COUNTIF(SizeParent, $G" + r + "), 1), SizesList), " +
+                                 "IF($F" + r + "<>\"\", IF(COUNTIF(SizeParent, $F" + r + ")>0, OFFSET(SizeChild, MATCH($F" + r + ", SizeParent, 0)-1, 0, COUNTIF(SizeParent, $F" + r + "), 1), SizesList), " +
+                                 "IF($E" + r + "<>\"\", IF(COUNTIF(SizeParent, $E" + r + ")>0, OFFSET(SizeChild, MATCH($E" + r + ", SizeParent, 0)-1, 0, COUNTIF(SizeParent, $E" + r + "), 1), SizesList), SizesList)))";
+                
+                ws1.Cell(r, 13).CreateDataValidation().List(sizeFormula, true);
+            }
+
+            ws1.Cell(2,1).Value = "TS-001";
+            ws1.Cell(2,2).Value = "تيشرت رياضي";
+            ws1.Cell(2,3).Value = units.FirstOrDefault() ?? "قطعة";
+            ws1.Cell(2,5).Value = mainCats.FirstOrDefault()?.NameAr;
+            ws1.Cell(2,8).Value = 200; 
+            ws1.Cell(2,9).Value = 299;
+            ws1.Cell(2,11).Value = "نعم";
+            ws1.Cell(2,19).Value = "نشط";
+            ws1.Cell(2,20).Value = "لا";
+            ws1.Row(2).Style.Font.FontColor = XLColor.Gray;
+
+            // ws1.Columns().AdjustToContents(); // ❌ REMOVED: Often fails on Linux/Docker without GDI+
+            
+            var stream = new MemoryStream();
+            wb.SaveAs(stream); 
+            stream.Position = 0;
+
+            return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "products_import_template.xlsx");
+        }
+        catch (Exception ex)
         {
-            wsL.Cell(i + 2, 14).Value = catSizeMapping[i].CatName;
-            wsL.Cell(i + 2, 15).Value = catSizeMapping[i].SizeValue;
+            return BadRequest(new { message = $"خطأ في إنشاء النموذج: {ex.Message}" });
         }
-        wb.DefinedNames.Add("SizeParent", wsL.Range(1, 14, catSizeMapping.Count + 1, 14));
-        wb.DefinedNames.Add("SizeChild",  wsL.Range(1, 15, catSizeMapping.Count + 1, 15));
-        
-        // Define Names for mapping columns (including the dummy row)
-        var parentRange = wsL.Range(1, 10, mapping.Count + 1, 10);
-        var childRange  = wsL.Range(1, 11, mapping.Count + 1, 11);
-        wb.DefinedNames.Add("MapParent", parentRange);
-        wb.DefinedNames.Add("MapChild", childRange);
-
-        var ws1 = wb.Worksheets.Add("المنتجات والمقاسات");
-        ws1.RightToLeft = true;
-
-        var headers1 = new[] {
-            "الكود SKU *", "الاسم عربي *", "الوحدة *", "الاسم انجليزي",
-            "التصنيف الأساسي *", "التصنيف الفرعي", "التصنيف الفرعي 2",
-            "سعر التكلفة", "السعر *", "سعر الخصم",
-            "خاضع للضريبة؟ *", "الماركة", "المقاس", "اللون (English)", "اللون (عربي)",
-            "المخزون", "فارق السعر للمقاس", "حد الطلب", "الحالة",
-            "مميز (نعم/لا)", "الوصف عربي", "الوصف انجليزي"
-        };
-        for (int c = 0; c < headers1.Length; c++)
-        {
-            var cell = ws1.Cell(1, c+1);
-            cell.Value = headers1[c];
-            cell.Style.Font.Bold = true;
-            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1a1a2e");
-            cell.Style.Font.FontColor = XLColor.White;
-        }
-
-        ws1.Column(1).Style.NumberFormat.Format = "@"; 
-
-        for (int r = 2; r <= 1000; r++)
-        {
-            ws1.Cell(r, 5).CreateDataValidation().List("=MainCategoriesList", true);
-            
-            // SubCategory (Col 6) based on MainCategory (Col 5)
-            // Using a more robust formula: IF cell is empty, show nothing; otherwise OFFSET from MATCH
-            ws1.Cell(r, 6).CreateDataValidation().List("=IF($E" + r + "=\"\", MapChild, OFFSET(MapChild, MATCH($E" + r + ", MapParent, 0)-1, 0, MAX(1, COUNTIF(MapParent, $E" + r + ")), 1))", true);
-            
-            // SubSubCategory (Col 7) based on SubCategory (Col 6)
-            ws1.Cell(r, 7).CreateDataValidation().List("=IF($F" + r + "=\"\", MapChild, OFFSET(MapChild, MATCH($F" + r + ", MapParent, 0)-1, 0, MAX(1, COUNTIF(MapParent, $F" + r + ")), 1))", true);
-            
-            ws1.Cell(r, 12).CreateDataValidation().List("=BrandsList", true);
-            ws1.Cell(r, 3).CreateDataValidation().List("=UnitsList", true);
-            ws1.Cell(r, 11).CreateDataValidation().List("=YesNoList", true);
-            ws1.Cell(r, 19).CreateDataValidation().List("=StatusList", true);
-            ws1.Cell(r, 20).CreateDataValidation().List("=YesNoList", true);
-            ws1.Cell(r, 15).CreateDataValidation().List("=ColorsList", true);
-
-            // Dynamic Size List: Checks SubSub(G), then Sub(F), then Main(E)
-            var sizeFormula = "=IF($G" + r + "<>\"\", IF(COUNTIF(SizeParent, $G" + r + ")>0, OFFSET(SizeChild, MATCH($G" + r + ", SizeParent, 0)-1, 0, COUNTIF(SizeParent, $G" + r + "), 1), SizesList), " +
-                             "IF($F" + r + "<>\"\", IF(COUNTIF(SizeParent, $F" + r + ")>0, OFFSET(SizeChild, MATCH($F" + r + ", SizeParent, 0)-1, 0, COUNTIF(SizeParent, $F" + r + "), 1), SizesList), " +
-                             "IF($E" + r + "<>\"\", IF(COUNTIF(SizeParent, $E" + r + ")>0, OFFSET(SizeChild, MATCH($E" + r + ", SizeParent, 0)-1, 0, COUNTIF(SizeParent, $E" + r + "), 1), SizesList), SizesList)))";
-            
-            ws1.Cell(r, 13).CreateDataValidation().List(sizeFormula, true);
-        }
-
-        ws1.Cell(2,1).Value = "TS-001";
-        ws1.Cell(2,2).Value = "تيشرت رياضي";
-        ws1.Cell(2,3).Value = units.FirstOrDefault() ?? "قطعة";
-        ws1.Cell(2,5).Value = mainCats.FirstOrDefault()?.NameAr;
-        ws1.Cell(2,8).Value = 200; 
-        ws1.Cell(2,9).Value = 299;
-        ws1.Cell(2,11).Value = "نعم";
-        ws1.Cell(2,19).Value = "نشط";
-        ws1.Cell(2,20).Value = "لا";
-        ws1.Row(2).Style.Font.FontColor = XLColor.Gray;
-
-        ws1.Columns().AdjustToContents();
-        var stream = new MemoryStream();
-        wb.SaveAs(stream); stream.Position = 0;
-
-        return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "products_import_template.xlsx");
     }
 
 
