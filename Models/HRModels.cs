@@ -69,6 +69,12 @@ public class Employee : BaseEntity
     public DateTime HireDate       { get; set; }
     public DateTime? TerminationDate { get; set; }
     
+    public decimal BaseSalary              { get; set; } = 0;
+    public decimal TransportationAllowance { get; set; } = 0;
+    public decimal CommunicationAllowance  { get; set; } = 0;
+    public decimal BonusAmount             { get; set; } = 0;
+    public decimal FixedAllowance          { get; set; } = 0;
+    public decimal FixedDeduction          { get; set; } = 0;
 
     public string? BankAccount     { get; set; }  // رقم الحساب البنكي
     public string? Notes           { get; set; }
@@ -138,6 +144,13 @@ public class PayrollItem : BaseEntity
     public int      EmployeeId   { get; set; }
     public Employee Employee     { get; set; } = null!;
 
+    public decimal BasicSalary             { get; set; } = 0;
+    public decimal TransportationAllowance { get; set; } = 0;
+    public decimal CommunicationAllowance  { get; set; } = 0;
+    public decimal BonusAmount             { get; set; } = 0;
+    public decimal DeductionAmount         { get; set; } = 0;
+    public decimal AdvanceDeducted         { get; set; } = 0;
+    public decimal NetPayable => BasicSalary + TransportationAllowance + CommunicationAllowance + BonusAmount - DeductionAmount - AdvanceDeducted;
 
     public string? Notes { get; set; }
 }
