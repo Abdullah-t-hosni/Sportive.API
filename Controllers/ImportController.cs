@@ -27,8 +27,10 @@ public class ImportController : ControllerBase
     {
         try
         {
-            var allCats      = await _db.Categories.AsNoTracking().Where(c => c.NameAr != null).ToListAsync();
-            var mainCats     = allCats.Where(c => c.ParentId == null).ToList();
+            var allCats = await _db.Categories.AsNoTracking().Where(c => c.NameAr != null).ToListAsync();
+            foreach (var c in allCats) c.NameAr = c.NameAr.Trim();
+
+            var mainCats     = allCats.Where(c => c.ParentId == null).OrderBy(c => c.NameAr).ToList();
             var brands       = await _db.Brands.AsNoTracking().Where(b => b.NameAr != null).Select(b => b.NameAr!).ToListAsync();
             var units        = await _db.ProductUnits.AsNoTracking().Where(u => u.NameAr != null).Select(u => u.NameAr!).ToListAsync();
             
@@ -106,6 +108,7 @@ public class ImportController : ControllerBase
                 .Select(m => (Parent: m.Parent.Trim(), Child: m.Child.Trim()))
                 .Distinct()
                 .OrderBy(m => m.Parent)
+                .ThenBy(m => m.Child)
                 .ToList();
             
             wsL.Cell(1, 10).Value = "__DUMMY__";
@@ -143,6 +146,12 @@ public class ImportController : ControllerBase
                 }
             }
 
+            catSizeMapping = catSizeMapping
+                .Where(m => !string.IsNullOrWhiteSpace(m.CatName) && !string.IsNullOrWhiteSpace(m.SizeValue))
+                .OrderBy(m => m.CatName)
+                .Distinct()
+                .ToList();
+
             wsL.Cell(1, 14).Value = "__DUMMY__";
             wsL.Cell(1, 15).Value = "(اختر التصنيف أولاً)";
             for (int i = 0; i < catSizeMapping.Count; i++)
@@ -150,8 +159,8 @@ public class ImportController : ControllerBase
                 wsL.Cell(i + 2, 14).Value = catSizeMapping[i].CatName;
                 wsL.Cell(i + 2, 15).Value = catSizeMapping[i].SizeValue;
             }
-            wb.DefinedNames.Add("SizeParent", wsL.Range(1, 14, catSizeMapping.Count + 1, 14));
-            wb.DefinedNames.Add("SizeChild",  wsL.Range(1, 15, catSizeMapping.Count + 1, 15));
+            wb.DefinedNames.Add("SizeParent", wsL.Range(1, 14, Math.Max(1, catSizeMapping.Count + 1), 14));
+            wb.DefinedNames.Add("SizeChild",  wsL.Range(1, 15, Math.Max(1, catSizeMapping.Count + 1), 15));
             
             var parentRange = wsL.Range(1, 10, mapping.Count + 1, 10);
             var childRange  = wsL.Range(1, 11, mapping.Count + 1, 11);

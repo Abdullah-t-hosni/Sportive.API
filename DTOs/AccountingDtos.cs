@@ -122,7 +122,8 @@ public record JournalEntryDto(
     string?  AttachmentPublicId = null,
     int?     CustomerId = null,
     int?     SupplierId = null,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    string? CostCenterLabel = null
 );
 
 public record JournalLineSummaryDto(
@@ -148,7 +149,8 @@ public record JournalLineDto(
     int?     SupplierId = null,
     int?     EmployeeId = null,
     string?  EntityName = null,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    string? CostCenterLabel = null
 );
 
 public record JournalEntrySummaryDto(
@@ -163,7 +165,8 @@ public record JournalEntrySummaryDto(
     decimal  TotalCredit,
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    string? CostCenterLabel = null
 );
 
 // ══════════════════════════════════════════════════════
@@ -214,7 +217,8 @@ public record VoucherSummaryDto(
     string?  Description,
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    string? CostCenterLabel = null
 );
 
 // ══════════════════════════════════════════════════════

@@ -166,6 +166,7 @@ public class FinancialReportsController : ControllerBase
 
         return Ok(new {
             from, to, source,
+            CostCenterLabel = source == OrderSource.Website ? "الموقع" : (source == OrderSource.POS ? "المحل" : "عام"),
             rows,
             totalOpenDebit    = Math.Round(balances.Where(b => b.ParentId == null).Sum(b => b.OpenDebit), 2),
             totalOpenCredit   = Math.Round(balances.Where(b => b.ParentId == null).Sum(b => b.OpenCredit), 2),
@@ -213,6 +214,7 @@ public class FinancialReportsController : ControllerBase
 
         return Ok(new {
             from, to, source,
+            CostCenterLabel = source == OrderSource.Website ? "الموقع" : (source == OrderSource.POS ? "المحل" : "عام"),
             revenues,
             expenses,
             totalRevenues,
@@ -276,7 +278,9 @@ public class FinancialReportsController : ControllerBase
             totalAssets, totalLiabilities, totalEquity, to);
 
         return Ok(new {
-            to, assets, liabilities, equity, netProfit,
+            to, source,
+            CostCenterLabel = source == OrderSource.Website ? "الموقع" : (source == OrderSource.POS ? "المحل" : "عام"),
+            assets, liabilities, equity, netProfit,
             totalAssets, totalLiabilities, totalEquity, totalLiabEquity,
             isBalanced = Math.Round(totalAssets, 2) == Math.Round(totalLiabEquity, 2)
         });
@@ -429,7 +433,7 @@ public class FinancialReportsController : ControllerBase
                                       .ThenBy(r => r.JournalEntryId).LastOrDefault()?.RunningBalance ?? 0
                 };
             }).ToList();
-        return Ok(new { from, to, accounts = grouped });
+        return Ok(new { from, to, source, CostCenterLabel = source == OrderSource.Website ? "الموقع" : (source == OrderSource.POS ? "المحل" : "عام"), accounts = grouped });
     }
 
     // ══════════════════════════════════════════════════════
@@ -584,7 +588,7 @@ public class FinancialReportsController : ControllerBase
         }).ToList();
 
         if (excel) return ExcelAccountStatement(acct, rows, openBal, from, to);
-        return Ok(new { from, to, account = new { acct.Id, acct.Code, acct.NameAr, Nature = acct.Nature.ToString() }, openingBalance = openBal, rows, totalDebit = rows.Sum(r => r.Debit), totalCredit = rows.Sum(r => r.Credit), closingBalance = rows.LastOrDefault()?.RunningBalance ?? openBal });
+        return Ok(new { from, to, source, CostCenterLabel = source == OrderSource.Website ? "الموقع" : (source == OrderSource.POS ? "المحل" : "عام"), account = new { acct.Id, acct.Code, acct.NameAr, Nature = acct.Nature.ToString() }, openingBalance = openBal, rows, totalDebit = rows.Sum(r => r.Debit), totalCredit = rows.Sum(r => r.Credit), closingBalance = rows.LastOrDefault()?.RunningBalance ?? openBal });
     }
 
 

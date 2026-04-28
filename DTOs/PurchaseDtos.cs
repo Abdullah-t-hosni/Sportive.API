@@ -115,7 +115,8 @@ public record PurchaseInvoiceSummaryDto(
     decimal  TotalAmount,
     decimal  PaidAmount,
     decimal  RemainingAmount,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    string? CostCenterLabel = null
 );
 
 public record PurchaseInvoiceDetailDto(
@@ -141,7 +142,8 @@ public record PurchaseInvoiceDetailDto(
     string?  AttachmentPublicId = null,
     OrderSource? CostCenter = null,
     int?     CashAccountId = null,
-    int?     SupplierId = null
+    int?     SupplierId = null,
+    string?  CostCenterLabel = null
 );
 
 public record PurchaseItemDto(
@@ -191,7 +193,9 @@ public record SupplierPaymentSummaryDto(
     string   AccountName,
     string?  Notes,
     string?  AttachmentUrl = null,
-    string?  AttachmentPublicId = null
+    string?  AttachmentPublicId = null,
+    OrderSource? CostCenter = null,
+    string? CostCenterLabel = null
 );
 
 // ══════════════════════════════════════════════════════

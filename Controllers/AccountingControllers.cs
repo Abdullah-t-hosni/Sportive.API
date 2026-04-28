@@ -555,10 +555,11 @@ public class JournalEntriesController : ControllerBase
                 e.Id, e.EntryNumber, e.EntryDate, e.Description, e.Reference, e.CreatedAt,
                 Status = e.Status.ToString(),
                 Type = e.Type.ToString(),
-                CostCenter = e.CostCenter,
+                CostCenter = (int?)e.CostCenter,
+                CostCenterLabel = e.CostCenter == OrderSource.Website ? "الموقع" : (e.CostCenter == OrderSource.POS ? "المحل" : "عام"),
                 LineCount = includeLines ? e.Lines.Count : _db.JournalLines.Count(l => l.JournalEntryId == e.Id),
                 TotalAmount = includeLines ? e.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit) : (_db.JournalLines.AsNoTracking().Where(l => l.JournalEntryId == e.Id && l.Debit > 0).Sum(l => (decimal?)l.Debit) ?? 0),
-                Lines = includeLines ? (object)e.Lines.Select(l => new { l.AccountId, l.Credit, l.Debit, AccountName = l.Account != null ? l.Account.NameAr : null, CostCenter = l.CostCenter }).ToList() : null
+                Lines = includeLines ? (object)e.Lines.Select(l => new { l.AccountId, l.Credit, l.Debit, AccountName = l.Account != null ? l.Account.NameAr : null, CostCenter = (int?)l.CostCenter }).ToList() : null
             })
             .ToListAsync();
 
@@ -584,9 +585,11 @@ public class JournalEntriesController : ControllerBase
                 l.Id, l.AccountId, l.Account?.Code ?? "", l.Account?.NameAr ?? "",
                 l.Debit, l.Credit, l.Description, l.CustomerId, l.SupplierId, l.EmployeeId,
                 l.Supplier?.Name ?? l.Customer?.FullName ?? l.Employee?.Name ?? null,
-                l.CostCenter
+                l.CostCenter,
+                l.CostCenter == OrderSource.Website ? "الموقع" : (l.CostCenter == OrderSource.POS ? "المحل" : "عام")
             )).ToList(),
-            e.AttachmentUrl, e.AttachmentPublicId, null, null, e.CostCenter
+            e.AttachmentUrl, e.AttachmentPublicId, null, null, e.CostCenter,
+            e.CostCenter == OrderSource.Website ? "الموقع" : (e.CostCenter == OrderSource.POS ? "المحل" : "عام")
         ));
     }
 
@@ -687,6 +690,7 @@ public class ReceiptVouchersController : ControllerBase
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description, v.CreatedAt,
                 v.CashAccountId,
                 CostCenter = (int?)v.CostCenter,
+                CostCenterLabel = v.CostCenter == OrderSource.Website ? "الموقع" : (v.CostCenter == OrderSource.POS ? "المحل" : "عام"),
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 FromAccountName = v.FromAccount != null ? v.FromAccount.NameAr : null,
                 EntityName = v.Customer != null ? v.Customer.FullName : (v.Employee != null ? v.Employee.Name : null)
@@ -709,6 +713,7 @@ public class ReceiptVouchersController : ControllerBase
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description,
                 v.CashAccountId,
                 CostCenter = (int?)v.CostCenter,
+                CostCenterLabel = v.CostCenter == OrderSource.Website ? "الموقع" : (v.CostCenter == OrderSource.POS ? "المحل" : "عام"),
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 FromAccountName = v.FromAccount != null ? v.FromAccount.NameAr : null,
                 EntityName = v.Customer != null ? v.Customer.FullName : (v.Employee != null ? v.Employee.Name : null)
@@ -929,6 +934,7 @@ public class PaymentVouchersController : ControllerBase
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description, v.CreatedAt,
                 v.CashAccountId, v.ToAccountId,
                 CostCenter = (int?)v.CostCenter,
+                CostCenterLabel = v.CostCenter == OrderSource.Website ? "الموقع" : (v.CostCenter == OrderSource.POS ? "المحل" : "عام"),
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 ToAccountName = v.ToAccount != null ? v.ToAccount.NameAr : null,
                 EntityName = v.Supplier != null ? v.Supplier.Name : (v.Employee != null ? v.Employee.Name : null)

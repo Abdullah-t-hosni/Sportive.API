@@ -56,7 +56,9 @@ public class SupplierPaymentsController : ControllerBase
                 p.Id, p.PaymentNumber, p.Supplier.Name, 
                 p.Invoice != null ? p.Invoice.InvoiceNumber : null,
                 p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes,
-                p.AttachmentUrl, p.AttachmentPublicId
+                p.AttachmentUrl, p.AttachmentPublicId,
+                p.CostCenter,
+                p.CostCenter == OrderSource.Website ? "الموقع" : (p.CostCenter == OrderSource.POS ? "المحل" : "عام")
             )).ToListAsync();
 
         return Ok(new PaginatedResult<SupplierPaymentSummaryDto>(items, total, page, pageSize,
@@ -77,7 +79,9 @@ public class SupplierPaymentsController : ControllerBase
             p.Id, p.PaymentNumber, p.Supplier.Name, 
             p.Invoice != null ? p.Invoice.InvoiceNumber : null,
             p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes,
-            p.AttachmentUrl, p.AttachmentPublicId
+            p.AttachmentUrl, p.AttachmentPublicId,
+            p.CostCenter,
+            p.CostCenter == OrderSource.Website ? "الموقع" : (p.CostCenter == OrderSource.POS ? "المحل" : "عام")
         ));
     }
 
@@ -153,7 +157,9 @@ public class SupplierPaymentsController : ControllerBase
             invoice?.InvoiceNumber,
             payment.PaymentDate, payment.Amount, payment.PaymentMethod.ToString(),
             payment.AccountName, payment.Notes,
-            payment.AttachmentUrl, payment.AttachmentPublicId
+            payment.AttachmentUrl, payment.AttachmentPublicId,
+            payment.CostCenter,
+            payment.CostCenter == OrderSource.Website ? "الموقع" : (payment.CostCenter == OrderSource.POS ? "المحل" : "عام")
         ));
     }
 

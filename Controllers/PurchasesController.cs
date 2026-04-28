@@ -295,7 +295,8 @@ public class PurchaseInvoicesController : ControllerBase
                 i.PaymentTerms.ToString(), i.Status.ToString(),
                 i.InvoiceDate, i.DueDate,
                 i.TotalAmount, i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
-                i.CostCenter
+                i.CostCenter,
+                i.CostCenter == OrderSource.Website ? "الموقع" : (i.CostCenter == OrderSource.POS ? "المحل" : "عام")
             )).ToListAsync();
 
         return Ok(new PaginatedResult<PurchaseInvoiceSummaryDto>(items, total, page, pageSize,
@@ -343,7 +344,9 @@ public class PurchaseInvoicesController : ControllerBase
                 r.SubTotal,
                 r.TaxAmount,
                 r.DiscountAmount,
-                r.Notes
+                r.Notes,
+                CostCenter = (int?)r.CostCenter,
+                CostCenterLabel = r.CostCenter == OrderSource.Website ? "الموقع" : (r.CostCenter == OrderSource.POS ? "المحل" : "عام")
             }).ToListAsync();
 
         return Ok(new PaginatedResult<object>(items.Cast<object>().ToList(), total, page, pageSize,
@@ -449,7 +452,8 @@ public class PurchaseInvoicesController : ControllerBase
             inv.AttachmentUrl, inv.AttachmentPublicId,
             inv.CostCenter,
             inv.CashAccountId,
-            inv.SupplierId
+            inv.SupplierId,
+            inv.CostCenter == OrderSource.Website ? "الموقع" : (inv.CostCenter == OrderSource.POS ? "المحل" : "عام")
         ));
 
     }
