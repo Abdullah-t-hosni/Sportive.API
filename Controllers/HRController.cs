@@ -79,7 +79,7 @@ public class EmployeesController : ControllerBase
         var list = await _db.Employees
             .Where(e => e.Status == EmployeeStatus.Active || (int)e.Status == 0)
             .OrderBy(e => e.Name)
-            .Select(e => new EmployeeBasicDto(e.Id, e.EmployeeNumber, e.Name, e.JobTitle, e.DepartmentId, e.Department != null ? e.Department.Name : null, e.BaseSalary, e.TransportationAllowance, e.CommunicationAllowance, e.BonusAmount, (int)e.Status))
+            .Select(e => new EmployeeBasicDto(e.Id, e.EmployeeNumber, e.Name, e.JobTitle, e.DepartmentId, e.Department != null ? e.Department.Name : null, e.BaseSalary, e.TransportationAllowance, e.CommunicationAllowance, e.BonusAmount, e.FixedAllowance, e.FixedDeduction, (int)e.Status))
             .ToListAsync();
         return Ok(list);
     }
@@ -408,7 +408,7 @@ public class PayrollController : ControllerBase
             CreatedByUserId            = UserId
         };
 
-        decimal totalBasic = 0, totalTrans = 0, totalComm = 0, totalBonus = 0, totalDed = 0, totalAdv = 0;
+        decimal totalBasic = 0, totalTrans = 0, totalComm = 0, totalBonus = 0, totalFixedAll = 0, totalFixedDed = 0, totalDed = 0, totalAdv = 0;
 
         foreach (var itemDto in dto.Items)
         {
@@ -419,11 +419,15 @@ public class PayrollController : ControllerBase
             var trans = itemDto.TransportationAllowance;
             var comm  = itemDto.CommunicationAllowance;
             var bonus = itemDto.BonusAmount;
+            var fixAll = itemDto.FixedAllowance;
+            var fixDed = itemDto.FixedDeduction;
 
             totalBasic += basic;
             totalTrans += trans;
             totalComm  += comm;
             totalBonus += bonus;
+            totalFixedAll += fixAll;
+            totalFixedDed += fixDed;
             totalDed   += itemDto.DeductionAmount;
             totalAdv   += itemDto.AdvanceDeducted;
 
@@ -434,6 +438,8 @@ public class PayrollController : ControllerBase
                 TransportationAllowance = trans,
                 CommunicationAllowance  = comm,
                 BonusAmount     = bonus,
+                FixedAllowance  = fixAll,
+                FixedDeduction  = fixDed,
                 DeductionAmount = itemDto.DeductionAmount,
                 AdvanceDeducted = itemDto.AdvanceDeducted,
                 Notes           = itemDto.Notes,
@@ -445,9 +451,11 @@ public class PayrollController : ControllerBase
         run.TotalTransportation   = totalTrans;
         run.TotalCommunication    = totalComm;
         run.TotalBonuses          = totalBonus;
+        run.TotalFixedAllowances  = totalFixedAll;
+        run.TotalFixedDeductions  = totalFixedDed;
         run.TotalDeductions       = totalDed;
         run.TotalAdvancesDeducted = totalAdv;
-        run.TotalNetPayable       = totalBasic + totalTrans + totalComm + totalBonus - totalDed - totalAdv;
+        run.TotalNetPayable       = totalBasic + totalTrans + totalComm + totalBonus + totalFixedAll - totalDed - totalFixedDed - totalAdv;
 
         _db.PayrollRuns.Add(run);
         await _db.SaveChangesAsync();
@@ -476,6 +484,8 @@ public class PayrollController : ControllerBase
         var transAccId   = await _core.GetRequiredMappedAccountAsync(MappingKeys.TransportationAllowanceExpense, mapDict);
         var commAccId    = await _core.GetRequiredMappedAccountAsync(MappingKeys.CommunicationAllowanceExpense, mapDict);
         var bonusAccId   = await _core.GetRequiredMappedAccountAsync(MappingKeys.EmployeeBonuses, mapDict);
+        var fixAllAccId  = await _core.GetRequiredMappedAccountAsync(MappingKeys.FixedAllowanceExpense, mapDict);
+        var fixDedAccId  = await _core.GetRequiredMappedAccountAsync(MappingKeys.FixedDeductionRevenue, mapDict);
 
         JournalEntry? je = null;
 
@@ -533,6 +543,16 @@ public class PayrollController : ControllerBase
                     Credit      = 0,
                     Description = $"إجمالي بدلات اتصال — {run.PeriodMonth}/{run.PeriodYear}"
                 });
+            
+            // مدين: بدلات ثابتة أخرى (إجمالي)
+            if (run.TotalFixedAllowances > 0)
+                je.Lines.Add(new JournalLine
+                {
+                    AccountId   = fixAllAccId,
+                    Debit       = run.TotalFixedAllowances,
+                    Credit      = 0,
+                    Description = $"إجمالي بدلات ثابتة أخرى — {run.PeriodMonth}/{run.PeriodYear}"
+                });
 
             // دائن: إيرادات الخصومات (إجمالي)
             if (run.TotalDeductions > 0)
@@ -542,6 +562,16 @@ public class PayrollController : ControllerBase
                     Debit       = 0,
                     Credit      = run.TotalDeductions,
                     Description = $"إجمالي خصومات الموظفين (جزاءات) — {run.PeriodMonth}/{run.PeriodYear}"
+                });
+
+            // دائن: خصومات ثابتة (إجمالي)
+            if (run.TotalFixedDeductions > 0)
+                je.Lines.Add(new JournalLine
+                {
+                    AccountId   = fixDedAccId,
+                    Debit       = 0,
+                    Credit      = run.TotalFixedDeductions,
+                    Description = $"إجمالي خصومات ثابتة — {run.PeriodMonth}/{run.PeriodYear}"
                 });
 
             // ── تفصيل الحركات لكل موظف (المكافآت، السلف، صافي الراتب) ────────────────
@@ -637,12 +667,15 @@ public class PayrollController : ControllerBase
 
     private static PayrollRunDto ToDto(PayrollRun run) => new(
         run.Id, run.PayrollNumber, run.PeriodYear, run.PeriodMonth,
-        run.TotalBasicSalary, run.TotalTransportation, run.TotalCommunication, run.TotalBonuses, run.TotalDeductions,
+        run.TotalBasicSalary, run.TotalTransportation, run.TotalCommunication, run.TotalBonuses,
+        run.TotalFixedAllowances, run.TotalFixedDeductions,
+        run.TotalDeductions,
         run.TotalAdvancesDeducted, run.TotalNetPayable, (int)run.Status, run.Notes,
         run.JournalEntryId, run.CreatedAt,
         run.Items.Select(i => new PayrollItemDto(
             i.Id, i.EmployeeId, i.Employee.Name, i.Employee.EmployeeNumber,
             i.Employee.JobTitle, i.BasicSalary, i.TransportationAllowance, i.CommunicationAllowance, i.BonusAmount,
+            i.FixedAllowance, i.FixedDeduction,
             i.DeductionAmount, i.AdvanceDeducted, i.NetPayable, i.Notes
         )).ToList()
     );
