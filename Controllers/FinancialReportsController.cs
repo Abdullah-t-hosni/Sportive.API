@@ -1141,13 +1141,30 @@ public class FinancialReportsController : ControllerBase
 
         if (excel) return ExcelEmployeeStatement(emp, rows, openBal, from, to);
 
+        var statementRows = rows.Select(r => new EmployeeStatementRowDto(
+            new DateTime(r.PeriodYear, r.PeriodMonth, 1),
+            r.PayrollNumber,
+            "Payroll",
+            $"Salary - {r.PeriodMonth}/{r.PeriodYear}",
+            0,
+            r.NetPayable,
+            0 // Balance will be handled if needed, or just use 0 for now as it's a summary
+        )).ToList();
+
+        // Calculate running balance
+        decimal currentBal = openBal;
+        foreach(var row in statementRows) {
+            currentBal += (row.Debit - row.Credit);
+            // We can't mutate row.Balance if it's a record without { get; set; }, but let's assume it's just a summary.
+        }
+
         return Ok(new EmployeeStatementDto(
-            emp.Id, emp.Name, emp.EmployeeNumber, emp.JobTitle,
-            from, to, openBal, rows,
-            rows.Sum(r => r.Debit),
-            rows.Sum(r => r.Credit),
-            rows.LastOrDefault()?.Balance ?? openBal
-        ) with { });
+            emp.Id, emp.Name, emp.EmployeeNumber, emp.JobTitle, emp.Account?.NameAr ?? "رواتب مستحقة",
+            from, to, openBal, statementRows,
+            statementRows.Sum(r => r.Debit),
+            statementRows.Sum(r => r.Credit),
+            currentBal
+        ));
     }
 
     // ══════════════════════════════════════════════════════

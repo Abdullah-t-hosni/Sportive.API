@@ -20,11 +20,12 @@ namespace Sportive.API.Controllers;
 [Authorize(Roles = "Admin,Manager,Accountant")]
 public class EmployeesController : ControllerBase
 {
-    private readonly AppDbContext    _db;
-    private readonly SequenceService _seq;
+    private readonly AppDbContext          _db;
+    private readonly SequenceService       _seq;
+    private readonly AccountingCoreService _core;
 
-    public EmployeesController(AppDbContext db, SequenceService seq)
-        => (_db, _seq) = (db, seq);
+    public EmployeesController(AppDbContext db, SequenceService seq, AccountingCoreService core)
+        => (_db, _seq, _core) = (db, seq, core);
 
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
@@ -274,7 +275,7 @@ public class EmployeesController : ControllerBase
         }
 
         return Ok(new EmployeeStatementDto(
-            emp.Id, emp.Name, emp.EmployeeNumber, emp.JobTitle, emp.Account?.Name ?? "رواتب مستحقة",
+            emp.Id, emp.Name, emp.EmployeeNumber, emp.JobTitle, emp.Account?.NameAr ?? "رواتب مستحقة",
             from, to, openingBalance, rows,
             rows.Sum(r => r.Debit), rows.Sum(r => r.Credit), runningBalance
         ));
@@ -317,7 +318,7 @@ public class EmployeesController : ControllerBase
         }
 
         return Ok(new EmployeeStatementDto(
-            0, "الكل / ALL", "000", "GENERAL_REPORT", acc?.Name ?? "رواتب مستحقة",
+            0, "الكل / ALL", "000", "GENERAL_REPORT", acc?.NameAr ?? "رواتب مستحقة",
             from, to, openingBalance, rows,
             rows.Sum(r => r.Debit), rows.Sum(r => r.Credit), runningBalance
         ));
@@ -504,79 +505,84 @@ public class PayrollController : ControllerBase
                 Lines           = new List<JournalLine>()
             };
 
-            // مدين: رواتب وأجور — الأساسي
+            // مدين: رواتب وأجور — الأساسي (إجمالي)
             je.Lines.Add(new JournalLine
             {
                 AccountId   = wagesAccId,
                 Debit       = run.TotalBasicSalary,
                 Credit      = 0,
-                Description = $"رواتب أساسية — {run.PeriodMonth}/{run.PeriodYear}"
+                Description = $"إجمالي الرواتب الأساسية — {run.PeriodMonth}/{run.PeriodYear}"
             });
 
-            // مدين: بدل انتقال
+            // مدين: بدل انتقال (إجمالي)
             if (run.TotalTransportation > 0)
                 je.Lines.Add(new JournalLine
                 {
                     AccountId   = transAccId,
                     Debit       = run.TotalTransportation,
                     Credit      = 0,
-                    Description = $"بدلات انتقال — {run.PeriodMonth}/{run.PeriodYear}"
+                    Description = $"إجمالي بدلات انتقال — {run.PeriodMonth}/{run.PeriodYear}"
                 });
 
-            // مدين: بدل اتصال
+            // مدين: بدل اتصال (إجمالي)
             if (run.TotalCommunication > 0)
                 je.Lines.Add(new JournalLine
                 {
                     AccountId   = commAccId,
                     Debit       = run.TotalCommunication,
                     Credit      = 0,
-                    Description = $"بدلات اتصال — {run.PeriodMonth}/{run.PeriodYear}"
+                    Description = $"إجمالي بدلات اتصال — {run.PeriodMonth}/{run.PeriodYear}"
                 });
 
-            // مدين: مكافآت تشجيعية
-            if (run.TotalBonuses > 0)
-                je.Lines.Add(new JournalLine
-                {
-                    AccountId   = bonusAccId,
-                    Debit       = run.TotalBonuses,
-                    Credit      = 0,
-                    Description = $"مكافآت تشجيعية — {run.PeriodMonth}/{run.PeriodYear}"
-                });
-
-            // Note: Deductions and Advances go to their respective accounts (Credit)
+            // دائن: إيرادات الخصومات (إجمالي)
             if (run.TotalDeductions > 0)
                 je.Lines.Add(new JournalLine
                 {
                     AccountId   = dedAccId,
                     Debit       = 0,
                     Credit      = run.TotalDeductions,
-                    Description = $"خصومات موظفين — {run.PeriodMonth}/{run.PeriodYear}"
+                    Description = $"إجمالي خصومات الموظفين (جزاءات) — {run.PeriodMonth}/{run.PeriodYear}"
                 });
 
-            if (run.TotalAdvancesDeducted > 0)
-                je.Lines.Add(new JournalLine
-                {
-                    AccountId   = advAccId,
-                    Debit       = 0,
-                    Credit      = run.TotalAdvancesDeducted,
-                    Description = $"خصم سلف موظفين — {run.PeriodMonth}/{run.PeriodYear}"
-                });
-
-            // Note: The Net Payable for each employee goes to Accrued Salaries (Credit)
-            // We split this by employee so it shows up in their statement
+            // ── تفصيل الحركات لكل موظف (المكافآت، السلف، صافي الراتب) ────────────────
             foreach (var item in run.Items)
             {
+                // 1. مكافآت الموظف (مدين)
+                if (item.BonusAmount > 0)
+                {
+                    je.Lines.Add(new JournalLine
+                    {
+                        AccountId   = bonusAccId,
+                        Debit       = item.BonusAmount,
+                        Credit      = 0,
+                        Description = $"مكافأة: {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}",
+                        EmployeeId  = item.EmployeeId
+                    });
+                }
+
+                // 2. خصم السلفة للموظف (دائن)
+                if (item.AdvanceDeducted > 0)
+                {
+                    je.Lines.Add(new JournalLine
+                    {
+                        AccountId   = advAccId,
+                        Debit       = 0,
+                        Credit      = item.AdvanceDeducted,
+                        Description = $"خصم سلفة: {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}",
+                        EmployeeId  = item.EmployeeId
+                    });
+                }
+
+                // 3. صافي الراتب المستحق للموظف (دائن)
                 if (item.NetPayable > 0)
                 {
-                    // If the employee has a specific account, use it, otherwise use the general Accrued Salaries account
                     var targetAccId = item.Employee?.AccountId ?? accrualAccId;
-                    
                     je.Lines.Add(new JournalLine
                     {
                         AccountId   = targetAccId,
                         Debit       = 0,
                         Credit      = item.NetPayable,
-                        Description = $"راتب مستحق: {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}",
+                        Description = $"صافي الراتب المستحق: {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}",
                         EmployeeId  = item.EmployeeId
                     });
                 }
@@ -654,9 +660,10 @@ public class EmployeeAdvancesController : ControllerBase
     private readonly AppDbContext    _db;
     private readonly SequenceService _seq;
     private readonly IAccountingService _accounting;
+    private readonly AccountingCoreService _core;
 
-    public EmployeeAdvancesController(AppDbContext db, SequenceService seq, IAccountingService accounting)
-        => (_db, _seq, _accounting) = (db, seq, accounting);
+    public EmployeeAdvancesController(AppDbContext db, SequenceService seq, IAccountingService accounting, AccountingCoreService core)
+        => (_db, _seq, _accounting, _core) = (db, seq, accounting, core);
 
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
@@ -722,8 +729,8 @@ public class EmployeeAdvancesController : ControllerBase
         _db.EmployeeAdvances.Add(advance);
 
         // 🎯 UNIFIED VOUCHER SYSTEM: Create a PaymentVoucher record for this advance
-        var mapDict = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId, StringComparer.OrdinalIgnoreCase);
-        var advAccId = (mapDict.TryGetValue(MappingKeys.EmployeeAdvances.ToLower(), out var aAccId) && aAccId.HasValue) 
+        var mapDict = await _core.GetSafeSystemMappingsAsync();
+        var advAccId = (mapDict.TryGetValue(MappingKeys.EmployeeAdvances, out var aAccId) && aAccId.HasValue) 
             ? aAccId.Value 
             : (emp.AccountId ?? 0);
 
@@ -779,9 +786,10 @@ public class EmployeeBonusesController : ControllerBase
     private readonly AppDbContext    _db;
     private readonly SequenceService _seq;
     private readonly IAccountingService _accounting;
+    private readonly AccountingCoreService _core;
 
-    public EmployeeBonusesController(AppDbContext db, SequenceService seq, IAccountingService accounting)
-        => (_db, _seq, _accounting) = (db, seq, accounting);
+    public EmployeeBonusesController(AppDbContext db, SequenceService seq, IAccountingService accounting, AccountingCoreService core)
+        => (_db, _seq, _accounting, _core) = (db, seq, accounting, core);
 
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
@@ -841,8 +849,7 @@ public class EmployeeBonusesController : ControllerBase
         };
 
         _db.EmployeeBonuses.Add(bonus);
-
-        var mapDict = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
+        var mapDict = await _core.GetSafeSystemMappingsAsync();
         if (!mapDict.TryGetValue(MappingKeys.SalaryExpense, out var bonusExpenseAccId) || bonusExpenseAccId == null)
             return BadRequest("لم يتم ضبط حساب مصروف الرواتب (للمكافآت) في الإعدادات.");
 
@@ -898,9 +905,10 @@ public class EmployeeDeductionsController : ControllerBase
     private readonly AppDbContext    _db;
     private readonly SequenceService _seq;
     private readonly IAccountingService _accounting;
+    private readonly AccountingCoreService _core;
 
-    public EmployeeDeductionsController(AppDbContext db, SequenceService seq, IAccountingService accounting)
-        => (_db, _seq, _accounting) = (db, seq, accounting);
+    public EmployeeDeductionsController(AppDbContext db, SequenceService seq, IAccountingService accounting, AccountingCoreService core)
+        => (_db, _seq, _accounting, _core) = (db, seq, accounting, core);
 
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
@@ -963,7 +971,7 @@ public class EmployeeDeductionsController : ControllerBase
         // 🎯 UNIFIED VOUCHER SYSTEM: Create a ReceiptVoucher record for this deduction (if cash)
         if (dto.CashAccountId.HasValue)
         {
-            var mapDict = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
+            var mapDict = await _core.GetSafeSystemMappingsAsync();
             if (!mapDict.TryGetValue(MappingKeys.EmployeeDeductions, out var deductionRevenueAccId) || deductionRevenueAccId == null)
                 return BadRequest("لم يتم ضبط حساب إيراد خصومات الموظفين في الإعدادات.");
 

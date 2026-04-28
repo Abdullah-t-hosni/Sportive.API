@@ -47,9 +47,6 @@ public static class MappingKeys
     // ── تسويات المخزون ──────────────────────────────────
     public const string InventoryVariance = "inventoryVarianceAccountID";
 
-    // ── موديول الموارد البشرية (HR & Payroll) ────────────
-
-    // ── الأصول الثابتة ───────────────────────────────────
     public const string DepreciationExpense      = "depreciationExpenseAccountID";
     public const string AccumulatedDepreciation = "accumulatedDepreciationAccountID";
 
