@@ -57,8 +57,8 @@ public class MappingSeederController : ControllerBase
             { MappingKeys.EmployeeDeductions, new[] { "4109", "جزاءات", "خصومات موظفين" } },
             { MappingKeys.DepreciationExpense, new[] { "5203", "إهلاك", "Depreciation" } },
             { MappingKeys.AccumulatedDepreciation, new[] { "1108", "مجمع إهلاك" } },
-            { MappingKeys.TransportationAllowanceExpenseAccountID, new[] { "5204", "انتقال", "بدل انتقال", "Transportation" } },
-            { MappingKeys.CommunicationAllowanceExpenseAccountID, new[] { "5205", "اتصال", "بدل اتصال", "Communication" } },
+            { MappingKeys.TransportationAllowanceExpense, new[] { "5204", "انتقال", "بدل انتقال", "Transportation" } },
+            { MappingKeys.CommunicationAllowanceExpense, new[] { "5205", "اتصال", "بدل اتصال", "Communication" } },
             { MappingKeys.OpeningEquity, new[] { "3103", "افتتاحي", "Opening Balance" } },
             { MappingKeys.InventoryVariance, new[] { "5201", "فروقات جرد", "Inventory Variance" } }
         };
