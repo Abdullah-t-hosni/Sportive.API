@@ -69,9 +69,6 @@ public class Employee : BaseEntity
     public DateTime HireDate       { get; set; }
     public DateTime? TerminationDate { get; set; }
     
-    public decimal BaseSalary      { get; set; } = 0;
-    public decimal FixedAllowance  { get; set; } = 0; // البدلات الثابتة
-    public decimal FixedDeduction  { get; set; } = 0; // الاستقطاعات الثابتة (مثل التأمينات)
 
     public string? BankAccount     { get; set; }  // رقم الحساب البنكي
     public string? Notes           { get; set; }
@@ -105,11 +102,13 @@ public class PayrollRun : BaseEntity
     public int     PeriodMonth      { get; set; }
 
     // ملخص مالي (يُحسب عند الترحيل)
-    public decimal TotalBasicSalary    { get; set; } = 0;
-    public decimal TotalBonuses        { get; set; } = 0;
-    public decimal TotalDeductions     { get; set; } = 0;
-    public decimal TotalAdvancesDeducted { get; set; } = 0;
-    public decimal TotalNetPayable     { get; set; } = 0;  // = Basic + Bonuses - Deductions - Advances
+    public decimal TotalBasicSalary          { get; set; } = 0;
+    public decimal TotalTransportation       { get; set; } = 0;
+    public decimal TotalCommunication        { get; set; } = 0;
+    public decimal TotalBonuses              { get; set; } = 0;
+    public decimal TotalDeductions           { get; set; } = 0;
+    public decimal TotalAdvancesDeducted     { get; set; } = 0;
+    public decimal TotalNetPayable           { get; set; } = 0;  // = Basic + Trans + Comm + Bonuses - Deductions - Advances
 
     public PayrollStatus Status { get; set; } = PayrollStatus.Draft;
     public string?  Notes           { get; set; }
@@ -139,11 +138,6 @@ public class PayrollItem : BaseEntity
     public int      EmployeeId   { get; set; }
     public Employee Employee     { get; set; } = null!;
 
-    public decimal BasicSalary       { get; set; } = 0;
-    public decimal BonusAmount       { get; set; } = 0;
-    public decimal DeductionAmount   { get; set; } = 0;
-    public decimal AdvanceDeducted   { get; set; } = 0;
-    public decimal NetPayable        => BasicSalary + BonusAmount - DeductionAmount - AdvanceDeducted;
 
     public string? Notes { get; set; }
 }

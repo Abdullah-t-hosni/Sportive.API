@@ -48,11 +48,6 @@ public static class MappingKeys
     public const string InventoryVariance = "inventoryVarianceAccountID";
 
     // ── موديول الموارد البشرية (HR & Payroll) ────────────
-    public const string SalaryExpense     = "salaryExpenseAccountID";
-    public const string SalariesPayable   = "salariesPayableAccountID";
-    public const string EmployeeAdvances  = "employeeAdvancesAccountID";
-    public const string EmployeeBonuses   = "employeeBonusesAccountID";
-    public const string EmployeeDeductions= "employeeDeductionsAccountID";
 
     // ── الأصول الثابتة ───────────────────────────────────
     public const string DepreciationExpense      = "depreciationExpenseAccountID";

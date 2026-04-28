@@ -17,8 +17,11 @@ public record CreateEmployeeDto(
     string        Name,
     DateTime      HireDate,
     decimal       BaseSalary,
-    decimal       FixedAllowance     = 0,
-    decimal       FixedDeduction     = 0,
+    decimal       TransportationAllowance = 0,
+    decimal       CommunicationAllowance  = 0,
+    decimal       BonusAmount             = 0,
+    decimal       FixedAllowance          = 0,
+    decimal       FixedDeduction          = 0,
     string?       Phone              = null,
     string?       Email              = null,
     string?       NationalId         = null,
@@ -28,7 +31,6 @@ public record CreateEmployeeDto(
     string?       Notes              = null,
     string?       AttachmentUrl      = null,
     string?       AttachmentPublicId = null,
-    int?          AccountId          = null,
     string?       AppUserId          = null   // ربط اختياري بحساب النظام
 );
 
@@ -37,8 +39,11 @@ public record UpdateEmployeeDto(
     DateTime      HireDate,
     decimal       BaseSalary,
     EmployeeStatus Status,
-    decimal       FixedAllowance     = 0,
-    decimal       FixedDeduction     = 0,
+    decimal       TransportationAllowance = 0,
+    decimal       CommunicationAllowance  = 0,
+    decimal       BonusAmount             = 0,
+    decimal       FixedAllowance          = 0,
+    decimal       FixedDeduction          = 0,
     string?       Phone              = null,
     string?       Email              = null,
     string?       NationalId         = null,
@@ -48,8 +53,7 @@ public record UpdateEmployeeDto(
     DateTime?     TerminationDate    = null,
     string?       Notes              = null,
     string?       AttachmentUrl      = null,
-    string?       AttachmentPublicId = null,
-    int?          AccountId          = null
+    string?       AttachmentPublicId = null
 );
 
 public record EmployeeDto(
@@ -65,6 +69,9 @@ public record EmployeeDto(
     DateTime       HireDate,
     DateTime?      TerminationDate,
     decimal        BaseSalary,
+    decimal        TransportationAllowance,
+    decimal        CommunicationAllowance,
+    decimal        BonusAmount,
     decimal        FixedAllowance,
     decimal        FixedDeduction,
     string?        BankAccount,
@@ -72,8 +79,6 @@ public record EmployeeDto(
     string?        Notes,
     string?        AttachmentUrl,
     string?        AttachmentPublicId,
-    int?           AccountId,
-    string?        AccountName,
     DateTime       CreatedAt,
     string?        AppUserId    = null,
     string?        AppUserName  = null
@@ -111,6 +116,8 @@ public record PayrollRunDto(
     int           PeriodYear,
     int           PeriodMonth,
     decimal       TotalBasicSalary,
+    decimal       TotalTransportation,
+    decimal       TotalCommunication,
     decimal       TotalBonuses,
     decimal       TotalDeductions,
     decimal       TotalAdvancesDeducted,
@@ -129,6 +136,8 @@ public record PayrollItemDto(
     string  EmployeeNumber,
     string? JobTitle,
     decimal BasicSalary,
+    decimal TransportationAllowance,
+    decimal CommunicationAllowance,
     decimal BonusAmount,
     decimal DeductionAmount,
     decimal AdvanceDeducted,
@@ -260,6 +269,7 @@ public record EmployeeStatementDto(
     string  EmployeeName,
     string  EmployeeNumber,
     string? JobTitle,
+    string? AccountName,
     DateTime From,
     DateTime To,
     decimal OpeningBalance,

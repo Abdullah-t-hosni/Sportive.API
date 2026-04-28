@@ -61,10 +61,9 @@ public class EmployeesController : ControllerBase
                 e.Id, e.EmployeeNumber, e.Name, e.Phone, e.Email, e.NationalId,
                 e.JobTitle, e.DepartmentId, e.Department != null ? e.Department.Name : null,
                 e.HireDate, e.TerminationDate,
-                e.BaseSalary, e.FixedAllowance, e.FixedDeduction,
+                e.BaseSalary, e.TransportationAllowance, e.CommunicationAllowance, e.BonusAmount, e.FixedAllowance, e.FixedDeduction,
                 e.BankAccount, (int)e.Status, e.Notes,
                 e.AttachmentUrl, e.AttachmentPublicId,
-                e.AccountId, e.Account != null ? e.Account.NameAr : null,
                 e.CreatedAt,
                 e.AppUserId, e.AppUser != null ? e.AppUser.FullName : null
             )).ToListAsync();
@@ -97,9 +96,9 @@ public class EmployeesController : ControllerBase
         return Ok(new EmployeeDto(
             e.Id, e.EmployeeNumber, e.Name, e.Phone, e.Email, e.NationalId,
             e.JobTitle, e.DepartmentId, e.Department?.Name, e.HireDate, e.TerminationDate,
-            e.BaseSalary, e.FixedAllowance, e.FixedDeduction, e.BankAccount, (int)e.Status, e.Notes,
+            e.BaseSalary, e.TransportationAllowance, e.CommunicationAllowance, e.BonusAmount, e.FixedAllowance, e.FixedDeduction, e.BankAccount, (int)e.Status, e.Notes,
             e.AttachmentUrl, e.AttachmentPublicId,
-            e.AccountId, e.Account?.NameAr, e.CreatedAt,
+            e.CreatedAt,
             e.AppUserId, e.AppUser?.FullName));
     }
 
@@ -140,13 +139,16 @@ public class EmployeesController : ControllerBase
             DepartmentId     = dto.DepartmentId,
             HireDate         = dto.HireDate,
             BaseSalary       = dto.BaseSalary,
-            FixedAllowance   = dto.FixedAllowance,
-            FixedDeduction   = dto.FixedDeduction,
+            TransportationAllowance = dto.TransportationAllowance,
+            CommunicationAllowance  = dto.CommunicationAllowance,
+            BonusAmount             = dto.BonusAmount,
+            FixedAllowance          = dto.FixedAllowance,
+            FixedDeduction          = dto.FixedDeduction,
             BankAccount      = dto.BankAccount?.Trim(),
             Notes            = dto.Notes?.Trim(),
             AttachmentUrl    = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
-            AccountId        = dto.AccountId ?? defaultAccId,
+            AccountId        = defaultAccId,
             AppUserId        = string.IsNullOrEmpty(dto.AppUserId) ? null : dto.AppUserId,
             Status           = EmployeeStatus.Active,
             CreatedAt        = TimeHelper.GetEgyptTime(),
@@ -200,13 +202,15 @@ public class EmployeesController : ControllerBase
         emp.HireDate          = dto.HireDate;
         emp.TerminationDate   = dto.TerminationDate;
         emp.BaseSalary        = dto.BaseSalary;
+        emp.TransportationAllowance = dto.TransportationAllowance;
+        emp.CommunicationAllowance  = dto.CommunicationAllowance;
+        emp.BonusAmount             = dto.BonusAmount;
         emp.FixedAllowance    = dto.FixedAllowance;
         emp.FixedDeduction    = dto.FixedDeduction;
         emp.BankAccount       = dto.BankAccount?.Trim();
         emp.Notes             = dto.Notes?.Trim();
         emp.AttachmentUrl     = dto.AttachmentUrl;
         emp.AttachmentPublicId = dto.AttachmentPublicId;
-        emp.AccountId         = dto.AccountId;
         emp.Status            = dto.Status;
         emp.UpdatedAt         = TimeHelper.GetEgyptTime();
 
@@ -234,11 +238,11 @@ public class EmployeesController : ControllerBase
     [HttpGet("{id}/statement")]
     public async Task<IActionResult> GetStatement(int id, [FromQuery] DateTime from, [FromQuery] DateTime to)
     {
+        if (id == 0) return await GetGeneralStatement(from, to);
+
         var emp = await _db.Employees.FindAsync(id);
         if (emp == null) return NotFound();
 
-        // 1. الرصيد الافتتاحي (كل القيود قبل التاريخ المطلوب)
-        // ملاحظات: المدين سلف، دائن رواتب
         var preEntries = await _db.JournalLines
             .Where(l => l.EmployeeId == id && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .Select(l => new { l.Debit, l.Credit })
@@ -246,7 +250,6 @@ public class EmployeesController : ControllerBase
         
         var openingBalance = preEntries.Sum(e => e.Debit - e.Credit);
 
-        // 2. الحركات في الفترة
         var lines = await _db.JournalLines
             .Include(l => l.JournalEntry)
             .Where(l => l.EmployeeId == id && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
@@ -271,7 +274,50 @@ public class EmployeesController : ControllerBase
         }
 
         return Ok(new EmployeeStatementDto(
-            emp.Id, emp.Name, emp.EmployeeNumber, emp.JobTitle,
+            emp.Id, emp.Name, emp.EmployeeNumber, emp.JobTitle, emp.Account?.Name ?? "رواتب مستحقة",
+            from, to, openingBalance, rows,
+            rows.Sum(r => r.Debit), rows.Sum(r => r.Credit), runningBalance
+        ));
+    }
+
+    private async Task<IActionResult> GetGeneralStatement(DateTime from, DateTime to)
+    {
+        var accrualAccId = await _core.GetRequiredMappedAccountAsync(MappingKeys.SalariesPayable);
+        var acc = await _db.Accounts.FindAsync(accrualAccId);
+
+        var preEntries = await _db.JournalLines
+            .Where(l => l.EmployeeId != null && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Select(l => new { l.Debit, l.Credit })
+            .ToListAsync();
+        
+        var openingBalance = preEntries.Sum(e => e.Debit - e.Credit);
+
+        var lines = await _db.JournalLines
+            .Include(l => l.JournalEntry)
+            .Include(l => l.Employee)
+            .Where(l => l.EmployeeId != null && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .OrderBy(l => l.JournalEntry.EntryDate)
+            .ToListAsync();
+
+        var rows = new List<EmployeeStatementRowDto>();
+        var runningBalance = openingBalance;
+
+        foreach (var l in lines)
+        {
+            runningBalance += (l.Debit - l.Credit);
+            rows.Add(new EmployeeStatementRowDto(
+                l.JournalEntry.EntryDate,
+                l.JournalEntry.EntryNumber,
+                l.JournalEntry.Type.ToString(),
+                $"[{l.Employee?.Name}] " + (l.Description ?? l.JournalEntry.Description ?? ""),
+                l.Debit,
+                l.Credit,
+                runningBalance
+            ));
+        }
+
+        return Ok(new EmployeeStatementDto(
+            0, "الكل / ALL", "000", "GENERAL_REPORT", acc?.Name ?? "رواتب مستحقة",
             from, to, openingBalance, rows,
             rows.Sum(r => r.Debit), rows.Sum(r => r.Credit), runningBalance
         ));
@@ -361,7 +407,7 @@ public class PayrollController : ControllerBase
             CreatedByUserId            = UserId
         };
 
-        decimal totalBasic = 0, totalBonus = 0, totalDed = 0, totalAdv = 0;
+        decimal totalBasic = 0, totalTrans = 0, totalComm = 0, totalBonus = 0, totalDed = 0, totalAdv = 0;
 
         foreach (var itemDto in dto.Items)
         {
@@ -369,8 +415,14 @@ public class PayrollController : ControllerBase
             if (emp == null) continue;
 
             var basic = itemDto.OverrideBasicSalary ?? emp.BaseSalary;
+            var trans = emp.TransportationAllowance;
+            var comm  = emp.CommunicationAllowance;
+            var bonus = itemDto.BonusAmount + emp.BonusAmount;
+
             totalBasic += basic;
-            totalBonus += itemDto.BonusAmount;
+            totalTrans += trans;
+            totalComm  += comm;
+            totalBonus += bonus;
             totalDed   += itemDto.DeductionAmount;
             totalAdv   += itemDto.AdvanceDeducted;
 
@@ -378,7 +430,9 @@ public class PayrollController : ControllerBase
             {
                 EmployeeId      = emp.Id,
                 BasicSalary     = basic,
-                BonusAmount     = itemDto.BonusAmount,
+                TransportationAllowance = trans,
+                CommunicationAllowance  = comm,
+                BonusAmount     = bonus,
                 DeductionAmount = itemDto.DeductionAmount,
                 AdvanceDeducted = itemDto.AdvanceDeducted,
                 Notes           = itemDto.Notes,
@@ -387,10 +441,12 @@ public class PayrollController : ControllerBase
         }
 
         run.TotalBasicSalary      = totalBasic;
+        run.TotalTransportation   = totalTrans;
+        run.TotalCommunication    = totalComm;
         run.TotalBonuses          = totalBonus;
         run.TotalDeductions       = totalDed;
         run.TotalAdvancesDeducted = totalAdv;
-        run.TotalNetPayable       = totalBasic + totalBonus - totalDed - totalAdv;
+        run.TotalNetPayable       = totalBasic + totalTrans + totalComm + totalBonus - totalDed - totalAdv;
 
         _db.PayrollRuns.Add(run);
         await _db.SaveChangesAsync();
@@ -415,6 +471,10 @@ public class PayrollController : ControllerBase
         var accrualAccId = run.AccruedSalariesAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.SalariesPayable, mapDict);
         var dedAccId     = run.DeductionRevenueAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.EmployeeDeductions, mapDict);
         var advAccId     = run.AdvancesAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.EmployeeAdvances, mapDict);
+        
+        var transAccId   = await _core.GetRequiredMappedAccountAsync(MappingKeys.TransportationAllowanceExpense, mapDict);
+        var commAccId    = await _core.GetRequiredMappedAccountAsync(MappingKeys.CommunicationAllowanceExpense, mapDict);
+        var bonusAccId   = await _core.GetRequiredMappedAccountAsync(MappingKeys.EmployeeBonuses, mapDict);
 
         JournalEntry? je = null;
 
@@ -444,14 +504,44 @@ public class PayrollController : ControllerBase
                 Lines           = new List<JournalLine>()
             };
 
-            // مدين: رواتب وأجور — الإجمالي (أساسي + مكافآت)
+            // مدين: رواتب وأجور — الأساسي
             je.Lines.Add(new JournalLine
             {
                 AccountId   = wagesAccId,
-                Debit       = totalGross,
+                Debit       = run.TotalBasicSalary,
                 Credit      = 0,
-                Description = $"رواتب وأجور — {run.PeriodMonth}/{run.PeriodYear}"
+                Description = $"رواتب أساسية — {run.PeriodMonth}/{run.PeriodYear}"
             });
+
+            // مدين: بدل انتقال
+            if (run.TotalTransportation > 0)
+                je.Lines.Add(new JournalLine
+                {
+                    AccountId   = transAccId,
+                    Debit       = run.TotalTransportation,
+                    Credit      = 0,
+                    Description = $"بدلات انتقال — {run.PeriodMonth}/{run.PeriodYear}"
+                });
+
+            // مدين: بدل اتصال
+            if (run.TotalCommunication > 0)
+                je.Lines.Add(new JournalLine
+                {
+                    AccountId   = commAccId,
+                    Debit       = run.TotalCommunication,
+                    Credit      = 0,
+                    Description = $"بدلات اتصال — {run.PeriodMonth}/{run.PeriodYear}"
+                });
+
+            // مدين: مكافآت تشجيعية
+            if (run.TotalBonuses > 0)
+                je.Lines.Add(new JournalLine
+                {
+                    AccountId   = bonusAccId,
+                    Debit       = run.TotalBonuses,
+                    Credit      = 0,
+                    Description = $"مكافآت تشجيعية — {run.PeriodMonth}/{run.PeriodYear}"
+                });
 
             // Note: Deductions and Advances go to their respective accounts (Credit)
             if (run.TotalDeductions > 0)
@@ -541,12 +631,12 @@ public class PayrollController : ControllerBase
 
     private static PayrollRunDto ToDto(PayrollRun run) => new(
         run.Id, run.PayrollNumber, run.PeriodYear, run.PeriodMonth,
-        run.TotalBasicSalary, run.TotalBonuses, run.TotalDeductions,
+        run.TotalBasicSalary, run.TotalTransportation, run.TotalCommunication, run.TotalBonuses, run.TotalDeductions,
         run.TotalAdvancesDeducted, run.TotalNetPayable, (int)run.Status, run.Notes,
         run.JournalEntryId, run.CreatedAt,
         run.Items.Select(i => new PayrollItemDto(
             i.Id, i.EmployeeId, i.Employee.Name, i.Employee.EmployeeNumber,
-            i.Employee.JobTitle, i.BasicSalary, i.BonusAmount,
+            i.Employee.JobTitle, i.BasicSalary, i.TransportationAllowance, i.CommunicationAllowance, i.BonusAmount,
             i.DeductionAmount, i.AdvanceDeducted, i.NetPayable, i.Notes
         )).ToList()
     );
