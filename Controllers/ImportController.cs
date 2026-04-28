@@ -27,18 +27,19 @@ public class ImportController : ControllerBase
     {
         try
         {
-            var allCats      = await _db.Categories.Where(c => c.NameAr != null).ToListAsync();
+            var allCats      = await _db.Categories.AsNoTracking().Where(c => c.NameAr != null).ToListAsync();
             var mainCats     = allCats.Where(c => c.ParentId == null).ToList();
-            var brands       = await _db.Brands.Where(b => b.NameAr != null).Select(b => b.NameAr!).ToListAsync();
-            var units        = await _db.ProductUnits.Where(u => u.NameAr != null).Select(u => u.NameAr!).ToListAsync();
+            var brands       = await _db.Brands.AsNoTracking().Where(b => b.NameAr != null).Select(b => b.NameAr!).ToListAsync();
+            var units        = await _db.ProductUnits.AsNoTracking().Where(u => u.NameAr != null).Select(u => u.NameAr!).ToListAsync();
             
-            // Fetch existing sizes and colors to provide as options
-            var existingSizes  = await _db.ProductVariants.Where(v => v.Size != null).Select(v => v.Size!).Distinct().ToListAsync();
+            // Fetch existing sizes and colors to provide as options — Limited for performance
+            var existingSizes  = await _db.ProductVariants.AsNoTracking().Where(v => v.Size != null).Select(v => v.Size!).Distinct().Take(100).ToListAsync();
             var catNames = allCats.Select(c => c.NameAr).Where(n => n != null).ToHashSet();
-            var existingColors = await _db.ProductVariants
+            var existingColors = await _db.ProductVariants.AsNoTracking()
                 .Where(v => v.ColorAr != null)
                 .Select(v => v.ColorAr!)
                 .Distinct()
+                .Take(100)
                 .ToListAsync();
             
             // Filter out colors that are actually category names or too long
@@ -117,7 +118,7 @@ public class ImportController : ControllerBase
             }
             
             // 4. Size Mapping
-            var sizeGroups = await _db.SizeGroups.Include(g => g.Values).ToListAsync();
+            var sizeGroups = await _db.SizeGroups.AsNoTracking().Include(g => g.Values).ToListAsync();
             var catSizeMapping = new List<(string CatName, string SizeValue)>();
             
             foreach (var cat in allCats)
