@@ -45,6 +45,46 @@ public class StartupSyncService : BackgroundService
                 if (!await roleManager.RoleExistsAsync(role))
                     await roleManager.CreateAsync(new Microsoft.AspNetCore.Identity.IdentityRole(role));
 
+            // ── DEFAULT SIZE GROUPS ──────────────────────────
+            if (!await db.SizeGroups.AnyAsync(stoppingToken))
+            {
+                var defaultGroups = new List<SizeGroup>
+                {
+                    new SizeGroup {
+                        Name = "أحذية (الأوروبية)", Description = "المقاسات الأوروبية للأحذية",
+                        Values = new List<SizeValue> {
+                            new SizeValue { Value = "36", SortOrder = 1 }, new SizeValue { Value = "37", SortOrder = 2 },
+                            new SizeValue { Value = "38", SortOrder = 3 }, new SizeValue { Value = "39", SortOrder = 4 },
+                            new SizeValue { Value = "40", SortOrder = 5 }, new SizeValue { Value = "41", SortOrder = 6 },
+                            new SizeValue { Value = "42", SortOrder = 7 }, new SizeValue { Value = "43", SortOrder = 8 },
+                            new SizeValue { Value = "44", SortOrder = 9 }, new SizeValue { Value = "45", SortOrder = 10 },
+                            new SizeValue { Value = "46", SortOrder = 11 }
+                        }
+                    },
+                    new SizeGroup {
+                        Name = "ملابس رياضية (أحرف)", Description = "المقاسات العالمية للملابس (S-XXL)",
+                        Values = new List<SizeValue> {
+                            new SizeValue { Value = "XS", SortOrder = 1 }, new SizeValue { Value = "S", SortOrder = 2 },
+                            new SizeValue { Value = "M", SortOrder = 3 }, new SizeValue { Value = "L", SortOrder = 4 },
+                            new SizeValue { Value = "XL", SortOrder = 5 }, new SizeValue { Value = "XXL", SortOrder = 6 },
+                            new SizeValue { Value = "3XL", SortOrder = 7 }
+                        }
+                    },
+                    new SizeGroup {
+                        Name = "ملابس أطفال (بالأعمار)", Description = "المقاسات المعتمدة على السن",
+                        Values = new List<SizeValue> {
+                            new SizeValue { Value = "2Y", SortOrder = 1 }, new SizeValue { Value = "4Y", SortOrder = 2 },
+                            new SizeValue { Value = "6Y", SortOrder = 3 }, new SizeValue { Value = "8Y", SortOrder = 4 },
+                            new SizeValue { Value = "10Y", SortOrder = 5 }, new SizeValue { Value = "12Y", SortOrder = 6 },
+                            new SizeValue { Value = "14Y", SortOrder = 7 }
+                        }
+                    }
+                };
+                await db.SizeGroups.AddRangeAsync(defaultGroups, stoppingToken);
+                await db.SaveChangesAsync(stoppingToken);
+                _logger.LogInformation("[StartupSync] Seeded default Size Groups.");
+            }
+
             var adminEmail    = Environment.GetEnvironmentVariable("ADMIN_EMAIL") ?? "admin@sportive.com";
             var adminPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD") ?? "Admin@123456";
 

@@ -132,6 +132,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(x => x.Brand).WithMany(b => b.Products)
              .HasForeignKey(x => x.BrandId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.SizeGroup).WithMany()
+             .HasForeignKey(x => x.SizeGroupId).OnDelete(DeleteBehavior.SetNull);
             e.Property(x => x.Status).HasConversion<string>();
         });
 

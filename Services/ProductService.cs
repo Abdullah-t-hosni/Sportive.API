@@ -241,6 +241,7 @@ public class ProductService : IProductService
             HasTax = dto.HasTax,
             VatRate = dto.VatRate,
             UnitId = dto.UnitId,
+            SizeGroupId = dto.SizeGroupId,
             Status = ProductStatus.Active,
             Slug = GenerateSlug(dto.NameEn ?? dto.NameAr) + "-" + Guid.NewGuid().ToString().Substring(0, 4)
         };
@@ -339,6 +340,7 @@ public class ProductService : IProductService
         product.HasTax = dto.HasTax;
         product.VatRate = dto.VatRate;
         product.UnitId = dto.UnitId;
+        product.SizeGroupId = dto.SizeGroupId;
         product.UpdatedAt = TimeHelper.GetEgyptTime();
 
         // إعادة حساب إجمالي المخزون وتحديث الحالة للتأكد من الدقة

@@ -30,6 +30,10 @@ public class Product : BaseEntity
     public int? CategoryId { get; set; }
     public Category? Category { get; set; }
 
+    // Size Group
+    public int? SizeGroupId { get; set; }
+    public SizeGroup? SizeGroup { get; set; }
+
     // Unit
     public int? UnitId { get; set; }
     public ProductUnit? Unit { get; set; }

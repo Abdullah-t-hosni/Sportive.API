@@ -174,7 +174,8 @@ public record CreateProductDto(
     [property: JsonPropertyName("reorderLevel")] int? ReorderLevel = 0,
     [property: JsonPropertyName("unitId")] int? UnitId = null,
     [property: JsonPropertyName("hasTax")] bool HasTax = true,
-    [property: JsonPropertyName("vatRate")] decimal? VatRate = null
+    [property: JsonPropertyName("vatRate")] decimal? VatRate = null,
+    [property: JsonPropertyName("sizeGroupId")] int? SizeGroupId = null
 );
 
 public record UpdateProductDto(
@@ -193,7 +194,8 @@ public record UpdateProductDto(
     [property: JsonPropertyName("status")] ProductStatus Status = ProductStatus.Active,
     [property: JsonPropertyName("unitId")] int? UnitId = null,
     [property: JsonPropertyName("hasTax")] bool HasTax = true,
-    [property: JsonPropertyName("vatRate")] decimal? VatRate = null
+    [property: JsonPropertyName("vatRate")] decimal? VatRate = null,
+    [property: JsonPropertyName("sizeGroupId")] int? SizeGroupId = null
 );
 
 public record CreateVariantDto(
