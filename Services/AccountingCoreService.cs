@@ -221,7 +221,6 @@ public class AccountingCoreService
             });
         }
 
-        _db.JournalEntries.Add(entry);
         await _db.SaveChangesAsync();
         return entry;
     }

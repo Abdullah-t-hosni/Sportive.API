@@ -696,68 +696,81 @@ public class EmployeeAdvancesController : ControllerBase
             (int)Math.Ceiling((double)total / pageSize)));
     }
 
-    // POST — صرف سلفة (مع قيد محاسبي: مدين سلف موظفين، دائن خزينة)
     [HttpPost]
+    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
     public async Task<IActionResult> Create([FromBody] CreateAdvanceDto dto)
     {
         var emp = await _db.Employees.FindAsync(dto.EmployeeId);
         if (emp == null) return NotFound("الموظف غير موجود.");
 
-        var advNo = await _seq.NextAsync("ADV", async (db, pattern) =>
-        {
-            var max = await db.EmployeeAdvances
-                .Where(a => EF.Functions.Like(a.AdvanceNumber, pattern))
-                .Select(a => a.AdvanceNumber).ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
-        });
-
-        var advance = new EmployeeAdvance
-        {
-            AdvanceNumber   = advNo,
-            EmployeeId      = dto.EmployeeId,
-            AdvanceDate     = dto.AdvanceDate,
-            Amount          = dto.Amount,
-            Reason          = dto.Reason?.Trim(),
-            Notes           = dto.Notes?.Trim(),
-            CashAccountId   = dto.CashAccountId,
-            Status          = AdvanceStatus.Pending,
-            CreatedAt       = TimeHelper.GetEgyptTime(),
-            CreatedByUserId = UserId
-        };
-
-        _db.EmployeeAdvances.Add(advance);
-
-        // 🎯 UNIFIED VOUCHER SYSTEM: Create a PaymentVoucher record for this advance
         var mapDict = await _core.GetSafeSystemMappingsAsync();
-        var advAccId = (mapDict.TryGetValue(MappingKeys.EmployeeAdvances, out var aAccId) && aAccId.HasValue) 
-            ? aAccId.Value 
-            : (emp.AccountId ?? 0);
+        if (!mapDict.TryGetValue(MappingKeys.EmployeeAdvances, out var advAccId) || advAccId == null)
+            return BadRequest("لم يتم ضبط حساب سلف الموظفين في الإعدادات.");
 
-        var voucher = new PaymentVoucher
+        if (!dto.CashAccountId.HasValue || dto.CashAccountId == 0)
+            return BadRequest("يجب اختيار حساب الخزينة/البنك للصرف.");
+
+        // Retry logic for sequence generation to handle race conditions
+        for (int retry = 0; retry < 3; retry++)
         {
-            VoucherNumber = advance.AdvanceNumber,
-            VoucherDate = advance.AdvanceDate,
-            Amount = advance.Amount,
-            CashAccountId = advance.CashAccountId ?? 0,
-            ToAccountId = advAccId,
-            EmployeeId = emp.Id,
-            PaymentMethod = VoucherPaymentMethod.Cash,
-            Description = $"سلفة موظف — {emp.Name}",
-            Reference = advance.AdvanceNumber,
-            CreatedAt = TimeHelper.GetEgyptTime(),
-            CreatedByUserId = UserId,
-            CostCenter = null
-        };
-        _db.PaymentVouchers.Add(voucher);
-        await _db.SaveChangesAsync();
+            try
+            {
+                var advNo = await _seq.NextAsync("ADV", async (db, pattern) =>
+                {
+                    var max = await db.EmployeeAdvances
+                        .Where(a => EF.Functions.Like(a.AdvanceNumber, pattern))
+                        .Select(a => a.AdvanceNumber).ToListAsync();
+                    return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                              .DefaultIfEmpty(0).Max();
+                });
 
-        // قيد: مدين سلف الموظفين، دائن الخزينة
-        await _accounting.PostPaymentVoucherAsync(voucher);
-        advance.JournalEntryId = voucher.JournalEntryId;
-        await _db.SaveChangesAsync();
+                var advance = new EmployeeAdvance
+                {
+                    AdvanceNumber = advNo,
+                    EmployeeId = dto.EmployeeId,
+                    AdvanceDate = dto.AdvanceDate,
+                    Amount = dto.Amount,
+                    Reason = dto.Reason?.Trim(),
+                    Notes = dto.Notes?.Trim(),
+                    CashAccountId = dto.CashAccountId,
+                    Status = AdvanceStatus.Pending,
+                    CreatedAt = TimeHelper.GetEgyptTime(),
+                    CreatedByUserId = UserId
+                };
 
-        return Ok(new { id = advance.Id, advanceNumber = advance.AdvanceNumber, journalEntryId = advance.JournalEntryId });
+                _db.EmployeeAdvances.Add(advance);
+
+                var voucher = new PaymentVoucher
+                {
+                    VoucherNumber = advance.AdvanceNumber,
+                    VoucherDate = advance.AdvanceDate,
+                    Amount = advance.Amount,
+                    CashAccountId = advance.CashAccountId.Value,
+                    ToAccountId = advAccId.Value,
+                    EmployeeId = emp.Id,
+                    PaymentMethod = VoucherPaymentMethod.Cash,
+                    Description = $"سلفة موظف — {emp.Name}",
+                    Reference = advance.AdvanceNumber,
+                    CreatedAt = TimeHelper.GetEgyptTime(),
+                    CreatedByUserId = UserId
+                };
+                _db.PaymentVouchers.Add(voucher);
+                await _db.SaveChangesAsync();
+
+                await _accounting.PostPaymentVoucherAsync(voucher);
+                advance.JournalEntryId = voucher.JournalEntryId;
+                await _db.SaveChangesAsync();
+
+                return Ok(new { id = advance.Id, advanceNumber = advance.AdvanceNumber, journalEntryId = advance.JournalEntryId });
+            }
+            catch (DbUpdateException ex) when (retry < 2 && (ex.InnerException?.Message.Contains("duplicate") == true || ex.Message.Contains("duplicate") == true))
+            {
+                // Number conflict, will retry with fresh MAX
+                _db.ChangeTracker.Clear();
+            }
+        }
+
+        return StatusCode(409, "فشل إنشاء السلفة بسبب تضارب في الترقيم التلقائي. يرجى المحاولة مرة أخرى.");
     }
 
     [HttpDelete("{id}")]
@@ -768,7 +781,55 @@ public class EmployeeAdvancesController : ControllerBase
         if (adv.Status != AdvanceStatus.Pending)
             return BadRequest("لا يمكن حذف سلفة بدأ خصمها.");
 
+        // Delete associated voucher and journal if unposted/partial? 
+        // Actually PaymentVoucher.Reference = AdvanceNumber
+        var voucher = await _db.PaymentVouchers.FirstOrDefaultAsync(v => v.Reference == adv.AdvanceNumber);
+        if (voucher != null)
+        {
+             // If there's a journal entry, we should ideally reverse it or delete it if unposted
+             if (voucher.JournalEntryId.HasValue)
+             {
+                 var je = await _db.JournalEntries.Include(j => j.Lines).FirstOrDefaultAsync(j => j.Id == voucher.JournalEntryId);
+                 if (je != null) _db.JournalEntries.Remove(je);
+             }
+             _db.PaymentVouchers.Remove(voucher);
+        }
+
         _db.EmployeeAdvances.Remove(adv);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpPut("{id}")]
+    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
+    public async Task<IActionResult> Update(int id, [FromBody] CreateAdvanceDto dto)
+    {
+        var adv = await _db.EmployeeAdvances.FindAsync(id);
+        if (adv == null) return NotFound();
+        if (adv.Status != AdvanceStatus.Pending)
+            return BadRequest("لا يمكن تعديل سلفة بدأ خصمها بالفعل.");
+
+        adv.Amount = dto.Amount;
+        adv.AdvanceDate = dto.AdvanceDate;
+        adv.Reason = dto.Reason?.Trim();
+        adv.Notes = dto.Notes?.Trim();
+        adv.CashAccountId = dto.CashAccountId;
+        adv.UpdatedAt = TimeHelper.GetEgyptTime();
+
+        // Update voucher if exists
+        var voucher = await _db.PaymentVouchers.FirstOrDefaultAsync(v => v.Reference == adv.AdvanceNumber);
+        if (voucher != null)
+        {
+            voucher.Amount = adv.Amount;
+            voucher.VoucherDate = adv.AdvanceDate;
+            voucher.CashAccountId = adv.CashAccountId ?? 0;
+            voucher.Description = $"تعديل سلفة موظف — {adv.AdvanceNumber}";
+            
+            // Re-post to update journal entry
+            await _accounting.PostPaymentVoucherAsync(voucher);
+            adv.JournalEntryId = voucher.JournalEntryId;
+        }
+
         await _db.SaveChangesAsync();
         return NoContent();
     }
@@ -820,63 +881,79 @@ public class EmployeeBonusesController : ControllerBase
     }
 
     [HttpPost]
+    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
     public async Task<IActionResult> Create([FromBody] CreateBonusDto dto)
     {
         var emp = await _db.Employees.FindAsync(dto.EmployeeId);
         if (emp == null) return NotFound("الموظف غير موجود.");
 
-        var bonNo = await _seq.NextAsync("BON", async (db, pattern) =>
-        {
-            var max = await db.EmployeeBonuses
-                .Where(b => EF.Functions.Like(b.BonusNumber, pattern))
-                .Select(b => b.BonusNumber).ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
-        });
-
-        var bonus = new EmployeeBonus
-        {
-            BonusNumber     = bonNo,
-            EmployeeId      = dto.EmployeeId,
-            BonusDate       = dto.BonusDate,
-            Amount          = dto.Amount,
-            BonusType       = dto.BonusType,
-            Reason          = dto.Reason?.Trim(),
-            Notes           = dto.Notes?.Trim(),
-            CashAccountId   = dto.CashAccountId,
-            CreatedAt       = TimeHelper.GetEgyptTime(),
-            CreatedByUserId = UserId
-        };
-
-        _db.EmployeeBonuses.Add(bonus);
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         if (!mapDict.TryGetValue(MappingKeys.SalaryExpense, out var bonusExpenseAccId) || bonusExpenseAccId == null)
             return BadRequest("لم يتم ضبط حساب مصروف الرواتب (للمكافآت) في الإعدادات.");
 
-        // 🎯 UNIFIED VOUCHER SYSTEM: Create a PaymentVoucher record for this bonus
-        var voucher = new PaymentVoucher
+        if (!dto.CashAccountId.HasValue || dto.CashAccountId == 0)
+            return BadRequest("يجب اختيار حساب الخزينة/البنك للصرف.");
+
+        // Retry logic for sequence generation
+        for (int retry = 0; retry < 3; retry++)
         {
-            VoucherNumber = bonus.BonusNumber,
-            VoucherDate = bonus.BonusDate,
-            Amount = bonus.Amount,
-            CashAccountId = bonus.CashAccountId ?? 0,
-            ToAccountId = bonusExpenseAccId.Value,
-            EmployeeId = emp.Id,
-            PaymentMethod = VoucherPaymentMethod.Cash,
-            Description = $"مكافأة فورية — {emp.Name}",
-            Reference = bonus.BonusNumber,
-            CreatedAt = TimeHelper.GetEgyptTime(),
-            CreatedByUserId = UserId,
-            CostCenter = null
-        };
-        _db.PaymentVouchers.Add(voucher);
-        await _db.SaveChangesAsync();
+            try
+            {
+                var bonNo = await _seq.NextAsync("BON", async (db, pattern) =>
+                {
+                    var max = await db.EmployeeBonuses
+                        .Where(b => EF.Functions.Like(b.BonusNumber, pattern))
+                        .Select(b => b.BonusNumber).ToListAsync();
+                    return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                              .DefaultIfEmpty(0).Max();
+                });
 
-        await _accounting.PostPaymentVoucherAsync(voucher);
-        bonus.JournalEntryId = voucher.JournalEntryId;
-        await _db.SaveChangesAsync();
+                var bonus = new EmployeeBonus
+                {
+                    BonusNumber = bonNo,
+                    EmployeeId = dto.EmployeeId,
+                    BonusDate = dto.BonusDate,
+                    Amount = dto.Amount,
+                    BonusType = dto.BonusType,
+                    Reason = dto.Reason?.Trim(),
+                    Notes = dto.Notes?.Trim(),
+                    CashAccountId = dto.CashAccountId,
+                    CreatedAt = TimeHelper.GetEgyptTime(),
+                    CreatedByUserId = UserId
+                };
 
-        return Ok(new { id = bonus.Id, bonusNumber = bonus.BonusNumber, journalEntryId = bonus.JournalEntryId });
+                _db.EmployeeBonuses.Add(bonus);
+
+                var voucher = new PaymentVoucher
+                {
+                    VoucherNumber = bonus.BonusNumber,
+                    VoucherDate = bonus.BonusDate,
+                    Amount = bonus.Amount,
+                    CashAccountId = bonus.CashAccountId.Value,
+                    ToAccountId = bonusExpenseAccId.Value,
+                    EmployeeId = emp.Id,
+                    PaymentMethod = VoucherPaymentMethod.Cash,
+                    Description = $"مكافأة فورية — {emp.Name}",
+                    Reference = bonus.BonusNumber,
+                    CreatedAt = TimeHelper.GetEgyptTime(),
+                    CreatedByUserId = UserId
+                };
+                _db.PaymentVouchers.Add(voucher);
+                await _db.SaveChangesAsync();
+
+                await _accounting.PostPaymentVoucherAsync(voucher);
+                bonus.JournalEntryId = voucher.JournalEntryId;
+                await _db.SaveChangesAsync();
+
+                return Ok(new { id = bonus.Id, bonusNumber = bonus.BonusNumber, journalEntryId = bonus.JournalEntryId });
+            }
+            catch (DbUpdateException ex) when (retry < 2 && (ex.InnerException?.Message.Contains("duplicate") == true || ex.Message.Contains("duplicate") == true))
+            {
+                _db.ChangeTracker.Clear();
+            }
+        }
+
+        return StatusCode(409, "فشل إنشاء المكافأة بسبب تضارب في الترقيم التلقائي. يرجى المحاولة مرة أخرى.");
     }
 
     [HttpDelete("{id}")]
@@ -887,7 +964,50 @@ public class EmployeeBonusesController : ControllerBase
         if (bon.PayrollRunId.HasValue)
             return BadRequest("لا يمكن حذف مكافأة مرتبطة بمسير رواتب.");
 
+        var voucher = await _db.PaymentVouchers.FirstOrDefaultAsync(v => v.Reference == bon.BonusNumber);
+        if (voucher != null)
+        {
+             if (voucher.JournalEntryId.HasValue)
+             {
+                 var je = await _db.JournalEntries.Include(j => j.Lines).FirstOrDefaultAsync(j => j.Id == voucher.JournalEntryId);
+                 if (je != null) _db.JournalEntries.Remove(je);
+             }
+             _db.PaymentVouchers.Remove(voucher);
+        }
+
         _db.EmployeeBonuses.Remove(bon);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpPut("{id}")]
+    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
+    public async Task<IActionResult> Update(int id, [FromBody] CreateBonusDto dto)
+    {
+        var bon = await _db.EmployeeBonuses.FindAsync(id);
+        if (bon == null) return NotFound();
+        if (bon.PayrollRunId.HasValue)
+            return BadRequest("لا يمكن تعديل مكافأة مربوطة بمسير رواتب.");
+
+        bon.Amount = dto.Amount;
+        bon.BonusDate = dto.BonusDate;
+        bon.BonusType = dto.BonusType;
+        bon.Reason = dto.Reason?.Trim();
+        bon.Notes = dto.Notes?.Trim();
+        bon.CashAccountId = dto.CashAccountId;
+        bon.UpdatedAt = TimeHelper.GetEgyptTime();
+
+        var voucher = await _db.PaymentVouchers.FirstOrDefaultAsync(v => v.Reference == bon.BonusNumber);
+        if (voucher != null)
+        {
+            voucher.Amount = bon.Amount;
+            voucher.VoucherDate = bon.BonusDate;
+            voucher.CashAccountId = bon.CashAccountId ?? 0;
+            
+            await _accounting.PostPaymentVoucherAsync(voucher);
+            bon.JournalEntryId = voucher.JournalEntryId;
+        }
+
         await _db.SaveChangesAsync();
         return NoContent();
     }
@@ -1014,6 +1134,27 @@ public class EmployeeDeductionsController : ControllerBase
             return BadRequest("لا يمكن حذف خصم مرتبط بمسير رواتب.");
 
         _db.EmployeeDeductions.Remove(ded);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpPut("{id}")]
+    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
+    public async Task<IActionResult> Update(int id, [FromBody] CreateDeductionDto dto)
+    {
+        var ded = await _db.EmployeeDeductions.FindAsync(id);
+        if (ded == null) return NotFound();
+        if (ded.PayrollRunId.HasValue)
+            return BadRequest("لا يمكن تعديل خصم مربوط بمسير رواتب.");
+
+        ded.Amount = dto.Amount;
+        ded.DeductionDate = dto.DeductionDate;
+        ded.DeductionType = dto.DeductionType;
+        ded.Reason = dto.Reason?.Trim();
+        ded.Notes = dto.Notes?.Trim();
+        ded.CashAccountId = dto.CashAccountId;
+        ded.UpdatedAt = TimeHelper.GetEgyptTime();
+
         await _db.SaveChangesAsync();
         return NoContent();
     }
