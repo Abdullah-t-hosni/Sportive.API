@@ -84,7 +84,7 @@ public record EmployeeDto(
     string?        AppUserName  = null
 );
 
-public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, int? DepartmentId, string? DepartmentName, decimal BaseSalary, int Status);
+public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, int? DepartmentId, string? DepartmentName, decimal BaseSalary, decimal TransportationAllowance, decimal CommunicationAllowance, decimal BonusAmount, int Status);
 
 // ══════════════════════════════════════════════════════
 // PAYROLL RUN DTOs
@@ -104,6 +104,8 @@ public record CreatePayrollRunDto(
 public record CreatePayrollItemDto(
     int      EmployeeId,
     decimal? OverrideBasicSalary = null,  // لو null يأخذ راتب الموظف
+    decimal  TransportationAllowance = 0,
+    decimal  CommunicationAllowance  = 0,
     decimal  BonusAmount         = 0,
     decimal  DeductionAmount     = 0,
     decimal  AdvanceDeducted     = 0,

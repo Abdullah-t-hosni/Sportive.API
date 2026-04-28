@@ -79,7 +79,7 @@ public class EmployeesController : ControllerBase
         var list = await _db.Employees
             .Where(e => e.Status == EmployeeStatus.Active || (int)e.Status == 0)
             .OrderBy(e => e.Name)
-            .Select(e => new EmployeeBasicDto(e.Id, e.EmployeeNumber, e.Name, e.JobTitle, e.DepartmentId, e.Department != null ? e.Department.Name : null, e.BaseSalary, (int)e.Status))
+            .Select(e => new EmployeeBasicDto(e.Id, e.EmployeeNumber, e.Name, e.JobTitle, e.DepartmentId, e.Department != null ? e.Department.Name : null, e.BaseSalary, e.TransportationAllowance, e.CommunicationAllowance, e.BonusAmount, (int)e.Status))
             .ToListAsync();
         return Ok(list);
     }
@@ -416,9 +416,9 @@ public class PayrollController : ControllerBase
             if (emp == null) continue;
 
             var basic = itemDto.OverrideBasicSalary ?? emp.BaseSalary;
-            var trans = emp.TransportationAllowance;
-            var comm  = emp.CommunicationAllowance;
-            var bonus = itemDto.BonusAmount + emp.BonusAmount;
+            var trans = itemDto.TransportationAllowance;
+            var comm  = itemDto.CommunicationAllowance;
+            var bonus = itemDto.BonusAmount;
 
             totalBasic += basic;
             totalTrans += trans;
