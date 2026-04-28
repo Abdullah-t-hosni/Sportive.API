@@ -118,18 +118,34 @@ public class CategoryService : ICategoryService
             if (parent != null) type = parent.Type;
         }
 
+        bool typeChanged = cat.Type != (CategoryType)type;
         cat.NameAr        = dto.NameAr;
         cat.NameEn        = dto.NameEn;
         cat.DescriptionAr = dto.DescriptionAr;
         cat.DescriptionEn = dto.DescriptionEn;
         cat.ImageUrl      = dto.ImageUrl;
-        cat.Type          = type;
+        cat.Type          = (CategoryType)type;
         cat.ParentId      = dto.ParentId;
         cat.SizeGroupId   = dto.SizeGroupId;
         cat.UpdatedAt     = TimeHelper.GetEgyptTime();
 
+        if (typeChanged)
+        {
+            await UpdateDescendantsTypeAsync(id, (CategoryType)type);
+        }
+
         await _db.SaveChangesAsync();
         return (await GetByIdAsync(id))!;
+    }
+
+    private async Task UpdateDescendantsTypeAsync(int parentId, CategoryType newType)
+    {
+        var children = await _db.Categories.Where(c => c.ParentId == parentId).ToListAsync();
+        foreach (var child in children)
+        {
+            child.Type = newType;
+            await UpdateDescendantsTypeAsync(child.Id, newType);
+        }
     }
 
     // ──────────────────────────────────────────────────────────

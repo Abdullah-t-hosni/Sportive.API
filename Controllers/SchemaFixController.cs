@@ -228,6 +228,59 @@ public class SchemaFixController : ControllerBase
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
+    [HttpGet("run-v11")]
+    public async Task<IActionResult> RunV11()
+    {
+        _logger.LogWarning("SchemaFix run-v11 (Category Hierarchy Type Fix) triggered.");
+        try
+        {
+            var allCats = await _db.Categories.ToListAsync();
+            int fixedCount = 0;
+
+            // 1. Identify roots
+            var roots = allCats.Where(c => c.ParentId == null).ToList();
+            
+            // Ensure system roots (1-4) have correct types
+            var root1 = roots.FirstOrDefault(r => r.Id == 1);
+            if (root1 != null && root1.Type != CategoryType.Men) { root1.Type = CategoryType.Men; fixedCount++; }
+            
+            var root2 = roots.FirstOrDefault(r => r.Id == 2);
+            if (root2 != null && root2.Type != CategoryType.Women) { root2.Type = CategoryType.Women; fixedCount++; }
+            
+            var root3 = roots.FirstOrDefault(r => r.Id == 3);
+            if (root3 != null && root3.Type != CategoryType.Kids) { root3.Type = CategoryType.Kids; fixedCount++; }
+            
+            var root4 = roots.FirstOrDefault(r => r.Id == 4);
+            if (root4 != null && root4.Type != CategoryType.Equipment) { root4.Type = CategoryType.Equipment; fixedCount++; }
+
+            // 2. Recursively update all descendants to match their root's type
+            foreach (var root in roots)
+            {
+                fixedCount += FixDescendantsInternal(root.Id, root.Type, allCats);
+            }
+
+            if (fixedCount > 0) await _db.SaveChangesAsync();
+            return Ok(new { message = "Category hierarchy types synchronized.", fixedCount });
+        }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
+    private int FixDescendantsInternal(int parentId, CategoryType correctType, List<Category> all)
+    {
+        int count = 0;
+        var children = all.Where(c => c.ParentId == parentId).ToList();
+        foreach (var child in children)
+        {
+            if (child.Type != correctType)
+            {
+                child.Type = correctType;
+                count++;
+            }
+            count += FixDescendantsInternal(child.Id, correctType, all);
+        }
+        return count;
+    }
+
     private string GenerateSlug(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return Guid.NewGuid().ToString().Substring(0, 8);
