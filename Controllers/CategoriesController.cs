@@ -1,3 +1,5 @@
+﻿using Sportive.API.Models;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
@@ -17,7 +19,7 @@ public class CategoriesController : ControllerBase
     public async Task<IActionResult> GetAll() =>
         Ok(await _categories.GetAllAsync());
 
-    /// <summary>Hierarchical tree — roots only, with nested children</summary>
+    /// <summary>Hierarchical tree â€” roots only, with nested children</summary>
     [HttpGet("tree")]
     public async Task<IActionResult> GetTree() =>
         Ok(await _categories.GetTreeAsync());
@@ -29,7 +31,7 @@ public class CategoriesController : ControllerBase
         return cat == null ? NotFound() : Ok(cat);
     }
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Categories, requireEdit: true)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateCategoryDto dto)
     {
@@ -41,7 +43,7 @@ public class CategoriesController : ControllerBase
         catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Categories, requireEdit: true)]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] CreateCategoryDto dto)
     {
@@ -50,7 +52,7 @@ public class CategoriesController : ControllerBase
         catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Categories, requireEdit: true)]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
@@ -58,3 +60,4 @@ public class CategoriesController : ControllerBase
         catch (KeyNotFoundException) { return NotFound(); }
     }
 }
+

@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -36,7 +37,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "Admin,Manager,Staff,Cashier")]
+    [RequirePermission(ModuleKeys.Orders)]
     public async Task<ActionResult<PaginatedResult<OrderSummaryDto>>> GetOrders(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 12,
         [FromQuery] OrderStatus? status = null, [FromQuery] string? search = null,
@@ -100,7 +101,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPost("pos")]
-    [Authorize(Roles = "Admin,Staff,Cashier")]
+    [RequirePermission(ModuleKeys.Orders)]
     public async Task<ActionResult<OrderDetailDto>> CreatePosOrder([FromBody] CreatePOSOrderDto posDto)
     {
         if (posDto == null || posDto.Items == null || !posDto.Items.Any())
@@ -214,8 +215,8 @@ public class OrdersController : ControllerBase
         order.PaymentStatus = dto.PaymentStatus;
         order.UpdatedAt     = TimeHelper.GetEgyptTime();
 
-        // ✅ IMPORTANT: Sync the numerical PaidAmount when status moves to Paid
-        // ✅ IMPORTANT: Sync the numerical PaidAmount when status moves to Paid
+        // âœ… IMPORTANT: Sync the numerical PaidAmount when status moves to Paid
+        // âœ… IMPORTANT: Sync the numerical PaidAmount when status moves to Paid
         if (dto.PaymentStatus == PaymentStatus.Paid)
         {
             // Only force total amount if no vouchers/payments exist yet to avoid double counting
@@ -240,7 +241,7 @@ public class OrdersController : ControllerBase
             {
                 OrderId          = id,
                 Status           = order.Status,
-                Note             = $"[حالة الدفع → {dto.PaymentStatus}] {dto.Note}",
+                Note             = $"[Ø­Ø§Ù„Ø© Ø§Ù„Ø¯ÙØ¹ â†’ {dto.PaymentStatus}] {dto.Note}",
                 ChangedByUserId  = dto.PerformedByEmployeeId?.ToString() ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                 CreatedAt        = TimeHelper.GetEgyptTime()
             });
@@ -289,7 +290,7 @@ public class OrdersController : ControllerBase
         var refundEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == order.OrderNumber + "-RFD");
         if (refundEntry != null) _db.JournalEntries.Remove(refundEntry);
 
-        // ✅ RESTORE COUPON USAGE IF DELETED
+        // âœ… RESTORE COUPON USAGE IF DELETED
         if (!string.IsNullOrEmpty(order.CouponCode))
         {
             var coupon = await _db.Coupons.FirstOrDefaultAsync(c => c.Code.ToUpper() == order.CouponCode.ToUpper());
@@ -305,7 +306,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPost("{id}/partial-return")]
-    [Authorize(Roles = "Admin,Manager,Staff,Cashier")]
+    [RequirePermission(ModuleKeys.Orders)]
     public async Task<ActionResult<OrderDetailDto>> PostPartialReturn(int id, [FromBody] PartialReturnDto dto)
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
@@ -313,14 +314,14 @@ public class OrdersController : ControllerBase
         return Ok(order);
     }
 
-    // ══════════════════════════════════════════════════
-    // POST /api/orders/{id}/archive — أرشفة أمر واحد
-    // POST /api/orders/{id}/unarchive — استرجاع من الأرشيف
-    // POST /api/orders/archive-batch — أرشفة مجموعة
-    // GET  /api/orders/archived — عرض الأوامر المؤرشفة
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // POST /api/orders/{id}/archive â€” Ø£Ø±Ø´ÙØ© Ø£Ù…Ø± ÙˆØ§Ø­Ø¯
+    // POST /api/orders/{id}/unarchive â€” Ø§Ø³ØªØ±Ø¬Ø§Ø¹ Ù…Ù† Ø§Ù„Ø£Ø±Ø´ÙŠÙ
+    // POST /api/orders/archive-batch â€” Ø£Ø±Ø´ÙØ© Ù…Ø¬Ù…ÙˆØ¹Ø©
+    // GET  /api/orders/archived â€” Ø¹Ø±Ø¶ Ø§Ù„Ø£ÙˆØ§Ù…Ø± Ø§Ù„Ù…Ø¤Ø±Ø´ÙØ©
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpPost("{id}/archive")]
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Orders, requireEdit: true)]
     public async Task<IActionResult> Archive(int id)
     {
         var order = await _db.Orders.FindAsync(id);
@@ -332,7 +333,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPost("{id}/unarchive")]
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Orders, requireEdit: true)]
     public async Task<IActionResult> Unarchive(int id)
     {
         var order = await _db.Orders.FindAsync(id);
@@ -344,7 +345,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPost("archive-batch")]
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Orders, requireEdit: true)]
     public async Task<IActionResult> ArchiveBatch([FromBody] ArchiveBatchDto dto)
     {
         if (dto.Ids == null || dto.Ids.Length == 0)
@@ -366,7 +367,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpGet("archived")]
-    [Authorize(Roles = "Admin,Manager,Accountant")]
+    [RequirePermission(ModuleKeys.Orders)]
     public async Task<IActionResult> GetArchived(
         [FromQuery] string?   search   = null,
         [FromQuery] DateTime? fromDate = null,
@@ -402,3 +403,4 @@ public class OrdersController : ControllerBase
 }
 
 public record ArchiveBatchDto(int[] Ids, bool? Archive = true);
+

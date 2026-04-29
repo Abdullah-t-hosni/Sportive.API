@@ -1,3 +1,5 @@
+﻿using Sportive.API.Models;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
@@ -17,7 +19,7 @@ public class CustomersController : ControllerBase
     private readonly ICustomerService _customers;
     public CustomersController(ICustomerService customers) => _customers = customers;
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Customers, requireEdit: true)]
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
@@ -33,8 +35,8 @@ public class CustomersController : ControllerBase
         [FromQuery] bool isDescending = true) =>
         Ok(await _customers.GetCustomersAsync(page, pageSize, search, minSpent, minOrders, joinStartDate, joinEndDate, categoryId, hasDebt, orderBy, isDescending));
 
-    /// <summary>بيانات RFM خفيفة لكل العملاء — بدون pagination أو addresses</summary>
-    [Authorize(Roles = "Admin,Manager")]
+    /// <summary>Ø¨ÙŠØ§Ù†Ø§Øª RFM Ø®ÙÙŠÙØ© Ù„ÙƒÙ„ Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ â€” Ø¨Ø¯ÙˆÙ† pagination Ø£Ùˆ addresses</summary>
+    [RequirePermission(ModuleKeys.Customers, requireEdit: true)]
     [HttpGet("rfm")]
     public async Task<IActionResult> GetRfm() =>
         Ok(await _customers.GetRfmDataAsync());
@@ -43,15 +45,15 @@ public class CustomersController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateCustomerDto dto)
     {
-        // 🛡️ Security Check: Owner or Admin?
+        // ðŸ›¡ï¸ Security Check: Owner or Admin?
         if (!IsOwnerOrAdmin(id)) return Forbid();
 
         try { return Ok(await _customers.UpdateCustomerAsync(id, dto)); }
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
-    /// <summary>إضافة عميل جديد — Admin, Manager, Cashier</summary>
-    [Authorize(Roles = "Admin,Manager,Cashier,sttaf")]
+    /// <summary>Ø¥Ø¶Ø§ÙØ© Ø¹Ù…ÙŠÙ„ Ø¬Ø¯ÙŠØ¯ â€” Admin, Manager, Cashier</summary>
+    [RequirePermission(ModuleKeys.Customers)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateCustomerDto dto)
     {
@@ -66,20 +68,20 @@ public class CustomersController : ControllerBase
         }
     }
 
-    /// <summary>تفاصيل عميل — Admin أو صاحب الحساب</summary>
+    /// <summary>ØªÙØ§ØµÙŠÙ„ Ø¹Ù…ÙŠÙ„ â€” Admin Ø£Ùˆ ØµØ§Ø­Ø¨ Ø§Ù„Ø­Ø³Ø§Ø¨</summary>
     [Authorize]
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        // 🛡️ Security Check: Owner or Admin?
+        // ðŸ›¡ï¸ Security Check: Owner or Admin?
         if (!IsOwnerOrAdmin(id)) return Forbid();
 
         var customer = await _customers.GetCustomerByIdAsync(id);
         return customer == null ? NotFound() : Ok(customer);
     }
 
-    /// <summary>تفعيل / إيقاف عميل — Admin فقط</summary>
-    [Authorize(Roles = "Admin")]
+    /// <summary>ØªÙØ¹ÙŠÙ„ / Ø¥ÙŠÙ‚Ø§Ù Ø¹Ù…ÙŠÙ„ â€” Admin ÙÙ‚Ø·</summary>
+    [RequirePermission(ModuleKeys.Customers, requireEdit: true)]
     [HttpPatch("{id}/toggle")]
     public async Task<IActionResult> Toggle(int id)
     {
@@ -87,8 +89,8 @@ public class CustomersController : ControllerBase
         return result ? Ok() : NotFound();
     }
 
-    /// <summary>حذف عميل بالكامل — Admin فقط</summary>
-    [Authorize(Roles = "Admin")]
+    /// <summary>Ø­Ø°Ù Ø¹Ù…ÙŠÙ„ Ø¨Ø§Ù„ÙƒØ§Ù…Ù„ â€” Admin ÙÙ‚Ø·</summary>
+    [RequirePermission(ModuleKeys.Customers, requireEdit: true)]
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteCustomer(int id)
     {
@@ -103,34 +105,34 @@ public class CustomersController : ControllerBase
         }
     }
 
-    /// <summary>إضافة عنوان</summary>
+    /// <summary>Ø¥Ø¶Ø§ÙØ© Ø¹Ù†ÙˆØ§Ù†</summary>
     [Authorize]
     [HttpPost("{customerId}/addresses")]
     public async Task<IActionResult> AddAddress(int customerId, [FromBody] CreateAddressDto dto) 
     {
-        // 🛡️ Security Check: Owner or Admin?
+        // ðŸ›¡ï¸ Security Check: Owner or Admin?
         if (!IsOwnerOrAdmin(customerId)) return Forbid();
         return Ok(await _customers.AddAddressAsync(customerId, dto));
     }
 
-    /// <summary>حذف عنوان</summary>
+    /// <summary>Ø­Ø°Ù Ø¹Ù†ÙˆØ§Ù†</summary>
     [Authorize]
     [HttpDelete("{customerId}/addresses/{addressId}")]
     public async Task<IActionResult> DeleteAddress(int customerId, int addressId)
     {
-        // 🛡️ Security Check: Owner or Admin?
+        // ðŸ›¡ï¸ Security Check: Owner or Admin?
         if (!IsOwnerOrAdmin(customerId)) return Forbid();
 
         try { await _customers.DeleteAddressAsync(customerId, addressId); return NoContent(); }
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
-    /// <summary>تعيين عنوان افتراضي</summary>
+    /// <summary>ØªØ¹ÙŠÙŠÙ† Ø¹Ù†ÙˆØ§Ù† Ø§ÙØªØ±Ø§Ø¶ÙŠ</summary>
     [Authorize]
     [HttpPatch("{customerId}/addresses/{addressId}/default")]
     public async Task<IActionResult> SetDefault(int customerId, int addressId)
     {
-        // 🛡️ Security Check: Owner or Admin?
+        // ðŸ›¡ï¸ Security Check: Owner or Admin?
         if (!IsOwnerOrAdmin(customerId)) return Forbid();
 
         await _customers.SetDefaultAddressAsync(customerId, addressId);
@@ -147,11 +149,11 @@ public class CustomersController : ControllerBase
         return currentCustomerId != null && int.Parse(currentCustomerId) == customerId;
     }
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Customers, requireEdit: true)]
     [HttpPost("import-opening-balances")]
     public async Task<IActionResult> ImportOpeningBalances(IFormFile file, [FromServices] AppDbContext db)
     {
-        if (file == null || file.Length == 0) return BadRequest(new { message = "لم يتم رفع ملف" });
+        if (file == null || file.Length == 0) return BadRequest(new { message = "Ù„Ù… ÙŠØªÙ… Ø±ÙØ¹ Ù…Ù„Ù" });
 
         var successCount = 0;
         var errors = new List<string>();
@@ -173,14 +175,14 @@ public class CustomersController : ControllerBase
                 var balStr = ws.Cell(r, 2).GetString().Trim();
                 if (!decimal.TryParse(balStr, out var balance))
                 {
-                    errors.Add($"سطر {r}: الرصيد غير صحيح للعميل '{identifier}'");
+                    errors.Add($"Ø³Ø·Ø± {r}: Ø§Ù„Ø±ØµÙŠØ¯ ØºÙŠØ± ØµØ­ÙŠØ­ Ù„Ù„Ø¹Ù…ÙŠÙ„ '{identifier}'");
                     continue;
                 }
 
                 var customer = allCustomers.FirstOrDefault(c => c.FullName == identifier || c.Phone == identifier);
                 if (customer == null)
                 {
-                    errors.Add($"سطر {r}: العميل '{identifier}' غير موجود");
+                    errors.Add($"Ø³Ø·Ø± {r}: Ø§Ù„Ø¹Ù…ÙŠÙ„ '{identifier}' ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯");
                     continue;
                 }
 
@@ -198,9 +200,10 @@ public class CustomersController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = $"خطأ في المعالجة: {ex.Message}" });
+            return BadRequest(new { message = $"Ø®Ø·Ø£ ÙÙŠ Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©: {ex.Message}" });
         }
 
         return Ok(new { success = true, successCount, errors });
     }
 }
+

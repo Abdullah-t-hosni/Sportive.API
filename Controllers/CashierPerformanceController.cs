@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -10,15 +11,15 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager")]
+[RequirePermission(ModuleKeys.ReportsMain)]
 public class CashierPerformanceController : ControllerBase
 {
     private readonly AppDbContext _db;
     public CashierPerformanceController(AppDbContext db) => _db = db;
 
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // GET /api/cashierperformance
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet]
     public async Task<IActionResult> GetPerformance(
         [FromQuery] DateTime? fromDate = null,
@@ -28,7 +29,7 @@ public class CashierPerformanceController : ControllerBase
         var from = fromDate?.Date ?? TimeHelper.GetEgyptTime().Date.AddDays(-30);
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        // ── جلب طلبات الكاشير فقط (Source = POS) ────
+        // â”€â”€ Ø¬Ù„Ø¨ Ø·Ù„Ø¨Ø§Øª Ø§Ù„ÙƒØ§Ø´ÙŠØ± ÙÙ‚Ø· (Source = POS) â”€â”€â”€â”€
         var orders = await _db.Orders
             .Include(o => o.Items)
             .Where(o => o.Status != OrderStatus.Cancelled
@@ -49,20 +50,20 @@ public class CashierPerformanceController : ControllerBase
         if (!orders.Any())
             return Ok(new { from, to, cashiers = Array.Empty<object>(), summary = new { } });
 
-        // ── جلب أسماء الكاشيرين ──────────────────────
+        // â”€â”€ Ø¬Ù„Ø¨ Ø£Ø³Ù…Ø§Ø¡ Ø§Ù„ÙƒØ§Ø´ÙŠØ±ÙŠÙ† â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var cashierIds = orders.Select(o => o.SalesPersonId!).Distinct().ToList();
         var users = await _db.Users
             .Where(u => cashierIds.Contains(u.Id))
             .Select(u => new { u.Id, u.FullName, u.PhoneNumber })
             .ToDictionaryAsync(u => u.Id);
 
-        // ── تجميع حسب الكاشير ─────────────────────────
+        // â”€â”€ ØªØ¬Ù…ÙŠØ¹ Ø­Ø³Ø¨ Ø§Ù„ÙƒØ§Ø´ÙŠØ± â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var cashierStats = orders
             .GroupBy(o => o.SalesPersonId!)
             .Select(g =>
             {
                 var user       = users.GetValueOrDefault(g.Key);
-                var name       = user?.FullName?.Trim() ?? "كاشير غير معروف";
+                var name       = user?.FullName?.Trim() ?? "ÙƒØ§Ø´ÙŠØ± ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ";
                 var allOrders  = g.ToList();
                 var grossRevenue = allOrders.Sum(o => o.TotalAmount);
                 var returnsAmount = allOrders.Sum(o => o.OrderReturnAmount);
@@ -73,7 +74,7 @@ public class CashierPerformanceController : ControllerBase
                 var totalItems = allOrders.Sum(o => o.ItemCount);
                 var avgItems   = count > 0 ? (decimal)totalItems / count : 0;
 
-                // مبيعات بالساعة (لتحديد ساعة الذروة)
+                // Ù…Ø¨ÙŠØ¹Ø§Øª Ø¨Ø§Ù„Ø³Ø§Ø¹Ø© (Ù„ØªØ­Ø¯ÙŠØ¯ Ø³Ø§Ø¹Ø© Ø§Ù„Ø°Ø±ÙˆØ©)
                 var byHour = allOrders
                     .GroupBy(o => o.CreatedAt.Hour)
                     .Select(h => new { hour = h.Key, count = h.Count(), revenue = h.Sum(o => o.TotalAmount) })
@@ -82,28 +83,28 @@ public class CashierPerformanceController : ControllerBase
 
                 var peakHour = byHour.FirstOrDefault();
 
-                // مبيعات بالأسبوع
+                // Ù…Ø¨ÙŠØ¹Ø§Øª Ø¨Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹
                 var byDay = allOrders
                     .GroupBy(o => o.CreatedAt.DayOfWeek)
                     .Select(d => new { day = (int)d.Key, dayName = d.Key.ToString(), count = d.Count(), revenue = d.Sum(o => o.TotalAmount) })
                     .OrderBy(d => d.day)
                     .ToList();
 
-                // آخر 30 يوم — مبيعات يومية
+                // Ø¢Ø®Ø± 30 ÙŠÙˆÙ… â€” Ù…Ø¨ÙŠØ¹Ø§Øª ÙŠÙˆÙ…ÙŠØ©
                 var byDate = allOrders
                     .GroupBy(o => o.CreatedAt.Date)
                     .Select(d => new { date = d.Key.ToString("MM/dd"), revenue = d.Sum(o => o.TotalAmount), count = d.Count() })
                     .OrderBy(d => d.date)
                     .ToList();
 
-                // طرق الدفع
+                // Ø·Ø±Ù‚ Ø§Ù„Ø¯ÙØ¹
                 var paymentBreakdown = allOrders
                     .GroupBy(o => o.PaymentMethod.ToString())
                     .Select(p => new { method = p.Key, count = p.Count(), revenue = p.Sum(o => o.TotalAmount) })
                     .OrderByDescending(p => p.count)
                     .ToList();
 
-                // أكبر فاتورة
+                // Ø£ÙƒØ¨Ø± ÙØ§ØªÙˆØ±Ø©
                 var maxOrder = allOrders.OrderByDescending(o => o.TotalAmount).First();
 
                 return new
@@ -134,7 +135,7 @@ public class CashierPerformanceController : ControllerBase
             .OrderByDescending(c => c.revenue)
             .ToList();
 
-        // ── ملخص إجمالي ───────────────────────────────
+        // â”€â”€ Ù…Ù„Ø®Øµ Ø¥Ø¬Ù…Ø§Ù„ÙŠ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var totalNetRevenue = cashierStats.Sum(c => c.revenue);
         var summary = new
         {
@@ -147,7 +148,7 @@ public class CashierPerformanceController : ControllerBase
             avgOrderAll    = cashierStats.Any() ? Math.Round(cashierStats.Average(c => c.avgOrder), 2) : 0,
             topCashier     = cashierStats.FirstOrDefault()?.name,
             topRevenue     = cashierStats.FirstOrDefault()?.revenue ?? 0,
-            // مقارنة بالنسبة المئوية لكل كاشير
+            // Ù…Ù‚Ø§Ø±Ù†Ø© Ø¨Ø§Ù„Ù†Ø³Ø¨Ø© Ø§Ù„Ù…Ø¦ÙˆÙŠØ© Ù„ÙƒÙ„ ÙƒØ§Ø´ÙŠØ±
             revenueShare   = cashierStats.Select(c => new {
                 c.name,
                 share = totalNetRevenue > 0 ? Math.Round(c.revenue / totalNetRevenue * 100, 1) : 0m,
@@ -159,22 +160,22 @@ public class CashierPerformanceController : ControllerBase
         return Ok(new { from, to, cashiers = cashierStats, summary });
     }
 
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // Excel Export
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     private IActionResult ExportExcel(dynamic cashiers, dynamic summary, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("أداء الكاشيرين");
+        var ws = wb.Worksheets.Add("Ø£Ø¯Ø§Ø¡ Ø§Ù„ÙƒØ§Ø´ÙŠØ±ÙŠÙ†");
         ws.RightToLeft = true;
 
-        ws.Cell(1, 1).Value = $"تقرير أداء الكاشيرين — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(1, 1).Value = $"ØªÙ‚Ø±ÙŠØ± Ø£Ø¯Ø§Ø¡ Ø§Ù„ÙƒØ§Ø´ÙŠØ±ÙŠÙ† â€” Ù…Ù† {from:yyyy-MM-dd} Ø¥Ù„Ù‰ {to:yyyy-MM-dd}";
         ws.Cell(1, 1).Style.Font.Bold = true;
         ws.Cell(1, 1).Style.Font.FontSize = 13;
         ws.Range(1, 1, 1, 8).Merge();
 
-        string[] headers = { "الكاشير", "عدد الطلبات", "إجمالي المبيعات", "إجمالي المرتجعات", "الصافي المحقق", "متوسط الفاتورة",
-                              "إجمالي الخصم", "إجمالي القطع", "أكبر فاتورة", "ساعة الذروة" };
+        string[] headers = { "Ø§Ù„ÙƒØ§Ø´ÙŠØ±", "Ø¹Ø¯Ø¯ Ø§Ù„Ø·Ù„Ø¨Ø§Øª", "Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª", "Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø±ØªØ¬Ø¹Ø§Øª", "Ø§Ù„ØµØ§ÙÙŠ Ø§Ù„Ù…Ø­Ù‚Ù‚", "Ù…ØªÙˆØ³Ø· Ø§Ù„ÙØ§ØªÙˆØ±Ø©",
+                              "Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø®ØµÙ…", "Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù‚Ø·Ø¹", "Ø£ÙƒØ¨Ø± ÙØ§ØªÙˆØ±Ø©", "Ø³Ø§Ø¹Ø© Ø§Ù„Ø°Ø±ÙˆØ©" };
         for (int c = 0; c < headers.Length; c++)
         {
             var cell = ws.Cell(2, c + 1);
@@ -211,3 +212,4 @@ public class CashierPerformanceController : ControllerBase
             { FileDownloadName = $"cashier_performance_{from:yyyyMMdd}_{to:yyyyMMdd}.xlsx" };
     }
 }
+

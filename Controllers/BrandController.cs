@@ -1,3 +1,5 @@
+﻿using Sportive.API.Models;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
@@ -32,7 +34,7 @@ public class BrandController : ControllerBase
         return Ok(brand);
     }
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Brands, requireEdit: true)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateBrandDto dto)
     {
@@ -47,7 +49,7 @@ public class BrandController : ControllerBase
         }
     }
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Brands, requireEdit: true)]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateBrandDto dto)
     {
@@ -66,7 +68,7 @@ public class BrandController : ControllerBase
         }
     }
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Brands, requireEdit: true)]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
@@ -81,3 +83,4 @@ public class BrandController : ControllerBase
         }
     }
 }
+

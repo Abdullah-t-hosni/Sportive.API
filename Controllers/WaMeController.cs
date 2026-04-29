@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -9,7 +10,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Staff,Cashier")]
+[RequirePermission(ModuleKeys.Settings)]
 public class WaMeController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -22,7 +23,7 @@ public class WaMeController : ControllerBase
     }
 
     // GET /api/wame/order/{id}
-    // يرجع كل روابط الـ wa.me لطلب معين
+    // ÙŠØ±Ø¬Ø¹ ÙƒÙ„ Ø±ÙˆØ§Ø¨Ø· Ø§Ù„Ù€ wa.me Ù„Ø·Ù„Ø¨ Ù…Ø¹ÙŠÙ†
     [HttpGet("order/{orderId}")]
     public async Task<IActionResult> GetOrderLinks(int orderId, [FromQuery] string? tracking = null)
     {
@@ -75,13 +76,13 @@ public class WaMeController : ControllerBase
     public IActionResult Custom([FromBody] CustomWaDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Phone) || string.IsNullOrWhiteSpace(dto.Message))
-            return BadRequest(new { message = "التليفون والرسالة مطلوبان" });
+            return BadRequest(new { message = "Ø§Ù„ØªÙ„ÙŠÙÙˆÙ† ÙˆØ§Ù„Ø±Ø³Ø§Ù„Ø© Ù…Ø·Ù„ÙˆØ¨Ø§Ù†" });
 
         var result = _wa.CustomMessage(dto.Phone, dto.Message);
         return Ok(result);
     }
 
-    // ── Helpers ──────────────────────────────────────
+    // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     private async Task<IActionResult> SingleLink(int orderId, Func<Order, WaMeResult> fn)
     {
         var order = await LoadOrder(orderId);
@@ -97,3 +98,4 @@ public class WaMeController : ControllerBase
 }
 
 public record CustomWaDto(string Phone, string Message);
+

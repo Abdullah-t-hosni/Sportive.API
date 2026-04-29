@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -23,10 +24,10 @@ public class SettingsController : ControllerBase
         _timeService = timeService;
     }
 
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // GET /api/settings
-    // جلب كل إعدادات المتجر العامة
-    // ══════════════════════════════════════════════════
+    // Ø¬Ù„Ø¨ ÙƒÙ„ Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„Ù…ØªØ¬Ø± Ø§Ù„Ø¹Ø§Ù…Ø©
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet]
     [AllowAnonymous]
     public async Task<IActionResult> Get()
@@ -52,12 +53,12 @@ public class SettingsController : ControllerBase
     }
 
 
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // PUT /api/settings
-    // تحديث الإعدادات (للمديرين فقط)
-    // ══════════════════════════════════════════════════
+    // ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª (Ù„Ù„Ù…Ø¯ÙŠØ±ÙŠÙ† ÙÙ‚Ø·)
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpPut]
-    [Authorize(Roles = AppRoles.Admin)]
+    [RequirePermission(ModuleKeys.Settings, requireEdit: true)]
     public async Task<IActionResult> Update([FromBody] StoreInfo dto)
     {
         try 
@@ -171,7 +172,7 @@ public class SettingsController : ControllerBase
 
             await _db.SaveChangesAsync();
 
-            // إلغاء cache التوقيت فوراً حتى تنعكس التغييرات على الفور
+            // Ø¥Ù„ØºØ§Ø¡ cache Ø§Ù„ØªÙˆÙ‚ÙŠØª ÙÙˆØ±Ø§Ù‹ Ø­ØªÙ‰ ØªÙ†Ø¹ÙƒØ³ Ø§Ù„ØªØºÙŠÙŠØ±Ø§Øª Ø¹Ù„Ù‰ Ø§Ù„ÙÙˆØ±
             _timeService.InvalidateCache();
 
             return Ok(info);
@@ -182,3 +183,4 @@ public class SettingsController : ControllerBase
         }
     }
 }
+

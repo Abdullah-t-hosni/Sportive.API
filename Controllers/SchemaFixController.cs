@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -7,13 +8,13 @@ using Sportive.API.Models;
 namespace Sportive.API.Controllers;
 
 /// <summary>
-/// 🔒 محمي بالكامل — Admin فقط
-/// يُستخدم لتصحيح مخطط قاعدة البيانات يدوياً عند الحاجة
-/// يُفضَّل تشغيل Migrations بدلاً من هذا الـ Controller
+/// ðŸ”’ Ù…Ø­Ù…ÙŠ Ø¨Ø§Ù„ÙƒØ§Ù…Ù„ â€” Admin ÙÙ‚Ø·
+/// ÙŠÙØ³ØªØ®Ø¯Ù… Ù„ØªØµØ­ÙŠØ­ Ù…Ø®Ø·Ø· Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª ÙŠØ¯ÙˆÙŠØ§Ù‹ Ø¹Ù†Ø¯ Ø§Ù„Ø­Ø§Ø¬Ø©
+/// ÙŠÙÙØ¶ÙŽÙ‘Ù„ ØªØ´ØºÙŠÙ„ Migrations Ø¨Ø¯Ù„Ø§Ù‹ Ù…Ù† Ù‡Ø°Ø§ Ø§Ù„Ù€ Controller
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]  // ✅ FIX: كان بدون Authorize — الآن Admin فقط
+[RequirePermission(ModuleKeys.Maintenance, requireEdit: true)]  // âœ… FIX: ÙƒØ§Ù† Ø¨Ø¯ÙˆÙ† Authorize â€” Ø§Ù„Ø¢Ù† Admin ÙÙ‚Ø·
 public class SchemaFixController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -91,7 +92,7 @@ public class SchemaFixController : ControllerBase
         _logger.LogWarning("SchemaFix run-v6 (Orphaned Movement Cleanup) triggered.");
         try
         {
-            // تنظيف الحركات التي تشير إلى أشكال منتجات (Variants) تم حذفها
+            // ØªÙ†Ø¸ÙŠÙ Ø§Ù„Ø­Ø±ÙƒØ§Øª Ø§Ù„ØªÙŠ ØªØ´ÙŠØ± Ø¥Ù„Ù‰ Ø£Ø´ÙƒØ§Ù„ Ù…Ù†ØªØ¬Ø§Øª (Variants) ØªÙ… Ø­Ø°ÙÙ‡Ø§
             var orphanedCount = await _db.Database.ExecuteSqlRawAsync(@"
                 UPDATE InventoryMovements 
                 SET ProductVariantId = NULL 
@@ -115,12 +116,12 @@ public class SchemaFixController : ControllerBase
     {
         _logger.LogWarning("SchemaFix run-v7 (Emergency FK Fix) triggered.");
         try {
-            // 1. تنظيف البيانات أولاً لضمان إمكانية إنشاء الربط
+            // 1. ØªÙ†Ø¸ÙŠÙ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø£ÙˆÙ„Ø§Ù‹ Ù„Ø¶Ù…Ø§Ù† Ø¥Ù…ÙƒØ§Ù†ÙŠØ© Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø±Ø¨Ø·
             await _db.Database.ExecuteSqlRawAsync(@"
                 UPDATE InventoryMovements SET ProductVariantId = NULL 
                 WHERE ProductVariantId IS NOT NULL AND ProductVariantId NOT IN (SELECT Id FROM ProductVariants);");
 
-            // 2. محاولة إضافة الـ FK يدوياً (لكي يجدها الـ EF ويحذفها في الخطوة القادمة من Migration)
+            // 2. Ù…Ø­Ø§ÙˆÙ„Ø© Ø¥Ø¶Ø§ÙØ© Ø§Ù„Ù€ FK ÙŠØ¯ÙˆÙŠØ§Ù‹ (Ù„ÙƒÙŠ ÙŠØ¬Ø¯Ù‡Ø§ Ø§Ù„Ù€ EF ÙˆÙŠØ­Ø°ÙÙ‡Ø§ ÙÙŠ Ø§Ù„Ø®Ø·ÙˆØ© Ø§Ù„Ù‚Ø§Ø¯Ù…Ø© Ù…Ù† Migration)
             try {
                 await _db.Database.ExecuteSqlRawAsync(@"
                     ALTER TABLE InventoryMovements ADD CONSTRAINT FK_InventoryMovements_ProductVariants_ProductVariantId
@@ -244,11 +245,11 @@ public class SchemaFixController : ControllerBase
                 CategoryType? targetType = null;
                 bool shouldBeRoot = false;
 
-                if (cat.Id == 1 || cat.NameAr == "رجالي" || cat.NameEn == "Men") { targetType = CategoryType.Men; shouldBeRoot = true; }
-                else if (cat.Id == 2 || cat.NameAr == "حريمي" || cat.NameEn == "Women") { targetType = CategoryType.Women; shouldBeRoot = true; }
-                else if (cat.Id == 3 || cat.NameAr == "أطفال" || cat.NameEn == "Kids") { targetType = CategoryType.Kids; shouldBeRoot = true; }
-                else if (cat.Id == 4 || cat.NameAr == "أدوات ومعدات" || cat.NameEn == "Equipment") { targetType = CategoryType.Equipment; shouldBeRoot = true; }
-                else if (cat.Id == 5 || cat.NameAr == "أحذية" || cat.NameEn == "Shoes") { targetType = CategoryType.Shoes; shouldBeRoot = true; }
+                if (cat.Id == 1 || cat.NameAr == "Ø±Ø¬Ø§Ù„ÙŠ" || cat.NameEn == "Men") { targetType = CategoryType.Men; shouldBeRoot = true; }
+                else if (cat.Id == 2 || cat.NameAr == "Ø­Ø±ÙŠÙ…ÙŠ" || cat.NameEn == "Women") { targetType = CategoryType.Women; shouldBeRoot = true; }
+                else if (cat.Id == 3 || cat.NameAr == "Ø£Ø·ÙØ§Ù„" || cat.NameEn == "Kids") { targetType = CategoryType.Kids; shouldBeRoot = true; }
+                else if (cat.Id == 4 || cat.NameAr == "Ø£Ø¯ÙˆØ§Øª ÙˆÙ…Ø¹Ø¯Ø§Øª" || cat.NameEn == "Equipment") { targetType = CategoryType.Equipment; shouldBeRoot = true; }
+                else if (cat.Id == 5 || cat.NameAr == "Ø£Ø­Ø°ÙŠØ©" || cat.NameEn == "Shoes") { targetType = CategoryType.Shoes; shouldBeRoot = true; }
 
                 if (shouldBeRoot)
                 {
@@ -295,3 +296,4 @@ public class SchemaFixController : ControllerBase
         return s;
     }
 }
+

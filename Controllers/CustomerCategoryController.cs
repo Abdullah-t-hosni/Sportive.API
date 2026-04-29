@@ -1,3 +1,5 @@
+﻿using Sportive.API.Models;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
@@ -32,7 +34,7 @@ public class CustomerCategoryController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [RequirePermission(ModuleKeys.Customers, requireEdit: true)]
     public async Task<ActionResult<CustomerCategoryDto>> Create(CreateCustomerCategoryDto dto)
     {
         var category = await _service.CreateAsync(dto);
@@ -40,7 +42,7 @@ public class CustomerCategoryController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [Authorize(Roles = "Admin")]
+    [RequirePermission(ModuleKeys.Customers, requireEdit: true)]
     public async Task<ActionResult<CustomerCategoryDto>> Update(int id, UpdateCustomerCategoryDto dto)
     {
         try
@@ -55,7 +57,7 @@ public class CustomerCategoryController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin")]
+    [RequirePermission(ModuleKeys.Customers, requireEdit: true)]
     public async Task<IActionResult> Delete(int id)
     {
         try
@@ -69,3 +71,4 @@ public class CustomerCategoryController : ControllerBase
         }
     }
 }
+

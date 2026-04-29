@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -10,16 +11,16 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Accountant")]
+[RequirePermission(ModuleKeys.AccountingMain)]
 public class InstallmentsController : ControllerBase
 {
     private readonly AppDbContext _db;
 
     public InstallmentsController(AppDbContext db) => _db = db;
 
-    // ══════════════════════════════════════════════════
-    // GET /api/installments — قائمة الأقساط مع فلتر
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // GET /api/installments â€” Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø£Ù‚Ø³Ø§Ø· Ù…Ø¹ ÙÙ„ØªØ±
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] int?    customerId = null,
@@ -59,9 +60,9 @@ public class InstallmentsController : ControllerBase
         return Ok(new { items, totalCount = total, page, pageSize });
     }
 
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // GET /api/installments/{id}
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
@@ -76,9 +77,9 @@ public class InstallmentsController : ControllerBase
         return Ok(item);
     }
 
-    // ══════════════════════════════════════════════════
-    // GET /api/installments/summary — ملخص المديونيات
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // GET /api/installments/summary â€” Ù…Ù„Ø®Øµ Ø§Ù„Ù…Ø¯ÙŠÙˆÙ†ÙŠØ§Øª
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("summary")]
     public async Task<IActionResult> GetSummary()
     {
@@ -96,14 +97,14 @@ public class InstallmentsController : ControllerBase
         });
     }
 
-    // ══════════════════════════════════════════════════
-    // POST /api/installments — إنشاء قسط جديد
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // POST /api/installments â€” Ø¥Ù†Ø´Ø§Ø¡ Ù‚Ø³Ø· Ø¬Ø¯ÙŠØ¯
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateInstallmentDto dto)
     {
         if (!await _db.Customers.AnyAsync(c => c.Id == dto.CustomerId))
-            return BadRequest(new { message = "العميل غير موجود" });
+            return BadRequest(new { message = "Ø§Ù„Ø¹Ù…ÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
 
         var installment = new CustomerInstallment
         {
@@ -120,9 +121,9 @@ public class InstallmentsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = installment.Id }, installment);
     }
 
-    // ══════════════════════════════════════════════════
-    // POST /api/installments/{id}/pay — تسجيل دفعة
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // POST /api/installments/{id}/pay â€” ØªØ³Ø¬ÙŠÙ„ Ø¯ÙØ¹Ø©
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpPost("{id}/pay")]
     public async Task<IActionResult> RegisterPayment(int id, [FromBody] PayInstallmentDto dto)
     {
@@ -132,12 +133,12 @@ public class InstallmentsController : ControllerBase
 
         if (installment == null) return NotFound();
         if (installment.Status == InstallmentStatus.Paid)
-            return BadRequest(new { message = "القسط مسدَّد بالكامل مسبقاً" });
+            return BadRequest(new { message = "Ø§Ù„Ù‚Ø³Ø· Ù…Ø³Ø¯ÙŽÙ‘Ø¯ Ø¨Ø§Ù„ÙƒØ§Ù…Ù„ Ù…Ø³Ø¨Ù‚Ø§Ù‹" });
         if (installment.Status == InstallmentStatus.Cancelled)
-            return BadRequest(new { message = "القسط ملغي" });
+            return BadRequest(new { message = "Ø§Ù„Ù‚Ø³Ø· Ù…Ù„ØºÙŠ" });
 
         if (dto.Amount <= 0 || dto.Amount > installment.RemainingAmount)
-            return BadRequest(new { message = $"المبلغ يجب أن يكون بين 1 و {installment.RemainingAmount:N2}" });
+            return BadRequest(new { message = $"Ø§Ù„Ù…Ø¨Ù„Øº ÙŠØ¬Ø¨ Ø£Ù† ÙŠÙƒÙˆÙ† Ø¨ÙŠÙ† 1 Ùˆ {installment.RemainingAmount:N2}" });
 
         var collectedBy = User.FindFirstValue(ClaimTypes.Name) ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
 
@@ -166,11 +167,11 @@ public class InstallmentsController : ControllerBase
         });
     }
 
-    // ══════════════════════════════════════════════════
-    // PUT /api/installments/{id} — تعديل القسط
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // PUT /api/installments/{id} â€” ØªØ¹Ø¯ÙŠÙ„ Ø§Ù„Ù‚Ø³Ø·
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpPut("{id}")]
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.AccountingMain, requireEdit: true)]
     public async Task<IActionResult> Update(int id, [FromBody] CreateInstallmentDto dto)
     {
         var installment = await _db.CustomerInstallments.FindAsync(id);
@@ -185,11 +186,11 @@ public class InstallmentsController : ControllerBase
         return Ok(installment);
     }
 
-    // ══════════════════════════════════════════════════
-    // DELETE /api/installments/{id} — حذف قسط
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // DELETE /api/installments/{id} â€” Ø­Ø°Ù Ù‚Ø³Ø·
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin")]
+    [RequirePermission(ModuleKeys.AccountingMain, requireEdit: true)]
     public async Task<IActionResult> Delete(int id)
     {
         var installment = await _db.CustomerInstallments
@@ -204,12 +205,12 @@ public class InstallmentsController : ControllerBase
         return NoContent();
     }
 
-    // ══════════════════════════════════════════════════
-    // POST /api/installments/sync-overdue — تحديث حالة المتأخرة
-    // يمكن استدعاؤها من Hosted Service أو يدوياً
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // POST /api/installments/sync-overdue â€” ØªØ­Ø¯ÙŠØ« Ø­Ø§Ù„Ø© Ø§Ù„Ù…ØªØ£Ø®Ø±Ø©
+    // ÙŠÙ…ÙƒÙ† Ø§Ø³ØªØ¯Ø¹Ø§Ø¤Ù‡Ø§ Ù…Ù† Hosted Service Ø£Ùˆ ÙŠØ¯ÙˆÙŠØ§Ù‹
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpPost("sync-overdue")]
-    [Authorize(Roles = "Admin")]
+    [RequirePermission(ModuleKeys.AccountingMain, requireEdit: true)]
     public async Task<IActionResult> SyncOverdue()
     {
         var today = DateTime.Today;
@@ -229,3 +230,4 @@ public class InstallmentsController : ControllerBase
 
 public record CreateInstallmentDto(int CustomerId, int? OrderId, decimal TotalAmount, DateTime DueDate, string? Note);
 public record PayInstallmentDto(decimal Amount, string? Note);
+

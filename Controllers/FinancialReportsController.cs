@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -14,7 +15,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Accountant")]
+[RequirePermission(ModuleKeys.ReportsMain)]
 public class FinancialReportsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -26,9 +27,9 @@ public class FinancialReportsController : ControllerBase
         _scopeFactory = scopeFactory;
     }
 
-    // ══════════════════════════════════════════════════════
-    // SHARED: حساب أرصدة كل الحسابات في فترة زمنية
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // SHARED: Ø­Ø³Ø§Ø¨ Ø£Ø±ØµØ¯Ø© ÙƒÙ„ Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª ÙÙŠ ÙØªØ±Ø© Ø²Ù…Ù†ÙŠØ©
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     private async Task<List<AccountBalance>> GetBalances(DateTime from, DateTime to, OrderSource? source = null)
     {
         var accounts = await _db.Accounts
@@ -84,7 +85,7 @@ public class FinancialReportsController : ControllerBase
             PeriodCredit = Math.Round(periodCrMap.GetValueOrDefault(a.Id, 0), 2)
         }).ToList();
 
-        // 5. 🔥 HIERARCHICAL ROLL-UP 🔥
+        // 5. ðŸ”¥ HIERARCHICAL ROLL-UP ðŸ”¥
         // We sort by Level descending to ensure children are processed before parents
         var balanceDict = balanceList.ToDictionary(b => b.Id);
         var itemsToRollUp = balanceList.OrderByDescending(b => b.Level).ToList();
@@ -112,13 +113,13 @@ public class FinancialReportsController : ControllerBase
         return balanceList;
     }
 
-    // helper: مجموع نوع حسابات معين
+    // helper: Ù…Ø¬Ù…ÙˆØ¹ Ù†ÙˆØ¹ Ø­Ø³Ø§Ø¨Ø§Øª Ù…Ø¹ÙŠÙ†
     private static decimal SumType(List<AccountBalance> balances, AccountType type)
         => balances.Where(b => b.Type == type && b.IsLeaf).Sum(b => b.ClosingBal);
 
-    // ══════════════════════════════════════════════════════
-    // 1. ميزان المراجعة  GET /api/financialreports/trial-balance
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 1. Ù…ÙŠØ²Ø§Ù† Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø©  GET /api/financialreports/trial-balance
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("trial-balance")]
     public async Task<IActionResult> TrialBalance(
         [FromQuery] DateTime? fromDate = null,
@@ -133,7 +134,7 @@ public class FinancialReportsController : ControllerBase
         var rows = balances
             .OrderBy(b => b.Code)
             .Select(b => {
-                // حساب الرصيد الافتتاحي (مدين/دائن) بناءً على الطبيعة والفرق
+                // Ø­Ø³Ø§Ø¨ Ø§Ù„Ø±ØµÙŠØ¯ Ø§Ù„Ø§ÙØªØªØ§Ø­ÙŠ (Ù…Ø¯ÙŠÙ†/Ø¯Ø§Ø¦Ù†) Ø¨Ù†Ø§Ø¡Ù‹ Ø¹Ù„Ù‰ Ø§Ù„Ø·Ø¨ÙŠØ¹Ø© ÙˆØ§Ù„ÙØ±Ù‚
                 decimal oDr = 0, oCr = 0;
                 if (b.Nature == AccountNature.Debit) {
                     oDr = b.OpenBalance > 0 ? b.OpenBalance : 0;
@@ -143,7 +144,7 @@ public class FinancialReportsController : ControllerBase
                     oDr = b.OpenBalance < 0 ? -b.OpenBalance : 0;
                 }
 
-                // حساب الرصيد الختامي (مدين/دائن) بناءً على الطبيعة والفرق
+                // Ø­Ø³Ø§Ø¨ Ø§Ù„Ø±ØµÙŠØ¯ Ø§Ù„Ø®ØªØ§Ù…ÙŠ (Ù…Ø¯ÙŠÙ†/Ø¯Ø§Ø¦Ù†) Ø¨Ù†Ø§Ø¡Ù‹ Ø¹Ù„Ù‰ Ø§Ù„Ø·Ø¨ÙŠØ¹Ø© ÙˆØ§Ù„ÙØ±Ù‚
                 decimal cDr = 0, cCr = 0;
                 if (b.Nature == AccountNature.Debit) {
                     cDr = b.ClosingBal > 0 ? b.ClosingBal : 0;
@@ -166,7 +167,7 @@ public class FinancialReportsController : ControllerBase
 
         return Ok(new {
             from, to, source,
-            CostCenterLabel = source == OrderSource.Website ? "الموقع" : (source == OrderSource.POS ? "المحل" : "عام"),
+            CostCenterLabel = source == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (source == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…"),
             rows,
             totalOpenDebit    = Math.Round(balances.Where(b => b.ParentId == null).Sum(b => b.OpenDebit), 2),
             totalOpenCredit   = Math.Round(balances.Where(b => b.ParentId == null).Sum(b => b.OpenCredit), 2),
@@ -177,9 +178,9 @@ public class FinancialReportsController : ControllerBase
         });
     }
 
-    // ══════════════════════════════════════════════════════
-    // 2. قائمة الدخل   GET /api/financialreports/income-statement
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 2. Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø¯Ø®Ù„   GET /api/financialreports/income-statement
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("income-statement")]
     public async Task<IActionResult> IncomeStatement(
         [FromQuery] DateTime? fromDate = null,
@@ -192,8 +193,8 @@ public class FinancialReportsController : ControllerBase
 
         var balances = await GetBalances(from, to, source);
 
-        // الإيرادات (طبيعتها دائن → الرصيد موجب = إيراد)
-        // ✅ تصحيح: ضم أي حساب يبدأ بكود 4 للإيرادات (مثل إيراد التوصيل)
+        // Ø§Ù„Ø¥ÙŠØ±Ø§Ø¯Ø§Øª (Ø·Ø¨ÙŠØ¹ØªÙ‡Ø§ Ø¯Ø§Ø¦Ù† â†’ Ø§Ù„Ø±ØµÙŠØ¯ Ù…ÙˆØ¬Ø¨ = Ø¥ÙŠØ±Ø§Ø¯)
+        // âœ… ØªØµØ­ÙŠØ­: Ø¶Ù… Ø£ÙŠ Ø­Ø³Ø§Ø¨ ÙŠØ¨Ø¯Ø£ Ø¨ÙƒÙˆØ¯ 4 Ù„Ù„Ø¥ÙŠØ±Ø§Ø¯Ø§Øª (Ù…Ø«Ù„ Ø¥ÙŠØ±Ø§Ø¯ Ø§Ù„ØªÙˆØµÙŠÙ„)
         var revenues = balances
             .Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.ClosingBal != 0)
             .OrderBy(b => b.Code)
@@ -214,7 +215,7 @@ public class FinancialReportsController : ControllerBase
 
         return Ok(new {
             from, to, source,
-            CostCenterLabel = source == OrderSource.Website ? "الموقع" : (source == OrderSource.POS ? "المحل" : "عام"),
+            CostCenterLabel = source == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (source == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…"),
             revenues,
             expenses,
             totalRevenues,
@@ -224,9 +225,9 @@ public class FinancialReportsController : ControllerBase
         });
     }
 
-    // ══════════════════════════════════════════════════════
-    // 3. الميزانية العمومية  GET /api/financialreports/balance-sheet
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 3. Ø§Ù„Ù…ÙŠØ²Ø§Ù†ÙŠØ© Ø§Ù„Ø¹Ù…ÙˆÙ…ÙŠØ©  GET /api/financialreports/balance-sheet
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("balance-sheet")]
     public async Task<IActionResult> BalanceSheet(
         [FromQuery] DateTime? toDate = null,
@@ -238,7 +239,7 @@ public class FinancialReportsController : ControllerBase
 
         var balances = await GetBalances(from, to, source);
 
-        // الأصول — طبيعة مدين (closingBal = Dr - Cr)
+        // Ø§Ù„Ø£ØµÙˆÙ„ â€” Ø·Ø¨ÙŠØ¹Ø© Ù…Ø¯ÙŠÙ† (closingBal = Dr - Cr)
         var assets = balances
             .Where(b => b.Type == AccountType.Asset && b.ClosingBal != 0)
             .OrderBy(b => b.Code)
@@ -257,7 +258,7 @@ public class FinancialReportsController : ControllerBase
             .Select(b => new BalanceSheetRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
             .ToList();
 
-        // صافي الربح للفترة يضاف لحقوق الملكية ونظهره في القائمة للشفافية
+        // ØµØ§ÙÙŠ Ø§Ù„Ø±Ø¨Ø­ Ù„Ù„ÙØªØ±Ø© ÙŠØ¶Ø§Ù Ù„Ø­Ù‚ÙˆÙ‚ Ø§Ù„Ù…Ù„ÙƒÙŠØ© ÙˆÙ†Ø¸Ù‡Ø±Ù‡ ÙÙŠ Ø§Ù„Ù‚Ø§Ø¦Ù…Ø© Ù„Ù„Ø´ÙØ§ÙÙŠØ©
         var incomeFrom = from; 
         var incomeBals = await GetBalances(incomeFrom, to, source);
         var totalRev   = incomeBals.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.ParentId == null).Sum(b => b.ClosingBal);
@@ -266,7 +267,7 @@ public class FinancialReportsController : ControllerBase
 
         if (netProfit != 0)
         {
-            equity.Add(new BalanceSheetRow("N/P", "صافي ربح / (خسارة) العام", 1, netProfit));
+            equity.Add(new BalanceSheetRow("N/P", "ØµØ§ÙÙŠ Ø±Ø¨Ø­ / (Ø®Ø³Ø§Ø±Ø©) Ø§Ù„Ø¹Ø§Ù…", 1, netProfit));
         }
 
         var totalAssets      = balances.Where(b => b.Type == AccountType.Asset && b.ParentId == null).Sum(b => b.ClosingBal);
@@ -279,16 +280,16 @@ public class FinancialReportsController : ControllerBase
 
         return Ok(new {
             to, source,
-            CostCenterLabel = source == OrderSource.Website ? "الموقع" : (source == OrderSource.POS ? "المحل" : "عام"),
+            CostCenterLabel = source == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (source == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…"),
             assets, liabilities, equity, netProfit,
             totalAssets, totalLiabilities, totalEquity, totalLiabEquity,
             isBalanced = Math.Round(totalAssets, 2) == Math.Round(totalLiabEquity, 2)
         });
     }
 
-    // ══════════════════════════════════════════════════════
-    // 4. دفتر الأستاذ  GET /api/financialreports/ledger
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 4. Ø¯ÙØªØ± Ø§Ù„Ø£Ø³ØªØ§Ø°  GET /api/financialreports/ledger
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("ledger")]
     public async Task<IActionResult> Ledger(
         [FromQuery] int?      accountId  = null,
@@ -341,7 +342,7 @@ public class FinancialReportsController : ControllerBase
                            .ThenBy(l => l.JournalEntry.Id)
                            .ToListAsync();
 
-        // الرصيد الافتتاحي لكل حساب
+        // Ø§Ù„Ø±ØµÙŠØ¯ Ø§Ù„Ø§ÙØªØªØ§Ø­ÙŠ Ù„ÙƒÙ„ Ø­Ø³Ø§Ø¨
         var accountIds = lines.Select(l => l.AccountId).Distinct().ToList();
         var openingMap = new Dictionary<int, decimal>();
 
@@ -362,7 +363,7 @@ public class FinancialReportsController : ControllerBase
             openingMap[aId] = acct.Nature == AccountNature.Debit ? openDr - openCr : openCr - openDr;
         }
 
-        // بناء السجلات مع الرصيد المتراكم — مرتبة حسب التاريخ ثم رقم القيد
+        // Ø¨Ù†Ø§Ø¡ Ø§Ù„Ø³Ø¬Ù„Ø§Øª Ù…Ø¹ Ø§Ù„Ø±ØµÙŠØ¯ Ø§Ù„Ù…ØªØ±Ø§ÙƒÙ… â€” Ù…Ø±ØªØ¨Ø© Ø­Ø³Ø¨ Ø§Ù„ØªØ§Ø±ÙŠØ® Ø«Ù… Ø±Ù‚Ù… Ø§Ù„Ù‚ÙŠØ¯
         var ledgerRows = new List<LedgerRow>();
         var balanceMap = new Dictionary<int, decimal>(openingMap);
 
@@ -393,19 +394,19 @@ public class FinancialReportsController : ControllerBase
 
         if (excel) return ExcelLedger(ledgerRows, openingMap, from, to);
 
-        // تجميع حسب الحساب — الحسابات مرتبة بالكود، والصفوف داخل كل حساب مرتبة بالتاريخ ثم رقم القيد
-        // تحسين: تجميع العملاء والموردين تحت حسابات رقابة إذا لم يكن هناك فلترة محددة
+        // ØªØ¬Ù…ÙŠØ¹ Ø­Ø³Ø¨ Ø§Ù„Ø­Ø³Ø§Ø¨ â€” Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª Ù…Ø±ØªØ¨Ø© Ø¨Ø§Ù„ÙƒÙˆØ¯ØŒ ÙˆØ§Ù„ØµÙÙˆÙ Ø¯Ø§Ø®Ù„ ÙƒÙ„ Ø­Ø³Ø§Ø¨ Ù…Ø±ØªØ¨Ø© Ø¨Ø§Ù„ØªØ§Ø±ÙŠØ® Ø«Ù… Ø±Ù‚Ù… Ø§Ù„Ù‚ÙŠØ¯
+        // ØªØ­Ø³ÙŠÙ†: ØªØ¬Ù…ÙŠØ¹ Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ ÙˆØ§Ù„Ù…ÙˆØ±Ø¯ÙŠÙ† ØªØ­Øª Ø­Ø³Ø§Ø¨Ø§Øª Ø±Ù‚Ø§Ø¨Ø© Ø¥Ø°Ø§ Ù„Ù… ÙŠÙƒÙ† Ù‡Ù†Ø§Ùƒ ÙÙ„ØªØ±Ø© Ù…Ø­Ø¯Ø¯Ø©
         var grouped = ledgerRows
             .GroupBy(r => {
                 if (r.AccountCode.StartsWith("1103") && !customerId.HasValue)
-                    return new { Id = 0, Code = "1103", Name = "إجمالي العملاء" };
+                    return new { Id = 0, Code = "1103", Name = "Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡" };
                 if (r.AccountCode.StartsWith("2101") && !supplierId.HasValue)
-                    return new { Id = 0, Code = "2101", Name = "إجمالي الموردين" };
+                    return new { Id = 0, Code = "2101", Name = "Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…ÙˆØ±Ø¯ÙŠÙ†" };
                 return new { Id = r.AccountId, Code = r.AccountCode, Name = r.AccountName };
             })
             .OrderBy(g => g.Key.Code)
             .Select(g => {
-                // حساب الرصيد الافتتاحي المجمع
+                // Ø­Ø³Ø§Ø¨ Ø§Ù„Ø±ØµÙŠØ¯ Ø§Ù„Ø§ÙØªØªØ§Ø­ÙŠ Ø§Ù„Ù…Ø¬Ù…Ø¹
                 decimal totalOpen = 0;
                 if (g.Key.Id == 0) {
                     var ids = ledgerRows.Where(r => r.AccountCode.StartsWith(g.Key.Code)).Select(r => r.AccountId).Distinct();
@@ -433,12 +434,12 @@ public class FinancialReportsController : ControllerBase
                                       .ThenBy(r => r.JournalEntryId).LastOrDefault()?.RunningBalance ?? 0
                 };
             }).ToList();
-        return Ok(new { from, to, source, CostCenterLabel = source == OrderSource.Website ? "الموقع" : (source == OrderSource.POS ? "المحل" : "عام"), accounts = grouped });
+        return Ok(new { from, to, source, CostCenterLabel = source == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (source == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…"), accounts = grouped });
     }
 
-    // ══════════════════════════════════════════════════════
-    // 5. تشخيص الصحة المحاسبية (Accounting Health Check)
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 5. ØªØ´Ø®ÙŠØµ Ø§Ù„ØµØ­Ø© Ø§Ù„Ù…Ø­Ø§Ø³Ø¨ÙŠØ© (Accounting Health Check)
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("health-check")]
     public async Task<IActionResult> AccountingHealthCheck()
     {
@@ -491,7 +492,7 @@ public class FinancialReportsController : ControllerBase
         var core = scope.ServiceProvider.GetRequiredService<AccountingCoreService>();
         await core.SyncAllEntityIdsAsync();
 
-        return Ok(new { message = $"تم إصلاح {fixedCount} حركة وتحديث ربط الكيانات بنجاح.", fixedCount });
+        return Ok(new { message = $"ØªÙ… Ø¥ØµÙ„Ø§Ø­ {fixedCount} Ø­Ø±ÙƒØ© ÙˆØªØ­Ø¯ÙŠØ« Ø±Ø¨Ø· Ø§Ù„ÙƒÙŠØ§Ù†Ø§Øª Ø¨Ù†Ø¬Ø§Ø­.", fixedCount });
     }
 
     [HttpGet("account-statement")]
@@ -522,10 +523,10 @@ public class FinancialReportsController : ControllerBase
                 targetId = await _db.Accounts.Where(a => a.Code.StartsWith("2103") || a.Code.StartsWith("1108")).Select(a => a.Id).FirstOrDefaultAsync();
         }
 
-        if (targetId == 0) return BadRequest(new { message = "يجب تحديد رقم الحساب أو اختيار عميل/مورد/موظف" });
+        if (targetId == 0) return BadRequest(new { message = "ÙŠØ¬Ø¨ ØªØ­Ø¯ÙŠØ¯ Ø±Ù‚Ù… Ø§Ù„Ø­Ø³Ø§Ø¨ Ø£Ùˆ Ø§Ø®ØªÙŠØ§Ø± Ø¹Ù…ÙŠÙ„/Ù…ÙˆØ±Ø¯/Ù…ÙˆØ¸Ù" });
 
         var acct = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == targetId);
-        if (acct == null) return NotFound(new { message = "الحساب غير موجود" });
+        if (acct == null) return NotFound(new { message = "Ø§Ù„Ø­Ø³Ø§Ø¨ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
 
         var targetAccountIds = new List<int> { targetId };
         if (!acct.IsLeaf)
@@ -588,13 +589,13 @@ public class FinancialReportsController : ControllerBase
         }).ToList();
 
         if (excel) return ExcelAccountStatement(acct, rows, openBal, from, to);
-        return Ok(new { from, to, source, CostCenterLabel = source == OrderSource.Website ? "الموقع" : (source == OrderSource.POS ? "المحل" : "عام"), account = new { acct.Id, acct.Code, acct.NameAr, Nature = acct.Nature.ToString() }, openingBalance = openBal, rows, totalDebit = rows.Sum(r => r.Debit), totalCredit = rows.Sum(r => r.Credit), closingBalance = rows.LastOrDefault()?.RunningBalance ?? openBal });
+        return Ok(new { from, to, source, CostCenterLabel = source == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (source == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…"), account = new { acct.Id, acct.Code, acct.NameAr, Nature = acct.Nature.ToString() }, openingBalance = openBal, rows, totalDebit = rows.Sum(r => r.Debit), totalCredit = rows.Sum(r => r.Credit), closingBalance = rows.LastOrDefault()?.RunningBalance ?? openBal });
     }
 
 
-    // ══════════════════════════════════════════════════════
-    // 6. قائمة التدفقات النقدية  GET /api/financialreports/cash-flow
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 6. Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„ØªØ¯ÙÙ‚Ø§Øª Ø§Ù„Ù†Ù‚Ø¯ÙŠØ©  GET /api/financialreports/cash-flow
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("cash-flow")]
     public async Task<IActionResult> CashFlow(
         [FromQuery] DateTime? fromDate = null,
@@ -605,15 +606,15 @@ public class FinancialReportsController : ControllerBase
         var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        // حسابات النقدية الحقيقية فقط (الخزينة 1101 والبنك 1102)
-        // نستبعد 1103 (العملاء) لأنها ليست نقدية سائلة مباشرة بالقيد المحاسبي
+        // Ø­Ø³Ø§Ø¨Ø§Øª Ø§Ù„Ù†Ù‚Ø¯ÙŠØ© Ø§Ù„Ø­Ù‚ÙŠÙ‚ÙŠØ© ÙÙ‚Ø· (Ø§Ù„Ø®Ø²ÙŠÙ†Ø© 1101 ÙˆØ§Ù„Ø¨Ù†Ùƒ 1102)
+        // Ù†Ø³ØªØ¨Ø¹Ø¯ 1103 (Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡) Ù„Ø£Ù†Ù‡Ø§ Ù„ÙŠØ³Øª Ù†Ù‚Ø¯ÙŠØ© Ø³Ø§Ø¦Ù„Ø© Ù…Ø¨Ø§Ø´Ø±Ø© Ø¨Ø§Ù„Ù‚ÙŠØ¯ Ø§Ù„Ù…Ø­Ø§Ø³Ø¨ÙŠ
         var cashAccounts = await _db.Accounts
             .Where(a => a.IsLeaf && (a.Code.StartsWith("1101") || a.Code.StartsWith("1102") || a.Code.StartsWith("1107")))
             .ToListAsync();
 
         var cashIds = cashAccounts.Select(a => a.Id).ToHashSet();
 
-        // جلب كل الأسطر التي تخص حسابات النقدية في تلك الفترة
+        // Ø¬Ù„Ø¨ ÙƒÙ„ Ø§Ù„Ø£Ø³Ø·Ø± Ø§Ù„ØªÙŠ ØªØ®Øµ Ø­Ø³Ø§Ø¨Ø§Øª Ø§Ù„Ù†Ù‚Ø¯ÙŠØ© ÙÙŠ ØªÙ„Ùƒ Ø§Ù„ÙØªØ±Ø©
         var cashLinesQuery = _db.JournalLines
             .Include(l => l.JournalEntry)
             .Include(l => l.Account)
@@ -629,7 +630,7 @@ public class FinancialReportsController : ControllerBase
             .OrderBy(l => l.JournalEntry.EntryDate)
             .ToListAsync();
 
-        // لجلب الطرف الآخر من القيد، نحتاج كل سطور القيود المعنية
+        // Ù„Ø¬Ù„Ø¨ Ø§Ù„Ø·Ø±Ù Ø§Ù„Ø¢Ø®Ø± Ù…Ù† Ø§Ù„Ù‚ÙŠØ¯ØŒ Ù†Ø­ØªØ§Ø¬ ÙƒÙ„ Ø³Ø·ÙˆØ± Ø§Ù„Ù‚ÙŠÙˆØ¯ Ø§Ù„Ù…Ø¹Ù†ÙŠØ©
         var entryIds = cashLines.Select(l => l.JournalEntryId).Distinct().ToList();
         var allLines = await _db.JournalLines
             .Include(l => l.Account)
@@ -641,7 +642,7 @@ public class FinancialReportsController : ControllerBase
         var invItems = new List<CashFlowItem>();
         var finItems = new List<CashFlowItem>();
 
-        // نأخذ كل القيود التي تخص تلك الفترة ولها علاقة بالنقدية
+        // Ù†Ø£Ø®Ø° ÙƒÙ„ Ø§Ù„Ù‚ÙŠÙˆØ¯ Ø§Ù„ØªÙŠ ØªØ®Øµ ØªÙ„Ùƒ Ø§Ù„ÙØªØ±Ø© ÙˆÙ„Ù‡Ø§ Ø¹Ù„Ø§Ù‚Ø© Ø¨Ø§Ù„Ù†Ù‚Ø¯ÙŠØ©
         var entriesInPeriod = await _db.JournalLines
             .Include(l => l.Account)
             .Include(l => l.JournalEntry)
@@ -662,15 +663,15 @@ public class FinancialReportsController : ControllerBase
             var cashLinesInEntry = entry.Lines.Where(l => cashIds.Contains(l.AccountId)).ToList();
             var nonCashLinesInEntry = entry.Lines.Where(l => !cashIds.Contains(l.AccountId)).ToList();
 
-            // إذا لم يكن هناك طرف نقدي أو لم يكن هناك طرف "غير نقدي" (تحويل داخلي)، نتجاهل القيد
+            // Ø¥Ø°Ø§ Ù„Ù… ÙŠÙƒÙ† Ù‡Ù†Ø§Ùƒ Ø·Ø±Ù Ù†Ù‚Ø¯ÙŠ Ø£Ùˆ Ù„Ù… ÙŠÙƒÙ† Ù‡Ù†Ø§Ùƒ Ø·Ø±Ù "ØºÙŠØ± Ù†Ù‚Ø¯ÙŠ" (ØªØ­ÙˆÙŠÙ„ Ø¯Ø§Ø®Ù„ÙŠ)ØŒ Ù†ØªØ¬Ø§Ù‡Ù„ Ø§Ù„Ù‚ÙŠØ¯
             if (!cashLinesInEntry.Any() || !nonCashLinesInEntry.Any()) continue;
 
-            // في قائمة التدفقات النقدية (الطريقة المباشرة)، التدفق النقدي هو صافي القيد للطرف النقدي
-            // لكن لكي يكون لدينا تفصيل بالحسابات المقابلة، سنوزع هذا التدفق على الحسابات غير النقدية
+            // ÙÙŠ Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„ØªØ¯ÙÙ‚Ø§Øª Ø§Ù„Ù†Ù‚Ø¯ÙŠØ© (Ø§Ù„Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ù…Ø¨Ø§Ø´Ø±Ø©)ØŒ Ø§Ù„ØªØ¯ÙÙ‚ Ø§Ù„Ù†Ù‚Ø¯ÙŠ Ù‡Ùˆ ØµØ§ÙÙŠ Ø§Ù„Ù‚ÙŠØ¯ Ù„Ù„Ø·Ø±Ù Ø§Ù„Ù†Ù‚Ø¯ÙŠ
+            // Ù„ÙƒÙ† Ù„ÙƒÙŠ ÙŠÙƒÙˆÙ† Ù„Ø¯ÙŠÙ†Ø§ ØªÙØµÙŠÙ„ Ø¨Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª Ø§Ù„Ù…Ù‚Ø§Ø¨Ù„Ø©ØŒ Ø³Ù†ÙˆØ²Ø¹ Ù‡Ø°Ø§ Ø§Ù„ØªØ¯ÙÙ‚ Ø¹Ù„Ù‰ Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª ØºÙŠØ± Ø§Ù„Ù†Ù‚Ø¯ÙŠØ©
             
-            // القاعدة: التدفق لمواجهة حساب غير نقدي = (دائن - مدين) للحساب غير النقدي
-            // إذا كان الحساب غير النقدي مدين (دفعنا مصروف)، فالتدفق سالب (نقص في النقدية)
-            // إذا كان الحساب غير النقدي دائن (استلمنا مبيعات)، فالتدفق موجب (زيادة في النقدية)
+            // Ø§Ù„Ù‚Ø§Ø¹Ø¯Ø©: Ø§Ù„ØªØ¯ÙÙ‚ Ù„Ù…ÙˆØ§Ø¬Ù‡Ø© Ø­Ø³Ø§Ø¨ ØºÙŠØ± Ù†Ù‚Ø¯ÙŠ = (Ø¯Ø§Ø¦Ù† - Ù…Ø¯ÙŠÙ†) Ù„Ù„Ø­Ø³Ø§Ø¨ ØºÙŠØ± Ø§Ù„Ù†Ù‚Ø¯ÙŠ
+            // Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ø­Ø³Ø§Ø¨ ØºÙŠØ± Ø§Ù„Ù†Ù‚Ø¯ÙŠ Ù…Ø¯ÙŠÙ† (Ø¯ÙØ¹Ù†Ø§ Ù…ØµØ±ÙˆÙ)ØŒ ÙØ§Ù„ØªØ¯ÙÙ‚ Ø³Ø§Ù„Ø¨ (Ù†Ù‚Øµ ÙÙŠ Ø§Ù„Ù†Ù‚Ø¯ÙŠØ©)
+            // Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ø­Ø³Ø§Ø¨ ØºÙŠØ± Ø§Ù„Ù†Ù‚Ø¯ÙŠ Ø¯Ø§Ø¦Ù† (Ø§Ø³ØªÙ„Ù…Ù†Ø§ Ù…Ø¨ÙŠØ¹Ø§Øª)ØŒ ÙØ§Ù„ØªØ¯ÙÙ‚ Ù…ÙˆØ¬Ø¨ (Ø²ÙŠØ§Ø¯Ø© ÙÙŠ Ø§Ù„Ù†Ù‚Ø¯ÙŠØ©)
             
             foreach (var nc in nonCashLinesInEntry)
             {
@@ -685,17 +686,17 @@ public class FinancialReportsController : ControllerBase
                     flowAmount
                 );
 
-                if (nc.Code.StartsWith("12")) // أصول ثابتة
+                if (nc.Code.StartsWith("12")) // Ø£ØµÙˆÙ„ Ø«Ø§Ø¨ØªØ©
                 {
                     investing += flowAmount;
                     invItems.Add(item);
                 }
-                else if (nc.Type == AccountType.Equity || nc.Code.StartsWith("22")) // حقوق ملكية أو قروض
+                else if (nc.Type == AccountType.Equity || nc.Code.StartsWith("22")) // Ø­Ù‚ÙˆÙ‚ Ù…Ù„ÙƒÙŠØ© Ø£Ùˆ Ù‚Ø±ÙˆØ¶
                 {
                     financing += flowAmount;
                     finItems.Add(item);
                 }
-                else // تشغيلية
+                else // ØªØ´ØºÙŠÙ„ÙŠØ©
                 {
                     operating += flowAmount;
                     opItems.Add(item);
@@ -703,7 +704,7 @@ public class FinancialReportsController : ControllerBase
             }
         }
 
-        // الرصيد الافتتاحي للنقدية
+        // Ø§Ù„Ø±ØµÙŠØ¯ Ø§Ù„Ø§ÙØªØªØ§Ø­ÙŠ Ù„Ù„Ù†Ù‚Ø¯ÙŠØ©
         var openCash = 0m;
         foreach (var ca in cashAccounts)
         {
@@ -716,7 +717,7 @@ public class FinancialReportsController : ControllerBase
             openCash += ol + ca.OpeningBalance;
         }
 
-        // الرصيد النهائي الفعلي من الحسابات (للتحقق)
+        // Ø§Ù„Ø±ØµÙŠØ¯ Ø§Ù„Ù†Ù‡Ø§Ø¦ÙŠ Ø§Ù„ÙØ¹Ù„ÙŠ Ù…Ù† Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª (Ù„Ù„ØªØ­Ù‚Ù‚)
         var actualClosingBalance = 0m;
         foreach (var ca in cashAccounts)
         {
@@ -739,24 +740,24 @@ public class FinancialReportsController : ControllerBase
             investingActivities = new { items = invItems, total = investing },
             financingActivities = new { items = finItems, total = financing },
             netCashFlow,
-            closingCashBalance = actualClosingBalance // نستخدم الرصيد الفعلي لضمان الدقة
+            closingCashBalance = actualClosingBalance // Ù†Ø³ØªØ®Ø¯Ù… Ø§Ù„Ø±ØµÙŠØ¯ Ø§Ù„ÙØ¹Ù„ÙŠ Ù„Ø¶Ù…Ø§Ù† Ø§Ù„Ø¯Ù‚Ø©
         });
     }
 
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // EXCEL EXPORTS
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     private IActionResult ExcelTrialBalance(List<TrialBalanceRow> rows, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("ميزان المراجعة");
+        var ws = wb.Worksheets.Add("Ù…ÙŠØ²Ø§Ù† Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø©");
         ws.RightToLeft = true;
 
-        ws.Cell(1, 1).Value = $"ميزان المراجعة — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(1, 1).Value = $"Ù…ÙŠØ²Ø§Ù† Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø© â€” Ù…Ù† {from:yyyy-MM-dd} Ø¥Ù„Ù‰ {to:yyyy-MM-dd}";
         ws.Cell(1, 1).Style.Font.Bold = true; ws.Cell(1, 1).Style.Font.FontSize = 13;
         ws.Range(1, 1, 1, 9).Merge();
 
-        string[] hdrs = { "الكود","اسم الحساب","مدين افتتاحي","دائن افتتاحي","مدين الفترة","دائن الفترة","مدين الختامي","دائن الختامي" };
+        string[] hdrs = { "Ø§Ù„ÙƒÙˆØ¯","Ø§Ø³Ù… Ø§Ù„Ø­Ø³Ø§Ø¨","Ù…Ø¯ÙŠÙ† Ø§ÙØªØªØ§Ø­ÙŠ","Ø¯Ø§Ø¦Ù† Ø§ÙØªØªØ§Ø­ÙŠ","Ù…Ø¯ÙŠÙ† Ø§Ù„ÙØªØ±Ø©","Ø¯Ø§Ø¦Ù† Ø§Ù„ÙØªØ±Ø©","Ù…Ø¯ÙŠÙ† Ø§Ù„Ø®ØªØ§Ù…ÙŠ","Ø¯Ø§Ø¦Ù† Ø§Ù„Ø®ØªØ§Ù…ÙŠ" };
         for (int c = 0; c < hdrs.Length; c++)
         {
             var cell = ws.Cell(2, c + 1);
@@ -784,7 +785,7 @@ public class FinancialReportsController : ControllerBase
         }
 
         // Totals
-        ws.Cell(r, 2).Value = "الإجمالي";
+        ws.Cell(r, 2).Value = "Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ";
         ws.Cell(r, 2).Style.Font.Bold = true;
         for (int c = 3; c <= 8; c++)
         {
@@ -804,10 +805,10 @@ public class FinancialReportsController : ControllerBase
         DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("قائمة الدخل");
+        var ws = wb.Worksheets.Add("Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø¯Ø®Ù„");
         ws.RightToLeft = true;
 
-        ws.Cell(1, 1).Value = $"قائمة الدخل — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(1, 1).Value = $"Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø¯Ø®Ù„ â€” Ù…Ù† {from:yyyy-MM-dd} Ø¥Ù„Ù‰ {to:yyyy-MM-dd}";
         ws.Cell(1, 1).Style.Font.Bold = true; ws.Cell(1, 1).Style.Font.FontSize = 13;
         ws.Range(1, 1, 1, 3).Merge();
 
@@ -825,19 +826,19 @@ public class FinancialReportsController : ControllerBase
                 ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
                 r++;
             }
-            ws.Cell(r, 2).Value = "الإجمالي";
+            ws.Cell(r, 2).Value = "Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ";
             ws.Cell(r, 2).Style.Font.Bold = true;
             ws.Cell(r, 3).Value = total;
             ws.Cell(r, 3).Style.Font.Bold = true;
             ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
         }
 
-        WriteSection("الإيرادات", revenues, totalRev, 2, XLColor.FromHtml("#e8f5e9"));
+        WriteSection("Ø§Ù„Ø¥ÙŠØ±Ø§Ø¯Ø§Øª", revenues, totalRev, 2, XLColor.FromHtml("#e8f5e9"));
         int expStart = revenues.Count + 4;
-        WriteSection("المصاريف", expenses, totalExp, expStart, XLColor.FromHtml("#fce4ec"));
+        WriteSection("Ø§Ù„Ù…ØµØ§Ø±ÙŠÙ", expenses, totalExp, expStart, XLColor.FromHtml("#fce4ec"));
 
         int netRow = expStart + expenses.Count + 3;
-        ws.Cell(netRow, 2).Value = netProfit >= 0 ? "صافي الربح" : "صافي الخسارة";
+        ws.Cell(netRow, 2).Value = netProfit >= 0 ? "ØµØ§ÙÙŠ Ø§Ù„Ø±Ø¨Ø­" : "ØµØ§ÙÙŠ Ø§Ù„Ø®Ø³Ø§Ø±Ø©";
         ws.Cell(netRow, 2).Style.Font.Bold = true; ws.Cell(netRow, 2).Style.Font.FontSize = 12;
         ws.Cell(netRow, 3).Value = Math.Abs(netProfit);
         ws.Cell(netRow, 3).Style.Font.Bold = true;
@@ -853,10 +854,10 @@ public class FinancialReportsController : ControllerBase
         decimal netProfit, decimal totalAssets, decimal totalLiabilities, decimal totalEquity, DateTime to)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("الميزانية العمومية");
+        var ws = wb.Worksheets.Add("Ø§Ù„Ù…ÙŠØ²Ø§Ù†ÙŠØ© Ø§Ù„Ø¹Ù…ÙˆÙ…ÙŠØ©");
         ws.RightToLeft = true;
 
-        ws.Cell(1, 1).Value = $"الميزانية العمومية — في {to:yyyy-MM-dd}";
+        ws.Cell(1, 1).Value = $"Ø§Ù„Ù…ÙŠØ²Ø§Ù†ÙŠØ© Ø§Ù„Ø¹Ù…ÙˆÙ…ÙŠØ© â€” ÙÙŠ {to:yyyy-MM-dd}";
         ws.Cell(1, 1).Style.Font.Bold = true; ws.Cell(1, 1).Style.Font.FontSize = 13;
         ws.Range(1, 1, 1, 4).Merge();
 
@@ -874,19 +875,19 @@ public class FinancialReportsController : ControllerBase
                 ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
                 r++;
             }
-            ws.Cell(r, 2).Value = $"إجمالي {title}"; ws.Cell(r, 2).Style.Font.Bold = true;
+            ws.Cell(r, 2).Value = $"Ø¥Ø¬Ù…Ø§Ù„ÙŠ {title}"; ws.Cell(r, 2).Style.Font.Bold = true;
             ws.Cell(r, 3).Value = total; ws.Cell(r, 3).Style.Font.Bold = true;
             ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
             r += 2;
         }
 
-        Section("الأصول",       assets,      totalAssets,      XLColor.FromHtml("#e3f2fd"));
-        Section("الالتزامات",   liabilities, totalLiabilities, XLColor.FromHtml("#fce4ec"));
-        Section("حقوق الملكية", equity,      totalEquity,      XLColor.FromHtml("#f3e5f5"));
+        Section("Ø§Ù„Ø£ØµÙˆÙ„",       assets,      totalAssets,      XLColor.FromHtml("#e3f2fd"));
+        Section("Ø§Ù„Ø§Ù„ØªØ²Ø§Ù…Ø§Øª",   liabilities, totalLiabilities, XLColor.FromHtml("#fce4ec"));
+        Section("Ø­Ù‚ÙˆÙ‚ Ø§Ù„Ù…Ù„ÙƒÙŠØ©", equity,      totalEquity,      XLColor.FromHtml("#f3e5f5"));
 
-        ws.Cell(r, 2).Value = "صافي الربح / الخسارة"; ws.Cell(r, 3).Value = netProfit;
+        ws.Cell(r, 2).Value = "ØµØ§ÙÙŠ Ø§Ù„Ø±Ø¨Ø­ / Ø§Ù„Ø®Ø³Ø§Ø±Ø©"; ws.Cell(r, 3).Value = netProfit;
         ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00"; r++;
-        ws.Cell(r, 2).Value = "إجمالي الالتزامات وحقوق الملكية"; ws.Cell(r, 2).Style.Font.Bold = true;
+        ws.Cell(r, 2).Value = "Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø§Ù„ØªØ²Ø§Ù…Ø§Øª ÙˆØ­Ù‚ÙˆÙ‚ Ø§Ù„Ù…Ù„ÙƒÙŠØ©"; ws.Cell(r, 2).Style.Font.Bold = true;
         ws.Cell(r, 3).Value = totalLiabilities + totalEquity; ws.Cell(r, 3).Style.Font.Bold = true;
         ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
 
@@ -897,10 +898,10 @@ public class FinancialReportsController : ControllerBase
     private IActionResult ExcelLedger(List<LedgerRow> rows, Dictionary<int, decimal> openMap, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("دفتر الأستاذ");
+        var ws = wb.Worksheets.Add("Ø¯ÙØªØ± Ø§Ù„Ø£Ø³ØªØ§Ø°");
         ws.RightToLeft = true;
 
-        string[] hdrs = { "الكود","اسم الحساب","التاريخ","القيد","الاسم","البيان","مدين","دائن","الرصيد" };
+        string[] hdrs = { "Ø§Ù„ÙƒÙˆØ¯","Ø§Ø³Ù… Ø§Ù„Ø­Ø³Ø§Ø¨","Ø§Ù„ØªØ§Ø±ÙŠØ®","Ø§Ù„Ù‚ÙŠØ¯","Ø§Ù„Ø§Ø³Ù…","Ø§Ù„Ø¨ÙŠØ§Ù†","Ù…Ø¯ÙŠÙ†","Ø¯Ø§Ø¦Ù†","Ø§Ù„Ø±ØµÙŠØ¯" };
         for (int c = 0; c < hdrs.Length; c++)
         {
             var cell = ws.Cell(1, c+1); cell.Value = hdrs[c];
@@ -915,7 +916,7 @@ public class FinancialReportsController : ControllerBase
             ws.Cell(r,2).Value = row.AccountName;
             ws.Cell(r,3).Value = row.Date.ToString("yyyy-MM-dd");
             ws.Cell(r,4).Value = row.EntryNumber;
-            ws.Cell(r,5).Value = row.PartnerName ?? "—";
+            ws.Cell(r,5).Value = row.PartnerName ?? "â€”";
             ws.Cell(r,6).Value = row.Description;
             ws.Cell(r,7).Value = row.Debit;
             ws.Cell(r,8).Value = row.Credit;
@@ -932,19 +933,19 @@ public class FinancialReportsController : ControllerBase
     private IActionResult ExcelAccountStatement(Account acct, List<LedgerRow> rows, decimal openBal, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("كشف حساب");
+        var ws = wb.Worksheets.Add("ÙƒØ´Ù Ø­Ø³Ø§Ø¨");
         ws.RightToLeft = true;
 
-        ws.Cell(1,1).Value = $"كشف حساب: {acct.Code} — {acct.NameAr}";
+        ws.Cell(1,1).Value = $"ÙƒØ´Ù Ø­Ø³Ø§Ø¨: {acct.Code} â€” {acct.NameAr}";
         ws.Cell(1,1).Style.Font.Bold = true; ws.Cell(1,1).Style.Font.FontSize = 13;
         ws.Range(1,1,1,5).Merge();
-        ws.Cell(2,1).Value = $"من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(2,1).Value = $"Ù…Ù† {from:yyyy-MM-dd} Ø¥Ù„Ù‰ {to:yyyy-MM-dd}";
         ws.Cell(2,1).Style.Font.FontColor = XLColor.Gray;
 
-        string[] hdrs = { "التاريخ", "القيد", "الاسم", "البيان", "مدين", "دائن", "الرصيد" };
+        string[] hdrs = { "Ø§Ù„ØªØ§Ø±ÙŠØ®", "Ø§Ù„Ù‚ÙŠØ¯", "Ø§Ù„Ø§Ø³Ù…", "Ø§Ù„Ø¨ÙŠØ§Ù†", "Ù…Ø¯ÙŠÙ†", "Ø¯Ø§Ø¦Ù†", "Ø§Ù„Ø±ØµÙŠØ¯" };
         for (int c = 0; c < hdrs.Length; c++) { ws.Cell(3, c + 1).Value = hdrs[c]; ws.Cell(3, c + 1).Style.Font.Bold = true; }
 
-        ws.Cell(4, 4).Value = "رصيد افتتاحي"; ws.Cell(4, 7).Value = openBal;
+        ws.Cell(4, 4).Value = "Ø±ØµÙŠØ¯ Ø§ÙØªØªØ§Ø­ÙŠ"; ws.Cell(4, 7).Value = openBal;
         ws.Cell(4, 7).Style.NumberFormat.Format = "#,##0.00";
 
         int r = 5;
@@ -952,7 +953,7 @@ public class FinancialReportsController : ControllerBase
         {
             ws.Cell(r, 1).Value = row.Date.ToString("yyyy-MM-dd");
             ws.Cell(r, 2).Value = row.EntryNumber;
-            ws.Cell(r, 3).Value = row.PartnerName ?? "—";
+            ws.Cell(r, 3).Value = row.PartnerName ?? "â€”";
             ws.Cell(r, 4).Value = row.Description;
             ws.Cell(r, 5).Value = row.Debit;
             ws.Cell(r, 6).Value = row.Credit;
@@ -962,7 +963,7 @@ public class FinancialReportsController : ControllerBase
             ws.Cell(r, 7).Style.NumberFormat.Format = "#,##0.00";
             r++;
         }
-        ws.Cell(r, 4).Value = "الإجمالي"; ws.Cell(r, 4).Style.Font.Bold = true;
+        ws.Cell(r, 4).Value = "Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ"; ws.Cell(r, 4).Style.Font.Bold = true;
         ws.Cell(r, 5).Value = rows.Sum(x => x.Debit); ws.Cell(r, 5).Style.Font.Bold = true;
         ws.Cell(r, 6).Value = rows.Sum(x => x.Credit); ws.Cell(r, 6).Style.Font.Bold = true;
         ws.Cell(r, 5).Style.NumberFormat.Format = "#,##0.00";
@@ -975,14 +976,14 @@ public class FinancialReportsController : ControllerBase
     private IActionResult ExcelCashFlow(List<CashFlowItem> op, List<CashFlowItem> inv, List<CashFlowItem> fin, decimal openBal, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("التدفقات النقدية");
+        var ws = wb.Worksheets.Add("Ø§Ù„ØªØ¯ÙÙ‚Ø§Øª Ø§Ù„Ù†Ù‚Ø¯ÙŠØ©");
         ws.RightToLeft = true;
 
-        ws.Cell(1,1).Value = $"قائمة التدفقات النقدية — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(1,1).Value = $"Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„ØªØ¯ÙÙ‚Ø§Øª Ø§Ù„Ù†Ù‚Ø¯ÙŠØ© â€” Ù…Ù† {from:yyyy-MM-dd} Ø¥Ù„Ù‰ {to:yyyy-MM-dd}";
         ws.Cell(1,1).Style.Font.Bold = true; ws.Cell(1,1).Style.Font.FontSize = 13;
 
         int r = 3;
-        ws.Cell(r, 1).Value = "الرصيد الافتتاحي للنقدية"; 
+        ws.Cell(r, 1).Value = "Ø§Ù„Ø±ØµÙŠØ¯ Ø§Ù„Ø§ÙØªØªØ§Ø­ÙŠ Ù„Ù„Ù†Ù‚Ø¯ÙŠØ©"; 
         ws.Cell(r, 3).Value = openBal; ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
         r += 2;
 
@@ -999,21 +1000,21 @@ public class FinancialReportsController : ControllerBase
                 ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
                 r++;
             }
-            ws.Cell(r, 2).Value = $"إجمالي {title}"; ws.Cell(r, 2).Style.Font.Bold = true;
+            ws.Cell(r, 2).Value = $"Ø¥Ø¬Ù…Ø§Ù„ÙŠ {title}"; ws.Cell(r, 2).Style.Font.Bold = true;
             ws.Cell(r, 3).Value = items.Sum(x => x.Amount); ws.Cell(r, 3).Style.Font.Bold = true;
             ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
             r += 2;
         }
 
-        AddSection("الأنشطة التشغيلية", op,  XLColor.FromHtml("#e8f5e9"));
-        AddSection("الأنشطة الاستثمارية", inv, XLColor.FromHtml("#fff3e0"));
-        AddSection("الأنشطة التمويلية", fin, XLColor.FromHtml("#e1f5fe"));
+        AddSection("Ø§Ù„Ø£Ù†Ø´Ø·Ø© Ø§Ù„ØªØ´ØºÙŠÙ„ÙŠØ©", op,  XLColor.FromHtml("#e8f5e9"));
+        AddSection("Ø§Ù„Ø£Ù†Ø´Ø·Ø© Ø§Ù„Ø§Ø³ØªØ«Ù…Ø§Ø±ÙŠØ©", inv, XLColor.FromHtml("#fff3e0"));
+        AddSection("Ø§Ù„Ø£Ù†Ø´Ø·Ø© Ø§Ù„ØªÙ…ÙˆÙŠÙ„ÙŠØ©", fin, XLColor.FromHtml("#e1f5fe"));
 
-        ws.Cell(r, 2).Value = "صافي التدفق النقدي"; ws.Cell(r, 2).Style.Font.Bold = true;
+        ws.Cell(r, 2).Value = "ØµØ§ÙÙŠ Ø§Ù„ØªØ¯ÙÙ‚ Ø§Ù„Ù†Ù‚Ø¯ÙŠ"; ws.Cell(r, 2).Style.Font.Bold = true;
         ws.Cell(r, 3).Value = op.Sum(x => x.Amount) + inv.Sum(x => x.Amount) + fin.Sum(x => x.Amount);
         ws.Cell(r, 3).Style.Font.Bold = true; ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
         r++;
-        ws.Cell(r, 2).Value = "الرصيد الختامي للنقدية"; ws.Cell(r, 2).Style.Font.Bold = true;
+        ws.Cell(r, 2).Value = "Ø§Ù„Ø±ØµÙŠØ¯ Ø§Ù„Ø®ØªØ§Ù…ÙŠ Ù„Ù„Ù†Ù‚Ø¯ÙŠØ©"; ws.Cell(r, 2).Style.Font.Bold = true;
         ws.Cell(r, 3).Value = openBal + op.Sum(x => x.Amount) + inv.Sum(x => x.Amount) + fin.Sum(x => x.Amount);
         ws.Cell(r, 3).Style.Font.Bold = true; ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
 
@@ -1024,19 +1025,19 @@ public class FinancialReportsController : ControllerBase
     private IActionResult ExcelEmployeeStatement(Employee emp, List<EmployeeStatementRowDto> rows, decimal openBal, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("كشف حساب موظف");
+        var ws = wb.Worksheets.Add("ÙƒØ´Ù Ø­Ø³Ø§Ø¨ Ù…ÙˆØ¸Ù");
         ws.RightToLeft = true;
 
-        ws.Cell(1,1).Value = $"كشف حساب: {emp.EmployeeNumber} — {emp.Name}";
+        ws.Cell(1,1).Value = $"ÙƒØ´Ù Ø­Ø³Ø§Ø¨: {emp.EmployeeNumber} â€” {emp.Name}";
         ws.Cell(1,1).Style.Font.Bold = true; ws.Cell(1,1).Style.Font.FontSize = 13;
         ws.Range(1,1,1,6).Merge();
-        ws.Cell(2,1).Value = $"من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(2,1).Value = $"Ù…Ù† {from:yyyy-MM-dd} Ø¥Ù„Ù‰ {to:yyyy-MM-dd}";
         ws.Cell(2,1).Style.Font.FontColor = XLColor.Gray;
 
-        string[] hdrs = { "التاريخ","رقم القيد","نوع العملية","البيان","مدين","دائن","الرصيد" };
+        string[] hdrs = { "Ø§Ù„ØªØ§Ø±ÙŠØ®","Ø±Ù‚Ù… Ø§Ù„Ù‚ÙŠØ¯","Ù†ÙˆØ¹ Ø§Ù„Ø¹Ù…Ù„ÙŠØ©","Ø§Ù„Ø¨ÙŠØ§Ù†","Ù…Ø¯ÙŠÙ†","Ø¯Ø§Ø¦Ù†","Ø§Ù„Ø±ØµÙŠØ¯" };
         for (int c = 0; c < hdrs.Length; c++) { ws.Cell(3,c+1).Value = hdrs[c]; ws.Cell(3,c+1).Style.Font.Bold = true; }
 
-        ws.Cell(4,4).Value = "رصيد افتتاحي"; ws.Cell(4,7).Value = openBal;
+        ws.Cell(4,4).Value = "Ø±ØµÙŠØ¯ Ø§ÙØªØªØ§Ø­ÙŠ"; ws.Cell(4,7).Value = openBal;
         ws.Cell(4,7).Style.NumberFormat.Format = "#,##0.00";
 
         int r = 5;
@@ -1054,7 +1055,7 @@ public class FinancialReportsController : ControllerBase
             ws.Cell(r,7).Style.NumberFormat.Format = "#,##0.00";
             r++;
         }
-        ws.Cell(r,4).Value = "الإجمالي"; ws.Cell(r,4).Style.Font.Bold = true;
+        ws.Cell(r,4).Value = "Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ"; ws.Cell(r,4).Style.Font.Bold = true;
         ws.Cell(r,5).Value = rows.Sum(x=>x.Debit); ws.Cell(r,5).Style.Font.Bold = true;
         ws.Cell(r,6).Value = rows.Sum(x=>x.Credit); ws.Cell(r,6).Style.Font.Bold = true;
         ws.Cell(r,5).Style.NumberFormat.Format = "#,##0.00";
@@ -1073,10 +1074,10 @@ public class FinancialReportsController : ControllerBase
         { FileDownloadName = filename };
     }
 
-    // ══════════════════════════════════════════════════════
-// ══════════════════════════════════════════════════════
-    // 7. كشف حساب الموظف  GET /api/financialreports/employee-statement
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 7. ÙƒØ´Ù Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…ÙˆØ¸Ù  GET /api/financialreports/employee-statement
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("employee-statement")]
     public async Task<IActionResult> EmployeeStatement(
         [FromQuery] int       employeeId,
@@ -1088,9 +1089,9 @@ public class FinancialReportsController : ControllerBase
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         var emp = await _db.Employees.FirstOrDefaultAsync(e => e.Id == employeeId);
-        if (emp == null) return NotFound(new { message = "الموظف غير موجود" });
+        if (emp == null) return NotFound(new { message = "Ø§Ù„Ù…ÙˆØ¸Ù ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
 
-        // ─── سطور القيود المرتبطة بالموظف ────────────────────
+        // â”€â”€â”€ Ø³Ø·ÙˆØ± Ø§Ù„Ù‚ÙŠÙˆØ¯ Ø§Ù„Ù…Ø±ØªØ¨Ø·Ø© Ø¨Ø§Ù„Ù…ÙˆØ¸Ù â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var jeLines = await _db.JournalLines
             .Include(l => l.JournalEntry)
             .Include(l => l.Account)
@@ -1101,7 +1102,7 @@ public class FinancialReportsController : ControllerBase
             .OrderBy(l => l.JournalEntry.EntryDate).ThenBy(l => l.JournalEntry.Id)
             .ToListAsync();
 
-        // رصيد افتتاحي من القيود السابقة للفترة
+        // Ø±ØµÙŠØ¯ Ø§ÙØªØªØ§Ø­ÙŠ Ù…Ù† Ø§Ù„Ù‚ÙŠÙˆØ¯ Ø§Ù„Ø³Ø§Ø¨Ù‚Ø© Ù„Ù„ÙØªØ±Ø©
         var openLines = await _db.JournalLines
             .Include(l => l.JournalEntry)
             .Where(l => l.EmployeeId == employeeId
@@ -1109,8 +1110,8 @@ public class FinancialReportsController : ControllerBase
                      && l.JournalEntry.EntryDate < from)
             .ToListAsync();
 
-        // طبيعة حساب الموظف مدين (السلف مدينة، الرواتب دائنة)
-        // الرصيد = مدين - دائن: موجب = له سلف غير مخصومة، سالب = له رواتب مستحقة
+        // Ø·Ø¨ÙŠØ¹Ø© Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…ÙˆØ¸Ù Ù…Ø¯ÙŠÙ† (Ø§Ù„Ø³Ù„Ù Ù…Ø¯ÙŠÙ†Ø©ØŒ Ø§Ù„Ø±ÙˆØ§ØªØ¨ Ø¯Ø§Ø¦Ù†Ø©)
+        // Ø§Ù„Ø±ØµÙŠØ¯ = Ù…Ø¯ÙŠÙ† - Ø¯Ø§Ø¦Ù†: Ù…ÙˆØ¬Ø¨ = Ù„Ù‡ Ø³Ù„Ù ØºÙŠØ± Ù…Ø®ØµÙˆÙ…Ø©ØŒ Ø³Ø§Ù„Ø¨ = Ù„Ù‡ Ø±ÙˆØ§ØªØ¨ Ù…Ø³ØªØ­Ù‚Ø©
         var openBal = openLines.Sum(l => l.Debit) - openLines.Sum(l => l.Credit);
 
         var runBal = openBal;
@@ -1130,7 +1131,7 @@ public class FinancialReportsController : ControllerBase
             ));
         }
 
-        // ─── بيانات إضافية من جداول HR ───────────────────────
+        // â”€â”€â”€ Ø¨ÙŠØ§Ù†Ø§Øª Ø¥Ø¶Ø§ÙÙŠØ© Ù…Ù† Ø¬Ø¯Ø§ÙˆÙ„ HR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var advances = await _db.EmployeeAdvances
             .Where(a => a.EmployeeId == employeeId && a.AdvanceDate >= from && a.AdvanceDate <= to)
             .OrderBy(a => a.AdvanceDate)
@@ -1190,7 +1191,7 @@ public class FinancialReportsController : ControllerBase
         }
 
         return Ok(new EmployeeStatementDto(
-            emp.Id, emp.Name, emp.EmployeeNumber, emp.JobTitle, emp.Account?.NameAr ?? "رواتب مستحقة",
+            emp.Id, emp.Name, emp.EmployeeNumber, emp.JobTitle, emp.Account?.NameAr ?? "Ø±ÙˆØ§ØªØ¨ Ù…Ø³ØªØ­Ù‚Ø©",
             from, to, openBal, statementRows,
             statementRows.Sum(r => r.Debit),
             statementRows.Sum(r => r.Credit),
@@ -1198,10 +1199,10 @@ public class FinancialReportsController : ControllerBase
         ));
     }
 
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // VAT Report  GET /api/financialreports/vat-report
-    // تقرير ضريبة القيمة المضافة على مستوى الأوامر والمشتريات
-    // ══════════════════════════════════════════════════════
+    // ØªÙ‚Ø±ÙŠØ± Ø¶Ø±ÙŠØ¨Ø© Ø§Ù„Ù‚ÙŠÙ…Ø© Ø§Ù„Ù…Ø¶Ø§ÙØ© Ø¹Ù„Ù‰ Ù…Ø³ØªÙˆÙ‰ Ø§Ù„Ø£ÙˆØ§Ù…Ø± ÙˆØ§Ù„Ù…Ø´ØªØ±ÙŠØ§Øª
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("vat-report")]
     public async Task<IActionResult> VatReport(
         [FromQuery] DateTime? fromDate = null,
@@ -1210,7 +1211,7 @@ public class FinancialReportsController : ControllerBase
         var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        // Sales VAT — from Orders
+        // Sales VAT â€” from Orders
         var salesOrders = await _db.Orders
             .AsNoTracking()
             .Where(o => o.CreatedAt >= from && o.CreatedAt <= to
@@ -1218,7 +1219,7 @@ public class FinancialReportsController : ControllerBase
             .Select(o => new {
                 o.Id, o.OrderNumber, o.CreatedAt,
                 o.TotalAmount, o.TotalVatAmount,
-                CustomerName = o.Customer != null ? o.Customer.FullName : "عميل متجول"
+                CustomerName = o.Customer != null ? o.Customer.FullName : "Ø¹Ù…ÙŠÙ„ Ù…ØªØ¬ÙˆÙ„"
             })
             .OrderBy(o => o.CreatedAt)
             .ToListAsync();
@@ -1227,7 +1228,7 @@ public class FinancialReportsController : ControllerBase
         var totalSalesNet   = salesOrders.Sum(o => o.TotalAmount - o.TotalVatAmount);
         var totalSalesGross = salesOrders.Sum(o => o.TotalAmount);
 
-        // Purchase VAT — from PurchaseInvoices
+        // Purchase VAT â€” from PurchaseInvoices
         var purchases = await _db.PurchaseInvoices
             .AsNoTracking()
             .Where(p => p.InvoiceDate >= from && p.InvoiceDate <= to
@@ -1270,7 +1271,7 @@ public class FinancialReportsController : ControllerBase
     }
 }
 
-// ── Internal models (not exposed to DB) ──────────────────
+// â”€â”€ Internal models (not exposed to DB) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 internal class AccountBalance
 {
     public int           Id           { get; set; }
@@ -1289,7 +1290,7 @@ internal class AccountBalance
     public decimal       ClosingBal   { get; set; }
 }
 
-// ── Report DTOs ──────────────────────────────────────────
+// â”€â”€ Report DTOs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 public record TrialBalanceRow(
     string Code, string NameAr, int Level,
     decimal OpenDebit, decimal OpenCredit,
@@ -1306,3 +1307,4 @@ public record LedgerRow(
     string? Reference = null, int JournalEntryId = 0,
     string? PartnerName = null);
 public record CashFlowItem(DateTime Date, string EntryNumber, string Description, string Account, decimal Amount);
+

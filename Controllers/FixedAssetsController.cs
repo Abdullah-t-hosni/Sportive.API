@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -10,13 +11,13 @@ using Sportive.API.Utils;
 
 namespace Sportive.API.Controllers;
 
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // 1. FIXED ASSET CATEGORIES
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 [ApiController]
 [Route("api/fixed-asset-categories")]
-[Authorize(Roles = "Admin,Manager,Accountant")]
+[RequirePermission(ModuleKeys.Assets)]
 public class FixedAssetCategoriesController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -47,7 +48,7 @@ public class FixedAssetCategoriesController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateFixedAssetCategoryDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Name))
-            return BadRequest("اسم الفئة مطلوب.");
+            return BadRequest("Ø§Ø³Ù… Ø§Ù„ÙØ¦Ø© Ù…Ø·Ù„ÙˆØ¨.");
 
         var cat = new FixedAssetCategory
         {
@@ -91,7 +92,7 @@ public class FixedAssetCategoriesController : ControllerBase
             .FirstOrDefaultAsync(c => c.Id == id);
         if (cat == null) return NotFound();
         if (cat.Assets.Any())
-            return BadRequest("لا يمكن حذف فئة تحتوي على أصول.");
+            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù ÙØ¦Ø© ØªØ­ØªÙˆÙŠ Ø¹Ù„Ù‰ Ø£ØµÙˆÙ„.");
 
         _db.FixedAssetCategories.Remove(cat);
         await _db.SaveChangesAsync();
@@ -99,13 +100,13 @@ public class FixedAssetCategoriesController : ControllerBase
     }
 }
 
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // 2. FIXED ASSETS
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 [ApiController]
 [Route("api/fixed-assets")]
-[Authorize(Roles = "Admin,Manager,Accountant")]
+[RequirePermission(ModuleKeys.Assets)]
 public class FixedAssetsController : ControllerBase
 {
     private readonly AppDbContext    _db;
@@ -119,9 +120,9 @@ public class FixedAssetsController : ControllerBase
         _core = core;
     }
 
-    // ─── helpers ──────────────────────────────────────
+    // â”€â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-    /// <summary>حساب قسط الإهلاك الشهري بطريقة القسط الثابت</summary>
+    /// <summary>Ø­Ø³Ø§Ø¨ Ù‚Ø³Ø· Ø§Ù„Ø¥Ù‡Ù„Ø§Ùƒ Ø§Ù„Ø´Ù‡Ø±ÙŠ Ø¨Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ù‚Ø³Ø· Ø§Ù„Ø«Ø§Ø¨Øª</summary>
     private static decimal CalcStraightLineMonthly(FixedAsset a)
     {
         var depreciable = a.PurchaseCost - a.SalvageValue;
@@ -130,7 +131,7 @@ public class FixedAssetsController : ControllerBase
     }
 
     /// <summary>
-    /// يرجع حسابات الأصل: أولاً من الأصل نفسه، وإن لم تكن فمن الفئة.
+    /// ÙŠØ±Ø¬Ø¹ Ø­Ø³Ø§Ø¨Ø§Øª Ø§Ù„Ø£ØµÙ„: Ø£ÙˆÙ„Ø§Ù‹ Ù…Ù† Ø§Ù„Ø£ØµÙ„ Ù†ÙØ³Ù‡ØŒ ÙˆØ¥Ù† Ù„Ù… ØªÙƒÙ† ÙÙ…Ù† Ø§Ù„ÙØ¦Ø©.
     /// </summary>
     private (int? assetAcc, int? accumAcc, int? expenseAcc) ResolveAccounts(FixedAsset a, FixedAssetCategory cat)
         => (
@@ -144,7 +145,7 @@ public class FixedAssetsController : ControllerBase
 
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
-    // ─── GET /api/fixed-assets ────────────────────────
+    // â”€â”€â”€ GET /api/fixed-assets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -195,7 +196,7 @@ public class FixedAssetsController : ControllerBase
             (int)Math.Ceiling((double)total / pageSize)));
     }
 
-    // ─── GET /api/fixed-assets/{id} ───────────────────
+    // â”€â”€â”€ GET /api/fixed-assets/{id} â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
@@ -220,15 +221,15 @@ public class FixedAssetsController : ControllerBase
         return Ok(new FixedAssetDetailDto(assetDto, depDtos, disDtos));
     }
 
-    // ─── POST /api/fixed-assets ───────────────────────
+    // â”€â”€â”€ POST /api/fixed-assets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateFixedAssetDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Name))
-            return BadRequest("اسم الأصل مطلوب.");
+            return BadRequest("Ø§Ø³Ù… Ø§Ù„Ø£ØµÙ„ Ù…Ø·Ù„ÙˆØ¨.");
         if (!await _db.FixedAssetCategories.AnyAsync(c => c.Id == dto.CategoryId))
-            return BadRequest("الفئة غير موجودة.");
+            return BadRequest("Ø§Ù„ÙØ¦Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©.");
 
         var assetNo = await _seq.NextAsync("FA", async (db, pattern) =>
         {
@@ -272,7 +273,7 @@ public class FixedAssetsController : ControllerBase
         return Ok(new { id = asset.Id, assetNumber = asset.AssetNumber });
     }
 
-    // ─── PUT /api/fixed-assets/{id} ───────────────────
+    // â”€â”€â”€ PUT /api/fixed-assets/{id} â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateFixedAssetDto dto)
@@ -280,9 +281,9 @@ public class FixedAssetsController : ControllerBase
         var asset = await _db.FixedAssets.FindAsync(id);
         if (asset == null) return NotFound();
         if (asset.Status == AssetStatus.Disposed)
-            return BadRequest("لا يمكن تعديل أصل مستبعد.");
+            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† ØªØ¹Ø¯ÙŠÙ„ Ø£ØµÙ„ Ù…Ø³ØªØ¨Ø¹Ø¯.");
         if (!await _db.FixedAssetCategories.AnyAsync(c => c.Id == dto.CategoryId))
-            return BadRequest("الفئة غير موجودة.");
+            return BadRequest("Ø§Ù„ÙØ¦Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©.");
 
         asset.Name                         = dto.Name.Trim();
         asset.Description                  = dto.Description?.Trim();
@@ -310,7 +311,7 @@ public class FixedAssetsController : ControllerBase
         return NoContent();
     }
 
-    // ─── DELETE /api/fixed-assets/{id} ────────────────
+    // â”€â”€â”€ DELETE /api/fixed-assets/{id} â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
@@ -321,16 +322,16 @@ public class FixedAssetsController : ControllerBase
             .FirstOrDefaultAsync(a => a.Id == id);
         if (asset == null) return NotFound();
         if (asset.Depreciations.Any() || asset.Disposals.Any())
-            return BadRequest("لا يمكن حذف أصل له قيود إهلاك أو استبعاد — قم بالأرشفة بدلاً من الحذف.");
+            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ø£ØµÙ„ Ù„Ù‡ Ù‚ÙŠÙˆØ¯ Ø¥Ù‡Ù„Ø§Ùƒ Ø£Ùˆ Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ â€” Ù‚Ù… Ø¨Ø§Ù„Ø£Ø±Ø´ÙØ© Ø¨Ø¯Ù„Ø§Ù‹ Ù…Ù† Ø§Ù„Ø­Ø°Ù.");
 
         _db.FixedAssets.Remove(asset);
         await _db.SaveChangesAsync();
         return NoContent();
     }
 
-    // ══════════════════════════════════════════════════
-    // تبويبة الإهلاك
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ØªØ¨ÙˆÙŠØ¨Ø© Ø§Ù„Ø¥Ù‡Ù„Ø§Ùƒ
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     // GET /api/fixed-assets/{id}/depreciations
     [HttpGet("{id}/depreciations")]
@@ -352,38 +353,38 @@ public class FixedAssetsController : ControllerBase
         return Ok(list);
     }
 
-    // POST /api/fixed-assets/{id}/depreciations  — ترحيل قسط إهلاك لأصل واحد
+    // POST /api/fixed-assets/{id}/depreciations  â€” ØªØ±Ø­ÙŠÙ„ Ù‚Ø³Ø· Ø¥Ù‡Ù„Ø§Ùƒ Ù„Ø£ØµÙ„ ÙˆØ§Ø­Ø¯
     [HttpPost("{id}/depreciations")]
     public async Task<IActionResult> PostDepreciation(int id, [FromBody] PostDepreciationDto dto)
     {
         if (dto.FixedAssetId != id)
-            return BadRequest("معرّف الأصل غير متطابق.");
+            return BadRequest("Ù…Ø¹Ø±Ù‘Ù Ø§Ù„Ø£ØµÙ„ ØºÙŠØ± Ù…ØªØ·Ø§Ø¨Ù‚.");
 
         var asset = await _db.FixedAssets
             .Include(a => a.Category)
             .FirstOrDefaultAsync(a => a.Id == id);
         if (asset == null) return NotFound();
         if (asset.Status != AssetStatus.Active)
-            return BadRequest($"لا يمكن ترحيل إهلاك على أصل بحالة: {asset.Status}.");
+            return BadRequest($"Ù„Ø§ ÙŠÙ…ÙƒÙ† ØªØ±Ø­ÙŠÙ„ Ø¥Ù‡Ù„Ø§Ùƒ Ø¹Ù„Ù‰ Ø£ØµÙ„ Ø¨Ø­Ø§Ù„Ø©: {asset.Status}.");
 
-        // تحقق من عدم تكرار نفس الشهر
+        // ØªØ­Ù‚Ù‚ Ù…Ù† Ø¹Ø¯Ù… ØªÙƒØ±Ø§Ø± Ù†ÙØ³ Ø§Ù„Ø´Ù‡Ø±
         if (await _db.AssetDepreciations.AnyAsync(d =>
                 d.FixedAssetId == id &&
                 d.PeriodYear   == dto.PeriodYear &&
                 d.PeriodMonth  == dto.PeriodMonth))
-            return BadRequest($"الإهلاك لشهر {dto.PeriodMonth}/{dto.PeriodYear} مرحّل مسبقاً.");
+            return BadRequest($"Ø§Ù„Ø¥Ù‡Ù„Ø§Ùƒ Ù„Ø´Ù‡Ø± {dto.PeriodMonth}/{dto.PeriodYear} Ù…Ø±Ø­Ù‘Ù„ Ù…Ø³Ø¨Ù‚Ø§Ù‹.");
 
-        // حساب مبلغ الإهلاك
+        // Ø­Ø³Ø§Ø¨ Ù…Ø¨Ù„Øº Ø§Ù„Ø¥Ù‡Ù„Ø§Ùƒ
         var amount = dto.OverrideAmount ?? CalcStraightLineMonthly(asset);
-        // لا يتجاوز القيمة الدفترية - القيمة التخريدية
+        // Ù„Ø§ ÙŠØªØ¬Ø§ÙˆØ² Ø§Ù„Ù‚ÙŠÙ…Ø© Ø§Ù„Ø¯ÙØªØ±ÙŠØ© - Ø§Ù„Ù‚ÙŠÙ…Ø© Ø§Ù„ØªØ®Ø±ÙŠØ¯ÙŠØ©
         var remaining = asset.PurchaseCost - asset.AccumulatedDepreciation - asset.SalvageValue;
-        if (remaining <= 0) return BadRequest("الأصل مستهلك بالكامل ولا يوجد مبلغ للإهلاك.");
+        if (remaining <= 0) return BadRequest("Ø§Ù„Ø£ØµÙ„ Ù…Ø³ØªÙ‡Ù„Ùƒ Ø¨Ø§Ù„ÙƒØ§Ù…Ù„ ÙˆÙ„Ø§ ÙŠÙˆØ¬Ø¯ Ù…Ø¨Ù„Øº Ù„Ù„Ø¥Ù‡Ù„Ø§Ùƒ.");
         amount = Math.Min(amount, remaining);
 
         var accumBefore = asset.AccumulatedDepreciation;
         var accumAfter  = accumBefore + amount;
 
-        // توليد رقم مستند
+        // ØªÙˆÙ„ÙŠØ¯ Ø±Ù‚Ù… Ù…Ø³ØªÙ†Ø¯
         var depNo = await _seq.NextAsync("DEP", async (db, pattern) =>
         {
             var max = await db.AssetDepreciations
@@ -409,7 +410,7 @@ public class FixedAssetsController : ControllerBase
             CreatedByUserId    = UserId
         };
 
-        // تحديث مجمع الإهلاك على الأصل
+        // ØªØ­Ø¯ÙŠØ« Ù…Ø¬Ù…Ø¹ Ø§Ù„Ø¥Ù‡Ù„Ø§Ùƒ Ø¹Ù„Ù‰ Ø§Ù„Ø£ØµÙ„
         asset.AccumulatedDepreciation = accumAfter;
         if (asset.PurchaseCost - accumAfter <= asset.SalvageValue)
             asset.Status = AssetStatus.FullyDepreciated;
@@ -417,7 +418,7 @@ public class FixedAssetsController : ControllerBase
 
         _db.AssetDepreciations.Add(dep);
 
-        // ── قيد محاسبي ───────────────────────────────────
+        // â”€â”€ Ù‚ÙŠØ¯ Ù…Ø­Ø§Ø³Ø¨ÙŠ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var (_, accumAccId, expenseAccId) = ResolveAccounts(asset, asset.Category);
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         
@@ -440,15 +441,15 @@ public class FixedAssetsController : ControllerBase
             EntryDate       = dto.DepreciationDate,
             Type            = JournalEntryType.AssetDepreciation,
             Status          = JournalEntryStatus.Posted,
-            Description     = $"إهلاك [{asset.AssetNumber}] {asset.Name} — {dto.PeriodMonth}/{dto.PeriodYear}",
+            Description     = $"Ø¥Ù‡Ù„Ø§Ùƒ [{asset.AssetNumber}] {asset.Name} â€” {dto.PeriodMonth}/{dto.PeriodYear}",
             Reference       = asset.AssetNumber,
             CostCenter      = costCenter,
             CreatedByUserId = UserId,
             CreatedAt       = TimeHelper.GetEgyptTime(),
             Lines = new List<JournalLine>
             {
-                new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"مصروف إهلاك [{asset.AssetNumber}] — {asset.Name}", CostCenter = costCenter, CreatedAt = TimeHelper.GetEgyptTime() },
-                new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"مجمع إهلاك [{asset.AssetNumber}] — {asset.Name}",   CostCenter = costCenter, CreatedAt = TimeHelper.GetEgyptTime() }
+                new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"Ù…ØµØ±ÙˆÙ Ø¥Ù‡Ù„Ø§Ùƒ [{asset.AssetNumber}] â€” {asset.Name}", CostCenter = costCenter, CreatedAt = TimeHelper.GetEgyptTime() },
+                new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"Ù…Ø¬Ù…Ø¹ Ø¥Ù‡Ù„Ø§Ùƒ [{asset.AssetNumber}] â€” {asset.Name}",   CostCenter = costCenter, CreatedAt = TimeHelper.GetEgyptTime() }
             }
         };
         _db.JournalEntries.Add(je);
@@ -461,7 +462,7 @@ public class FixedAssetsController : ControllerBase
         return Ok(new { id = dep.Id, depreciationNumber = dep.DepreciationNumber, amount, journalEntryId = je?.Id });
     }
 
-    // POST /api/fixed-assets/depreciations/run-batch  — ترحيل إهلاك شهري لجميع الأصول النشطة
+    // POST /api/fixed-assets/depreciations/run-batch  â€” ØªØ±Ø­ÙŠÙ„ Ø¥Ù‡Ù„Ø§Ùƒ Ø´Ù‡Ø±ÙŠ Ù„Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø£ØµÙˆÙ„ Ø§Ù„Ù†Ø´Ø·Ø©
     [HttpPost("depreciations/run-batch")]
     public async Task<IActionResult> RunBatchDepreciation([FromBody] RunBatchDepreciationDto dto)
     {
@@ -477,7 +478,7 @@ public class FixedAssetsController : ControllerBase
 
         foreach (var asset in assets)
         {
-            // تحقق من عدم تكرار
+            // ØªØ­Ù‚Ù‚ Ù…Ù† Ø¹Ø¯Ù… ØªÙƒØ±Ø§Ø±
             if (await _db.AssetDepreciations.AnyAsync(d =>
                     d.FixedAssetId == asset.Id &&
                     d.PeriodYear   == dto.PeriodYear &&
@@ -515,7 +516,7 @@ public class FixedAssetsController : ControllerBase
                 AccumulatedBefore  = accumBefore,
                 AccumulatedAfter   = accumAfter,
                 BookValueAfter     = asset.PurchaseCost - accumAfter,
-                Notes              = $"إهلاك دفعي — {dto.PeriodMonth}/{dto.PeriodYear}",
+                Notes              = $"Ø¥Ù‡Ù„Ø§Ùƒ Ø¯ÙØ¹ÙŠ â€” {dto.PeriodMonth}/{dto.PeriodYear}",
                 CreatedAt          = TimeHelper.GetEgyptTime(),
                 CreatedByUserId    = UserId
             };
@@ -527,11 +528,11 @@ public class FixedAssetsController : ControllerBase
 
             _db.AssetDepreciations.Add(dep);
 
-            // قيد محاسبي
+            // Ù‚ÙŠØ¯ Ù…Ø­Ø§Ø³Ø¨ÙŠ
             var (_, accumAccId, expenseAccId) = ResolveAccounts(asset, asset.Category);
             var batchSource = ResolveCostCenter(asset, asset.Category);
             
-            // جلب الربط العام في حال عدم وجود ربط مخصص للأصل/الفئة
+            // Ø¬Ù„Ø¨ Ø§Ù„Ø±Ø¨Ø· Ø§Ù„Ø¹Ø§Ù… ÙÙŠ Ø­Ø§Ù„ Ø¹Ø¯Ù… ÙˆØ¬ÙˆØ¯ Ø±Ø¨Ø· Ù…Ø®ØµØµ Ù„Ù„Ø£ØµÙ„/Ø§Ù„ÙØ¦Ø©
             var mapDict = await _core.GetSafeSystemMappingsAsync();
             var finalAccumAcc   = accumAccId   ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.AccumulatedDepreciation, mapDict);
             var finalExpenseAcc = expenseAccId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.DepreciationExpense, mapDict);
@@ -553,15 +554,15 @@ public class FixedAssetsController : ControllerBase
                     EntryDate       = dto.AsOfDate,
                     Type            = JournalEntryType.AssetDepreciation,
                     Status          = JournalEntryStatus.Posted,
-                    Description     = $"إهلاك دفعي [{asset.AssetNumber}] {asset.Name} — {dto.PeriodMonth}/{dto.PeriodYear}",
+                    Description     = $"Ø¥Ù‡Ù„Ø§Ùƒ Ø¯ÙØ¹ÙŠ [{asset.AssetNumber}] {asset.Name} â€” {dto.PeriodMonth}/{dto.PeriodYear}",
                     Reference       = asset.AssetNumber,
                     CostCenter      = batchSource,
                     CreatedByUserId = UserId,
                     CreatedAt       = TimeHelper.GetEgyptTime(),
                     Lines = new List<JournalLine>
                     {
-                        new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"مصروف إهلاك [{asset.AssetNumber}] — {asset.Name}", CostCenter = batchSource, CreatedAt = TimeHelper.GetEgyptTime() },
-                        new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"مجمع إهلاك [{asset.AssetNumber}] — {asset.Name}",   CostCenter = batchSource, CreatedAt = TimeHelper.GetEgyptTime() }
+                        new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"Ù…ØµØ±ÙˆÙ Ø¥Ù‡Ù„Ø§Ùƒ [{asset.AssetNumber}] â€” {asset.Name}", CostCenter = batchSource, CreatedAt = TimeHelper.GetEgyptTime() },
+                        new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"Ù…Ø¬Ù…Ø¹ Ø¥Ù‡Ù„Ø§Ùƒ [{asset.AssetNumber}] â€” {asset.Name}",   CostCenter = batchSource, CreatedAt = TimeHelper.GetEgyptTime() }
                     }
                 };
                 _db.JournalEntries.Add(je);
@@ -577,9 +578,9 @@ public class FixedAssetsController : ControllerBase
         return Ok(new { posted, skipped, details });
     }
 
-    // ══════════════════════════════════════════════════
-    // تبويبة الاستبعادات
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ØªØ¨ÙˆÙŠØ¨Ø© Ø§Ù„Ø§Ø³ØªØ¨Ø¹Ø§Ø¯Ø§Øª
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     // GET /api/fixed-assets/{id}/disposal
     [HttpGet("{id}/disposal")]
@@ -592,7 +593,7 @@ public class FixedAssetsController : ControllerBase
         return Ok(ToDisDto(dis, dis.FixedAsset.Name));
     }
 
-    // GET /api/fixed-assets/disposals  — كل الاستبعادات
+    // GET /api/fixed-assets/disposals  â€” ÙƒÙ„ Ø§Ù„Ø§Ø³ØªØ¨Ø¹Ø§Ø¯Ø§Øª
     [HttpGet("disposals")]
     public async Task<IActionResult> GetAllDisposals(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
@@ -614,7 +615,7 @@ public class FixedAssetsController : ControllerBase
     public async Task<IActionResult> Dispose(int id, [FromBody] PostDisposalDto dto)
     {
         if (dto.FixedAssetId != id)
-            return BadRequest("معرّف الأصل غير متطابق.");
+            return BadRequest("Ù…Ø¹Ø±Ù‘Ù Ø§Ù„Ø£ØµÙ„ ØºÙŠØ± Ù…ØªØ·Ø§Ø¨Ù‚.");
 
         var asset = await _db.FixedAssets
             .Include(a => a.Category)
@@ -622,11 +623,11 @@ public class FixedAssetsController : ControllerBase
             .FirstOrDefaultAsync(a => a.Id == id);
         if (asset == null) return NotFound();
         if (asset.Status == AssetStatus.Disposed)
-            return BadRequest("الأصل مستبعد بالفعل.");
+            return BadRequest("Ø§Ù„Ø£ØµÙ„ Ù…Ø³ØªØ¨Ø¹Ø¯ Ø¨Ø§Ù„ÙØ¹Ù„.");
         if (asset.Disposals.Any())
-            return BadRequest("يوجد مستند استبعاد مسبق لهذا الأصل.");
+            return BadRequest("ÙŠÙˆØ¬Ø¯ Ù…Ø³ØªÙ†Ø¯ Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ Ù…Ø³Ø¨Ù‚ Ù„Ù‡Ø°Ø§ Ø§Ù„Ø£ØµÙ„.");
 
-        // أرقام وقت الاستبعاد
+        // Ø£Ø±Ù‚Ø§Ù… ÙˆÙ‚Øª Ø§Ù„Ø§Ø³ØªØ¨Ø¹Ø§Ø¯
         var bookValue   = asset.PurchaseCost - asset.AccumulatedDepreciation;
         var accumAtDis  = asset.AccumulatedDepreciation;
 
@@ -664,7 +665,7 @@ public class FixedAssetsController : ControllerBase
 
         _db.AssetDisposals.Add(disposal);
 
-        // ── قيد محاسبي ────────────────────────────────────
+        // â”€â”€ Ù‚ÙŠØ¯ Ù…Ø­Ø§Ø³Ø¨ÙŠ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var (assetAccId, accumAccId, _) = ResolveAccounts(asset, asset.Category);
         JournalEntry? je = null;
 
@@ -689,7 +690,7 @@ public class FixedAssetsController : ControllerBase
                 EntryDate       = dto.DisposalDate,
                 Type            = JournalEntryType.AssetDisposal,
                 Status          = JournalEntryStatus.Posted,
-                Description     = $"استبعاد {asset.Name} ({dto.DisposalType})",
+                Description     = $"Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ {asset.Name} ({dto.DisposalType})",
                 Reference       = disNo,
                 CostCenter      = ResolveCostCenter(asset, asset.Category),
                 CreatedByUserId = UserId,
@@ -697,24 +698,24 @@ public class FixedAssetsController : ControllerBase
                 Lines           = new List<JournalLine>()
             };
 
-            // مدين: مجمع الإهلاك
+            // Ù…Ø¯ÙŠÙ†: Ù…Ø¬Ù…Ø¹ Ø§Ù„Ø¥Ù‡Ù„Ø§Ùƒ
             if (accumAtDis > 0)
-                je.Lines.Add(new() { AccountId = accumAccId.Value, Debit = accumAtDis, Credit = 0, Description = "مجمع إهلاك — استبعاد" });
+                je.Lines.Add(new() { AccountId = accumAccId.Value, Debit = accumAtDis, Credit = 0, Description = "Ù…Ø¬Ù…Ø¹ Ø¥Ù‡Ù„Ø§Ùƒ â€” Ø§Ø³ØªØ¨Ø¹Ø§Ø¯" });
 
-            // مدين: المتحصلات (إن كانت > 0)
+            // Ù…Ø¯ÙŠÙ†: Ø§Ù„Ù…ØªØ­ØµÙ„Ø§Øª (Ø¥Ù† ÙƒØ§Ù†Øª > 0)
             if (dto.SaleProceeds > 0 && dto.ProceedsAccountId.HasValue)
-                je.Lines.Add(new() { AccountId = dto.ProceedsAccountId.Value, Debit = dto.SaleProceeds, Credit = 0, Description = "متحصلات الاستبعاد" });
+                je.Lines.Add(new() { AccountId = dto.ProceedsAccountId.Value, Debit = dto.SaleProceeds, Credit = 0, Description = "Ù…ØªØ­ØµÙ„Ø§Øª Ø§Ù„Ø§Ø³ØªØ¨Ø¹Ø§Ø¯" });
 
-            // مدين: خسارة الاستبعاد (إن وجدت)
+            // Ù…Ø¯ÙŠÙ†: Ø®Ø³Ø§Ø±Ø© Ø§Ù„Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ (Ø¥Ù† ÙˆØ¬Ø¯Øª)
             if (gainLoss < 0 && lossAccId.HasValue)
-                je.Lines.Add(new() { AccountId = lossAccId.Value, Debit = Math.Abs(gainLoss), Credit = 0, Description = "خسارة استبعاد أصل" });
+                je.Lines.Add(new() { AccountId = lossAccId.Value, Debit = Math.Abs(gainLoss), Credit = 0, Description = "Ø®Ø³Ø§Ø±Ø© Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ Ø£ØµÙ„" });
 
-            // دائن: الأصل بتكلفته الأصلية
-            je.Lines.Add(new() { AccountId = assetAccId.Value, Debit = 0, Credit = asset.PurchaseCost, Description = $"استبعاد {asset.Name}" });
+            // Ø¯Ø§Ø¦Ù†: Ø§Ù„Ø£ØµÙ„ Ø¨ØªÙƒÙ„ÙØªÙ‡ Ø§Ù„Ø£ØµÙ„ÙŠØ©
+            je.Lines.Add(new() { AccountId = assetAccId.Value, Debit = 0, Credit = asset.PurchaseCost, Description = $"Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ {asset.Name}" });
 
-            // دائن: ربح الاستبعاد (إن وجد)
+            // Ø¯Ø§Ø¦Ù†: Ø±Ø¨Ø­ Ø§Ù„Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ (Ø¥Ù† ÙˆØ¬Ø¯)
             if (gainLoss > 0 && gainAccId.HasValue)
-                je.Lines.Add(new() { AccountId = gainAccId.Value, Debit = 0, Credit = gainLoss, Description = "ربح استبعاد أصل" });
+                je.Lines.Add(new() { AccountId = gainAccId.Value, Debit = 0, Credit = gainLoss, Description = "Ø±Ø¨Ø­ Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ Ø£ØµÙ„" });
 
             _db.JournalEntries.Add(je);
         }
@@ -727,7 +728,7 @@ public class FixedAssetsController : ControllerBase
         return Ok(new { id = disposal.Id, disposalNumber = disposal.DisposalNumber, journalEntryId = je?.Id });
     }
 
-    // ─── mapping helpers ──────────────────────────────
+    // â”€â”€â”€ mapping helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private static FixedAssetDto ToDto(FixedAsset a) => new(
         a.Id, a.AssetNumber, a.Name, a.Description,
@@ -764,9 +765,10 @@ public class FixedAssetsController : ControllerBase
     );
 }
 
-// DTO خاص بالدفعة الشهرية
+// DTO Ø®Ø§Øµ Ø¨Ø§Ù„Ø¯ÙØ¹Ø© Ø§Ù„Ø´Ù‡Ø±ÙŠØ©
 public record RunBatchDepreciationDto(
     int      PeriodYear,
     int      PeriodMonth,
     DateTime AsOfDate
 );
+

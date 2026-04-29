@@ -1,3 +1,5 @@
+﻿using Sportive.API.Models;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.Services;
@@ -7,28 +9,28 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager")]
+[RequirePermission(ModuleKeys.Coupons, requireEdit: true)]
 public class CouponsController : ControllerBase
 {
     private readonly ICouponService _coupons;
     public CouponsController(ICouponService coupons) => _coupons = coupons;
 
-    /// <summary>التحقق من كوبون خصم (public)</summary>
+    /// <summary>Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† ÙƒÙˆØ¨ÙˆÙ† Ø®ØµÙ… (public)</summary>
     [HttpPost("validate")]
     [AllowAnonymous]
     public async Task<IActionResult> Validate([FromBody] ApplyCouponRequest req)
     {
         var (valid, discount, error) = await _coupons.ValidateAsync(req.Code, req.OrderTotal);
         if (!valid) return BadRequest(new { message = error });
-        return Ok(new { discount, message = $"تم تطبيق خصم {discount:N2} ج.م" });
+        return Ok(new { discount, message = $"ØªÙ… ØªØ·Ø¨ÙŠÙ‚ Ø®ØµÙ… {discount:N2} Ø¬.Ù…" });
     }
 
-    /// <summary>كل الكوبونات (Admin)</summary>
+    /// <summary>ÙƒÙ„ Ø§Ù„ÙƒÙˆØ¨ÙˆÙ†Ø§Øª (Admin)</summary>
     [HttpGet]
     public async Task<IActionResult> GetAll() =>
         Ok(await _coupons.GetAllAsync());
 
-    /// <summary>إضافة كوبون جديد (Admin)</summary>
+    /// <summary>Ø¥Ø¶Ø§ÙØ© ÙƒÙˆØ¨ÙˆÙ† Ø¬Ø¯ÙŠØ¯ (Admin)</summary>
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateCouponDto dto)
     {
@@ -36,7 +38,7 @@ public class CouponsController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
-    /// <summary>تعديل كوبون (Admin)</summary>
+    /// <summary>ØªØ¹Ø¯ÙŠÙ„ ÙƒÙˆØ¨ÙˆÙ† (Admin)</summary>
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] CreateCouponDto dto)
     {
@@ -48,18 +50,19 @@ public class CouponsController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
-    /// <summary>تفعيل/إيقاف كوبون (Admin)</summary>
+    /// <summary>ØªÙØ¹ÙŠÙ„/Ø¥ÙŠÙ‚Ø§Ù ÙƒÙˆØ¨ÙˆÙ† (Admin)</summary>
     [HttpPatch("{id}/toggle")]
     public async Task<IActionResult> Toggle(int id) =>
         await _coupons.ToggleAsync(id) ? Ok() : NotFound();
 
-    /// <summary>تعطيل كوبون (Admin)</summary>
+    /// <summary>ØªØ¹Ø·ÙŠÙ„ ÙƒÙˆØ¨ÙˆÙ† (Admin)</summary>
     [HttpPatch("{id}/deactivate")]
     public async Task<IActionResult> Deactivate(int id) =>
         await _coupons.DeactivateAsync(id) ? Ok() : NotFound();
 
-    /// <summary>حذف كوبون (Admin)</summary>
+    /// <summary>Ø­Ø°Ù ÙƒÙˆØ¨ÙˆÙ† (Admin)</summary>
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id) =>
         await _coupons.DeleteAsync(id) ? Ok() : NotFound();
 }
+

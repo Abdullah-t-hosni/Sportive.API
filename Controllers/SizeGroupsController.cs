@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -8,7 +9,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager")]
+[RequirePermission(ModuleKeys.ProductsGroup, requireEdit: true)]
 public class SizeGroupsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -66,3 +67,4 @@ public class SizeGroupsController : ControllerBase
         return NoContent();
     }
 }
+

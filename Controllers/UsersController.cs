@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -9,7 +10,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[RequirePermission(ModuleKeys.Staff, requireEdit: true)]
 public class UsersController : ControllerBase
 {
     private readonly UserManager<AppUser> _userManager;
@@ -23,7 +24,7 @@ public class UsersController : ControllerBase
         _db = db;
     }
 
-    // ── Get All Users (with Roles) ───────────────────────────
+    // â”€â”€ Get All Users (with Roles) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     [HttpGet]
     public async Task<IActionResult> GetAllUsers([FromQuery] string? search = null, [FromQuery] string? role = null)
     {
@@ -63,13 +64,13 @@ public class UsersController : ControllerBase
         return Ok(grouped.OrderByDescending(u => u.createdAt));
     }
 
-    // ── Update User Basic Info ──────────────────────────────
+    // â”€â”€ Update User Basic Info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public record UpdateUserDto(string FullName, string Email, string? Phone, bool? IsActive);
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateUser(string id, [FromBody] UpdateUserDto dto)
     {
         var user = await _userManager.FindByIdAsync(id);
-        if (user == null) return NotFound(new { message = "المستخدم غير موجود" });
+        if (user == null) return NotFound(new { message = "Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
 
         user.FullName    = dto.FullName;
         user.Email       = dto.Email;
@@ -80,36 +81,36 @@ public class UsersController : ControllerBase
         var result = await _userManager.UpdateAsync(user);
         if (!result.Succeeded) return BadRequest(result.Errors);
 
-        return Ok(new { message = "تم تحديث بيانات المستخدم بنجاح" });
+        return Ok(new { message = "ØªÙ… ØªØ­Ø¯ÙŠØ« Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ø¨Ù†Ø¬Ø§Ø­" });
     }
 
-    // ── Reset Password (ADMIN OVERRIDE) ────────────────────
+    // â”€â”€ Reset Password (ADMIN OVERRIDE) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public record ResetPasswordDto(string NewPassword);
     [HttpPost("{id}/reset-password")]
     public async Task<IActionResult> ResetPassword(string id, [FromBody] ResetPasswordDto dto)
     {
         var user = await _userManager.FindByIdAsync(id);
-        if (user == null) return NotFound(new { message = "المستخدم غير موجود" });
+        if (user == null) return NotFound(new { message = "Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
 
-        if (string.IsNullOrWhiteSpace(dto.NewPassword)) return BadRequest(new { message = "كلمة المرور لا يمكن أن تكون فارغة" });
+        if (string.IsNullOrWhiteSpace(dto.NewPassword)) return BadRequest(new { message = "ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ± Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø£Ù† ØªÙƒÙˆÙ† ÙØ§Ø±ØºØ©" });
 
-        // 🛡️ STRATEGY: Hard override by removing and adding password
+        // ðŸ›¡ï¸ STRATEGY: Hard override by removing and adding password
         await _userManager.RemovePasswordAsync(user);
         var result = await _userManager.AddPasswordAsync(user, dto.NewPassword);
 
         if (!result.Succeeded) 
-            return BadRequest(new { message = "فشل تغيير كلمة المرور", errors = result.Errors.Select(e => e.Description) });
+            return BadRequest(new { message = "ÙØ´Ù„ ØªØºÙŠÙŠØ± ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±", errors = result.Errors.Select(e => e.Description) });
 
-        return Ok(new { message = "تم تغيير كلمة المرور بنجاح" });
+        return Ok(new { message = "ØªÙ… ØªØºÙŠÙŠØ± ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ± Ø¨Ù†Ø¬Ø§Ø­" });
     }
 
-    // ── Update User Roles ───────────────────────────────────
+    // â”€â”€ Update User Roles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public record UpdateRolesDto(List<string> Roles);
     [HttpPut("{id}/roles")]
     public async Task<IActionResult> UpdateRoles(string id, [FromBody] UpdateRolesDto dto)
     {
         var user = await _userManager.FindByIdAsync(id);
-        if (user == null) return NotFound(new { message = "المستخدم غير موجود" });
+        if (user == null) return NotFound(new { message = "Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
 
         var currentRoles = await _userManager.GetRolesAsync(user);
         await _userManager.RemoveFromRolesAsync(user, currentRoles);
@@ -124,15 +125,15 @@ public class UsersController : ControllerBase
         var result = await _userManager.AddToRolesAsync(user, dto.Roles);
         if (!result.Succeeded) return BadRequest(result.Errors);
 
-        return Ok(new { message = "تم تحديث الصلاحيات بنجاح" });
+        return Ok(new { message = "ØªÙ… ØªØ­Ø¯ÙŠØ« Ø§Ù„ØµÙ„Ø§Ø­ÙŠØ§Øª Ø¨Ù†Ø¬Ø§Ø­" });
     }
 
-    // ── Delete User ───────────────────────────────────────── (Soft delete/Deactivate or Hard Delete)
+    // â”€â”€ Delete User â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ (Soft delete/Deactivate or Hard Delete)
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteUser(string id, [FromQuery] bool permanent = false)
     {
         var user = await _userManager.FindByIdAsync(id);
-        if (user == null) return NotFound(new { message = "المستخدم غير موجود / User not found" });
+        if (user == null) return NotFound(new { message = "Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ / User not found" });
 
         if (permanent)
         {
@@ -149,7 +150,7 @@ public class UsersController : ControllerBase
                 if (hasOrders)
                 {
                     return BadRequest(new { 
-                        message = "لا يمكن حذف هذا المستخدم نهائياً لوجود طلبات مرتبطة به. برجاء تعطيل الحساب بدلاً من الحذف الزائد.",
+                        message = "Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ù‡Ø°Ø§ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ù†Ù‡Ø§Ø¦ÙŠØ§Ù‹ Ù„ÙˆØ¬ÙˆØ¯ Ø·Ù„Ø¨Ø§Øª Ù…Ø±ØªØ¨Ø·Ø© Ø¨Ù‡. Ø¨Ø±Ø¬Ø§Ø¡ ØªØ¹Ø·ÙŠÙ„ Ø§Ù„Ø­Ø³Ø§Ø¨ Ø¨Ø¯Ù„Ø§Ù‹ Ù…Ù† Ø§Ù„Ø­Ø°Ù Ø§Ù„Ø²Ø§Ø¦Ø¯.",
                         details = "This user has order history and cannot be permanently deleted due to database integrity. Use 'Deactivate' (Soft Delete) instead." 
                     });
                 }
@@ -170,6 +171,7 @@ public class UsersController : ControllerBase
             if (!result.Succeeded) return BadRequest(result.Errors);
         }
 
-        return Ok(new { message = "تم حذف المستخدم بنجاح / Operation successful" });
+        return Ok(new { message = "ØªÙ… Ø­Ø°Ù Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ø¨Ù†Ø¬Ø§Ø­ / Operation successful" });
     }
 }
+

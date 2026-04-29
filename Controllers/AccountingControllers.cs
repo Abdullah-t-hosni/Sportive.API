@@ -1,6 +1,7 @@
+﻿using Sportive.API.Attributes;
 // ============================================================
 // Controllers/AccountingControllers.cs
-// تم دمج ملفات المحاسبة واستعادة المحتوى مع تصحيح الـ Double Counting
+// ØªÙ… Ø¯Ù…Ø¬ Ù…Ù„ÙØ§Øª Ø§Ù„Ù…Ø­Ø§Ø³Ø¨Ø© ÙˆØ§Ø³ØªØ¹Ø§Ø¯Ø© Ø§Ù„Ù…Ø­ØªÙˆÙ‰ Ù…Ø¹ ØªØµØ­ÙŠØ­ Ø§Ù„Ù€ Double Counting
 // ============================================================
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -16,9 +17,9 @@ using ClosedXML.Excel;
 
 namespace Sportive.API.Controllers;
 
-// 1. ACCOUNTS (دليل الحسابات)
+// 1. ACCOUNTS (Ø¯Ù„ÙŠÙ„ Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª)
 [ApiController, Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Accountant")]
+[RequirePermission(ModuleKeys.AccountingMain)]
 public class AccountsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -60,10 +61,10 @@ public class AccountsController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateAccountDto dto)
     {
         if (await _db.Accounts.AnyAsync(a => a.Code == dto.Code))
-            return BadRequest("كود الحساب موجود مسبقاً.");
+            return BadRequest("ÙƒÙˆØ¯ Ø§Ù„Ø­Ø³Ø§Ø¨ Ù…ÙˆØ¬ÙˆØ¯ Ù…Ø³Ø¨Ù‚Ø§Ù‹.");
 
         if (dto.OpeningBalance != 0 && !dto.IsLeaf)
-            return BadRequest("لا يمكن إضافة رصيد افتتاحي لحساب أب. الأرصدة الافتتاحية تضاف للحسابات النهائية فقط.");
+            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø¥Ø¶Ø§ÙØ© Ø±ØµÙŠØ¯ Ø§ÙØªØªØ§Ø­ÙŠ Ù„Ø­Ø³Ø§Ø¨ Ø£Ø¨. Ø§Ù„Ø£Ø±ØµØ¯Ø© Ø§Ù„Ø§ÙØªØªØ§Ø­ÙŠØ© ØªØ¶Ø§Ù Ù„Ù„Ø­Ø³Ø§Ø¨Ø§Øª Ø§Ù„Ù†Ù‡Ø§Ø¦ÙŠØ© ÙÙ‚Ø·.");
 
         var account = new Account
         {
@@ -93,7 +94,7 @@ public class AccountsController : ControllerBase
         if (account == null) return NotFound();
 
         if (dto.OpeningBalance != 0 && !account.IsLeaf)
-            return BadRequest("لا يمكن إضافة رصيد افتتاحي لحساب أب.");
+            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø¥Ø¶Ø§ÙØ© Ø±ØµÙŠØ¯ Ø§ÙØªØªØ§Ø­ÙŠ Ù„Ø­Ø³Ø§Ø¨ Ø£Ø¨.");
 
         account.NameAr            = dto.NameAr;
         account.NameEn            = dto.NameEn;
@@ -113,7 +114,7 @@ public class AccountsController : ControllerBase
         if (account == null) return NotFound();
 
         if (await _db.JournalLines.AnyAsync(l => l.AccountId == id))
-            return BadRequest("لا يمكن حذف حساب يحتوي على حركات مالية.");
+            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ø­Ø³Ø§Ø¨ ÙŠØ­ØªÙˆÙŠ Ø¹Ù„Ù‰ Ø­Ø±ÙƒØ§Øª Ù…Ø§Ù„ÙŠØ©.");
 
         _db.Accounts.Remove(account);
         await _db.SaveChangesAsync();
@@ -126,10 +127,10 @@ public class AccountsController : ControllerBase
         var accounts = await _db.Accounts.Where(a => a.AllowPosting && a.IsActive).OrderBy(a => a.Code).ToListAsync();
 
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("الأرصدة الافتتاحية");
+        var ws = wb.Worksheets.Add("Ø§Ù„Ø£Ø±ØµØ¯Ø© Ø§Ù„Ø§ÙØªØªØ§Ø­ÙŠØ©");
         ws.RightToLeft = true;
 
-        var headers = new[] { "كود الحساب *", "اسم الحساب", "الرصيد الافتتاحي *", "الطبيعة", "النوع" };
+        var headers = new[] { "ÙƒÙˆØ¯ Ø§Ù„Ø­Ø³Ø§Ø¨ *", "Ø§Ø³Ù… Ø§Ù„Ø­Ø³Ø§Ø¨", "Ø§Ù„Ø±ØµÙŠØ¯ Ø§Ù„Ø§ÙØªØªØ§Ø­ÙŠ *", "Ø§Ù„Ø·Ø¨ÙŠØ¹Ø©", "Ø§Ù„Ù†ÙˆØ¹" };
         for (int c = 0; c < headers.Length; c++)
         {
             var cell = ws.Cell(1, c + 1);
@@ -145,7 +146,7 @@ public class AccountsController : ControllerBase
             ws.Cell(row, 1).Value = a.Code;
             ws.Cell(row, 2).Value = a.NameAr;
             ws.Cell(row, 3).Value = a.OpeningBalance;
-            ws.Cell(row, 4).Value = a.Nature == AccountNature.Debit ? "مدين" : "دائن";
+            ws.Cell(row, 4).Value = a.Nature == AccountNature.Debit ? "Ù…Ø¯ÙŠÙ†" : "Ø¯Ø§Ø¦Ù†";
             ws.Cell(row, 5).Value = a.Type.ToString();
             
             // Format existing data to look like reference
@@ -166,7 +167,7 @@ public class AccountsController : ControllerBase
     [HttpPost("import-opening-balances")]
     public async Task<IActionResult> ImportOpeningBalances(IFormFile file)
     {
-        if (file == null || file.Length == 0) return BadRequest(new { message = "لم يتم رفع ملف" });
+        if (file == null || file.Length == 0) return BadRequest(new { message = "Ù„Ù… ÙŠØªÙ… Ø±ÙØ¹ Ù…Ù„Ù" });
 
         var successCount = 0;
         var errors = new List<string>();
@@ -175,7 +176,7 @@ public class AccountsController : ControllerBase
         {
             using var stream = file.OpenReadStream();
             using var wb = new XLWorkbook(stream);
-            var ws = wb.Worksheets.FirstOrDefault() ?? throw new Exception("الملف فارغ");
+            var ws = wb.Worksheets.FirstOrDefault() ?? throw new Exception("Ø§Ù„Ù…Ù„Ù ÙØ§Ø±Øº");
             var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
 
             var allAccounts = await _db.Accounts.ToListAsync();
@@ -200,11 +201,11 @@ public class AccountsController : ControllerBase
                 return -1;
             }
 
-            int colCode = GetCol("كود الحساب", "Code", "Account Code", "كود");
-            int colBal  = GetCol("الرصيد", "Balance", "Opening Balance", "الرصيد الافتتاحي");
+            int colCode = GetCol("ÙƒÙˆØ¯ Ø§Ù„Ø­Ø³Ø§Ø¨", "Code", "Account Code", "ÙƒÙˆØ¯");
+            int colBal  = GetCol("Ø§Ù„Ø±ØµÙŠØ¯", "Balance", "Opening Balance", "Ø§Ù„Ø±ØµÙŠØ¯ Ø§Ù„Ø§ÙØªØªØ§Ø­ÙŠ");
 
             if (colCode == -1 || colBal == -1)
-                return BadRequest(new { message = "الأعمدة الإلزامية (كود الحساب، الرصيد) غير موجودة." });
+                return BadRequest(new { message = "Ø§Ù„Ø£Ø¹Ù…Ø¯Ø© Ø§Ù„Ø¥Ù„Ø²Ø§Ù…ÙŠØ© (ÙƒÙˆØ¯ Ø§Ù„Ø­Ø³Ø§Ø¨ØŒ Ø§Ù„Ø±ØµÙŠØ¯) ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©." });
 
             for (int r = 2; r <= lastRow; r++)
             {
@@ -214,20 +215,20 @@ public class AccountsController : ControllerBase
                 var balStr = ws.Cell(r, colBal).GetString().Trim();
                 if (!decimal.TryParse(balStr, out var balance))
                 {
-                    errors.Add($"سطر {r}: الرصيد غير صحيح للحساب '{code}'");
+                    errors.Add($"Ø³Ø·Ø± {r}: Ø§Ù„Ø±ØµÙŠØ¯ ØºÙŠØ± ØµØ­ÙŠØ­ Ù„Ù„Ø­Ø³Ø§Ø¨ '{code}'");
                     continue;
                 }
 
                 var account = allAccounts.FirstOrDefault(a => a.Code == code);
                 if (account == null)
                 {
-                    errors.Add($"سطر {r}: كود الحساب '{code}' غير موجود");
+                    errors.Add($"Ø³Ø·Ø± {r}: ÙƒÙˆØ¯ Ø§Ù„Ø­Ø³Ø§Ø¨ '{code}' ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯");
                     continue;
                 }
 
                 if (!account.IsLeaf)
                 {
-                    errors.Add($"سطر {r}: الحساب '{code}' ليس حساباً فرعياً (Leaf)..");
+                    errors.Add($"Ø³Ø·Ø± {r}: Ø§Ù„Ø­Ø³Ø§Ø¨ '{code}' Ù„ÙŠØ³ Ø­Ø³Ø§Ø¨Ø§Ù‹ ÙØ±Ø¹ÙŠØ§Ù‹ (Leaf)..");
                     continue;
                 }
 
@@ -241,7 +242,7 @@ public class AccountsController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = $"خطأ في المعالجة: {ex.Message}" });
+            return BadRequest(new { message = $"Ø®Ø·Ø£ ÙÙŠ Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©: {ex.Message}" });
         }
 
         return Ok(new { success = true, successCount, errors });
@@ -253,45 +254,45 @@ public class AccountsController : ControllerBase
         var registry = new List<object>
         {
             // --- Sales & POS ---
-            new { key = MappingKeys.Sales, description = "حساب إيرادات المبيعات (الرئيسي)" },
-            new { key = MappingKeys.SalesReturn, description = "حساب مردودات المبيعات" },
-            new { key = MappingKeys.SalesDiscount, description = "حساب مسموحات وخصومات المبيعات" },
-            new { key = MappingKeys.Customer, description = "حساب وسيط العملاء (المدينون) - افتراضي" },
+            new { key = MappingKeys.Sales, description = "Ø­Ø³Ø§Ø¨ Ø¥ÙŠØ±Ø§Ø¯Ø§Øª Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª (Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠ)" },
+            new { key = MappingKeys.SalesReturn, description = "Ø­Ø³Ø§Ø¨ Ù…Ø±Ø¯ÙˆØ¯Ø§Øª Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª" },
+            new { key = MappingKeys.SalesDiscount, description = "Ø­Ø³Ø§Ø¨ Ù…Ø³Ù…ÙˆØ­Ø§Øª ÙˆØ®ØµÙˆÙ…Ø§Øª Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª" },
+            new { key = MappingKeys.Customer, description = "Ø­Ø³Ø§Ø¨ ÙˆØ³ÙŠØ· Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ (Ø§Ù„Ù…Ø¯ÙŠÙ†ÙˆÙ†) - Ø§ÙØªØ±Ø§Ø¶ÙŠ" },
             
             // --- Cash & Payments (POS) ---
-            new { key = MappingKeys.PosCash, description = "خزينة الكاشير (نقدي)" },
-            new { key = MappingKeys.PosBank, description = "حساب البنك / فيزا (POS)" },
-            new { key = MappingKeys.PosVodafone, description = "فودافون كاش (POS)" },
-            new { key = MappingKeys.PosInstaPay, description = "انستاباي (POS)" },
+            new { key = MappingKeys.PosCash, description = "Ø®Ø²ÙŠÙ†Ø© Ø§Ù„ÙƒØ§Ø´ÙŠØ± (Ù†Ù‚Ø¯ÙŠ)" },
+            new { key = MappingKeys.PosBank, description = "Ø­Ø³Ø§Ø¨ Ø§Ù„Ø¨Ù†Ùƒ / ÙÙŠØ²Ø§ (POS)" },
+            new { key = MappingKeys.PosVodafone, description = "ÙÙˆØ¯Ø§ÙÙˆÙ† ÙƒØ§Ø´ (POS)" },
+            new { key = MappingKeys.PosInstaPay, description = "Ø§Ù†Ø³ØªØ§Ø¨Ø§ÙŠ (POS)" },
             
             // --- Cash & Payments (Website) ---
-            new { key = MappingKeys.WebCash, description = "تحصيلات الموقع (نقدي عند الاستلام)" },
-            new { key = MappingKeys.WebVodafone, description = "فودافون كاش (الموقع)" },
-            new { key = MappingKeys.WebInstaPay, description = "انستاباي (الموقع)" },
+            new { key = MappingKeys.WebCash, description = "ØªØ­ØµÙŠÙ„Ø§Øª Ø§Ù„Ù…ÙˆÙ‚Ø¹ (Ù†Ù‚Ø¯ÙŠ Ø¹Ù†Ø¯ Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…)" },
+            new { key = MappingKeys.WebVodafone, description = "ÙÙˆØ¯Ø§ÙÙˆÙ† ÙƒØ§Ø´ (Ø§Ù„Ù…ÙˆÙ‚Ø¹)" },
+            new { key = MappingKeys.WebInstaPay, description = "Ø§Ù†Ø³ØªØ§Ø¨Ø§ÙŠ (Ø§Ù„Ù…ÙˆÙ‚Ø¹)" },
             
             // --- Purchases & Inventory ---
-            new { key = MappingKeys.Inventory, description = "حساب المخزون (الأصول المتداولة)" },
-            new { key = MappingKeys.InventoryVariance, description = "حساب فروقات جرد المخزون (خسارة/ربح)" },
-            new { key = MappingKeys.Supplier, description = "حساب الموردين (الدائنون) - افتراضي" },
-            new { key = MappingKeys.PurchaseDiscount, description = "حساب الخصم المكتسب (مشتريات)" },
-            new { key = MappingKeys.VatInput, description = "ضريبة المدخلات (مشتريات)" },
-            new { key = MappingKeys.VatOutput, description = "ضريبة المخرجات (مبيعات)" },
-            new { key = MappingKeys.DeliveryRevenue, description = "حساب إيرادات التوصيل" },
-            new { key = MappingKeys.PaymentVoucherCash, description = "الخزينة الافتراضية لسندات الصرف للموردين" },
+            new { key = MappingKeys.Inventory, description = "Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…Ø®Ø²ÙˆÙ† (Ø§Ù„Ø£ØµÙˆÙ„ Ø§Ù„Ù…ØªØ¯Ø§ÙˆÙ„Ø©)" },
+            new { key = MappingKeys.InventoryVariance, description = "Ø­Ø³Ø§Ø¨ ÙØ±ÙˆÙ‚Ø§Øª Ø¬Ø±Ø¯ Ø§Ù„Ù…Ø®Ø²ÙˆÙ† (Ø®Ø³Ø§Ø±Ø©/Ø±Ø¨Ø­)" },
+            new { key = MappingKeys.Supplier, description = "Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…ÙˆØ±Ø¯ÙŠÙ† (Ø§Ù„Ø¯Ø§Ø¦Ù†ÙˆÙ†) - Ø§ÙØªØ±Ø§Ø¶ÙŠ" },
+            new { key = MappingKeys.PurchaseDiscount, description = "Ø­Ø³Ø§Ø¨ Ø§Ù„Ø®ØµÙ… Ø§Ù„Ù…ÙƒØªØ³Ø¨ (Ù…Ø´ØªØ±ÙŠØ§Øª)" },
+            new { key = MappingKeys.VatInput, description = "Ø¶Ø±ÙŠØ¨Ø© Ø§Ù„Ù…Ø¯Ø®Ù„Ø§Øª (Ù…Ø´ØªØ±ÙŠØ§Øª)" },
+            new { key = MappingKeys.VatOutput, description = "Ø¶Ø±ÙŠØ¨Ø© Ø§Ù„Ù…Ø®Ø±Ø¬Ø§Øª (Ù…Ø¨ÙŠØ¹Ø§Øª)" },
+            new { key = MappingKeys.DeliveryRevenue, description = "Ø­Ø³Ø§Ø¨ Ø¥ÙŠØ±Ø§Ø¯Ø§Øª Ø§Ù„ØªÙˆØµÙŠÙ„" },
+            new { key = MappingKeys.PaymentVoucherCash, description = "Ø§Ù„Ø®Ø²ÙŠÙ†Ø© Ø§Ù„Ø§ÙØªØ±Ø§Ø¶ÙŠØ© Ù„Ø³Ù†Ø¯Ø§Øª Ø§Ù„ØµØ±Ù Ù„Ù„Ù…ÙˆØ±Ø¯ÙŠÙ†" },
 
             // --- HR & Payroll ---
-            new { key = MappingKeys.SalaryExpense, description = "حساب مصاريف الرواتب والأجور" },
-            new { key = MappingKeys.SalariesPayable, description = "حساب الرواتب المستحقة" },
-            new { key = MappingKeys.EmployeeAdvances, description = "حساب سلف الموظفين" },
-            new { key = MappingKeys.EmployeeBonuses, description = "حساب مكافآت الموظفين" },
-            new { key = MappingKeys.EmployeeDeductions, description = "حساب جزاءات وخصومات الموظفين (إيراد)" },
+            new { key = MappingKeys.SalaryExpense, description = "Ø­Ø³Ø§Ø¨ Ù…ØµØ§Ø±ÙŠÙ Ø§Ù„Ø±ÙˆØ§ØªØ¨ ÙˆØ§Ù„Ø£Ø¬ÙˆØ±" },
+            new { key = MappingKeys.SalariesPayable, description = "Ø­Ø³Ø§Ø¨ Ø§Ù„Ø±ÙˆØ§ØªØ¨ Ø§Ù„Ù…Ø³ØªØ­Ù‚Ø©" },
+            new { key = MappingKeys.EmployeeAdvances, description = "Ø­Ø³Ø§Ø¨ Ø³Ù„Ù Ø§Ù„Ù…ÙˆØ¸ÙÙŠÙ†" },
+            new { key = MappingKeys.EmployeeBonuses, description = "Ø­Ø³Ø§Ø¨ Ù…ÙƒØ§ÙØ¢Øª Ø§Ù„Ù…ÙˆØ¸ÙÙŠÙ†" },
+            new { key = MappingKeys.EmployeeDeductions, description = "Ø­Ø³Ø§Ø¨ Ø¬Ø²Ø§Ø¡Ø§Øª ÙˆØ®ØµÙˆÙ…Ø§Øª Ø§Ù„Ù…ÙˆØ¸ÙÙŠÙ† (Ø¥ÙŠØ±Ø§Ø¯)" },
 
             // --- Fixed Assets ---
-            new { key = MappingKeys.DepreciationExpense, description = "حساب مصروف الإهلاك" },
-            new { key = MappingKeys.AccumulatedDepreciation, description = "حساب مجمع الإهلاك (أصول ثروات)" },
+            new { key = MappingKeys.DepreciationExpense, description = "Ø­Ø³Ø§Ø¨ Ù…ØµØ±ÙˆÙ Ø§Ù„Ø¥Ù‡Ù„Ø§Ùƒ" },
+            new { key = MappingKeys.AccumulatedDepreciation, description = "Ø­Ø³Ø§Ø¨ Ù…Ø¬Ù…Ø¹ Ø§Ù„Ø¥Ù‡Ù„Ø§Ùƒ (Ø£ØµÙˆÙ„ Ø«Ø±ÙˆØ§Øª)" },
 
             // --- POS Closures ---
-            new { key = MappingKeys.PosDailyClosure, description = "حساب تقفيلات اليومية (POS)" },
+            new { key = MappingKeys.PosDailyClosure, description = "Ø­Ø³Ø§Ø¨ ØªÙ‚ÙÙŠÙ„Ø§Øª Ø§Ù„ÙŠÙˆÙ…ÙŠØ© (POS)" },
         };
         return Ok(registry);
     }
@@ -313,7 +314,7 @@ public class AccountsController : ControllerBase
 
     private async Task<IActionResult> SaveMappingsInternal(Dictionary<string, int?>? body)
     {
-        if (body == null) return BadRequest("بيانات الربط مفقودة.");
+        if (body == null) return BadRequest("Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø±Ø¨Ø· Ù…ÙÙ‚ÙˆØ¯Ø©.");
 
         foreach (var kvp in body)
         {
@@ -340,7 +341,7 @@ public class AccountsController : ControllerBase
         {
             var allAccounts = await _db.Accounts.ToListAsync();
             
-            // 1. 🔥 AUTO-LINK BY CODES 🔥
+            // 1. ðŸ”¥ AUTO-LINK BY CODES ðŸ”¥
             // We sort by length to ensure parents are processed in a way that doesn't create cycles 
             // and we find the most specific parent (longest matching prefix).
             foreach (var a in allAccounts.OrderBy(x => x.Code.Length))
@@ -384,7 +385,7 @@ public class AccountsController : ControllerBase
             UpdateLevels(null, 1);
             await _db.SaveChangesAsync();
 
-            return Ok(new { success = true, message = "تم إصلاح شجرة الحسابات وربط الأكواد تلقائياً بنجاح.", count = allAccounts.Count });
+            return Ok(new { success = true, message = "ØªÙ… Ø¥ØµÙ„Ø§Ø­ Ø´Ø¬Ø±Ø© Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª ÙˆØ±Ø¨Ø· Ø§Ù„Ø£ÙƒÙˆØ§Ø¯ ØªÙ„Ù‚Ø§Ø¦ÙŠØ§Ù‹ Ø¨Ù†Ø¬Ø§Ø­.", count = allAccounts.Count });
         }
         catch (Exception ex)
         {
@@ -401,7 +402,7 @@ public class AccountsController : ControllerBase
         try
         {
             await _accounting.SyncEntityBalancesAsync();
-            return Ok(new { success = true, message = "تمت إعادة مزامنة أرصدة الموردين والعملاء بنجاح." });
+            return Ok(new { success = true, message = "ØªÙ…Øª Ø¥Ø¹Ø§Ø¯Ø© Ù…Ø²Ø§Ù…Ù†Ø© Ø£Ø±ØµØ¯Ø© Ø§Ù„Ù…ÙˆØ±Ø¯ÙŠÙ† ÙˆØ§Ù„Ø¹Ù…Ù„Ø§Ø¡ Ø¨Ù†Ø¬Ø§Ø­." });
         }
         catch (Exception ex)
         {
@@ -428,12 +429,12 @@ public class AccountsController : ControllerBase
                     var children = BuildTree(a.Id);
                     var netLinesAmount = balances.GetValueOrDefault(a.Id, 0);
                     
-                    // تحويل الصافي بناءً على طبيعة الحساب
+                    // ØªØ­ÙˆÙŠÙ„ Ø§Ù„ØµØ§ÙÙŠ Ø¨Ù†Ø§Ø¡Ù‹ Ø¹Ù„Ù‰ Ø·Ø¨ÙŠØ¹Ø© Ø§Ù„Ø­Ø³Ø§Ø¨
                     var directCurrentBal = a.Nature == AccountNature.Debit ? netLinesAmount : -netLinesAmount;
                     
-                    // 🚨 ADVANCED FIX:
-                    // الحساب الأب توازنه = (مجموع أرصدة أبنائه الحالية) + (حركاته المباشرة).
-                    // ممارسة فضلى: لا يوجد OpeningBalance للأب، هو فقط مرآة لأبنائه.
+                    // ðŸš¨ ADVANCED FIX:
+                    // Ø§Ù„Ø­Ø³Ø§Ø¨ Ø§Ù„Ø£Ø¨ ØªÙˆØ§Ø²Ù†Ù‡ = (Ù…Ø¬Ù…ÙˆØ¹ Ø£Ø±ØµØ¯Ø© Ø£Ø¨Ù†Ø§Ø¦Ù‡ Ø§Ù„Ø­Ø§Ù„ÙŠØ©) + (Ø­Ø±ÙƒØ§ØªÙ‡ Ø§Ù„Ù…Ø¨Ø§Ø´Ø±Ø©).
+                    // Ù…Ù…Ø§Ø±Ø³Ø© ÙØ¶Ù„Ù‰: Ù„Ø§ ÙŠÙˆØ¬Ø¯ OpeningBalance Ù„Ù„Ø£Ø¨ØŒ Ù‡Ùˆ ÙÙ‚Ø· Ù…Ø±Ø¢Ø© Ù„Ø£Ø¨Ù†Ø§Ø¦Ù‡.
                     
                     decimal totalCurrentBalance = directCurrentBal;
                     
@@ -443,7 +444,7 @@ public class AccountsController : ControllerBase
                     }
                     else 
                     {
-                        // فقط الحسابات النهائية (Leaf) تأخذ رصيداً افتتاحياً
+                        // ÙÙ‚Ø· Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª Ø§Ù„Ù†Ù‡Ø§Ø¦ÙŠØ© (Leaf) ØªØ£Ø®Ø° Ø±ØµÙŠØ¯Ø§Ù‹ Ø§ÙØªØªØ§Ø­ÙŠØ§Ù‹
                         totalCurrentBalance += a.OpeningBalance;
                     }
 
@@ -472,10 +473,10 @@ public class AccountsController : ControllerBase
 
         // 2. Definitive list of names from user
         var allowList = new[] {
-            "نقدية الكاشير", "فودافون كاش الكاشير", "انستاباي الكاشير",
-            "حساب البنك", "نقدية الموقع", "فودافون كاش الموقع", "انستاباي الموقع",
-            "نقدية الحسابات", "فودافون كاش الحسابات", "انستاباي الحسابات",
-            "جاري الدكتور", "جاري ابراهيم", "جاري حتاته"
+            "Ù†Ù‚Ø¯ÙŠØ© Ø§Ù„ÙƒØ§Ø´ÙŠØ±", "ÙÙˆØ¯Ø§ÙÙˆÙ† ÙƒØ§Ø´ Ø§Ù„ÙƒØ§Ø´ÙŠØ±", "Ø§Ù†Ø³ØªØ§Ø¨Ø§ÙŠ Ø§Ù„ÙƒØ§Ø´ÙŠØ±",
+            "Ø­Ø³Ø§Ø¨ Ø§Ù„Ø¨Ù†Ùƒ", "Ù†Ù‚Ø¯ÙŠØ© Ø§Ù„Ù…ÙˆÙ‚Ø¹", "ÙÙˆØ¯Ø§ÙÙˆÙ† ÙƒØ§Ø´ Ø§Ù„Ù…ÙˆÙ‚Ø¹", "Ø§Ù†Ø³ØªØ§Ø¨Ø§ÙŠ Ø§Ù„Ù…ÙˆÙ‚Ø¹",
+            "Ù†Ù‚Ø¯ÙŠØ© Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª", "ÙÙˆØ¯Ø§ÙÙˆÙ† ÙƒØ§Ø´ Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª", "Ø§Ù†Ø³ØªØ§Ø¨Ø§ÙŠ Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª",
+            "Ø¬Ø§Ø±ÙŠ Ø§Ù„Ø¯ÙƒØªÙˆØ±", "Ø¬Ø§Ø±ÙŠ Ø§Ø¨Ø±Ø§Ù‡ÙŠÙ…", "Ø¬Ø§Ø±ÙŠ Ø­ØªØ§ØªÙ‡"
         };
 
         var results = new List<string>();
@@ -491,13 +492,13 @@ public class AccountsController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
-        return Ok(new { message = "تم تفعيل خاصية التحصيل للحسابات المحددة.", details = results });
+        return Ok(new { message = "ØªÙ… ØªÙØ¹ÙŠÙ„ Ø®Ø§ØµÙŠØ© Ø§Ù„ØªØ­ØµÙŠÙ„ Ù„Ù„Ø­Ø³Ø§Ø¨Ø§Øª Ø§Ù„Ù…Ø­Ø¯Ø¯Ø©.", details = results });
     }
 }
 
-// 2. JOURNAL ENTRIES (قيود اليومية)
+// 2. JOURNAL ENTRIES (Ù‚ÙŠÙˆØ¯ Ø§Ù„ÙŠÙˆÙ…ÙŠØ©)
 [ApiController, Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Accountant")]
+[RequirePermission(ModuleKeys.AccountingMain)]
 public class JournalEntriesController : ControllerBase
 {
     private readonly IAccountingService _accounting;
@@ -556,7 +557,7 @@ public class JournalEntriesController : ControllerBase
                 Status = e.Status.ToString(),
                 Type = e.Type.ToString(),
                 CostCenter = (int?)e.CostCenter,
-                CostCenterLabel = e.CostCenter == OrderSource.Website ? "الموقع" : (e.CostCenter == OrderSource.POS ? "المحل" : "عام"),
+                CostCenterLabel = e.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (e.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…"),
                 LineCount = includeLines ? e.Lines.Count : _db.JournalLines.Count(l => l.JournalEntryId == e.Id),
                 TotalAmount = includeLines ? e.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit) : (_db.JournalLines.AsNoTracking().Where(l => l.JournalEntryId == e.Id && l.Debit > 0).Sum(l => (decimal?)l.Debit) ?? 0),
                 Lines = includeLines ? (object)e.Lines.Select(l => new { l.AccountId, l.Credit, l.Debit, AccountName = l.Account != null ? l.Account.NameAr : null, CostCenter = (int?)l.CostCenter }).ToList() : null
@@ -586,10 +587,10 @@ public class JournalEntriesController : ControllerBase
                 l.Debit, l.Credit, l.Description, l.CustomerId, l.SupplierId, l.EmployeeId,
                 l.Supplier?.Name ?? l.Customer?.FullName ?? l.Employee?.Name ?? null,
                 l.CostCenter,
-                l.CostCenter == OrderSource.Website ? "الموقع" : (l.CostCenter == OrderSource.POS ? "المحل" : "عام")
+                l.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (l.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…")
             )).ToList(),
             e.AttachmentUrl, e.AttachmentPublicId, null, null, e.CostCenter,
-            e.CostCenter == OrderSource.Website ? "الموقع" : (e.CostCenter == OrderSource.POS ? "المحل" : "عام")
+            e.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (e.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…")
         ));
     }
 
@@ -614,7 +615,7 @@ public class JournalEntriesController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    public async Task<IActionResult> Delete(int id, [FromQuery] string reason = "حذف يدوي")
+    public async Task<IActionResult> Delete(int id, [FromQuery] string reason = "Ø­Ø°Ù ÙŠØ¯ÙˆÙŠ")
     {
         var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Id == id);
         if (entry == null) return NotFound();
@@ -622,7 +623,7 @@ public class JournalEntriesController : ControllerBase
         if (entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
         {
             await _accounting.ReverseEntryAsync(id, reason);
-            return Ok(new { message = "تم عكس القيد بنجاح بدلاً من الحذف." });
+            return Ok(new { message = "ØªÙ… Ø¹ÙƒØ³ Ø§Ù„Ù‚ÙŠØ¯ Ø¨Ù†Ø¬Ø§Ø­ Ø¨Ø¯Ù„Ø§Ù‹ Ù…Ù† Ø§Ù„Ø­Ø°Ù." });
         }
 
         _db.JournalEntries.Remove(entry);
@@ -631,9 +632,9 @@ public class JournalEntriesController : ControllerBase
     }
 }
 
-// 3. RECEIPT VOUCHERS (سندات القبض)
+// 3. RECEIPT VOUCHERS (Ø³Ù†Ø¯Ø§Øª Ø§Ù„Ù‚Ø¨Ø¶)
 [ApiController, Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Accountant")]
+[RequirePermission(ModuleKeys.AccountingMain)]
 public class ReceiptVouchersController : ControllerBase
 {
     private readonly IAccountingService _accounting;
@@ -690,7 +691,7 @@ public class ReceiptVouchersController : ControllerBase
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description, v.CreatedAt,
                 v.CashAccountId,
                 CostCenter = (int?)v.CostCenter,
-                CostCenterLabel = v.CostCenter == OrderSource.Website ? "الموقع" : (v.CostCenter == OrderSource.POS ? "المحل" : "عام"),
+                CostCenterLabel = v.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (v.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…"),
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 FromAccountName = v.FromAccount != null ? v.FromAccount.NameAr : null,
                 EntityName = v.Customer != null ? v.Customer.FullName : (v.Employee != null ? v.Employee.Name : null)
@@ -713,7 +714,7 @@ public class ReceiptVouchersController : ControllerBase
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description,
                 v.CashAccountId,
                 CostCenter = (int?)v.CostCenter,
-                CostCenterLabel = v.CostCenter == OrderSource.Website ? "الموقع" : (v.CostCenter == OrderSource.POS ? "المحل" : "عام"),
+                CostCenterLabel = v.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (v.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…"),
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 FromAccountName = v.FromAccount != null ? v.FromAccount.NameAr : null,
                 EntityName = v.Customer != null ? v.Customer.FullName : (v.Employee != null ? v.Employee.Name : null)
@@ -741,9 +742,9 @@ public class ReceiptVouchersController : ControllerBase
         });
         
         var cashAccount = await _db.Accounts.FindAsync(dto.CashAccountId);
-        if (cashAccount == null) return BadRequest("حساب التحصيل غير موجود.");
+        if (cashAccount == null) return BadRequest("Ø­Ø³Ø§Ø¨ Ø§Ù„ØªØ­ØµÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯.");
         if (!cashAccount.CanReceivePayment && !User.IsInRole("Admin"))
-            return BadRequest($"الحساب '{cashAccount.NameAr}' لا يقبل عمليات التحصيل/الدفع.");
+            return BadRequest($"Ø§Ù„Ø­Ø³Ø§Ø¨ '{cashAccount.NameAr}' Ù„Ø§ ÙŠÙ‚Ø¨Ù„ Ø¹Ù…Ù„ÙŠØ§Øª Ø§Ù„ØªØ­ØµÙŠÙ„/Ø§Ù„Ø¯ÙØ¹.");
 
         var voucher = new ReceiptVoucher {
             VoucherNumber = vNo, VoucherDate = dto.VoucherDate.ToStoreTime(), Amount = dto.Amount, CashAccountId = dto.CashAccountId,
@@ -755,7 +756,7 @@ public class ReceiptVouchersController : ControllerBase
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value, CreatedAt = TimeHelper.GetEgyptTime(), OrderId = dto.OrderId
         };
 
-        // 🎯 AUTO-RESOLVE COST CENTER: If not provided, try to infer from the order
+        // ðŸŽ¯ AUTO-RESOLVE COST CENTER: If not provided, try to infer from the order
         if (voucher.CostCenter == null && dto.OrderId.HasValue)
         {
             voucher.CostCenter = await _db.Orders.Where(o => o.Id == dto.OrderId.Value).Select(o => (OrderSource?)o.Source).FirstOrDefaultAsync();
@@ -767,19 +768,19 @@ public class ReceiptVouchersController : ControllerBase
             var order = await _db.Orders.FindAsync(dto.OrderId.Value);
             if (order != null) {
                 var remaining = order.TotalAmount - order.PaidAmount;
-                if (dto.Amount > remaining + 0.01m) return BadRequest($"عفواً، المبلغ ({dto.Amount}) أكبر من المديونية المتبقية على الفاتورة ({remaining})");
+                if (dto.Amount > remaining + 0.01m) return BadRequest($"Ø¹ÙÙˆØ§Ù‹ØŒ Ø§Ù„Ù…Ø¨Ù„Øº ({dto.Amount}) Ø£ÙƒØ¨Ø± Ù…Ù† Ø§Ù„Ù…Ø¯ÙŠÙˆÙ†ÙŠØ© Ø§Ù„Ù…ØªØ¨Ù‚ÙŠØ© Ø¹Ù„Ù‰ Ø§Ù„ÙØ§ØªÙˆØ±Ø© ({remaining})");
                 
                 var oldPaid = order.PaidAmount;
                 order.PaidAmount += dto.Amount;
                 order.PaymentStatus = order.PaidAmount >= order.TotalAmount - 0.01m ? PaymentStatus.Paid : PaymentStatus.Pending;
                 order.UpdatedAt = TimeHelper.GetEgyptTime();
 
-                // 📝 LOG TO ORDER HISTORY: Who collected the debt?
+                // ðŸ“ LOG TO ORDER HISTORY: Who collected the debt?
                 _db.OrderStatusHistories.Add(new OrderStatusHistory
                 {
                     OrderId = order.Id,
                     Status = order.Status, // Keep same status
-                    Note = $"[تحصيل مديونية] تم تحصيل مبلغ {dto.Amount:N2} ج.م ({dto.PaymentMethod})",
+                    Note = $"[ØªØ­ØµÙŠÙ„ Ù…Ø¯ÙŠÙˆÙ†ÙŠØ©] ØªÙ… ØªØ­ØµÙŠÙ„ Ù…Ø¨Ù„Øº {dto.Amount:N2} Ø¬.Ù… ({dto.PaymentMethod})",
                     ChangedByUserId = dto.EmployeeId?.ToString() ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                     CreatedAt = TimeHelper.GetEgyptTime()
                 });
@@ -787,11 +788,11 @@ public class ReceiptVouchersController : ControllerBase
         }
         else if (dto.CustomerId.HasValue)
         {
-            // التحقق من مديونية العميل الإجمالية (إذا لم يكن تحصيل لفاتورة محددة)
+            // Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ù…Ø¯ÙŠÙˆÙ†ÙŠØ© Ø§Ù„Ø¹Ù…ÙŠÙ„ Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠØ© (Ø¥Ø°Ø§ Ù„Ù… ÙŠÙƒÙ† ØªØ­ØµÙŠÙ„ Ù„ÙØ§ØªÙˆØ±Ø© Ù…Ø­Ø¯Ø¯Ø©)
             var customer = await _db.Customers.FindAsync(dto.CustomerId.Value);
             if (customer != null)
             {
-                // الحصول على رصيد العميل الحالي من الحسابات
+                // Ø§Ù„Ø­ØµÙˆÙ„ Ø¹Ù„Ù‰ Ø±ØµÙŠØ¯ Ø§Ù„Ø¹Ù…ÙŠÙ„ Ø§Ù„Ø­Ø§Ù„ÙŠ Ù…Ù† Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª
                 var customerAccountId = await _db.AccountSystemMappings
                     .Where(m => m.Key == MappingKeys.Customer.ToLower())
                     .Select(m => m.AccountId)
@@ -799,14 +800,14 @@ public class ReceiptVouchersController : ControllerBase
 
                 if (customerAccountId.HasValue)
                 {
-                    // حساب الرصيد الحالي للعميل (مدين - دائن)
+                    // Ø­Ø³Ø§Ø¨ Ø§Ù„Ø±ØµÙŠØ¯ Ø§Ù„Ø­Ø§Ù„ÙŠ Ù„Ù„Ø¹Ù…ÙŠÙ„ (Ù…Ø¯ÙŠÙ† - Ø¯Ø§Ø¦Ù†)
                     var currentBalance = await _db.JournalLines
                         .Where(l => l.AccountId == customerAccountId.Value && l.CustomerId == dto.CustomerId.Value)
                         .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
                     if (dto.Amount > currentBalance + 0.1m)
                     {
-                        return BadRequest($"عفواً، لا يمكن تحصيل مبلغ أكبر من مديونية العميل الإجمالية. المديونية الحالية: {currentBalance:N2}");
+                        return BadRequest($"Ø¹ÙÙˆØ§Ù‹ØŒ Ù„Ø§ ÙŠÙ…ÙƒÙ† ØªØ­ØµÙŠÙ„ Ù…Ø¨Ù„Øº Ø£ÙƒØ¨Ø± Ù…Ù† Ù…Ø¯ÙŠÙˆÙ†ÙŠØ© Ø§Ù„Ø¹Ù…ÙŠÙ„ Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠØ©. Ø§Ù„Ù…Ø¯ÙŠÙˆÙ†ÙŠØ© Ø§Ù„Ø­Ø§Ù„ÙŠØ©: {currentBalance:N2}");
                     }
                 }
             }
@@ -828,7 +829,7 @@ public class ReceiptVouchersController : ControllerBase
             .FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber);
         
         if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
-            return BadRequest("لا يمكن تعديل سند مرحّل إلا من خلال الإدارة.");
+            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† ØªØ¹Ø¯ÙŠÙ„ Ø³Ù†Ø¯ Ù…Ø±Ø­Ù‘Ù„ Ø¥Ù„Ø§ Ù…Ù† Ø®Ù„Ø§Ù„ Ø§Ù„Ø¥Ø¯Ø§Ø±Ø©.");
 
         voucher.VoucherDate = dto.VoucherDate.ToStoreTime();
         voucher.Amount = dto.Amount;
@@ -846,8 +847,8 @@ public class ReceiptVouchersController : ControllerBase
         if (entry != null) {
             entry.EntryDate = voucher.VoucherDate; entry.Description = voucher.Description; entry.UpdatedAt = TimeHelper.GetEgyptTime();
             _db.JournalLines.RemoveRange(entry.Lines);
-            entry.Lines.Add(new JournalLine { AccountId = voucher.CashAccountId, Debit = voucher.Amount, Credit = 0, Description = $"[تحديث] {voucher.VoucherNumber}" });
-            entry.Lines.Add(new JournalLine { AccountId = voucher.FromAccountId, Debit = 0, Credit = voucher.Amount, Description = $"من ح/ {voucher.FromAccount?.NameAr}" });
+            entry.Lines.Add(new JournalLine { AccountId = voucher.CashAccountId, Debit = voucher.Amount, Credit = 0, Description = $"[ØªØ­Ø¯ÙŠØ«] {voucher.VoucherNumber}" });
+            entry.Lines.Add(new JournalLine { AccountId = voucher.FromAccountId, Debit = 0, Credit = voucher.Amount, Description = $"Ù…Ù† Ø­/ {voucher.FromAccount?.NameAr}" });
         }
 
         await _db.SaveChangesAsync();
@@ -864,8 +865,8 @@ public class ReceiptVouchersController : ControllerBase
         var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber);
         
         if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin")) {
-            await _accounting.ReverseEntryAsync(entry.Id, "إلغاء سند قبض");
-            return Ok(new { message = "تم إلغاء السند وعكس القيد." });
+            await _accounting.ReverseEntryAsync(entry.Id, "Ø¥Ù„ØºØ§Ø¡ Ø³Ù†Ø¯ Ù‚Ø¨Ø¶");
+            return Ok(new { message = "ØªÙ… Ø¥Ù„ØºØ§Ø¡ Ø§Ù„Ø³Ù†Ø¯ ÙˆØ¹ÙƒØ³ Ø§Ù„Ù‚ÙŠØ¯." });
         }
 
         _db.ReceiptVouchers.Remove(voucher);
@@ -876,9 +877,9 @@ public class ReceiptVouchersController : ControllerBase
     }
 }
 
-// 4. PAYMENT VOUCHERS (سندات الصرف)
+// 4. PAYMENT VOUCHERS (Ø³Ù†Ø¯Ø§Øª Ø§Ù„ØµØ±Ù)
 [ApiController, Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Accountant")]
+[RequirePermission(ModuleKeys.AccountingMain)]
 public class PaymentVouchersController : ControllerBase
 {
     private readonly IAccountingService _accounting;
@@ -934,7 +935,7 @@ public class PaymentVouchersController : ControllerBase
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description, v.CreatedAt,
                 v.CashAccountId, v.ToAccountId,
                 CostCenter = (int?)v.CostCenter,
-                CostCenterLabel = v.CostCenter == OrderSource.Website ? "الموقع" : (v.CostCenter == OrderSource.POS ? "المحل" : "عام"),
+                CostCenterLabel = v.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (v.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…"),
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 ToAccountName = v.ToAccount != null ? v.ToAccount.NameAr : null,
                 EntityName = v.Supplier != null ? v.Supplier.Name : (v.Employee != null ? v.Employee.Name : null)
@@ -962,9 +963,9 @@ public class PaymentVouchersController : ControllerBase
         });
 
         var cashAccount = await _db.Accounts.FindAsync(dto.CashAccountId);
-        if (cashAccount == null) return BadRequest("حساب الدفع غير موجود.");
+        if (cashAccount == null) return BadRequest("Ø­Ø³Ø§Ø¨ Ø§Ù„Ø¯ÙØ¹ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯.");
         if (!cashAccount.CanReceivePayment && !User.IsInRole("Admin"))
-            return BadRequest($"الحساب '{cashAccount.NameAr}' لا يقبل عمليات التحصيل/الدفع.");
+            return BadRequest($"Ø§Ù„Ø­Ø³Ø§Ø¨ '{cashAccount.NameAr}' Ù„Ø§ ÙŠÙ‚Ø¨Ù„ Ø¹Ù…Ù„ÙŠØ§Øª Ø§Ù„ØªØ­ØµÙŠÙ„/Ø§Ù„Ø¯ÙØ¹.");
 
         var voucher = new PaymentVoucher {
             VoucherNumber = vNo, VoucherDate = dto.VoucherDate.ToStoreTime(), Amount = dto.Amount, CashAccountId = dto.CashAccountId,
@@ -976,14 +977,14 @@ public class PaymentVouchersController : ControllerBase
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value, CreatedAt = TimeHelper.GetEgyptTime(), PurchaseInvoiceId = dto.PurchaseInvoiceId
         };
 
-        // 🎯 FIX: Honor the selected cost center (Admin/General should remain null/general, not forced to Website)
+        // ðŸŽ¯ FIX: Honor the selected cost center (Admin/General should remain null/general, not forced to Website)
         // If it's null, it stays null (General/Administration).
 
         if (dto.PurchaseInvoiceId.HasValue) {
             var invoice = await _db.PurchaseInvoices.FindAsync(dto.PurchaseInvoiceId.Value);
             if (invoice != null) {
                 var remaining = invoice.TotalAmount - invoice.PaidAmount;
-                if (dto.Amount > remaining + 0.1m) return BadRequest($"المبلغ أكبر من مديونية الفاتورة ({remaining})");
+                if (dto.Amount > remaining + 0.1m) return BadRequest($"Ø§Ù„Ù…Ø¨Ù„Øº Ø£ÙƒØ¨Ø± Ù…Ù† Ù…Ø¯ÙŠÙˆÙ†ÙŠØ© Ø§Ù„ÙØ§ØªÙˆØ±Ø© ({remaining})");
                 invoice.PaidAmount += dto.Amount;
                 invoice.Status = invoice.PaidAmount >= invoice.TotalAmount - 0.1m ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.PartPaid;
             }
@@ -1004,7 +1005,7 @@ public class PaymentVouchersController : ControllerBase
 
         var entry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == voucher.VoucherNumber);
         if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
-            return BadRequest("لا يمكن تعديل سند مرحّل.");
+            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† ØªØ¹Ø¯ÙŠÙ„ Ø³Ù†Ø¯ Ù…Ø±Ø­Ù‘Ù„.");
 
         voucher.VoucherDate = dto.VoucherDate.ToStoreTime(); voucher.Amount = dto.Amount; voucher.CashAccountId = dto.CashAccountId;
         voucher.ToAccountId = dto.ToAccountId; voucher.SupplierId = dto.SupplierId; voucher.EmployeeId = dto.EmployeeId; voucher.Description = dto.Description;
@@ -1013,8 +1014,8 @@ public class PaymentVouchersController : ControllerBase
         if (entry != null) {
             entry.EntryDate = voucher.VoucherDate; entry.Description = voucher.Description;
             _db.JournalLines.RemoveRange(entry.Lines);
-            entry.Lines.Add(new JournalLine { AccountId = voucher.ToAccountId, Debit = voucher.Amount, Credit = 0, Description = $"[تحديث] {voucher.VoucherNumber}" });
-            entry.Lines.Add(new JournalLine { AccountId = voucher.CashAccountId, Debit = 0, Credit = voucher.Amount, Description = $"من ح/ {voucher.CashAccount?.NameAr}" });
+            entry.Lines.Add(new JournalLine { AccountId = voucher.ToAccountId, Debit = voucher.Amount, Credit = 0, Description = $"[ØªØ­Ø¯ÙŠØ«] {voucher.VoucherNumber}" });
+            entry.Lines.Add(new JournalLine { AccountId = voucher.CashAccountId, Debit = 0, Credit = voucher.Amount, Description = $"Ù…Ù† Ø­/ {voucher.CashAccount?.NameAr}" });
         }
 
         await _db.SaveChangesAsync();
@@ -1030,8 +1031,8 @@ public class PaymentVouchersController : ControllerBase
 
         var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == voucher.VoucherNumber);
         if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin")) {
-            await _accounting.ReverseEntryAsync(entry.Id, "إلغاء سند صرف");
-            return Ok(new { message = "تم إلغاء السند وعكس القيد." });
+            await _accounting.ReverseEntryAsync(entry.Id, "Ø¥Ù„ØºØ§Ø¡ Ø³Ù†Ø¯ ØµØ±Ù");
+            return Ok(new { message = "ØªÙ… Ø¥Ù„ØºØ§Ø¡ Ø§Ù„Ø³Ù†Ø¯ ÙˆØ¹ÙƒØ³ Ø§Ù„Ù‚ÙŠØ¯." });
         }
 
         _db.PaymentVouchers.Remove(voucher);
@@ -1041,3 +1042,4 @@ public class PaymentVouchersController : ControllerBase
         return NoContent();
     }
 }
+

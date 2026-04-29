@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -10,11 +11,11 @@ namespace Sportive.API.Controllers;
 
 /// <summary>
 /// GET /api/dashboard/kpi
-/// مؤشرات KPI متقدمة — داشبورد شامل
+/// Ù…Ø¤Ø´Ø±Ø§Øª KPI Ù…ØªÙ‚Ø¯Ù…Ø© â€” Ø¯Ø§Ø´Ø¨ÙˆØ±Ø¯ Ø´Ø§Ù…Ù„
 /// </summary>
 [ApiController]
 [Route("api/dashboard")]
-[Authorize(Roles = "Admin,Manager,Accountant")]
+[RequirePermission(ModuleKeys.Dashboard)]
 public class DashboardKpiController : ControllerBase
 {
     private readonly IDashboardService _dashboard;
@@ -65,7 +66,7 @@ public class DashboardKpiController : ControllerBase
     public async Task<IActionResult> GetStaffStats([FromQuery] string staffId) =>
         Ok(await _dashboard.GetStaffStatsAsync(staffId));
 
-    // ✅ Compatibility Aliases
+    // âœ… Compatibility Aliases
     [HttpGet("/api/analytics/admin-stats")]
     [ApiExplorerSettings(IgnoreApi = true)]
     public async Task<IActionResult> GetStatsAlias([FromQuery] OrderSource? source = null) =>
@@ -93,3 +94,4 @@ public class DashboardKpiController : ControllerBase
         previous == 0 ? (current > 0 ? 100 : 0) :
         Math.Round((current - previous) / previous * 100, 1);
 }
+

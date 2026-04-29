@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -8,7 +9,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Cashier")]
+[RequirePermission(ModuleKeys.Barcode)]
 public class BarcodeController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -23,7 +24,7 @@ public class BarcodeController : ControllerBase
         bool isInt = int.TryParse(queryVal, out int id);
         bool isDecimal = decimal.TryParse(queryVal, out decimal price);
 
-        // البحث عن المنتج بالـ SKU أو الـ ID أو البحث في المتغيرات
+        // Ø§Ù„Ø¨Ø­Ø« Ø¹Ù† Ø§Ù„Ù…Ù†ØªØ¬ Ø¨Ø§Ù„Ù€ SKU Ø£Ùˆ Ø§Ù„Ù€ ID Ø£Ùˆ Ø§Ù„Ø¨Ø­Ø« ÙÙŠ Ø§Ù„Ù…ØªØºÙŠØ±Ø§Øª
         var product = await _db.Products
             .Include(p => p.Images)
             .Include(p => p.Variants)
@@ -33,13 +34,13 @@ public class BarcodeController : ControllerBase
                 (isInt && p.Id == id) ||
                 (isDecimal && (p.Price == price || p.DiscountPrice == price)) ||
                 p.NameAr.ToLower().Contains(queryVal) ||
-                // البحث في المتغيرات (مثلاً لو كان الكود هو SKU-Size-Color)
+                // Ø§Ù„Ø¨Ø­Ø« ÙÙŠ Ø§Ù„Ù…ØªØºÙŠØ±Ø§Øª (Ù…Ø«Ù„Ø§Ù‹ Ù„Ùˆ ÙƒØ§Ù† Ø§Ù„ÙƒÙˆØ¯ Ù‡Ùˆ SKU-Size-Color)
                 p.Variants.Any(v => (p.SKU + "-" + v.Size + "-" + v.Color).ToLower() == queryVal)
             );
 
-        if (product == null) return NotFound(new { message = $"لا يوجد منتج بالكود: {q}" });
+        if (product == null) return NotFound(new { message = $"Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ù…Ù†ØªØ¬ Ø¨Ø§Ù„ÙƒÙˆØ¯: {q}" });
 
-        // التنسيق المطلوب للـ Frontend (POS)
+        // Ø§Ù„ØªÙ†Ø³ÙŠÙ‚ Ø§Ù„Ù…Ø·Ù„ÙˆØ¨ Ù„Ù„Ù€ Frontend (POS)
         return Ok(new
         {
             id = product.Id,
@@ -70,7 +71,7 @@ public class BarcodeController : ControllerBase
             .Include(p => p.Variants)
             .FirstOrDefaultAsync(p => p.Id == id);
 
-        if (product == null) return NotFound(new { message = "المنتج غير موجود" });
+        if (product == null) return NotFound(new { message = "Ø§Ù„Ù…Ù†ØªØ¬ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
 
         var stickers = new List<object>();
         var basePrice = product.DiscountPrice ?? product.Price;
@@ -118,7 +119,7 @@ public class BarcodeController : ControllerBase
             .ThenInclude(item => item.ProductVariant)
             .FirstOrDefaultAsync(i => i.Id == id);
 
-        if (invoice == null) return NotFound(new { message = "الفاتورة غير موجودة" });
+        if (invoice == null) return NotFound(new { message = "Ø§Ù„ÙØ§ØªÙˆØ±Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©" });
 
         var stickers = invoice.Items.Where(i => i.Product != null).Select(item => new
         {
@@ -134,3 +135,4 @@ public class BarcodeController : ControllerBase
         return Ok(new { stickers });
     }
 }
+

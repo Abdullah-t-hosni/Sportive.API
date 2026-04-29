@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -11,7 +12,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Accountant,Staff")]
+[RequirePermission(ModuleKeys.ReportsMain)]
 public class OperationalReportsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -25,7 +26,7 @@ public class OperationalReportsController : ControllerBase
     }
     
     [HttpPost("reset-supplier-balances")]
-    [Authorize(Roles = "Admin")]
+    [RequirePermission(ModuleKeys.ReportsMain)]
     public async Task<IActionResult> ResetSupplierBalances()
     {
         try 
@@ -65,12 +66,12 @@ public class OperationalReportsController : ControllerBase
         return Ok(new { colors, sizes, products });
     }
 
-    // ══════════════════════════════════════════════════════
-    // 1. كشف حساب عميل
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 1. ÙƒØ´Ù Ø­Ø³Ø§Ø¨ Ø¹Ù…ÙŠÙ„
     // GET /api/operationalreports/customer-statement?customerId=&fromDate=&toDate=
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("customer-statement")]
-    [Authorize(Roles = "Admin,Manager,Accountant")]
+    [RequirePermission(ModuleKeys.ReportsMain)]
     public async Task<IActionResult> CustomerStatement(
         [FromQuery] int?      customerId = null,
         [FromQuery] string?   search     = null,
@@ -97,7 +98,7 @@ public class OperationalReportsController : ControllerBase
         var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId);
         if (customer == null) return NotFound();
 
-        // ✅ REFACTORED TO LEDGER-BASED (Source of Truth)
+        // âœ… REFACTORED TO LEDGER-BASED (Source of Truth)
         // 1. Calculate Prior Balance
         decimal priorBalance = await _db.JournalLines
             .Where(l => l.CustomerId == customerId && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
@@ -115,21 +116,21 @@ public class OperationalReportsController : ControllerBase
 
         if (balance != 0)
         {
-            lines.Add(new CustomerStatementLine(from.AddSeconds(-1), "رصيد", "OPENING", "رصيد مرحّل من الفترة السابقة", balance > 0 ? balance : 0, balance < 0 ? Math.Abs(balance) : 0, balance));
+            lines.Add(new CustomerStatementLine(from.AddSeconds(-1), "Ø±ØµÙŠØ¯", "OPENING", "Ø±ØµÙŠØ¯ Ù…Ø±Ø­Ù‘Ù„ Ù…Ù† Ø§Ù„ÙØªØ±Ø© Ø§Ù„Ø³Ø§Ø¨Ù‚Ø©", balance > 0 ? balance : 0, balance < 0 ? Math.Abs(balance) : 0, balance));
         }
 
         foreach (var l in entries)
         {
             balance += (l.Debit - l.Credit);
             var typeStr = l.JournalEntry.Type switch {
-                JournalEntryType.Sales => "فاتورة",
-                JournalEntryType.ReceiptVoucher => "سند قبض",
-                JournalEntryType.SalesReturn => "مرتجع",
-                _ => "قيد"
+                JournalEntryType.Sales => "ÙØ§ØªÙˆØ±Ø©",
+                JournalEntryType.ReceiptVoucher => "Ø³Ù†Ø¯ Ù‚Ø¨Ø¶",
+                JournalEntryType.SalesReturn => "Ù…Ø±ØªØ¬Ø¹",
+                _ => "Ù‚ÙŠØ¯"
             };
             lines.Add(new CustomerStatementLine(
                 l.JournalEntry.EntryDate, typeStr, l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber,
-                l.Description ?? l.JournalEntry.Description ?? "حركة حساب",
+                l.Description ?? l.JournalEntry.Description ?? "Ø­Ø±ÙƒØ© Ø­Ø³Ø§Ø¨",
                 l.Debit, l.Credit, balance));
         }
 
@@ -150,12 +151,12 @@ public class OperationalReportsController : ControllerBase
         });
     }
 
-    // ══════════════════════════════════════════════════════
-    // 1.5 كشف حساب مورد
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 1.5 ÙƒØ´Ù Ø­Ø³Ø§Ø¨ Ù…ÙˆØ±Ø¯
     // GET /api/operationalreports/supplier-statement?supplierId=&fromDate=&toDate=
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("supplier-statement")]
-    [Authorize(Roles = "Admin,Manager,Accountant")]
+    [RequirePermission(ModuleKeys.ReportsMain)]
     public async Task<IActionResult> SupplierStatement(
         [FromQuery] int?      supplierId = null,
         [FromQuery] string?   search     = null,
@@ -181,7 +182,7 @@ public class OperationalReportsController : ControllerBase
         var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == supplierId);
         if (supplier == null) return NotFound();
 
-        // ✅ REFACTORED TO LEDGER-BASED
+        // âœ… REFACTORED TO LEDGER-BASED
         decimal priorBalance = await _db.JournalLines
             .Where(l => l.SupplierId == supplierId && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .SumAsync(l => (decimal?)(l.Credit - l.Debit)) ?? 0;
@@ -196,20 +197,20 @@ public class OperationalReportsController : ControllerBase
         decimal balance = priorBalance;
 
         if (balance != 0)
-            lines.Add(new CustomerStatementLine(from.AddSeconds(-1), "رصيد", "OPENING", "رصيد مرحّل", balance > 0 ? balance : 0, balance < 0 ? Math.Abs(balance) : 0, balance));
+            lines.Add(new CustomerStatementLine(from.AddSeconds(-1), "Ø±ØµÙŠØ¯", "OPENING", "Ø±ØµÙŠØ¯ Ù…Ø±Ø­Ù‘Ù„", balance > 0 ? balance : 0, balance < 0 ? Math.Abs(balance) : 0, balance));
         
         foreach (var l in entries)
         {
             balance += (l.Credit - l.Debit); // For suppliers, Credit increases balance (debt to them)
             var typeStr = l.JournalEntry.Type switch {
-                JournalEntryType.Purchases => "فاتورة شراء",
-                JournalEntryType.PaymentVoucher => "سند صرف",
-                JournalEntryType.PurchaseReturn => "مرتجع",
-                _ => "قيد"
+                JournalEntryType.Purchases => "ÙØ§ØªÙˆØ±Ø© Ø´Ø±Ø§Ø¡",
+                JournalEntryType.PaymentVoucher => "Ø³Ù†Ø¯ ØµØ±Ù",
+                JournalEntryType.PurchaseReturn => "Ù…Ø±ØªØ¬Ø¹",
+                _ => "Ù‚ÙŠØ¯"
             };
             lines.Add(new CustomerStatementLine(
                 l.JournalEntry.EntryDate, typeStr, l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber,
-                l.Description ?? l.JournalEntry.Description ?? "حركة حساب",
+                l.Description ?? l.JournalEntry.Description ?? "Ø­Ø±ÙƒØ© Ø­Ø³Ø§Ø¨",
                 l.Credit, l.Debit, balance));
         }
 
@@ -229,12 +230,12 @@ public class OperationalReportsController : ControllerBase
         });
     }
 
-    // ══════════════════════════════════════════════════════
-    // 2. ديون العملاء (عمر الدين)
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 2. Ø¯ÙŠÙˆÙ† Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ (Ø¹Ù…Ø± Ø§Ù„Ø¯ÙŠÙ†)
     // GET /api/operationalreports/customer-aging
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("customer-aging")]
-    [Authorize(Roles = "Admin,Manager,Accountant")]
+    [RequirePermission(ModuleKeys.ReportsMain)]
     public async Task<IActionResult> CustomerAging(
         [FromQuery] string?   search  = null,
         [FromQuery] DateTime? asOfDate = null,
@@ -265,7 +266,7 @@ public class OperationalReportsController : ControllerBase
             })
             .ToListAsync();
 
-        // ✅ FIX: Use Ledger (JournalLines) to get all movements accurately
+        // âœ… FIX: Use Ledger (JournalLines) to get all movements accurately
         var ledgerBalances = await _db.JournalLines
             .Where(l => (l.Account.Code.StartsWith("1104") || l.Account.Code.StartsWith("1201")))
             .Where(l => l.JournalEntry.EntryDate <= asOf && (l.JournalEntry.Status == JournalEntryStatus.Posted))
@@ -284,10 +285,10 @@ public class OperationalReportsController : ControllerBase
             if (!balanceMap.TryGetValue(c.Id, out var balance) || balance <= 0) 
                 continue;
 
-            // فقط المبيعات الآجلة حتى تاريخ asOf لتوزيع عمر الدين
+            // ÙÙ‚Ø· Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª Ø§Ù„Ø¢Ø¬Ù„Ø© Ø­ØªÙ‰ ØªØ§Ø±ÙŠØ® asOf Ù„ØªÙˆØ²ÙŠØ¹ Ø¹Ù…Ø± Ø§Ù„Ø¯ÙŠÙ†
             var creditOrders = c.Orders.OrderBy(o => o.CreatedAt).ToList();
 
-            // حساب عمر الدين — توزيع الرصيد على الطلبات حسب أعمارها (LIFO logic for payments assumption)
+            // Ø­Ø³Ø§Ø¨ Ø¹Ù…Ø± Ø§Ù„Ø¯ÙŠÙ† â€” ØªÙˆØ²ÙŠØ¹ Ø§Ù„Ø±ØµÙŠØ¯ Ø¹Ù„Ù‰ Ø§Ù„Ø·Ù„Ø¨Ø§Øª Ø­Ø³Ø¨ Ø£Ø¹Ù…Ø§Ø±Ù‡Ø§ (LIFO logic for payments assumption)
             decimal rem = balance;
             decimal c30 = 0, c60 = 0, c90 = 0, c90plus = 0;
 
@@ -338,12 +339,12 @@ public class OperationalReportsController : ControllerBase
         return Ok(new { asOf, rows, totals = summary, summary });
     }
 
-    // ══════════════════════════════════════════════════════
-    // 3. ديون الموردين
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 3. Ø¯ÙŠÙˆÙ† Ø§Ù„Ù…ÙˆØ±Ø¯ÙŠÙ†
     // GET /api/operationalreports/supplier-aging
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("supplier-aging")]
-    [Authorize(Roles = "Admin,Manager,Accountant")]
+    [RequirePermission(ModuleKeys.ReportsMain)]
     public async Task<IActionResult> SupplierAging(
         [FromQuery] string?   search   = null,
         [FromQuery] DateTime? asOfDate = null,
@@ -377,7 +378,7 @@ public class OperationalReportsController : ControllerBase
                 })
                 .ToListAsync();
 
-            // ✅ FIX: Use Ledger (JournalLines) for accurate balance
+            // âœ… FIX: Use Ledger (JournalLines) for accurate balance
             var ledgerBalances = await _db.JournalLines
                 .AsNoTracking()
                 .Where(l => l.SupplierId != null && l.Account.Code.StartsWith("2101"))
@@ -397,13 +398,13 @@ public class OperationalReportsController : ControllerBase
                 if (!balanceMap.TryGetValue(s.Id, out var balance) || balance <= 0) 
                     continue;
 
-                // الفواتير الآجلة حتى تاريخ asOf لتوزيع عمر الدين
+                // Ø§Ù„ÙÙˆØ§ØªÙŠØ± Ø§Ù„Ø¢Ø¬Ù„Ø© Ø­ØªÙ‰ ØªØ§Ø±ÙŠØ® asOf Ù„ØªÙˆØ²ÙŠØ¹ Ø¹Ù…Ø± Ø§Ù„Ø¯ÙŠÙ†
                 var creditInvoices = s.Invoices.OrderBy(i => i.InvoiceDate).ToList();
 
                 decimal b = balance;
                 decimal c30 = 0, c60 = 0, c90 = 0, c90p = 0;
 
-                // توزيع الرصيد على الفواتير بحسب عمرها
+                // ØªÙˆØ²ÙŠØ¹ Ø§Ù„Ø±ØµÙŠØ¯ Ø¹Ù„Ù‰ Ø§Ù„ÙÙˆØ§ØªÙŠØ± Ø¨Ø­Ø³Ø¨ Ø¹Ù…Ø±Ù‡Ø§
                 foreach (var inv in creditInvoices)
                 {
                     if (b <= 0) break;
@@ -459,10 +460,10 @@ public class OperationalReportsController : ControllerBase
         }
     }
 
-    // ══════════════════════════════════════════════════════
-    // 4. تقرير المخزون (إجمالي + تفصيلي)
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 4. ØªÙ‚Ø±ÙŠØ± Ø§Ù„Ù…Ø®Ø²ÙˆÙ† (Ø¥Ø¬Ù…Ø§Ù„ÙŠ + ØªÙØµÙŠÙ„ÙŠ)
     // GET /api/operationalreports/inventory
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("inventory")]
     public async Task<IActionResult> Inventory(
         [FromQuery] string? search      = null,
@@ -542,15 +543,15 @@ public class OperationalReportsController : ControllerBase
         // --- Pagination ---
         var totalCount = await q.CountAsync();
         
-        // جلب البيانات المطلوبة مع تفاصيلها
+        // Ø¬Ù„Ø¨ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ù…Ø·Ù„ÙˆØ¨Ø© Ù…Ø¹ ØªÙØ§ØµÙŠÙ„Ù‡Ø§
         var products = await q.OrderBy(p => p.CategoryId)
                              .ThenBy(p => p.NameAr)
                              .Skip((page - 1) * pageSize)
                              .Take(pageSize)
                              .ToListAsync();
 
-        // حساب القيم الإجمالية للمجموعة المفلترة بالكامل (بدون تكرار الاستعلامات المكلفة)
-        // ملاحظة: نستخدم الاستعلام q المفلتر قبل التقطيع (Skip/Take)
+        // Ø­Ø³Ø§Ø¨ Ø§Ù„Ù‚ÙŠÙ… Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠØ© Ù„Ù„Ù…Ø¬Ù…ÙˆØ¹Ø© Ø§Ù„Ù…ÙÙ„ØªØ±Ø© Ø¨Ø§Ù„ÙƒØ§Ù…Ù„ (Ø¨Ø¯ÙˆÙ† ØªÙƒØ±Ø§Ø± Ø§Ù„Ø§Ø³ØªØ¹Ù„Ø§Ù…Ø§Øª Ø§Ù„Ù…ÙƒÙ„ÙØ©)
+        // Ù…Ù„Ø§Ø­Ø¸Ø©: Ù†Ø³ØªØ®Ø¯Ù… Ø§Ù„Ø§Ø³ØªØ¹Ù„Ø§Ù… q Ø§Ù„Ù…ÙÙ„ØªØ± Ù‚Ø¨Ù„ Ø§Ù„ØªÙ‚Ø·ÙŠØ¹ (Skip/Take)
         var totals = await q.Select(p => new {
             TotalStock = p.Variants.Any() 
                 ? p.Variants.Where(v => 
@@ -564,7 +565,7 @@ public class OperationalReportsController : ControllerBase
         }).ToListAsync();
 
         var totalUnits     = totals.Sum(x => x.TotalStock);
-        var lowStockCount  = totals.Count(x => x.TotalStock <= 5); // أو ReorderLevel
+        var lowStockCount  = totals.Count(x => x.TotalStock <= 5); // Ø£Ùˆ ReorderLevel
         var outOfStock     = totals.Count(x => x.TotalStock <= 0);
         var totalSalesVal  = totals.Sum(x => (decimal)x.TotalStock * x.Price);
         var totalCostVal   = totals.Sum(x => (decimal)x.TotalStock * x.Cost);
@@ -601,7 +602,7 @@ public class OperationalReportsController : ControllerBase
             );
         }).ToList();
 
-        // ✅ LEDGER RECONCILIATION FOR INVENTORY
+        // âœ… LEDGER RECONCILIATION FOR INVENTORY
         var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
         var inventoryAccId = maps.GetValueOrDefault(MappingKeys.Inventory);
         decimal ledgerInventoryValue = 0;
@@ -644,12 +645,12 @@ public class OperationalReportsController : ControllerBase
         return Ok(result);
     }
 
-    // ══════════════════════════════════════════════════════
-    // 5. تقرير المبيعات
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 5. ØªÙ‚Ø±ÙŠØ± Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª
     // GET /api/operationalreports/sales?fromDate=&toDate=&source=
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("sales")]
-    [Authorize(Roles = "Admin,Manager,Accountant")]
+    [RequirePermission(ModuleKeys.ReportsMain)]
     public async Task<IActionResult> SalesReport(
         [FromQuery] DateTime?    fromDate   = null,
         [FromQuery] DateTime?    toDate     = null,
@@ -663,7 +664,7 @@ public class OperationalReportsController : ControllerBase
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        // ✅ LEDGER-BASED RECONCILIATION
+        // âœ… LEDGER-BASED RECONCILIATION
         var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
         var salesAccId = maps.GetValueOrDefault(MappingKeys.Sales);
         
@@ -723,7 +724,7 @@ public class OperationalReportsController : ControllerBase
         decimal ledgerReturns = await returnsQ.SumAsync(l => (decimal?)l.Debit) ?? 0;
 
         var rows = orders.Select(o => {
-            // ✅ Detailed payment string
+            // âœ… Detailed payment string
             var paySummary = string.Join(", ", o.Payments.Select(p => $"{p.Method}: {p.Amount:N0}"));
 
             return new SalesRow(
@@ -767,12 +768,12 @@ public class OperationalReportsController : ControllerBase
         return Ok(new { from, to, rows, summary });
     }
 
-    // ══════════════════════════════════════════════════════
-    // 6. تقرير المشتريات
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 6. ØªÙ‚Ø±ÙŠØ± Ø§Ù„Ù…Ø´ØªØ±ÙŠØ§Øª
     // GET /api/operationalreports/purchases?fromDate=&toDate=&supplierId=
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("purchases")]
-    [Authorize(Roles = "Admin,Manager,Accountant")]
+    [RequirePermission(ModuleKeys.ReportsMain)]
     public async Task<IActionResult> PurchasesReport(
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
@@ -855,12 +856,12 @@ public class OperationalReportsController : ControllerBase
         }
     }
 
-    // ══════════════════════════════════════════════════════
-    // 7. مرتجعات المبيعات
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 7. Ù…Ø±ØªØ¬Ø¹Ø§Øª Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª
     // GET /api/operationalreports/sales-returns
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("sales-returns")]
-    [Authorize(Roles = "Admin,Manager,Accountant")]
+    [RequirePermission(ModuleKeys.ReportsMain)]
     public async Task<IActionResult> SalesReturns(
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
@@ -941,17 +942,17 @@ public class OperationalReportsController : ControllerBase
             totalAmount  = rows.Sum(r => r.Amount),
         };
 
-        if (excel) return ExcelReturns(rows, summary, from, to, "مرتجعات المبيعات");
+        if (excel) return ExcelReturns(rows, summary, from, to, "Ù…Ø±ØªØ¬Ø¹Ø§Øª Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª");
 
         return Ok(new { from, to, rows, summary });
     }
 
-    // ══════════════════════════════════════════════════════
-    // 8. مرتجعات المشتريات
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 8. Ù…Ø±ØªØ¬Ø¹Ø§Øª Ø§Ù„Ù…Ø´ØªØ±ÙŠØ§Øª
     // GET /api/operationalreports/purchase-returns
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("purchase-returns")]
-    [Authorize(Roles = "Admin,Manager,Accountant")]
+    [RequirePermission(ModuleKeys.ReportsMain)]
     public async Task<IActionResult> PurchaseReturns(
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
@@ -965,7 +966,7 @@ public class OperationalReportsController : ControllerBase
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        // 🎯 FIX: Fetch from PurchaseReturns table to include Standalone returns
+        // ðŸŽ¯ FIX: Fetch from PurchaseReturns table to include Standalone returns
         var q = _db.PurchaseReturns.AsNoTracking()
             .Where(r => r.ReturnDate >= from && r.ReturnDate <= to);
 
@@ -1013,7 +1014,7 @@ public class OperationalReportsController : ControllerBase
             r.ReturnNumber, r.ReturnDate,
             r.SupplierName, r.SupplierPhone,
             r.TotalAmount, 
-            r.Notes ?? (r.InvoiceNumber != null ? $"مرتجع للفاتورة #{r.InvoiceNumber}" : "مرتجع مستقل"),
+            r.Notes ?? (r.InvoiceNumber != null ? $"Ù…Ø±ØªØ¬Ø¹ Ù„Ù„ÙØ§ØªÙˆØ±Ø© #{r.InvoiceNumber}" : "Ù…Ø±ØªØ¬Ø¹ Ù…Ø³ØªÙ‚Ù„"),
             r.Items.Select(it => new ReportItemDto(
                 it.ProductSKU,
                 it.ProductNameAr,
@@ -1027,15 +1028,15 @@ public class OperationalReportsController : ControllerBase
             )).ToList()
         )).ToList();
 
-        if (excel) return ExcelReturns(rows, new { count = rows.Count, totalAmount = rows.Sum(r => r.Amount) }, from, to, "مرتجعات المشتريات");
+        if (excel) return ExcelReturns(rows, new { count = rows.Count, totalAmount = rows.Sum(r => r.Amount) }, from, to, "Ù…Ø±ØªØ¬Ø¹Ø§Øª Ø§Ù„Ù…Ø´ØªØ±ÙŠØ§Øª");
 
         return Ok(new { from, to, rows, summary = new { count = rows.Count, totalAmount = rows.Sum(r => r.Amount) } });
     }
 
-    // ══════════════════════════════════════════════════════
-    // 9. عمليات المستخدمين (الكاشير)
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 9. Ø¹Ù…Ù„ÙŠØ§Øª Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…ÙŠÙ† (Ø§Ù„ÙƒØ§Ø´ÙŠØ±)
     // GET /api/operationalreports/user-activity
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("user-activity")]
     public async Task<IActionResult> UserActivity(
         [FromQuery] DateTime? fromDate = null,
@@ -1058,7 +1059,7 @@ public class OperationalReportsController : ControllerBase
 
         var orders = await q.OrderByDescending(o => o.CreatedAt).ToListAsync();
 
-        // 🛡️ REFINEMENT: Resolve staff names from HR Employees or System Users
+        // ðŸ›¡ï¸ REFINEMENT: Resolve staff names from HR Employees or System Users
         var personIds = orders.Select(o => o.SalesPersonId).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
         var numericIds = personIds.Where(id => int.TryParse(id, out _)).Select(id => int.Parse(id!)).ToList();
         
@@ -1147,10 +1148,10 @@ public class OperationalReportsController : ControllerBase
         return Ok(new { from, to, summary = byPerson, detail });
     }
 
-    // ══════════════════════════════════════════════════════
-    // 10. حركة صنف
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 10. Ø­Ø±ÙƒØ© ØµÙ†Ù
     // GET /api/operationalreports/product-movement?productId=&fromDate=&toDate=
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("product-movement")]
     public async Task<IActionResult> ProductMovement(
         [FromQuery] int?      productId  = null,
@@ -1222,7 +1223,7 @@ public class OperationalReportsController : ControllerBase
             var orderMap = await _db.Orders.AsNoTracking().Where(o => orderRefs.Contains(o.OrderNumber)).ToDictionaryAsync(o => o.OrderNumber, o => o.Id);
             var purchaseMap = await _db.PurchaseInvoices.AsNoTracking().Where(i => purchaseRefs.Contains(i.InvoiceNumber)).ToDictionaryAsync(i => i.InvoiceNumber, i => i.Id);
 
-            // 🛡️ REFINEMENT: Resolve staff names for the report
+            // ðŸ›¡ï¸ REFINEMENT: Resolve staff names for the report
             var personIds = dbMovements.Select(m => m.CreatedByUserId).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
             var numericIds = personIds.Where(id => int.TryParse(id, out _)).Select(id => int.Parse(id!)).ToList();
             var empNames = await _db.Employees.Where(e => numericIds.Contains(e.Id)).ToDictionaryAsync(e => e.Id.ToString(), e => e.Name);
@@ -1249,7 +1250,7 @@ public class OperationalReportsController : ControllerBase
                     TranslateMovementType(m.Type),
                     m.Reference ?? "N/A",
                     m.Note ?? "-",
-                    (m.ProductVariant != null ? (m.ProductVariant.Size + " / " + (m.ProductVariant.ColorAr ?? m.ProductVariant.Color ?? "")) : "أساسي"),
+                    (m.ProductVariant != null ? (m.ProductVariant.Size + " / " + (m.ProductVariant.ColorAr ?? m.ProductVariant.Color ?? "")) : "Ø£Ø³Ø§Ø³ÙŠ"),
                     m.Quantity > 0 ? m.Quantity : 0,
                     m.Quantity < 0 ? Math.Abs(m.Quantity) : 0,
                     m.Quantity * m.UnitCost,
@@ -1259,14 +1260,14 @@ public class OperationalReportsController : ControllerBase
                     m.Product?.SKU ?? "N/A",
                     m.RemainingStock,
                     sourceId,
-                    m.ProductVariant?.Size ?? "أساسي",
+                    m.ProductVariant?.Size ?? "Ø£Ø³Ø§Ø³ÙŠ",
                     m.ProductVariant?.ColorAr ?? m.ProductVariant?.Color ?? "-"
                 );
             }).ToList();
 
             // Summary
             decimal currentStock = 0;
-            string productBrief = "الكل";
+            string productBrief = "Ø§Ù„ÙƒÙ„";
 
             if (productId > 0)
             {
@@ -1313,14 +1314,14 @@ public class OperationalReportsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "ProductMovement report failed");
-            return StatusCode(500, new { message = "حدث خطأ أثناء تنفيذ التقرير. يرجى المحاولة مرة أخرى." });
+            return StatusCode(500, new { message = "Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªÙ†ÙÙŠØ° Ø§Ù„ØªÙ‚Ø±ÙŠØ±. ÙŠØ±Ø¬Ù‰ Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø© Ù…Ø±Ø© Ø£Ø®Ø±Ù‰." });
         }
     }
 
-    // ══════════════════════════════════════════════════════
-    // 11. سجل حركات المخزن الشامل (Advanced Movement Ledger)
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 11. Ø³Ø¬Ù„ Ø­Ø±ÙƒØ§Øª Ø§Ù„Ù…Ø®Ø²Ù† Ø§Ù„Ø´Ø§Ù…Ù„ (Advanced Movement Ledger)
     // GET /api/operationalreports/stock-movements?productId=&fromDate=&toDate=&type=
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("stock-movement")]
     [HttpGet("stock-movements")] // Alias for different frontend versions
     public async Task<IActionResult> StockMovementsLedger(
@@ -1352,7 +1353,7 @@ public class OperationalReportsController : ControllerBase
             m.CreatedAt,
             productName = m.Product?.NameAr,
             sku         = m.Product?.SKU,
-            variant     = m.ProductVariant != null ? $"{m.ProductVariant.Size} {m.ProductVariant.ColorAr}" : "أساسي",
+            variant     = m.ProductVariant != null ? $"{m.ProductVariant.Size} {m.ProductVariant.ColorAr}" : "Ø£Ø³Ø§Ø³ÙŠ",
             entryType   = m.Type.ToString(),
             entryTypeAr = GetMovementTypeAr(m.Type),
             m.Quantity,
@@ -1373,35 +1374,35 @@ public class OperationalReportsController : ControllerBase
 
     private string GetMovementTypeAr(InventoryMovementType type) => type switch
     {
-        InventoryMovementType.OpeningBalance => "رصيد أول المدة",
-        InventoryMovementType.Purchase       => "مشتريات",
-        InventoryMovementType.Sale           => "مبيعات",
-        InventoryMovementType.ReturnIn       => "مرتجع مبيعات",
-        InventoryMovementType.ReturnOut      => "مرتجع مشتريات",
-        InventoryMovementType.Audit          => "جرد",
-        InventoryMovementType.Adjustment     => "تسوية مخزنية",
+        InventoryMovementType.OpeningBalance => "Ø±ØµÙŠØ¯ Ø£ÙˆÙ„ Ø§Ù„Ù…Ø¯Ø©",
+        InventoryMovementType.Purchase       => "Ù…Ø´ØªØ±ÙŠØ§Øª",
+        InventoryMovementType.Sale           => "Ù…Ø¨ÙŠØ¹Ø§Øª",
+        InventoryMovementType.ReturnIn       => "Ù…Ø±ØªØ¬Ø¹ Ù…Ø¨ÙŠØ¹Ø§Øª",
+        InventoryMovementType.ReturnOut      => "Ù…Ø±ØªØ¬Ø¹ Ù…Ø´ØªØ±ÙŠØ§Øª",
+        InventoryMovementType.Audit          => "Ø¬Ø±Ø¯",
+        InventoryMovementType.Adjustment     => "ØªØ³ÙˆÙŠØ© Ù…Ø®Ø²Ù†ÙŠØ©",
         _ => type.ToString()
     };
 
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // EXCEL HELPERS
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     private IActionResult ExcelCustomerStatement(Customer c, List<CustomerStatementLine> lines, decimal invoiced, decimal paid, decimal outstanding, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("كشف حساب عميل");
+        var ws = wb.Worksheets.Add("ÙƒØ´Ù Ø­Ø³Ø§Ø¨ Ø¹Ù…ÙŠÙ„");
         ws.RightToLeft = true;
-        ws.Cell(1,1).Value = $"كشف حساب: {c.FullName} | {c.Phone}";
+        ws.Cell(1,1).Value = $"ÙƒØ´Ù Ø­Ø³Ø§Ø¨: {c.FullName} | {c.Phone}";
         ws.Cell(1,1).Style.Font.Bold = true; ws.Cell(1,1).Style.Font.FontSize = 13;
-        ws.Cell(2,1).Value = $"من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(2,1).Value = $"Ù…Ù† {from:yyyy-MM-dd} Ø¥Ù„Ù‰ {to:yyyy-MM-dd}";
 
-        string[] h = {"التاريخ","النوع","المرجع","البيان","مدين","دائن","الرصيد"};
+        string[] h = {"Ø§Ù„ØªØ§Ø±ÙŠØ®","Ø§Ù„Ù†ÙˆØ¹","Ø§Ù„Ù…Ø±Ø¬Ø¹","Ø§Ù„Ø¨ÙŠØ§Ù†","Ù…Ø¯ÙŠÙ†","Ø¯Ø§Ø¦Ù†","Ø§Ù„Ø±ØµÙŠØ¯"};
         for (int i=0;i<h.Length;i++){ws.Cell(3,i+1).Value=h[i];ws.Cell(3,i+1).Style.Font.Bold=true;ws.Cell(3,i+1).Style.Fill.BackgroundColor=XLColor.FromHtml("#1a237e");ws.Cell(3,i+1).Style.Font.FontColor=XLColor.White;}
 
         int r=4;
         foreach(var l in lines){ws.Cell(r,1).Value=l.Date.ToString("yyyy-MM-dd");ws.Cell(r,2).Value=l.Type;ws.Cell(r,3).Value=l.Reference;ws.Cell(r,4).Value=l.Description;ws.Cell(r,5).Value=l.Debit;ws.Cell(r,6).Value=l.Credit;ws.Cell(r,7).Value=l.Balance;for(int c2=5;c2<=7;c2++)ws.Cell(r,c2).Style.NumberFormat.Format="#,##0.00";r++;}
 
-        ws.Cell(r,4).Value="الإجمالي";ws.Cell(r,4).Style.Font.Bold=true;ws.Cell(r,5).Value=invoiced;ws.Cell(r,6).Value=paid;ws.Cell(r,7).Value=outstanding;for(int c2=5;c2<=7;c2++){ws.Cell(r,c2).Style.Font.Bold=true;ws.Cell(r,c2).Style.NumberFormat.Format="#,##0.00";}
+        ws.Cell(r,4).Value="Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ";ws.Cell(r,4).Style.Font.Bold=true;ws.Cell(r,5).Value=invoiced;ws.Cell(r,6).Value=paid;ws.Cell(r,7).Value=outstanding;for(int c2=5;c2<=7;c2++){ws.Cell(r,c2).Style.Font.Bold=true;ws.Cell(r,c2).Style.NumberFormat.Format="#,##0.00";}
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"customer_{c.Id}_{from:yyyyMMdd}.xlsx");
     }
@@ -1409,13 +1410,13 @@ public class OperationalReportsController : ControllerBase
     private IActionResult ExcelCustomerAging(List<CustomerAgingRow> rows, DateTime asOf)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("ديون العملاء");
+        var ws = wb.Worksheets.Add("Ø¯ÙŠÙˆÙ† Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡");
         ws.RightToLeft = true;
-        ws.Cell(1,1).Value = $"تقرير ديون العملاء — حتى {asOf:yyyy-MM-dd}";
+        ws.Cell(1,1).Value = $"ØªÙ‚Ø±ÙŠØ± Ø¯ÙŠÙˆÙ† Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ â€” Ø­ØªÙ‰ {asOf:yyyy-MM-dd}";
         ws.Cell(1,1).Style.Font.Bold = true; ws.Cell(1,1).Style.Font.FontSize = 13;
         ws.Range(1,1,1,7).Merge();
 
-        string[] h = {"اسم العميل","التليفون","الإجمالي","0-30 يوم","31-60 يوم","61-90 يوم","أكثر من 90"};
+        string[] h = {"Ø§Ø³Ù… Ø§Ù„Ø¹Ù…ÙŠÙ„","Ø§Ù„ØªÙ„ÙŠÙÙˆÙ†","Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ","0-30 ÙŠÙˆÙ…","31-60 ÙŠÙˆÙ…","61-90 ÙŠÙˆÙ…","Ø£ÙƒØ«Ø± Ù…Ù† 90"};
         for(int i=0;i<h.Length;i++){ws.Cell(2,i+1).Value=h[i];ws.Cell(2,i+1).Style.Font.Bold=true;ws.Cell(2,i+1).Style.Fill.BackgroundColor=XLColor.FromHtml("#1a237e");ws.Cell(2,i+1).Style.Font.FontColor=XLColor.White;}
 
         int r=3;
@@ -1428,12 +1429,12 @@ public class OperationalReportsController : ControllerBase
     private IActionResult ExcelSupplierAging(List<SupplierAgingRow> rows, DateTime asOf)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("ديون الموردين");
+        var ws = wb.Worksheets.Add("Ø¯ÙŠÙˆÙ† Ø§Ù„Ù…ÙˆØ±Ø¯ÙŠÙ†");
         ws.RightToLeft = true;
-        ws.Cell(1,1).Value = $"تقرير ديون الموردين — حتى {asOf:yyyy-MM-dd}";
+        ws.Cell(1,1).Value = $"ØªÙ‚Ø±ÙŠØ± Ø¯ÙŠÙˆÙ† Ø§Ù„Ù…ÙˆØ±Ø¯ÙŠÙ† â€” Ø­ØªÙ‰ {asOf:yyyy-MM-dd}";
         ws.Cell(1,1).Style.Font.Bold = true; ws.Cell(1,1).Style.Font.FontSize = 13;
 
-        string[] h = {"المورد","التليفون","الشركة","الإجمالي","0-30","31-60","61-90","أكثر من 90"};
+        string[] h = {"Ø§Ù„Ù…ÙˆØ±Ø¯","Ø§Ù„ØªÙ„ÙŠÙÙˆÙ†","Ø§Ù„Ø´Ø±ÙƒØ©","Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ","0-30","31-60","61-90","Ø£ÙƒØ«Ø± Ù…Ù† 90"};
         for(int i=0;i<h.Length;i++){ws.Cell(2,i+1).Value=h[i];ws.Cell(2,i+1).Style.Font.Bold=true;ws.Cell(2,i+1).Style.Fill.BackgroundColor=XLColor.FromHtml("#c62828");ws.Cell(2,i+1).Style.Font.FontColor=XLColor.White;}
 
         int r=3;
@@ -1445,13 +1446,13 @@ public class OperationalReportsController : ControllerBase
     private IActionResult ExcelSupplierStatement(Supplier s, List<CustomerStatementLine> lines, decimal invoiced, decimal paid, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("كشف حساب مورد");
+        var ws = wb.Worksheets.Add("ÙƒØ´Ù Ø­Ø³Ø§Ø¨ Ù…ÙˆØ±Ø¯");
         ws.RightToLeft = true;
-        ws.Cell(1,1).Value = $"كشف حساب مورد: {s.Name} | {s.Phone}";
+        ws.Cell(1,1).Value = $"ÙƒØ´Ù Ø­Ø³Ø§Ø¨ Ù…ÙˆØ±Ø¯: {s.Name} | {s.Phone}";
         ws.Cell(1,1).Style.Font.Bold = true;
-        ws.Cell(2,1).Value = $"من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(2,1).Value = $"Ù…Ù† {from:yyyy-MM-dd} Ø¥Ù„Ù‰ {to:yyyy-MM-dd}";
 
-        string[] h = {"التاريخ","النوع","المرجع","البيان","مدين (مشتريات)","دائن (مدفوعات)","الرصيد"};
+        string[] h = {"Ø§Ù„ØªØ§Ø±ÙŠØ®","Ø§Ù„Ù†ÙˆØ¹","Ø§Ù„Ù…Ø±Ø¬Ø¹","Ø§Ù„Ø¨ÙŠØ§Ù†","Ù…Ø¯ÙŠÙ† (Ù…Ø´ØªØ±ÙŠØ§Øª)","Ø¯Ø§Ø¦Ù† (Ù…Ø¯ÙÙˆØ¹Ø§Øª)","Ø§Ù„Ø±ØµÙŠØ¯"};
         for (int i=0;i<h.Length;i++){ws.Cell(3,i+1).Value=h[i];ws.Cell(3,i+1).Style.Font.Bold=true;ws.Cell(3,i+1).Style.Fill.BackgroundColor=XLColor.FromHtml("#c62828");ws.Cell(3,i+1).Style.Font.FontColor=XLColor.White;}
 
         int r=4;
@@ -1464,17 +1465,17 @@ public class OperationalReportsController : ControllerBase
     private IActionResult ExcelInventory(List<InventoryRow> rows, dynamic summary)
     {
         using var wb = new XLWorkbook();
-        var ws1 = wb.Worksheets.Add("ملخص المخزون");
+        var ws1 = wb.Worksheets.Add("Ù…Ù„Ø®Øµ Ø§Ù„Ù…Ø®Ø²ÙˆÙ†");
         ws1.RightToLeft = true;
-        string[] h1 = {"الاسم عربي","SKU","الفئة","السعر","سعر البيع","إجمالي المخزون","قيمة المخزون"};
+        string[] h1 = {"Ø§Ù„Ø§Ø³Ù… Ø¹Ø±Ø¨ÙŠ","SKU","Ø§Ù„ÙØ¦Ø©","Ø§Ù„Ø³Ø¹Ø±","Ø³Ø¹Ø± Ø§Ù„Ø¨ÙŠØ¹","Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø®Ø²ÙˆÙ†","Ù‚ÙŠÙ…Ø© Ø§Ù„Ù…Ø®Ø²ÙˆÙ†"};
         for(int i=0;i<h1.Length;i++){ws1.Cell(1,i+1).Value=h1[i];ws1.Cell(1,i+1).Style.Font.Bold=true;ws1.Cell(1,i+1).Style.Fill.BackgroundColor=XLColor.FromHtml("#1b5e20");ws1.Cell(1,i+1).Style.Font.FontColor=XLColor.White;}
         int r=2;
         foreach(var row in rows){ws1.Cell(r,1).Value=row.NameAr;ws1.Cell(r,2).Value=row.SKU;ws1.Cell(r,3).Value=row.CategoryName;ws1.Cell(r,4).Value=row.Price;ws1.Cell(r,5).Value=row.Price;ws1.Cell(r,6).Value=row.TotalStock;ws1.Cell(r,7).Value=row.TotalValue;ws1.Cell(r,4).Style.NumberFormat.Format="#,##0.00";ws1.Cell(r,5).Style.NumberFormat.Format="#,##0.00";ws1.Cell(r,7).Style.NumberFormat.Format="#,##0.00";if(row.TotalStock<=5)ws1.Row(r).Style.Fill.BackgroundColor=XLColor.FromHtml("#fff3e0");if(row.TotalStock==0)ws1.Row(r).Style.Fill.BackgroundColor=XLColor.FromHtml("#ffebee");r++;}
         ws1.Columns().AdjustToContents();
 
-        var ws2 = wb.Worksheets.Add("تفاصيل المقاسات");
+        var ws2 = wb.Worksheets.Add("ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ù…Ù‚Ø§Ø³Ø§Øª");
         ws2.RightToLeft = true;
-        string[] h2 = {"المنتج","SKU","المقاس","اللون","المخزون","السعر","القيمة"};
+        string[] h2 = {"Ø§Ù„Ù…Ù†ØªØ¬","SKU","Ø§Ù„Ù…Ù‚Ø§Ø³","Ø§Ù„Ù„ÙˆÙ†","Ø§Ù„Ù…Ø®Ø²ÙˆÙ†","Ø§Ù„Ø³Ø¹Ø±","Ø§Ù„Ù‚ÙŠÙ…Ø©"};
         for(int i=0;i<h2.Length;i++){ws2.Cell(1,i+1).Value=h2[i];ws2.Cell(1,i+1).Style.Font.Bold=true;}
         int r2=2;
         foreach(var p in rows)foreach(var v in p.Variants){ws2.Cell(r2,1).Value=p.NameAr;ws2.Cell(r2,2).Value=p.SKU;ws2.Cell(r2,3).Value=v.Size;ws2.Cell(r2,4).Value=v.Color;ws2.Cell(r2,5).Value=v.StockQuantity;ws2.Cell(r2,6).Value=v.Price;ws2.Cell(r2,7).Value=v.Value;ws2.Cell(r2,6).Style.NumberFormat.Format="#,##0.00";ws2.Cell(r2,7).Style.NumberFormat.Format="#,##0.00";r2++;}
@@ -1486,12 +1487,12 @@ public class OperationalReportsController : ControllerBase
     private IActionResult ExcelSales(List<SalesRow> rows, dynamic summary, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("تقرير المبيعات بالتفاصيل");
+        var ws = wb.Worksheets.Add("ØªÙ‚Ø±ÙŠØ± Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª Ø¨Ø§Ù„ØªÙØ§ØµÙŠÙ„");
         ws.RightToLeft = true;
-        ws.Cell(1,1).Value=$"تقرير المبيعات التفصيلي — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(1,1).Value=$"ØªÙ‚Ø±ÙŠØ± Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª Ø§Ù„ØªÙØµÙŠÙ„ÙŠ â€” Ù…Ù† {from:yyyy-MM-dd} Ø¥Ù„Ù‰ {to:yyyy-MM-dd}";
         ws.Cell(1,1).Style.Font.Bold=true;
         
-        string[] h={"رقم الطلب","التاريخ","العميل","التليفون","المصدر","الحالة","الدفع","تفاصيل الدفع","كود الصنف","اسم الصنف","المقاس","اللون","الكمية","سعر الوحدة","خصم البند","إجمالي البند","خصم الفاتورة (كوبون)","إجمالي الفاتورة"};
+        string[] h={"Ø±Ù‚Ù… Ø§Ù„Ø·Ù„Ø¨","Ø§Ù„ØªØ§Ø±ÙŠØ®","Ø§Ù„Ø¹Ù…ÙŠÙ„","Ø§Ù„ØªÙ„ÙŠÙÙˆÙ†","Ø§Ù„Ù…ØµØ¯Ø±","Ø§Ù„Ø­Ø§Ù„Ø©","Ø§Ù„Ø¯ÙØ¹","ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø¯ÙØ¹","ÙƒÙˆØ¯ Ø§Ù„ØµÙ†Ù","Ø§Ø³Ù… Ø§Ù„ØµÙ†Ù","Ø§Ù„Ù…Ù‚Ø§Ø³","Ø§Ù„Ù„ÙˆÙ†","Ø§Ù„ÙƒÙ…ÙŠØ©","Ø³Ø¹Ø± Ø§Ù„ÙˆØ­Ø¯Ø©","Ø®ØµÙ… Ø§Ù„Ø¨Ù†Ø¯","Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø¨Ù†Ø¯","Ø®ØµÙ… Ø§Ù„ÙØ§ØªÙˆØ±Ø© (ÙƒÙˆØ¨ÙˆÙ†)","Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„ÙØ§ØªÙˆØ±Ø©"};
         for(int i=0;i<h.Length;i++){
             var cell = ws.Cell(2,i+1);
             cell.Value=h[i];
@@ -1512,7 +1513,7 @@ public class OperationalReportsController : ControllerBase
                 ws.Cell(r, 5).Value = order.Source;
                 ws.Cell(r, 6).Value = order.Status;
                 ws.Cell(r, 7).Value = order.PaymentMethod;
-                ws.Cell(r, 8).Value = order.PaymentDetails; // ✅ Added
+                ws.Cell(r, 8).Value = order.PaymentDetails; // âœ… Added
                 ws.Cell(r, 16).Value = order.TotalAmount;
                 r++;
                 continue;
@@ -1527,7 +1528,7 @@ public class OperationalReportsController : ControllerBase
                 ws.Cell(r, 5).Value = order.Source;
                 ws.Cell(r, 6).Value = order.Status;
                 ws.Cell(r, 7).Value = order.PaymentMethod;
-                ws.Cell(r, 8).Value = order.PaymentDetails; // ✅ Added
+                ws.Cell(r, 8).Value = order.PaymentDetails; // âœ… Added
                 
                 ws.Cell(r, 9).Value = item.SKU;
                 ws.Cell(r, 10).Value = item.ProductName;
@@ -1551,10 +1552,10 @@ public class OperationalReportsController : ControllerBase
     private IActionResult ExcelPurchases(List<PurchaseRow> rows, dynamic summary, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("تقرير المشتريات بالتفاصيل");
+        var ws = wb.Worksheets.Add("ØªÙ‚Ø±ÙŠØ± Ø§Ù„Ù…Ø´ØªØ±ÙŠØ§Øª Ø¨Ø§Ù„ØªÙØ§ØµÙŠÙ„");
         ws.RightToLeft = true;
         
-        string[] h={"رقم الفاتورة","فاتورة المورد","المورد","التاريخ","شروط الدفع","الحالة","كود الصنف","اسم الصنف","المقاس","اللون","الكمية","التكلفة","الإجمالي"};
+        string[] h={"Ø±Ù‚Ù… Ø§Ù„ÙØ§ØªÙˆØ±Ø©","ÙØ§ØªÙˆØ±Ø© Ø§Ù„Ù…ÙˆØ±Ø¯","Ø§Ù„Ù…ÙˆØ±Ø¯","Ø§Ù„ØªØ§Ø±ÙŠØ®","Ø´Ø±ÙˆØ· Ø§Ù„Ø¯ÙØ¹","Ø§Ù„Ø­Ø§Ù„Ø©","ÙƒÙˆØ¯ Ø§Ù„ØµÙ†Ù","Ø§Ø³Ù… Ø§Ù„ØµÙ†Ù","Ø§Ù„Ù…Ù‚Ø§Ø³","Ø§Ù„Ù„ÙˆÙ†","Ø§Ù„ÙƒÙ…ÙŠØ©","Ø§Ù„ØªÙƒÙ„ÙØ©","Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ"};
         for(int i=0;i<h.Length;i++){
             var cell = ws.Cell(1,i+1);
             cell.Value=h[i];
@@ -1609,10 +1610,10 @@ public class OperationalReportsController : ControllerBase
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add(title);
         ws.RightToLeft = true;
-        ws.Cell(1,1).Value=$"{title} التفصيلي — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(1,1).Value=$"{title} Ø§Ù„ØªÙØµÙŠÙ„ÙŠ â€” Ù…Ù† {from:yyyy-MM-dd} Ø¥Ù„Ù‰ {to:yyyy-MM-dd}";
         ws.Cell(1,1).Style.Font.Bold=true;
         
-        string[] h={"الرقم","التاريخ","الاسم","التليفون","كود الصنف","اسم الصنف","المقاس","اللون","الكمية","المبلغ","السبب"};
+        string[] h={"Ø§Ù„Ø±Ù‚Ù…","Ø§Ù„ØªØ§Ø±ÙŠØ®","Ø§Ù„Ø§Ø³Ù…","Ø§Ù„ØªÙ„ÙŠÙÙˆÙ†","ÙƒÙˆØ¯ Ø§Ù„ØµÙ†Ù","Ø§Ø³Ù… Ø§Ù„ØµÙ†Ù","Ø§Ù„Ù…Ù‚Ø§Ø³","Ø§Ù„Ù„ÙˆÙ†","Ø§Ù„ÙƒÙ…ÙŠØ©","Ø§Ù„Ù…Ø¨Ù„Øº","Ø§Ù„Ø³Ø¨Ø¨"};
         for(int i=0;i<h.Length;i++){
             var cell = ws.Cell(2,i+1);
             cell.Value=h[i];
@@ -1664,13 +1665,13 @@ public class OperationalReportsController : ControllerBase
         using var wb = new XLWorkbook();
         
         // Unified Report Sheet
-        var ws = wb.Worksheets.Add("أداء الكاشير التفصيلي");
+        var ws = wb.Worksheets.Add("Ø£Ø¯Ø§Ø¡ Ø§Ù„ÙƒØ§Ø´ÙŠØ± Ø§Ù„ØªÙØµÙŠÙ„ÙŠ");
         ws.RightToLeft = true;
         
-        ws.Cell(1,1).Value=$"تقرير أداء الموظفين التفصيلي — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(1,1).Value=$"ØªÙ‚Ø±ÙŠØ± Ø£Ø¯Ø§Ø¡ Ø§Ù„Ù…ÙˆØ¸ÙÙŠÙ† Ø§Ù„ØªÙØµÙŠÙ„ÙŠ â€” Ù…Ù† {from:yyyy-MM-dd} Ø¥Ù„Ù‰ {to:yyyy-MM-dd}";
         ws.Cell(1,1).Style.Font.Bold=true;
 
-        string[] h = { "الموظف/الكاشير", "رقم الطلب", "التاريخ", "العميل", "الحالة", "كود الصنف", "اسم الصنف", "المقاس", "اللون", "الكمية", "السعر", "الخصم", "الإجمالي" };
+        string[] h = { "Ø§Ù„Ù…ÙˆØ¸Ù/Ø§Ù„ÙƒØ§Ø´ÙŠØ±", "Ø±Ù‚Ù… Ø§Ù„Ø·Ù„Ø¨", "Ø§Ù„ØªØ§Ø±ÙŠØ®", "Ø§Ù„Ø¹Ù…ÙŠÙ„", "Ø§Ù„Ø­Ø§Ù„Ø©", "ÙƒÙˆØ¯ Ø§Ù„ØµÙ†Ù", "Ø§Ø³Ù… Ø§Ù„ØµÙ†Ù", "Ø§Ù„Ù…Ù‚Ø§Ø³", "Ø§Ù„Ù„ÙˆÙ†", "Ø§Ù„ÙƒÙ…ÙŠØ©", "Ø§Ù„Ø³Ø¹Ø±", "Ø§Ù„Ø®ØµÙ…", "Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ" };
         for (int i = 0; i < h.Length; i++) { 
             var cell = ws.Cell(2, i + 1);
             cell.Value = h[i]; 
@@ -1690,8 +1691,8 @@ public class OperationalReportsController : ControllerBase
             ws.Cell(r, 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#e8eaf6");
             ws.Range(r, 1, r, 5).Merge();
             
-            ws.Cell(r, 6).Value = "إجماليات:";
-            ws.Cell(r, 7).Value = $"مبيعات: {user.GrossSales:N2} | مرتجعات: {user.TotalReturns:N2} | خصومات: {user.TotalDiscount:N2} | صافي: {user.NetSales:N2}";
+            ws.Cell(r, 6).Value = "Ø¥Ø¬Ù…Ø§Ù„ÙŠØ§Øª:";
+            ws.Cell(r, 7).Value = $"Ù…Ø¨ÙŠØ¹Ø§Øª: {user.GrossSales:N2} | Ù…Ø±ØªØ¬Ø¹Ø§Øª: {user.TotalReturns:N2} | Ø®ØµÙˆÙ…Ø§Øª: {user.TotalDiscount:N2} | ØµØ§ÙÙŠ: {user.NetSales:N2}";
             ws.Range(r, 7, r, 13).Merge();
             ws.Row(r).Style.Font.Bold = true;
             r++;
@@ -1745,15 +1746,15 @@ public class OperationalReportsController : ControllerBase
     private IActionResult ExcelProductMovement(Product? p, List<ProductMovementLine> movements, dynamic summary, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("حركة الصنف");
+        var ws = wb.Worksheets.Add("Ø­Ø±ÙƒØ© Ø§Ù„ØµÙ†Ù");
         ws.RightToLeft = true;
         
-        var title = p != null ? $"حركة صنف: {p.NameAr} ({p.SKU})" : "حركة جميع الأصناف";
+        var title = p != null ? $"Ø­Ø±ÙƒØ© ØµÙ†Ù: {p.NameAr} ({p.SKU})" : "Ø­Ø±ÙƒØ© Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø£ØµÙ†Ø§Ù";
         ws.Cell(1,1).Value = title;
         ws.Cell(1,1).Style.Font.Bold = true;
         ws.Cell(1,1).Style.Font.FontSize = 14;
 
-        string[] h = { "التاريخ", "النوع", "المرجع", "الصنف", "الاسم/المورد", "التفاصيل", "وارد", "صادر", "المبلغ" };
+        string[] h = { "Ø§Ù„ØªØ§Ø±ÙŠØ®", "Ø§Ù„Ù†ÙˆØ¹", "Ø§Ù„Ù…Ø±Ø¬Ø¹", "Ø§Ù„ØµÙ†Ù", "Ø§Ù„Ø§Ø³Ù…/Ø§Ù„Ù…ÙˆØ±Ø¯", "Ø§Ù„ØªÙØ§ØµÙŠÙ„", "ÙˆØ§Ø±Ø¯", "ØµØ§Ø¯Ø±", "Ø§Ù„Ù…Ø¨Ù„Øº" };
         for (int i = 0; i < h.Length; i++)
         {
             ws.Cell(3, i + 1).Value = h[i];
@@ -1789,10 +1790,10 @@ public class OperationalReportsController : ControllerBase
         wb.SaveAs(tempFile);
         var stream = new FileStream(tempFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.DeleteOnClose);
         return new FileStreamResult(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") { FileDownloadName = filename };
-    }    // ══════════════════════════════════════════════════════
-    // 12. تقرير الأصناف الراكدة (Stock Aging)
+    }    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // 12. ØªÙ‚Ø±ÙŠØ± Ø§Ù„Ø£ØµÙ†Ø§Ù Ø§Ù„Ø±Ø§ÙƒØ¯Ø© (Stock Aging)
     // GET /api/operationalreports/inventory-aging?days=60
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("inventory-aging")]
     [HttpGet("/api/inventory/aging")] // Alias for legacy/varying client paths
     public async Task<IActionResult> InventoryAging(
@@ -1868,20 +1869,20 @@ public class OperationalReportsController : ControllerBase
 
     private string TranslateMovementType(InventoryMovementType type) => type switch
     {
-        InventoryMovementType.Purchase => "مشتريات (+)",
-        InventoryMovementType.Sale => "مبيعات (-)",
-        InventoryMovementType.ReturnOut => "مرتجع مشتريات (-)",
-        InventoryMovementType.ReturnIn => "مرتجع مبيعات (+)",
-        InventoryMovementType.Adjustment => "تسوية مخزنية",
-        InventoryMovementType.Audit => "جرد مخزني",
-        InventoryMovementType.TransferIn => "تحويل للداخل (+)",
-        InventoryMovementType.TransferOut => "تحويل للخارج (-)",
-        InventoryMovementType.OpeningBalance => "رصيد أول المدة (+)",
+        InventoryMovementType.Purchase => "Ù…Ø´ØªØ±ÙŠØ§Øª (+)",
+        InventoryMovementType.Sale => "Ù…Ø¨ÙŠØ¹Ø§Øª (-)",
+        InventoryMovementType.ReturnOut => "Ù…Ø±ØªØ¬Ø¹ Ù…Ø´ØªØ±ÙŠØ§Øª (-)",
+        InventoryMovementType.ReturnIn => "Ù…Ø±ØªØ¬Ø¹ Ù…Ø¨ÙŠØ¹Ø§Øª (+)",
+        InventoryMovementType.Adjustment => "ØªØ³ÙˆÙŠØ© Ù…Ø®Ø²Ù†ÙŠØ©",
+        InventoryMovementType.Audit => "Ø¬Ø±Ø¯ Ù…Ø®Ø²Ù†ÙŠ",
+        InventoryMovementType.TransferIn => "ØªØ­ÙˆÙŠÙ„ Ù„Ù„Ø¯Ø§Ø®Ù„ (+)",
+        InventoryMovementType.TransferOut => "ØªØ­ÙˆÙŠÙ„ Ù„Ù„Ø®Ø§Ø±Ø¬ (-)",
+        InventoryMovementType.OpeningBalance => "Ø±ØµÙŠØ¯ Ø£ÙˆÙ„ Ø§Ù„Ù…Ø¯Ø© (+)",
         _ => type.ToString()
     };
 }
 
-// ── Report DTOs ──────────────────────────────────────────
+// â”€â”€ Report DTOs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 public record CustomerStatementLine(DateTime Date, string Type, string Reference, string Description, decimal Debit, decimal Credit, decimal Balance);
 public record CustomerAgingRow(int CustomerId, string Name, string Phone, decimal Total, decimal Current, decimal Days60, decimal Days90, decimal Over90);
 public record SupplierAgingRow(int SupplierId, string Name, string Phone, string CompanyName, decimal Total, decimal Current, decimal Days60, decimal Days90, decimal Over90);
@@ -1893,3 +1894,4 @@ public record ReturnRow(string Reference, DateTime Date, string Name, string Pho
 public record ReportItemDto(string SKU, string ProductName, string Size, string Color, decimal Quantity, decimal UnitPrice = 0, decimal UnitCost = 0, decimal Discount = 0, decimal LineTotal = 0);
 public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal GrossSales, decimal TotalReturns, decimal TotalDiscount, decimal NetSales, int Cancellations);
 public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "", int Balance = 0, int? SourceId = null, string Size = "", string Color = "");
+

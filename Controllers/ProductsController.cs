@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
@@ -39,7 +40,7 @@ public class ProductsController : ControllerBase
     public async Task<IActionResult> GetRelated(int id, [FromQuery] int count = 4) =>
         Ok(await _products.GetRelatedProductsAsync(id, count));
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateProductDto dto)
     {
@@ -47,7 +48,7 @@ public class ProductsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = product.Id }, product);
     }
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateProductDto dto)
     {
@@ -55,7 +56,7 @@ public class ProductsController : ControllerBase
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
@@ -63,33 +64,34 @@ public class ProductsController : ControllerBase
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPatch("{id}/cost")]
     public async Task<IActionResult> UpdateCost(int id, [FromBody] decimal? costPrice) =>
         await _products.UpdateCostPriceAsync(id, costPrice) ? Ok() : NotFound();
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPatch("variants/{variantId}/stock")]
     public async Task<IActionResult> UpdateStock(int variantId, [FromBody] int quantity) =>
         await _products.UpdateStockAsync(variantId, quantity) ? Ok() : NotFound();
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPatch("{id}/stock")]
     public async Task<IActionResult> UpdateProductStock(int id, [FromBody] int quantity) =>
         await _products.UpdateProductStockAsync(id, quantity) ? Ok() : NotFound();
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPost("{productId}/variants")]
     public async Task<IActionResult> AddVariant(int productId, [FromBody] CreateVariantDto dto) =>
         Ok(await _products.AddVariantAsync(productId, dto));
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPatch("variants/{variantId}")]
     public async Task<IActionResult> UpdateVariant(int variantId, [FromBody] CreateVariantDto dto) =>
         Ok(await _products.UpdateVariantAsync(variantId, dto));
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpDelete("variants/{variantId}")]
     public async Task<IActionResult> DeleteVariant(int variantId) =>
         await _products.DeleteVariantAsync(variantId) ? NoContent() : NotFound();
 }
+

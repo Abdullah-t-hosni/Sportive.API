@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -10,7 +11,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[RequirePermission(ModuleKeys.Import, requireEdit: true)]
 public class ImportController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -18,9 +19,9 @@ public class ImportController : ControllerBase
 
     public ImportController(AppDbContext db) => _db = db;
 
-    // ── TEMPLATE DOWNLOAD ────────────────────────────────────
+    // â”€â”€ TEMPLATE DOWNLOAD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // GET /api/import/template
-    // ── TEMPLATE DOWNLOAD ────────────────────────────────────
+    // â”€â”€ TEMPLATE DOWNLOAD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // GET /api/import/template
     [HttpGet("template")]
     public async Task<IActionResult> GetTemplate()
@@ -34,7 +35,7 @@ public class ImportController : ControllerBase
             var brands       = await _db.Brands.AsNoTracking().Where(b => b.NameAr != null).Select(b => b.NameAr!).ToListAsync();
             var units        = await _db.ProductUnits.AsNoTracking().Where(u => u.NameAr != null).Select(u => u.NameAr!).ToListAsync();
             
-            // Fetch existing sizes and colors to provide as options — Limited for performance
+            // Fetch existing sizes and colors to provide as options â€” Limited for performance
             var existingSizes  = await _db.ProductVariants.AsNoTracking().Where(v => v.Size != null).Select(v => v.Size!).Distinct().Take(100).ToListAsync();
             var catNames = allCats.Select(c => c.NameAr).Where(n => n != null).ToHashSet();
             var existingColors = await _db.ProductVariants.AsNoTracking()
@@ -50,7 +51,7 @@ public class ImportController : ControllerBase
                 .ToList();
 
             var standardColors = new List<string> { 
-                "أبيض", "أسود", "أحمر", "أزرق", "أخضر", "أصفر", "رمادي", "كحلي", "بني", "بيج", "برتقالي", "بنفسجي", "سماوي", "ذهبي", "فضي" 
+                "Ø£Ø¨ÙŠØ¶", "Ø£Ø³ÙˆØ¯", "Ø£Ø­Ù…Ø±", "Ø£Ø²Ø±Ù‚", "Ø£Ø®Ø¶Ø±", "Ø£ØµÙØ±", "Ø±Ù…Ø§Ø¯ÙŠ", "ÙƒØ­Ù„ÙŠ", "Ø¨Ù†ÙŠ", "Ø¨ÙŠØ¬", "Ø¨Ø±ØªÙ‚Ø§Ù„ÙŠ", "Ø¨Ù†ÙØ³Ø¬ÙŠ", "Ø³Ù…Ø§ÙˆÙŠ", "Ø°Ù‡Ø¨ÙŠ", "ÙØ¶ÙŠ" 
             };
             existingColors = existingColors.Concat(standardColors).Distinct().ToList();
 
@@ -68,15 +69,15 @@ public class ImportController : ControllerBase
                 for (int i = 0; i < items.Count; i++) wsL.Cell(i + 1, col).Value = items[i];
             }
 
-            if (!brands.Any()) brands.Add("عام");
-            if (!units.Any()) units.Add("قطعة");
+            if (!brands.Any()) brands.Add("Ø¹Ø§Ù…");
+            if (!units.Any()) units.Add("Ù‚Ø·Ø¹Ø©");
             if (!existingSizes.Any()) existingSizes = new List<string> { "S", "M", "L", "XL", "XXL", "3XL", "Free Size" };
-            if (!existingColors.Any()) existingColors = new List<string> { "أبيض", "أسود", "أحمر", "أزرق", "أخضر", "رمادي", "كحلي", "بني" };
+            if (!existingColors.Any()) existingColors = new List<string> { "Ø£Ø¨ÙŠØ¶", "Ø£Ø³ÙˆØ¯", "Ø£Ø­Ù…Ø±", "Ø£Ø²Ø±Ù‚", "Ø£Ø®Ø¶Ø±", "Ø±Ù…Ø§Ø¯ÙŠ", "ÙƒØ­Ù„ÙŠ", "Ø¨Ù†ÙŠ" };
 
             FillCol(2, brands);     
             FillCol(3, units);      
-            FillCol(4, new List<string> { "نعم", "لا" });
-            FillCol(5, new List<string> { "نشط", "مسودة", "مخفي" });
+            FillCol(4, new List<string> { "Ù†Ø¹Ù…", "Ù„Ø§" });
+            FillCol(5, new List<string> { "Ù†Ø´Ø·", "Ù…Ø³ÙˆØ¯Ø©", "Ù…Ø®ÙÙŠ" });
             FillCol(6, existingSizes);
             FillCol(7, existingColors);
 
@@ -112,7 +113,7 @@ public class ImportController : ControllerBase
                 .ToList();
             
             wsL.Cell(1, 10).Value = "__DUMMY__";
-            wsL.Cell(1, 11).Value = "(اختر التصنيف أولاً)";
+            wsL.Cell(1, 11).Value = "(Ø§Ø®ØªØ± Ø§Ù„ØªØµÙ†ÙŠÙ Ø£ÙˆÙ„Ø§Ù‹)";
 
             for (int i = 0; i < mapping.Count; i++)
             {
@@ -153,7 +154,7 @@ public class ImportController : ControllerBase
                 .ToList();
 
             wsL.Cell(1, 14).Value = "__DUMMY__";
-            wsL.Cell(1, 15).Value = "(اختر التصنيف أولاً)";
+            wsL.Cell(1, 15).Value = "(Ø§Ø®ØªØ± Ø§Ù„ØªØµÙ†ÙŠÙ Ø£ÙˆÙ„Ø§Ù‹)";
             for (int i = 0; i < catSizeMapping.Count; i++)
             {
                 wsL.Cell(i + 2, 14).Value = catSizeMapping[i].CatName;
@@ -167,16 +168,16 @@ public class ImportController : ControllerBase
             wb.DefinedNames.Add("MapParent", parentRange);
             wb.DefinedNames.Add("MapChild", childRange);
 
-            var ws1 = wb.Worksheets.Add("المنتجات والمقاسات");
+            var ws1 = wb.Worksheets.Add("Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª ÙˆØ§Ù„Ù…Ù‚Ø§Ø³Ø§Øª");
             ws1.RightToLeft = true;
 
             var headers1 = new[] {
-                "الكود SKU *", "الاسم عربي *", "الوحدة *", "الاسم انجليزي",
-                "التصنيف الأساسي *", "التصنيف الفرعي", "التصنيف الفرعي 2",
-                "سعر التكلفة", "السعر *", "سعر الخصم",
-                "خاضع للضريبة؟ *", "الماركة", "المقاس", "اللون (English)", "اللون (عربي)",
-                "المخزون", "فارق السعر للمقاس", "حد الطلب", "الحالة",
-                "مميز (نعم/لا)", "الوصف عربي", "الوصف انجليزي"
+                "Ø§Ù„ÙƒÙˆØ¯ SKU *", "Ø§Ù„Ø§Ø³Ù… Ø¹Ø±Ø¨ÙŠ *", "Ø§Ù„ÙˆØ­Ø¯Ø© *", "Ø§Ù„Ø§Ø³Ù… Ø§Ù†Ø¬Ù„ÙŠØ²ÙŠ",
+                "Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„Ø£Ø³Ø§Ø³ÙŠ *", "Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„ÙØ±Ø¹ÙŠ", "Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„ÙØ±Ø¹ÙŠ 2",
+                "Ø³Ø¹Ø± Ø§Ù„ØªÙƒÙ„ÙØ©", "Ø§Ù„Ø³Ø¹Ø± *", "Ø³Ø¹Ø± Ø§Ù„Ø®ØµÙ…",
+                "Ø®Ø§Ø¶Ø¹ Ù„Ù„Ø¶Ø±ÙŠØ¨Ø©ØŸ *", "Ø§Ù„Ù…Ø§Ø±ÙƒØ©", "Ø§Ù„Ù…Ù‚Ø§Ø³", "Ø§Ù„Ù„ÙˆÙ† (English)", "Ø§Ù„Ù„ÙˆÙ† (Ø¹Ø±Ø¨ÙŠ)",
+                "Ø§Ù„Ù…Ø®Ø²ÙˆÙ†", "ÙØ§Ø±Ù‚ Ø§Ù„Ø³Ø¹Ø± Ù„Ù„Ù…Ù‚Ø§Ø³", "Ø­Ø¯ Ø§Ù„Ø·Ù„Ø¨", "Ø§Ù„Ø­Ø§Ù„Ø©",
+                "Ù…Ù…ÙŠØ² (Ù†Ø¹Ù…/Ù„Ø§)", "Ø§Ù„ÙˆØµÙ Ø¹Ø±Ø¨ÙŠ", "Ø§Ù„ÙˆØµÙ Ø§Ù†Ø¬Ù„ÙŠØ²ÙŠ"
             };
             for (int c = 0; c < headers1.Length; c++)
             {
@@ -210,17 +211,17 @@ public class ImportController : ControllerBase
             }
 
             ws1.Cell(2,1).Value = "TS-001";
-            ws1.Cell(2,2).Value = "تيشرت رياضي";
-            ws1.Cell(2,3).Value = units.FirstOrDefault() ?? "قطعة";
+            ws1.Cell(2,2).Value = "ØªÙŠØ´Ø±Øª Ø±ÙŠØ§Ø¶ÙŠ";
+            ws1.Cell(2,3).Value = units.FirstOrDefault() ?? "Ù‚Ø·Ø¹Ø©";
             ws1.Cell(2,5).Value = mainCats.FirstOrDefault()?.NameAr;
             ws1.Cell(2,8).Value = 200; 
             ws1.Cell(2,9).Value = 299;
-            ws1.Cell(2,11).Value = "نعم";
-            ws1.Cell(2,19).Value = "نشط";
-            ws1.Cell(2,20).Value = "لا";
+            ws1.Cell(2,11).Value = "Ù†Ø¹Ù…";
+            ws1.Cell(2,19).Value = "Ù†Ø´Ø·";
+            ws1.Cell(2,20).Value = "Ù„Ø§";
             ws1.Row(2).Style.Font.FontColor = XLColor.Gray;
 
-            // ws1.Columns().AdjustToContents(); // ❌ REMOVED: Often fails on Linux/Docker without GDI+
+            // ws1.Columns().AdjustToContents(); // âŒ REMOVED: Often fails on Linux/Docker without GDI+
             
             var stream = new MemoryStream();
             wb.SaveAs(stream); 
@@ -230,23 +231,23 @@ public class ImportController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = $"خطأ في إنشاء النموذج: {ex.Message}" });
+            return BadRequest(new { message = $"Ø®Ø·Ø£ ÙÙŠ Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ù†Ù…ÙˆØ°Ø¬: {ex.Message}" });
         }
     }
 
 
-    // ── IMPORT PRODUCTS ───────────────────────────────────────
+    // â”€â”€ IMPORT PRODUCTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // POST /api/import/products
     [HttpPost("products")]
     [RequestSizeLimit(10 * 1024 * 1024)] // 10MB
     public async Task<IActionResult> ImportProducts(IFormFile file, [FromQuery] bool update = false)
     {
         if (file == null || file.Length == 0)
-            return BadRequest(new { message = "لم يتم رفع ملف" });
+            return BadRequest(new { message = "Ù„Ù… ÙŠØªÙ… Ø±ÙØ¹ Ù…Ù„Ù" });
 
         var ext = Path.GetExtension(file.FileName).ToLower();
         if (ext != ".xlsx" && ext != ".xls")
-            return BadRequest(new { message = "يجب أن يكون الملف بصيغة Excel (.xlsx)" });
+            return BadRequest(new { message = "ÙŠØ¬Ø¨ Ø£Ù† ÙŠÙƒÙˆÙ† Ø§Ù„Ù…Ù„Ù Ø¨ØµÙŠØºØ© Excel (.xlsx)" });
 
         var result = new ImportResult();
 
@@ -258,7 +259,7 @@ public class ImportController : ControllerBase
             var ws = wb.Worksheets.FirstOrDefault(x => x.Visibility == XLWorksheetVisibility.Visible)
                      ?? wb.Worksheets.FirstOrDefault();
 
-            if (ws == null) throw new Exception("الملف لا يحتوي على صفحات عمل");
+            if (ws == null) throw new Exception("Ø§Ù„Ù…Ù„Ù Ù„Ø§ ÙŠØ­ØªÙˆÙŠ Ø¹Ù„Ù‰ ØµÙØ­Ø§Øª Ø¹Ù…Ù„");
 
             var headers = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var firstRow = ws.Row(1);
@@ -284,31 +285,31 @@ public class ImportController : ControllerBase
             }
 
             // Mapping columns
-            int colSku      = GetCol("الكود SKU", "الباركود", "sku", "Code");
-            int colNameAr   = GetCol("الاسم عربي", "اسم المنتج", "الاسم", "Name Ar");
-            int colUnit     = GetCol("الوحدة", "وحدة القياس", "Unit");
-            int colNameEn   = GetCol("الاسم انجليزي", "الاسم English", "Name En");
-            int colMainCat  = GetCol("التصنيف الأساسي", "الفئة", "التصنيف", "Main Category", "Category");
-            int colSubCat   = GetCol("التصنيف الفرعي", "الفئة الفرعية", "Sub Category");
-            int colSubSub   = GetCol("التصنيف الفرعي 2", "التصنيف فرع فرعي", "الفئة الفرعية 2", "Sub Sub Category");
-            int colCost     = GetCol("سعر التكلفة", "التكلفة", "Cost");
-            int colPrice    = GetCol("السعر", "سعر البيع", "Price");
-            int colDisc     = GetCol("سعر الخصم", "الخصم", "Discount");
-            int colHasTax   = GetCol("خاضع للضريبة", "taxable", "الضريبة", "Is Taxable"); 
-            int colBrand    = GetCol("العلامة التجارية", "الماركة", "Brand", "الماركه");
-            int colSize     = GetCol("المقاس", "Size", "القياس", "المقاسات", "size");
-            int colColorEn  = GetCol("اللون (English)", "اللون English", "Color En", "Color");
-            int colColorAr  = GetCol("اللون (عربي)", "اللون عربي", "Color Ar", "اللون", "الوان");
-            int colStock    = GetCol("المخزون", "Stock", "الكمية");
-            int colAdj      = GetCol("فارق السعر للمقاس", "Price Adjustment");
-            int colReorder  = GetCol("حد الطلب", "Reorder Level");
-            int colStatus   = GetCol("الحالة", "Status");
-            int colFeat     = GetCol("مميز (نعم/لا)", "Featured");
-            int colDescAr   = GetCol("الوصف عربي", "Description Ar");
-            int colDescEn   = GetCol("الوصف انجليزي", "Description En");
+            int colSku      = GetCol("Ø§Ù„ÙƒÙˆØ¯ SKU", "Ø§Ù„Ø¨Ø§Ø±ÙƒÙˆØ¯", "sku", "Code");
+            int colNameAr   = GetCol("Ø§Ù„Ø§Ø³Ù… Ø¹Ø±Ø¨ÙŠ", "Ø§Ø³Ù… Ø§Ù„Ù…Ù†ØªØ¬", "Ø§Ù„Ø§Ø³Ù…", "Name Ar");
+            int colUnit     = GetCol("Ø§Ù„ÙˆØ­Ø¯Ø©", "ÙˆØ­Ø¯Ø© Ø§Ù„Ù‚ÙŠØ§Ø³", "Unit");
+            int colNameEn   = GetCol("Ø§Ù„Ø§Ø³Ù… Ø§Ù†Ø¬Ù„ÙŠØ²ÙŠ", "Ø§Ù„Ø§Ø³Ù… English", "Name En");
+            int colMainCat  = GetCol("Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„Ø£Ø³Ø§Ø³ÙŠ", "Ø§Ù„ÙØ¦Ø©", "Ø§Ù„ØªØµÙ†ÙŠÙ", "Main Category", "Category");
+            int colSubCat   = GetCol("Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„ÙØ±Ø¹ÙŠ", "Ø§Ù„ÙØ¦Ø© Ø§Ù„ÙØ±Ø¹ÙŠØ©", "Sub Category");
+            int colSubSub   = GetCol("Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„ÙØ±Ø¹ÙŠ 2", "Ø§Ù„ØªØµÙ†ÙŠÙ ÙØ±Ø¹ ÙØ±Ø¹ÙŠ", "Ø§Ù„ÙØ¦Ø© Ø§Ù„ÙØ±Ø¹ÙŠØ© 2", "Sub Sub Category");
+            int colCost     = GetCol("Ø³Ø¹Ø± Ø§Ù„ØªÙƒÙ„ÙØ©", "Ø§Ù„ØªÙƒÙ„ÙØ©", "Cost");
+            int colPrice    = GetCol("Ø§Ù„Ø³Ø¹Ø±", "Ø³Ø¹Ø± Ø§Ù„Ø¨ÙŠØ¹", "Price");
+            int colDisc     = GetCol("Ø³Ø¹Ø± Ø§Ù„Ø®ØµÙ…", "Ø§Ù„Ø®ØµÙ…", "Discount");
+            int colHasTax   = GetCol("Ø®Ø§Ø¶Ø¹ Ù„Ù„Ø¶Ø±ÙŠØ¨Ø©", "taxable", "Ø§Ù„Ø¶Ø±ÙŠØ¨Ø©", "Is Taxable"); 
+            int colBrand    = GetCol("Ø§Ù„Ø¹Ù„Ø§Ù…Ø© Ø§Ù„ØªØ¬Ø§Ø±ÙŠØ©", "Ø§Ù„Ù…Ø§Ø±ÙƒØ©", "Brand", "Ø§Ù„Ù…Ø§Ø±ÙƒÙ‡");
+            int colSize     = GetCol("Ø§Ù„Ù…Ù‚Ø§Ø³", "Size", "Ø§Ù„Ù‚ÙŠØ§Ø³", "Ø§Ù„Ù…Ù‚Ø§Ø³Ø§Øª", "size");
+            int colColorEn  = GetCol("Ø§Ù„Ù„ÙˆÙ† (English)", "Ø§Ù„Ù„ÙˆÙ† English", "Color En", "Color");
+            int colColorAr  = GetCol("Ø§Ù„Ù„ÙˆÙ† (Ø¹Ø±Ø¨ÙŠ)", "Ø§Ù„Ù„ÙˆÙ† Ø¹Ø±Ø¨ÙŠ", "Color Ar", "Ø§Ù„Ù„ÙˆÙ†", "Ø§Ù„ÙˆØ§Ù†");
+            int colStock    = GetCol("Ø§Ù„Ù…Ø®Ø²ÙˆÙ†", "Stock", "Ø§Ù„ÙƒÙ…ÙŠØ©");
+            int colAdj      = GetCol("ÙØ§Ø±Ù‚ Ø§Ù„Ø³Ø¹Ø± Ù„Ù„Ù…Ù‚Ø§Ø³", "Price Adjustment");
+            int colReorder  = GetCol("Ø­Ø¯ Ø§Ù„Ø·Ù„Ø¨", "Reorder Level");
+            int colStatus   = GetCol("Ø§Ù„Ø­Ø§Ù„Ø©", "Status");
+            int colFeat     = GetCol("Ù…Ù…ÙŠØ² (Ù†Ø¹Ù…/Ù„Ø§)", "Featured");
+            int colDescAr   = GetCol("Ø§Ù„ÙˆØµÙ Ø¹Ø±Ø¨ÙŠ", "Description Ar");
+            int colDescEn   = GetCol("Ø§Ù„ÙˆØµÙ Ø§Ù†Ø¬Ù„ÙŠØ²ÙŠ", "Description En");
 
             if (colSku == -1 || colNameAr == -1 || colPrice == -1 || colUnit == -1 || colMainCat == -1)
-                return BadRequest(new { message = "الأعمدة الإلزامية ناقصة (الكود، الاسم، السعر، الوحدة، التصنيف الأساسي)" });
+                return BadRequest(new { message = "Ø§Ù„Ø£Ø¹Ù…Ø¯Ø© Ø§Ù„Ø¥Ù„Ø²Ø§Ù…ÙŠØ© Ù†Ø§Ù‚ØµØ© (Ø§Ù„ÙƒÙˆØ¯ØŒ Ø§Ù„Ø§Ø³Ù…ØŒ Ø§Ù„Ø³Ø¹Ø±ØŒ Ø§Ù„ÙˆØ­Ø¯Ø©ØŒ Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„Ø£Ø³Ø§Ø³ÙŠ)" });
 
             var categories   = await _db.Categories.AsNoTracking().ToListAsync();
             var brands       = await _db.Brands.AsNoTracking().ToListAsync();
@@ -321,7 +322,7 @@ public class ImportController : ControllerBase
 
             // Prepare Error Workbook for rejected rows
             using var errorWb = new XLWorkbook();
-            var errorWs = errorWb.Worksheets.Add("الأسطر المرفوضة");
+            var errorWs = errorWb.Worksheets.Add("Ø§Ù„Ø£Ø³Ø·Ø± Ø§Ù„Ù…Ø±ÙÙˆØ¶Ø©");
             errorWs.RightToLeft = true;
             
             // Copy headers to error worksheet
@@ -339,7 +340,7 @@ public class ImportController : ControllerBase
                 }
             }
             int colErrDesc = (lastCol?.ColumnNumber() ?? 20) + 1;
-            errorWs.Cell(1, colErrDesc).Value = "سبب الرفض";
+            errorWs.Cell(1, colErrDesc).Value = "Ø³Ø¨Ø¨ Ø§Ù„Ø±ÙØ¶";
             errorWs.Cell(1, colErrDesc).Style.Font.Bold = true;
             errorWs.Cell(1, colErrDesc).Style.Fill.BackgroundColor = XLColor.Red;
             errorWs.Cell(1, colErrDesc).Style.Font.FontColor = XLColor.White;
@@ -348,7 +349,7 @@ public class ImportController : ControllerBase
 
             void LogRowError(int r, string message)
             {
-                result.Errors.Add($"صف {r}: {message}");
+                result.Errors.Add($"ØµÙ {r}: {message}");
                 // Copy the entire row from the original sheet to the error sheet
                 var lCol = ws.LastColumnUsed()?.ColumnNumber() ?? 20;
                 for (int c = 1; c <= lCol; c++)
@@ -371,8 +372,8 @@ public class ImportController : ControllerBase
 
                 if (isExisting && !update)
                 {
-                    if (!result.Skipped.Any(s => s.Contains($"الكود '{sku}' موجود")))
-                        result.Skipped.Add($"صف {r}: الكود '{sku}' موجود مسبقاً — تم تخطيه");
+                    if (!result.Skipped.Any(s => s.Contains($"Ø§Ù„ÙƒÙˆØ¯ '{sku}' Ù…ÙˆØ¬ÙˆØ¯")))
+                        result.Skipped.Add($"ØµÙ {r}: Ø§Ù„ÙƒÙˆØ¯ '{sku}' Ù…ÙˆØ¬ÙˆØ¯ Ù…Ø³Ø¨Ù‚Ø§Ù‹ â€” ØªÙ… ØªØ®Ø·ÙŠÙ‡");
                     continue;
                 }
 
@@ -429,10 +430,10 @@ public class ImportController : ControllerBase
                                 if (!string.IsNullOrEmpty(unitStr))
                                     product.UnitId = units.FirstOrDefault(u => string.Equals((u.NameAr ?? "").Trim(), unitStr.Trim(), StringComparison.OrdinalIgnoreCase))?.Id ?? product.UnitId;
 
-                                product.HasTax = !GetVal(colHasTax).Contains("لا");
+                                product.HasTax = !GetVal(colHasTax).Contains("Ù„Ø§");
                                 product.ReorderLevel = int.TryParse(GetVal(colReorder), out var rl) ? rl : product.ReorderLevel;
-                                product.Status = GetVal(colStatus) switch { "مسودة" => ProductStatus.Draft, "مخفي" => ProductStatus.Hidden, _ => ProductStatus.Active };
-                                product.IsFeatured = GetVal(colFeat).Contains("نعم");
+                                product.Status = GetVal(colStatus) switch { "Ù…Ø³ÙˆØ¯Ø©" => ProductStatus.Draft, "Ù…Ø®ÙÙŠ" => ProductStatus.Hidden, _ => ProductStatus.Active };
+                                product.IsFeatured = GetVal(colFeat).Contains("Ù†Ø¹Ù…");
                                 product.DescriptionAr = GetVal(colDescAr).NullIfEmpty() ?? product.DescriptionAr;
                                 product.DescriptionEn = GetVal(colDescEn).NullIfEmpty() ?? product.DescriptionEn;
                                 
@@ -450,13 +451,13 @@ public class ImportController : ControllerBase
                         // Mandatory checks for new products
                         if (string.IsNullOrEmpty(nameAr) || string.IsNullOrEmpty(priceStr) || string.IsNullOrEmpty(unitStr) || string.IsNullOrEmpty(mainC))
                         {
-                            LogRowError(r, $"بيانات إلزامية ناقصة (الاسم '{nameAr}', السعر '{priceStr}', الوحدة '{unitStr}', التصنيف '{mainC}') — يجب ملء كافة المعلومات الأساسية");
+                            LogRowError(r, $"Ø¨ÙŠØ§Ù†Ø§Øª Ø¥Ù„Ø²Ø§Ù…ÙŠØ© Ù†Ø§Ù‚ØµØ© (Ø§Ù„Ø§Ø³Ù… '{nameAr}', Ø§Ù„Ø³Ø¹Ø± '{priceStr}', Ø§Ù„ÙˆØ­Ø¯Ø© '{unitStr}', Ø§Ù„ØªØµÙ†ÙŠÙ '{mainC}') â€” ÙŠØ¬Ø¨ Ù…Ù„Ø¡ ÙƒØ§ÙØ© Ø§Ù„Ù…Ø¹Ù„ÙˆÙ…Ø§Øª Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ©");
                             continue;
                         }
 
                         if (!decimal.TryParse(priceStr, out var price))
                         {
-                            LogRowError(r, $"السعر غير صحيح '{priceStr}' للكود {sku}");
+                            LogRowError(r, $"Ø§Ù„Ø³Ø¹Ø± ØºÙŠØ± ØµØ­ÙŠØ­ '{priceStr}' Ù„Ù„ÙƒÙˆØ¯ {sku}");
                             continue;
                         }
 
@@ -483,7 +484,7 @@ public class ImportController : ControllerBase
                         }
                         else
                         {
-                            LogRowError(r, $"التصنيف الأساسي '{mainC}' غير موجود في النظام");
+                            LogRowError(r, $"Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„Ø£Ø³Ø§Ø³ÙŠ '{mainC}' ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ ÙÙŠ Ø§Ù„Ù†Ø¸Ø§Ù…");
                             continue;
                         }
 
@@ -493,7 +494,7 @@ public class ImportController : ControllerBase
                         int? uId = units.FirstOrDefault(u => string.Equals((u.NameAr ?? "").Trim(), unitStr.Trim(), StringComparison.OrdinalIgnoreCase))?.Id;
                         if (uId == null)
                         {
-                            LogRowError(r, $"وحدة القياس '{unitStr}' غير موجودة");
+                            LogRowError(r, $"ÙˆØ­Ø¯Ø© Ø§Ù„Ù‚ÙŠØ§Ø³ '{unitStr}' ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©");
                             continue;
                         }
 
@@ -505,12 +506,12 @@ public class ImportController : ControllerBase
                             DiscountPrice = decimal.TryParse(GetVal(colDisc), out var dp) ? dp : null,
                             CostPrice = decimal.TryParse(GetVal(colCost), out var cs) ? cs : null,
                             CategoryId = catId.Value, BrandId = bId, UnitId = uId,
-                            HasTax = !GetVal(colHasTax).Contains("لا"),
+                            HasTax = !GetVal(colHasTax).Contains("Ù„Ø§"),
                             ReorderLevel = int.TryParse(GetVal(colReorder), out var rl) ? rl : 0,
                             DescriptionAr = GetVal(colDescAr).NullIfEmpty(),
                             DescriptionEn = GetVal(colDescEn).NullIfEmpty(),
-                            IsFeatured    = GetVal(colFeat).Contains("نعم"),
-                            Status = GetVal(colStatus) switch { "مسودة" => ProductStatus.Draft, "مخفي" => ProductStatus.Hidden, _ => ProductStatus.Active },
+                            IsFeatured    = GetVal(colFeat).Contains("Ù†Ø¹Ù…"),
+                            Status = GetVal(colStatus) switch { "Ù…Ø³ÙˆØ¯Ø©" => ProductStatus.Draft, "Ù…Ø®ÙÙŠ" => ProductStatus.Hidden, _ => ProductStatus.Active },
                             CreatedAt = TimeHelper.GetEgyptTime()
                         };
                         productsDict[sku] = product;
@@ -574,7 +575,7 @@ public class ImportController : ControllerBase
             }
 
             return Ok(new { 
-                message = result.Errors.Any() ? "تم الاستيراد مع وجود بعض الأخطاء" : "تم الاستيراد بنجاح", 
+                message = result.Errors.Any() ? "ØªÙ… Ø§Ù„Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ù…Ø¹ ÙˆØ¬ÙˆØ¯ Ø¨Ø¹Ø¶ Ø§Ù„Ø£Ø®Ø·Ø§Ø¡" : "ØªÙ… Ø§Ù„Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ø¨Ù†Ø¬Ø§Ø­", 
                 added = result.Added, 
                 updated = result.Updated, 
                 variantsAdded = result.VariantsAdded, 
@@ -586,12 +587,12 @@ public class ImportController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = $"خطأ: {ex.Message}" });
+            return BadRequest(new { message = $"Ø®Ø·Ø£: {ex.Message}" });
         }
     }
 
 
-    // ── INVENTORY TEMPLATE ────────────────────────────────────
+    // â”€â”€ INVENTORY TEMPLATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // GET /api/import/inventory-template
     [HttpGet("inventory-template")]
     public async Task<IActionResult> GetInventoryTemplate()
@@ -599,10 +600,10 @@ public class ImportController : ControllerBase
         using var wb = new XLWorkbook();
 
         // Sheet 1: Stock Update
-        var ws = wb.Worksheets.Add("تحديث المخزون");
+        var ws = wb.Worksheets.Add("ØªØ­Ø¯ÙŠØ« Ø§Ù„Ù…Ø®Ø²ÙˆÙ†");
         ws.RightToLeft = true;
 
-        var headers = new[] { "الكود (SKU) *", "اسم المنتج", "المقاس", "اللون", "الكمية الجديدة *" };
+        var headers = new[] { "Ø§Ù„ÙƒÙˆØ¯ (SKU) *", "Ø§Ø³Ù… Ø§Ù„Ù…Ù†ØªØ¬", "Ø§Ù„Ù…Ù‚Ø§Ø³", "Ø§Ù„Ù„ÙˆÙ†", "Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø© *" };
         for (int c = 0; c < headers.Length; c++)
         {
             var cell = ws.Cell(1, c + 1);
@@ -614,7 +615,7 @@ public class ImportController : ControllerBase
         }
 
         // Add instruction row
-        ws.Cell(2, 1).Value = "(أدخل SKU المنتج أو المتغير والكمية الفعلية)";
+        ws.Cell(2, 1).Value = "(Ø£Ø¯Ø®Ù„ SKU Ø§Ù„Ù…Ù†ØªØ¬ Ø£Ùˆ Ø§Ù„Ù…ØªØºÙŠØ± ÙˆØ§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„ÙØ¹Ù„ÙŠØ©)";
         ws.Row(2).Style.Font.FontColor = XLColor.Gray;
         ws.Row(2).Style.Font.Italic = true;
 
@@ -665,18 +666,18 @@ public class ImportController : ControllerBase
             "inventory_import_template.xlsx");
     }
 
-    // ── IMPORT INVENTORY (STOCK UPDATE ONLY) ──────────────────
+    // â”€â”€ IMPORT INVENTORY (STOCK UPDATE ONLY) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // POST /api/import/inventory
     [HttpPost("inventory")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> ImportInventory(IFormFile file)
     {
         if (file == null || file.Length == 0)
-            return BadRequest(new { message = "لم يتم رفع ملف" });
+            return BadRequest(new { message = "Ù„Ù… ÙŠØªÙ… Ø±ÙØ¹ Ù…Ù„Ù" });
 
         var ext = Path.GetExtension(file.FileName).ToLower();
         if (ext != ".xlsx" && ext != ".xls")
-            return BadRequest(new { message = "يجب أن يكون الملف بصيغة Excel (.xlsx)" });
+            return BadRequest(new { message = "ÙŠØ¬Ø¨ Ø£Ù† ÙŠÙƒÙˆÙ† Ø§Ù„Ù…Ù„Ù Ø¨ØµÙŠØºØ© Excel (.xlsx)" });
 
         int updated = 0;
         var skipped = new List<string>();
@@ -687,7 +688,7 @@ public class ImportController : ControllerBase
             using var stream = file.OpenReadStream();
             using var wb     = new XLWorkbook(stream);
 
-            if (!wb.TryGetWorksheet("تحديث المخزون", out var ws))
+            if (!wb.TryGetWorksheet("ØªØ­Ø¯ÙŠØ« Ø§Ù„Ù…Ø®Ø²ÙˆÙ†", out var ws))
                 ws = wb.Worksheets.First();
 
             var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
@@ -712,13 +713,13 @@ public class ImportController : ControllerBase
 
                 if (!int.TryParse(qtyStr, out var qty) || qty < 0)
                 {
-                    errors.Add($"صف {r}: الكمية غير صحيحة للكود '{sku}'");
+                    errors.Add($"ØµÙ {r}: Ø§Ù„ÙƒÙ…ÙŠØ© ØºÙŠØ± ØµØ­ÙŠØ­Ø© Ù„Ù„ÙƒÙˆØ¯ '{sku}'");
                     continue;
                 }
 
                 if (!productBySku.TryGetValue(sku, out var product))
                 {
-                    skipped.Add($"صف {r}: الكود '{sku}' غير موجود في النظام — تم تخطيه");
+                    skipped.Add($"ØµÙ {r}: Ø§Ù„ÙƒÙˆØ¯ '{sku}' ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ ÙÙŠ Ø§Ù„Ù†Ø¸Ø§Ù… â€” ØªÙ… ØªØ®Ø·ÙŠÙ‡");
                     continue;
                 }
 
@@ -726,7 +727,7 @@ public class ImportController : ControllerBase
 
                 if (!activeVariants.Any())
                 {
-                    // Product without variants — update directly
+                    // Product without variants â€” update directly
                     product.TotalStock = qty;
                     updated++;
                 }
@@ -739,7 +740,7 @@ public class ImportController : ControllerBase
 
                     if (variant == null)
                     {
-                        skipped.Add($"صف {r}: لم يُعثر على مقاس/لون '{size}/{color}' للكود '{sku}'");
+                        skipped.Add($"ØµÙ {r}: Ù„Ù… ÙŠÙØ¹Ø«Ø± Ø¹Ù„Ù‰ Ù…Ù‚Ø§Ø³/Ù„ÙˆÙ† '{size}/{color}' Ù„Ù„ÙƒÙˆØ¯ '{sku}'");
                         continue;
                     }
 
@@ -751,8 +752,8 @@ public class ImportController : ControllerBase
                 }
                 else
                 {
-                    // SKU has variants but no size/color specified — skip with helpful message
-                    skipped.Add($"صف {r}: الكود '{sku}' له مقاسات — حدد المقاس واللون في العمودين C وD");
+                    // SKU has variants but no size/color specified â€” skip with helpful message
+                    skipped.Add($"ØµÙ {r}: Ø§Ù„ÙƒÙˆØ¯ '{sku}' Ù„Ù‡ Ù…Ù‚Ø§Ø³Ø§Øª â€” Ø­Ø¯Ø¯ Ø§Ù„Ù…Ù‚Ø§Ø³ ÙˆØ§Ù„Ù„ÙˆÙ† ÙÙŠ Ø§Ù„Ø¹Ù…ÙˆØ¯ÙŠÙ† C ÙˆD");
                     continue;
                 }
             }
@@ -761,12 +762,12 @@ public class ImportController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = $"خطأ في قراءة الملف: {ex.Message}" });
+            return BadRequest(new { message = $"Ø®Ø·Ø£ ÙÙŠ Ù‚Ø±Ø§Ø¡Ø© Ø§Ù„Ù…Ù„Ù: {ex.Message}" });
         }
 
         return Ok(new
         {
-            message  = $"تم تحديث مخزون {updated} صف بنجاح",
+            message  = $"ØªÙ… ØªØ­Ø¯ÙŠØ« Ù…Ø®Ø²ÙˆÙ† {updated} ØµÙ Ø¨Ù†Ø¬Ø§Ø­",
             updated,
             skipped  = skipped.Count,
             errors   = errors.Count,
@@ -774,15 +775,15 @@ public class ImportController : ControllerBase
         });
     }
 
-    // ── ACCOUNTS TEMPLATE ─────────────────────────────────────
+    // â”€â”€ ACCOUNTS TEMPLATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     [HttpGet("accounts-template")]
     public IActionResult GetAccountsTemplate()
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("شجرة الحسابات");
+        var ws = wb.Worksheets.Add("Ø´Ø¬Ø±Ø© Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª");
         ws.RightToLeft = true;
 
-        var headers = new[] { "كود الحساب *", "الاسم عربي *", "الاسم انجليزي", "النوع (Asset/Liability/Equity/Revenue/Expense)", "الطبيعة (Debit/Credit)", "كود الأب", "يقبل ترحيل (نعم/لا)" };
+        var headers = new[] { "ÙƒÙˆØ¯ Ø§Ù„Ø­Ø³Ø§Ø¨ *", "Ø§Ù„Ø§Ø³Ù… Ø¹Ø±Ø¨ÙŠ *", "Ø§Ù„Ø§Ø³Ù… Ø§Ù†Ø¬Ù„ÙŠØ²ÙŠ", "Ø§Ù„Ù†ÙˆØ¹ (Asset/Liability/Equity/Revenue/Expense)", "Ø§Ù„Ø·Ø¨ÙŠØ¹Ø© (Debit/Credit)", "ÙƒÙˆØ¯ Ø§Ù„Ø£Ø¨", "ÙŠÙ‚Ø¨Ù„ ØªØ±Ø­ÙŠÙ„ (Ù†Ø¹Ù…/Ù„Ø§)" };
         for (int c = 0; c < headers.Length; c++)
         {
             var cell = ws.Cell(1, c + 1);
@@ -794,12 +795,12 @@ public class ImportController : ControllerBase
 
         // Example Row
         ws.Cell(2,1).Value = "110101";
-        ws.Cell(2,2).Value = "خزينة المكتب";
+        ws.Cell(2,2).Value = "Ø®Ø²ÙŠÙ†Ø© Ø§Ù„Ù…ÙƒØªØ¨";
         ws.Cell(2,3).Value = "Office Cash";
         ws.Cell(2,4).Value = "Asset";
         ws.Cell(2,5).Value = "Debit";
         ws.Cell(2,6).Value = "1101";
-        ws.Cell(2,7).Value = "نعم";
+        ws.Cell(2,7).Value = "Ù†Ø¹Ù…";
 
         // Removed AdjustToContents for Linux stability
         var stream = new MemoryStream();
@@ -807,11 +808,11 @@ public class ImportController : ControllerBase
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "accounts_import_template.xlsx");
     }
 
-    // ── IMPORT ACCOUNTS ───────────────────────────────────────
+    // â”€â”€ IMPORT ACCOUNTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     [HttpPost("accounts")]
     public async Task<IActionResult> ImportAccounts(IFormFile file)
     {
-        if (file == null || file.Length == 0) return BadRequest(new { message = "لم يتم رفع ملف" });
+        if (file == null || file.Length == 0) return BadRequest(new { message = "Ù„Ù… ÙŠØªÙ… Ø±ÙØ¹ Ù…Ù„Ù" });
 
         try
         {
@@ -840,14 +841,14 @@ public class ImportController : ControllerBase
                     TypeStr = ws.Cell(r, 4).GetString().Trim(),
                     NatureStr = ws.Cell(r, 5).GetString().Trim(),
                     ParentCode = ws.Cell(r, 6).GetString().Trim(),
-                    AllowPosting = ws.Cell(r, 7).GetString().Trim().Contains("نعم")
+                    AllowPosting = ws.Cell(r, 7).GetString().Trim().Contains("Ù†Ø¹Ù…")
                 });
             }
 
             // Pass 1: Upsert
             foreach (var row in rows)
             {
-                if (string.IsNullOrEmpty(row.NameAr)) { errors.Add($"صف {row.Row}: الاسم مطلوب"); continue; }
+                if (string.IsNullOrEmpty(row.NameAr)) { errors.Add($"ØµÙ {row.Row}: Ø§Ù„Ø§Ø³Ù… Ù…Ø·Ù„ÙˆØ¨"); continue; }
                 
                 if (!Enum.TryParse<AccountType>(row.TypeStr as string, true, out AccountType type)) type = AccountType.Asset;
                 if (!Enum.TryParse<AccountNature>(row.NatureStr as string, true, out AccountNature nature)) nature = AccountNature.Debit;
@@ -903,7 +904,7 @@ public class ImportController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = $"خطأ في المعالجة: {ex.Message}" });
+            return BadRequest(new { message = $"Ø®Ø·Ø£ ÙÙŠ Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©: {ex.Message}" });
         }
     }
 
@@ -923,3 +924,4 @@ internal static class StringExtensions
     public static string? NullIfEmpty(this string? s)
         => string.IsNullOrWhiteSpace(s) ? null : s;
 }
+

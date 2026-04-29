@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,7 +13,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Accountant")]
+[RequirePermission(ModuleKeys.SupplierVouchers)]
 public class SupplierPaymentsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -58,7 +59,7 @@ public class SupplierPaymentsController : ControllerBase
                 p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes,
                 p.AttachmentUrl, p.AttachmentPublicId,
                 p.CostCenter,
-                p.CostCenter == OrderSource.Website ? "الموقع" : (p.CostCenter == OrderSource.POS ? "المحل" : "عام")
+                p.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (p.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…")
             )).ToListAsync();
 
         return Ok(new PaginatedResult<SupplierPaymentSummaryDto>(items, total, page, pageSize,
@@ -81,24 +82,24 @@ public class SupplierPaymentsController : ControllerBase
             p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes,
             p.AttachmentUrl, p.AttachmentPublicId,
             p.CostCenter,
-            p.CostCenter == OrderSource.Website ? "الموقع" : (p.CostCenter == OrderSource.POS ? "المحل" : "عام")
+            p.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (p.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…")
         ));
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateSupplierPaymentDto dto)
     {
-        if (dto.Amount <= 0) return BadRequest(new { message = "المبلغ يجب أن يكون أكبر من صفر" });
+        if (dto.Amount <= 0) return BadRequest(new { message = "Ø§Ù„Ù…Ø¨Ù„Øº ÙŠØ¬Ø¨ Ø£Ù† ÙŠÙƒÙˆÙ† Ø£ÙƒØ¨Ø± Ù…Ù† ØµÙØ±" });
 
         var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
         if (supplier == null)
-            return BadRequest(new { message = $"المورد المطلوب غير موجود (ID: {dto.SupplierId})" });
+            return BadRequest(new { message = $"Ø§Ù„Ù…ÙˆØ±Ø¯ Ø§Ù„Ù…Ø·Ù„ÙˆØ¨ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ (ID: {dto.SupplierId})" });
 
         PurchaseInvoice? invoice = null;
         if (dto.PurchaseInvoiceId.HasValue && dto.PurchaseInvoiceId > 0)
         {
             invoice = await _db.PurchaseInvoices.FirstOrDefaultAsync(i => i.Id == dto.PurchaseInvoiceId.Value);
-            if (invoice == null) return BadRequest(new { message = "الفاتورة المحددة غير موجودة" });
+            if (invoice == null) return BadRequest(new { message = "Ø§Ù„ÙØ§ØªÙˆØ±Ø© Ø§Ù„Ù…Ø­Ø¯Ø¯Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©" });
         }
 
         var pNo = await _seq.NextAsync("SP", async (db, pattern) =>
@@ -121,7 +122,7 @@ public class SupplierPaymentsController : ControllerBase
             PaymentMethod = dto.PaymentMethod,
             AccountName = dto.AccountName,
             CashAccountId = (dto.CashAccountId > 0) ? dto.CashAccountId : null,
-            Notes = dto.Notes ?? $"سند دفع للمورد {supplier.Name}",
+            Notes = dto.Notes ?? $"Ø³Ù†Ø¯ Ø¯ÙØ¹ Ù„Ù„Ù…ÙˆØ±Ø¯ {supplier.Name}",
             ReferenceNumber = dto.ReferenceNumber,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             AttachmentUrl = dto.AttachmentUrl,
@@ -137,7 +138,7 @@ public class SupplierPaymentsController : ControllerBase
             var remaining = invoice.TotalAmount - invoice.PaidAmount - invoice.ReturnedAmount;
             if (dto.Amount > remaining + 0.1m)
             {
-                return BadRequest(new { message = $"لا يمكن صرف مبلغ ({dto.Amount}) وهو أكبر من المديونية المتبقية للفاتورة ({remaining})." });
+                return BadRequest(new { message = $"Ù„Ø§ ÙŠÙ…ÙƒÙ† ØµØ±Ù Ù…Ø¨Ù„Øº ({dto.Amount}) ÙˆÙ‡Ùˆ Ø£ÙƒØ¨Ø± Ù…Ù† Ø§Ù„Ù…Ø¯ÙŠÙˆÙ†ÙŠØ© Ø§Ù„Ù…ØªØ¨Ù‚ÙŠØ© Ù„Ù„ÙØ§ØªÙˆØ±Ø© ({remaining})." });
             }
             invoice.PaidAmount += dto.Amount;
             var netTotal = invoice.TotalAmount - invoice.ReturnedAmount;
@@ -149,7 +150,7 @@ public class SupplierPaymentsController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        // 💡 Ensure accounting sync gets the correct ID
+        // ðŸ’¡ Ensure accounting sync gets the correct ID
         _ = PostSupplierPaymentWithRetryAsync(payment.Id, pNo);
 
         return CreatedAtAction(nameof(GetById), new { id = payment.Id }, new SupplierPaymentSummaryDto(
@@ -159,12 +160,12 @@ public class SupplierPaymentsController : ControllerBase
             payment.AccountName, payment.Notes,
             payment.AttachmentUrl, payment.AttachmentPublicId,
             payment.CostCenter,
-            payment.CostCenter == OrderSource.Website ? "الموقع" : (payment.CostCenter == OrderSource.POS ? "المحل" : "عام")
+            payment.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (payment.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…")
         ));
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.SupplierVouchers, requireEdit: true)]
     public async Task<IActionResult> Delete(int id)
     {
         var p = await _db.SupplierPayments
@@ -230,3 +231,4 @@ public class SupplierPaymentsController : ControllerBase
         }
     }
 }
+

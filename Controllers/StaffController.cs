@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -12,7 +13,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager")]
+[RequirePermission(ModuleKeys.Staff, requireEdit: true)]
 public class StaffController : ControllerBase
 {
     private readonly UserManager<AppUser>      _users;
@@ -21,6 +22,7 @@ public class StaffController : ControllerBase
     private readonly StaffPermissionService    _permService;
     private readonly SequenceService           _sequence;
     private readonly ICustomerService          _customerService;
+    private readonly ICacheService             _cache;
 
     public StaffController(
         UserManager<AppUser>      users,
@@ -28,7 +30,8 @@ public class StaffController : ControllerBase
         AppDbContext              db,
         StaffPermissionService    permService,
         SequenceService           sequence,
-        ICustomerService          customerService)
+        ICustomerService          customerService,
+        ICacheService             cache)
     {
         _users           = users;
         _roles           = roles;
@@ -36,18 +39,15 @@ public class StaffController : ControllerBase
         _permService     = permService;
         _sequence        = sequence;
         _customerService = customerService;
+        _cache           = cache;
     }
 
-    // ══════════════════════════════════════════════════
     // GET /api/staff
-    // قائمة كل الموظفين (بدون الـ Customers)
-    // ══════════════════════════════════════════════════
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
         var staffRoles = AppRoles.StaffRoles.ToList();
 
-        // جلب كل يوزر عنده دور موظف
         var staffUsers    = new List<object>();
         var employeeLinks = await _db.Employees
             .Where(e => e.AppUserId != null)
@@ -79,28 +79,28 @@ public class StaffController : ControllerBase
         return Ok(staffUsers.OrderBy(s => ((dynamic)s).role));
     }
 
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // POST /api/staff
-    // إنشاء موظف جديد
-    // ══════════════════════════════════════════════════
+    // Ø¥Ù†Ø´Ø§Ø¡ Ù…ÙˆØ¸Ù Ø¬Ø¯ÙŠØ¯
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateStaffDto dto)
     {
-        // تحقق من صحة الدور
+        // ØªØ­Ù‚Ù‚ Ù…Ù† ØµØ­Ø© Ø§Ù„Ø¯ÙˆØ±
         var validRole = AppRoles.StaffRoles.FirstOrDefault(r => r.Equals(dto.Role, StringComparison.OrdinalIgnoreCase));
         if (validRole == null)
-            return BadRequest(new { message = $"دور غير صالح: {dto.Role}" });
+            return BadRequest(new { message = $"Ø¯ÙˆØ± ØºÙŠØ± ØµØ§Ù„Ø­: {dto.Role}" });
         dto = dto with { Role = validRole };
 
-        // تحقق من التكرار
+        // ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„ØªÙƒØ±Ø§Ø±
         if (await _users.Users.AnyAsync(u => u.Email == dto.Email && u.UserName!.StartsWith("staff_")))
-            return BadRequest(new { message = "الإيميل مستخدم بالفعل لموظف آخر" });
+            return BadRequest(new { message = "Ø§Ù„Ø¥ÙŠÙ…ÙŠÙ„ Ù…Ø³ØªØ®Ø¯Ù… Ø¨Ø§Ù„ÙØ¹Ù„ Ù„Ù…ÙˆØ¸Ù Ø¢Ø®Ø±" });
 
         var phoneExists = await _users.Users.AnyAsync(u => u.PhoneNumber == dto.Phone && u.UserName!.StartsWith("staff_"));
         if (phoneExists)
-            return BadRequest(new { message = "رقم التليفون مستخدم بالفعل لموظف آخر" });
+            return BadRequest(new { message = "Ø±Ù‚Ù… Ø§Ù„ØªÙ„ÙŠÙÙˆÙ† Ù…Ø³ØªØ®Ø¯Ù… Ø¨Ø§Ù„ÙØ¹Ù„ Ù„Ù…ÙˆØ¸Ù Ø¢Ø®Ø±" });
 
-        // إنشاء الأدوار لو مش موجودة
+        // Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø£Ø¯ÙˆØ§Ø± Ù„Ùˆ Ù…Ø´ Ù…ÙˆØ¬ÙˆØ¯Ø©
         await EnsureRolesAsync();
 
         var user = new AppUser
@@ -119,10 +119,10 @@ public class StaffController : ControllerBase
 
         await _users.AddToRoleAsync(user, dto.Role);
 
-        // زرع الصلاحيات الافتراضية بناءً على الدور
+        // Ø²Ø±Ø¹ Ø§Ù„ØµÙ„Ø§Ø­ÙŠØ§Øª Ø§Ù„Ø§ÙØªØ±Ø§Ø¶ÙŠØ© Ø¨Ù†Ø§Ø¡Ù‹ Ø¹Ù„Ù‰ Ø§Ù„Ø¯ÙˆØ±
         await _permService.SeedDefaultPermissionsAsync(user.Id, dto.Role);
 
-        // ✅ ربط أو إنشاء سجل HR وتحضير الحسابات المحاسبية (اختياري)
+        // âœ… Ø±Ø¨Ø· Ø£Ùˆ Ø¥Ù†Ø´Ø§Ø¡ Ø³Ø¬Ù„ HR ÙˆØªØ­Ø¶ÙŠØ± Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª Ø§Ù„Ù…Ø­Ø§Ø³Ø¨ÙŠØ© (Ø§Ø®ØªÙŠØ§Ø±ÙŠ)
         if (dto.IsEmployee)
         {
             await EnsureEmployeeLinkAsync(user, dto.Role);
@@ -132,44 +132,45 @@ public class StaffController : ControllerBase
             id       = user.Id,
             fullName = user.FullName,
             role     = dto.Role,
-            message  = $"تم إنشاء {GetRoleAr(dto.Role)} بنجاح ومزامنته مع الـ HR"
+            message  = $"ØªÙ… Ø¥Ù†Ø´Ø§Ø¡ {GetRoleAr(dto.Role)} Ø¨Ù†Ø¬Ø§Ø­ ÙˆÙ…Ø²Ø§Ù…Ù†ØªÙ‡ Ù…Ø¹ Ø§Ù„Ù€ HR"
         });
     }
 
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // PUT /api/staff/{id}/role
-    // تغيير دور موظف
-    // ══════════════════════════════════════════════════
+    // ØªØºÙŠÙŠØ± Ø¯ÙˆØ± Ù…ÙˆØ¸Ù
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpPut("{id}/role")]
     public async Task<IActionResult> ChangeRole(string id, [FromBody] ChangeRoleDto dto)
     {
         var validRole = AppRoles.StaffRoles.FirstOrDefault(r => r.Equals(dto.Role, StringComparison.OrdinalIgnoreCase));
         if (validRole == null)
-            return BadRequest(new { message = $"دور غير صالح: {dto.Role}" });
+            return BadRequest(new { message = $"Ø¯ÙˆØ± ØºÙŠØ± ØµØ§Ù„Ø­: {dto.Role}" });
         dto = dto with { Role = validRole };
 
         var user = await _users.FindByIdAsync(id);
         if (user == null) return NotFound();
 
-        // منع تغيير دور الأدمن الأصلي
+        // Ù…Ù†Ø¹ ØªØºÙŠÙŠØ± Ø¯ÙˆØ± Ø§Ù„Ø£Ø¯Ù…Ù† Ø§Ù„Ø£ØµÙ„ÙŠ
         if (user.Email == "admin@sportive.com" && dto.Role != AppRoles.Admin)
-            return BadRequest(new { message = "لا يمكن تغيير دور الأدمن الأصلي" });
+            return BadRequest(new { message = "Ù„Ø§ ÙŠÙ…ÙƒÙ† ØªØºÙŠÙŠØ± Ø¯ÙˆØ± Ø§Ù„Ø£Ø¯Ù…Ù† Ø§Ù„Ø£ØµÙ„ÙŠ" });
 
         var currentRoles = await _users.GetRolesAsync(user);
         var staffRoles   = currentRoles.Where(r => r != AppRoles.Customer).ToList();
 
-        // احذف الأدوار القديمة وأضف الجديد
+        // Ø§Ø­Ø°Ù Ø§Ù„Ø£Ø¯ÙˆØ§Ø± Ø§Ù„Ù‚Ø¯ÙŠÙ…Ø© ÙˆØ£Ø¶Ù Ø§Ù„Ø¬Ø¯ÙŠØ¯
         if (staffRoles.Any())
             await _users.RemoveFromRolesAsync(user, staffRoles);
         
         var result = await _users.AddToRoleAsync(user, dto.Role);
         if (!result.Succeeded)
-            return BadRequest(new { message = "فشل في تغيير الدور: " + result.Errors.FirstOrDefault()?.Description });
+            return BadRequest(new { message = "ÙØ´Ù„ ÙÙŠ ØªØºÙŠÙŠØ± Ø§Ù„Ø¯ÙˆØ±: " + result.Errors.FirstOrDefault()?.Description });
 
-        // إعادة زرع الصلاحيات الافتراضية للدور الجديد
+        // Ø¥Ø¹Ø§Ø¯Ø© Ø²Ø±Ø¹ Ø§Ù„ØµÙ„Ø§Ø­ÙŠØ§Øª Ø§Ù„Ø§ÙØªØ±Ø§Ø¶ÙŠØ© Ù„Ù„Ø¯ÙˆØ± Ø§Ù„Ø¬Ø¯ÙŠØ¯
         await _permService.SeedDefaultPermissionsAsync(user.Id, dto.Role);
+        await _cache.RemoveAsync($"UserPermissions_{user.Id}");
 
-        // ✅ تحديث سجل HR المرتبط إن وجد
+        // âœ… ØªØ­Ø¯ÙŠØ« Ø³Ø¬Ù„ HR Ø§Ù„Ù…Ø±ØªØ¨Ø· Ø¥Ù† ÙˆØ¬Ø¯
         var hasEmployee = await _db.Employees.AnyAsync(e => e.AppUserId == user.Id);
         if (hasEmployee)
         {
@@ -180,18 +181,18 @@ public class StaffController : ControllerBase
             id,
             newRole  = dto.Role,
             roleAr   = GetRoleAr(dto.Role),
-            message  = "تم تغيير الدور وتحديث سجل الموارد البشرية بنجاح"
+            message  = "ØªÙ… ØªØºÙŠÙŠØ± Ø§Ù„Ø¯ÙˆØ± ÙˆØªØ­Ø¯ÙŠØ« Ø³Ø¬Ù„ Ø§Ù„Ù…ÙˆØ§Ø±Ø¯ Ø§Ù„Ø¨Ø´Ø±ÙŠØ© Ø¨Ù†Ø¬Ø§Ø­"
         });
     }
 
     private async Task EnsureEmployeeLinkAsync(AppUser user, string role)
     {
-        // 1. ابحث عن موظف مرتبط بهذا المستخدم
+        // 1. Ø§Ø¨Ø­Ø« Ø¹Ù† Ù…ÙˆØ¸Ù Ù…Ø±ØªØ¨Ø· Ø¨Ù‡Ø°Ø§ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…
         var employee = await _db.Employees.FirstOrDefaultAsync(e => e.AppUserId == user.Id);
         
         if (employee == null)
         {
-            // 2. إذا لم يوجد، ابحث عن موظف بنفس الهاتف وغير مرتبط بمستخدم (حالة استيراد بيانات قديمة)
+            // 2. Ø¥Ø°Ø§ Ù„Ù… ÙŠÙˆØ¬Ø¯ØŒ Ø§Ø¨Ø­Ø« Ø¹Ù† Ù…ÙˆØ¸Ù Ø¨Ù†ÙØ³ Ø§Ù„Ù‡Ø§ØªÙ ÙˆØºÙŠØ± Ù…Ø±ØªØ¨Ø· Ø¨Ù…Ø³ØªØ®Ø¯Ù… (Ø­Ø§Ù„Ø© Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ø¨ÙŠØ§Ù†Ø§Øª Ù‚Ø¯ÙŠÙ…Ø©)
             employee = await _db.Employees.FirstOrDefaultAsync(e => e.Phone == user.PhoneNumber && (e.AppUserId == null || e.AppUserId == ""));
             
             if (employee != null)
@@ -200,7 +201,7 @@ public class StaffController : ControllerBase
             }
             else
             {
-                // 3. إنشاء سجل جديد
+                // 3. Ø¥Ù†Ø´Ø§Ø¡ Ø³Ø¬Ù„ Ø¬Ø¯ÙŠØ¯
                 var empNo = await _sequence.NextAsync("EMP", async (db, pattern) =>
                 {
                     var max = await db.Employees
@@ -226,20 +227,20 @@ public class StaffController : ControllerBase
             }
         }
         
-        // تحديث البيانات الأساسية لضمان التطابق
+        // ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ© Ù„Ø¶Ù…Ø§Ù† Ø§Ù„ØªØ·Ø§Ø¨Ù‚
         employee.Name = user.FullName;
         employee.Email = user.Email;
         employee.Phone = user.PhoneNumber;
-        employee.JobTitle = role; // المسمى الوظيفي يتبع الدور
+        employee.JobTitle = role; // Ø§Ù„Ù…Ø³Ù…Ù‰ Ø§Ù„ÙˆØ¸ÙŠÙÙŠ ÙŠØªØ¨Ø¹ Ø§Ù„Ø¯ÙˆØ±
 
         await _db.SaveChangesAsync();
         await _customerService.EnsureCustomerAccountAsync(0, isEmployee: true, employeeId: employee.Id);
     }
 
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // POST /api/staff/{id}/link-employee
-    // ربط مستخدم حالي بسجل موظف (يدوياً)
-    // ══════════════════════════════════════════════════
+    // Ø±Ø¨Ø· Ù…Ø³ØªØ®Ø¯Ù… Ø­Ø§Ù„ÙŠ Ø¨Ø³Ø¬Ù„ Ù…ÙˆØ¸Ù (ÙŠØ¯ÙˆÙŠØ§Ù‹)
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpPost("{id}/link-employee")]
     public async Task<IActionResult> LinkEmployee(string id)
     {
@@ -250,20 +251,20 @@ public class StaffController : ControllerBase
         var role = GetPrimaryRole(roles);
 
         await EnsureEmployeeLinkAsync(user, role);
-        return Ok(new { message = "تم ربط المستخدم بسجل الموظفين والمحاسبة بنجاح" });
+        return Ok(new { message = "ØªÙ… Ø±Ø¨Ø· Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ø¨Ø³Ø¬Ù„ Ø§Ù„Ù…ÙˆØ¸ÙÙŠÙ† ÙˆØ§Ù„Ù…Ø­Ø§Ø³Ø¨Ø© Ø¨Ù†Ø¬Ø§Ø­" });
     }
 
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // PATCH /api/staff/{id}/toggle-active
-    // تفعيل / تعطيل الموظف
-    // ══════════════════════════════════════════════════
+    // ØªÙØ¹ÙŠÙ„ / ØªØ¹Ø·ÙŠÙ„ Ø§Ù„Ù…ÙˆØ¸Ù
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpPatch("{id}/toggle-active")]
     public async Task<IActionResult> ToggleActive(string id)
     {
         var user = await _users.FindByIdAsync(id);
         if (user == null) return NotFound();
         if (user.Email == "admin@sportive.com")
-            return BadRequest(new { message = "لا يمكن تعطيل الأدمن الأصلي" });
+            return BadRequest(new { message = "Ù„Ø§ ÙŠÙ…ÙƒÙ† ØªØ¹Ø·ÙŠÙ„ Ø§Ù„Ø£Ø¯Ù…Ù† Ø§Ù„Ø£ØµÙ„ÙŠ" });
 
         user.IsActive = !user.IsActive;
         await _users.UpdateAsync(user);
@@ -271,10 +272,10 @@ public class StaffController : ControllerBase
         return Ok(new { isActive = user.IsActive });
     }
 
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // PUT /api/staff/{id}/reset-password
-    // إعادة تعيين كلمة مرور موظف
-    // ══════════════════════════════════════════════════
+    // Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† ÙƒÙ„Ù…Ø© Ù…Ø±ÙˆØ± Ù…ÙˆØ¸Ù
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpPut("{id}/reset-password")]
     public async Task<IActionResult> ResetPassword(string id, [FromBody] StaffResetPasswordDto dto)
     {
@@ -285,32 +286,32 @@ public class StaffController : ControllerBase
         var result = await _users.ResetPasswordAsync(user, token, dto.NewPassword);
 
         return result.Succeeded
-            ? Ok(new { message = "تم تغيير كلمة المرور بنجاح" })
+            ? Ok(new { message = "ØªÙ… ØªØºÙŠÙŠØ± ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ± Ø¨Ù†Ø¬Ø§Ø­" })
             : BadRequest(new { errors = result.Errors.Select(e => e.Description) });
     }
 
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // DELETE /api/staff/{id}
-    // حذف موظف نهائياً أو تعطيله
-    // ══════════════════════════════════════════════════
+    // Ø­Ø°Ù Ù…ÙˆØ¸Ù Ù†Ù‡Ø§Ø¦ÙŠØ§Ù‹ Ø£Ùˆ ØªØ¹Ø·ÙŠÙ„Ù‡
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id)
     {
         var user = await _users.FindByIdAsync(id);
         if (user == null) return NotFound();
         if (user.Email == "admin@sportive.com")
-            return BadRequest(new { message = "لا يمكن حذف الأدمن الأصلي" });
+            return BadRequest(new { message = "Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ø§Ù„Ø£Ø¯Ù…Ù† Ø§Ù„Ø£ØµÙ„ÙŠ" });
 
-        // نفضل التعطيل (Soft Delete) لو كان هناك سجلات مرتبطة به
+        // Ù†ÙØ¶Ù„ Ø§Ù„ØªØ¹Ø·ÙŠÙ„ (Soft Delete) Ù„Ùˆ ÙƒØ§Ù† Ù‡Ù†Ø§Ùƒ Ø³Ø¬Ù„Ø§Øª Ù…Ø±ØªØ¨Ø·Ø© Ø¨Ù‡
         var hasOrders = await _db.Orders.AnyAsync(o => o.SalesPersonId == id);
         if (hasOrders)
         {
             user.IsActive = false;
             await _users.UpdateAsync(user);
-            return Ok(new { message = "تم تعطيل الحساب بدلاً من الحذف لوجود سجلات مبيعات مرتبطة به" });
+            return Ok(new { message = "ØªÙ… ØªØ¹Ø·ÙŠÙ„ Ø§Ù„Ø­Ø³Ø§Ø¨ Ø¨Ø¯Ù„Ø§Ù‹ Ù…Ù† Ø§Ù„Ø­Ø°Ù Ù„ÙˆØ¬ÙˆØ¯ Ø³Ø¬Ù„Ø§Øª Ù…Ø¨ÙŠØ¹Ø§Øª Ù…Ø±ØªØ¨Ø·Ø© Ø¨Ù‡" });
         }
 
-        // فك الربط مع سجل الـ HR (مع الحفاظ على السجل)
+        // ÙÙƒ Ø§Ù„Ø±Ø¨Ø· Ù…Ø¹ Ø³Ø¬Ù„ Ø§Ù„Ù€ HR (Ù…Ø¹ Ø§Ù„Ø­ÙØ§Ø¸ Ø¹Ù„Ù‰ Ø§Ù„Ø³Ø¬Ù„)
         var linkedEmployee = await _db.Employees.FirstOrDefaultAsync(e => e.AppUserId == id);
         if (linkedEmployee != null)
         {
@@ -318,21 +319,21 @@ public class StaffController : ControllerBase
             linkedEmployee.UpdatedAt = TimeHelper.GetEgyptTime();
         }
 
-        // حذف الصلاحيات
+        // Ø­Ø°Ù Ø§Ù„ØµÙ„Ø§Ø­ÙŠØ§Øª
         var perms = await _db.UserModulePermissions.Where(p => p.UserAccountID == id).ToListAsync();
         _db.UserModulePermissions.RemoveRange(perms);
         await _db.SaveChangesAsync();
 
         var result = await _users.DeleteAsync(user);
         return result.Succeeded
-            ? Ok(new { message = "تم حذف الموظف بنجاح" })
+            ? Ok(new { message = "ØªÙ… Ø­Ø°Ù Ø§Ù„Ù…ÙˆØ¸Ù Ø¨Ù†Ø¬Ø§Ø­" })
             : BadRequest(new { errors = result.Errors.Select(e => e.Description) });
     }
 
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // GET /api/staff/{id}/permissions
-    // جلب صلاحيات المستخدم الخاصة
-    // ══════════════════════════════════════════════════
+    // Ø¬Ù„Ø¨ ØµÙ„Ø§Ø­ÙŠØ§Øª Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ø§Ù„Ø®Ø§ØµØ©
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("{id}/permissions")]
     public async Task<IActionResult> GetPermissions(string id)
     {
@@ -347,21 +348,21 @@ public class StaffController : ControllerBase
         return Ok(perms);
     }
 
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // PUT /api/staff/{id}/permissions
-    // تحديث صلاحيات المستخدم (الحق فى الرؤية أو التحكم)
-    // ══════════════════════════════════════════════════
+    // ØªØ­Ø¯ÙŠØ« ØµÙ„Ø§Ø­ÙŠØ§Øª Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… (Ø§Ù„Ø­Ù‚ ÙÙ‰ Ø§Ù„Ø±Ø¤ÙŠØ© Ø£Ùˆ Ø§Ù„ØªØ­ÙƒÙ…)
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpPut("{id}/permissions")]
     public async Task<IActionResult> UpdatePermissions(string id, [FromBody] List<UserModulePermissionDto> dto)
     {
         var user = await _users.FindByIdAsync(id);
         if (user == null) return NotFound();
 
-        // حذف القديم
+        // Ø­Ø°Ù Ø§Ù„Ù‚Ø¯ÙŠÙ…
         var existing = await _db.UserModulePermissions.Where(p => p.UserAccountID == id).ToListAsync();
         _db.UserModulePermissions.RemoveRange(existing);
 
-        // إضافة الجديد
+        // Ø¥Ø¶Ø§ÙØ© Ø§Ù„Ø¬Ø¯ÙŠØ¯
         foreach (var p in dto)
         {
             _db.UserModulePermissions.Add(new UserModulePermission
@@ -374,13 +375,15 @@ public class StaffController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
-        return Ok(new { message = "تم تحديث الصلاحيات بنجاح" });
+        await _cache.RemoveAsync($"UserPermissions_{id}");
+
+        return Ok(new { message = "ØªÙ… ØªØ­Ø¯ÙŠØ« Ø§Ù„ØµÙ„Ø§Ø­ÙŠØ§Øª Ø¨Ù†Ø¬Ø§Ø­" });
     }
 
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // GET /api/staff/{id}/profile
-    // بروفايل كامل: بيانات المستخدم + HR + الصلاحيات
-    // ══════════════════════════════════════════════════
+    // Ø¨Ø±ÙˆÙØ§ÙŠÙ„ ÙƒØ§Ù…Ù„: Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… + HR + Ø§Ù„ØµÙ„Ø§Ø­ÙŠØ§Øª
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("{id}/profile")]
     public async Task<IActionResult> GetProfile(string id)
     {
@@ -416,36 +419,36 @@ public class StaffController : ControllerBase
         });
     }
 
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // POST /api/staff/backfill-permissions
-    // زرع الصلاحيات الافتراضية للمستخدمين القدامى
-    // ══════════════════════════════════════════════════
+    // Ø²Ø±Ø¹ Ø§Ù„ØµÙ„Ø§Ø­ÙŠØ§Øª Ø§Ù„Ø§ÙØªØ±Ø§Ø¶ÙŠØ© Ù„Ù„Ù…Ø³ØªØ®Ø¯Ù…ÙŠÙ† Ø§Ù„Ù‚Ø¯Ø§Ù…Ù‰
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpPost("backfill-permissions")]
-    [Authorize(Roles = AppRoles.Admin)]
+    [RequirePermission(ModuleKeys.Staff, requireEdit: true)]
     public async Task<IActionResult> BackfillPermissions()
     {
         await _permService.BackfillMissingPermissionsAsync(_users);
-        return Ok(new { message = "تم زرع الصلاحيات الافتراضية للمستخدمين." });
+        return Ok(new { message = "ØªÙ… Ø²Ø±Ø¹ Ø§Ù„ØµÙ„Ø§Ø­ÙŠØ§Øª Ø§Ù„Ø§ÙØªØ±Ø§Ø¶ÙŠØ© Ù„Ù„Ù…Ø³ØªØ®Ø¯Ù…ÙŠÙ†." });
     }
 
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // GET /api/staff/roles
-    // قائمة الأدوار المتاحة
-    // ══════════════════════════════════════════════════
+    // Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø£Ø¯ÙˆØ§Ø± Ø§Ù„Ù…ØªØ§Ø­Ø©
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("roles")]
     public IActionResult GetRoles()
     {
         return Ok(new[]
         {
-            new { value = AppRoles.Admin,      labelAr = "مدير النظام",      labelEn = "System Admin",  permissions = "كل الصلاحيات" },
-            new { value = AppRoles.Manager,    labelAr = "مدير الفرع",       labelEn = "Branch Manager", permissions = "كل شيء ما عدا إعدادات النظام" },
-            new { value = AppRoles.Cashier,    labelAr = "كاشير",            labelEn = "Cashier",        permissions = "POS فقط" },
-            new { value = AppRoles.Accountant, labelAr = "محاسب",            labelEn = "Accountant",     permissions = "التقارير المالية والمحاسبة" },
-            new { value = AppRoles.Staff,      labelAr = "موظف",             labelEn = "Staff",          permissions = "الطلبات والمنتجات (عرض)" },
+            new { value = AppRoles.Admin,      labelAr = "Ù…Ø¯ÙŠØ± Ø§Ù„Ù†Ø¸Ø§Ù…",      labelEn = "System Admin",  permissions = "ÙƒÙ„ Ø§Ù„ØµÙ„Ø§Ø­ÙŠØ§Øª" },
+            new { value = AppRoles.Manager,    labelAr = "Ù…Ø¯ÙŠØ± Ø§Ù„ÙØ±Ø¹",       labelEn = "Branch Manager", permissions = "ÙƒÙ„ Ø´ÙŠØ¡ Ù…Ø§ Ø¹Ø¯Ø§ Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„Ù†Ø¸Ø§Ù…" },
+            new { value = AppRoles.Cashier,    labelAr = "ÙƒØ§Ø´ÙŠØ±",            labelEn = "Cashier",        permissions = "POS ÙÙ‚Ø·" },
+            new { value = AppRoles.Accountant, labelAr = "Ù…Ø­Ø§Ø³Ø¨",            labelEn = "Accountant",     permissions = "Ø§Ù„ØªÙ‚Ø§Ø±ÙŠØ± Ø§Ù„Ù…Ø§Ù„ÙŠØ© ÙˆØ§Ù„Ù…Ø­Ø§Ø³Ø¨Ø©" },
+            new { value = AppRoles.Staff,      labelAr = "Ù…ÙˆØ¸Ù",             labelEn = "Staff",          permissions = "Ø§Ù„Ø·Ù„Ø¨Ø§Øª ÙˆØ§Ù„Ù…Ù†ØªØ¬Ø§Øª (Ø¹Ø±Ø¶)" },
         });
     }
 
-    // ── Helpers ───────────────────────────────────────
+    // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     private async Task EnsureRolesAsync()
     {
         foreach (var role in AppRoles.StaffRoles)
@@ -462,16 +465,16 @@ public class StaffController : ControllerBase
 
     private static string GetRoleAr(string role) => role switch
     {
-        AppRoles.Admin      => "مدير النظام",
-        AppRoles.Manager    => "مدير الفرع",
-        AppRoles.Cashier    => "كاشير",
-        AppRoles.Accountant => "محاسب",
-        AppRoles.Staff      => "موظف",
+        AppRoles.Admin      => "Ù…Ø¯ÙŠØ± Ø§Ù„Ù†Ø¸Ø§Ù…",
+        AppRoles.Manager    => "Ù…Ø¯ÙŠØ± Ø§Ù„ÙØ±Ø¹",
+        AppRoles.Cashier    => "ÙƒØ§Ø´ÙŠØ±",
+        AppRoles.Accountant => "Ù…Ø­Ø§Ø³Ø¨",
+        AppRoles.Staff      => "Ù…ÙˆØ¸Ù",
         _                   => role
     };
 }
 
-// ── DTOs ──────────────────────────────────────────────
+// â”€â”€ DTOs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 public record CreateStaffDto(
     string FullName,
     string Email,
@@ -484,3 +487,4 @@ public record CreateStaffDto(
 public record ChangeRoleDto(string Role);
 public record StaffResetPasswordDto(string NewPassword);
 public record UserModulePermissionDto(string ModuleKey, bool CanView, bool CanEdit);
+

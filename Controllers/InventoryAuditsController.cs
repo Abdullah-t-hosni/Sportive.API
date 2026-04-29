@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,7 +14,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Accountant,Staff,Cashier")]
+[RequirePermission(ModuleKeys.InventoryCount)]
 public class InventoryAuditsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -76,7 +77,7 @@ public class InventoryAuditsController : ControllerBase
                 .Take(pageSize)
                 .Select(a => new {
                     a.Id, 
-                    Title = a.Title ?? "جرد بدون عنوان", 
+                    Title = a.Title ?? "Ø¬Ø±Ø¯ Ø¨Ø¯ÙˆÙ† Ø¹Ù†ÙˆØ§Ù†", 
                     a.AuditDate, 
                     StatusInt = (int)a.Status,
                     a.TotalExpectedValue, 
@@ -109,7 +110,7 @@ public class InventoryAuditsController : ControllerBase
             var fullMsg = ex.InnerException != null ? $"{ex.Message} -> {ex.InnerException.Message}" : ex.Message;
             return StatusCode(500, new { 
                 success = false, 
-                message = "خطأ في تحميل سجلات الجرد", 
+                message = "Ø®Ø·Ø£ ÙÙŠ ØªØ­Ù…ÙŠÙ„ Ø³Ø¬Ù„Ø§Øª Ø§Ù„Ø¬Ø±Ø¯", 
                 detail = fullMsg,
                 type = ex.GetType().Name,
                 stack = ex.StackTrace 
@@ -154,7 +155,7 @@ public class InventoryAuditsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in GetById InventoryAudit {Id}", id);
-            return StatusCode(500, new { message = "خطأ في تحميل تفاصيل الجرد", detail = ex.Message });
+            return StatusCode(500, new { message = "Ø®Ø·Ø£ ÙÙŠ ØªØ­Ù…ÙŠÙ„ ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø¬Ø±Ø¯", detail = ex.Message });
         }
     }
 
@@ -164,7 +165,7 @@ public class InventoryAuditsController : ControllerBase
         if (!await CheckPerms(ModuleKeys.InventoryCount, true)) return Forbid();
         var audit = new InventoryAudit
         {
-            Title = string.IsNullOrWhiteSpace(dto.Title) ? $"جرد مخزن - {TimeHelper.GetEgyptTime():yyyy-MM-dd HH:mm}" : dto.Title,
+            Title = string.IsNullOrWhiteSpace(dto.Title) ? $"Ø¬Ø±Ø¯ Ù…Ø®Ø²Ù† - {TimeHelper.GetEgyptTime():yyyy-MM-dd HH:mm}" : dto.Title,
             Description = dto.Description,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             Status = InventoryAuditStatus.Draft,
@@ -229,7 +230,7 @@ public class InventoryAuditsController : ControllerBase
         audit.UpdatedAt = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
 
-        return Ok(new { message = "تم حفظ التغييرات بنجاح" });
+        return Ok(new { message = "ØªÙ… Ø­ÙØ¸ Ø§Ù„ØªØºÙŠÙŠØ±Ø§Øª Ø¨Ù†Ø¬Ø§Ø­" });
     }
 
     private async Task ProcessItemsAsync(InventoryAudit audit, List<CreateInventoryAuditItemDto> items)
@@ -288,7 +289,7 @@ public class InventoryAuditsController : ControllerBase
             .FirstOrDefaultAsync(a => a.Id == id);
 
         if (audit == null) return NotFound();
-        if (audit.Status == InventoryAuditStatus.Posted) return BadRequest("هذا الجرد معتمد بالفعل");
+        if (audit.Status == InventoryAuditStatus.Posted) return BadRequest("Ù‡Ø°Ø§ Ø§Ù„Ø¬Ø±Ø¯ Ù…Ø¹ØªÙ…Ø¯ Ø¨Ø§Ù„ÙØ¹Ù„");
 
         // Update Stock via InventoryService
         foreach (var item in audit.Items)
@@ -321,7 +322,7 @@ public class InventoryAuditsController : ControllerBase
         audit.JournalEntryId = jeId;
 
         await _db.SaveChangesAsync();
-        return Ok(new { message = "تم اعتماد الجرد وتعديل المخزون وترحيل القيد المحاسبي بنجاح" });
+        return Ok(new { message = "ØªÙ… Ø§Ø¹ØªÙ…Ø§Ø¯ Ø§Ù„Ø¬Ø±Ø¯ ÙˆØªØ¹Ø¯ÙŠÙ„ Ø§Ù„Ù…Ø®Ø²ÙˆÙ† ÙˆØªØ±Ø­ÙŠÙ„ Ø§Ù„Ù‚ÙŠØ¯ Ø§Ù„Ù…Ø­Ø§Ø³Ø¨ÙŠ Ø¨Ù†Ø¬Ø§Ø­" });
     }
 
     [HttpDelete("{id}")]
@@ -355,3 +356,4 @@ public class InventoryAuditsController : ControllerBase
         return NoContent();
     }
 }
+

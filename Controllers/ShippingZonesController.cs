@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -27,7 +28,7 @@ public class ShippingZonesController : ControllerBase
         return Ok(zones);
     }
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Settings, requireEdit: true)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] ShippingZone zone)
     {
@@ -37,7 +38,7 @@ public class ShippingZonesController : ControllerBase
         return CreatedAtAction(nameof(GetAll), new { id = zone.Id }, zone);
     }
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Settings, requireEdit: true)]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] ShippingZone dto)
     {
@@ -57,7 +58,7 @@ public class ShippingZonesController : ControllerBase
         return Ok(zone);
     }
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Settings, requireEdit: true)]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
@@ -69,7 +70,7 @@ public class ShippingZonesController : ControllerBase
         return NoContent();
     }
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Settings, requireEdit: true)]
     [HttpPatch("{id}/toggle")]
     public async Task<IActionResult> Toggle(int id)
     {
@@ -83,3 +84,4 @@ public class ShippingZonesController : ControllerBase
         return Ok(new { zone.IsActive });
     }
 }
+

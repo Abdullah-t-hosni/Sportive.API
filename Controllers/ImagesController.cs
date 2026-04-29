@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.Data;
@@ -9,7 +10,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[RequirePermission(ModuleKeys.Settings, requireEdit: true)]
 public class ImagesController : ControllerBase
 {
     private readonly IImageService _images;
@@ -27,7 +28,7 @@ public class ImagesController : ControllerBase
         [FromRoute] int productId, [FromForm] IFormFile file, [FromQuery] bool isMain = false, [FromQuery] string? colorAr = null)
     {
         var product = await _db.Products.FindAsync(productId);
-        if (product == null) return NotFound(new { message = "المنتج غير موجود" });
+        if (product == null) return NotFound(new { message = "Ø§Ù„Ù…Ù†ØªØ¬ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
 
         var result = await _images.UploadProductImageAsync(file, productId);
         if (!result.Success) return BadRequest(new { message = result.Error });
@@ -59,7 +60,7 @@ public class ImagesController : ControllerBase
     public async Task<IActionResult> UploadVariantImage([FromRoute] int variantId, [FromForm] IFormFile file)
     {
         var variant = await _db.ProductVariants.FindAsync(variantId);
-        if (variant == null) return NotFound(new { message = "الموديل غير موجود" });
+        if (variant == null) return NotFound(new { message = "Ø§Ù„Ù…ÙˆØ¯ÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
 
         var result = await _images.UploadAttachmentAsync(file, $"variants/{variantId}");
         if (!result.Success) return BadRequest(new { message = result.Error });
@@ -76,7 +77,7 @@ public class ImagesController : ControllerBase
     public async Task<IActionResult> UploadCategoryImage([FromRoute] int categoryId, [FromForm] IFormFile file)
     {
         var category = await _db.Categories.FindAsync(categoryId);
-        if (category == null) return NotFound(new { message = "القسم غير موجود" });
+        if (category == null) return NotFound(new { message = "Ø§Ù„Ù‚Ø³Ù… ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
 
         var result = await _images.UploadCategoryImageAsync(file, categoryId);
         if (!result.Success) return BadRequest(new { message = result.Error });
@@ -197,3 +198,4 @@ public class ImagesController : ControllerBase
         return NoContent();
     }
 }
+

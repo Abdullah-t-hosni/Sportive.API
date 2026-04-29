@@ -1,3 +1,5 @@
+﻿using Sportive.API.Models;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
@@ -54,25 +56,25 @@ public class ReviewsController : ControllerBase
         }
     }
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Reviews, requireEdit: true)]
     [HttpGet("pending")]
     public async Task<IActionResult> GetPending() => Ok(await _reviews.GetPendingReviewsAsync());
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Reviews, requireEdit: true)]
     [HttpGet("approved")]
     public async Task<IActionResult> GetApproved() => Ok(await _reviews.GetAllApprovedReviewsAsync());
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Reviews, requireEdit: true)]
     [HttpPost("{id}/approve")]
     public async Task<IActionResult> Approve(int id) =>
         await _reviews.ApproveReviewAsync(id) ? Ok() : NotFound();
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Reviews, requireEdit: true)]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id) =>
         await _reviews.DeleteReviewAsync(id) ? NoContent() : NotFound();
 
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.Reviews, requireEdit: true)]
     [HttpPost("{id}/reply")]
     public async Task<IActionResult> Reply(int id, [FromBody] ReplyDto dto)
     {
@@ -82,3 +84,4 @@ public class ReviewsController : ControllerBase
 }
 
 public record ReplyDto(string Reply);
+

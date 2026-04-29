@@ -1,3 +1,4 @@
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -14,12 +15,12 @@ using ClosedXML.Excel;
 
 namespace Sportive.API.Controllers;
 
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // SUPPLIERS
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Accountant")]
+[RequirePermission(ModuleKeys.PurchasesMain)]
 public class SuppliersController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -79,15 +80,15 @@ public class SuppliersController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateSupplierDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Name) || string.IsNullOrWhiteSpace(dto.Phone))
-            return BadRequest(new { message = "الاسم ورقم الهاتف إلزاميان" });
+            return BadRequest(new { message = "Ø§Ù„Ø§Ø³Ù… ÙˆØ±Ù‚Ù… Ø§Ù„Ù‡Ø§ØªÙ Ø¥Ù„Ø²Ø§Ù…ÙŠØ§Ù†" });
 
-        // 1. التحقق من وجود المورد مسبقاً (نشط)
+        // 1. Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† ÙˆØ¬ÙˆØ¯ Ø§Ù„Ù…ÙˆØ±Ø¯ Ù…Ø³Ø¨Ù‚Ø§Ù‹ (Ù†Ø´Ø·)
         var existing = await _db.Suppliers.FirstOrDefaultAsync(s => 
             s.Name.Trim() == dto.Name.Trim() || s.Phone.Trim() == dto.Phone.Trim());
         
         if (existing != null)
         {
-            return BadRequest(new { message = "هذا المورد مسجل بالفعل." });
+            return BadRequest(new { message = "Ù‡Ø°Ø§ Ø§Ù„Ù…ÙˆØ±Ø¯ Ù…Ø³Ø¬Ù„ Ø¨Ø§Ù„ÙØ¹Ù„." });
         }
 
         var supplier = new Supplier
@@ -103,7 +104,7 @@ public class SuppliersController : ControllerBase
             AttachmentPublicId = dto.AttachmentPublicId
         };
 
-        // ── Use Global Control Account for Supplier ──
+        // â”€â”€ Use Global Control Account for Supplier â”€â”€
         var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "2101");
         if (parent != null)
         {
@@ -157,7 +158,7 @@ public class SuppliersController : ControllerBase
         if (supplier == null) return NotFound();
 
         if (supplier.Invoices.Any())
-            return BadRequest(new { message = "لا يمكن حذف مورد مسجل له فواتير مشتريات. يرجى حذف الفواتير أولاً." });
+            return BadRequest(new { message = "Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ù…ÙˆØ±Ø¯ Ù…Ø³Ø¬Ù„ Ù„Ù‡ ÙÙˆØ§ØªÙŠØ± Ù…Ø´ØªØ±ÙŠØ§Øª. ÙŠØ±Ø¬Ù‰ Ø­Ø°Ù Ø§Ù„ÙÙˆØ§ØªÙŠØ± Ø£ÙˆÙ„Ø§Ù‹." });
 
         _db.Suppliers.Remove(supplier);
         await _db.SaveChangesAsync();
@@ -167,7 +168,7 @@ public class SuppliersController : ControllerBase
     [HttpPost("import-opening-balances")]
     public async Task<IActionResult> ImportOpeningBalances(IFormFile file)
     {
-        if (file == null || file.Length == 0) return BadRequest(new { message = "لم يتم رفع ملف" });
+        if (file == null || file.Length == 0) return BadRequest(new { message = "Ù„Ù… ÙŠØªÙ… Ø±ÙØ¹ Ù…Ù„Ù" });
 
         var successCount = 0;
         var errors = new List<string>();
@@ -189,14 +190,14 @@ public class SuppliersController : ControllerBase
                 var balStr = ws.Cell(r, 2).GetString().Trim();
                 if (!decimal.TryParse(balStr, out var balance))
                 {
-                    errors.Add($"سطر {r}: الرصيد غير صحيح للمورد '{identifier}'");
+                    errors.Add($"Ø³Ø·Ø± {r}: Ø§Ù„Ø±ØµÙŠØ¯ ØºÙŠØ± ØµØ­ÙŠØ­ Ù„Ù„Ù…ÙˆØ±Ø¯ '{identifier}'");
                     continue;
                 }
 
                 var supplier = allSuppliers.FirstOrDefault(s => s.Name == identifier || s.Phone == identifier);
                 if (supplier == null)
                 {
-                    errors.Add($"سطر {r}: المورد '{identifier}' غير موجود");
+                    errors.Add($"Ø³Ø·Ø± {r}: Ø§Ù„Ù…ÙˆØ±Ø¯ '{identifier}' ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯");
                     continue;
                 }
 
@@ -209,19 +210,19 @@ public class SuppliersController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = $"خطأ في المعالجة: {ex.Message}" });
+            return BadRequest(new { message = $"Ø®Ø·Ø£ ÙÙŠ Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©: {ex.Message}" });
         }
 
         return Ok(new { success = true, successCount, errors });
     }
 }
 
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // PURCHASE INVOICES
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Manager,Accountant")]
+[RequirePermission(ModuleKeys.PurchasesMain)]
 public class PurchaseInvoicesController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -296,7 +297,7 @@ public class PurchaseInvoicesController : ControllerBase
                 i.InvoiceDate, i.DueDate,
                 i.TotalAmount, i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
                 i.CostCenter,
-                i.CostCenter == OrderSource.Website ? "الموقع" : (i.CostCenter == OrderSource.POS ? "المحل" : "عام")
+                i.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (i.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…")
             )).ToListAsync();
 
         return Ok(new PaginatedResult<PurchaseInvoiceSummaryDto>(items, total, page, pageSize,
@@ -336,7 +337,7 @@ public class PurchaseInvoicesController : ControllerBase
                 r.Id,
                 r.ReturnNumber,
                 r.PurchaseInvoiceId,
-                InvoiceNumber = r.Invoice != null ? r.Invoice.InvoiceNumber : "بدون فاتورة",
+                InvoiceNumber = r.Invoice != null ? r.Invoice.InvoiceNumber : "Ø¨Ø¯ÙˆÙ† ÙØ§ØªÙˆØ±Ø©",
                 r.SupplierId,
                 SupplierName = r.Supplier.Name,
                 r.ReturnDate,
@@ -346,7 +347,7 @@ public class PurchaseInvoicesController : ControllerBase
                 r.DiscountAmount,
                 r.Notes,
                 CostCenter = (int?)r.CostCenter,
-                CostCenterLabel = r.CostCenter == OrderSource.Website ? "الموقع" : (r.CostCenter == OrderSource.POS ? "المحل" : "عام")
+                CostCenterLabel = r.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (r.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…")
             }).ToListAsync();
 
         return Ok(new PaginatedResult<object>(items.Cast<object>().ToList(), total, page, pageSize,
@@ -453,7 +454,7 @@ public class PurchaseInvoicesController : ControllerBase
             inv.CostCenter,
             inv.CashAccountId,
             inv.SupplierId,
-            inv.CostCenter == OrderSource.Website ? "الموقع" : (inv.CostCenter == OrderSource.POS ? "المحل" : "عام")
+            inv.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (inv.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…")
         ));
 
     }
@@ -462,7 +463,7 @@ public class PurchaseInvoicesController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreatePurchaseInvoiceDto dto)
     {
         if (!dto.Items.Any())
-            return BadRequest(new { message = "يجب إضافة صنف واحد على الأقل" });
+            return BadRequest(new { message = "ÙŠØ¬Ø¨ Ø¥Ø¶Ø§ÙØ© ØµÙ†Ù ÙˆØ§Ø­Ø¯ Ø¹Ù„Ù‰ Ø§Ù„Ø£Ù‚Ù„" });
 
         foreach (var item in dto.Items)
         {
@@ -471,7 +472,7 @@ public class PurchaseInvoicesController : ControllerBase
                 var hasVariants = await _db.ProductVariants.AnyAsync(v => v.ProductId == item.ProductId.Value);
                 if (hasVariants)
                 {
-                    return BadRequest(new { message = $"يجب اختيار المقاس واللون للصنف: {item.Description}" });
+                    return BadRequest(new { message = $"ÙŠØ¬Ø¨ Ø§Ø®ØªÙŠØ§Ø± Ø§Ù„Ù…Ù‚Ø§Ø³ ÙˆØ§Ù„Ù„ÙˆÙ† Ù„Ù„ØµÙ†Ù: {item.Description}" });
                 }
             }
         }
@@ -480,7 +481,7 @@ public class PurchaseInvoicesController : ControllerBase
 
         var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
         if (supplier == null)
-            return BadRequest(new { message = "المورد غير موجود" });
+            return BadRequest(new { message = "Ø§Ù„Ù…ÙˆØ±Ø¯ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
 
         var invNo = await _seq.NextAsync("PO", async (db, pattern) =>
         {
@@ -549,7 +550,7 @@ public class PurchaseInvoicesController : ControllerBase
                     invoice.CostCenter
                 );
                 
-                // ── Auto-update and Alert on Price Changes ──
+                // â”€â”€ Auto-update and Alert on Price Changes â”€â”€
                 var product = await _db.Products.FindAsync(item.ProductId.Value);
                 if (product != null)
                 {
@@ -557,7 +558,7 @@ public class PurchaseInvoicesController : ControllerBase
                     if (product.CostPrice.HasValue && newCost > product.CostPrice.Value) {
                         var diff = newCost - product.CostPrice.Value;
                         var pct  = Math.Round((diff / product.CostPrice.Value) * 100, 1);
-                        warnings.Add($"ارتفاع سعر: {product.NameAr} بنسبة {pct}% (من {product.CostPrice.Value} إلى {newCost})");
+                        warnings.Add($"Ø§Ø±ØªÙØ§Ø¹ Ø³Ø¹Ø±: {product.NameAr} Ø¨Ù†Ø³Ø¨Ø© {pct}% (Ù…Ù† {product.CostPrice.Value} Ø¥Ù„Ù‰ {newCost})");
                     }
                     product.CostPrice = newCost;
                     product.UpdatedAt = TimeHelper.GetEgyptTime();
@@ -591,8 +592,8 @@ public class PurchaseInvoicesController : ControllerBase
                 Amount        = invoice.TotalAmount,
                 PaymentDate   = invoice.InvoiceDate,
                 PaymentMethod = PaymentMethod_Purchase.Cash,
-                AccountName   = "الخزينة (آلي)",
-                Notes         = $"سداد تلقائي لفاتورة {invNo}",
+                AccountName   = "Ø§Ù„Ø®Ø²ÙŠÙ†Ø© (Ø¢Ù„ÙŠ)",
+                Notes         = $"Ø³Ø¯Ø§Ø¯ ØªÙ„Ù‚Ø§Ø¦ÙŠ Ù„ÙØ§ØªÙˆØ±Ø© {invNo}",
                 CreatedAt     = TimeHelper.GetEgyptTime(),
                 CostCenter    = invoice.CostCenter
             });
@@ -607,7 +608,7 @@ public class PurchaseInvoicesController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.PurchasesMain, requireEdit: true)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdatePurchaseInvoiceDto dto)
     {
         var inv = await _db.PurchaseInvoices
@@ -627,7 +628,7 @@ public class PurchaseInvoicesController : ControllerBase
                     var hasVariants = await _db.ProductVariants.AnyAsync(v => v.ProductId == item.ProductId.Value);
                     if (hasVariants)
                     {
-                        return BadRequest(new { message = $"يجب اختيار المقاس واللون للصنف بالتعديل: {item.Description}" });
+                        return BadRequest(new { message = $"ÙŠØ¬Ø¨ Ø§Ø®ØªÙŠØ§Ø± Ø§Ù„Ù…Ù‚Ø§Ø³ ÙˆØ§Ù„Ù„ÙˆÙ† Ù„Ù„ØµÙ†Ù Ø¨Ø§Ù„ØªØ¹Ø¯ÙŠÙ„: {item.Description}" });
                     }
                 }
             }
@@ -684,7 +685,7 @@ public class PurchaseInvoicesController : ControllerBase
         inv.TotalAmount = (subtotal + inv.TaxAmount) - inv.DiscountAmount;
         inv.Supplier.TotalPurchases += inv.TotalAmount;
 
-        // ── Auto-update and Alert on Price Changes ──
+        // â”€â”€ Auto-update and Alert on Price Changes â”€â”€
         var warnings = new List<string>();
         foreach (var item in inv.Items.Where(i => i.ProductId.HasValue))
         {
@@ -696,7 +697,7 @@ public class PurchaseInvoicesController : ControllerBase
                 if (product.CostPrice.HasValue && newCost > product.CostPrice.Value) {
                     var diff = newCost - product.CostPrice.Value;
                     var pct  = Math.Round((diff / product.CostPrice.Value) * 100, 1);
-                    warnings.Add($"ارتفاع سعر: {product.NameAr} بنسبة {pct}% (من {product.CostPrice.Value} إلى {newCost})");
+                    warnings.Add($"Ø§Ø±ØªÙØ§Ø¹ Ø³Ø¹Ø±: {product.NameAr} Ø¨Ù†Ø³Ø¨Ø© {pct}% (Ù…Ù† {product.CostPrice.Value} Ø¥Ù„Ù‰ {newCost})");
                 }
                 product.CostPrice = newCost;
                 product.UpdatedAt = TimeHelper.GetEgyptTime();
@@ -754,7 +755,7 @@ public class PurchaseInvoicesController : ControllerBase
         var oldStatus = inv.Status;
         if (oldStatus == dto.Status) return Ok(new { id = inv.Id, status = inv.Status.ToString() });
 
-        // ── 1. Handle Stock Reversal (If moving FROM received TO inactive) ──
+        // â”€â”€ 1. Handle Stock Reversal (If moving FROM received TO inactive) â”€â”€
         bool wasInStock = (oldStatus == PurchaseInvoiceStatus.Received || oldStatus == PurchaseInvoiceStatus.Paid || oldStatus == PurchaseInvoiceStatus.PartPaid);
         bool willBeOut  = (dto.Status == PurchaseInvoiceStatus.Cancelled || dto.Status == PurchaseInvoiceStatus.Returned);
 
@@ -804,7 +805,7 @@ public class PurchaseInvoicesController : ControllerBase
              }
         }
 
-        // ── 2. Handle Accounting & Totals ──
+        // â”€â”€ 2. Handle Accounting & Totals â”€â”€
         if (dto.Status == PurchaseInvoiceStatus.Cancelled)
         {
             // Reverse Supplier Totals (Net remaining of the invoice)
@@ -837,15 +838,15 @@ public class PurchaseInvoicesController : ControllerBase
     }
 
     [HttpPost("returns/standalone")]
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.PurchasesMain, requireEdit: true)]
     public async Task<IActionResult> CreateStandaloneReturn([FromBody] CreateStandaloneReturnDto dto)
     {
         if (dto == null || dto.Items == null || !dto.Items.Any())
-            return BadRequest(new { message = "يجب إضافة صنف واحد على الأقل للمرتجع" });
+            return BadRequest(new { message = "ÙŠØ¬Ø¨ Ø¥Ø¶Ø§ÙØ© ØµÙ†Ù ÙˆØ§Ø­Ø¯ Ø¹Ù„Ù‰ Ø§Ù„Ø£Ù‚Ù„ Ù„Ù„Ù…Ø±ØªØ¬Ø¹" });
 
         var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
         if (supplier == null)
-            return BadRequest(new { message = "المورد غير موجود" });
+            return BadRequest(new { message = "Ø§Ù„Ù…ÙˆØ±Ø¯ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
 
         var pUnits = await GetUnitsListAsync();
         var returnNo = await _seq.NextAsync("PR", async (db, pattern) =>
@@ -941,7 +942,7 @@ public class PurchaseInvoicesController : ControllerBase
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error in CreateStandaloneReturn - {Message} - Inner: {InnerMessage}", ex.Message, ex.InnerException?.Message);
                 return StatusCode(500, new { 
-                    message = "خطأ داخلي أثناء معالجة المرتجع", 
+                    message = "Ø®Ø·Ø£ Ø¯Ø§Ø®Ù„ÙŠ Ø£Ø«Ù†Ø§Ø¡ Ù…Ø¹Ø§Ù„Ø¬Ø© Ø§Ù„Ù…Ø±ØªØ¬Ø¹", 
                     error = ex.Message,
                     detail = ex.InnerException?.Message 
                 });
@@ -950,11 +951,11 @@ public class PurchaseInvoicesController : ControllerBase
     }
 
     [HttpPut("returns/standalone/{id}")]
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.PurchasesMain, requireEdit: true)]
     public async Task<IActionResult> UpdateStandaloneReturn(int id, [FromBody] CreateStandaloneReturnDto dto)
     {
         if (dto == null || dto.Items == null || !dto.Items.Any())
-            return BadRequest(new { message = "يجب إضافة صنف واحد على الأقل للمرتجع" });
+            return BadRequest(new { message = "ÙŠØ¬Ø¨ Ø¥Ø¶Ø§ÙØ© ØµÙ†Ù ÙˆØ§Ø­Ø¯ Ø¹Ù„Ù‰ Ø§Ù„Ø£Ù‚Ù„ Ù„Ù„Ù…Ø±ØªØ¬Ø¹" });
 
         var pReturn = await _db.PurchaseReturns
             .Include(r => r.Items)
@@ -1079,7 +1080,7 @@ public class PurchaseInvoicesController : ControllerBase
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error in UpdateStandaloneReturn - {Message} - Inner: {InnerMessage}", ex.Message, ex.InnerException?.Message);
                 return StatusCode(500, new { 
-                    message = "خطأ داخلي أثناء تعديل المرتجع", 
+                    message = "Ø®Ø·Ø£ Ø¯Ø§Ø®Ù„ÙŠ Ø£Ø«Ù†Ø§Ø¡ ØªØ¹Ø¯ÙŠÙ„ Ø§Ù„Ù…Ø±ØªØ¬Ø¹", 
                     error = ex.Message,
                     detail = ex.InnerException?.Message 
                 });
@@ -1090,14 +1091,14 @@ public class PurchaseInvoicesController : ControllerBase
 
 
     [HttpPost("{id}/return")]
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.PurchasesMain, requireEdit: true)]
     public async Task<IActionResult> ReturnPurchase(int id, [FromBody] ReturnPurchaseInvoiceDto dto)
     {
         if (dto == null)
-            return BadRequest(new { message = "محتوى الطلب فارغ" });
+            return BadRequest(new { message = "Ù…Ø­ØªÙˆÙ‰ Ø§Ù„Ø·Ù„Ø¨ ÙØ§Ø±Øº" });
 
         if (dto.Items == null || !dto.Items.Any())
-            return BadRequest(new { message = "يجب اختيار أصناف للإرجاع" });
+            return BadRequest(new { message = "ÙŠØ¬Ø¨ Ø§Ø®ØªÙŠØ§Ø± Ø£ØµÙ†Ø§Ù Ù„Ù„Ø¥Ø±Ø¬Ø§Ø¹" });
 
         // 1. Generate Return Document Number BEFORE starting transaction to avoid deadlocks
         // (SequenceService uses its own scope/connection)
@@ -1125,13 +1126,13 @@ public class PurchaseInvoicesController : ControllerBase
                     .FirstOrDefaultAsync(i => i.Id == id);
 
                 if (inv == null) 
-                    return NotFound(new { message = "الفاتورة غير موجودة" });
+                    return NotFound(new { message = "Ø§Ù„ÙØ§ØªÙˆØ±Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©" });
 
                 if (inv.Status == PurchaseInvoiceStatus.Cancelled)
-                    return BadRequest(new { message = "لا يمكن عمل مرتجع لفاتورة ملغاة" });
+                    return BadRequest(new { message = "Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø¹Ù…Ù„ Ù…Ø±ØªØ¬Ø¹ Ù„ÙØ§ØªÙˆØ±Ø© Ù…Ù„ØºØ§Ø©" });
 
                 if (inv.Status == PurchaseInvoiceStatus.Draft || (int)inv.Status == 0) 
-                    return BadRequest(new { message = "لا يمكن عمل مرتجع لفاتورة لم يتم استلامها بعد (مسودة)" });
+                    return BadRequest(new { message = "Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø¹Ù…Ù„ Ù…Ø±ØªØ¬Ø¹ Ù„ÙØ§ØªÙˆØ±Ø© Ù„Ù… ÙŠØªÙ… Ø§Ø³ØªÙ„Ø§Ù…Ù‡Ø§ Ø¨Ø¹Ø¯ (Ù…Ø³ÙˆØ¯Ø©)" });
 
                 var pReturn = new PurchaseReturn
                 {
@@ -1165,12 +1166,12 @@ public class PurchaseInvoicesController : ControllerBase
                     decimal remainingInPieces = Math.Max(0, invQtyInPieces - returnedInPieces);
 
                     if (reqItem.Quantity > remainingInPieces + 0.001M)
-                        return BadRequest(new { message = $"الكمية المطلوبة ({reqItem.Quantity} قطعة) أكبر من المتبقي في الفاتورة ({remainingInPieces} قطعة) للصنف {invItem.Description}" });
+                        return BadRequest(new { message = $"Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„Ù…Ø·Ù„ÙˆØ¨Ø© ({reqItem.Quantity} Ù‚Ø·Ø¹Ø©) Ø£ÙƒØ¨Ø± Ù…Ù† Ø§Ù„Ù…ØªØ¨Ù‚ÙŠ ÙÙŠ Ø§Ù„ÙØ§ØªÙˆØ±Ø© ({remainingInPieces} Ù‚Ø·Ø¹Ø©) Ù„Ù„ØµÙ†Ù {invItem.Description}" });
 
                     // B. Validate against PHYSICAL STOCK
                     var physicalStock = await _inventory.GetCurrentStockAsync(invItem.ProductId, invItem.ProductVariantId);
                     if (reqItem.Quantity > physicalStock + 0.001M)
-                        return BadRequest(new { message = $"لا يوجد رصيد كافي في المخزن لإتمام المرتجع للصنف {invItem.Description}. المتوفر حالياً: {physicalStock} قطعة." });
+                        return BadRequest(new { message = $"Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø±ØµÙŠØ¯ ÙƒØ§ÙÙŠ ÙÙŠ Ø§Ù„Ù…Ø®Ø²Ù† Ù„Ø¥ØªÙ…Ø§Ù… Ø§Ù„Ù…Ø±ØªØ¬Ø¹ Ù„Ù„ØµÙ†Ù {invItem.Description}. Ø§Ù„Ù…ØªÙˆÙØ± Ø­Ø§Ù„ÙŠØ§Ù‹: {physicalStock} Ù‚Ø·Ø¹Ø©." });
 
                     // C. Update Invoice Item
                     decimal returnedInOriginalUnits = multiplier > 0 ? (reqItem.Quantity / multiplier) : reqItem.Quantity;
@@ -1201,7 +1202,7 @@ public class PurchaseInvoicesController : ControllerBase
                             invItem.ProductId,
                             invItem.ProductVariantId,
                             returnNo,
-                            $"مرتجع مشتريات (فاتورة رقم #{inv.InvoiceNumber})",
+                            $"Ù…Ø±ØªØ¬Ø¹ Ù…Ø´ØªØ±ÙŠØ§Øª (ÙØ§ØªÙˆØ±Ø© Ø±Ù‚Ù… #{inv.InvoiceNumber})",
                             pReturn.CreatedByUserId,
                             unitCostPerPiece
                         );
@@ -1209,7 +1210,7 @@ public class PurchaseInvoicesController : ControllerBase
                 }
 
                 if (!pReturn.Items.Any() || totalSubTotal <= 0)
-                    return BadRequest(new { message = "لم يتم تحديد أي كميات صالحة للإرجاع" });
+                    return BadRequest(new { message = "Ù„Ù… ÙŠØªÙ… ØªØ­Ø¯ÙŠØ¯ Ø£ÙŠ ÙƒÙ…ÙŠØ§Øª ØµØ§Ù„Ø­Ø© Ù„Ù„Ø¥Ø±Ø¬Ø§Ø¹" });
 
                 // 2. Financial Calculations
                 decimal subTotal_Original = Math.Max(1, inv.SubTotal);
@@ -1264,7 +1265,7 @@ public class PurchaseInvoicesController : ControllerBase
                     
                 _logger.LogError(ex, "Severe error in ReturnPurchase for invoice {Id}", id);
                 return StatusCode(500, new { 
-                    message = "خطأ داخلي أثناء معالجة المرتجع", 
+                    message = "Ø®Ø·Ø£ Ø¯Ø§Ø®Ù„ÙŠ Ø£Ø«Ù†Ø§Ø¡ Ù…Ø¹Ø§Ù„Ø¬Ø© Ø§Ù„Ù…Ø±ØªØ¬Ø¹", 
                     error = ex.Message,
                     detail = ex.InnerException?.Message 
                 });
@@ -1335,7 +1336,7 @@ public class PurchaseInvoicesController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin,Manager")]
+    [RequirePermission(ModuleKeys.PurchasesMain, requireEdit: true)]
     public async Task<IActionResult> Delete(int id)
     {
         var inv = await _db.PurchaseInvoices
@@ -1347,14 +1348,14 @@ public class PurchaseInvoicesController : ControllerBase
 
         if (inv == null) return NotFound();
 
-        // 1. التحقق من وجود مرتجعات (Check for Returns)
+        // 1. Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† ÙˆØ¬ÙˆØ¯ Ù…Ø±ØªØ¬Ø¹Ø§Øª (Check for Returns)
         var hasReturns = await _db.PurchaseReturns.AnyAsync(r => r.PurchaseInvoiceId == id);
         if (hasReturns || inv.ReturnedAmount > 0)
         {
-            return BadRequest(new { message = "لا يمكن حذف فاتورة لها مرتجعات. يرجى حذف المرتجعات أولاً." });
+            return BadRequest(new { message = "Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù ÙØ§ØªÙˆØ±Ø© Ù„Ù‡Ø§ Ù…Ø±ØªØ¬Ø¹Ø§Øª. ÙŠØ±Ø¬Ù‰ Ø­Ø°Ù Ø§Ù„Ù…Ø±ØªØ¬Ø¹Ø§Øª Ø£ÙˆÙ„Ø§Ù‹." });
         }
 
-        // 2. التحقق مما إذا كان قد تم بيع أي جزء من الفاتورة (Check if items were sold)
+        // 2. Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù…Ø§ Ø¥Ø°Ø§ ÙƒØ§Ù† Ù‚Ø¯ ØªÙ… Ø¨ÙŠØ¹ Ø£ÙŠ Ø¬Ø²Ø¡ Ù…Ù† Ø§Ù„ÙØ§ØªÙˆØ±Ø© (Check if items were sold)
         var pUnits = await GetUnitsListAsync();
         foreach (var item in inv.Items)
         {
@@ -1368,7 +1369,7 @@ public class PurchaseInvoicesController : ControllerBase
                 {
                     var productName = item.Product?.NameAr ?? item.Description;
                     return BadRequest(new { 
-                        message = $"لا يمكن حذف الفاتورة لأنه تم بيع أجزاء منها بالفعل. الصنف: {productName} (الكمية في الفاتورة: {qtyInPieces}، الرصيد الحالي: {currentStock})" 
+                        message = $"Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ø§Ù„ÙØ§ØªÙˆØ±Ø© Ù„Ø£Ù†Ù‡ ØªÙ… Ø¨ÙŠØ¹ Ø£Ø¬Ø²Ø§Ø¡ Ù…Ù†Ù‡Ø§ Ø¨Ø§Ù„ÙØ¹Ù„. Ø§Ù„ØµÙ†Ù: {productName} (Ø§Ù„ÙƒÙ…ÙŠØ© ÙÙŠ Ø§Ù„ÙØ§ØªÙˆØ±Ø©: {qtyInPieces}ØŒ Ø§Ù„Ø±ØµÙŠØ¯ Ø§Ù„Ø­Ø§Ù„ÙŠ: {currentStock})" 
                     });
                 }
             }
@@ -1403,9 +1404,9 @@ public class PurchaseInvoicesController : ControllerBase
 
     /// <summary>
     /// Posts the accounting journal for a purchase invoice in the background.
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // GET /api/purchaseinvoices/{id}/pdf
-    // ══════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("{id}/pdf")]
     public async Task<IActionResult> GetPdf(int id)
     {
@@ -1460,3 +1461,4 @@ public class PurchaseInvoicesController : ControllerBase
         }
     }
 }
+
