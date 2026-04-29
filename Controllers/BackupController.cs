@@ -17,13 +17,15 @@ public class BackupController : ControllerBase
     private readonly UserManager<AppUser> _userManager;
     private readonly IMemoryCache _cache;
     private readonly ILogger<BackupController> _logger;
+    private readonly IAuditService _audit;
 
-    public BackupController(IBackupService backup, UserManager<AppUser> userManager, IMemoryCache cache, ILogger<BackupController> logger)
+    public BackupController(IBackupService backup, UserManager<AppUser> userManager, IMemoryCache cache, ILogger<BackupController> logger, IAuditService audit)
     {
         _backup = backup;
         _userManager = userManager;
         _cache = cache;
         _logger = logger;
+        _audit = audit;
     }
 
     // ── POST /api/backup/run ──────────────────────────
@@ -129,6 +131,8 @@ public class BackupController : ControllerBase
 
         _cache.Remove(cacheKey);
         _logger.LogWarning("DATABASE RESTORE INITIATED by {User} using file {File}", User.Identity?.Name, req.File.FileName);
+        
+        await _audit.LogAsync("DatabaseRestore", "System", "DB", $"Restore initiated using {req.File.FileName}", user.Id, user.UserName);
 
         using var stream = req.File.OpenReadStream();
         var result = await _backup.RestoreAsync(stream, req.File.FileName, User.Identity?.Name);

@@ -20,14 +20,16 @@ public class PaymentController : ControllerBase
     private readonly IConfiguration _config;
     private readonly ILogger<PaymentController> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IAuditService _audit;
 
-    public PaymentController(IPaymobService paymob, AppDbContext db, ILogger<PaymentController> logger, IConfiguration config, IServiceScopeFactory scopeFactory)
+    public PaymentController(IPaymobService paymob, AppDbContext db, ILogger<PaymentController> logger, IConfiguration config, IServiceScopeFactory scopeFactory, IAuditService audit)
     {
-        _paymob       = paymob;
-        _db           = db;
-        _logger       = logger;
-        _config       = config;
+        _paymob = paymob;
+        _db = db;
+        _logger = logger;
+        _config = config;
         _scopeFactory = scopeFactory;
+        _audit = audit;
     }
 
     /// <summary>إنشاء رابط دفع Paymob لطلب معين</summary>
@@ -125,6 +127,8 @@ public class PaymentController : ControllerBase
                         order.Status = OrderStatus.Confirmed;
                     order.UpdatedAt = TimeHelper.GetEgyptTime();
                     await _db.SaveChangesAsync();
+                    
+                    await _audit.LogAsync(success ? "PaymentSuccess" : "PaymentFailed", "Order", order.Id.ToString(), $"Webhook payment response", null, "PaymobWebhook");
 
                     if (success)
                         BackgroundJob.Enqueue<IAccountingService>(a => a.PostOrderPaymentByIdAsync(order.Id));

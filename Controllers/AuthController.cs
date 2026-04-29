@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -26,8 +26,9 @@ public class AuthController : ControllerBase
     private readonly IMemoryCache _cache;
     private readonly IEmailService _email;
     private readonly IWhatsAppApiService _whatsappApi;
+    private readonly IAuditService _audit;
 
-    public AuthController(IAuthService auth, AppDbContext db, UserManager<AppUser> userManager, IMemoryCache cache, IEmailService email, IWhatsAppApiService whatsappApi)
+    public AuthController(IAuthService auth, AppDbContext db, UserManager<AppUser> userManager, IMemoryCache cache, IEmailService email, IWhatsAppApiService whatsappApi, IAuditService audit)
     {
         _auth = auth;
         _db = db;
@@ -35,6 +36,7 @@ public class AuthController : ControllerBase
         _cache = cache;
         _email = email;
         _whatsappApi = whatsappApi;
+        _audit = audit;
     }
 
     [HttpPost("register")]
@@ -49,7 +51,11 @@ public class AuthController : ControllerBase
     [EnableRateLimiting("auth")]
     public async Task<IActionResult> Login([FromBody] LoginDto dto)
     {
-        try { return Ok(await _auth.LoginAsync(dto)); }
+        try { 
+            var response = await _auth.LoginAsync(dto);
+            await _audit.LogAsync("Login", "User", null, $"User logged in via {dto.Identifier}", null, dto.Identifier);
+            return Ok(response); 
+        }
         catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
     }
 

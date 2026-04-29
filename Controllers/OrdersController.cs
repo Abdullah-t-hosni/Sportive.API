@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -26,14 +26,16 @@ public class OrdersController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<OrdersController> _logger;
+    private readonly IAuditService _audit;
 
-    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<OrdersController> logger)
+    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<OrdersController> logger, IAuditService audit)
     {
         _orderService = orderService;
         _pdfService   = pdfService;
         _db           = db;
         _scopeFactory = scopeFactory;
         _logger       = logger;
+        _audit        = audit;
     }
 
     [HttpGet]
@@ -302,6 +304,9 @@ public class OrdersController : ControllerBase
 
         _db.Orders.Remove(order);
         await _db.SaveChangesAsync();
+        
+        await _audit.LogAsync("DeleteOrder", "Order", id.ToString(), $"Order {order.OrderNumber} deleted with its journal entries", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name));
+
         return NoContent();
     }
 

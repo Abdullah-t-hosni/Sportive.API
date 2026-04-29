@@ -158,3 +158,29 @@ public class CreateAddressValidator : AbstractValidator<CreateAddressDto>
             .WithMessage("خط الطول يجب أن يكون بين -180 و 180");
     }
 }
+
+// ── POS ───────────────────────────────────────────────────────
+public class CreatePOSOrderValidator : AbstractValidator<CreatePOSOrderDto>
+{
+    public CreatePOSOrderValidator()
+    {
+        RuleFor(x => x.Items).NotEmpty().WithMessage("الطلب يجب أن يحتوي على عنصر واحد على الأقل");
+        RuleForEach(x => x.Items).ChildRules(items =>
+        {
+            items.RuleFor(i => i.Quantity).GreaterThan(0).WithMessage("الكمية يجب أن تكون أكبر من صفر");
+            items.RuleFor(i => i.UnitPrice).GreaterThanOrEqualTo(0).WithMessage("سعر الوحدة لا يمكن أن يكون سالباً");
+        });
+
+        RuleFor(x => x.DiscountAmount)
+            .GreaterThanOrEqualTo(0).When(x => x.DiscountAmount.HasValue)
+            .WithMessage("قيمة الخصم الإضافي لا يمكن أن تكون سالبة");
+        
+        RuleFor(x => x.Subtotal)
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("المجموع الفرعي لا يمكن أن يكون سالباً");
+
+        RuleFor(x => x.PaidAmount)
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("المبلغ المدفوع لا يمكن أن يكون سالباً");
+    }
+}

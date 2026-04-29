@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +11,7 @@ namespace Sportive.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [RequirePermission(ModuleKeys.Settings)]
+[Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("auth")]
 public class WaMeController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -23,7 +24,6 @@ public class WaMeController : ControllerBase
     }
 
     // GET /api/wame/order/{id}
-    // ÙŠØ±Ø¬Ø¹ ÙƒÙ„ Ø±ÙˆØ§Ø¨Ø· Ø§Ù„Ù€ wa.me Ù„Ø·Ù„Ø¨ Ù…Ø¹ÙŠÙ†
     [HttpGet("order/{orderId}")]
     public async Task<IActionResult> GetOrderLinks(int orderId, [FromQuery] string? tracking = null)
     {
@@ -82,7 +82,6 @@ public class WaMeController : ControllerBase
         return Ok(result);
     }
 
-    // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     private async Task<IActionResult> SingleLink(int orderId, Func<Order, WaMeResult> fn)
     {
         var order = await LoadOrder(orderId);

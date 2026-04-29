@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -8,6 +8,7 @@ using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Interfaces;
+using System.Security.Claims;
 
 namespace Sportive.API.Controllers;
 
@@ -23,6 +24,7 @@ public class StaffController : ControllerBase
     private readonly SequenceService           _sequence;
     private readonly ICustomerService          _customerService;
     private readonly ICacheService             _cache;
+    private readonly IAuditService             _audit;
 
     public StaffController(
         UserManager<AppUser>      users,
@@ -31,7 +33,8 @@ public class StaffController : ControllerBase
         StaffPermissionService    permService,
         SequenceService           sequence,
         ICustomerService          customerService,
-        ICacheService             cache)
+        ICacheService             cache,
+        IAuditService             audit)
     {
         _users           = users;
         _roles           = roles;
@@ -40,6 +43,7 @@ public class StaffController : ControllerBase
         _sequence        = sequence;
         _customerService = customerService;
         _cache           = cache;
+        _audit           = audit;
     }
 
     // GET /api/staff
@@ -176,6 +180,8 @@ public class StaffController : ControllerBase
         {
             await EnsureEmployeeLinkAsync(user, dto.Role);
         }
+
+        await _audit.LogAsync("ChangeRole", "User", user.Id, $"Role changed to {dto.Role}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name));
 
         return Ok(new {
             id,
@@ -376,14 +382,16 @@ public class StaffController : ControllerBase
 
         await _db.SaveChangesAsync();
         await _cache.RemoveAsync($"UserPermissions_{id}");
+        
+        await _audit.LogAsync("UpdatePermissions", "UserModulePermission", id, "Permissions updated manually", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name));
 
-        return Ok(new { message = "ØªÙ… ØªØ­Ø¯ÙŠØ« Ø§Ù„ØµÙ„Ø§Ø­ÙŠØ§Øª Ø¨Ù†Ø¬Ø§Ø­" });
+        return Ok(new { message = "تم تحديث الصلاحيات بنجاح" });
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ==================================================================================================
     // GET /api/staff/{id}/profile
-    // Ø¨Ø±ÙˆÙØ§ÙŠÙ„ ÙƒØ§Ù…Ù„: Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… + HR + Ø§Ù„ØµÙ„Ø§Ø­ÙŠØ§Øª
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // بروفايل كامل: بيانات المستخدم + HR + الصلاحيات
+    // ==================================================================================================
     [HttpGet("{id}/profile")]
     public async Task<IActionResult> GetProfile(string id)
     {
