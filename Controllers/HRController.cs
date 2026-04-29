@@ -244,13 +244,25 @@ public class EmployeesController : ControllerBase
     [HttpGet("{id}/statement")]
     public async Task<IActionResult> GetStatement(int id, [FromQuery] DateTime from, [FromQuery] DateTime to)
     {
-        if (id == 0) return await GetGeneralStatement(from, to);
+        var mapDict = await _core.GetSafeSystemMappingsAsync();
+        var hrAccountIds = new List<int>();
+        
+        // تجمع كل الحسابات المتعلقة بالموظفين (رواتب، سلف، مكافآت، خصومات)
+        if (mapDict.TryGetValue(MappingKeys.SalariesPayable.ToLower(), out var s1)) hrAccountIds.Add(s1);
+        if (mapDict.TryGetValue(MappingKeys.EmployeeAdvances.ToLower(), out var s2)) hrAccountIds.Add(s2);
+        if (mapDict.TryGetValue(MappingKeys.EmployeeBonuses.ToLower(), out var s3)) hrAccountIds.Add(s3);
+        if (mapDict.TryGetValue(MappingKeys.EmployeeDeductions.ToLower(), out var s4)) hrAccountIds.Add(s4);
+
+        if (id == 0) return await GetGeneralStatement(from, to, hrAccountIds);
 
         var emp = await _db.Employees.FindAsync(id);
         if (emp == null) return NotFound();
+        if (emp.AccountId.HasValue) hrAccountIds.Add(emp.AccountId.Value);
+
+        hrAccountIds = hrAccountIds.Distinct().ToList();
 
         var preEntries = await _db.JournalLines
-            .Where(l => l.EmployeeId == id && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.EmployeeId == id && hrAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .Select(l => new { l.Debit, l.Credit })
             .ToListAsync();
         
@@ -258,7 +270,7 @@ public class EmployeesController : ControllerBase
 
         var lines = await _db.JournalLines
             .Include(l => l.JournalEntry)
-            .Where(l => l.EmployeeId == id && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.EmployeeId == id && hrAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .OrderBy(l => l.JournalEntry.EntryDate)
             .ToListAsync();
 
@@ -286,13 +298,13 @@ public class EmployeesController : ControllerBase
         ));
     }
 
-    private async Task<IActionResult> GetGeneralStatement(DateTime from, DateTime to)
+    private async Task<IActionResult> GetGeneralStatement(DateTime from, DateTime to, List<int> hrAccountIds)
     {
         var accrualAccId = await _core.GetRequiredMappedAccountAsync(MappingKeys.SalariesPayable);
         var acc = await _db.Accounts.FindAsync(accrualAccId);
 
         var preEntries = await _db.JournalLines
-            .Where(l => l.EmployeeId != null && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.EmployeeId != null && hrAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .Select(l => new { l.Debit, l.Credit })
             .ToListAsync();
         
@@ -301,7 +313,7 @@ public class EmployeesController : ControllerBase
         var lines = await _db.JournalLines
             .Include(l => l.JournalEntry)
             .Include(l => l.Employee)
-            .Where(l => l.EmployeeId != null && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.EmployeeId != null && hrAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .OrderBy(l => l.JournalEntry.EntryDate)
             .ToListAsync();
 
