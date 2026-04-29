@@ -624,10 +624,11 @@ public class PayrollController : ControllerBase
                 // 3. صافي الراتب المستحق للموظف (دائن)
                 if (item.NetPayable > 0)
                 {
-                    var targetAccId = item.Employee?.AccountId ?? accrualAccId;
+                    // نستخدم دائماً حساب الرواتب المستحقة العام لضمان التوجيه الصحيح
+                    // مع الاحتفاظ بربط الموظف بالسطر للتحليل
                     je.Lines.Add(new JournalLine
                     {
-                        AccountId   = targetAccId,
+                        AccountId   = accrualAccId,
                         Debit       = 0,
                         Credit      = item.NetPayable,
                         Description = $"صافي الراتب المستحق: {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}",
