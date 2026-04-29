@@ -756,7 +756,7 @@ public class OperationalReportsController : ControllerBase
                 .Where(i => i.JournalEntries.Any(j => j.Status == JournalEntryStatus.Posted));
 
             if (supplierId.HasValue) q = q.Where(i => i.SupplierId == supplierId.Value);
-            if (source.HasValue) q = q.Where(i => i.Source == source.Value);
+            if (source.HasValue) q = q.Where(i => i.CostCenter == source.Value);
 
             var invoices = await q.OrderByDescending(i => i.InvoiceDate).ToListAsync();
 
@@ -917,7 +917,7 @@ public class OperationalReportsController : ControllerBase
 
         if (source.HasValue)
         {
-            q = q.Where(r => r.Source == source.Value);
+            q = q.Where(r => r.CostCenter == source.Value);
         }
 
         if (categoryId.HasValue && categoryId > 0)
@@ -1090,6 +1090,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int?      brandId    = null,
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
+        [FromQuery] string?   color      = null,
+        [FromQuery] string?   size       = null,
         [FromQuery] OrderSource? source  = null,
         [FromQuery] bool      excel      = false)
     {
