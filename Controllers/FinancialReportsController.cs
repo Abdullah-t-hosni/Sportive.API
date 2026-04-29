@@ -599,6 +599,7 @@ public class FinancialReportsController : ControllerBase
     public async Task<IActionResult> CashFlow(
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate   = null,
+        [FromQuery] OrderSource? source = null,
         [FromQuery] bool      excel    = false)
     {
         var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
@@ -613,13 +614,18 @@ public class FinancialReportsController : ControllerBase
         var cashIds = cashAccounts.Select(a => a.Id).ToHashSet();
 
         // جلب كل الأسطر التي تخص حسابات النقدية في تلك الفترة
-        var cashLines = await _db.JournalLines
+        var cashLinesQuery = _db.JournalLines
             .Include(l => l.JournalEntry)
             .Include(l => l.Account)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to
-                     && cashIds.Contains(l.AccountId))
+                     && cashIds.Contains(l.AccountId));
+
+        if (source.HasValue)
+            cashLinesQuery = cashLinesQuery.Where(l => l.CostCenter == source.Value);
+
+        var cashLines = await cashLinesQuery
             .OrderBy(l => l.JournalEntry.EntryDate)
             .ToListAsync();
 
@@ -727,7 +733,7 @@ public class FinancialReportsController : ControllerBase
         if (excel) return ExcelCashFlow(opItems, invItems, finItems, openCash, from, to);
 
         return Ok(new {
-            from, to,
+            from, to, source,
             openingCashBalance = openCash,
             operatingActivities = new { items = opItems, total = operating },
             investingActivities = new { items = invItems, total = investing },

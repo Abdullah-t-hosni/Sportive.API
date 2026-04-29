@@ -301,20 +301,24 @@ public class SalesAccountingService
             lines.Add((vatAcct, totalVatAmount, 0, $"مرتجع ضريبة مبيعات - {order.OrderNumber}"));
         }
 
-        // ── Refund Routing ────────────────────────────────────
-        // Image logic: "لو دفع" -> Cash/Treasury, "لو لم يدفع" -> Customer
-        if (order.PaymentStatus == PaymentStatus.Paid || order.Source == OrderSource.POS)
+        // ── Refund Routing (Accurate Reversal) ─────────────────
+        // We must reverse exactly what was paid vs what was put on credit.
+        decimal cashRefundAmount = order.PaidAmount;
+        decimal creditRefundAmount = Math.Round(order.TotalAmount - cashRefundAmount, 2);
+
+        if (cashRefundAmount > 0)
         {
             string cashId = refundAccountId.HasValue
                 ? $"ID:{refundAccountId.Value}"
                 : await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
 
             string methodLabel = _core.GetMethodLabel(order.PaymentMethod);
-            lines.Add((cashId, 0, order.TotalAmount, $"رد نقدية للمرتجع ({methodLabel}) - {order.OrderNumber}"));
+            lines.Add((cashId, 0, cashRefundAmount, $"رد نقدية للمرتجع ({methodLabel}) - {order.OrderNumber}"));
         }
-        else
+
+        if (creditRefundAmount > 0)
         {
-            lines.Add((receivablesAcct, 0, order.TotalAmount, $"تنزيل مديونية (مرتجع آجل) - {order.Customer?.FullName}"));
+            lines.Add((receivablesAcct, 0, creditRefundAmount, $"تنزيل مديونية (مرتجع) - {order.Customer?.FullName ?? order.OrderNumber}"));
         }
 
         // ── Stock Reversal ────────────────────────────────────
@@ -380,16 +384,25 @@ public class SalesAccountingService
         else if (discountReversal < 0)
             lines.Add((salesDiscAcct, Math.Abs(discountReversal), 0, $"تسوية تفاوت (مرتجع جزئي) - {order.OrderNumber}"));
 
-        if (order.PaymentStatus == PaymentStatus.Paid || order.Source == OrderSource.POS)
+        // ── Partial Refund Routing ────────────────────────────
+        // For partial returns, we prioritize refunding the debt first, then cash.
+        // If the customer owes us money, we cancel the debt. If no debt, we refund cash.
+        decimal originalDebt = Math.Round(order.TotalAmount - order.PaidAmount, 2);
+        
+        decimal amountToCustomerCredit = Math.Min(originalDebt, refundAmount);
+        decimal amountToCashRefund = Math.Round(refundAmount - amountToCustomerCredit, 2);
+
+        if (amountToCashRefund > 0)
         {
             string cashId = refundAccountId.HasValue
                 ? $"ID:{refundAccountId.Value}"
                 : await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
-            lines.Add((cashId, 0, refundAmount, $"رد نقدية جزئي ({_core.GetMethodLabel(order.PaymentMethod)}) - {order.OrderNumber}"));
+            lines.Add((cashId, 0, amountToCashRefund, $"رد نقدية جزئي ({_core.GetMethodLabel(order.PaymentMethod)}) - {order.OrderNumber}"));
         }
-        else
+
+        if (amountToCustomerCredit > 0)
         {
-            lines.Add((receivablesAcct, 0, refundAmount, $"تنزيل مديونية جزئي - {order.OrderNumber}"));
+            lines.Add((receivablesAcct, 0, amountToCustomerCredit, $"تنزيل مديونية جزئي - {order.OrderNumber}"));
         }
 
         if (totalCostReturn > 0)

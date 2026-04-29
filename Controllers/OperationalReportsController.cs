@@ -457,6 +457,7 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] string  stockStatus = "all", // "all", "positive", "zero"
         [FromQuery] int     page        = 1,
         [FromQuery] int     pageSize    = 50,
+        [FromQuery] OrderSource? source  = null,
         [FromQuery] bool    excel       = false)
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
@@ -583,9 +584,12 @@ public class OperationalReportsController : ControllerBase
         var inventoryAccId = maps.GetValueOrDefault(MappingKeys.Inventory);
         decimal ledgerInventoryValue = 0;
         if (inventoryAccId != null) {
-            ledgerInventoryValue = await _db.JournalLines
-                .Where(l => l.AccountId == inventoryAccId && l.JournalEntry.Status == JournalEntryStatus.Posted)
-                .SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
+            var ledgerQ = _db.JournalLines
+                .Where(l => l.AccountId == inventoryAccId && l.JournalEntry.Status == JournalEntryStatus.Posted);
+            
+            if (source.HasValue) ledgerQ = ledgerQ.Where(l => l.CostCenter == source.Value);
+
+            ledgerInventoryValue = await ledgerQ.SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
         }
 
         var summary = new {
@@ -730,6 +734,7 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int?      brandId    = null,
         [FromQuery] string?   color      = null,
         [FromQuery] string?   size       = null,
+        [FromQuery] OrderSource? source     = null,
         [FromQuery] bool      excel      = false)
     {
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
@@ -751,6 +756,7 @@ public class OperationalReportsController : ControllerBase
                 .Where(i => i.JournalEntries.Any(j => j.Status == JournalEntryStatus.Posted));
 
             if (supplierId.HasValue) q = q.Where(i => i.SupplierId == supplierId.Value);
+            if (source.HasValue) q = q.Where(i => i.Source == source.Value);
 
             var invoices = await q.OrderByDescending(i => i.InvoiceDate).ToListAsync();
 
@@ -812,6 +818,7 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int?      brandId    = null,
         [FromQuery] string?   color      = null,
         [FromQuery] string?   size       = null,
+        [FromQuery] OrderSource? source     = null,
         [FromQuery] bool      excel      = false)
     {
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
@@ -825,6 +832,11 @@ public class OperationalReportsController : ControllerBase
             .Include(j => j.Order).ThenInclude(o => o!.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Brand)
             .Where(j => j.Type == JournalEntryType.SalesReturn 
                      && j.EntryDate >= from && j.EntryDate <= to);
+
+        if (source.HasValue)
+        {
+            returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Source == source.Value);
+        }
 
         if (categoryId.HasValue && categoryId > 0)
         {
@@ -888,6 +900,7 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int?      brandId    = null,
         [FromQuery] string?   color      = null,
         [FromQuery] string?   size       = null,
+        [FromQuery] OrderSource? source     = null,
         [FromQuery] bool      excel      = false)
     {
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
@@ -901,6 +914,11 @@ public class OperationalReportsController : ControllerBase
             .Include(r => r.Items).ThenInclude(it => it.Product).ThenInclude(p => p!.Brand)
             .Include(r => r.Items).ThenInclude(it => it.ProductVariant)
             .Where(r => r.ReturnDate >= from && r.ReturnDate <= to);
+
+        if (source.HasValue)
+        {
+            q = q.Where(r => r.Source == source.Value);
+        }
 
         if (categoryId.HasValue && categoryId > 0)
         {
@@ -1070,10 +1088,9 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] string?   search     = null,
         [FromQuery] int?      categoryId = null,
         [FromQuery] int?      brandId    = null,
-        [FromQuery] string?   color      = null,
-        [FromQuery] string?   size       = null,
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
+        [FromQuery] OrderSource? source  = null,
         [FromQuery] bool      excel      = false)
     {
         try
@@ -1104,6 +1121,7 @@ public class OperationalReportsController : ControllerBase
                 .Where(m => m.CreatedAt >= from && m.CreatedAt <= to);
 
             if (productId > 0) movementsQuery = movementsQuery.Where(m => m.ProductId == productId);
+            if (source.HasValue) movementsQuery = movementsQuery.Where(m => m.CostCenter == source.Value);
 
             if (categoryId.HasValue && categoryId > 0)
             {
@@ -1239,6 +1257,7 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int?      variantId = null,
         [FromQuery] DateTime? fromDate  = null,
         [FromQuery] DateTime? toDate    = null,
+        [FromQuery] OrderSource? source = null,
         [FromQuery] InventoryMovementType? type = null)
     {
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
@@ -1252,6 +1271,7 @@ public class OperationalReportsController : ControllerBase
 
         if (productId.HasValue) q = q.Where(m => m.ProductId == productId.Value);
         if (variantId.HasValue) q = q.Where(m => m.ProductVariantId == variantId.Value);
+        if (source.HasValue)    q = q.Where(m => m.CostCenter == source.Value);
         if (type.HasValue)      q = q.Where(m => m.Type == type.Value);
 
         var items = await q.OrderByDescending(m => m.CreatedAt).ToListAsync();
