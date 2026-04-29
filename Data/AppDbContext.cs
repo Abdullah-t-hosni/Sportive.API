@@ -195,6 +195,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.Method).HasConversion<string>();
             e.HasOne(x => x.Order).WithMany(o => o.Payments)
              .HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.Reference);
         });
 
         builder.Entity<OrderItem>(e => {
@@ -276,6 +277,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
                 .HasForeignKey(p => p.PurchaseInvoiceId).IsRequired(false);
             e.Property(p => p.PaymentMethod).HasConversion<string>();
             e.Property(p => p.CostCenter).HasConversion<string>();
+            e.HasIndex(p => p.ReferenceNumber);
         });
         
         builder.Entity<PurchaseReturn>(e => {
@@ -344,6 +346,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(v => v.FromAccount).WithMany().HasForeignKey(v => v.FromAccountId);
             e.HasOne(v => v.JournalEntry).WithMany().HasForeignKey(v => v.JournalEntryId).IsRequired(false);
             e.Property(v => v.PaymentMethod).HasConversion<string>();
+            e.HasIndex(v => v.Reference);
         });
 
         builder.Entity<PaymentVoucher>(e => {
@@ -352,6 +355,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(v => v.ToAccount).WithMany().HasForeignKey(v => v.ToAccountId);
             e.HasOne(v => v.JournalEntry).WithMany().HasForeignKey(v => v.JournalEntryId).IsRequired(false);
             e.Property(v => v.PaymentMethod).HasConversion<string>();
+            e.HasIndex(v => v.Reference);
         });
 
         builder.Entity<InventoryMovement>(e => {
