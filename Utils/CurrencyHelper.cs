@@ -8,6 +8,13 @@ public static class CurrencyHelper
     private static readonly string[] Tens = { "", "عشرة", "عشرون", "ثلاثون", "أربعون", "خمسون", "ستون", "سبعون", "ثمانون", "تسعون" };
     private static readonly string[] Hundreds = { "", "مائة", "مائتان", "ثلاثمائة", "أربعمائة", "خمسمائة", "ستمائة", "سبعمائة", "ثمانمائة", "تسعمائة" };
 
+    /// <summary>
+    /// ✅ Financial-safe rounding — always round half away from zero.
+    /// Use this everywhere instead of Math.Round() to avoid accounting mismatches.
+    /// </summary>
+    public static decimal Round(decimal value, int decimals = 2)
+        => Math.Round(value, decimals, MidpointRounding.AwayFromZero);
+
     public static string ToArabicWords(decimal amount)
     {
         if (amount == 0) return "صفر جنيه";

@@ -182,15 +182,26 @@ public class PdfService : IPdfService
     private string Reshape(string input)
     {
         if (string.IsNullOrEmpty(input)) return "";
-        var reshaped = ArabicAdapter.Reshape(input);
-        var characters = reshaped.ToCharArray();
-        System.Array.Reverse(characters);
-        var reversed = new string(characters);
-        return Regex.Replace(reversed, @"[a-zA-Z0-9\-\.\/]+", m =>
-        {
-            var chars = m.Value.ToCharArray();
-            System.Array.Reverse(chars);
-            return new string(chars);
-        });
+        // Sanitize: Limit length to prevent buffer/memory issues in reshaper
+        if (input.Length > 500) input = input.Substring(0, 500);
+        // Replace problematic control chars
+        input = new string(input.Where(c => !char.IsControl(c) || c == '\n' || c == '\r').ToArray());
+
+        try {
+            var reshaped = ArabicAdapter.Reshape(input);
+            var characters = reshaped.ToCharArray();
+            System.Array.Reverse(characters);
+            var reversed = new string(characters);
+            return Regex.Replace(reversed, @"[a-zA-Z0-9\-\.\/]+", m =>
+            {
+                var chars = m.Value.ToCharArray();
+                System.Array.Reverse(chars);
+                return new string(chars);
+            });
+        }
+        catch {
+            // Fallback in case of reshaping crash
+            return input;
+        }
     }
 }

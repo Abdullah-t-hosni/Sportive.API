@@ -5,7 +5,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("auth")]
+[Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("api")]
 public class AiController : ControllerBase
 {
     private readonly IAiAssistantService _ai;

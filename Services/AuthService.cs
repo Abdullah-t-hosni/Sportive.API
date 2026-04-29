@@ -170,7 +170,9 @@ public class AuthService : IAuthService
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["JWT:Secret"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-        var expires = DateTime.UtcNow.AddHours(double.Parse(_config["JWT:ExpiresHours"] ?? "72"));
+        // ⚠️ Access Token: short-lived (2h default). Refresh token handles re-auth silently.
+        var accessTokenHours = double.Parse(_config["JWT:ExpiresHours"] ?? "2");
+        var expires = DateTime.UtcNow.AddHours(accessTokenHours);
 
         var token = new JwtSecurityToken(
             issuer: _config["JWT:Issuer"],
