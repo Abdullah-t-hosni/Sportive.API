@@ -383,91 +383,100 @@ public class PayrollController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreatePayrollRunDto dto)
     {
-        if (!dto.Items.Any()) return BadRequest("يجب إضافة موظف واحد على الأقل.");
-
-        // تحقق من عدم تكرار نفس الشهر
-        var lang = Request.Headers["Accept-Language"].ToString().StartsWith("en") ? "en" : "ar";
-        var existing = await _db.PayrollRuns.FirstOrDefaultAsync(p => p.PeriodYear == dto.PeriodYear && p.PeriodMonth == dto.PeriodMonth);
-        if (existing != null)
+        try 
         {
-            return Conflict(new { 
-                message = lang == "ar" ? $"يوجد مسير رواتب لشهر {dto.PeriodMonth}/{dto.PeriodYear} مسبقاً برقم ({existing.PayrollNumber})." : $"A payroll run for {dto.PeriodMonth}/{dto.PeriodYear} already exists with number ({existing.PayrollNumber}).",
-                existingId = existing.Id
-            });
-        }
+            if (dto == null || dto.Items == null || !dto.Items.Any()) 
+                return BadRequest("يجب إضافة موظف واحد على الأقل.");
 
-        var payNo = await _seq.NextAsync("PAY", async (db, pattern) =>
-        {
-            var max = await db.PayrollRuns
-                .Where(p => EF.Functions.Like(p.PayrollNumber, pattern))
-                .Select(p => p.PayrollNumber).ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
-        });
+            var lang = Request.Headers["Accept-Language"].ToString().StartsWith("en") ? "en" : "ar";
 
-        var run = new PayrollRun
-        {
-            PayrollNumber              = payNo,
-            PeriodYear                 = dto.PeriodYear,
-            PeriodMonth                = dto.PeriodMonth,
-            Notes                      = dto.Notes?.Trim(),
-            WagesExpenseAccountId      = dto.WagesExpenseAccountId,
-            AccruedSalariesAccountId   = dto.AccruedSalariesAccountId,
-            DeductionRevenueAccountId  = dto.DeductionRevenueAccountId,
-            AdvancesAccountId          = dto.AdvancesAccountId,
-            Status                     = PayrollStatus.Draft,
-            CreatedAt                  = TimeHelper.GetEgyptTime(),
-            CreatedByUserId            = UserId
-        };
-
-        decimal totalBasic = 0, totalTrans = 0, totalComm = 0, totalBonus = 0, totalFixedAll = 0, totalDed = 0, totalAdv = 0;
-
-        foreach (var itemDto in dto.Items)
-        {
-            var emp = await _db.Employees.FindAsync(itemDto.EmployeeId);
-            if (emp == null) continue;
-
-            var basic = itemDto.OverrideBasicSalary ?? emp.BaseSalary;
-            var trans = itemDto.TransportationAllowance;
-            var comm  = itemDto.CommunicationAllowance;
-            var bonus = itemDto.BonusAmount;
-            var fixAll = itemDto.FixedAllowance;
-
-            totalBasic += basic;
-            totalTrans += trans;
-            totalComm  += comm;
-            totalBonus += bonus;
-            totalFixedAll += fixAll;
-            totalDed   += itemDto.DeductionAmount;
-            totalAdv   += itemDto.AdvanceDeducted;
-
-            run.Items.Add(new PayrollItem
+            // تحقق من عدم تكرار نفس الشهر
+            var existing = await _db.PayrollRuns.FirstOrDefaultAsync(p => p.PeriodYear == dto.PeriodYear && p.PeriodMonth == dto.PeriodMonth);
+            if (existing != null)
             {
-                EmployeeId      = emp.Id,
-                BasicSalary     = basic,
-                TransportationAllowance = trans,
-                CommunicationAllowance  = comm,
-                BonusAmount     = bonus,
-                FixedAllowance  = fixAll,
-                DeductionAmount = itemDto.DeductionAmount,
-                AdvanceDeducted = itemDto.AdvanceDeducted,
-                Notes           = itemDto.Notes,
-                CreatedAt       = TimeHelper.GetEgyptTime()
+                return Conflict(new { 
+                    message = lang == "ar" ? $"يوجد مسير رواتب لشهر {dto.PeriodMonth}/{dto.PeriodYear} مسبقاً برقم ({existing.PayrollNumber})." : $"A payroll run for {dto.PeriodMonth}/{dto.PeriodYear} already exists with number ({existing.PayrollNumber}).",
+                    existingId = existing.Id
+                });
+            }
+
+            var payNo = await _seq.NextAsync("PAY", async (db, pattern) =>
+            {
+                var max = await db.PayrollRuns
+                    .Where(p => EF.Functions.Like(p.PayrollNumber, pattern))
+                    .Select(p => p.PayrollNumber).ToListAsync();
+                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
+                          .DefaultIfEmpty(0).Max();
             });
+
+            var run = new PayrollRun
+            {
+                PayrollNumber              = payNo,
+                PeriodYear                 = dto.PeriodYear,
+                PeriodMonth                = dto.PeriodMonth,
+                Notes                      = dto.Notes?.Trim(),
+                WagesExpenseAccountId      = dto.WagesExpenseAccountId,
+                AccruedSalariesAccountId   = dto.AccruedSalariesAccountId,
+                DeductionRevenueAccountId  = dto.DeductionRevenueAccountId,
+                AdvancesAccountId          = dto.AdvancesAccountId,
+                Status                     = PayrollStatus.Draft,
+                CreatedAt                  = TimeHelper.GetEgyptTime(),
+                CreatedByUserId            = UserId
+            };
+
+            decimal totalBasic = 0, totalTrans = 0, totalComm = 0, totalBonus = 0, totalFixedAll = 0, totalDed = 0, totalAdv = 0;
+
+            foreach (var itemDto in dto.Items)
+            {
+                var emp = await _db.Employees.FindAsync(itemDto.EmployeeId);
+                if (emp == null) continue;
+
+                var basic = itemDto.OverrideBasicSalary ?? emp.BaseSalary;
+                var trans = itemDto.TransportationAllowance;
+                var comm  = itemDto.CommunicationAllowance;
+                var bonus = itemDto.BonusAmount;
+                var fixAll = itemDto.FixedAllowance;
+
+                totalBasic += basic;
+                totalTrans += trans;
+                totalComm  += comm;
+                totalBonus += bonus;
+                totalFixedAll += fixAll;
+                totalDed   += itemDto.DeductionAmount;
+                totalAdv   += itemDto.AdvanceDeducted;
+
+                run.Items.Add(new PayrollItem
+                {
+                    EmployeeId      = emp.Id,
+                    BasicSalary     = basic,
+                    TransportationAllowance = trans,
+                    CommunicationAllowance  = comm,
+                    BonusAmount     = bonus,
+                    FixedAllowance  = fixAll,
+                    DeductionAmount = itemDto.DeductionAmount,
+                    AdvanceDeducted = itemDto.AdvanceDeducted,
+                    Notes           = itemDto.Notes,
+                    CreatedAt       = TimeHelper.GetEgyptTime()
+                });
+            }
+
+            run.TotalBasicSalary      = totalBasic;
+            run.TotalTransportation   = totalTrans;
+            run.TotalCommunication    = totalComm;
+            run.TotalBonuses          = totalBonus;
+            run.TotalFixedAllowances  = totalFixedAll;
+            run.TotalDeductions       = totalDed;
+            run.TotalAdvancesDeducted = totalAdv;
+            run.TotalNetPayable       = totalBasic + totalTrans + totalComm + totalBonus + totalFixedAll - totalDed - totalAdv;
+
+            _db.PayrollRuns.Add(run);
+            await _db.SaveChangesAsync();
+            return Ok(new { id = run.Id, payrollNumber = run.PayrollNumber });
         }
-
-        run.TotalBasicSalary      = totalBasic;
-        run.TotalTransportation   = totalTrans;
-        run.TotalCommunication    = totalComm;
-        run.TotalBonuses          = totalBonus;
-        run.TotalFixedAllowances  = totalFixedAll;
-        run.TotalDeductions       = totalDed;
-        run.TotalAdvancesDeducted = totalAdv;
-        run.TotalNetPayable       = totalBasic + totalTrans + totalComm + totalBonus + totalFixedAll - totalDed - totalAdv;
-
-        _db.PayrollRuns.Add(run);
-        await _db.SaveChangesAsync();
-        return Ok(new { id = run.Id, payrollNumber = run.PayrollNumber });
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "خطأ داخلي في الخادم أثناء إنشاء المسير.", details = ex.Message });
+        }
     }
 
     // POST /api/payroll/{id}/post — ترحيل المسير وتوليد القيد المحاسبي
