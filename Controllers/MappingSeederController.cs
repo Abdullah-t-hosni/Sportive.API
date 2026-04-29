@@ -51,7 +51,7 @@ public class MappingSeederController : ControllerBase
             { MappingKeys.WebVodafone, new[] { "فودافون", "Vodafone" } },
             { MappingKeys.WebInstaPay, new[] { "انستاباي", "Instapay" } },
             { MappingKeys.SalaryExpense, new[] { "5202", "رواتب", " wages", "Salaries" } },
-            { MappingKeys.SalariesPayable, new[] { "2201", "رواتب مستحقة - موظفين", "رواتب مستحقة موظفين", "رواتب مستحقة" } },
+            { MappingKeys.SalariesPayable, new[] { "2103", "رواتب مستحقة - موظفين", "رواتب مستحقة موظفين", "رواتب مستحقة" } },
             { MappingKeys.EmployeeAdvances, new[] { "1201", "سلف", "Advances" } },
             { MappingKeys.EmployeeBonuses, new[] { "5202", "مكافآت" } },
             { MappingKeys.EmployeeDeductions, new[] { "4109", "جزاءات", "خصومات موظفين" } },
