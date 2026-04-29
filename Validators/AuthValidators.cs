@@ -13,8 +13,9 @@ public class RegisterValidator : AbstractValidator<RegisterDto>
             .MaximumLength(100).WithMessage("الاسم لا يجب أن يتجاوز 100 حرف");
 
         RuleFor(x => x.Email)
-            .EmailAddress().When(x => !string.IsNullOrEmpty(x.Email))
-            .WithMessage("صيغة البريد الإلكتروني غير صحيحة");
+            .NotEmpty().WithMessage("البريد الإلكتروني مطلوب")
+            .EmailAddress().WithMessage("صيغة البريد الإلكتروني غير صحيحة")
+            .MaximumLength(100).WithMessage("البريد الإلكتروني لا يجب أن يتجاوز 100 حرف");
 
         RuleFor(x => x.Password)
             .NotEmpty().WithMessage("كلمة المرور مطلوبة");
@@ -42,10 +43,12 @@ public class ChangePasswordValidator : AbstractValidator<ChangePasswordDto>
 {
     public ChangePasswordValidator()
     {
-        RuleFor(x => x.CurrentPassword).NotEmpty();
+        RuleFor(x => x.CurrentPassword)
+            .NotEmpty().WithMessage("كلمة المرور الحالية مطلوبة");
+            
         RuleFor(x => x.NewPassword)
-            .NotEmpty()
-            .NotEqual(x => x.CurrentPassword)
-            .WithMessage("كلمة المرور الجديدة لازم تختلف عن القديمة");
+            .NotEmpty().WithMessage("كلمة المرور الجديدة مطلوبة")
+            .MinimumLength(6).WithMessage("كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل")
+            .NotEqual(x => x.CurrentPassword).WithMessage("كلمة المرور الجديدة يجب أن تختلف عن القديمة");
     }
 }

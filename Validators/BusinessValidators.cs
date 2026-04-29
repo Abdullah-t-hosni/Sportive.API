@@ -68,7 +68,9 @@ public class CreatePurchaseInvoiceValidator : AbstractValidator<CreatePurchaseIn
             .InclusiveBetween(0, 100).WithMessage("نسبة الضريبة يجب أن تكون بين 0 و 100");
 
         RuleFor(x => x.DiscountAmount)
-            .GreaterThanOrEqualTo(0).WithMessage("قيمة الخصم لا يمكن أن تكون سالبة");
+            .GreaterThanOrEqualTo(0).WithMessage("قيمة الخصم لا يمكن أن تكون سالبة")
+            .LessThanOrEqualTo(x => x.Items != null ? x.Items.Sum(i => i.Quantity * i.UnitCost) : 0)
+            .WithMessage("قيمة الخصم لا يمكن أن تتجاوز إجمالي قيمة البنود");
 
         RuleFor(x => x.Items)
             .NotNull().NotEmpty().WithMessage("يجب إضافة بند واحد على الأقل للفاتورة");
@@ -105,7 +107,9 @@ public class UpdatePurchaseInvoiceValidator : AbstractValidator<UpdatePurchaseIn
             .InclusiveBetween(0, 100).WithMessage("نسبة الضريبة يجب أن تكون بين 0 و 100");
 
         RuleFor(x => x.DiscountAmount)
-            .GreaterThanOrEqualTo(0).WithMessage("قيمة الخصم لا يمكن أن تكون سالبة");
+            .GreaterThanOrEqualTo(0).WithMessage("قيمة الخصم لا يمكن أن تكون سالبة")
+            .LessThanOrEqualTo(x => x.Items != null ? x.Items.Sum(i => i.Quantity * i.UnitCost) : 0)
+            .WithMessage("قيمة الخصم لا يمكن أن تتجاوز إجمالي قيمة البنود");
 
         RuleFor(x => x.Items)
             .NotNull().NotEmpty().WithMessage("يجب إضافة بند واحد على الأقل");
@@ -170,7 +174,9 @@ public class CreateCouponValidator : AbstractValidator<CreateCouponDto>
 
         RuleFor(x => x.MaxDiscountAmount)
             .GreaterThan(0).When(x => x.MaxDiscountAmount.HasValue)
-            .WithMessage("الحد الأقصى للخصم يجب أن يكون أكبر من صفر");
+            .WithMessage("الحد الأقصى للخصم يجب أن يكون أكبر من صفر")
+            .LessThanOrEqualTo(x => x.MinOrderAmount ?? decimal.MaxValue).When(x => x.MaxDiscountAmount.HasValue && x.MinOrderAmount.HasValue)
+            .WithMessage("الحد الأقصى للخصم لا يمكن أن يتجاوز الحد الأدنى للطلب");
 
         RuleFor(x => x.MaxUsageCount)
             .GreaterThan(0).When(x => x.MaxUsageCount.HasValue)
@@ -228,6 +234,7 @@ public class CreateInventoryAuditItemValidator : AbstractValidator<CreateInvento
             .WithMessage("يجب تحديد منتج أو موديل للبند");
 
         RuleFor(x => x.ActualQuantity)
-            .GreaterThanOrEqualTo(0).WithMessage("الكمية الفعلية لا يمكن أن تكون سالبة");
+            .GreaterThanOrEqualTo(0).WithMessage("الكمية الفعلية لا يمكن أن تكون سالبة")
+            .LessThanOrEqualTo(1000000).WithMessage("الكمية المكتوبة غير منطقية");
     }
 }

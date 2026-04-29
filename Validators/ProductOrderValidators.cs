@@ -35,7 +35,9 @@ public class CreateProductValidator : AbstractValidator<CreateProductDto>
 
         RuleFor(x => x.CostPrice)
             .GreaterThanOrEqualTo(0).When(x => x.CostPrice.HasValue)
-            .WithMessage("سعر التكلفة لا يمكن أن يكون سالباً");
+            .WithMessage("سعر التكلفة لا يمكن أن يكون سالباً")
+            .LessThanOrEqualTo(x => x.Price).When(x => x.CostPrice.HasValue)
+            .WithMessage("سعر التكلفة لا يمكن أن يتجاوز سعر البيع الأساسي");
 
         RuleFor(x => x.CategoryId)
             .GreaterThan(0).WithMessage("يجب اختيار فئة للمنتج");
@@ -173,7 +175,9 @@ public class CreatePOSOrderValidator : AbstractValidator<CreatePOSOrderDto>
 
         RuleFor(x => x.DiscountAmount)
             .GreaterThanOrEqualTo(0).When(x => x.DiscountAmount.HasValue)
-            .WithMessage("قيمة الخصم الإضافي لا يمكن أن تكون سالبة");
+            .WithMessage("قيمة الخصم الإضافي لا يمكن أن تكون سالبة")
+            .LessThanOrEqualTo(x => x.Subtotal).When(x => x.DiscountAmount.HasValue)
+            .WithMessage("قيمة الخصم تتجاوز إجمالي الفاتورة");
         
         RuleFor(x => x.Subtotal)
             .GreaterThanOrEqualTo(0)
@@ -181,6 +185,8 @@ public class CreatePOSOrderValidator : AbstractValidator<CreatePOSOrderDto>
 
         RuleFor(x => x.PaidAmount)
             .GreaterThanOrEqualTo(0)
-            .WithMessage("المبلغ المدفوع لا يمكن أن يكون سالباً");
+            .WithMessage("المبلغ المدفوع لا يمكن أن يكون سالباً")
+            .LessThanOrEqualTo(x => x.Subtotal - (x.DiscountAmount ?? 0))
+            .WithMessage("المبلغ المدفوع يتجاوز إجمالي الفاتورة المطلوب");
     }
 }
