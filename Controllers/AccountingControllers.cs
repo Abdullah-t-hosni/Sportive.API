@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 // ============================================================
 // Controllers/AccountingControllers.cs
 // ØªÙ… Ø¯Ù…Ø¬ Ù…Ù„ÙØ§Øª Ø§Ù„Ù…Ø­Ø§Ø³Ø¨Ø© ÙˆØ§Ø³ØªØ¹Ø§Ø¯Ø© Ø§Ù„Ù…Ø­ØªÙˆÙ‰ Ù…Ø¹ ØªØµØ­ÙŠØ­ Ø§Ù„Ù€ Double Counting
@@ -249,6 +249,7 @@ public class AccountsController : ControllerBase
     }
 
     [HttpGet("mapping-registry")]
+    [AllowPosAccess]
     public IActionResult GetMappingRegistry()
     {
         var registry = new List<object>
@@ -298,6 +299,7 @@ public class AccountsController : ControllerBase
     }
 
     [HttpGet("mappings")]
+    [AllowPosAccess]
     public async Task<IActionResult> GetMappings()
     {
         var mappings = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);

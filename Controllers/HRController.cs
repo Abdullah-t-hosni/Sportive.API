@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -32,6 +32,7 @@ public class EmployeesController : ControllerBase
 
     [HttpGet]
     [RequireModulePermission(ModuleKeys.Hr)]
+    [AllowPosAccess]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? search     = null,
         [FromQuery] int?    departmentId = null,
@@ -76,6 +77,7 @@ public class EmployeesController : ControllerBase
     }
 
     [HttpGet("basic")]
+    [AllowPosAccess]
     public async Task<IActionResult> GetBasic()
     {
         var list = await _db.Employees

@@ -1,4 +1,4 @@
-﻿using Sportive.API.Models;
+using Sportive.API.Models;
 using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -27,6 +27,7 @@ public class CouponsController : ControllerBase
 
     /// <summary>ÙƒÙ„ Ø§Ù„ÙƒÙˆØ¨ÙˆÙ†Ø§Øª (Admin)</summary>
     [HttpGet]
+    [AllowPosAccess]
     public async Task<IActionResult> GetAll() =>
         Ok(await _coupons.GetAllAsync());
 

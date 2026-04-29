@@ -3,9 +3,13 @@ using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Services;
+using Sportive.API.Models;
 using System.Security.Claims;
 
 namespace Sportive.API.Attributes;
+
+[AttributeUsage(AttributeTargets.Method)]
+public class AllowPosAccessAttribute : Attribute { }
 
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class, AllowMultiple = true)]
 public class RequirePermissionAttribute : TypeFilterAttribute
@@ -60,6 +64,13 @@ public class RequirePermissionFilter : IAsyncAuthorizationFilter
                 .Select(p => new { p.ModuleKey, p.CanView, p.CanEdit })
                 .ToListAsync();
         }, TimeSpan.FromMinutes(15));
+
+        // â­ï¸ ALLOW POS ACCESS BYPASS
+        var hasPosAccessOverride = context.ActionDescriptor.EndpointMetadata.Any(em => em.GetType() == typeof(AllowPosAccessAttribute));
+        if (hasPosAccessOverride && perms != null && perms.Any(p => p.ModuleKey == ModuleKeys.Pos && p.CanView))
+        {
+            return; // Authorized via POS bypass
+        }
 
         var targetPerm = perms?.FirstOrDefault(p => p.ModuleKey == _module);
         
