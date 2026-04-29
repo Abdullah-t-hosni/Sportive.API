@@ -37,6 +37,18 @@ public class InventoryService : IInventoryService
         
         if (roundedQty == 0 && quantity == 0) return;
 
+        // Idempotency check: prevent duplicate movements for the same order/invoice and item
+        if (!string.IsNullOrEmpty(reference))
+        {
+            bool exists = await _db.InventoryMovements.AnyAsync(m => 
+                m.Type == type && 
+                m.Reference == reference && 
+                m.ProductId == productId && 
+                m.ProductVariantId == variantId);
+                
+            if (exists) return;
+        }
+
         int remainingBefore = 0;
 
         // 1. Update Actual Stock levels in Product/Variant

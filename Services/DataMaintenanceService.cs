@@ -121,7 +121,8 @@ public class DataMaintenanceService : IDataMaintenanceService
                             try { 
                                 if (table.All(char.IsLetterOrDigit)) 
                                 {
-                                    await _db.Database.ExecuteSqlRawAsync($"TRUNCATE TABLE `{table}`;"); 
+                                    string query = $"TRUNCATE TABLE `{table}`;";
+                                    await _db.Database.ExecuteSqlRawAsync(query); 
                                 }
                             }
                             catch (Exception ex) { _logger.LogWarning("TRUNCATE {Table} skipped: {Error}", table, ex.Message); }

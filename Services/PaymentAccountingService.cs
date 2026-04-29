@@ -26,6 +26,7 @@ public class PaymentAccountingService
     public async Task PostOrderPaymentAsync(Order order)
     {
         var reference = order.OrderNumber + "-PMT";
+        if (await _core.EntryExistsAsync(JournalEntryType.ReceiptVoucher, reference)) return;
         
         // ✅ NEW: Prevent double-accounting for POS orders where payments are already merged into the SalesInvoice
         var invoiceEntry = await _db.JournalEntries
@@ -96,6 +97,7 @@ public class PaymentAccountingService
     public async Task PostOrderRefundAsync(Order order)
     {
         var reference = order.OrderNumber + "-RFD";
+        if (await _core.EntryExistsAsync(JournalEntryType.PaymentVoucher, reference)) return;
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         string receivablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
@@ -110,6 +112,7 @@ public class PaymentAccountingService
 
     public async Task PostReceiptVoucherAsync(ReceiptVoucher voucher, int? orderId = null)
     {
+        if (await _core.EntryExistsAsync(JournalEntryType.ReceiptVoucher, voucher.VoucherNumber)) return;
         var lines = new List<(string code, decimal debit, decimal credit, string desc)> {
             ($"ID:{voucher.CashAccountId}", voucher.Amount, 0, $"سند قبض {voucher.VoucherNumber}"),
             ($"ID:{voucher.FromAccountId}", 0, voucher.Amount, $"من حساب {voucher.FromAccount?.NameAr}")
@@ -123,6 +126,7 @@ public class PaymentAccountingService
 
     public async Task PostPaymentVoucherAsync(PaymentVoucher voucher)
     {
+        if (await _core.EntryExistsAsync(JournalEntryType.PaymentVoucher, voucher.VoucherNumber)) return;
         var lines = new List<(string code, decimal debit, decimal credit, string desc)> {
             ($"ID:{voucher.ToAccountId}", voucher.Amount, 0, $"سند دفع {voucher.VoucherNumber}"),
             ($"ID:{voucher.CashAccountId}", 0, voucher.Amount, $"صرف من {voucher.CashAccount?.NameAr}")
@@ -135,6 +139,7 @@ public class PaymentAccountingService
 
     public async Task PostSupplierPaymentAsync(SupplierPayment payment)
     {
+        if (await _core.EntryExistsAsync(JournalEntryType.PaymentVoucher, payment.PaymentNumber)) return;
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         string payablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Supplier, mapDict)}";
         

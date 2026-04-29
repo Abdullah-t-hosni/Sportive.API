@@ -13,6 +13,7 @@ public interface IPaymobService
 {
     Task<PaymobPaymentResponse> CreatePaymentAsync(PaymobOrderRequest request);
     bool VerifyCallback(Dictionary<string, string> callbackData);
+    bool VerifyWebhook(JsonElement payload, string hmacReceived);
 }
 
 // ─── Implementation ──────────────────────────────────────────
@@ -187,5 +188,56 @@ public class PaymobService : IPaymobService
 
         callbackData.TryGetValue("hmac", out var received);
         return computed == received?.ToLower();
+    }
+
+    public bool VerifyWebhook(JsonElement payload, string hmacReceived)
+    {
+        if (string.IsNullOrEmpty(HmacSecret)) return true;
+
+        if (!payload.TryGetProperty("obj", out var obj)) return false;
+
+        var fields = new[]
+        {
+            "amount_cents", "created_at", "currency", "error_occured",
+            "has_parent_transaction", "id", "integration_id", "is_3d_secure",
+            "is_auth", "is_capture", "is_refunded", "is_standalone_payment",
+            "is_voided", "order.id", "owner", "pending",
+            "source_data.pan", "source_data.sub_type", "source_data.type",
+            "success"
+        };
+        // Note: Paymob uses 'order.id' in webhook but 'order' in callback.
+
+        var concatenated = "";
+        
+        foreach (var field in fields)
+        {
+            var parts = field.Split('.');
+            JsonElement current = obj;
+            bool found = true;
+            foreach (var part in parts)
+            {
+                if (current.ValueKind == JsonValueKind.Object && current.TryGetProperty(part, out var next))
+                {
+                    current = next;
+                }
+                else
+                {
+                    found = false;
+                    break;
+                }
+            }
+            if (found)
+            {
+                if (current.ValueKind == JsonValueKind.True) concatenated += "true";
+                else if (current.ValueKind == JsonValueKind.False) concatenated += "false";
+                else concatenated += current.ToString();
+            }
+        }
+
+        using var hmac = new System.Security.Cryptography.HMACSHA512(Encoding.UTF8.GetBytes(HmacSecret));
+        var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(concatenated));
+        var computed = BitConverter.ToString(hash).Replace("-", "").ToLower();
+
+        return computed == hmacReceived?.ToLower();
     }
 }

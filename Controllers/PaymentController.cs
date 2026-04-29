@@ -12,6 +12,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("auth")]
 public class PaymentController : ControllerBase
 {
     private readonly IPaymobService _paymob;
@@ -98,9 +99,15 @@ public class PaymentController : ControllerBase
 
     /// <summary>Paymob Webhook — يستقبل نتيجة الدفع كـ JSON (أكثر أماناً)</summary>
     [HttpPost("webhook")]
-    public async Task<IActionResult> Webhook([FromBody] JsonElement payload)
+    public async Task<IActionResult> Webhook([FromQuery] string hmac, [FromBody] JsonElement payload)
     {
         _logger.LogInformation("Paymob Transaction Webhook received");
+        
+        if (!_paymob.VerifyWebhook(payload, hmac))
+        {
+            _logger.LogWarning("Paymob HMAC verification failed on Webhook");
+            return BadRequest(new { message = "Invalid HMAC signature" });
+        }
         
         try {
             var obj         = payload.GetProperty("obj");

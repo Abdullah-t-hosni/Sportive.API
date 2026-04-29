@@ -26,6 +26,7 @@ public class PurchaseAccountingService
     public async Task PostPurchaseInvoiceAsync(PurchaseInvoice invoice)
     {
         if (string.IsNullOrEmpty(invoice.InvoiceNumber)) return;
+        if (await _core.EntryExistsAsync(JournalEntryType.PurchaseInvoice, invoice.InvoiceNumber)) return;
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
