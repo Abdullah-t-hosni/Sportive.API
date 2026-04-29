@@ -81,7 +81,8 @@ public class InventoryAuditsController : ControllerBase
                     StatusInt = (int)a.Status,
                     a.TotalExpectedValue, 
                     a.TotalActualValue,
-                    ItemCount = a.Items.Count
+                    ItemCount = a.Items.Count,
+                    a.CostCenter
                 })
                 .ToListAsync();
 
@@ -95,7 +96,8 @@ public class InventoryAuditsController : ControllerBase
                 a.TotalExpectedValue, 
                 a.TotalActualValue, 
                 a.TotalActualValue - a.TotalExpectedValue,
-                a.ItemCount
+                a.ItemCount,
+                a.CostCenter
             )).ToList();
 
             var totalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)pageSize);
@@ -145,7 +147,8 @@ public class InventoryAuditsController : ControllerBase
                         i.Note, imageUrl
                     );
                 }).ToList(),
-                a.JournalEntryId
+                a.JournalEntryId,
+                a.CostCenter
             ));
         }
         catch (Exception ex)
@@ -165,7 +168,8 @@ public class InventoryAuditsController : ControllerBase
             Description = dto.Description,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             Status = InventoryAuditStatus.Draft,
-            AuditDate = TimeHelper.GetEgyptTime()
+            AuditDate = TimeHelper.GetEgyptTime(),
+            CostCenter = dto.CostCenter
         };
 
         if (dto.Items != null && dto.Items.Any())
@@ -202,15 +206,19 @@ public class InventoryAuditsController : ControllerBase
                     item.ProductVariantId, 
                     $"REVERT-AUDIT-{audit.Id}", 
                     "Reverting for edit", 
-                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                    0, // unitCost fallback
+                    audit.CostCenter
                 );
             }
             audit.Status = InventoryAuditStatus.Draft;
+            audit.CostCenter = dto.CostCenter;
             audit.JournalEntryId = null; // Entry should be reversed or ignored
         }
 
         audit.Title = dto.Title;
         audit.Description = dto.Description;
+        audit.CostCenter = dto.CostCenter;
         
         // Remove old items and re-add (Simple approach for audit)
         _db.InventoryAuditItems.RemoveRange(audit.Items);
@@ -293,7 +301,9 @@ public class InventoryAuditsController : ControllerBase
                 item.ProductVariantId,
                 $"AUDIT-{audit.Id}",
                 item.Note,
-                User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                item.UnitCost,
+                audit.CostCenter
             );
         }
 
@@ -305,7 +315,8 @@ public class InventoryAuditsController : ControllerBase
             auditId: audit.Id, 
             netImpact: audit.ValueDifference, 
             reference: $"AUDIT-{audit.Id}", 
-            userId: User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            userId: User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+            costCenter: audit.CostCenter
         );
         audit.JournalEntryId = jeId;
 
@@ -332,7 +343,9 @@ public class InventoryAuditsController : ControllerBase
                     item.ProductVariantId,
                     $"DELETE-AUDIT-{audit.Id}",
                     "Audit Deleted",
-                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                    item.UnitCost,
+                    audit.CostCenter
                 );
             }
         }

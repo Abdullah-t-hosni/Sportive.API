@@ -30,7 +30,8 @@ public record CreateEmployeeDto(
     string?       Notes              = null,
     string?       AttachmentUrl      = null,
     string?       AttachmentPublicId = null,
-    string?       AppUserId          = null   // ربط اختياري بحساب النظام
+    string?       AppUserId          = null,   // ربط اختياري بحساب النظام
+    OrderSource?  CostCenter         = null    // مركز التكلفة
 );
 
 public record UpdateEmployeeDto(
@@ -51,7 +52,8 @@ public record UpdateEmployeeDto(
     DateTime?     TerminationDate    = null,
     string?       Notes              = null,
     string?       AttachmentUrl      = null,
-    string?       AttachmentPublicId = null
+    string?       AttachmentPublicId = null,
+    OrderSource?  CostCenter         = null
 );
 
 public record EmployeeDto(
@@ -78,7 +80,8 @@ public record EmployeeDto(
     string?        AttachmentPublicId,
     DateTime       CreatedAt,
     string?        AppUserId    = null,
-    string?        AppUserName  = null
+    string?        AppUserName  = null,
+    OrderSource?   CostCenter   = null
 );
 
 public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, int? DepartmentId, string? DepartmentName, decimal BaseSalary, decimal TransportationAllowance, decimal CommunicationAllowance, decimal BonusAmount, decimal FixedAllowance, decimal PendingAdvancesAmount, decimal PendingBonusesAmount, decimal PendingDeductionsAmount, int Status);
@@ -169,7 +172,8 @@ public record CreateAdvanceDto(
     decimal  Amount,
     string?  Reason        = null,
     string?  Notes         = null,
-    int?     CashAccountId = null   // حساب الخزينة/البنك عند الصرف
+    int?     CashAccountId = null,   // حساب الخزينة/البنك عند الصرف
+    OrderSource? CostCenter = null
 );
 
 public record EmployeeAdvanceDto(
@@ -187,7 +191,8 @@ public record EmployeeAdvanceDto(
     int?           CashAccountId,
     string?        CashAccountName,
     int?           JournalEntryId,
-    DateTime       CreatedAt
+    DateTime       CreatedAt,
+    OrderSource?   CostCenter = null
 );
 
 // ══════════════════════════════════════════════════════
@@ -201,7 +206,8 @@ public record CreateBonusDto(
     BonusType BonusType     = BonusType.Other,
     string?   Reason        = null,
     string?   Notes         = null,
-    int?      CashAccountId = null
+    int?      CashAccountId = null,
+    OrderSource? BonusCostCenter = null
 );
 
 public record EmployeeBonusDto(
@@ -218,7 +224,8 @@ public record EmployeeBonusDto(
     int?      CashAccountId,
     string?   CashAccountName,
     int?      JournalEntryId,
-    DateTime  CreatedAt
+    DateTime  CreatedAt,
+    OrderSource? CostCenter = null
 );
 
 // ══════════════════════════════════════════════════════
@@ -232,7 +239,8 @@ public record CreateDeductionDto(
     DeductionType DeductionType = DeductionType.Other,
     string?       Reason        = null,
     string?       Notes         = null,
-    int?          CashAccountId = null
+    int?          CashAccountId = null,
+    OrderSource?  CostCenter    = null
 );
 
 public record EmployeeDeductionDto(
@@ -249,7 +257,8 @@ public record EmployeeDeductionDto(
     int?          CashAccountId,
     string?       CashAccountName,
     int?          JournalEntryId,
-    DateTime      CreatedAt
+    DateTime      CreatedAt,
+    OrderSource?  CostCenter = null
 );
 
 // ══════════════════════════════════════════════════════

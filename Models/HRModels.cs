@@ -91,6 +91,8 @@ public class Employee : BaseEntity
     public int?    AccountId { get; set; }
     public Account? Account  { get; set; }
 
+    public OrderSource? CostCenter { get; set; } // مركز التكلفة (موقع/محل/عام)
+
     public ICollection<PayrollItem>       PayrollItems { get; set; } = new List<PayrollItem>();
     public ICollection<EmployeeAdvance>   Advances     { get; set; } = new List<EmployeeAdvance>();
     public ICollection<EmployeeBonus>     Bonuses      { get; set; } = new List<EmployeeBonus>();
@@ -176,6 +178,7 @@ public class EmployeeAdvance : BaseEntity
     public string?  Reason          { get; set; }
     public string?  Notes           { get; set; }
     public string?  CreatedByUserId { get; set; }
+    public OrderSource? CostCenter  { get; set; } // مركز التكلفة
 
     // الحساب الدائن عند صرف السلفة (خزينة / بنك)
     public int?    CashAccountId { get; set; }
@@ -201,6 +204,7 @@ public class EmployeeBonus : BaseEntity
     public string?  Reason          { get; set; }
     public string?  Notes           { get; set; }
     public string?  CreatedByUserId { get; set; }
+    public OrderSource? CostCenter  { get; set; } // مركز التكلفة
 
     // مرتبط بمسير رواتب (اختياري)
     public int?        PayrollRunId { get; set; }
@@ -229,6 +233,7 @@ public class EmployeeDeduction : BaseEntity
     public string?  Reason          { get; set; }
     public string?  Notes           { get; set; }
     public string?  CreatedByUserId { get; set; }
+    public OrderSource? CostCenter  { get; set; } // مركز التكلفة
 
     // مرتبط بمسير رواتب (اختياري)
     public int?        PayrollRunId { get; set; }

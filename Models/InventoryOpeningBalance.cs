@@ -9,6 +9,7 @@ public class InventoryOpeningBalance : BaseEntity
     public DateTime Date { get; set; } = DateTime.UtcNow;
     public string? Notes { get; set; }
     public decimal TotalValue { get; set; }
+    public OrderSource? CostCenter { get; set; } // مركز التكلفة
     
     public ICollection<InventoryOpeningBalanceItem> Items { get; set; } = new List<InventoryOpeningBalanceItem>();
 }

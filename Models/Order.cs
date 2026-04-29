@@ -42,6 +42,7 @@ public enum OrderSource
 {
     Website = 0,
     POS     = 1,
+    General = 2,
 }
 
 public class Order : BaseEntity

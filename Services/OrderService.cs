@@ -443,7 +443,9 @@ public class OrderService : IOrderService
                             item.ProductVariantId,
                             order.OrderNumber,
                             "Order created",
-                            order.SalesPersonId
+                            order.SalesPersonId,
+                            0, // unitCost fallback
+                            order.Source
                         );
                     }
                 }
@@ -535,7 +537,9 @@ public class OrderService : IOrderService
                             ci.ProductVariantId,
                             order.OrderNumber,
                             "Website Order created",
-                            null
+                            null,
+                            0, // unitCost fallback
+                            order.Source
                         );
                         
                         _db.CartItems.Remove(ci);
@@ -884,7 +888,9 @@ public class OrderService : IOrderService
                         await _inventory.LogMovementAsync(
                             InventoryMovementType.Sale,
                             -item.Quantity, item.ProductId, item.ProductVariantId,
-                            order.OrderNumber, "Revert: Order status changed from Returned", updatedByUserId
+                            order.OrderNumber, "Revert: Order status changed from Returned", updatedByUserId,
+                            0, // unitCost fallback
+                            order.Source
                         );
                     }
                 }
@@ -909,7 +915,9 @@ public class OrderService : IOrderService
             {
                 await _inventory.LogMovementAsync(
                     dto.Status == OrderStatus.Returned ? InventoryMovementType.ReturnIn : InventoryMovementType.Adjustment,
-                    item.Quantity, item.ProductId, item.ProductVariantId, order.OrderNumber, $"Order {dto.Status}", updatedByUserId
+                    item.Quantity, item.ProductId, item.ProductVariantId, order.OrderNumber, $"Order {dto.Status}", updatedByUserId,
+                    0, // unitCost fallback
+                    order.Source
                 );
             }
 
@@ -1005,7 +1013,9 @@ public class OrderService : IOrderService
                     await _inventory.LogMovementAsync(
                         InventoryMovementType.ReturnIn,
                         req.Quantity, line.ProductId, line.ProductVariantId,
-                        order.OrderNumber, $"Partial Return: {req.Quantity} units", updatedByUserId
+                        order.OrderNumber, $"Partial Return: {req.Quantity} units", updatedByUserId,
+                        0, // unitCost fallback
+                        order.Source
                     );
                 }
 

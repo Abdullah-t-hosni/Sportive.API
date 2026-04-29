@@ -537,7 +537,17 @@ public class PurchaseInvoicesController : ControllerBase
             if (item.ProductId.HasValue)
             {
                 var multiplier = GetMultiplier(pUnits, item.Unit);
-                await _inventory.LogMovementAsync(InventoryMovementType.Purchase, item.Quantity * multiplier, item.ProductId, item.ProductVariantId, invNo, "Purchase Invoice receipt", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                await _inventory.LogMovementAsync(
+                    InventoryMovementType.Purchase, 
+                    item.Quantity * multiplier, 
+                    item.ProductId, 
+                    item.ProductVariantId, 
+                    invNo, 
+                    "Purchase Invoice receipt", 
+                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                    item.UnitCost,
+                    invoice.CostCenter
+                );
                 
                 // ── Auto-update and Alert on Price Changes ──
                 var product = await _db.Products.FindAsync(item.ProductId.Value);
@@ -708,7 +718,17 @@ public class PurchaseInvoicesController : ControllerBase
             var diff = newQty - oldQty;
             if (diff != 0)
             {
-                await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, diff, key.ProductId, key.ProductVariantId, inv.InvoiceNumber, $"Edit Inv #{inv.InvoiceNumber}", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                await _inventory.LogMovementAsync(
+                    InventoryMovementType.Adjustment, 
+                    diff, 
+                    key.ProductId, 
+                    key.ProductVariantId, 
+                    inv.InvoiceNumber, 
+                    $"Edit Inv #{inv.InvoiceNumber}", 
+                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                    0, // unitCost fallback
+                    inv.CostCenter
+                );
             }
         }
 
@@ -754,7 +774,9 @@ public class PurchaseInvoicesController : ControllerBase
                         item.ProductVariantId,
                         inv.InvoiceNumber,
                         $"Purchase status changed: {oldStatus} -> {dto.Status}",
-                        User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                        User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                        item.UnitCost,
+                        inv.CostCenter
                     );
                 }
             }
@@ -774,7 +796,9 @@ public class PurchaseInvoicesController : ControllerBase
                         item.ProductVariantId,
                         inv.InvoiceNumber,
                         $"Purchase status activated: {dto.Status}",
-                        User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                        User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                        item.UnitCost,
+                        inv.CostCenter
                     );
                 }
              }

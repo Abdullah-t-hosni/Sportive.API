@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Sportive.API.Models;
 
 namespace Sportive.API.DTOs;
 
@@ -7,7 +8,8 @@ public record CreateOpeningBalanceDto(
     DateTime Date,
     string? Notes,
     List<CreateOpeningBalanceItemDto> Items,
-    bool UpdateProductCost = false
+    bool UpdateProductCost = false,
+    OrderSource? CostCenter = null
 );
 
 public record CreateOpeningBalanceItemDto(
@@ -22,7 +24,8 @@ public record OpeningBalanceSummaryDto(
     string Reference,
     DateTime Date,
     decimal TotalValue,
-    int ItemsCount
+    int ItemsCount,
+    OrderSource? CostCenter = null
 );
 
 public record OpeningBalanceDetailDto(
@@ -31,7 +34,8 @@ public record OpeningBalanceDetailDto(
     DateTime Date,
     string? Notes,
     decimal TotalValue,
-    List<OpeningBalanceItemDto> Items
+    List<OpeningBalanceItemDto> Items,
+    OrderSource? CostCenter = null
 );
 
 public record OpeningBalanceItemDto(

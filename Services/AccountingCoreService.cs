@@ -225,7 +225,7 @@ public class AccountingCoreService
         return entry;
     }
 
-    public async Task<int?> PostInventoryAdjustmentAsync(int auditId, decimal netImpact, string reference, string? userId)
+    public async Task<int?> PostInventoryAdjustmentAsync(int auditId, decimal netImpact, string reference, string? userId, OrderSource? costCenter = null)
     {
         if (netImpact == 0) return null;
 
@@ -260,14 +260,15 @@ public class AccountingCoreService
             Reference   = reference,
             Description = $"تسوية جرد آلي رقم {auditId}",
             CreatedByUserId = userId,
+            CostCenter = costCenter,
             CreatedAt   = TimeHelper.GetEgyptTime()
         };
 
         // 1. Inventory Account
-        entry.Lines.Add(new JournalLine { AccountId = inventoryId, Debit = isIncrease ? absVal : 0, Credit = isIncrease ? 0 : absVal, Description = $"تسوية مخزون - جرد #{auditId}", CreatedAt = TimeHelper.GetEgyptTime() });
+        entry.Lines.Add(new JournalLine { AccountId = inventoryId, Debit = isIncrease ? absVal : 0, Credit = isIncrease ? 0 : absVal, Description = $"تسوية مخزون - جرد #{auditId}", CreatedAt = TimeHelper.GetEgyptTime(), CostCenter = costCenter });
         
         // 2. Variance Account
-        entry.Lines.Add(new JournalLine { AccountId = varianceId, Debit = isIncrease ? 0 : absVal, Credit = isIncrease ? absVal : 0, Description = $"فروقات جرد مخزون #{auditId}", CreatedAt = TimeHelper.GetEgyptTime() });
+        entry.Lines.Add(new JournalLine { AccountId = varianceId, Debit = isIncrease ? 0 : absVal, Credit = isIncrease ? absVal : 0, Description = $"فروقات جرد مخزون #{auditId}", CreatedAt = TimeHelper.GetEgyptTime(), CostCenter = costCenter });
 
         _db.JournalEntries.Add(entry);
         await _db.SaveChangesAsync();

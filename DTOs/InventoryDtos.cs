@@ -6,7 +6,8 @@ namespace Sportive.API.DTOs;
 public record CreateInventoryAuditDto(
     string Title,
     string? Description,
-    List<CreateInventoryAuditItemDto> Items
+    List<CreateInventoryAuditItemDto> Items,
+    OrderSource? CostCenter = null
 );
 
 public record CreateInventoryAuditItemDto(
@@ -20,7 +21,8 @@ public record UpdateInventoryAuditDto(
     string Title,
     string? Description,
     InventoryAuditStatus Status,
-    List<CreateInventoryAuditItemDto> Items
+    List<CreateInventoryAuditItemDto> Items,
+    OrderSource? CostCenter = null
 );
 
 public record InventoryAuditSummaryDto(
@@ -31,7 +33,8 @@ public record InventoryAuditSummaryDto(
     decimal TotalExpectedValue,
     decimal TotalActualValue,
     decimal ValueDifference,
-    int ItemCount
+    int ItemCount,
+    OrderSource? CostCenter = null
 );
 
 public record InventoryAuditDetailDto(
@@ -44,7 +47,8 @@ public record InventoryAuditDetailDto(
     decimal TotalActualValue,
     decimal ValueDifference,
     List<InventoryAuditItemDto> Items,
-    int? JournalEntryId = null
+    int? JournalEntryId = null,
+    OrderSource? CostCenter = null
 );
 
 public record InventoryAuditItemDto(

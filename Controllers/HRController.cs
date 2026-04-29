@@ -66,7 +66,8 @@ public class EmployeesController : ControllerBase
                 e.BankAccount, (int)e.Status, e.Notes,
                 e.AttachmentUrl, e.AttachmentPublicId,
                 e.CreatedAt,
-                e.AppUserId, e.AppUser != null ? e.AppUser.FullName : null
+                e.AppUserId, e.AppUser != null ? e.AppUser.FullName : null,
+                e.CostCenter
             )).ToListAsync();
 
         return Ok(new PaginatedResult<EmployeeDto>(items, total, page, pageSize,
@@ -107,7 +108,8 @@ public class EmployeesController : ControllerBase
             e.BaseSalary, e.TransportationAllowance, e.CommunicationAllowance, e.BonusAmount, e.FixedAllowance, e.BankAccount, (int)e.Status, e.Notes,
             e.AttachmentUrl, e.AttachmentPublicId,
             e.CreatedAt,
-            e.AppUserId, e.AppUser?.FullName));
+            e.AppUserId, e.AppUser?.FullName,
+            e.CostCenter));
     }
 
     [HttpPost]
@@ -157,6 +159,7 @@ public class EmployeesController : ControllerBase
             AttachmentPublicId = dto.AttachmentPublicId,
             AccountId        = defaultAccId,
             AppUserId        = string.IsNullOrEmpty(dto.AppUserId) ? null : dto.AppUserId,
+            CostCenter       = dto.CostCenter,
             Status           = EmployeeStatus.Active,
             CreatedAt        = TimeHelper.GetEgyptTime(),
             CreatedByUserId  = UserId
@@ -218,6 +221,7 @@ public class EmployeesController : ControllerBase
         emp.AttachmentUrl     = dto.AttachmentUrl;
         emp.AttachmentPublicId = dto.AttachmentPublicId;
         emp.Status            = dto.Status;
+        emp.CostCenter        = dto.CostCenter;
         emp.UpdatedAt         = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
@@ -546,69 +550,51 @@ public class PayrollController : ControllerBase
                 Lines           = new List<JournalLine>()
             };
 
-            // مدين: رواتب وأجور — الأساسي (إجمالي)
-            je.Lines.Add(new JournalLine
+            // ── تجميع وترحيل المصاريف حسب مركز التكلفة ──────────────────────────
+            var itemsByCostCenter = run.Items.GroupBy(i => i.Employee?.CostCenter ?? OrderSource.General);
+
+            foreach (var group in itemsByCostCenter)
             {
-                AccountId   = wagesAccId,
-                Debit       = run.TotalBasicSalary,
-                Credit      = 0,
-                Description = $"إجمالي الرواتب الأساسية — {run.PeriodMonth}/{run.PeriodYear}"
-            });
+                var cc = group.Key;
+                var ccBasic = group.Sum(i => i.BasicSalary);
+                var ccTrans = group.Sum(i => i.TransportationAllowance);
+                var ccComm  = group.Sum(i => i.CommunicationAllowance);
+                var ccFix   = group.Sum(i => i.FixedAllowance);
+                var ccBonus = group.Sum(i => i.BonusAmount);
+                var ccDed   = group.Sum(i => i.DeductionAmount);
 
-            // مدين: بدل انتقال (إجمالي)
-            if (run.TotalTransportation > 0)
-                je.Lines.Add(new JournalLine
+                if (ccBasic > 0)
                 {
-                    AccountId   = transAccId,
-                    Debit       = run.TotalTransportation,
-                    Credit      = 0,
-                    Description = $"إجمالي بدلات انتقال — {run.PeriodMonth}/{run.PeriodYear}"
-                });
+                    je.Lines.Add(new JournalLine { AccountId = wagesAccId, Debit = ccBasic, Description = $"رواتب أساسية - {cc} — {run.PeriodMonth}/{run.PeriodYear}", CostCenter = cc });
+                }
+                if (ccTrans > 0)
+                {
+                    je.Lines.Add(new JournalLine { AccountId = transAccId, Debit = ccTrans, Description = $"بدلات انتقال - {cc} — {run.PeriodMonth}/{run.PeriodYear}", CostCenter = cc });
+                }
+                if (ccComm > 0)
+                {
+                    je.Lines.Add(new JournalLine { AccountId = commAccId, Debit = ccComm, Description = $"بدلات اتصال - {cc} — {run.PeriodMonth}/{run.PeriodYear}", CostCenter = cc });
+                }
+                if (ccFix > 0)
+                {
+                    je.Lines.Add(new JournalLine { AccountId = fixAllAccId, Debit = ccFix, Description = $"بدلات ثابتة أخرى - {cc} — {run.PeriodMonth}/{run.PeriodYear}", CostCenter = cc });
+                }
+                if (ccBonus > 0)
+                {
+                    je.Lines.Add(new JournalLine { AccountId = bonusAccId, Debit = ccBonus, Description = $"مكافآت تشجيعية - {cc} — {run.PeriodMonth}/{run.PeriodYear}", CostCenter = cc });
+                }
+                if (ccDed > 0)
+                {
+                    je.Lines.Add(new JournalLine { AccountId = dedAccId, Credit = ccDed, Description = $"خصومات وجزاءات - {cc} — {run.PeriodMonth}/{run.PeriodYear}", CostCenter = cc });
+                }
+            }
 
-            // مدين: بدل اتصال (إجمالي)
-            if (run.TotalCommunication > 0)
-                je.Lines.Add(new JournalLine
-                {
-                    AccountId   = commAccId,
-                    Debit       = run.TotalCommunication,
-                    Credit      = 0,
-                    Description = $"إجمالي بدلات اتصال — {run.PeriodMonth}/{run.PeriodYear}"
-                });
-            
-            // مدين: بدلات ثابتة أخرى (إجمالي)
-            if (run.TotalFixedAllowances > 0)
-                je.Lines.Add(new JournalLine
-                {
-                    AccountId   = fixAllAccId,
-                    Debit       = run.TotalFixedAllowances,
-                    Credit      = 0,
-                    Description = $"إجمالي بدلات ثابتة أخرى — {run.PeriodMonth}/{run.PeriodYear}"
-                });
-
-            // مدين: مكافآت تشجيعية (إجمالي)
-            if (run.TotalBonuses > 0)
-                je.Lines.Add(new JournalLine
-                {
-                    AccountId   = bonusAccId,
-                    Debit       = run.TotalBonuses,
-                    Credit      = 0,
-                    Description = $"إجمالي المكافآت التشجيعية — {run.PeriodMonth}/{run.PeriodYear}"
-                });
-
-            // دائن: إيرادات الخصومات (إجمالي)
-            if (run.TotalDeductions > 0)
-                je.Lines.Add(new JournalLine
-                {
-                    AccountId   = dedAccId,
-                    Debit       = 0,
-                    Credit      = run.TotalDeductions,
-                    Description = $"إجمالي خصومات الموظفين (جزاءات) — {run.PeriodMonth}/{run.PeriodYear}"
-                });
-
-            // ── تفصيل الحركات لكل موظف (الاستحقاقات والاستقطاعات) ────────────────
+            // ── تفصيل الحركات لكل موظف (الالتزامات في كشف الحساب) ────────────────
             foreach (var item in run.Items)
             {
-                // أ. إجمالي الاستحقاقات (راتب + بدلات + مكافآت) -> دائن (له)
+                var employeeCC = item.Employee?.CostCenter ?? OrderSource.General;
+
+                // أ. إجمالي المستحقات -> دائن (له)
                 var grossEarnings = item.BasicSalary + item.TransportationAllowance + item.CommunicationAllowance + item.FixedAllowance + item.BonusAmount;
                 if (grossEarnings > 0)
                 {
@@ -618,7 +604,8 @@ public class PayrollController : ControllerBase
                         Debit       = 0,
                         Credit      = grossEarnings,
                         Description = $"إجمالي المستحقات (راتب + بدلات + مكافآت): {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}",
-                        EmployeeId  = item.EmployeeId
+                        EmployeeId  = item.EmployeeId,
+                        CostCenter  = employeeCC
                     });
                 }
 
@@ -631,16 +618,17 @@ public class PayrollController : ControllerBase
                         Debit       = item.AdvanceDeducted,
                         Credit      = 0,
                         Description = $"استقطاع سلفة: {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}",
-                        EmployeeId  = item.EmployeeId
+                        EmployeeId  = item.EmployeeId,
+                        CostCenter  = employeeCC
                     });
                     
-                    // الطرف المقابل لخفض حساب السلف (بدون موظف لتجنب الازدواجية في كشف حسابه الشخصي)
                     je.Lines.Add(new JournalLine
                     {
                         AccountId   = advAccId,
                         Debit       = 0,
                         Credit      = item.AdvanceDeducted,
-                        Description = $"سداد سلفة موظف: {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}"
+                        Description = $"سداد سلفة موظف: {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}",
+                        CostCenter  = employeeCC
                     });
                 }
 
@@ -653,7 +641,8 @@ public class PayrollController : ControllerBase
                         Debit       = item.DeductionAmount,
                         Credit      = 0,
                         Description = $"جزاءات وخصومات: {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}",
-                        EmployeeId  = item.EmployeeId
+                        EmployeeId  = item.EmployeeId,
+                        CostCenter  = employeeCC
                     });
                 }
             }
@@ -821,7 +810,7 @@ public class EmployeeAdvancesController : ControllerBase
                 a.AdvanceDate, a.Amount, a.DeductedAmount, a.Amount - a.DeductedAmount,
                 (int)a.Status, a.Reason, a.Notes,
                 a.CashAccountId, a.CashAccount != null ? a.CashAccount.NameAr : null,
-                a.JournalEntryId, a.CreatedAt
+                a.JournalEntryId, a.CreatedAt, a.CostCenter
             )).ToListAsync();
 
         return Ok(new PaginatedResult<EmployeeAdvanceDto>(items, total, page, pageSize,
@@ -867,6 +856,7 @@ public class EmployeeAdvancesController : ControllerBase
                     Reason = dto.Reason?.Trim(),
                     Notes = dto.Notes?.Trim(),
                     CashAccountId = dto.CashAccountId,
+                    CostCenter = dto.CostCenter ?? emp.CostCenter,
                     Status = AdvanceStatus.Pending,
                     CreatedAt = TimeHelper.GetEgyptTime(),
                     CreatedByUserId = UserId
@@ -891,7 +881,8 @@ public class EmployeeAdvancesController : ControllerBase
                         Description = $"سلفة موظف — {emp.Name}",
                         Reference = advance.AdvanceNumber,
                         CreatedAt = TimeHelper.GetEgyptTime(),
-                        CreatedByUserId = UserId
+                        CreatedByUserId = UserId,
+                        CostCenter = advance.CostCenter
                     };
                     _db.PaymentVouchers.Add(voucher);
                     await _db.SaveChangesAsync();
@@ -958,6 +949,7 @@ public class EmployeeAdvancesController : ControllerBase
         adv.Reason = dto.Reason?.Trim();
         adv.Notes = dto.Notes?.Trim();
         adv.CashAccountId = dto.CashAccountId;
+        adv.CostCenter = dto.CostCenter ?? adv.CostCenter;
         adv.UpdatedAt = TimeHelper.GetEgyptTime();
 
         // Update voucher if exists
@@ -968,6 +960,7 @@ public class EmployeeAdvancesController : ControllerBase
             voucher.VoucherDate = adv.AdvanceDate;
             voucher.CashAccountId = adv.CashAccountId ?? 0;
             voucher.Description = $"تعديل سلفة موظف — {adv.AdvanceNumber}";
+            voucher.CostCenter = adv.CostCenter;
             
             // Re-post to update journal entry
             await _accounting.PostPaymentVoucherAsync(voucher);
@@ -1017,7 +1010,7 @@ public class EmployeeBonusesController : ControllerBase
                 b.Id, b.BonusNumber, b.EmployeeId, b.Employee.Name,
                 b.BonusDate, b.Amount, (int)b.BonusType, b.Reason, b.Notes,
                 b.PayrollRunId, b.CashAccountId, b.CashAccount != null ? b.CashAccount.NameAr : null,
-                b.JournalEntryId, b.CreatedAt
+                b.JournalEntryId, b.CreatedAt, b.CostCenter
             )).ToListAsync();
 
         return Ok(new PaginatedResult<EmployeeBonusDto>(items, total, page, pageSize,
@@ -1064,6 +1057,7 @@ public class EmployeeBonusesController : ControllerBase
                     Reason = dto.Reason?.Trim(),
                     Notes = dto.Notes?.Trim(),
                     CashAccountId = dto.CashAccountId,
+                    CostCenter = dto.BonusCostCenter ?? emp.CostCenter, // Use provided or fall back to employee default
                     CreatedAt = TimeHelper.GetEgyptTime(),
                     CreatedByUserId = UserId
                 };
@@ -1087,7 +1081,8 @@ public class EmployeeBonusesController : ControllerBase
                         Description = $"مكافأة موظف — {emp.Name}",
                         Reference = bonus.BonusNumber,
                         CreatedAt = TimeHelper.GetEgyptTime(),
-                        CreatedByUserId = UserId
+                        CreatedByUserId = UserId,
+                        CostCenter = bonus.CostCenter
                     };
                     _db.PaymentVouchers.Add(voucher);
                     await _db.SaveChangesAsync();
@@ -1151,6 +1146,7 @@ public class EmployeeBonusesController : ControllerBase
         bon.Reason = dto.Reason?.Trim();
         bon.Notes = dto.Notes?.Trim();
         bon.CashAccountId = dto.CashAccountId;
+        bon.CostCenter = dto.BonusCostCenter ?? bon.CostCenter;
         bon.UpdatedAt = TimeHelper.GetEgyptTime();
 
         var voucher = await _db.PaymentVouchers.FirstOrDefaultAsync(v => v.Reference == bon.BonusNumber);
@@ -1159,6 +1155,7 @@ public class EmployeeBonusesController : ControllerBase
             voucher.Amount = bon.Amount;
             voucher.VoucherDate = bon.BonusDate;
             voucher.CashAccountId = bon.CashAccountId ?? 0;
+            voucher.CostCenter = bon.CostCenter;
             
             await _accounting.PostPaymentVoucherAsync(voucher);
             bon.JournalEntryId = voucher.JournalEntryId;
@@ -1206,7 +1203,7 @@ public class EmployeeDeductionsController : ControllerBase
                 d.Id, d.DeductionNumber, d.EmployeeId, d.Employee.Name,
                 d.DeductionDate, d.Amount, (int)d.DeductionType, d.Reason, d.Notes,
                 d.PayrollRunId, d.CashAccountId, d.CashAccount != null ? d.CashAccount.NameAr : null,
-                d.JournalEntryId, d.CreatedAt
+                d.JournalEntryId, d.CreatedAt, d.CostCenter
             )).ToListAsync();
 
         return Ok(new PaginatedResult<EmployeeDeductionDto>(items, total, page, pageSize,
@@ -1238,6 +1235,7 @@ public class EmployeeDeductionsController : ControllerBase
             Reason          = dto.Reason?.Trim(),
             Notes           = dto.Notes?.Trim(),
             CashAccountId   = dto.CashAccountId,
+            CostCenter      = dto.CostCenter ?? emp.CostCenter,
             CreatedAt       = TimeHelper.GetEgyptTime(),
             CreatedByUserId = UserId
         };
@@ -1264,7 +1262,7 @@ public class EmployeeDeductionsController : ControllerBase
                 Reference = ded.DeductionNumber,
                 CreatedAt = TimeHelper.GetEgyptTime(),
                 CreatedByUserId = UserId,
-                CostCenter = OrderSource.Website
+                CostCenter = ded.CostCenter
             };
             _db.ReceiptVouchers.Add(voucher);
             await _db.SaveChangesAsync();
@@ -1309,6 +1307,7 @@ public class EmployeeDeductionsController : ControllerBase
         ded.Reason = dto.Reason?.Trim();
         ded.Notes = dto.Notes?.Trim();
         ded.CashAccountId = dto.CashAccountId;
+        ded.CostCenter = dto.CostCenter ?? ded.CostCenter;
         ded.UpdatedAt = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();

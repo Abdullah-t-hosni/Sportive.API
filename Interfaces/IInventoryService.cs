@@ -15,7 +15,8 @@ public interface IInventoryService
         string? reference = null,
         string? note = null,
         string? userId = null,
-        decimal unitCost = 0
+        decimal unitCost = 0,
+        OrderSource? costCenter = null
     );
 
     /// <summary>

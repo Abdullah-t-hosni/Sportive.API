@@ -25,7 +25,8 @@ public class InventoryService : IInventoryService
         string? reference = null,
         string? note = null,
         string? userId = null,
-        decimal unitCost = 0)
+        decimal unitCost = 0,
+        OrderSource? costCenter = null)
     {
         if (quantity == 0) return;
         if (productId == 0) productId = null;
@@ -112,6 +113,7 @@ public class InventoryService : IInventoryService
             Note             = note,
             UnitCost         = effectiveUnitCost,
             CreatedByUserId  = userId,
+            CostCenter       = costCenter,
             CreatedAt        = TimeHelper.GetEgyptTime()
         });
 

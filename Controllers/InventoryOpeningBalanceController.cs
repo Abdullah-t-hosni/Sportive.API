@@ -61,7 +61,7 @@ public class InventoryOpeningBalanceController : ControllerBase
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(x => new OpeningBalanceSummaryDto(
-                x.Id, x.Reference, x.Date, x.TotalValue, x.Items.Count
+                x.Id, x.Reference, x.Date, x.TotalValue, x.Items.Count, x.CostCenter
             ))
             .ToListAsync();
 
@@ -84,7 +84,8 @@ public class InventoryOpeningBalanceController : ControllerBase
                 i.Id, i.ProductId, i.Product?.NameAr, i.Product?.SKU,
                 i.ProductVariantId, i.ProductVariant?.Size, i.ProductVariant?.ColorAr,
                 i.Quantity, i.CostPrice, i.TotalCost
-            )).ToList()
+            )).ToList(),
+            x.CostCenter
         ));
     }
 
@@ -115,6 +116,7 @@ public class InventoryOpeningBalanceController : ControllerBase
             Reference = refNo,
             Date      = dto.Date,
             Notes     = dto.Notes,
+            CostCenter = dto.CostCenter,
             CreatedAt = TimeHelper.GetEgyptTime()
         };
 
@@ -145,7 +147,8 @@ public class InventoryOpeningBalanceController : ControllerBase
                     refNo, 
                     "ارصدة افتتاحية", 
                     userId,
-                    item.CostPrice
+                    item.CostPrice,
+                    ob.CostCenter
                 );
 
                 // 2. Update Product Cost Price if requested
@@ -265,7 +268,8 @@ public class InventoryOpeningBalanceController : ControllerBase
                     ob.Reference, 
                     $"إلغاء رصيد افتتاحي - {ob.Reference}", 
                     userId,
-                    item.CostPrice
+                    item.CostPrice,
+                    ob.CostCenter
                 );
             }
         }
@@ -514,7 +518,8 @@ public class InventoryOpeningBalanceController : ControllerBase
                 new (inventoryId, ob.TotalValue, 0, "إثبات قيمة المخزون الافتتاحي"),
                 new (openingId,   0, ob.TotalValue, "مقابل حساب الأرصدة الافتتاحية")
             },
-            Type:        JournalEntryType.OpeningBalance
+            Type:        JournalEntryType.OpeningBalance,
+            CostCenter:  ob.CostCenter
         );
 
         await _accounting.PostManualEntryAsync(dto, User);
