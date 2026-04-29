@@ -13,6 +13,7 @@ using Sportive.API.Models;
 using Microsoft.Extensions.Caching.Memory;
 using Sportive.API.Services;
 using Sportive.API.Utils;
+using Hangfire;
 
 namespace Sportive.API.Controllers;
 
@@ -107,7 +108,7 @@ public class AuthController : ControllerBase
                     <p>Ø¥Ø°Ø§ Ù„Ù… ØªÙƒÙ† Ø£Ù†Øª Ù…Ù† Ø·Ù„Ø¨ Ù‡Ø°Ø§ Ø§Ù„ÙƒÙˆØ¯ØŒ ÙŠØ±Ø¬Ù‰ ØªØ¬Ø§Ù‡Ù„ Ù‡Ø°Ù‡ Ø§Ù„Ø±Ø³Ø§Ù„Ø©.</p>
                 </div>";
             
-            await _email.SendEmailAsync(user.Email, subject, body);
+            BackgroundJob.Enqueue<IEmailService>(email => email.SendEmailAsync(user.Email, subject, body));
         }
 
         bool isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
@@ -154,16 +155,11 @@ public class AuthController : ControllerBase
 
         bool isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
         
-        // Ø¥Ø±Ø³Ø§Ù„ Ø±Ø³Ø§Ù„Ø© Ø¨Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø§Ù„ÙˆØ§ØªØ³Ø§Ø¨
-        bool sent = await _whatsappApi.SendOtpAsync(dto.PhoneNumber, code);
-
-        if (!sent && !isDev)
-        {
-            return BadRequest(new { message = "Failed to send OTP message via WhatsApp" });
-        }
+        // إرسال رسالة باستخدام الواتساب
+        BackgroundJob.Enqueue<IWhatsAppApiService>(api => api.SendOtpAsync(dto.PhoneNumber, code));
 
         return Ok(new { 
-            message = "OTP sent successfully to your WhatsApp."
+            message = "OTP message queued for delivery via WhatsApp."
         });
     }
 
