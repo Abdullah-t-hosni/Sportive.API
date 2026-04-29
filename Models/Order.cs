@@ -40,9 +40,9 @@ public enum PaymentStatus
 
 public enum OrderSource
 {
-    Website = 0,
-    POS     = 1,
-    General = 2,
+    General = 1,
+    POS     = 2,
+    Website = 3,
 }
 
 public class Order : BaseEntity

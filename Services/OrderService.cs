@@ -312,7 +312,7 @@ public class OrderService : IOrderService
                     }
                 }
 
-                var actualSource = (int)dto.Source == 0 ? OrderSource.Website : dto.Source;
+                var actualSource = ((int)dto.Source == 0) ? OrderSource.Website : dto.Source;
                 order = new Order
                 {
                     CustomerId = customerId.Value,
