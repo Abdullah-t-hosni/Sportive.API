@@ -78,6 +78,7 @@ public class CartService : ICartService
 
     private async Task<List<CartItem>> GetCartItemsAsync(int customerId) =>
         await _db.CartItems
+            .AsNoTracking()
             .Include(c => c.Product).ThenInclude(p => p!.Images)
             .Include(c => c.ProductVariant)
             .Where(c => c.CustomerId == customerId)

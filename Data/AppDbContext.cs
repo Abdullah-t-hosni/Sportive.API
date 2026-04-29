@@ -128,6 +128,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.VatRate).HasPrecision(18, 2);
             e.Property(x => x.SKU).HasMaxLength(50);
             e.HasIndex(x => x.SKU).IsUnique();
+            // ⚡ Performance: slug lookups on storefront (GetBySlug)
+            e.HasIndex(x => x.Slug);
+            // ⚡ Performance: status+stock filter used in dashboards
+            e.HasIndex(x => new { x.Status, x.TotalStock });
             e.HasOne(x => x.Category).WithMany(c => c.Products)
              .HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(x => x.Brand).WithMany(b => b.Products)
@@ -188,6 +192,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.PaymentStatus).HasConversion<string>();
             e.Property(x => x.Source).HasConversion<string>();
             e.HasIndex(x => x.CreatedAt);
+            // ⚡ Performance: cover customer order history queries
+            e.HasIndex(x => new { x.CustomerId, x.CreatedAt });
+            // ⚡ Performance: cover dashboard/status filter queries
+            e.HasIndex(x => new { x.Status, x.CreatedAt });
         });
 
         builder.Entity<OrderPayment>(e => {
@@ -217,6 +225,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Product).WithMany(p => p.CartItems)
              .HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+            // ⚡ Performance: every cart load filters by CustomerId
+            e.HasIndex(x => x.CustomerId);
         });
 
         builder.Entity<Coupon>(e => {
@@ -367,6 +377,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(x => x.ProductVariant).WithMany().HasForeignKey(x => x.ProductVariantId).OnDelete(DeleteBehavior.SetNull);
             e.Property(x => x.Type).HasConversion<string>();
+            // ⚡ Performance: movement history queries filter by product + date
+            e.HasIndex(x => new { x.ProductId, x.CreatedAt });
+            // ⚡ Performance: reference-based lookup (order number)
+            e.HasIndex(x => x.Reference);
         });
 
         builder.Entity<InventoryAudit>(e => {
