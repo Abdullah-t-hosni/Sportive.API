@@ -86,11 +86,15 @@ public class CloudinaryImageService : IImageService
         if (file.Length > MaxFileSizeBytes)
             return new ImageUploadDto(false, null, null, "حجم الملف يتجاوز 10 ميجابايت");
 
+        // 🛡️ MIME type guard: extension alone can be spoofed (e.g. malware.jpg)
+        var imageExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
+        var isImage = imageExtensions.Contains(ext);
+        if (isImage && !file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            return new ImageUploadDto(false, null, null, "نوع MIME غير مطابق للامتداد");
+
         try
         {
             await using var stream = file.OpenReadStream();
-            var imageExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
-            var isImage = imageExtensions.Contains(ext);
 
             CloudinaryDotNet.Actions.RawUploadResult uploadResult;
             if (isImage)

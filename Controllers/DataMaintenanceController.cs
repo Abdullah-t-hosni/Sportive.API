@@ -99,6 +99,7 @@ public class DataMaintenanceController : ControllerBase
     }
 
     [HttpPost("fix-pos-orders")]
+    [Authorize(Policy = "SuperAdminOnly")]
     public async Task<IActionResult> FixPosOrders()
     {
         var (success, message) = await _service.FixPosOrdersAsync();
@@ -106,6 +107,7 @@ public class DataMaintenanceController : ControllerBase
     }
 
     [HttpPost("cleanup-duplicates")]
+    [Authorize(Policy = "SuperAdminOnly")]
     public async Task<IActionResult> CleanupDuplicates()
     {
         var (success, message) = await _service.CleanupDuplicatesAsync();
@@ -113,6 +115,7 @@ public class DataMaintenanceController : ControllerBase
     }
 
     [HttpPost("sync-order-accounting")]
+    [Authorize(Policy = "SuperAdminOnly")]
     public async Task<IActionResult> SyncOrderAccounting()
     {
         var (success, message) = await _service.SyncOrderAccountingAsync();
@@ -120,6 +123,7 @@ public class DataMaintenanceController : ControllerBase
     }
 
     [HttpPost("sync-payment-accounting")]
+    [Authorize(Policy = "SuperAdminOnly")]
     public async Task<IActionResult> SyncPaymentAccounting()
     {
         var (success, message) = await _service.SyncPaymentAccountingAsync();
@@ -127,6 +131,7 @@ public class DataMaintenanceController : ControllerBase
     }
 
     [HttpPost("sync-purchase-journal-entries")]
+    [Authorize(Policy = "SuperAdminOnly")]
     public async Task<IActionResult> SyncPurchaseJournalEntries()
     {
         var (success, message, details) = await _service.SyncPurchaseJournalEntriesAsync();
@@ -134,6 +139,7 @@ public class DataMaintenanceController : ControllerBase
     }
 
     [HttpPost("sync-entity-ids")]
+    [Authorize(Policy = "SuperAdminOnly")]
     public async Task<IActionResult> SyncEntityIds()
     {
         var (success, message) = await _service.SyncEntityIdsAsync();
@@ -141,6 +147,7 @@ public class DataMaintenanceController : ControllerBase
     }
 
     [HttpPost("sync-sub-accounts")]
+    [Authorize(Policy = "SuperAdminOnly")]
     public async Task<IActionResult> SyncSubAccounts()
     {
         var (success, message) = await _service.SyncSubAccountsAsync();
@@ -148,6 +155,7 @@ public class DataMaintenanceController : ControllerBase
     }
 
     [HttpPost("sync-ledger-source")]
+    [Authorize(Policy = "SuperAdminOnly")]
     public async Task<IActionResult> SyncLedgerSource()
     {
         var (success, message) = await _service.SyncLedgerSourceAsync();
@@ -155,6 +163,7 @@ public class DataMaintenanceController : ControllerBase
     }
 
     [HttpPost("fix-utc-times")]
+    [Authorize(Policy = "SuperAdminOnly")]
     public async Task<IActionResult> FixUtcTimes()
     {
         var (success, message) = await _service.FixUtcTimesAsync();
