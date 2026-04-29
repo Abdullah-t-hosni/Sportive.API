@@ -255,14 +255,17 @@ public class EmployeesController : ControllerBase
 
         if (id == 0) return await GetGeneralStatement(from, to, hrAccountIds);
 
+        var accrualAccId = await _core.GetRequiredMappedAccountAsync(MappingKeys.SalariesPayable, mapDict);
         var emp = await _db.Employees.FindAsync(id);
         if (emp == null) return NotFound();
-        if (emp.AccountId.HasValue) hrAccountIds.Add(emp.AccountId.Value);
 
-        hrAccountIds = hrAccountIds.Distinct().ToList();
+        // في كشف الموظف الفردي، نركز فقط على حساب "الرواتب المستحقة" لبيان الرصيد الصافي (المستحقات - الاستقطاعات)
+        var personalAccountIds = new List<int> { accrualAccId };
+        if (emp.AccountId.HasValue) personalAccountIds.Add(emp.AccountId.Value);
+        personalAccountIds = personalAccountIds.Distinct().ToList();
 
         var preEntries = await _db.JournalLines
-            .Where(l => l.EmployeeId == id && hrAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.EmployeeId == id && personalAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .Select(l => new { l.Debit, l.Credit })
             .ToListAsync();
         
@@ -270,7 +273,7 @@ public class EmployeesController : ControllerBase
 
         var lines = await _db.JournalLines
             .Include(l => l.JournalEntry)
-            .Where(l => l.EmployeeId == id && hrAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.EmployeeId == id && personalAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .OrderBy(l => l.JournalEntry.EntryDate)
             .ToListAsync();
 
@@ -582,6 +585,16 @@ public class PayrollController : ControllerBase
                     Description = $"إجمالي بدلات ثابتة أخرى — {run.PeriodMonth}/{run.PeriodYear}"
                 });
 
+            // مدين: مكافآت تشجيعية (إجمالي)
+            if (run.TotalBonuses > 0)
+                je.Lines.Add(new JournalLine
+                {
+                    AccountId   = bonusAccId,
+                    Debit       = run.TotalBonuses,
+                    Credit      = 0,
+                    Description = $"إجمالي المكافآت التشجيعية — {run.PeriodMonth}/{run.PeriodYear}"
+                });
+
             // دائن: إيرادات الخصومات (إجمالي)
             if (run.TotalDeductions > 0)
                 je.Lines.Add(new JournalLine
@@ -592,46 +605,54 @@ public class PayrollController : ControllerBase
                     Description = $"إجمالي خصومات الموظفين (جزاءات) — {run.PeriodMonth}/{run.PeriodYear}"
                 });
 
-            // ── تفصيل الحركات لكل موظف (المكافآت، السلف، صافي الراتب) ────────────────
+            // ── تفصيل الحركات لكل موظف (الاستحقاقات والاستقطاعات) ────────────────
             foreach (var item in run.Items)
             {
-                // 1. مكافآت الموظف (مدين)
-                if (item.BonusAmount > 0)
+                // أ. إجمالي الاستحقاقات (راتب + بدلات + مكافآت) -> دائن (له)
+                var grossEarnings = item.BasicSalary + item.TransportationAllowance + item.CommunicationAllowance + item.FixedAllowance + item.BonusAmount;
+                if (grossEarnings > 0)
                 {
                     je.Lines.Add(new JournalLine
                     {
-                        AccountId   = bonusAccId,
-                        Debit       = item.BonusAmount,
-                        Credit      = 0,
-                        Description = $"مكافأة: {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}",
+                        AccountId   = accrualAccId,
+                        Debit       = 0,
+                        Credit      = grossEarnings,
+                        Description = $"إجمالي المستحقات (راتب + بدلات + مكافآت): {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}",
                         EmployeeId  = item.EmployeeId
                     });
                 }
 
-                // 2. خصم السلفة للموظف (دائن)
+                // ب. استقطاع السلفة -> مدين (عليه)
                 if (item.AdvanceDeducted > 0)
                 {
+                    je.Lines.Add(new JournalLine
+                    {
+                        AccountId   = accrualAccId,
+                        Debit       = item.AdvanceDeducted,
+                        Credit      = 0,
+                        Description = $"استقطاع سلفة: {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}",
+                        EmployeeId  = item.EmployeeId
+                    });
+                    
+                    // الطرف المقابل لخفض حساب السلف (بدون موظف لتجنب الازدواجية في كشف حسابه الشخصي)
                     je.Lines.Add(new JournalLine
                     {
                         AccountId   = advAccId,
                         Debit       = 0,
                         Credit      = item.AdvanceDeducted,
-                        Description = $"خصم سلفة: {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}",
-                        EmployeeId  = item.EmployeeId
+                        Description = $"سداد سلفة موظف: {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}"
                     });
                 }
 
-                // 3. صافي الراتب المستحق للموظف (دائن)
-                if (item.NetPayable > 0)
+                // ج. الجزاءات والخصومات -> مدين (عليه)
+                if (item.DeductionAmount > 0)
                 {
-                    // نستخدم دائماً حساب الرواتب المستحقة العام لضمان التوجيه الصحيح
-                    // مع الاحتفاظ بربط الموظف بالسطر للتحليل
                     je.Lines.Add(new JournalLine
                     {
                         AccountId   = accrualAccId,
-                        Debit       = 0,
-                        Credit      = item.NetPayable,
-                        Description = $"صافي الراتب المستحق: {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}",
+                        Debit       = item.DeductionAmount,
+                        Credit      = 0,
+                        Description = $"جزاءات وخصومات: {item.Employee?.Name} — {run.PeriodMonth}/{run.PeriodYear}",
                         EmployeeId  = item.EmployeeId
                     });
                 }
