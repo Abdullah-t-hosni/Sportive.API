@@ -510,10 +510,10 @@ public class PayrollController : ControllerBase
         var dedAccId     = run.DeductionRevenueAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.EmployeeDeductions, mapDict);
         var advAccId     = run.AdvancesAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.EmployeeAdvances, mapDict);
         
-        var transAccId   = await _core.GetRequiredMappedAccountAsync(MappingKeys.TransportationAllowanceExpense, mapDict);
-        var commAccId    = await _core.GetRequiredMappedAccountAsync(MappingKeys.CommunicationAllowanceExpense, mapDict);
-        var bonusAccId   = await _core.GetRequiredMappedAccountAsync(MappingKeys.EmployeeBonuses, mapDict);
-        var fixAllAccId  = await _core.GetRequiredMappedAccountAsync(MappingKeys.FixedAllowanceExpense, mapDict);
+        var transAccId   = run.TotalTransportation > 0 ? await _core.GetRequiredMappedAccountAsync(MappingKeys.TransportationAllowanceExpense, mapDict) : 0;
+        var commAccId    = run.TotalCommunication > 0 ? await _core.GetRequiredMappedAccountAsync(MappingKeys.CommunicationAllowanceExpense, mapDict) : 0;
+        var bonusAccId   = (run.TotalBonuses > 0 || run.Items.Any(i => i.BonusAmount > 0)) ? await _core.GetRequiredMappedAccountAsync(MappingKeys.EmployeeBonuses, mapDict) : 0;
+        var fixAllAccId  = run.TotalFixedAllowances > 0 ? await _core.GetRequiredMappedAccountAsync(MappingKeys.FixedAllowanceExpense, mapDict) : 0;
 
         JournalEntry? je = null;
 
