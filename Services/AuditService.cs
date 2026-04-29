@@ -12,11 +12,11 @@ namespace Sportive.API.Services;
 
 public interface IAuditService
 {
-    /// <summary>تسجيل عملية بسيطة بدون قيم قديمة/جديدة</summary>
+    /// <summary>Log a simple action. AuditLogs are APPEND-ONLY — never update or delete.</summary>
     Task LogAsync(string action, string entityType, string? entityId = null,
         string? notes = null, string? userId = null, string? userName = null, string? ip = null);
 
-    /// <summary>تسجيل عملية تعديل مع القيم القديمة والجديدة</summary>
+    /// <summary>Log a change with old/new values. AuditLogs are APPEND-ONLY — never update or delete.</summary>
     Task LogChangeAsync<T>(string action, string entityType, string? entityId,
         T? oldValue, T? newValue, string? userId = null, string? userName = null, string? ip = null);
 }

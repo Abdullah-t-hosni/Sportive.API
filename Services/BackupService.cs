@@ -286,7 +286,20 @@ public class BackupService : IBackupService
         _log.LogWarning("[Restore] Initiating safety backup before restoration for user {user}", currentUserName);
         await RunBackupAsync("Auto_Before_Restore", ct);
 
-        var tempFile = Path.Combine(BackupDir, $"restore_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{fileName}");
+        // 🛡️ Sanitize fileName to prevent path traversal (e.g. ../../etc/passwd)
+        var safeFileName  = Path.GetFileName(fileName); // strips any directory components
+        if (string.IsNullOrWhiteSpace(safeFileName) || safeFileName.Contains("..")
+            || (!safeFileName.EndsWith(".sql", StringComparison.OrdinalIgnoreCase)
+                && !safeFileName.EndsWith(".gz", StringComparison.OrdinalIgnoreCase)))
+        {
+            return new BackupResult(false, fileName, 0, sw.Elapsed, Error: "Invalid or unsafe file name.");
+        }
+
+        var tempFile = Path.GetFullPath(Path.Combine(BackupDir, $"restore_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{safeFileName}"));
+        // Ensure the resolved path is still inside BackupDir (double-check)
+        if (!tempFile.StartsWith(Path.GetFullPath(BackupDir), StringComparison.OrdinalIgnoreCase))
+            return new BackupResult(false, fileName, 0, sw.Elapsed, Error: "Path traversal detected.");
+
         var finalSql = tempFile;
 
         try

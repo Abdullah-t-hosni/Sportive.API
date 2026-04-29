@@ -22,6 +22,12 @@ public class AiAssistantService : IAiAssistantService
 
     public async Task<string> ChatAsync(string userMessage, string? conversationId = null, bool isAdmin = false)
     {
+        // 🛡️ Guard: prevent prompt injection and token cost explosion
+        if (string.IsNullOrWhiteSpace(userMessage))
+            return "عذراً، لم تصلني رسالة.";
+        if (userMessage.Length > 1000)
+            userMessage = userMessage.Substring(0, 1000); // hard cap ~250 tokens
+
         var apiKey = _config["AI:GeminiKey"];
         if (string.IsNullOrEmpty(apiKey))
         {
@@ -124,7 +130,8 @@ public class AiAssistantService : IAiAssistantService
         var lowStock = await _db.Products.CountAsync(p => p.TotalStock <= p.ReorderLevel && p.Status == Models.ProductStatus.Active);
         var custCount = await _db.Customers.CountAsync();
         var inventoryVal = await _db.Products.SumAsync(p => p.TotalStock * p.CostPrice);
-        var coupons = await _db.Coupons.Where(c => c.IsActive && (!c.ExpiresAt.HasValue || c.ExpiresAt >= egyptTime)).Select(c => c.Code).ToListAsync();
+        var coupons = await _db.Coupons.Where(c =>
+            c.IsActive && (!c.ExpiresAt.HasValue || c.ExpiresAt >= egyptTime)).CountAsync();
 
         return new { 
             TodaySales = sales, 
@@ -133,7 +140,8 @@ public class AiAssistantService : IAiAssistantService
             LowStockCount = lowStock, 
             CustomerCount = custCount,
             TotalInventoryValue = inventoryVal,
-            ActiveCoupons = string.Join(", ", coupons)
+            // 🛡️ Never expose actual coupon codes via AI context — count only
+            ActiveCoupons = coupons
         };
     }
 }

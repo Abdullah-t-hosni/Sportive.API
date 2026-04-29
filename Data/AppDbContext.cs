@@ -245,6 +245,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => x.EntityType);
             e.HasIndex(x => x.CreatedAt);
             e.HasIndex(x => new { x.EntityType, x.EntityId });
+            // 🔒 APPEND-ONLY: Audit logs must never be updated or deleted
+            e.ToTable(tb => {
+                tb.HasComment("Immutable audit trail — insert-only, never update/delete.");
+            });
         });
 
         builder.Entity<Supplier>(e => {
