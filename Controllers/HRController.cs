@@ -386,8 +386,15 @@ public class PayrollController : ControllerBase
         if (!dto.Items.Any()) return BadRequest("يجب إضافة موظف واحد على الأقل.");
 
         // تحقق من عدم تكرار نفس الشهر
-        if (await _db.PayrollRuns.AnyAsync(p => p.PeriodYear == dto.PeriodYear && p.PeriodMonth == dto.PeriodMonth))
-            return BadRequest($"يوجد مسير رواتب لشهر {dto.PeriodMonth}/{dto.PeriodYear} مسبقاً.");
+        var lang = Request.Headers["Accept-Language"].ToString().StartsWith("en") ? "en" : "ar";
+        var existing = await _db.PayrollRuns.FirstOrDefaultAsync(p => p.PeriodYear == dto.PeriodYear && p.PeriodMonth == dto.PeriodMonth);
+        if (existing != null)
+        {
+            return Conflict(new { 
+                message = lang == "ar" ? $"يوجد مسير رواتب لشهر {dto.PeriodMonth}/{dto.PeriodYear} مسبقاً برقم ({existing.PayrollNumber})." : $"A payroll run for {dto.PeriodMonth}/{dto.PeriodYear} already exists with number ({existing.PayrollNumber}).",
+                existingId = existing.Id
+            });
+        }
 
         var payNo = await _seq.NextAsync("PAY", async (db, pattern) =>
         {
