@@ -10,21 +10,36 @@ namespace Sportive.API.Services;
 public class CategoryService : ICategoryService
 {
     private readonly AppDbContext _db;
-    public CategoryService(AppDbContext db) => _db = db;
+    private readonly ICacheService _cache;
+    
+    private const string CacheKeyAll  = "Categories_All";
+    private const string CacheKeyTree = "Categories_Tree";
+
+    public CategoryService(AppDbContext db, ICacheService cache)
+    {
+        _db = db;
+        _cache = cache;
+    }
 
     // ──────────────────────────────────────────────────────────
     // Flat list — كل الأقسام مع معلومات القسم الأب (بدون أبناء)
     // ──────────────────────────────────────────────────────────
     public async Task<List<CategoryDto>> GetAllAsync()
     {
+        var cached = await _cache.GetAsync<List<CategoryDto>>(CacheKeyAll);
+        if (cached != null) return cached;
+
         var cats = await _db.Categories
+            .AsNoTracking()
             .Include(c => c.Parent)
             .Include(c => c.SizeGroup)
             .Include(c => c.Products)
             .OrderBy(c => c.ParentId).ThenBy(c => c.NameAr)
             .ToListAsync();
 
-        return cats.Select(c => MapFlat(c)).ToList();
+        var result = cats.Select(c => MapFlat(c)).ToList();
+        await _cache.SetAsync(CacheKeyAll, result, TimeSpan.FromMinutes(10));
+        return result;
     }
 
     // ──────────────────────────────────────────────────────────
@@ -32,7 +47,11 @@ public class CategoryService : ICategoryService
     // ──────────────────────────────────────────────────────────
     public async Task<List<CategoryDto>> GetTreeAsync()
     {
+        var cached = await _cache.GetAsync<List<CategoryDto>>(CacheKeyTree);
+        if (cached != null) return cached;
+
         var allCats = await _db.Categories
+            .AsNoTracking()
             .Include(c => c.SizeGroup)
             .Include(c => c.Products)
             .ToListAsync();
@@ -42,7 +61,9 @@ public class CategoryService : ICategoryService
             .OrderBy(x => x.NameAr)
             .ToList();
 
-        return roots.Select(r => BuildTreeRecursive(r, allCats)).ToList();
+        var result = roots.Select(r => BuildTreeRecursive(r, allCats)).ToList();
+        await _cache.SetAsync(CacheKeyTree, result, TimeSpan.FromMinutes(10));
+        return result;
     }
 
     // ──────────────────────────────────────────────────────────
@@ -92,6 +113,10 @@ public class CategoryService : ICategoryService
         };
         _db.Categories.Add(cat);
         await _db.SaveChangesAsync();
+        // Invalidate category caches
+        await _cache.RemoveAsync(CacheKeyAll);
+        await _cache.RemoveAsync(CacheKeyTree);
+        await _cache.RemoveAsync("CategoryTree"); // used by ProductService
         return (await GetByIdAsync(cat.Id))!;
     }
 
@@ -135,6 +160,9 @@ public class CategoryService : ICategoryService
         }
 
         await _db.SaveChangesAsync();
+        await _cache.RemoveAsync(CacheKeyAll);
+        await _cache.RemoveAsync(CacheKeyTree);
+        await _cache.RemoveAsync("CategoryTree");
         return (await GetByIdAsync(id))!;
     }
 
@@ -168,6 +196,9 @@ public class CategoryService : ICategoryService
 
         _db.Categories.Remove(cat);
         await _db.SaveChangesAsync();
+        await _cache.RemoveAsync(CacheKeyAll);
+        await _cache.RemoveAsync(CacheKeyTree);
+        await _cache.RemoveAsync("CategoryTree");
     }
 
     // ──────────────────────────────────────────────────────────

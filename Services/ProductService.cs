@@ -11,24 +11,25 @@ public class ProductService : IProductService
 {
     private readonly AppDbContext _db;
     private readonly INotificationService _notifications;
-
     private readonly IInventoryService _inventory;
+    private readonly ICacheService _cache;
 
-    public ProductService(AppDbContext db, INotificationService notifications, IInventoryService inventory)
+    public ProductService(AppDbContext db, INotificationService notifications, IInventoryService inventory, ICacheService cache)
     {
         _db = db;
         _notifications = notifications;
         _inventory = inventory;
+        _cache = cache;
     }
 
 
     public async Task<PaginatedResult<ProductSummaryDto>> GetProductsAsync(ProductFilterDto filter)
     {
         var query = _db.Products
+            .AsNoTracking()
             .Include(p => p.Category!).ThenInclude(c => c.Parent!).ThenInclude(c => c.Parent!)
             .Include(p => p.Brand)
             .Include(p => p.Images)
-            .Include(p => p.Reviews)
             .Include(p => p.Variants)
             .Include(p => p.Unit)
             .AsQueryable();
@@ -746,12 +747,19 @@ public class ProductService : IProductService
 
     private async Task<List<int>> GetCategoryDescendants(int categoryId)
     {
+        // Cache category tree for 10 min — it barely changes and is called on every product filter
+        var allCategories = await _cache.GetAsync<List<(int Id, int? ParentId)>>("CategoryTree");
+        if (allCategories == null)
+        {
+            var raw = await _db.Categories.AsNoTracking().Select(c => new { c.Id, c.ParentId }).ToListAsync();
+            allCategories = raw.Select(c => (c.Id, c.ParentId)).ToList();
+            await _cache.SetAsync("CategoryTree", allCategories, TimeSpan.FromMinutes(10));
+        }
+
         var categoryIds = new List<int> { categoryId };
-        var allCategories = await _db.Categories.Select(c => new { c.Id, c.ParentId }).ToListAsync();
-        
         var toProcess = new Queue<int>();
         toProcess.Enqueue(categoryId);
-        
+
         while (toProcess.Count > 0)
         {
             var currentId = toProcess.Dequeue();
@@ -765,7 +773,7 @@ public class ProductService : IProductService
                 }
             }
         }
-        
+
         return categoryIds;
     }
 }

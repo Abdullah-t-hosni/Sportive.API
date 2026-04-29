@@ -285,7 +285,12 @@ builder.Services.AddHangfire(config => config
         TablesPrefix = "Hangfire"
     })));
 
-builder.Services.AddHangfireServer();
+builder.Services.AddHangfireServer(opt =>
+{
+    opt.WorkerCount  = Math.Max(2, Environment.ProcessorCount);  // avoid DB pool exhaustion
+    opt.Queues       = new[] { "critical", "default", "low" };
+    opt.ServerName   = $"sportive-{Environment.MachineName}";
+});
 
 // ── RESPONSE COMPRESSION ──────────────────────────────
 builder.Services.AddResponseCompression(options =>
