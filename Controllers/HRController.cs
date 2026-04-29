@@ -248,10 +248,10 @@ public class EmployeesController : ControllerBase
         var hrAccountIds = new List<int>();
         
         // تجمع كل الحسابات المتعلقة بالموظفين (رواتب، سلف، مكافآت، خصومات)
-        if (mapDict.TryGetValue(MappingKeys.SalariesPayable.ToLower(), out var s1)) hrAccountIds.Add(s1);
-        if (mapDict.TryGetValue(MappingKeys.EmployeeAdvances.ToLower(), out var s2)) hrAccountIds.Add(s2);
-        if (mapDict.TryGetValue(MappingKeys.EmployeeBonuses.ToLower(), out var s3)) hrAccountIds.Add(s3);
-        if (mapDict.TryGetValue(MappingKeys.EmployeeDeductions.ToLower(), out var s4)) hrAccountIds.Add(s4);
+        if (mapDict.TryGetValue(MappingKeys.SalariesPayable.ToLower(), out var s1) && s1.HasValue) hrAccountIds.Add(s1.Value);
+        if (mapDict.TryGetValue(MappingKeys.EmployeeAdvances.ToLower(), out var s2) && s2.HasValue) hrAccountIds.Add(s2.Value);
+        if (mapDict.TryGetValue(MappingKeys.EmployeeBonuses.ToLower(), out var s3) && s3.HasValue) hrAccountIds.Add(s3.Value);
+        if (mapDict.TryGetValue(MappingKeys.EmployeeDeductions.ToLower(), out var s4) && s4.HasValue) hrAccountIds.Add(s4.Value);
 
         if (id == 0) return await GetGeneralStatement(from, to, hrAccountIds);
 
