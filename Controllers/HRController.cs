@@ -687,10 +687,56 @@ public class PayrollController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var run = await _db.PayrollRuns.FindAsync(id);
+        var run = await _db.PayrollRuns.Include(p => p.Items).FirstOrDefaultAsync(p => p.Id == id);
         if (run == null) return NotFound();
+
+        bool isAdmin = User.IsInRole("Admin") || User.IsInRole("SuperAdmin");
+        
+        if (run.Status == PayrollStatus.Posted && !isAdmin)
+            return BadRequest("لا يمكن حذف مسير مرحّل إلا بواسطة المدير.");
+
+        // إذا كان مرحلاً، نحتاج لعكس كافة الحركات المالية لضمان سلامة الحسابات
         if (run.Status == PayrollStatus.Posted)
-            return BadRequest("لا يمكن حذف مسير مرحّل.");
+        {
+            // 1. حذف القيد المحاسبي المرتبط
+            if (run.JournalEntryId.HasValue)
+            {
+                var je = await _db.JournalEntries.FindAsync(run.JournalEntryId.Value);
+                if (je != null) _db.JournalEntries.Remove(je);
+            }
+
+            // 2. استرجاع السلف المخصومة (إعادة المبالغ لأرصدة الموظفين)
+            foreach (var item in run.Items.Where(i => i.AdvanceDeducted > 0))
+            {
+                var advances = await _db.EmployeeAdvances
+                    .Where(a => a.EmployeeId == item.EmployeeId && a.DeductedAmount > 0)
+                    .OrderByDescending(a => a.AdvanceDate) // نعكس الحركات من الأحدث للأقدم
+                    .ToListAsync();
+
+                var toRestore = item.AdvanceDeducted;
+                foreach (var adv in advances)
+                {
+                    if (toRestore <= 0) break;
+                    var restored = Math.Min(adv.DeductedAmount, toRestore);
+                    adv.DeductedAmount -= restored;
+                    
+                    // تحديث حالة السلفة بناءً على المبلغ المتبقي
+                    if (adv.DeductedAmount <= 0) adv.Status = AdvanceStatus.Pending;
+                    else if (adv.DeductedAmount < adv.Amount) adv.Status = AdvanceStatus.PartiallyDeducted;
+                    else adv.Status = AdvanceStatus.FullyDeducted;
+
+                    toRestore -= restored;
+                    adv.UpdatedAt = TimeHelper.GetEgyptTime();
+                }
+            }
+
+            // 3. فك ارتباط المكافآت والخصومات المعلقة (لتعود متاحة للمسيرات القادمة)
+            var bonuses = await _db.EmployeeBonuses.Where(b => b.PayrollRunId == run.Id).ToListAsync();
+            foreach (var b in bonuses) b.PayrollRunId = null;
+
+            var deductions = await _db.EmployeeDeductions.Where(d => d.PayrollRunId == run.Id).ToListAsync();
+            foreach (var d in deductions) d.PayrollRunId = null;
+        }
 
         _db.PayrollRuns.Remove(run);
         await _db.SaveChangesAsync();
