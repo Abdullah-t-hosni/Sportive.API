@@ -26,7 +26,8 @@ public class InventoryService : IInventoryService
         string? note = null,
         string? userId = null,
         decimal unitCost = 0,
-        OrderSource? costCenter = null)
+        OrderSource? costCenter = null,
+        bool autoSave = true)
     {
         if (quantity == 0) return;
         if (productId == 0) productId = null;
@@ -58,6 +59,7 @@ public class InventoryService : IInventoryService
             if (variant != null)
             {
                 remainingBefore = variant.StockQuantity;
+                if (variant.StockQuantity + roundedQty < 0) throw new InvalidOperationException($"Insufficient stock for variant {variantId} (Available: {variant.StockQuantity}, Requested: {-roundedQty})");
                 variant.StockQuantity += roundedQty;
                 variant.UpdatedAt = TimeHelper.GetEgyptTime();
 
@@ -89,6 +91,7 @@ public class InventoryService : IInventoryService
             if (product != null)
             {
                 remainingBefore = product.TotalStock;
+                if (product.TotalStock + roundedQty < 0) throw new InvalidOperationException($"Insufficient stock for product {productId} (Available: {product.TotalStock}, Requested: {-roundedQty})");
                 product.TotalStock += roundedQty;
 
                 // 💡 AUTO-STATUS: Active <-> OutOfStock based on physical stock
@@ -129,7 +132,7 @@ public class InventoryService : IInventoryService
             CreatedAt        = TimeHelper.GetEgyptTime()
         });
 
-        await _db.SaveChangesAsync();
+        if (autoSave) await _db.SaveChangesAsync();
 
         // 3. Low-stock alert — fire-and-forget after save (called by the parent transaction)
         if (variantId.HasValue)

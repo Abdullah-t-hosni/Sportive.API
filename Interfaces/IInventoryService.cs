@@ -16,7 +16,8 @@ public interface IInventoryService
         string? note = null,
         string? userId = null,
         decimal unitCost = 0,
-        OrderSource? costCenter = null
+        OrderSource? costCenter = null,
+        bool autoSave = true
     );
 
     /// <summary>

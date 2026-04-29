@@ -248,6 +248,7 @@ builder.Services.AddScoped<IPdfService, PdfService>();
 builder.Services.AddScoped<AccountingCoreService>();
 builder.Services.AddScoped<SalesAccountingService>();
 builder.Services.AddScoped<PurchaseAccountingService>();
+builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<PaymentAccountingService>();
 builder.Services.AddScoped<JournalAccountingService>();
 builder.Services.AddScoped<IAccountingService, AccountingService>();

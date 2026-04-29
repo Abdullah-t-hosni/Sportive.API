@@ -344,13 +344,19 @@ public class OrderService : IOrderService
                                (actualSource == OrderSource.Website && d.ApplyTo == DiscountApplyTo.Store))
                     .ToListAsync();
 
+                // ⚡ Preload category tree to avoid N+1 inside discount loops
+                var allCategories = await _db.Categories.AsNoTracking().ToDictionaryAsync(c => c.Id, c => c.ParentId);
+
                 // 3. Handle Items
                 if (dto.Items != null && dto.Items.Any())
                 {
+                    // ⚡ Preload all products for this order to avoid N+1 query
+                    var productIds = dto.Items.Select(i => i.ProductId).Distinct().ToList();
+                    var productsDict = await _db.Products.Include(p => p.Variants).Where(p => productIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
+
                     foreach (var item in dto.Items)
                     {
-                        var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == item.ProductId);
-                        if (product == null) continue;
+                        if (!productsDict.TryGetValue(item.ProductId, out var product)) continue;
 
                         var variant = item.ProductVariantId.HasValue 
                             ? product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId)
@@ -378,8 +384,7 @@ public class OrderService : IOrderService
                                     disc = activeDiscounts.FirstOrDefault(d => d.CategoryId == lookupId);
                                     if (disc == null)
                                     {
-                                        var cat = await _db.Categories.AsNoTracking().FirstOrDefaultAsync(c => c.Id == lookupId);
-                                        currentCatId = cat?.ParentId;
+                                        currentCatId = allCategories.GetValueOrDefault(lookupId);
                                     }
                                 }
                             }
@@ -445,7 +450,8 @@ public class OrderService : IOrderService
                             "Order created",
                             order.SalesPersonId,
                             0, // unitCost fallback
-                            order.Source
+                            order.Source,
+                            autoSave: false
                         );
                     }
                 }
@@ -481,8 +487,7 @@ public class OrderService : IOrderService
                                     disc = activeDiscounts.FirstOrDefault(d => d.CategoryId == lookupId);
                                     if (disc == null)
                                     {
-                                        var cat = await _db.Categories.AsNoTracking().FirstOrDefaultAsync(c => c.Id == lookupId);
-                                        currentCatId = cat?.ParentId;
+                                        currentCatId = allCategories.GetValueOrDefault(lookupId);
                                     }
                                 }
                             }
@@ -539,7 +544,8 @@ public class OrderService : IOrderService
                             "Website Order created",
                             null,
                             0, // unitCost fallback
-                            order.Source
+                            order.Source,
+                            autoSave: false
                         );
                         
                         _db.CartItems.Remove(ci);
@@ -890,7 +896,8 @@ public class OrderService : IOrderService
                             -item.Quantity, item.ProductId, item.ProductVariantId,
                             order.OrderNumber, "Revert: Order status changed from Returned", updatedByUserId,
                             0, // unitCost fallback
-                            order.Source
+                            order.Source,
+                            autoSave: false
                         );
                     }
                 }
@@ -917,7 +924,8 @@ public class OrderService : IOrderService
                     dto.Status == OrderStatus.Returned ? InventoryMovementType.ReturnIn : InventoryMovementType.Adjustment,
                     item.Quantity, item.ProductId, item.ProductVariantId, order.OrderNumber, $"Order {dto.Status}", updatedByUserId,
                     0, // unitCost fallback
-                    order.Source
+                    order.Source,
+                    autoSave: false
                 );
             }
 
@@ -1015,7 +1023,8 @@ public class OrderService : IOrderService
                         req.Quantity, line.ProductId, line.ProductVariantId,
                         order.OrderNumber, $"Partial Return: {req.Quantity} units", updatedByUserId,
                         0, // unitCost fallback
-                        order.Source
+                        order.Source,
+                        autoSave: false
                     );
                 }
 
