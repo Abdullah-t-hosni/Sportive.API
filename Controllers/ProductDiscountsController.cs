@@ -1,3 +1,4 @@
+using Sportive.API.Interfaces;
 ﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,7 +15,12 @@ namespace Sportive.API.Controllers;
 public class ProductDiscountsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public ProductDiscountsController(AppDbContext db) => _db = db;
+    private readonly ITranslator _t;
+    public ProductDiscountsController(AppDbContext db, ITranslator t)
+    {
+        _db = db;
+        _t = t;
+    }
 
     // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // GET /api/productdiscounts â€” ÙƒÙ„ Ø§Ù„Ø®ØµÙˆÙ…Ø§Øª

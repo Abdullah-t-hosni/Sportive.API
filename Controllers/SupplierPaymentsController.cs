@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,6 +8,7 @@ using Sportive.API.DTOs;
 using Sportive.API.Models;
 using Sportive.API.Services;
 using System.Security.Claims;
+using Sportive.API.Interfaces;
 
 namespace Sportive.API.Controllers;
 
@@ -21,14 +22,16 @@ public class SupplierPaymentsController : ControllerBase
     private readonly SequenceService _seq;
     private readonly ILogger<SupplierPaymentsController> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ITranslator _t;
 
-    public SupplierPaymentsController(AppDbContext db, IAccountingService accounting, SequenceService seq, ILogger<SupplierPaymentsController> logger, IServiceScopeFactory scopeFactory)
+    public SupplierPaymentsController(AppDbContext db, IAccountingService accounting, SequenceService seq, ILogger<SupplierPaymentsController> logger, IServiceScopeFactory scopeFactory, ITranslator t)
     {
         _db = db;
         _accounting = accounting;
         _seq = seq;
         _logger = logger;
         _scopeFactory = scopeFactory;
+        _t = t;
     }
 
     [HttpGet]
@@ -59,7 +62,7 @@ public class SupplierPaymentsController : ControllerBase
                 p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes,
                 p.AttachmentUrl, p.AttachmentPublicId,
                 p.CostCenter,
-                p.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (p.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…")
+                p.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (p.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General"))
             )).ToListAsync();
 
         return Ok(new PaginatedResult<SupplierPaymentSummaryDto>(items, total, page, pageSize,
@@ -82,24 +85,24 @@ public class SupplierPaymentsController : ControllerBase
             p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes,
             p.AttachmentUrl, p.AttachmentPublicId,
             p.CostCenter,
-            p.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (p.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…")
+            p.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (p.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General"))
         ));
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateSupplierPaymentDto dto)
     {
-        if (dto.Amount <= 0) return BadRequest(new { message = "Ø§Ù„Ù…Ø¨Ù„Øº ÙŠØ¬Ø¨ Ø£Ù† ÙŠÙƒÙˆÙ† Ø£ÙƒØ¨Ø± Ù…Ù† ØµÙØ±" });
+        if (dto.Amount <= 0) return BadRequest(new { message = _t.Get("SupplierPayments.AmountGreaterThanZero") });
 
         var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
         if (supplier == null)
-            return BadRequest(new { message = $"Ø§Ù„Ù…ÙˆØ±Ø¯ Ø§Ù„Ù…Ø·Ù„ÙˆØ¨ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ (ID: {dto.SupplierId})" });
+            return BadRequest(new { message = _t.Get("SupplierPayments.SupplierNotFound", dto.SupplierId.ToString()) });
 
         PurchaseInvoice? invoice = null;
         if (dto.PurchaseInvoiceId.HasValue && dto.PurchaseInvoiceId > 0)
         {
             invoice = await _db.PurchaseInvoices.FirstOrDefaultAsync(i => i.Id == dto.PurchaseInvoiceId.Value);
-            if (invoice == null) return BadRequest(new { message = "Ø§Ù„ÙØ§ØªÙˆØ±Ø© Ø§Ù„Ù…Ø­Ø¯Ø¯Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©" });
+            if (invoice == null) return BadRequest(new { message = _t.Get("SupplierPayments.InvoiceNotFound") });
         }
 
         var pNo = await _seq.NextAsync("SP", async (db, pattern) =>
@@ -122,7 +125,7 @@ public class SupplierPaymentsController : ControllerBase
             PaymentMethod = dto.PaymentMethod,
             AccountName = dto.AccountName,
             CashAccountId = (dto.CashAccountId > 0) ? dto.CashAccountId : null,
-            Notes = dto.Notes ?? $"Ø³Ù†Ø¯ Ø¯ÙØ¹ Ù„Ù„Ù…ÙˆØ±Ø¯ {supplier.Name}",
+            Notes = dto.Notes ?? _t.Get("SupplierPayments.PaymentDescription", supplier.Name),
             ReferenceNumber = dto.ReferenceNumber,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             AttachmentUrl = dto.AttachmentUrl,
@@ -138,7 +141,7 @@ public class SupplierPaymentsController : ControllerBase
             var remaining = invoice.TotalAmount - invoice.PaidAmount - invoice.ReturnedAmount;
             if (dto.Amount > remaining + 0.1m)
             {
-                return BadRequest(new { message = $"Ù„Ø§ ÙŠÙ…ÙƒÙ† ØµØ±Ù Ù…Ø¨Ù„Øº ({dto.Amount}) ÙˆÙ‡Ùˆ Ø£ÙƒØ¨Ø± Ù…Ù† Ø§Ù„Ù…Ø¯ÙŠÙˆÙ†ÙŠØ© Ø§Ù„Ù…ØªØ¨Ù‚ÙŠØ© Ù„Ù„ÙØ§ØªÙˆØ±Ø© ({remaining})." });
+                return BadRequest(new { message = _t.Get("SupplierPayments.AmountExceedsDebt", dto.Amount.ToString(), remaining.ToString()) });
             }
             invoice.PaidAmount += dto.Amount;
             var netTotal = invoice.TotalAmount - invoice.ReturnedAmount;
@@ -160,7 +163,7 @@ public class SupplierPaymentsController : ControllerBase
             payment.AccountName, payment.Notes,
             payment.AttachmentUrl, payment.AttachmentPublicId,
             payment.CostCenter,
-            payment.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (payment.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…")
+            payment.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (payment.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General"))
         ));
     }
 

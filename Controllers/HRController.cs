@@ -9,12 +9,13 @@ using Sportive.API.DTOs;
 using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Utils;
+using Sportive.API.Interfaces;
 
 namespace Sportive.API.Controllers;
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// 1. EMPLOYEES (Ø§Ù„Ù…ÙˆØ¸ÙÙŠÙ†)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// 1. EMPLOYEES (الموظفين)
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 [ApiController]
 [Route("api/employees")]
@@ -24,9 +25,10 @@ public class EmployeesController : ControllerBase
     private readonly AppDbContext          _db;
     private readonly SequenceService       _seq;
     private readonly AccountingCoreService _core;
+    private readonly ITranslator _t;
 
-    public EmployeesController(AppDbContext db, SequenceService seq, AccountingCoreService core)
-        => (_db, _seq, _core) = (db, seq, core);
+    public EmployeesController(AppDbContext db, SequenceService seq, AccountingCoreService core, ITranslator t)
+        => (_db, _seq, _core, _t) = (db, seq, core, t);
 
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
@@ -80,8 +82,7 @@ public class EmployeesController : ControllerBase
     [AllowPosAccess]
     public async Task<IActionResult> GetBasic()
     {
-        var list = await _db.Employees
-            .Where(e => e.Status == EmployeeStatus.Active || (int)e.Status == 0)
+        return Ok(await _db.Employees
             .OrderBy(e => e.Name)
             .Select(e => new EmployeeBasicDto(
                 e.Id, e.EmployeeNumber, e.Name, e.JobTitle, e.DepartmentId, 
@@ -91,8 +92,7 @@ public class EmployeesController : ControllerBase
                 e.Bonuses.Where(b => b.PayrollRunId == null && b.CashAccountId == null).Sum(b => b.Amount),
                 e.Deductions.Where(d => d.PayrollRunId == null && d.CashAccountId == null).Sum(d => d.Amount),
                 (int)e.Status))
-            .ToListAsync();
-        return Ok(list);
+            .ToListAsync());
     }
 
     [HttpGet("{id}")]
@@ -120,12 +120,12 @@ public class EmployeesController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateEmployeeDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Name))
-            return BadRequest("Ø§Ø³Ù… Ø§Ù„Ù…ÙˆØ¸Ù Ù…Ø·Ù„ÙˆØ¨.");
+            return BadRequest(_t.Get("HR.NameRequired"));
 
         if (!string.IsNullOrEmpty(dto.AppUserId))
         {
             var conflict = await _db.Employees.AnyAsync(e => e.AppUserId == dto.AppUserId);
-            if (conflict) return BadRequest(new { message = "Ù‡Ø°Ø§ Ø§Ù„Ø­Ø³Ø§Ø¨ Ù…Ø±ØªØ¨Ø· Ø¨Ù…ÙˆØ¸Ù Ø¢Ø®Ø± Ø¨Ø§Ù„ÙØ¹Ù„." });
+            if (conflict) return BadRequest(new { message = _t.Get("HR.AccountLinkedAlready") });
         }
 
         var empNo = await _seq.NextAsync("EMP", async (db, pattern) =>
@@ -173,7 +173,7 @@ public class EmployeesController : ControllerBase
         return Ok(new { id = emp.Id, employeeNumber = emp.EmployeeNumber });
     }
 
-    // PATCH /api/employees/{id}/link-user â€” Ø±Ø¨Ø·/ÙÙƒ Ø§Ù„Ø±Ø¨Ø· Ù…Ø¹ Ø­Ø³Ø§Ø¨ Ø§Ù„Ù†Ø¸Ø§Ù…
+    // PATCH /api/employees/{id}/link-user Ã¢â‚¬â€ Ã˜Â±Ã˜Â¨Ã˜Â·/Ã™ÂÃ™Æ’ Ã˜Â§Ã™â€žÃ˜Â±Ã˜Â¨Ã˜Â· Ã™â€¦Ã˜Â¹ Ã˜Â­Ã˜Â³Ã˜Â§Ã˜Â¨ Ã˜Â§Ã™â€žÃ™â€ Ã˜Â¸Ã˜Â§Ã™â€¦
     [HttpPatch("{id}/link-user")]
     [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
     public async Task<IActionResult> LinkUser(int id, [FromBody] LinkUserDto dto)
@@ -184,19 +184,19 @@ public class EmployeesController : ControllerBase
         if (!string.IsNullOrEmpty(dto.AppUserId))
         {
             var userExists = await _db.Users.AnyAsync(u => u.Id == dto.AppUserId);
-            if (!userExists) return BadRequest(new { message = "Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯." });
+            if (!userExists) return BadRequest(new { message = _t.Get("HR.UserNotFound") });
 
             var conflict = await _db.Employees
                 .AnyAsync(e => e.AppUserId == dto.AppUserId && e.Id != id);
             if (conflict)
-                return BadRequest(new { message = "Ù‡Ø°Ø§ Ø§Ù„Ø­Ø³Ø§Ø¨ Ù…Ø±ØªØ¨Ø· Ø¨Ù…ÙˆØ¸Ù Ø¢Ø®Ø± Ø¨Ø§Ù„ÙØ¹Ù„." });
+                return BadRequest(new { message = _t.Get("HR.AccountLinkedAlready") });
         }
 
         emp.AppUserId = string.IsNullOrEmpty(dto.AppUserId) ? null : dto.AppUserId;
         emp.UpdatedAt = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
 
-        return Ok(new { message = dto.AppUserId != null ? "ØªÙ… Ø±Ø¨Ø· Ø§Ù„Ø­Ø³Ø§Ø¨ Ø¨Ù†Ø¬Ø§Ø­." : "ØªÙ… ÙÙƒ Ø±Ø¨Ø· Ø§Ù„Ø­Ø³Ø§Ø¨." });
+        return Ok(new { message = dto.AppUserId != null ? _t.Get("HR.AccountLinked") : _t.Get("HR.AccountUnlinked") });
     }
 
     [HttpPut("{id}")]
@@ -241,7 +241,7 @@ public class EmployeesController : ControllerBase
             .FirstOrDefaultAsync(e => e.Id == id);
         if (emp == null) return NotFound();
         if (emp.PayrollItems.Any() || emp.Advances.Any())
-            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ù…ÙˆØ¸Ù Ù„Ù‡ Ù…Ø¹Ø§Ù…Ù„Ø§Øª â€” Ù‚Ù… Ø¨Ø¥Ù†Ù‡Ø§Ø¡ Ø§Ù„Ø®Ø¯Ù…Ø© Ø¨Ø¯Ù„Ø§Ù‹ Ù…Ù† Ø§Ù„Ø­Ø°Ù.");
+            return BadRequest(new { message = _t.Get("HR.CannotDeleteEmployee") });
 
         _db.Employees.Remove(emp);
         await _db.SaveChangesAsync();
@@ -254,7 +254,7 @@ public class EmployeesController : ControllerBase
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         var hrAccountIds = new List<int>();
         
-        // ØªØ¬Ù…Ø¹ ÙƒÙ„ Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª Ø§Ù„Ù…ØªØ¹Ù„Ù‚Ø© Ø¨Ø§Ù„Ù…ÙˆØ¸ÙÙŠÙ† (Ø±ÙˆØ§ØªØ¨ØŒ Ø³Ù„ÙØŒ Ù…ÙƒØ§ÙØ¢ØªØŒ Ø®ØµÙˆÙ…Ø§Øª)
+        // تجمع كل الحسابات المتعلقة بالموظفين (رواتب، سلف، مكافآت، خصومات)
         if (mapDict.TryGetValue(MappingKeys.SalariesPayable.ToLower(), out var s1) && s1.HasValue) hrAccountIds.Add(s1.Value);
         if (mapDict.TryGetValue(MappingKeys.EmployeeAdvances.ToLower(), out var s2) && s2.HasValue) hrAccountIds.Add(s2.Value);
         if (mapDict.TryGetValue(MappingKeys.EmployeeBonuses.ToLower(), out var s3) && s3.HasValue) hrAccountIds.Add(s3.Value);
@@ -266,7 +266,7 @@ public class EmployeesController : ControllerBase
         var emp = await _db.Employees.FindAsync(id);
         if (emp == null) return NotFound();
 
-        // ÙÙŠ ÙƒØ´Ù Ø§Ù„Ù…ÙˆØ¸Ù Ø§Ù„ÙØ±Ø¯ÙŠØŒ Ù†Ø±ÙƒØ² ÙÙ‚Ø· Ø¹Ù„Ù‰ Ø­Ø³Ø§Ø¨ "Ø§Ù„Ø±ÙˆØ§ØªØ¨ Ø§Ù„Ù…Ø³ØªØ­Ù‚Ø©" Ù„Ø¨ÙŠØ§Ù† Ø§Ù„Ø±ØµÙŠØ¯ Ø§Ù„ØµØ§ÙÙŠ (Ø§Ù„Ù…Ø³ØªØ­Ù‚Ø§Øª - Ø§Ù„Ø§Ø³ØªÙ‚Ø·Ø§Ø¹Ø§Øª)
+        // في كشف الموظف الفردي، نركز فقط على حساب "الرواتب المستحقة" لبيان الرصيد الصافي (المستحقات - الاستقطاعات)
         var personalAccountIds = new List<int> { accrualAccId };
         if (emp.AccountId.HasValue) personalAccountIds.Add(emp.AccountId.Value);
         personalAccountIds = personalAccountIds.Distinct().ToList();
@@ -302,7 +302,7 @@ public class EmployeesController : ControllerBase
         }
 
         return Ok(new EmployeeStatementDto(
-            emp.Id, emp.Name, emp.EmployeeNumber, emp.JobTitle, emp.Account?.NameAr ?? "Ø±ÙˆØ§ØªØ¨ Ù…Ø³ØªØ­Ù‚Ø© Ù…ÙˆØ¸ÙÙŠÙ†",
+            emp.Id, emp.Name, emp.EmployeeNumber, emp.JobTitle, emp.Account?.NameAr ?? "رواتب مستحقة موظفين",
             from, to, openingBalance, rows,
             rows.Sum(r => r.Debit), rows.Sum(r => r.Credit), runningBalance
         ));
@@ -345,16 +345,16 @@ public class EmployeesController : ControllerBase
         }
 
         return Ok(new EmployeeStatementDto(
-            0, "Ø§Ù„ÙƒÙ„ / ALL", "000", "GENERAL_REPORT", acc?.NameAr ?? "Ø±ÙˆØ§ØªØ¨ Ù…Ø³ØªØ­Ù‚Ø© Ù…ÙˆØ¸ÙÙŠÙ†",
+            0, _t.Get("HR.GeneralStatementName"), "000", "GENERAL_REPORT", acc?.NameAr ?? _t.Get("HR.DefaultAccrualAccountName"),
             from, to, openingBalance, rows,
             rows.Sum(r => r.Debit), rows.Sum(r => r.Credit), runningBalance
         ));
     }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// 2. PAYROLL RUNS (Ù…Ø³ÙŠØ± Ø§Ù„Ø±ÙˆØ§ØªØ¨)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// 2. PAYROLL RUNS (Ã™â€¦Ã˜Â³Ã™Å Ã˜Â± Ã˜Â§Ã™â€žÃ˜Â±Ã™Ë†Ã˜Â§Ã˜ÂªÃ˜Â¨)
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 [ApiController]
 [Route("api/payroll")]
@@ -364,10 +364,10 @@ public class PayrollController : ControllerBase
     private readonly AppDbContext    _db;
     private readonly SequenceService _seq;
     private readonly AccountingCoreService _core;
+    private readonly ITranslator _t;
 
-    public PayrollController(AppDbContext db, SequenceService seq, AccountingCoreService core)
-        => (_db, _seq, _core) = (db, seq, core);
-
+    public PayrollController(AppDbContext db, SequenceService seq, AccountingCoreService core, ITranslator t)
+        => (_db, _seq, _core, _t) = (db, seq, core, t);
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
     [HttpGet]
@@ -401,23 +401,23 @@ public class PayrollController : ControllerBase
         return Ok(ToDto(run));
     }
 
-    // POST /api/payroll â€” Ø¥Ù†Ø´Ø§Ø¡ Ù…Ø³ÙŠØ± Ø±ÙˆØ§ØªØ¨ (Ù…Ø³ÙˆØ¯Ø©)
+    // POST /api/payroll Ã¢â‚¬â€ Ã˜Â¥Ã™â€ Ã˜Â´Ã˜Â§Ã˜Â¡ Ã™â€¦Ã˜Â³Ã™Å Ã˜Â± Ã˜Â±Ã™Ë†Ã˜Â§Ã˜ÂªÃ˜Â¨ (Ã™â€¦Ã˜Â³Ã™Ë†Ã˜Â¯Ã˜Â©)
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreatePayrollRunDto dto)
     {
         try 
         {
             if (dto == null || dto.Items == null || !dto.Items.Any()) 
-                return BadRequest("ÙŠØ¬Ø¨ Ø¥Ø¶Ø§ÙØ© Ù…ÙˆØ¸Ù ÙˆØ§Ø­Ø¯ Ø¹Ù„Ù‰ Ø§Ù„Ø£Ù‚Ù„.");
+                return BadRequest(new { message = _t.Get("HR.PayrollMinOneEmployee") });
 
             var lang = Request.Headers["Accept-Language"].ToString().StartsWith("en") ? "en" : "ar";
 
-            // ØªØ­Ù‚Ù‚ Ù…Ù† Ø¹Ø¯Ù… ØªÙƒØ±Ø§Ø± Ù†ÙØ³ Ø§Ù„Ø´Ù‡Ø±
+            // Ã˜ÂªÃ˜Â­Ã™â€šÃ™â€š Ã™â€¦Ã™â€  Ã˜Â¹Ã˜Â¯Ã™â€¦ Ã˜ÂªÃ™Æ’Ã˜Â±Ã˜Â§Ã˜Â± Ã™â€ Ã™ÂÃ˜Â³ Ã˜Â§Ã™â€žÃ˜Â´Ã™â€¡Ã˜Â±
             var existing = await _db.PayrollRuns.FirstOrDefaultAsync(p => p.PeriodYear == dto.PeriodYear && p.PeriodMonth == dto.PeriodMonth);
             if (existing != null)
             {
                 return Conflict(new { 
-                    message = lang == "ar" ? $"ÙŠÙˆØ¬Ø¯ Ù…Ø³ÙŠØ± Ø±ÙˆØ§ØªØ¨ Ù„Ø´Ù‡Ø± {dto.PeriodMonth}/{dto.PeriodYear} Ù…Ø³Ø¨Ù‚Ø§Ù‹ Ø¨Ø±Ù‚Ù… ({existing.PayrollNumber})." : $"A payroll run for {dto.PeriodMonth}/{dto.PeriodYear} already exists with number ({existing.PayrollNumber}).",
+                    message = lang == "ar" ? _t.Get("HR.PayrollAlreadyExists", dto.PeriodMonth.ToString(), dto.PeriodYear.ToString(), existing.PayrollNumber) : $"A payroll run for {dto.PeriodMonth}/{dto.PeriodYear} already exists with number ({existing.PayrollNumber}).",
                     existingId = existing.Id
                 });
             }
@@ -497,11 +497,11 @@ public class PayrollController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { message = "Ø®Ø·Ø£ Ø¯Ø§Ø®Ù„ÙŠ ÙÙŠ Ø§Ù„Ø®Ø§Ø¯Ù… Ø£Ø«Ù†Ø§Ø¡ Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ù…Ø³ÙŠØ±.", details = ex.Message });
+            return StatusCode(500, new { message = _t.Get("HR.PayrollCreateError"), details = ex.Message });
         }
     }
 
-    // POST /api/payroll/{id}/post â€” ØªØ±Ø­ÙŠÙ„ Ø§Ù„Ù…Ø³ÙŠØ± ÙˆØªÙˆÙ„ÙŠØ¯ Ø§Ù„Ù‚ÙŠØ¯ Ø§Ù„Ù…Ø­Ø§Ø³Ø¨ÙŠ
+    // POST /api/payroll/{id}/post Ã¢â‚¬â€ Ã˜ÂªÃ˜Â±Ã˜Â­Ã™Å Ã™â€ž Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â³Ã™Å Ã˜Â± Ã™Ë†Ã˜ÂªÃ™Ë†Ã™â€žÃ™Å Ã˜Â¯ Ã˜Â§Ã™â€žÃ™â€šÃ™Å Ã˜Â¯ Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â­Ã˜Â§Ã˜Â³Ã˜Â¨Ã™Å 
     [HttpPost("{id}/post")]
     public async Task<IActionResult> Post(int id)
     {
@@ -510,9 +510,9 @@ public class PayrollController : ControllerBase
             .FirstOrDefaultAsync(p => p.Id == id);
         if (run == null) return NotFound();
         if (run.Status == PayrollStatus.Posted)
-            return BadRequest("Ø§Ù„Ù…Ø³ÙŠØ± Ù…Ø±Ø­Ù‘Ù„ Ø¨Ø§Ù„ÙØ¹Ù„.");
+            return BadRequest(new { message = _t.Get("HR.PayrollAlreadyPosted") });
 
-        // â”€â”€ ØªÙˆÙ„ÙŠØ¯ Ø§Ù„Ù‚ÙŠØ¯ Ø§Ù„Ù…Ø­Ø§Ø³Ø¨ÙŠ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // Ã¢â€â‚¬Ã¢â€â‚¬ Ã˜ÂªÃ™Ë†Ã™â€žÃ™Å Ã˜Â¯ Ã˜Â§Ã™â€žÃ™â€šÃ™Å Ã˜Â¯ Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â­Ã˜Â§Ã˜Â³Ã˜Â¨Ã™Å  Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
         var mapDict = await _core.GetSafeSystemMappingsAsync();
 
         var wagesAccId   = run.WagesExpenseAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.SalaryExpense, mapDict);
@@ -546,14 +546,14 @@ public class PayrollController : ControllerBase
                 EntryDate       = TimeHelper.GetEgyptTime(),
                 Type            = JournalEntryType.Payroll,
                 Status          = JournalEntryStatus.Posted,
-                Description     = $"Ù…Ø³ÙŠØ± Ø±ÙˆØ§ØªØ¨ Ø´Ù‡Ø± {run.PeriodMonth}/{run.PeriodYear}",
+                Description     = _t.Get("HR.PayrollRunDescription", run.PeriodMonth, run.PeriodYear),
                 Reference       = run.PayrollNumber,
                 CreatedByUserId = UserId,
                 CreatedAt       = TimeHelper.GetEgyptTime(),
                 Lines           = new List<JournalLine>()
             };
 
-            // â”€â”€ ØªØ¬Ù…ÙŠØ¹ ÙˆØªØ±Ø­ÙŠÙ„ Ø§Ù„Ù…ØµØ§Ø±ÙŠÙ Ø­Ø³Ø¨ Ù…Ø±ÙƒØ² Ø§Ù„ØªÙƒÙ„ÙØ© â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // Ã¢â€â‚¬Ã¢â€â‚¬ Ã˜ÂªÃ˜Â¬Ã™â€¦Ã™Å Ã˜Â¹ Ã™Ë†Ã˜ÂªÃ˜Â±Ã˜Â­Ã™Å Ã™â€ž Ã˜Â§Ã™â€žÃ™â€¦Ã˜ÂµÃ˜Â§Ã˜Â±Ã™Å Ã™Â Ã˜Â­Ã˜Â³Ã˜Â¨ Ã™â€¦Ã˜Â±Ã™Æ’Ã˜Â² Ã˜Â§Ã™â€žÃ˜ÂªÃ™Æ’Ã™â€žÃ™ÂÃ˜Â© Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
             var itemsByCostCenter = run.Items.GroupBy(i => i.Employee?.CostCenter ?? OrderSource.General);
 
             foreach (var group in itemsByCostCenter)
@@ -568,36 +568,36 @@ public class PayrollController : ControllerBase
 
                 if (ccBasic > 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = wagesAccId, Debit = ccBasic, Description = $"Ø±ÙˆØ§ØªØ¨ Ø£Ø³Ø§Ø³ÙŠØ© - {cc} â€” {run.PeriodMonth}/{run.PeriodYear}", CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = wagesAccId, Debit = ccBasic, Description = _t.Get("HR.BasicSalaryDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
                 }
                 if (ccTrans > 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = transAccId, Debit = ccTrans, Description = $"Ø¨Ø¯Ù„Ø§Øª Ø§Ù†ØªÙ‚Ø§Ù„ - {cc} â€” {run.PeriodMonth}/{run.PeriodYear}", CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = transAccId, Debit = ccTrans, Description = _t.Get("HR.TransAllowanceDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
                 }
                 if (ccComm > 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = commAccId, Debit = ccComm, Description = $"Ø¨Ø¯Ù„Ø§Øª Ø§ØªØµØ§Ù„ - {cc} â€” {run.PeriodMonth}/{run.PeriodYear}", CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = commAccId, Debit = ccComm, Description = _t.Get("HR.CommAllowanceDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
                 }
                 if (ccFix > 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = fixAllAccId, Debit = ccFix, Description = $"Ø¨Ø¯Ù„Ø§Øª Ø«Ø§Ø¨ØªØ© Ø£Ø®Ø±Ù‰ - {cc} â€” {run.PeriodMonth}/{run.PeriodYear}", CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = fixAllAccId, Debit = ccFix, Description = _t.Get("HR.FixedAllowanceDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
                 }
                 if (ccBonus > 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = bonusAccId, Debit = ccBonus, Description = $"Ù…ÙƒØ§ÙØ¢Øª ØªØ´Ø¬ÙŠØ¹ÙŠØ© - {cc} â€” {run.PeriodMonth}/{run.PeriodYear}", CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = bonusAccId, Debit = ccBonus, Description = _t.Get("HR.BonusDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
                 }
                 if (ccDed > 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = dedAccId, Credit = ccDed, Description = $"Ø®ØµÙˆÙ…Ø§Øª ÙˆØ¬Ø²Ø§Ø¡Ø§Øª - {cc} â€” {run.PeriodMonth}/{run.PeriodYear}", CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = dedAccId, Credit = ccDed, Description = _t.Get("HR.DeductionDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
                 }
             }
 
-            // â”€â”€ ØªÙØµÙŠÙ„ Ø§Ù„Ø­Ø±ÙƒØ§Øª Ù„ÙƒÙ„ Ù…ÙˆØ¸Ù (Ø§Ù„Ø§Ù„ØªØ²Ø§Ù…Ø§Øª ÙÙŠ ÙƒØ´Ù Ø§Ù„Ø­Ø³Ø§Ø¨) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // Ã¢â€â‚¬Ã¢â€â‚¬ Ã˜ÂªÃ™ÂÃ˜ÂµÃ™Å Ã™â€ž Ã˜Â§Ã™â€žÃ˜Â­Ã˜Â±Ã™Æ’Ã˜Â§Ã˜Âª Ã™â€žÃ™Æ’Ã™â€ž Ã™â€¦Ã™Ë†Ã˜Â¸Ã™Â (Ã˜Â§Ã™â€žÃ˜Â§Ã™â€žÃ˜ÂªÃ˜Â²Ã˜Â§Ã™â€¦Ã˜Â§Ã˜Âª Ã™ÂÃ™Å  Ã™Æ’Ã˜Â´Ã™Â Ã˜Â§Ã™â€žÃ˜Â­Ã˜Â³Ã˜Â§Ã˜Â¨) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
             foreach (var item in run.Items)
             {
                 var employeeCC = item.Employee?.CostCenter ?? OrderSource.General;
 
-                // Ø£. Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø³ØªØ­Ù‚Ø§Øª -> Ø¯Ø§Ø¦Ù† (Ù„Ù‡)
+                // Ã˜Â£. Ã˜Â¥Ã˜Â¬Ã™â€¦Ã˜Â§Ã™â€žÃ™Å  Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â³Ã˜ÂªÃ˜Â­Ã™â€šÃ˜Â§Ã˜Âª -> Ã˜Â¯Ã˜Â§Ã˜Â¦Ã™â€  (Ã™â€žÃ™â€¡)
                 var grossEarnings = item.BasicSalary + item.TransportationAllowance + item.CommunicationAllowance + item.FixedAllowance + item.BonusAmount;
                 if (grossEarnings > 0)
                 {
@@ -606,13 +606,13 @@ public class PayrollController : ControllerBase
                         AccountId   = accrualAccId,
                         Debit       = 0,
                         Credit      = grossEarnings,
-                        Description = $"Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø³ØªØ­Ù‚Ø§Øª (Ø±Ø§ØªØ¨ + Ø¨Ø¯Ù„Ø§Øª + Ù…ÙƒØ§ÙØ¢Øª): {item.Employee?.Name} â€” {run.PeriodMonth}/{run.PeriodYear}",
+                        Description = _t.Get("HR.GrossEarningsDesc", item.Employee?.Name, run.PeriodMonth, run.PeriodYear),
                         EmployeeId  = item.EmployeeId,
                         CostCenter  = employeeCC
                     });
                 }
 
-                // Ø¨. Ø§Ø³ØªÙ‚Ø·Ø§Ø¹ Ø§Ù„Ø³Ù„ÙØ© -> Ù…Ø¯ÙŠÙ† (Ø¹Ù„ÙŠÙ‡)
+                // Ã˜Â¨. Ã˜Â§Ã˜Â³Ã˜ÂªÃ™â€šÃ˜Â·Ã˜Â§Ã˜Â¹ Ã˜Â§Ã™â€žÃ˜Â³Ã™â€žÃ™ÂÃ˜Â© -> Ã™â€¦Ã˜Â¯Ã™Å Ã™â€  (Ã˜Â¹Ã™â€žÃ™Å Ã™â€¡)
                 if (item.AdvanceDeducted > 0)
                 {
                     je.Lines.Add(new JournalLine
@@ -620,7 +620,7 @@ public class PayrollController : ControllerBase
                         AccountId   = accrualAccId,
                         Debit       = item.AdvanceDeducted,
                         Credit      = 0,
-                        Description = $"Ø§Ø³ØªÙ‚Ø·Ø§Ø¹ Ø³Ù„ÙØ©: {item.Employee?.Name} â€” {run.PeriodMonth}/{run.PeriodYear}",
+                        Description = _t.Get("HR.AdvanceDeductionDesc", item.Employee?.Name, run.PeriodMonth, run.PeriodYear),
                         EmployeeId  = item.EmployeeId,
                         CostCenter  = employeeCC
                     });
@@ -630,12 +630,12 @@ public class PayrollController : ControllerBase
                         AccountId   = advAccId,
                         Debit       = 0,
                         Credit      = item.AdvanceDeducted,
-                        Description = $"Ø³Ø¯Ø§Ø¯ Ø³Ù„ÙØ© Ù…ÙˆØ¸Ù: {item.Employee?.Name} â€” {run.PeriodMonth}/{run.PeriodYear}",
+                        Description = _t.Get("HR.AdvanceSettlementDesc", item.Employee?.Name, run.PeriodMonth, run.PeriodYear),
                         CostCenter  = employeeCC
                     });
                 }
 
-                // Ø¬. Ø§Ù„Ø¬Ø²Ø§Ø¡Ø§Øª ÙˆØ§Ù„Ø®ØµÙˆÙ…Ø§Øª -> Ù…Ø¯ÙŠÙ† (Ø¹Ù„ÙŠÙ‡)
+                // Ã˜Â¬. Ã˜Â§Ã™â€žÃ˜Â¬Ã˜Â²Ã˜Â§Ã˜Â¡Ã˜Â§Ã˜Âª Ã™Ë†Ã˜Â§Ã™â€žÃ˜Â®Ã˜ÂµÃ™Ë†Ã™â€¦Ã˜Â§Ã˜Âª -> Ã™â€¦Ã˜Â¯Ã™Å Ã™â€  (Ã˜Â¹Ã™â€žÃ™Å Ã™â€¡)
                 if (item.DeductionAmount > 0)
                 {
                     je.Lines.Add(new JournalLine
@@ -643,7 +643,7 @@ public class PayrollController : ControllerBase
                         AccountId   = accrualAccId,
                         Debit       = item.DeductionAmount,
                         Credit      = 0,
-                        Description = $"Ø¬Ø²Ø§Ø¡Ø§Øª ÙˆØ®ØµÙˆÙ…Ø§Øª: {item.Employee?.Name} â€” {run.PeriodMonth}/{run.PeriodYear}",
+                        Description = _t.Get("HR.DeductionLogDesc", item.Employee?.Name, run.PeriodMonth, run.PeriodYear),
                         EmployeeId  = item.EmployeeId,
                         CostCenter  = employeeCC
                     });
@@ -652,7 +652,7 @@ public class PayrollController : ControllerBase
 
             _db.JournalEntries.Add(je);
 
-            // ØªØ­Ø¯ÙŠØ« Ø­Ø§Ù„Ø© Ø§Ù„Ø³Ù„Ù Ø§Ù„Ù…Ø®ØµÙˆÙ…Ø©
+            // Ã˜ÂªÃ˜Â­Ã˜Â¯Ã™Å Ã˜Â« Ã˜Â­Ã˜Â§Ã™â€žÃ˜Â© Ã˜Â§Ã™â€žÃ˜Â³Ã™â€žÃ™Â Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â®Ã˜ÂµÃ™Ë†Ã™â€¦Ã˜Â©
             foreach (var item in run.Items.Where(i => i.AdvanceDeducted > 0))
             {
                 var pendingAdvances = await _db.EmployeeAdvances
@@ -674,7 +674,7 @@ public class PayrollController : ControllerBase
                 }
             }
 
-            // Ø±Ø¨Ø· Ø§Ù„Ù…ÙƒØ§ÙØ¢Øª ÙˆØ§Ù„Ø®ØµÙˆÙ…Ø§Øª Ø§Ù„Ù…Ø¹Ù„Ù‚Ø© Ø¨Ù‡Ø°Ø§ Ø§Ù„Ù…Ø³ÙŠØ± (Ù„Ø¥ØºÙ„Ø§Ù‚Ù‡Ø§)
+            // Ã˜Â±Ã˜Â¨Ã˜Â· Ã˜Â§Ã™â€žÃ™â€¦Ã™Æ’Ã˜Â§Ã™ÂÃ˜Â¢Ã˜Âª Ã™Ë†Ã˜Â§Ã™â€žÃ˜Â®Ã˜ÂµÃ™Ë†Ã™â€¦Ã˜Â§Ã˜Âª Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â¹Ã™â€žÃ™â€šÃ˜Â© Ã˜Â¨Ã™â€¡Ã˜Â°Ã˜Â§ Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â³Ã™Å Ã˜Â± (Ã™â€žÃ˜Â¥Ã˜ÂºÃ™â€žÃ˜Â§Ã™â€šÃ™â€¡Ã˜Â§)
             var empIds = run.Items.Select(i => i.EmployeeId).ToList();
             
             var pendingBonuses = await _db.EmployeeBonuses
@@ -706,24 +706,24 @@ public class PayrollController : ControllerBase
         bool isAdmin = User.IsInRole("Admin") || User.IsInRole("SuperAdmin");
         
         if (run.Status == PayrollStatus.Posted && !isAdmin)
-            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ù…Ø³ÙŠØ± Ù…Ø±Ø­Ù‘Ù„ Ø¥Ù„Ø§ Ø¨ÙˆØ§Ø³Ø·Ø© Ø§Ù„Ù…Ø¯ÙŠØ±.");
+            return BadRequest(new { message = _t.Get("HR.PayrollCannotDelete") });
 
-        // Ø¥Ø°Ø§ ÙƒØ§Ù† Ù…Ø±Ø­Ù„Ø§Ù‹ØŒ Ù†Ø­ØªØ§Ø¬ Ù„Ø¹ÙƒØ³ ÙƒØ§ÙØ© Ø§Ù„Ø­Ø±ÙƒØ§Øª Ø§Ù„Ù…Ø§Ù„ÙŠØ© Ù„Ø¶Ù…Ø§Ù† Ø³Ù„Ø§Ù…Ø© Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª
+        // Ã˜Â¥Ã˜Â°Ã˜Â§ Ã™Æ’Ã˜Â§Ã™â€  Ã™â€¦Ã˜Â±Ã˜Â­Ã™â€žÃ˜Â§Ã™â€¹Ã˜Å’ Ã™â€ Ã˜Â­Ã˜ÂªÃ˜Â§Ã˜Â¬ Ã™â€žÃ˜Â¹Ã™Æ’Ã˜Â³ Ã™Æ’Ã˜Â§Ã™ÂÃ˜Â© Ã˜Â§Ã™â€žÃ˜Â­Ã˜Â±Ã™Æ’Ã˜Â§Ã˜Âª Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â§Ã™â€žÃ™Å Ã˜Â© Ã™â€žÃ˜Â¶Ã™â€¦Ã˜Â§Ã™â€  Ã˜Â³Ã™â€žÃ˜Â§Ã™â€¦Ã˜Â© Ã˜Â§Ã™â€žÃ˜Â­Ã˜Â³Ã˜Â§Ã˜Â¨Ã˜Â§Ã˜Âª
         if (run.Status == PayrollStatus.Posted)
         {
-            // 1. Ø­Ø°Ù Ø§Ù„Ù‚ÙŠØ¯ Ø§Ù„Ù…Ø­Ø§Ø³Ø¨ÙŠ Ø§Ù„Ù…Ø±ØªØ¨Ø·
+            // 1. Ã˜Â­Ã˜Â°Ã™Â Ã˜Â§Ã™â€žÃ™â€šÃ™Å Ã˜Â¯ Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â­Ã˜Â§Ã˜Â³Ã˜Â¨Ã™Å  Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â±Ã˜ÂªÃ˜Â¨Ã˜Â·
             if (run.JournalEntryId.HasValue)
             {
                 var je = await _db.JournalEntries.FindAsync(run.JournalEntryId.Value);
                 if (je != null) _db.JournalEntries.Remove(je);
             }
 
-            // 2. Ø§Ø³ØªØ±Ø¬Ø§Ø¹ Ø§Ù„Ø³Ù„Ù Ø§Ù„Ù…Ø®ØµÙˆÙ…Ø© (Ø¥Ø¹Ø§Ø¯Ø© Ø§Ù„Ù…Ø¨Ø§Ù„Øº Ù„Ø£Ø±ØµØ¯Ø© Ø§Ù„Ù…ÙˆØ¸ÙÙŠÙ†)
+            // 2. Ã˜Â§Ã˜Â³Ã˜ÂªÃ˜Â±Ã˜Â¬Ã˜Â§Ã˜Â¹ Ã˜Â§Ã™â€žÃ˜Â³Ã™â€žÃ™Â Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â®Ã˜ÂµÃ™Ë†Ã™â€¦Ã˜Â© (Ã˜Â¥Ã˜Â¹Ã˜Â§Ã˜Â¯Ã˜Â© Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â¨Ã˜Â§Ã™â€žÃ˜Âº Ã™â€žÃ˜Â£Ã˜Â±Ã˜ÂµÃ˜Â¯Ã˜Â© Ã˜Â§Ã™â€žÃ™â€¦Ã™Ë†Ã˜Â¸Ã™ÂÃ™Å Ã™â€ )
             foreach (var item in run.Items.Where(i => i.AdvanceDeducted > 0))
             {
                 var advances = await _db.EmployeeAdvances
                     .Where(a => a.EmployeeId == item.EmployeeId && a.DeductedAmount > 0)
-                    .OrderByDescending(a => a.AdvanceDate) // Ù†Ø¹ÙƒØ³ Ø§Ù„Ø­Ø±ÙƒØ§Øª Ù…Ù† Ø§Ù„Ø£Ø­Ø¯Ø« Ù„Ù„Ø£Ù‚Ø¯Ù…
+                    .OrderByDescending(a => a.AdvanceDate) // عكس الحركات من الأحدث للأقدم
                     .ToListAsync();
 
                 var toRestore = item.AdvanceDeducted;
@@ -733,7 +733,7 @@ public class PayrollController : ControllerBase
                     var restored = Math.Min(adv.DeductedAmount, toRestore);
                     adv.DeductedAmount -= restored;
                     
-                    // ØªØ­Ø¯ÙŠØ« Ø­Ø§Ù„Ø© Ø§Ù„Ø³Ù„ÙØ© Ø¨Ù†Ø§Ø¡Ù‹ Ø¹Ù„Ù‰ Ø§Ù„Ù…Ø¨Ù„Øº Ø§Ù„Ù…ØªØ¨Ù‚ÙŠ
+                    // Ã˜ÂªÃ˜Â­Ã˜Â¯Ã™Å Ã˜Â« Ã˜Â­Ã˜Â§Ã™â€žÃ˜Â© Ã˜Â§Ã™â€žÃ˜Â³Ã™â€žÃ™ÂÃ˜Â© Ã˜Â¨Ã™â€ Ã˜Â§Ã˜Â¡Ã™â€¹ Ã˜Â¹Ã™â€žÃ™â€° Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â¨Ã™â€žÃ˜Âº Ã˜Â§Ã™â€žÃ™â€¦Ã˜ÂªÃ˜Â¨Ã™â€šÃ™Å 
                     if (adv.DeductedAmount <= 0) adv.Status = AdvanceStatus.Pending;
                     else if (adv.DeductedAmount < adv.Amount) adv.Status = AdvanceStatus.PartiallyDeducted;
                     else adv.Status = AdvanceStatus.FullyDeducted;
@@ -743,7 +743,7 @@ public class PayrollController : ControllerBase
                 }
             }
 
-            // 3. ÙÙƒ Ø§Ø±ØªØ¨Ø§Ø· Ø§Ù„Ù…ÙƒØ§ÙØ¢Øª ÙˆØ§Ù„Ø®ØµÙˆÙ…Ø§Øª Ø§Ù„Ù…Ø¹Ù„Ù‚Ø© (Ù„ØªØ¹ÙˆØ¯ Ù…ØªØ§Ø­Ø© Ù„Ù„Ù…Ø³ÙŠØ±Ø§Øª Ø§Ù„Ù‚Ø§Ø¯Ù…Ø©)
+            // 3. Ã™ÂÃ™Æ’ Ã˜Â§Ã˜Â±Ã˜ÂªÃ˜Â¨Ã˜Â§Ã˜Â· Ã˜Â§Ã™â€žÃ™â€¦Ã™Æ’Ã˜Â§Ã™ÂÃ˜Â¢Ã˜Âª Ã™Ë†Ã˜Â§Ã™â€žÃ˜Â®Ã˜ÂµÃ™Ë†Ã™â€¦Ã˜Â§Ã˜Âª Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â¹Ã™â€žÃ™â€šÃ˜Â© (Ã™â€žÃ˜ÂªÃ˜Â¹Ã™Ë†Ã˜Â¯ Ã™â€¦Ã˜ÂªÃ˜Â§Ã˜Â­Ã˜Â© Ã™â€žÃ™â€žÃ™â€¦Ã˜Â³Ã™Å Ã˜Â±Ã˜Â§Ã˜Âª Ã˜Â§Ã™â€žÃ™â€šÃ˜Â§Ã˜Â¯Ã™â€¦Ã˜Â©)
             var bonuses = await _db.EmployeeBonuses.Where(b => b.PayrollRunId == run.Id).ToListAsync();
             foreach (var b in bonuses) b.PayrollRunId = null;
 
@@ -772,9 +772,9 @@ public class PayrollController : ControllerBase
     );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// 3. ADVANCES (Ø§Ù„Ø³Ù„Ù)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// 3. ADVANCES (Ã˜Â§Ã™â€žÃ˜Â³Ã™â€žÃ™Â)
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 [ApiController]
 [Route("api/employee-advances")]
@@ -785,10 +785,10 @@ public class EmployeeAdvancesController : ControllerBase
     private readonly SequenceService _seq;
     private readonly IAccountingService _accounting;
     private readonly AccountingCoreService _core;
+    private readonly ITranslator _t;
 
-    public EmployeeAdvancesController(AppDbContext db, SequenceService seq, IAccountingService accounting, AccountingCoreService core)
-        => (_db, _seq, _accounting, _core) = (db, seq, accounting, core);
-
+    public EmployeeAdvancesController(AppDbContext db, SequenceService seq, IAccountingService accounting, AccountingCoreService core, ITranslator t)
+        => (_db, _seq, _accounting, _core, _t) = (db, seq, accounting, core, t);
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
     [HttpGet]
@@ -825,15 +825,15 @@ public class EmployeeAdvancesController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateAdvanceDto dto)
     {
         var emp = await _db.Employees.FindAsync(dto.EmployeeId);
-        if (emp == null) return NotFound("Ø§Ù„Ù…ÙˆØ¸Ù ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯.");
+        if (emp == null) return NotFound();
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
 
-        // ðŸŽ¯ UNIFIED VOUCHER SYSTEM: Create a PaymentVoucher record for this advance (if cash disbursement)
+        // Ã°Å¸Å½Â¯ UNIFIED VOUCHER SYSTEM: Create a PaymentVoucher record for this advance (if cash disbursement)
         if (dto.CashAccountId.HasValue && dto.CashAccountId > 0)
         {
             if (!mapDict.TryGetValue(MappingKeys.EmployeeAdvances, out var advAccId) || advAccId == null)
-                return BadRequest("Ù„Ù… ÙŠØªÙ… Ø¶Ø¨Ø· Ø­Ø³Ø§Ø¨ Ø³Ù„Ù Ø§Ù„Ù…ÙˆØ¸ÙÙŠÙ† ÙÙŠ Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª.");
+                return BadRequest(new { message = _t.Get("HR.SalaryAccountNotSet") });
         }
 
         // Retry logic for sequence generation to handle race conditions
@@ -881,7 +881,7 @@ public class EmployeeAdvancesController : ControllerBase
                         ToAccountId = advAccId.Value,
                         EmployeeId = emp.Id,
                         PaymentMethod = VoucherPaymentMethod.Cash,
-                        Description = $"Ø³Ù„ÙØ© Ù…ÙˆØ¸Ù â€” {emp.Name}",
+                        Description = $"سلفة موظف — {emp.Name}",
                         Reference = advance.AdvanceNumber,
                         CreatedAt = TimeHelper.GetEgyptTime(),
                         CreatedByUserId = UserId,
@@ -908,7 +908,7 @@ public class EmployeeAdvancesController : ControllerBase
             }
         }
 
-        return StatusCode(409, "ÙØ´Ù„ Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø³Ù„ÙØ© Ø¨Ø³Ø¨Ø¨ ØªØ¶Ø§Ø±Ø¨ ÙÙŠ Ø§Ù„ØªØ±Ù‚ÙŠÙ… Ø§Ù„ØªÙ„Ù‚Ø§Ø¦ÙŠ. ÙŠØ±Ø¬Ù‰ Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø© Ù…Ø±Ø© Ø£Ø®Ø±Ù‰.");
+        return StatusCode(409, new { message = _t.Get("HR.AdvanceDuplicateNumber") });
     }
 
     [HttpDelete("{id}")]
@@ -917,7 +917,7 @@ public class EmployeeAdvancesController : ControllerBase
         var adv = await _db.EmployeeAdvances.FindAsync(id);
         if (adv == null) return NotFound();
         if (adv.Status != AdvanceStatus.Pending)
-            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ø³Ù„ÙØ© Ø¨Ø¯Ø£ Ø®ØµÙ…Ù‡Ø§.");
+            return BadRequest(new { message = _t.Get("HR.AdvanceCannotDelete") });
 
         // Delete associated voucher and journal if unposted/partial? 
         // Actually PaymentVoucher.Reference = AdvanceNumber
@@ -945,7 +945,7 @@ public class EmployeeAdvancesController : ControllerBase
         var adv = await _db.EmployeeAdvances.FindAsync(id);
         if (adv == null) return NotFound();
         if (adv.Status != AdvanceStatus.Pending)
-            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† ØªØ¹Ø¯ÙŠÙ„ Ø³Ù„ÙØ© Ø¨Ø¯Ø£ Ø®ØµÙ…Ù‡Ø§ Ø¨Ø§Ù„ÙØ¹Ù„.");
+            return BadRequest(new { message = _t.Get("HR.AdvanceCannotDelete") });
 
         adv.Amount = dto.Amount;
         adv.AdvanceDate = dto.AdvanceDate;
@@ -962,7 +962,7 @@ public class EmployeeAdvancesController : ControllerBase
             voucher.Amount = adv.Amount;
             voucher.VoucherDate = adv.AdvanceDate;
             voucher.CashAccountId = adv.CashAccountId ?? 0;
-            voucher.Description = $"ØªØ¹Ø¯ÙŠÙ„ Ø³Ù„ÙØ© Ù…ÙˆØ¸Ù â€” {adv.AdvanceNumber}";
+            voucher.Description = $"تعديل سلفة موظف — {adv.AdvanceNumber}";
             voucher.CostCenter = adv.CostCenter;
             
             // Re-post to update journal entry
@@ -975,9 +975,9 @@ public class EmployeeAdvancesController : ControllerBase
     }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// 4. BONUSES (Ø§Ù„Ù…ÙƒØ§ÙØ¢Øª)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// 4. BONUSES (Ã˜Â§Ã™â€žÃ™â€¦Ã™Æ’Ã˜Â§Ã™ÂÃ˜Â¢Ã˜Âª)
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 [ApiController]
 [Route("api/employee-bonuses")]
@@ -988,10 +988,10 @@ public class EmployeeBonusesController : ControllerBase
     private readonly SequenceService _seq;
     private readonly IAccountingService _accounting;
     private readonly AccountingCoreService _core;
+    private readonly ITranslator _t;
 
-    public EmployeeBonusesController(AppDbContext db, SequenceService seq, IAccountingService accounting, AccountingCoreService core)
-        => (_db, _seq, _accounting, _core) = (db, seq, accounting, core);
-
+    public EmployeeBonusesController(AppDbContext db, SequenceService seq, IAccountingService accounting, AccountingCoreService core, ITranslator t)
+        => (_db, _seq, _accounting, _core, _t) = (db, seq, accounting, core, t);
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
     [HttpGet]
@@ -1025,15 +1025,15 @@ public class EmployeeBonusesController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateBonusDto dto)
     {
         var emp = await _db.Employees.FindAsync(dto.EmployeeId);
-        if (emp == null) return NotFound("Ø§Ù„Ù…ÙˆØ¸Ù ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯.");
+        if (emp == null) return NotFound();
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
 
-        // ðŸŽ¯ UNIFIED VOUCHER SYSTEM: Create a PaymentVoucher record for this bonus (if cash disbursement)
+        // Ã°Å¸Å½Â¯ UNIFIED VOUCHER SYSTEM: Create a PaymentVoucher record for this bonus (if cash disbursement)
         if (dto.CashAccountId.HasValue && dto.CashAccountId > 0)
         {
             if (!mapDict.TryGetValue(MappingKeys.SalaryExpense, out var bonusExpenseAccId) || bonusExpenseAccId == null)
-                return BadRequest("Ù„Ù… ÙŠØªÙ… Ø¶Ø¨Ø· Ø­Ø³Ø§Ø¨ Ù…ØµØ±ÙˆÙ Ø§Ù„Ø±ÙˆØ§ØªØ¨ (Ù„Ù„Ù…ÙƒØ§ÙØ¢Øª) ÙÙŠ Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª.");
+                return BadRequest(new { message = _t.Get("HR.BonusAccountNotSet") });
         }
 
         // Retry logic for sequence generation
@@ -1081,7 +1081,7 @@ public class EmployeeBonusesController : ControllerBase
                         ToAccountId = bonusExpenseAccId.Value,
                         EmployeeId = emp.Id,
                         PaymentMethod = VoucherPaymentMethod.Cash,
-                        Description = $"Ù…ÙƒØ§ÙØ£Ø© Ù…ÙˆØ¸Ù â€” {emp.Name}",
+                        Description = $"مكافأة موظف — {emp.Name}",
                         Reference = bonus.BonusNumber,
                         CreatedAt = TimeHelper.GetEgyptTime(),
                         CreatedByUserId = UserId,
@@ -1107,7 +1107,7 @@ public class EmployeeBonusesController : ControllerBase
             }
         }
 
-        return StatusCode(409, "ÙØ´Ù„ Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ù…ÙƒØ§ÙØ£Ø© Ø¨Ø³Ø¨Ø¨ ØªØ¶Ø§Ø±Ø¨ ÙÙŠ Ø§Ù„ØªØ±Ù‚ÙŠÙ… Ø§Ù„ØªÙ„Ù‚Ø§Ø¦ÙŠ. ÙŠØ±Ø¬Ù‰ Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø© Ù…Ø±Ø© Ø£Ø®Ø±Ù‰.");
+        return StatusCode(409, new { message = _t.Get("HR.BonusDuplicateNumber") });
     }
 
     [HttpDelete("{id}")]
@@ -1116,7 +1116,7 @@ public class EmployeeBonusesController : ControllerBase
         var bon = await _db.EmployeeBonuses.FindAsync(id);
         if (bon == null) return NotFound();
         if (bon.PayrollRunId.HasValue)
-            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ù…ÙƒØ§ÙØ£Ø© Ù…Ø±ØªØ¨Ø·Ø© Ø¨Ù…Ø³ÙŠØ± Ø±ÙˆØ§ØªØ¨.");
+            return BadRequest(new { message = _t.Get("HR.BonusCannotDelete") });
 
         var voucher = await _db.PaymentVouchers.FirstOrDefaultAsync(v => v.Reference == bon.BonusNumber);
         if (voucher != null)
@@ -1141,7 +1141,7 @@ public class EmployeeBonusesController : ControllerBase
         var bon = await _db.EmployeeBonuses.FindAsync(id);
         if (bon == null) return NotFound();
         if (bon.PayrollRunId.HasValue)
-            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† ØªØ¹Ø¯ÙŠÙ„ Ù…ÙƒØ§ÙØ£Ø© Ù…Ø±Ø¨ÙˆØ·Ø© Ø¨Ù…Ø³ÙŠØ± Ø±ÙˆØ§ØªØ¨.");
+            return BadRequest(new { message = _t.Get("HR.BonusCannotEdit") });
 
         bon.Amount = dto.Amount;
         bon.BonusDate = dto.BonusDate;
@@ -1169,9 +1169,9 @@ public class EmployeeBonusesController : ControllerBase
     }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// 5. DEDUCTIONS (Ø§Ù„Ø®ØµÙˆÙ…Ø§Øª)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// 5. DEDUCTIONS (Ã˜Â§Ã™â€žÃ˜Â®Ã˜ÂµÃ™Ë†Ã™â€¦Ã˜Â§Ã˜Âª)
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 [ApiController]
 [Route("api/employee-deductions")]
@@ -1182,10 +1182,10 @@ public class EmployeeDeductionsController : ControllerBase
     private readonly SequenceService _seq;
     private readonly IAccountingService _accounting;
     private readonly AccountingCoreService _core;
+    private readonly ITranslator _t;
 
-    public EmployeeDeductionsController(AppDbContext db, SequenceService seq, IAccountingService accounting, AccountingCoreService core)
-        => (_db, _seq, _accounting, _core) = (db, seq, accounting, core);
-
+    public EmployeeDeductionsController(AppDbContext db, SequenceService seq, IAccountingService accounting, AccountingCoreService core, ITranslator t)
+        => (_db, _seq, _accounting, _core, _t) = (db, seq, accounting, core, t);
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
     [HttpGet]
@@ -1217,7 +1217,7 @@ public class EmployeeDeductionsController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateDeductionDto dto)
     {
         var emp = await _db.Employees.FindAsync(dto.EmployeeId);
-        if (emp == null) return NotFound("Ø§Ù„Ù…ÙˆØ¸Ù ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯.");
+        if (emp == null) return NotFound();
 
         var dedNo = await _seq.NextAsync("DED", async (db, pattern) =>
         {
@@ -1245,12 +1245,12 @@ public class EmployeeDeductionsController : ControllerBase
 
         _db.EmployeeDeductions.Add(ded);
 
-        // ðŸŽ¯ UNIFIED VOUCHER SYSTEM: Create a ReceiptVoucher record for this deduction (if cash)
+        // Ã°Å¸Å½Â¯ UNIFIED VOUCHER SYSTEM: Create a ReceiptVoucher record for this deduction (if cash)
         if (dto.CashAccountId.HasValue)
         {
             var mapDict = await _core.GetSafeSystemMappingsAsync();
             if (!mapDict.TryGetValue(MappingKeys.EmployeeDeductions, out var deductionRevenueAccId) || deductionRevenueAccId == null)
-                return BadRequest("Ù„Ù… ÙŠØªÙ… Ø¶Ø¨Ø· Ø­Ø³Ø§Ø¨ Ø¥ÙŠØ±Ø§Ø¯ Ø®ØµÙˆÙ…Ø§Øª Ø§Ù„Ù…ÙˆØ¸ÙÙŠÙ† ÙÙŠ Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª.");
+                return BadRequest(new { message = _t.Get("HR.DeductionAccountNotSet") });
 
             var voucher = new ReceiptVoucher
             {
@@ -1261,7 +1261,7 @@ public class EmployeeDeductionsController : ControllerBase
                 FromAccountId = deductionRevenueAccId.Value,
                 EmployeeId = emp.Id,
                 PaymentMethod = VoucherPaymentMethod.Cash,
-                Description = $"ØªØ­ØµÙŠÙ„ Ø®ØµÙ… ÙÙˆØ±ÙŠ â€” {emp.Name}",
+                Description = $"تحصيل خصم فوري — {emp.Name}",
                 Reference = ded.DeductionNumber,
                 CreatedAt = TimeHelper.GetEgyptTime(),
                 CreatedByUserId = UserId,
@@ -1288,7 +1288,7 @@ public class EmployeeDeductionsController : ControllerBase
         var ded = await _db.EmployeeDeductions.FindAsync(id);
         if (ded == null) return NotFound();
         if (ded.PayrollRunId.HasValue)
-            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ø®ØµÙ… Ù…Ø±ØªØ¨Ø· Ø¨Ù…Ø³ÙŠØ± Ø±ÙˆØ§ØªØ¨.");
+            return BadRequest(new { message = _t.Get("HR.DeductionCannotDelete") });
 
         _db.EmployeeDeductions.Remove(ded);
         await _db.SaveChangesAsync();
@@ -1302,7 +1302,7 @@ public class EmployeeDeductionsController : ControllerBase
         var ded = await _db.EmployeeDeductions.FindAsync(id);
         if (ded == null) return NotFound();
         if (ded.PayrollRunId.HasValue)
-            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† ØªØ¹Ø¯ÙŠÙ„ Ø®ØµÙ… Ù…Ø±Ø¨ÙˆØ· Ø¨Ù…Ø³ÙŠØ± Ø±ÙˆØ§ØªØ¨.");
+            return BadRequest(new { message = _t.Get("HR.DeductionCannotEdit") });
 
         ded.Amount = dto.Amount;
         ded.DeductionDate = dto.DeductionDate;
@@ -1318,9 +1318,9 @@ public class EmployeeDeductionsController : ControllerBase
     }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// 6. DEPARTMENTS (Ø§Ù„Ø£Ù‚Ø³Ø§Ù… / Ø§Ù„ÙØ¦Ø§Øª)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// 6. DEPARTMENTS (Ã˜Â§Ã™â€žÃ˜Â£Ã™â€šÃ˜Â³Ã˜Â§Ã™â€¦ / Ã˜Â§Ã™â€žÃ™ÂÃ˜Â¦Ã˜Â§Ã˜Âª)
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 [ApiController]
 [Route("api/departments")]
@@ -1328,8 +1328,8 @@ public class EmployeeDeductionsController : ControllerBase
 public class DepartmentsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public DepartmentsController(AppDbContext db) => _db = db;
-
+    private readonly ITranslator _t;
+    public DepartmentsController(AppDbContext db, ITranslator t) { _db = db; _t = t; }
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
@@ -1366,13 +1366,13 @@ public class DepartmentsController : ControllerBase
     {
         var dept = await _db.Departments.Include(d => d.Employees).FirstOrDefaultAsync(d => d.Id == id);
         if (dept == null) return NotFound();
-        if (dept.Employees.Any()) return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ù‚Ø³Ù… Ø¨Ù‡ Ù…ÙˆØ¸ÙÙŠÙ†.");
+        if (dept.Employees.Any()) return BadRequest(new { message = _t.Get("HR.DepartmentHasEmployees") });
         _db.Departments.Remove(dept);
         await _db.SaveChangesAsync();
         return NoContent();
     }
 }
 
-// â”€â”€ DTOs Ø¥Ø¶Ø§ÙÙŠØ© â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ DTOs Ã˜Â¥Ã˜Â¶Ã˜Â§Ã™ÂÃ™Å Ã˜Â© Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 public record LinkUserDto(string? AppUserId);
 

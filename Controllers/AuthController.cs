@@ -28,8 +28,9 @@ public class AuthController : ControllerBase
     private readonly IEmailService _email;
     private readonly IWhatsAppApiService _whatsappApi;
     private readonly IAuditService _audit;
+    private readonly ITranslator _translator;
 
-    public AuthController(IAuthService auth, AppDbContext db, UserManager<AppUser> userManager, IMemoryCache cache, IEmailService email, IWhatsAppApiService whatsappApi, IAuditService audit)
+    public AuthController(IAuthService auth, AppDbContext db, UserManager<AppUser> userManager, IMemoryCache cache, IEmailService email, IWhatsAppApiService whatsappApi, IAuditService audit, ITranslator translator)
     {
         _auth = auth;
         _db = db;
@@ -38,6 +39,7 @@ public class AuthController : ControllerBase
         _email = email;
         _whatsappApi = whatsappApi;
         _audit = audit;
+        _translator = translator;
     }
 
     [HttpPost("register")]
@@ -60,24 +62,24 @@ public class AuthController : ControllerBase
         catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
     }
 
-    /// <summary>ØªØ¬Ø¯ÙŠØ¯ Ø§Ù„Ù€ access token â€” Ø§Ù„ÙØ±ÙˆÙ†Øª ÙŠØ¨Ø¹Øª refreshToken ÙŠØ¬ÙŠØ¨ access token Ø¬Ø¯ÙŠØ¯</summary>
+    /// <summary>تجديد الـ access token — الفرونت يبعت refreshToken يجيب access token جديد</summary>
     [HttpPost("refresh")]
     public async Task<IActionResult> Refresh([FromBody] RefreshTokenRequestDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.RefreshToken))
-            return BadRequest(new { message = "refreshToken Ù…Ø·Ù„ÙˆØ¨" });
+            return BadRequest(new { message = _translator.Get("Auth.RefreshTokenRequired") });
         try { return Ok(await _auth.RefreshTokenAsync(dto.RefreshToken)); }
         catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
     }
 
-    /// <summary>ØªØ³Ø¬ÙŠÙ„ Ø®Ø±ÙˆØ¬ â€” ÙŠÙÙ„ØºÙŠ Ø§Ù„Ù€ refresh token</summary>
+    /// <summary>تسجيل خروج — يلغي الـ refresh token</summary>
     [Authorize]
     [HttpPost("logout")]
     public async Task<IActionResult> Logout()
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
         await _auth.RevokeRefreshTokenAsync(userId);
-        return Ok(new { message = "ØªÙ… ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø®Ø±ÙˆØ¬ Ø¨Ù†Ø¬Ø§Ø­" });
+        return Ok(new { message = _translator.Get("Auth.LoggedOut") });
     }
 
     [HttpPost("forgot-password")]
@@ -88,24 +90,24 @@ public class AuthController : ControllerBase
                    ?? await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == dto.Identifier);
         
         if (user == null)
-            return NotFound(new { message = "User not found with this identifier" });
+            return NotFound(new { message = _translator.Get("Auth.UserNotFound") });
 
-        // âœ… FIX: Ø§Ø³ØªØ®Ø¯Ø§Ù… RandomNumberGenerator Ø§Ù„Ø¢Ù…Ù† Ø¨Ø¯Ù„Ø§Ù‹ Ù…Ù† new Random() ØºÙŠØ± Ø§Ù„Ø¢Ù…Ù†
+        // ✅ FIX: استخدام RandomNumberGenerator الآمن بدلاً من new Random() غير الآمن
         var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
         _cache.Set($"ResetCode_{dto.Identifier}", code, TimeSpan.FromMinutes(10));
 
-        // ðŸ›¡ï¸ SECURITY FIX: Only send via email/WhatsApp, never return in production!
+        // Ã°Å¸â€ºÂ¡Ã¯Â¸Â SECURITY FIX: Only send via email/WhatsApp, never return in production!
         if (!string.IsNullOrEmpty(user.Email))
         {
-            var subject = "ÙƒÙˆØ¯ Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ† ÙƒÙ„Ù…Ø© Ø§Ù„Ø³Ø± - Sportive";
+            var subject = _translator.Get("Auth.ResetEmailSubject");
             var body = $@"
                 <div dir='rtl' style='font-family: Arial, sans-serif; border: 1px solid #eee; padding: 20px;'>
                     <h2 style='color: #0f3460;'>Sportive Store</h2>
-                    <p>Ø£Ù‡Ù„Ø§Ù‹ Ø¨Ùƒ {user.FullName}ØŒ</p>
-                    <p>ÙƒÙˆØ¯ Ø§Ø³ØªØ¹Ø§Ø¯Ø© ÙƒÙ„Ù…Ø© Ø§Ù„Ø³Ø± Ø§Ù„Ø®Ø§Øµ Ø¨Ùƒ Ù‡Ùˆ:</p>
+                    <p>{_translator.Get("Auth.ResetEmailGreeting", user.FullName)}</p>
+                    <p>{_translator.Get("Auth.ResetEmailCodeText")}</p>
                     <div style='background: #f4f4f4; padding: 15px; font-size: 24px; font-weight: bold; text-align: center; border-radius: 5px;'>{code}</div>
-                    <p>Ù‡Ø°Ø§ Ø§Ù„ÙƒÙˆØ¯ ØµØ§Ù„Ø­ Ù„Ù…Ø¯Ø© 10 Ø¯Ù‚Ø§Ø¦Ù‚ ÙÙ‚Ø·.</p>
-                    <p>Ø¥Ø°Ø§ Ù„Ù… ØªÙƒÙ† Ø£Ù†Øª Ù…Ù† Ø·Ù„Ø¨ Ù‡Ø°Ø§ Ø§Ù„ÙƒÙˆØ¯ØŒ ÙŠØ±Ø¬Ù‰ ØªØ¬Ø§Ù‡Ù„ Ù‡Ø°Ù‡ Ø§Ù„Ø±Ø³Ø§Ù„Ø©.</p>
+                    <p>{_translator.Get("Auth.ResetEmailExpiryText")}</p>
+                    <p>{_translator.Get("Auth.ResetEmailIgnoreText")}</p>
                 </div>";
             
             BackgroundJob.Enqueue<IEmailService>(email => email.SendEmailAsync(user.Email, subject, body));
@@ -114,7 +116,7 @@ public class AuthController : ControllerBase
         bool isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
         
         return Ok(new { 
-            message = "Authentication code sent to your registered email/phone.",
+            message = _translator.Get("Auth.CodeSent"),
             code = isDev ? code : null, 
             supportPhone = "201021461937"
         });
@@ -126,13 +128,13 @@ public class AuthController : ControllerBase
     {
         if (!_cache.TryGetValue($"ResetCode_{dto.Identifier}", out string? cachedCode) || cachedCode != dto.Code)
         {
-            return BadRequest(new { message = "Invalid or expired verify code" });
+            return BadRequest(new { message = _translator.Get("Auth.InvalidCode") });
         }
 
         var user = await _userManager.FindByEmailAsync(dto.Identifier ?? "") 
                    ?? await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == dto.Identifier);
 
-        if (user == null) return NotFound(new { message = "User no longer exists" });
+        if (user == null) return NotFound(new { message = _translator.Get("Auth.UserNoLongerExists") });
 
         var token = await _userManager.GeneratePasswordResetTokenAsync(user);
         var result = await _userManager.ResetPasswordAsync(user, token, dto.NewPassword);
@@ -141,16 +143,16 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = string.Join(", ", result.Errors.Select(e => e.Description)) });
 
         _cache.Remove($"ResetCode_{dto.Identifier}");
-        return Ok(new { message = "Password reset successful" });
+        return Ok(new { message = _translator.Get("Auth.PasswordResetSuccess") });
     }
 
     [HttpPost("send-otp")]
     [EnableRateLimiting("auth")]
     public async Task<IActionResult> SendOtp([FromBody] SendOtpDto dto)
     {
-        // âœ… FIX: Ø§Ø³ØªØ®Ø¯Ø§Ù… RandomNumberGenerator Ø§Ù„Ø¢Ù…Ù†
+        // ✅ FIX: استخدام RandomNumberGenerator الآمن
         var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-        // Ø­ÙØ¸ Ø§Ù„ÙƒÙˆØ¯ Ù„Ù…Ø¯Ø© 5 Ø¯Ù‚Ø§Ø¦Ù‚
+        // حفظ الكود لمدة 5 دقائق
         _cache.Set($"OtpCode_{dto.PhoneNumber}", code, TimeSpan.FromMinutes(5));
 
         bool isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
@@ -159,7 +161,7 @@ public class AuthController : ControllerBase
         BackgroundJob.Enqueue<IWhatsAppApiService>(api => api.SendOtpAsync(dto.PhoneNumber, code));
 
         return Ok(new { 
-            message = "OTP message queued for delivery via WhatsApp."
+            message = _translator.Get("Auth.OtpSent")
         });
     }
 
@@ -169,12 +171,12 @@ public class AuthController : ControllerBase
     {
         if (!_cache.TryGetValue($"OtpCode_{dto.PhoneNumber}", out string? cachedCode) || cachedCode != dto.Code)
         {
-            return BadRequest(new { message = "Invalid or expired OTP code" });
+            return BadRequest(new { message = _translator.Get("Auth.InvalidCode") });
         }
 
-        // ÙÙŠ Ø­Ø§Ù„ Ø§Ù„Ù†Ø¬Ø§Ø­ Ù†Ù‚ÙˆÙ… Ø¨Ù…Ø³Ø­ Ø§Ù„ÙƒÙˆØ¯ Ù…Ù† Ø§Ù„Ù€ Cache
+        // في حال النجاح نقوم بمسح الكود من الـ Cache
         _cache.Remove($"OtpCode_{dto.PhoneNumber}");
-        return Ok(new { message = "OTP verified successfully" });
+        return Ok(new { message = _translator.Get("Auth.OtpVerified") });
     }
 
     [Authorize]
@@ -183,10 +185,10 @@ public class AuthController : ControllerBase
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
         var result = await _auth.ChangePasswordAsync(userId, dto);
-        return result ? Ok(new { message = "Password changed successfully" }) : BadRequest(new { message = "Failed to change password" });
+        return result ? Ok(new { message = _translator.Get("Auth.PasswordChanged") }) : BadRequest(new { message = _translator.Get("Auth.PasswordChangeFailed") });
     }
 
-    /// <summary>ÙŠØ±Ø¬Ø¹ customerId Ù„Ù„Ù…Ø³ØªØ®Ø¯Ù… Ø§Ù„Ù…Ø³Ø¬Ù„ Ø­Ø§Ù„ÙŠØ§Ù‹</summary>
+    /// <summary>يرجع customerId للمستخدم المسجل حالياً</summary>
     [Authorize]
     [HttpGet("customer-id")]
     public async Task<IActionResult> GetCustomerId()
@@ -198,12 +200,12 @@ public class AuthController : ControllerBase
             .FirstOrDefaultAsync();
 
         if (customer == null)
-            return NotFound(new { message = "Customer profile not found" });
+            return NotFound(new { message = _translator.Get("Auth.CustomerNotFound") });
 
         return Ok(new { customerId = customer.Id });
     }
 
-    /// <summary>Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ø§Ù„Ø­Ø§Ù„ÙŠ</summary>
+    /// <summary>بيانات المستخدم الحالي</summary>
     [Authorize]
     [HttpGet("me")]
     public async Task<IActionResult> GetMe()
@@ -272,7 +274,7 @@ public class AuthController : ControllerBase
         return Ok(users);
     }
 
-    /// <summary>ØªØ³Ø¬ÙŠÙ„ Ù…ÙˆØ¸Ù Ø¬Ø¯ÙŠØ¯ (Ù„Ù„Ù…Ø¯ÙŠØ±)</summary>
+    /// <summary>تسجيل موظف جديد (للمدير)</summary>
     [RequirePermission(ModuleKeys.Staff, requireEdit: true)]
     [HttpPost("staff")]
     public async Task<IActionResult> CreateStaff([FromBody] RegisterDto dto, [FromQuery] string role = "Cashier")
@@ -297,8 +299,7 @@ public class AuthController : ControllerBase
 
                 await _auth.AssignRoleAsync(existingUser.Id, role);
                 await EnsureEmployeeLinkAsync(existingUser, role);
-
-                return Ok(new { message = "Staff reactivated and updated successfully" });
+                return Ok(new { message = _translator.Get("Auth.StaffReactivated") });
             }
 
             var authResult = await _auth.RegisterAsync(dto, isCustomer: false);
@@ -310,8 +311,7 @@ public class AuthController : ControllerBase
                 await _auth.AssignRoleAsync(user.Id, role);
                 await EnsureEmployeeLinkAsync(user, role);
             }
-
-            return Ok(new { message = "Staff created successfully" }); 
+            return Ok(new { message = _translator.Get("Auth.StaffCreated") }); 
         }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
         catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
@@ -380,7 +380,7 @@ public class AuthController : ControllerBase
         // Use case-insensitive check
         bool Is(string role) => roles.Any(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase));
         
-        // â”€â”€ Admin & Manager: Full Access Baseline â”€â”€
+        // Ã¢â€â‚¬Ã¢â€â‚¬ Admin & Manager: Full Access Baseline Ã¢â€â‚¬Ã¢â€â‚¬
         if (Is("Admin") || Is("Manager"))
         {
             perms.Add("dashboard"); 
@@ -401,7 +401,7 @@ public class AuthController : ControllerBase
             perms.Add("import");
         }
 
-        // â”€â”€ Admin Exclusive â”€â”€
+        // Ã¢â€â‚¬Ã¢â€â‚¬ Admin Exclusive Ã¢â€â‚¬Ã¢â€â‚¬
         if (Is("Admin"))
         {
             perms.Add("staff"); perms.Add("staff.edit");
@@ -410,7 +410,7 @@ public class AuthController : ControllerBase
             perms.Add("whatsapp");
         }
 
-        // â”€â”€ Cashier: POS & Orders Operations â”€â”€
+        // Ã¢â€â‚¬Ã¢â€â‚¬ Cashier: POS & Orders Operations Ã¢â€â‚¬Ã¢â€â‚¬
         if (Is("Cashier"))
         {
             perms.Add("pos");
@@ -420,7 +420,7 @@ public class AuthController : ControllerBase
             perms.Add("customers"); // To add/select customers during sale
         }
 
-        // â”€â”€ Accountant: Financial & Reporting â”€â”€
+        // Ã¢â€â‚¬Ã¢â€â‚¬ Accountant: Financial & Reporting Ã¢â€â‚¬Ã¢â€â‚¬
         if (Is("Accountant"))
         {
             perms.Add("dashboard");
@@ -432,7 +432,7 @@ public class AuthController : ControllerBase
             perms.Add("products.read");
         }
 
-        // â”€â”€ Staff (Store Keeper / Sales): Inventory & Orders â”€â”€
+        // Ã¢â€â‚¬Ã¢â€â‚¬ Staff (Store Keeper / Sales): Inventory & Orders Ã¢â€â‚¬Ã¢â€â‚¬
         if (Is("Staff"))
         {
             perms.Add("orders");

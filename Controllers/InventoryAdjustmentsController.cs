@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.Data;
@@ -15,20 +15,22 @@ public class InventoryAdjustmentsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IInventoryService _inventory;
+    private readonly ITranslator _t;
 
-    public InventoryAdjustmentsController(AppDbContext db, IInventoryService inventory)
+    public InventoryAdjustmentsController(AppDbContext db, IInventoryService inventory, ITranslator t)
     {
         _db = db;
         _inventory = inventory;
+        _t = t;
     }
 
     /// <summary>
-    /// ØªØ³ÙˆÙŠØ© Ù…Ø®Ø²Ù†ÙŠØ© Ø³Ø±ÙŠØ¹Ø© Ù„ØµÙ†Ù ÙˆØ§Ø­Ø¯
+    /// Quick stock adjustment for a single item
     /// </summary>
     [HttpPost]
     public async Task<IActionResult> Adjust([FromBody] QuickAdjustmentDto dto)
     {
-        if (dto.Quantity == 0) return BadRequest("Ø§Ù„ÙƒÙ…ÙŠØ© Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø£Ù† ØªÙƒÙˆÙ† ØµÙØ±");
+        if (dto.Quantity == 0) return BadRequest(new { message = _t.Get("Inventory.AdjustmentZeroQty") });
 
         await _inventory.LogMovementAsync(
             InventoryMovementType.Adjustment,
@@ -36,14 +38,13 @@ public class InventoryAdjustmentsController : ControllerBase
             dto.ProductId,
             dto.ProductVariantId,
             "MANUAL-ADJ",
-            dto.Note ?? "ØªØ¹Ø¯ÙŠÙ„ ÙŠØ¯ÙˆÙŠ Ù…Ù† Ø§Ù„Ø¥Ø¯Ø§Ø±Ø©",
+            dto.Note ?? _t.Get("Inventory.ManualAdminAdjustment"),
             User.FindFirst(ClaimTypes.NameIdentifier)?.Value
         );
 
         await _db.SaveChangesAsync();
-        return Ok(new { message = "ØªÙ… ØªØ¹Ø¯ÙŠÙ„ Ø§Ù„Ù…Ø®Ø²ÙˆÙ† Ø¨Ù†Ø¬Ø§Ø­" });
+        return Ok(new { message = _t.Get("Inventory.AdjustmentSuccess") });
     }
 }
 
 public record QuickAdjustmentDto(int? ProductId, int? ProductVariantId, int Quantity, string? Note);
-

@@ -24,7 +24,12 @@ namespace Sportive.API.Controllers;
 public class SuppliersController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public SuppliersController(AppDbContext db) => _db = db;
+    private readonly ITranslator _t;
+    public SuppliersController(AppDbContext db, ITranslator t)
+    {
+        _db = db;
+        _t = t;
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -80,7 +85,7 @@ public class SuppliersController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateSupplierDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Name) || string.IsNullOrWhiteSpace(dto.Phone))
-            return BadRequest(new { message = "Ø§Ù„Ø§Ø³Ù… ÙˆØ±Ù‚Ù… Ø§Ù„Ù‡Ø§ØªÙ Ø¥Ù„Ø²Ø§Ù…ÙŠØ§Ù†" });
+            return BadRequest(new { message = _t.Get("Suppliers.NameAndPhoneRequired") });
 
         // 1. Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† ÙˆØ¬ÙˆØ¯ Ø§Ù„Ù…ÙˆØ±Ø¯ Ù…Ø³Ø¨Ù‚Ø§Ù‹ (Ù†Ø´Ø·)
         var existing = await _db.Suppliers.FirstOrDefaultAsync(s => 
@@ -88,7 +93,7 @@ public class SuppliersController : ControllerBase
         
         if (existing != null)
         {
-            return BadRequest(new { message = "Ù‡Ø°Ø§ Ø§Ù„Ù…ÙˆØ±Ø¯ Ù…Ø³Ø¬Ù„ Ø¨Ø§Ù„ÙØ¹Ù„." });
+            return BadRequest(new { message = _t.Get("Suppliers.AlreadyExists") });
         }
 
         var supplier = new Supplier
@@ -158,7 +163,7 @@ public class SuppliersController : ControllerBase
         if (supplier == null) return NotFound();
 
         if (supplier.Invoices.Any())
-            return BadRequest(new { message = "Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ù…ÙˆØ±Ø¯ Ù…Ø³Ø¬Ù„ Ù„Ù‡ ÙÙˆØ§ØªÙŠØ± Ù…Ø´ØªØ±ÙŠØ§Øª. ÙŠØ±Ø¬Ù‰ Ø­Ø°Ù Ø§Ù„ÙÙˆØ§ØªÙŠØ± Ø£ÙˆÙ„Ø§Ù‹." });
+        if (supplier.Invoices.Any()) return BadRequest(new { message = _t.Get("Suppliers.CannotDeleteWithInvoices") });
 
         _db.Suppliers.Remove(supplier);
         await _db.SaveChangesAsync();
@@ -168,7 +173,7 @@ public class SuppliersController : ControllerBase
     [HttpPost("import-opening-balances")]
     public async Task<IActionResult> ImportOpeningBalances(IFormFile file)
     {
-        if (file == null || file.Length == 0) return BadRequest(new { message = "Ù„Ù… ÙŠØªÙ… Ø±ÙØ¹ Ù…Ù„Ù" });
+        if (file == null || file.Length == 0) return BadRequest(new { message = _t.Get("Common.NoFileUploaded") });
 
         var successCount = 0;
         var errors = new List<string>();
@@ -210,16 +215,16 @@ public class SuppliersController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = $"Ø®Ø·Ø£ ÙÙŠ Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©: {ex.Message}" });
+            return BadRequest(new { message = _t.Get("Common.ProcessingError", ex.Message) });
         }
 
         return Ok(new { success = true, successCount, errors });
     }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
 // PURCHASE INVOICES
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// 
 [ApiController]
 [Route("api/[controller]")]
 [RequirePermission(ModuleKeys.PurchasesMain)]
@@ -232,9 +237,11 @@ public class PurchaseInvoicesController : ControllerBase
     private readonly ILogger<PurchaseInvoicesController> _logger;
     private readonly SequenceService _seq;
     private readonly IPdfService _pdf;
+    private readonly ITranslator _t;
 
-    public PurchaseInvoicesController(AppDbContext db, IServiceScopeFactory scopeFactory, IProductService productService, IInventoryService inventory, ILogger<PurchaseInvoicesController> logger, SequenceService seq, IPdfService pdf)
+    public PurchaseInvoicesController(AppDbContext db, IServiceScopeFactory scopeFactory, IProductService productService, IInventoryService inventory, ILogger<PurchaseInvoicesController> logger, SequenceService seq, IPdfService pdf, ITranslator t)
     {
+        _t = t;
         _db             = db;
         _scopeFactory   = scopeFactory;
         _productService = productService;
@@ -463,7 +470,7 @@ public class PurchaseInvoicesController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreatePurchaseInvoiceDto dto)
     {
         if (!dto.Items.Any())
-            return BadRequest(new { message = "ÙŠØ¬Ø¨ Ø¥Ø¶Ø§ÙØ© ØµÙ†Ù ÙˆØ§Ø­Ø¯ Ø¹Ù„Ù‰ Ø§Ù„Ø£Ù‚Ù„" });
+            return BadRequest(new { message = _t.Get("Purchases.MinOneItemRequired") });
 
         foreach (var item in dto.Items)
         {
@@ -472,7 +479,7 @@ public class PurchaseInvoicesController : ControllerBase
                 var hasVariants = await _db.ProductVariants.AnyAsync(v => v.ProductId == item.ProductId.Value);
                 if (hasVariants)
                 {
-                    return BadRequest(new { message = $"ÙŠØ¬Ø¨ Ø§Ø®ØªÙŠØ§Ø± Ø§Ù„Ù…Ù‚Ø§Ø³ ÙˆØ§Ù„Ù„ÙˆÙ† Ù„Ù„ØµÙ†Ù: {item.Description}" });
+                    return BadRequest(new { message = _t.Get("Purchases.SizeColorRequired", item.Description) });
                 }
             }
         }
@@ -481,7 +488,7 @@ public class PurchaseInvoicesController : ControllerBase
 
         var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
         if (supplier == null)
-            return BadRequest(new { message = "Ø§Ù„Ù…ÙˆØ±Ø¯ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
+            return BadRequest(new { message = _t.Get("Purchases.SupplierNotFound") });
 
         var invNo = await _seq.NextAsync("PO", async (db, pattern) =>
         {
@@ -628,7 +635,7 @@ public class PurchaseInvoicesController : ControllerBase
                     var hasVariants = await _db.ProductVariants.AnyAsync(v => v.ProductId == item.ProductId.Value);
                     if (hasVariants)
                     {
-                        return BadRequest(new { message = $"ÙŠØ¬Ø¨ Ø§Ø®ØªÙŠØ§Ø± Ø§Ù„Ù…Ù‚Ø§Ø³ ÙˆØ§Ù„Ù„ÙˆÙ† Ù„Ù„ØµÙ†Ù Ø¨Ø§Ù„ØªØ¹Ø¯ÙŠÙ„: {item.Description}" });
+                    return BadRequest(new { message = _t.Get("Purchases.SizeColorRequiredForEdit", item.Description) });
                     }
                 }
             }
@@ -842,11 +849,11 @@ public class PurchaseInvoicesController : ControllerBase
     public async Task<IActionResult> CreateStandaloneReturn([FromBody] CreateStandaloneReturnDto dto)
     {
         if (dto == null || dto.Items == null || !dto.Items.Any())
-            return BadRequest(new { message = "ÙŠØ¬Ø¨ Ø¥Ø¶Ø§ÙØ© ØµÙ†Ù ÙˆØ§Ø­Ø¯ Ø¹Ù„Ù‰ Ø§Ù„Ø£Ù‚Ù„ Ù„Ù„Ù…Ø±ØªØ¬Ø¹" });
+            return BadRequest(new { message = _t.Get("Purchases.MinOneReturnItemRequired") });
 
         var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
         if (supplier == null)
-            return BadRequest(new { message = "Ø§Ù„Ù…ÙˆØ±Ø¯ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
+            return BadRequest(new { message = _t.Get("Purchases.SupplierNotFound") });
 
         var pUnits = await GetUnitsListAsync();
         var returnNo = await _seq.NextAsync("PR", async (db, pattern) =>
@@ -942,7 +949,7 @@ public class PurchaseInvoicesController : ControllerBase
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error in CreateStandaloneReturn - {Message} - Inner: {InnerMessage}", ex.Message, ex.InnerException?.Message);
                 return StatusCode(500, new { 
-                    message = "Ø®Ø·Ø£ Ø¯Ø§Ø®Ù„ÙŠ Ø£Ø«Ù†Ø§Ø¡ Ù…Ø¹Ø§Ù„Ø¬Ø© Ø§Ù„Ù…Ø±ØªØ¬Ø¹", 
+                        message = _t.Get("Purchases.InternalReturnError"),
                     error = ex.Message,
                     detail = ex.InnerException?.Message 
                 });
@@ -955,7 +962,7 @@ public class PurchaseInvoicesController : ControllerBase
     public async Task<IActionResult> UpdateStandaloneReturn(int id, [FromBody] CreateStandaloneReturnDto dto)
     {
         if (dto == null || dto.Items == null || !dto.Items.Any())
-            return BadRequest(new { message = "ÙŠØ¬Ø¨ Ø¥Ø¶Ø§ÙØ© ØµÙ†Ù ÙˆØ§Ø­Ø¯ Ø¹Ù„Ù‰ Ø§Ù„Ø£Ù‚Ù„ Ù„Ù„Ù…Ø±ØªØ¬Ø¹" });
+            return BadRequest(new { message = _t.Get("Purchases.MinOneReturnItemRequired") });
 
         var pReturn = await _db.PurchaseReturns
             .Include(r => r.Items)
@@ -1080,7 +1087,7 @@ public class PurchaseInvoicesController : ControllerBase
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error in UpdateStandaloneReturn - {Message} - Inner: {InnerMessage}", ex.Message, ex.InnerException?.Message);
                 return StatusCode(500, new { 
-                    message = "Ø®Ø·Ø£ Ø¯Ø§Ø®Ù„ÙŠ Ø£Ø«Ù†Ø§Ø¡ ØªØ¹Ø¯ÙŠÙ„ Ø§Ù„Ù…Ø±ØªØ¬Ø¹", 
+                        message = _t.Get("Purchases.InternalReturnUpdateError"),
                     error = ex.Message,
                     detail = ex.InnerException?.Message 
                 });
@@ -1095,10 +1102,10 @@ public class PurchaseInvoicesController : ControllerBase
     public async Task<IActionResult> ReturnPurchase(int id, [FromBody] ReturnPurchaseInvoiceDto dto)
     {
         if (dto == null)
-            return BadRequest(new { message = "Ù…Ø­ØªÙˆÙ‰ Ø§Ù„Ø·Ù„Ø¨ ÙØ§Ø±Øº" });
+            return BadRequest(new { message = _t.Get("Common.EmptyRequest") });
 
         if (dto.Items == null || !dto.Items.Any())
-            return BadRequest(new { message = "ÙŠØ¬Ø¨ Ø§Ø®ØªÙŠØ§Ø± Ø£ØµÙ†Ø§Ù Ù„Ù„Ø¥Ø±Ø¬Ø§Ø¹" });
+            return BadRequest(new { message = _t.Get("Purchases.ReturnItemsRequired") });
 
         // 1. Generate Return Document Number BEFORE starting transaction to avoid deadlocks
         // (SequenceService uses its own scope/connection)
@@ -1126,13 +1133,13 @@ public class PurchaseInvoicesController : ControllerBase
                     .FirstOrDefaultAsync(i => i.Id == id);
 
                 if (inv == null) 
-                    return NotFound(new { message = "Ø§Ù„ÙØ§ØªÙˆØ±Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©" });
+                    return NotFound(new { message = _t.Get("Purchases.InvoiceNotFound") });
 
                 if (inv.Status == PurchaseInvoiceStatus.Cancelled)
-                    return BadRequest(new { message = "Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø¹Ù…Ù„ Ù…Ø±ØªØ¬Ø¹ Ù„ÙØ§ØªÙˆØ±Ø© Ù…Ù„ØºØ§Ø©" });
+                    return BadRequest(new { message = _t.Get("Purchases.CannotReturnCancelled") });
 
                 if (inv.Status == PurchaseInvoiceStatus.Draft || (int)inv.Status == 0) 
-                    return BadRequest(new { message = "Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø¹Ù…Ù„ Ù…Ø±ØªØ¬Ø¹ Ù„ÙØ§ØªÙˆØ±Ø© Ù„Ù… ÙŠØªÙ… Ø§Ø³ØªÙ„Ø§Ù…Ù‡Ø§ Ø¨Ø¹Ø¯ (Ù…Ø³ÙˆØ¯Ø©)" });
+                    return BadRequest(new { message = _t.Get("Purchases.CannotReturnDraft") });
 
                 var pReturn = new PurchaseReturn
                 {
@@ -1166,12 +1173,12 @@ public class PurchaseInvoicesController : ControllerBase
                     decimal remainingInPieces = Math.Max(0, invQtyInPieces - returnedInPieces);
 
                     if (reqItem.Quantity > remainingInPieces + 0.001M)
-                        return BadRequest(new { message = $"Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„Ù…Ø·Ù„ÙˆØ¨Ø© ({reqItem.Quantity} Ù‚Ø·Ø¹Ø©) Ø£ÙƒØ¨Ø± Ù…Ù† Ø§Ù„Ù…ØªØ¨Ù‚ÙŠ ÙÙŠ Ø§Ù„ÙØ§ØªÙˆØ±Ø© ({remainingInPieces} Ù‚Ø·Ø¹Ø©) Ù„Ù„ØµÙ†Ù {invItem.Description}" });
+                        return BadRequest(new { message = _t.Get("Purchases.ReturnQuantityExceedsRemaining", reqItem.Quantity, remainingInPieces, invItem.Description) });
 
                     // B. Validate against PHYSICAL STOCK
                     var physicalStock = await _inventory.GetCurrentStockAsync(invItem.ProductId, invItem.ProductVariantId);
                     if (reqItem.Quantity > physicalStock + 0.001M)
-                        return BadRequest(new { message = $"Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø±ØµÙŠØ¯ ÙƒØ§ÙÙŠ ÙÙŠ Ø§Ù„Ù…Ø®Ø²Ù† Ù„Ø¥ØªÙ…Ø§Ù… Ø§Ù„Ù…Ø±ØªØ¬Ø¹ Ù„Ù„ØµÙ†Ù {invItem.Description}. Ø§Ù„Ù…ØªÙˆÙØ± Ø­Ø§Ù„ÙŠØ§Ù‹: {physicalStock} Ù‚Ø·Ø¹Ø©." });
+                        return BadRequest(new { message = _t.Get("Purchases.ReturnQuantityExceedsStock", invItem.Description, physicalStock) });
 
                     // C. Update Invoice Item
                     decimal returnedInOriginalUnits = multiplier > 0 ? (reqItem.Quantity / multiplier) : reqItem.Quantity;
@@ -1210,7 +1217,7 @@ public class PurchaseInvoicesController : ControllerBase
                 }
 
                 if (!pReturn.Items.Any() || totalSubTotal <= 0)
-                    return BadRequest(new { message = "Ù„Ù… ÙŠØªÙ… ØªØ­Ø¯ÙŠØ¯ Ø£ÙŠ ÙƒÙ…ÙŠØ§Øª ØµØ§Ù„Ø­Ø© Ù„Ù„Ø¥Ø±Ø¬Ø§Ø¹" });
+            return BadRequest(new { message = _t.Get("Purchases.NoValidReturnQuantities") });
 
                 // 2. Financial Calculations
                 decimal subTotal_Original = Math.Max(1, inv.SubTotal);
@@ -1265,7 +1272,7 @@ public class PurchaseInvoicesController : ControllerBase
                     
                 _logger.LogError(ex, "Severe error in ReturnPurchase for invoice {Id}", id);
                 return StatusCode(500, new { 
-                    message = "Ø®Ø·Ø£ Ø¯Ø§Ø®Ù„ÙŠ Ø£Ø«Ù†Ø§Ø¡ Ù…Ø¹Ø§Ù„Ø¬Ø© Ø§Ù„Ù…Ø±ØªØ¬Ø¹", 
+                        message = _t.Get("Purchases.InternalReturnError"),
                     error = ex.Message,
                     detail = ex.InnerException?.Message 
                 });
@@ -1352,7 +1359,7 @@ public class PurchaseInvoicesController : ControllerBase
         var hasReturns = await _db.PurchaseReturns.AnyAsync(r => r.PurchaseInvoiceId == id);
         if (hasReturns || inv.ReturnedAmount > 0)
         {
-            return BadRequest(new { message = "Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù ÙØ§ØªÙˆØ±Ø© Ù„Ù‡Ø§ Ù…Ø±ØªØ¬Ø¹Ø§Øª. ÙŠØ±Ø¬Ù‰ Ø­Ø°Ù Ø§Ù„Ù…Ø±ØªØ¬Ø¹Ø§Øª Ø£ÙˆÙ„Ø§Ù‹." });
+            return BadRequest(new { message = _t.Get("Purchases.CannotDeleteWithReturns") });
         }
 
         // 2. Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù…Ø§ Ø¥Ø°Ø§ ÙƒØ§Ù† Ù‚Ø¯ ØªÙ… Ø¨ÙŠØ¹ Ø£ÙŠ Ø¬Ø²Ø¡ Ù…Ù† Ø§Ù„ÙØ§ØªÙˆØ±Ø© (Check if items were sold)
@@ -1368,9 +1375,9 @@ public class PurchaseInvoicesController : ControllerBase
                 if (currentStock < qtyInPieces)
                 {
                     var productName = item.Product?.NameAr ?? item.Description;
-                    return BadRequest(new { 
-                        message = $"Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ø§Ù„ÙØ§ØªÙˆØ±Ø© Ù„Ø£Ù†Ù‡ ØªÙ… Ø¨ÙŠØ¹ Ø£Ø¬Ø²Ø§Ø¡ Ù…Ù†Ù‡Ø§ Ø¨Ø§Ù„ÙØ¹Ù„. Ø§Ù„ØµÙ†Ù: {productName} (Ø§Ù„ÙƒÙ…ÙŠØ© ÙÙŠ Ø§Ù„ÙØ§ØªÙˆØ±Ø©: {qtyInPieces}ØŒ Ø§Ù„Ø±ØµÙŠØ¯ Ø§Ù„Ø­Ø§Ù„ÙŠ: {currentStock})" 
-                    });
+                    return BadRequest(new { message = _t.Get("Purchases.CannotDeleteInvoiceUsedInSales", productName, qtyInPieces, currentStock) });
+
+
                 }
             }
         }

@@ -1,184 +1,147 @@
+using System.Text;
 using Sportive.API.Models;
+using Sportive.API.Interfaces;
 
 namespace Sportive.API.Services;
 
-// ══════════════════════════════════════════════════════
-// WaMeService — يولّد روابط wa.me جاهزة للنسخ أو الفتح
-// لا يحتاج API Key أو اشتراك
-// ══════════════════════════════════════════════════════
-
-public interface IWaMeService
-{
-    WaMeResult OrderConfirmation(Order order);
-    WaMeResult ShippingUpdate(Order order, string? tracking = null);
-    WaMeResult ReturnConfirmation(Order order);
-    WaMeResult OrderReady(Order order);
-    WaMeResult PaymentReminder(Order order);
-    WaMeResult CustomMessage(string phone, string message);
-}
-
-public record WaMeResult(
-    string Phone,
-    string Message,
-    string Link,         // wa.me/20201xxxxxxxx?text=...
-    string ShortMessage  // للعرض في الـ UI (أول سطرين)
-);
-
+/// <summary>
+/// WaMeService — Generates wa.me links ready for copying or opening.
+/// No API Key or subscription required.
+/// </summary>
 public class WaMeService : IWaMeService
 {
     private readonly IConfiguration _config;
-    private string StoreName => _config["Store:Name"] ?? "Sportive";
-    private string StorePhone => _config["Store:Phone"] ?? "201002076641";
-    private string StoreUrl => _config["Store:Url"] ?? "https://sportive-sportwear.com";
+    private readonly ITranslator _t;
 
-    public WaMeService(IConfiguration config) => _config = config;
+    public WaMeService(IConfiguration config, ITranslator t)
+    {
+        _config = config;
+        _t = t;
+    }
 
-    // ── 1. تأكيد الطلب ───────────────────────────────
+    private string StorePhone => _config["Store:WhatsApp"] ?? _config["Store:Phone"] ?? "";
+    private string StoreUrl   => _config["Store:BaseUrl"]  ?? "https://sportive-sportwear.com";
+
+    private WaMeResult CreateLink(string phone, string message)
+    {
+        if (string.IsNullOrEmpty(phone)) return new WaMeResult("", "", "");
+
+        // Clean phone: remove +, spaces, dashes
+        var cleanPhone = new string(phone.Where(char.IsDigit).ToArray());
+        if (!cleanPhone.StartsWith("20") && cleanPhone.Length == 11) cleanPhone = "20" + cleanPhone;
+
+        var encodedMsg = Uri.EscapeDataString(message);
+        var url = $"https://wa.me/{cleanPhone}?text={encodedMsg}";
+
+        var lines = message.Split('\n');
+        var shortMsg = lines.Length > 2 ? string.Join('\n', lines.Take(2)) + "..." : message;
+
+        return new WaMeResult(url, message, shortMsg);
+    }
+
     public WaMeResult OrderConfirmation(Order order)
     {
-        var itemsList = order.Items?.Select(i =>
-            $"  • {i.ProductNameAr} × {i.Quantity}").ToList()
-            ?? new List<string>();
+        var itemsSummary = new StringBuilder();
+        foreach (var item in order.Items)
+        {
+            itemsSummary.AppendLine($"• {item.ProductNameAr} ({item.Size} - {item.Color}) x{item.Quantity}");
+        }
 
-        var msg = $"""
-أهلاً {CustomerName(order)} 👋
+        var discountPart = order.DiscountAmount > 0
+            ? $"🎁 {_t.Get("WhatsApp.Discount")}: *{order.DiscountAmount:N2}*\n"
+            : "";
 
-✅ *تم تأكيد طلبك بنجاح!*
+        var message = string.Format(
+            _t.Get("WhatsApp.OrderConfirm"),
+            CustomerFirstName(order),
+            order.OrderNumber,
+            itemsSummary.ToString().TrimEnd(),
+            order.TotalAmount,
+            discountPart,
+            PaymentMethodLabel(order.PaymentMethod),
+            FulfillmentLabel(order.FulfillmentType),
+            StoreUrl
+        );
 
-🔢 رقم الطلب: *{order.OrderNumber}*
-📦 الطلب:
-{string.Join("\n", itemsList)}
-
-💰 الإجمالي: *{order.TotalAmount:N2} ج.م*
-{(order.DiscountAmount > 0 ? $"🎁 الخصم: *{order.DiscountAmount:N2} ج.م*\n" : "")}💳 الدفع: *{PaymentMethodAr(order.PaymentMethod)}*
-📍 النوع: *{FulfillmentAr(order.FulfillmentType)}*
-
-سنتواصل معك قريباً لتأكيد التسليم 🙏
-📄 فاتورتك الإلكترونية: {StoreUrl}/invoice/{order.OrderNumber}
-
-_{StoreName}_
-""";
-        return Build(order.Customer?.Phone, msg);
+        return CreateLink(order.Customer?.Phone ?? "", message);
     }
 
-    // ── 2. تحديث الشحن ───────────────────────────────
     public WaMeResult ShippingUpdate(Order order, string? tracking = null)
     {
-        var msg = $"""
-مرحباً {CustomerName(order)} 🚚
+        var trackingPart = string.IsNullOrEmpty(tracking) ? "" : $"📍 {_t.Get("WhatsApp.TrackingCode")}: *{tracking}*\n";
 
-*طلبك #{order.OrderNumber} في الطريق!*
+        var message = string.Format(
+            _t.Get("WhatsApp.ShippingUpdate"),
+            CustomerFirstName(order),
+            order.OrderNumber,
+            trackingPart,
+            StorePhone
+        );
 
-{(string.IsNullOrEmpty(tracking) ? "" : $"📍 كود التتبع: *{tracking}*\n")}⏱ متوقع الوصول: 2-3 أيام عمل
-📞 للاستفسار: {StorePhone}
-
-_{StoreName}_
-""";
-        return Build(order.Customer?.Phone, msg);
+        return CreateLink(order.Customer?.Phone ?? "", message);
     }
 
-    // ── 3. تأكيد المرتجع ─────────────────────────────
     public WaMeResult ReturnConfirmation(Order order)
     {
-        var msg = $"""
-مرحباً {CustomerName(order)} 🔄
+        var message = string.Format(
+            _t.Get("WhatsApp.ReturnConfirm"),
+            CustomerFirstName(order),
+            order.OrderNumber,
+            order.TotalAmount
+        );
 
-*تم استلام طلب الإرجاع*
-
-🔢 رقم الطلب: *{order.OrderNumber}*
-💰 المبلغ المسترجع: *{order.TotalAmount:N2} ج.م*
-
-سيتم رد المبلغ خلال 3-5 أيام عمل 🙏
-نأسف للإزعاج ونتمنى رؤيتك قريباً!
-
-_{StoreName}_
-""";
-        return Build(order.Customer?.Phone, msg);
+        return CreateLink(order.Customer?.Phone ?? "", message);
     }
 
-    // ── 4. جاهز للاستلام ─────────────────────────────
     public WaMeResult OrderReady(Order order)
     {
-        var msg = $"""
-أهلاً {CustomerName(order)} 🎉
+        var address = _config["Store:Address"] ?? "فرع Sportive الرئيسي";
 
-*طلبك #{order.OrderNumber} جاهز للاستلام!*
+        var message = string.Format(
+            _t.Get("WhatsApp.ReadyForPickup"),
+            CustomerFirstName(order),
+            order.OrderNumber,
+            address,
+            StorePhone
+        );
 
-📍 العنوان: {_config["Store:Address"] ?? "فرع Sportive الرئيسي"}
-🕐 مواعيد العمل: 10 ص — 10 م يومياً
-📞 للتواصل: {StorePhone}
-
-انتظرنا! 💪
-_{StoreName}_
-""";
-        return Build(order.Customer?.Phone, msg);
+        return CreateLink(order.Customer?.Phone ?? "", message);
     }
 
-    // ── 5. تذكير بالدفع ──────────────────────────────
     public WaMeResult PaymentReminder(Order order)
     {
-        var msg = $"""
-مرحباً {CustomerName(order)} 💬
+        var message = string.Format(
+            _t.Get("WhatsApp.PaymentReminder"),
+            CustomerFirstName(order),
+            order.OrderNumber,
+            order.TotalAmount,
+            StorePhone
+        );
 
-تذكير بخصوص طلبك *#{order.OrderNumber}*
-
-💰 المبلغ المستحق: *{order.TotalAmount:N2} ج.م*
-💳 طرق الدفع: كاش / فودافون / انستاباي
-
-للدفع أو الاستفسار تواصل معنا:
-📞 {StorePhone}
-
-شكراً لتعاملك معنا 🙏
-_{StoreName}_
-""";
-        return Build(order.Customer?.Phone, msg);
+        return CreateLink(order.Customer?.Phone ?? "", message);
     }
 
-    // ── 6. رسالة مخصصة ───────────────────────────────
-    public WaMeResult CustomMessage(string phone, string message)
-        => Build(phone, message);
+    public WaMeResult CustomMessage(string phone, string message) => CreateLink(phone, message);
 
-    // ── Helpers ───────────────────────────────────────
-    private WaMeResult Build(string? phone, string message)
+    private string CustomerFirstName(Order o)
     {
-        var normalized = NormalizePhone(phone ?? "");
-        var encoded    = Uri.EscapeDataString(message.Trim());
-        var link       = string.IsNullOrEmpty(normalized)
-            ? $"https://wa.me/?text={encoded}"
-            : $"https://wa.me/{normalized}?text={encoded}";
-
-        var lines  = message.Trim().Split('\n');
-        var shortMsg = string.Join(" • ", lines.Take(2)
-            .Select(l => l.Replace("*", "").Trim())
-            .Where(l => !string.IsNullOrEmpty(l)));
-
-        return new WaMeResult(normalized, message.Trim(), link, shortMsg);
+        var name = o.Customer?.FullName?.Split(' ').FirstOrDefault();
+        return !string.IsNullOrEmpty(name) ? name : _t.Get("WhatsApp.DefaultCustomer");
     }
 
-    private static string NormalizePhone(string phone)
+    private string PaymentMethodLabel(PaymentMethod method) => method switch
     {
-        var digits = new string(phone.Where(char.IsDigit).ToArray());
-        if (digits.StartsWith("01") && digits.Length == 11) return "20" + digits;
-        if (digits.StartsWith("20") && digits.Length == 12) return digits;
-        return digits;
-    }
-
-    private static string CustomerName(Order o) =>
-        o.Customer?.FullName?.Split(' ').FirstOrDefault() ?? "عزيزنا";
-
-    private static string PaymentMethodAr(PaymentMethod m) => m switch
-    {
-        PaymentMethod.Cash       => "كاش عند الاستلام",
-        PaymentMethod.CreditCard => "فيزا / ماستر كارد",
-        PaymentMethod.Vodafone   => "فودافون كاش",
-        PaymentMethod.InstaPay   => "انستاباي",
-        _                        => m.ToString()
+        PaymentMethod.Cash       => _t.Get("WhatsApp.Payment.Cash"),
+        PaymentMethod.CreditCard => _t.Get("WhatsApp.Payment.CreditCard"),
+        PaymentMethod.Vodafone   => _t.Get("WhatsApp.Payment.Vodafone"),
+        PaymentMethod.InstaPay   => _t.Get("WhatsApp.Payment.InstaPay"),
+        _                        => method.ToString()
     };
 
-    private static string FulfillmentAr(FulfillmentType f) => f switch
+    private string FulfillmentLabel(FulfillmentType type) => type switch
     {
-        FulfillmentType.Delivery => "توصيل للمنزل",
-        FulfillmentType.Pickup   => "استلام من الفرع",
-        _                        => f.ToString()
+        FulfillmentType.Delivery => _t.Get("WhatsApp.Fulfillment.Delivery"),
+        FulfillmentType.Pickup   => _t.Get("WhatsApp.Fulfillment.Pickup"),
+        _                        => type.ToString()
     };
 }

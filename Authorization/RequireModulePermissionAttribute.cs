@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
+using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using System.Security.Claims;
 
@@ -44,14 +45,16 @@ public class RequireModulePermissionAttribute : Attribute, IAsyncAuthorizationFi
 
         if (perm == null || !perm.CanView)
         {
-            context.Result = new ObjectResult(new { message = "ليس لديك صلاحية الوصول لهذه الوحدة." })
+            var t = context.HttpContext.RequestServices.GetRequiredService<ITranslator>();
+            context.Result = new ObjectResult(new { message = t.Get("Auth.NoViewPermission") })
                 { StatusCode = 403 };
             return;
         }
 
         if (_requireEdit && !perm.CanEdit)
         {
-            context.Result = new ObjectResult(new { message = "ليس لديك صلاحية التعديل في هذه الوحدة." })
+            var t = context.HttpContext.RequestServices.GetRequiredService<ITranslator>();
+            context.Result = new ObjectResult(new { message = t.Get("Auth.NoEditPermission") })
                 { StatusCode = 403 };
         }
     }

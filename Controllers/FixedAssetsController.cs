@@ -1,3 +1,4 @@
+using Sportive.API.Interfaces;
 ﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -21,8 +22,8 @@ namespace Sportive.API.Controllers;
 public class FixedAssetCategoriesController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public FixedAssetCategoriesController(AppDbContext db) => _db = db;
-
+    private readonly ITranslator _t;
+    public FixedAssetCategoriesController(AppDbContext db, ITranslator t) { _db = db; _t = t; }
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
@@ -48,7 +49,7 @@ public class FixedAssetCategoriesController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateFixedAssetCategoryDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Name))
-            return BadRequest("Ø§Ø³Ù… Ø§Ù„ÙØ¦Ø© Ù…Ø·Ù„ÙˆØ¨.");
+            return BadRequest(_t.Get("Assets.CategoryNameRequired"));
 
         var cat = new FixedAssetCategory
         {
@@ -92,7 +93,7 @@ public class FixedAssetCategoriesController : ControllerBase
             .FirstOrDefaultAsync(c => c.Id == id);
         if (cat == null) return NotFound();
         if (cat.Assets.Any())
-            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù ÙØ¦Ø© ØªØ­ØªÙˆÙŠ Ø¹Ù„Ù‰ Ø£ØµÙˆÙ„.");
+            return BadRequest(_t.Get("Assets.CategoryWithAssets"));
 
         _db.FixedAssetCategories.Remove(cat);
         await _db.SaveChangesAsync();
@@ -112,14 +113,14 @@ public class FixedAssetsController : ControllerBase
     private readonly AppDbContext    _db;
     private readonly SequenceService _seq;
     private readonly AccountingCoreService _core;
-
-    public FixedAssetsController(AppDbContext db, SequenceService seq, AccountingCoreService core)
+    private readonly ITranslator _t;
+    public FixedAssetsController(AppDbContext db, SequenceService seq, AccountingCoreService core, ITranslator t)
     {
         _db  = db;
         _seq = seq;
         _core = core;
+        _t = t;
     }
-
     // â”€â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     /// <summary>Ø­Ø³Ø§Ø¨ Ù‚Ø³Ø· Ø§Ù„Ø¥Ù‡Ù„Ø§Ùƒ Ø§Ù„Ø´Ù‡Ø±ÙŠ Ø¨Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ù‚Ø³Ø· Ø§Ù„Ø«Ø§Ø¨Øª</summary>
@@ -227,9 +228,9 @@ public class FixedAssetsController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateFixedAssetDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Name))
-            return BadRequest("Ø§Ø³Ù… Ø§Ù„Ø£ØµÙ„ Ù…Ø·Ù„ÙˆØ¨.");
+            return BadRequest(_t.Get("Assets.NameRequired"));
         if (!await _db.FixedAssetCategories.AnyAsync(c => c.Id == dto.CategoryId))
-            return BadRequest("Ø§Ù„ÙØ¦Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©.");
+            return BadRequest(_t.Get("Assets.CategoryNotFound"));
 
         var assetNo = await _seq.NextAsync("FA", async (db, pattern) =>
         {
@@ -281,9 +282,9 @@ public class FixedAssetsController : ControllerBase
         var asset = await _db.FixedAssets.FindAsync(id);
         if (asset == null) return NotFound();
         if (asset.Status == AssetStatus.Disposed)
-            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† ØªØ¹Ø¯ÙŠÙ„ Ø£ØµÙ„ Ù…Ø³ØªØ¨Ø¹Ø¯.");
+            return BadRequest(_t.Get("Assets.CannotEditDisposed"));
         if (!await _db.FixedAssetCategories.AnyAsync(c => c.Id == dto.CategoryId))
-            return BadRequest("Ø§Ù„ÙØ¦Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©.");
+            return BadRequest(_t.Get("Assets.CategoryNotFound"));
 
         asset.Name                         = dto.Name.Trim();
         asset.Description                  = dto.Description?.Trim();
@@ -322,7 +323,7 @@ public class FixedAssetsController : ControllerBase
             .FirstOrDefaultAsync(a => a.Id == id);
         if (asset == null) return NotFound();
         if (asset.Depreciations.Any() || asset.Disposals.Any())
-            return BadRequest("Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ø£ØµÙ„ Ù„Ù‡ Ù‚ÙŠÙˆØ¯ Ø¥Ù‡Ù„Ø§Ùƒ Ø£Ùˆ Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ â€” Ù‚Ù… Ø¨Ø§Ù„Ø£Ø±Ø´ÙØ© Ø¨Ø¯Ù„Ø§Ù‹ Ù…Ù† Ø§Ù„Ø­Ø°Ù.");
+            return BadRequest(_t.Get("Assets.CannotDeleteWithHistory"));
 
         _db.FixedAssets.Remove(asset);
         await _db.SaveChangesAsync();
@@ -358,27 +359,27 @@ public class FixedAssetsController : ControllerBase
     public async Task<IActionResult> PostDepreciation(int id, [FromBody] PostDepreciationDto dto)
     {
         if (dto.FixedAssetId != id)
-            return BadRequest("Ù…Ø¹Ø±Ù‘Ù Ø§Ù„Ø£ØµÙ„ ØºÙŠØ± Ù…ØªØ·Ø§Ø¨Ù‚.");
+            return BadRequest(_t.Get("Assets.IdMismatch"));
 
         var asset = await _db.FixedAssets
             .Include(a => a.Category)
             .FirstOrDefaultAsync(a => a.Id == id);
         if (asset == null) return NotFound();
         if (asset.Status != AssetStatus.Active)
-            return BadRequest($"Ù„Ø§ ÙŠÙ…ÙƒÙ† ØªØ±Ø­ÙŠÙ„ Ø¥Ù‡Ù„Ø§Ùƒ Ø¹Ù„Ù‰ Ø£ØµÙ„ Ø¨Ø­Ø§Ù„Ø©: {asset.Status}.");
+            return BadRequest(_t.Get("Assets.DepreciationStatusError", asset.Status));
 
         // ØªØ­Ù‚Ù‚ Ù…Ù† Ø¹Ø¯Ù… ØªÙƒØ±Ø§Ø± Ù†ÙØ³ Ø§Ù„Ø´Ù‡Ø±
         if (await _db.AssetDepreciations.AnyAsync(d =>
                 d.FixedAssetId == id &&
                 d.PeriodYear   == dto.PeriodYear &&
                 d.PeriodMonth  == dto.PeriodMonth))
-            return BadRequest($"Ø§Ù„Ø¥Ù‡Ù„Ø§Ùƒ Ù„Ø´Ù‡Ø± {dto.PeriodMonth}/{dto.PeriodYear} Ù…Ø±Ø­Ù‘Ù„ Ù…Ø³Ø¨Ù‚Ø§Ù‹.");
+            return BadRequest(_t.Get("Assets.DepreciationMonthAlreadyPosted", dto.PeriodMonth, dto.PeriodYear));
 
         // Ø­Ø³Ø§Ø¨ Ù…Ø¨Ù„Øº Ø§Ù„Ø¥Ù‡Ù„Ø§Ùƒ
         var amount = dto.OverrideAmount ?? CalcStraightLineMonthly(asset);
         // Ù„Ø§ ÙŠØªØ¬Ø§ÙˆØ² Ø§Ù„Ù‚ÙŠÙ…Ø© Ø§Ù„Ø¯ÙØªØ±ÙŠØ© - Ø§Ù„Ù‚ÙŠÙ…Ø© Ø§Ù„ØªØ®Ø±ÙŠØ¯ÙŠØ©
         var remaining = asset.PurchaseCost - asset.AccumulatedDepreciation - asset.SalvageValue;
-        if (remaining <= 0) return BadRequest("Ø§Ù„Ø£ØµÙ„ Ù…Ø³ØªÙ‡Ù„Ùƒ Ø¨Ø§Ù„ÙƒØ§Ù…Ù„ ÙˆÙ„Ø§ ÙŠÙˆØ¬Ø¯ Ù…Ø¨Ù„Øº Ù„Ù„Ø¥Ù‡Ù„Ø§Ùƒ.");
+        if (remaining <= 0) return BadRequest(_t.Get("Assets.FullyDepreciated"));
         amount = Math.Min(amount, remaining);
 
         var accumBefore = asset.AccumulatedDepreciation;
@@ -441,15 +442,15 @@ public class FixedAssetsController : ControllerBase
             EntryDate       = dto.DepreciationDate,
             Type            = JournalEntryType.AssetDepreciation,
             Status          = JournalEntryStatus.Posted,
-            Description     = $"Ø¥Ù‡Ù„Ø§Ùƒ [{asset.AssetNumber}] {asset.Name} â€” {dto.PeriodMonth}/{dto.PeriodYear}",
+            Description     = $"{_t.Get("Assets.DepreciationLabel")} [{asset.AssetNumber}] {asset.Name} â€” {dto.PeriodMonth}/{dto.PeriodYear}",
             Reference       = asset.AssetNumber,
             CostCenter      = costCenter,
             CreatedByUserId = UserId,
             CreatedAt       = TimeHelper.GetEgyptTime(),
             Lines = new List<JournalLine>
             {
-                new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"Ù…ØµØ±ÙˆÙ Ø¥Ù‡Ù„Ø§Ùƒ [{asset.AssetNumber}] â€” {asset.Name}", CostCenter = costCenter, CreatedAt = TimeHelper.GetEgyptTime() },
-                new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"Ù…Ø¬Ù…Ø¹ Ø¥Ù‡Ù„Ø§Ùƒ [{asset.AssetNumber}] â€” {asset.Name}",   CostCenter = costCenter, CreatedAt = TimeHelper.GetEgyptTime() }
+                new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"{_t.Get("Assets.DepreciationExpenseLabel")} [{asset.AssetNumber}] â€” {asset.Name}", CostCenter = costCenter, CreatedAt = TimeHelper.GetEgyptTime() },
+                new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"{_t.Get("Assets.AccumulatedDepreciationLabel")} [{asset.AssetNumber}] â€” {asset.Name}",   CostCenter = costCenter, CreatedAt = TimeHelper.GetEgyptTime() }
             }
         };
         _db.JournalEntries.Add(je);
@@ -516,7 +517,7 @@ public class FixedAssetsController : ControllerBase
                 AccumulatedBefore  = accumBefore,
                 AccumulatedAfter   = accumAfter,
                 BookValueAfter     = asset.PurchaseCost - accumAfter,
-                Notes              = $"Ø¥Ù‡Ù„Ø§Ùƒ Ø¯ÙØ¹ÙŠ â€” {dto.PeriodMonth}/{dto.PeriodYear}",
+                Notes              = _t.Get("Assets.BatchDepreciationNote", dto.PeriodMonth, dto.PeriodYear),
                 CreatedAt          = TimeHelper.GetEgyptTime(),
                 CreatedByUserId    = UserId
             };
@@ -554,15 +555,15 @@ public class FixedAssetsController : ControllerBase
                     EntryDate       = dto.AsOfDate,
                     Type            = JournalEntryType.AssetDepreciation,
                     Status          = JournalEntryStatus.Posted,
-                    Description     = $"Ø¥Ù‡Ù„Ø§Ùƒ Ø¯ÙØ¹ÙŠ [{asset.AssetNumber}] {asset.Name} â€” {dto.PeriodMonth}/{dto.PeriodYear}",
+                    Description     = $"{_t.Get("Assets.DepreciationLabel")} [{asset.AssetNumber}] {asset.Name} â€” {dto.PeriodMonth}/{dto.PeriodYear}",
                     Reference       = asset.AssetNumber,
                     CostCenter      = batchSource,
                     CreatedByUserId = UserId,
                     CreatedAt       = TimeHelper.GetEgyptTime(),
                     Lines = new List<JournalLine>
                     {
-                        new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"Ù…ØµØ±ÙˆÙ Ø¥Ù‡Ù„Ø§Ùƒ [{asset.AssetNumber}] â€” {asset.Name}", CostCenter = batchSource, CreatedAt = TimeHelper.GetEgyptTime() },
-                        new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"Ù…Ø¬Ù…Ø¹ Ø¥Ù‡Ù„Ø§Ùƒ [{asset.AssetNumber}] â€” {asset.Name}",   CostCenter = batchSource, CreatedAt = TimeHelper.GetEgyptTime() }
+                        new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"{_t.Get("Assets.DepreciationExpenseLabel")} [{asset.AssetNumber}] â€” {asset.Name}", CostCenter = batchSource, CreatedAt = TimeHelper.GetEgyptTime() },
+                        new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"{_t.Get("Assets.AccumulatedDepreciationLabel")} [{asset.AssetNumber}] â€” {asset.Name}",   CostCenter = batchSource, CreatedAt = TimeHelper.GetEgyptTime() }
                     }
                 };
                 _db.JournalEntries.Add(je);
@@ -615,7 +616,7 @@ public class FixedAssetsController : ControllerBase
     public async Task<IActionResult> Dispose(int id, [FromBody] PostDisposalDto dto)
     {
         if (dto.FixedAssetId != id)
-            return BadRequest("Ù…Ø¹Ø±Ù‘Ù Ø§Ù„Ø£ØµÙ„ ØºÙŠØ± Ù…ØªØ·Ø§Ø¨Ù‚.");
+            return BadRequest(_t.Get("Assets.IdMismatch"));
 
         var asset = await _db.FixedAssets
             .Include(a => a.Category)
@@ -623,9 +624,9 @@ public class FixedAssetsController : ControllerBase
             .FirstOrDefaultAsync(a => a.Id == id);
         if (asset == null) return NotFound();
         if (asset.Status == AssetStatus.Disposed)
-            return BadRequest("Ø§Ù„Ø£ØµÙ„ Ù…Ø³ØªØ¨Ø¹Ø¯ Ø¨Ø§Ù„ÙØ¹Ù„.");
+            return BadRequest(_t.Get("Assets.AlreadyDisposed"));
         if (asset.Disposals.Any())
-            return BadRequest("ÙŠÙˆØ¬Ø¯ Ù…Ø³ØªÙ†Ø¯ Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ Ù…Ø³Ø¨Ù‚ Ù„Ù‡Ø°Ø§ Ø§Ù„Ø£ØµÙ„.");
+            return BadRequest(_t.Get("Assets.DisposalVoucherExists"));
 
         // Ø£Ø±Ù‚Ø§Ù… ÙˆÙ‚Øª Ø§Ù„Ø§Ø³ØªØ¨Ø¹Ø§Ø¯
         var bookValue   = asset.PurchaseCost - asset.AccumulatedDepreciation;
@@ -690,7 +691,7 @@ public class FixedAssetsController : ControllerBase
                 EntryDate       = dto.DisposalDate,
                 Type            = JournalEntryType.AssetDisposal,
                 Status          = JournalEntryStatus.Posted,
-                Description     = $"Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ {asset.Name} ({dto.DisposalType})",
+                Description     = $"{_t.Get("Assets.DisposalLabel")} {asset.Name} ({dto.DisposalType})",
                 Reference       = disNo,
                 CostCenter      = ResolveCostCenter(asset, asset.Category),
                 CreatedByUserId = UserId,
@@ -700,22 +701,22 @@ public class FixedAssetsController : ControllerBase
 
             // Ù…Ø¯ÙŠÙ†: Ù…Ø¬Ù…Ø¹ Ø§Ù„Ø¥Ù‡Ù„Ø§Ùƒ
             if (accumAtDis > 0)
-                je.Lines.Add(new() { AccountId = accumAccId.Value, Debit = accumAtDis, Credit = 0, Description = "Ù…Ø¬Ù…Ø¹ Ø¥Ù‡Ù„Ø§Ùƒ â€” Ø§Ø³ØªØ¨Ø¹Ø§Ø¯" });
+                je.Lines.Add(new() { AccountId = accumAccId.Value, Debit = accumAtDis, Credit = 0, Description = $"{_t.Get("Assets.AccumulatedDepreciationLabel")} â€” {_t.Get("Assets.DisposalLabel")}" });
 
             // Ù…Ø¯ÙŠÙ†: Ø§Ù„Ù…ØªØ­ØµÙ„Ø§Øª (Ø¥Ù† ÙƒØ§Ù†Øª > 0)
             if (dto.SaleProceeds > 0 && dto.ProceedsAccountId.HasValue)
-                je.Lines.Add(new() { AccountId = dto.ProceedsAccountId.Value, Debit = dto.SaleProceeds, Credit = 0, Description = "Ù…ØªØ­ØµÙ„Ø§Øª Ø§Ù„Ø§Ø³ØªØ¨Ø¹Ø§Ø¯" });
+                je.Lines.Add(new() { AccountId = dto.ProceedsAccountId.Value, Debit = dto.SaleProceeds, Credit = 0, Description = _t.Get("Assets.DisposalProceedsLabel") });
 
             // Ù…Ø¯ÙŠÙ†: Ø®Ø³Ø§Ø±Ø© Ø§Ù„Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ (Ø¥Ù† ÙˆØ¬Ø¯Øª)
             if (gainLoss < 0 && lossAccId.HasValue)
-                je.Lines.Add(new() { AccountId = lossAccId.Value, Debit = Math.Abs(gainLoss), Credit = 0, Description = "Ø®Ø³Ø§Ø±Ø© Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ Ø£ØµÙ„" });
+                je.Lines.Add(new() { AccountId = lossAccId.Value, Debit = Math.Abs(gainLoss), Credit = 0, Description = _t.Get("Assets.DisposalLossLabel") });
 
             // Ø¯Ø§Ø¦Ù†: Ø§Ù„Ø£ØµÙ„ Ø¨ØªÙƒÙ„ÙØªÙ‡ Ø§Ù„Ø£ØµÙ„ÙŠØ©
-            je.Lines.Add(new() { AccountId = assetAccId.Value, Debit = 0, Credit = asset.PurchaseCost, Description = $"Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ {asset.Name}" });
+            je.Lines.Add(new() { AccountId = assetAccId.Value, Debit = 0, Credit = asset.PurchaseCost, Description = $"{_t.Get("Assets.DisposalLabel")} {asset.Name}" });
 
             // Ø¯Ø§Ø¦Ù†: Ø±Ø¨Ø­ Ø§Ù„Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ (Ø¥Ù† ÙˆØ¬Ø¯)
             if (gainLoss > 0 && gainAccId.HasValue)
-                je.Lines.Add(new() { AccountId = gainAccId.Value, Debit = 0, Credit = gainLoss, Description = "Ø±Ø¨Ø­ Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ Ø£ØµÙ„" });
+                je.Lines.Add(new() { AccountId = gainAccId.Value, Debit = 0, Credit = gainLoss, Description = _t.Get("Assets.DisposalGainLabel") });
 
             _db.JournalEntries.Add(je);
         }

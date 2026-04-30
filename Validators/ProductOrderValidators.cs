@@ -5,55 +5,56 @@
 using FluentValidation;
 using Sportive.API.DTOs;
 using Sportive.API.Models;
+using Sportive.API.Interfaces;
 
 namespace Sportive.API.Validators;
 
 // ── PRODUCT ──────────────────────────────────────────────────
 public class CreateProductValidator : AbstractValidator<CreateProductDto>
 {
-    public CreateProductValidator()
+    public CreateProductValidator(ITranslator translator)
     {
         RuleFor(x => x.NameAr)
-            .NotEmpty().WithMessage("اسم المنتج بالعربية مطلوب")
-            .MaximumLength(200).WithMessage("الاسم لا يتجاوز 200 حرف");
+            .NotEmpty().WithMessage(translator.Get("Products.NameArRequired"))
+            .MaximumLength(200).WithMessage(translator.Get("Products.NameMaxLength"));
 
         RuleFor(x => x.NameEn)
-            .NotEmpty().WithMessage("Product English name is required")
+            .NotEmpty().WithMessage(translator.Get("Products.NameEnRequired"))
             .MaximumLength(200);
 
         RuleFor(x => x.SKU)
-            .NotEmpty().WithMessage("رمز SKU مطلوب")
+            .NotEmpty().WithMessage(translator.Get("Products.SKURequired"))
             .MaximumLength(50)
-            .Matches(@"^[A-Za-z0-9\-_]+$").WithMessage("SKU يجب أن يحتوي على حروف وأرقام وشرطات فقط");
+            .Matches(@"^[A-Za-z0-9\-_]+$").WithMessage(translator.Get("Products.SKUInvalid"));
 
         RuleFor(x => x.Price)
-            .GreaterThan(0).WithMessage("السعر يجب أن يكون أكبر من صفر");
+            .GreaterThan(0).WithMessage(translator.Get("Products.PricePositive"));
 
         RuleFor(x => x.DiscountPrice)
             .LessThan(x => x.Price).When(x => x.DiscountPrice.HasValue && x.DiscountPrice > 0)
-            .WithMessage("سعر الخصم يجب أن يكون أقل من السعر الأصلي");
+            .WithMessage(translator.Get("Products.DiscountPriceTooHigh"));
 
         RuleFor(x => x.CostPrice)
             .GreaterThanOrEqualTo(0).When(x => x.CostPrice.HasValue)
-            .WithMessage("سعر التكلفة لا يمكن أن يكون سالباً")
+            .WithMessage(translator.Get("Products.CostPriceNegative"))
             .LessThanOrEqualTo(x => x.Price).When(x => x.CostPrice.HasValue)
-            .WithMessage("سعر التكلفة لا يمكن أن يتجاوز سعر البيع الأساسي");
+            .WithMessage(translator.Get("Products.CostPriceTooHigh"));
 
         RuleFor(x => x.CategoryId)
-            .GreaterThan(0).WithMessage("يجب اختيار فئة للمنتج");
+            .GreaterThan(0).WithMessage(translator.Get("Products.CategoryRequired"));
 
         RuleFor(x => x.ReorderLevel)
-            .GreaterThanOrEqualTo(0).WithMessage("حد الطلب لا يمكن أن يكون سالباً");
+            .GreaterThanOrEqualTo(0).WithMessage(translator.Get("Products.ReorderLevelNegative"));
 
         RuleFor(x => x.VatRate)
             .InclusiveBetween(0, 100).When(x => x.VatRate.HasValue)
-            .WithMessage("نسبة الضريبة يجب أن تكون بين 0 و 100");
+            .WithMessage(translator.Get("Products.VatRateInvalid"));
     }
 }
 
 public class UpdateProductValidator : AbstractValidator<UpdateProductDto>
 {
-    public UpdateProductValidator()
+    public UpdateProductValidator(ITranslator translator)
     {
         RuleFor(x => x.NameAr).NotEmpty().MaximumLength(200);
         RuleFor(x => x.NameEn).NotEmpty().MaximumLength(200);
@@ -62,7 +63,7 @@ public class UpdateProductValidator : AbstractValidator<UpdateProductDto>
         RuleFor(x => x.DiscountPrice)
             .LessThan(x => x.Price)
             .When(x => x.DiscountPrice.HasValue && x.DiscountPrice > 0)
-            .WithMessage("سعر الخصم يجب أن يكون أقل من السعر الأصلي");
+            .WithMessage(translator.Get("Products.DiscountPriceTooHigh"));
         RuleFor(x => x.CategoryId).GreaterThan(0);
         RuleFor(x => x.ReorderLevel).GreaterThanOrEqualTo(0);
     }
@@ -71,80 +72,80 @@ public class UpdateProductValidator : AbstractValidator<UpdateProductDto>
 // ── ORDER ─────────────────────────────────────────────────────
 public class CreateOrderValidator : AbstractValidator<CreateOrderDto>
 {
-    public CreateOrderValidator()
+    public CreateOrderValidator(ITranslator translator)
     {
         RuleFor(x => x.FulfillmentType)
-            .IsInEnum().WithMessage("نوع التسليم غير صحيح");
+            .IsInEnum().WithMessage(translator.Get("Orders.FulfillmentTypeInvalid"));
 
         RuleFor(x => x.PaymentMethod)
-            .IsInEnum().WithMessage("طريقة الدفع غير صحيحة");
+            .IsInEnum().WithMessage(translator.Get("Orders.PaymentMethodInvalid"));
 
         // إذا التوصيل للبيت، يجب تحديد عنوان
         RuleFor(x => x.DeliveryAddressId)
             .NotNull()
             .When(x => x.FulfillmentType == FulfillmentType.Delivery && x.Source == OrderSource.Website)
-            .WithMessage("يجب اختيار عنوان التوصيل");
+            .WithMessage(translator.Get("Orders.DeliveryAddressRequired"));
 
         // Items إجبارية للطلبات الإلكترونية
         RuleFor(x => x.Items)
             .NotNull().NotEmpty()
             .When(x => x.Source == OrderSource.Website)
-            .WithMessage("يجب إضافة منتجات للطلب");
+            .WithMessage(translator.Get("Orders.ItemsRequired"));
 
-        RuleForEach(x => x.Items).SetValidator(new CreateOrderItemValidator())
+        RuleForEach(x => x.Items).SetValidator(new CreateOrderItemValidator(translator))
             .When(x => x.Items != null);
     }
 }
 
 public class CreateOrderItemValidator : AbstractValidator<CreateOrderItemDto>
 {
-    public CreateOrderItemValidator()
+    public CreateOrderItemValidator(ITranslator translator)
     {
         RuleFor(x => x.ProductId)
-            .GreaterThan(0).WithMessage("معرف المنتج غير صحيح");
+            .GreaterThan(0).WithMessage(translator.Get("Orders.ProductIdInvalid"));
 
         RuleFor(x => x.Quantity)
-            .GreaterThan(0).WithMessage("الكمية يجب أن تكون أكبر من صفر")
-            .LessThanOrEqualTo(1000).WithMessage("الكمية كبيرة جداً — الحد الأقصى 1000");
+            .GreaterThan(0).WithMessage(translator.Get("Orders.QuantityPositive"))
+            .LessThanOrEqualTo(1000).WithMessage(translator.Get("Orders.QuantityTooHigh"));
     }
 }
 
 // ── CART ──────────────────────────────────────────────────────
 public class AddToCartValidator : AbstractValidator<AddToCartDto>
 {
-    public AddToCartValidator()
+    public AddToCartValidator(ITranslator translator)
     {
         RuleFor(x => x.ProductId).GreaterThan(0);
         RuleFor(x => x.Quantity)
-            .GreaterThan(0).WithMessage("الكمية يجب أن تكون 1 على الأقل")
-            .LessThanOrEqualTo(100).WithMessage("الحد الأقصى لكمية واحدة هو 100");
+            .GreaterThan(0).WithMessage(translator.Get("Cart.QuantityMin"))
+            .LessThanOrEqualTo(100).WithMessage(translator.Get("Cart.QuantityMax"));
     }
 }
 
 // ── CUSTOMER ──────────────────────────────────────────────────
 public class CreateCustomerValidator : AbstractValidator<CreateCustomerDto>
 {
-    public CreateCustomerValidator()
+    public CreateCustomerValidator(ITranslator translator)
     {
         RuleFor(x => x.FullName)
-            .NotEmpty().WithMessage("الاسم بالكامل مطلوب")
+            .NotEmpty().WithMessage(translator.Get("Customers.FullNameRequired"))
             .MaximumLength(200);
 
         RuleFor(x => x.Email)
             .EmailAddress().When(x => !string.IsNullOrEmpty(x.Email))
-            .WithMessage("صيغة البريد الإلكتروني غير صحيحة");
+            .WithMessage(translator.Get("Customers.EmailInvalid"));
 
         RuleFor(x => x.Phone)
             .Matches(@"^(\+20|0)?1[0125]\d{8}$")
             .When(x => !string.IsNullOrEmpty(x.Phone))
-            .WithMessage("رقم الهاتف المصري غير صحيح (مثال: 01012345678)");
+            .WithMessage(translator.Get("Customers.PhoneInvalid"));
     }
 }
 
 // ── ADDRESS ───────────────────────────────────────────────────
 public class CreateAddressValidator : AbstractValidator<CreateAddressDto>
 {
-    public CreateAddressValidator()
+    public CreateAddressValidator(ITranslator translator)
     {
         RuleFor(x => x.TitleAr).NotEmpty().MaximumLength(100);
         RuleFor(x => x.TitleEn).NotEmpty().MaximumLength(100);
@@ -153,40 +154,40 @@ public class CreateAddressValidator : AbstractValidator<CreateAddressDto>
 
         RuleFor(x => x.Latitude)
             .InclusiveBetween(-90, 90).When(x => x.Latitude.HasValue)
-            .WithMessage("خط العرض يجب أن يكون بين -90 و 90");
+            .WithMessage(translator.Get("Addresses.LatitudeInvalid"));
 
         RuleFor(x => x.Longitude)
             .InclusiveBetween(-180, 180).When(x => x.Longitude.HasValue)
-            .WithMessage("خط الطول يجب أن يكون بين -180 و 180");
+            .WithMessage(translator.Get("Addresses.LongitudeInvalid"));
     }
 }
 
 // ── POS ───────────────────────────────────────────────────────
 public class CreatePOSOrderValidator : AbstractValidator<CreatePOSOrderDto>
 {
-    public CreatePOSOrderValidator()
+    public CreatePOSOrderValidator(ITranslator translator)
     {
-        RuleFor(x => x.Items).NotEmpty().WithMessage("الطلب يجب أن يحتوي على عنصر واحد على الأقل");
+        RuleFor(x => x.Items).NotEmpty().WithMessage(translator.Get("POS.ItemsRequired"));
         RuleForEach(x => x.Items).ChildRules(items =>
         {
-            items.RuleFor(i => i.Quantity).GreaterThan(0).WithMessage("الكمية يجب أن تكون أكبر من صفر");
-            items.RuleFor(i => i.UnitPrice).GreaterThanOrEqualTo(0).WithMessage("سعر الوحدة لا يمكن أن يكون سالباً");
+            items.RuleFor(i => i.Quantity).GreaterThan(0).WithMessage(translator.Get("POS.QuantityPositive"));
+            items.RuleFor(i => i.UnitPrice).GreaterThanOrEqualTo(0).WithMessage(translator.Get("POS.UnitPriceNegative"));
         });
 
         RuleFor(x => x.DiscountAmount)
             .GreaterThanOrEqualTo(0).When(x => x.DiscountAmount.HasValue)
-            .WithMessage("قيمة الخصم الإضافي لا يمكن أن تكون سالبة")
+            .WithMessage(translator.Get("POS.DiscountNegative"))
             .LessThanOrEqualTo(x => x.Subtotal).When(x => x.DiscountAmount.HasValue)
-            .WithMessage("قيمة الخصم تتجاوز إجمالي الفاتورة");
+            .WithMessage(translator.Get("POS.DiscountTooHigh"));
         
         RuleFor(x => x.Subtotal)
             .GreaterThanOrEqualTo(0)
-            .WithMessage("المجموع الفرعي لا يمكن أن يكون سالباً");
+            .WithMessage(translator.Get("POS.SubtotalNegative"));
 
         RuleFor(x => x.PaidAmount)
             .GreaterThanOrEqualTo(0)
-            .WithMessage("المبلغ المدفوع لا يمكن أن يكون سالباً")
+            .WithMessage(translator.Get("POS.PaidAmountNegative"))
             .LessThanOrEqualTo(x => x.Subtotal - (x.DiscountAmount ?? 0))
-            .WithMessage("المبلغ المدفوع يتجاوز إجمالي الفاتورة المطلوب");
+            .WithMessage(translator.Get("POS.PaidAmountTooHigh"));
     }
 }

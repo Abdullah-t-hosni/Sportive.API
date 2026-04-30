@@ -15,6 +15,13 @@ namespace Sportive.API.Services;
 
 public class PdfService : IPdfService
 {
+    private readonly ITranslator _t;
+
+    public PdfService(ITranslator t)
+    {
+        _t = t;
+    }
+
     private static string _activeFont = "DejaVu Sans";
     private static bool _fontRegistered = false;
 
@@ -59,15 +66,15 @@ public class PdfService : IPdfService
                     page.Header().Column(col =>
                     {
                         col.Item().AlignCenter().Text("SPORTIVE").FontSize(18).Bold().FontColor(Colors.Black);
-                        col.Item().AlignCenter().Text(Reshape(order.Source == "1" || order.Source == "POS" ? "فاتورة مبيعات - كاشير" : "فاتورة مبيعات - متجر أونلاين")).FontSize(8).FontColor(Colors.Grey.Medium);
+                        col.Item().AlignCenter().Text(Reshape(order.Source == "1" || order.Source == "POS" ? _t.Get("Pdf.SalesInvoiceCashier") : _t.Get("Pdf.SalesInvoiceOnline"))).FontSize(8).FontColor(Colors.Grey.Medium);
                         
                         col.Item().PaddingTop(5).Row(row => {
-                            row.RelativeItem().Text(Reshape($"رقم: {order.OrderNumber}")).Bold();
+                            row.RelativeItem().Text(Reshape(_t.Get("Pdf.Number", order.OrderNumber))).Bold();
                             row.RelativeItem().AlignRight().Text(order.CreatedAt.ToString("yyyy/MM/dd HH:mm"));
                         });
 
                         if (!string.IsNullOrEmpty(order.SalesPersonName))
-                            col.Item().Text(Reshape($"البائع: {order.SalesPersonName}")).FontSize(7);
+                            col.Item().Text(Reshape(_t.Get("Pdf.Seller", order.SalesPersonName))).FontSize(7);
                         
                         col.Item().PaddingTop(2).BorderBottom(1).PaddingBottom(2);
                     });
@@ -76,13 +83,13 @@ public class PdfService : IPdfService
                     {
                         col.Item().Column(c =>
                         {
-                            c.Item().Text(Reshape($"العميل: {order.Customer?.FullName ?? "عميل نقدي"}")).Bold().FontSize(9);
+                            c.Item().Text(Reshape(_t.Get("Pdf.Customer", order.Customer?.FullName ?? _t.Get("Pdf.CashCustomer")))).Bold().FontSize(9);
                             if (!string.IsNullOrEmpty(order.Customer?.Phone))
-                                c.Item().Text(Reshape($"الهاتف: {order.Customer.Phone}")).FontSize(8);
+                                c.Item().Text(Reshape(_t.Get("Pdf.Phone", order.Customer.Phone))).FontSize(8);
                             
                             c.Item().PaddingTop(2).Row(r => {
-                                r.RelativeItem().Text(Reshape($"الدفع: {order.PaymentMethod}")).FontSize(8);
-                                r.RelativeItem().AlignRight().Text(Reshape($"الاستلام: {order.FulfillmentType}")).FontSize(8);
+                                r.RelativeItem().Text(Reshape(_t.Get("Pdf.Payment", order.PaymentMethod))).FontSize(8);
+                                r.RelativeItem().AlignRight().Text(Reshape(_t.Get("Pdf.Fulfillment", order.FulfillmentType))).FontSize(8);
                             });
                         });
                         
@@ -100,10 +107,10 @@ public class PdfService : IPdfService
 
                             table.Header(header =>
                             {
-                                header.Cell().Element(CellStyle).Text(Reshape("الصنف"));
-                                header.Cell().Element(CellStyle).AlignCenter().Text(Reshape("الكمية"));
-                                header.Cell().Element(CellStyle).AlignRight().Text(Reshape("السعر"));
-                                header.Cell().Element(CellStyle).AlignRight().Text(Reshape("الإجمالي"));
+                                header.Cell().Element(CellStyle).Text(Reshape(_t.Get("Pdf.Item")));
+                                header.Cell().Element(CellStyle).AlignCenter().Text(Reshape(_t.Get("Pdf.Qty")));
+                                header.Cell().Element(CellStyle).AlignRight().Text(Reshape(_t.Get("Pdf.Price")));
+                                header.Cell().Element(CellStyle).AlignRight().Text(Reshape(_t.Get("Pdf.Total")));
 
                                 static IContainer CellStyle(IContainer container)
                                 {
@@ -131,33 +138,33 @@ public class PdfService : IPdfService
 
                         col.Item().PaddingTop(10).AlignRight().Column(c =>
                         {
-                            c.Item().Text(Reshape($"الإجمالي: {order.SubTotal:N0} ج.م")).FontSize(9).Bold();
+                            c.Item().Text(Reshape(_t.Get("Pdf.SubTotal", order.SubTotal.ToString("N0")))).FontSize(9).Bold();
                             var totalDisc = order.DiscountAmount + order.TemporalDiscount;
                             if (totalDisc > 0)
-                                c.Item().Text(Reshape($"الخصم: {totalDisc:N0} ج.م")).FontSize(8).FontColor(Colors.Red.Medium);
+                                c.Item().Text(Reshape(_t.Get("Pdf.Discount", totalDisc.ToString("N0")))).FontSize(8).FontColor(Colors.Red.Medium);
                             
-                            c.Item().Text(Reshape($"الصافي: {order.TotalAmount:N0} ج.م")).FontSize(12).Bold().FontColor(Colors.Black);
+                            c.Item().Text(Reshape(_t.Get("Pdf.NetTotal", order.TotalAmount.ToString("N0")))).FontSize(12).Bold().FontColor(Colors.Black);
                         });
 
                         if (order.Payments != null && order.Payments.Any())
                         {
                             col.Item().PaddingTop(10).Column(c => {
-                                c.Item().Text(Reshape("تفاصيل السداد:")).FontSize(8).Bold();
+                                c.Item().Text(Reshape(_t.Get("Pdf.PaymentDetails"))).FontSize(8).Bold();
                                 foreach (var p in order.Payments)
                                 {
                                     var method = p.Method;
-                                    if (method == "Cash") method = "نقدي";
-                                    else if (method == "Bank" || method == "CreditCard") method = "شبكة / فيزا";
-                                    else if (method == "InstaPay") method = "إنستا باي";
-                                    else if (method == "Vodafone") method = "فودافون كاش";
-                                    else if (method == "Credit") method = "آجل";
+                                    if (method == "Cash") method = _t.Get("Pdf.Method.Cash");
+                                    else if (method == "Bank" || method == "CreditCard") method = _t.Get("Pdf.Method.Bank");
+                                    else if (method == "InstaPay") method = _t.Get("Pdf.Method.InstaPay");
+                                    else if (method == "Vodafone") method = _t.Get("Pdf.Method.Vodafone");
+                                    else if (method == "Credit") method = _t.Get("Pdf.Method.Credit");
 
                                     c.Item().Text(Reshape($"- {method}: {p.Amount:N0} ج.م")).FontSize(7);
                                 }
                             });
                         }
 
-                        col.Item().PaddingTop(20).AlignCenter().Text(Reshape("شكراً لتعاملكم معنا!")).FontSize(10).Bold();
+                        col.Item().PaddingTop(20).AlignCenter().Text(Reshape(_t.Get("Pdf.ThankYou"))).FontSize(10).Bold();
                         col.Item().AlignCenter().Text("www.sportive-equipment.com").FontSize(8).FontColor(Colors.Grey.Medium);
                     });
 

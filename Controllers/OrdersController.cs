@@ -27,8 +27,9 @@ public class OrdersController : ControllerBase
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<OrdersController> _logger;
     private readonly IAuditService _audit;
+    private readonly ITranslator _translator;
 
-    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<OrdersController> logger, IAuditService audit)
+    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<OrdersController> logger, IAuditService audit, ITranslator translator)
     {
         _orderService = orderService;
         _pdfService   = pdfService;
@@ -36,6 +37,7 @@ public class OrdersController : ControllerBase
         _scopeFactory = scopeFactory;
         _logger       = logger;
         _audit        = audit;
+        _translator   = translator;
     }
 
     [HttpGet]
@@ -68,7 +70,7 @@ public class OrdersController : ControllerBase
     public async Task<ActionResult<PaginatedResult<OrderSummaryDto>>> GetMyOrders([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
         var customerIdStr = User.FindFirst("CustomerId")?.Value;
-        if (string.IsNullOrEmpty(customerIdStr)) return BadRequest("User has no customer profile");
+        if (string.IsNullOrEmpty(customerIdStr)) return BadRequest(_translator.Get("Orders.NoCustomerProfile"));
         
         var result = await _orderService.GetCustomerOrdersAsync(int.Parse(customerIdStr), page, pageSize);
         return Ok(result);
@@ -107,7 +109,7 @@ public class OrdersController : ControllerBase
     public async Task<ActionResult<OrderDetailDto>> CreatePosOrder([FromBody] CreatePOSOrderDto posDto)
     {
         if (posDto == null || posDto.Items == null || !posDto.Items.Any())
-            return BadRequest("Order must have at least one item.");
+            return BadRequest(_translator.Get("Orders.MinOneItem"));
 
         var dto = new CreateOrderDto(
             FulfillmentType.Pickup,
@@ -132,7 +134,7 @@ public class OrdersController : ControllerBase
         );
 
         var order = await _orderService.CreateOrderAsync(posDto.CustomerId, dto);
-        if (order == null) return StatusCode(500, "Failed to create order.");
+        if (order == null) return StatusCode(500, _translator.Get("Orders.CreationFailed"));
         
         return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
     }
@@ -182,10 +184,10 @@ public class OrdersController : ControllerBase
             .Include(o => o.Items)
             .FirstOrDefaultAsync(o => o.OrderNumber == orderNumber);
 
-        if (order == null) return NotFound("Invoice not found.");
+        if (order == null) return NotFound(_translator.Get("Orders.InvoiceNotFound"));
 
         var dto = await _orderService.GetOrderByIdAsync(order.Id);
-        if (dto == null) return NotFound("Invoice details not found.");
+        if (dto == null) return NotFound(_translator.Get("Orders.InvoiceDetailsNotFound"));
 
         var pdfBytes = await _pdfService.GenerateOrderPdfAsync(dto);
         return File(pdfBytes, "application/pdf", $"Invoice-{orderNumber}.pdf");
@@ -198,10 +200,10 @@ public class OrdersController : ControllerBase
             .Include(o => o.Customer)
             .FirstOrDefaultAsync(o => o.OrderNumber == orderNumber);
 
-        if (order == null) return NotFound("Invoice not found.");
+        if (order == null) return NotFound(_translator.Get("Orders.InvoiceNotFound"));
 
         var dto = await _orderService.GetOrderByIdAsync(order.Id);
-        if (dto == null) return NotFound("Invoice details not found.");
+        if (dto == null) return NotFound(_translator.Get("Orders.InvoiceDetailsNotFound"));
 
         return Ok(dto);
     }
@@ -243,7 +245,7 @@ public class OrdersController : ControllerBase
             {
                 OrderId          = id,
                 Status           = order.Status,
-                Note             = $"[Ø­Ø§Ù„Ø© Ø§Ù„Ø¯ÙØ¹ â†’ {dto.PaymentStatus}] {dto.Note}",
+                Note             = _translator.Get("Orders.PaymentStatusUpdateNote", dto.PaymentStatus, dto.Note),
                 ChangedByUserId  = dto.PerformedByEmployeeId?.ToString() ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                 CreatedAt        = TimeHelper.GetEgyptTime()
             });
@@ -319,12 +321,10 @@ public class OrdersController : ControllerBase
         return Ok(order);
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    // POST /api/orders/{id}/archive â€” Ø£Ø±Ø´ÙØ© Ø£Ù…Ø± ÙˆØ§Ø­Ø¯
-    // POST /api/orders/{id}/unarchive â€” Ø§Ø³ØªØ±Ø¬Ø§Ø¹ Ù…Ù† Ø§Ù„Ø£Ø±Ø´ÙŠÙ
-    // POST /api/orders/archive-batch â€” Ø£Ø±Ø´ÙØ© Ù…Ø¬Ù…ÙˆØ¹Ø©
-    // GET  /api/orders/archived â€” Ø¹Ø±Ø¶ Ø§Ù„Ø£ÙˆØ§Ù…Ø± Ø§Ù„Ù…Ø¤Ø±Ø´ÙØ©
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // POST /api/orders/{id}/archive 
+    // POST /api/orders/{id}/unarchive 
+    // POST /api/orders/archive-batch 
+    // GET  /api/orders/archived 
     [HttpPost("{id}/archive")]
     [RequirePermission(ModuleKeys.Orders, requireEdit: true)]
     public async Task<IActionResult> Archive(int id)
@@ -334,7 +334,7 @@ public class OrdersController : ControllerBase
         order.IsArchived = true;
         order.ArchivedAt = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
-        return Ok(new { message = "Archived" });
+        return Ok(new { message = _translator.Get("Orders.Archived") });
     }
 
     [HttpPost("{id}/unarchive")]
@@ -346,7 +346,7 @@ public class OrdersController : ControllerBase
         order.IsArchived = false;
         order.ArchivedAt = null;
         await _db.SaveChangesAsync();
-        return Ok(new { message = "Unarchived" });
+        return Ok(new { message = _translator.Get("Orders.Unarchived") });
     }
 
     [HttpPost("archive-batch")]
@@ -354,7 +354,7 @@ public class OrdersController : ControllerBase
     public async Task<IActionResult> ArchiveBatch([FromBody] ArchiveBatchDto dto)
     {
         if (dto.Ids == null || dto.Ids.Length == 0)
-            return BadRequest(new { message = "No order IDs provided" });
+            return BadRequest(new { message = _translator.Get("Orders.NoIdsProvided") });
 
         var shouldArchive = dto.Archive ?? true;
         var orders = await _db.Orders

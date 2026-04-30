@@ -1,21 +1,28 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
+using Sportive.API.Interfaces;
 using Sportive.API.Models;
 
 namespace Sportive.API.Controllers;
 
 /// <summary>
-/// GET /api/track?orderNumber=SZ-xxx&phone=01xxxxxxxx
-/// Endpoint عام — بدون تسجيل دخول
-/// يرجع حالة الطلب إذا تطابق رقم الطلب + التليفون
+/// GET /api/track?orderNumber=SZ-xxx&amp;phone=01xxxxxxxx
+/// Public endpoint — no login required.
+/// Returns order status if order number + phone match.
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
 public class TrackController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public TrackController(AppDbContext db) => _db = db;
+    private readonly ITranslator _t;
+
+    public TrackController(AppDbContext db, ITranslator t)
+    {
+        _db = db;
+        _t = t;
+    }
 
     [HttpGet]
     public async Task<IActionResult> Track(
@@ -23,7 +30,7 @@ public class TrackController : ControllerBase
         [FromQuery] string phone)
     {
         if (string.IsNullOrWhiteSpace(orderNumber) || string.IsNullOrWhiteSpace(phone))
-            return BadRequest(new { message = "رقم الطلب والتليفون مطلوبان" });
+            return BadRequest(new { message = _t.Get("Track.OrderPhoneRequired") });
 
         var normalizedPhone = NormalizePhone(phone.Trim());
         var normalizedOrder = orderNumber.Trim().ToUpper();
@@ -39,14 +46,12 @@ public class TrackController : ControllerBase
             .FirstOrDefaultAsync();
 
         if (order == null)
-            return NotFound(new { message = "لا يوجد طلب بهذا الرقم" });
+            return NotFound(new { message = _t.Get("Track.OrderNotFound") });
 
-        // تحقق من التليفون
         var customerPhone = NormalizePhone(order.Customer?.Phone ?? "");
         if (customerPhone != normalizedPhone)
-            return NotFound(new { message = "رقم الطلب أو التليفون غير صحيح" });
+            return NotFound(new { message = _t.Get("Track.InvalidOrderOrPhone") });
 
-        // ترتيب خطوات timeline بالحالات الممكنة
         var timeline = BuildTimeline(order);
 
         return Ok(new
@@ -57,7 +62,9 @@ public class TrackController : ControllerBase
             statusColor  = GetStatusColor(order.Status),
             isActive     = order.Status != OrderStatus.Cancelled && order.Status != OrderStatus.Returned,
             fulfillment  = order.FulfillmentType.ToString(),
-            fulfillmentAr= order.FulfillmentType == FulfillmentType.Delivery ? "توصيل للمنزل" : "استلام من الفرع",
+            fulfillmentAr= order.FulfillmentType == FulfillmentType.Delivery
+                ? _t.Get("WhatsApp.Fulfillment.Delivery")
+                : _t.Get("WhatsApp.Fulfillment.Pickup"),
             paymentMethod= GetPaymentAr(order.PaymentMethod),
             paymentStatus= GetPaymentStatusAr(order.PaymentStatus),
             paymentPaid  = order.PaymentStatus == PaymentStatus.Paid,
@@ -93,18 +100,18 @@ public class TrackController : ControllerBase
 
     /// <summary>
     /// GET /api/track/by-phone?phone=01xxxxxxxx
-    /// يرجع قائمة الطلبات "الغير مكتملة" لهذا الرقم
+    /// Returns a list of in-progress orders for this phone number.
     /// </summary>
     [HttpGet("by-phone")]
     public async Task<IActionResult> TrackByPhone([FromQuery] string phone)
     {
         if (string.IsNullOrWhiteSpace(phone))
-            return BadRequest(new { message = "رقم التليفون مطلوب" });
+            return BadRequest(new { message = _t.Get("Track.PhoneRequired") });
 
         var normalizedPhone = NormalizePhone(phone.Trim());
-        // البحث بآخر 10 أرقام لضمان الوصول الصحيح حتى لو اختلف كود الدولة
-        var searchSuffix = normalizedPhone.Length >= 10 
-            ? normalizedPhone.Substring(normalizedPhone.Length - 10) 
+        // Match on last 10 digits to handle different country codes
+        var searchSuffix = normalizedPhone.Length >= 10
+            ? normalizedPhone.Substring(normalizedPhone.Length - 10)
             : normalizedPhone;
 
         var orders = await _db.Orders
@@ -115,7 +122,6 @@ public class TrackController : ControllerBase
             .Include(o => o.DeliveryAddress)
             .Include(o => o.StatusHistory.OrderByDescending(h => h.CreatedAt))
             .Where(o => o.Customer != null && o.Customer.Phone != null && o.Customer.Phone.EndsWith(searchSuffix)
-                     // استبعاد تم التوصيل، الملغي، والمرتجع
                      && o.Status != OrderStatus.Delivered
                      && o.Status != OrderStatus.Cancelled
                      && o.Status != OrderStatus.Returned)
@@ -123,7 +129,7 @@ public class TrackController : ControllerBase
             .ToListAsync();
 
         if (!orders.Any())
-            return NotFound(new { message = "لا توجد طلبات جاري توصيلها لهذا الرقم حالياً" });
+            return NotFound(new { message = _t.Get("Track.NoActiveOrders") });
 
         return Ok(orders.Select(order => new
         {
@@ -132,9 +138,11 @@ public class TrackController : ControllerBase
             status       = order.Status.ToString(),
             statusAr     = GetStatusAr(order.Status),
             statusColor  = GetStatusColor(order.Status),
-            isActive     = true, // بما أنه لسه موصلش
+            isActive     = true,
             fulfillment  = order.FulfillmentType.ToString(),
-            fulfillmentAr= order.FulfillmentType == FulfillmentType.Delivery ? "توصيل للمنزل" : "استلام من الفرع",
+            fulfillmentAr= order.FulfillmentType == FulfillmentType.Delivery
+                ? _t.Get("WhatsApp.Fulfillment.Delivery")
+                : _t.Get("WhatsApp.Fulfillment.Pickup"),
             paymentMethod= GetPaymentAr(order.PaymentMethod),
             paymentStatus= GetPaymentStatusAr(order.PaymentStatus),
             paymentPaid  = order.PaymentStatus == PaymentStatus.Paid,
@@ -169,35 +177,37 @@ public class TrackController : ControllerBase
     }
 
     // ── Timeline ─────────────────────────────────────────
-    private static List<object> BuildTimeline(Order order)
+    private List<object> BuildTimeline(Order order)
     {
-        // الخطوات الممكنة حسب نوع الطلب
         var steps = order.FulfillmentType == FulfillmentType.Delivery
             ? new[]
             {
-                (OrderStatus.Pending,         "تم استلام الطلب",    "Pending"),
-                (OrderStatus.Confirmed,       "تم تأكيد الطلب",    "Confirmed"),
-                (OrderStatus.Processing,      "جاري التحضير",      "Processing"),
-                (OrderStatus.OutForDelivery,  "خرج للتوصيل",       "OutForDelivery"),
-                (OrderStatus.Delivered,       "تم التوصيل",        "Delivered"),
+                (OrderStatus.Pending,        _t.Get("Status.Pending"),        "Pending"),
+                (OrderStatus.Confirmed,      _t.Get("Status.Confirmed"),      "Confirmed"),
+                (OrderStatus.Processing,     _t.Get("Status.Processing"),     "Processing"),
+                (OrderStatus.OutForDelivery, _t.Get("Status.OutForDelivery"), "OutForDelivery"),
+                (OrderStatus.Delivered,      _t.Get("Status.Delivered"),      "Delivered"),
             }
             : new[]
             {
-                (OrderStatus.Pending,         "تم استلام الطلب",    "Pending"),
-                (OrderStatus.Confirmed,       "تم تأكيد الطلب",    "Confirmed"),
-                (OrderStatus.Processing,      "جاري التحضير",      "Processing"),
-                (OrderStatus.ReadyForPickup,  "جاهز للاستلام",     "ReadyForPickup"),
-                (OrderStatus.Delivered,       "تم الاستلام",       "Delivered"),
+                (OrderStatus.Pending,         _t.Get("Status.Pending"),          "Pending"),
+                (OrderStatus.Confirmed,       _t.Get("Status.Confirmed"),        "Confirmed"),
+                (OrderStatus.Processing,      _t.Get("Status.Processing"),       "Processing"),
+                (OrderStatus.ReadyForPickup,  _t.Get("Status.ReadyForPickup"),   "ReadyForPickup"),
+                (OrderStatus.Delivered,       _t.Get("Status.DeliveredPickup"),  "Delivered"),
             };
 
         var currentIdx = Array.FindIndex(steps, s => s.Item1 == order.Status);
 
-        // لو ملغي أو مرتجع
         if (order.Status == OrderStatus.Cancelled || order.Status == OrderStatus.Returned)
         {
+            var label = order.Status == OrderStatus.Cancelled
+                ? _t.Get("Status.Cancelled")
+                : _t.Get("Status.Returned");
+
             return new List<object>
             {
-                new { status = "Cancelled", label = order.Status == OrderStatus.Cancelled ? "تم الإلغاء" : "مرتجع", done = true, current = true, time = (DateTime?)null }
+                new { status = "Cancelled", label, done = true, current = true, time = (DateTime?)null }
             };
         }
 
@@ -226,16 +236,16 @@ public class TrackController : ControllerBase
         return digits;
     }
 
-    private static string GetStatusAr(OrderStatus s) => s switch
+    private string GetStatusAr(OrderStatus s) => s switch
     {
-        OrderStatus.Pending        => "في الانتظار",
-        OrderStatus.Confirmed      => "مؤكد",
-        OrderStatus.Processing     => "جاري التحضير",
-        OrderStatus.ReadyForPickup => "جاهز للاستلام",
-        OrderStatus.OutForDelivery => "خرج للتوصيل",
-        OrderStatus.Delivered      => "تم التوصيل",
-        OrderStatus.Cancelled      => "ملغي",
-        OrderStatus.Returned       => "مرتجع",
+        OrderStatus.Pending        => _t.Get("Status.Waiting"),
+        OrderStatus.Confirmed      => _t.Get("Status.ConfirmedShort"),
+        OrderStatus.Processing     => _t.Get("Status.ProcessingShort"),
+        OrderStatus.ReadyForPickup => _t.Get("Status.ReadyForPickupShort"),
+        OrderStatus.OutForDelivery => _t.Get("Status.OutForDeliveryShort"),
+        OrderStatus.Delivered      => _t.Get("Status.DeliveredShort"),
+        OrderStatus.Cancelled      => _t.Get("Status.Cancelled"),
+        OrderStatus.Returned       => _t.Get("Status.Returned"),
         _                          => s.ToString()
     };
 
@@ -249,20 +259,20 @@ public class TrackController : ControllerBase
         _                          => "amber",
     };
 
-    private static string GetPaymentAr(PaymentMethod m) => m switch
+    private string GetPaymentAr(PaymentMethod m) => m switch
     {
-        PaymentMethod.Cash      => "كاش عند الاستلام",
-        PaymentMethod.Vodafone  => "فودافون كاش",
-        PaymentMethod.InstaPay  => "انستاباي",
+        PaymentMethod.Cash      => _t.Get("WhatsApp.Payment.Cash"),
+        PaymentMethod.Vodafone  => _t.Get("WhatsApp.Payment.Vodafone"),
+        PaymentMethod.InstaPay  => _t.Get("WhatsApp.Payment.InstaPay"),
         _                       => m.ToString()
     };
 
-    private static string GetPaymentStatusAr(PaymentStatus p) => p switch
+    private string GetPaymentStatusAr(PaymentStatus p) => p switch
     {
-        PaymentStatus.Paid     => "مدفوع",
-        PaymentStatus.Pending  => "في الانتظار",
-        PaymentStatus.Refunded => "مسترجع",
-        PaymentStatus.Failed   => "فشل",
+        PaymentStatus.Paid     => _t.Get("PayStatus.Paid"),
+        PaymentStatus.Pending  => _t.Get("PayStatus.Pending"),
+        PaymentStatus.Refunded => _t.Get("PayStatus.Refunded"),
+        PaymentStatus.Failed   => _t.Get("PayStatus.Failed"),
         _                      => p.ToString()
     };
 }

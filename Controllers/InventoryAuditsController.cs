@@ -21,13 +21,15 @@ public class InventoryAuditsController : ControllerBase
     private readonly IInventoryService _inventory;
     private readonly AccountingCoreService _accounting;
     private readonly ILogger<InventoryAuditsController> _logger;
+    private readonly ITranslator _t;
 
-    public InventoryAuditsController(AppDbContext db, IInventoryService inventory, AccountingCoreService accounting, ILogger<InventoryAuditsController> logger)
+    public InventoryAuditsController(AppDbContext db, IInventoryService inventory, AccountingCoreService accounting, ILogger<InventoryAuditsController> logger, ITranslator t)
     {
         _db = db;
         _inventory = inventory;
         _accounting = accounting;
         _logger = logger;
+        _t = t;
     }
 
     private async Task<bool> CheckPerms(string perm, bool edit = false)
@@ -77,7 +79,7 @@ public class InventoryAuditsController : ControllerBase
                 .Take(pageSize)
                 .Select(a => new {
                     a.Id, 
-                    Title = a.Title ?? "Ø¬Ø±Ø¯ Ø¨Ø¯ÙˆÙ† Ø¹Ù†ÙˆØ§Ù†", 
+                    Title = a.Title ?? _t.Get("InventoryAudits.UntitledAudit"), 
                     a.AuditDate, 
                     StatusInt = (int)a.Status,
                     a.TotalExpectedValue, 
@@ -110,7 +112,7 @@ public class InventoryAuditsController : ControllerBase
             var fullMsg = ex.InnerException != null ? $"{ex.Message} -> {ex.InnerException.Message}" : ex.Message;
             return StatusCode(500, new { 
                 success = false, 
-                message = "Ø®Ø·Ø£ ÙÙŠ ØªØ­Ù…ÙŠÙ„ Ø³Ø¬Ù„Ø§Øª Ø§Ù„Ø¬Ø±Ø¯", 
+                message = _t.Get("InventoryAudits.ErrorLoadingLogs"), 
                 detail = fullMsg,
                 type = ex.GetType().Name,
                 stack = ex.StackTrace 
@@ -155,7 +157,7 @@ public class InventoryAuditsController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in GetById InventoryAudit {Id}", id);
-            return StatusCode(500, new { message = "Ø®Ø·Ø£ ÙÙŠ ØªØ­Ù…ÙŠÙ„ ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø¬Ø±Ø¯", detail = ex.Message });
+            return StatusCode(500, new { message = _t.Get("InventoryAudits.ErrorLoadingDetails"), detail = ex.Message });
         }
     }
 
@@ -165,7 +167,7 @@ public class InventoryAuditsController : ControllerBase
         if (!await CheckPerms(ModuleKeys.InventoryCount, true)) return Forbid();
         var audit = new InventoryAudit
         {
-            Title = string.IsNullOrWhiteSpace(dto.Title) ? $"Ø¬Ø±Ø¯ Ù…Ø®Ø²Ù† - {TimeHelper.GetEgyptTime():yyyy-MM-dd HH:mm}" : dto.Title,
+            Title = string.IsNullOrWhiteSpace(dto.Title) ? _t.Get("InventoryAudits.DefaultTitle", TimeHelper.GetEgyptTime().ToString("yyyy-MM-dd HH:mm")) : dto.Title,
             Description = dto.Description,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             Status = InventoryAuditStatus.Draft,
@@ -230,7 +232,7 @@ public class InventoryAuditsController : ControllerBase
         audit.UpdatedAt = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
 
-        return Ok(new { message = "ØªÙ… Ø­ÙØ¸ Ø§Ù„ØªØºÙŠÙŠØ±Ø§Øª Ø¨Ù†Ø¬Ø§Ø­" });
+        return Ok(new { message = _t.Get("InventoryAudits.ChangesSaved") });
     }
 
     private async Task ProcessItemsAsync(InventoryAudit audit, List<CreateInventoryAuditItemDto> items)
@@ -289,7 +291,7 @@ public class InventoryAuditsController : ControllerBase
             .FirstOrDefaultAsync(a => a.Id == id);
 
         if (audit == null) return NotFound();
-        if (audit.Status == InventoryAuditStatus.Posted) return BadRequest("Ù‡Ø°Ø§ Ø§Ù„Ø¬Ø±Ø¯ Ù…Ø¹ØªÙ…Ø¯ Ø¨Ø§Ù„ÙØ¹Ù„");
+        if (audit.Status == InventoryAuditStatus.Posted) return BadRequest(_t.Get("InventoryAudits.AlreadyPosted"));
 
         // Update Stock via InventoryService
         foreach (var item in audit.Items)
@@ -322,7 +324,7 @@ public class InventoryAuditsController : ControllerBase
         audit.JournalEntryId = jeId;
 
         await _db.SaveChangesAsync();
-        return Ok(new { message = "ØªÙ… Ø§Ø¹ØªÙ…Ø§Ø¯ Ø§Ù„Ø¬Ø±Ø¯ ÙˆØªØ¹Ø¯ÙŠÙ„ Ø§Ù„Ù…Ø®Ø²ÙˆÙ† ÙˆØªØ±Ø­ÙŠÙ„ Ø§Ù„Ù‚ÙŠØ¯ Ø§Ù„Ù…Ø­Ø§Ø³Ø¨ÙŠ Ø¨Ù†Ø¬Ø§Ø­" });
+        return Ok(new { message = _t.Get("InventoryAudits.AuditApprovedSuccess") });
     }
 
     [HttpDelete("{id}")]

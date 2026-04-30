@@ -20,19 +20,22 @@ public class AuthService : IAuthService
     private readonly IConfiguration _config;
     private readonly AppDbContext _db;
     private readonly ICustomerService _customerService;
+    private readonly ITranslator _t;
 
     public AuthService(
         UserManager<AppUser> userManager, 
         RoleManager<IdentityRole> roleManager, 
         IConfiguration config,
         AppDbContext db,
-        ICustomerService customerService)
+        ICustomerService customerService,
+        ITranslator t)
     {
         _userManager = userManager;
         _roleManager = roleManager;
         _config = config;
         _db = db;
         _customerService = customerService;
+        _t = t;
     }
 
     public async Task<AuthResponseDto> RegisterAsync(RegisterDto dto, bool isCustomer = true)
@@ -44,14 +47,14 @@ public class AuthService : IAuthService
         {
             var existingEmail = await _userManager.Users.FirstOrDefaultAsync(u => u.Email == dto.Email && u.UserName!.StartsWith(prefix));
             if (existingEmail != null) 
-                throw new InvalidOperationException("البريد الإلكتروني مستخدم بالفعل / Email already in use.");
+                throw new InvalidOperationException(_t.Get("Auth.EmailInUse"));
         }
 
         if (!string.IsNullOrEmpty(dto.Phone))
         {
             var existingPhone = await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == dto.Phone && u.UserName!.StartsWith(prefix));
             if (existingPhone != null) 
-                throw new InvalidOperationException("رقم الهاتف مستخدم بالفعل / Phone number already in use.");
+                throw new InvalidOperationException(_t.Get("Auth.PhoneInUse"));
         }
 
         // 2. Create User
@@ -120,7 +123,7 @@ public class AuthService : IAuthService
     public async Task<AuthResponseDto> LoginAsync(LoginDto dto)
     {
         if (string.IsNullOrEmpty(dto.Identifier))
-            throw new UnauthorizedAccessException("رقم الهاتف أو البريد الإلكتروني مطلوب");
+            throw new UnauthorizedAccessException(_t.Get("Auth.IdentifierRequired"));
 
         var prefix = dto.IsStaff ? "staff_" : "cust_";
 
@@ -131,7 +134,7 @@ public class AuthService : IAuthService
                 && (u.UserName!.StartsWith(prefix) || u.Email == "admin@sportive.com" || u.UserName == dto.Identifier));
 
         if (user == null || !user.IsActive || !await _userManager.CheckPasswordAsync(user, dto.Password))
-            throw new UnauthorizedAccessException("بيانات الدخول غير صحيحة");
+            throw new UnauthorizedAccessException(_t.Get("Auth.InvalidCredentials"));
 
         return await LoginInternalAsync(user);
     }
@@ -212,7 +215,7 @@ public class AuthService : IAuthService
         if (user == null || !user.IsActive
             || user.RefreshTokenExpiry == null
             || user.RefreshTokenExpiry < DateTime.UtcNow)
-            throw new UnauthorizedAccessException("رمز التجديد غير صالح أو منتهي الصلاحية.");
+            throw new UnauthorizedAccessException(_t.Get("Auth.RefreshTokenInvalid"));
 
         return await LoginInternalAsync(user);
     }

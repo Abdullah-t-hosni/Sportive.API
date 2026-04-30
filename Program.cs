@@ -263,6 +263,7 @@ builder.Services.AddHostedService<Sportive.API.Services.BackgroundServices.Start
 builder.Services.AddScoped<IWishlistService, WishlistService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<IAiAssistantService, AiAssistantService>();
+builder.Services.AddSingleton<ITranslator, Translator>();
 builder.Services.AddSingleton<SequenceService>();
 builder.Services.AddSingleton<TimeService>();
 builder.Services.AddSingleton<ITimeService>(sp => sp.GetRequiredService<TimeService>());
@@ -348,6 +349,7 @@ builder.Services.AddControllers()
             System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
         x.JsonSerializerOptions.Converters.Add(
             new System.Text.Json.Serialization.JsonStringEnumConverter());
+        x.JsonSerializerOptions.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
     });
 
 // ── BUILD ─────────────────────────────────────────────

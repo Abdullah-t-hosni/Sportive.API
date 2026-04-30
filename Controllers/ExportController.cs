@@ -40,13 +40,13 @@ public class ExportController : ControllerBase
         var orders = await query.OrderByDescending(o => o.CreatedAt).ToListAsync();
 
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("Ø§Ù„Ø·Ù„Ø¨Ø§Øª");
+        var ws = wb.Worksheets.Add("الطلبات");
 
         // Header
         var headers = new[] {
-            "Ø±Ù‚Ù… Ø§Ù„ÙØ§ØªÙˆØ±Ø©","Ø±Ù‚Ù… Ø§Ù„Ù…Ø±Ø¬Ø¹","Ø§Ù„Ø¹Ù…ÙŠÙ„","Ø§Ù„ØªÙ„ÙŠÙÙˆÙ†","Ø§Ù„Ù…ØµØ¯Ø±",
-            "Ø§Ù„Ø­Ø§Ù„Ø©","Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø¯ÙØ¹","Ø­Ø§Ù„Ø© Ø§Ù„Ø¯ÙØ¹","ÙƒÙˆØ¯ Ø§Ù„ØµÙ†Ù","Ø§Ù„Ø§Ø³Ù…","Ø§Ù„Ù…Ù‚Ø§Ø³","Ø§Ù„Ù„ÙˆÙ†","Ø§Ù„ÙƒÙ…ÙŠØ©", 
-            "Ø§Ù„Ù…Ø¬Ù…ÙˆØ¹","Ø§Ù„Ø®ØµÙ…","Ø§Ù„ØªÙˆØµÙŠÙ„","Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ","Ø§Ù„ØªØ§Ø±ÙŠØ®"
+            "رقم الفاتورة","رقم المرجع","العميل","التليفون","المصدر",
+            "الحالة","طريقة الدفع","حالة الدفع","كود الصنف","الاسم","المقاس","اللون","الكمية", 
+            "المجموع","الخصم","التوصيل","الإجمالي","التاريخ"
         };
         for (int c = 0; c < headers.Length; c++)
         {
@@ -68,7 +68,7 @@ public class ExportController : ControllerBase
                 ws.Cell(row, 2).Value  = ""; 
                 ws.Cell(row, 3).Value  = o.Customer?.FullName ?? "";
                 ws.Cell(row, 4).Value  = o.Customer?.Phone ?? "";
-                ws.Cell(row, 5).Value  = o.Source == OrderSource.POS ? "ÙƒØ§Ø´ÙŠØ±" : "Ù…ÙˆÙ‚Ø¹";
+                ws.Cell(row, 5).Value  = o.Source == OrderSource.POS ? "كاشير" : "موقع";
                 ws.Cell(row, 6).Value  = o.Status.ToString();
                 ws.Cell(row, 7).Value  = o.PaymentMethod.ToString();
                 ws.Cell(row, 8).Value  = o.PaymentStatus.ToString();
@@ -86,7 +86,7 @@ public class ExportController : ControllerBase
                 ws.Cell(row, 1).Value  = o.OrderNumber;
                 ws.Cell(row, 3).Value  = o.Customer?.FullName ?? "";
                 ws.Cell(row, 4).Value  = o.Customer?.Phone ?? "";
-                ws.Cell(row, 5).Value  = o.Source == OrderSource.POS ? "ÙƒØ§Ø´ÙŠØ±" : "Ù…ÙˆÙ‚Ø¹";
+                ws.Cell(row, 5).Value  = o.Source == OrderSource.POS ? "كاشير" : "موقع";
                 ws.Cell(row, 6).Value  = o.Status.ToString();
                 ws.Cell(row, 7).Value  = o.PaymentMethod.ToString();
                 ws.Cell(row, 8).Value  = o.PaymentStatus.ToString();
@@ -112,7 +112,7 @@ public class ExportController : ControllerBase
         }
 
         // Summary row
-        ws.Cell(row + 1, 10).Value = "Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ:";
+        ws.Cell(row + 1, 10).Value = "الإجمالي:";
         ws.Cell(row + 1, 10).Style.Font.Bold = true;
         ws.Cell(row + 1, 11).FormulaA1 = $"=SUM(K2:K{row})";
         ws.Cell(row + 1, 11).Style.Font.Bold = true;
@@ -144,9 +144,9 @@ public class ExportController : ControllerBase
         using var wb = new XLWorkbook();
 
         // Sheet 1: Products
-        var ws1 = wb.Worksheets.Add("Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª");
-        var h1 = new[] { "Ø§Ù„Ø§Ø³Ù… Ø¹Ø±Ø¨ÙŠ","Ø§Ù„Ø§Ø³Ù… Ø§Ù†Ø¬Ù„ÙŠØ²ÙŠ","Ø§Ù„ÙØ¦Ø©","Ø§Ù„ÙƒÙˆØ¯ (SKU)",
-            "Ø§Ù„Ø³Ø¹Ø±","Ø³Ø¹Ø± Ø§Ù„Ø®ØµÙ…","Ø§Ù„Ø¹Ù„Ø§Ù…Ø© Ø§Ù„ØªØ¬Ø§Ø±ÙŠØ©","Ø§Ù„Ø­Ø§Ù„Ø©","Ù…Ù…ÙŠØ²","Ø§Ù„ÙˆØµÙ Ø¹Ø±Ø¨ÙŠ" };
+        var ws1 = wb.Worksheets.Add("المنتجات");
+        var h1 = new[] { "الاسم عربي","الاسم انجليزي","الفئة","الكود (SKU)",
+            "السعر","سعر الخصم","العلامة التجارية","الحالة","مميز","الوصف عربي" };
         StyleHeader(ws1, h1);
 
         int r = 2;
@@ -160,7 +160,7 @@ public class ExportController : ControllerBase
             ws1.Cell(r,6).Value  = p.DiscountPrice ?? 0;
             ws1.Cell(r,7).Value  = p.Brand?.NameAr ?? "";
             ws1.Cell(r,8).Value  = p.Status.ToString();
-            ws1.Cell(r,9).Value  = p.IsFeatured ? "Ù†Ø¹Ù…" : "Ù„Ø§";
+            ws1.Cell(r,9).Value  = p.IsFeatured ? "نعم" : "لا";
             ws1.Cell(r,10).Value = p.DescriptionAr ?? "";
             ws1.Cell(r,5).Style.NumberFormat.Format = "#,##0.00";
             ws1.Cell(r,6).Style.NumberFormat.Format = "#,##0.00";
@@ -170,8 +170,8 @@ public class ExportController : ControllerBase
         ws1.RightToLeft = true;
 
         // Sheet 2: Variants
-        var ws2 = wb.Worksheets.Add("Ø§Ù„Ù…Ù‚Ø§Ø³Ø§Øª ÙˆØ§Ù„Ø£Ù„ÙˆØ§Ù†");
-        var h2 = new[] { "Ø§Ù„ÙƒÙˆØ¯ (SKU)","Ø§Ù„Ø§Ø³Ù… Ø¹Ø±Ø¨ÙŠ","Ø§Ù„Ù…Ù‚Ø§Ø³","Ø§Ù„Ù„ÙˆÙ†","Ø§Ù„Ù„ÙˆÙ† Ø¹Ø±Ø¨ÙŠ","Ø§Ù„Ù…Ø®Ø²ÙˆÙ†","ÙØ§Ø±Ù‚ Ø§Ù„Ø³Ø¹Ø±" };
+        var ws2 = wb.Worksheets.Add("المقاسات والألوان");
+        var h2 = new[] { "الكود (SKU)","الاسم عربي","المقاس","اللون","اللون عربي","المخزون","فارق السعر" };
         StyleHeader(ws2, h2);
 
         int r2 = 2;
@@ -208,8 +208,8 @@ public class ExportController : ControllerBase
             .ToListAsync();
 
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡");
-        var headers = new[] { "Ø§Ù„Ø§Ø³Ù…","Ø§Ù„Ø¥ÙŠÙ…ÙŠÙ„","Ø§Ù„ØªÙ„ÙŠÙÙˆÙ†","Ø¹Ø¯Ø¯ Ø§Ù„Ø·Ù„Ø¨Ø§Øª","Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø¥Ù†ÙØ§Ù‚","ØªØ§Ø±ÙŠØ® Ø§Ù„ØªØ³Ø¬ÙŠÙ„" };
+        var ws = wb.Worksheets.Add("العملاء");
+        var headers = new[] { "الاسم","الإيميل","التليفون","عدد الطلبات","إجمالي الإنفاق","تاريخ التسجيل" };
         StyleHeader(ws, headers);
 
         int row = 2;
@@ -251,15 +251,15 @@ public class ExportController : ControllerBase
             .ToListAsync();
 
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("ØªÙ‚Ø±ÙŠØ± Ø§Ù„ÙƒØ§Ø´ÙŠØ±");
+        var ws = wb.Worksheets.Add("تقرير الكاشير");
 
         // Title
-        ws.Cell(1,1).Value = $"ØªÙ‚Ø±ÙŠØ± Ø§Ù„ÙƒØ§Ø´ÙŠØ± â€” {from:yyyy-MM-dd}";
+        ws.Cell(1,1).Value = $"تقرير الكاشير — {from:yyyy-MM-dd}";
         ws.Cell(1,1).Style.Font.Bold = true;
         ws.Cell(1,1).Style.Font.FontSize = 14;
         ws.Range(1,1,1,8).Merge();
 
-        var headers = new[] { "Ø±Ù‚Ù… Ø§Ù„ÙØ§ØªÙˆØ±Ø©","Ø§Ù„Ø¹Ù…ÙŠÙ„","Ø§Ù„ØªÙ„ÙŠÙÙˆÙ†","Ø§Ù„Ø¨Ø§Ø¦Ø¹","Ø§Ù„Ù…Ø¨Ù„Øº","Ø§Ù„Ø®ØµÙ…","Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ","Ø§Ù„Ø­Ø§Ù„Ø©" };
+        var headers = new[] { "رقم الفاتورة","العميل","التليفون","البائع","المبلغ","الخصم","الإجمالي","الحالة" };
         for (int c = 0; c < headers.Length; c++)
         {
             var cell = ws.Cell(2, c+1);
@@ -279,8 +279,8 @@ public class ExportController : ControllerBase
             ws.Cell(row,5).Value = o.SubTotal;
             ws.Cell(row,6).Value = o.DiscountAmount;
             ws.Cell(row,7).Value = o.TotalAmount;
-            ws.Cell(row,8).Value = o.Status == OrderStatus.Returned ? "Ù…Ø±ØªØ¬Ø¹"
-                : o.Status == OrderStatus.Cancelled ? "Ù…Ù„ØºÙŠ" : "Ù…ÙƒØªÙ…Ù„";
+            ws.Cell(row,8).Value = o.Status == OrderStatus.Returned ? "مرتجع"
+                : o.Status == OrderStatus.Cancelled ? "ملغي" : "مكتمل";
 
             ws.Cell(row,5).Style.NumberFormat.Format = "#,##0.00";
             ws.Cell(row,6).Style.NumberFormat.Format = "#,##0.00";
@@ -295,17 +295,17 @@ public class ExportController : ControllerBase
         var active   = orders.Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned).ToList();
         var returned = orders.Where(o => o.Status == OrderStatus.Returned).ToList();
 
-        ws.Cell(row+1, 6).Value = "Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª:";
+        ws.Cell(row+1, 6).Value = "إجمالي المبيعات:";
         ws.Cell(row+1, 6).Style.Font.Bold = true;
         ws.Cell(row+1, 7).Value = active.Sum(o => o.TotalAmount);
         ws.Cell(row+1, 7).Style.Font.Bold = true;
 
-        ws.Cell(row+2, 6).Value = "Ø§Ù„Ù…Ø±ØªØ¬Ø¹Ø§Øª:";
+        ws.Cell(row+2, 6).Value = "المرتجعات:";
         ws.Cell(row+2, 6).Style.Font.FontColor = XLColor.Red;
         ws.Cell(row+2, 7).Value = returned.Sum(o => o.TotalAmount);
         ws.Cell(row+2, 7).Style.Font.FontColor = XLColor.Red;
 
-        ws.Cell(row+3, 6).Value = "Ø§Ù„ØµØ§ÙÙŠ:";
+        ws.Cell(row+3, 6).Value = "الصافي:";
         ws.Cell(row+3, 6).Style.Font.Bold = true;
         ws.Cell(row+3, 7).Value = active.Sum(o => o.TotalAmount) - returned.Sum(o => o.TotalAmount);
         ws.Cell(row+3, 7).Style.Font.Bold = true;
@@ -334,13 +334,13 @@ public class ExportController : ControllerBase
             .ToListAsync();
 
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("Ø§Ù„Ù…Ø®Ø²ÙˆÙ† Ø§Ù„ÙƒØ§Ù…Ù„");
+        var ws = wb.Worksheets.Add("المخزون الكامل");
 
         var headers = new[]
         {
-            "Ø§Ù„ÙƒÙˆØ¯ (SKU)", "Ø§Ø³Ù… Ø§Ù„Ù…Ù†ØªØ¬", "Ø§Ù„ÙØ¦Ø©", "Ø§Ù„Ù…Ø§Ø±ÙƒØ©",
-            "Ø§Ù„Ø³Ø¹Ø±", "Ø§Ù„ØªÙƒÙ„ÙØ©", "Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø®Ø²ÙˆÙ†", "Ø­Ø¯ Ø¥Ø¹Ø§Ø¯Ø© Ø§Ù„Ø·Ù„Ø¨",
-            "Ù‚ÙŠÙ…Ø© Ø§Ù„Ù…Ø®Ø²ÙˆÙ†", "Ø§Ù„Ø­Ø§Ù„Ø©"
+            "الكود (SKU)", "اسم المنتج", "الفئة", "الماركة",
+            "السعر", "التكلفة", "إجمالي المخزون", "حد إعادة الطلب",
+            "قيمة المخزون", "الحالة"
         };
         StyleHeader(ws, headers);
 
@@ -376,7 +376,7 @@ public class ExportController : ControllerBase
         }
 
         // ØµÙ Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ
-        ws.Cell(row + 1, 8).Value = "Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ù‚ÙŠÙ…Ø© Ø§Ù„Ù…Ø®Ø²ÙˆÙ†:";
+        ws.Cell(row + 1, 8).Value = "إجمالي قيمة المخزون:";
         ws.Cell(row + 1, 8).Style.Font.Bold = true;
         ws.Cell(row + 1, 9).Value = grandTotal;
         ws.Cell(row + 1, 9).Style.Font.Bold = true;
@@ -407,12 +407,12 @@ public class ExportController : ControllerBase
             .ToListAsync();
 
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("Ù…Ù†Ø®ÙØ¶Ø© Ø§Ù„Ù…Ø®Ø²ÙˆÙ†");
+        var ws = wb.Worksheets.Add("منخفضة المخزون");
 
         var headers = new[]
         {
-            "Ø§Ù„ÙƒÙˆØ¯ (SKU)", "Ø§Ø³Ù… Ø§Ù„Ù…Ù†ØªØ¬", "Ø§Ù„ÙØ¦Ø©", "Ø§Ù„Ù…Ø§Ø±ÙƒØ©",
-            "Ø§Ù„Ù…Ø®Ø²ÙˆÙ† Ø§Ù„Ø­Ø§Ù„ÙŠ", "Ø­Ø¯ Ø¥Ø¹Ø§Ø¯Ø© Ø§Ù„Ø·Ù„Ø¨", "Ø§Ù„Ù†Ù‚Øµ", "Ø§Ù„ØªÙƒÙ„ÙØ©", "Ø§Ù„Ø­Ø§Ù„Ø©"
+            "الكود (SKU)", "اسم المنتج", "الفئة", "الماركة",
+            "المخزون الحالي", "حد إعادة الطلب", "النقص", "التكلفة", "الحالة"
         };
         StyleHeader(ws, headers);
 
@@ -429,7 +429,7 @@ public class ExportController : ControllerBase
             ws.Cell(row, 6).Value = p.ReorderLevel;
             ws.Cell(row, 7).Value = shortage > 0 ? shortage : 0;
             ws.Cell(row, 8).Value = p.CostPrice ?? 0;
-            ws.Cell(row, 9).Value = p.TotalStock == 0 ? "Ù†ÙØ° Ø§Ù„Ù…Ø®Ø²ÙˆÙ†" : "Ù…Ø®Ø²ÙˆÙ† Ù…Ù†Ø®ÙØ¶";
+            ws.Cell(row, 9).Value = p.TotalStock == 0 ? "نفذ المخزون" : "مخزون منخفض";
 
             ws.Cell(row, 8).Style.NumberFormat.Format = "#,##0.00";
 
@@ -465,13 +465,13 @@ public class ExportController : ControllerBase
             .ToListAsync();
 
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("Ø§Ù„Ù…Ù‚Ø§Ø³Ø§Øª ÙˆØ§Ù„Ø£Ù„ÙˆØ§Ù†");
+        var ws = wb.Worksheets.Add("المقاسات والألوان");
 
         var headers = new[]
         {
-            "Ø§Ù„ÙƒÙˆØ¯ (SKU)", "Ø§Ø³Ù… Ø§Ù„Ù…Ù†ØªØ¬", "Ø§Ù„ÙØ¦Ø©", "Ø§Ù„Ù…Ø§Ø±ÙƒØ©",
-            "Ø§Ù„Ù…Ù‚Ø§Ø³", "Ø§Ù„Ù„ÙˆÙ†", "Ø§Ù„Ù„ÙˆÙ† Ø¹Ø±Ø¨ÙŠ",
-            "Ø§Ù„Ù…Ø®Ø²ÙˆÙ†", "Ø­Ø¯ Ø¥Ø¹Ø§Ø¯Ø© Ø§Ù„Ø·Ù„Ø¨", "ÙØ§Ø±Ù‚ Ø§Ù„Ø³Ø¹Ø±", "Ø§Ù„Ø­Ø§Ù„Ø©"
+            "الكود (SKU)", "اسم المنتج", "الفئة", "الماركة",
+            "المقاس", "اللون", "اللون عربي",
+            "المخزون", "حد إعادة الطلب", "فارق السعر", "الحالة"
         };
         StyleHeader(ws, headers);
 
@@ -489,7 +489,7 @@ public class ExportController : ControllerBase
             ws.Cell(row, 8).Value  = v.StockQuantity;
             ws.Cell(row, 9).Value  = v.ReorderLevel;
             ws.Cell(row, 10).Value = v.PriceAdjustment ?? 0;
-            ws.Cell(row, 11).Value = v.StockQuantity == 0 ? "Ù†ÙØ°" : v.ReorderLevel > 0 && v.StockQuantity <= v.ReorderLevel ? "Ù…Ù†Ø®ÙØ¶" : "Ù…ØªØ§Ø­";
+            ws.Cell(row, 11).Value = v.StockQuantity == 0 ? "نفذ" : v.ReorderLevel > 0 && v.StockQuantity <= v.ReorderLevel ? "منخفض" : "متاح";
 
             ws.Cell(row, 10).Style.NumberFormat.Format = "#,##0.00";
 
@@ -521,9 +521,9 @@ public class ExportController : ControllerBase
             .ToListAsync();
 
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("Ø´Ø¬Ø±Ø© Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª");
+        var ws = wb.Worksheets.Add("شجرة الحسابات");
 
-        var headers = new[] { "ÙƒÙˆØ¯ Ø§Ù„Ø­Ø³Ø§Ø¨", "Ø§Ù„Ø§Ø³Ù… Ø¹Ø±Ø¨ÙŠ", "Ø§Ù„Ø§Ø³Ù… Ø§Ù†Ø¬Ù„ÙŠØ²ÙŠ", "Ø§Ù„Ù†ÙˆØ¹", "Ø§Ù„Ø·Ø¨ÙŠØ¹Ø©", "ÙƒÙˆØ¯ Ø§Ù„Ø£Ø¨", "ÙŠÙ‚Ø¨Ù„ ØªØ±Ø­ÙŠÙ„" };
+        var headers = new[] { "كود الحساب", "الاسم عربي", "الاسم انجليزي", "النوع", "الطبيعة", "كود الأب", "يقبل ترحيل" };
         StyleHeader(ws, headers);
 
         int row = 2;
@@ -535,7 +535,7 @@ public class ExportController : ControllerBase
             ws.Cell(row, 4).Value = a.Type.ToString();
             ws.Cell(row, 5).Value = a.Nature.ToString();
             ws.Cell(row, 6).Value = a.Parent?.Code ?? "";
-            ws.Cell(row, 7).Value = a.AllowPosting ? "Ù†Ø¹Ù…" : "Ù„Ø§";
+            ws.Cell(row, 7).Value = a.AllowPosting ? "نعم" : "لا";
             row++;
         }
 

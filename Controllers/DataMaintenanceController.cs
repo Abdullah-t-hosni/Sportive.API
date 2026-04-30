@@ -14,19 +14,21 @@ public class DataMaintenanceController : ControllerBase
     private readonly IDataMaintenanceService _service;
     private readonly IWebHostEnvironment _env;
     private readonly UserManager<AppUser> _userManager;
+    private readonly ITranslator _t;
 
-    public DataMaintenanceController(IDataMaintenanceService service, IWebHostEnvironment env, UserManager<AppUser> userManager)
+    public DataMaintenanceController(IDataMaintenanceService service, IWebHostEnvironment env, UserManager<AppUser> userManager, ITranslator t)
     {
         _service = service;
         _env = env;
         _userManager = userManager;
+        _t = t;
     }
 
     [HttpPost("wipe-customers")]
     [Authorize(Policy = "SuperAdminOnly")]
     public async Task<IActionResult> WipeCustomers()
     {
-        if (!_env.IsDevelopment()) return StatusCode(403, new { success = false, message = "هذه الخاصية متاحة فقط في بيئة التطوير." });
+        if (!_env.IsDevelopment()) return StatusCode(403, new { success = false, message = _t.Get("Maintenance.DevOnly") });
 
         var (success, message) = await _service.WipeCustomersAsync(User.Identity?.Name);
         return success ? Ok(new { success, message }) : BadRequest(new { success, message });
@@ -36,7 +38,7 @@ public class DataMaintenanceController : ControllerBase
     [Authorize(Policy = "SuperAdminOnly")]
     public async Task<IActionResult> RequestFactoryResetOtp()
     {
-        if (!_env.IsDevelopment()) return StatusCode(403, new { success = false, message = "هذه الخاصية متاحة فقط في بيئة التطوير." });
+        if (!_env.IsDevelopment()) return StatusCode(403, new { success = false, message = _t.Get("Maintenance.DevOnly") });
 
         var user = await _userManager.GetUserAsync(User);
         if (user == null) return Unauthorized(new { success = false, message = "User not found" });
@@ -51,7 +53,7 @@ public class DataMaintenanceController : ControllerBase
     [Authorize(Policy = "SuperAdminOnly")]
     public async Task<IActionResult> FactoryReset([FromBody] FactoryResetRequest req)
     {
-        if (!_env.IsDevelopment()) return StatusCode(403, new { success = false, message = "هذه الخاصية متاحة فقط في بيئة التطوير." });
+        if (!_env.IsDevelopment()) return StatusCode(403, new { success = false, message = _t.Get("Maintenance.DevOnly") });
 
         var user = await _userManager.GetUserAsync(User);
         if (user == null) return Unauthorized(new { success = false, message = "User not found" });
@@ -70,13 +72,13 @@ public class DataMaintenanceController : ControllerBase
     [HttpGet("debug-account/{code}")]
     public IActionResult DebugAccount(string code)
     {
-        return BadRequest(new { message = "هذا الـ Endpoint تم تعطيله مؤقتاً." });
+        return BadRequest(new { message = _t.Get("Maintenance.EndpointDisabled") });
     }
 
     [HttpGet("debug-supplier/{id}")]
     public IActionResult DebugSupplier(int id)
     {
-        return BadRequest(new { message = "هذا الـ Endpoint تم تعطيله مؤقتاً." });
+        return BadRequest(new { message = _t.Get("Maintenance.EndpointDisabled") });
     }
 
     [HttpGet("sync-accounts")]
@@ -92,7 +94,7 @@ public class DataMaintenanceController : ControllerBase
     [HttpGet("purge-deleted"), HttpPost("purge-deleted")]
     public async Task<IActionResult> PurgeDeleted()
     {
-        if (!_env.IsDevelopment()) return StatusCode(403, new { success = false, message = "هذه الخاصية متاحة فقط في بيئة التطوير." });
+        if (!_env.IsDevelopment()) return StatusCode(403, new { success = false, message = _t.Get("Maintenance.DevOnly") });
 
         var (success, purged, message) = await _service.PurgeDeletedAsync(User.Identity?.Name);
         return success ? Ok(new { success, purged }) : BadRequest(new { success, message });

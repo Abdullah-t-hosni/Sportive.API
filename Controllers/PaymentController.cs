@@ -7,6 +7,7 @@ using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using Sportive.API.Utils;
+using Sportive.API.Interfaces;
 
 namespace Sportive.API.Controllers;
 
@@ -21,8 +22,9 @@ public class PaymentController : ControllerBase
     private readonly ILogger<PaymentController> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAuditService _audit;
+    private readonly ITranslator _t;
 
-    public PaymentController(IPaymobService paymob, AppDbContext db, ILogger<PaymentController> logger, IConfiguration config, IServiceScopeFactory scopeFactory, IAuditService audit)
+    public PaymentController(IPaymobService paymob, AppDbContext db, ILogger<PaymentController> logger, IConfiguration config, IServiceScopeFactory scopeFactory, IAuditService audit, ITranslator t)
     {
         _paymob = paymob;
         _db = db;
@@ -30,6 +32,7 @@ public class PaymentController : ControllerBase
         _config = config;
         _scopeFactory = scopeFactory;
         _audit = audit;
+        _t = t;
     }
 
     /// <summary>إنشاء رابط دفع Paymob لطلب معين</summary>
@@ -41,10 +44,10 @@ public class PaymentController : ControllerBase
             .Include(o => o.Customer)
             .FirstOrDefaultAsync(o => o.Id == orderId);
         if (order == null)
-            return NotFound(new { message = "الطلب غير موجود" });
+            return NotFound(new { message = _t.Get("Payments.OrderNotFound") });
 
         if (order.PaymentStatus == PaymentStatus.Paid)
-            return BadRequest(new { message = "الطلب مدفوع مسبقاً" });
+            return BadRequest(new { message = _t.Get("Payments.AlreadyPaid") });
 
         var result = await _paymob.CreatePaymentAsync(new PaymobOrderRequest(
             Amount: order.TotalAmount,
@@ -56,7 +59,7 @@ public class PaymentController : ControllerBase
         ));
 
         if (!result.Success)
-            return BadRequest(new { message = result.Error ?? "فشل إنشاء رابط الدفع" });
+            return BadRequest(new { message = result.Error ?? _t.Get("Payments.LinkCreationFailed") });
 
         return Ok(new { paymentUrl = result.PaymentUrl, orderNumber = order.OrderNumber });
     }

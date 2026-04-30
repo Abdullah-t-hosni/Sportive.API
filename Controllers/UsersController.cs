@@ -1,10 +1,11 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using Sportive.API.Interfaces;
 
 namespace Sportive.API.Controllers;
 
@@ -16,15 +17,17 @@ public class UsersController : ControllerBase
     private readonly UserManager<AppUser> _userManager;
     private readonly RoleManager<IdentityRole> _roleManager;
     private readonly AppDbContext _db;
+    private readonly ITranslator _t;
 
-    public UsersController(UserManager<AppUser> userManager, RoleManager<IdentityRole> roleManager, AppDbContext db)
+    public UsersController(UserManager<AppUser> userManager, RoleManager<IdentityRole> roleManager, AppDbContext db, ITranslator t)
     {
         _userManager = userManager;
         _roleManager = roleManager;
         _db = db;
+        _t = t;
     }
 
-    // â”€â”€ Get All Users (with Roles) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Get All Users (with Roles) ───────────────────────────
     [HttpGet]
     public async Task<IActionResult> GetAllUsers([FromQuery] string? search = null, [FromQuery] string? role = null)
     {
@@ -64,13 +67,13 @@ public class UsersController : ControllerBase
         return Ok(grouped.OrderByDescending(u => u.createdAt));
     }
 
-    // â”€â”€ Update User Basic Info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Update User Basic Info ───────────────────────────────
     public record UpdateUserDto(string FullName, string Email, string? Phone, bool? IsActive);
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateUser(string id, [FromBody] UpdateUserDto dto)
     {
         var user = await _userManager.FindByIdAsync(id);
-        if (user == null) return NotFound(new { message = "Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
+        if (user == null) return NotFound(new { message = _t.Get("Users.NotFound") });
 
         user.FullName    = dto.FullName;
         user.Email       = dto.Email;
@@ -81,36 +84,37 @@ public class UsersController : ControllerBase
         var result = await _userManager.UpdateAsync(user);
         if (!result.Succeeded) return BadRequest(result.Errors);
 
-        return Ok(new { message = "ØªÙ… ØªØ­Ø¯ÙŠØ« Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ø¨Ù†Ø¬Ø§Ø­" });
+        return Ok(new { message = _t.Get("Users.UpdateSuccess") });
     }
 
-    // â”€â”€ Reset Password (ADMIN OVERRIDE) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Reset Password (ADMIN OVERRIDE) ─────────────────────
     public record ResetPasswordDto(string NewPassword);
     [HttpPost("{id}/reset-password")]
     public async Task<IActionResult> ResetPassword(string id, [FromBody] ResetPasswordDto dto)
     {
         var user = await _userManager.FindByIdAsync(id);
-        if (user == null) return NotFound(new { message = "Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
+        if (user == null) return NotFound(new { message = _t.Get("Users.NotFound") });
 
-        if (string.IsNullOrWhiteSpace(dto.NewPassword)) return BadRequest(new { message = "ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ± Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø£Ù† ØªÙƒÙˆÙ† ÙØ§Ø±ØºØ©" });
+        if (string.IsNullOrWhiteSpace(dto.NewPassword)) 
+            return BadRequest(new { message = _t.Get("Users.PasswordEmpty") });
 
-        // ðŸ›¡ï¸ STRATEGY: Hard override by removing and adding password
+        // 🛡️ STRATEGY: Hard override by removing and adding password
         await _userManager.RemovePasswordAsync(user);
         var result = await _userManager.AddPasswordAsync(user, dto.NewPassword);
 
         if (!result.Succeeded) 
-            return BadRequest(new { message = "ÙØ´Ù„ ØªØºÙŠÙŠØ± ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±", errors = result.Errors.Select(e => e.Description) });
+            return BadRequest(new { message = _t.Get("Auth.PasswordChangeFailed"), errors = result.Errors.Select(e => e.Description) });
 
-        return Ok(new { message = "ØªÙ… ØªØºÙŠÙŠØ± ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ± Ø¨Ù†Ø¬Ø§Ø­" });
+        return Ok(new { message = _t.Get("Users.PasswordChangeSuccess") });
     }
 
-    // â”€â”€ Update User Roles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Update User Roles ────────────────────────────────────
     public record UpdateRolesDto(List<string> Roles);
     [HttpPut("{id}/roles")]
     public async Task<IActionResult> UpdateRoles(string id, [FromBody] UpdateRolesDto dto)
     {
         var user = await _userManager.FindByIdAsync(id);
-        if (user == null) return NotFound(new { message = "Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
+        if (user == null) return NotFound(new { message = _t.Get("Users.NotFound") });
 
         var currentRoles = await _userManager.GetRolesAsync(user);
         await _userManager.RemoveFromRolesAsync(user, currentRoles);
@@ -125,15 +129,15 @@ public class UsersController : ControllerBase
         var result = await _userManager.AddToRolesAsync(user, dto.Roles);
         if (!result.Succeeded) return BadRequest(result.Errors);
 
-        return Ok(new { message = "ØªÙ… ØªØ­Ø¯ÙŠØ« Ø§Ù„ØµÙ„Ø§Ø­ÙŠØ§Øª Ø¨Ù†Ø¬Ø§Ø­" });
+        return Ok(new { message = _t.Get("Users.PermissionsUpdateSuccess") });
     }
 
-    // â”€â”€ Delete User â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ (Soft delete/Deactivate or Hard Delete)
+    // ── Delete User ────────────────────────────────────────── (Soft delete/Deactivate or Hard Delete)
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteUser(string id, [FromQuery] bool permanent = false)
     {
         var user = await _userManager.FindByIdAsync(id);
-        if (user == null) return NotFound(new { message = "Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ / User not found" });
+        if (user == null) return NotFound(new { message = _t.Get("Users.NotFound") });
 
         if (permanent)
         {
@@ -150,8 +154,7 @@ public class UsersController : ControllerBase
                 if (hasOrders)
                 {
                     return BadRequest(new { 
-                        message = "Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ù‡Ø°Ø§ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ù†Ù‡Ø§Ø¦ÙŠØ§Ù‹ Ù„ÙˆØ¬ÙˆØ¯ Ø·Ù„Ø¨Ø§Øª Ù…Ø±ØªØ¨Ø·Ø© Ø¨Ù‡. Ø¨Ø±Ø¬Ø§Ø¡ ØªØ¹Ø·ÙŠÙ„ Ø§Ù„Ø­Ø³Ø§Ø¨ Ø¨Ø¯Ù„Ø§Ù‹ Ù…Ù† Ø§Ù„Ø­Ø°Ù Ø§Ù„Ø²Ø§Ø¦Ø¯.",
-                        details = "This user has order history and cannot be permanently deleted due to database integrity. Use 'Deactivate' (Soft Delete) instead." 
+                        message = _t.Get("Users.DeleteErrorHasOrders")
                     });
                 }
 
@@ -171,7 +174,6 @@ public class UsersController : ControllerBase
             if (!result.Succeeded) return BadRequest(result.Errors);
         }
 
-        return Ok(new { message = "ØªÙ… Ø­Ø°Ù Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ø¨Ù†Ø¬Ø§Ø­ / Operation successful" });
+        return Ok(new { message = _t.Get("Users.DeleteSuccess") });
     }
 }
-

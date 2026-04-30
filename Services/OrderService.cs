@@ -22,6 +22,7 @@ public class OrderService : IOrderService
     private readonly IAccountingService _accounting;
     private readonly ILogger<OrderService> _logger;
     private readonly SequenceService _seq;
+    private readonly ITranslator _t;
 
     public OrderService(
         AppDbContext db,
@@ -33,7 +34,8 @@ public class OrderService : IOrderService
         ICustomerService customerService,
         IAccountingService accounting,
         ILogger<OrderService> logger,
-        SequenceService seq)
+        SequenceService seq,
+        ITranslator t)
     {
         _db = db;
         _notificationService = notificationService;
@@ -45,6 +47,7 @@ public class OrderService : IOrderService
         _accounting = accounting;
         _logger = logger;
         _seq = seq;
+        _t = t;
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
@@ -122,7 +125,7 @@ public class OrderService : IOrderService
         var customerId = o.CustomerId;
         var customerDto = o.Customer != null 
             ? new CustomerBasicDto(o.Customer.Id, o.Customer.FullName, o.Customer.Email, o.Customer.Phone, o.Customer.FixedDiscount)
-            : new CustomerBasicDto(customerId, "Unknown Customer", "", "");
+            : new CustomerBasicDto(customerId, _t.Get("Orders.UnknownCustomer"), "", "");
 
         var salesPersonName = "";
         if (!string.IsNullOrEmpty(o.SalesPersonId))
@@ -173,7 +176,7 @@ public class OrderService : IOrderService
                     name = allEmps.FirstOrDefault(e => e.Id == eid)?.Name;
                 }
             }
-            if (string.IsNullOrEmpty(name) && h.Note != null && (h.Note.Contains("تم إنشاء الطلب") || h.Note.Contains("Order Created")))
+            if (string.IsNullOrEmpty(name) && h.Note != null && (h.Note.Contains(_t.Get("Orders.StatusCreated")) || h.Note.Contains("Order Created")))
             {
                 name = salesPersonName;
             }
@@ -278,7 +281,7 @@ public class OrderService : IOrderService
                     {
                         var c = new Customer
                         {
-                            FullName = dto.CustomerName ?? "Walk-in Customer",
+                            FullName = dto.CustomerName ?? _t.Get("Orders.WalkInCustomer"),
                             Phone = phone,
                             Email = $"{phone}@pos.sportive.com",
                             CreatedAt = TimeHelper.GetEgyptTime(),
@@ -291,11 +294,11 @@ public class OrderService : IOrderService
                     }
                 }
 
-                if (!customerId.HasValue) throw new ArgumentException("Customer identification required.");
+                if (!customerId.HasValue) throw new ArgumentException(_t.Get("Auth.IdentifierRequired"));
 
                 if (dto.Source == OrderSource.POS && string.IsNullOrEmpty(dto.SalesPersonId))
                 {
-                    throw new ArgumentException("معرف البائع مطلوب لعمليات الـ POS");
+                    throw new ArgumentException(_t.Get("Orders.SellerRequired"));
                 }
 
                 // 🔎 CREDIT POLICY: No credit for anonymous customers
@@ -308,7 +311,7 @@ public class OrderService : IOrderService
                         customer.Phone == "0000000000" || 
                         string.IsNullOrEmpty(customer.Phone))
                     {
-                        throw new ArgumentException("عفواً، لا يمكن البيع الآجل لعميل نقدي مجهول. يرجى اختيار أو تسجيل عميل باسم ورقم هاتف أولاً لإثبات المديونية.");
+                        throw new ArgumentException(_t.Get("Orders.CreditPolicyViolation"));
                     }
                 }
 
@@ -433,8 +436,8 @@ public class OrderService : IOrderService
                         {
                             throw new ArgumentException(
                                 actualSource == OrderSource.POS
-                                ? $"الكمية المطلوبة ({item.Quantity}) من {product.NameAr} غير متاحة في المخزون (المتاح: {availableStock})"
-                                : $"Requested quantity for {product.NameAr} is not available in stock.");
+                                ? _t.Get("Orders.StockUnavailable", item.Quantity, product.NameAr, availableStock)
+                                : _t.Get("Orders.StockUnavailable", item.Quantity, product.NameAr, availableStock));
                         }
 
                         order.Items.Add(orderItem);
@@ -447,7 +450,7 @@ public class OrderService : IOrderService
                             item.ProductId,
                             item.ProductVariantId,
                             order.OrderNumber,
-                            "Order created",
+                            _t.Get("Orders.StatusCreated"),
                             order.SalesPersonId,
                             0, // unitCost fallback
                             order.Source,
@@ -461,7 +464,7 @@ public class OrderService : IOrderService
                         .Include(c => c.ProductVariant)
                         .Where(c => c.CustomerId == customerId.Value).ToListAsync();
                     
-                    if (!cartItems.Any()) throw new ArgumentException("Cart is empty.");
+                    if (!cartItems.Any()) throw new ArgumentException(_t.Get("Orders.CartEmpty"));
 
                     foreach (var ci in cartItems)
                     {
@@ -469,7 +472,7 @@ public class OrderService : IOrderService
                     var availableStock = ci.ProductVariant?.StockQuantity ?? ci.Product.TotalStock;
                     if (store != null && !store.AllowBackorders && ci.Quantity > availableStock)
                     {
-                        throw new ArgumentException($"الكمية المطلوبة ({ci.Quantity}) من {ci.Product.NameAr} غير متاحة في المخزون حالياً.");
+                        throw new ArgumentException(_t.Get("Orders.StockUnavailable", ci.Quantity, ci.Product.NameAr, availableStock));
                     }
 
                         decimal originalUnitPrice = ci.Product.Price;
@@ -541,7 +544,7 @@ public class OrderService : IOrderService
                             ci.ProductId,
                             ci.ProductVariantId,
                             order.OrderNumber,
-                            "Website Order created",
+                            _t.Get("Orders.StatusCreated"),
                             null,
                             0, // unitCost fallback
                             order.Source,
@@ -633,7 +636,7 @@ public class OrderService : IOrderService
                         }
                         
                         if (order.PaidAmount > order.TotalAmount + 0.1m)
-                            throw new ArgumentException($"عفواً، لا يمكن تحصيل مبلغ أكبر من قيمة الفاتورة. (المدفوع: {order.PaidAmount} | المطلوب: {order.TotalAmount})");
+                            throw new ArgumentException(_t.Get("Orders.OverpaidError", order.PaidAmount, order.TotalAmount));
 
                         // Set status based on total paid vs total amount
                         if (order.PaidAmount >= order.TotalAmount - 0.01m) 
@@ -711,7 +714,7 @@ public class OrderService : IOrderService
                 // 4. Validate Business Rules/Settings
                 if (order.Source == OrderSource.Website && store != null && order.TotalAmount < store.MinOrderAmount)
                 {
-                    throw new ArgumentException($"الحد الأدنى للطلب هو {store.MinOrderAmount:N2} ج.م. المبلغ الحالي: {order.TotalAmount:N2} ج.م");
+                    throw new ArgumentException(_t.Get("Orders.MinAmountError", store.MinOrderAmount, order.TotalAmount));
                 }
 
                 if (store != null && !store.AllowBackorders)
@@ -722,7 +725,7 @@ public class OrderService : IOrderService
                 order.StatusHistory.Add(new OrderStatusHistory { 
                     Status = order.Status, 
                     CreatedAt = TimeHelper.GetEgyptTime(), 
-                    Note = "تم إنشاء الطلب",
+                    Note = _t.Get("Orders.StatusCreated"),
                     ChangedByUserId = dto.SalesPersonId
                 });
 
@@ -733,7 +736,7 @@ public class OrderService : IOrderService
                     if (coupon != null)
                     {
                         if (coupon.MaxUsageCount.HasValue && coupon.CurrentUsageCount >= coupon.MaxUsageCount)
-                            throw new ArgumentException("هذا الكوبون تم استخدامه بالكامل بالحد الأقصى");
+                            throw new ArgumentException(_t.Get("Orders.CouponLimitReached"));
 
                         coupon.CurrentUsageCount++;
                     }

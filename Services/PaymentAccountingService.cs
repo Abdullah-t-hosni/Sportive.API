@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.Utils;
+using Sportive.API.Interfaces;
 using MK = Sportive.API.Utils.MappingKeys;
 
 namespace Sportive.API.Services;
@@ -15,12 +16,14 @@ public class PaymentAccountingService
     private readonly AppDbContext _db;
     private readonly AccountingCoreService _core;
     private readonly ILogger<PaymentAccountingService> _logger;
+    private readonly ITranslator _t;
 
-    public PaymentAccountingService(AppDbContext db, AccountingCoreService core, ILogger<PaymentAccountingService> logger)
+    public PaymentAccountingService(AppDbContext db, AccountingCoreService core, ILogger<PaymentAccountingService> logger, ITranslator t)
     {
         _db = db;
         _core = core;
         _logger = logger;
+        _t = t;
     }
 
     public async Task PostOrderPaymentAsync(Order order)
@@ -56,8 +59,9 @@ public class PaymentAccountingService
             foreach (var p in payments)
             {
                 var code = await _core.GetMappedCashAccountAsync(p.Method, order.Source, mapDict);
-                lines.Add((code, p.Amount, 0, $"تحصيل ({_core.GetMethodLabel(p.Method)}) - {order.OrderNumber}"));
-                lines.Add((receivablesAcct, 0, p.Amount, $"إغلاق مديونية ({_core.GetMethodLabel(p.Method)}) - {order.OrderNumber}"));
+                var methodLabel = _core.GetMethodLabel(p.Method);
+                lines.Add((code, p.Amount, 0, _t.Get("Accounting.CollectionShortDesc", methodLabel, order.OrderNumber)));
+                lines.Add((receivablesAcct, 0, p.Amount, _t.Get("Accounting.DebtClosureDesc", methodLabel, order.OrderNumber)));
                 handledPaidAmt += p.Amount;
             }
         }
@@ -69,29 +73,30 @@ public class PaymentAccountingService
                 foreach (var (m, v) in splits)
                 {
                     var code = await _core.GetMappedCashAccountAsync(m, order.Source, mapDict);
-                    lines.Add((code, v, 0, $"تحصيل ({_core.GetMethodLabel(m)}) - {order.OrderNumber}"));
-                    lines.Add((receivablesAcct, 0, v, $"إغلاق مديونية ({_core.GetMethodLabel(m)}) - {order.OrderNumber}"));
+                    var methodLabel = _core.GetMethodLabel(m);
+                    lines.Add((code, v, 0, _t.Get("Accounting.CollectionShortDesc", methodLabel, order.OrderNumber)));
+                    lines.Add((receivablesAcct, 0, v, _t.Get("Accounting.DebtClosureDesc", methodLabel, order.OrderNumber)));
                     handledPaidAmt += v;
                 }
             }
             else if (order.PaymentMethod != PaymentMethod.Credit && order.TotalAmount > 0)
             {
                 var cashCode = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
-                lines.Add((cashCode, order.TotalAmount, 0, $"تحصيل طلب {order.OrderNumber} ({_core.GetMethodLabel(order.PaymentMethod)})"));
-                lines.Add((receivablesAcct, 0, order.TotalAmount, $"إغلاق مديونية طلب {order.OrderNumber}"));
+                var methodLabel = _core.GetMethodLabel(order.PaymentMethod);
+                lines.Add((cashCode, order.TotalAmount, 0, _t.Get("Accounting.OrderCollectionDesc", order.OrderNumber, methodLabel)));
+                lines.Add((receivablesAcct, 0, order.TotalAmount, _t.Get("Accounting.OrderDebtClosureDesc", order.OrderNumber)));
                 handledPaidAmt = order.TotalAmount;
             }
         }
 
-        // ⚠️ STRICT VALIDATION: Ensure ledger entries match order records
         if (!lines.Any()) return;
         
         if (order.PaidAmount > 0 && Math.Abs(handledPaidAmt - order.PaidAmount) > 0.01m)
         {
-            throw new InvalidOperationException($"خطأ في مطابقة تحصيل الطلب: المبلغ المسجل في سجلات الطلب ({order.PaidAmount}) لا يطابق واقع القيود ({handledPaidAmt}) للطلب {order.OrderNumber}");
+            throw new InvalidOperationException(_t.Get("Accounting.PaymentMatchingGeneralError", order.PaidAmount, handledPaidAmt, order.OrderNumber));
         }
 
-        await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, reference, $"تحصيل تلقائي للطلب {order.OrderNumber}", TimeHelper.GetEgyptTime(), lines, orderId: order.Id, customerId: order.CustomerId, source: order.Source);
+        await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, reference, _t.Get("Accounting.AutoReceiptVoucherMainDesc", order.OrderNumber), TimeHelper.GetEgyptTime(), lines, orderId: order.Id, customerId: order.CustomerId, source: order.Source);
     }
 
     public async Task PostOrderRefundAsync(Order order)
@@ -104,22 +109,21 @@ public class PaymentAccountingService
         var cashCode = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
-        lines.Add((receivablesAcct, order.TotalAmount, 0, $"رد مديونية لطلب {order.OrderNumber}"));
-        lines.Add((cashCode, 0, order.TotalAmount, $"رد مبلغ الطلب {order.OrderNumber}"));
+        lines.Add((receivablesAcct, order.TotalAmount, 0, _t.Get("Accounting.DebtRefundDesc", order.OrderNumber)));
+        lines.Add((cashCode, 0, order.TotalAmount, _t.Get("Accounting.OrderAmountRefundDesc", order.OrderNumber)));
 
-        await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, reference, $"رد تلقائي للطلب {order.OrderNumber}", TimeHelper.GetEgyptTime(), lines, orderId: order.Id, customerId: order.CustomerId, source: order.Source);
+        await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, reference, _t.Get("Accounting.AutoPaymentVoucherMainDesc", order.OrderNumber), TimeHelper.GetEgyptTime(), lines, orderId: order.Id, customerId: order.CustomerId, source: order.Source);
     }
 
     public async Task PostReceiptVoucherAsync(ReceiptVoucher voucher, int? orderId = null)
     {
         if (await _core.EntryExistsAsync(JournalEntryType.ReceiptVoucher, voucher.VoucherNumber)) return;
         var lines = new List<(string code, decimal debit, decimal credit, string desc)> {
-            ($"ID:{voucher.CashAccountId}", voucher.Amount, 0, $"سند قبض {voucher.VoucherNumber}"),
-            ($"ID:{voucher.FromAccountId}", 0, voucher.Amount, $"من حساب {voucher.FromAccount?.NameAr}")
+            ($"ID:{voucher.CashAccountId}", voucher.Amount, 0, _t.Get("Accounting.ReceiptVoucherShortDesc", voucher.VoucherNumber)),
+            ($"ID:{voucher.FromAccountId}", 0, voucher.Amount, _t.Get("Accounting.FromAccountDesc", voucher.FromAccount?.NameAr ?? ""))
         };
         var entry = await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, customerId: voucher.CustomerId, orderId: orderId, source: voucher.CostCenter, employeeId: voucher.EmployeeId);
         
-        // Update voucher with Entry ID to prevent broken links
         voucher.JournalEntryId = entry.Id;
         await _db.SaveChangesAsync();
     }
@@ -128,8 +132,8 @@ public class PaymentAccountingService
     {
         if (await _core.EntryExistsAsync(JournalEntryType.PaymentVoucher, voucher.VoucherNumber)) return;
         var lines = new List<(string code, decimal debit, decimal credit, string desc)> {
-            ($"ID:{voucher.ToAccountId}", voucher.Amount, 0, $"سند دفع {voucher.VoucherNumber}"),
-            ($"ID:{voucher.CashAccountId}", 0, voucher.Amount, $"صرف من {voucher.CashAccount?.NameAr}")
+            ($"ID:{voucher.ToAccountId}", voucher.Amount, 0, _t.Get("Accounting.PaymentVoucherShortDesc", voucher.VoucherNumber)),
+            ($"ID:{voucher.CashAccountId}", 0, voucher.Amount, _t.Get("Accounting.FromCashAccountDesc", voucher.CashAccount?.NameAr ?? ""))
         };
         var entry = await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, supplierId: voucher.SupplierId, purchaseInvoiceId: voucher.PurchaseInvoiceId, source: voucher.CostCenter, employeeId: voucher.EmployeeId);
         
@@ -143,18 +147,16 @@ public class PaymentAccountingService
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         string payablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Supplier, mapDict)}";
         
-        // Prefer specific CashAccountId selected by user, fallback to system mappings
         string cashCode = payment.CashAccountId.HasValue 
             ? $"ID:{payment.CashAccountId.Value}" 
             : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.PaymentVoucherCash, mapDict)}";
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)> {
-            (payablesAcct, payment.Amount, 0, $"تسوية مورد - {payment.PaymentNumber}"),
-            (cashCode, 0, payment.Amount, $"صرف من {payment.AccountName}")
+            (payablesAcct, payment.Amount, 0, _t.Get("Accounting.SupplierSettlementDesc", payment.PaymentNumber)),
+            (cashCode, 0, payment.Amount, _t.Get("Accounting.FromCashAccountDesc", payment.AccountName ?? ""))
         };
-        await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, payment.PaymentNumber, $"سند صرف مورد {payment.PaymentNumber}", payment.PaymentDate, lines, supplierId: payment.SupplierId, purchaseInvoiceId: payment.PurchaseInvoiceId, source: payment.CostCenter);
+        await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, payment.PaymentNumber, _t.Get("Accounting.SupplierPaymentVoucherMainDesc", payment.PaymentNumber), payment.PaymentDate, lines, supplierId: payment.SupplierId, purchaseInvoiceId: payment.PurchaseInvoiceId, source: payment.CostCenter);
         
-        // Immediate status update
         await _core.SyncEntityBalancesAsync();
     }
 }

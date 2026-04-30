@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.DTOs;
+using Sportive.API.Interfaces;
 
 namespace Sportive.API.Services;
 
@@ -20,7 +21,13 @@ public interface ICouponService
 public class CouponService : ICouponService
 {
     private readonly AppDbContext _db;
-    public CouponService(AppDbContext db) => _db = db;
+    private readonly ITranslator _t;
+
+    public CouponService(AppDbContext db, ITranslator t)
+    {
+        _db = db;
+        _t = t;
+    }
 
     public async Task<(bool Valid, decimal Discount, string? Error)> ValidateAsync(
         string code, decimal orderTotal)
@@ -29,16 +36,16 @@ public class CouponService : ICouponService
             .FirstOrDefaultAsync(c => c.Code.ToUpper() == code.ToUpper() && c.IsActive);
 
         if (coupon == null)
-            return (false, 0, "كوبون الخصم غير صحيح أو منتهي الصلاحية");
+            return (false, 0, _t.Get("Coupons.InvalidOrExpired"));
 
         if (coupon.ExpiresAt.HasValue && coupon.ExpiresAt < TimeHelper.GetEgyptTime())
-            return (false, 0, "انتهت صلاحية كوبون الخصم");
+            return (false, 0, _t.Get("Coupons.Expired"));
 
         if (coupon.MaxUsageCount.HasValue && coupon.CurrentUsageCount >= coupon.MaxUsageCount)
-            return (false, 0, "تم استخدام هذا الكوبون بالحد الأقصى");
+            return (false, 0, _t.Get("Coupons.LimitReached"));
 
         if (coupon.MinOrderAmount.HasValue && orderTotal < coupon.MinOrderAmount)
-            return (false, 0, $"الحد الأدنى للطلب {coupon.MinOrderAmount:N2} ج.م");
+            return (false, 0, _t.Get("Coupons.MinAmountError", coupon.MinOrderAmount.Value));
 
         decimal discount;
         if (coupon.DiscountType == DiscountType.Percentage)
@@ -58,7 +65,7 @@ public class CouponService : ICouponService
     public async Task<Coupon> CreateAsync(CreateCouponDto dto)
     {
         var exists = await _db.Coupons.AnyAsync(c => c.Code.ToUpper() == dto.Code.ToUpper());
-        if (exists) throw new InvalidOperationException("كود الكوبون موجود مسبقاً");
+        if (exists) throw new InvalidOperationException(_t.Get("Coupons.AlreadyExists"));
 
         var coupon = new Coupon
         {
@@ -98,7 +105,7 @@ public class CouponService : ICouponService
         if (!coupon.Code.Equals(dto.Code, StringComparison.OrdinalIgnoreCase))
         {
             var exists = await _db.Coupons.AnyAsync(c => c.Code.ToUpper() == dto.Code.ToUpper() && c.Id != id);
-            if (exists) throw new InvalidOperationException("كود الكوبون موجود مسبقاً");
+            if (exists) throw new InvalidOperationException(_t.Get("Coupons.AlreadyExists"));
         }
 
         coupon.Code              = dto.Code.ToUpper();

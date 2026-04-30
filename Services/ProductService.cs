@@ -13,13 +13,15 @@ public class ProductService : IProductService
     private readonly INotificationService _notifications;
     private readonly IInventoryService _inventory;
     private readonly ICacheService _cache;
+    private readonly ITranslator _t;
 
-    public ProductService(AppDbContext db, INotificationService notifications, IInventoryService inventory, ICacheService cache)
+    public ProductService(AppDbContext db, INotificationService notifications, IInventoryService inventory, ICacheService cache, ITranslator t)
     {
         _db = db;
         _notifications = notifications;
         _inventory = inventory;
         _cache = cache;
+        _t = t;
     }
 
 
@@ -133,8 +135,8 @@ public class ProductService : IProductService
                     ? (x.d.DiscountType == DiscountType.Percentage ? Math.Round(x.p.Price - (x.p.Price * x.d.DiscountValue / 100), 2) : Math.Round(x.p.Price - x.d.DiscountValue, 2)) 
                     : (x.p.DiscountPrice ?? 0),
                 x.p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
-                x.p.Category != null ? x.p.Category.NameAr : "Category Missing",
-                x.p.Category != null ? x.p.Category.NameEn : "Category Missing",
+                x.p.Category != null ? x.p.Category.NameAr : _t.Get("Products.CategoryMissing"),
+                x.p.Category != null ? x.p.Category.NameEn : _t.Get("Products.CategoryMissing"),
                 x.p.Brand != null ? x.p.Brand.NameAr : null,
                 x.p.Brand != null ? x.p.Brand.NameEn : null,
                 x.p.BrandId,
@@ -220,10 +222,10 @@ public class ProductService : IProductService
     {
         // التحقق من تكرار الكود
         if (await _db.Products.AnyAsync(p => p.SKU == dto.SKU))
-            throw new ArgumentException($"كود المنتج {dto.SKU} مستخدم بالفعل لمنتج آخر.");
+            throw new ArgumentException(_t.Get("Products.SKUInUse", dto.SKU));
 
         if (!dto.Price.HasValue || dto.Price <= 0)
-            throw new ArgumentException("سعر المنتج مطلوب ويجب أن يكون أكبر من صفر.");
+            throw new ArgumentException(_t.Get("Products.PriceRequired"));
 
         var product = new Product
         {
@@ -285,7 +287,7 @@ public class ProductService : IProductService
                         product.Id,
                         v.Id,
                         "INIT-PRODUCT",
-                        "رصيد افتتاحي عند إنشاء المنتج",
+                        _t.Get("Products.OpeningBalance"),
                         null
                     );
                 }
@@ -300,7 +302,7 @@ public class ProductService : IProductService
                 product.Id,
                 null,
                 "INIT-PRODUCT",
-                "رصيد افتتاحي عند إنشاء المنتج",
+                _t.Get("Products.OpeningBalance"),
                 null
             );
         }
@@ -315,7 +317,7 @@ public class ProductService : IProductService
     {
         // التحقق من تكرار الكود مع استبعاد المنتج الحالي
         if (await _db.Products.AnyAsync(p => p.SKU == dto.SKU && p.Id != id))
-            throw new ArgumentException($"كود المنتج {dto.SKU} مستخدم بالفعل لمنتج آخر.");
+            throw new ArgumentException(_t.Get("Products.SKUInUse", dto.SKU));
 
         var product = await _db.Products
             .Include(p => p.Variants)
@@ -323,7 +325,7 @@ public class ProductService : IProductService
             ?? throw new KeyNotFoundException($"Product {id} not found");
 
         if (!dto.Price.HasValue || dto.Price <= 0)
-            throw new ArgumentException("سعر المنتج مطلوب ويجب أن يكون أكبر من صفر.");
+            throw new ArgumentException(_t.Get("Products.PriceRequired"));
 
         product.NameAr = dto.NameAr;
         product.NameEn = dto.NameEn;
@@ -378,7 +380,7 @@ public class ProductService : IProductService
             variant.ProductId,
             variant.Id,
             "MANUAL-UPDATE",
-            "تحديث يدوي من صفحة المنتج",
+            _t.Get("Products.ManualStockUpdate"),
             null
         );
 
@@ -401,7 +403,7 @@ public class ProductService : IProductService
             product.Id,
             null,
             "MANUAL-UPDATE",
-            "تحديث يدوي من صفحة المنتج",
+            _t.Get("Products.ManualStockUpdate"),
             null
         );
 
@@ -519,7 +521,7 @@ public class ProductService : IProductService
                 productId,
                 v.Id,
                 "INIT-VARIANT",
-                "رصيد افتتاحي للموديل الجديد",
+                _t.Get("Products.VariantOpeningBalance"),
                 null
             );
             await _db.SaveChangesAsync();
@@ -603,8 +605,8 @@ public class ProductService : IProductService
                     ? (x.d.DiscountType == DiscountType.Percentage ? Math.Round(x.p.Price - (x.p.Price * x.d.DiscountValue / 100), 2) : Math.Round(x.p.Price - x.d.DiscountValue, 2)) 
                     : (x.p.DiscountPrice ?? 0),
                 x.p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
-                x.p.Category != null ? x.p.Category.NameAr : "Category Missing", 
-                x.p.Category != null ? x.p.Category.NameEn : "Category Missing", 
+                x.p.Category != null ? x.p.Category.NameAr : _t.Get("Products.CategoryMissing"), 
+                x.p.Category != null ? x.p.Category.NameEn : _t.Get("Products.CategoryMissing"), 
                 x.p.Brand != null ? x.p.Brand.NameAr : null, 
                 x.p.Brand != null ? x.p.Brand.NameEn : null,
                 x.p.BrandId,
@@ -660,8 +662,8 @@ public class ProductService : IProductService
                     ? (x.d.DiscountType == DiscountType.Percentage ? Math.Round(x.p.Price - (x.p.Price * x.d.DiscountValue / 100), 2) : Math.Round(x.p.Price - x.d.DiscountValue, 2)) 
                     : (x.p.DiscountPrice ?? 0),
                 x.p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
-                x.p.Category != null ? x.p.Category.NameAr : "Category Missing", 
-                x.p.Category != null ? x.p.Category.NameEn : "Category Missing", 
+                x.p.Category != null ? x.p.Category.NameAr : _t.Get("Products.CategoryMissing"), 
+                x.p.Category != null ? x.p.Category.NameEn : _t.Get("Products.CategoryMissing"), 
                 x.p.Brand != null ? x.p.Brand.NameAr : null, 
                 x.p.Brand != null ? x.p.Brand.NameEn : null,
                 x.p.BrandId,
@@ -696,7 +698,7 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync();
     }
 
-    private static ProductDetailDto MapToDetail(Product p, ProductDiscount? d = null)
+    private ProductDetailDto MapToDetail(Product p, ProductDiscount? d = null)
     {
         decimal finalDiscountPrice = p.DiscountPrice ?? 0;
         string? activeLabel = null;
@@ -716,7 +718,7 @@ public class ProductService : IProductService
             p.Brand != null ? p.Brand.NameEn : null,
             p.BrandId,
             p.Status.ToString(), p.IsFeatured,
-            p.CategoryId, p.Category?.NameAr ?? "Category Missing", p.Category?.NameEn ?? "Category Missing",
+            p.CategoryId, p.Category?.NameAr ?? _t.Get("Products.CategoryMissing"), p.Category?.NameEn ?? _t.Get("Products.CategoryMissing"),
             p.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList() ?? new List<ProductVariantDto>(),
             p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr)).ToList() ?? new List<ProductImageDto>(),
             p.AverageRating,
@@ -730,7 +732,7 @@ public class ProductService : IProductService
             p.Unit?.NameEn,
             p.Unit?.Symbol,
             p.CreatedAt,
-            p.Reviews?.Where(r => r.IsApproved).OrderByDescending(r => r.CreatedAt).Select(r => new ReviewListItemDto(r.Id, r.Customer?.FullName ?? "عميل", r.Rating, r.Comment, r.CreatedAt)).ToList(),
+            p.Reviews?.Where(r => r.IsApproved).OrderByDescending(r => r.CreatedAt).Select(r => new ReviewListItemDto(r.Id, r.Customer?.FullName ?? _t.Get("Products.AnonymousReviewer"), r.Rating, r.Comment, r.CreatedAt)).ToList(),
             activeLabel
         );
     }

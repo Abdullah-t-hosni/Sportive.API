@@ -10,11 +10,13 @@ public class InventoryService : IInventoryService
 {
     private readonly AppDbContext _db;
     private readonly INotificationService _notifications;
+    private readonly ITranslator _t;
 
-    public InventoryService(AppDbContext db, INotificationService notifications)
+    public InventoryService(AppDbContext db, INotificationService notifications, ITranslator t)
     {
         _db = db;
         _notifications = notifications;
+        _t = t;
     }
 
     public async Task LogMovementAsync(
@@ -59,7 +61,9 @@ public class InventoryService : IInventoryService
             if (variant != null)
             {
                 remainingBefore = variant.StockQuantity;
-                if (variant.StockQuantity + roundedQty < 0) throw new InvalidOperationException($"Insufficient stock for variant {variantId} (Available: {variant.StockQuantity}, Requested: {-roundedQty})");
+                if (variant.StockQuantity + roundedQty < 0) 
+                    throw new InvalidOperationException(_t.Get("Inventory.InsufficientStock", variant.StockQuantity, -roundedQty));
+                
                 variant.StockQuantity += roundedQty;
                 variant.UpdatedAt = TimeHelper.GetEgyptTime();
 
@@ -91,7 +95,9 @@ public class InventoryService : IInventoryService
             if (product != null)
             {
                 remainingBefore = product.TotalStock;
-                if (product.TotalStock + roundedQty < 0) throw new InvalidOperationException($"Insufficient stock for product {productId} (Available: {product.TotalStock}, Requested: {-roundedQty})");
+                if (product.TotalStock + roundedQty < 0) 
+                    throw new InvalidOperationException(_t.Get("Inventory.InsufficientStock", product.TotalStock, -roundedQty));
+                
                 product.TotalStock += roundedQty;
 
                 // 💡 AUTO-STATUS: Active <-> OutOfStock based on physical stock
@@ -145,9 +151,9 @@ public class InventoryService : IInventoryService
                 if (reorder > 0 && newStock <= reorder && newStock >= 0)
                     await _notifications.SendAsync(
                         null,
-                        $"تنبيه مخزون منخفض",
-                        $"Low Stock Alert",
-                        $"المنتج \"{variant.Product.NameAr}\" وصل إلى {newStock} وحدة (حد الطلب: {reorder})",
+                        _t.Get("Inventory.LowStockAlertTitle"),
+                        "Low Stock Alert",
+                        _t.Get("Inventory.LowStockAlertDesc", variant.Product.NameAr, newStock, reorder),
                         $"Product \"{variant.Product.NameEn}\" reached {newStock} units (reorder level: {reorder})",
                         "Alert");
             }
@@ -159,9 +165,9 @@ public class InventoryService : IInventoryService
                 product.TotalStock <= product.ReorderLevel && product.TotalStock >= 0)
                 await _notifications.SendAsync(
                     null,
-                    "تنبيه مخزون منخفض",
+                    _t.Get("Inventory.LowStockAlertTitle"),
                     "Low Stock Alert",
-                    $"المنتج \"{product.NameAr}\" وصل إلى {product.TotalStock} وحدة (حد الطلب: {product.ReorderLevel})",
+                    _t.Get("Inventory.LowStockAlertDesc", product.NameAr, product.TotalStock, product.ReorderLevel),
                     $"Product \"{product.NameEn}\" reached {product.TotalStock} units (reorder level: {product.ReorderLevel})",
                     "Alert");
         }

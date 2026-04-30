@@ -1,3 +1,4 @@
+using Sportive.API.Interfaces;
 ﻿using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
@@ -15,8 +16,8 @@ namespace Sportive.API.Controllers;
 public class ImportController : ControllerBase
 {
     private readonly AppDbContext _db;
-    
-
+    private readonly ITranslator _t;
+    public ImportController(AppDbContext db, ITranslator t) { _db = db; _t = t; }
     public ImportController(AppDbContext db) => _db = db;
 
     // â”€â”€ TEMPLATE DOWNLOAD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -69,10 +70,10 @@ public class ImportController : ControllerBase
                 for (int i = 0; i < items.Count; i++) wsL.Cell(i + 1, col).Value = items[i];
             }
 
-            if (!brands.Any()) brands.Add("Ø¹Ø§Ù…");
-            if (!units.Any()) units.Add("Ù‚Ø·Ø¹Ø©");
+            if (!brands.Any()) brands.Add("عام");
+            if (!units.Any()) units.Add("قطعة");
             if (!existingSizes.Any()) existingSizes = new List<string> { "S", "M", "L", "XL", "XXL", "3XL", "Free Size" };
-            if (!existingColors.Any()) existingColors = new List<string> { "Ø£Ø¨ÙŠØ¶", "Ø£Ø³ÙˆØ¯", "Ø£Ø­Ù…Ø±", "Ø£Ø²Ø±Ù‚", "Ø£Ø®Ø¶Ø±", "Ø±Ù…Ø§Ø¯ÙŠ", "ÙƒØ­Ù„ÙŠ", "Ø¨Ù†ÙŠ" };
+            if (!existingColors.Any()) existingColors = new List<string> { "أبيض", "أسود", "أحمر", "أزرق", "أخضر", "رمادي", "كحلي", "بني" };
 
             FillCol(2, brands);     
             FillCol(3, units);      
@@ -113,7 +114,7 @@ public class ImportController : ControllerBase
                 .ToList();
             
             wsL.Cell(1, 10).Value = "__DUMMY__";
-            wsL.Cell(1, 11).Value = "(Ø§Ø®ØªØ± Ø§Ù„ØªØµÙ†ÙŠÙ Ø£ÙˆÙ„Ø§Ù‹)";
+            wsL.Cell(1, 11).Value = "(" + _t.Get("Import.SizeHeader") + " " + _t.Get("Accounting.General") + ")";
 
             for (int i = 0; i < mapping.Count; i++)
             {
@@ -168,16 +169,16 @@ public class ImportController : ControllerBase
             wb.DefinedNames.Add("MapParent", parentRange);
             wb.DefinedNames.Add("MapChild", childRange);
 
-            var ws1 = wb.Worksheets.Add("Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª ÙˆØ§Ù„Ù…Ù‚Ø§Ø³Ø§Øª");
+            var ws1 = wb.Worksheets.Add(_t.Get("Import.TemplateProductsSheet"));
             ws1.RightToLeft = true;
 
             var headers1 = new[] {
-                "Ø§Ù„ÙƒÙˆØ¯ SKU *", "Ø§Ù„Ø§Ø³Ù… Ø¹Ø±Ø¨ÙŠ *", "Ø§Ù„ÙˆØ­Ø¯Ø© *", "Ø§Ù„Ø§Ø³Ù… Ø§Ù†Ø¬Ù„ÙŠØ²ÙŠ",
-                "Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„Ø£Ø³Ø§Ø³ÙŠ *", "Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„ÙØ±Ø¹ÙŠ", "Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„ÙØ±Ø¹ÙŠ 2",
-                "Ø³Ø¹Ø± Ø§Ù„ØªÙƒÙ„ÙØ©", "Ø§Ù„Ø³Ø¹Ø± *", "Ø³Ø¹Ø± Ø§Ù„Ø®ØµÙ…",
-                "Ø®Ø§Ø¶Ø¹ Ù„Ù„Ø¶Ø±ÙŠØ¨Ø©ØŸ *", "Ø§Ù„Ù…Ø§Ø±ÙƒØ©", "Ø§Ù„Ù…Ù‚Ø§Ø³", "Ø§Ù„Ù„ÙˆÙ† (English)", "Ø§Ù„Ù„ÙˆÙ† (Ø¹Ø±Ø¨ÙŠ)",
-                "Ø§Ù„Ù…Ø®Ø²ÙˆÙ†", "ÙØ§Ø±Ù‚ Ø§Ù„Ø³Ø¹Ø± Ù„Ù„Ù…Ù‚Ø§Ø³", "Ø­Ø¯ Ø§Ù„Ø·Ù„Ø¨", "Ø§Ù„Ø­Ø§Ù„Ø©",
-                "Ù…Ù…ÙŠØ² (Ù†Ø¹Ù…/Ù„Ø§)", "Ø§Ù„ÙˆØµÙ Ø¹Ø±Ø¨ÙŠ", "Ø§Ù„ÙˆØµÙ Ø§Ù†Ø¬Ù„ÙŠØ²ÙŠ"
+                _t.Get("Import.SkuHeader"), _t.Get("Import.NameArHeader"), _t.Get("Import.UnitHeader"), _t.Get("Import.NameEnHeader"),
+                _t.Get("Import.MainCatHeader"), _t.Get("Import.SubCatHeader"), _t.Get("Import.SubSubCatHeader"),
+                _t.Get("Import.CostHeader"), _t.Get("Import.PriceHeader"), _t.Get("Import.DiscountHeader"),
+                _t.Get("Import.TaxableHeader"), _t.Get("Import.BrandHeader"), _t.Get("Import.SizeHeader"), _t.Get("Import.ColorEnHeader"), _t.Get("Import.ColorArHeader"),
+                _t.Get("Import.StockHeader"), _t.Get("Import.PriceAdjHeader"), _t.Get("Import.ReorderHeader"), _t.Get("Import.StatusHeader"),
+                _t.Get("Import.FeaturedHeader"), _t.Get("Import.DescArHeader"), _t.Get("Import.DescEnHeader")
             };
             for (int c = 0; c < headers1.Length; c++)
             {
@@ -211,14 +212,14 @@ public class ImportController : ControllerBase
             }
 
             ws1.Cell(2,1).Value = "TS-001";
-            ws1.Cell(2,2).Value = "ØªÙŠØ´Ø±Øª Ø±ÙŠØ§Ø¶ÙŠ";
-            ws1.Cell(2,3).Value = units.FirstOrDefault() ?? "Ù‚Ø·Ø¹Ø©";
+            ws1.Cell(2,2).Value = "تيشرت رياضي";
+            ws1.Cell(2,3).Value = units.FirstOrDefault() ?? "قطعة";
             ws1.Cell(2,5).Value = mainCats.FirstOrDefault()?.NameAr;
             ws1.Cell(2,8).Value = 200; 
             ws1.Cell(2,9).Value = 299;
-            ws1.Cell(2,11).Value = "Ù†Ø¹Ù…";
-            ws1.Cell(2,19).Value = "Ù†Ø´Ø·";
-            ws1.Cell(2,20).Value = "Ù„Ø§";
+            ws1.Cell(2,11).Value = "نعم";
+            ws1.Cell(2,19).Value = "نشط";
+            ws1.Cell(2,20).Value = "لا";
             ws1.Row(2).Style.Font.FontColor = XLColor.Gray;
 
             // ws1.Columns().AdjustToContents(); // âŒ REMOVED: Often fails on Linux/Docker without GDI+
@@ -231,7 +232,7 @@ public class ImportController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = $"Ø®Ø·Ø£ ÙÙŠ Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ù†Ù…ÙˆØ°Ø¬: {ex.Message}" });
+            return BadRequest(new { message = _t.Get("Import.TemplateCreateError", ex.Message) });
         }
     }
 
@@ -242,12 +243,12 @@ public class ImportController : ControllerBase
     [RequestSizeLimit(10 * 1024 * 1024)] // 10MB
     public async Task<IActionResult> ImportProducts(IFormFile file, [FromQuery] bool update = false)
     {
-        if (file == null || file.Length == 0)
+        if (file == null || file.Length == 0) return BadRequest(new { message = _t.Get("Import.NoFile") });
             return BadRequest(new { message = "Ù„Ù… ÙŠØªÙ… Ø±ÙØ¹ Ù…Ù„Ù" });
 
         var ext = Path.GetExtension(file.FileName).ToLower();
         if (ext != ".xlsx" && ext != ".xls")
-            return BadRequest(new { message = "ÙŠØ¬Ø¨ Ø£Ù† ÙŠÙƒÙˆÙ† Ø§Ù„Ù…Ù„Ù Ø¨ØµÙŠØºØ© Excel (.xlsx)" });
+            return BadRequest(new { message = _t.Get("Import.ExcelOnly") });
 
         var result = new ImportResult();
 
@@ -259,7 +260,7 @@ public class ImportController : ControllerBase
             var ws = wb.Worksheets.FirstOrDefault(x => x.Visibility == XLWorksheetVisibility.Visible)
                      ?? wb.Worksheets.FirstOrDefault();
 
-            if (ws == null) throw new Exception("Ø§Ù„Ù…Ù„Ù Ù„Ø§ ÙŠØ­ØªÙˆÙŠ Ø¹Ù„Ù‰ ØµÙØ­Ø§Øª Ø¹Ù…Ù„");
+            if (ws == null) throw new Exception(_t.Get("Import.NoSheets"));
 
             var headers = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var firstRow = ws.Row(1);
@@ -309,7 +310,7 @@ public class ImportController : ControllerBase
             int colDescEn   = GetCol("Ø§Ù„ÙˆØµÙ Ø§Ù†Ø¬Ù„ÙŠØ²ÙŠ", "Description En");
 
             if (colSku == -1 || colNameAr == -1 || colPrice == -1 || colUnit == -1 || colMainCat == -1)
-                return BadRequest(new { message = "Ø§Ù„Ø£Ø¹Ù…Ø¯Ø© Ø§Ù„Ø¥Ù„Ø²Ø§Ù…ÙŠØ© Ù†Ø§Ù‚ØµØ© (Ø§Ù„ÙƒÙˆØ¯ØŒ Ø§Ù„Ø§Ø³Ù…ØŒ Ø§Ù„Ø³Ø¹Ø±ØŒ Ø§Ù„ÙˆØ­Ø¯Ø©ØŒ Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„Ø£Ø³Ø§Ø³ÙŠ)" });
+                return BadRequest(new { message = _t.Get("Import.MissingColumns") });
 
             var categories   = await _db.Categories.AsNoTracking().ToListAsync();
             var brands       = await _db.Brands.AsNoTracking().ToListAsync();
@@ -322,7 +323,7 @@ public class ImportController : ControllerBase
 
             // Prepare Error Workbook for rejected rows
             using var errorWb = new XLWorkbook();
-            var errorWs = errorWb.Worksheets.Add("Ø§Ù„Ø£Ø³Ø·Ø± Ø§Ù„Ù…Ø±ÙÙˆØ¶Ø©");
+            var errorWs = errorWb.Worksheets.Add(_t.Get("Import.RejectedRowsSheet"));
             errorWs.RightToLeft = true;
             
             // Copy headers to error worksheet
@@ -340,8 +341,7 @@ public class ImportController : ControllerBase
                 }
             }
             int colErrDesc = (lastCol?.ColumnNumber() ?? 20) + 1;
-            errorWs.Cell(1, colErrDesc).Value = "Ø³Ø¨Ø¨ Ø§Ù„Ø±ÙØ¶";
-            errorWs.Cell(1, colErrDesc).Style.Font.Bold = true;
+            errorWs.Cell(1, colErrDesc).Value = _t.Get("Import.RejectionReasonHeader");
             errorWs.Cell(1, colErrDesc).Style.Fill.BackgroundColor = XLColor.Red;
             errorWs.Cell(1, colErrDesc).Style.Font.FontColor = XLColor.White;
 
@@ -373,8 +373,8 @@ public class ImportController : ControllerBase
                 if (isExisting && !update)
                 {
                     if (!result.Skipped.Any(s => s.Contains($"Ø§Ù„ÙƒÙˆØ¯ '{sku}' Ù…ÙˆØ¬ÙˆØ¯")))
-                        result.Skipped.Add($"ØµÙ {r}: Ø§Ù„ÙƒÙˆØ¯ '{sku}' Ù…ÙˆØ¬ÙˆØ¯ Ù…Ø³Ø¨Ù‚Ø§Ù‹ â€” ØªÙ… ØªØ®Ø·ÙŠÙ‡");
-                    continue;
+                    if (!result.Skipped.Any(s => s.Contains(sku)))
+                        result.Skipped.Add(_t.Get("Import.SkuExists", sku));
                 }
 
                 if (!productsDict.TryGetValue(sku, out var product))
@@ -451,13 +451,13 @@ public class ImportController : ControllerBase
                         // Mandatory checks for new products
                         if (string.IsNullOrEmpty(nameAr) || string.IsNullOrEmpty(priceStr) || string.IsNullOrEmpty(unitStr) || string.IsNullOrEmpty(mainC))
                         {
-                            LogRowError(r, $"Ø¨ÙŠØ§Ù†Ø§Øª Ø¥Ù„Ø²Ø§Ù…ÙŠØ© Ù†Ø§Ù‚ØµØ© (Ø§Ù„Ø§Ø³Ù… '{nameAr}', Ø§Ù„Ø³Ø¹Ø± '{priceStr}', Ø§Ù„ÙˆØ­Ø¯Ø© '{unitStr}', Ø§Ù„ØªØµÙ†ÙŠÙ '{mainC}') â€” ÙŠØ¬Ø¨ Ù…Ù„Ø¡ ÙƒØ§ÙØ© Ø§Ù„Ù…Ø¹Ù„ÙˆÙ…Ø§Øª Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ©");
+                            LogRowError(r, _t.Get("Import.RowMandatoryMissing", nameAr, priceStr, unitStr, mainC));
                             continue;
                         }
 
                         if (!decimal.TryParse(priceStr, out var price))
                         {
-                            LogRowError(r, $"Ø§Ù„Ø³Ø¹Ø± ØºÙŠØ± ØµØ­ÙŠØ­ '{priceStr}' Ù„Ù„ÙƒÙˆØ¯ {sku}");
+                            LogRowError(r, _t.Get("Import.InvalidPrice", priceStr, sku));
                             continue;
                         }
 
@@ -484,7 +484,7 @@ public class ImportController : ControllerBase
                         }
                         else
                         {
-                            LogRowError(r, $"Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„Ø£Ø³Ø§Ø³ÙŠ '{mainC}' ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ ÙÙŠ Ø§Ù„Ù†Ø¸Ø§Ù…");
+                            LogRowError(r, _t.Get("Import.CategoryNotFound", mainC));
                             continue;
                         }
 
@@ -494,7 +494,7 @@ public class ImportController : ControllerBase
                         int? uId = units.FirstOrDefault(u => string.Equals((u.NameAr ?? "").Trim(), unitStr.Trim(), StringComparison.OrdinalIgnoreCase))?.Id;
                         if (uId == null)
                         {
-                            LogRowError(r, $"ÙˆØ­Ø¯Ø© Ø§Ù„Ù‚ÙŠØ§Ø³ '{unitStr}' ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©");
+                            LogRowError(r, _t.Get("Import.UnitNotFound", unitStr));
                             continue;
                         }
 
@@ -575,7 +575,7 @@ public class ImportController : ControllerBase
             }
 
             return Ok(new { 
-                message = result.Errors.Any() ? "ØªÙ… Ø§Ù„Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ù…Ø¹ ÙˆØ¬ÙˆØ¯ Ø¨Ø¹Ø¶ Ø§Ù„Ø£Ø®Ø·Ø§Ø¡" : "ØªÙ… Ø§Ù„Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ø¨Ù†Ø¬Ø§Ø­", 
+                message = result.Errors.Any() ? _t.Get("Import.ImportWithErrors") : _t.Get("Import.ImportSuccess"),
                 added = result.Added, 
                 updated = result.Updated, 
                 variantsAdded = result.VariantsAdded, 
@@ -587,7 +587,7 @@ public class ImportController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = $"Ø®Ø·Ø£: {ex.Message}" });
+            return BadRequest(new { message = _t.Get("Accounting.ProcessingError", ex.Message) });
         }
     }
 
@@ -600,10 +600,10 @@ public class ImportController : ControllerBase
         using var wb = new XLWorkbook();
 
         // Sheet 1: Stock Update
-        var ws = wb.Worksheets.Add("ØªØ­Ø¯ÙŠØ« Ø§Ù„Ù…Ø®Ø²ÙˆÙ†");
+        var ws = wb.Worksheets.Add(_t.Get("Import.InventoryUpdateSheet"));
         ws.RightToLeft = true;
 
-        var headers = new[] { "Ø§Ù„ÙƒÙˆØ¯ (SKU) *", "Ø§Ø³Ù… Ø§Ù„Ù…Ù†ØªØ¬", "Ø§Ù„Ù…Ù‚Ø§Ø³", "Ø§Ù„Ù„ÙˆÙ†", "Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø© *" };
+        var headers = new[] { _t.Get("Import.SkuHeader").Replace("*","").Trim(), _t.Get("Import.NameArHeader").Replace("*","").Trim(), _t.Get("Import.SizeHeader"), _t.Get("Import.ColorArHeader"), _t.Get("Import.NewQtyHeader") };
         for (int c = 0; c < headers.Length; c++)
         {
             var cell = ws.Cell(1, c + 1);
@@ -615,7 +615,7 @@ public class ImportController : ControllerBase
         }
 
         // Add instruction row
-        ws.Cell(2, 1).Value = "(Ø£Ø¯Ø®Ù„ SKU Ø§Ù„Ù…Ù†ØªØ¬ Ø£Ùˆ Ø§Ù„Ù…ØªØºÙŠØ± ÙˆØ§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„ÙØ¹Ù„ÙŠØ©)";
+        ws.Cell(2, 1).Value = _t.Get("Import.InventoryInstruction");
         ws.Row(2).Style.Font.FontColor = XLColor.Gray;
         ws.Row(2).Style.Font.Italic = true;
 
@@ -673,11 +673,11 @@ public class ImportController : ControllerBase
     public async Task<IActionResult> ImportInventory(IFormFile file)
     {
         if (file == null || file.Length == 0)
-            return BadRequest(new { message = "Ù„Ù… ÙŠØªÙ… Ø±ÙØ¹ Ù…Ù„Ù" });
+        if (file == null || file.Length == 0) return BadRequest(new { message = _t.Get("Import.NoFile") });
 
         var ext = Path.GetExtension(file.FileName).ToLower();
         if (ext != ".xlsx" && ext != ".xls")
-            return BadRequest(new { message = "ÙŠØ¬Ø¨ Ø£Ù† ÙŠÙƒÙˆÙ† Ø§Ù„Ù…Ù„Ù Ø¨ØµÙŠØºØ© Excel (.xlsx)" });
+            return BadRequest(new { message = _t.Get("Import.ExcelOnly") });
 
         int updated = 0;
         var skipped = new List<string>();
@@ -688,7 +688,7 @@ public class ImportController : ControllerBase
             using var stream = file.OpenReadStream();
             using var wb     = new XLWorkbook(stream);
 
-            if (!wb.TryGetWorksheet("ØªØ­Ø¯ÙŠØ« Ø§Ù„Ù…Ø®Ø²ÙˆÙ†", out var ws))
+            if (!wb.TryGetWorksheet(_t.Get("Import.InventoryUpdateSheet"), out var ws)) ws = wb.Worksheets.First();
                 ws = wb.Worksheets.First();
 
             var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
@@ -713,13 +713,13 @@ public class ImportController : ControllerBase
 
                 if (!int.TryParse(qtyStr, out var qty) || qty < 0)
                 {
-                    errors.Add($"ØµÙ {r}: Ø§Ù„ÙƒÙ…ÙŠØ© ØºÙŠØ± ØµØ­ÙŠØ­Ø© Ù„Ù„ÙƒÙˆØ¯ '{sku}'");
+                    errors.Add(_t.Get("Import.InvalidQty", sku));
                     continue;
                 }
 
                 if (!productBySku.TryGetValue(sku, out var product))
                 {
-                    skipped.Add($"ØµÙ {r}: Ø§Ù„ÙƒÙˆØ¯ '{sku}' ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ ÙÙŠ Ø§Ù„Ù†Ø¸Ø§Ù… â€” ØªÙ… ØªØ®Ø·ÙŠÙ‡");
+                    skipped.Add(_t.Get("Import.SkuNotFound", sku));
                     continue;
                 }
 
@@ -740,7 +740,7 @@ public class ImportController : ControllerBase
 
                     if (variant == null)
                     {
-                        skipped.Add($"ØµÙ {r}: Ù„Ù… ÙŠÙØ¹Ø«Ø± Ø¹Ù„Ù‰ Ù…Ù‚Ø§Ø³/Ù„ÙˆÙ† '{size}/{color}' Ù„Ù„ÙƒÙˆØ¯ '{sku}'");
+                        skipped.Add(_t.Get("Import.SizeColorNotFound", size, color, sku));
                         continue;
                     }
 
@@ -753,7 +753,7 @@ public class ImportController : ControllerBase
                 else
                 {
                     // SKU has variants but no size/color specified â€” skip with helpful message
-                    skipped.Add($"ØµÙ {r}: Ø§Ù„ÙƒÙˆØ¯ '{sku}' Ù„Ù‡ Ù…Ù‚Ø§Ø³Ø§Øª â€” Ø­Ø¯Ø¯ Ø§Ù„Ù…Ù‚Ø§Ø³ ÙˆØ§Ù„Ù„ÙˆÙ† ÙÙŠ Ø§Ù„Ø¹Ù…ÙˆØ¯ÙŠÙ† C ÙˆD");
+                    skipped.Add(_t.Get("Import.SkuHasVariantsMustSpecify", sku));
                     continue;
                 }
             }
@@ -767,7 +767,7 @@ public class ImportController : ControllerBase
 
         return Ok(new
         {
-            message  = $"ØªÙ… ØªØ­Ø¯ÙŠØ« Ù…Ø®Ø²ÙˆÙ† {updated} ØµÙ Ø¨Ù†Ø¬Ø§Ø­",
+            message  = _t.Get("Import.InventoryUpdateSuccess", updated),
             updated,
             skipped  = skipped.Count,
             errors   = errors.Count,
@@ -780,10 +780,10 @@ public class ImportController : ControllerBase
     public IActionResult GetAccountsTemplate()
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("Ø´Ø¬Ø±Ø© Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª");
+        var ws = wb.Worksheets.Add(_t.Get("Import.AccountsSheet"));
         ws.RightToLeft = true;
 
-        var headers = new[] { "ÙƒÙˆØ¯ Ø§Ù„Ø­Ø³Ø§Ø¨ *", "Ø§Ù„Ø§Ø³Ù… Ø¹Ø±Ø¨ÙŠ *", "Ø§Ù„Ø§Ø³Ù… Ø§Ù†Ø¬Ù„ÙŠØ²ÙŠ", "Ø§Ù„Ù†ÙˆØ¹ (Asset/Liability/Equity/Revenue/Expense)", "Ø§Ù„Ø·Ø¨ÙŠØ¹Ø© (Debit/Credit)", "ÙƒÙˆØ¯ Ø§Ù„Ø£Ø¨", "ÙŠÙ‚Ø¨Ù„ ØªØ±Ø­ÙŠÙ„ (Ù†Ø¹Ù…/Ù„Ø§)" };
+        var headers = new[] { _t.Get("Accounting.AccountCodeHeader"), _t.Get("Import.NameArHeader"), _t.Get("Import.NameEnHeader"), _t.Get("Accounting.TypeHeader"), _t.Get("Accounting.NatureHeader"), "Parent Code", "Accept Posting" };
         for (int c = 0; c < headers.Length; c++)
         {
             var cell = ws.Cell(1, c + 1);

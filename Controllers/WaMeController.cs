@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
+using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using Sportive.API.Services;
 
@@ -16,11 +17,13 @@ public class WaMeController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IWaMeService _wa;
+    private readonly ITranslator _t;
 
-    public WaMeController(AppDbContext db, IWaMeService wa)
+    public WaMeController(AppDbContext db, IWaMeService wa, ITranslator t)
     {
         _db = db;
         _wa = wa;
+        _t = t;
     }
 
     // GET /api/wame/order/{id}
@@ -76,7 +79,7 @@ public class WaMeController : ControllerBase
     public IActionResult Custom([FromBody] CustomWaDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Phone) || string.IsNullOrWhiteSpace(dto.Message))
-            return BadRequest(new { message = "Ø§Ù„ØªÙ„ÙŠÙÙˆÙ† ÙˆØ§Ù„Ø±Ø³Ø§Ù„Ø© Ù…Ø·Ù„ÙˆØ¨Ø§Ù†" });
+            return BadRequest(new { message = _t.Get("Common.PhoneAndMessageRequired") });
 
         var result = _wa.CustomMessage(dto.Phone, dto.Message);
         return Ok(result);

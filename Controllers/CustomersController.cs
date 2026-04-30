@@ -17,7 +17,8 @@ namespace Sportive.API.Controllers;
 public class CustomersController : ControllerBase
 {
     private readonly ICustomerService _customers;
-    public CustomersController(ICustomerService customers) => _customers = customers;
+    private readonly ITranslator _t;
+    public CustomersController(ICustomerService customers, ITranslator t) => (_customers, _t) = (customers, t);
 
     [RequirePermission(ModuleKeys.Customers, requireEdit: true)]
     [HttpGet]
@@ -35,7 +36,7 @@ public class CustomersController : ControllerBase
         [FromQuery] bool isDescending = true) =>
         Ok(await _customers.GetCustomersAsync(page, pageSize, search, minSpent, minOrders, joinStartDate, joinEndDate, categoryId, hasDebt, orderBy, isDescending));
 
-    /// <summary>Ø¨ÙŠØ§Ù†Ø§Øª RFM Ø®ÙÙŠÙØ© Ù„ÙƒÙ„ Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ â€” Ø¨Ø¯ÙˆÙ† pagination Ø£Ùˆ addresses</summary>
+    /// <summary>بيانات RFM خفيفة لكل العملاء — بدون pagination أو addresses</summary>
     [RequirePermission(ModuleKeys.Customers, requireEdit: true)]
     [HttpGet("rfm")]
     public async Task<IActionResult> GetRfm() =>
@@ -52,7 +53,7 @@ public class CustomersController : ControllerBase
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
-    /// <summary>Ø¥Ø¶Ø§ÙØ© Ø¹Ù…ÙŠÙ„ Ø¬Ø¯ÙŠØ¯ â€” Admin, Manager, Cashier</summary>
+    /// <summary>إضافة عميل جديد — Admin, Manager, Cashier</summary>
     [RequirePermission(ModuleKeys.Customers)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateCustomerDto dto)
@@ -68,7 +69,7 @@ public class CustomersController : ControllerBase
         }
     }
 
-    /// <summary>ØªÙØ§ØµÙŠÙ„ Ø¹Ù…ÙŠÙ„ â€” Admin Ø£Ùˆ ØµØ§Ø­Ø¨ Ø§Ù„Ø­Ø³Ø§Ø¨</summary>
+    /// <summary>تفاصيل عميل — Admin أو صاحب الحساب</summary>
     [Authorize]
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
@@ -80,7 +81,7 @@ public class CustomersController : ControllerBase
         return customer == null ? NotFound() : Ok(customer);
     }
 
-    /// <summary>ØªÙØ¹ÙŠÙ„ / Ø¥ÙŠÙ‚Ø§Ù Ø¹Ù…ÙŠÙ„ â€” Admin ÙÙ‚Ø·</summary>
+    /// <summary>تفعيل / إيقاف عميل — Admin فقط</summary>
     [RequirePermission(ModuleKeys.Customers, requireEdit: true)]
     [HttpPatch("{id}/toggle")]
     public async Task<IActionResult> Toggle(int id)
@@ -89,7 +90,7 @@ public class CustomersController : ControllerBase
         return result ? Ok() : NotFound();
     }
 
-    /// <summary>Ø­Ø°Ù Ø¹Ù…ÙŠÙ„ Ø¨Ø§Ù„ÙƒØ§Ù…Ù„ â€” Admin ÙÙ‚Ø·</summary>
+    /// <summary>حذف عميل بالكامل — Admin فقط</summary>
     [RequirePermission(ModuleKeys.Customers, requireEdit: true)]
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteCustomer(int id)
@@ -136,7 +137,7 @@ public class CustomersController : ControllerBase
         if (!IsOwnerOrAdmin(customerId)) return Forbid();
 
         await _customers.SetDefaultAddressAsync(customerId, addressId);
-        return Ok(new { message = "Default address updated" });
+        return Ok(new { message = _t.Get("Customers.DefaultAddressUpdated") });
     }
 
     // Helper to check ownership
@@ -175,14 +176,14 @@ public class CustomersController : ControllerBase
                 var balStr = ws.Cell(r, 2).GetString().Trim();
                 if (!decimal.TryParse(balStr, out var balance))
                 {
-                    errors.Add($"Ø³Ø·Ø± {r}: Ø§Ù„Ø±ØµÙŠØ¯ ØºÙŠØ± ØµØ­ÙŠØ­ Ù„Ù„Ø¹Ù…ÙŠÙ„ '{identifier}'");
+                    errors.Add(_t.Get("Accounting.InvalidBalanceAtRow", r, identifier));
                     continue;
                 }
 
                 var customer = allCustomers.FirstOrDefault(c => c.FullName == identifier || c.Phone == identifier);
                 if (customer == null)
                 {
-                    errors.Add($"Ø³Ø·Ø± {r}: Ø§Ù„Ø¹Ù…ÙŠÙ„ '{identifier}' ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯");
+                    errors.Add(_t.Get("Accounting.CustomerNotFoundAtRow", r, identifier));
                     continue;
                 }
 

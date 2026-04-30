@@ -18,14 +18,16 @@ public class BackupController : ControllerBase
     private readonly IMemoryCache _cache;
     private readonly ILogger<BackupController> _logger;
     private readonly IAuditService _audit;
+    private readonly ITranslator _t;
 
-    public BackupController(IBackupService backup, UserManager<AppUser> userManager, IMemoryCache cache, ILogger<BackupController> logger, IAuditService audit)
+    public BackupController(IBackupService backup, UserManager<AppUser> userManager, IMemoryCache cache, ILogger<BackupController> logger, IAuditService audit, ITranslator t)
     {
         _backup = backup;
         _userManager = userManager;
         _cache = cache;
         _logger = logger;
         _audit = audit;
+        _t = t;
     }
 
     // ── POST /api/backup/run ──────────────────────────
@@ -43,7 +45,7 @@ public class BackupController : ControllerBase
                 fileName = result.FileName,
                 sizeMb   = Math.Round((double)result.FileSizeBytes / 1024 / 1024, 2),
                 durationS= Math.Round(result.Duration.TotalSeconds, 1),
-                message  = "تم عمل النسخة الاحتياطية بنجاح ✅"
+                message  = _t.Get("Backup.Success")
               })
             : StatusCode(500, new { success = false, error = result.Error });
     }
@@ -69,11 +71,11 @@ public class BackupController : ControllerBase
     {
         var record = await _backup.GetByIdAsync(id);
 
-        if (record == null) return NotFound(new { message = "النسخة غير موجودة" });
+        if (record == null) return NotFound(new { message = _t.Get("Backup.NotFound") });
         if (string.IsNullOrEmpty(record.FilePath))
-            return NotFound(new { message = "مسار الملف غير محدد" });
+            return NotFound(new { message = _t.Get("Backup.FilePathNotSet") });
         if (!System.IO.File.Exists(record.FilePath))
-            return NotFound(new { message = "الملف حُذف من الخادم" });
+            return NotFound(new { message = _t.Get("Backup.FileDeleted") });
 
         // 🛡️ Safe streaming for large files
         var stream = new FileStream(record.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true);
@@ -93,9 +95,9 @@ public class BackupController : ControllerBase
         _cache.Set(cacheKey, otp, TimeSpan.FromMinutes(5));
 
         _logger.LogCritical("RESTORE DATABASE OTP for {Email}: {OTP}", user.Email, otp);
-        await email.SendEmailAsync(user.Email, "تنبيه: رمز استرجاع قاعدة البيانات", $"رمز التأكيد الخاص بك هو: {otp}. تنبيه: هذه العملية ستمسح البيانات الحالية وتستبدلها.");
+        await email.SendEmailAsync(user.Email, _t.Get("Backup.RestoreOtpSubject"), _t.Get("Backup.RestoreOtpBody", otp));
 
-        return Ok(new { success = true, message = "تم إرسال رمز التأكيد للإيميل الخاص بك. صالح لمدة 5 دقائق." });
+        return Ok(new { success = true, message = _t.Get("Backup.OtpSent") });
     }
 
     public class RestoreRequest
@@ -110,24 +112,24 @@ public class BackupController : ControllerBase
     public async Task<IActionResult> Restore([FromForm] RestoreRequest req)
     {
         if (req.File == null || req.File.Length == 0)
-            return BadRequest(new { message = "يرجى اختيار ملف صالح" });
+            return BadRequest(new { message = _t.Get("Backup.InvalidFile") });
 
         if (req.File.Length > 500 * 1024 * 1024) // 500MB Limit
-            return BadRequest(new { message = "حجم الملف كبير جداً (الحد الأقصى 500 ميجابايت)" });
+            return BadRequest(new { message = _t.Get("Backup.FileSizeLimit") });
 
         if (!req.File.FileName.EndsWith(".sql") && !req.File.FileName.EndsWith(".gz"))
-            return BadRequest(new { message = "الملحقات المسموحة فقط هي .sql أو .sql.gz" });
+            return BadRequest(new { message = _t.Get("Backup.AllowedExtensions") });
 
         // 🔐 3-Layer Security Check
         var user = await _userManager.GetUserAsync(User);
         if (user == null) return Unauthorized();
 
         if (!await _userManager.CheckPasswordAsync(user, req.Password))
-            return BadRequest(new { success = false, message = "كلمة المرور غير صحيحة." });
+            return BadRequest(new { success = false, message = _t.Get("Backup.InvalidPassword") });
 
         var cacheKey = $"RestoreOtp_{user.Id}";
         if (!_cache.TryGetValue(cacheKey, out string? cachedOtp) || cachedOtp != req.Otp)
-            return BadRequest(new { success = false, message = "رمز التأكيد (OTP) غير صحيح أو منتهي الصلاحية." });
+            return BadRequest(new { success = false, message = _t.Get("Backup.InvalidOtp") });
 
         _cache.Remove(cacheKey);
         _logger.LogWarning("DATABASE RESTORE INITIATED by {User} using file {File}", User.Identity?.Name, req.File.FileName);
@@ -140,7 +142,7 @@ public class BackupController : ControllerBase
         return result.Success
             ? Ok(new {
                 success = true,
-                message = "تم استرجاع قاعدة البيانات بنجاح ✅ - يرجى مراجعة البيانات الآن",
+                message = _t.Get("Backup.RestoreSuccess"),
                 durationS = Math.Round(result.Duration.TotalSeconds, 1)
               })
             : StatusCode(500, new { success = false, error = result.Error });

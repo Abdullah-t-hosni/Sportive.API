@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.Utils;
+using Sportive.API.Interfaces;
 using MK = Sportive.API.Utils.MappingKeys;
 
 namespace Sportive.API.Services;
@@ -16,15 +17,18 @@ public class SalesAccountingService
     private readonly AppDbContext _db;
     private readonly AccountingCoreService _core;
     private readonly ILogger<SalesAccountingService> _logger;
+    private readonly ITranslator _t;
 
     public SalesAccountingService(
         AppDbContext db,
         AccountingCoreService core,
-        ILogger<SalesAccountingService> logger)
+        ILogger<SalesAccountingService> logger,
+        ITranslator t)
     {
         _db   = db;
         _core = core;
         _logger = logger;
+        _t = t;
     }
 
     // ══════════════════════════════════════════════════════
@@ -133,14 +137,14 @@ public class SalesAccountingService
             totalActualVatAmount    = order.SubTotal - totalOriginalNetRevenue;
         }
 
-        lines.Add((salesRevAcct, 0, totalOriginalNetRevenue, $"مبيعات - {order.OrderNumber} (إيراد إجمالي قبل الخصم)"));
+        lines.Add((salesRevAcct, 0, totalOriginalNetRevenue, _t.Get("Accounting.SalesRevenueDesc", order.OrderNumber)));
         
         if (totalActualVatAmount > 0)
-            lines.Add((vatAcct, 0, totalActualVatAmount, $"ضريبة مبيعات {store?.VatRatePercent ?? 14}% - {order.OrderNumber}"));
+            lines.Add((vatAcct, 0, totalActualVatAmount, _t.Get("Accounting.SalesTaxDesc", store?.VatRatePercent ?? 14, order.OrderNumber)));
         
         if (order.DeliveryFee > 0)
         {
-            lines.Add((deliveryRevAcct, 0, order.DeliveryFee, $"إيراد توصيل - {order.OrderNumber}"));
+            lines.Add((deliveryRevAcct, 0, order.DeliveryFee, _t.Get("Accounting.DeliveryRevenueDesc", order.OrderNumber)));
         }
         else if (order.FulfillmentType == FulfillmentType.Delivery && !string.IsNullOrEmpty(order.DeliveryAddress?.City))
         {
@@ -151,8 +155,8 @@ public class SalesAccountingService
             
             if (matchedZone != null && matchedZone.Fee > 0)
             {
-                lines.Add((deliveryRevAcct, 0, matchedZone.Fee, $"إيراد توصيل (مجاني) - {order.OrderNumber}"));
-                lines.Add((salesDiscAcct, matchedZone.Fee, 0, $"تغطية خصم شحن مجاني - {order.OrderNumber}"));
+                lines.Add((deliveryRevAcct, 0, matchedZone.Fee, _t.Get("Accounting.FreeShippingRevenueDesc", order.OrderNumber)));
+                lines.Add((salesDiscAcct, matchedZone.Fee, 0, _t.Get("Accounting.FreeShippingDiscountDesc", order.OrderNumber)));
             }
         }
 
@@ -163,13 +167,12 @@ public class SalesAccountingService
         {
              // If order has a global discount (manual), we net-ify it to keep math perfect
              decimal manualNetDisc = Math.Round(order.DiscountAmount / (1 + vatRate), 2);
-             lines.Add((salesDiscAcct, manualNetDisc, 0, $"خصم يدوي / كوبون (صافي) - {order.OrderNumber} [إجمالي: {order.DiscountAmount}]"));
-             // Note: The difference between Gross and Net manual discount is reflected in lower VAT collection anyway.
+             lines.Add((salesDiscAcct, manualNetDisc, 0, _t.Get("Accounting.ManualDiscountDesc", order.OrderNumber, order.DiscountAmount)));
         }
 
         if (totalNetDiscount > 0)
         {
-            lines.Add((salesDiscAcct, Math.Round(totalNetDiscount, 2), 0, $"خصم عروض / أصناف (صافي) - {order.OrderNumber} [إجمالي: {totalGrossDiscount}]"));
+            lines.Add((salesDiscAcct, Math.Round(totalNetDiscount, 2), 0, _t.Get("Accounting.OfferDiscountDesc", order.OrderNumber, totalGrossDiscount)));
         }
 
         // ✅ ROBUSTNESS: Ensure payments are loaded and fresh
@@ -187,8 +190,8 @@ public class SalesAccountingService
             foreach (var p in payments)
             {
                 var cashAcct = await _core.GetMappedCashAccountAsync(p.Method, order.Source, mapDict);
-                string methodAr = _core.GetMethodLabel(p.Method);
-                lines.Add((cashAcct, p.Amount, 0, $"تحصيل ({methodAr}) - {order.OrderNumber}"));
+                string methodLabel = _core.GetMethodLabel(p.Method);
+                lines.Add((cashAcct, p.Amount, 0, _t.Get("Accounting.CollectionDesc", methodLabel, order.OrderNumber)));
                 handledPaidAmt += p.Amount;
             }
         }
@@ -201,7 +204,7 @@ public class SalesAccountingService
                 foreach (var (m, v) in splits)
                 {
                     var cashAcct = await _core.GetMappedCashAccountAsync(m, order.Source, mapDict);
-                    lines.Add((cashAcct, v, 0, $"تحصيل ({_core.GetMethodLabel(m)}) - {order.OrderNumber}"));
+                    lines.Add((cashAcct, v, 0, _t.Get("Accounting.CollectionDesc", _core.GetMethodLabel(m), order.OrderNumber)));
                     handledPaidAmt += v;
                 }
             }
@@ -209,35 +212,30 @@ public class SalesAccountingService
             {
                 var cashAcct = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
                 decimal payAmt = order.PaidAmount;
-                lines.Add((cashAcct, payAmt, 0, $"تحصيل ({_core.GetMethodLabel(order.PaymentMethod)}) - {order.OrderNumber}"));
+                lines.Add((cashAcct, payAmt, 0, _t.Get("Accounting.CollectionDesc", _core.GetMethodLabel(order.PaymentMethod), order.OrderNumber)));
                 handledPaidAmt = payAmt;
             }
         }
 
         // ⚠️ STRICT VALIDATION: No silent adjustments or magic fixes.
-        // If the calculated payment (handledPaidAmt) doesn't match the order's PaidAmount, we fail.
         if (Math.Abs(handledPaidAmt - order.PaidAmount) > 0.01m)
         {
-            throw new InvalidOperationException($"خطأ في مطابقة الدفع: المبلغ المسجل في الطلب ({order.PaidAmount}) لا يطابق مجموع بنود الدفع في الحسابات ({handledPaidAmt}). " +
-                "يرجى مراجعة تفاصيل الدفع للطلب وتصحيحها قبل الترحيل.");
+            throw new InvalidOperationException(_t.Get("Accounting.PaymentMismatchError", order.PaidAmount, handledPaidAmt));
         }
 
         // Remaining debt → Receivables
         var remainingDebt = Math.Round(order.TotalAmount - handledPaidAmt, 2);
 
-
         if (Math.Abs(remainingDebt) > 0.01m)
-            lines.Add((receivablesAcct, remainingDebt, 0, $"إثبات مديونية متبقية (آجل) - {order.OrderNumber}"));
+            lines.Add((receivablesAcct, remainingDebt, 0, _t.Get("Accounting.DebtRecognitionDesc", order.OrderNumber)));
 
         // ── 2.5 Final Balancing Check ────────────────────────
-        // Ensure mathematically balanced entry (absorb tiny rounding diffs into revenue if any)
         decimal sumDr = lines.Sum(l => l.debit);
         decimal sumCr = lines.Sum(l => l.credit);
         decimal diff = sumDr - sumCr;
         
         if (Math.Abs(diff) > 0 && Math.Abs(diff) < 0.1m)
         {
-            // Adjust the sales revenue line by the diff to ensure perfect balance
             var revLineIdx = lines.FindIndex(l => l.code == salesRevAcct);
             if (revLineIdx != -1)
             {
@@ -250,14 +248,14 @@ public class SalesAccountingService
         var totalCost = order.Items?.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity) ?? 0;
         if (totalCost > 0)
         {
-            lines.Add((cogsAcct,      totalCost, 0,         $"تكلفة المبيعات - {order.OrderNumber}"));
-            lines.Add((inventoryAcct, 0,         totalCost, $"خروج مخزون - {order.OrderNumber}"));
+            lines.Add((cogsAcct,      totalCost, 0,         _t.Get("Accounting.CogsDesc", order.OrderNumber)));
+            lines.Add((inventoryAcct, 0,         totalCost, _t.Get("Accounting.InventoryOutDesc", order.OrderNumber)));
         }
 
         var entry = await _core.PostEntryAsync(
             type:        JournalEntryType.SalesInvoice,
             reference:   order.OrderNumber,
-            description: $"فاتورة مبيعات {order.OrderNumber} - {order.Customer?.FullName}",
+            description: _t.Get("Accounting.SalesEntryMainDesc", order.OrderNumber, order.Customer?.FullName ?? ""),
             date:        order.CreatedAt,
             lines:       lines,
             orderId:     order.Id,
@@ -267,9 +265,6 @@ public class SalesAccountingService
         );
     }
 
-    // ══════════════════════════════════════════════════════
-    // مرتجع مبيعات كامل
-    // ══════════════════════════════════════════════════════
     public async Task PostSalesReturnAsync(Order order, int? refundAccountId = null)
     {
         if (await _core.EntryExistsAsync(JournalEntryType.SalesReturn, order.OrderNumber + "-RTN")) return;
@@ -281,7 +276,6 @@ public class SalesAccountingService
         string inventoryAcct   = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Inventory,   mapDict)}";
         string cogsAcct        = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.COGS,        mapDict)}";
 
-        // ── Customer Account ─────────────────────────────────
         string receivablesAcct;
         if (order.Customer?.MainAccountId != null)
             receivablesAcct = $"ID:{order.Customer.MainAccountId}";
@@ -293,17 +287,15 @@ public class SalesAccountingService
         var totalVatAmount = order.TotalVatAmount;
         var netReturnPrice = order.TotalAmount - totalVatAmount;
 
-        lines.Add((salesReturnAcct, netReturnPrice, 0, $"مرتجع مبيعات - {order.OrderNumber}"));
+        lines.Add((salesReturnAcct, netReturnPrice, 0, _t.Get("Accounting.SalesReturnDesc", order.OrderNumber)));
         if (totalVatAmount > 0)
         {
             string vatAcct = !string.IsNullOrEmpty(store?.StoreVatAccountId)
                 ? $"ID:{store.StoreVatAccountId}"
                 : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatOutput, mapDict)}";
-            lines.Add((vatAcct, totalVatAmount, 0, $"مرتجع ضريبة مبيعات - {order.OrderNumber}"));
+            lines.Add((vatAcct, totalVatAmount, 0, _t.Get("Accounting.SalesReturnTaxDesc", order.OrderNumber)));
         }
 
-        // ── Refund Routing (Accurate Reversal) ─────────────────
-        // We must reverse exactly what was paid vs what was put on credit.
         decimal cashRefundAmount = order.PaidAmount;
         decimal creditRefundAmount = Math.Round(order.TotalAmount - cashRefundAmount, 2);
 
@@ -314,26 +306,25 @@ public class SalesAccountingService
                 : await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
 
             string methodLabel = _core.GetMethodLabel(order.PaymentMethod);
-            lines.Add((cashId, 0, cashRefundAmount, $"رد نقدية للمرتجع ({methodLabel}) - {order.OrderNumber}"));
+            lines.Add((cashId, 0, cashRefundAmount, _t.Get("Accounting.SalesReturnRefundDesc", methodLabel, order.OrderNumber)));
         }
 
         if (creditRefundAmount > 0)
         {
-            lines.Add((receivablesAcct, 0, creditRefundAmount, $"تنزيل مديونية (مرتجع) - {order.Customer?.FullName ?? order.OrderNumber}"));
+            lines.Add((receivablesAcct, 0, creditRefundAmount, _t.Get("Accounting.SalesReturnDebtReductionDesc", order.Customer?.FullName ?? order.OrderNumber)));
         }
 
-        // ── Stock Reversal ────────────────────────────────────
         var totalCost = order.Items?.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity) ?? 0;
         if (totalCost > 0)
         {
-            lines.Add((inventoryAcct, totalCost, 0,         "المخزون (إعادة)"));
-            lines.Add((cogsAcct,      0,         totalCost, "تكلفة البضاعة المباعة (تخفيض)"));
+            lines.Add((inventoryAcct, totalCost, 0,         _t.Get("Accounting.InventoryInDesc")));
+            lines.Add((cogsAcct,      0,         totalCost, _t.Get("Accounting.CogsReductionDesc")));
         }
 
         await _core.PostEntryAsync(
             type:        JournalEntryType.SalesReturn,
             reference:   order.OrderNumber + "-RTN",
-            description: $"مرتجع مبيعات {order.OrderNumber} - {order.Customer?.FullName}",
+            description: _t.Get("Accounting.SalesReturnMainDesc", order.OrderNumber, order.Customer?.FullName ?? ""),
             date:        TimeHelper.GetEgyptTime(),
             lines:       lines,
             orderId:     order.Id,
@@ -342,9 +333,6 @@ public class SalesAccountingService
         );
     }
 
-    // ══════════════════════════════════════════════════════
-    // مرتجع مبيعات جزئي
-    // ══════════════════════════════════════════════════════
     public async Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null)
     {
         var suffix    = TimeHelper.GetEgyptTime().Ticks.ToString().Substring(10);
@@ -372,24 +360,20 @@ public class SalesAccountingService
             totalCostReturn += (item.Product?.CostPrice ?? 0) * item.Quantity;
         }
 
-        lines.Add((salesReturnAcct, totalNetReturn, 0, $"مرتجع جزئي (صافي) - {order.OrderNumber}"));
+        lines.Add((salesReturnAcct, totalNetReturn, 0, _t.Get("Accounting.PartialReturnNetDesc", order.OrderNumber)));
         if (totalVatReturn > 0)
         {
             string vatAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatOutput, mapDict)}";
-            lines.Add((vatAcct, totalVatReturn, 0, $"إلغاء ضريبة جزئية - {order.OrderNumber}"));
+            lines.Add((vatAcct, totalVatReturn, 0, _t.Get("Accounting.PartialReturnTaxCancelDesc", order.OrderNumber)));
         }
 
         decimal discountReversal = (totalNetReturn + totalVatReturn) - refundAmount;
         if (discountReversal > 0)
-            lines.Add((salesDiscAcct, 0, discountReversal, $"موازنة خصم (مرتجع جزئي) - {order.OrderNumber}"));
+            lines.Add((salesDiscAcct, 0, discountReversal, _t.Get("Accounting.PartialReturnDiscountBalDesc", order.OrderNumber)));
         else if (discountReversal < 0)
-            lines.Add((salesDiscAcct, Math.Abs(discountReversal), 0, $"تسوية تفاوت (مرتجع جزئي) - {order.OrderNumber}"));
+            lines.Add((salesDiscAcct, Math.Abs(discountReversal), 0, _t.Get("Accounting.PartialReturnDiffAdjDesc", order.OrderNumber)));
 
-        // ── Partial Refund Routing ────────────────────────────
-        // For partial returns, we prioritize refunding the debt first, then cash.
-        // If the customer owes us money, we cancel the debt. If no debt, we refund cash.
         decimal originalDebt = Math.Round(order.TotalAmount - order.PaidAmount, 2);
-        
         decimal amountToCustomerCredit = Math.Min(originalDebt, refundAmount);
         decimal amountToCashRefund = Math.Round(refundAmount - amountToCustomerCredit, 2);
 
@@ -398,24 +382,24 @@ public class SalesAccountingService
             string cashId = refundAccountId.HasValue
                 ? $"ID:{refundAccountId.Value}"
                 : await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
-            lines.Add((cashId, 0, amountToCashRefund, $"رد نقدية جزئي ({_core.GetMethodLabel(order.PaymentMethod)}) - {order.OrderNumber}"));
+            lines.Add((cashId, 0, amountToCashRefund, _t.Get("Accounting.PartialReturnCashRefundDesc", _core.GetMethodLabel(order.PaymentMethod), order.OrderNumber)));
         }
 
         if (amountToCustomerCredit > 0)
         {
-            lines.Add((receivablesAcct, 0, amountToCustomerCredit, $"تنزيل مديونية جزئي - {order.OrderNumber}"));
+            lines.Add((receivablesAcct, 0, amountToCustomerCredit, _t.Get("Accounting.PartialReturnDebtReductionDesc", order.OrderNumber)));
         }
 
         if (totalCostReturn > 0)
         {
-            lines.Add((inventoryAcct, totalCostReturn, 0,              "المخزون (إعادة جزئي)"));
-            lines.Add((cogsAcct,      0,               totalCostReturn, "تكلفة البضاعة المباعة (تخفيض جزئي)"));
+            lines.Add((inventoryAcct, totalCostReturn, 0,              _t.Get("Accounting.PartialInventoryInDesc")));
+            lines.Add((cogsAcct,      0,               totalCostReturn, _t.Get("Accounting.PartialCogsReductionDesc")));
         }
 
         await _core.PostEntryAsync(
             type:        JournalEntryType.SalesReturn,
             reference:   reference,
-            description: $"مرتجع جزئي موحد {order.OrderNumber} ({returnedItems.Count} أصناف)",
+            description: _t.Get("Accounting.PartialReturnUnifiedMainDesc", order.OrderNumber, returnedItems.Count),
             date:        TimeHelper.GetEgyptTime(),
             lines:       lines,
             orderId:     order.Id,

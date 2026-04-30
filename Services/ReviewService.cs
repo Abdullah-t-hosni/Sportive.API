@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using Sportive.API.Interfaces;
 
 namespace Sportive.API.Services;
 
@@ -34,11 +35,13 @@ public class ReviewService : IReviewService
 {
     private readonly AppDbContext _db;
     private readonly INotificationService _notifications;
+    private readonly ITranslator _t;
 
-    public ReviewService(AppDbContext db, INotificationService notifications)
+    public ReviewService(AppDbContext db, INotificationService notifications, ITranslator t)
     {
         _db = db;
         _notifications = notifications;
+        _t = t;
     }
 
     public async Task<List<ReviewDto>> GetApprovedReviewsAsync(int productId)
@@ -66,7 +69,7 @@ public class ReviewService : IReviewService
     {
         // 🛡️ SECURITY: Double check eligibility even if UI hides the form
         if (!await CanCustomerReviewAsync(customerId, productId))
-            throw new InvalidOperationException("You can only review products you have purchased and received.");
+            throw new InvalidOperationException(_t.Get("Reviews.EligibilityError"));
 
         var existing = await _db.Reviews.FirstOrDefaultAsync(r => r.CustomerId == customerId && r.ProductId == productId);
         if (existing != null)
@@ -95,9 +98,9 @@ public class ReviewService : IReviewService
         var c = await _db.Customers.FindAsync(customerId);
         await _notifications.SendAsync(
             null, // Admin Group
-            "تقييم جديد بانتظار المراجعة", 
+            _t.Get("Reviews.NewReviewPendingTitle"), 
             "New Review Pending",
-            $"العميل {c?.FullName} قام بتقييم {p?.NameAr}",
+            _t.Get("Reviews.NewReviewPendingDesc", c?.FullName ?? "", p?.NameAr ?? ""),
             $"Customer {c?.FullName} reviewed {p?.NameEn}",
             "Review"
         );
@@ -161,7 +164,7 @@ public class ReviewService : IReviewService
 
     public async Task<bool> ReplyToReviewAsync(int reviewId, string reply, string adminName)
     {
-        var r = await _db.Reviews.FindAsync(reviewId);
+        var r = await _db.Reviews.Include(x => x.Product).FirstOrDefaultAsync(x => x.Id == reviewId);
         if (r == null) return false;
 
         r.AdminReply = reply;
@@ -177,9 +180,9 @@ public class ReviewService : IReviewService
             {
                 await _notifications.SendAsync(
                     customer.AppUser.Id,
-                    "تم الرد على تقييمك",
+                    _t.Get("Reviews.ReplyTitle"),
                     "Reply to your review",
-                    $"قامت الإدارة بالرد على تقييمك لمنتج {r.Product?.NameAr}",
+                    _t.Get("Reviews.ReplyDesc", r.Product?.NameAr ?? ""),
                     $"Admin replied to your review for {r.Product?.NameEn}",
                     "ReviewResponse"
                 );

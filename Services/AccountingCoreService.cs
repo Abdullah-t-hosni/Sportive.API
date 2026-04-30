@@ -6,6 +6,7 @@ using Sportive.API.Utils;
 using System.Text.Json;
 using Sportive.API.DTOs;
 using System.Security.Claims;
+using Sportive.API.Interfaces;
 
 namespace Sportive.API.Services;
 
@@ -18,6 +19,7 @@ public class AccountingCoreService
     private readonly SequenceService _seq;
     private readonly ILogger<AccountingCoreService> _logger;
     private readonly INotificationService _notifications;
+    private readonly ITranslator _t;
 
     // كودات الحسابات الافتتاحية (Fallback)
     public const string CASH_CASHIER  = "110101";
@@ -41,12 +43,13 @@ public class AccountingCoreService
     public const string VAT_OUTPUT    = "2104";
     public const string VAT_INPUT     = "2105";
 
-    public AccountingCoreService(AppDbContext db, SequenceService seq, ILogger<AccountingCoreService> logger, INotificationService notifications)
+    public AccountingCoreService(AppDbContext db, SequenceService seq, ILogger<AccountingCoreService> logger, INotificationService notifications, ITranslator t)
     {
         _db = db;
         _seq = seq;
         _logger = logger;
         _notifications = notifications;
+        _t = t;
     }
 
     public async Task CheckDateLockAsync(DateTime date, ClaimsPrincipal? user)
@@ -56,7 +59,7 @@ public class AccountingCoreService
         var settings = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync();
         if (settings?.AccountingLockDate != null && date.Date <= settings.AccountingLockDate.Value.Date)
         {
-            throw new InvalidOperationException($"الفترة المحاسبية (حتى {settings.AccountingLockDate.Value:yyyy-MM-dd}) مغلقة. لا يمكن الإضافة أو التعديل في فترة مغلقة.");
+            throw new InvalidOperationException(_t.Get("Accounting.LockedPeriodError", settings.AccountingLockDate.Value.ToString("yyyy-MM-dd")));
         }
     }
 
@@ -116,7 +119,7 @@ public class AccountingCoreService
         var totalDr = lines.Sum(l => l.debit);
         var totalCr = lines.Sum(l => l.credit);
         if (Math.Round(totalDr, 2) != Math.Round(totalCr, 2))
-            throw new InvalidOperationException($"القيد غير متوازن: مدين={totalDr}, دائن={totalCr} | {reference}");
+            throw new InvalidOperationException(_t.Get("Accounting.EntryUnbalanced", totalDr, totalCr, reference));
 
         JournalEntry entry;
         if (existing != null)
@@ -191,7 +194,7 @@ public class AccountingCoreService
         {
             if (debit == 0 && credit == 0) continue;
             var (accountId, exactMatch, errorNote) = resolvedAccounts[code];
-            var finalDesc = exactMatch ? desc : $"{desc} [تنبيه: {errorNote}]";
+            var finalDesc = exactMatch ? desc : $"{desc} {_t.Get("Accounting.WarningPrefix", errorNote ?? "")}";
             accountIdCache.TryGetValue(accountId, out var actualAccount);
             var realCode = actualAccount?.Code ?? "";
 
@@ -233,10 +236,10 @@ public class AccountingCoreService
         
         // STRICT MAPPING: Fail if keys are missing in AccountSystemMappings table
         if (!mappings.TryGetValue(MappingKeys.Inventory.ToLower(), out var iId) || iId == null)
-            throw new InvalidOperationException($"فشل الترحيل المحاسبي: حساب المخزون ({MappingKeys.Inventory}) غير مربوط في الإعدادات.");
+            throw new InvalidOperationException(_t.Get("Accounting.MappingMissing", MappingKeys.Inventory));
 
         if (!mappings.TryGetValue(MappingKeys.InventoryVariance.ToLower(), out var vId) || vId == null)
-            throw new InvalidOperationException($"فشل الترحيل المحاسبي: حساب فروقات الجرد ({MappingKeys.InventoryVariance}) غير مربوط في الإعدادات.");
+            throw new InvalidOperationException(_t.Get("Accounting.MappingMissing", MappingKeys.InventoryVariance));
 
         var inventoryId = iId.Value;
         var varianceId  = vId.Value;
@@ -258,17 +261,17 @@ public class AccountingCoreService
             Type        = JournalEntryType.Manual,
             Status      = JournalEntryStatus.Posted,
             Reference   = reference,
-            Description = $"تسوية جرد آلي رقم {auditId}",
+            Description = _t.Get("Accounting.InventoryAdjDesc", auditId),
             CreatedByUserId = userId,
             CostCenter = costCenter,
             CreatedAt   = TimeHelper.GetEgyptTime()
         };
 
         // 1. Inventory Account
-        entry.Lines.Add(new JournalLine { AccountId = inventoryId, Debit = isIncrease ? absVal : 0, Credit = isIncrease ? 0 : absVal, Description = $"تسوية مخزون - جرد #{auditId}", CreatedAt = TimeHelper.GetEgyptTime(), CostCenter = costCenter });
+        entry.Lines.Add(new JournalLine { AccountId = inventoryId, Debit = isIncrease ? absVal : 0, Credit = isIncrease ? 0 : absVal, Description = _t.Get("Accounting.InventoryAdjItemDesc", auditId), CreatedAt = TimeHelper.GetEgyptTime(), CostCenter = costCenter });
         
         // 2. Variance Account
-        entry.Lines.Add(new JournalLine { AccountId = varianceId, Debit = isIncrease ? 0 : absVal, Credit = isIncrease ? absVal : 0, Description = $"فروقات جرد مخزون #{auditId}", CreatedAt = TimeHelper.GetEgyptTime(), CostCenter = costCenter });
+        entry.Lines.Add(new JournalLine { AccountId = varianceId, Debit = isIncrease ? 0 : absVal, Credit = isIncrease ? absVal : 0, Description = _t.Get("Accounting.InventoryVarianceDesc", auditId), CreatedAt = TimeHelper.GetEgyptTime(), CostCenter = costCenter });
 
         _db.JournalEntries.Add(entry);
         await _db.SaveChangesAsync();
@@ -283,9 +286,9 @@ public class AccountingCoreService
             if (int.TryParse(cleanInput.Substring(3), out var exactId) && exactId > 0)
             {
                 var acctById = await _db.Accounts.Where(a => a.Id == exactId).Select(a => new { a.Id, a.IsActive }).FirstOrDefaultAsync();
-                if (acctById != null) return (acctById.Id, acctById.IsActive, !acctById.IsActive ? $"الحساب غير نشط" : null);
+                if (acctById != null) return (acctById.Id, acctById.IsActive, !acctById.IsActive ? _t.Get("Accounting.AccountInactive") : null);
             }
-            throw new InvalidOperationException($"فشل العملية: الحساب المعرف بـ ID ( {input} ) غير موجود حالياً.");
+            throw new InvalidOperationException(_t.Get("Accounting.AccountNotFoundById", input));
         }
 
         var acctByCodeList = await _db.Accounts.Where(a => EF.Functions.Like(a.Code, $"%{cleanInput}%")).Select(a => new { a.Id, a.Code, a.IsActive }).ToListAsync();
@@ -293,11 +296,11 @@ public class AccountingCoreService
         if (exactAcct != null)
         {
             if (!exactAcct.IsActive)
-                throw new InvalidOperationException($"الحساب ( {input} ) غير نشط حالياً. يرجى تفعيله من دليل الحسابات.");
+                throw new InvalidOperationException(_t.Get("Accounting.AccountInactiveWithCode", input));
             return (exactAcct.Id, true, null);
         }
 
-        throw new InvalidOperationException($"فشل العملية: الحساب المطلوب ( {input} ) غير موجود في النظام. يرجى التأكد من دليل الحسابات أو صفحة الربط المالي.");
+        throw new InvalidOperationException(_t.Get("Accounting.AccountNotFoundByCode", input));
     }
 
     public async Task<int> GetRequiredMappedAccountAsync(string key, Dictionary<string, int?>? map = null)
@@ -306,7 +309,7 @@ public class AccountingCoreService
         if (map.TryGetValue(key.ToLower(), out var id) && id.HasValue)
             return id.Value;
             
-        throw new InvalidOperationException($"فشل العملية: لم يتم تحديد حساب ( {key} ) في صفحة الربط المالي.");
+        throw new InvalidOperationException(_t.Get("Accounting.KeyNotMapped", key));
     }
 
     public async Task<string> GetMappedCashAccountAsync(PaymentMethod method, OrderSource source, Dictionary<string, int?>? map = null)
@@ -334,16 +337,16 @@ public class AccountingCoreService
             return $"ID:{accountId}";
         }
 
-        throw new InvalidOperationException($"فشل العملية: لم يتم تحديد حساب لوسيلة الدفع ({GetMethodLabel(method)}) للمصدر ({source}) في صفحة الربط المالي.");
+        throw new InvalidOperationException(_t.Get("Accounting.MethodMappingMissing", GetMethodLabel(method), source.ToString()));
     }
 
     public string GetMethodLabel(PaymentMethod method) => method switch {
-        PaymentMethod.Cash       => "نقدي",
-        PaymentMethod.Bank       => "حوالة بنكية",
-        PaymentMethod.CreditCard => "فيزا / شبكة",
-        PaymentMethod.Vodafone   => "فودافون كاش",
-        PaymentMethod.InstaPay   => "انستاباي",
-        PaymentMethod.Credit     => "آجل",
+        PaymentMethod.Cash       => _t.Get("PaymentMethod.Cash"),
+        PaymentMethod.Bank       => _t.Get("PaymentMethod.Bank"),
+        PaymentMethod.CreditCard => _t.Get("PaymentMethod.CreditCard"),
+        PaymentMethod.Vodafone   => _t.Get("PaymentMethod.Vodafone"),
+        PaymentMethod.InstaPay   => _t.Get("PaymentMethod.InstaPay"),
+        PaymentMethod.Credit     => _t.Get("PaymentMethod.Credit"),
         _                        => method.ToString()
     };
 
@@ -719,28 +722,6 @@ public class AccountingCoreService
 
             c.TotalSales = volume;
             c.TotalPaid  = volume - debt; 
-        }
-
-        // 5. Sync Employees
-        var empControlAccId = await _db.AccountSystemMappings
-            .Where(m => m.Key == MappingKeys.SalariesPayable)
-            .Select(m => m.AccountId)
-            .FirstOrDefaultAsync();
-
-        if (empControlAccId.HasValue)
-        {
-            var activeEmployees = await _db.Employees.ToListAsync();
-            foreach (var e in activeEmployees)
-            {
-                // Balance = Credit (Salary/Bonus) - Debit (Advances/Deductions/Payments)
-                // We check all lines linked to THIS employee on the Salaries Payable account
-                var balance = await _db.JournalLines
-                    .Where(l => l.EmployeeId == e.Id && l.AccountId == empControlAccId.Value)
-                    .SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0;
-                
-                // You can add logic here if you want to store this balance in Employee model
-                // For now, it's computed in statements.
-            }
         }
 
         await _db.SaveChangesAsync();
