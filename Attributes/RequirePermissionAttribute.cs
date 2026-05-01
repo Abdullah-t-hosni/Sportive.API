@@ -1,16 +1,22 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
-using Microsoft.EntityFrameworkCore;
-using Sportive.API.Data;
-using Sportive.API.Services;
+using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using System.Security.Claims;
 
 namespace Sportive.API.Attributes;
 
-[AttributeUsage(AttributeTargets.Method)]
+// ────────────────────────────────────────────────────────────────
+// Marker: endpoint is accessible to any user with POS view access
+// ────────────────────────────────────────────────────────────────
+[AttributeUsage(AttributeTargets.Method | AttributeTargets.Class)]
 public class AllowPosAccessAttribute : Attribute { }
 
+// ────────────────────────────────────────────────────────────────
+// Declarative attribute — delegates ALL logic to IPermissionService
+// Supports comma-separated modules: "Customers,Pos,Orders"
+// ────────────────────────────────────────────────────────────────
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class, AllowMultiple = true)]
 public class RequirePermissionAttribute : TypeFilterAttribute
 {
@@ -21,33 +27,47 @@ public class RequirePermissionAttribute : TypeFilterAttribute
     }
 }
 
+// ────────────────────────────────────────────────────────────────
+// Filter — thin orchestrator, no business logic
+// ────────────────────────────────────────────────────────────────
 public class RequirePermissionFilter : IAsyncAuthorizationFilter
 {
-    private readonly string _module;
-    private readonly bool _requireEdit;
-    private readonly ICacheService _cache;
-    private readonly AppDbContext _db;
+    private readonly string            _module;
+    private readonly bool              _requireEdit;
+    private readonly IPermissionService _permissions;
+    private readonly ITranslator        _t;
 
-    public RequirePermissionFilter(string module, bool requireEdit, ICacheService cache, AppDbContext db)
+    public RequirePermissionFilter(
+        string module, bool requireEdit,
+        IPermissionService permissions, ITranslator t)
     {
-        _module = module;
+        _module      = module;
         _requireEdit = requireEdit;
-        _cache = cache;
-        _db = db;
+        _permissions = permissions;
+        _t           = t;
     }
 
     public async Task OnAuthorizationAsync(AuthorizationFilterContext context)
     {
+        var metadata = context.ActionDescriptor.EndpointMetadata;
+
+        // ── 1. AllowAnonymous short-circuit ──────────────────────
+        if (metadata.Any(em => em is AllowAnonymousAttribute))
+            return;
+
+        // ── 2. Authentication check ──────────────────────────────
         var user = context.HttpContext.User;
-        if (user.Identity == null || !user.Identity.IsAuthenticated)
+        if (user.Identity?.IsAuthenticated != true)
         {
             context.Result = new UnauthorizedResult();
             return;
         }
 
-        // Admin has full access to everything
-        if (user.IsInRole("Admin") || user.IsInRole("SuperAdmin")) return;
+        // ── 3. Privileged roles bypass (no DB hit needed) ────────
+        if (user.IsInRole(AppRoles.Admin) || user.IsInRole(AppRoles.Manager))
+            return;
 
+        // ── 4. Resolve user ID ───────────────────────────────────
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId))
         {
@@ -55,41 +75,27 @@ public class RequirePermissionFilter : IAsyncAuthorizationFilter
             return;
         }
 
-        // Fetch permissions from cache (or DB if not cached)
-        var cacheKey = $"UserPermissions_{userId}";
-        var perms = await _cache.GetOrCreateAsync(cacheKey, async () =>
-        {
-            return await _db.UserModulePermissions
-                .Where(p => p.UserAccountID == userId)
-                .Select(p => new { p.ModuleKey, p.CanView, p.CanEdit })
-                .ToListAsync();
-        }, TimeSpan.FromMinutes(15));
+        // ── 5. POS bypass ────────────────────────────────────────
+        if (metadata.Any(em => em is AllowPosAccessAttribute) &&
+            await _permissions.HasPosAccessAsync(userId))
+            return;
 
-        // â­ï¸ ALLOW POS ACCESS BYPASS
-        var hasPosAccessOverride = context.ActionDescriptor.EndpointMetadata.Any(em => em.GetType() == typeof(AllowPosAccessAttribute));
-        if (hasPosAccessOverride && perms != null && perms.Any(p => p.ModuleKey == ModuleKeys.Pos && p.CanView))
-        {
-            return; // Authorized via POS bypass
-        }
+        // ── 6. Module permission check ───────────────────────────
+        var modules = _module
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(m => m.Trim());
 
-        var targetPerm = perms?.FirstOrDefault(p => p.ModuleKey == _module);
-        
-        if (targetPerm == null)
+        if (!await _permissions.CanViewAsync(userId, modules))
         {
-            context.Result = new ForbidResult();
+            context.Result = new ObjectResult(new { message = _t.Get("Auth.NoViewPermission") })
+                { StatusCode = 403 };
             return;
         }
 
-        if (_requireEdit && !targetPerm.CanEdit)
+        if (_requireEdit && !await _permissions.CanEditAsync(userId, modules))
         {
-            context.Result = new ForbidResult();
-            return;
-        }
-
-        if (!targetPerm.CanView)
-        {
-            context.Result = new ForbidResult();
-            return;
+            context.Result = new ObjectResult(new { message = _t.Get("Auth.NoEditPermission") })
+                { StatusCode = 403 };
         }
     }
 }

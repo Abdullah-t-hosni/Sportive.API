@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
-using Sportive.API.Authorization;
 using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Models;
@@ -13,9 +12,7 @@ using Sportive.API.Interfaces;
 
 namespace Sportive.API.Controllers;
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 // 1. EMPLOYEES (الموظفين)
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 [ApiController]
 [Route("api/employees")]
@@ -33,7 +30,7 @@ public class EmployeesController : ControllerBase
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
     [HttpGet]
-    [RequireModulePermission(ModuleKeys.Hr)]
+    [RequirePermission(ModuleKeys.Hr)]
     [AllowPosAccess]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? search     = null,
@@ -96,7 +93,7 @@ public class EmployeesController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    [RequireModulePermission(ModuleKeys.Hr)]
+    [RequirePermission(ModuleKeys.Hr)]
     public async Task<IActionResult> GetById(int id)
     {
         var e = await _db.Employees
@@ -116,7 +113,7 @@ public class EmployeesController : ControllerBase
     }
 
     [HttpPost]
-    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
     public async Task<IActionResult> Create([FromBody] CreateEmployeeDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Name))
@@ -173,9 +170,9 @@ public class EmployeesController : ControllerBase
         return Ok(new { id = emp.Id, employeeNumber = emp.EmployeeNumber });
     }
 
-    // PATCH /api/employees/{id}/link-user Ã¢â‚¬â€ Ã˜Â±Ã˜Â¨Ã˜Â·/Ã™ÂÃ™Æ’ Ã˜Â§Ã™â€žÃ˜Â±Ã˜Â¨Ã˜Â· Ã™â€¦Ã˜Â¹ Ã˜Â­Ã˜Â³Ã˜Â§Ã˜Â¨ Ã˜Â§Ã™â€žÃ™â€ Ã˜Â¸Ã˜Â§Ã™â€¦
+    // PATCH /api/employees/{id}/link-user
     [HttpPatch("{id}/link-user")]
-    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
     public async Task<IActionResult> LinkUser(int id, [FromBody] LinkUserDto dto)
     {
         var emp = await _db.Employees.FindAsync(id);
@@ -200,7 +197,7 @@ public class EmployeesController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateEmployeeDto dto)
     {
         var emp = await _db.Employees.FindAsync(id);
@@ -232,7 +229,7 @@ public class EmployeesController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
     public async Task<IActionResult> Delete(int id)
     {
         var emp = await _db.Employees
@@ -352,10 +349,7 @@ public class EmployeesController : ControllerBase
     }
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-// 2. PAYROLL RUNS (Ã™â€¦Ã˜Â³Ã™Å Ã˜Â± Ã˜Â§Ã™â€žÃ˜Â±Ã™Ë†Ã˜Â§Ã˜ÂªÃ˜Â¨)
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-
+// 2. PAYROLL RUNS 
 [ApiController]
 [Route("api/payroll")]
 [RequirePermission(ModuleKeys.HrPayroll)]
@@ -401,7 +395,7 @@ public class PayrollController : ControllerBase
         return Ok(ToDto(run));
     }
 
-    // POST /api/payroll Ã¢â‚¬â€ Ã˜Â¥Ã™â€ Ã˜Â´Ã˜Â§Ã˜Â¡ Ã™â€¦Ã˜Â³Ã™Å Ã˜Â± Ã˜Â±Ã™Ë†Ã˜Â§Ã˜ÂªÃ˜Â¨ (Ã™â€¦Ã˜Â³Ã™Ë†Ã˜Â¯Ã˜Â©)
+    // POST /api/payroll 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreatePayrollRunDto dto)
     {
@@ -412,7 +406,6 @@ public class PayrollController : ControllerBase
 
             var lang = Request.Headers["Accept-Language"].ToString().StartsWith("en") ? "en" : "ar";
 
-            // Ã˜ÂªÃ˜Â­Ã™â€šÃ™â€š Ã™â€¦Ã™â€  Ã˜Â¹Ã˜Â¯Ã™â€¦ Ã˜ÂªÃ™Æ’Ã˜Â±Ã˜Â§Ã˜Â± Ã™â€ Ã™ÂÃ˜Â³ Ã˜Â§Ã™â€žÃ˜Â´Ã™â€¡Ã˜Â±
             var existing = await _db.PayrollRuns.FirstOrDefaultAsync(p => p.PeriodYear == dto.PeriodYear && p.PeriodMonth == dto.PeriodMonth);
             if (existing != null)
             {
@@ -501,7 +494,7 @@ public class PayrollController : ControllerBase
         }
     }
 
-    // POST /api/payroll/{id}/post Ã¢â‚¬â€ Ã˜ÂªÃ˜Â±Ã˜Â­Ã™Å Ã™â€ž Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â³Ã™Å Ã˜Â± Ã™Ë†Ã˜ÂªÃ™Ë†Ã™â€žÃ™Å Ã˜Â¯ Ã˜Â§Ã™â€žÃ™â€šÃ™Å Ã˜Â¯ Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â­Ã˜Â§Ã˜Â³Ã˜Â¨Ã™Å 
+    // POST /api/payroll/{id}/post 
     [HttpPost("{id}/post")]
     public async Task<IActionResult> Post(int id)
     {
@@ -512,7 +505,6 @@ public class PayrollController : ControllerBase
         if (run.Status == PayrollStatus.Posted)
             return BadRequest(new { message = _t.Get("HR.PayrollAlreadyPosted") });
 
-        // Ã¢â€â‚¬Ã¢â€â‚¬ Ã˜ÂªÃ™Ë†Ã™â€žÃ™Å Ã˜Â¯ Ã˜Â§Ã™â€žÃ™â€šÃ™Å Ã˜Â¯ Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â­Ã˜Â§Ã˜Â³Ã˜Â¨Ã™Å  Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
         var mapDict = await _core.GetSafeSystemMappingsAsync();
 
         var wagesAccId   = run.WagesExpenseAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.SalaryExpense, mapDict);
@@ -553,7 +545,6 @@ public class PayrollController : ControllerBase
                 Lines           = new List<JournalLine>()
             };
 
-            // Ã¢â€â‚¬Ã¢â€â‚¬ Ã˜ÂªÃ˜Â¬Ã™â€¦Ã™Å Ã˜Â¹ Ã™Ë†Ã˜ÂªÃ˜Â±Ã˜Â­Ã™Å Ã™â€ž Ã˜Â§Ã™â€žÃ™â€¦Ã˜ÂµÃ˜Â§Ã˜Â±Ã™Å Ã™Â Ã˜Â­Ã˜Â³Ã˜Â¨ Ã™â€¦Ã˜Â±Ã™Æ’Ã˜Â² Ã˜Â§Ã™â€žÃ˜ÂªÃ™Æ’Ã™â€žÃ™ÂÃ˜Â© Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
             var itemsByCostCenter = run.Items.GroupBy(i => i.Employee?.CostCenter ?? OrderSource.General);
 
             foreach (var group in itemsByCostCenter)
@@ -592,12 +583,10 @@ public class PayrollController : ControllerBase
                 }
             }
 
-            // Ã¢â€â‚¬Ã¢â€â‚¬ Ã˜ÂªÃ™ÂÃ˜ÂµÃ™Å Ã™â€ž Ã˜Â§Ã™â€žÃ˜Â­Ã˜Â±Ã™Æ’Ã˜Â§Ã˜Âª Ã™â€žÃ™Æ’Ã™â€ž Ã™â€¦Ã™Ë†Ã˜Â¸Ã™Â (Ã˜Â§Ã™â€žÃ˜Â§Ã™â€žÃ˜ÂªÃ˜Â²Ã˜Â§Ã™â€¦Ã˜Â§Ã˜Âª Ã™ÂÃ™Å  Ã™Æ’Ã˜Â´Ã™Â Ã˜Â§Ã™â€žÃ˜Â­Ã˜Â³Ã˜Â§Ã˜Â¨) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
             foreach (var item in run.Items)
             {
                 var employeeCC = item.Employee?.CostCenter ?? OrderSource.General;
 
-                // Ã˜Â£. Ã˜Â¥Ã˜Â¬Ã™â€¦Ã˜Â§Ã™â€žÃ™Å  Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â³Ã˜ÂªÃ˜Â­Ã™â€šÃ˜Â§Ã˜Âª -> Ã˜Â¯Ã˜Â§Ã˜Â¦Ã™â€  (Ã™â€žÃ™â€¡)
                 var grossEarnings = item.BasicSalary + item.TransportationAllowance + item.CommunicationAllowance + item.FixedAllowance + item.BonusAmount;
                 if (grossEarnings > 0)
                 {
@@ -612,7 +601,6 @@ public class PayrollController : ControllerBase
                     });
                 }
 
-                // Ã˜Â¨. Ã˜Â§Ã˜Â³Ã˜ÂªÃ™â€šÃ˜Â·Ã˜Â§Ã˜Â¹ Ã˜Â§Ã™â€žÃ˜Â³Ã™â€žÃ™ÂÃ˜Â© -> Ã™â€¦Ã˜Â¯Ã™Å Ã™â€  (Ã˜Â¹Ã™â€žÃ™Å Ã™â€¡)
                 if (item.AdvanceDeducted > 0)
                 {
                     je.Lines.Add(new JournalLine
@@ -635,7 +623,6 @@ public class PayrollController : ControllerBase
                     });
                 }
 
-                // Ã˜Â¬. Ã˜Â§Ã™â€žÃ˜Â¬Ã˜Â²Ã˜Â§Ã˜Â¡Ã˜Â§Ã˜Âª Ã™Ë†Ã˜Â§Ã™â€žÃ˜Â®Ã˜ÂµÃ™Ë†Ã™â€¦Ã˜Â§Ã˜Âª -> Ã™â€¦Ã˜Â¯Ã™Å Ã™â€  (Ã˜Â¹Ã™â€žÃ™Å Ã™â€¡)
                 if (item.DeductionAmount > 0)
                 {
                     je.Lines.Add(new JournalLine
@@ -652,7 +639,6 @@ public class PayrollController : ControllerBase
 
             _db.JournalEntries.Add(je);
 
-            // Ã˜ÂªÃ˜Â­Ã˜Â¯Ã™Å Ã˜Â« Ã˜Â­Ã˜Â§Ã™â€žÃ˜Â© Ã˜Â§Ã™â€žÃ˜Â³Ã™â€žÃ™Â Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â®Ã˜ÂµÃ™Ë†Ã™â€¦Ã˜Â©
             foreach (var item in run.Items.Where(i => i.AdvanceDeducted > 0))
             {
                 var pendingAdvances = await _db.EmployeeAdvances
@@ -674,7 +660,6 @@ public class PayrollController : ControllerBase
                 }
             }
 
-            // Ã˜Â±Ã˜Â¨Ã˜Â· Ã˜Â§Ã™â€žÃ™â€¦Ã™Æ’Ã˜Â§Ã™ÂÃ˜Â¢Ã˜Âª Ã™Ë†Ã˜Â§Ã™â€žÃ˜Â®Ã˜ÂµÃ™Ë†Ã™â€¦Ã˜Â§Ã˜Âª Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â¹Ã™â€žÃ™â€šÃ˜Â© Ã˜Â¨Ã™â€¡Ã˜Â°Ã˜Â§ Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â³Ã™Å Ã˜Â± (Ã™â€žÃ˜Â¥Ã˜ÂºÃ™â€žÃ˜Â§Ã™â€šÃ™â€¡Ã˜Â§)
             var empIds = run.Items.Select(i => i.EmployeeId).ToList();
             
             var pendingBonuses = await _db.EmployeeBonuses
@@ -708,17 +693,14 @@ public class PayrollController : ControllerBase
         if (run.Status == PayrollStatus.Posted && !isAdmin)
             return BadRequest(new { message = _t.Get("HR.PayrollCannotDelete") });
 
-        // Ã˜Â¥Ã˜Â°Ã˜Â§ Ã™Æ’Ã˜Â§Ã™â€  Ã™â€¦Ã˜Â±Ã˜Â­Ã™â€žÃ˜Â§Ã™â€¹Ã˜Å’ Ã™â€ Ã˜Â­Ã˜ÂªÃ˜Â§Ã˜Â¬ Ã™â€žÃ˜Â¹Ã™Æ’Ã˜Â³ Ã™Æ’Ã˜Â§Ã™ÂÃ˜Â© Ã˜Â§Ã™â€žÃ˜Â­Ã˜Â±Ã™Æ’Ã˜Â§Ã˜Âª Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â§Ã™â€žÃ™Å Ã˜Â© Ã™â€žÃ˜Â¶Ã™â€¦Ã˜Â§Ã™â€  Ã˜Â³Ã™â€žÃ˜Â§Ã™â€¦Ã˜Â© Ã˜Â§Ã™â€žÃ˜Â­Ã˜Â³Ã˜Â§Ã˜Â¨Ã˜Â§Ã˜Âª
         if (run.Status == PayrollStatus.Posted)
         {
-            // 1. Ã˜Â­Ã˜Â°Ã™Â Ã˜Â§Ã™â€žÃ™â€šÃ™Å Ã˜Â¯ Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â­Ã˜Â§Ã˜Â³Ã˜Â¨Ã™Å  Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â±Ã˜ÂªÃ˜Â¨Ã˜Â·
             if (run.JournalEntryId.HasValue)
             {
                 var je = await _db.JournalEntries.FindAsync(run.JournalEntryId.Value);
                 if (je != null) _db.JournalEntries.Remove(je);
             }
 
-            // 2. Ã˜Â§Ã˜Â³Ã˜ÂªÃ˜Â±Ã˜Â¬Ã˜Â§Ã˜Â¹ Ã˜Â§Ã™â€žÃ˜Â³Ã™â€žÃ™Â Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â®Ã˜ÂµÃ™Ë†Ã™â€¦Ã˜Â© (Ã˜Â¥Ã˜Â¹Ã˜Â§Ã˜Â¯Ã˜Â© Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â¨Ã˜Â§Ã™â€žÃ˜Âº Ã™â€žÃ˜Â£Ã˜Â±Ã˜ÂµÃ˜Â¯Ã˜Â© Ã˜Â§Ã™â€žÃ™â€¦Ã™Ë†Ã˜Â¸Ã™ÂÃ™Å Ã™â€ )
             foreach (var item in run.Items.Where(i => i.AdvanceDeducted > 0))
             {
                 var advances = await _db.EmployeeAdvances
@@ -733,7 +715,6 @@ public class PayrollController : ControllerBase
                     var restored = Math.Min(adv.DeductedAmount, toRestore);
                     adv.DeductedAmount -= restored;
                     
-                    // Ã˜ÂªÃ˜Â­Ã˜Â¯Ã™Å Ã˜Â« Ã˜Â­Ã˜Â§Ã™â€žÃ˜Â© Ã˜Â§Ã™â€žÃ˜Â³Ã™â€žÃ™ÂÃ˜Â© Ã˜Â¨Ã™â€ Ã˜Â§Ã˜Â¡Ã™â€¹ Ã˜Â¹Ã™â€žÃ™â€° Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â¨Ã™â€žÃ˜Âº Ã˜Â§Ã™â€žÃ™â€¦Ã˜ÂªÃ˜Â¨Ã™â€šÃ™Å 
                     if (adv.DeductedAmount <= 0) adv.Status = AdvanceStatus.Pending;
                     else if (adv.DeductedAmount < adv.Amount) adv.Status = AdvanceStatus.PartiallyDeducted;
                     else adv.Status = AdvanceStatus.FullyDeducted;
@@ -743,7 +724,6 @@ public class PayrollController : ControllerBase
                 }
             }
 
-            // 3. Ã™ÂÃ™Æ’ Ã˜Â§Ã˜Â±Ã˜ÂªÃ˜Â¨Ã˜Â§Ã˜Â· Ã˜Â§Ã™â€žÃ™â€¦Ã™Æ’Ã˜Â§Ã™ÂÃ˜Â¢Ã˜Âª Ã™Ë†Ã˜Â§Ã™â€žÃ˜Â®Ã˜ÂµÃ™Ë†Ã™â€¦Ã˜Â§Ã˜Âª Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â¹Ã™â€žÃ™â€šÃ˜Â© (Ã™â€žÃ˜ÂªÃ˜Â¹Ã™Ë†Ã˜Â¯ Ã™â€¦Ã˜ÂªÃ˜Â§Ã˜Â­Ã˜Â© Ã™â€žÃ™â€žÃ™â€¦Ã˜Â³Ã™Å Ã˜Â±Ã˜Â§Ã˜Âª Ã˜Â§Ã™â€žÃ™â€šÃ˜Â§Ã˜Â¯Ã™â€¦Ã˜Â©)
             var bonuses = await _db.EmployeeBonuses.Where(b => b.PayrollRunId == run.Id).ToListAsync();
             foreach (var b in bonuses) b.PayrollRunId = null;
 
@@ -772,9 +752,7 @@ public class PayrollController : ControllerBase
     );
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-// 3. ADVANCES (Ã˜Â§Ã™â€žÃ˜Â³Ã™â€žÃ™Â)
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// 3. ADVANCES 
 
 [ApiController]
 [Route("api/employee-advances")]
@@ -821,7 +799,7 @@ public class EmployeeAdvancesController : ControllerBase
     }
 
     [HttpPost]
-    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
     public async Task<IActionResult> Create([FromBody] CreateAdvanceDto dto)
     {
         var emp = await _db.Employees.FindAsync(dto.EmployeeId);
@@ -829,7 +807,7 @@ public class EmployeeAdvancesController : ControllerBase
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
 
-        // Ã°Å¸Å½Â¯ UNIFIED VOUCHER SYSTEM: Create a PaymentVoucher record for this advance (if cash disbursement)
+        //  UNIFIED VOUCHER SYSTEM: Create a PaymentVoucher record for this advance (if cash disbursement)
         if (dto.CashAccountId.HasValue && dto.CashAccountId > 0)
         {
             if (!mapDict.TryGetValue(MappingKeys.EmployeeAdvances, out var advAccId) || advAccId == null)
@@ -939,7 +917,7 @@ public class EmployeeAdvancesController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
     public async Task<IActionResult> Update(int id, [FromBody] CreateAdvanceDto dto)
     {
         var adv = await _db.EmployeeAdvances.FindAsync(id);
@@ -975,10 +953,7 @@ public class EmployeeAdvancesController : ControllerBase
     }
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-// 4. BONUSES (Ã˜Â§Ã™â€žÃ™â€¦Ã™Æ’Ã˜Â§Ã™ÂÃ˜Â¢Ã˜Âª)
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-
+// 4. BONUSES 
 [ApiController]
 [Route("api/employee-bonuses")]
 [RequirePermission(ModuleKeys.HrPayroll)]
@@ -1021,7 +996,7 @@ public class EmployeeBonusesController : ControllerBase
     }
 
     [HttpPost]
-    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
     public async Task<IActionResult> Create([FromBody] CreateBonusDto dto)
     {
         var emp = await _db.Employees.FindAsync(dto.EmployeeId);
@@ -1135,7 +1110,7 @@ public class EmployeeBonusesController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
     public async Task<IActionResult> Update(int id, [FromBody] CreateBonusDto dto)
     {
         var bon = await _db.EmployeeBonuses.FindAsync(id);
@@ -1169,9 +1144,7 @@ public class EmployeeBonusesController : ControllerBase
     }
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-// 5. DEDUCTIONS (Ã˜Â§Ã™â€žÃ˜Â®Ã˜ÂµÃ™Ë†Ã™â€¦Ã˜Â§Ã˜Âª)
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// 5. DEDUCTIONS 
 
 [ApiController]
 [Route("api/employee-deductions")]
@@ -1296,7 +1269,7 @@ public class EmployeeDeductionsController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [RequireModulePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
     public async Task<IActionResult> Update(int id, [FromBody] CreateDeductionDto dto)
     {
         var ded = await _db.EmployeeDeductions.FindAsync(id);
@@ -1318,9 +1291,7 @@ public class EmployeeDeductionsController : ControllerBase
     }
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-// 6. DEPARTMENTS (Ã˜Â§Ã™â€žÃ˜Â£Ã™â€šÃ˜Â³Ã˜Â§Ã™â€¦ / Ã˜Â§Ã™â€žÃ™ÂÃ˜Â¦Ã˜Â§Ã˜Âª)
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// 6. DEPARTMENTS 
 
 [ApiController]
 [Route("api/departments")]
@@ -1373,6 +1344,6 @@ public class DepartmentsController : ControllerBase
     }
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ DTOs Ã˜Â¥Ã˜Â¶Ã˜Â§Ã™ÂÃ™Å Ã˜Â© Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+//DTOs 
 public record LinkUserDto(string? AppUserId);
 

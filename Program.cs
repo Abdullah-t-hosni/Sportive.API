@@ -263,6 +263,7 @@ builder.Services.AddHostedService<Sportive.API.Services.BackgroundServices.Start
 builder.Services.AddScoped<IWishlistService, WishlistService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<IAiAssistantService, AiAssistantService>();
+builder.Services.AddScoped<IPermissionService, PermissionService>();  // unified authz service
 builder.Services.AddSingleton<ITranslator, Translator>();
 builder.Services.AddSingleton<SequenceService>();
 builder.Services.AddSingleton<TimeService>();
