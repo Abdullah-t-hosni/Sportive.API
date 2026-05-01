@@ -19,7 +19,7 @@ namespace Sportive.API.Controllers;
 
 // 1. ACCOUNTS
 [ApiController, Route("api/[controller]")]
-[RequirePermission(ModuleKeys.AccountingMain)]
+[RequirePermission(ModuleKeys.AccountingMain + "," + ModuleKeys.Pos + "," + ModuleKeys.PurchasesMain + "," + ModuleKeys.Settings + "," + ModuleKeys.HrAdvances + "," + ModuleKeys.HrPayroll)]
 public class AccountsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -502,7 +502,7 @@ public class AccountsController : ControllerBase
 
 // 2. JOURNAL ENTRIES
 [ApiController, Route("api/[controller]")]
-[RequirePermission(ModuleKeys.AccountingMain)]
+[RequirePermission(ModuleKeys.AccountingMain + "," + ModuleKeys.Pos + "," + ModuleKeys.PurchasesMain + "," + ModuleKeys.ReturnsFull)]
 public class JournalEntriesController : ControllerBase
 {
     private readonly IAccountingService _accounting;
@@ -640,7 +640,7 @@ public class JournalEntriesController : ControllerBase
 
 // 3. RECEIPT VOUCHERS
 [ApiController, Route("api/[controller]")]
-[RequirePermission(ModuleKeys.AccountingMain)]
+[RequirePermission(ModuleKeys.AccountingMain + "," + ModuleKeys.Pos)]
 public class ReceiptVouchersController : ControllerBase
 {
     private readonly ITranslator _t;
@@ -887,7 +887,7 @@ public class ReceiptVouchersController : ControllerBase
 
 // 4. PAYMENT VOUCHERS
 [ApiController, Route("api/[controller]")]
-[RequirePermission(ModuleKeys.AccountingMain)]
+[RequirePermission(ModuleKeys.AccountingMain + "," + ModuleKeys.Pos + "," + ModuleKeys.HrAdvances + "," + ModuleKeys.HrPayroll)]
 public class PaymentVouchersController : ControllerBase
 {
     private readonly ITranslator _t;

@@ -13,7 +13,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[RequirePermission(ModuleKeys.ReportsMain)]
+[RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard + "," + ModuleKeys.Pos + "," + ModuleKeys.InventoryGroup)]
 public class OperationalReportsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -71,7 +71,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/customer-statement?customerId=&fromDate=&toDate=
     // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("customer-statement")]
-    [RequirePermission(ModuleKeys.ReportsMain)]
+    [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard + "," + ModuleKeys.Pos + "," + ModuleKeys.InventoryGroup)]
     public async Task<IActionResult> CustomerStatement(
         [FromQuery] int?      customerId = null,
         [FromQuery] string?   search     = null,
@@ -156,7 +156,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/supplier-statement?supplierId=&fromDate=&toDate=
     // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("supplier-statement")]
-    [RequirePermission(ModuleKeys.ReportsMain)]
+    [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard + "," + ModuleKeys.Pos + "," + ModuleKeys.InventoryGroup)]
     public async Task<IActionResult> SupplierStatement(
         [FromQuery] int?      supplierId = null,
         [FromQuery] string?   search     = null,
@@ -235,7 +235,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/customer-aging
     // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("customer-aging")]
-    [RequirePermission(ModuleKeys.ReportsMain)]
+    [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard + "," + ModuleKeys.Pos + "," + ModuleKeys.InventoryGroup)]
     public async Task<IActionResult> CustomerAging(
         [FromQuery] string?   search  = null,
         [FromQuery] DateTime? asOfDate = null,
@@ -344,7 +344,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/supplier-aging
     // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("supplier-aging")]
-    [RequirePermission(ModuleKeys.ReportsMain)]
+    [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard + "," + ModuleKeys.Pos + "," + ModuleKeys.InventoryGroup)]
     public async Task<IActionResult> SupplierAging(
         [FromQuery] string?   search   = null,
         [FromQuery] DateTime? asOfDate = null,
@@ -650,7 +650,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/sales?fromDate=&toDate=&source=
     // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("sales")]
-    [RequirePermission(ModuleKeys.ReportsMain)]
+    [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard + "," + ModuleKeys.Pos + "," + ModuleKeys.InventoryGroup)]
     public async Task<IActionResult> SalesReport(
         [FromQuery] DateTime?    fromDate   = null,
         [FromQuery] DateTime?    toDate     = null,
@@ -773,7 +773,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/purchases?fromDate=&toDate=&supplierId=
     // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("purchases")]
-    [RequirePermission(ModuleKeys.ReportsMain)]
+    [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard + "," + ModuleKeys.Pos + "," + ModuleKeys.InventoryGroup)]
     public async Task<IActionResult> PurchasesReport(
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
@@ -861,7 +861,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/sales-returns
     // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("sales-returns")]
-    [RequirePermission(ModuleKeys.ReportsMain)]
+    [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard + "," + ModuleKeys.Pos + "," + ModuleKeys.InventoryGroup)]
     public async Task<IActionResult> SalesReturns(
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,
@@ -952,7 +952,7 @@ public class OperationalReportsController : ControllerBase
     // GET /api/operationalreports/purchase-returns
     // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("purchase-returns")]
-    [RequirePermission(ModuleKeys.ReportsMain)]
+    [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard + "," + ModuleKeys.Pos + "," + ModuleKeys.InventoryGroup)]
     public async Task<IActionResult> PurchaseReturns(
         [FromQuery] DateTime? fromDate   = null,
         [FromQuery] DateTime? toDate     = null,

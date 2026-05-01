@@ -20,7 +20,7 @@ namespace Sportive.API.Controllers;
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 [ApiController]
 [Route("api/[controller]")]
-[RequirePermission(ModuleKeys.PurchasesMain)]
+[RequirePermission(ModuleKeys.PurchasesMain + "," + ModuleKeys.SupplierVouchers + "," + ModuleKeys.Purchases)]
 public class SuppliersController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -227,7 +227,7 @@ public class SuppliersController : ControllerBase
 // 
 [ApiController]
 [Route("api/[controller]")]
-[RequirePermission(ModuleKeys.PurchasesMain)]
+[RequirePermission(ModuleKeys.PurchasesMain + "," + ModuleKeys.SupplierVouchers)]
 public class PurchaseInvoicesController : ControllerBase
 {
     private readonly AppDbContext _db;

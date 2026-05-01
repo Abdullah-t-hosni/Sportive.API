@@ -1,4 +1,4 @@
-﻿using Sportive.API.Models;
+using Sportive.API.Models;
 using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -20,7 +20,7 @@ public class CustomersController : ControllerBase
     private readonly ITranslator _t;
     public CustomersController(ICustomerService customers, ITranslator t) => (_customers, _t) = (customers, t);
 
-    [RequirePermission(ModuleKeys.Customers, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Customers + "," + ModuleKeys.Pos + "," + ModuleKeys.Orders)]
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
@@ -37,7 +37,7 @@ public class CustomersController : ControllerBase
         Ok(await _customers.GetCustomersAsync(page, pageSize, search, minSpent, minOrders, joinStartDate, joinEndDate, categoryId, hasDebt, orderBy, isDescending));
 
     /// <summary>بيانات RFM خفيفة لكل العملاء — بدون pagination أو addresses</summary>
-    [RequirePermission(ModuleKeys.Customers, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Customers + "," + ModuleKeys.Pos + "," + ModuleKeys.Orders)]
     [HttpGet("rfm")]
     public async Task<IActionResult> GetRfm() =>
         Ok(await _customers.GetRfmDataAsync());
@@ -54,7 +54,7 @@ public class CustomersController : ControllerBase
     }
 
     /// <summary>إضافة عميل جديد — Admin, Manager, Cashier</summary>
-    [RequirePermission(ModuleKeys.Customers)]
+    [RequirePermission(ModuleKeys.Customers + "," + ModuleKeys.Pos + "," + ModuleKeys.Orders)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateCustomerDto dto)
     {
@@ -106,7 +106,6 @@ public class CustomersController : ControllerBase
         }
     }
 
-    /// <summary>Ø¥Ø¶Ø§ÙØ© Ø¹Ù†ÙˆØ§Ù†</summary>
     [Authorize]
     [HttpPost("{customerId}/addresses")]
     public async Task<IActionResult> AddAddress(int customerId, [FromBody] CreateAddressDto dto) 
@@ -116,7 +115,6 @@ public class CustomersController : ControllerBase
         return Ok(await _customers.AddAddressAsync(customerId, dto));
     }
 
-    /// <summary>Ø­Ø°Ù Ø¹Ù†ÙˆØ§Ù†</summary>
     [Authorize]
     [HttpDelete("{customerId}/addresses/{addressId}")]
     public async Task<IActionResult> DeleteAddress(int customerId, int addressId)
@@ -128,7 +126,6 @@ public class CustomersController : ControllerBase
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
-    /// <summary>ØªØ¹ÙŠÙŠÙ† Ø¹Ù†ÙˆØ§Ù† Ø§ÙØªØ±Ø§Ø¶ÙŠ</summary>
     [Authorize]
     [HttpPatch("{customerId}/addresses/{addressId}/default")]
     public async Task<IActionResult> SetDefault(int customerId, int addressId)

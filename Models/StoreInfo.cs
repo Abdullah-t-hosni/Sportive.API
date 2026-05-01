@@ -321,6 +321,21 @@ public class StoreInfo
     [JsonPropertyName("barcodeShowColor")]
     public bool BarcodeShowColor { get; set; } = true;
 
+    [JsonPropertyName("barcodeLabelWidth")]
+    public int BarcodeLabelWidth { get; set; } = 40;
+
+    [JsonPropertyName("barcodeLabelHeight")]
+    public int BarcodeLabelHeight { get; set; } = 25;
+
+    [JsonPropertyName("barcodeSvgWidth")]
+    public int BarcodeSvgWidth { get; set; } = 180;
+
+    [JsonPropertyName("barcodeSvgHeight")]
+    public int BarcodeSvgHeight { get; set; } = 50;
+
+    [JsonPropertyName("barcodeShowStoreName")]
+    public bool BarcodeShowStoreName { get; set; } = true;
+
     [JsonPropertyName("lastUpdatedAt")]
     public DateTime LastUpdateDate { get; set; } = DateTime.UtcNow;
 }

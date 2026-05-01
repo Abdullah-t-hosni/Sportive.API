@@ -11,12 +11,12 @@ namespace Sportive.API.Authorization;
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class)]
 public class RequireModulePermissionAttribute : Attribute, IAsyncAuthorizationFilter
 {
-    private readonly string _moduleKey;
+    private readonly string[] _moduleKeys;
     private readonly bool   _requireEdit;
 
     public RequireModulePermissionAttribute(string moduleKey, bool requireEdit = false)
     {
-        _moduleKey   = moduleKey;
+        _moduleKeys   = moduleKey.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(k => k.Trim()).ToArray();
         _requireEdit = requireEdit;
     }
 
@@ -39,11 +39,12 @@ public class RequireModulePermissionAttribute : Attribute, IAsyncAuthorizationFi
 
         var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
 
-        var perm = await db.UserModulePermissions
+        var perms = await db.UserModulePermissions
             .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.UserAccountID == userId && p.ModuleKey == _moduleKey);
+            .Where(p => p.UserAccountID == userId && _moduleKeys.Contains(p.ModuleKey))
+            .ToListAsync();
 
-        if (perm == null || !perm.CanView)
+        if (!perms.Any(p => p.CanView))
         {
             var t = context.HttpContext.RequestServices.GetRequiredService<ITranslator>();
             context.Result = new ObjectResult(new { message = t.Get("Auth.NoViewPermission") })
@@ -51,7 +52,7 @@ public class RequireModulePermissionAttribute : Attribute, IAsyncAuthorizationFi
             return;
         }
 
-        if (_requireEdit && !perm.CanEdit)
+        if (_requireEdit && !perms.Any(p => p.CanView && p.CanEdit))
         {
             var t = context.HttpContext.RequestServices.GetRequiredService<ITranslator>();
             context.Result = new ObjectResult(new { message = t.Get("Auth.NoEditPermission") })

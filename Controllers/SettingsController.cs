@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -149,6 +149,11 @@ public class SettingsController : ControllerBase
             info.BarcodeShowName          = dto.BarcodeShowName;
             info.BarcodeShowSize          = dto.BarcodeShowSize;
             info.BarcodeShowColor         = dto.BarcodeShowColor;
+            info.BarcodeShowStoreName     = dto.BarcodeShowStoreName;
+            info.BarcodeLabelWidth        = dto.BarcodeLabelWidth;
+            info.BarcodeLabelHeight       = dto.BarcodeLabelHeight;
+            info.BarcodeSvgWidth          = dto.BarcodeSvgWidth;
+            info.BarcodeSvgHeight         = dto.BarcodeSvgHeight;
 
             info.ReceiptPaperSize         = dto.ReceiptPaperSize ?? "Receipt";
             info.ReceiptWidth             = dto.ReceiptWidth;
