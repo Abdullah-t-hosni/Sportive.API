@@ -18,7 +18,6 @@ public class ImportController : ControllerBase
     private readonly AppDbContext _db;
     private readonly ITranslator _t;
     public ImportController(AppDbContext db, ITranslator t) { _db = db; _t = t; }
-    public ImportController(AppDbContext db) => _db = db;
 
     // â”€â”€ TEMPLATE DOWNLOAD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // GET /api/import/template
