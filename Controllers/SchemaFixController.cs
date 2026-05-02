@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -267,6 +267,33 @@ public class SchemaFixController : ControllerBase
 
             if (fixedCount > 0) await _db.SaveChangesAsync();
             return Ok(new { message = "Category hierarchy types synchronized.", fixedCount });
+        }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
+    [HttpGet("run-v12")]
+    public async Task<IActionResult> RunV12()
+    {
+        _logger.LogWarning("SchemaFix run-v12 (Receipt Show Time & SKU) triggered.");
+        try
+        {
+            var skipped = new List<string>();
+            var cmds = new[] {
+                "ALTER TABLE StoreSettings ADD COLUMN ReceiptShowTime BOOLEAN DEFAULT 1 NOT NULL;",
+                "ALTER TABLE StoreSettings ADD COLUMN ReceiptShowSKU BOOLEAN DEFAULT 1 NOT NULL;"
+            };
+
+            foreach (var c in cmds)
+            {
+                try { await _db.Database.ExecuteSqlRawAsync(c); }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("SchemaFix run-v12 skipped cmd: {Error}", ex.Message);
+                    skipped.Add(ex.Message);
+                }
+            }
+
+            return Ok(new { message = "Receipt settings columns added.", skipped });
         }
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }

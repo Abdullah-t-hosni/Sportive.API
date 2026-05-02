@@ -115,6 +115,8 @@ public class SettingsController : ControllerBase
             info.ReceiptShowTotalPieceCount = dto.ReceiptShowTotalPieceCount;
             info.ReceiptShowItemCount    = dto.ReceiptShowItemCount;
             info.ReceiptShowBalance      = dto.ReceiptShowBalance;
+            info.ReceiptShowTime         = dto.ReceiptShowTime;
+            info.ReceiptShowSKU          = dto.ReceiptShowSKU;
             info.ReceiptSoftwareProvider = dto.ReceiptSoftwareProvider;
 
             info.VatRatePercent          = dto.VatRatePercent;

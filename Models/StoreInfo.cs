@@ -166,6 +166,12 @@ public class StoreInfo
     [JsonPropertyName("receiptShowBalance")]
     public bool ReceiptShowBalance { get; set; } = true;
 
+    [JsonPropertyName("receiptShowTime")]
+    public bool ReceiptShowTime { get; set; } = true;
+
+    [JsonPropertyName("receiptShowSKU")]
+    public bool ReceiptShowSKU { get; set; } = true;
+
     [MaxLength(200)]
     [JsonPropertyName("receiptSoftwareProvider")]
     public string? ReceiptSoftwareProvider { get; set; } = "By Easy Store";
