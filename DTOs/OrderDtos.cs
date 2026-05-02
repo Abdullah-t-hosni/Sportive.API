@@ -174,6 +174,7 @@ public record OrderItemDto(
     int Id,
     string ProductNameAr,
     string ProductNameEn,
+    string? SKU,
     string? ProductImage,
     string? ProductSlug,
     string? Size,

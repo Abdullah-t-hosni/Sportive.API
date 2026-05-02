@@ -280,7 +280,9 @@ public class SchemaFixController : ControllerBase
             var skipped = new List<string>();
             var cmds = new[] {
                 "ALTER TABLE StoreSettings ADD COLUMN ReceiptShowTime BOOLEAN DEFAULT 1 NOT NULL;",
-                "ALTER TABLE StoreSettings ADD COLUMN ReceiptShowSKU BOOLEAN DEFAULT 1 NOT NULL;"
+                "ALTER TABLE StoreSettings ADD COLUMN ReceiptShowSKU BOOLEAN DEFAULT 1 NOT NULL;",
+                "ALTER TABLE OrderItems ADD COLUMN SKU VARCHAR(100) NULL;",
+                "UPDATE OrderItems SET SKU = (SELECT SKU FROM Products WHERE Products.Id = OrderItems.ProductId) WHERE SKU IS NULL OR SKU = '';"
             };
 
             foreach (var c in cmds)

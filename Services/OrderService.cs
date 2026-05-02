@@ -153,7 +153,7 @@ public class OrderService : IOrderService
             .SumAsync(l => l.Credit);
 
         var itemDtos = o.Items.Select(i => new OrderItemDto(
-            i.Id, i.ProductNameAr, i.ProductNameEn, i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
+            i.Id, i.ProductNameAr, i.ProductNameEn, i.SKU, i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
             i.Product?.Slug,
             i.Size, i.Color, i.Quantity, i.UnitPrice, i.TotalPrice,
             i.OriginalUnitPrice, i.DiscountAmount,
@@ -411,6 +411,7 @@ public class OrderService : IOrderService
                             ProductVariantId = item.ProductVariantId,
                             ProductNameAr = product.NameAr,
                             ProductNameEn = product.NameEn,
+                            SKU = product.SKU,
                             Size = variant?.Size,
                             Color = variant?.Color,
                             Quantity = item.Quantity,
@@ -514,6 +515,7 @@ public class OrderService : IOrderService
                             ProductVariantId = ci.ProductVariantId,
                             ProductNameAr = ci.Product.NameAr,
                             ProductNameEn = ci.Product.NameEn,
+                            SKU = ci.Product.SKU,
                             Size = ci.ProductVariant?.Size,
                             Color = ci.ProductVariant?.Color,
                             Quantity = ci.Quantity,

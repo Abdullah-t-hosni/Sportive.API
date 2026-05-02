@@ -118,6 +118,7 @@ public class OrderItem : BaseEntity
 
     public string ProductNameAr { get; set; } = string.Empty; // snapshot at time of order
     public string ProductNameEn { get; set; } = string.Empty;
+    public string? SKU { get; set; } // snapshot at time of order
     public string? Size { get; set; }
     public string? Color { get; set; }
     public int Quantity { get; set; }
