@@ -78,7 +78,7 @@ public class OrdersController : ControllerBase
     
     private bool IsOwnerOrStaff(int customerId)
     {
-        if (User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Staff") || User.IsInRole("Cashier"))
+        if (User.IsInRole("SuperAdmin") || User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Staff") || User.IsInRole("Cashier"))
             return true;
 
         var currentCustomerId = User.FindFirst("CustomerId")?.Value;

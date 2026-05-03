@@ -22,7 +22,7 @@ public class AiController : ControllerBase
             return BadRequest(new { message = "Message is required" });
 
         // Check if user is Admin/Staff for Admin Context
-        bool isAdmin = User.IsInRole("Admin") || User.IsInRole("Manager");
+        bool isAdmin = User.IsInRole("SuperAdmin") || User.IsInRole("Admin") || User.IsInRole("Manager");
 
         var response = await _ai.ChatAsync(request.Message, request.ConversationId, isAdmin);
         return Ok(new { response, conversationId = request.ConversationId ?? Guid.NewGuid().ToString() });

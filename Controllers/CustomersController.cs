@@ -46,7 +46,7 @@ public class CustomersController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateCustomerDto dto)
     {
-        // ðŸ›¡ï¸ Security Check: Owner or Admin?
+        // 🛡️ Security Check: Owner or Admin?
         if (!IsOwnerOrAdmin(id)) return Forbid();
 
         try { return Ok(await _customers.UpdateCustomerAsync(id, dto)); }
@@ -74,7 +74,7 @@ public class CustomersController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        // ðŸ›¡ï¸ Security Check: Owner or Admin?
+        // 🛡️ Security Check: Owner or Admin?
         if (!IsOwnerOrAdmin(id)) return Forbid();
 
         var customer = await _customers.GetCustomerByIdAsync(id);
@@ -110,7 +110,7 @@ public class CustomersController : ControllerBase
     [HttpPost("{customerId}/addresses")]
     public async Task<IActionResult> AddAddress(int customerId, [FromBody] CreateAddressDto dto) 
     {
-        // ðŸ›¡ï¸ Security Check: Owner or Admin?
+        // 🛡️ Security Check: Owner or Admin?
         if (!IsOwnerOrAdmin(customerId)) return Forbid();
         return Ok(await _customers.AddAddressAsync(customerId, dto));
     }
@@ -119,7 +119,7 @@ public class CustomersController : ControllerBase
     [HttpDelete("{customerId}/addresses/{addressId}")]
     public async Task<IActionResult> DeleteAddress(int customerId, int addressId)
     {
-        // ðŸ›¡ï¸ Security Check: Owner or Admin?
+        // 🛡️ Security Check: Owner or Admin?
         if (!IsOwnerOrAdmin(customerId)) return Forbid();
 
         try { await _customers.DeleteAddressAsync(customerId, addressId); return NoContent(); }
@@ -130,7 +130,7 @@ public class CustomersController : ControllerBase
     [HttpPatch("{customerId}/addresses/{addressId}/default")]
     public async Task<IActionResult> SetDefault(int customerId, int addressId)
     {
-        // ðŸ›¡ï¸ Security Check: Owner or Admin?
+        // 🛡️ Security Check: Owner or Admin?
         if (!IsOwnerOrAdmin(customerId)) return Forbid();
 
         await _customers.SetDefaultAddressAsync(customerId, addressId);
@@ -140,7 +140,7 @@ public class CustomersController : ControllerBase
     // Helper to check ownership
     private bool IsOwnerOrAdmin(int customerId)
     {
-        if (User.IsInRole("Admin") || User.IsInRole("Manager"))
+        if (User.IsInRole("SuperAdmin") || User.IsInRole("Admin") || User.IsInRole("Manager"))
             return true;
 
         var currentCustomerId = User.FindFirst("CustomerId")?.Value;
@@ -151,7 +151,7 @@ public class CustomersController : ControllerBase
     [HttpPost("import-opening-balances")]
     public async Task<IActionResult> ImportOpeningBalances(IFormFile file, [FromServices] AppDbContext db)
     {
-        if (file == null || file.Length == 0) return BadRequest(new { message = "Ù„Ù… ÙŠØªÙ… Ø±ÙØ¹ Ù…Ù„Ù" });
+        if (file == null || file.Length == 0) return BadRequest(new { message = _t.Get("Accounting.NoFileUploaded") });
 
         var successCount = 0;
         var errors = new List<string>();
@@ -198,10 +198,9 @@ public class CustomersController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = $"Ø®Ø·Ø£ ÙÙŠ Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©: {ex.Message}" });
+            return BadRequest(new { message = _t.Get("Accounting.ProcessingError", ex.Message) });
         }
 
         return Ok(new { success = true, successCount, errors });
     }
 }
-

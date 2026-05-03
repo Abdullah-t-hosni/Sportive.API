@@ -254,7 +254,7 @@ public class AuthController : ControllerBase
     [HttpGet("staff")]
     public async Task<IActionResult> GetStaff()
     {
-        var staffRoles = new[] { "Admin", "Staff", "Cashier", "Manager", "Accountant" };
+        var staffRoles = AppRoles.StaffRoles;
         
         var users = await (from u in _db.Users
                           join ur in _db.UserRoles on u.Id equals ur.UserId

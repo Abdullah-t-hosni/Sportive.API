@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -38,7 +38,7 @@ public class InventoryAuditsController : ControllerBase
         if (string.IsNullOrEmpty(userId)) return false;
         
         // Admins bypass
-        if (User.IsInRole("Admin")) return true;
+        if (User.IsInRole("SuperAdmin") || User.IsInRole("Admin")) return true;
 
         var userPerm = await _db.UserModulePermissions
             .FirstOrDefaultAsync(p => p.UserAccountID == userId && p.ModuleKey == perm);
@@ -240,28 +240,31 @@ public class InventoryAuditsController : ControllerBase
         decimal totalExpected = 0;
         decimal totalActual = 0;
 
+        var variantIds = items.Where(i => i.ProductVariantId.HasValue).Select(i => i.ProductVariantId!.Value).Distinct().ToList();
+        var productIds = items.Where(i => i.ProductId.HasValue && !i.ProductVariantId.HasValue).Select(i => i.ProductId!.Value).Distinct().ToList();
+
+        var variants = variantIds.Any() 
+            ? await _db.ProductVariants.Include(v => v.Product).Where(v => variantIds.Contains(v.Id)).ToDictionaryAsync(v => v.Id)
+            : new Dictionary<int, ProductVariant>();
+
+        var products = productIds.Any()
+            ? await _db.Products.Where(p => productIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id)
+            : new Dictionary<int, Product>();
+
         foreach (var item in items)
         {
             decimal unitCost = 0;
             int currentStock = 0;
 
-            if (item.ProductVariantId.HasValue)
+            if (item.ProductVariantId.HasValue && variants.TryGetValue(item.ProductVariantId.Value, out var v))
             {
-                var variant = await _db.ProductVariants.Include(v => v.Product).FirstOrDefaultAsync(v => v.Id == item.ProductVariantId);
-                if (variant != null)
-                {
-                    unitCost = variant.Product.CostPrice ?? 0;
-                    currentStock = variant.StockQuantity;
-                }
+                unitCost = v.Product?.CostPrice ?? 0;
+                currentStock = v.StockQuantity;
             }
-            else if (item.ProductId.HasValue)
+            else if (item.ProductId.HasValue && products.TryGetValue(item.ProductId.Value, out var p))
             {
-                var product = await _db.Products.FindAsync(item.ProductId);
-                if (product != null)
-                {
-                    unitCost = product.CostPrice ?? 0;
-                    currentStock = product.TotalStock;
-                }
+                unitCost = p.CostPrice ?? 0;
+                currentStock = p.TotalStock;
             }
 
             audit.Items.Add(new InventoryAuditItem

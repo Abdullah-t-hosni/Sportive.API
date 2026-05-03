@@ -1,5 +1,5 @@
 using Sportive.API.Interfaces;
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -19,9 +19,7 @@ public class ImportController : ControllerBase
     private readonly ITranslator _t;
     public ImportController(AppDbContext db, ITranslator t) { _db = db; _t = t; }
 
-    // â”€â”€ TEMPLATE DOWNLOAD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // GET /api/import/template
-    // â”€â”€ TEMPLATE DOWNLOAD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── TEMPLATE DOWNLOAD ──────────────────────────────────
     // GET /api/import/template
     [HttpGet("template")]
     public async Task<IActionResult> GetTemplate()
@@ -35,7 +33,7 @@ public class ImportController : ControllerBase
             var brands       = await _db.Brands.AsNoTracking().Where(b => b.NameAr != null).Select(b => b.NameAr!).ToListAsync();
             var units        = await _db.ProductUnits.AsNoTracking().Where(u => u.NameAr != null).Select(u => u.NameAr!).ToListAsync();
             
-            // Fetch existing sizes and colors to provide as options â€” Limited for performance
+            // Fetch existing sizes and colors to provide as options — Limited for performance
             var existingSizes  = await _db.ProductVariants.AsNoTracking().Where(v => v.Size != null).Select(v => v.Size!).Distinct().Take(100).ToListAsync();
             var catNames = allCats.Select(c => c.NameAr).Where(n => n != null).ToHashSet();
             var existingColors = await _db.ProductVariants.AsNoTracking()
@@ -51,7 +49,7 @@ public class ImportController : ControllerBase
                 .ToList();
 
             var standardColors = new List<string> { 
-                "Ø£Ø¨ÙŠØ¶", "Ø£Ø³ÙˆØ¯", "Ø£Ø­Ù…Ø±", "Ø£Ø²Ø±Ù‚", "Ø£Ø®Ø¶Ø±", "Ø£ØµÙØ±", "Ø±Ù…Ø§Ø¯ÙŠ", "ÙƒØ­Ù„ÙŠ", "Ø¨Ù†ÙŠ", "Ø¨ÙŠØ¬", "Ø¨Ø±ØªÙ‚Ø§Ù„ÙŠ", "Ø¨Ù†ÙØ³Ø¬ÙŠ", "Ø³Ù…Ø§ÙˆÙŠ", "Ø°Ù‡Ø¨ÙŠ", "ÙØ¶ÙŠ" 
+                "أبيض", "أسود", "أحمر", "أزرق", "أخضر", "أصفر", "رمادي", "كحلي", "بني", "بيج", "برتقالي", "بنفسجي", "سماوي", "ذهبي", "فضي" 
             };
             existingColors = existingColors.Concat(standardColors).Distinct().ToList();
 
@@ -76,8 +74,8 @@ public class ImportController : ControllerBase
 
             FillCol(2, brands);     
             FillCol(3, units);      
-            FillCol(4, new List<string> { "Ù†Ø¹Ù…", "Ù„Ø§" });
-            FillCol(5, new List<string> { "Ù†Ø´Ø·", "Ù…Ø³ÙˆØ¯Ø©", "Ù…Ø®ÙÙŠ" });
+            FillCol(4, new List<string> { "نعم", "لا" });
+            FillCol(5, new List<string> { "نشط", "مسودة", "مخفي" });
             FillCol(6, existingSizes);
             FillCol(7, existingColors);
 
@@ -154,7 +152,7 @@ public class ImportController : ControllerBase
                 .ToList();
 
             wsL.Cell(1, 14).Value = "__DUMMY__";
-            wsL.Cell(1, 15).Value = "(Ø§Ø®ØªØ± Ø§Ù„ØªØµÙ†ÙŠÙ Ø£ÙˆÙ„Ø§Ù‹)";
+            wsL.Cell(1, 15).Value = "(اختر التصنيف أولاً)";
             for (int i = 0; i < catSizeMapping.Count; i++)
             {
                 wsL.Cell(i + 2, 14).Value = catSizeMapping[i].CatName;
@@ -221,8 +219,6 @@ public class ImportController : ControllerBase
             ws1.Cell(2,20).Value = "لا";
             ws1.Row(2).Style.Font.FontColor = XLColor.Gray;
 
-            // ws1.Columns().AdjustToContents(); // âŒ REMOVED: Often fails on Linux/Docker without GDI+
-            
             var stream = new MemoryStream();
             wb.SaveAs(stream); 
             stream.Position = 0;
@@ -235,15 +231,13 @@ public class ImportController : ControllerBase
         }
     }
 
-
-    // â”€â”€ IMPORT PRODUCTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── IMPORT PRODUCTS ─────────────────────────────────────
     // POST /api/import/products
     [HttpPost("products")]
     [RequestSizeLimit(10 * 1024 * 1024)] // 10MB
     public async Task<IActionResult> ImportProducts(IFormFile file, [FromQuery] bool update = false)
     {
         if (file == null || file.Length == 0) return BadRequest(new { message = _t.Get("Import.NoFile") });
-            return BadRequest(new { message = "Ù„Ù… ÙŠØªÙ… Ø±ÙØ¹ Ù…Ù„Ù" });
 
         var ext = Path.GetExtension(file.FileName).ToLower();
         if (ext != ".xlsx" && ext != ".xls")
@@ -285,28 +279,28 @@ public class ImportController : ControllerBase
             }
 
             // Mapping columns
-            int colSku      = GetCol("Ø§Ù„ÙƒÙˆØ¯ SKU", "Ø§Ù„Ø¨Ø§Ø±ÙƒÙˆØ¯", "sku", "Code");
-            int colNameAr   = GetCol("Ø§Ù„Ø§Ø³Ù… Ø¹Ø±Ø¨ÙŠ", "Ø§Ø³Ù… Ø§Ù„Ù…Ù†ØªØ¬", "Ø§Ù„Ø§Ø³Ù…", "Name Ar");
-            int colUnit     = GetCol("Ø§Ù„ÙˆØ­Ø¯Ø©", "ÙˆØ­Ø¯Ø© Ø§Ù„Ù‚ÙŠØ§Ø³", "Unit");
-            int colNameEn   = GetCol("Ø§Ù„Ø§Ø³Ù… Ø§Ù†Ø¬Ù„ÙŠØ²ÙŠ", "Ø§Ù„Ø§Ø³Ù… English", "Name En");
-            int colMainCat  = GetCol("Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„Ø£Ø³Ø§Ø³ÙŠ", "Ø§Ù„ÙØ¦Ø©", "Ø§Ù„ØªØµÙ†ÙŠÙ", "Main Category", "Category");
-            int colSubCat   = GetCol("Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„ÙØ±Ø¹ÙŠ", "Ø§Ù„ÙØ¦Ø© Ø§Ù„ÙØ±Ø¹ÙŠØ©", "Sub Category");
-            int colSubSub   = GetCol("Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„ÙØ±Ø¹ÙŠ 2", "Ø§Ù„ØªØµÙ†ÙŠÙ ÙØ±Ø¹ ÙØ±Ø¹ÙŠ", "Ø§Ù„ÙØ¦Ø© Ø§Ù„ÙØ±Ø¹ÙŠØ© 2", "Sub Sub Category");
-            int colCost     = GetCol("Ø³Ø¹Ø± Ø§Ù„ØªÙƒÙ„ÙØ©", "Ø§Ù„ØªÙƒÙ„ÙØ©", "Cost");
-            int colPrice    = GetCol("Ø§Ù„Ø³Ø¹Ø±", "Ø³Ø¹Ø± Ø§Ù„Ø¨ÙŠØ¹", "Price");
-            int colDisc     = GetCol("Ø³Ø¹Ø± Ø§Ù„Ø®ØµÙ…", "Ø§Ù„Ø®ØµÙ…", "Discount");
-            int colHasTax   = GetCol("Ø®Ø§Ø¶Ø¹ Ù„Ù„Ø¶Ø±ÙŠØ¨Ø©", "taxable", "Ø§Ù„Ø¶Ø±ÙŠØ¨Ø©", "Is Taxable"); 
-            int colBrand    = GetCol("Ø§Ù„Ø¹Ù„Ø§Ù…Ø© Ø§Ù„ØªØ¬Ø§Ø±ÙŠØ©", "Ø§Ù„Ù…Ø§Ø±ÙƒØ©", "Brand", "Ø§Ù„Ù…Ø§Ø±ÙƒÙ‡");
-            int colSize     = GetCol("Ø§Ù„Ù…Ù‚Ø§Ø³", "Size", "Ø§Ù„Ù‚ÙŠØ§Ø³", "Ø§Ù„Ù…Ù‚Ø§Ø³Ø§Øª", "size");
-            int colColorEn  = GetCol("Ø§Ù„Ù„ÙˆÙ† (English)", "Ø§Ù„Ù„ÙˆÙ† English", "Color En", "Color");
-            int colColorAr  = GetCol("Ø§Ù„Ù„ÙˆÙ† (Ø¹Ø±Ø¨ÙŠ)", "Ø§Ù„Ù„ÙˆÙ† Ø¹Ø±Ø¨ÙŠ", "Color Ar", "Ø§Ù„Ù„ÙˆÙ†", "Ø§Ù„ÙˆØ§Ù†");
-            int colStock    = GetCol("Ø§Ù„Ù…Ø®Ø²ÙˆÙ†", "Stock", "Ø§Ù„ÙƒÙ…ÙŠØ©");
-            int colAdj      = GetCol("ÙØ§Ø±Ù‚ Ø§Ù„Ø³Ø¹Ø± Ù„Ù„Ù…Ù‚Ø§Ø³", "Price Adjustment");
-            int colReorder  = GetCol("Ø­Ø¯ Ø§Ù„Ø·Ù„Ø¨", "Reorder Level");
-            int colStatus   = GetCol("Ø§Ù„Ø­Ø§Ù„Ø©", "Status");
-            int colFeat     = GetCol("Ù…Ù…ÙŠØ² (Ù†Ø¹Ù…/Ù„Ø§)", "Featured");
-            int colDescAr   = GetCol("Ø§Ù„ÙˆØµÙ Ø¹Ø±Ø¨ÙŠ", "Description Ar");
-            int colDescEn   = GetCol("Ø§Ù„ÙˆØµÙ Ø§Ù†Ø¬Ù„ÙŠØ²ÙŠ", "Description En");
+            int colSku      = GetCol("الكود SKU", "الباركود", "sku", "Code");
+            int colNameAr   = GetCol("الاسم عربي", "اسم المنتج", "الاسم", "Name Ar");
+            int colUnit     = GetCol("الوحدة", "وحدة القياس", "Unit");
+            int colNameEn   = GetCol("الاسم انجليزي", "الاسم English", "Name En");
+            int colMainCat  = GetCol("التصنيف الأساسي", "الفئة", "التصنيف", "Main Category", "Category");
+            int colSubCat   = GetCol("التصنيف الفرعي", "الفئة الفرعية", "Sub Category");
+            int colSubSub   = GetCol("التصنيف الفرعي 2", "التصنيف فرع فرعي", "الفئة الفرعية 2", "Sub Sub Category");
+            int colCost     = GetCol("سعر التكلفة", "التكلفة", "Cost");
+            int colPrice    = GetCol("السعر", "سعر البيع", "Price");
+            int colDisc     = GetCol("سعر الخصم", "الخصم", "Discount");
+            int colHasTax   = GetCol("خاضع للضريبة", "taxable", "الضريبة", "Is Taxable"); 
+            int colBrand    = GetCol("العلامة التجارية", "الماركة", "Brand", "الماركه");
+            int colSize     = GetCol("المقاس", "Size", "القياس", "المقاسات", "size");
+            int colColorEn  = GetCol("اللون (English)", "اللون English", "Color En", "Color");
+            int colColorAr  = GetCol("اللون (عربي)", "اللون عربي", "Color Ar", "اللون", "الوان");
+            int colStock    = GetCol("المخزون", "Stock", "الكمية");
+            int colAdj      = GetCol("فارق السعر للمقاس", "Price Adjustment");
+            int colReorder  = GetCol("حد الطلب", "Reorder Level");
+            int colStatus   = GetCol("الحالة", "Status");
+            int colFeat     = GetCol("مميز (نعم/لا)", "Featured");
+            int colDescAr   = GetCol("الوصف عربي", "Description Ar");
+            int colDescEn   = GetCol("الوصف انجليزي", "Description En");
 
             if (colSku == -1 || colNameAr == -1 || colPrice == -1 || colUnit == -1 || colMainCat == -1)
                 return BadRequest(new { message = _t.Get("Import.MissingColumns") });
@@ -348,7 +342,7 @@ public class ImportController : ControllerBase
 
             void LogRowError(int r, string message)
             {
-                result.Errors.Add($"ØµÙ {r}: {message}");
+                result.Errors.Add($"صف {r}: {message}");
                 // Copy the entire row from the original sheet to the error sheet
                 var lCol = ws.LastColumnUsed()?.ColumnNumber() ?? 20;
                 for (int c = 1; c <= lCol; c++)
@@ -371,7 +365,6 @@ public class ImportController : ControllerBase
 
                 if (isExisting && !update)
                 {
-                    if (!result.Skipped.Any(s => s.Contains($"Ø§Ù„ÙƒÙˆØ¯ '{sku}' Ù…ÙˆØ¬ÙˆØ¯")))
                     if (!result.Skipped.Any(s => s.Contains(sku)))
                         result.Skipped.Add(_t.Get("Import.SkuExists", sku));
                 }
@@ -429,10 +422,10 @@ public class ImportController : ControllerBase
                                 if (!string.IsNullOrEmpty(unitStr))
                                     product.UnitId = units.FirstOrDefault(u => string.Equals((u.NameAr ?? "").Trim(), unitStr.Trim(), StringComparison.OrdinalIgnoreCase))?.Id ?? product.UnitId;
 
-                                product.HasTax = !GetVal(colHasTax).Contains("Ù„Ø§");
+                                product.HasTax = !GetVal(colHasTax).Contains("لا");
                                 product.ReorderLevel = int.TryParse(GetVal(colReorder), out var rl) ? rl : product.ReorderLevel;
-                                product.Status = GetVal(colStatus) switch { "Ù…Ø³ÙˆØ¯Ø©" => ProductStatus.Draft, "Ù…Ø®ÙÙŠ" => ProductStatus.Hidden, _ => ProductStatus.Active };
-                                product.IsFeatured = GetVal(colFeat).Contains("Ù†Ø¹Ù…");
+                                product.Status = GetVal(colStatus) switch { "مسودة" => ProductStatus.Draft, "مخفي" => ProductStatus.Hidden, _ => ProductStatus.Active };
+                                product.IsFeatured = GetVal(colFeat).Contains("نعم");
                                 product.DescriptionAr = GetVal(colDescAr).NullIfEmpty() ?? product.DescriptionAr;
                                 product.DescriptionEn = GetVal(colDescEn).NullIfEmpty() ?? product.DescriptionEn;
                                 
@@ -505,12 +498,12 @@ public class ImportController : ControllerBase
                             DiscountPrice = decimal.TryParse(GetVal(colDisc), out var dp) ? dp : null,
                             CostPrice = decimal.TryParse(GetVal(colCost), out var cs) ? cs : null,
                             CategoryId = catId.Value, BrandId = bId, UnitId = uId,
-                            HasTax = !GetVal(colHasTax).Contains("Ù„Ø§"),
+                            HasTax = !GetVal(colHasTax).Contains("لا"),
                             ReorderLevel = int.TryParse(GetVal(colReorder), out var rl) ? rl : 0,
                             DescriptionAr = GetVal(colDescAr).NullIfEmpty(),
                             DescriptionEn = GetVal(colDescEn).NullIfEmpty(),
-                            IsFeatured    = GetVal(colFeat).Contains("Ù†Ø¹Ù…"),
-                            Status = GetVal(colStatus) switch { "Ù…Ø³ÙˆØ¯Ø©" => ProductStatus.Draft, "Ù…Ø®ÙÙŠ" => ProductStatus.Hidden, _ => ProductStatus.Active },
+                            IsFeatured    = GetVal(colFeat).Contains("نعم"),
+                            Status = GetVal(colStatus) switch { "مسودة" => ProductStatus.Draft, "مخفي" => ProductStatus.Hidden, _ => ProductStatus.Active },
                             CreatedAt = TimeHelper.GetEgyptTime()
                         };
                         productsDict[sku] = product;
@@ -567,7 +560,6 @@ public class ImportController : ControllerBase
             string? errorReportBase64 = null;
             if (result.Errors.Any())
             {
-                // Removed AdjustToContents for Linux stability
                 using var errStream = new MemoryStream();
                 errorWb.SaveAs(errStream);
                 errorReportBase64 = Convert.ToBase64String(errStream.ToArray());
@@ -590,8 +582,7 @@ public class ImportController : ControllerBase
         }
     }
 
-
-    // â”€â”€ INVENTORY TEMPLATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── INVENTORY TEMPLATE ──────────────────────────────────
     // GET /api/import/inventory-template
     [HttpGet("inventory-template")]
     public async Task<IActionResult> GetInventoryTemplate()
@@ -618,7 +609,6 @@ public class ImportController : ControllerBase
         ws.Row(2).Style.Font.FontColor = XLColor.Gray;
         ws.Row(2).Style.Font.Italic = true;
 
-        // Populate with existing products + variants as reference
         var products = await _db.Products
             .Include(p => p.Variants)
             .OrderBy(p => p.NameAr)
@@ -630,7 +620,6 @@ public class ImportController : ControllerBase
         {
             if (!p.Variants.Any())
             {
-                // Product-level (no variants)
                 ws.Cell(row, 1).Value = p.SKU;
                 ws.Cell(row, 2).Value = p.NameAr;
                 ws.Cell(row, 3).Value = "";
@@ -643,11 +632,10 @@ public class ImportController : ControllerBase
             {
                 foreach (var v in p.Variants)
                 {
-                    var varSku = p.SKU;
-                    ws.Cell(row, 1).Value = varSku;
+                    ws.Cell(row, 1).Value = p.SKU;
                     ws.Cell(row, 2).Value = p.NameAr;
                     ws.Cell(row, 3).Value = v.Size ?? "";
-                    ws.Cell(row, 4).Value = v.Color ?? "";
+                    ws.Cell(row, 4).Value = v.ColorAr ?? v.Color ?? "";
                     ws.Cell(row, 5).Value = v.StockQuantity;
                     ws.Row(row).Style.Font.FontColor = XLColor.DarkGray;
                     row++;
@@ -655,23 +643,19 @@ public class ImportController : ControllerBase
             }
         }
 
-        // Removed AdjustToContents for Linux stability
-
         var stream = new MemoryStream();
         wb.SaveAs(stream);
         stream.Position = 0;
 
-        return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "inventory_import_template.xlsx");
+        return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "inventory_import_template.xlsx");
     }
 
-    // â”€â”€ IMPORT INVENTORY (STOCK UPDATE ONLY) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── IMPORT INVENTORY (STOCK UPDATE ONLY) ────────────────
     // POST /api/import/inventory
     [HttpPost("inventory")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> ImportInventory(IFormFile file)
     {
-        if (file == null || file.Length == 0)
         if (file == null || file.Length == 0) return BadRequest(new { message = _t.Get("Import.NoFile") });
 
         var ext = Path.GetExtension(file.FileName).ToLower();
@@ -688,16 +672,9 @@ public class ImportController : ControllerBase
             using var wb     = new XLWorkbook(stream);
 
             if (!wb.TryGetWorksheet(_t.Get("Import.InventoryUpdateSheet"), out var ws)) ws = wb.Worksheets.First();
-                ws = wb.Worksheets.First();
 
             var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
-
-            // Load all products with their variants
-            var allProducts = await _db.Products
-                .Include(p => p.Variants)
-                .ToListAsync();
-
-            // Build lookup: productSKU -> product
+            var allProducts = await _db.Products.Include(p => p.Variants).ToListAsync();
             var productBySku = allProducts.ToDictionary(p => p.SKU, StringComparer.OrdinalIgnoreCase);
 
             for (int r = 2; r <= lastRow; r++)
@@ -707,7 +684,6 @@ public class ImportController : ControllerBase
                 var color  = ws.Cell(r, 4).GetString().Trim().ToLower();
                 var qtyStr = ws.Cell(r, 5).GetString().Trim();
 
-                // Skip empty or instruction rows
                 if (string.IsNullOrEmpty(sku) || sku.StartsWith("(")) continue;
 
                 if (!int.TryParse(qtyStr, out var qty) || qty < 0)
@@ -726,16 +702,14 @@ public class ImportController : ControllerBase
 
                 if (!activeVariants.Any())
                 {
-                    // Product without variants â€” update directly
                     product.TotalStock = qty;
                     updated++;
                 }
                 else if (!string.IsNullOrEmpty(size) || !string.IsNullOrEmpty(color))
                 {
-                    // Match by size and/or color
                     var variant = activeVariants.FirstOrDefault(v =>
                         (string.IsNullOrEmpty(size)  || (v.Size  ?? "").ToLower() == size) &&
-                        (string.IsNullOrEmpty(color) || (v.Color ?? "").ToLower() == color));
+                        (string.IsNullOrEmpty(color) || (v.ColorAr ?? v.Color ?? "").ToLower() == color));
 
                     if (variant == null)
                     {
@@ -744,14 +718,11 @@ public class ImportController : ControllerBase
                     }
 
                     variant.StockQuantity = qty;
-
-                    // Recalculate product total stock
                     product.TotalStock = activeVariants.Sum(v => v.StockQuantity);
                     updated++;
                 }
                 else
                 {
-                    // SKU has variants but no size/color specified â€” skip with helpful message
                     skipped.Add(_t.Get("Import.SkuHasVariantsMustSpecify", sku));
                     continue;
                 }
@@ -761,11 +732,10 @@ public class ImportController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = $"Ø®Ø·Ø£ ÙÙŠ Ù‚Ø±Ø§Ø¡Ø© Ø§Ù„Ù…Ù„Ù: {ex.Message}" });
+            return BadRequest(new { message = _t.Get("Accounting.ProcessingError", ex.Message) });
         }
 
-        return Ok(new
-        {
+        return Ok(new {
             message  = _t.Get("Import.InventoryUpdateSuccess", updated),
             updated,
             skipped  = skipped.Count,
@@ -774,7 +744,7 @@ public class ImportController : ControllerBase
         });
     }
 
-    // â”€â”€ ACCOUNTS TEMPLATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── ACCOUNTS TEMPLATE ───────────────────────────────────
     [HttpGet("accounts-template")]
     public IActionResult GetAccountsTemplate()
     {
@@ -792,135 +762,17 @@ public class ImportController : ControllerBase
             cell.Style.Font.FontColor = XLColor.White;
         }
 
-        // Example Row
         ws.Cell(2,1).Value = "110101";
-        ws.Cell(2,2).Value = "Ø®Ø²ÙŠÙ†Ø© Ø§Ù„Ù…ÙƒØªØ¨";
+        ws.Cell(2,2).Value = "خزينة المكتب";
         ws.Cell(2,3).Value = "Office Cash";
         ws.Cell(2,4).Value = "Asset";
         ws.Cell(2,5).Value = "Debit";
         ws.Cell(2,6).Value = "1101";
-        ws.Cell(2,7).Value = "Ù†Ø¹Ù…";
+        ws.Cell(2,7).Value = "Yes";
 
-        // Removed AdjustToContents for Linux stability
+        ws.Columns().AdjustToContents();
         var stream = new MemoryStream();
-        wb.SaveAs(stream); stream.Position = 0;
-        return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "accounts_import_template.xlsx");
-    }
-
-    // â”€â”€ IMPORT ACCOUNTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    [HttpPost("accounts")]
-    public async Task<IActionResult> ImportAccounts(IFormFile file)
-    {
-        if (file == null || file.Length == 0) return BadRequest(new { message = "Ù„Ù… ÙŠØªÙ… Ø±ÙØ¹ Ù…Ù„Ù" });
-
-        try
-        {
-            using var stream = file.OpenReadStream();
-            using var wb = new XLWorkbook(stream);
-            var ws = wb.Worksheets.First();
-            var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
-
-            var added = 0;
-            var updated = 0;
-            var errors = new List<string>();
-
-            var allAccounts = await _db.Accounts.ToListAsync();
-            var accountMap = allAccounts.ToDictionary(a => a.Code, a => a, StringComparer.OrdinalIgnoreCase);
-
-            var rows = new List<dynamic>();
-            for (int r = 2; r <= lastRow; r++)
-            {
-                var code = ws.Cell(r, 1).GetString().Trim();
-                if (string.IsNullOrEmpty(code)) continue;
-
-                rows.Add(new {
-                    Row = r, Code = code,
-                    NameAr = ws.Cell(r, 2).GetString().Trim(),
-                    NameEn = ws.Cell(r, 3).GetString().Trim(),
-                    TypeStr = ws.Cell(r, 4).GetString().Trim(),
-                    NatureStr = ws.Cell(r, 5).GetString().Trim(),
-                    ParentCode = ws.Cell(r, 6).GetString().Trim(),
-                    AllowPosting = ws.Cell(r, 7).GetString().Trim().Contains("Ù†Ø¹Ù…")
-                });
-            }
-
-            // Pass 1: Upsert
-            foreach (var row in rows)
-            {
-                if (string.IsNullOrEmpty(row.NameAr)) { errors.Add($"ØµÙ {row.Row}: Ø§Ù„Ø§Ø³Ù… Ù…Ø·Ù„ÙˆØ¨"); continue; }
-                
-                if (!Enum.TryParse<AccountType>(row.TypeStr as string, true, out AccountType type)) type = AccountType.Asset;
-                if (!Enum.TryParse<AccountNature>(row.NatureStr as string, true, out AccountNature nature)) nature = AccountNature.Debit;
-
-                if (accountMap.TryGetValue(row.Code as string ?? "", out var existing))
-                {
-                    existing.NameAr = row.NameAr;
-                    existing.NameEn = row.NameEn;
-                    existing.Type = type;
-                    existing.Nature = nature;
-                    existing.AllowPosting = row.AllowPosting;
-                    updated++;
-                }
-                else
-                {
-                    var newAcc = new Account {
-                        Code = row.Code, NameAr = row.NameAr, NameEn = row.NameEn,
-                        Type = type, Nature = nature, AllowPosting = row.AllowPosting,
-                        IsActive = true, CreatedAt = TimeHelper.GetEgyptTime()
-                    };
-                    _db.Accounts.Add(newAcc);
-                    accountMap[row.Code] = newAcc;
-                    added++;
-                }
-            }
-            await _db.SaveChangesAsync();
-
-            // Pass 2: Parents
-            foreach (var row in rows)
-            {
-                if (string.IsNullOrEmpty(row.ParentCode as string)) continue;
-                if (accountMap.TryGetValue(row.Code as string ?? "", out var acc) && accountMap.TryGetValue(row.ParentCode as string ?? "", out var parent))
-                {
-                    acc.ParentId = parent.Id;
-                }
-            }
-            await _db.SaveChangesAsync();
-
-            // Fix Tree Structure (Levels, IsLeaf)
-            var accountsToFix = await _db.Accounts.ToListAsync();
-            void UpdateLevels(int? pId, int lvl) {
-                var kids = accountsToFix.Where(a => a.ParentId == pId).ToList();
-                foreach (var k in kids) {
-                    k.Level = lvl;
-                    k.IsLeaf = !accountsToFix.Any(a => a.ParentId == k.Id);
-                    UpdateLevels(k.Id, lvl + 1);
-                }
-            }
-            UpdateLevels(null, 1);
-            await _db.SaveChangesAsync();
-
-            return Ok(new { success = true, added, updated, errors });
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { message = $"Ø®Ø·Ø£ ÙÙŠ Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©: {ex.Message}" });
-        }
-    }
-
-    private class ImportResult
-    {
-        public int Added         { get; set; }
-        public int Updated       { get; set; }
-        public int VariantsAdded { get; set; }
-        public List<string> Skipped { get; set; } = new();
-        public List<string> Errors  { get; set; } = new();
+        wb.SaveAs(stream);
+        return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "accounts_import_template.xlsx");
     }
 }
-
-// Extension
-internal static class StringExtensions
-{
-    public static string? NullIfEmpty(this string? s)
-        => string.IsNullOrWhiteSpace(s) ? null : s;
-}
-

@@ -1,5 +1,5 @@
 using Sportive.API.Interfaces;
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -22,11 +22,8 @@ public class ProductDiscountsController : ControllerBase
         _t = t;
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    // GET /api/productdiscounts â€” ÙƒÙ„ Ø§Ù„Ø®ØµÙˆÙ…Ø§Øª
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet]
-    [AllowAnonymous] // Ø§Ù„Ù…ØªØ¬Ø± ÙŠØ­ØªØ§Ø¬ ÙŠÙ‚Ø±Ø£ Ø§Ù„Ø®ØµÙˆÙ…Ø§Øª Ø§Ù„ÙØ¹Ø§Ù„Ø©
+    [AllowAnonymous]
     public async Task<IActionResult> GetAll(
         [FromQuery] int?  productId = null,
         [FromQuery] bool  activeOnly = false)
@@ -66,9 +63,6 @@ public class ProductDiscountsController : ControllerBase
         return Ok(items);
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    // GET /api/productdiscounts/active â€” Ø§Ù„Ø®ØµÙˆÙ…Ø§Øª Ø§Ù„ÙØ¹Ø§Ù„Ø© Ø§Ù„Ø¢Ù†
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("active")]
     [AllowAnonymous]
     public async Task<IActionResult> GetActive()
@@ -98,29 +92,26 @@ public class ProductDiscountsController : ControllerBase
         return Ok(items);
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    // POST /api/productdiscounts â€” Ø¥Ù†Ø´Ø§Ø¡ Ø®ØµÙ…
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] ProductDiscountDto dto)
     {
         if (dto.ProductId.HasValue && !await _db.Products.AnyAsync(p => p.Id == dto.ProductId))
-            return BadRequest(new { message = "Ø§Ù„Ù…Ù†ØªØ¬ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
+            return BadRequest(new { message = _t.Get("Products.NotFound") });
 
         if (dto.CategoryId.HasValue && !await _db.Categories.AnyAsync(c => c.Id == dto.CategoryId))
-            return BadRequest(new { message = "Ø§Ù„Ù‚Ø³Ù… ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
+            return BadRequest(new { message = _t.Get("Categories.NotFound") });
 
         if (dto.BrandId.HasValue && !await _db.Brands.AnyAsync(b => b.Id == dto.BrandId))
-            return BadRequest(new { message = "Ø§Ù„Ù…Ø§Ø±ÙƒØ© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©" });
+            return BadRequest(new { message = _t.Get("Brands.NotFound") });
 
         if (!dto.ProductId.HasValue && !dto.CategoryId.HasValue && !dto.BrandId.HasValue)
-            return BadRequest(new { message = "ÙŠØ¬Ø¨ Ø§Ø®ØªÙŠØ§Ø± Ù…Ù†ØªØ¬ Ø£Ùˆ Ù‚Ø³Ù… Ø£Ùˆ Ù…Ø§Ø±ÙƒØ©" });
+            return BadRequest(new { message = _t.Get("Discounts.ProductCategoryOrBrandRequired") });
 
         if (dto.ValidFrom >= dto.ValidTo)
-            return BadRequest(new { message = "ØªØ§Ø±ÙŠØ® Ø§Ù„Ø¨Ø¯Ø§ÙŠØ© ÙŠØ¬Ø¨ Ø£Ù† ÙŠÙƒÙˆÙ† Ù‚Ø¨Ù„ ØªØ§Ø±ÙŠØ® Ø§Ù„Ù†Ù‡Ø§ÙŠØ©" });
+            return BadRequest(new { message = _t.Get("Discounts.StartDateBeforeEndDate") });
 
         if (dto.DiscountValue <= 0)
-            return BadRequest(new { message = "Ù‚ÙŠÙ…Ø© Ø§Ù„Ø®ØµÙ… ÙŠØ¬Ø¨ Ø£Ù† ØªÙƒÙˆÙ† Ù…ÙˆØ¬Ø¨Ø©" });
+            return BadRequest(new { message = _t.Get("Discounts.MustBePositive") });
 
         var discount = new ProductDiscount
         {
@@ -142,9 +133,6 @@ public class ProductDiscountsController : ControllerBase
         return CreatedAtAction(nameof(GetAll), new { productId = discount.ProductId }, discount);
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    // PUT /api/productdiscounts/{id} â€” ØªØ¹Ø¯ÙŠÙ„
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] ProductDiscountDto dto)
     {
@@ -168,9 +156,6 @@ public class ProductDiscountsController : ControllerBase
         return Ok(discount);
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    // DELETE /api/productdiscounts/{id} â€” Ø­Ø°Ù
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpDelete("{id}")]
     [RequirePermission(ModuleKeys.Discounts, requireEdit: true)]
     public async Task<IActionResult> Delete(int id)
@@ -196,4 +181,3 @@ public record ProductDiscountDto(
     string? Label,
     DiscountApplyTo ApplyTo
 );
-

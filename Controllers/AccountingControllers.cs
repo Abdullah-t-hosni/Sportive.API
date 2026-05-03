@@ -626,7 +626,7 @@ public class JournalEntriesController : ControllerBase
         var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Id == id);
         if (entry == null) return NotFound();
 
-        if (entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
+        if (entry.Status == JournalEntryStatus.Posted && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin")))
         {
             await _accounting.ReverseEntryAsync(id, reason);
             return Ok(new { message = _t.Get("Accounting.ReverseSuccessMessage") });
@@ -751,7 +751,7 @@ public class ReceiptVouchersController : ControllerBase
         
         var cashAccount = await _db.Accounts.FindAsync(dto.CashAccountId);
         if (cashAccount == null) return BadRequest(_t.Get("Accounting.ReceiptVoucher.AccountNotFound"));
-        if (!cashAccount.CanReceivePayment && !User.IsInRole("Admin"))
+        if (!cashAccount.CanReceivePayment && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin")))
             return BadRequest(_t.Get("Accounting.ReceiptVoucher.AccountCannotReceivePayment", cashAccount.NameAr));
 
         var voucher = new ReceiptVoucher {
@@ -836,7 +836,7 @@ public class ReceiptVouchersController : ControllerBase
         var entry = await _db.JournalEntries.Include(e => e.Lines)
             .FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber);
         
-        if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
+        if (entry != null && entry.Status == JournalEntryStatus.Posted && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin")))
             return BadRequest(_t.Get("Accounting.ReceiptVoucher.CannotEditPosted"));
 
         voucher.VoucherDate = dto.VoucherDate.ToStoreTime();
@@ -872,7 +872,7 @@ public class ReceiptVouchersController : ControllerBase
 
         var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber);
         
-        if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin")) {
+        if (entry != null && entry.Status == JournalEntryStatus.Posted && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin"))) {
             await _accounting.ReverseEntryAsync(entry.Id, _t.Get("Accounting.ReceiptVoucher.ReverseLog"));
             return Ok(new { message = _t.Get("Accounting.ReceiptVoucher.ReverseSuccess") });
         }
@@ -974,7 +974,7 @@ public class PaymentVouchersController : ControllerBase
 
         var cashAccount = await _db.Accounts.FindAsync(dto.CashAccountId);
         if (cashAccount == null) return BadRequest(_t.Get("Accounting.PaymentVoucher.AccountNotFound"));
-        if (!cashAccount.CanReceivePayment && !User.IsInRole("Admin"))
+        if (!cashAccount.CanReceivePayment && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin")))
             return BadRequest(_t.Get("Accounting.ReceiptVoucher.AccountCannotReceivePayment", cashAccount.NameAr));
 
         var voucher = new PaymentVoucher {
@@ -1014,7 +1014,7 @@ public class PaymentVouchersController : ControllerBase
         if (voucher == null) return NotFound();
 
         var entry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == voucher.VoucherNumber);
-        if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin"))
+        if (entry != null && entry.Status == JournalEntryStatus.Posted && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin")))
             return BadRequest(_t.Get("Accounting.PaymentVoucher.CannotEditPosted"));
 
         voucher.VoucherDate = dto.VoucherDate.ToStoreTime(); voucher.Amount = dto.Amount; voucher.CashAccountId = dto.CashAccountId;
@@ -1040,7 +1040,7 @@ public class PaymentVouchersController : ControllerBase
         if (voucher == null) return NotFound();
 
         var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == voucher.VoucherNumber);
-        if (entry != null && entry.Status == JournalEntryStatus.Posted && !User.IsInRole("Admin")) {
+        if (entry != null && entry.Status == JournalEntryStatus.Posted && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin"))) {
             await _accounting.ReverseEntryAsync(entry.Id, _t.Get("Accounting.PaymentVoucher.ReverseLog"));
             return Ok(new { message = _t.Get("Accounting.ReceiptVoucher.ReverseSuccess") });
         }
