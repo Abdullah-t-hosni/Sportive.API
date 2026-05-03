@@ -37,7 +37,7 @@ public class ProductService : IProductService
             .AsQueryable();
         
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
-        if (store != null && store.HideOutOfStock && !filter.Status.HasValue)
+        if (store != null && store.HideOutOfStock && !filter.Status.HasValue && string.IsNullOrWhiteSpace(filter.Search))
         {
             query = query.Where(p => p.TotalStock > 0);
         }
@@ -63,7 +63,14 @@ public class ProductService : IProductService
                 p.SKU.ToLower().Contains(s) ||
                 (isInt && p.Id == searchId) ||
                 (isDecimal && (p.Price == searchPrice || p.DiscountPrice == searchPrice)) ||
-                (p.Brand != null && (p.Brand.NameAr.ToLower().Contains(s) || p.Brand.NameEn.ToLower().Contains(s))));
+                (p.Brand != null && (p.Brand.NameAr.ToLower().Contains(s) || p.Brand.NameEn.ToLower().Contains(s))) ||
+                p.Variants.Any(v => 
+                    (v.Size != null && v.Size.ToLower().Contains(s)) || 
+                    (v.Color != null && v.Color.ToLower().Contains(s)) || 
+                    (v.ColorAr != null && v.ColorAr.ToLower().Contains(s)) ||
+                    (p.SKU + "-" + v.Size + "-" + v.Color).ToLower().Contains(s)
+                )
+            );
         }
 
         if (filter.MinPrice.HasValue)
