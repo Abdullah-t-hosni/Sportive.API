@@ -1,5 +1,9 @@
 # Sportive API — دليل التشغيل
 
+> [!TIP]
+> **Documentation Available:** Check the [**Docs Index**](./docs/INDEX.md) for detailed architecture, technology stack, and feature workflows.
+
+
 ## المتطلبات
 - [.NET 9 SDK](https://dotnet.microsoft.com/download)
 - MySQL 8.x (محليًا أو مستضافًا مثل Hostinger)
