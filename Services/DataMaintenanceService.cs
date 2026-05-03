@@ -69,7 +69,7 @@ public class DataMaintenanceService : IDataMaintenanceService
         
         try 
         {
-            await _emailService.SendEmailAsync(user.Email, "رمز تأكيد تصفير النظام (Factory Reset)", 
+            await _emailService.SendEmailAsync(user.Email ?? "", "رمز تأكيد تصفير النظام (Factory Reset)", 
                 $"تحذير: تم طلب تصفير النظام. رمز التأكيد الخاص بك هو: {otp}. صالح لمدة 5 دقائق.");
         } 
         catch (Exception ex) 

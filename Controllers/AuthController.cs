@@ -148,7 +148,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("send-otp")]
     [EnableRateLimiting("auth")]
-    public async Task<IActionResult> SendOtp([FromBody] SendOtpDto dto)
+    public IActionResult SendOtp([FromBody] SendOtpDto dto)
     {
         // ✅ FIX: استخدام RandomNumberGenerator الآمن
         var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();

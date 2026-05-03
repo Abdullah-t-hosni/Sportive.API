@@ -95,7 +95,7 @@ public class BackupController : ControllerBase
         _cache.Set(cacheKey, otp, TimeSpan.FromMinutes(5));
 
         _logger.LogCritical("RESTORE DATABASE OTP for {Email}: {OTP}", user.Email, otp);
-        await email.SendEmailAsync(user.Email, _t.Get("Backup.RestoreOtpSubject"), _t.Get("Backup.RestoreOtpBody", otp));
+        await email.SendEmailAsync(user.Email ?? "", _t.Get("Backup.RestoreOtpSubject"), _t.Get("Backup.RestoreOtpBody", otp));
 
         return Ok(new { success = true, message = _t.Get("Backup.OtpSent") });
     }
