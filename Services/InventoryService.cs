@@ -11,12 +11,14 @@ public class InventoryService : IInventoryService
     private readonly AppDbContext _db;
     private readonly INotificationService _notifications;
     private readonly ITranslator _t;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public InventoryService(AppDbContext db, INotificationService notifications, ITranslator t)
+    public InventoryService(AppDbContext db, INotificationService notifications, ITranslator t, IServiceScopeFactory scopeFactory)
     {
         _db = db;
         _notifications = notifications;
         _t = t;
+        _scopeFactory = scopeFactory;
     }
 
     public async Task LogMovementAsync(
@@ -67,19 +69,15 @@ public class InventoryService : IInventoryService
                 variant.StockQuantity += roundedQty;
                 variant.UpdatedAt = TimeHelper.GetEgyptTime();
 
-                // Sync parent product total stock
-                var totalStock = await _db.ProductVariants
-                    .Where(v => v.ProductId == variant.ProductId)
-                    .SumAsync(v => v.StockQuantity);
-                
-                variant.Product.TotalStock = totalStock;
+                // Sync parent product total stock — OPTIMIZED: Avoid Re-Summing everything
+                variant.Product.TotalStock += roundedQty;
                 
                 // 💡 AUTO-STATUS: Active <-> OutOfStock based on physical stock
-                if (variant.Product.Status == ProductStatus.Active && totalStock <= 0)
+                if (variant.Product.Status == ProductStatus.Active && variant.Product.TotalStock <= 0)
                 {
                     variant.Product.Status = ProductStatus.OutOfStock;
                 }
-                else if (variant.Product.Status == ProductStatus.OutOfStock && totalStock > 0)
+                else if (variant.Product.Status == ProductStatus.OutOfStock && variant.Product.TotalStock > 0)
                 {
                     variant.Product.Status = ProductStatus.Active;
                 }
@@ -140,37 +138,36 @@ public class InventoryService : IInventoryService
 
         if (autoSave) await _db.SaveChangesAsync();
 
-        // 3. Low-stock alert — fire-and-forget after save (called by the parent transaction)
-        if (variantId.HasValue)
-        {
-            var variant = await _db.ProductVariants.Include(v => v.Product).FirstOrDefaultAsync(v => v.Id == variantId);
-            if (variant != null)
-            {
-                var newStock = variant.StockQuantity;
-                var reorder  = variant.ReorderLevel > 0 ? variant.ReorderLevel : variant.Product.ReorderLevel;
-                if (reorder > 0 && newStock <= reorder && newStock >= 0)
-                    await _notifications.SendAsync(
-                        null,
-                        _t.Get("Inventory.LowStockAlertTitle"),
-                        "Low Stock Alert",
-                        _t.Get("Inventory.LowStockAlertDesc", variant.Product.NameAr, newStock, reorder),
-                        $"Product \"{variant.Product.NameEn}\" reached {newStock} units (reorder level: {reorder})",
-                        "Alert");
-            }
-        }
-        else if (productId.HasValue)
-        {
-            var product = await _db.Products.FindAsync(productId);
-            if (product != null && product.ReorderLevel > 0 &&
-                product.TotalStock <= product.ReorderLevel && product.TotalStock >= 0)
-                await _notifications.SendAsync(
-                    null,
-                    _t.Get("Inventory.LowStockAlertTitle"),
-                    "Low Stock Alert",
-                    _t.Get("Inventory.LowStockAlertDesc", product.NameAr, product.TotalStock, product.ReorderLevel),
-                    $"Product \"{product.NameEn}\" reached {product.TotalStock} units (reorder level: {product.ReorderLevel})",
-                    "Alert");
-        }
+        // 3. Low-stock alert — Fire-and-forget to avoid blocking the main thread
+        _ = Task.Run(async () => {
+            try {
+                using var scope = _scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
+                var t = scope.ServiceProvider.GetRequiredService<ITranslator>();
+
+                if (variantId.HasValue)
+                {
+                    var v = await db.ProductVariants.Include(pv => pv.Product).FirstOrDefaultAsync(pv => pv.Id == variantId);
+                    if (v != null)
+                    {
+                        var reorder = v.ReorderLevel > 0 ? v.ReorderLevel : v.Product.ReorderLevel;
+                        if (reorder > 0 && v.StockQuantity <= reorder && v.StockQuantity >= 0)
+                            await notifications.SendAsync(null, t.Get("Inventory.LowStockAlertTitle"), "Low Stock Alert", 
+                                t.Get("Inventory.LowStockAlertDesc", v.Product.NameAr, v.StockQuantity, reorder),
+                                $"Product \"{v.Product.NameEn}\" reached {v.StockQuantity} units", "Alert");
+                    }
+                }
+                else if (productId.HasValue)
+                {
+                    var p = await db.Products.FindAsync(productId);
+                    if (p != null && p.ReorderLevel > 0 && p.TotalStock <= p.ReorderLevel && p.TotalStock >= 0)
+                        await notifications.SendAsync(null, t.Get("Inventory.LowStockAlertTitle"), "Low Stock Alert",
+                            t.Get("Inventory.LowStockAlertDesc", p.NameAr, p.TotalStock, p.ReorderLevel),
+                            $"Product \"{p.NameEn}\" reached {p.TotalStock} units", "Alert");
+                }
+            } catch { /* Suppress background errors */ }
+        });
     }
 
     public async Task<List<InventoryMovement>> GetMovementsAsync(int? productId = null, int? variantId = null)

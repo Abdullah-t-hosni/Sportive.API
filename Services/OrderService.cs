@@ -7,6 +7,7 @@ using Sportive.API.Models;
 using Sportive.API.Utils;
 using System.Text;
 using System.Text.Json;
+using Hangfire;
 
 namespace Sportive.API.Services;
 
@@ -23,6 +24,7 @@ public class OrderService : IOrderService
     private readonly ILogger<OrderService> _logger;
     private readonly SequenceService _seq;
     private readonly ITranslator _t;
+    private readonly IBackgroundJobClient _backgroundJobs;
 
     public OrderService(
         AppDbContext db,
@@ -35,7 +37,8 @@ public class OrderService : IOrderService
         IAccountingService accounting,
         ILogger<OrderService> logger,
         SequenceService seq,
-        ITranslator t)
+        ITranslator t,
+        IBackgroundJobClient backgroundJobs)
     {
         _db = db;
         _notificationService = notificationService;
@@ -48,6 +51,7 @@ public class OrderService : IOrderService
         _logger = logger;
         _seq = seq;
         _t = t;
+        _backgroundJobs = backgroundJobs;
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
@@ -761,52 +765,63 @@ public class OrderService : IOrderService
             }
         });
 
-        await _customerService.EvaluateCustomerCategoryAsync(order.CustomerId);
+        // ✅ HANGFIRE: Offload customer category evaluation to background
+        _backgroundJobs.Enqueue<ICustomerService>(s => s.EvaluateCustomerCategoryAsync(order.CustomerId));
 
-        // 5. Notifications & Email
-        _ = Task.Run(async () =>
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
-            var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
-            var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-            if (order == null) return;
-            var customerInner = await db.Customers.FindAsync(order.CustomerId);
-            if (customerInner != null && !string.IsNullOrEmpty(customerInner.AppUserId))
-            {
-                await notificationService.SendAsync(customerInner.AppUserId, 
-                    "تم استلام طلبك", "Order Received",
-                    $"طلبك رقم {order.OrderNumber} قيد الانتظار.", $"Your order #{order.OrderNumber} is pending.",
-                    "Order", order.Id);
-            }
-
-            try 
-            {
-                var adminEmails = (config["Backup:Email:To"] ?? "admin@sportive.com").Split(',');
-                var subject = $"🔔 طلب جديد: {order.OrderNumber}";
-                var body = $@"
-                    <div dir='rtl' style='font-family: Arial, sans-serif; border: 1px solid #eee; padding: 20px;'>
-                        <h2 style='color: #0f3460;'>تنبيه طلب جديد 🆕</h2>
-                        <p>رقم الطلب: <b>{order.OrderNumber}</b></p>
-                        <p>اسم العميل: {customerInner?.FullName ?? "عميل خارجي"}</p>
-                        <p>إجمالي المبلغ: <span style='color: green; font-weight: bold;'>{order.TotalAmount:N2} ج.م</span></p>
-                        <hr/>
-                        <a href='https://admin.sportive-sportwear.com/orders/{order.Id}' 
-                           style='display: inline-block; background: #0f3460; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;'>
-                           عرض التفاصيل
-                        </a>
-                    </div>";
-                foreach(var email in adminEmails) await emailService.SendEmailAsync(email.Trim(), subject, body);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "[Notifications] Admin email for order {OrderNumber} failed", order.OrderNumber);
-            }
-        });
+        // ✅ HANGFIRE: Offload notifications & emails to background
+        _backgroundJobs.Enqueue(() => SendOrderNotificationsAsync(order.Id));
 
         return result;
+    }
+
+    [Queue("critical")]
+    public async Task SendOrderNotificationsAsync(int orderId)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
+        var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+        var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+
+        var order = await db.Orders.Include(o => o.Customer).FirstOrDefaultAsync(o => o.Id == orderId);
+        if (order == null) return;
+
+        // 1. App Notification
+        if (order.Customer != null && !string.IsNullOrEmpty(order.Customer.AppUserId))
+        {
+            await notificationService.SendAsync(order.Customer.AppUserId, 
+                "تم استلام طلبك", "Order Received",
+                $"طلبك رقم {order.OrderNumber} قيد الانتظار.", $"Your order #{order.OrderNumber} is pending.",
+                "Order", order.Id);
+        }
+
+        // 2. Admin Email Alert
+        try 
+        {
+            var adminEmails = (config["Backup:Email:To"] ?? "admin@sportive.com").Split(',');
+            var subject = $"🔔 طلب جديد: {order.OrderNumber}";
+            var body = $@"
+                <div dir='rtl' style='font-family: Arial, sans-serif; border: 1px solid #eee; padding: 20px;'>
+                    <h2 style='color: #0f3460;'>تنبيه طلب جديد 🆕</h2>
+                    <p>رقم الطلب: <b>{order.OrderNumber}</b></p>
+                    <p>اسم العميل: {order.Customer?.FullName ?? "عميل خارجي"}</p>
+                    <p>إجمالي المبلغ: <span style='color: green; font-weight: bold;'>{order.TotalAmount:N2} ج.م</span></p>
+                    <hr/>
+                    <a href='https://admin.sportive-sportwear.com/orders/{order.Id}' 
+                       style='display: inline-block; background: #0f3460; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;'>
+                       عرض التفاصيل
+                    </a>
+                </div>";
+
+            foreach (var email in adminEmails)
+            {
+                await emailService.SendEmailAsync(email.Trim(), subject, body);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send admin notification for order {OrderNo}", order.OrderNumber);
+        }
     }
 
     public async Task<OrderDetailDto> UpdateOrderStatusAsync(int orderId, UpdateOrderStatusDto dto, string updatedByUserId)

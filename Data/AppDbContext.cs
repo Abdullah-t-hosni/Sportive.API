@@ -139,6 +139,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(x => x.SizeGroup).WithMany()
              .HasForeignKey(x => x.SizeGroupId).OnDelete(DeleteBehavior.SetNull);
             e.Property(x => x.Status).HasConversion<string>();
+            e.HasIndex(x => x.CategoryId);
+            e.HasIndex(x => x.BrandId);
         });
 
         builder.Entity<ProductVariant>(e => {
@@ -196,6 +198,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => new { x.CustomerId, x.CreatedAt });
             // ⚡ Performance: cover dashboard/status filter queries
             e.HasIndex(x => new { x.Status, x.CreatedAt });
+            e.HasIndex(x => x.SalesPersonId);
+            e.HasIndex(x => x.IsArchived);
         });
 
         builder.Entity<OrderPayment>(e => {
@@ -330,6 +334,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(j => j.Type).HasConversion<string>();
             e.Property(j => j.Status).HasConversion<string>();
             e.HasIndex(x => x.EntryDate);
+            e.HasIndex(x => new { x.Status, x.EntryDate }); // ⚡ Performance: cover dashboard/report filters
             e.HasIndex(x => new { x.Reference, x.Type }).IsUnique();
         });
 
@@ -352,6 +357,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(l => l.Account).WithMany(a => a.Lines).HasForeignKey(l => l.AccountId);
             e.HasOne(l => l.Employee).WithMany()
              .HasForeignKey(l => l.EmployeeId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            
+            // ⚡ Performance: Critical for Statement and Aging reports
+            e.HasIndex(l => l.CustomerId);
+            e.HasIndex(l => l.SupplierId);
+            e.HasIndex(l => l.AccountId);
+            e.HasIndex(l => l.CostCenter);
         });
 
         builder.Entity<ReceiptVoucher>(e => {
