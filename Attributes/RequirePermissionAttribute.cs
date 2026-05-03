@@ -64,7 +64,7 @@ public class RequirePermissionFilter : IAsyncAuthorizationFilter
         }
 
         // ── 3. Privileged roles bypass (no DB hit needed) ────────
-        if (user.IsInRole(AppRoles.Admin) || user.IsInRole(AppRoles.Manager))
+        if (user.IsInRole(AppRoles.SuperAdmin) || user.IsInRole(AppRoles.Admin) || user.IsInRole(AppRoles.Manager))
             return;
 
         // ── 4. Resolve user ID ───────────────────────────────────

@@ -451,7 +451,7 @@ public class StaffController : ControllerBase
 
     private static string GetPrimaryRole(IList<string> roles)
     {
-        foreach (var r in new[] { AppRoles.Admin, AppRoles.Manager, AppRoles.Accountant, AppRoles.Cashier, AppRoles.Staff })
+        foreach (var r in new[] { AppRoles.SuperAdmin, AppRoles.Admin, AppRoles.Manager, AppRoles.Accountant, AppRoles.Cashier, AppRoles.Staff })
             if (roles.Contains(r)) return r;
         return AppRoles.Customer;
     }
