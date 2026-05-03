@@ -380,8 +380,8 @@ public class AuthController : ControllerBase
         // Use case-insensitive check
         bool Is(string role) => roles.Any(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase));
         
-        // Ã¢â€â‚¬Ã¢â€â‚¬ Admin & Manager: Full Access Baseline Ã¢â€â‚¬Ã¢â€â‚¬
-        if (Is("Admin") || Is("Manager"))
+        // ── Admin & Manager: Full Access Baseline ──
+        if (Is("Admin") || Is("Manager") || Is("SuperAdmin"))
         {
             perms.Add("dashboard"); 
             perms.Add("orders"); perms.Add("orders.edit"); perms.Add("orders.delete");
@@ -401,8 +401,8 @@ public class AuthController : ControllerBase
             perms.Add("import");
         }
 
-        // Ã¢â€â‚¬Ã¢â€â‚¬ Admin Exclusive Ã¢â€â‚¬Ã¢â€â‚¬
-        if (Is("Admin"))
+        // ── Admin Exclusive ──
+        if (Is("Admin") || Is("SuperAdmin"))
         {
             perms.Add("staff"); perms.Add("staff.edit");
             perms.Add("settings"); perms.Add("settings.edit");

@@ -433,6 +433,7 @@ public class StaffController : ControllerBase
     {
         return Ok(new[]
         {
+            new { value = AppRoles.SuperAdmin, labelAr = "سوبر أدمن",         labelEn = "Super Admin",   permissions = "التحكم الكامل + الصيانة" },
             new { value = AppRoles.Admin,      labelAr = _t.Get("Roles.Admin"),      labelEn = "System Admin",  permissions = _t.Get("Roles.Admin.Perms") },
             new { value = AppRoles.Manager,    labelAr = _t.Get("Roles.Manager"),    labelEn = "Branch Manager", permissions = _t.Get("Roles.Manager.Perms") },
             new { value = AppRoles.Cashier,    labelAr = _t.Get("Roles.Cashier"),    labelEn = "Cashier",        permissions = _t.Get("Roles.Cashier.Perms") },
@@ -457,6 +458,7 @@ public class StaffController : ControllerBase
 
     private string GetRoleAr(string role) => role switch
     {
+        AppRoles.SuperAdmin => "سوبر أدمن",
         AppRoles.Admin      => _t.Get("Roles.Admin"),
         AppRoles.Manager    => _t.Get("Roles.Manager"),
         AppRoles.Cashier    => _t.Get("Roles.Cashier"),

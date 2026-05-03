@@ -109,8 +109,9 @@ public class StartupSyncService : BackgroundService
                     PhoneNumber = "01111111111", FullName = "Sport Zone", IsActive = true
                 };
                 await userManager.CreateAsync(admin, adminPassword);
-                await userManager.AddToRoleAsync(admin, "Admin");
-                _logger.LogInformation("[StartupSync] Default admin user created.");
+                await userManager.AddToRoleAsync(admin, AppRoles.SuperAdmin);
+                await userManager.AddToRoleAsync(admin, AppRoles.Admin);
+                _logger.LogInformation("[StartupSync] Default super admin user created.");
             }
 
             // ── EXISTING HEAVY SYNCS ──────────────────────────

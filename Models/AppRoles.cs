@@ -16,6 +16,7 @@ namespace Sportive.API.Models;
 
 public static class AppRoles
 {
+    public const string SuperAdmin = "SuperAdmin";
     public const string Admin      = "Admin";
     public const string Manager    = "Manager";
     public const string Cashier    = "Cashier";
@@ -32,10 +33,10 @@ public static class AppRoles
     public const string OrdersAccess      = "Admin,Manager,Staff,Cashier";
 
     public static readonly string[] All = {
-        Admin, Manager, Cashier, Accountant, Staff, Customer
+        SuperAdmin, Admin, Manager, Cashier, Accountant, Staff, Customer
     };
 
     public static readonly string[] StaffRoles = {
-        Admin, Manager, Cashier, Accountant, Staff
+        SuperAdmin, Admin, Manager, Cashier, Accountant, Staff
     };
 }
