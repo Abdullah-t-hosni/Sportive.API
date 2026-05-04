@@ -728,6 +728,28 @@ public class OperationalReportsController : ControllerBase
             ordersQ = ordersQ.Where(o => o.Source == source.Value);
         }
 
+        if (categoryId.HasValue && categoryId > 0)
+        {
+            var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
+            ordersQ = ordersQ.Where(o => o.Items.Any(i => i.Product != null && i.Product.CategoryId.HasValue && categoryIds.Contains(i.Product.CategoryId.Value)));
+        }
+
+        if (brandId.HasValue && brandId > 0)
+        {
+            var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
+            ordersQ = ordersQ.Where(o => o.Items.Any(i => i.Product != null && i.Product.BrandId.HasValue && brandIds.Contains(i.Product.BrandId.Value)));
+        }
+
+        if (!string.IsNullOrEmpty(color))
+        {
+            ordersQ = ordersQ.Where(o => o.Items.Any(i => i.Color == color || (i.Product != null && i.Product.Variants.Any(v => v.Color == color || v.ColorAr == color))));
+        }
+
+        if (!string.IsNullOrEmpty(size))
+        {
+            ordersQ = ordersQ.Where(o => o.Items.Any(i => i.Size == size || (i.Product != null && i.Product.Variants.Any(v => v.Size == size))));
+        }
+
         var totalOrdersCount = await ordersQ.CountAsync();
 
         var orders = await ordersQ
@@ -874,6 +896,28 @@ public class OperationalReportsController : ControllerBase
 
             if (supplierId.HasValue) q = q.Where(i => i.SupplierId == supplierId.Value);
             if (source.HasValue) q = q.Where(i => i.CostCenter == source.Value);
+
+            if (categoryId.HasValue && categoryId > 0)
+            {
+                var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
+                q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && categoryIds.Contains(it.Product.CategoryId.Value)));
+            }
+
+            if (brandId.HasValue && brandId > 0)
+            {
+                var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
+                q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.BrandId.HasValue && brandIds.Contains(it.Product.BrandId.Value)));
+            }
+
+            if (!string.IsNullOrEmpty(color))
+            {
+                q = q.Where(i => i.Items.Any(it => it.ProductVariant != null && (it.ProductVariant.Color == color || it.ProductVariant.ColorAr == color)));
+            }
+
+            if (!string.IsNullOrEmpty(size))
+            {
+                q = q.Where(i => i.Items.Any(it => it.ProductVariant != null && it.ProductVariant.Size == size));
+            }
 
             var totalCount = await q.CountAsync();
             var invoices = await q
@@ -1069,6 +1113,17 @@ public class OperationalReportsController : ControllerBase
             var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
             q = q.Where(r => r.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && categoryIds.Contains(it.Product.CategoryId.Value)));
         }
+
+        if (brandId.HasValue && brandId > 0) {
+            var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
+            q = q.Where(r => r.Items.Any(it => it.Product != null && it.Product.BrandId.HasValue && brandIds.Contains(it.Product.BrandId.Value)));
+        }
+
+        if (!string.IsNullOrEmpty(color))
+            q = q.Where(r => r.Items.Any(it => it.ProductVariant != null && (it.ProductVariant.Color == color || it.ProductVariant.ColorAr == color)));
+
+        if (!string.IsNullOrEmpty(size))
+            q = q.Where(r => r.Items.Any(it => it.ProductVariant != null && it.ProductVariant.Size == size));
 
         var returns = await q
             .Select(r => new {
