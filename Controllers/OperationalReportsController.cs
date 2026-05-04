@@ -1548,7 +1548,7 @@ public class OperationalReportsController : ControllerBase
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add(_t.Get("Reports.CustomerStatement"));
         ws.RightToLeft = true;
-        ws.Cell(1,1).Value = _t.Get("Reports.CustomerStatementTitle", c.FullName, c.Phone);
+        ws.Cell(1,1).Value = _t.Get("Reports.CustomerStatementTitle", c.FullName ?? "", c.Phone ?? "");
         ws.Cell(1,1).Style.Font.Bold = true; ws.Cell(1,1).Style.Font.FontSize = 13;
         ws.Cell(2,1).Value = _t.Get("Reports.DateRange", from.ToString("yyyy-MM-dd"), to.ToString("yyyy-MM-dd"));
 

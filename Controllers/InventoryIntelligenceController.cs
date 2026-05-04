@@ -12,7 +12,6 @@ namespace Sportive.API.Controllers;
 
 /// <summary>
 /// Inventory Intelligence Controller â€” Phase 2 Enhancements
-/// ÙŠØ­ØªÙˆÙŠ Ø¹Ù„Ù‰: Ø¬Ø¯ÙˆÙ„ Ø§Ø³ØªØ­Ù‚Ø§Ù‚Ø§Øª Ø§Ù„Ù…ÙˆØ±Ø¯ÙŠÙ†ØŒ ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø§Ù„Ù…Ù‚Ø§Ø³Ø§ØªØŒ Ø§Ù„Ø¬Ø±Ø¯ Ø§Ù„Ø¬Ø²Ø¦ÙŠ Ø§Ù„ÙŠÙˆÙ…ÙŠ
 /// </summary>
 [ApiController]
 [Route("api/operationalreports")]
@@ -126,10 +125,7 @@ public class InventoryIntelligenceController : ControllerBase
         });
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    // 14. ØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ù†Ù‚Øµ Ø§Ù„Ù…Ø®Ø²ÙˆÙ† Ø¹Ù„Ù‰ Ù…Ø³ØªÙˆÙ‰ Ø§Ù„Ù…Ù‚Ø§Ø³/Ø§Ù„Ù„ÙˆÙ†
     // GET /api/operationalreports/variant-reorder-alerts?threshold=2
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("variant-reorder-alerts")]
     [HttpGet("variant-reorder")] // Alias for varying client paths
     public async Task<IActionResult> VariantReorderAlerts(
@@ -192,11 +188,9 @@ public class InventoryIntelligenceController : ControllerBase
         });
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    // 15. Ø§Ù„Ø¬Ø±Ø¯ Ø§Ù„Ø¬Ø²Ø¦ÙŠ Ø§Ù„ÙŠÙˆÙ…ÙŠ (Daily Cycle Count)
+    // 15.  (Daily Cycle Count)
     // GET  /api/operationalreports/cycle-count-today?count=5
     // POST /api/operationalreports/cycle-count-submit
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("cycle-count-today")]
     public async Task<IActionResult> CycleCountToday(
         [FromQuery] int     count      = 5,
@@ -208,7 +202,6 @@ public class InventoryIntelligenceController : ControllerBase
     {
         var today = TimeHelper.GetEgyptTime().Date;
 
-        // Ø§Ù„Ù€ variants Ø§Ù„ØªÙŠ Ø¬ÙØ±Ø¯Øª Ø§Ù„ÙŠÙˆÙ… Ø¨Ø§Ù„ÙØ¹Ù„ Ø¨Ø§Ù„Ø¬Ø±Ø¯ Ø§Ù„Ø¬Ø²Ø¦ÙŠ
         var auditedToday = await _db.InventoryMovements
             .Where(m => m.Type == InventoryMovementType.Audit
                      && m.CreatedAt >= today
@@ -260,7 +253,6 @@ public class InventoryIntelligenceController : ControllerBase
             CostPrice   = v.Product!.CostPrice ?? 0
         }).ToListAsync();
 
-        // Ø¥Ø°Ø§ ÙƒØ§Ù† Ù‡Ù†Ø§Ùƒ Ø¨Ø­Ø« Ø£Ùˆ ÙÙ„ØªØ±Ø©ØŒ Ù†ÙØ®Ø±Ø¬ ÙƒÙ„ Ø§Ù„Ù†ØªØ§Ø¦Ø¬ Ù„Ù„Ø³Ù‡ÙˆÙ„Ø©ØŒ ÙˆØ¥Ø°Ø§ Ù„Ù… ØªÙƒÙ† Ù‡Ù†Ø§Ùƒ ÙÙ„ØªØ±Ø©ØŒ Ù†Ù„ØªØ²Ù… Ø¨Ø§Ù„Ø¹Ø¯Ø¯ Ø§Ù„Ø¹Ø´ÙˆØ§Ø¦ÙŠ
         var isFiltered = !string.IsNullOrEmpty(search) || categoryId.HasValue || brandId.HasValue || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size);
         
         IEnumerable<object> picked;

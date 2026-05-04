@@ -766,7 +766,7 @@ public class OrderService : IOrderService
         });
 
         // ✅ HANGFIRE: Offload customer category evaluation to background
-        _backgroundJobs.Enqueue<ICustomerService>(s => s.EvaluateCustomerCategoryAsync(customerId.Value));
+        _backgroundJobs.Enqueue<ICustomerService>(s => s.EvaluateCustomerCategoryAsync(customerId.GetValueOrDefault()));
 
         // ✅ HANGFIRE: Offload notifications & emails to background
         _backgroundJobs.Enqueue(() => SendOrderNotificationsAsync(result.Id));
