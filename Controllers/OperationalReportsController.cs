@@ -955,7 +955,7 @@ public class OperationalReportsController : ControllerBase
                     i.ReturnedAmount,
                     i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
                     i.Items.Select(it => new ReportItemDto(
-                        it.ProductSKU, it.ProductNameAr, it.Size, it.ColorAr,
+                        it.ProductSKU, it.ProductNameAr, it.Size ?? "", it.ColorAr ?? "",
                         it.Quantity, 0, it.UnitCost, 0, it.TotalCost
                     )).ToList()
                 );
@@ -1010,6 +1010,9 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] OrderSource? source     = null,
         [FromQuery] bool      excel      = false)
     {
+        var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+
         var catIds = categoryId.HasValue && categoryId > 0 ? await FilterHelper.GetCategoryFamilyIds(_db, categoryId) : new List<int>();
         var brIds = brandId.HasValue && brandId > 0 ? await FilterHelper.GetBrandFamilyIds(_db, brandId) : new List<int>();
 
@@ -1033,7 +1036,7 @@ public class OperationalReportsController : ControllerBase
             returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Color == color || (it.Color == null && it.Product != null && it.Product.Variants.Any(v => (v.Color == color || v.ColorAr == color)))));
 
         if (!string.IsNullOrEmpty(size))
-            returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Size == size || (it.Size == null && i.Product != null && it.Product.Variants.Any(v => v.Size == size))));
+            returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Size == size || (it.Size == null && it.Product != null && it.Product.Variants.Any(v => v.Size == size))));
 
         var returns = await returnsQ
             .Select(j => new {
@@ -1111,6 +1114,9 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int       pageSize   = 50,
         [FromQuery] bool      excel      = false)
     {
+        var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+
         var catIds = categoryId.HasValue && categoryId > 0 ? await FilterHelper.GetCategoryFamilyIds(_db, categoryId) : new List<int>();
         var brIds = brandId.HasValue && brandId > 0 ? await FilterHelper.GetBrandFamilyIds(_db, brandId) : new List<int>();
 
