@@ -92,7 +92,7 @@ public class WishlistController : ControllerBase
     }
 
     /// <summary>DELETE /api/wishlist/{productId} — حذف منتج</summary>
-    [HttpDelete("{productId}")]
+    [HttpDelete("{productId:int}")]
     public async Task<IActionResult> Remove(int productId)
     {
         var customerId = await GetCustomerIdAsync();
@@ -111,7 +111,7 @@ public class WishlistController : ControllerBase
     }
 
     /// <summary>GET /api/wishlist/check/{productId} — هل المنتج محفوظ؟</summary>
-    [HttpGet("check/{productId}")]
+    [HttpGet("check/{productId:int}")]
     public async Task<IActionResult> Check(int productId)
     {
         var customerId = await GetCustomerIdAsync();
