@@ -1453,30 +1453,42 @@ public class OperationalReportsController : ControllerBase
     [HttpGet("stock-movement")]
     [HttpGet("stock-movements")] // Alias for different frontend versions
     public async Task<IActionResult> StockMovementsLedger(
-        [FromQuery] int?      productId = null,
+        [FromQuery] int?      productId  = null,
         [FromQuery] int?      variantId = null,
         [FromQuery] DateTime? fromDate  = null,
         [FromQuery] DateTime? toDate    = null,
         [FromQuery] OrderSource? source = null,
-        [FromQuery] InventoryMovementType? type = null)
+        [FromQuery] InventoryMovementType? type = null,
+        [FromQuery] int       page       = 1,
+        [FromQuery] int       pageSize   = 50,
+        [FromQuery] bool      excel      = false)
     {
-        var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
-        var to   = toDate ?? TimeHelper.GetEgyptTime();
+        var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
+        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        var q = _db.InventoryMovements
+        var q = _db.InventoryMovements.AsNoTracking()
             .Include(m => m.Product)
             .Include(m => m.ProductVariant)
             .Where(m => m.CreatedAt >= from && m.CreatedAt <= to)
             .AsQueryable();
 
-        if (productId.HasValue) q = q.Where(m => m.ProductId == productId.Value);
-        if (variantId.HasValue) q = q.Where(m => m.ProductVariantId == variantId.Value);
-        if (source.HasValue)    q = q.Where(m => m.CostCenter == source.Value);
-        if (type.HasValue)      q = q.Where(m => m.Type == type.Value);
+        if (productId.HasValue && productId > 0) q = q.Where(m => m.ProductId == productId.Value);
+        if (variantId.HasValue && variantId > 0) q = q.Where(m => m.ProductVariantId == variantId.Value);
+        if (source.HasValue) q = q.Where(m => m.CostCenter == source.Value);
+        if (type.HasValue) q = q.Where(m => m.Type == type.Value);
 
-        var items = await q.OrderByDescending(m => m.CreatedAt).ToListAsync();
+        var periodQ = q.Where(m => m.CreatedAt >= from && m.CreatedAt <= to);
+        var totalCount = await periodQ.CountAsync();
+        
+        var dbMovements = await periodQ
+            .OrderByDescending(m => m.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
 
-        var rows = items.Select(m => new {
+
+        // Mapping starts
+        var rows = dbMovements.Select(m => new {
             m.Id,
             m.CreatedAt,
             productName = m.Product?.NameAr,
@@ -1509,6 +1521,8 @@ public class OperationalReportsController : ControllerBase
         InventoryMovementType.ReturnOut      => "مرتجع مشتريات",
         InventoryMovementType.Audit          => "جرد",
         InventoryMovementType.Adjustment     => "تسوية مخزنية",
+        InventoryMovementType.TransferIn     => "تحويل للداخل",
+        InventoryMovementType.TransferOut    => "تحويل للخارج",
         _ => type.ToString()
     };
 
