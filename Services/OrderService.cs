@@ -25,6 +25,7 @@ public class OrderService : IOrderService
     private readonly SequenceService _seq;
     private readonly ITranslator _t;
     private readonly IBackgroundJobClient _backgroundJobs;
+    private readonly IDashboardEventService _dashboardEvents;
 
     public OrderService(
         AppDbContext db,
@@ -38,7 +39,8 @@ public class OrderService : IOrderService
         ILogger<OrderService> logger,
         SequenceService seq,
         ITranslator t,
-        IBackgroundJobClient backgroundJobs)
+        IBackgroundJobClient backgroundJobs,
+        IDashboardEventService dashboardEvents)
     {
         _db = db;
         _notificationService = notificationService;
@@ -52,6 +54,7 @@ public class OrderService : IOrderService
         _seq = seq;
         _t = t;
         _backgroundJobs = backgroundJobs;
+        _dashboardEvents = dashboardEvents;
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
@@ -748,6 +751,9 @@ public class OrderService : IOrderService
                     }
                 }
 
+                // ⚡ Outbox Trigger: Save event in the same transaction
+                _dashboardEvents.NotifyTransactionOccurred(order.CreatedAt);
+
                 await _db.SaveChangesAsync();
 
                 // 💳 ATOMIC ACCOUNTING: Post to ledger BEFORE committing the transaction
@@ -755,6 +761,10 @@ public class OrderService : IOrderService
                 await _accounting.PostSalesOrderAsync(order);
 
                 await tx.CommitAsync();
+
+                // ⚡ Immediate Wake-up: Trigger outbox processing now
+                _dashboardEvents.TriggerImmediateProcessing();
+
                 return (await GetOrderByIdAsync(order.Id))!;
             }
             catch (Exception ex)

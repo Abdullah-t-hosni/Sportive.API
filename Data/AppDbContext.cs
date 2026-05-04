@@ -76,6 +76,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<FixedAsset>         FixedAssets          { get; set; }
     public DbSet<AssetDepreciation>  AssetDepreciations   { get; set; }
     public DbSet<AssetDisposal>      AssetDisposals       { get; set; }
+    public DbSet<DailyStat>          DailyStats           { get; set; }
+    public DbSet<OutboxMessage>      OutboxMessages       { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -196,8 +198,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => x.CreatedAt);
             // ⚡ Performance: cover customer order history queries
             e.HasIndex(x => new { x.CustomerId, x.CreatedAt });
-            // ⚡ Performance: cover dashboard/status filter queries
-            e.HasIndex(x => new { x.Status, x.CreatedAt });
+            // ⚡ Performance: covering index for dashboard/KPI (Status + Date + Amount)
+            e.HasIndex(x => new { x.CreatedAt, x.Status, x.TotalAmount });
             e.HasIndex(x => x.SalesPersonId);
             e.HasIndex(x => x.IsArchived);
         });
@@ -208,6 +210,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(x => x.Order).WithMany(o => o.Payments)
              .HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.Reference);
+            // ⚡ Performance: covering index for payment summaries
+            e.HasIndex(x => new { x.CreatedAt, x.Method, x.Amount });
         });
 
         builder.Entity<OrderItem>(e => {
@@ -376,7 +380,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(v => v.JournalEntry).WithMany().HasForeignKey(v => v.JournalEntryId).IsRequired(false);
             e.Property(v => v.PaymentMethod).HasConversion<string>();
             e.HasIndex(v => v.Reference);
-            e.HasIndex(v => v.VoucherDate);
+            // ⚡ Performance: covering index for collection summaries
+            e.HasIndex(v => new { v.VoucherDate, v.Amount });
         });
 
         builder.Entity<PaymentVoucher>(e => {
@@ -386,7 +391,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(v => v.JournalEntry).WithMany().HasForeignKey(v => v.JournalEntryId).IsRequired(false);
             e.Property(v => v.PaymentMethod).HasConversion<string>();
             e.HasIndex(v => v.Reference);
-            e.HasIndex(v => v.VoucherDate);
+            // ⚡ Performance: covering index for expense summaries
+            e.HasIndex(v => new { v.VoucherDate, v.Amount });
         });
 
         builder.Entity<InventoryMovement>(e => {
@@ -449,6 +455,18 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(x => x.JournalEntryId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
         });
 
+        builder.Entity<OutboxMessage>(e => {
+            e.HasIndex(x => x.MessageId).IsUnique();
+        });
+        
+        builder.Entity<DailyStat>(e => {
+            e.HasKey(x => new { x.TenantId, x.Date, x.Source });
+            e.Property(x => x.TotalSales).HasPrecision(18, 2);
+            e.Property(x => x.TotalCollections).HasPrecision(18, 2);
+            e.Property(x => x.TotalExpenses).HasPrecision(18, 2);
+            e.Property(x => x.Profit).HasPrecision(18, 2);
+        });
+ 
         builder.Entity<PayrollItem>(e => {
             e.Property(x => x.BasicSalary).HasPrecision(18, 2);
             e.Property(x => x.BonusAmount).HasPrecision(18, 2);

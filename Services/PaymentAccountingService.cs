@@ -1,3 +1,4 @@
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
@@ -17,13 +18,15 @@ public class PaymentAccountingService
     private readonly AccountingCoreService _core;
     private readonly ILogger<PaymentAccountingService> _logger;
     private readonly ITranslator _t;
-
-    public PaymentAccountingService(AppDbContext db, AccountingCoreService core, ILogger<PaymentAccountingService> logger, ITranslator t)
+    private readonly IDashboardEventService _dashboardEvents;
+ 
+    public PaymentAccountingService(AppDbContext db, AccountingCoreService core, ILogger<PaymentAccountingService> logger, ITranslator t, IDashboardEventService dashboardEvents)
     {
         _db = db;
         _core = core;
         _logger = logger;
         _t = t;
+        _dashboardEvents = dashboardEvents;
     }
 
     public async Task PostOrderPaymentAsync(Order order)
@@ -125,7 +128,11 @@ public class PaymentAccountingService
         var entry = await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, customerId: voucher.CustomerId, orderId: orderId, source: voucher.CostCenter, employeeId: voucher.EmployeeId);
         
         voucher.JournalEntryId = entry.Id;
+        
+        // ⚡ Outbox Pattern: Save event in the same transaction
+        _dashboardEvents.NotifyTransactionOccurred(voucher.VoucherDate);
         await _db.SaveChangesAsync();
+        _dashboardEvents.TriggerImmediateProcessing();
     }
 
     public async Task PostPaymentVoucherAsync(PaymentVoucher voucher)
@@ -138,7 +145,11 @@ public class PaymentAccountingService
         var entry = await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, supplierId: voucher.SupplierId, purchaseInvoiceId: voucher.PurchaseInvoiceId, source: voucher.CostCenter, employeeId: voucher.EmployeeId);
         
         voucher.JournalEntryId = entry.Id;
+        
+        // ⚡ Outbox Pattern: Save event in the same transaction
+        _dashboardEvents.NotifyTransactionOccurred(voucher.VoucherDate);
         await _db.SaveChangesAsync();
+        _dashboardEvents.TriggerImmediateProcessing();
     }
 
     public async Task PostSupplierPaymentAsync(SupplierPayment payment)
@@ -158,5 +169,8 @@ public class PaymentAccountingService
         await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, payment.PaymentNumber, _t.Get("Accounting.SupplierPaymentVoucherMainDesc", payment.PaymentNumber), payment.PaymentDate, lines, supplierId: payment.SupplierId, purchaseInvoiceId: payment.PurchaseInvoiceId, source: payment.CostCenter);
         
         await _core.SyncEntityBalancesAsync();
+        
+        // ⚡ Decoupled Event
+        _dashboardEvents.NotifyTransactionOccurred(payment.PaymentDate);
     }
 }

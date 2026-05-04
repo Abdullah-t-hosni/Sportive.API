@@ -8,6 +8,7 @@ using Sportive.API.Hubs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using System.Text;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Sportive.API.Services;
 
@@ -16,12 +17,14 @@ public class DashboardService : IDashboardService
     private readonly AppDbContext _db;
     private readonly IHubContext<NotificationHub> _hub;
     private readonly UserManager<AppUser> _userManager;
+    private readonly ICacheService _cache;
 
-    public DashboardService(AppDbContext db, IHubContext<NotificationHub> hub, UserManager<AppUser> userManager)
+    public DashboardService(AppDbContext db, IHubContext<NotificationHub> hub, UserManager<AppUser> userManager, ICacheService cache)
     {
         _db = db;
         _hub = hub;
         _userManager = userManager;
+        _cache = cache;
     }
 
     public async Task<DashboardStatsDto> GetStatsAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null)
@@ -424,6 +427,17 @@ public class DashboardService : IDashboardService
         );
     public async Task<object> GetKpiAsync(OrderSource? source = null)
     {
+        var EgyptTime = TimeHelper.GetEgyptTime();
+        var cacheKey = $"KPI_DASHBOARD_{source}_{EgyptTime:yyyyMMdd_HHmm}";
+
+        return await _cache.GetOrCreateAsync(cacheKey, async () => 
+        {
+            return await GetKpiInternalAsync(source);
+        }, TimeSpan.FromSeconds(30)) ?? new {};
+    }
+
+    private async Task<object> GetKpiInternalAsync(OrderSource? source = null)
+    {
         var now        = TimeHelper.GetEgyptTime();
         var todayStart     = now.Date;
         var todayEnd       = todayStart.AddDays(1);
@@ -599,13 +613,35 @@ public class DashboardService : IDashboardService
     public async Task<List<SalesChartDto>> GetSalesChartAsync(string period)
     {
         var now = TimeHelper.GetEgyptTime();
-        var from = period == "daily" ? now.AddDays(-29).Date : new DateTime(now.Year - 1, now.Month, 1);
-        var orders = await _db.Orders.AsNoTracking().Where(o => o.CreatedAt >= from && o.Status != OrderStatus.Cancelled)
-            .Select(o => new { o.CreatedAt, o.TotalAmount }).ToListAsync();
-        
+        var start = period == "daily" ? now.AddDays(-29).Date : new DateTime(now.Year - 1, now.Month, 1);
+        var end = now.Date.AddDays(1);
+
+        // Try to get from DailyStats (General source)
+        var stats = await _db.DailyStats.AsNoTracking()
+            .Where(s => s.Date >= start && s.Date < end && s.Source == OrderSource.General)
+            .OrderBy(s => s.Date)
+            .Select(s => new { s.Date, s.TotalSales, s.OrdersCount })
+            .ToListAsync();
+
         if (period == "daily")
-            return orders.GroupBy(o => o.CreatedAt.Date).Select(g => new SalesChartDto(g.Key.ToString("MM/dd"), g.Sum(o => o.TotalAmount), g.Count())).OrderBy(x => x.Label).ToList();
-        return orders.GroupBy(o => new { o.CreatedAt.Year, o.CreatedAt.Month }).Select(g => new SalesChartDto($"{g.Key.Month}/{g.Key.Year}", g.Sum(o => o.TotalAmount), g.Count())).OrderBy(x => x.Label).ToList();
+        {
+            var results = new List<SalesChartDto>();
+            for (int i = 0; i < 30; i++)
+            {
+                var date = start.AddDays(i);
+                var dayData = stats.FirstOrDefault(s => s.Date.Date == date.Date);
+                results.Add(new SalesChartDto(date.ToString("MM/dd"), dayData?.TotalSales ?? 0, dayData?.OrdersCount ?? 0));
+            }
+            return results;
+        }
+        else
+        {
+            // Monthly view from daily stats
+            return stats.GroupBy(s => new { s.Date.Year, s.Date.Month })
+                .Select(g => new SalesChartDto($"{g.Key.Month}/{g.Key.Year}", g.Sum(x => x.TotalSales), g.Sum(x => x.OrdersCount)))
+                .OrderBy(x => x.Label)
+                .ToList();
+        }
     }
 
     public async Task<List<TopProductDto>> GetTopProductsAsync(int count = 10)

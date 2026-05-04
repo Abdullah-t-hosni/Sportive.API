@@ -126,6 +126,14 @@ public class StartupSyncService : BackgroundService
             await orderService.SyncAllOrderAccountingAsync();
             await accountingService.SyncAllPurchaseAccountingAsync();
 
+            // ── DASHBOARD PRE-AGGREGATION BACKFILL ────────────
+            var statsService = scope.ServiceProvider.GetRequiredService<IStatisticsService>();
+            if (!await db.DailyStats.AnyAsync(stoppingToken))
+            {
+                _logger.LogInformation("[StartupSync] DailyStats table is empty. Running backfill for the last 90 days...");
+                await statsService.BackfillStatsAsync(TimeHelper.GetEgyptTime().Date.AddDays(-90), TimeHelper.GetEgyptTime().Date);
+            }
+
             _logger.LogInformation("[StartupSync] All synchronizations completed successfully.");
         }
         catch (OperationCanceledException)

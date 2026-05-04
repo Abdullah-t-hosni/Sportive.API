@@ -264,6 +264,11 @@ builder.Services.AddScoped<IWishlistService, WishlistService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<IAiAssistantService, AiAssistantService>();
 builder.Services.AddScoped<IPermissionService, PermissionService>();  // unified authz service
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ITenantProvider, TenantProvider>();
+builder.Services.AddScoped<IStatisticsService, StatisticsService>();
+builder.Services.AddScoped<IDashboardEventService, DashboardEventService>();
+builder.Services.AddScoped<IOutboxProcessor, OutboxProcessor>();
 builder.Services.AddSingleton<ITranslator, Translator>();
 builder.Services.AddSingleton<SequenceService>();
 builder.Services.AddSingleton<TimeService>();
@@ -437,6 +442,19 @@ app.UseHangfireDashboard("/jobs", new DashboardOptions
 app.MapControllers();
 app.MapHealthChecks("/health");
 app.MapHub<NotificationHub>("/notifications-hub");
+
+// ── RECURRING JOBS ────────────────────────────────────
+using (var scope = app.Services.CreateScope())
+{
+    var backgroundJobs = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
+    backgroundJobs.AddOrUpdate("UpdateTodayStats", 
+        () => scope.ServiceProvider.GetRequiredService<IStatisticsService>().UpdateDailyStatsAsync(TimeHelper.GetEgyptTime()), 
+        "*/15 * * * *");
+        
+    backgroundJobs.AddOrUpdate("ProcessOutbox", 
+        () => scope.ServiceProvider.GetRequiredService<IOutboxProcessor>().ProcessMessagesAsync(), 
+        "*/1 * * * *"); // Every minute for near real-time analytics
+}
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Run($"http://0.0.0.0:{port}");
