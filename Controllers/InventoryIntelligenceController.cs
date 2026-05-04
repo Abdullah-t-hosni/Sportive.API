@@ -109,7 +109,6 @@ public class InventoryIntelligenceController : ControllerBase
             });
         }
 
-        // â”€â”€ ÙÙˆØ§ØªÙŠØ± Ø¢Ø¬Ù„Ø© Ø¨Ø¯ÙˆÙ† ØªØ§Ø±ÙŠØ® Ø§Ø³ØªØ­Ù‚Ø§Ù‚ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var undated       = invoices.Where(i => !i.DueDate.HasValue && i.PaymentTerms == PaymentTerms.Credit).ToList();
         var undatedAmount = undated.Sum(i => i.RemainingAmount);
 
@@ -217,7 +216,6 @@ public class InventoryIntelligenceController : ControllerBase
                      && v.Product.Status == ProductStatus.Active
                      && !auditedToday.Contains(v.Id));
 
-        // ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„ÙÙ„Ø§ØªØ± Ø¥Ø°Ø§ ÙˆÙØ¬Ø¯Øª
         if (!string.IsNullOrEmpty(search))
         {
             q = q.Where(v => v.Product!.NameAr.Contains(search) || v.Product.SKU.Contains(search));
@@ -367,7 +365,7 @@ public class InventoryIntelligenceController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        // â”€â”€ ACCOUNTING LINK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        //  ACCOUNTING LINK 
         decimal netImpact = audit.TotalActualValue - audit.TotalExpectedValue;
         if (netImpact != 0)
         {
@@ -398,6 +396,6 @@ public class InventoryIntelligenceController : ControllerBase
     }
 }
 
-// â”€â”€ Cycle Count DTO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//  Cycle Count DTO 
 public record CycleCountItemDto(int VariantId, int ActualCount, string? Notes);
 
