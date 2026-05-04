@@ -425,6 +425,8 @@ public class DashboardService : IDashboardService
             orders.Count,
             orders.Sum(o => o.TotalAmount)
         );
+    }
+
     public async Task<object> GetKpiAsync(OrderSource? source = null)
     {
         var EgyptTime = TimeHelper.GetEgyptTime();
