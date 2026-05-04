@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -168,19 +168,19 @@ public class InventoryIntelligenceController : ControllerBase
             .ThenBy(v => v.Product!.NameAr)
             .Select(v => new
             {
-                ProductId    = v.ProductId,
-                ProductName  = v.Product!.NameAr,
-                ProductSKU   = v.Product!.SKU,
-                CategoryName = v.Product!.Category != null ? v.Product.Category.NameAr : "",
-                VariantId    = v.Id,
-                Size         = v.Size,
-                Color        = v.ColorAr ?? v.Color,
-                Stock        = v.StockQuantity,
-                ReorderLevel = v.ReorderLevel > 0 ? v.ReorderLevel : threshold,
-                Shortage     = Math.Max(0, (v.ReorderLevel > 0 ? v.ReorderLevel : threshold) - v.StockQuantity),
-                IsZero       = v.StockQuantity <= 0,
-                IsCritical   = v.StockQuantity == 1,
-                CostValue    = (decimal)v.StockQuantity * (v.Product!.CostPrice ?? 0)
+                productId         = v.ProductId,
+                productName       = v.Product!.NameAr,
+                sku               = v.Product!.SKU,
+                categoryName      = v.Product!.Category != null ? v.Product.Category.NameAr : "",
+                variantId         = v.Id,
+                size              = v.Size,
+                color             = v.ColorAr ?? v.Color,
+                stockQuantity     = v.StockQuantity,
+                reorderPoint      = v.ReorderLevel > 0 ? v.ReorderLevel : threshold,
+                suggestedQuantity = Math.Max(0, (v.ReorderLevel > 0 ? v.ReorderLevel : threshold) - v.StockQuantity),
+                isZero            = v.StockQuantity <= 0,
+                isCritical        = v.StockQuantity == 1,
+                costValue         = (decimal)v.StockQuantity * (v.Product!.CostPrice ?? 0)
             })
             .ToListAsync();
 
@@ -188,8 +188,8 @@ public class InventoryIntelligenceController : ControllerBase
         {
             threshold,
             totalAlerts    = variants.Count,
-            zeroStockCount = variants.Count(v => v.IsZero),
-            criticalCount  = variants.Count(v => v.IsCritical),
+            zeroStockCount = variants.Count(v => v.isZero),
+            criticalCount  = variants.Count(v => v.isCritical),
             rows           = variants
         });
     }
