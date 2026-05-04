@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -366,7 +366,7 @@ public class ExportController : ControllerBase
             ws.Cell(row, 6).Style.NumberFormat.Format = "#,##0.00";
             ws.Cell(row, 9).Style.NumberFormat.Format = "#,##0.00";
 
-            // ØªÙ„ÙˆÙŠÙ† Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª Ù…Ù†Ø®ÙØ¶Ø© Ø§Ù„Ù…Ø®Ø²ÙˆÙ†
+            // تلوين المنتجات منخفضة المخزون
             if (p.TotalStock == 0)
                 ws.Row(row).Style.Fill.BackgroundColor = XLColor.FromHtml("#ffebee");
             else if (p.ReorderLevel > 0 && p.TotalStock <= p.ReorderLevel)
@@ -375,7 +375,7 @@ public class ExportController : ControllerBase
             row++;
         }
 
-        // ØµÙ Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ
+        // صف الإجمالي
         ws.Cell(row + 1, 8).Value = "إجمالي قيمة المخزون:";
         ws.Cell(row + 1, 8).Style.Font.Bold = true;
         ws.Cell(row + 1, 9).Value = grandTotal;
@@ -393,7 +393,7 @@ public class ExportController : ControllerBase
             $"inventory_full_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
-    // â”€â”€ LOW STOCK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── LOW STOCK ──────────────────────────────────────────────────────────
     // GET /api/export/low-stock
     [HttpGet("low-stock")]
     public async Task<IActionResult> ExportLowStock()
@@ -433,7 +433,7 @@ public class ExportController : ControllerBase
 
             ws.Cell(row, 8).Style.NumberFormat.Format = "#,##0.00";
 
-            // Ø£Ø­Ù…Ø± Ù„Ù„Ù†Ø§ÙØ°ØŒ Ø£ØµÙØ± Ù„Ù„Ù…Ù†Ø®ÙØ¶
+            // أحمر للنافذ، أصفر للمنخفض
             ws.Row(row).Style.Fill.BackgroundColor = p.TotalStock == 0
                 ? XLColor.FromHtml("#ffebee")
                 : XLColor.FromHtml("#fff8e1");

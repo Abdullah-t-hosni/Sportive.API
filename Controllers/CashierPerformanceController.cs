@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -57,13 +57,13 @@ public class CashierPerformanceController : ControllerBase
             .Select(u => new { u.Id, u.FullName, u.PhoneNumber })
             .ToDictionaryAsync(u => u.Id);
 
-        // â”€â”€ ØªØ¬Ù…ÙŠØ¹ Ø­Ø³Ø¨ Ø§Ù„ÙƒØ§Ø´ÙŠØ± â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ---- تجميع حسب الكاشير --------------------------
         var cashierStats = orders
             .GroupBy(o => o.SalesPersonId!)
             .Select(g =>
             {
                 var user       = users.GetValueOrDefault(g.Key);
-                var name       = user?.FullName?.Trim() ?? "ÙƒØ§Ø´ÙŠØ± ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ";
+                var name       = user?.FullName?.Trim() ?? "كاشير غير معروف";
                 var allOrders  = g.ToList();
                 var grossRevenue = allOrders.Sum(o => o.TotalAmount);
                 var returnsAmount = allOrders.Sum(o => o.OrderReturnAmount);
@@ -74,7 +74,7 @@ public class CashierPerformanceController : ControllerBase
                 var totalItems = allOrders.Sum(o => o.ItemCount);
                 var avgItems   = count > 0 ? (decimal)totalItems / count : 0;
 
-                // Ù…Ø¨ÙŠØ¹Ø§Øª Ø¨Ø§Ù„Ø³Ø§Ø¹Ø© (Ù„ØªØ­Ø¯ÙŠØ¯ Ø³Ø§Ø¹Ø© Ø§Ù„Ø°Ø±ÙˆØ©)
+                // مبيعات بالساعة (لتحديد ساعة الذروة)
                 var byHour = allOrders
                     .GroupBy(o => o.CreatedAt.Hour)
                     .Select(h => new { hour = h.Key, count = h.Count(), revenue = h.Sum(o => o.TotalAmount) })
@@ -83,28 +83,28 @@ public class CashierPerformanceController : ControllerBase
 
                 var peakHour = byHour.FirstOrDefault();
 
-                // Ù…Ø¨ÙŠØ¹Ø§Øª Ø¨Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹
+                // مبيعات بالأسبوع
                 var byDay = allOrders
                     .GroupBy(o => o.CreatedAt.DayOfWeek)
-                    .Select(d => new { day = (int)d.Key, dayName = d.Key.ToString(), count = d.Count(), revenue = d.Sum(o => o.TotalAmount) })
+                    .Select(d => new { day = (int)d.Key, dayName = d.Key.ToString(), count = d.Count(), revenue = h.Sum(o => o.TotalAmount) })
                     .OrderBy(d => d.day)
                     .ToList();
 
-                // Ø¢Ø®Ø± 30 ÙŠÙˆÙ… â€” Ù…Ø¨ÙŠØ¹Ø§Øª ÙŠÙˆÙ…ÙŠØ©
+                // آخر 30 يوم — مبيعات يومية
                 var byDate = allOrders
                     .GroupBy(o => o.CreatedAt.Date)
                     .Select(d => new { date = d.Key.ToString("MM/dd"), revenue = d.Sum(o => o.TotalAmount), count = d.Count() })
                     .OrderBy(d => d.date)
                     .ToList();
 
-                // Ø·Ø±Ù‚ Ø§Ù„Ø¯ÙØ¹
+                // طرق الدفع
                 var paymentBreakdown = allOrders
                     .GroupBy(o => o.PaymentMethod.ToString())
                     .Select(p => new { method = p.Key, count = p.Count(), revenue = p.Sum(o => o.TotalAmount) })
                     .OrderByDescending(p => p.count)
                     .ToList();
 
-                // Ø£ÙƒØ¨Ø± ÙØ§ØªÙˆØ±Ø©
+                // أكبر فاتورة
                 var maxOrder = allOrders.OrderByDescending(o => o.TotalAmount).First();
 
                 return new
@@ -135,7 +135,7 @@ public class CashierPerformanceController : ControllerBase
             .OrderByDescending(c => c.revenue)
             .ToList();
 
-        // â”€â”€ Ù…Ù„Ø®Øµ Ø¥Ø¬Ù…Ø§Ù„ÙŠ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ---- ملخص إجمالي ----------------------------
         var totalNetRevenue = cashierStats.Sum(c => c.revenue);
         var summary = new
         {
@@ -148,7 +148,7 @@ public class CashierPerformanceController : ControllerBase
             avgOrderAll    = cashierStats.Any() ? Math.Round(cashierStats.Average(c => c.avgOrder), 2) : 0,
             topCashier     = cashierStats.FirstOrDefault()?.name,
             topRevenue     = cashierStats.FirstOrDefault()?.revenue ?? 0,
-            // Ù…Ù‚Ø§Ø±Ù†Ø© Ø¨Ø§Ù„Ù†Ø³Ø¨Ø© Ø§Ù„Ù…Ø¦ÙˆÙŠØ© Ù„ÙƒÙ„ ÙƒØ§Ø´ÙŠØ±
+            // مقارنة بالنسبة المئوية لكل كاشير
             revenueShare   = cashierStats.Select(c => new {
                 c.name,
                 share = totalNetRevenue > 0 ? Math.Round(c.revenue / totalNetRevenue * 100, 1) : 0m,
@@ -160,22 +160,22 @@ public class CashierPerformanceController : ControllerBase
         return Ok(new { from, to, cashiers = cashierStats, summary });
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // =========================================================================
     // Excel Export
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // =========================================================================
     private IActionResult ExportExcel(dynamic cashiers, dynamic summary, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("Ø£Ø¯Ø§Ø¡ Ø§Ù„ÙƒØ§Ø´ÙŠØ±ÙŠÙ†");
+        var ws = wb.Worksheets.Add("أداء الكاشيرين");
         ws.RightToLeft = true;
 
-        ws.Cell(1, 1).Value = $"ØªÙ‚Ø±ÙŠØ± Ø£Ø¯Ø§Ø¡ Ø§Ù„ÙƒØ§Ø´ÙŠØ±ÙŠÙ† â€” Ù…Ù† {from:yyyy-MM-dd} Ø¥Ù„Ù‰ {to:yyyy-MM-dd}";
+        ws.Cell(1, 1).Value = $"تقرير أداء الكاشيرين — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
         ws.Cell(1, 1).Style.Font.Bold = true;
         ws.Cell(1, 1).Style.Font.FontSize = 13;
         ws.Range(1, 1, 1, 8).Merge();
 
-        string[] headers = { "Ø§Ù„ÙƒØ§Ø´ÙŠØ±", "Ø¹Ø¯Ø¯ Ø§Ù„Ø·Ù„Ø¨Ø§Øª", "Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª", "Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø±ØªØ¬Ø¹Ø§Øª", "Ø§Ù„ØµØ§ÙÙŠ Ø§Ù„Ù…Ø­Ù‚Ù‚", "Ù…ØªÙˆØ³Ø· Ø§Ù„ÙØ§ØªÙˆØ±Ø©",
-                              "Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø®ØµÙ…", "Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù‚Ø·Ø¹", "Ø£ÙƒØ¨Ø± ÙØ§ØªÙˆØ±Ø©", "Ø³Ø§Ø¹Ø© Ø§Ù„Ø°Ø±ÙˆØ©" };
+        string[] headers = { "الكاشير", "عدد الطلبات", "إجمالي المبيعات", "إجمالي المرتجعات", "الصافي المحقق", "متوسط الفاتورة",
+                              "إجمالي الخصم", "إجمالي القطع", "أكبر فاتورة", "ساعة الذروة" };
         for (int c = 0; c < headers.Length; c++)
         {
             var cell = ws.Cell(2, c + 1);

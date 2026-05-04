@@ -1322,10 +1322,10 @@ public class OperationalReportsController : ControllerBase
             }
 
             if (!string.IsNullOrEmpty(color))
-                movementsQuery = movementsQuery.Where(m => (m.ProductVariant != null && (m.ProductVariant.Color == color || m.ProductVariant.ColorAr == color)) || (m.Product != null && m.Product.Variants.Any(v => v.Color == color || v.ColorAr == color)));
+                movementsQuery = movementsQuery.Where(m => m.ProductVariant != null && (m.ProductVariant.Color == color || m.ProductVariant.ColorAr == color));
 
             if (!string.IsNullOrEmpty(size))
-                movementsQuery = movementsQuery.Where(m => (m.ProductVariant != null && m.ProductVariant.Size == size) || (m.Product != null && m.Product.Variants.Any(v => v.Size == size)));
+                movementsQuery = movementsQuery.Where(m => m.ProductVariant != null && m.ProductVariant.Size == size);
 
             var totalCount = await movementsQuery.CountAsync();
             var dbMovements = await movementsQuery
@@ -1477,6 +1477,18 @@ public class OperationalReportsController : ControllerBase
         if (source.HasValue) q = q.Where(m => m.CostCenter == source.Value);
         if (type.HasValue) q = q.Where(m => m.Type == type.Value);
 
+        if (categoryId.HasValue && categoryId > 0)
+        {
+            var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
+            q = q.Where(m => m.Product != null && m.Product.CategoryId.HasValue && categoryIds.Contains(m.Product.CategoryId.Value));
+        }
+
+        if (brandId.HasValue && brandId > 0)
+        {
+            var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
+            q = q.Where(m => m.Product != null && m.Product.BrandId.HasValue && brandIds.Contains(m.Product.BrandId.Value));
+        }
+
         var periodQ = q.Where(m => m.CreatedAt >= from && m.CreatedAt <= to);
         var totalCount = await periodQ.CountAsync();
         
@@ -1493,7 +1505,9 @@ public class OperationalReportsController : ControllerBase
             m.CreatedAt,
             productName = m.Product?.NameAr,
             sku         = m.Product?.SKU,
-            variant     = m.ProductVariant != null ? $"{m.ProductVariant.Size} {m.ProductVariant.ColorAr}" : "أساسي",
+            variant     = m.ProductVariant != null ? m.ProductVariant.Size : "أساسي",
+            color       = m.ProductVariant != null ? (m.ProductVariant.ColorAr ?? m.ProductVariant.Color) : "",
+            colorAr     = m.ProductVariant != null ? m.ProductVariant.ColorAr : "",
             entryType   = m.Type.ToString(),
             entryTypeAr = GetMovementTypeAr(m.Type),
             m.Quantity,
@@ -1931,7 +1945,7 @@ public class OperationalReportsController : ControllerBase
         var stream = new FileStream(tempFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.DeleteOnClose);
         return new FileStreamResult(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") { FileDownloadName = filename };
     }    // ══════════════════════════════════════════════════════
-    // 12. "a"` "~" " "~" (Stock Aging)
+    // 12.(Stock Aging)
     // GET /api/operationalreports/inventory-aging?days=60
     // ══════════════════════════════════════════════════════
     [HttpGet("inventory-aging")]
