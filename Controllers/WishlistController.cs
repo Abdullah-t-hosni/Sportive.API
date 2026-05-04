@@ -53,6 +53,21 @@ public class WishlistController : ControllerBase
         return Ok(items);
     }
 
+    /// <summary>GET /api/wishlist/ids — أرقام المنتجات المحفوظة فقط</summary>
+    [HttpGet("ids")]
+    public async Task<IActionResult> GetIds()
+    {
+        var customerId = await GetCustomerIdAsync();
+        if (customerId == null) return Ok(new List<int>());
+
+        var ids = await _db.Set<WishlistItem>()
+            .Where(w => w.CustomerId == customerId)
+            .Select(w => w.ProductId)
+            .ToListAsync();
+
+        return Ok(ids);
+    }
+
     /// <summary>POST /api/wishlist — إضافة منتج</summary>
     [HttpPost]
     public async Task<IActionResult> Add([FromBody] AddWishlistDto dto)
