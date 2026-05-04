@@ -422,14 +422,6 @@ public class DashboardService : IDashboardService
             orders.Count,
             orders.Sum(o => o.TotalAmount)
         );
-    }
-
-    public async Task TriggerLiveUpdateAsync()
-    {
-        // Pushes a refresh event to all clients in the "Admin" group
-        await _hub.Clients.Group("Admin").SendAsync("RefreshDashboard");
-    }
-
     public async Task<object> GetKpiAsync(OrderSource? source = null)
     {
         var now        = TimeHelper.GetEgyptTime();
@@ -442,394 +434,205 @@ public class DashboardService : IDashboardService
         var monthStart     = new DateTime(now.Year, now.Month, 1);
         var lastMonthStart = monthStart.AddMonths(-1);
         var lastMonthEnd   = monthStart;
-        var yearStart      = new DateTime(now.Year, 1, 1);
 
-        // ── جلب كل الطلبات المهمة مرة واحدة ──────────
-        var allOrdersQuery = _db.Orders
-            .Where(o => o.Status != OrderStatus.Cancelled);
-        
-        if (source.HasValue)
-        {
-            allOrdersQuery = allOrdersQuery.Where(o => o.Source == source.Value);
-        }
+        // ── 1. جلب الإحصائيات الأساسية من قاعدة البيانات (Aggregate Queries) ──────────
+        var allOrdersQuery = _db.Orders.AsNoTracking().Where(o => o.Status != OrderStatus.Cancelled);
+        if (source.HasValue) allOrdersQuery = allOrdersQuery.Where(o => o.Source == source.Value);
 
-        var allOrders = await allOrdersQuery
-            .Select(o => new {
-                o.Id, o.CreatedAt, o.TotalAmount, o.SubTotal,
-                o.DiscountAmount, o.Status, o.Source,
-                o.PaymentMethod, o.CustomerId, o.PaidAmount,
-                ItemCount = o.Items.Sum(i => i.Quantity)
-            })
-            .ToListAsync();
+        var stats = await allOrdersQuery.GroupBy(x => 1).Select(g => new {
+            TodayRev = g.Where(o => o.CreatedAt >= todayStart && o.CreatedAt < todayEnd).Sum(o => (decimal?)o.TotalAmount) ?? 0,
+            TodayCount = g.Count(o => o.CreatedAt >= todayStart && o.CreatedAt < todayEnd),
+            YesterdayRev = g.Where(o => o.CreatedAt >= yesterdayStart && o.CreatedAt < todayStart).Sum(o => (decimal?)o.TotalAmount) ?? 0,
+            YesterdayCount = g.Count(o => o.CreatedAt >= yesterdayStart && o.CreatedAt < todayStart),
+            WeekRev = g.Where(o => o.CreatedAt >= weekStart).Sum(o => (decimal?)o.TotalAmount) ?? 0,
+            WeekCount = g.Count(o => o.CreatedAt >= weekStart),
+            LastWeekRev = g.Where(o => o.CreatedAt >= lastWeekStart && o.CreatedAt < lastWeekEnd).Sum(o => (decimal?)o.TotalAmount) ?? 0,
+            LastWeekCount = g.Count(o => o.CreatedAt >= lastWeekStart && o.CreatedAt < lastWeekEnd),
+            MonthRev = g.Where(o => o.CreatedAt >= monthStart).Sum(o => (decimal?)o.TotalAmount) ?? 0,
+            MonthCount = g.Count(o => o.CreatedAt >= monthStart),
+            LastMonthRev = g.Where(o => o.CreatedAt >= lastMonthStart && o.CreatedAt < lastMonthEnd).Sum(o => (decimal?)o.TotalAmount) ?? 0,
+            LastMonthCount = g.Count(o => o.CreatedAt >= lastMonthStart && o.CreatedAt < lastMonthEnd),
+            TotalRev = g.Sum(o => (decimal?)o.TotalAmount) ?? 0,
+            TotalCount = g.Count()
+        }).FirstOrDefaultAsync();
 
-        // ── جلب المدفوعات (Order Payments) ──────────
-        var allPaymentsQuery = _db.OrderPayments
-            .Where(p => p.Order.Status != OrderStatus.Cancelled && p.Order.CreatedAt >= lastMonthStart);
-        
-        if (source.HasValue)
-        {
-            allPaymentsQuery = allPaymentsQuery.Where(p => p.Order.Source == source.Value);
-        }
+        var todayRevenue = stats?.TodayRev ?? 0;
+        var todayOrdersCount = stats?.TodayCount ?? 0;
+        var yesterdayRevenue = stats?.YesterdayRev ?? 0;
+        var yesterdayOrdersCount = stats?.YesterdayCount ?? 0;
+        var thisMonthRevenue = stats?.MonthRev ?? 0;
+        var thisMonthOrdersCount = stats?.MonthCount ?? 0;
+        var lastMonthRevenue = stats?.LastMonthRev ?? 0;
+        var lastMonthOrdersCount = stats?.LastMonthCount ?? 0;
 
-        var allPayments = await allPaymentsQuery
-            .Select(p => new { p.Order.CreatedAt, p.Amount, p.Method, p.OrderId })
-            .ToListAsync();
+        // ── 2. جلب التحصيلات (سندات القبض) ──────────
+        var allCollectionsQuery = _db.ReceiptVouchers.AsNoTracking().Where(v => v.VoucherDate >= lastMonthStart);
+        if (source.HasValue) allCollectionsQuery = allCollectionsQuery.Where(v => v.CostCenter == source.Value);
 
-        // ── جلب التحصيلات (سندات القبض) ──────────
-        var allCollectionsQuery = _db.ReceiptVouchers
-            .Where(v => v.VoucherDate >= lastMonthStart);
-        
-        if (source.HasValue)
-        {
-            allCollectionsQuery = allCollectionsQuery.Where(v => v.CostCenter == source.Value);
-        }
+        var collStats = await allCollectionsQuery.GroupBy(x => 1).Select(g => new {
+            Today = g.Where(v => v.VoucherDate >= todayStart && v.VoucherDate < todayEnd).Sum(v => (decimal?)v.Amount) ?? 0,
+            Yesterday = g.Where(v => v.VoucherDate >= yesterdayStart && v.VoucherDate < todayStart).Sum(v => (decimal?)v.Amount) ?? 0,
+            Week = g.Where(v => v.VoucherDate >= weekStart).Sum(v => (decimal?)v.Amount) ?? 0,
+            LastWeek = g.Where(v => v.VoucherDate >= lastWeekStart && v.VoucherDate < lastWeekEnd).Sum(v => (decimal?)v.Amount) ?? 0,
+            Month = g.Where(v => v.VoucherDate >= monthStart).Sum(v => (decimal?)v.Amount) ?? 0,
+            LastMonth = g.Where(v => v.VoucherDate >= lastMonthStart && v.VoucherDate < lastMonthEnd).Sum(v => (decimal?)v.Amount) ?? 0
+        }).FirstOrDefaultAsync();
 
-        var allCollections = await allCollectionsQuery
-            .Select(v => new { v.VoucherDate, v.Amount, v.PaymentMethod })
-            .ToListAsync();
+        var todayCollections = collStats?.Today ?? 0;
+        var yesterdayCollections = collStats?.Yesterday ?? 0;
+        var thisMonthCollections = collStats?.Month ?? 0;
+        var lastMonthCollections = collStats?.LastMonth ?? 0;
 
-        // ── جلب المصروفات (سندات الصرف) ──────────
-        var allExpensesQuery = _db.PaymentVouchers
-            .Where(v => v.VoucherDate >= todayStart && v.PaymentMethod == VoucherPaymentMethod.Cash);
-        
-        if (source.HasValue)
-        {
-            allExpensesQuery = allExpensesQuery.Where(v => v.CostCenter == source.Value);
-        }
-
-        var todayExpenses = await allExpensesQuery
+        // ── 3. جلب المصروفات اليومية ──────────
+        var todayExpenses = await _db.PaymentVouchers.AsNoTracking()
+            .Where(v => v.VoucherDate >= todayStart && v.VoucherDate < todayEnd && (source == null || v.CostCenter == source))
             .SumAsync(v => (decimal?)v.Amount) ?? 0;
 
-        // ── KPI 1: إيرادات اليوم ──────────────────────
-        var todayOrders     = allOrders.Where(o => o.CreatedAt >= todayStart && o.CreatedAt < todayEnd).ToList();
-        var yesterdayOrders = allOrders.Where(o => o.CreatedAt >= yesterdayStart && o.CreatedAt < todayStart).ToList();
-        var todayRevenue    = todayOrders.Sum(o => o.TotalAmount);
-        var yesterdayRevenue= yesterdayOrders.Sum(o => o.TotalAmount);
-        var todayCollections = allCollections.Where(v => v.VoucherDate >= todayStart && v.VoucherDate < todayEnd).Sum(v => v.Amount);
-        var yesterdayCollections = allCollections.Where(v => v.VoucherDate >= yesterdayStart && v.VoucherDate < todayStart).Sum(v => v.Amount);
-
-        // ── KPI 2: هذا الأسبوع vs الأسبوع الماضي ─────
-        var thisWeekOrders  = allOrders.Where(o => o.CreatedAt >= weekStart).ToList();
-        var lastWeekOrders  = allOrders.Where(o => o.CreatedAt >= lastWeekStart && o.CreatedAt < lastWeekEnd).ToList();
-        var thisWeekRevenue = thisWeekOrders.Sum(o => o.TotalAmount);
-        var lastWeekRevenue = lastWeekOrders.Sum(o => o.TotalAmount);
-        var thisWeekCollections = allCollections.Where(v => v.VoucherDate >= weekStart).Sum(v => v.Amount);
-        var lastWeekCollections = allCollections.Where(v => v.VoucherDate >= lastWeekStart && v.VoucherDate < lastWeekEnd).Sum(v => v.Amount);
-
-        // ── KPI 3: هذا الشهر ─────────────────────────
-        var thisMonthOrders = allOrders.Where(o => o.CreatedAt >= monthStart).ToList();
-        var lastMonthOrders = allOrders.Where(o => o.CreatedAt >= lastMonthStart && o.CreatedAt < lastMonthEnd).ToList();
-        var thisMonthRevenue= thisMonthOrders.Sum(o => o.TotalAmount);
-        var lastMonthRevenue= lastMonthOrders.Sum(o => o.TotalAmount);
-        var thisMonthCollections = allCollections.Where(v => v.VoucherDate >= monthStart).Sum(v => v.Amount);
-        var lastMonthCollections = allCollections.Where(v => v.VoucherDate >= lastMonthStart && v.VoucherDate < lastMonthEnd).Sum(v => v.Amount);
-
-        // ── KPI 4: متوسط قيمة الطلب ──────────────────
-        var avgOrderThisWeek = thisWeekOrders.Count > 0 ? thisWeekOrders.Average(o => o.TotalAmount) : 0;
-        var avgOrderLastWeek = lastWeekOrders.Count > 0 ? lastWeekOrders.Average(o => o.TotalAmount) : 0;
-
-        // ── KPI 5: معدل التحويل كاشير vs موقع ─────────
-        var posCount     = thisWeekOrders.Count(o => o.Source == OrderSource.POS);
-        var webCount     = thisWeekOrders.Count(o => o.Source == OrderSource.Website);
-        var totalCount   = thisWeekOrders.Count;
-
-        // ── KPI 6: المرتجعات ──────────────────────────
-        var returnedThisMonth = await _db.Orders
-            .Where(o => o.Status == OrderStatus.Returned && o.CreatedAt >= monthStart)
-            .CountAsync();
-        var returnRate = thisMonthOrders.Count > 0
-            ? Math.Round((decimal)returnedThisMonth / (thisMonthOrders.Count + returnedThisMonth) * 100, 1) : 0;
-
-        // ── TOP PRODUCTS (أفضل 10 منتجات) ───────────
-        var topProducts = await _db.OrderItems
-            .Include(i => i.Order)
-            .Include(i => i.Product).ThenInclude(p => p!.Images)
-            .Where(i => i.Order.Status != OrderStatus.Cancelled
-                     && i.Order.CreatedAt >= monthStart
-                     && i.ProductId.HasValue) // ✅ Added
-            .GroupBy(i => new { ProductId = i.ProductId!.Value, i.ProductNameAr, i.ProductNameEn })
+        // ── 4. أفضل المنتجات ──────────
+        var topProducts = await _db.OrderItems.AsNoTracking()
+            .Where(i => i.Order!.Status != OrderStatus.Cancelled && i.Order.CreatedAt >= monthStart && i.ProductId.HasValue && (source == null || i.Order.Source == source))
+            .GroupBy(i => new { i.ProductId, i.ProductNameAr, i.ProductNameEn })
             .Select(g => new {
-                g.Key.ProductId,
-                g.Key.ProductNameAr,
-                g.Key.ProductNameEn,
-                TotalSold    = g.Sum(i => i.Quantity),
+                ProductId = g.Key.ProductId!.Value,
+                ProductNameAr = g.Key.ProductNameAr,
+                ProductNameEn = g.Key.ProductNameEn,
+                TotalSold = g.Sum(i => i.Quantity),
                 TotalRevenue = g.Sum(i => i.TotalPrice),
-                OrderCount   = g.Select(i => i.OrderId).Distinct().Count(),
+                OrderCount = g.Select(i => i.OrderId).Distinct().Count()
             })
             .OrderByDescending(x => x.TotalRevenue)
             .Take(10)
             .ToListAsync();
 
-        // Add images
         var productIds = topProducts.Select(p => p.ProductId).ToList();
-        var images     = await _db.ProductImages
+        var imagesMap = await _db.ProductImages.AsNoTracking()
             .Where(img => productIds.Contains(img.ProductId) && img.IsMain)
             .ToDictionaryAsync(img => img.ProductId, img => img.ImageUrl);
 
-        // ── SALES BY HOUR (آخر 24 ساعة) ──────────────
-        var last24hOrders = allOrders.Where(o => o.CreatedAt >= now.AddHours(-24)).ToList();
-        var salesByHour   = Enumerable.Range(0, 24).Select(h => {
-            var hourStart = now.AddHours(-24 + h);
-            var hourEnd   = hourStart.AddHours(1);
-            var hrs       = last24hOrders.Where(o => o.CreatedAt >= hourStart && o.CreatedAt < hourEnd);
-            return new { hour = hourStart.Hour, revenue = hrs.Sum(o => o.TotalAmount), orders = hrs.Count() };
+        // ── 5. المخططات (Charts) ──────────
+        var last24h = now.AddHours(-24);
+        var salesByHourRaw = await allOrdersQuery.Where(o => o.CreatedAt >= last24h)
+            .GroupBy(o => o.CreatedAt.Hour)
+            .Select(g => new { hour = g.Key, revenue = g.Sum(o => o.TotalAmount), orders = g.Count() })
+            .ToListAsync();
+        
+        var salesByHour = Enumerable.Range(0, 24).Select(h => {
+            var hour = now.AddHours(-23 + h).Hour;
+            var data = salesByHourRaw.FirstOrDefault(x => x.hour == hour);
+            return new { hour, revenue = data?.revenue ?? 0, orders = data?.orders ?? 0 };
         }).ToList();
 
-        // ── SALES BY DAY (آخر 30 يوم) ────────────────
-        var salesByDay = Enumerable.Range(0, 30).Select(d => {
-            var dayStart = todayStart.AddDays(-29 + d);
-            var dayEnd   = dayStart.AddDays(1);
-            var day      = allOrders.Where(o => o.CreatedAt >= dayStart && o.CreatedAt < dayEnd);
-            return new {
-                date    = dayStart.ToString("MM/dd"),
-                dayName = dayStart.DayOfWeek.ToString()[..3],
-                revenue = day.Sum(o => o.TotalAmount),
-                orders  = day.Count()
-            };
-        }).ToList();
-
-        // ── توزيع طرق الدفع لليوم (دقيق) ────────────────
-        var todayPayments = allPayments.Where(p => p.CreatedAt >= todayStart && p.CreatedAt < todayEnd).ToList();
-        var todayPaidTotal = todayPayments.Sum(p => p.Amount);
-        var todayCreditAmount = todayRevenue - todayPaidTotal;
-        
-        var todayPaymentBreakdown = todayPayments
-            .GroupBy(p => p.Method.ToString())
-            .Select(g => new {
-                method = g.Key,
-                amount = g.Sum(p => p.Amount)
-            }).ToList();
-        
-        // إضافة خانة الأجل إذا وجدت
-        if (todayCreditAmount > 0) {
-            todayPaymentBreakdown.Add(new { method = "Credit", amount = todayCreditAmount });
-        }
-
-        // ── PAYMENT METHOD BREAKDOWN (This Month) ──────────────────
-        var monthPayments = allPayments.Where(p => p.CreatedAt >= monthStart).ToList();
-        var monthPaidTotal = monthPayments.Sum(p => p.Amount);
-        var monthCreditAmount = thisMonthRevenue - monthPaidTotal;
-
-        var paymentBreakdown = monthPayments
-            .GroupBy(p => p.Method.ToString())
-            .Select(g => new {
-                method  = g.Key,
-                count   = g.Count(),
-                amount  = g.Sum(p => p.Amount),
-                pct     = thisMonthRevenue > 0 ? Math.Round((decimal)g.Sum(p => p.Amount) / thisMonthRevenue * 100, 1) : 0
-            })
-            .ToList();
-        
-        if (monthCreditAmount > 0) {
-            paymentBreakdown.Add(new { 
-                method = "Credit", 
-                count = 0, 
-                amount = monthCreditAmount, 
-                pct = thisMonthRevenue > 0 ? Math.Round(monthCreditAmount / thisMonthRevenue * 100, 1) : 0 
-            });
-        }
-
-        // ── NEW vs RETURNING CUSTOMERS ────────────────
-        var thisMonthCustomers = thisMonthOrders.Select(o => o.CustomerId).Distinct().Count();
-        var newCustomers = await _db.Customers
-            .CountAsync(c => c.CreatedAt >= monthStart);
-        var returningCustomers = thisMonthCustomers - newCustomers < 0 ? 0 : thisMonthCustomers - newCustomers;
-
-        // ── HOURLY PEAK (أوقات الذروة) ────────────────
-        var peakHour = salesByHour.OrderByDescending(h => h.revenue).First();
-
-        // ── 7. أعمار الديون (Aging) ────────────────────
-        // Sales Aging (Customers)
-        var customerLedger = allOrders.GroupBy(o => o.CustomerId)
-            .Select(g => new { CustomerId = g.Key, Balance = g.Sum(o => o.TotalAmount - o.PaidAmount) })
-            .Where(x => x.Balance > 0)
-            .OrderByDescending(x => x.Balance)
-            .ToList();
-
-        var topDebtors = new List<object>();
-        foreach (var cId in customerLedger.Take(5).Select(x => x.CustomerId))
-        {
-            var cust = await _db.Customers.FindAsync(cId);
-            if (cust != null) topDebtors.Add(new { cust.Id, cust.FullName, cust.Phone, balance = customerLedger.First(x => x.CustomerId == cId).Balance });
-        }
-
-        // Purchase Aging (Suppliers)
-        var allPurchases = await _db.PurchaseInvoices
-            .Where(i => i.Status != PurchaseInvoiceStatus.Cancelled)
-            .Select(i => new { i.SupplierId, i.TotalAmount, i.PaidAmount, i.InvoiceDate })
+        var last30d = todayStart.AddDays(-29);
+        var salesByDayRaw = await allOrdersQuery.Where(o => o.CreatedAt >= last30d)
+            .GroupBy(o => o.CreatedAt.Date)
+            .Select(g => new { date = g.Key, revenue = g.Sum(o => o.TotalAmount), orders = g.Count() })
             .ToListAsync();
 
-        var supplierLedger = allPurchases.GroupBy(i => i.SupplierId)
-            .Select(g => new { SupplierId = g.Key, Balance = g.Sum(i => i.TotalAmount - i.PaidAmount) })
-            .Where(x => x.Balance > 0)
+        var salesByDay = Enumerable.Range(0, 30).Select(d => {
+            var date = last30d.AddDays(d);
+            var data = salesByDayRaw.FirstOrDefault(x => x.date == date);
+            return new { date = date.ToString("MM/dd"), dayName = date.DayOfWeek.ToString()[..3], revenue = data?.revenue ?? 0, orders = data?.orders ?? 0 };
+        }).ToList();
+
+        // ── 6. أعمار الديون (Aging) ──────────
+        var topDebtors = await _db.Customers.AsNoTracking()
+            .Where(c => c.Orders.Any(o => o.Status != OrderStatus.Cancelled))
+            .Select(c => new { 
+                c.Id, c.FullName, c.Phone, 
+                Balance = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount - o.PaidAmount) ?? 0 
+            })
+            .Where(x => x.Balance > 0.01M)
             .OrderByDescending(x => x.Balance)
-            .ToList();
+            .Take(5)
+            .ToListAsync();
 
-        var topCreditors = new List<object>();
-        foreach (var sId in supplierLedger.Take(5).Select(x => x.SupplierId))
-        {
-            var supp = await _db.Suppliers.FindAsync(sId);
-            if (supp != null) topCreditors.Add(new { supp.Id, supp.Name, supp.Phone, balance = supplierLedger.First(x => x.SupplierId == sId).Balance });
-        }
+        var topCreditors = await _db.Suppliers.AsNoTracking()
+            .Where(s => s.Invoices.Any(i => i.Status != PurchaseInvoiceStatus.Cancelled))
+            .Select(s => new { 
+                s.Id, s.Name, s.Phone, 
+                Balance = s.Invoices.Where(i => i.Status != PurchaseInvoiceStatus.Cancelled).Sum(i => (decimal?)i.TotalAmount - i.PaidAmount) ?? 0 
+            })
+            .Where(x => x.Balance > 0.01M)
+            .OrderByDescending(x => x.Balance)
+            .Take(5)
+            .ToListAsync();
 
-        // Aging Buckets (Simplified for Dashboard)
-        var salesAgingBuckets = new {
-            current = customerLedger.Where(x => x.Balance > 0).Sum(x => x.Balance),
-            over30 = 0, // Placeholder for simplicity unless detailed loop is needed
-            total = customerLedger.Sum(x => x.Balance)
-        };
-
-        var purchaseAgingBuckets = new {
-            current = supplierLedger.Where(x => x.Balance > 0).Sum(x => x.Balance),
-            total = supplierLedger.Sum(x => x.Balance)
-        };
-
-        // ── 8. مخطط الإيرادات والمصروفات (12 شهر) ─────────
-        var incomeChartData = new List<object>();
-        for (int i = 11; i >= 0; i--)
-        {
-            var mStart = monthStart.AddMonths(-i);
-            var mEnd = mStart.AddMonths(1);
-
-            var rev = allOrders.Where(o => o.CreatedAt >= mStart && o.CreatedAt < mEnd).Sum(o => o.TotalAmount);
-            
-            // Expenses from purchases + payment vouchers
-            var pur = allPurchases.Where(p => p.InvoiceDate >= mStart && p.InvoiceDate < mEnd).Sum(p => p.TotalAmount);
-            var expVouchers = await _db.PaymentVouchers
-                .Where(v => v.VoucherDate >= mStart && v.VoucherDate < mEnd)
-                .SumAsync(v => (decimal?)v.Amount) ?? 0;
-
-            incomeChartData.Add(new {
-                label = mStart.ToString("MMM yy"),
-                revenue = rev,
-                expenses = pur + expVouchers
-            });
-        }
+        // ── 7. توزيع طرق الدفع ──────────
+        var todayPaymentsRaw = await _db.OrderPayments.AsNoTracking()
+            .Where(p => p.Order.Status != OrderStatus.Cancelled && p.Order.CreatedAt >= todayStart && p.Order.CreatedAt < todayEnd && (source == null || p.Order.Source == source))
+            .GroupBy(p => p.Method)
+            .Select(g => new { Method = g.Key.ToString(), Amount = g.Sum(p => p.Amount) })
+            .ToListAsync();
+        
+        var todayPaidTotal = todayPaymentsRaw.Sum(p => p.Amount);
+        var todayCreditAmount = todayRevenue - todayPaidTotal;
+        var todayPaymentBreakdown = todayPaymentsRaw.Select(p => new { method = p.Method, amount = p.Amount }).ToList();
+        if (todayCreditAmount > 0.01M) todayPaymentBreakdown.Add(new { method = "Credit", amount = todayCreditAmount });
 
         // ── ASSEMBLE RESPONSE ─────────────────────────
         return new {
             generatedAt = now,
-            newCustomersToday = await _db.Customers.CountAsync(c => c.CreatedAt >= todayStart),
-            newCustomersList = await _db.Customers
-                .Where(c => c.CreatedAt >= todayStart)
-                .OrderByDescending(c => c.CreatedAt)
-                .Select(c => new { c.Id, c.FullName, c.Phone, c.Email, c.CreatedAt })
-                .ToListAsync(),
-
-            // اليوم مقارنة بالأمس
             today = new {
-                revenue     = todayRevenue,
+                revenue = todayRevenue,
                 collections = todayCollections,
-                expenses    = todayExpenses,
-                orders      = todayOrders.Count,
-                avgOrder    = todayOrders.Count > 0 ? Math.Round(todayRevenue / todayOrders.Count, 2) : 0,
-                expectedInDrawer = todayPayments.Where(p => p.Method == PaymentMethod.Cash).Sum(p => p.Amount) + todayCollections - todayExpenses,
-                vsYesterday = new {
-                    revenue  = yesterdayRevenue,
-                    collections = yesterdayCollections,
-                    growth   = GrowthPct(todayRevenue, yesterdayRevenue),
-                    orders   = yesterdayOrders.Count,
-                    isUp     = todayRevenue >= yesterdayRevenue
-                },
-                paymentBreakdown = todayPaymentBreakdown
+                expenses = todayExpenses,
+                orders = todayOrdersCount,
+                avgOrder = todayOrdersCount > 0 ? Math.Round(todayRevenue / todayOrdersCount, 2) : 0,
+                vsYesterday = new { revenue = yesterdayRevenue, growth = GrowthPct(todayRevenue, yesterdayRevenue), orders = yesterdayOrdersCount }
             },
-
-            // ديون وأرصدة
-            aging = new {
-                sales = salesAgingBuckets,
-                purchases = purchaseAgingBuckets,
-                topDebtors,
-                topCreditors
-            },
-
-            // هذا الشهر
             thisMonth = new {
-                revenue        = thisMonthRevenue,
-                collections    = thisMonthCollections,
-                orders         = thisMonthOrders.Count,
-                customers      = thisMonthCustomers,
-                newCustomers,
-                returningCustomers,
-                returnedOrders = returnedThisMonth,
-                returnRate,
-                totalDiscount  = thisMonthOrders.Sum(o => o.DiscountAmount),
-                vsLastMonth    = new {
-                    revenue = lastMonthRevenue,
-                    collections = lastMonthCollections,
-                    growth  = GrowthPct(thisMonthRevenue, lastMonthRevenue),
-                    orders  = lastMonthOrders.Count,
-                    isUp    = thisMonthRevenue >= lastMonthRevenue
-                }
+                revenue = thisMonthRevenue,
+                collections = thisMonthCollections,
+                orders = thisMonthOrdersCount,
+                vsLastMonth = new { revenue = lastMonthRevenue, growth = GrowthPct(thisMonthRevenue, lastMonthRevenue), orders = lastMonthOrdersCount }
             },
-
-            // أفضل المنتجات
-            topProducts = topProducts.Select(p => new {
-                p.ProductId, p.ProductNameAr, p.ProductNameEn,
-                p.TotalSold, p.TotalRevenue, p.OrderCount,
-                image = images.GetValueOrDefault(p.ProductId),
-            }),
-
-            // مخططات
-            charts = new {
-                byHour = salesByHour,
-                byDay  = salesByDay,
-                income = incomeChartData
-            }
+            topProducts = topProducts.Select(p => new { p.ProductId, p.ProductNameAr, p.ProductNameEn, p.TotalSold, p.TotalRevenue, p.OrderCount, image = imagesMap.GetValueOrDefault(p.ProductId) }),
+            charts = new { byHour = salesByHour, byDay = salesByDay },
+            aging = new { debtors = topDebtors, creditors = topCreditors },
+            paymentBreakdown = todayPaymentBreakdown
         };
     }
 
     private static decimal GrowthPct(decimal current, decimal previous) =>
-        previous == 0 ? (current > 0 ? 100 : 0) :
-        Math.Round((current - previous) / previous * 100, 1);
-
-    // --- Original Methods (Modified slightly for consistency) ---
+        previous == 0 ? (current > 0 ? 100 : 0) : Math.Round((current - previous) / previous * 100, 1);
 
     public async Task<List<SalesChartDto>> GetSalesChartAsync(string period)
     {
         var now = TimeHelper.GetEgyptTime();
+        var from = period == "daily" ? now.AddDays(-29).Date : new DateTime(now.Year - 1, now.Month, 1);
+        var orders = await _db.Orders.AsNoTracking().Where(o => o.CreatedAt >= from && o.Status != OrderStatus.Cancelled)
+            .Select(o => new { o.CreatedAt, o.TotalAmount }).ToListAsync();
+        
         if (period == "daily")
-        {
-            var from = now.AddDays(-29).Date;
-            var orders = await _db.Orders.Where(o => o.CreatedAt >= from && o.Status != OrderStatus.Cancelled).Select(o => new { o.CreatedAt, o.TotalAmount }).ToListAsync();
             return orders.GroupBy(o => o.CreatedAt.Date).Select(g => new SalesChartDto(g.Key.ToString("MM/dd"), g.Sum(o => o.TotalAmount), g.Count())).OrderBy(x => x.Label).ToList();
-        }
-        else // monthly
-        {
-            var from = new DateTime(now.Year - 1, now.Month, 1);
-            var orders = await _db.Orders.Where(o => o.CreatedAt >= from && o.Status != OrderStatus.Cancelled).Select(o => new { o.CreatedAt, o.TotalAmount }).ToListAsync();
-            return orders.GroupBy(o => new { o.CreatedAt.Year, o.CreatedAt.Month }).Select(g => new SalesChartDto($"{g.Key.Month}/{g.Key.Year}", g.Sum(o => o.TotalAmount), g.Count())).OrderBy(x => x.Label).ToList();
-        }
+        return orders.GroupBy(o => new { o.CreatedAt.Year, o.CreatedAt.Month }).Select(g => new SalesChartDto($"{g.Key.Month}/{g.Key.Year}", g.Sum(o => o.TotalAmount), g.Count())).OrderBy(x => x.Label).ToList();
     }
 
     public async Task<List<TopProductDto>> GetTopProductsAsync(int count = 10)
     {
-        var items = await _db.OrderItems.Include(i => i.Product!).ThenInclude(p => p.Images)
-            .Select(i => new { 
-                i.ProductId, i.ProductNameAr, i.ProductNameEn, i.Quantity, i.TotalPrice, 
-                MainImage = i.Product != null ? i.Product.Images.Where(img => img.IsMain).Select(img => img.ImageUrl).FirstOrDefault() : null 
+        var top = await _db.OrderItems.AsNoTracking().Where(i => i.Order!.Status != OrderStatus.Cancelled)
+            .GroupBy(i => new { i.ProductId, i.ProductNameAr, i.ProductNameEn })
+            .Select(g => new { 
+                ProductId = g.Key.ProductId, ProductNameAr = g.Key.ProductNameAr, ProductNameEn = g.Key.ProductNameEn, 
+                Sold = g.Sum(i => i.Quantity), Revenue = g.Sum(i => i.TotalPrice) 
             })
-            .ToListAsync();
+            .OrderByDescending(x => x.Sold).Take(count).ToListAsync();
 
-        return items.GroupBy(i => i.ProductId).Select(g => new TopProductDto(g.Key, g.First().ProductNameAr, g.First().ProductNameEn, g.First().MainImage, g.Sum(i => i.Quantity), g.Sum(i => i.TotalPrice))).OrderByDescending(x => x.TotalSold).Take(count).ToList();
+        var pIds = top.Select(t => t.ProductId).ToList();
+        var imgs = await _db.ProductImages.AsNoTracking().Where(img => pIds.Contains(img.ProductId) && img.IsMain).ToDictionaryAsync(img => img.ProductId, img => img.ImageUrl);
+
+        return top.Select(t => new TopProductDto(t.ProductId, t.ProductNameAr, t.ProductNameEn, t.ProductId.HasValue ? imgs.GetValueOrDefault(t.ProductId.Value) : null, t.Sold, t.Revenue)).ToList();
     }
 
     public async Task<List<OrderStatusStatsDto>> GetOrderStatusStatsAsync()
     {
-        var total = await _db.Orders.CountAsync();
-        if (total == 0) return new List<OrderStatusStatsDto>();
-        var groups = await _db.Orders.GroupBy(o => o.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync();
-        return groups.Select(g => new OrderStatusStatsDto(g.Status.ToString(), g.Count, Math.Round((decimal)g.Count / total * 100, 1))).ToList();
+        var stats = await _db.Orders.AsNoTracking().GroupBy(o => o.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync();
+        var total = stats.Sum(s => s.Count);
+        return stats.Select(s => new OrderStatusStatsDto(s.Status.ToString(), s.Count, total > 0 ? Math.Round((decimal)s.Count / total * 100, 1) : 0)).ToList();
     }
 
     public async Task<List<OrderSummaryDto>> GetRecentOrdersAsync(int count = 10)
     {
-        var orders = await _db.Orders
-            .Include(o => o.Customer)
-            .Include(o => o.Items)
-            .Include(o => o.Payments)
-            .OrderByDescending(o => o.CreatedAt)
-            .Take(count)
-            .ToListAsync();
 
         return orders.Select(o => new OrderSummaryDto(
             o.Id,

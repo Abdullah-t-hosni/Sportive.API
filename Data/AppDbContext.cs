@@ -219,6 +219,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Product).WithMany(p => p.OrderItems)
              .HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.SetNull);
+            
+            // ⚡ Performance: critical for heavy reports (Sales by product/category)
+            e.HasIndex(x => x.OrderId);
+            e.HasIndex(x => x.ProductId);
         });
         builder.Entity<OrderStatusHistory>(e => {
             e.Property(x => x.Status).HasConversion<string>();
@@ -372,6 +376,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(v => v.JournalEntry).WithMany().HasForeignKey(v => v.JournalEntryId).IsRequired(false);
             e.Property(v => v.PaymentMethod).HasConversion<string>();
             e.HasIndex(v => v.Reference);
+            e.HasIndex(v => v.VoucherDate);
         });
 
         builder.Entity<PaymentVoucher>(e => {
@@ -381,6 +386,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(v => v.JournalEntry).WithMany().HasForeignKey(v => v.JournalEntryId).IsRequired(false);
             e.Property(v => v.PaymentMethod).HasConversion<string>();
             e.HasIndex(v => v.Reference);
+            e.HasIndex(v => v.VoucherDate);
         });
 
         builder.Entity<InventoryMovement>(e => {
@@ -390,6 +396,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.Type).HasConversion<string>();
             // ⚡ Performance: movement history queries filter by product + date
             e.HasIndex(x => new { x.ProductId, x.CreatedAt });
+            e.HasIndex(x => x.ProductVariantId);
             // ⚡ Performance: reference-based lookup (order number)
             e.HasIndex(x => x.Reference);
         });

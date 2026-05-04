@@ -100,7 +100,17 @@ public class OperationalReportsController : ControllerBase
         }
 
         if (customerId == null)
-            return Ok(new { customers = await _db.Customers.Select(c => new { c.Id, c.FullName, c.Phone, c.Email }).ToListAsync() });
+        {
+            var totalCusts = await _db.Customers.CountAsync();
+            var customers = await _db.Customers
+                .AsNoTracking()
+                .OrderBy(c => c.FullName)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(c => new { c.Id, c.FullName, c.Phone, c.Email })
+                .ToListAsync();
+            return Ok(new { items = customers, pagination = new { totalCount = totalCusts, pageSize, currentPage = page, totalPages = (int)Math.Ceiling(totalCusts / (double)pageSize) } });
+        }
 
         var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId);
         if (customer == null) return NotFound();
@@ -204,7 +214,17 @@ public class OperationalReportsController : ControllerBase
         }
 
         if (supplierId == null)
-            return Ok(new { items = await _db.Suppliers.Select(s => new { s.Id, s.Name, s.Phone }).ToListAsync() });
+        {
+            var totalSupps = await _db.Suppliers.CountAsync();
+            var suppliers = await _db.Suppliers
+                .AsNoTracking()
+                .OrderBy(s => s.Name)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(s => new { s.Id, s.Name, s.Phone })
+                .ToListAsync();
+            return Ok(new { items = suppliers, pagination = new { totalCount = totalSupps, pageSize, currentPage = page, totalPages = (int)Math.Ceiling(totalSupps / (double)pageSize) } });
+        }
 
         var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == supplierId);
         if (supplier == null) return NotFound();
@@ -593,10 +613,9 @@ public class OperationalReportsController : ControllerBase
                              .Take(pageSize)
                              .ToListAsync();
 
-        // حساب القيم الإجمالية للمجموعة المفلترة بالكامل (بدون تكرار الاستعلامات المكلفة)
-        // ملاحظة: نستخدم الاستعلام q المفلتر قبل التقطيع (Skip/Take)
-        var totals = await q.Select(p => new {
-            TotalStock = p.Variants.Any() 
+        // حساب القيم الإجمالية للمجموعة المفلترة بالكامل (باستخدام تجميع في قاعدة البيانات لتجنب تحميل آلاف الصفوف للذاكرة)
+        var totalStats = await q.Select(p => new {
+            Stock = p.Variants.Any() 
                 ? p.Variants.Where(v => 
                     (string.IsNullOrEmpty(color) || v.Color == color || v.ColorAr == color) &&
                     (string.IsNullOrEmpty(size) || v.Size == size) &&
@@ -605,13 +624,19 @@ public class OperationalReportsController : ControllerBase
                 : p.TotalStock,
             p.Price,
             Cost = p.CostPrice ?? 0
-        }).ToListAsync();
+        }).GroupBy(x => 1).Select(g => new {
+            Units = g.Sum(x => x.Stock),
+            SalesVal = g.Sum(x => (decimal)x.Stock * x.Price),
+            CostVal = g.Sum(x => (decimal)x.Stock * x.Cost),
+            LowStock = g.Count(x => x.Stock <= 5),
+            OutOfStock = g.Count(x => x.Stock <= 0)
+        }).FirstOrDefaultAsync();
 
-        var totalUnits     = totals.Sum(x => x.TotalStock);
-        var lowStockCount  = totals.Count(x => x.TotalStock <= 5); // أقصى ReorderLevel
-        var outOfStock     = totals.Count(x => x.TotalStock <= 0);
-        var totalSalesVal  = totals.Sum(x => (decimal)x.TotalStock * x.Price);
-        var totalCostVal   = totals.Sum(x => (decimal)x.TotalStock * x.Cost);
+        var totalUnits     = totalStats?.Units ?? 0;
+        var lowStockCount  = totalStats?.LowStock ?? 0;
+        var outOfStock     = totalStats?.OutOfStock ?? 0;
+        var totalSalesVal  = totalStats?.SalesVal ?? 0;
+        var totalCostVal   = totalStats?.CostVal ?? 0;
 
         var rows = products.Select(p =>
         {
