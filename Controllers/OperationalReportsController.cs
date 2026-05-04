@@ -728,27 +728,20 @@ public class OperationalReportsController : ControllerBase
             ordersQ = ordersQ.Where(o => o.Source == source.Value);
         }
 
-        if (categoryId.HasValue && categoryId > 0)
-        {
-            var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
-            ordersQ = ordersQ.Where(o => o.Items.Any(i => i.Product != null && i.Product.CategoryId.HasValue && categoryIds.Contains(i.Product.CategoryId.Value)));
-        }
+        var catIds = categoryId.HasValue && categoryId > 0 ? await FilterHelper.GetCategoryFamilyIds(_db, categoryId) : new List<int>();
+        var brIds = brandId.HasValue && brandId > 0 ? await FilterHelper.GetBrandFamilyIds(_db, brandId) : new List<int>();
 
-        if (brandId.HasValue && brandId > 0)
-        {
-            var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
-            ordersQ = ordersQ.Where(o => o.Items.Any(i => i.Product != null && i.Product.BrandId.HasValue && brandIds.Contains(i.Product.BrandId.Value)));
-        }
+        if (catIds.Any())
+            ordersQ = ordersQ.Where(o => o.Items.Any(i => i.Product != null && i.Product.CategoryId.HasValue && catIds.Contains(i.Product.CategoryId.Value)));
+
+        if (brIds.Any())
+            ordersQ = ordersQ.Where(o => o.Items.Any(i => i.Product != null && i.Product.BrandId.HasValue && brIds.Contains(i.Product.BrandId.Value)));
 
         if (!string.IsNullOrEmpty(color))
-        {
-            ordersQ = ordersQ.Where(o => o.Items.Any(i => i.Color == color || (i.Product != null && i.Product.Variants.Any(v => v.Color == color || v.ColorAr == color))));
-        }
+            ordersQ = ordersQ.Where(o => o.Items.Any(i => i.Color == color || (i.Color == null && i.Product != null && i.Product.Variants.Any(v => (v.Color == color || v.ColorAr == color)))));
 
         if (!string.IsNullOrEmpty(size))
-        {
-            ordersQ = ordersQ.Where(o => o.Items.Any(i => i.Size == size || (i.Product != null && i.Product.Variants.Any(v => v.Size == size))));
-        }
+            ordersQ = ordersQ.Where(o => o.Items.Any(i => i.Size == size || (i.Size == null && i.Product != null && i.Product.Variants.Any(v => v.Size == size))));
 
         var totalOrdersCount = await ordersQ.CountAsync();
 
@@ -766,16 +759,23 @@ public class OperationalReportsController : ControllerBase
                 o.DiscountAmount,
                 o.TemporalDiscount,
                 o.TotalAmount,
-                Items = o.Items.Select(i => new {
-                    ProductSKU = i.Product != null ? i.Product.SKU : "",
-                    ProductNameAr = i.Product != null ? i.Product.NameAr : i.ProductNameAr,
-                    i.Size,
-                    i.Color,
-                    i.Quantity,
-                    i.UnitPrice,
-                    i.DiscountAmount,
-                    i.TotalPrice
-                }).ToList(),
+                Items = o.Items
+                    .Where(i => 
+                        (!catIds.Any() || (i.Product != null && i.Product.CategoryId.HasValue && catIds.Contains(i.Product.CategoryId.Value))) &&
+                        (!brIds.Any() || (i.Product != null && i.Product.BrandId.HasValue && brIds.Contains(i.Product.BrandId.Value))) &&
+                        (string.IsNullOrEmpty(color) || i.Color == color || (i.Color == null && i.Product != null && i.Product.Variants.Any(v => (v.Color == color || v.ColorAr == color)))) &&
+                        (string.IsNullOrEmpty(size) || i.Size == size || (i.Size == null && i.Product != null && i.Product.Variants.Any(v => v.Size == size)))
+                    )
+                    .Select(i => new {
+                        ProductSKU = i.Product != null ? i.Product.SKU : "",
+                        ProductNameAr = i.Product != null ? i.Product.NameAr : i.ProductNameAr,
+                        i.Size,
+                        i.Color,
+                        i.Quantity,
+                        i.UnitPrice,
+                        i.DiscountAmount,
+                        i.TotalPrice
+                    }).ToList(),
                 PostedSales = o.JournalEntries
                     .Where(j => j.Status == JournalEntryStatus.Posted)
                     .SelectMany(j => j.Lines)
@@ -800,8 +800,8 @@ public class OperationalReportsController : ControllerBase
         decimal ledgerReturns = await returnsQ.SumAsync(l => (decimal?)l.Debit) ?? 0;
 
         var rows = orders.Select(o => {
-            // ✅ Detailed payment string
             var paySummary = string.Join(", ", o.Payments.Select(p => $"{p.Method}: {p.Amount:N0}"));
+            var itemsTotal = o.Items.Sum(i => i.TotalPrice);
 
             return new SalesRow(
                 o.Id, o.OrderNumber, o.CreatedAt,
@@ -811,7 +811,7 @@ public class OperationalReportsController : ControllerBase
                 o.Status.ToString(),
                 o.PaymentMethod.ToString(),
                 o.SubTotal, o.DiscountAmount + o.TemporalDiscount, 
-                o.PostedSales > 0 ? o.PostedSales : o.TotalAmount, // Use Ledger amount if possible
+                (catIds.Any() || brIds.Any() || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size)) ? itemsTotal : (o.PostedSales > 0 ? o.PostedSales : o.TotalAmount),
                 o.Items.Sum(i => i.Quantity),
                 o.Items.Select(i => new ReportItemDto(
                     i.ProductSKU,
@@ -820,8 +820,8 @@ public class OperationalReportsController : ControllerBase
                     i.Color ?? "",
                     i.Quantity,
                     i.UnitPrice,
-                    0, // UnitCost (optional in sales)
-                    i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1), // Per unit discount
+                    0, 
+                    i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1),
                     i.TotalPrice
                 )).ToList(),
                 paySummary
@@ -832,6 +832,7 @@ public class OperationalReportsController : ControllerBase
             totalOrders   = totalOrdersCount,
             totalGrossRevenue  = rows.Sum(r => r.TotalAmount),
             totalDiscount      = rows.Sum(r => r.DiscountAmount),
+            totalUnits         = rows.Sum(r => r.ItemCount),
             totalReturns       = ledgerReturns,
             totalNetRevenue    = rows.Sum(r => r.TotalAmount) - ledgerReturns,
             avgOrder      = totalOrdersCount > 0 ? (rows.Sum(r => r.TotalAmount) - ledgerReturns) / totalOrdersCount : 0,
@@ -889,6 +890,9 @@ public class OperationalReportsController : ControllerBase
             var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
             var purchaseAccId = maps.GetValueOrDefault(MappingKeys.Purchase);
 
+            var catIds = categoryId.HasValue && categoryId > 0 ? await FilterHelper.GetCategoryFamilyIds(_db, categoryId) : new List<int>();
+            var brIds = brandId.HasValue && brandId > 0 ? await FilterHelper.GetBrandFamilyIds(_db, brandId) : new List<int>();
+
             // 1. Fetch Invoices joined with Posted JVs
             var q = _db.PurchaseInvoices.AsNoTracking()
                 .Where(i => i.InvoiceDate >= from && i.InvoiceDate <= to)
@@ -897,27 +901,17 @@ public class OperationalReportsController : ControllerBase
             if (supplierId.HasValue) q = q.Where(i => i.SupplierId == supplierId.Value);
             if (source.HasValue) q = q.Where(i => i.CostCenter == source.Value);
 
-            if (categoryId.HasValue && categoryId > 0)
-            {
-                var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
-                q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && categoryIds.Contains(it.Product.CategoryId.Value)));
-            }
+            if (catIds.Any())
+                q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && catIds.Contains(it.Product.CategoryId.Value)));
 
-            if (brandId.HasValue && brandId > 0)
-            {
-                var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
-                q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.BrandId.HasValue && brandIds.Contains(it.Product.BrandId.Value)));
-            }
+            if (brIds.Any())
+                q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.BrandId.HasValue && brIds.Contains(it.Product.BrandId.Value)));
 
             if (!string.IsNullOrEmpty(color))
-            {
                 q = q.Where(i => i.Items.Any(it => it.ProductVariant != null && (it.ProductVariant.Color == color || it.ProductVariant.ColorAr == color)));
-            }
 
             if (!string.IsNullOrEmpty(size))
-            {
                 q = q.Where(i => i.Items.Any(it => it.ProductVariant != null && it.ProductVariant.Size == size));
-            }
 
             var totalCount = await q.CountAsync();
             var invoices = await q
@@ -925,13 +919,20 @@ public class OperationalReportsController : ControllerBase
                     i.Id, i.InvoiceNumber, i.SupplierInvoiceNumber, i.InvoiceDate,
                     SupplierName = i.Supplier != null ? i.Supplier.Name : "N/A",
                     i.PaymentTerms, i.Status, i.SubTotal, i.TaxAmount, i.TotalAmount, i.ReturnedAmount, i.PaidAmount,
-                    Items = i.Items.Select(it => new {
-                        ProductSKU = it.Product != null ? it.Product.SKU : "",
-                        ProductNameAr = it.Product != null ? it.Product.NameAr : it.Description,
-                        Size = it.ProductVariant != null ? it.ProductVariant.Size : "",
-                        ColorAr = it.ProductVariant != null ? it.ProductVariant.ColorAr : (it.ProductVariant != null ? it.ProductVariant.Color : ""),
-                        it.Quantity, it.UnitCost, it.TotalCost
-                    }).ToList(),
+                    Items = i.Items
+                        .Where(it => 
+                            (!catIds.Any() || (it.Product != null && it.Product.CategoryId.HasValue && catIds.Contains(it.Product.CategoryId.Value))) &&
+                            (!brIds.Any() || (it.Product != null && it.Product.BrandId.HasValue && brIds.Contains(it.Product.BrandId.Value))) &&
+                            (string.IsNullOrEmpty(color) || (it.ProductVariant != null && (it.ProductVariant.Color == color || it.ProductVariant.ColorAr == color))) &&
+                            (string.IsNullOrEmpty(size) || (it.ProductVariant != null && it.ProductVariant.Size == size))
+                        )
+                        .Select(it => new {
+                            ProductSKU = it.Product != null ? it.Product.SKU : "",
+                            ProductNameAr = it.Product != null ? it.Product.NameAr : it.Description,
+                            Size = it.ProductVariant != null ? it.ProductVariant.Size : "",
+                            ColorAr = it.ProductVariant != null ? (it.ProductVariant.ColorAr ?? it.ProductVariant.Color) : "",
+                            it.Quantity, it.UnitCost, it.TotalCost
+                        }).ToList(),
                     LedgerPostedAmount = i.JournalEntries
                         .Where(j => j.Status == JournalEntryStatus.Posted)
                         .SelectMany(j => j.Lines)
@@ -943,23 +944,27 @@ public class OperationalReportsController : ControllerBase
                 .Take(pageSize)
                 .ToListAsync();
 
-            var rows = invoices.Select(i => new PurchaseRow(
-                i.Id, i.InvoiceNumber, i.SupplierInvoiceNumber ?? "",
-                i.SupplierName, i.InvoiceDate,
-                i.PaymentTerms.ToString(), i.Status.ToString(),
-                i.SubTotal, i.TaxAmount, 
-                i.LedgerPostedAmount > 0 ? i.LedgerPostedAmount : i.TotalAmount,
-                i.ReturnedAmount,
-                i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
-                i.Items.Select(it => new ReportItemDto(
-                    it.ProductSKU, it.ProductNameAr, it.Size, it.ColorAr,
-                    it.Quantity, 0, it.UnitCost, 0, it.TotalCost
-                )).ToList()
-            )).ToList();
+            var rows = invoices.Select(i => {
+                var itemsTotal = i.Items.Sum(it => it.TotalCost);
+                return new PurchaseRow(
+                    i.Id, i.InvoiceNumber, i.SupplierInvoiceNumber ?? "",
+                    i.SupplierName, i.InvoiceDate,
+                    i.PaymentTerms.ToString(), i.Status.ToString(),
+                    i.SubTotal, i.TaxAmount, 
+                    (catIds.Any() || brIds.Any() || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size)) ? itemsTotal : (i.LedgerPostedAmount > 0 ? i.LedgerPostedAmount : i.TotalAmount),
+                    i.ReturnedAmount,
+                    i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
+                    i.Items.Select(it => new ReportItemDto(
+                        it.ProductSKU, it.ProductNameAr, it.Size, it.ColorAr,
+                        it.Quantity, 0, it.UnitCost, 0, it.TotalCost
+                    )).ToList()
+                );
+            }).ToList();
 
             var summary = new {
                 totalInvoices  = rows.Count,
                 totalGross     = rows.Sum(r => r.TotalAmount),
+                totalUnits     = rows.Sum(r => r.Items?.Sum(it => it.Quantity) ?? 0),
                 totalReturned  = rows.Sum(r => r.ReturnedAmount),
                 totalNet       = rows.Sum(r => r.TotalAmount - r.ReturnedAmount),
                 totalPaid      = rows.Sum(r => r.PaidAmount),
