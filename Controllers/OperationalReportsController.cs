@@ -1169,7 +1169,7 @@ public class OperationalReportsController : ControllerBase
 
         var rows = returns.Select(r => {
             var itemsList = r.Items.Select(it => new ReportItemDto(
-                it.ProductSKU, it.ProductNameAr, it.Size, it.ColorAr ?? "",
+                it.ProductSKU, it.ProductNameAr, it.Size ?? "", it.ColorAr ?? "",
                 it.Quantity, 0, it.UnitCost, 0, it.TotalCost
             )).ToList();
 
@@ -1455,6 +1455,8 @@ public class OperationalReportsController : ControllerBase
     public async Task<IActionResult> StockMovementsLedger(
         [FromQuery] int?      productId  = null,
         [FromQuery] int?      variantId = null,
+        [FromQuery] int?      categoryId = null,
+        [FromQuery] int?      brandId    = null,
         [FromQuery] DateTime? fromDate  = null,
         [FromQuery] DateTime? toDate    = null,
         [FromQuery] OrderSource? source = null,

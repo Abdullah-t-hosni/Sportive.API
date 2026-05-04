@@ -595,7 +595,7 @@ public class PayrollController : ControllerBase
                         AccountId   = accrualAccId,
                         Debit       = 0,
                         Credit      = grossEarnings,
-                        Description = _t.Get("HR.GrossEarningsDesc", item.Employee?.Name, run.PeriodMonth, run.PeriodYear),
+                        Description = _t.Get("HR.GrossEarningsDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
                         EmployeeId  = item.EmployeeId,
                         CostCenter  = employeeCC
                     });
@@ -608,7 +608,7 @@ public class PayrollController : ControllerBase
                         AccountId   = accrualAccId,
                         Debit       = item.AdvanceDeducted,
                         Credit      = 0,
-                        Description = _t.Get("HR.AdvanceDeductionDesc", item.Employee?.Name, run.PeriodMonth, run.PeriodYear),
+                        Description = _t.Get("HR.AdvanceDeductionDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
                         EmployeeId  = item.EmployeeId,
                         CostCenter  = employeeCC
                     });
@@ -618,7 +618,7 @@ public class PayrollController : ControllerBase
                         AccountId   = advAccId,
                         Debit       = 0,
                         Credit      = item.AdvanceDeducted,
-                        Description = _t.Get("HR.AdvanceSettlementDesc", item.Employee?.Name, run.PeriodMonth, run.PeriodYear),
+                        Description = _t.Get("HR.AdvanceSettlementDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
                         CostCenter  = employeeCC
                     });
                 }
@@ -630,7 +630,7 @@ public class PayrollController : ControllerBase
                         AccountId   = accrualAccId,
                         Debit       = item.DeductionAmount,
                         Credit      = 0,
-                        Description = _t.Get("HR.DeductionLogDesc", item.Employee?.Name, run.PeriodMonth, run.PeriodYear),
+                        Description = _t.Get("HR.DeductionLogDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
                         EmployeeId  = item.EmployeeId,
                         CostCenter  = employeeCC
                     });

@@ -856,7 +856,7 @@ public class ReceiptVouchersController : ControllerBase
             entry.EntryDate = voucher.VoucherDate; entry.Description = voucher.Description; entry.UpdatedAt = TimeHelper.GetEgyptTime();
             _db.JournalLines.RemoveRange(entry.Lines);
             entry.Lines.Add(new JournalLine { AccountId = voucher.CashAccountId, Debit = voucher.Amount, Credit = 0, Description = _t.Get("Accounting.ReceiptVoucher.UpdateLog", voucher.VoucherNumber) });
-            entry.Lines.Add(new JournalLine { AccountId = voucher.FromAccountId, Debit = 0, Credit = voucher.Amount, Description = _t.Get("Accounting.FromAccountDesc", voucher.FromAccount?.NameAr) });
+            entry.Lines.Add(new JournalLine { AccountId = voucher.FromAccountId, Debit = 0, Credit = voucher.Amount, Description = _t.Get("Accounting.FromAccountDesc", voucher.FromAccount?.NameAr ?? "") });
         }
 
         await _db.SaveChangesAsync();
@@ -1025,7 +1025,7 @@ public class PaymentVouchersController : ControllerBase
             entry.EntryDate = voucher.VoucherDate; entry.Description = voucher.Description;
             _db.JournalLines.RemoveRange(entry.Lines);
             entry.Lines.Add(new JournalLine { AccountId = voucher.ToAccountId, Debit = voucher.Amount, Credit = 0, Description = _t.Get("Accounting.ReceiptVoucher.UpdateLog", voucher.VoucherNumber) });
-            entry.Lines.Add(new JournalLine { AccountId = voucher.CashAccountId, Debit = 0, Credit = voucher.Amount, Description = _t.Get("Accounting.FromAccountDesc", voucher.CashAccount?.NameAr) });
+            entry.Lines.Add(new JournalLine { AccountId = voucher.CashAccountId, Debit = 0, Credit = voucher.Amount, Description = _t.Get("Accounting.FromAccountDesc", voucher.CashAccount?.NameAr ?? "") });
         }
 
         await _db.SaveChangesAsync();

@@ -17,9 +17,7 @@ public class CashierPerformanceController : ControllerBase
     private readonly AppDbContext _db;
     public CashierPerformanceController(AppDbContext db) => _db = db;
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // GET /api/cashierperformance
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet]
     public async Task<IActionResult> GetPerformance(
         [FromQuery] DateTime? fromDate = null,
@@ -29,7 +27,6 @@ public class CashierPerformanceController : ControllerBase
         var from = fromDate?.Date ?? TimeHelper.GetEgyptTime().Date.AddDays(-30);
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        // â”€â”€ Ø¬Ù„Ø¨ Ø·Ù„Ø¨Ø§Øª Ø§Ù„ÙƒØ§Ø´ÙŠØ± ÙÙ‚Ø· (Source = POS) â”€â”€â”€â”€
         var orders = await _db.Orders
             .Include(o => o.Items)
             .Where(o => o.Status != OrderStatus.Cancelled
@@ -50,7 +47,6 @@ public class CashierPerformanceController : ControllerBase
         if (!orders.Any())
             return Ok(new { from, to, cashiers = Array.Empty<object>(), summary = new { } });
 
-        // â”€â”€ Ø¬Ù„Ø¨ Ø£Ø³Ù…Ø§Ø¡ Ø§Ù„ÙƒØ§Ø´ÙŠØ±ÙŠÙ† â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var cashierIds = orders.Select(o => o.SalesPersonId!).Distinct().ToList();
         var users = await _db.Users
             .Where(u => cashierIds.Contains(u.Id))
@@ -86,7 +82,7 @@ public class CashierPerformanceController : ControllerBase
                 // مبيعات بالأسبوع
                 var byDay = allOrders
                     .GroupBy(o => o.CreatedAt.DayOfWeek)
-                    .Select(d => new { day = (int)d.Key, dayName = d.Key.ToString(), count = d.Count(), revenue = h.Sum(o => o.TotalAmount) })
+                    .Select(d => new { day = (int)d.Key, dayName = d.Key.ToString(), count = d.Count(), revenue = d.Sum(o => o.TotalAmount) })
                     .OrderBy(d => d.day)
                     .ToList();
 
