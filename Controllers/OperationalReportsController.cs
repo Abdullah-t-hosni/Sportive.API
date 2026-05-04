@@ -1010,8 +1010,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] OrderSource? source     = null,
         [FromQuery] bool      excel      = false)
     {
-        var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+        var catIds = categoryId.HasValue && categoryId > 0 ? await FilterHelper.GetCategoryFamilyIds(_db, categoryId) : new List<int>();
+        var brIds = brandId.HasValue && brandId > 0 ? await FilterHelper.GetBrandFamilyIds(_db, brandId) : new List<int>();
 
         // Get all SalesReturn journal entries
         var returnsQ = _db.JournalEntries.AsNoTracking()
@@ -1023,46 +1023,42 @@ public class OperationalReportsController : ControllerBase
             returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Source == source.Value);
         }
 
-        if (categoryId.HasValue && categoryId > 0)
-        {
-            var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
-            returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && categoryIds.Contains(it.Product.CategoryId.Value)));
-        }
+        if (catIds.Any())
+            returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && catIds.Contains(it.Product.CategoryId.Value)));
 
-        if (brandId.HasValue && brandId > 0)
-        {
-            var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
-            returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Product != null && it.Product.BrandId.HasValue && brandIds.Contains(it.Product.BrandId.Value)));
-        }
+        if (brIds.Any())
+            returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Product != null && it.Product.BrandId.HasValue && brIds.Contains(it.Product.BrandId.Value)));
 
         if (!string.IsNullOrEmpty(color))
-            returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Color == color || (it.Product != null && it.Product.Variants.Any(v => v.Color == color || v.ColorAr == color))));
+            returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Color == color || (it.Color == null && it.Product != null && it.Product.Variants.Any(v => (v.Color == color || v.ColorAr == color)))));
 
         if (!string.IsNullOrEmpty(size))
-            returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Size == size || (it.Product != null && it.Product.Variants.Any(v => v.Size == size))));
+            returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Size == size || (it.Size == null && i.Product != null && it.Product.Variants.Any(v => v.Size == size))));
 
         var returns = await returnsQ
             .Select(j => new {
                 j.Reference, j.EntryNumber, j.EntryDate,
                 CustomerName = j.Order != null && j.Order.Customer != null ? j.Order.Customer.FullName : "Walk-in",
                 CustomerPhone = j.Order != null && j.Order.Customer != null ? j.Order.Customer.Phone : "",
-                Amount = j.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit),
+                OriginalAmount = j.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit),
                 j.Description,
-                Items = j.Order != null ? j.Order.Items.Where(i => i.ReturnedQuantity > 0).Select(i => new {
-                    ProductSKU = i.Product != null ? i.Product.SKU : "",
-                    ProductNameAr = i.Product != null ? i.Product.NameAr : i.ProductNameAr,
-                    i.Size, i.Color, i.ReturnedQuantity, i.UnitPrice, i.Quantity, i.DiscountAmount
-                }).ToList() : null
+                Items = j.Order != null ? j.Order.Items
+                    .Where(i => i.ReturnedQuantity > 0)
+                    .Where(i => 
+                        (!catIds.Any() || (i.Product != null && i.Product.CategoryId.HasValue && catIds.Contains(i.Product.CategoryId.Value))) &&
+                        (!brIds.Any() || (i.Product != null && i.Product.BrandId.HasValue && brIds.Contains(i.Product.BrandId.Value))) &&
+                        (string.IsNullOrEmpty(color) || i.Color == color || (i.Color == null && i.Product != null && i.Product.Variants.Any(v => (v.Color == color || v.ColorAr == color)))) &&
+                        (string.IsNullOrEmpty(size) || i.Size == size || (i.Size == null && i.Product != null && i.Product.Variants.Any(v => v.Size == size))))
+                    .Select(i => new {
+                        ProductSKU = i.Product != null ? i.Product.SKU : "",
+                        ProductNameAr = i.Product != null ? i.Product.NameAr : i.ProductNameAr,
+                        i.Size, i.Color, i.ReturnedQuantity, i.UnitPrice, i.Quantity, i.DiscountAmount
+                    }).ToList() : null
             })
             .OrderByDescending(j => j.EntryDate).ToListAsync();
 
-        var rows = returns.Select(j => new ReturnRow(
-            j.Reference ?? j.EntryNumber, j.EntryDate,
-            j.CustomerName,
-            j.CustomerPhone ?? "",
-            j.Amount,
-            j.Description ?? "",
-            j.Items?.Select(i => new ReportItemDto(
+        var rows = returns.Select(j => {
+            var itemsList = j.Items?.Select(i => new ReportItemDto(
                 i.ProductSKU,
                 i.ProductNameAr,
                 i.Size ?? "",
@@ -1072,8 +1068,19 @@ public class OperationalReportsController : ControllerBase
                 0,
                 i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1),
                 (i.UnitPrice - (i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1))) * i.ReturnedQuantity
-            )).ToList()
-        )).ToList();
+            )).ToList();
+
+            var itemsAmount = itemsList?.Sum(it => it.LineTotal) ?? 0;
+
+            return new ReturnRow(
+                j.Reference ?? j.EntryNumber, j.EntryDate,
+                j.CustomerName,
+                j.CustomerPhone ?? "",
+                (catIds.Any() || brIds.Any() || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size)) ? itemsAmount : j.OriginalAmount,
+                j.Description ?? "",
+                itemsList
+            );
+        }).ToList();
 
         var summary = new {
             count        = rows.Count,
@@ -1104,9 +1111,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int       pageSize   = 50,
         [FromQuery] bool      excel      = false)
     {
-        pageSize = Math.Clamp(pageSize, 1, 100);
-        var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+        var catIds = categoryId.HasValue && categoryId > 0 ? await FilterHelper.GetCategoryFamilyIds(_db, categoryId) : new List<int>();
+        var brIds = brandId.HasValue && brandId > 0 ? await FilterHelper.GetBrandFamilyIds(_db, brandId) : new List<int>();
 
         var q = _db.PurchaseReturns.AsNoTracking()
             .Where(r => r.ReturnDate >= from && r.ReturnDate <= to);
@@ -1114,15 +1120,11 @@ public class OperationalReportsController : ControllerBase
         if (supplierId.HasValue) q = q.Where(r => r.SupplierId == supplierId.Value);
         if (source.HasValue) q = q.Where(r => r.CostCenter == source.Value);
 
-        if (categoryId.HasValue && categoryId > 0) {
-            var categoryIds = await FilterHelper.GetCategoryFamilyIds(_db, categoryId);
-            q = q.Where(r => r.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && categoryIds.Contains(it.Product.CategoryId.Value)));
-        }
+        if (catIds.Any())
+            q = q.Where(r => r.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && catIds.Contains(it.Product.CategoryId.Value)));
 
-        if (brandId.HasValue && brandId > 0) {
-            var brandIds = await FilterHelper.GetBrandFamilyIds(_db, brandId);
-            q = q.Where(r => r.Items.Any(it => it.Product != null && it.Product.BrandId.HasValue && brandIds.Contains(it.Product.BrandId.Value)));
-        }
+        if (brIds.Any())
+            q = q.Where(r => r.Items.Any(it => it.Product != null && it.Product.BrandId.HasValue && brIds.Contains(it.Product.BrandId.Value)));
 
         if (!string.IsNullOrEmpty(color))
             q = q.Where(r => r.Items.Any(it => it.ProductVariant != null && (it.ProductVariant.Color == color || it.ProductVariant.ColorAr == color)));
@@ -1135,15 +1137,22 @@ public class OperationalReportsController : ControllerBase
                 r.ReturnNumber, r.ReturnDate,
                 SupplierName = r.Supplier != null ? r.Supplier.Name : "N/A",
                 SupplierPhone = r.Supplier != null ? r.Supplier.Phone : "",
-                r.TotalAmount, r.Notes,
+                OriginalTotal = r.TotalAmount, r.Notes,
                 InvoiceNumber = r.Invoice != null ? r.Invoice.InvoiceNumber : null,
-                Items = r.Items.Select(it => new {
-                    ProductSKU = it.Product != null ? it.Product.SKU : "",
-                    ProductNameAr = it.Product != null ? it.Product.NameAr : "",
-                    Size = it.ProductVariant != null ? it.ProductVariant.Size : "",
-                    ColorAr = it.ProductVariant != null ? (it.ProductVariant.ColorAr ?? it.ProductVariant.Color) : "",
-                    it.Quantity, it.UnitCost, it.TotalCost
-                }).ToList()
+                Items = r.Items
+                    .Where(it => 
+                        (!catIds.Any() || (it.Product != null && it.Product.CategoryId.HasValue && catIds.Contains(it.Product.CategoryId.Value))) &&
+                        (!brIds.Any() || (it.Product != null && it.Product.BrandId.HasValue && brIds.Contains(it.Product.BrandId.Value))) &&
+                        (string.IsNullOrEmpty(color) || (it.ProductVariant != null && (it.ProductVariant.Color == color || it.ProductVariant.ColorAr == color))) &&
+                        (string.IsNullOrEmpty(size) || (it.ProductVariant != null && it.ProductVariant.Size == size))
+                    )
+                    .Select(it => new {
+                        ProductSKU = it.Product != null ? it.Product.SKU : "",
+                        ProductNameAr = it.Product != null ? it.Product.NameAr : "",
+                        Size = it.ProductVariant != null ? it.ProductVariant.Size : "",
+                        ColorAr = it.ProductVariant != null ? (it.ProductVariant.ColorAr ?? it.ProductVariant.Color) : "",
+                        it.Quantity, it.UnitCost, it.TotalCost
+                    }).ToList()
             })
             .OrderByDescending(r => r.ReturnDate)
             .Skip((page - 1) * pageSize)
@@ -1152,16 +1161,22 @@ public class OperationalReportsController : ControllerBase
 
         var totalCount = await q.CountAsync();
 
-        var rows = returns.Select(r => new ReturnRow(
-            r.ReturnNumber, r.ReturnDate,
-            r.SupplierName, r.SupplierPhone,
-            r.TotalAmount, 
-            r.Notes ?? (r.InvoiceNumber != null ? $"مرتجع للفاتورة #{r.InvoiceNumber}" : "مرتجع مستقل"),
-            r.Items.Select(it => new ReportItemDto(
+        var rows = returns.Select(r => {
+            var itemsList = r.Items.Select(it => new ReportItemDto(
                 it.ProductSKU, it.ProductNameAr, it.Size, it.ColorAr ?? "",
                 it.Quantity, 0, it.UnitCost, 0, it.TotalCost
-            )).ToList()
-        )).ToList();
+            )).ToList();
+
+            var itemsAmount = itemsList.Sum(it => it.LineTotal);
+
+            return new ReturnRow(
+                r.ReturnNumber, r.ReturnDate,
+                r.SupplierName, r.SupplierPhone,
+                (catIds.Any() || brIds.Any() || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size)) ? itemsAmount : r.OriginalTotal, 
+                r.Notes ?? (r.InvoiceNumber != null ? $"مرتجع للفاتورة #{r.InvoiceNumber}" : "مرتجع مستقل"),
+                itemsList
+            );
+        }).ToList();
 
         var summary = new { count = totalCount, totalAmount = rows.Sum(r => r.Amount) };
         if (excel) return ExcelReturns(rows, summary, from, to, "مرتجعات المشتريات");
