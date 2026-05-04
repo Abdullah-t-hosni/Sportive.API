@@ -3,6 +3,8 @@ using Sportive.API.Data;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using Sportive.API.Utils;
+using Microsoft.AspNetCore.SignalR;
+using Sportive.API.Hubs;
 
 namespace Sportive.API.Services;
 
@@ -12,13 +14,15 @@ public class InventoryService : IInventoryService
     private readonly INotificationService _notifications;
     private readonly ITranslator _t;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IHubContext<NotificationHub> _hubContext;
 
-    public InventoryService(AppDbContext db, INotificationService notifications, ITranslator t, IServiceScopeFactory scopeFactory)
+    public InventoryService(AppDbContext db, INotificationService notifications, ITranslator t, IServiceScopeFactory scopeFactory, IHubContext<NotificationHub> hubContext)
     {
         _db = db;
         _notifications = notifications;
         _t = t;
         _scopeFactory = scopeFactory;
+        _hubContext = hubContext;
     }
 
     public async Task LogMovementAsync(
@@ -137,6 +141,20 @@ public class InventoryService : IInventoryService
         });
 
         if (autoSave) await _db.SaveChangesAsync();
+        
+        // 🚀 BROADCAST STOCK UPDATE: Notify all clients to update their UI
+        if (productId.HasValue)
+        {
+            var currentStock = variantId.HasValue 
+                ? (await _db.ProductVariants.Where(v => v.Id == variantId).Select(v => v.StockQuantity).FirstOrDefaultAsync())
+                : (await _db.Products.Where(p => p.Id == productId).Select(p => p.TotalStock).FirstOrDefaultAsync());
+
+            await _hubContext.Clients.All.SendAsync("StockUpdated", new {
+                productId = productId.Value,
+                variantId = variantId ?? 0,
+                newStock = currentStock
+            });
+        }
 
         // 3. Low-stock alert — Fire-and-forget to avoid blocking the main thread
         _ = Task.Run(async () => {
