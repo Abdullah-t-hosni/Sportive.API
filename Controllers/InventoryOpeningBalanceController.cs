@@ -383,7 +383,15 @@ public class InventoryOpeningBalanceController : ControllerBase
 
             int GetCol(params string[] aliases) {
                 foreach (var a in aliases) {
-                    if (headers.TryGetValue(Normalize(a), out var idx)) return idx;
+                    var normA = Normalize(a);
+                    if (string.IsNullOrEmpty(normA)) continue;
+                    
+                    if (headers.TryGetValue(normA, out var idx)) return idx;
+                    
+                    // Fallback to partial match
+                    foreach (var h in headers) {
+                        if (h.Key.Contains(normA) || normA.Contains(h.Key)) return h.Value;
+                    }
                 }
                 return -1;
             }
