@@ -476,7 +476,7 @@
   "Import.ImportWithErrors": "اكتمل الاستيراد مع وجود بعض الأخطاء",
   "Import.ImportSuccess": "اكتمل الاستيراد بنجاح",
   "Import.TemplateProductsSheet": "المنتجات والمقاسات",
-  "Import.SkuHeader": "كود كود الصنف *",
+  "Import.SkuHeader": "كود الصنف *",
   "Import.NameArHeader": "الاسم (عربي) *",
   "Import.UnitHeader": "الوحدة *",
   "Import.NameEnHeader": "الاسم (إنجليزي)",

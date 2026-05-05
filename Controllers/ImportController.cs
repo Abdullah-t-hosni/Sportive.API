@@ -258,7 +258,8 @@ public class ImportController : ControllerBase
             var headers = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var firstRow = ws.Row(1);
             
-            string Normalize(string s) => new string(s.Where(c => char.IsLetterOrDigit(c)).ToArray()).ToLower();
+            // Strip asterisk markers and normalize for matching
+            string Normalize(string s) => new string(s.Replace("*","").Where(c => char.IsLetterOrDigit(c)).ToArray()).ToLower();
 
             for (int c = 1; c <= (ws.LastColumnUsed()?.ColumnNumber() ?? 25); c++)
             {
@@ -278,29 +279,29 @@ public class ImportController : ControllerBase
                 return -1;
             }
 
-            // Mapping columns
-            int colSku      = GetCol("الكود SKU", "الباركود", "sku", "Code");
-            int colNameAr   = GetCol("الاسم عربي", "اسم المنتج", "الاسم", "Name Ar");
+            // Mapping columns — aliases include both the exact template header values (from ar.json) and legacy/manual variations
+            int colSku      = GetCol("كود الصنف", "كود كود الصنف", "الكود SKU", "الباركود", "sku", "Code", "كود الصنف", "الكود");
+            int colNameAr   = GetCol("الاسم عربي", "الاسم (عربي)", "اسم المنتج", "الاسم", "Name Ar");
             int colUnit     = GetCol("الوحدة", "وحدة القياس", "Unit");
-            int colNameEn   = GetCol("الاسم انجليزي", "الاسم English", "Name En");
-            int colMainCat  = GetCol("التصنيف الأساسي", "الفئة", "التصنيف", "Main Category", "Category");
-            int colSubCat   = GetCol("التصنيف الفرعي", "الفئة الفرعية", "Sub Category");
-            int colSubSub   = GetCol("التصنيف الفرعي 2", "التصنيف فرع فرعي", "الفئة الفرعية 2", "Sub Sub Category");
+            int colNameEn   = GetCol("الاسم انجليزي", "الاسم (إنجليزي)", "الاسم English", "Name En");
+            int colMainCat  = GetCol("القسم الرئيسي", "التصنيف الأساسي", "الفئة", "التصنيف", "Main Category", "Category");
+            int colSubCat   = GetCol("القسم الفرعي", "التصنيف الفرعي", "الفئة الفرعية", "Sub Category");
+            int colSubSub   = GetCol("القسم الفرعي 2", "التصنيف الفرعي 2", "التصنيف فرع فرعي", "الفئة الفرعية 2", "Sub Sub Category");
             int colCost     = GetCol("سعر التكلفة", "التكلفة", "Cost");
             int colPrice    = GetCol("السعر", "سعر البيع", "Price");
             int colDisc     = GetCol("سعر الخصم", "الخصم", "Discount");
-            int colHasTax   = GetCol("خاضع للضريبة", "taxable", "الضريبة", "Is Taxable"); 
+            int colHasTax   = GetCol("خاضع للضريبة", "خاضع للضريبة؟", "taxable", "الضريبة", "Is Taxable"); 
             int colBrand    = GetCol("العلامة التجارية", "الماركة", "Brand", "الماركه");
             int colSize     = GetCol("المقاس", "Size", "القياس", "المقاسات", "size");
-            int colColorEn  = GetCol("اللون (English)", "اللون English", "Color En", "Color");
+            int colColorEn  = GetCol("اللون (إنجليزي)", "اللون (English)", "اللون English", "Color En", "Color");
             int colColorAr  = GetCol("اللون (عربي)", "اللون عربي", "Color Ar", "اللون", "الوان");
-            int colStock    = GetCol("المخزون", "Stock", "الكمية");
-            int colAdj      = GetCol("فارق السعر للمقاس", "Price Adjustment");
-            int colReorder  = GetCol("حد الطلب", "Reorder Level");
+            int colStock    = GetCol("الرصيد", "المخزون", "Stock", "الكمية");
+            int colAdj      = GetCol("فرق سعر المقاس", "فارق السعر للمقاس", "Price Adjustment");
+            int colReorder  = GetCol("حد إعادة الطلب", "حد الطلب", "Reorder Level");
             int colStatus   = GetCol("الحالة", "Status");
             int colFeat     = GetCol("مميز (نعم/لا)", "Featured");
-            int colDescAr   = GetCol("الوصف عربي", "Description Ar");
-            int colDescEn   = GetCol("الوصف انجليزي", "Description En");
+            int colDescAr   = GetCol("الوصف (عربي)", "الوصف عربي", "Description Ar");
+            int colDescEn   = GetCol("الوصف (إنجليزي)", "الوصف انجليزي", "Description En");
 
             if (colSku == -1 || colNameAr == -1 || colPrice == -1 || colUnit == -1 || colMainCat == -1)
                 return BadRequest(new { message = _t.Get("Import.MissingColumns") });
