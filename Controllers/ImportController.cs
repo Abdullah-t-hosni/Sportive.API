@@ -19,6 +19,15 @@ public class ImportController : ControllerBase
     private readonly ITranslator _t;
     public ImportController(AppDbContext db, ITranslator t) { _db = db; _t = t; }
 
+    private string GenerateSlug(string name, string sku)
+    {
+        var baseName = string.IsNullOrWhiteSpace(name) ? "product" : name;
+        var slug = baseName.ToLower().Replace(" ", "-").Replace("&", "-");
+        slug = System.Text.RegularExpressions.Regex.Replace(slug, @"[^a-z0-9\-]", "");
+        slug = System.Text.RegularExpressions.Regex.Replace(slug, @"-+", "-").Trim('-');
+        return string.IsNullOrWhiteSpace(slug) ? sku : $"{slug}-{sku}".ToLower();
+    }
+
     // ── TEMPLATE DOWNLOAD ──────────────────────────────────
     // GET /api/import/template
     [HttpGet("template")]
@@ -387,6 +396,10 @@ public class ImportController : ControllerBase
 
                                 if (!string.IsNullOrEmpty(nameAr)) product.NameAr = nameAr;
                                 product.NameEn = GetVal(colNameEn).NullIfEmpty() ?? product.NameEn;
+                                if (string.IsNullOrWhiteSpace(product.Slug))
+                                {
+                                    product.Slug = GenerateSlug(product.NameEn, product.SKU);
+                                }
                                 if (decimal.TryParse(priceStr, out var price)) product.Price = price;
                                 product.DiscountPrice = decimal.TryParse(GetVal(colDisc), out var dp) ? dp : product.DiscountPrice;
                                 product.CostPrice = decimal.TryParse(GetVal(colCost), out var cs) ? cs : product.CostPrice;
@@ -495,6 +508,7 @@ public class ImportController : ControllerBase
                         {
                             NameAr = nameAr,
                             NameEn = GetVal(colNameEn).NullIfEmpty() ?? nameAr,
+                            Slug = GenerateSlug(GetVal(colNameEn).NullIfEmpty(), sku),
                             SKU = sku, Price = price,
                             DiscountPrice = decimal.TryParse(GetVal(colDisc), out var dp) ? dp : null,
                             CostPrice = decimal.TryParse(GetVal(colCost), out var cs) ? cs : null,

@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
@@ -28,6 +28,11 @@ public class ProductsController : ControllerBase
     [HttpGet("slug/{slug}")]
     public async Task<IActionResult> GetBySlug(string slug, [FromQuery] DiscountApplyTo? source = null)
     {
+        if (int.TryParse(slug, out int id))
+        {
+            var productById = await _products.GetProductByIdAsync(id, source);
+            if (productById != null) return Ok(productById);
+        }
         var product = await _products.GetProductBySlugAsync(slug, source);
         return product == null ? NotFound() : Ok(product);
     }
