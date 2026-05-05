@@ -530,4 +530,42 @@ public class DataMaintenanceService : IDataMaintenanceService
             return (false, ex.Message); 
         }
     }
+
+    private string GenerateSlug(string name, string sku)
+    {
+        var baseName = string.IsNullOrWhiteSpace(name) ? "product" : name;
+        var slug = baseName.ToLower().Replace(" ", "-").Replace("&", "-");
+        slug = System.Text.RegularExpressions.Regex.Replace(slug, @"[^a-z0-9\-]", "");
+        slug = System.Text.RegularExpressions.Regex.Replace(slug, @"-+", "-").Trim('-');
+        return string.IsNullOrWhiteSpace(slug) ? sku : $"{slug}-{sku}".ToLower();
+    }
+
+    public async Task<(bool Success, string Message, int UpdatedCount)> FixMissingSlugsAsync()
+    {
+        try
+        {
+            var productsWithoutSlug = await _db.Products
+                .Where(p => p.Slug == null || p.Slug == "")
+                .ToListAsync();
+
+            int count = 0;
+            foreach (var p in productsWithoutSlug)
+            {
+                p.Slug = GenerateSlug(p.NameEn ?? p.NameAr, p.SKU);
+                count++;
+            }
+
+            if (count > 0)
+            {
+                await _db.SaveChangesAsync();
+            }
+
+            return (true, $"تم إصلاح وإنشاء روابط (Slugs) لعدد {count} منتج بنجاح.", count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "FixMissingSlugs failed");
+            return (false, "العملية فشلت. يرجى المحاولة مرة أخرى.", 0);
+        }
+    }
 }

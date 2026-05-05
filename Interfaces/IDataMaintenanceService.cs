@@ -33,4 +33,6 @@ public interface IDataMaintenanceService
     Task<(bool Success, string Message)> SyncLedgerSourceAsync();
     
     Task<(bool Success, string Message)> FixUtcTimesAsync();
+    
+    Task<(bool Success, string Message, int UpdatedCount)> FixMissingSlugsAsync();
 }

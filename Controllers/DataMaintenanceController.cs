@@ -171,4 +171,12 @@ public class DataMaintenanceController : ControllerBase
         var (success, message) = await _service.FixUtcTimesAsync();
         return success ? Ok(new { success, message }) : BadRequest(new { success, message });
     }
+
+    [HttpPost("fix-slugs")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> FixSlugs()
+    {
+        var (success, message, count) = await _service.FixMissingSlugsAsync();
+        return success ? Ok(new { success, message, count }) : BadRequest(new { success, message });
+    }
 }
