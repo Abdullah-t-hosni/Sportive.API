@@ -353,7 +353,7 @@ public class InventoryOpeningBalanceController : ControllerBase
     }
 
     [HttpPost("import")]
-    public async Task<IActionResult> Import(IFormFile file)
+    public async Task<IActionResult> Import([FromForm] IFormFile file)
     {
         if (file == null || file.Length == 0) return BadRequest(new { message = _t.Get("Accounting.NoFileUploaded") });
 
