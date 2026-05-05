@@ -629,4 +629,43 @@ public class CustomerService : ICustomerService
             await _db.SaveChangesAsync();
         }
     }
+
+    public async Task<CustomerInsightsDto> GetInsightsAsync()
+    {
+        var customers = await _db.Customers
+            .AsNoTracking()
+            .Select(c => new {
+                c.Id,
+                c.Tags,
+                TotalSpent = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0
+            })
+            .ToListAsync();
+
+        var vipCount = customers.Count(c => c.TotalSpent > 1000 || (c.Tags != null && c.Tags.Contains("VIP")));
+        var regularCount = customers.Count(c => c.TotalSpent > 0 && c.TotalSpent <= 1000 && (c.Tags == null || !c.Tags.Contains("VIP")));
+        var lostCount = customers.Count(c => c.TotalSpent == 0);
+
+        // Growth Trend (Last 6 months)
+        var sixMonthsAgo = TimeHelper.GetEgyptTime().AddMonths(-5);
+        var growthTrendRaw = await _db.Customers
+            .AsNoTracking()
+            .Where(c => c.CreatedAt >= new DateTime(sixMonthsAgo.Year, sixMonthsAgo.Month, 1))
+            .GroupBy(c => new { c.CreatedAt.Year, c.CreatedAt.Month })
+            .Select(g => new { 
+                Year = g.Key.Year, 
+                Month = g.Key.Month, 
+                Count = g.Count() 
+            })
+            .ToListAsync();
+
+        var trend = new List<GrowthTrendDto>();
+        for (int i = 0; i < 6; i++)
+        {
+            var date = sixMonthsAgo.AddMonths(i);
+            var monthData = growthTrendRaw.FirstOrDefault(g => g.Year == date.Year && g.Month == date.Month);
+            trend.Add(new GrowthTrendDto(date.ToString("MMM"), monthData?.Count ?? 0));
+        }
+
+        return new CustomerInsightsDto(vipCount, regularCount, lostCount, trend);
+    }
 }

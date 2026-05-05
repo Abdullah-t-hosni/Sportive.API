@@ -119,3 +119,13 @@ public record UpdateCustomerDto(
     [property: JsonPropertyName("fixedDiscount")] decimal FixedDiscount = 0,
     [property: JsonPropertyName("tags")] List<string>? Tags = null
 );
+
+public record CustomerInsightsDto(
+    int VipCount,
+    int RegularCount,
+    int LostCount,
+    List<GrowthTrendDto> GrowthTrend
+);
+
+public record GrowthTrendDto(string Name, decimal Val);
+

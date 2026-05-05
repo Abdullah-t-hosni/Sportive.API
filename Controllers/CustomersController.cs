@@ -36,11 +36,15 @@ public class CustomersController : ControllerBase
         [FromQuery] bool isDescending = true) =>
         Ok(await _customers.GetCustomersAsync(page, pageSize, search, minSpent, minOrders, joinStartDate, joinEndDate, categoryId, hasDebt, orderBy, isDescending));
 
-    /// <summary>بيانات RFM خفيفة لكل العملاء — بدون pagination أو addresses</summary>
     [RequirePermission(ModuleKeys.Customers + "," + ModuleKeys.Pos + "," + ModuleKeys.Orders)]
     [HttpGet("rfm")]
     public async Task<IActionResult> GetRfm() =>
         Ok(await _customers.GetRfmDataAsync());
+
+    [RequirePermission(ModuleKeys.Customers)]
+    [HttpGet("insights")]
+    public async Task<IActionResult> GetInsights() =>
+        Ok(await _customers.GetInsightsAsync());
 
     [Authorize]
     [HttpPut("{id}")]

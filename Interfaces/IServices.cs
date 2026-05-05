@@ -98,6 +98,7 @@ public interface ICustomerService
     Task<List<CustomerRfmDto>> GetRfmDataAsync();
     Task<int> GetOrCreateCustomerIdByUserIdAsync(string userId);
     Task EvaluateCustomerCategoryAsync(int customerId);
+    Task<CustomerInsightsDto> GetInsightsAsync();
 }
 
 public interface ICustomerCategoryService
