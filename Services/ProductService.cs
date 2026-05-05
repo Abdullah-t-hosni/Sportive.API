@@ -61,7 +61,6 @@ public class ProductService : IProductService
                 p.NameAr.ToLower().Contains(s) ||
                 p.NameEn.ToLower().Contains(s) ||
                 p.SKU.ToLower().Contains(s) ||
-                (isInt && p.Id == searchId) ||
                 (isDecimal && (p.Price == searchPrice || p.DiscountPrice == searchPrice)) ||
                 (p.Brand != null && (p.Brand.NameAr.ToLower().Contains(s) || p.Brand.NameEn.ToLower().Contains(s))) ||
                 p.Variants.Any(v => 
