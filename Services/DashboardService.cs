@@ -438,6 +438,11 @@ public class DashboardService : IDashboardService
         }, TimeSpan.FromSeconds(30)) ?? new {};
     }
 
+    public async Task TriggerLiveUpdateAsync()
+    {
+        await _hub.Clients.Group("Admin").SendAsync("DashboardUpdated", new { date = TimeHelper.GetEgyptTime() });
+    }
+
     private async Task<object> GetKpiInternalAsync(OrderSource? source = null)
     {
         var now        = TimeHelper.GetEgyptTime();

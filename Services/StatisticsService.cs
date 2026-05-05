@@ -4,6 +4,7 @@ using Sportive.API.Data;
 using Sportive.API.Hubs;
 using Sportive.API.Models;
 using Sportive.API.Utils;
+using Hangfire;
 
 namespace Sportive.API.Services
 {
