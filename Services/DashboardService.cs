@@ -624,13 +624,21 @@ public class DashboardService : IDashboardService
         var end = (toDate?.Date.AddDays(1)) ?? now.Date.AddDays(1);
 
         // 1. Try to get from DailyStats first (Performance Optimized)
-        var stats = await _db.DailyStats.AsNoTracking()
-            .Where(s => s.Date >= start && s.Date < end && s.Source == OrderSource.General)
-            .OrderBy(s => s.Date)
-            .Select(s => new { s.Date, s.TotalSales, s.OrdersCount })
-            .ToListAsync();
+        IEnumerable<dynamic> stats;
+        try
+        {
+            stats = await _db.DailyStats.AsNoTracking()
+                .Where(s => s.Date >= start && s.Date < end && s.Source == OrderSource.General)
+                .OrderBy(s => s.Date)
+                .Select(s => new { Date = s.Date, TotalSales = s.TotalSales, OrdersCount = s.OrdersCount })
+                .ToListAsync();
+        }
+        catch
+        {
+            stats = new List<dynamic>();
+        }
 
-        // 2. Fallback to Orders table if DailyStats is empty (Source of Truth)
+        // 2. Fallback to Orders table if DailyStats is empty or failed (Source of Truth)
         if (!stats.Any())
         {
             stats = await _db.Orders.AsNoTracking()
@@ -645,13 +653,13 @@ public class DashboardService : IDashboardService
         {
             var results = new List<SalesChartDto>();
             int days = (int)(end - start).TotalDays;
-            if (days <= 0) days = 30; // Safety fallback
-            if (days > 100) days = 100; // Cap to avoid memory issues
+            if (days <= 0) days = 30; 
+            if (days > 100) days = 100;
 
             for (int i = 0; i < days; i++)
             {
                 var date = start.AddDays(i);
-                var dayData = stats.FirstOrDefault(s => s.Date.Date == date.Date);
+                var dayData = stats.FirstOrDefault(s => ((DateTime)s.Date).Date == date.Date);
                 results.Add(new SalesChartDto(date.ToString("MM/dd"), dayData?.TotalSales ?? 0, dayData?.OrdersCount ?? 0));
             }
             return results;
