@@ -140,7 +140,7 @@ public class InventoryOpeningBalanceController : ControllerBase
             });
             totalValue += total;
 
-            // 1. Update Inventory
+            // 1. Update Inventory (OPTIMIZED: No auto-save, no broadcast inside loop)
             if (item.ProductId.HasValue)
             {
                 await _inventory.LogMovementAsync(
@@ -152,10 +152,13 @@ public class InventoryOpeningBalanceController : ControllerBase
                     _t.Get("Inventory.OpeningBalanceLog"), 
                     userId,
                     item.CostPrice,
-                    ob.CostCenter
+                    ob.CostCenter,
+                    autoSave: false,
+                    broadcast: false
                 );
 
                 // 2. Update Product Cost Price if requested
+                // Note: We avoid FindAsync here to keep it fast
                 var product = await _db.Products.FindAsync(item.ProductId.Value);
                 if (product != null && dto.UpdateProductCost && item.CostPrice > 0)
                 {

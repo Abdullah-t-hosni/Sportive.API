@@ -35,7 +35,8 @@ public class InventoryService : IInventoryService
         string? userId = null,
         decimal unitCost = 0,
         OrderSource? costCenter = null,
-        bool autoSave = true)
+        bool autoSave = true,
+        bool broadcast = true)
     {
         if (quantity == 0) return;
         if (productId == 0) productId = null;
@@ -47,7 +48,8 @@ public class InventoryService : IInventoryService
         if (roundedQty == 0 && quantity == 0) return;
 
         // Idempotency check: prevent duplicate movements for the same order/invoice and item
-        if (!string.IsNullOrEmpty(reference))
+        // Skip check if it's an opening balance to speed up bulk imports
+        if (!string.IsNullOrEmpty(reference) && type != InventoryMovementType.OpeningBalance)
         {
             bool exists = await _db.InventoryMovements.AnyAsync(m => 
                 m.Type == type && 
@@ -59,6 +61,7 @@ public class InventoryService : IInventoryService
         }
 
         int remainingBefore = 0;
+        int newStock = 0;
 
         // 1. Update Actual Stock levels in Product/Variant
         if (variantId.HasValue)
@@ -71,6 +74,7 @@ public class InventoryService : IInventoryService
                     throw new InvalidOperationException(_t.Get("Inventory.InsufficientStock", variant.StockQuantity, -roundedQty));
                 
                 variant.StockQuantity += roundedQty;
+                newStock = variant.StockQuantity;
                 variant.UpdatedAt = TimeHelper.GetEgyptTime();
 
                 // Sync parent product total stock — OPTIMIZED: Avoid Re-Summing everything
@@ -101,6 +105,7 @@ public class InventoryService : IInventoryService
                     throw new InvalidOperationException(_t.Get("Inventory.InsufficientStock", product.TotalStock, -roundedQty));
                 
                 product.TotalStock += roundedQty;
+                newStock = product.TotalStock;
 
                 // 💡 AUTO-STATUS: Active <-> OutOfStock based on physical stock
                 if (product.Status == ProductStatus.Active && product.TotalStock <= 0)
@@ -143,16 +148,12 @@ public class InventoryService : IInventoryService
         if (autoSave) await _db.SaveChangesAsync();
         
         // 🚀 BROADCAST STOCK UPDATE: Notify all clients to update their UI
-        if (productId.HasValue)
+        if (broadcast && productId.HasValue)
         {
-            var currentStock = variantId.HasValue 
-                ? (await _db.ProductVariants.Where(v => v.Id == variantId).Select(v => v.StockQuantity).FirstOrDefaultAsync())
-                : (await _db.Products.Where(p => p.Id == productId).Select(p => p.TotalStock).FirstOrDefaultAsync());
-
             await _hubContext.Clients.All.SendAsync("StockUpdated", new {
                 productId = productId.Value,
                 variantId = variantId ?? 0,
-                newStock = currentStock
+                newStock = newStock
             });
         }
 
