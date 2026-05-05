@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -32,8 +32,8 @@ public class DashboardKpiController : ControllerBase
         Ok(await _dashboard.GetStatsAsync(source, fromDate, toDate));
 
     [HttpGet("sales-chart")]
-    public async Task<IActionResult> GetSalesChart([FromQuery] string period = "monthly") =>
-        Ok(await _dashboard.GetSalesChartAsync(period));
+    public async Task<IActionResult> GetSalesChart([FromQuery] string period = "monthly", [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null) =>
+        Ok(await _dashboard.GetSalesChartAsync(period, fromDate, toDate));
 
     [HttpGet("top-products")]
     public async Task<IActionResult> GetTopProductsList([FromQuery] int count = 10) =>

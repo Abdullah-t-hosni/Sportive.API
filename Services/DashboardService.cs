@@ -617,23 +617,38 @@ public class DashboardService : IDashboardService
     private static decimal GrowthPct(decimal current, decimal previous) =>
         previous == 0 ? (current > 0 ? 100 : 0) : Math.Round((current - previous) / previous * 100, 1);
 
-    public async Task<List<SalesChartDto>> GetSalesChartAsync(string period)
+    public async Task<List<SalesChartDto>> GetSalesChartAsync(string period, DateTime? fromDate = null, DateTime? toDate = null)
     {
         var now = TimeHelper.GetEgyptTime();
-        var start = period == "daily" ? now.AddDays(-29).Date : new DateTime(now.Year - 1, now.Month, 1);
-        var end = now.Date.AddDays(1);
+        var start = fromDate ?? (period == "daily" ? now.AddDays(-29).Date : new DateTime(now.Year - 1, now.Month, 1));
+        var end = (toDate?.Date.AddDays(1)) ?? now.Date.AddDays(1);
 
-        // Try to get from DailyStats (General source)
+        // 1. Try to get from DailyStats first (Performance Optimized)
         var stats = await _db.DailyStats.AsNoTracking()
             .Where(s => s.Date >= start && s.Date < end && s.Source == OrderSource.General)
             .OrderBy(s => s.Date)
             .Select(s => new { s.Date, s.TotalSales, s.OrdersCount })
             .ToListAsync();
 
+        // 2. Fallback to Orders table if DailyStats is empty (Source of Truth)
+        if (!stats.Any())
+        {
+            stats = await _db.Orders.AsNoTracking()
+                .Where(o => o.CreatedAt >= start && o.CreatedAt < end && o.Status != OrderStatus.Cancelled)
+                .GroupBy(o => o.CreatedAt.Date)
+                .Select(g => new { Date = g.Key, TotalSales = g.Sum(o => o.TotalAmount), OrdersCount = g.Count() })
+                .OrderBy(s => s.Date)
+                .ToListAsync();
+        }
+
         if (period == "daily")
         {
             var results = new List<SalesChartDto>();
-            for (int i = 0; i < 30; i++)
+            int days = (int)(end - start).TotalDays;
+            if (days <= 0) days = 30; // Safety fallback
+            if (days > 100) days = 100; // Cap to avoid memory issues
+
+            for (int i = 0; i < days; i++)
             {
                 var date = start.AddDays(i);
                 var dayData = stats.FirstOrDefault(s => s.Date.Date == date.Date);
@@ -643,7 +658,7 @@ public class DashboardService : IDashboardService
         }
         else
         {
-            // Monthly view from daily stats
+            // Monthly view
             return stats.GroupBy(s => new { s.Date.Year, s.Date.Month })
                 .Select(g => new SalesChartDto($"{g.Key.Month}/{g.Key.Year}", g.Sum(x => x.TotalSales), g.Sum(x => x.OrdersCount)))
                 .OrderBy(x => x.Label)
