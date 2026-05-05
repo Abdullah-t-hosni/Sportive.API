@@ -290,10 +290,28 @@ public class InventoryOpeningBalanceController : ControllerBase
     [HttpGet("template")]
     public async Task<IActionResult> GetTemplate()
     {
-        var existingSizes  = await _db.ProductVariants.Where(v => v.Size != null).Select(v => v.Size!).Distinct().ToListAsync();
-        var existingColors = await _db.ProductVariants.Where(v => v.ColorAr != null).Select(v => v.ColorAr!).Distinct().ToListAsync();
+        var existingSizes  = await _db.ProductVariants
+            .Where(v => v.Size != null && v.Size != "")
+            .Select(v => v.Size!)
+            .Distinct()
+            .ToListAsync();
+            
+        var existingColors = await _db.ProductVariants
+            .Where(v => v.ColorAr != null && v.ColorAr != "")
+            .Select(v => v.ColorAr!)
+            .Distinct()
+            .ToListAsync();
+
+        var products = await _db.Products
+            .AsNoTracking()
+            .Select(p => new { p.SKU, p.NameAr })
+            .Where(p => p.SKU != null && p.SKU != "")
+            .OrderBy(p => p.SKU)
+            .ToListAsync();
 
         using var wb = new XLWorkbook();
+        
+        // 1. Lists Sheet (Hidden)
         var wsL = wb.Worksheets.Add("Lists");
         wsL.Hide();
 
@@ -305,7 +323,23 @@ public class InventoryOpeningBalanceController : ControllerBase
         }
         FillCol(1, existingSizes, "SizesList");
         FillCol(2, existingColors, "ColorsList");
+        
+        // 2. Products Reference Sheet
+        var wsP = wb.Worksheets.Add(_t.Get("Inventory.ProductsListSheet") ?? "Products Reference");
+        wsP.RightToLeft = true;
+        wsP.Cell(1, 1).Value = _t.Get("Inventory.SkuCol");
+        wsP.Cell(1, 2).Value = _t.Get("Inventory.NameCol");
+        wsP.Range(1, 1, 1, 2).Style.Font.Bold = true;
+        wsP.Range(1, 1, 1, 2).Style.Fill.BackgroundColor = XLColor.FromHtml("#eeeeee");
+        
+        for (int i = 0; i < products.Count; i++)
+        {
+            wsP.Cell(i + 2, 1).Value = products[i].SKU;
+            wsP.Cell(i + 2, 2).Value = products[i].NameAr;
+        }
+        wsP.Columns().AdjustToContents();
 
+        // 3. Main Input Sheet
         var ws = wb.Worksheets.Add(_t.Get("Inventory.OpeningBalanceSheet"));
         ws.RightToLeft = true;
 
@@ -327,25 +361,33 @@ public class InventoryOpeningBalanceController : ControllerBase
             cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
         }
 
-        // Add Data Validation for 500 rows
-        for (int r = 2; r <= 501; r++)
+        // Add Data Validation for 1000 rows
+        for (int r = 2; r <= 1001; r++)
         {
             ws.Cell(r, 4).GetDataValidation().List("=SizesList");
             ws.Cell(r, 5).GetDataValidation().List("=ColorsList");
         }
 
+        // Instructions
+        ws.Cell(1, 8).Value = "تعليمات الهامش:";
+        ws.Cell(1, 8).Style.Font.Bold = true;
+        ws.Cell(2, 8).Value = "1. استخدم شيت 'Products Reference' للبحث عن أكواد المنتجات الصحيحة.";
+        ws.Cell(3, 8).Value = "2. الكمية والتكلفة يجب أن تكون أرقاماً صحيحة.";
+        ws.Cell(4, 8).Value = "3. المقاس واللون اختياريان ولكن يفضل اختيارهما من القائمة المنسدلة.";
+
         // Sample Data
-        ws.Cell(2, 1).Value = "SKU-XYZ";
-        ws.Cell(2, 2).Value = 10;
-        ws.Cell(2, 3).Value = 150.00;
-        ws.Cell(2, 4).Value = existingSizes.FirstOrDefault() ?? "XL";
-        ws.Cell(2, 5).Value = existingColors.FirstOrDefault() ?? "Black";
-        ws.Cell(2, 6).Value = _t.Get("Inventory.DescPlaceholder");
+        ws.Cell(2, 1).Value = products.FirstOrDefault()?.SKU ?? "SKU-XYZ";
+        ws.Cell(2, 2).Value = 1;
+        ws.Cell(2, 3).Value = 100.00;
+        ws.Cell(2, 4).Value = existingSizes.FirstOrDefault() ?? "—";
+        ws.Cell(2, 5).Value = existingColors.FirstOrDefault() ?? "—";
+        ws.Cell(2, 6).Value = products.FirstOrDefault()?.NameAr ?? "اسم المنتج التوضيحي";
         ws.Row(2).Style.Font.FontColor = XLColor.Gray;
 
         ws.Columns().AdjustToContents();
         ws.Column(1).Width = 20;
         ws.Column(6).Width = 30;
+        ws.Column(8).Width = 50;
 
         using var stream = new MemoryStream();
         wb.SaveAs(stream);
