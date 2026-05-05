@@ -160,18 +160,18 @@ builder.Services.AddRateLimiter(options =>
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 0
             }));
 
-    // Per-route AI/heavy endpoint policy — 30 req/min
+    // Per-route AI/heavy endpoint policy — 60 req/min
     options.AddPolicy("api", httpContext =>
         RateLimitPartition.GetSlidingWindowLimiter(
             partitionKey: httpContext.User.Identity?.Name ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new SlidingWindowRateLimiterOptions
             {
-                PermitLimit = 30, Window = TimeSpan.FromMinutes(1),
+                PermitLimit = 60, Window = TimeSpan.FromMinutes(1),
                 SegmentsPerWindow = 6,
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 0
             }));
 
-    // Global policy — 150 req/min keyed by authenticated user ID, falling back to IP
+    // Global policy — 300 req/min keyed by authenticated user ID, falling back to IP
     // This prevents a single shared IP (NAT/proxy) from triggering limits for all users behind it.
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
         RateLimitPartition.GetSlidingWindowLimiter(
@@ -180,7 +180,7 @@ builder.Services.AddRateLimiter(options =>
                 : $"ip:{httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown"}",
             factory: _ => new SlidingWindowRateLimiterOptions
             {
-                PermitLimit = 150, Window = TimeSpan.FromMinutes(1),
+                PermitLimit = 300, Window = TimeSpan.FromMinutes(1),
                 SegmentsPerWindow = 10,
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 0
             }));
