@@ -692,7 +692,7 @@ public class OperationalReportsController : ControllerBase
             totalCostValue        = totalCostVal,
             ledgerInventoryValue  = ledgerInventoryValue, // Absolute Financial Truth
             valuationDifference   = ledgerInventoryValue - totalCostVal, // Gap between physical and books
-            agingAlerts           = totals.Count(x => x.TotalStock > 0 && x.Cost > 0)
+            agingAlerts           = rows.Count(x => x.TotalStock > 0 && x.CostPrice > 0)
         };
 
         if (excel) return ExcelInventory(rows, summary);

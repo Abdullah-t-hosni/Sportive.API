@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Sportive.API.Interfaces;
 using Sportive.API.Services;
 using Sportive.API.Models;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Services.BackgroundServices;
 

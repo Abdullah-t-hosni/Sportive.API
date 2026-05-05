@@ -676,6 +676,13 @@ public class DashboardService : IDashboardService
 
     public async Task<List<OrderSummaryDto>> GetRecentOrdersAsync(int count = 10)
     {
+        var orders = await _db.Orders.AsNoTracking()
+            .Include(o => o.Customer)
+            .Include(o => o.Items)
+            .Include(o => o.Payments)
+            .OrderByDescending(o => o.CreatedAt)
+            .Take(count)
+            .ToListAsync();
 
         return orders.Select(o => new OrderSummaryDto(
             o.Id,
