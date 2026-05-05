@@ -311,36 +311,8 @@ public class InventoryOpeningBalanceController : ControllerBase
 
         using var wb = new XLWorkbook();
         
-        // 1. Lists Sheet (Hidden)
-        var wsL = wb.Worksheets.Add("Lists");
-        wsL.Hide();
-
-        void FillCol(int col, List<string> items, string name) {
-            if (!items.Any()) items.Add("—");
-            for (int i = 0; i < items.Count; i++) wsL.Cell(i + 1, col).Value = items[i];
-            var range = wsL.Range(1, col, items.Count, col);
-            wb.DefinedNames.Add(name, range);
-        }
-        FillCol(1, existingSizes, "SizesList");
-        FillCol(2, existingColors, "ColorsList");
-        
-        // 2. Products Reference Sheet
-        var wsP = wb.Worksheets.Add(_t.Get("Inventory.ProductsListSheet") ?? "Products Reference");
-        wsP.RightToLeft = true;
-        wsP.Cell(1, 1).Value = _t.Get("Inventory.SkuCol");
-        wsP.Cell(1, 2).Value = _t.Get("Inventory.NameCol");
-        wsP.Range(1, 1, 1, 2).Style.Font.Bold = true;
-        wsP.Range(1, 1, 1, 2).Style.Fill.BackgroundColor = XLColor.FromHtml("#eeeeee");
-        
-        for (int i = 0; i < products.Count; i++)
-        {
-            wsP.Cell(i + 2, 1).Value = products[i].SKU;
-            wsP.Cell(i + 2, 2).Value = products[i].NameAr;
-        }
-        wsP.Columns().AdjustToContents();
-
-        // 3. Main Input Sheet
-        var ws = wb.Worksheets.Add(_t.Get("Inventory.OpeningBalanceSheet"));
+        // 1. Main Input Sheet (Must be FIRST for reliable import)
+        var ws = wb.Worksheets.Add(_t.Get("Inventory.OpeningBalanceSheet") ?? "Opening Balance");
         ws.RightToLeft = true;
 
         var headers = new[] { 
@@ -360,6 +332,35 @@ public class InventoryOpeningBalanceController : ControllerBase
             cell.Style.Font.FontColor = XLColor.White;
             cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
         }
+
+        // 2. Lists Sheet (Hidden)
+        var wsL = wb.Worksheets.Add("Lists");
+        wsL.Hide();
+
+        void FillCol(int col, List<string> items, string name) {
+            if (!items.Any()) items.Add("—");
+            for (int i = 0; i < items.Count; i++) wsL.Cell(i + 1, col).Value = items[i];
+            var range = wsL.Range(1, col, items.Count, col);
+            wb.DefinedNames.Add(name, range);
+        }
+        FillCol(1, existingSizes, "SizesList");
+        FillCol(2, existingColors, "ColorsList");
+        
+        // 3. Products Reference Sheet
+        var wsP = wb.Worksheets.Add(_t.Get("Inventory.ProductsListSheet") ?? "Products Reference");
+        wsP.RightToLeft = true;
+        wsP.Cell(1, 1).Value = _t.Get("Inventory.SkuCol");
+        wsP.Cell(1, 2).Value = _t.Get("Inventory.NameCol");
+        wsP.Range(1, 1, 1, 2).Style.Font.Bold = true;
+        wsP.Range(1, 1, 1, 2).Style.Fill.BackgroundColor = XLColor.FromHtml("#eeeeee");
+        
+        for (int i = 0; i < products.Count; i++)
+        {
+            wsP.Cell(i + 2, 1).Value = products[i].SKU;
+            wsP.Cell(i + 2, 2).Value = products[i].NameAr;
+        }
+        wsP.Columns().AdjustToContents();
+
 
         // Add Data Validation for 1000 rows
         for (int r = 2; r <= 1001; r++)
@@ -406,7 +407,8 @@ public class InventoryOpeningBalanceController : ControllerBase
         {
             using var stream = file.OpenReadStream();
             using var wb = new XLWorkbook(stream);
-            var ws = wb.Worksheets.First();
+            // Try to find the input sheet by common keywords if the first sheet is not the one
+            var ws = wb.Worksheets.FirstOrDefault(s => s.Name.Contains("الأرصدة") || s.Name.Contains("Opening")) ?? wb.Worksheets.First();
             var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
 
             var products = await _db.Products.Include(p => p.Variants).Include(p => p.Images).ToListAsync();
