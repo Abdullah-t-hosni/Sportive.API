@@ -107,9 +107,9 @@ public class ProductService : IProductService
         // Sorting
         query = filter.SortBy switch
         {
-            "price" => filter.SortDir == "asc" ? query.OrderBy(p => p.Price) : query.OrderByDescending(p => p.Price),
-            "name" => filter.SortDir == "asc" ? query.OrderBy(p => p.NameEn) : query.OrderByDescending(p => p.NameEn),
-            _ => query.OrderByDescending(p => p.CreatedAt)
+            "price" => filter.SortDir == "asc" ? query.OrderBy(p => p.Price).ThenBy(p => p.Id) : query.OrderByDescending(p => p.Price).ThenBy(p => p.Id),
+            "name" => filter.SortDir == "asc" ? query.OrderBy(p => p.NameEn).ThenBy(p => p.Id) : query.OrderByDescending(p => p.NameEn).ThenBy(p => p.Id),
+            _ => query.OrderByDescending(p => p.CreatedAt).ThenBy(p => p.Id)
         };
 
         var total = await query.CountAsync();
@@ -599,7 +599,7 @@ public class ProductService : IProductService
                     .OrderByDescending(d => d.ProductId != null ? 3 : (d.CategoryId != null ? 2 : 1))
                     .FirstOrDefault()
             })
-            .OrderByDescending(x => x.p.CreatedAt)
+            .OrderByDescending(x => x.p.CreatedAt).ThenBy(x => x.p.Id)
             .Take(count)
             .Select(x => new ProductSummaryDto(
                 x.p.Id,
