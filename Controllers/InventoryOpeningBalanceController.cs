@@ -370,24 +370,47 @@ public class InventoryOpeningBalanceController : ControllerBase
             var products = await _db.Products.Include(p => p.Variants).Include(p => p.Images).ToListAsync();
             
             var headers = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            var firstRow = ws.Row(1);
-            
+            var debugHeaders = new List<string>();
+            IXLRow? headerRow = null;
+
             string Normalize(string s) {
                 if (string.IsNullOrEmpty(s)) return "";
-                // 1. Remove non-letters/digits
                 var clean = new string(s.Where(c => char.IsLetterOrDigit(c)).ToArray()).ToLower();
-                // 2. Unify Arabic letters (Alif, Yeh, Teh Marbuta)
                 return clean
                     .Replace("أ", "ا").Replace("إ", "ا").Replace("آ", "ا")
                     .Replace("ة", "ه")
                     .Replace("ى", "ي");
             }
 
-            var lastCol = ws.LastColumnUsed()?.ColumnNumber() ?? 0;
-            var debugHeaders = new List<string>();
+            // --- 💡 AUTO-DETECT HEADER ROW (Search first 10 rows) ---
+            var keywords = new[] { "sku", "الكود", "الكمية", "qty", "التكلفة", "cost" };
+            for (int r = 1; r <= 10; r++)
+            {
+                var row = ws.Row(r);
+                bool found = false;
+                for (int c = 1; c <= 20; c++)
+                {
+                    var val = Normalize(row.Cell(c).GetString());
+                    if (keywords.Any(k => val.Contains(Normalize(k))))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                if (found)
+                {
+                    headerRow = row;
+                    break;
+                }
+            }
+
+            if (headerRow == null) 
+                return BadRequest(new { message = _t.Get("Inventory.ImportErrorCols") + " (لم يتم العثور على سطر العناوين)" });
+
+            var lastCol = ws.LastColumnUsed()?.ColumnNumber() ?? 10;
             for (int c = 1; c <= lastCol; c++)
             {
-                var hRaw = firstRow.Cell(c).GetString().Trim();
+                var hRaw = headerRow.Cell(c).GetString().Trim();
                 if (string.IsNullOrEmpty(hRaw)) continue;
                 var norm = Normalize(hRaw);
                 headers[norm] = c;
@@ -398,10 +421,7 @@ public class InventoryOpeningBalanceController : ControllerBase
                 foreach (var a in aliases) {
                     var normA = Normalize(a);
                     if (string.IsNullOrEmpty(normA)) continue;
-                    
                     if (headers.TryGetValue(normA, out var idx)) return idx;
-                    
-                    // Fallback to partial match
                     foreach (var h in headers) {
                         if (h.Key.Contains(normA) || normA.Contains(h.Key)) return h.Value;
                     }
@@ -424,11 +444,12 @@ public class InventoryOpeningBalanceController : ControllerBase
                 
                 return BadRequest(new { 
                     message = $"{_t.Get("Inventory.ImportErrorCols")} المفقود: {string.Join(", ", missing)}",
-                    detectedHeaders = debugHeaders
+                    detectedHeaders = debugHeaders,
+                    headerRowFound = headerRow.RowNumber()
                 });
             }
 
-            for (int r = 2; r <= lastRow; r++)
+            for (int r = headerRow.RowNumber() + 1; r <= lastRow; r++)
             {
                 string GetVal(int col) => col != -1 ? ws.Cell(r, col).GetString().Trim() : "";
 
