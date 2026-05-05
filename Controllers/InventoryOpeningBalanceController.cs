@@ -371,14 +371,27 @@ public class InventoryOpeningBalanceController : ControllerBase
             
             var headers = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var firstRow = ws.Row(1);
-            string Normalize(string s) => new string(s.Where(c => char.IsLetterOrDigit(c)).ToArray()).ToLower();
+            
+            string Normalize(string s) {
+                if (string.IsNullOrEmpty(s)) return "";
+                // 1. Remove non-letters/digits
+                var clean = new string(s.Where(c => char.IsLetterOrDigit(c)).ToArray()).ToLower();
+                // 2. Unify Arabic letters (Alif, Yeh, Teh Marbuta)
+                return clean
+                    .Replace("أ", "ا").Replace("إ", "ا").Replace("آ", "ا")
+                    .Replace("ة", "ه")
+                    .Replace("ى", "ي");
+            }
 
             var lastCol = ws.LastColumnUsed()?.ColumnNumber() ?? 0;
+            var debugHeaders = new List<string>();
             for (int c = 1; c <= lastCol; c++)
             {
                 var hRaw = firstRow.Cell(c).GetString().Trim();
                 if (string.IsNullOrEmpty(hRaw)) continue;
-                headers[Normalize(hRaw)] = c;
+                var norm = Normalize(hRaw);
+                headers[norm] = c;
+                debugHeaders.Add($"{hRaw} -> {norm}");
             }
 
             int GetCol(params string[] aliases) {
@@ -403,7 +416,17 @@ public class InventoryOpeningBalanceController : ControllerBase
             int colColor = GetCol("اللون", "Color");
 
             if (colSku == -1 || colQty == -1 || colCost == -1)
-                return BadRequest(new { message = _t.Get("Inventory.ImportErrorCols") });
+            {
+                var missing = new List<string>();
+                if (colSku == -1) missing.Add("الكود (SKU)");
+                if (colQty == -1) missing.Add("الكمية (Qty)");
+                if (colCost == -1) missing.Add("التكلفة (Cost)");
+                
+                return BadRequest(new { 
+                    message = $"{_t.Get("Inventory.ImportErrorCols")} المفقود: {string.Join(", ", missing)}",
+                    detectedHeaders = debugHeaders
+                });
+            }
 
             for (int r = 2; r <= lastRow; r++)
             {
