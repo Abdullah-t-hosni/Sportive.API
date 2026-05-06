@@ -195,7 +195,7 @@ public class AccountingCoreService
             bool isPayables = realCode.StartsWith("2101") || realCode.StartsWith("2102");
             bool isSalesOrPurchase = type == JournalEntryType.SalesInvoice || type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseInvoice || type == JournalEntryType.PurchaseReturn;
 
-            bool isEmployeeAccount = realCode.StartsWith("22") || realCode.StartsWith("12") || realCode.StartsWith("52") || realCode.StartsWith("4109") ||
+            bool isEmployeeAccount = realCode == "4109" || 
                                      actualAccount?.NameAr?.Contains("موظف") == true || actualAccount?.NameEn?.ToLower().Contains("employee") == true ||
                                      actualAccount?.NameAr?.Contains("سلف") == true || actualAccount?.NameAr?.Contains("أجور") == true || actualAccount?.NameAr?.Contains("رواتب") == true;
             
@@ -462,8 +462,18 @@ public class AccountingCoreService
                         }
                         if (employeeId.HasValue && l.EmployeeId == null)
                         {
-                            l.EmployeeId = employeeId;
-                            lineChanged = true;
+                            var acct = await _db.Accounts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == l.AccountId);
+                            var realCode = acct?.Code ?? "";
+                            bool isEmployeeOrDiscount = realCode == "4109" || 
+                                     acct?.NameAr?.Contains("موظف") == true || acct?.NameEn?.ToLower().Contains("employee") == true ||
+                                     acct?.NameAr?.Contains("سلف") == true || acct?.NameAr?.Contains("أجور") == true || acct?.NameAr?.Contains("رواتب") == true ||
+                                     acct?.NameAr?.Contains("خصم") == true || acct?.NameEn?.ToLower().Contains("discount") == true;
+
+                            if (isEmployeeOrDiscount)
+                            {
+                                l.EmployeeId = employeeId;
+                                lineChanged = true;
+                            }
                         }
                         if (lineChanged) changed = true;
                     }

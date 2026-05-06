@@ -26,13 +26,11 @@ public class Translator : ITranslator
         var langHeader = context.Request.Headers["Accept-Language"].ToString();
         if (string.IsNullOrEmpty(langHeader)) return "ar";
 
-        // Simple check: if starts with 'en', use English, otherwise Arabic
         return langHeader.StartsWith("en", StringComparison.OrdinalIgnoreCase) ? "en" : "ar";
     }
 
-    private Dictionary<string, string> GetTranslations()
+    private Dictionary<string, string> GetTranslations(string lang)
     {
-        var lang = GetCurrentLanguage();
         var cacheKey = CacheKeyPrefix + lang;
 
         if (_cache.TryGetValue(cacheKey, out Dictionary<string, string>? translations) && translations != null)
@@ -76,7 +74,12 @@ public class Translator : ITranslator
 
     public string Get(string key)
     {
-        var translations = GetTranslations();
+        var lang = GetCurrentLanguage();
+        // Enforce Arabic for all Accounting entries to maintain General Ledger consistency
+        if (key.StartsWith("Accounting.")) 
+            lang = "ar";
+
+        var translations = GetTranslations(lang);
         return translations.TryGetValue(key, out var value) ? value : key;
     }
 
