@@ -479,8 +479,8 @@ public class CustomerService : ICustomerService
         var address = new Address
         {
             CustomerId     = customerId,
-            TitleAr        = dto.TitleAr,
-            TitleEn        = dto.TitleEn,
+            TitleAr        = string.IsNullOrWhiteSpace(dto.TitleAr) ? "عنواني" : dto.TitleAr,
+            TitleEn        = string.IsNullOrWhiteSpace(dto.TitleEn) ? "My Address" : dto.TitleEn,
             Street         = dto.Street,
             City           = dto.City,
             District       = dto.District,

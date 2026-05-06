@@ -156,6 +156,25 @@ public class AuthService : IAuthService
             .Select(c => (int?)c.Id)
             .FirstOrDefaultAsync();
 
+        if (!customerId.HasValue)
+        {
+            // Auto-create customer record for ANY user to allow them to use storefront features (addresses, orders)
+            var customer = new Customer
+            {
+                AppUserId = user.Id,
+                FullName = user.FullName,
+                Email = user.Email ?? "",
+                Phone = user.PhoneNumber,
+                CreatedAt = TimeHelper.GetEgyptTime()
+            };
+            _db.Customers.Add(customer);
+            await _db.SaveChangesAsync();
+            customerId = customer.Id;
+
+            // Auto-create Accounting Account
+            await _customerService.EnsureCustomerAccountAsync(customer.Id);
+        }
+
         if (customerId.HasValue)
             claims.Add(new Claim("CustomerId", customerId.Value.ToString()));
 

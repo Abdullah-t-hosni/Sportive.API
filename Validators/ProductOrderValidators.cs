@@ -147,8 +147,8 @@ public class CreateAddressValidator : AbstractValidator<CreateAddressDto>
 {
     public CreateAddressValidator(ITranslator translator)
     {
-        RuleFor(x => x.TitleAr).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.TitleEn).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.TitleAr).MaximumLength(100);
+        RuleFor(x => x.TitleEn).MaximumLength(100);
         RuleFor(x => x.Street).NotEmpty().MaximumLength(300);
         RuleFor(x => x.City).NotEmpty().MaximumLength(100);
 
