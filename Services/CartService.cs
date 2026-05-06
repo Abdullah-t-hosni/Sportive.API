@@ -102,7 +102,7 @@ public class CartService : ICartService
             }
             else
             {
-                price = c.Product?.DiscountPrice ?? basePrice;
+                price = (c.Product?.DiscountPrice > 0) ? c.Product.DiscountPrice.Value : basePrice;
             }
 
             if (c.ProductVariant?.PriceAdjustment.HasValue == true)

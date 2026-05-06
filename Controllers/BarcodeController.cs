@@ -65,7 +65,7 @@ public class BarcodeController : ControllerBase
                 color = v.Color,
                 colorAr = v.ColorAr,
                 stockQuantity = v.StockQuantity,
-                finalPrice = (product.DiscountPrice ?? product.Price) + (v.PriceAdjustment ?? 0)
+                finalPrice = ((product.DiscountPrice > 0) ? product.DiscountPrice.Value : product.Price) + (v.PriceAdjustment ?? 0)
             })
         });
     }
@@ -80,7 +80,7 @@ public class BarcodeController : ControllerBase
         if (product == null) return NotFound(new { message = "المنتج غير موجود" });
 
         var stickers = new List<object>();
-        var basePrice = product.DiscountPrice ?? product.Price;
+        var basePrice = (product.DiscountPrice > 0) ? product.DiscountPrice.Value : product.Price;
 
         var activeVariants = product.Variants.ToList();
         
@@ -133,7 +133,7 @@ public class BarcodeController : ControllerBase
             productName = item.ProductVariantId != null
                 ? $"{item.Product.NameAr} - {item.ProductVariant!.Size ?? ""} {item.ProductVariant.ColorAr ?? item.ProductVariant.Color ?? ""}".Trim()
                 : item.Product.NameAr,
-            price = item.Product.DiscountPrice ?? item.Product.Price + (item.ProductVariant?.PriceAdjustment ?? 0),
+            price = ((item.Product.DiscountPrice > 0) ? item.Product.DiscountPrice.Value : item.Product.Price) + (item.ProductVariant?.PriceAdjustment ?? 0),
             sku = item.Product.SKU,
             qty = item.Quantity
         }).ToList();

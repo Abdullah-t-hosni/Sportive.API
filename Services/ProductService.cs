@@ -139,7 +139,7 @@ public class ProductService : IProductService
                 x.p.Price,
                 x.d != null 
                     ? (x.d.DiscountType == DiscountType.Percentage ? Math.Round(x.p.Price - (x.p.Price * x.d.DiscountValue / 100), 2) : Math.Round(x.p.Price - x.d.DiscountValue, 2)) 
-                    : (x.p.DiscountPrice ?? x.p.Price),
+                    : ((x.p.DiscountPrice > 0) ? x.p.DiscountPrice.Value : x.p.Price),
                 x.p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
                 x.p.Category != null ? x.p.Category.NameAr : _t.Get("Products.CategoryMissing"),
                 x.p.Category != null ? x.p.Category.NameEn : _t.Get("Products.CategoryMissing"),
@@ -609,7 +609,7 @@ public class ProductService : IProductService
                 x.p.Price,
                 x.d != null 
                     ? (x.d.DiscountType == DiscountType.Percentage ? Math.Round(x.p.Price - (x.p.Price * x.d.DiscountValue / 100), 2) : Math.Round(x.p.Price - x.d.DiscountValue, 2)) 
-                    : (x.p.DiscountPrice ?? x.p.Price),
+                    : ((x.p.DiscountPrice > 0) ? x.p.DiscountPrice.Value : x.p.Price),
                 x.p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
                 x.p.Category != null ? x.p.Category.NameAr : _t.Get("Products.CategoryMissing"), 
                 x.p.Category != null ? x.p.Category.NameEn : _t.Get("Products.CategoryMissing"), 
@@ -666,7 +666,7 @@ public class ProductService : IProductService
                 x.p.Id, x.p.NameAr, x.p.NameEn, x.p.Slug, x.p.Price, 
                 x.d != null 
                     ? (x.d.DiscountType == DiscountType.Percentage ? Math.Round(x.p.Price - (x.p.Price * x.d.DiscountValue / 100), 2) : Math.Round(x.p.Price - x.d.DiscountValue, 2)) 
-                    : (x.p.DiscountPrice ?? x.p.Price),
+                    : ((x.p.DiscountPrice > 0) ? x.p.DiscountPrice.Value : x.p.Price),
                 x.p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
                 x.p.Category != null ? x.p.Category.NameAr : _t.Get("Products.CategoryMissing"), 
                 x.p.Category != null ? x.p.Category.NameEn : _t.Get("Products.CategoryMissing"), 
@@ -706,7 +706,7 @@ public class ProductService : IProductService
 
     private ProductDetailDto MapToDetail(Product p, ProductDiscount? d = null)
     {
-        decimal finalDiscountPrice = p.DiscountPrice ?? p.Price;
+        decimal finalDiscountPrice = (p.DiscountPrice > 0) ? p.DiscountPrice.Value : p.Price;
         string? activeLabel = null;
 
         if (d != null)

@@ -408,7 +408,7 @@ public class OrderService : IOrderService
                             }
                             else
                             {
-                                unitPrice = product.DiscountPrice ?? originalUnitPrice;
+                                unitPrice = (product.DiscountPrice > 0 ? product.DiscountPrice.Value : originalUnitPrice);
                             }
                         }
                         
@@ -513,7 +513,7 @@ public class OrderService : IOrderService
                         }
                         else
                         {
-                            unitPrice = ci.Product.DiscountPrice ?? originalUnitPrice;
+                            unitPrice = (ci.Product.DiscountPrice > 0 ? ci.Product.DiscountPrice.Value : originalUnitPrice);
                         }
                         
                         var orderItem = new OrderItem
