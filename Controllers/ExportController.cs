@@ -157,7 +157,7 @@ public class ExportController : ControllerBase
             ws1.Cell(r,3).Value  = p.Category != null ? p.Category.NameAr : "Category Missing";
             ws1.Cell(r,4).Value  = p.SKU;
             ws1.Cell(r,5).Value  = p.Price;
-            ws1.Cell(r,6).Value  = p.DiscountPrice ?? 0;
+            ws1.Cell(r,6).Value  = p.DiscountPrice ?? p.Price;
             ws1.Cell(r,7).Value  = p.Brand?.NameAr ?? "";
             ws1.Cell(r,8).Value  = p.Status.ToString();
             ws1.Cell(r,9).Value  = p.IsFeatured ? "نعم" : "لا";
