@@ -75,10 +75,6 @@ public class Translator : ITranslator
     public string Get(string key)
     {
         var lang = GetCurrentLanguage();
-        // Enforce Arabic for all Accounting entries to maintain General Ledger consistency
-        if (key.StartsWith("Accounting.")) 
-            lang = "ar";
-
         var translations = GetTranslations(lang);
         return translations.TryGetValue(key, out var value) ? value : key;
     }
