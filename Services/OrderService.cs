@@ -276,21 +276,31 @@ public class OrderService : IOrderService
                 if (!customerId.HasValue)
                 {
                     var phone = string.IsNullOrEmpty(dto.CustomerPhone) ? "0000000000" : dto.CustomerPhone;
-                    var existing = await _db.Customers.FirstOrDefaultAsync(c => c.Phone == phone);
+                    
+                    // 🛡️ Robust Lookup: Check by Phone OR generated Email to prevent 409
+                    var generatedEmail = $"{phone}@pos.sportive.com";
+                    var existing = await _db.Customers.FirstOrDefaultAsync(c => c.Phone == phone || c.Email == generatedEmail);
 
                     if (existing != null)
                     {
                         customerId = existing.Id;
-                        // ✅ ضمان وجود حساب محاسبي حتى للعملاء القدامى
+                        // ✅ Ensure account exists
                         await _customerService.EnsureCustomerAccountAsync(customerId.Value);
                     }
                     else
                     {
+                        // 🛡️ Final fallback for email uniqueness
+                        var finalEmail = generatedEmail;
+                        if (await _db.Customers.AnyAsync(c => c.Email == finalEmail))
+                        {
+                            finalEmail = $"{phone}-{Guid.NewGuid().ToString().Substring(0, 4)}@pos.sportive.com";
+                        }
+
                         var c = new Customer
                         {
                             FullName = dto.CustomerName ?? _t.Get("Orders.WalkInCustomer"),
                             Phone = phone,
-                            Email = $"{phone}@pos.sportive.com",
+                            Email = finalEmail,
                             CreatedAt = TimeHelper.GetEgyptTime(),
                             IsActive = true
                         };

@@ -16,6 +16,9 @@ public class SequenceService
     private readonly Dictionary<string, SemaphoreSlim> _locks = new();
     private readonly object _lockDictLock = new();
 
+    // Cache the last used number to prevent DB race conditions during uncommitted transactions
+    private readonly Dictionary<string, int> _lastUsed = new();
+
     public SequenceService(IServiceScopeFactory scopeFactory)
         => _scopeFactory = scopeFactory;
 
@@ -36,6 +39,10 @@ public class SequenceService
     /// </summary>
     public async Task<string> NextAsync(string prefix, Func<AppDbContext, string, Task<int>> maxSelector)
     {
+        var now    = TimeHelper.GetEgyptTime();
+        var stamp  = $"{now.Year % 100:D2}{now.Month:D2}";
+        var cacheKey = $"{prefix}-{stamp}";
+
         var sem = GetLock(prefix);
         await sem.WaitAsync();
         try
@@ -43,12 +50,24 @@ public class SequenceService
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-            var now    = TimeHelper.GetEgyptTime();
-            var stamp  = $"{now.Year % 100:D2}{now.Month:D2}";
             var likePattern = $"{prefix}-{stamp}-%";
 
-            var currentMax = await maxSelector(db, likePattern);
+            // 1. Get current max from DB
+            var dbMax = await maxSelector(db, likePattern);
+            
+            // 2. Compare with in-memory cache to handle uncommitted parallel requests
+            int currentMax;
+            if (_lastUsed.TryGetValue(cacheKey, out var cachedValue))
+            {
+                currentMax = Math.Max(dbMax, cachedValue);
+            }
+            else
+            {
+                currentMax = dbMax;
+            }
+
             var next = currentMax + 1;
+            _lastUsed[cacheKey] = next;
 
             return $"{prefix}-{stamp}-{next:D4}";
         }
