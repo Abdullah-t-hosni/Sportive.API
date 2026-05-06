@@ -28,10 +28,7 @@ public class JournalAccountingService
         var entry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Id == journalEntryId);
         if (entry == null || entry.Status == JournalEntryStatus.Reversed) return;
 
-        var revNo = await _seq.NextAsync("JE", async (db, pattern) => {
-            var max = await db.JournalEntries.Where(e => EF.Functions.Like(e.EntryNumber, pattern)).Select(e => e.EntryNumber).ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0).DefaultIfEmpty(0).Max();
-        });
+        var revNo = await _seq.NextAsync("JE");
 
         var reversal = new JournalEntry {
             EntryNumber = revNo, EntryDate = TimeHelper.GetEgyptTime(), Type = entry.Type, Status = JournalEntryStatus.Posted, Reference = entry.EntryNumber, Description = $"عكس: {entry.EntryNumber} — {reason}", ReversalOfId = entry.Id, CostCenter = entry.CostCenter, CreatedAt = TimeHelper.GetEgyptTime()
@@ -52,10 +49,7 @@ public class JournalAccountingService
         var userId = user?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var type = dto.Type ?? JournalEntryType.Manual;
         var prefix = type == JournalEntryType.OpeningBalance ? "OPE" : "JE";
-        var entryNumber = await _seq.NextAsync(prefix, async (db, pattern) => {
-            var max = await db.JournalEntries.Where(e => EF.Functions.Like(e.EntryNumber, pattern)).Select(e => e.EntryNumber).ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0).DefaultIfEmpty(0).Max();
-        });
+        var entryNumber = await _seq.NextAsync(prefix);
 
         var entry = new JournalEntry { EntryNumber = entryNumber, EntryDate = dto.EntryDate.ToStoreTime(), Description = dto.Description, Reference = dto.Reference, Type = type, Status = JournalEntryStatus.Posted, CreatedByUserId = userId, CostCenter = dto.CostCenter };
         

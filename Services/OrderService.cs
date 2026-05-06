@@ -1127,15 +1127,7 @@ public class OrderService : IOrderService
         var basePrefix = store?.OrderNumberPrefix ?? "SPT";
 
         var prefix = source == OrderSource.POS ? "POS" : basePrefix;
-        return await _seq.NextAsync(prefix, async (db, pattern) =>
-        {
-            var max = await db.Orders
-                .Where(o => EF.Functions.Like(o.OrderNumber, pattern))
-                .Select(o => o.OrderNumber)
-                .ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
-        });
+        return await _seq.NextAsync(prefix);
     }
 
     public async Task SyncAllOrderAccountingAsync()

@@ -78,10 +78,15 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<AssetDisposal>      AssetDisposals       { get; set; }
     public DbSet<DailyStat>          DailyStats           { get; set; }
     public DbSet<OutboxMessage>      OutboxMessages       { get; set; }
+    public DbSet<DbSequence>        DbSequences          { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<DbSequence>(e => {
+            e.HasIndex(x => new { x.Prefix, x.Stamp }).IsUnique();
+        });
 
         builder.Entity<AppUser>(e => {
             e.HasIndex(u => u.PhoneNumber);

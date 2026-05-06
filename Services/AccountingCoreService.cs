@@ -150,14 +150,7 @@ public class AccountingCoreService
                 OrderSource.Website => "JE-WEB",
                 _                   => "JE-GEN"
             };
-            var entryNo = await _seq.NextAsync(jePrefix, async (db, pattern) =>
-            {
-                var max = await db.JournalEntries
-                    .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
-                    .Select(e => e.EntryNumber)
-                    .ToListAsync();
-                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0).DefaultIfEmpty(0).Max();
-            });
+            var entryNo = await _seq.NextAsync(jePrefix);
 
             entry = new JournalEntry
             {
@@ -248,11 +241,7 @@ public class AccountingCoreService
         var absVal = Math.Abs(netImpact);
 
         var jePrefix = "JE-ADJ";
-        var entryNo = await _seq.NextAsync(jePrefix, async (db, pattern) =>
-        {
-            var max = await db.JournalEntries.Where(e => EF.Functions.Like(e.EntryNumber, pattern)).Select(e => e.EntryNumber).ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0).DefaultIfEmpty(0).Max();
-        });
+        var entryNo = await _seq.NextAsync(jePrefix);
 
         var entry = new JournalEntry
         {

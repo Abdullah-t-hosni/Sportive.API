@@ -1,79 +1,117 @@
-using Sportive.API.Utils;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
+using Sportive.API.Models;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Services;
 
 /// <summary>
 /// Generates unique, sequential document numbers that are safe under concurrent requests.
-/// Uses a database-level MAX query inside a serializable transaction to avoid race conditions.
-/// Registered as a Singleton so the in-process lock provides a fast path before hitting the DB.
+/// Database-backed and safe across multiple server instances.
 /// </summary>
 public class SequenceService
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    // One lock per prefix so different document types don't block each other
-    private readonly Dictionary<string, SemaphoreSlim> _locks = new();
-    private readonly object _lockDictLock = new();
+    private readonly ILogger<SequenceService> _logger;
 
-    // Cache the last used number to prevent DB race conditions during uncommitted transactions
-    private readonly Dictionary<string, int> _lastUsed = new();
-
-    public SequenceService(IServiceScopeFactory scopeFactory)
-        => _scopeFactory = scopeFactory;
-
-    private SemaphoreSlim GetLock(string prefix)
+    public SequenceService(IServiceScopeFactory scopeFactory, ILogger<SequenceService> logger)
     {
-        lock (_lockDictLock)
+        _scopeFactory = scopeFactory;
+        _logger = logger;
+    }
+
+    [Obsolete("Use NextAsync(prefix) instead. This overload seeds the DbSequences table if it doesn't exist.")]
+    public async Task<string> NextAsync(string prefix, Func<AppDbContext, string, Task<int>> maxSelector)
+    {
+        var now   = TimeHelper.GetEgyptTime();
+        var stamp = $"{now.Year % 100:D2}{now.Month:D2}";
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var exists = await db.DbSequences.AnyAsync(s => s.Prefix == prefix && s.Stamp == stamp);
+        if (!exists)
         {
-            if (!_locks.TryGetValue(prefix, out var sem))
-                _locks[prefix] = sem = new SemaphoreSlim(1, 1);
-            return sem;
+            try
+            {
+                var currentMax = await maxSelector(db, $"{prefix}-{stamp}-%");
+                var seq = new DbSequence
+                {
+                    Prefix = prefix,
+                    Stamp = stamp,
+                    LastValue = currentMax,
+                    LastUpdatedAt = now
+                };
+                db.DbSequences.Add(seq);
+                await db.SaveChangesAsync();
+                _logger.LogInformation("Seeded DbSequence for {Prefix}-{Stamp} with initial value {Max}", prefix, stamp, currentMax);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to seed DbSequence for {Prefix}. It will start from 1.", prefix);
+            }
         }
+
+        return await NextAsync(prefix);
     }
 
     /// <summary>
     /// Returns the next document number, e.g. "PO-2504-0042".
     /// Format: {prefix}-{YY}{MM}-{seq:D4}
-    /// Thread-safe against concurrent HTTP requests.
+    /// Database-backed and safe across multiple server instances.
     /// </summary>
-    public async Task<string> NextAsync(string prefix, Func<AppDbContext, string, Task<int>> maxSelector)
+    public async Task<string> NextAsync(string prefix)
     {
-        var now    = TimeHelper.GetEgyptTime();
-        var stamp  = $"{now.Year % 100:D2}{now.Month:D2}";
-        var cacheKey = $"{prefix}-{stamp}";
+        var now   = TimeHelper.GetEgyptTime();
+        var stamp = $"{now.Year % 100:D2}{now.Month:D2}";
 
-        var sem = GetLock(prefix);
-        await sem.WaitAsync();
-        try
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var strategy = db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
-            using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-            var likePattern = $"{prefix}-{stamp}-%";
-
-            // 1. Get current max from DB
-            var dbMax = await maxSelector(db, likePattern);
-            
-            // 2. Compare with in-memory cache to handle uncommitted parallel requests
-            int currentMax;
-            if (_lastUsed.TryGetValue(cacheKey, out var cachedValue))
+            // Use Serializable to ensure no two instances read the same value
+            await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            try
             {
-                currentMax = Math.Max(dbMax, cachedValue);
+                var seq = await db.DbSequences
+                    .FirstOrDefaultAsync(s => s.Prefix == prefix && s.Stamp == stamp);
+
+                if (seq == null)
+                {
+                    seq = new DbSequence
+                    {
+                        Prefix = prefix,
+                        Stamp = stamp,
+                        LastValue = 1,
+                        LastUpdatedAt = now
+                    };
+                    db.DbSequences.Add(seq);
+                }
+                else
+                {
+                    seq.LastValue++;
+                    seq.LastUpdatedAt = now;
+                }
+
+                await db.SaveChangesAsync();
+                await tx.CommitAsync();
+
+                return $"{prefix}-{stamp}-{seq.LastValue:D4}";
             }
-            else
+            catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Duplicate") == true || ex.InnerException?.Message.Contains("unique") == true)
             {
-                currentMax = dbMax;
+                // Conflict during initial creation - retry will handle it automatically via strategy
+                await tx.RollbackAsync();
+                throw; 
             }
-
-            var next = currentMax + 1;
-            _lastUsed[cacheKey] = next;
-
-            return $"{prefix}-{stamp}-{next:D4}";
-        }
-        finally
-        {
-            sem.Release();
-        }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Sequence generation failed for {Prefix}", prefix);
+                await tx.RollbackAsync();
+                throw;
+            }
+        });
     }
 }
