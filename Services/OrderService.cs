@@ -277,37 +277,46 @@ public class OrderService : IOrderService
                 {
                     var phone = string.IsNullOrEmpty(dto.CustomerPhone) ? "0000000000" : dto.CustomerPhone;
                     
-                    // 🛡️ Robust Lookup: Check by Phone OR generated Email to prevent 409
-                    var generatedEmail = $"{phone}@pos.sportive.com";
-                    var existing = await _db.Customers.FirstOrDefaultAsync(c => c.Phone == phone || c.Email == generatedEmail);
+                    // 🛡️ RACE CONDITION PROTECTION:
+                    // If multiple requests for the same new phone number come in simultaneously, 
+                    // Serializable transaction helps, but we also catch DbUpdateException for safety.
+                    try
+                    {
+                        var generatedEmail = $"{phone}@sportive.com";
+                        var existing = await _db.Customers.FirstOrDefaultAsync(c => c.Phone == phone || c.Email == generatedEmail);
 
-                    if (existing != null)
-                    {
-                        customerId = existing.Id;
-                        // ✅ Ensure account exists
-                        await _customerService.EnsureCustomerAccountAsync(customerId.Value);
-                    }
-                    else
-                    {
-                        // 🛡️ Final fallback for email uniqueness
-                        var finalEmail = generatedEmail;
-                        if (await _db.Customers.AnyAsync(c => c.Email == finalEmail))
+                        if (existing != null)
                         {
-                            finalEmail = $"{phone}-{Guid.NewGuid().ToString().Substring(0, 4)}@pos.sportive.com";
+                            customerId = existing.Id;
+                            // Ensure account exists
+                            await _customerService.EnsureCustomerAccountAsync(customerId.Value);
                         }
-
-                        var c = new Customer
+                        else
                         {
-                            FullName = dto.CustomerName ?? _t.Get("Orders.WalkInCustomer"),
-                            Phone = phone,
-                            Email = finalEmail,
-                            CreatedAt = TimeHelper.GetEgyptTime(),
-                            IsActive = true
-                        };
-                        _db.Customers.Add(c);
-                        await _db.SaveChangesAsync();
-                        await _customerService.EnsureCustomerAccountAsync(c.Id);
-                        customerId = c.Id;
+                            // Create new guest or walk-in customer
+                            var newCust = new Customer
+                            {
+                                FullName = dto.CustomerName ?? (phone == "0000000000" ? "Walk-in Customer" : "Online Guest"),
+                                Phone = phone,
+                                Email = generatedEmail,
+                                CreatedAt = now,
+                                IsActive = true
+                            };
+                            _db.Customers.Add(newCust);
+                            await _db.SaveChangesAsync(); // Try to save here to catch conflict early
+                            customerId = newCust.Id;
+                            await _customerService.EnsureCustomerAccountAsync(customerId.Value);
+                        }
+                    }
+                    catch (DbUpdateException)
+                    {
+                        // 🛡️ Fallback: If SaveChanges failed, someone else might have just created this customer.
+                        // Refresh the context and try to find them.
+                        _db.ChangeTracker.Clear();
+                        var fallbackEmail = $"{phone}@sportive.com";
+                        var resolved = await _db.Customers.FirstOrDefaultAsync(c => c.Phone == phone || c.Email == fallbackEmail);
+                        if (resolved != null) customerId = resolved.Id;
+                        else throw; // If still not found, rethrow the original exception
                     }
                 }
 
