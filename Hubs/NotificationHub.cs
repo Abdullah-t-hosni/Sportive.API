@@ -13,7 +13,7 @@ public class NotificationHub : Hub
             await Groups.AddToGroupAsync(Context.ConnectionId, userId);
 
         // Admin group
-        if (Context.User?.IsInRole("Admin") == true)
+        if (Context.User?.IsInRole("Admin") == true || Context.User?.IsInRole("SuperAdmin") == true)
             await Groups.AddToGroupAsync(Context.ConnectionId, "Admin");
 
         await base.OnConnectedAsync();

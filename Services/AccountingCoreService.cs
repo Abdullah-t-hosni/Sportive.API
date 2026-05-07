@@ -54,7 +54,7 @@ public class AccountingCoreService
 
     public async Task CheckDateLockAsync(DateTime date, ClaimsPrincipal? user)
     {
-        if (user != null && user.IsInRole("Admin")) return; // Admin bypass
+        if (user != null && (user.IsInRole("Admin") || user.IsInRole("SuperAdmin"))) return; // Admin bypass
 
         var settings = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync();
         if (settings?.AccountingLockDate != null && date.Date <= settings.AccountingLockDate.Value.Date)
