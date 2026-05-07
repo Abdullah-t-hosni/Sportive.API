@@ -238,6 +238,7 @@ public class ProductFilterDto
     public bool? OnlyInStock { get; set; }
     public int Page { get; set; } = 1;
     public DiscountApplyTo? Source { get; set; }
+    public bool? ByPrice { get; set; }
 
     private int _pageSize = 12;
     public int PageSize

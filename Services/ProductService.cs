@@ -54,22 +54,29 @@ public class ProductService : IProductService
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
             var s = filter.Search.Trim().ToLower();
-            bool isInt = int.TryParse(s, out int searchId);
             bool isDecimal = decimal.TryParse(s, out decimal searchPrice);
             
-            query = query.Where(p =>
-                p.NameAr.ToLower().Contains(s) ||
-                p.NameEn.ToLower().Contains(s) ||
-                p.SKU.ToLower().Contains(s) ||
-                (isDecimal && filter.Source == DiscountApplyTo.POS && (p.Price == searchPrice || p.DiscountPrice == searchPrice)) ||
-                (p.Brand != null && (p.Brand.NameAr.ToLower().Contains(s) || p.Brand.NameEn.ToLower().Contains(s))) ||
-                p.Variants.Any(v => 
-                    (v.Size != null && v.Size.ToLower().Contains(s)) || 
-                    (v.Color != null && v.Color.ToLower().Contains(s)) || 
-                    (v.ColorAr != null && v.ColorAr.ToLower().Contains(s)) ||
-                    (p.SKU + "-" + v.Size + "-" + v.Color).ToLower().Contains(s)
-                )
-            );
+            if (filter.ByPrice == true)
+            {
+                // Strict price search
+                query = query.Where(p => isDecimal && (p.Price == searchPrice || p.DiscountPrice == searchPrice));
+            }
+            else
+            {
+                // Name, SKU, and Variant search (EXCLUDES price to avoid conflicts)
+                query = query.Where(p =>
+                    p.NameAr.ToLower().Contains(s) ||
+                    p.NameEn.ToLower().Contains(s) ||
+                    p.SKU.ToLower().Contains(s) ||
+                    (p.Brand != null && (p.Brand.NameAr.ToLower().Contains(s) || p.Brand.NameEn.ToLower().Contains(s))) ||
+                    p.Variants.Any(v => 
+                        (v.Size != null && v.Size.ToLower().Contains(s)) || 
+                        (v.Color != null && v.Color.ToLower().Contains(s)) || 
+                        (v.ColorAr != null && v.ColorAr.ToLower().Contains(s)) ||
+                        (p.SKU + "-" + v.Size + "-" + v.Color).ToLower().Contains(s)
+                    )
+                );
+            }
         }
 
         if (filter.MinPrice.HasValue)

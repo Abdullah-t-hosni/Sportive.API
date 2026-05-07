@@ -16,7 +16,7 @@ public class BarcodeController : ControllerBase
     public BarcodeController(AppDbContext db) => _db = db;
 
     [HttpGet("scan")]
-    public async Task<IActionResult> Scan([FromQuery] string q)
+    public async Task<IActionResult> Scan([FromQuery] string q, [FromQuery] bool byPrice = false)
     {
         if (string.IsNullOrWhiteSpace(q)) return BadRequest();
 
@@ -24,18 +24,19 @@ public class BarcodeController : ControllerBase
         bool isInt = int.TryParse(queryVal, out int id);
         bool isDecimal = decimal.TryParse(queryVal, out decimal price);
 
-        // البحث عن المنتج بالـ SKU أو الـ ID أو البحث في المتغيرات
+        // البحث عن المنتج بناءً على نمط البحث المختار
         var product = await _db.Products
             .Include(p => p.Images)
             .Include(p => p.Variants)
             .Include(p => p.Category)
             .FirstOrDefaultAsync(p => 
-                p.SKU.ToLower() == queryVal || 
-                (isInt && p.Id == id) ||
-                (isDecimal && (p.Price == price || p.DiscountPrice == price)) ||
-                p.NameAr.ToLower().Contains(queryVal) ||
-                // البحث في المتغيرات (مثلاً لو كان الكود هو SKU-Size-Color)
-                p.Variants.Any(v => (p.SKU + "-" + v.Size + "-" + v.Color).ToLower() == queryVal)
+                byPrice ? (isDecimal && (p.Price == price || p.DiscountPrice == price)) : (
+                    p.SKU.ToLower() == queryVal || 
+                    (isInt && p.Id == id) ||
+                    p.NameAr.ToLower().Contains(queryVal) ||
+                    // البحث في المتغيرات (مثلاً لو كان الكود هو SKU-Size-Color)
+                    p.Variants.Any(v => (p.SKU + "-" + v.Size + "-" + v.Color).ToLower() == queryVal)
+                )
             );
 
         if (product == null) return NotFound(new { message = $"لا يوجد منتج بالكود: {q}" });
