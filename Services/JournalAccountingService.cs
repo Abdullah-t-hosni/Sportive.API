@@ -72,7 +72,7 @@ public class JournalAccountingService
         foreach (var l in dto.Lines) {
             var account = await _db.Accounts.FindAsync(l.AccountId);
             if (account == null) throw new InvalidOperationException($"الحساب رقم {l.AccountId} غير موجود.");
-            if (!account.AllowPosting && !(user?.IsInRole("Admin") ?? false || user?.IsInRole("SuperAdmin") ?? false))
+            if (!account.AllowPosting && !((user?.IsInRole("Admin") ?? false) || (user?.IsInRole("SuperAdmin") ?? false)))
                 throw new InvalidOperationException($"الحساب '{account.NameAr}' لا يقبل الترحيل المباشر.");
 
             entry.Lines.Add(new JournalLine { AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit, Description = l.Description, CustomerId = l.CustomerId, SupplierId = l.SupplierId, EmployeeId = l.EmployeeId, OrderId = l.OrderId, CostCenter = l.CostCenter ?? entry.CostCenter });
@@ -95,7 +95,7 @@ public class JournalAccountingService
         if (entry == null) throw new KeyNotFoundException("القيد غير موجود");
 
         // 🚨 PRO-ACCOUNTING: لا يجوز تعديل قيد مرحل (إلا للأدمن أو السوبر أدمن)
-        if (entry.Status == JournalEntryStatus.Posted && !(user?.IsInRole("Admin") ?? false || user?.IsInRole("SuperAdmin") ?? false))
+        if (entry.Status == JournalEntryStatus.Posted && !((user?.IsInRole("Admin") ?? false) || (user?.IsInRole("SuperAdmin") ?? false)))
             throw new InvalidOperationException("لا يمكن تعديل قيد مرحل. يرجى عمل قيد عكسي ثم قيد جديد.");
 
         await _core.CheckDateLockAsync(entry.EntryDate, user); // Check old date
@@ -120,7 +120,7 @@ public class JournalAccountingService
         {
             var account = await _db.Accounts.FindAsync(l.AccountId);
             if (account == null) throw new InvalidOperationException($"الحساب رقم {l.AccountId} غير موجود.");
-            if (!account.AllowPosting && !(user?.IsInRole("Admin") ?? false || user?.IsInRole("SuperAdmin") ?? false))
+            if (!account.AllowPosting && !((user?.IsInRole("Admin") ?? false) || (user?.IsInRole("SuperAdmin") ?? false)))
                 throw new InvalidOperationException($"الحساب '{account.NameAr}' لا يقبل الترحيل المباشر.");
 
             entry.Lines.Add(new JournalLine
