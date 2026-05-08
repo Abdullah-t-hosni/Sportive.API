@@ -27,7 +27,7 @@ public class TrackController : ControllerBase
 
     [HttpGet]
     [Authorize]
-    public async Task<IActionResult> Track()
+    public IActionResult Track()
     {
         // This endpoint is now redundant as /api/orders/my handles this.
         // But we could implement a version that requires authentication if needed.

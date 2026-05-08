@@ -19,7 +19,7 @@ public class ImportController : ControllerBase
     private readonly ITranslator _t;
     public ImportController(AppDbContext db, ITranslator t) { _db = db; _t = t; }
 
-    private string GenerateSlug(string name, string sku)
+    private string GenerateSlug(string? name, string sku)
     {
         var baseName = string.IsNullOrWhiteSpace(name) ? "product" : name;
         var slug = baseName.ToLower().Replace(" ", "-").Replace("&", "-");
