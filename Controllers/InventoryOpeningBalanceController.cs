@@ -629,7 +629,7 @@ public class InventoryOpeningBalanceController : ControllerBase
                 new (openingId,   0, ob.TotalValue, _t.Get("Inventory.OpeningBalanceEquityDesc"))
             },
             Type:        JournalEntryType.OpeningBalance,
-            CostCenter:  ob.CostCenter
+            CostCenter:  (int?)ob.CostCenter
         );
 
         await _accounting.PostManualEntryAsync(dto, User);
