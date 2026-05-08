@@ -252,6 +252,7 @@ public record CreateStandaloneReturnItemDto(
     int? ProductVariantId = null,
     string? Unit = null,
     decimal Quantity = 1,
-    decimal UnitCost = 0
+    decimal UnitCost = 0,
+    int? PurchaseInvoiceItemId = null
 );
 

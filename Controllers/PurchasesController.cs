@@ -384,6 +384,52 @@ public class PurchaseInvoicesController : ControllerBase
                     .Include(r => r.Items).ThenInclude(ri => ri.ProductVariant)
                     .OrderByDescending(r => r.Id)
                     .FirstOrDefaultAsync(r => r.PurchaseInvoiceId == id);
+
+                // 2.1 SUPER SMART FALLBACK: If no return exists for this invoice, return the invoice itself as a template
+                if (rtn == null)
+                {
+                    var inv = await _db.PurchaseInvoices
+                        .Include(i => i.Supplier)
+                        .Include(i => i.Items).ThenInclude(it => it.Product)
+                        .Include(i => i.Items).ThenInclude(it => it.ProductVariant)
+                        .FirstOrDefaultAsync(i => i.Id == id);
+
+                    if (inv != null)
+                    {
+                        return Ok(new {
+                            Id = 0,
+                            ReturnNumber = "NEW",
+                            PurchaseInvoiceId = inv.Id,
+                            InvoiceNumber = inv.InvoiceNumber,
+                            SupplierId = inv.SupplierId,
+                            SupplierName = inv.Supplier?.Name,
+                            Supplier = inv.Supplier != null ? new { inv.Supplier.Id, Name = inv.Supplier.Name } : null,
+                            ReturnDate = TimeHelper.GetEgyptTime(),
+                            inv.SubTotal,
+                            inv.TaxAmount,
+                            inv.DiscountAmount,
+                            inv.TotalAmount,
+                            Notes = "",
+                            inv.PaymentTerms,
+                            inv.CashAccountId,
+                            inv.CostCenter,
+                            Items = inv.Items.Select(ri => new {
+                                Id = 0,
+                                PurchaseInvoiceItemId = ri.Id,
+                                ProductId = ri.ProductId,
+                                ProductName = ri.Product?.NameAr,
+                                Sku = ri.Product?.SKU ?? "",
+                                ProductVariantId = ri.ProductVariantId,
+                                Size = ri.ProductVariant?.Size,
+                                Color = ri.ProductVariant?.ColorAr ?? ri.ProductVariant?.Color,
+                                Quantity = ri.Quantity,
+                                UnitCost = ri.UnitCost,
+                                TotalCost = ri.TotalCost,
+                                Unit = ri.Unit
+                            })
+                        });
+                    }
+                }
             }
         }
 
@@ -999,6 +1045,7 @@ public class PurchaseInvoicesController : ControllerBase
                     
                     pReturn.Items.Add(new PurchaseReturnItem
                     {
+                        PurchaseInvoiceItemId = item.PurchaseInvoiceItemId,
                         ProductId = item.ProductId,
                         ProductVariantId = item.ProductVariantId,
                         Quantity = item.Quantity,
@@ -1136,6 +1183,7 @@ public class PurchaseInvoicesController : ControllerBase
                     
                     pReturn.Items.Add(new PurchaseReturnItem
                     {
+                        PurchaseInvoiceItemId = item.PurchaseInvoiceItemId,
                         ProductId = item.ProductId,
                         ProductVariantId = item.ProductVariantId,
                         Quantity = item.Quantity,
@@ -1200,8 +1248,109 @@ public class PurchaseInvoicesController : ControllerBase
                 });
             }
         });
+    [HttpDelete("returns/{id}")]
+    [RequirePermission(ModuleKeys.PurchasesMain, requireEdit: true)]
+    public async Task<IActionResult> DeleteReturn(int id)
+    {
+        var pReturn = await _db.PurchaseReturns
+            .Include(r => r.Items)
+            .Include(r => r.Supplier)
+            .Include(r => r.Invoice)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (pReturn == null) return NotFound();
+
+        var pUnits = await GetUnitsListAsync();
+        var strategy = _db.Database.CreateExecutionStrategy();
+        
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
+        {
+            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            try
+            {
+                // 1. Reverse Stock Movements
+                foreach (var item in pReturn.Items)
+                {
+                    if (item.ProductId.HasValue)
+                    {
+                        var mult = GetMultiplier(pUnits, item.Unit);
+                        await _inventory.LogMovementAsync(
+                            InventoryMovementType.Adjustment,
+                            item.Quantity * mult, // Add back
+                            item.ProductId,
+                            item.ProductVariantId,
+                            pReturn.ReturnNumber,
+                            $"Delete Return #{pReturn.ReturnNumber} (Reversal)",
+                            User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                            autoSave: false
+                        );
+                    }
+                }
+
+                // 2. Reverse Supplier Impact
+                if (pReturn.Supplier != null)
+                {
+                    pReturn.Supplier.TotalPurchases += pReturn.TotalAmount;
+                    if (pReturn.PaymentTerms == PaymentTerms.Cash)
+                    {
+                        pReturn.Supplier.TotalPaid += pReturn.TotalAmount;
+                    }
+                }
+
+                // 3. Reverse Invoice Impact (if linked)
+                if (pReturn.Invoice != null)
+                {
+                    pReturn.Invoice.ReturnedAmount -= pReturn.TotalAmount;
+                    
+                    // Re-calculate invoice status
+                    var totalQty = await _db.PurchaseInvoiceItems.Where(i => i.PurchaseInvoiceId == pReturn.PurchaseInvoiceId).SumAsync(i => i.Quantity);
+                    var totalReturnedQty = await _db.PurchaseInvoiceItems.Where(i => i.PurchaseInvoiceId == pReturn.PurchaseInvoiceId).SumAsync(i => i.ReturnedQuantity);
+                    
+                    // Note: Since we are deleting THIS return, we need to adjust the ReturnedQuantity of the items too
+                    foreach(var rItem in pReturn.Items)
+                    {
+                        if (rItem.PurchaseInvoiceItemId.HasValue)
+                        {
+                            var invItem = await _db.PurchaseInvoiceItems.FindAsync(rItem.PurchaseInvoiceItemId.Value);
+                            if (invItem != null)
+                            {
+                                var mult = GetMultiplier(pUnits, invItem.Unit);
+                                decimal returnedInOriginalUnits = mult > 0 ? (rItem.Quantity / mult) : rItem.Quantity;
+                                invItem.ReturnedQuantity -= returnedInOriginalUnits;
+                            }
+                        }
+                    }
+
+                    // Refresh totals for status
+                    totalReturnedQty = await _db.PurchaseInvoiceItems.Where(i => i.PurchaseInvoiceId == pReturn.PurchaseInvoiceId).SumAsync(i => i.ReturnedQuantity);
+
+                    if (totalReturnedQty <= 0.001M)
+                        pReturn.Invoice.Status = PurchaseInvoiceStatus.Received; // Or Paid if it was paid
+                    else
+                        pReturn.Invoice.Status = PurchaseInvoiceStatus.PartiallyReturned;
+
+                    pReturn.Invoice.UpdatedAt = TimeHelper.GetEgyptTime();
+                }
+
+                // 4. Remove Journal Entry
+                var journalEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Reference == pReturn.ReturnNumber && e.Type == JournalEntryType.PurchaseReturn);
+                if (journalEntry != null) _db.JournalEntries.Remove(journalEntry);
+
+                // 5. Finalize Deletion
+                _db.PurchaseReturns.Remove(pReturn);
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error deleting purchase return {Id}", id);
+                return StatusCode(500, new { message = _t.Get("Purchases.InternalDeleteReturnError"), error = ex.Message });
+            }
+        });
     }
-    
 
 
     [HttpPost("{id}/return")]
