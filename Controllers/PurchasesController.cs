@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -15,9 +15,7 @@ using ClosedXML.Excel;
 
 namespace Sportive.API.Controllers;
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // SUPPLIERS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 [ApiController]
 [Route("api/[controller]")]
 [RequirePermission(ModuleKeys.PurchasesMain + "," + ModuleKeys.SupplierVouchers + "," + ModuleKeys.Purchases)]
@@ -87,7 +85,6 @@ public class SuppliersController : ControllerBase
         if (string.IsNullOrWhiteSpace(dto.Name) || string.IsNullOrWhiteSpace(dto.Phone))
             return BadRequest(new { message = _t.Get("Suppliers.NameAndPhoneRequired") });
 
-        // 1. Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† ÙˆØ¬ÙˆØ¯ Ø§Ù„Ù…ÙˆØ±Ø¯ Ù…Ø³Ø¨Ù‚Ø§Ù‹ (Ù†Ø´Ø·)
         var existing = await _db.Suppliers.FirstOrDefaultAsync(s => 
             s.Name.Trim() == dto.Name.Trim() || s.Phone.Trim() == dto.Phone.Trim());
         
@@ -109,7 +106,7 @@ public class SuppliersController : ControllerBase
             AttachmentPublicId = dto.AttachmentPublicId
         };
 
-        // â”€â”€ Use Global Control Account for Supplier â”€â”€
+        // ——— Use Global Control Account for Supplier ———
         var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "2101");
         if (parent != null)
         {
@@ -195,14 +192,14 @@ public class SuppliersController : ControllerBase
                 var balStr = ws.Cell(r, 2).GetString().Trim();
                 if (!decimal.TryParse(balStr, out var balance))
                 {
-                    errors.Add($"Ø³Ø·Ø± {r}: Ø§Ù„Ø±ØµÙŠØ¯ ØºÙŠØ± ØµØ­ÙŠØ­ Ù„Ù„Ù…ÙˆØ±Ø¯ '{identifier}'");
+                    errors.Add($"سطر {r}: الرصيد غير صحيح للمورد '{identifier}'");
                     continue;
                 }
 
                 var supplier = allSuppliers.FirstOrDefault(s => s.Name == identifier || s.Phone == identifier);
                 if (supplier == null)
                 {
-                    errors.Add($"Ø³Ø·Ø± {r}: Ø§Ù„Ù…ÙˆØ±Ø¯ '{identifier}' ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯");
+                    errors.Add($"سطر {r}: المورد '{identifier}' غير موجود");
                     continue;
                 }
 
@@ -304,7 +301,7 @@ public class PurchaseInvoicesController : ControllerBase
                 i.InvoiceDate, i.DueDate,
                 i.TotalAmount, i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
                 i.CostCenter,
-                i.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (i.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…")
+                i.CostCenter == OrderSource.Website ? "الموقع" : (i.CostCenter == OrderSource.POS ? "المحل" : "عام")
             )).ToListAsync();
 
         return Ok(new PaginatedResult<PurchaseInvoiceSummaryDto>(items, total, page, pageSize,
@@ -344,7 +341,7 @@ public class PurchaseInvoicesController : ControllerBase
                 r.Id,
                 r.ReturnNumber,
                 r.PurchaseInvoiceId,
-                InvoiceNumber = r.Invoice != null ? r.Invoice.InvoiceNumber : "Ø¨Ø¯ÙˆÙ† ÙØ§ØªÙˆØ±Ø©",
+                InvoiceNumber = r.Invoice != null ? r.Invoice.InvoiceNumber : "بدون فاتورة",
                 r.SupplierId,
                 SupplierName = r.Supplier.Name,
                 r.ReturnDate,
@@ -354,7 +351,7 @@ public class PurchaseInvoicesController : ControllerBase
                 r.DiscountAmount,
                 r.Notes,
                 CostCenter = (int?)r.CostCenter,
-                CostCenterLabel = r.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (r.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…")
+                CostCenterLabel = r.CostCenter == OrderSource.Website ? "الموقع" : (r.CostCenter == OrderSource.POS ? "المحل" : "عام")
             }).ToListAsync();
 
         return Ok(new PaginatedResult<object>(items.Cast<object>().ToList(), total, page, pageSize,
@@ -461,7 +458,7 @@ public class PurchaseInvoicesController : ControllerBase
             inv.CostCenter,
             inv.CashAccountId,
             inv.SupplierId,
-            inv.CostCenter == OrderSource.Website ? "Ø§Ù„Ù…ÙˆÙ‚Ø¹" : (inv.CostCenter == OrderSource.POS ? "Ø§Ù„Ù…Ø­Ù„" : "Ø¹Ø§Ù…")
+            inv.CostCenter == OrderSource.Website ? "الموقع" : (inv.CostCenter == OrderSource.POS ? "المحل" : "عام")
         ));
 
     }
@@ -486,132 +483,131 @@ public class PurchaseInvoicesController : ControllerBase
 
         var pUnits = await GetUnitsListAsync();
 
-        var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
-        if (supplier == null)
-            return BadRequest(new { message = _t.Get("Purchases.SupplierNotFound") });
-
-        var invNo = await _seq.NextAsync("PO", async (db, pattern) =>
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
-            var max = await db.PurchaseInvoices
-                .Where(i => EF.Functions.Like(i.InvoiceNumber, pattern))
-                .Select(i => i.InvoiceNumber)
-                .ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
-        });
-
-        var invoice = new PurchaseInvoice
-        {
-            InvoiceNumber         = invNo,
-            SupplierInvoiceNumber = dto.SupplierInvoiceNumber,
-            SupplierId            = dto.SupplierId,
-            PaymentTerms          = dto.PaymentTerms,
-            InvoiceDate           = dto.InvoiceDate,
-            PaymentTermDays       = dto.PaymentTermDays,
-            DueDate               = dto.PaymentTerms == PaymentTerms.Cash ? null : (dto.PaymentTermDays.HasValue ? dto.InvoiceDate.AddDays(dto.PaymentTermDays.Value) : dto.DueDate),
-            TaxPercent            = dto.TaxPercent,
-            DiscountAmount        = dto.DiscountAmount,
-            Notes                 = dto.Notes,
-            Status                = dto.PaymentTerms == PaymentTerms.Cash ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.Received,
-            AttachmentUrl         = dto.AttachmentUrl,
-            AttachmentPublicId    = dto.AttachmentPublicId,
-            CreatedAt             = TimeHelper.GetEgyptTime(),
-            VendorAccountId       = dto.VendorAccountId > 0 ? dto.VendorAccountId : null,
-            InventoryAccountId    = dto.InventoryAccountId > 0 ? dto.InventoryAccountId : null,
-            ExpenseAccountId      = dto.ExpenseAccountId > 0 ? dto.ExpenseAccountId : null,
-            VatAccountId          = dto.VatAccountId > 0 ? dto.VatAccountId : null,
-            CashAccountId         = dto.CashAccountId > 0 ? dto.CashAccountId : null,
-            CostCenter            = dto.CostCenter
-        };
-
-        var warnings = new List<string>();
-        decimal subtotal = 0;
-        foreach (var item in dto.Items)
-        {
-            var total = item.Quantity * item.UnitCost;
-            invoice.Items.Add(new PurchaseInvoiceItem
+            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            try
             {
-                Description = item.Description,
-                ProductId   = item.ProductId,
-                ProductVariantId = item.ProductVariantId,
-                Unit        = item.Unit,
-                Quantity    = item.Quantity,
-                UnitCost    = item.UnitCost,
-                TotalCost   = total,
-                CreatedAt   = TimeHelper.GetEgyptTime()
-            });
-            subtotal += total;
+                var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
+                if (supplier == null)
+                    return BadRequest(new { message = _t.Get("Purchases.SupplierNotFound") });
 
-            if (item.ProductId.HasValue)
-            {
-                var multiplier = GetMultiplier(pUnits, item.Unit);
-                await _inventory.LogMovementAsync(
-                    InventoryMovementType.Purchase, 
-                    item.Quantity * multiplier, 
-                    item.ProductId, 
-                    item.ProductVariantId, 
-                    invNo, 
-                    "Purchase Invoice receipt", 
-                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-                    item.UnitCost,
-                    invoice.CostCenter
-                );
-                
-                // â”€â”€ Auto-update and Alert on Price Changes â”€â”€
-                var product = await _db.Products.FindAsync(item.ProductId.Value);
-                if (product != null)
+                var invNo = await _seq.NextAsync("PO");
+
+                var invoice = new PurchaseInvoice
                 {
-                    var newCost = multiplier > 0 ? Math.Round(item.UnitCost / multiplier, 2) : item.UnitCost;
-                    if (product.CostPrice.HasValue && newCost > product.CostPrice.Value) {
-                        var diff = newCost - product.CostPrice.Value;
-                        var pct  = Math.Round((diff / product.CostPrice.Value) * 100, 1);
-                        warnings.Add($"Ø§Ø±ØªÙØ§Ø¹ Ø³Ø¹Ø±: {product.NameAr} Ø¨Ù†Ø³Ø¨Ø© {pct}% (Ù…Ù† {product.CostPrice.Value} Ø¥Ù„Ù‰ {newCost})");
+                    InvoiceNumber         = invNo,
+                    SupplierInvoiceNumber = dto.SupplierInvoiceNumber,
+                    SupplierId            = dto.SupplierId,
+                    PaymentTerms          = dto.PaymentTerms,
+                    InvoiceDate           = dto.InvoiceDate,
+                    PaymentTermDays       = dto.PaymentTermDays,
+                    DueDate               = dto.PaymentTerms == PaymentTerms.Cash ? null : (dto.PaymentTermDays.HasValue ? dto.InvoiceDate.AddDays(dto.PaymentTermDays.Value) : dto.DueDate),
+                    TaxPercent            = dto.TaxPercent,
+                    DiscountAmount        = dto.DiscountAmount,
+                    Notes                 = dto.Notes,
+                    Status                = dto.PaymentTerms == PaymentTerms.Cash ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.Received,
+                    AttachmentUrl         = dto.AttachmentUrl,
+                    AttachmentPublicId    = dto.AttachmentPublicId,
+                    CreatedAt             = TimeHelper.GetEgyptTime(),
+                    VendorAccountId       = dto.VendorAccountId > 0 ? dto.VendorAccountId : null,
+                    InventoryAccountId    = dto.InventoryAccountId > 0 ? dto.InventoryAccountId : null,
+                    ExpenseAccountId      = dto.ExpenseAccountId > 0 ? dto.ExpenseAccountId : null,
+                    VatAccountId          = dto.VatAccountId > 0 ? dto.VatAccountId : null,
+                    CashAccountId         = dto.CashAccountId > 0 ? dto.CashAccountId : null,
+                    CostCenter            = dto.CostCenter
+                };
+
+                var warnings = new List<string>();
+                decimal subtotal = 0;
+                foreach (var item in dto.Items)
+                {
+                    var total = item.Quantity * item.UnitCost;
+                    invoice.Items.Add(new PurchaseInvoiceItem
+                    {
+                        Description = item.Description,
+                        ProductId   = item.ProductId,
+                        ProductVariantId = item.ProductVariantId,
+                        Unit        = item.Unit,
+                        Quantity    = item.Quantity,
+                        UnitCost    = item.UnitCost,
+                        TotalCost   = total,
+                        CreatedAt   = TimeHelper.GetEgyptTime()
+                    });
+                    subtotal += total;
+
+                    if (item.ProductId.HasValue)
+                    {
+                        var multiplier = GetMultiplier(pUnits, item.Unit);
+                        await _inventory.LogMovementAsync(
+                            InventoryMovementType.Purchase, 
+                            item.Quantity * multiplier, 
+                            item.ProductId, 
+                            item.ProductVariantId, 
+                            invNo, 
+                            "Purchase Invoice receipt", 
+                            User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                            item.UnitCost,
+                            invoice.CostCenter,
+                            autoSave: false
+                        );
+                        
+                        var product = await _db.Products.FindAsync(item.ProductId.Value);
+                        if (product != null)
+                        {
+                            var newCost = multiplier > 0 ? Math.Round(item.UnitCost / multiplier, 2) : item.UnitCost;
+                            if (product.CostPrice.HasValue && newCost > product.CostPrice.Value) {
+                                var diff = newCost - product.CostPrice.Value;
+                                var pct  = Math.Round((diff / product.CostPrice.Value) * 100, 1);
+                                warnings.Add(_t.Get("Purchases.PriceIncreaseWarning", product.NameAr, pct, product.CostPrice.Value, newCost));
+                            }
+                            product.CostPrice = newCost;
+                            product.UpdatedAt = TimeHelper.GetEgyptTime();
+                        }
                     }
-                    product.CostPrice = newCost;
-                    product.UpdatedAt = TimeHelper.GetEgyptTime();
                 }
+
+                invoice.SubTotal    = subtotal;
+                invoice.TaxAmount   = Math.Round(subtotal * (dto.TaxPercent / 100), 2);
+                invoice.TotalAmount = (subtotal + invoice.TaxAmount) - dto.DiscountAmount;
+                supplier.TotalPurchases += invoice.TotalAmount;
+
+                if (dto.PaymentTerms == PaymentTerms.Cash)
+                {
+                    invoice.PaidAmount = invoice.TotalAmount;
+                    supplier.TotalPaid += invoice.TotalAmount;
+
+                    var pNo = await _seq.NextAsync("SP");
+                    invoice.Payments.Add(new SupplierPayment
+                    {
+                        PaymentNumber = pNo,
+                        SupplierId    = supplier.Id,
+                        Amount        = invoice.TotalAmount,
+                        PaymentDate   = invoice.InvoiceDate,
+                        PaymentMethod = PaymentMethod_Purchase.Cash,
+                        AccountName   = "الخزينة (آلي)",
+                        Notes         = $"سداد تلقائي لفاتورة {invNo}",
+                        CreatedAt     = TimeHelper.GetEgyptTime(),
+                        CostCenter    = invoice.CostCenter
+                    });
+                }
+
+                _db.PurchaseInvoices.Add(invoice);
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                _ = PostJournalWithRetryAsync(invoice.Id, invoice.InvoiceNumber, isReturn: false);
+
+                return CreatedAtAction(nameof(GetById), new { id = invoice.Id }, new { id = invoice.Id, invoiceNumber = invoice.InvoiceNumber, warnings });
             }
-        }
-
-        invoice.SubTotal    = subtotal;
-        invoice.TaxAmount   = Math.Round(subtotal * (dto.TaxPercent / 100), 2);
-        invoice.TotalAmount = (subtotal + invoice.TaxAmount) - dto.DiscountAmount;
-        supplier.TotalPurchases += invoice.TotalAmount;
-
-        if (dto.PaymentTerms == PaymentTerms.Cash)
-        {
-            invoice.PaidAmount = invoice.TotalAmount;
-            supplier.TotalPaid += invoice.TotalAmount;
-
-            var pNo = await _seq.NextAsync("SP", async (db, pattern) =>
+            catch (Exception ex)
             {
-                var max = await db.SupplierPayments
-                    .Where(p => EF.Functions.Like(p.PaymentNumber, pattern))
-                    .Select(p => p.PaymentNumber)
-                    .ToListAsync();
-                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                          .DefaultIfEmpty(0).Max();
-            });
-            invoice.Payments.Add(new SupplierPayment
-            {
-                PaymentNumber = pNo,
-                SupplierId    = supplier.Id,
-                Amount        = invoice.TotalAmount,
-                PaymentDate   = invoice.InvoiceDate,
-                PaymentMethod = PaymentMethod_Purchase.Cash,
-                AccountName   = "Ø§Ù„Ø®Ø²ÙŠÙ†Ø© (Ø¢Ù„ÙŠ)",
-                Notes         = $"Ø³Ø¯Ø§Ø¯ ØªÙ„Ù‚Ø§Ø¦ÙŠ Ù„ÙØ§ØªÙˆØ±Ø© {invNo}",
-                CreatedAt     = TimeHelper.GetEgyptTime(),
-                CostCenter    = invoice.CostCenter
-            });
-        }
-
-        _db.PurchaseInvoices.Add(invoice);
-        await _db.SaveChangesAsync();
-
-        _ = PostJournalWithRetryAsync(invoice.Id, invoice.InvoiceNumber, isReturn: false);
-
-        return CreatedAtAction(nameof(GetById), new { id = invoice.Id }, new { id = invoice.Id, invoiceNumber = invoice.InvoiceNumber, warnings });
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Purchase invoice creation failed. Trace: {Message}", ex.Message);
+                return StatusCode(500, new { message = _t.Get("Purchases.CreationError"), details = ex.Message });
+            }
+        });
     }
 
     [HttpPut("{id}")]
@@ -692,7 +688,7 @@ public class PurchaseInvoicesController : ControllerBase
         inv.TotalAmount = (subtotal + inv.TaxAmount) - inv.DiscountAmount;
         inv.Supplier.TotalPurchases += inv.TotalAmount;
 
-        // â”€â”€ Auto-update and Alert on Price Changes â”€â”€
+        // ——— Auto-update and Alert on Price Changes ———
         var warnings = new List<string>();
         foreach (var item in inv.Items.Where(i => i.ProductId.HasValue))
         {
@@ -704,7 +700,7 @@ public class PurchaseInvoicesController : ControllerBase
                 if (product.CostPrice.HasValue && newCost > product.CostPrice.Value) {
                     var diff = newCost - product.CostPrice.Value;
                     var pct  = Math.Round((diff / product.CostPrice.Value) * 100, 1);
-                    warnings.Add($"Ø§Ø±ØªÙØ§Ø¹ Ø³Ø¹Ø±: {product.NameAr} Ø¨Ù†Ø³Ø¨Ø© {pct}% (Ù…Ù† {product.CostPrice.Value} Ø¥Ù„Ù‰ {newCost})");
+                    warnings.Add($"ارتفاع سعر: {product.NameAr} بنسبة {pct}% (من {product.CostPrice.Value} إلى {newCost})");
                 }
                 product.CostPrice = newCost;
                 product.UpdatedAt = TimeHelper.GetEgyptTime();
@@ -762,7 +758,7 @@ public class PurchaseInvoicesController : ControllerBase
         var oldStatus = inv.Status;
         if (oldStatus == dto.Status) return Ok(new { id = inv.Id, status = inv.Status.ToString() });
 
-        // â”€â”€ 1. Handle Stock Reversal (If moving FROM received TO inactive) â”€â”€
+        // ——— 1. Handle Stock Reversal (If moving FROM received TO inactive) ———
         bool wasInStock = (oldStatus == PurchaseInvoiceStatus.Received || oldStatus == PurchaseInvoiceStatus.Paid || oldStatus == PurchaseInvoiceStatus.PartPaid);
         bool willBeOut  = (dto.Status == PurchaseInvoiceStatus.Cancelled || dto.Status == PurchaseInvoiceStatus.Returned);
 
@@ -812,7 +808,7 @@ public class PurchaseInvoicesController : ControllerBase
              }
         }
 
-        // â”€â”€ 2. Handle Accounting & Totals â”€â”€
+        // ——— 2. Handle Accounting & Totals ———
         if (dto.Status == PurchaseInvoiceStatus.Cancelled)
         {
             // Reverse Supplier Totals (Net remaining of the invoice)
@@ -856,20 +852,12 @@ public class PurchaseInvoicesController : ControllerBase
             return BadRequest(new { message = _t.Get("Purchases.SupplierNotFound") });
 
         var pUnits = await GetUnitsListAsync();
-        var returnNo = await _seq.NextAsync("PR", async (db, pattern) =>
-        {
-            var max = await db.PurchaseReturns
-                .Where(r => EF.Functions.Like(r.ReturnNumber, pattern))
-                .Select(r => r.ReturnNumber)
-                .ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
-        });
+        var returnNo = await _seq.NextAsync("PR");
 
         var strategy = _db.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
         {
-            using var transaction = await _db.Database.BeginTransactionAsync();
+            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
                 var pReturn = new PurchaseReturn
@@ -916,7 +904,8 @@ public class PurchaseInvoicesController : ControllerBase
                             returnNo,
                             "Standalone Purchase Return",
                             pReturn.CreatedByUserId,
-                            item.UnitCost / (multiplier > 0 ? multiplier : 1)
+                            item.UnitCost / (multiplier > 0 ? multiplier : 1),
+                            autoSave: false
                         );
                     }
                 }
@@ -976,7 +965,7 @@ public class PurchaseInvoicesController : ControllerBase
         var strategy = _db.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
         {
-            using var transaction = await _db.Database.BeginTransactionAsync();
+            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
                 // 1. Reverse old stock movements
@@ -992,7 +981,8 @@ public class PurchaseInvoicesController : ControllerBase
                             item.ProductVariantId,
                             pReturn.ReturnNumber,
                             $"Edit Return #{pReturn.ReturnNumber} (Reversal)",
-                            User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                            User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                            autoSave: false
                         );
                     }
                 }
@@ -1051,7 +1041,8 @@ public class PurchaseInvoicesController : ControllerBase
                             pReturn.ReturnNumber,
                             "Updated Standalone Return",
                             User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-                            item.UnitCost / (multiplier > 0 ? multiplier : 1)
+                            item.UnitCost / (multiplier > 0 ? multiplier : 1),
+                            autoSave: false
                         );
                     }
                 }
@@ -1109,20 +1100,12 @@ public class PurchaseInvoicesController : ControllerBase
 
         // 1. Generate Return Document Number BEFORE starting transaction to avoid deadlocks
         // (SequenceService uses its own scope/connection)
-        var returnNo = await _seq.NextAsync("PR", async (db, pattern) =>
-        {
-            var max = await db.PurchaseReturns
-                .Where(r => EF.Functions.Like(r.ReturnNumber, pattern))
-                .Select(r => r.ReturnNumber)
-                .ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
-        });
+        var returnNo = await _seq.NextAsync("PR");
 
         var strategy = _db.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
         {
-            using var transaction = await _db.Database.BeginTransactionAsync();
+            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
                 _logger.LogInformation("Processing purchase return {ReturnNo} for invoice {Id}", returnNo, id);
@@ -1209,9 +1192,10 @@ public class PurchaseInvoicesController : ControllerBase
                             invItem.ProductId,
                             invItem.ProductVariantId,
                             returnNo,
-                            $"Ù…Ø±ØªØ¬Ø¹ Ù…Ø´ØªØ±ÙŠØ§Øª (ÙØ§ØªÙˆØ±Ø© Ø±Ù‚Ù… #{inv.InvoiceNumber})",
+                            $"مرتجع مشتريات (فاتورة رقم #{inv.InvoiceNumber})",
                             pReturn.CreatedByUserId,
-                            unitCostPerPiece
+                            unitCostPerPiece,
+                            autoSave: false
                         );
                     }
                 }
@@ -1355,14 +1339,14 @@ public class PurchaseInvoicesController : ControllerBase
 
         if (inv == null) return NotFound();
 
-        // 1. Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† ÙˆØ¬ÙˆØ¯ Ù…Ø±ØªØ¬Ø¹Ø§Øª (Check for Returns)
+        // 1. التحقق من وجود مرتجعات (Check for Returns)
         var hasReturns = await _db.PurchaseReturns.AnyAsync(r => r.PurchaseInvoiceId == id);
         if (hasReturns || inv.ReturnedAmount > 0)
         {
             return BadRequest(new { message = _t.Get("Purchases.CannotDeleteWithReturns") });
         }
 
-        // 2. Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù…Ø§ Ø¥Ø°Ø§ ÙƒØ§Ù† Ù‚Ø¯ ØªÙ… Ø¨ÙŠØ¹ Ø£ÙŠ Ø¬Ø²Ø¡ Ù…Ù† Ø§Ù„ÙØ§ØªÙˆØ±Ø© (Check if items were sold)
+        // 2. التحقق مما إذا كان قد تم بيع أي جزء من الفاتورة (Check if items were sold)
         var pUnits = await GetUnitsListAsync();
         foreach (var item in inv.Items)
         {
@@ -1411,9 +1395,8 @@ public class PurchaseInvoicesController : ControllerBase
 
     /// <summary>
     /// Posts the accounting journal for a purchase invoice in the background.
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // GET /api/purchaseinvoices/{id}/pdf
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // =================================================================================
     [HttpGet("{id}/pdf")]
     public async Task<IActionResult> GetPdf(int id)
     {
@@ -1468,4 +1451,5 @@ public class PurchaseInvoicesController : ControllerBase
         }
     }
 }
+
 
