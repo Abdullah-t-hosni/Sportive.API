@@ -78,7 +78,7 @@ public record CreateJournalEntryDto(
     JournalEntryType? Type = JournalEntryType.Manual,
     string?           AttachmentUrl = null,
     string?           AttachmentPublicId = null,
-    OrderSource?      CostCenter = null,
+    int?              CostCenter = null,
     bool              AsDraft = false
 );
 
@@ -89,7 +89,7 @@ public record UpdateJournalEntryDto(
     List<CreateJournalLineDto> Lines,
     string?           AttachmentUrl = null,
     string?           AttachmentPublicId = null,
-    OrderSource?      CostCenter = null,
+    int?              CostCenter = null,
     bool              PostAfterUpdate = false
 );
 
@@ -102,7 +102,7 @@ public record CreateJournalLineDto(
     int?    SupplierId  = null,
     int?    EmployeeId  = null,
     int?    OrderId     = null,
-    OrderSource? CostCenter = null
+    int?    CostCenter = null
 );
 
 public record JournalEntryDto(
@@ -122,7 +122,7 @@ public record JournalEntryDto(
     string?  AttachmentPublicId = null,
     int?     CustomerId = null,
     int?     SupplierId = null,
-    OrderSource? CostCenter = null,
+    int?     CostCenter = null,
     string? CostCenterLabel = null
 );
 
@@ -134,7 +134,7 @@ public record JournalLineSummaryDto(
     decimal  Debit,
     decimal  Credit,
     decimal  Balance,
-    OrderSource? CostCenter = null
+    int?     CostCenter = null
 );
 
 public record JournalLineDto(
@@ -149,7 +149,7 @@ public record JournalLineDto(
     int?     SupplierId = null,
     int?     EmployeeId = null,
     string?  EntityName = null,
-    OrderSource? CostCenter = null,
+    int?     CostCenter = null,
     string? CostCenterLabel = null
 );
 
@@ -165,7 +165,7 @@ public record JournalEntrySummaryDto(
     decimal  TotalCredit,
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
-    OrderSource? CostCenter = null,
+    int?     CostCenter = null,
     string? CostCenterLabel = null
 );
 
@@ -185,7 +185,7 @@ public record CreateReceiptVoucherDto(
     string?  Description,
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
-    OrderSource? CostCenter = null,
+    int?     CostCenter = null,
     int?     EmployeeId = null
 );
 
@@ -201,7 +201,7 @@ public record UpdateReceiptVoucherDto(
     string?  Description,
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
-    OrderSource? CostCenter = null,
+    int?     CostCenter = null,
     int?     EmployeeId = null
 );
 
@@ -217,7 +217,7 @@ public record VoucherSummaryDto(
     string?  Description,
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
-    OrderSource? CostCenter = null,
+    int?     CostCenter = null,
     string? CostCenterLabel = null
 );
 
@@ -237,7 +237,7 @@ public record CreatePaymentVoucherDto(
     string?  Description,
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
-    OrderSource? CostCenter = null,
+    int?     CostCenter = null,
     int?     EmployeeId = null
 );
 
@@ -253,7 +253,7 @@ public record UpdatePaymentVoucherDto(
     string?  Description,
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
-    OrderSource? CostCenter = null,
+    int?     CostCenter = null,
     int?     EmployeeId = null
 );
 

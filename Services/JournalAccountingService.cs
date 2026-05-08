@@ -51,7 +51,7 @@ public class JournalAccountingService
         var prefix = type == JournalEntryType.OpeningBalance ? "OPE" : "JE";
         var entryNumber = await _seq.NextAsync(prefix);
 
-        var entry = new JournalEntry { EntryNumber = entryNumber, EntryDate = dto.EntryDate.ToStoreTime(), Description = dto.Description, Reference = dto.Reference, Type = type, Status = JournalEntryStatus.Posted, CreatedByUserId = userId, CostCenter = dto.CostCenter };
+        var entry = new JournalEntry { EntryNumber = entryNumber, EntryDate = dto.EntryDate.ToStoreTime(), Description = dto.Description, Reference = dto.Reference, Type = type, Status = JournalEntryStatus.Posted, CreatedByUserId = userId, CostCenter = (OrderSource?)dto.CostCenter };
         
         // 🎯 AUTO-RESOLVE COST CENTER: If not provided, try to infer from the first line that has an OrderId
         if (entry.CostCenter == null)
@@ -75,7 +75,7 @@ public class JournalAccountingService
             if (!account.AllowPosting && !((user?.IsInRole("Admin") ?? false) || (user?.IsInRole("SuperAdmin") ?? false)))
                 throw new InvalidOperationException($"الحساب '{account.NameAr}' لا يقبل الترحيل المباشر.");
 
-            entry.Lines.Add(new JournalLine { AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit, Description = l.Description, CustomerId = l.CustomerId, SupplierId = l.SupplierId, EmployeeId = l.EmployeeId, OrderId = l.OrderId, CostCenter = l.CostCenter ?? entry.CostCenter });
+            entry.Lines.Add(new JournalLine { AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit, Description = l.Description, CustomerId = l.CustomerId, SupplierId = l.SupplierId, EmployeeId = l.EmployeeId, OrderId = l.OrderId, CostCenter = (OrderSource?)l.CostCenter ?? entry.CostCenter });
         }
 
         // التحقق من التوازن قبل الحفظ
@@ -111,7 +111,7 @@ public class JournalAccountingService
         entry.EntryDate = dto.EntryDate.ToStoreTime();
         entry.Description = dto.Description;
         entry.Reference = dto.Reference;
-        entry.CostCenter = dto.CostCenter;
+        entry.CostCenter = (OrderSource?)dto.CostCenter;
         entry.UpdatedAt = TimeHelper.GetEgyptTime();
 
         // تحديث الأسطر (مسح الحالية وإعادتها)
@@ -133,7 +133,7 @@ public class JournalAccountingService
                 SupplierId = l.SupplierId,
                 EmployeeId = l.EmployeeId,
                 OrderId = l.OrderId,
-                CostCenter = l.CostCenter ?? dto.CostCenter,
+                CostCenter = (OrderSource?)l.CostCenter ?? entry.CostCenter,
                 CreatedAt = TimeHelper.GetEgyptTime()
             });
         }

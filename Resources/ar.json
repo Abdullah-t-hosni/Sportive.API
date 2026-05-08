@@ -602,7 +602,7 @@
   "Accounting.CannotAddOpeningBalanceToParent": "لا يمكن إضافة رصيد افتتاحي لحساب أب. الأرصدة الافتتاحية تضاف للحسابات النهائية فقط.",
   "Accounting.CannotDeleteAccountWithTransactions": "لا يمكن حذف حساب يحتوي على حركات مالية.",
   "Accounting.CostCenter.Website": "الموقع",
-  "Accounting.CostCenter.نقطة البيع": "المحل",
+  "Accounting.CostCenter.POS": "المحل",
   "Accounting.CostCenter.General": "عام",
   "Accounting.ParentCannotHaveOpeningBalance": "لا يمكن إضافة رصيد افتتاحي لحساب أب. الأرصدة الافتتاحية تضاف للحسابات النهائية فقط.",
   "Accounting.EmptyFile": "الملف فارغ",

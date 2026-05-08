@@ -592,10 +592,10 @@ public class JournalEntriesController : ControllerBase
                 l.Id, l.AccountId, l.Account?.Code ?? "", l.Account?.NameAr ?? "",
                 l.Debit, l.Credit, l.Description, l.CustomerId, l.SupplierId, l.EmployeeId,
                 l.Supplier?.Name ?? l.Customer?.FullName ?? l.Employee?.Name ?? null,
-                l.CostCenter,
+                (int?)l.CostCenter,
                 l.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (l.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General"))
             )).ToList(),
-            e.AttachmentUrl, e.AttachmentPublicId, null, null, e.CostCenter,
+            e.AttachmentUrl, e.AttachmentPublicId, null, null, (int?)e.CostCenter,
             e.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (e.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General"))
         ));
     }
@@ -759,7 +759,7 @@ public class ReceiptVouchersController : ControllerBase
             FromAccountId = dto.FromAccountId, CustomerId = dto.CustomerId, PaymentMethod = dto.PaymentMethod,
             Reference = dto.Reference, Description = dto.Description, AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
-            CostCenter = dto.CostCenter,
+            CostCenter = (OrderSource?)dto.CostCenter,
             EmployeeId = dto.EmployeeId,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value, CreatedAt = TimeHelper.GetEgyptTime(), OrderId = dto.OrderId
         };
@@ -850,6 +850,7 @@ public class ReceiptVouchersController : ControllerBase
         voucher.Description = dto.Description;
         voucher.AttachmentUrl = dto.AttachmentUrl;
         voucher.AttachmentPublicId = dto.AttachmentPublicId;
+        voucher.CostCenter = (OrderSource?)dto.CostCenter;
         voucher.UpdatedAt = TimeHelper.GetEgyptTime();
 
         if (entry != null) {
@@ -982,7 +983,7 @@ public class PaymentVouchersController : ControllerBase
             ToAccountId = dto.ToAccountId, SupplierId = dto.SupplierId, PaymentMethod = dto.PaymentMethod,
             Reference = dto.Reference, Description = dto.Description, AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
-            CostCenter = dto.CostCenter,
+            CostCenter = (OrderSource?)dto.CostCenter,
             EmployeeId = dto.EmployeeId,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value, CreatedAt = TimeHelper.GetEgyptTime(), PurchaseInvoiceId = dto.PurchaseInvoiceId
         };
@@ -1019,7 +1020,9 @@ public class PaymentVouchersController : ControllerBase
 
         voucher.VoucherDate = dto.VoucherDate.ToStoreTime(); voucher.Amount = dto.Amount; voucher.CashAccountId = dto.CashAccountId;
         voucher.ToAccountId = dto.ToAccountId; voucher.SupplierId = dto.SupplierId; voucher.EmployeeId = dto.EmployeeId; voucher.Description = dto.Description;
-        voucher.PurchaseInvoiceId = dto.PurchaseInvoiceId; voucher.UpdatedAt = TimeHelper.GetEgyptTime();
+        voucher.PurchaseInvoiceId = dto.PurchaseInvoiceId;
+        voucher.CostCenter = (OrderSource?)dto.CostCenter;
+        voucher.UpdatedAt = TimeHelper.GetEgyptTime();
 
         if (entry != null) {
             entry.EntryDate = voucher.VoucherDate; entry.Description = voucher.Description;
