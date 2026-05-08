@@ -222,7 +222,7 @@ public class FixedAssetsController : ControllerBase
         return Ok(new FixedAssetDetailDto(assetDto, depDtos, disDtos));
     }
 
-    // â”€â”€â”€ POST /api/fixed-assets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”€â”€â”€ POST /api/fixed-assets 
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateFixedAssetDto dto)
@@ -232,14 +232,8 @@ public class FixedAssetsController : ControllerBase
         if (!await _db.FixedAssetCategories.AnyAsync(c => c.Id == dto.CategoryId))
             return BadRequest(_t.Get("Assets.CategoryNotFound"));
 
-        var assetNo = await _seq.NextAsync("FA", async (db, pattern) =>
-        {
-            var max = await db.FixedAssets
-                .Where(a => EF.Functions.Like(a.AssetNumber, pattern))
-                .Select(a => a.AssetNumber).ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
-        });
+        var assetNo = await _seq.NextAsync("FA");
+
 
         var asset = new FixedAsset
         {
@@ -386,14 +380,7 @@ public class FixedAssetsController : ControllerBase
         var accumAfter  = accumBefore + amount;
 
         // ØªÙˆÙ„ÙŠØ¯ Ø±Ù‚Ù… Ù…Ø³ØªÙ†Ø¯
-        var depNo = await _seq.NextAsync("DEP", async (db, pattern) =>
-        {
-            var max = await db.AssetDepreciations
-                .Where(d => EF.Functions.Like(d.DepreciationNumber, pattern))
-                .Select(d => d.DepreciationNumber).ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
-        });
+        var depNo = await _seq.NextAsync("DEP");
 
         var dep = new AssetDepreciation
         {
@@ -427,14 +414,7 @@ public class FixedAssetsController : ControllerBase
         var finalExpenseAcc  = expenseAccId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.DepreciationExpense, mapDict);
         var costCenter       = ResolveCostCenter(asset, asset.Category);
 
-        var jeNo = await _seq.NextAsync("JE", async (db, pattern) =>
-        {
-            var max = await db.JournalEntries
-                .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
-                .Select(e => e.EntryNumber).ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
-        });
+        var jeNo = await _seq.NextAsync("JE");
 
         var je = new JournalEntry
         {
@@ -497,14 +477,7 @@ public class FixedAssetsController : ControllerBase
             var accumBefore = asset.AccumulatedDepreciation;
             var accumAfter  = accumBefore + amount;
 
-            var depNo = await _seq.NextAsync("DEP", async (db, pattern) =>
-            {
-                var max = await db.AssetDepreciations
-                    .Where(d => EF.Functions.Like(d.DepreciationNumber, pattern))
-                    .Select(d => d.DepreciationNumber).ToListAsync();
-                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                          .DefaultIfEmpty(0).Max();
-            });
+            var depNo = await _seq.NextAsync("DEP");
 
             var dep = new AssetDepreciation
             {
@@ -540,14 +513,7 @@ public class FixedAssetsController : ControllerBase
 
             if (finalAccumAcc > 0 && finalExpenseAcc > 0)
             {
-                var jeNo = await _seq.NextAsync("JE", async (db, pattern) =>
-                {
-                    var max = await db.JournalEntries
-                        .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
-                        .Select(e => e.EntryNumber).ToListAsync();
-                    return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                              .DefaultIfEmpty(0).Max();
-                });
+                var jeNo = await _seq.NextAsync("JE");
 
                 var je = new JournalEntry
                 {
@@ -628,18 +594,10 @@ public class FixedAssetsController : ControllerBase
         if (asset.Disposals.Any())
             return BadRequest(_t.Get("Assets.DisposalVoucherExists"));
 
-        // Ø£Ø±Ù‚Ø§Ù… ÙˆÙ‚Øª Ø§Ù„Ø§Ø³ØªØ¨Ø¹Ø§Ø¯
         var bookValue   = asset.PurchaseCost - asset.AccumulatedDepreciation;
         var accumAtDis  = asset.AccumulatedDepreciation;
 
-        var disNo = await _seq.NextAsync("DIS", async (db, pattern) =>
-        {
-            var max = await db.AssetDisposals
-                .Where(d => EF.Functions.Like(d.DisposalNumber, pattern))
-                .Select(d => d.DisposalNumber).ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
-        });
+        var disNo = await _seq.NextAsync("DIS");
 
         var disposal = new AssetDisposal
         {
@@ -666,7 +624,6 @@ public class FixedAssetsController : ControllerBase
 
         _db.AssetDisposals.Add(disposal);
 
-        // â”€â”€ Ù‚ÙŠØ¯ Ù…Ø­Ø§Ø³Ø¨ÙŠ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var (assetAccId, accumAccId, _) = ResolveAccounts(asset, asset.Category);
         JournalEntry? je = null;
 
@@ -676,14 +633,7 @@ public class FixedAssetsController : ControllerBase
             var gainAccId  = dto.GainAccountId;
             var lossAccId  = dto.LossAccountId;
 
-            var jeNo = await _seq.NextAsync("JE", async (db, pattern) =>
-            {
-                var max = await db.JournalEntries
-                    .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
-                    .Select(e => e.EntryNumber).ToListAsync();
-                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                          .DefaultIfEmpty(0).Max();
-            });
+            var jeNo = await _seq.NextAsync("JE");
 
             je = new JournalEntry
             {
@@ -699,22 +649,17 @@ public class FixedAssetsController : ControllerBase
                 Lines           = new List<JournalLine>()
             };
 
-            // Ù…Ø¯ÙŠÙ†: Ù…Ø¬Ù…Ø¹ Ø§Ù„Ø¥Ù‡Ù„Ø§Ùƒ
             if (accumAtDis > 0)
                 je.Lines.Add(new() { AccountId = accumAccId.Value, Debit = accumAtDis, Credit = 0, Description = $"{_t.Get("Assets.AccumulatedDepreciationLabel")} â€” {_t.Get("Assets.DisposalLabel")}" });
 
-            // Ù…Ø¯ÙŠÙ†: Ø§Ù„Ù…ØªØ­ØµÙ„Ø§Øª (Ø¥Ù† ÙƒØ§Ù†Øª > 0)
             if (dto.SaleProceeds > 0 && dto.ProceedsAccountId.HasValue)
                 je.Lines.Add(new() { AccountId = dto.ProceedsAccountId.Value, Debit = dto.SaleProceeds, Credit = 0, Description = _t.Get("Assets.DisposalProceedsLabel") });
 
-            // Ù…Ø¯ÙŠÙ†: Ø®Ø³Ø§Ø±Ø© Ø§Ù„Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ (Ø¥Ù† ÙˆØ¬Ø¯Øª)
             if (gainLoss < 0 && lossAccId.HasValue)
                 je.Lines.Add(new() { AccountId = lossAccId.Value, Debit = Math.Abs(gainLoss), Credit = 0, Description = _t.Get("Assets.DisposalLossLabel") });
 
-            // Ø¯Ø§Ø¦Ù†: Ø§Ù„Ø£ØµÙ„ Ø¨ØªÙƒÙ„ÙØªÙ‡ Ø§Ù„Ø£ØµÙ„ÙŠØ©
             je.Lines.Add(new() { AccountId = assetAccId.Value, Debit = 0, Credit = asset.PurchaseCost, Description = $"{_t.Get("Assets.DisposalLabel")} {asset.Name}" });
 
-            // Ø¯Ø§Ø¦Ù†: Ø±Ø¨Ø­ Ø§Ù„Ø§Ø³ØªØ¨Ø¹Ø§Ø¯ (Ø¥Ù† ÙˆØ¬Ø¯)
             if (gainLoss > 0 && gainAccId.HasValue)
                 je.Lines.Add(new() { AccountId = gainAccId.Value, Debit = 0, Credit = gainLoss, Description = _t.Get("Assets.DisposalGainLabel") });
 
@@ -729,8 +674,7 @@ public class FixedAssetsController : ControllerBase
         return Ok(new { id = disposal.Id, disposalNumber = disposal.DisposalNumber, journalEntryId = je?.Id });
     }
 
-    // â”€â”€â”€ mapping helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
+    // mapping helpers 
     private static FixedAssetDto ToDto(FixedAsset a) => new(
         a.Id, a.AssetNumber, a.Name, a.Description,
         a.CategoryId, a.Category?.Name ?? "",
@@ -766,7 +710,7 @@ public class FixedAssetsController : ControllerBase
     );
 }
 
-// DTO Ø®Ø§Øµ Ø¨Ø§Ù„Ø¯ÙØ¹Ø© Ø§Ù„Ø´Ù‡Ø±ÙŠØ©
+// DTO
 public record RunBatchDepreciationDto(
     int      PeriodYear,
     int      PeriodMonth,

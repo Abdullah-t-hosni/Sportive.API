@@ -125,14 +125,7 @@ public class EmployeesController : ControllerBase
             if (conflict) return BadRequest(new { message = _t.Get("HR.AccountLinkedAlready") });
         }
 
-        var empNo = await _seq.NextAsync("EMP", async (db, pattern) =>
-        {
-            var max = await db.Employees
-                .Where(e => EF.Functions.Like(e.EmployeeNumber, pattern))
-                .Select(e => e.EmployeeNumber).ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
-        });
+        var empNo = await _seq.NextAsync("EMP");
 
         var core = (AccountingCoreService)HttpContext.RequestServices.GetService(typeof(AccountingCoreService))!;
         var maps = await core.GetSafeSystemMappingsAsync();
@@ -415,14 +408,7 @@ public class PayrollController : ControllerBase
                 });
             }
 
-            var payNo = await _seq.NextAsync("PAY", async (db, pattern) =>
-            {
-                var max = await db.PayrollRuns
-                    .Where(p => EF.Functions.Like(p.PayrollNumber, pattern))
-                    .Select(p => p.PayrollNumber).ToListAsync();
-                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                          .DefaultIfEmpty(0).Max();
-            });
+            var payNo = await _seq.NextAsync("PAY");
 
             var run = new PayrollRun
             {
@@ -521,14 +507,7 @@ public class PayrollController : ControllerBase
 
         if (true) // Always proceed with strict mappings
         {
-            var jeNo = await _seq.NextAsync("JE", async (db, pattern) =>
-            {
-                var max = await db.JournalEntries
-                    .Where(e => EF.Functions.Like(e.EntryNumber, pattern))
-                    .Select(e => e.EntryNumber).ToListAsync();
-                return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                          .DefaultIfEmpty(0).Max();
-            });
+            var jeNo = await _seq.NextAsync("JE");
 
             var totalGross = run.TotalBasicSalary + run.TotalBonuses;
 
@@ -819,14 +798,7 @@ public class EmployeeAdvancesController : ControllerBase
         {
             try
             {
-                var advNo = await _seq.NextAsync("ADV", async (db, pattern) =>
-                {
-                    var max = await db.EmployeeAdvances
-                        .Where(a => EF.Functions.Like(a.AdvanceNumber, pattern))
-                        .Select(a => a.AdvanceNumber).ToListAsync();
-                    return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                              .DefaultIfEmpty(0).Max();
-                });
+                var advNo = await _seq.NextAsync("ADV");
 
                 var advance = new EmployeeAdvance
                 {
@@ -1016,14 +988,7 @@ public class EmployeeBonusesController : ControllerBase
         {
             try
             {
-                var bonNo = await _seq.NextAsync("BON", async (db, pattern) =>
-                {
-                    var max = await db.EmployeeBonuses
-                        .Where(b => EF.Functions.Like(b.BonusNumber, pattern))
-                        .Select(b => b.BonusNumber).ToListAsync();
-                    return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                              .DefaultIfEmpty(0).Max();
-                });
+                var bonNo = await _seq.NextAsync("BON");
 
                 var bonus = new EmployeeBonus
                 {
@@ -1192,14 +1157,7 @@ public class EmployeeDeductionsController : ControllerBase
         var emp = await _db.Employees.FindAsync(dto.EmployeeId);
         if (emp == null) return NotFound();
 
-        var dedNo = await _seq.NextAsync("DED", async (db, pattern) =>
-        {
-            var max = await db.EmployeeDeductions
-                .Where(d => EF.Functions.Like(d.DeductionNumber, pattern))
-                .Select(d => d.DeductionNumber).ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
-        });
+        var dedNo = await _seq.NextAsync("DED");
 
         var ded = new EmployeeDeduction
         {

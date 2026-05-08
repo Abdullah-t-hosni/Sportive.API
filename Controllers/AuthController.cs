@@ -333,14 +333,7 @@ public class AuthController : ControllerBase
             {
                 // 3. Create new HR profile
                 var sequence = HttpContext.RequestServices.GetRequiredService<SequenceService>();
-                var empNo = await sequence.NextAsync("EMP", async (db, pattern) =>
-                {
-                    var max = await db.Employees
-                        .Where(e => EF.Functions.Like(e.EmployeeNumber, pattern))
-                        .Select(e => e.EmployeeNumber).ToListAsync();
-                    return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                              .DefaultIfEmpty(0).Max();
-                });
+                var empNo = await sequence.NextAsync("EMP");
 
                 employee = new Employee
                 {

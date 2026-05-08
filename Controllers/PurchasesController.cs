@@ -539,7 +539,7 @@ public class PurchaseInvoicesController : ControllerBase
         var pUnits = await GetUnitsListAsync();
 
         var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
         {
             using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
@@ -670,7 +670,7 @@ public class PurchaseInvoicesController : ControllerBase
     public async Task<IActionResult> Update(int id, [FromBody] UpdatePurchaseInvoiceDto dto)
     {
         var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () => 
+        return await strategy.ExecuteAsync<IActionResult>(async () => 
         {
             using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try 
@@ -971,7 +971,7 @@ public class PurchaseInvoicesController : ControllerBase
         var returnNo = await _seq.NextAsync("PR");
 
         var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
         {
             using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
@@ -1079,7 +1079,7 @@ public class PurchaseInvoicesController : ControllerBase
         var pUnits = await GetUnitsListAsync();
         
         var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
         {
             using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
@@ -1219,7 +1219,7 @@ public class PurchaseInvoicesController : ControllerBase
         var returnNo = await _seq.NextAsync("PR");
 
         var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
         {
             using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try

@@ -209,14 +209,7 @@ public class StaffController : ControllerBase
             else
             {
                 // 3. إنشاء سجل جديد
-                var empNo = await _sequence.NextAsync("EMP", async (db, pattern) =>
-                {
-                    var max = await db.Employees
-                        .Where(e => EF.Functions.Like(e.EmployeeNumber, pattern))
-                        .Select(e => e.EmployeeNumber).ToListAsync();
-                    return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                              .DefaultIfEmpty(0).Max();
-                });
+                var empNo = await _sequence.NextAsync("EMP");
 
                 employee = new Employee
                 {

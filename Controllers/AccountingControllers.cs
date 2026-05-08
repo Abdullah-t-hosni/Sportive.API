@@ -746,10 +746,7 @@ public class ReceiptVouchersController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateReceiptVoucherDto dto)
     {
-        var vNo = await _seq.NextAsync("RV", async (db, pattern) => {
-            var max = await db.ReceiptVouchers.Where(v => EF.Functions.Like(v.VoucherNumber, pattern)).Select(v => v.VoucherNumber).ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0).DefaultIfEmpty(0).Max();
-        });
+        var vNo = await _seq.NextAsync("RV");
         
         var cashAccount = await _db.Accounts.FindAsync(dto.CashAccountId);
         if (cashAccount == null) return BadRequest(_t.Get("Accounting.ReceiptVoucher.AccountNotFound"));
@@ -1003,10 +1000,7 @@ public class PaymentVouchersController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreatePaymentVoucherDto dto)
     {
-        var vNo = await _seq.NextAsync("PV", async (db, pattern) => {
-            var max = await db.PaymentVouchers.Where(v => EF.Functions.Like(v.VoucherNumber, pattern)).Select(v => v.VoucherNumber).ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0).DefaultIfEmpty(0).Max();
-        });
+        var vNo = await _seq.NextAsync("PV");
 
         var cashAccount = await _db.Accounts.FindAsync(dto.CashAccountId);
         if (cashAccount == null) return BadRequest(_t.Get("Accounting.PaymentVoucher.AccountNotFound"));

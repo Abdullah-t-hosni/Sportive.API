@@ -105,15 +105,7 @@ public class InventoryOpeningBalanceController : ControllerBase
         if (dto.Items == null || !dto.Items.Any())
             return BadRequest(new { message = _t.Get("Purchases.MinOneItemRequired") });
 
-        var refNo = await _seq.NextAsync("OB", async (db, pattern) =>
-        {
-            var max = await db.InventoryOpeningBalances
-                .Where(x => EF.Functions.Like(x.Reference, pattern))
-                .Select(x => x.Reference)
-                .ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
-        });
+        var refNo = await _seq.NextAsync("OB");
 
         var ob = new InventoryOpeningBalance
         {

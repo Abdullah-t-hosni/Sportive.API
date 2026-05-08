@@ -105,15 +105,7 @@ public class SupplierPaymentsController : ControllerBase
             if (invoice == null) return BadRequest(new { message = _t.Get("SupplierPayments.InvoiceNotFound") });
         }
 
-        var pNo = await _seq.NextAsync("SP", async (db, pattern) =>
-        {
-            var max = await db.SupplierPayments
-                .Where(p => EF.Functions.Like(p.PaymentNumber, pattern))
-                .Select(p => p.PaymentNumber)
-                .ToListAsync();
-            return max.Select(n => int.TryParse(n.Split('-').LastOrDefault(), out var v) ? v : 0)
-                      .DefaultIfEmpty(0).Max();
-        });
+        var pNo = await _seq.NextAsync("SP");
 
         var payment = new SupplierPayment
         {
