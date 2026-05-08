@@ -1400,7 +1400,7 @@ public class PurchaseInvoicesController : ControllerBase
                     Notes             = dto.Notes,
                     ReferenceNumber   = dto.ReferenceNumber,
                     CreatedByUserId   = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
-                    CostCenter        = dto.CostCenter ?? inv.CostCenter
+                    CostCenter        = inv.CostCenter  // Always inherit from the linked invoice
                 };
 
                 decimal totalSubTotal = 0;
