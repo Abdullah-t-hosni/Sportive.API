@@ -130,6 +130,7 @@ public class AccountingCoreService
             entry.UpdatedAt = TimeHelper.GetEgyptTime();
             entry.OrderId = orderId;
             entry.PurchaseInvoiceId = purchaseInvoiceId;
+            source ??= OrderSource.General;
             entry.CostCenter = source;
 
             // Clear old lines
@@ -138,11 +139,13 @@ public class AccountingCoreService
         }
         else
         {
-            // 🎯 AUTO-RESOLVE COST CENTER: If not provided, try to infer from the order
             if (source == null && orderId.HasValue)
             {
                 source = await _db.Orders.Where(o => o.Id == orderId.Value).Select(o => (OrderSource?)o.Source).FirstOrDefaultAsync();
             }
+            
+            // Final fallback
+            source ??= OrderSource.General;
 
             // 📝 Journal Numbering (JE-POS-xxxx, JE-WEB-xxxx, JE-GEN-xxxx)
             var jePrefix = source switch {

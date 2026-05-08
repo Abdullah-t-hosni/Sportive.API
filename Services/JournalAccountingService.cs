@@ -66,7 +66,7 @@ public class JournalAccountingService
         // If still null, default based on User Role (Cashiers -> POS, Others -> Website)
         if (entry.CostCenter == null)
         {
-            entry.CostCenter = user?.IsInRole("Cashier") == true ? OrderSource.POS : OrderSource.Website;
+            entry.CostCenter = user?.IsInRole("Cashier") == true ? OrderSource.POS : OrderSource.General;
         }
 
         foreach (var l in dto.Lines) {
