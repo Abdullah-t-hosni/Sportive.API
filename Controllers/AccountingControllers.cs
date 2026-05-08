@@ -603,8 +603,12 @@ public class JournalEntriesController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateJournalEntryDto dto)
     {
-        var entry = await _accounting.PostManualEntryAsync(dto, User);
-        return CreatedAtAction(nameof(GetById), new { id = entry.Id }, entry);
+        try {
+            var entry = await _accounting.PostManualEntryAsync(dto, User);
+            return CreatedAtAction(nameof(GetById), new { id = entry.Id }, entry);
+        } catch (InvalidOperationException ex) {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     [HttpPut("{id}")]

@@ -51,6 +51,11 @@ public class JournalAccountingService
         var prefix = type == JournalEntryType.OpeningBalance ? "OPE" : "JE";
         var entryNumber = await _seq.NextAsync(prefix);
 
+        if (!string.IsNullOrEmpty(dto.Reference) && await _db.JournalEntries.AnyAsync(e => e.Reference == dto.Reference && e.Type == type))
+        {
+            throw new InvalidOperationException($"المرجع '{dto.Reference}' موجود مسبقاً لهذا النوع من القيود.");
+        }
+
         var entry = new JournalEntry { EntryNumber = entryNumber, EntryDate = dto.EntryDate.ToStoreTime(), Description = dto.Description, Reference = dto.Reference, Type = type, Status = JournalEntryStatus.Posted, CreatedByUserId = userId, CostCenter = (OrderSource?)dto.CostCenter };
         
         // 🎯 AUTO-RESOLVE COST CENTER: If not provided, try to infer from the first line that has an OrderId
@@ -110,6 +115,11 @@ public class JournalAccountingService
         // تحديث البيانات الأساسية
         entry.EntryDate = dto.EntryDate.ToStoreTime();
         entry.Description = dto.Description;
+        if (!string.IsNullOrEmpty(dto.Reference) && await _db.JournalEntries.AnyAsync(e => e.Reference == dto.Reference && e.Type == entry.Type && e.Id != id))
+        {
+            throw new InvalidOperationException($"المرجع '{dto.Reference}' موجود مسبقاً في قيد آخر من نفس النوع.");
+        }
+
         entry.Reference = dto.Reference;
         entry.CostCenter = (OrderSource?)dto.CostCenter;
         entry.UpdatedAt = TimeHelper.GetEgyptTime();
