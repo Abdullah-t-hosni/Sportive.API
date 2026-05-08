@@ -1245,9 +1245,10 @@ public class PurchaseInvoicesController : ControllerBase
                         message = _t.Get("Purchases.InternalReturnUpdateError"),
                     error = ex.Message,
                     detail = ex.InnerException?.Message 
-                });
             }
         });
+    }
+
     [HttpDelete("returns/{id}")]
     [RequirePermission(ModuleKeys.PurchasesMain, requireEdit: true)]
     public async Task<IActionResult> DeleteReturn(int id)
