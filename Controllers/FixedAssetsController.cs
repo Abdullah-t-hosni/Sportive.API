@@ -121,7 +121,7 @@ public class FixedAssetsController : ControllerBase
         _core = core;
         _t = t;
     }
-    // â”€â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // --- helpers ---
 
     /// <summary>Ø­Ø³Ø§Ø¨ Ù‚Ø³Ø· Ø§Ù„Ø¥Ù‡Ù„Ø§Ùƒ Ø§Ù„Ø´Ù‡Ø±ÙŠ Ø¨Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ù‚Ø³Ø· Ø§Ù„Ø«Ø§Ø¨Øª</summary>
     private static decimal CalcStraightLineMonthly(FixedAsset a)
@@ -146,7 +146,7 @@ public class FixedAssetsController : ControllerBase
 
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
-    // â”€â”€â”€ GET /api/fixed-assets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // --- GET /api/fixed-assets ---
 
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -197,7 +197,7 @@ public class FixedAssetsController : ControllerBase
             (int)Math.Ceiling((double)total / pageSize)));
     }
 
-    // â”€â”€â”€ GET /api/fixed-assets/{id} â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // --- GET /api/fixed-assets/{id} ---
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
@@ -268,7 +268,7 @@ public class FixedAssetsController : ControllerBase
         return Ok(new { id = asset.Id, assetNumber = asset.AssetNumber });
     }
 
-    // â”€â”€â”€ PUT /api/fixed-assets/{id} â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // --- PUT /api/fixed-assets/{id} ---
 
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateFixedAssetDto dto)
@@ -306,7 +306,7 @@ public class FixedAssetsController : ControllerBase
         return NoContent();
     }
 
-    // â”€â”€â”€ DELETE /api/fixed-assets/{id} â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // --- DELETE /api/fixed-assets/{id} ---
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
@@ -406,7 +406,7 @@ public class FixedAssetsController : ControllerBase
 
         _db.AssetDepreciations.Add(dep);
 
-        // â”€â”€ Ù‚ÙŠØ¯ Ù…Ø­Ø§Ø³Ø¨ÙŠ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // --- Journal Entry ---
         var (_, accumAccId, expenseAccId) = ResolveAccounts(asset, asset.Category);
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         
