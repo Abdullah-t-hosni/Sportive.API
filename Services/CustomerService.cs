@@ -25,6 +25,8 @@ public class CustomerService : ICustomerService
             .AsNoTracking()
             .Include(c => c.MainAccount)
             .Include(c => c.Category)
+            .Include(c => c.AppUser)
+            .Where(c => c.AppUser == null || !c.AppUser.UserName.StartsWith("staff_"))
             .AsQueryable();
 
         // 1. Basic Filters
@@ -132,6 +134,8 @@ public class CustomerService : ICustomerService
     public async Task<List<CustomerRfmDto>> GetRfmDataAsync() =>
         await _db.Customers
             .AsNoTracking()
+            .Include(c => c.AppUser)
+            .Where(c => c.AppUser == null || !c.AppUser.UserName.StartsWith("staff_"))
             .OrderByDescending(c => c.CreatedAt)
             .Select(c => new CustomerRfmDto(
                 c.Id,
@@ -149,8 +153,8 @@ public class CustomerService : ICustomerService
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
             .Include(c => c.MainAccount)
-            .Include(c => c.Category)
-            .Where(c => c.Id == id)
+            .Include(c => c.AppUser)
+            .Where(c => c.Id == id && (c.AppUser == null || !c.AppUser.UserName.StartsWith("staff_")))
             .Select(c => new
             {
                 c.Id, c.FullName, c.Email, c.Phone, c.AppUserId, c.CreatedAt,
@@ -197,8 +201,8 @@ public class CustomerService : ICustomerService
         var rawResult = await _db.Customers
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
-            .Include(c => c.MainAccount)
-            .Where(c => c.Email == email)
+            .Include(c => c.AppUser)
+            .Where(c => c.Email == email && (c.AppUser == null || !c.AppUser.UserName.StartsWith("staff_")))
             .Select(c => new
             {
                 c.Id, c.FullName, c.Email, c.Phone, c.AppUserId, c.CreatedAt,
@@ -245,8 +249,8 @@ public class CustomerService : ICustomerService
         var rawResult = await _db.Customers
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
-            .Include(c => c.MainAccount)
-            .Where(c => c.AppUserId == userId)
+            .Include(c => c.AppUser)
+            .Where(c => c.AppUserId == userId && (c.AppUser == null || !c.AppUser.UserName.StartsWith("staff_")))
             .Select(c => new
             {
                 c.Id, c.FullName, c.Email, c.Phone, c.AppUserId, c.CreatedAt,
@@ -298,6 +302,13 @@ public class CustomerService : ICustomerService
         
         if (existing != null)
             throw new InvalidOperationException("هذا العميل (أو الهاتف) مسجل بالفعل في ملفات العملاء.");
+
+        // 2. Check if this phone/email belongs to a system user (Staff)
+        var staffExists = await _db.Users.AnyAsync(u => 
+            (u.PhoneNumber == dto.Phone || u.Email == dto.Email) && u.UserName.StartsWith("staff_"));
+        
+        if (staffExists)
+            throw new InvalidOperationException("هذا الرقم/البريد مسجل كمستخدم للنظام (موظف) ولا يمكن إضافته كعميل.");
 
         // 3. (REMOVED) Identity Users Conflict Check (Staff and Customers are now separated)
         var generatedEmail = dto.Email;
@@ -568,13 +579,18 @@ public class CustomerService : ICustomerService
     public async Task<int> GetOrCreateCustomerIdByUserIdAsync(string userId)
     {
         var customer = await _db.Customers
-            .Select(c => new { c.Id, c.AppUserId })
+            .Include(c => c.AppUser)
             .FirstOrDefaultAsync(c => c.AppUserId == userId);
 
-        if (customer != null) return customer.Id;
+        if (customer != null) 
+        {
+            if (customer.AppUser != null && customer.AppUser.UserName.StartsWith("staff_"))
+                return 0; // Don't return staff as customers
+            return customer.Id;
+        }
 
         var user = await _db.Users.FindAsync(userId);
-        if (user == null) return 0;
+        if (user == null || user.UserName.StartsWith("staff_")) return 0;
 
         var newCustomer = new Customer
         {
@@ -634,6 +650,8 @@ public class CustomerService : ICustomerService
     {
         var customers = await _db.Customers
             .AsNoTracking()
+            .Include(c => c.AppUser)
+            .Where(c => c.AppUser == null || !c.AppUser.UserName.StartsWith("staff_"))
             .Select(c => new {
                 c.Id,
                 c.Tags,

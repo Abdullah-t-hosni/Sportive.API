@@ -158,31 +158,37 @@ public class AuthService : IAuthService
 
         if (!customerId.HasValue)
         {
-            // 🛡️ Auto-create customer record for ANY user to allow them to use storefront features (addresses, orders)
-            // Fix: Use phone or a unique fallback to avoid "" email 409 conflict
-            var fallbackEmail = !string.IsNullOrEmpty(user.Email) ? user.Email : 
-                               (!string.IsNullOrEmpty(user.PhoneNumber) ? $"{user.PhoneNumber}@sportive.com" : $"{user.Id.Substring(0, 8)}@temp.sportive.com");
+            // 🛡️ Auto-create customer record ONLY if user is not staff
+            var staffRoles = AppRoles.StaffRoles.ToList();
+            bool isStaff = roles.Any(r => staffRoles.Contains(r));
 
-            // Ensure uniqueness even for fallback
-            if (await _db.Customers.AnyAsync(c => c.Email == fallbackEmail))
+            if (!isStaff)
             {
-                fallbackEmail = $"{Guid.NewGuid().ToString().Substring(0, 8)}@temp.sportive.com";
+                // Fix: Use phone or a unique fallback to avoid "" email 409 conflict
+                var fallbackEmail = !string.IsNullOrEmpty(user.Email) ? user.Email : 
+                                   (!string.IsNullOrEmpty(user.PhoneNumber) ? $"{user.PhoneNumber}@sportive.com" : $"{user.Id.Substring(0, 8)}@temp.sportive.com");
+
+                // Ensure uniqueness even for fallback
+                if (await _db.Customers.AnyAsync(c => c.Email == fallbackEmail))
+                {
+                    fallbackEmail = $"{Guid.NewGuid().ToString().Substring(0, 8)}@temp.sportive.com";
+                }
+
+                var customer = new Customer
+                {
+                    AppUserId = user.Id,
+                    FullName = user.FullName,
+                    Email = fallbackEmail,
+                    Phone = user.PhoneNumber,
+                    CreatedAt = TimeHelper.GetEgyptTime()
+                };
+                _db.Customers.Add(customer);
+                await _db.SaveChangesAsync();
+                customerId = customer.Id;
+
+                // Auto-create Accounting Account
+                await _customerService.EnsureCustomerAccountAsync(customer.Id);
             }
-
-            var customer = new Customer
-            {
-                AppUserId = user.Id,
-                FullName = user.FullName,
-                Email = fallbackEmail,
-                Phone = user.PhoneNumber,
-                CreatedAt = TimeHelper.GetEgyptTime()
-            };
-            _db.Customers.Add(customer);
-            await _db.SaveChangesAsync();
-            customerId = customer.Id;
-
-            // Auto-create Accounting Account
-            await _customerService.EnsureCustomerAccountAsync(customer.Id);
         }
 
         if (customerId.HasValue)

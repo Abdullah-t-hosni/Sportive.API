@@ -35,4 +35,5 @@ public interface IDataMaintenanceService
     Task<(bool Success, string Message)> FixUtcTimesAsync();
     
     Task<(bool Success, string Message, int UpdatedCount)> FixMissingSlugsAsync();
+    Task<(bool Success, string Message)> CleanupStaffCustomersAsync();
 }

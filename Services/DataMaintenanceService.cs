@@ -568,4 +568,50 @@ public class DataMaintenanceService : IDataMaintenanceService
             return (false, "العملية فشلت. يرجى المحاولة مرة أخرى.", 0);
         }
     }
+
+    public async Task<(bool Success, string Message)> CleanupStaffCustomersAsync()
+    {
+        try
+        {
+            // 1. Find all customers linked to staff users
+            var staffCustomers = await _db.Customers
+                .Include(c => c.AppUser)
+                .Include(c => c.Orders)
+                .Where(c => c.AppUserId != null && c.AppUser.UserName.StartsWith("staff_"))
+                .ToListAsync();
+
+            if (!staffCustomers.Any())
+                return (true, "لا يوجد موظفون مسجلون كعملاء حالياً.");
+
+            int deletedCount = 0;
+            int unlinkedCount = 0;
+
+            foreach (var sc in staffCustomers)
+            {
+                // If they have no orders, delete the customer record entirely
+                if (!sc.Orders.Any())
+                {
+                    _db.Addresses.RemoveRange(_db.Addresses.Where(a => a.CustomerId == sc.Id));
+                    _db.Customers.Remove(sc);
+                    deletedCount++;
+                }
+                else
+                {
+                    // If they have orders, we must keep the customer record for database integrity
+                    // but we unlink it from the staff user account so it's a "Standalone Customer"
+                    sc.AppUserId = null;
+                    unlinkedCount++;
+                }
+            }
+
+            await _db.SaveChangesAsync();
+
+            return (true, $"تمت العملية بنجاح. تم حذف {deletedCount} سجل عميل (بدون طلبات) وفك ارتباط {unlinkedCount} سجل عميل (لديهم طلبات) عن حسابات الموظفين.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "CleanupStaffCustomers failed");
+            return (false, "العملية فشلت. يرجى مراجعة سجلات الخادم.");
+        }
+    }
 }

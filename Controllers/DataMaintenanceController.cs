@@ -179,4 +179,12 @@ public class DataMaintenanceController : ControllerBase
         var (success, message, count) = await _service.FixMissingSlugsAsync();
         return success ? Ok(new { success, message, count }) : BadRequest(new { success, message });
     }
+
+    [HttpGet("cleanup-staff-customers"), HttpPost("cleanup-staff-customers")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> CleanupStaffCustomers()
+    {
+        var (success, message) = await _service.CleanupStaffCustomersAsync();
+        return success ? Ok(new { success, message }) : BadRequest(new { success, message });
+    }
 }
