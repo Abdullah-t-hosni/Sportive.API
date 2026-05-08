@@ -1245,6 +1245,7 @@ public class PurchaseInvoicesController : ControllerBase
                         message = _t.Get("Purchases.InternalReturnUpdateError"),
                     error = ex.Message,
                     detail = ex.InnerException?.Message 
+                });
             }
         });
     }
