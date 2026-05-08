@@ -688,6 +688,51 @@ public class PurchaseInvoicesController : ControllerBase
         inv.TotalAmount = (subtotal + inv.TaxAmount) - inv.DiscountAmount;
         inv.Supplier.TotalPurchases += inv.TotalAmount;
 
+        // --- Sync Payment for Cash Invoices ---
+        if (inv.PaymentTerms == PaymentTerms.Cash)
+        {
+            var oldPaid = inv.PaidAmount;
+            inv.PaidAmount = inv.TotalAmount;
+            inv.Supplier.TotalPaid += (inv.PaidAmount - oldPaid);
+
+            // Update the automatic payment record if exists
+            var autoPayment = inv.Payments.FirstOrDefault(p => p.Notes != null && p.Notes.Contains(inv.InvoiceNumber));
+            if (autoPayment != null)
+            {
+                autoPayment.Amount = inv.TotalAmount;
+                autoPayment.PaymentDate = inv.InvoiceDate;
+                autoPayment.CostCenter = inv.CostCenter;
+            }
+            else
+            {
+                // Create payment if it was changed from Credit to Cash
+                var pNo = await _seq.NextAsync("SP");
+                inv.Payments.Add(new SupplierPayment
+                {
+                    PaymentNumber = pNo,
+                    SupplierId = inv.SupplierId,
+                    Amount = inv.TotalAmount,
+                    PaymentDate = inv.InvoiceDate,
+                    PaymentMethod = PaymentMethod_Purchase.Cash,
+                    AccountName = "الخزينة (آلي)",
+                    Notes = $"سداد تلقائي لفاتورة {inv.InvoiceNumber}",
+                    CreatedAt = TimeHelper.GetEgyptTime(),
+                    CostCenter = inv.CostCenter
+                });
+            }
+            inv.Status = PurchaseInvoiceStatus.Paid;
+        }
+        else 
+        {
+            // If it's credit but was partially paid before, check if it's now fully paid or partially
+            if (inv.PaidAmount >= inv.TotalAmount - 0.001M)
+                inv.Status = PurchaseInvoiceStatus.Paid;
+            else if (inv.PaidAmount > 0)
+                inv.Status = PurchaseInvoiceStatus.PartPaid;
+            else
+                inv.Status = PurchaseInvoiceStatus.Received;
+        }
+
         // ——— Auto-update and Alert on Price Changes ———
         var warnings = new List<string>();
         foreach (var item in inv.Items.Where(i => i.ProductId.HasValue))

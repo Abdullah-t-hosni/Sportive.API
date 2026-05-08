@@ -436,8 +436,6 @@ public class AccountsController : ControllerBase
                     // Convert net amount based on account nature
                     var directCurrentBal = a.Nature == AccountNature.Debit ? netLinesAmount : -netLinesAmount;
                     
-                    // ðŸš¨ ADVANCED FIX:
-                    // ADVANCED FIX:
                     // Parent account balance = sum of children balances + direct transactions.
                     // Best practice: Parents should not have OpeningBalance directly.
                     decimal totalCurrentBalance = directCurrentBal;
@@ -787,7 +785,7 @@ public class ReceiptVouchersController : ControllerBase
                 order.PaymentStatus = order.PaidAmount >= order.TotalAmount - 0.01m ? PaymentStatus.Paid : PaymentStatus.Pending;
                 order.UpdatedAt = TimeHelper.GetEgyptTime();
 
-                // ðŸ“ LOG TO ORDER HISTORY: Who collected the debt?
+                // ðŸ“  LOG TO ORDER HISTORY: Who collected the debt?
                 _db.OrderStatusHistories.Add(new OrderStatusHistory
                 {
                     OrderId = order.Id,
@@ -843,6 +841,7 @@ public class ReceiptVouchersController : ControllerBase
         if (entry != null && entry.Status == JournalEntryStatus.Posted && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin")))
             return BadRequest(_t.Get("Accounting.ReceiptVoucher.CannotEditPosted"));
 
+        var oldAmount = voucher.Amount;
         voucher.VoucherDate = dto.VoucherDate.ToStoreTime();
         voucher.Amount = dto.Amount;
         voucher.CashAccountId = dto.CashAccountId;
@@ -857,11 +856,43 @@ public class ReceiptVouchersController : ControllerBase
         voucher.CostCenter = (OrderSource?)dto.CostCenter;
         voucher.UpdatedAt = TimeHelper.GetEgyptTime();
 
+        // Sync with Order if linked
+        if (voucher.OrderId.HasValue)
+        {
+            var order = await _db.Orders.FindAsync(voucher.OrderId.Value);
+            if (order != null)
+            {
+                order.PaidAmount = (order.PaidAmount - oldAmount) + voucher.Amount;
+                order.PaymentStatus = order.PaidAmount >= order.TotalAmount - 0.01m ? PaymentStatus.Paid : PaymentStatus.Pending;
+                order.UpdatedAt = TimeHelper.GetEgyptTime();
+            }
+        }
+
         if (entry != null) {
-            entry.EntryDate = voucher.VoucherDate; entry.Description = voucher.Description; entry.UpdatedAt = TimeHelper.GetEgyptTime();
+            entry.EntryDate = voucher.VoucherDate; 
+            entry.Description = voucher.Description; 
+            entry.UpdatedAt = TimeHelper.GetEgyptTime();
             _db.JournalLines.RemoveRange(entry.Lines);
-            entry.Lines.Add(new JournalLine { AccountId = voucher.CashAccountId, Debit = voucher.Amount, Credit = 0, Description = _t.Get("Accounting.ReceiptVoucher.UpdateLog", voucher.VoucherNumber) });
-            entry.Lines.Add(new JournalLine { AccountId = voucher.FromAccountId, Debit = 0, Credit = voucher.Amount, Description = _t.Get("Accounting.FromAccountDesc", voucher.FromAccount?.NameAr ?? "") });
+            
+            // Re-add lines with correct entity links
+            entry.Lines.Add(new JournalLine { 
+                AccountId = voucher.CashAccountId, 
+                Debit = voucher.Amount, 
+                Credit = 0, 
+                Description = _t.Get("Accounting.ReceiptVoucher.UpdateLog", voucher.VoucherNumber),
+                CustomerId = voucher.CustomerId,
+                EmployeeId = voucher.EmployeeId,
+                CostCenter = voucher.CostCenter
+            });
+            entry.Lines.Add(new JournalLine { 
+                AccountId = voucher.FromAccountId, 
+                Debit = 0, 
+                Credit = voucher.Amount, 
+                Description = _t.Get("Accounting.FromAccountDesc", voucher.FromAccount?.NameAr ?? ""),
+                CustomerId = voucher.CustomerId,
+                EmployeeId = voucher.EmployeeId,
+                CostCenter = voucher.CostCenter
+            });
         }
 
         await _db.SaveChangesAsync();
@@ -1022,17 +1053,49 @@ public class PaymentVouchersController : ControllerBase
         if (entry != null && entry.Status == JournalEntryStatus.Posted && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin")))
             return BadRequest(_t.Get("Accounting.PaymentVoucher.CannotEditPosted"));
 
+        var oldAmount = voucher.Amount;
         voucher.VoucherDate = dto.VoucherDate.ToStoreTime(); voucher.Amount = dto.Amount; voucher.CashAccountId = dto.CashAccountId;
         voucher.ToAccountId = dto.ToAccountId; voucher.SupplierId = dto.SupplierId; voucher.EmployeeId = dto.EmployeeId; voucher.Description = dto.Description;
         voucher.PurchaseInvoiceId = dto.PurchaseInvoiceId;
         voucher.CostCenter = (OrderSource?)dto.CostCenter;
         voucher.UpdatedAt = TimeHelper.GetEgyptTime();
 
+        // Sync with Purchase Invoice if linked
+        if (voucher.PurchaseInvoiceId.HasValue)
+        {
+            var invoice = await _db.PurchaseInvoices.FindAsync(voucher.PurchaseInvoiceId.Value);
+            if (invoice != null)
+            {
+                invoice.PaidAmount = (invoice.PaidAmount - oldAmount) + voucher.Amount;
+                invoice.Status = invoice.PaidAmount >= invoice.TotalAmount - 0.1m ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.PartPaid;
+                invoice.UpdatedAt = TimeHelper.GetEgyptTime();
+            }
+        }
+
         if (entry != null) {
-            entry.EntryDate = voucher.VoucherDate; entry.Description = voucher.Description;
+            entry.EntryDate = voucher.VoucherDate; 
+            entry.Description = voucher.Description;
+            entry.UpdatedAt = TimeHelper.GetEgyptTime();
             _db.JournalLines.RemoveRange(entry.Lines);
-            entry.Lines.Add(new JournalLine { AccountId = voucher.ToAccountId, Debit = voucher.Amount, Credit = 0, Description = _t.Get("Accounting.ReceiptVoucher.UpdateLog", voucher.VoucherNumber) });
-            entry.Lines.Add(new JournalLine { AccountId = voucher.CashAccountId, Debit = 0, Credit = voucher.Amount, Description = _t.Get("Accounting.FromAccountDesc", voucher.CashAccount?.NameAr ?? "") });
+            
+            entry.Lines.Add(new JournalLine { 
+                AccountId = voucher.ToAccountId, 
+                Debit = voucher.Amount, 
+                Credit = 0, 
+                Description = _t.Get("Accounting.ReceiptVoucher.UpdateLog", voucher.VoucherNumber),
+                SupplierId = voucher.SupplierId,
+                EmployeeId = voucher.EmployeeId,
+                CostCenter = voucher.CostCenter
+            });
+            entry.Lines.Add(new JournalLine { 
+                AccountId = voucher.CashAccountId, 
+                Debit = 0, 
+                Credit = voucher.Amount, 
+                Description = _t.Get("Accounting.FromAccountDesc", voucher.CashAccount?.NameAr ?? ""),
+                SupplierId = voucher.SupplierId,
+                EmployeeId = voucher.EmployeeId,
+                CostCenter = voucher.CostCenter
+            });
         }
 
         await _db.SaveChangesAsync();
@@ -1059,4 +1122,3 @@ public class PaymentVouchersController : ControllerBase
         return NoContent();
     }
 }
-
