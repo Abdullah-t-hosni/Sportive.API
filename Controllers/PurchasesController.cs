@@ -359,17 +359,46 @@ public class PurchaseInvoicesController : ControllerBase
     }
 
 
-    [HttpGet("returns/{id}")]
-    public async Task<IActionResult> GetReturnDetail(int id)
+    [HttpGet("returns/{idOrNumber}")]
+    public async Task<IActionResult> GetReturnDetail(string idOrNumber)
     {
-        var rtn = await _db.PurchaseReturns
-            .Include(r => r.Supplier)
-            .Include(r => r.Invoice)
-            .Include(r => r.Items).ThenInclude(ri => ri.Product)
-            .Include(r => r.Items).ThenInclude(ri => ri.ProductVariant)
-            .FirstOrDefaultAsync(r => r.Id == id);
+        PurchaseReturn? rtn = null;
 
-        if (rtn == null) return NotFound();
+        // 1. Try search by ID (int)
+        if (int.TryParse(idOrNumber, out int id))
+        {
+            rtn = await _db.PurchaseReturns
+                .Include(r => r.Supplier)
+                .Include(r => r.Invoice)
+                .Include(r => r.Items).ThenInclude(ri => ri.Product)
+                .Include(r => r.Items).ThenInclude(ri => ri.ProductVariant)
+                .FirstOrDefaultAsync(r => r.Id == id);
+            
+            // 2. SMART FALLBACK: If not found as Return ID, maybe it's an Invoice ID?
+            if (rtn == null)
+            {
+                rtn = await _db.PurchaseReturns
+                    .Include(r => r.Supplier)
+                    .Include(r => r.Invoice)
+                    .Include(r => r.Items).ThenInclude(ri => ri.Product)
+                    .Include(r => r.Items).ThenInclude(ri => ri.ProductVariant)
+                    .OrderByDescending(r => r.Id)
+                    .FirstOrDefaultAsync(r => r.PurchaseInvoiceId == id);
+            }
+        }
+
+        // 3. Try search by ReturnNumber (string)
+        if (rtn == null)
+        {
+            rtn = await _db.PurchaseReturns
+                .Include(r => r.Supplier)
+                .Include(r => r.Invoice)
+                .Include(r => r.Items).ThenInclude(ri => ri.Product)
+                .Include(r => r.Items).ThenInclude(ri => ri.ProductVariant)
+                .FirstOrDefaultAsync(r => r.ReturnNumber == idOrNumber);
+        }
+
+        if (rtn == null) return NotFound(new { message = _t.Get("Purchases.ReturnNotFound") });
 
         return Ok(new {
             rtn.Id,
@@ -406,15 +435,41 @@ public class PurchaseInvoicesController : ControllerBase
         });
     }
 
-    [HttpGet("returns/{id}/pdf")]
-    public async Task<IActionResult> GetReturnPdf(int id)
+    [HttpGet("returns/{idOrNumber}/pdf")]
+    public async Task<IActionResult> GetReturnPdf(string idOrNumber)
     {
-        var rtn = await _db.PurchaseReturns
-            .Include(r => r.Supplier)
-            .Include(r => r.Invoice)
-            .Include(r => r.Items).ThenInclude(ri => ri.Product)
-            .Include(r => r.Items).ThenInclude(ri => ri.ProductVariant)
-            .FirstOrDefaultAsync(r => r.Id == id);
+        PurchaseReturn? rtn = null;
+
+        if (int.TryParse(idOrNumber, out int id))
+        {
+            rtn = await _db.PurchaseReturns
+                .Include(r => r.Supplier)
+                .Include(r => r.Invoice)
+                .Include(r => r.Items).ThenInclude(ri => ri.Product)
+                .Include(r => r.Items).ThenInclude(ri => ri.ProductVariant)
+                .FirstOrDefaultAsync(r => r.Id == id);
+
+            if (rtn == null)
+            {
+                rtn = await _db.PurchaseReturns
+                    .Include(r => r.Supplier)
+                    .Include(r => r.Invoice)
+                    .Include(r => r.Items).ThenInclude(ri => ri.Product)
+                    .Include(r => r.Items).ThenInclude(ri => ri.ProductVariant)
+                    .OrderByDescending(r => r.Id)
+                    .FirstOrDefaultAsync(r => r.PurchaseInvoiceId == id);
+            }
+        }
+
+        if (rtn == null)
+        {
+            rtn = await _db.PurchaseReturns
+                .Include(r => r.Supplier)
+                .Include(r => r.Invoice)
+                .Include(r => r.Items).ThenInclude(ri => ri.Product)
+                .Include(r => r.Items).ThenInclude(ri => ri.ProductVariant)
+                .FirstOrDefaultAsync(r => r.ReturnNumber == idOrNumber);
+        }
 
         if (rtn == null) return NotFound();
 
@@ -614,178 +669,194 @@ public class PurchaseInvoicesController : ControllerBase
     [RequirePermission(ModuleKeys.PurchasesMain, requireEdit: true)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdatePurchaseInvoiceDto dto)
     {
-        var inv = await _db.PurchaseInvoices
-            .Include(i => i.Items)
-            .Include(i => i.Supplier)
-            .Include(i => i.Payments)
-            .FirstOrDefaultAsync(i => i.Id == id);
-
-        if (inv == null) return NotFound();
-
-        if (dto.Items != null)
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () => 
         {
-            foreach (var item in dto.Items)
+            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            try 
             {
-                if (item.ProductId.HasValue && !item.ProductVariantId.HasValue)
+                var inv = await _db.PurchaseInvoices
+                    .Include(i => i.Items)
+                    .Include(i => i.Supplier)
+                    .Include(i => i.Payments)
+                    .FirstOrDefaultAsync(i => i.Id == id);
+
+                if (inv == null) return NotFound();
+
+                if (dto.Items != null)
                 {
-                    var hasVariants = await _db.ProductVariants.AnyAsync(v => v.ProductId == item.ProductId.Value);
-                    if (hasVariants)
+                    foreach (var item in dto.Items)
                     {
-                    return BadRequest(new { message = _t.Get("Purchases.SizeColorRequiredForEdit", item.Description) });
+                        if (item.ProductId.HasValue && !item.ProductVariantId.HasValue)
+                        {
+                            var hasVariants = await _db.ProductVariants.AnyAsync(v => v.ProductId == item.ProductId.Value);
+                            if (hasVariants)
+                            {
+                                return BadRequest(new { message = _t.Get("Purchases.SizeColorRequiredForEdit", item.Description) });
+                            }
+                        }
                     }
                 }
-            }
-        }
 
-        var pUnits = await GetUnitsListAsync();
+                var pUnits = await GetUnitsListAsync();
 
-        var oldStockMap = inv.Items
-            .Where(x => x.ProductId.HasValue)
-            .GroupBy(x => new { x.ProductId, x.ProductVariantId })
-            .ToDictionary(g => g.Key, g => g.Sum(x => (int)Math.Round(x.Quantity * GetMultiplier(pUnits, x.Unit))));
+                var oldStockMap = inv.Items
+                    .Where(x => x.ProductId.HasValue)
+                    .GroupBy(x => new { x.ProductId, x.ProductVariantId })
+                    .ToDictionary(g => g.Key, g => g.Sum(x => (int)Math.Round(x.Quantity * GetMultiplier(pUnits, x.Unit))));
 
-        inv.Supplier.TotalPurchases -= inv.TotalAmount;
+                inv.Supplier.TotalPurchases -= inv.TotalAmount;
 
-        // Use the global DTO properties
-        inv.PaymentTerms = dto.PaymentTerms;
-        inv.InvoiceDate = dto.InvoiceDate;
-        inv.DueDate = dto.DueDate;
-        inv.TaxPercent = dto.TaxPercent;
-        inv.DiscountAmount = dto.DiscountAmount;
-        inv.Notes = dto.Notes;
-        inv.CostCenter = dto.CostCenter;
-        if (dto.SupplierInvoiceNumber != null) inv.SupplierInvoiceNumber = dto.SupplierInvoiceNumber;
-        if (dto.CashAccountId.HasValue && dto.CashAccountId.Value > 0) inv.CashAccountId = dto.CashAccountId.Value;
-        if (dto.VendorAccountId.HasValue && dto.VendorAccountId.Value > 0) inv.VendorAccountId = dto.VendorAccountId.Value;
-        if (dto.InventoryAccountId.HasValue && dto.InventoryAccountId.Value > 0) inv.InventoryAccountId = dto.InventoryAccountId.Value;
-        if (dto.VatAccountId.HasValue && dto.VatAccountId.Value > 0) inv.VatAccountId = dto.VatAccountId.Value;
+                // Use the global DTO properties
+                inv.PaymentTerms = dto.PaymentTerms;
+                inv.InvoiceDate = dto.InvoiceDate;
+                inv.DueDate = dto.DueDate;
+                inv.TaxPercent = dto.TaxPercent;
+                inv.DiscountAmount = dto.DiscountAmount;
+                inv.Notes = dto.Notes;
+                inv.CostCenter = dto.CostCenter;
+                if (dto.SupplierInvoiceNumber != null) inv.SupplierInvoiceNumber = dto.SupplierInvoiceNumber;
+                if (dto.CashAccountId.HasValue && dto.CashAccountId.Value > 0) inv.CashAccountId = dto.CashAccountId.Value;
+                if (dto.VendorAccountId.HasValue && dto.VendorAccountId.Value > 0) inv.VendorAccountId = dto.VendorAccountId.Value;
+                if (dto.InventoryAccountId.HasValue && dto.InventoryAccountId.Value > 0) inv.InventoryAccountId = dto.InventoryAccountId.Value;
+                if (dto.VatAccountId.HasValue && dto.VatAccountId.Value > 0) inv.VatAccountId = dto.VatAccountId.Value;
 
-        _db.PurchaseInvoiceItems.RemoveRange(inv.Items);
-        inv.Items.Clear();
+                _db.PurchaseInvoiceItems.RemoveRange(inv.Items);
+                inv.Items.Clear();
 
-        decimal subtotal = 0;
-        if (dto.Items != null)
-        {
-            foreach (var item in dto.Items)
-            {
-                var total = Math.Round(item.Quantity * item.UnitCost, 2);
-                subtotal += total;
-                inv.Items.Add(new PurchaseInvoiceItem
+                decimal subtotal = 0;
+                if (dto.Items != null)
                 {
-                    ProductId = item.ProductId,
-                    ProductVariantId = item.ProductVariantId,
-                    Description = item.Description,
-                    Unit = item.Unit ?? "Unit",
-                    Quantity = item.Quantity,
-                    UnitCost = item.UnitCost,
-                    TotalCost = total
-                });
-            }
-        }
-
-        inv.SubTotal = subtotal;
-        inv.TaxAmount = Math.Round(subtotal * (inv.TaxPercent / 100), 2);
-        inv.TotalAmount = (subtotal + inv.TaxAmount) - inv.DiscountAmount;
-        inv.Supplier.TotalPurchases += inv.TotalAmount;
-
-        // --- Sync Payment for Cash Invoices ---
-        if (inv.PaymentTerms == PaymentTerms.Cash)
-        {
-            var oldPaid = inv.PaidAmount;
-            inv.PaidAmount = inv.TotalAmount;
-            inv.Supplier.TotalPaid += (inv.PaidAmount - oldPaid);
-
-            // Update the automatic payment record if exists
-            var autoPayment = inv.Payments.FirstOrDefault(p => p.Notes != null && p.Notes.Contains(inv.InvoiceNumber));
-            if (autoPayment != null)
-            {
-                autoPayment.Amount = inv.TotalAmount;
-                autoPayment.PaymentDate = inv.InvoiceDate;
-                autoPayment.CostCenter = inv.CostCenter;
-            }
-            else
-            {
-                // Create payment if it was changed from Credit to Cash
-                var pNo = await _seq.NextAsync("SP");
-                inv.Payments.Add(new SupplierPayment
-                {
-                    PaymentNumber = pNo,
-                    SupplierId = inv.SupplierId,
-                    Amount = inv.TotalAmount,
-                    PaymentDate = inv.InvoiceDate,
-                    PaymentMethod = PaymentMethod_Purchase.Cash,
-                    AccountName = "الخزينة (آلي)",
-                    Notes = $"سداد تلقائي لفاتورة {inv.InvoiceNumber}",
-                    CreatedAt = TimeHelper.GetEgyptTime(),
-                    CostCenter = inv.CostCenter
-                });
-            }
-            inv.Status = PurchaseInvoiceStatus.Paid;
-        }
-        else 
-        {
-            // If it's credit but was partially paid before, check if it's now fully paid or partially
-            if (inv.PaidAmount >= inv.TotalAmount - 0.001M)
-                inv.Status = PurchaseInvoiceStatus.Paid;
-            else if (inv.PaidAmount > 0)
-                inv.Status = PurchaseInvoiceStatus.PartPaid;
-            else
-                inv.Status = PurchaseInvoiceStatus.Received;
-        }
-
-        // ——— Auto-update and Alert on Price Changes ———
-        var warnings = new List<string>();
-        foreach (var item in inv.Items.Where(i => i.ProductId.HasValue))
-        {
-            var product = await _db.Products.FindAsync(item.ProductId!.Value);
-            if (product != null)
-            {
-                var multiplier = GetMultiplier(pUnits, item.Unit);
-                var newCost = multiplier > 0 ? Math.Round(item.UnitCost / multiplier, 2) : item.UnitCost;
-                if (product.CostPrice.HasValue && newCost > product.CostPrice.Value) {
-                    var diff = newCost - product.CostPrice.Value;
-                    var pct  = Math.Round((diff / product.CostPrice.Value) * 100, 1);
-                    warnings.Add($"ارتفاع سعر: {product.NameAr} بنسبة {pct}% (من {product.CostPrice.Value} إلى {newCost})");
+                    foreach (var item in dto.Items)
+                    {
+                        var total = Math.Round(item.Quantity * item.UnitCost, 2);
+                        subtotal += total;
+                        inv.Items.Add(new PurchaseInvoiceItem
+                        {
+                            ProductId = item.ProductId,
+                            ProductVariantId = item.ProductVariantId,
+                            Description = item.Description,
+                            Unit = item.Unit ?? "Unit",
+                            Quantity = item.Quantity,
+                            UnitCost = item.UnitCost,
+                            TotalCost = total
+                        });
+                    }
                 }
-                product.CostPrice = newCost;
-                product.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                inv.SubTotal = subtotal;
+                inv.TaxAmount = Math.Round(subtotal * (inv.TaxPercent / 100), 2);
+                inv.TotalAmount = (subtotal + inv.TaxAmount) - inv.DiscountAmount;
+                inv.Supplier.TotalPurchases += inv.TotalAmount;
+
+                // --- Sync Payment for Cash Invoices ---
+                if (inv.PaymentTerms == PaymentTerms.Cash)
+                {
+                    var oldPaid = inv.PaidAmount;
+                    inv.PaidAmount = inv.TotalAmount;
+                    inv.Supplier.TotalPaid += (inv.PaidAmount - oldPaid);
+
+                    // Update the automatic payment record if exists
+                    var autoPayment = inv.Payments.FirstOrDefault(p => p.Notes != null && p.Notes.Contains(inv.InvoiceNumber));
+                    if (autoPayment != null)
+                    {
+                        autoPayment.Amount = inv.TotalAmount;
+                        autoPayment.PaymentDate = inv.InvoiceDate;
+                        autoPayment.CostCenter = inv.CostCenter;
+                    }
+                    else
+                    {
+                        // Create payment if it was changed from Credit to Cash
+                        var pNo = await _seq.NextAsync("SP");
+                        inv.Payments.Add(new SupplierPayment
+                        {
+                            PaymentNumber = pNo,
+                            SupplierId = inv.SupplierId,
+                            Amount = inv.TotalAmount,
+                            PaymentDate = inv.InvoiceDate,
+                            PaymentMethod = PaymentMethod_Purchase.Cash,
+                            AccountName = "الخزينة (آلي)",
+                            Notes = $"سداد تلقائي لفاتورة {inv.InvoiceNumber}",
+                            CreatedAt = TimeHelper.GetEgyptTime(),
+                            CostCenter = inv.CostCenter
+                        });
+                    }
+                    inv.Status = PurchaseInvoiceStatus.Paid;
+                }
+                else 
+                {
+                    // If it's credit but was partially paid before, check if it's now fully paid or partially
+                    if (inv.PaidAmount >= inv.TotalAmount - 0.001M)
+                        inv.Status = PurchaseInvoiceStatus.Paid;
+                    else if (inv.PaidAmount > 0)
+                        inv.Status = PurchaseInvoiceStatus.PartPaid;
+                    else
+                        inv.Status = PurchaseInvoiceStatus.Received;
+                }
+
+                // ——— Auto-update and Alert on Price Changes ———
+                var warnings = new List<string>();
+                foreach (var item in inv.Items.Where(i => i.ProductId.HasValue))
+                {
+                    var product = await _db.Products.FindAsync(item.ProductId!.Value);
+                    if (product != null)
+                    {
+                        var multiplier = GetMultiplier(pUnits, item.Unit);
+                        var newCost = multiplier > 0 ? Math.Round(item.UnitCost / multiplier, 2) : item.UnitCost;
+                        if (product.CostPrice.HasValue && newCost > product.CostPrice.Value) {
+                            var diff = newCost - product.CostPrice.Value;
+                            var pct  = Math.Round((diff / product.CostPrice.Value) * 100, 1);
+                            warnings.Add(_t.Get("Purchases.PriceIncreaseWarning", product.NameAr, pct, product.CostPrice.Value, newCost));
+                        }
+                        product.CostPrice = newCost;
+                        product.UpdatedAt = TimeHelper.GetEgyptTime();
+                    }
+                }
+
+                await _db.SaveChangesAsync();
+
+                var newStockMap = inv.Items
+                    .Where(x => x.ProductId.HasValue)
+                    .GroupBy(x => new { x.ProductId, x.ProductVariantId })
+                    .ToDictionary(g => g.Key, g => g.Sum(x => (int)Math.Round(x.Quantity * GetMultiplier(pUnits, x.Unit))));
+
+                var keys = oldStockMap.Keys.Union(newStockMap.Keys).Distinct();
+                foreach (var key in keys)
+                {
+                    var oldQty = oldStockMap.GetValueOrDefault(key, 0);
+                    var newQty = newStockMap.GetValueOrDefault(key, 0);
+                    var diff = newQty - oldQty;
+                    if (diff != 0)
+                    {
+                        await _inventory.LogMovementAsync(
+                            InventoryMovementType.Adjustment, 
+                            diff, 
+                            key.ProductId, 
+                            key.ProductVariantId, 
+                            inv.InvoiceNumber, 
+                            $"Edit Inv #{inv.InvoiceNumber}", 
+                            User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                            0, // unitCost fallback
+                            inv.CostCenter,
+                            autoSave: false
+                        );
+                    }
+                }
+
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                _ = PostJournalWithRetryAsync(id, inv.InvoiceNumber, isReturn: false);
+
+                return Ok(new { id = inv.Id, invoiceNumber = inv.InvoiceNumber, warnings });
             }
-        }
-
-        await _db.SaveChangesAsync();
-
-        var newStockMap = inv.Items
-            .Where(x => x.ProductId.HasValue)
-            .GroupBy(x => new { x.ProductId, x.ProductVariantId })
-            .ToDictionary(g => g.Key, g => g.Sum(x => (int)Math.Round(x.Quantity * GetMultiplier(pUnits, x.Unit))));
-
-        var keys = oldStockMap.Keys.Union(newStockMap.Keys).Distinct();
-        foreach (var key in keys)
-        {
-            var oldQty = oldStockMap.GetValueOrDefault(key, 0);
-            var newQty = newStockMap.GetValueOrDefault(key, 0);
-            var diff = newQty - oldQty;
-            if (diff != 0)
+            catch (Exception ex)
             {
-                await _inventory.LogMovementAsync(
-                    InventoryMovementType.Adjustment, 
-                    diff, 
-                    key.ProductId, 
-                    key.ProductVariantId, 
-                    inv.InvoiceNumber, 
-                    $"Edit Inv #{inv.InvoiceNumber}", 
-                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-                    0, // unitCost fallback
-                    inv.CostCenter
-                );
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Update Purchase Invoice failed: {Message}", ex.Message);
+                return StatusCode(500, new { message = _t.Get("Purchases.UpdateError"), details = ex.Message });
             }
-        }
-
-        await _db.SaveChangesAsync();
-
-        _ = PostJournalWithRetryAsync(id, inv.InvoiceNumber, isReturn: false);
-
-        return Ok(new { id = inv.Id, invoiceNumber = inv.InvoiceNumber, warnings });
+        });
     }
 
     [AcceptVerbs("PATCH", "PUT")]
