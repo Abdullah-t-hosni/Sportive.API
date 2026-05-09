@@ -19,6 +19,7 @@ public class CashierPerformanceController : ControllerBase
 
     // GET /api/cashierperformance
     [HttpGet]
+    [AllowPosAccess]
     public async Task<IActionResult> GetPerformance(
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate   = null,

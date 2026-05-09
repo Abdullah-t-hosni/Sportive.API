@@ -144,7 +144,7 @@ public class CustomersController : ControllerBase
     // Helper to check ownership
     private bool IsOwnerOrAdmin(int customerId)
     {
-        if (User.IsInRole("SuperAdmin") || User.IsInRole("Admin") || User.IsInRole("Manager"))
+        if (User.IsInRole("SuperAdmin") || User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Staff") || User.IsInRole("Cashier"))
             return true;
 
         var currentCustomerId = User.FindFirst("CustomerId")?.Value;

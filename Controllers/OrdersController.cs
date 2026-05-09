@@ -42,6 +42,7 @@ public class OrdersController : ControllerBase
 
     [HttpGet]
     [RequirePermission(ModuleKeys.Orders)]
+    [AllowPosAccess]
     public async Task<ActionResult<PaginatedResult<OrderSummaryDto>>> GetOrders(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 12,
         [FromQuery] OrderStatus? status = null, [FromQuery] string? search = null,
@@ -106,6 +107,7 @@ public class OrdersController : ControllerBase
 
     [HttpPost("pos")]
     [RequirePermission(ModuleKeys.Orders)]
+    [AllowPosAccess]
     public async Task<ActionResult<OrderDetailDto>> CreatePosOrder([FromBody] CreatePOSOrderDto posDto)
     {
         if (posDto == null || posDto.Items == null || !posDto.Items.Any())
@@ -314,6 +316,7 @@ public class OrdersController : ControllerBase
 
     [HttpPost("{id}/partial-return")]
     [RequirePermission(ModuleKeys.Orders)]
+    [AllowPosAccess]
     public async Task<ActionResult<OrderDetailDto>> PostPartialReturn(int id, [FromBody] PartialReturnDto dto)
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
