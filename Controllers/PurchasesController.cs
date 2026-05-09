@@ -678,7 +678,7 @@ public class PurchaseInvoicesController : ControllerBase
                         if (product != null)
                         {
                             var newCost = multiplier > 0 ? Math.Round(item.UnitCost / multiplier, 2) : item.UnitCost;
-                            if (product.CostPrice.HasValue && newCost > product.CostPrice.Value) {
+                        if (product.CostPrice.HasValue && product.CostPrice.Value > 0 && newCost > product.CostPrice.Value) {
                                 var diff = newCost - product.CostPrice.Value;
                                 var pct  = Math.Round((diff / product.CostPrice.Value) * 100, 1);
                                 warnings.Add(_t.Get("Purchases.PriceIncreaseWarning", product.NameAr, pct, product.CostPrice.Value, newCost));
@@ -697,7 +697,8 @@ public class PurchaseInvoicesController : ControllerBase
                     var baseForGlobal = subtotal - dto.DiscountAmount;
                     if (dto.IsTaxInclusive)
                     {
-                        var net = baseForGlobal / (1 + (dto.TaxPercent / 100));
+                        var divisor = 1 + (dto.TaxPercent / 100);
+                        var net = divisor > 0 ? baseForGlobal / divisor : baseForGlobal;
                         globalTax = baseForGlobal - net;
                     }
                     else
@@ -862,7 +863,8 @@ public class PurchaseInvoicesController : ControllerBase
                     var baseForGlobal = subtotal - inv.DiscountAmount;
                     if (inv.IsTaxInclusive)
                     {
-                        var net = baseForGlobal / (1 + (dto.TaxPercent / 100));
+                        var divisor = 1 + (dto.TaxPercent / 100);
+                        var net = divisor > 0 ? baseForGlobal / divisor : baseForGlobal;
                         globalTax = baseForGlobal - net;
                     }
                     else
@@ -937,7 +939,7 @@ public class PurchaseInvoicesController : ControllerBase
                     {
                         var multiplier = GetMultiplier(pUnits, item.Unit);
                         var newCost = multiplier > 0 ? Math.Round(item.UnitCost / multiplier, 2) : item.UnitCost;
-                        if (product.CostPrice.HasValue && newCost > product.CostPrice.Value) {
+                        if (product.CostPrice.HasValue && product.CostPrice.Value > 0 && newCost > product.CostPrice.Value) {
                             var diff = newCost - product.CostPrice.Value;
                             var pct  = Math.Round((diff / product.CostPrice.Value) * 100, 1);
                             warnings.Add(_t.Get("Purchases.PriceIncreaseWarning", product.NameAr, pct, product.CostPrice.Value, newCost));
