@@ -542,13 +542,13 @@ public class PurchaseInvoicesController : ControllerBase
             new SupplierBasicDto(inv.Supplier.Id, inv.Supplier.Name, inv.Supplier.Phone, inv.Supplier.CompanyName),
             inv.PaymentTerms.ToString(), inv.Status.ToString(),
             inv.InvoiceDate, inv.DueDate,
-            inv.SubTotal, inv.TaxPercent, inv.TaxAmount, inv.DiscountAmount, inv.TotalAmount,
+            inv.SubTotal, inv.TaxPercent, inv.TaxAmount, inv.IsTaxInclusive, inv.DiscountAmount, inv.TotalAmount,
             inv.PaidAmount, inv.TotalAmount - inv.PaidAmount - inv.ReturnedAmount, inv.Notes,
             inv.Items.Select(it => new PurchaseItemDto(
                 it.Id, it.Description, it.ProductId, 
                 it.Product?.SKU, it.Product?.NameAr, 
                 it.ProductVariantId, it.ProductVariant?.Size, it.ProductVariant?.ColorAr ?? it.ProductVariant?.Color,
-                it.Unit, GetMultiplier(pUnits, it.Unit), it.Quantity, it.ReturnedQuantity, it.UnitCost, it.TotalCost
+                it.Unit, GetMultiplier(pUnits, it.Unit), it.Quantity, it.ReturnedQuantity, it.UnitCost, it.TaxRate, it.IsTaxInclusive, it.TotalCost
             )).ToList(),
             inv.Payments.Select(p => new SupplierPaymentSummaryDto(
                 p.Id, p.PaymentNumber, inv.Supplier.Name, inv.InvoiceNumber,
@@ -617,14 +617,31 @@ public class PurchaseInvoicesController : ControllerBase
                     ExpenseAccountId      = dto.ExpenseAccountId > 0 ? dto.ExpenseAccountId : null,
                     VatAccountId          = dto.VatAccountId > 0 ? dto.VatAccountId : null,
                     CashAccountId         = dto.CashAccountId > 0 ? dto.CashAccountId : null,
-                    CostCenter            = dto.CostCenter
+                    CostCenter            = dto.CostCenter,
+                    IsTaxInclusive        = dto.IsTaxInclusive
                 };
 
                 var warnings = new List<string>();
                 decimal subtotal = 0;
+                decimal totalLineTax = 0;
                 foreach (var item in dto.Items)
                 {
-                    var total = item.Quantity * item.UnitCost;
+                    var lineBase = item.Quantity * item.UnitCost;
+                    var lineTax = 0M;
+                    if (item.TaxRate > 0)
+                    {
+                        if (item.IsTaxInclusive)
+                        {
+                            var basePrice = lineBase / (1 + (item.TaxRate / 100));
+                            lineTax = lineBase - basePrice;
+                            lineBase = basePrice;
+                        }
+                        else
+                        {
+                            lineTax = lineBase * (item.TaxRate / 100);
+                        }
+                    }
+
                     invoice.Items.Add(new PurchaseInvoiceItem
                     {
                         Description = item.Description,
@@ -633,10 +650,13 @@ public class PurchaseInvoicesController : ControllerBase
                         Unit        = item.Unit,
                         Quantity    = item.Quantity,
                         UnitCost    = item.UnitCost,
-                        TotalCost   = total,
+                        TaxRate     = item.TaxRate,
+                        IsTaxInclusive = item.IsTaxInclusive,
+                        TotalCost   = Math.Round(item.Quantity * item.UnitCost, 2),
                         CreatedAt   = TimeHelper.GetEgyptTime()
                     });
-                    subtotal += total;
+                    subtotal += lineBase;
+                    totalLineTax += lineTax;
 
                     if (item.ProductId.HasValue)
                     {
@@ -669,9 +689,33 @@ public class PurchaseInvoicesController : ControllerBase
                     }
                 }
 
-                invoice.SubTotal    = subtotal;
-                invoice.TaxAmount   = Math.Round(subtotal * (dto.TaxPercent / 100), 2);
-                invoice.TotalAmount = (subtotal + invoice.TaxAmount) - dto.DiscountAmount;
+                invoice.SubTotal    = Math.Round(subtotal, 2);
+                
+                decimal globalTax = 0;
+                if (dto.TaxPercent > 0)
+                {
+                    var baseForGlobal = subtotal - dto.DiscountAmount;
+                    if (dto.IsTaxInclusive)
+                    {
+                        var net = baseForGlobal / (1 + (dto.TaxPercent / 100));
+                        globalTax = baseForGlobal - net;
+                    }
+                    else
+                    {
+                        globalTax = baseForGlobal * (dto.TaxPercent / 100);
+                    }
+                }
+
+                invoice.TaxAmount   = Math.Round(totalLineTax + globalTax, 2);
+                
+                if (dto.IsTaxInclusive)
+                {
+                    invoice.TotalAmount = Math.Round(subtotal - dto.DiscountAmount, 2);
+                }
+                else
+                {
+                    invoice.TotalAmount = Math.Round(subtotal + globalTax + totalLineTax - dto.DiscountAmount, 2);
+                }
                 supplier.TotalPurchases += invoice.TotalAmount;
 
                 if (dto.PaymentTerms == PaymentTerms.Cash)
@@ -766,17 +810,33 @@ public class PurchaseInvoicesController : ControllerBase
                 if (dto.VendorAccountId.HasValue && dto.VendorAccountId.Value > 0) inv.VendorAccountId = dto.VendorAccountId.Value;
                 if (dto.InventoryAccountId.HasValue && dto.InventoryAccountId.Value > 0) inv.InventoryAccountId = dto.InventoryAccountId.Value;
                 if (dto.VatAccountId.HasValue && dto.VatAccountId.Value > 0) inv.VatAccountId = dto.VatAccountId.Value;
+                inv.IsTaxInclusive = dto.IsTaxInclusive;
 
                 _db.PurchaseInvoiceItems.RemoveRange(inv.Items);
                 inv.Items.Clear();
 
                 decimal subtotal = 0;
+                decimal totalLineTax = 0;
                 if (dto.Items != null)
                 {
                     foreach (var item in dto.Items)
                     {
-                        var total = Math.Round(item.Quantity * item.UnitCost, 2);
-                        subtotal += total;
+                        var lineBase = item.Quantity * item.UnitCost;
+                        var lineTax = 0M;
+                        if (item.TaxRate > 0)
+                        {
+                            if (item.IsTaxInclusive)
+                            {
+                                var basePrice = lineBase / (1 + (item.TaxRate / 100));
+                                lineTax = lineBase - basePrice;
+                                lineBase = basePrice;
+                            }
+                            else
+                            {
+                                lineTax = lineBase * (item.TaxRate / 100);
+                            }
+                        }
+
                         inv.Items.Add(new PurchaseInvoiceItem
                         {
                             ProductId = item.ProductId,
@@ -785,14 +845,42 @@ public class PurchaseInvoicesController : ControllerBase
                             Unit = item.Unit ?? "Unit",
                             Quantity = item.Quantity,
                             UnitCost = item.UnitCost,
-                            TotalCost = total
+                            TaxRate = item.TaxRate,
+                            IsTaxInclusive = item.IsTaxInclusive,
+                            TotalCost = Math.Round(item.Quantity * item.UnitCost, 2)
                         });
+                        subtotal += lineBase;
+                        totalLineTax += lineTax;
                     }
                 }
 
-                inv.SubTotal = subtotal;
-                inv.TaxAmount = Math.Round(subtotal * (inv.TaxPercent / 100), 2);
-                inv.TotalAmount = (subtotal + inv.TaxAmount) - inv.DiscountAmount;
+                inv.SubTotal = Math.Round(subtotal, 2);
+                
+                decimal globalTax = 0;
+                if (dto.TaxPercent > 0)
+                {
+                    var baseForGlobal = subtotal - inv.DiscountAmount;
+                    if (inv.IsTaxInclusive)
+                    {
+                        var net = baseForGlobal / (1 + (dto.TaxPercent / 100));
+                        globalTax = baseForGlobal - net;
+                    }
+                    else
+                    {
+                        globalTax = baseForGlobal * (dto.TaxPercent / 100);
+                    }
+                }
+
+                inv.TaxAmount = Math.Round(totalLineTax + globalTax, 2);
+                
+                if (inv.IsTaxInclusive)
+                {
+                    inv.TotalAmount = Math.Round(subtotal - inv.DiscountAmount, 2);
+                }
+                else
+                {
+                    inv.TotalAmount = Math.Round(subtotal + globalTax + totalLineTax - inv.DiscountAmount, 2);
+                }
                 inv.Supplier.TotalPurchases += inv.TotalAmount;
 
                 // --- Sync Payment for Cash Invoices ---

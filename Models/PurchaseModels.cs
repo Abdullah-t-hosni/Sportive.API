@@ -71,6 +71,7 @@ public class PurchaseInvoice : BaseEntity
     public decimal TotalAmount   { get; set; } = 0; // الإجمالي النهائي
     public decimal PaidAmount    { get; set; } = 0; // المبلغ المدفوع
     public decimal ReturnedAmount { get; set; } = 0; // القيمة المرتجعة
+    public bool    IsTaxInclusive { get; set; } = false; // هل السعر شامل الضريبة؟ (على مستوى الفاتورة)
     public decimal RemainingAmount => TotalAmount - PaidAmount - ReturnedAmount;
 
     public string? Notes { get; set; }
@@ -104,6 +105,8 @@ public class PurchaseInvoiceItem : BaseEntity
     public string? Unit        { get; set; }                  // الوحدة
     public decimal Quantity    { get; set; } = 1;
     public decimal UnitCost    { get; set; } = 0;
+    public decimal TaxRate     { get; set; } = 0;   // نسبة الضريبة للصنف
+    public bool    IsTaxInclusive { get; set; } = false; // هل سعر الصنف شامل الضريبة؟
     public decimal TotalCost   { get; set; } = 0;
     
     public decimal ReturnedQuantity { get; set; } = 0;

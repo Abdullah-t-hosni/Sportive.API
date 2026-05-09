@@ -61,6 +61,7 @@ public record CreatePurchaseInvoiceDto(
     DateTime? DueDate,
     string?  SupplierInvoiceNumber,
     decimal  TaxPercent,
+    bool     IsTaxInclusive,
     string?  Notes,
     List<CreatePurchaseItemDto> Items,
     decimal  DiscountAmount = 0,
@@ -80,7 +81,9 @@ public record CreatePurchaseItemDto(
     int?    ProductVariantId = null,
     string? Unit = null,
     decimal Quantity = 1,
-    decimal UnitCost = 0
+    decimal UnitCost = 0,
+    decimal TaxRate = 0,
+    bool    IsTaxInclusive = false
 );
 
 public record UpdatePurchaseInvoiceDto(
@@ -89,6 +92,7 @@ public record UpdatePurchaseInvoiceDto(
     DateTime? DueDate,
     string?  SupplierInvoiceNumber,
     decimal  TaxPercent,
+    bool     IsTaxInclusive,
     string?  Notes,
     List<CreatePurchaseItemDto> Items,
     decimal  DiscountAmount = 0,
@@ -131,6 +135,7 @@ public record PurchaseInvoiceDetailDto(
     decimal  SubTotal,
     decimal  TaxPercent,
     decimal  TaxAmount,
+    bool     IsTaxInclusive,
     decimal  DiscountAmount,
     decimal  TotalAmount,
     decimal  PaidAmount,
@@ -160,6 +165,8 @@ public record PurchaseItemDto(
     decimal Quantity,
     decimal ReturnedQuantity,
     decimal UnitCost,
+    decimal TaxRate,
+    bool    IsTaxInclusive,
     decimal TotalCost
 );
 
