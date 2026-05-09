@@ -12,7 +12,7 @@ public class SizeGroup : BaseEntity
 public class SizeValue : BaseEntity
 {
     public int SizeGroupId { get; set; }
-    public SizeGroup SizeGroup { get; set; } = null!;
+    [System.Text.Json.Serialization.JsonIgnore] public SizeGroup? SizeGroup { get; set; }
     public string Value { get; set; } = string.Empty; // e.g. "40", "XL"
     public int SortOrder { get; set; } = 0;
 }
