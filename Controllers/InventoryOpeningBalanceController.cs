@@ -227,7 +227,98 @@ public class InventoryOpeningBalanceController : ControllerBase
         }
     }
 
-    [HttpDelete("{id}")]
+        [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] CreateOpeningBalanceDto dto)
+    {
+        var ob = await _db.InventoryOpeningBalances
+            .Include(x => x.Items)
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        if (ob == null) return NotFound();
+
+        await _core.CheckDateLockAsync(ob.Date, User);
+        await _core.CheckDateLockAsync(dto.Date, User);
+
+        if (await _db.InventoryOpeningBalances.AnyAsync(x => x.Date.Year == dto.Date.Year && x.Id != id))
+            return BadRequest(new { message = _t.Get("Inventory.OpeningBalanceExists") });
+
+        if (dto.Items == null || !dto.Items.Any())
+            return BadRequest(new { message = _t.Get("Purchases.MinOneItemRequired") });
+
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var journal = await _db.JournalEntries.FirstOrDefaultAsync(j => j.Reference == ob.Reference);
+        if (journal != null)
+        {
+            if (User.IsInRole("SuperAdmin") || User.IsInRole("Admin")) 
+                _db.JournalEntries.Remove(journal);
+            else 
+                await _accounting.ReverseEntryAsync(journal.Id, _t.Get("Inventory.OpeningBalanceCancelLog", ob.Reference));
+        }
+
+        foreach (var item in ob.Items)
+        {
+            if (item.ProductId.HasValue)
+            {
+                await _inventory.LogMovementAsync(
+                    InventoryMovementType.Adjustment,
+                    -item.Quantity, 
+                    item.ProductId, 
+                    item.ProductVariantId, 
+                    ob.Reference, 
+                    _t.Get("Inventory.OpeningBalanceCancelInvLog", ob.Reference), 
+                    userId,
+                    item.CostPrice,
+                    ob.CostCenter
+                );
+            }
+        }
+
+        ob.Date = dto.Date;
+        ob.Notes = dto.Notes;
+        ob.CostCenter = dto.CostCenter;
+
+        _db.InventoryOpeningBalanceItems.RemoveRange(ob.Items);
+        ob.Items.Clear();
+
+        decimal totalValue = 0;
+        foreach (var item in dto.Items)
+        {
+            var total = item.Quantity * item.CostPrice;
+            ob.Items.Add(new InventoryOpeningBalanceItem
+            {
+                ProductId = item.ProductId,
+                ProductVariantId = item.ProductVariantId,
+                Quantity = item.Quantity,
+                CostPrice = item.CostPrice,
+                CreatedAt = TimeHelper.GetEgyptTime()
+            });
+            totalValue += total;
+
+            if (item.ProductId.HasValue)
+            {
+                await _inventory.LogMovementAsync(
+                    InventoryMovementType.OpeningBalance, 
+                    item.Quantity, 
+                    item.ProductId, 
+                    item.ProductVariantId, 
+                    ob.Reference, 
+                    _t.Get("Inventory.OpeningBalanceLog"), 
+                    userId,
+                    item.CostPrice,
+                    ob.CostCenter
+                );
+            }
+        }
+        
+        ob.TotalValue = totalValue;
+
+        await _db.SaveChangesAsync();
+        await PostJournalAsync(ob);
+
+        return NoContent();
+    }
+
+[HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
         var ob = await _db.InventoryOpeningBalances
@@ -627,3 +718,4 @@ public class InventoryOpeningBalanceController : ControllerBase
         await _accounting.PostManualEntryAsync(dto, User);
     }
 }
+
