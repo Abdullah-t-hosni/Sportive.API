@@ -750,8 +750,9 @@ public class PurchaseInvoicesController : ControllerBase
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                _logger.LogError(ex, "Purchase invoice creation failed. Trace: {Message}", ex.Message);
-                return StatusCode(500, new { message = _t.Get("Purchases.CreationError"), details = ex.Message });
+                var fullMsg = ex.InnerException != null ? $"{ex.Message} | {ex.InnerException.Message}" : ex.Message;
+                _logger.LogError(ex, "Purchase invoice creation failed. Trace: {Message}", fullMsg);
+                return StatusCode(500, new { message = _t.Get("Purchases.CreationError"), details = fullMsg });
             }
         });
     }
