@@ -67,3 +67,4 @@ public record InventoryAuditItemDto(
     string? Note,
     string? ImageUrl = null
 );
+

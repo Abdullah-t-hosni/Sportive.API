@@ -48,5 +48,7 @@ public record OpeningBalanceItemDto(
     string? Color,
     int Quantity,
     decimal CostPrice,
-    decimal TotalCost
+    decimal TotalCost,
+    string? ImageUrl = null
 );
+
