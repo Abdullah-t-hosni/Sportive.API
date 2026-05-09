@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -36,18 +36,26 @@ public class SizeGroupsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = group.Id }, group);
     }
 
-    [HttpPut("{id}")]
+        [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] SizeGroup group)
     {
         if (id != group.Id) return BadRequest();
-        _db.Entry(group).State = EntityState.Modified;
         
-        // Handle values sync
-        var existingValues = await _db.SizeValues.Where(v => v.SizeGroupId == id).ToListAsync();
-        _db.SizeValues.RemoveRange(existingValues);
+        var existingGroup = await _db.SizeGroups.Include(g => g.Values).FirstOrDefaultAsync(g => g.Id == id);
+        if (existingGroup == null) return NotFound();
+
+        existingGroup.Name = group.Name;
+        existingGroup.Description = group.Description;
+        existingGroup.UpdatedAt = Sportive.API.Utils.TimeHelper.GetEgyptTime();
+
+        _db.SizeValues.RemoveRange(existingGroup.Values);
         if (group.Values != null)
         {
-            foreach (var v in group.Values) v.SizeGroupId = id;
+            foreach (var v in group.Values)
+            {
+                v.Id = 0;
+                v.SizeGroupId = id;
+            }
             _db.SizeValues.AddRange(group.Values);
         }
 
@@ -67,4 +75,5 @@ public class SizeGroupsController : ControllerBase
         return NoContent();
     }
 }
+
 
