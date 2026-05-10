@@ -936,7 +936,7 @@ public class FinancialReportsController : ControllerBase
         var ws = wb.Worksheets.Add("account-statement");
         ws.RightToLeft = true;
 
-        ws.Cell(1,1).Value = $"Account Statement: {acct.Code} - {acct.Name}";
+        ws.Cell(1,1).Value = $"Account Statement: {acct.Code} - {acct.NameAr}";
         ws.Cell(1,1).Style.Font.Bold = true; ws.Cell(1,1).Style.Font.FontSize = 13;
         ws.Range(1,1,1,5).Merge();
         ws.Cell(2,1).Value = $"From {from:yyyy-MM-dd} To {to:yyyy-MM-dd}";
