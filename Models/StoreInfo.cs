@@ -257,7 +257,7 @@ public class StoreInfo
     public bool HideOutOfStock { get; set; } = false;
     
     // --- 7. System & Maintenance ---
-    [JsonPropertyName("isMaintenanceMode")]
+    [JsonPropertyName("inMaintenance")]
     public bool InMaintenance { get; set; } = false;
 
     [MaxLength(10)]
