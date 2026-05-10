@@ -34,6 +34,10 @@ public class Product : BaseEntity
     public int? SizeGroupId { get; set; }
     public SizeGroup? SizeGroup { get; set; }
 
+    // Color Group
+    public int? ColorGroupId { get; set; }
+    public ColorGroup? ColorGroup { get; set; }
+
     // Unit
     public int? UnitId { get; set; }
     public ProductUnit? Unit { get; set; }

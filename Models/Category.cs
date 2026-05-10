@@ -15,6 +15,9 @@ public class Category : BaseEntity
     public int? SizeGroupId { get; set; }
     public SizeGroup? SizeGroup { get; set; }
 
+    public int? ColorGroupId { get; set; }
+    public ColorGroup? ColorGroup { get; set; }
+
     // Subcategory support
     public int? ParentId { get; set; }
     public Category? Parent { get; set; }

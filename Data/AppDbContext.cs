@@ -34,6 +34,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<ShippingZone> ShippingZones    => Set<ShippingZone>();
     public DbSet<SizeGroup>    SizeGroups       => Set<SizeGroup>();
     public DbSet<SizeValue>    SizeValues       => Set<SizeValue>();
+    public DbSet<ColorGroup>   ColorGroups      => Set<ColorGroup>();
+    public DbSet<ColorValue>   ColorValues      => Set<ColorValue>();
 
     public DbSet<AuditLog> AuditLogs            => Set<AuditLog>();
 
@@ -106,6 +108,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.SizeGroup).WithMany()
              .HasForeignKey(x => x.SizeGroupId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.ColorGroup).WithMany()
+             .HasForeignKey(x => x.ColorGroupId).OnDelete(DeleteBehavior.SetNull);
+
         });
 
         builder.Entity<SizeGroup>(e => {
@@ -115,6 +120,16 @@ public class AppDbContext : IdentityDbContext<AppUser>
         });
 
         builder.Entity<SizeValue>(e => {
+            e.Property(x => x.Value).HasMaxLength(50).IsRequired();
+        });
+
+        builder.Entity<ColorGroup>(e => {
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            e.HasMany(x => x.Values).WithOne(v => v.ColorGroup)
+             .HasForeignKey(v => v.ColorGroupId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<ColorValue>(e => {
             e.Property(x => x.Value).HasMaxLength(50).IsRequired();
         });
 
@@ -145,6 +160,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(x => x.BrandId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(x => x.SizeGroup).WithMany()
              .HasForeignKey(x => x.SizeGroupId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.ColorGroup).WithMany()
+             .HasForeignKey(x => x.ColorGroupId).OnDelete(DeleteBehavior.SetNull);
+
             e.Property(x => x.Status).HasConversion<string>();
             e.HasIndex(x => x.CategoryId);
             e.HasIndex(x => x.BrandId);
