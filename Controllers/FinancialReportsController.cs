@@ -857,7 +857,7 @@ public class FinancialReportsController : ControllerBase
         var ws = wb.Worksheets.Add("Balance Sheet");
         ws.RightToLeft = true;
 
-        ws.Cell(1, 1).Value = $"Balance Sheet"  {to:yyyy-MM-dd}";
+        ws.Cell(1, 1).Value = $"Balance Sheet - {to:yyyy-MM-dd}";
         ws.Cell(1, 1).Style.Font.Bold = true; ws.Cell(1, 1).Style.Font.FontSize = 13;
         ws.Range(1, 1, 1, 4).Merge();
 
