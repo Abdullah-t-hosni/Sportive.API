@@ -156,7 +156,6 @@ public class AssetPurchasesController : ControllerBase
 
                 decimal subtotal = 0;
                 decimal totalLineTax = 0;
-                var allNewAssets = new List<FixedAsset>();
 
                 foreach (var item in dto.Items)
                 {
@@ -200,6 +199,7 @@ public class AssetPurchasesController : ControllerBase
                     subtotal += lineBase;
                     totalLineTax += lineTax;
 
+                    // إنشاء الأصول تلقائياً
                     for (int i = 0; i < (int)item.Quantity; i++)
                     {
                         var assetNo = await _seq.NextAsync("FA");
@@ -211,7 +211,7 @@ public class AssetPurchasesController : ControllerBase
                             PurchaseDate = dto.InvoiceDate,
                             PurchaseCost = item.UnitCost,
                             Status = AssetStatus.Active,
-                            PurchaseInvoiceId = null, // Set to null, will update after save
+                            PurchaseInvoiceId = 0, // Set to temp 0, will update after save
                             CreatedAt = TimeHelper.GetEgyptTime(),
                             Supplier = supplier.Name,
                             CostCenter = invoice.CostCenter,
@@ -221,7 +221,6 @@ public class AssetPurchasesController : ControllerBase
                             DepreciationStartDate = dto.InvoiceDate
                         };
                         _db.FixedAssets.Add(asset);
-                        allNewAssets.Add(asset);
                         
                         if (i == 0) invItem.CreatedAsset = asset;
                     }
@@ -278,10 +277,13 @@ public class AssetPurchasesController : ControllerBase
                 await _db.SaveChangesAsync();
 
                 // تحديث الـ InvoiceId في الأصول المنشأة
-                foreach(var a in allNewAssets) 
-                {
-                    a.PurchaseInvoiceId = invoice.Id;
-                }
+                var createdAssets = _db.ChangeTracker.Entries<FixedAsset>()
+                    .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified)
+                    .Select(e => e.Entity)
+                    .Where(a => a.PurchaseInvoiceId == 0)
+                    .ToList();
+                
+                foreach(var a in createdAssets) a.PurchaseInvoiceId = invoice.Id;
                 await _db.SaveChangesAsync();
 
                 await transaction.CommitAsync();
