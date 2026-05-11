@@ -21,6 +21,7 @@ public class Product : BaseEntity
     public int ReorderLevel { get; set; } = 0; // حد الطلب للمنتج الرئيسي
     public bool HasTax { get; set; } = true; // خيار وجود ضريبة على المنتج
     public decimal? VatRate { get; set; } // نسبة الضريبة المخصصة للمنتج (null تعني استخدام النسبة الافتراضية للمتجر)
+    public bool IsTaxInclusive { get; set; } = true; // هل السعر شامل الضريبة؟
     
     // Rating Cache
     public double AverageRating { get; set; } = 0;

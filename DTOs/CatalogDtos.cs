@@ -97,6 +97,7 @@ public record ProductSummaryDto(
     [property: JsonPropertyName("hasVariants")] bool HasVariants,
     [property: JsonPropertyName("variants")] List<ProductVariantDto>? Variants = null,
     [property: JsonPropertyName("hasTax")] bool HasTax = true,
+    [property: JsonPropertyName("isTaxInclusive")] bool IsTaxInclusive = true,
     [property: JsonPropertyName("vatRate")] decimal? VatRate = null,
     [property: JsonPropertyName("costPrice")] decimal? CostPrice = null,
     [property: JsonPropertyName("unitId")] int? UnitId = null,
@@ -133,6 +134,7 @@ public record ProductDetailDto(
     [property: JsonPropertyName("totalStock")] int TotalStock,
     [property: JsonPropertyName("reorderLevel")] int ReorderLevel,
     [property: JsonPropertyName("hasTax")] bool HasTax,
+    [property: JsonPropertyName("isTaxInclusive")] bool IsTaxInclusive,
     [property: JsonPropertyName("vatRate")] decimal? VatRate,
     [property: JsonPropertyName("unitId")] int? UnitId,
     [property: JsonPropertyName("unitNameAr")] string? UnitNameAr,
@@ -174,6 +176,7 @@ public record CreateProductDto(
     [property: JsonPropertyName("reorderLevel")] int? ReorderLevel = 0,
     [property: JsonPropertyName("unitId")] int? UnitId = null,
     [property: JsonPropertyName("hasTax")] bool HasTax = true,
+    [property: JsonPropertyName("isTaxInclusive")] bool IsTaxInclusive = true,
     [property: JsonPropertyName("vatRate")] decimal? VatRate = null,
     [property: JsonPropertyName("sizeGroupId")] int? SizeGroupId = null
 );
@@ -194,6 +197,7 @@ public record UpdateProductDto(
     [property: JsonPropertyName("status")] ProductStatus Status = ProductStatus.Active,
     [property: JsonPropertyName("unitId")] int? UnitId = null,
     [property: JsonPropertyName("hasTax")] bool HasTax = true,
+    [property: JsonPropertyName("isTaxInclusive")] bool IsTaxInclusive = true,
     [property: JsonPropertyName("vatRate")] decimal? VatRate = null,
     [property: JsonPropertyName("sizeGroupId")] int? SizeGroupId = null
 );

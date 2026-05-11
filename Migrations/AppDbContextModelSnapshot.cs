@@ -222,7 +222,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("ParentId");
 
-                    b.ToTable("Accounts");
+                    b.ToTable("Accounts", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.AccountSystemMapping", b =>
@@ -254,7 +254,7 @@ namespace Sportive.API.Migrations
                     b.HasIndex("Key")
                         .IsUnique();
 
-                    b.ToTable("AccountSystemMappings");
+                    b.ToTable("AccountSystemMappings", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.Address", b =>
@@ -318,7 +318,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("CustomerId");
 
-                    b.ToTable("Addresses");
+                    b.ToTable("Addresses", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.AppUser", b =>
@@ -473,7 +473,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("JournalEntryId");
 
-                    b.ToTable("AssetDepreciations");
+                    b.ToTable("AssetDepreciations", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.AssetDisposal", b =>
@@ -558,7 +558,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("ProceedsAccountId");
 
-                    b.ToTable("AssetDisposals");
+                    b.ToTable("AssetDisposals", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.AuditLog", b =>
@@ -618,7 +618,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("EntityType", "EntityId");
 
-                    b.ToTable("AuditLogs", t =>
+                    b.ToTable("AuditLogs", null, t =>
                         {
                             t.HasComment("Immutable audit trail — insert-only, never update/delete.");
                         });
@@ -676,7 +676,7 @@ namespace Sportive.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("BackupRecords");
+                    b.ToTable("BackupRecords", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.Brand", b =>
@@ -722,7 +722,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("ParentId");
 
-                    b.ToTable("Brands");
+                    b.ToTable("Brands", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.CartItem", b =>
@@ -759,7 +759,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("ProductVariantId");
 
-                    b.ToTable("CartItems");
+                    b.ToTable("CartItems", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.Category", b =>
@@ -818,7 +818,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("SizeGroupId");
 
-                    b.ToTable("Categories");
+                    b.ToTable("Categories", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.ColorGroup", b =>
@@ -845,7 +845,7 @@ namespace Sportive.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("ColorGroups");
+                    b.ToTable("ColorGroups", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.ColorValue", b =>
@@ -877,7 +877,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("ColorGroupId");
 
-                    b.ToTable("ColorValues");
+                    b.ToTable("ColorValues", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.Coupon", b =>
@@ -937,7 +937,7 @@ namespace Sportive.API.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
-                    b.ToTable("Coupons");
+                    b.ToTable("Coupons", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.Customer", b =>
@@ -1012,7 +1012,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("Phone");
 
-                    b.ToTable("Customers");
+                    b.ToTable("Customers", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.CustomerCategory", b =>
@@ -1052,7 +1052,7 @@ namespace Sportive.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("CustomerCategories");
+                    b.ToTable("CustomerCategories", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.CustomerInstallment", b =>
@@ -1096,7 +1096,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("OrderId");
 
-                    b.ToTable("CustomerInstallments");
+                    b.ToTable("CustomerInstallments", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.DailyStat", b =>
@@ -1134,7 +1134,7 @@ namespace Sportive.API.Migrations
 
                     b.HasKey("TenantId", "Date", "Source");
 
-                    b.ToTable("DailyStats");
+                    b.ToTable("DailyStats", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.DbSequence", b =>
@@ -1164,7 +1164,7 @@ namespace Sportive.API.Migrations
                     b.HasIndex("Prefix", "Stamp")
                         .IsUnique();
 
-                    b.ToTable("DbSequences");
+                    b.ToTable("DbSequences", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.Department", b =>
@@ -1190,7 +1190,7 @@ namespace Sportive.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Departments");
+                    b.ToTable("Departments", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.Employee", b =>
@@ -1297,7 +1297,7 @@ namespace Sportive.API.Migrations
                     b.HasIndex("EmployeeNumber")
                         .IsUnique();
 
-                    b.ToTable("Employees");
+                    b.ToTable("Employees", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.EmployeeAdvance", b =>
@@ -1365,7 +1365,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("JournalEntryId");
 
-                    b.ToTable("EmployeeAdvances");
+                    b.ToTable("EmployeeAdvances", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.EmployeeBonus", b =>
@@ -1434,7 +1434,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("PayrollRunId");
 
-                    b.ToTable("EmployeeBonuses");
+                    b.ToTable("EmployeeBonuses", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.EmployeeDeduction", b =>
@@ -1503,7 +1503,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("PayrollRunId");
 
-                    b.ToTable("EmployeeDeductions");
+                    b.ToTable("EmployeeDeductions", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.FixedAsset", b =>
@@ -1614,7 +1614,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("PurchaseInvoiceId");
 
-                    b.ToTable("FixedAssets");
+                    b.ToTable("FixedAssets", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.FixedAssetCategory", b =>
@@ -1661,7 +1661,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("DepreciationExpenseAccountId");
 
-                    b.ToTable("FixedAssetCategories");
+                    b.ToTable("FixedAssetCategories", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.InstallmentPayment", b =>
@@ -1697,7 +1697,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("CustomerInstallmentId");
 
-                    b.ToTable("InstallmentPayments");
+                    b.ToTable("InstallmentPayments", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.InventoryAudit", b =>
@@ -1748,7 +1748,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("JournalEntryId");
 
-                    b.ToTable("InventoryAudits");
+                    b.ToTable("InventoryAudits", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.InventoryAuditItem", b =>
@@ -1795,7 +1795,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("ProductVariantId");
 
-                    b.ToTable("InventoryAuditItems");
+                    b.ToTable("InventoryAuditItems", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.InventoryMovement", b =>
@@ -1852,7 +1852,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("ProductId", "CreatedAt");
 
-                    b.ToTable("InventoryMovements");
+                    b.ToTable("InventoryMovements", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.InventoryOpeningBalance", b =>
@@ -1888,7 +1888,7 @@ namespace Sportive.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("InventoryOpeningBalances");
+                    b.ToTable("InventoryOpeningBalances", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.InventoryOpeningBalanceItem", b =>
@@ -1929,7 +1929,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("ProductVariantId");
 
-                    b.ToTable("InventoryOpeningBalanceItems");
+                    b.ToTable("InventoryOpeningBalanceItems", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.JournalEntry", b =>
@@ -2003,7 +2003,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("Status", "EntryDate");
 
-                    b.ToTable("JournalEntries");
+                    b.ToTable("JournalEntries", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.JournalLine", b =>
@@ -2071,7 +2071,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("SupplierId");
 
-                    b.ToTable("JournalLines");
+                    b.ToTable("JournalLines", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.Notification", b =>
@@ -2124,7 +2124,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("UserId", "IsRead");
 
-                    b.ToTable("Notifications");
+                    b.ToTable("Notifications", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.Order", b =>
@@ -2257,7 +2257,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("CreatedAt", "Status", "TotalAmount");
 
-                    b.ToTable("Orders");
+                    b.ToTable("Orders", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.OrderItem", b =>
@@ -2339,7 +2339,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("ProductVariantId");
 
-                    b.ToTable("OrderItems");
+                    b.ToTable("OrderItems", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.OrderPayment", b =>
@@ -2384,7 +2384,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("CreatedAt", "Method", "Amount");
 
-                    b.ToTable("OrderPayments");
+                    b.ToTable("OrderPayments", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.OrderStatusHistory", b =>
@@ -2418,7 +2418,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("OrderId");
 
-                    b.ToTable("OrderStatusHistories");
+                    b.ToTable("OrderStatusHistories", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.OutboxMessage", b =>
@@ -2463,7 +2463,7 @@ namespace Sportive.API.Migrations
                     b.HasIndex("MessageId")
                         .IsUnique();
 
-                    b.ToTable("OutboxMessages");
+                    b.ToTable("OutboxMessages", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.PaymentVoucher", b =>
@@ -2549,7 +2549,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("VoucherDate", "Amount");
 
-                    b.ToTable("PaymentVouchers");
+                    b.ToTable("PaymentVouchers", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.PayrollItem", b =>
@@ -2606,7 +2606,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("PayrollRunId");
 
-                    b.ToTable("PayrollItems");
+                    b.ToTable("PayrollItems", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.PayrollRun", b =>
@@ -2702,7 +2702,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("WagesExpenseAccountId");
 
-                    b.ToTable("PayrollRuns");
+                    b.ToTable("PayrollRuns", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.Product", b =>
@@ -2814,7 +2814,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("Status", "TotalStock");
 
-                    b.ToTable("Products");
+                    b.ToTable("Products", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.ProductDiscount", b =>
@@ -2872,7 +2872,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("ProductId");
 
-                    b.ToTable("ProductDiscounts");
+                    b.ToTable("ProductDiscounts", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.ProductImage", b =>
@@ -2912,7 +2912,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("ProductId");
 
-                    b.ToTable("ProductImages");
+                    b.ToTable("ProductImages", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.ProductUnit", b =>
@@ -2948,7 +2948,7 @@ namespace Sportive.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("ProductUnits");
+                    b.ToTable("ProductUnits", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.ProductVariant", b =>
@@ -2997,7 +2997,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("ProductId");
 
-                    b.ToTable("ProductVariants");
+                    b.ToTable("ProductVariants", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.PurchaseInvoice", b =>
@@ -3106,7 +3106,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("SupplierId");
 
-                    b.ToTable("PurchaseInvoices");
+                    b.ToTable("PurchaseInvoices", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.PurchaseInvoiceItem", b =>
@@ -3180,7 +3180,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("PurchaseInvoiceId");
 
-                    b.ToTable("PurchaseInvoiceItems");
+                    b.ToTable("PurchaseInvoiceItems", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.PurchaseReturn", b =>
@@ -3252,7 +3252,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("SupplierId");
 
-                    b.ToTable("PurchaseReturns");
+                    b.ToTable("PurchaseReturns", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.PurchaseReturnItem", b =>
@@ -3305,7 +3305,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("PurchaseReturnId");
 
-                    b.ToTable("PurchaseReturnItems");
+                    b.ToTable("PurchaseReturnItems", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.ReceiptVoucher", b =>
@@ -3391,7 +3391,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("VoucherDate", "Amount");
 
-                    b.ToTable("ReceiptVouchers");
+                    b.ToTable("ReceiptVouchers", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.Review", b =>
@@ -3438,7 +3438,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("ProductId");
 
-                    b.ToTable("Reviews");
+                    b.ToTable("Reviews", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.ShippingZone", b =>
@@ -3497,7 +3497,7 @@ namespace Sportive.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("ShippingZones");
+                    b.ToTable("ShippingZones", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.SizeGroup", b =>
@@ -3524,7 +3524,7 @@ namespace Sportive.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("SizeGroups");
+                    b.ToTable("SizeGroups", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.SizeValue", b =>
@@ -3556,7 +3556,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("SizeGroupId");
 
-                    b.ToTable("SizeValues");
+                    b.ToTable("SizeValues", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.StoreInfo", b =>
@@ -4006,7 +4006,7 @@ namespace Sportive.API.Migrations
 
                     b.HasKey("StoreConfigId");
 
-                    b.ToTable("StoreSettings");
+                    b.ToTable("StoreSettings", (string)null);
 
                     b.HasData(
                         new
@@ -4146,7 +4146,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("MainAccountId");
 
-                    b.ToTable("Suppliers");
+                    b.ToTable("Suppliers", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.SupplierPayment", b =>
@@ -4219,7 +4219,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("SupplierId");
 
-                    b.ToTable("SupplierPayments");
+                    b.ToTable("SupplierPayments", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.UserModulePermission", b =>
@@ -4254,7 +4254,7 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("UserAccountID");
 
-                    b.ToTable("UserModulePermissions");
+                    b.ToTable("UserModulePermissions", (string)null);
                 });
 
             modelBuilder.Entity("Sportive.API.Models.WishlistItem", b =>
@@ -4284,7 +4284,7 @@ namespace Sportive.API.Migrations
                     b.HasIndex("CustomerId", "ProductId")
                         .IsUnique();
 
-                    b.ToTable("WishlistItems");
+                    b.ToTable("WishlistItems", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>

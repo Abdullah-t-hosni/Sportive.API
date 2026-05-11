@@ -163,6 +163,7 @@ public class ProductService : IProductService
                 x.p.Variants != null && x.p.Variants.Any(),
                 x.p.Variants!.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList(),
                 x.p.HasTax,
+                x.p.IsTaxInclusive,
                 x.p.VatRate,
                 x.p.CostPrice,
                 x.p.UnitId,
@@ -258,6 +259,7 @@ public class ProductService : IProductService
             IsFeatured = dto.IsFeatured,
             ReorderLevel = dto.ReorderLevel ?? 0,
             HasTax = dto.HasTax,
+            IsTaxInclusive = dto.IsTaxInclusive,
             VatRate = dto.VatRate,
             UnitId = dto.UnitId,
             SizeGroupId = dto.SizeGroupId,
@@ -357,6 +359,7 @@ public class ProductService : IProductService
         product.ReorderLevel = dto.ReorderLevel ?? 0;
         product.Status = dto.Status;
         product.HasTax = dto.HasTax;
+        product.IsTaxInclusive = dto.IsTaxInclusive;
         product.VatRate = dto.VatRate;
         product.UnitId = dto.UnitId;
         product.SizeGroupId = dto.SizeGroupId;
@@ -636,6 +639,7 @@ public class ProductService : IProductService
                 x.p.Variants != null && x.p.Variants.Any(),
                 x.p.Variants!.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList(),
                 x.p.HasTax,
+                x.p.IsTaxInclusive,
                 x.p.VatRate,
                 x.p.CostPrice,
                 x.p.UnitId,
@@ -694,6 +698,7 @@ public class ProductService : IProductService
                 x.p.Variants != null && x.p.Variants.Any(),
                 x.p.Variants!.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList(),
                 x.p.HasTax,
+                x.p.IsTaxInclusive,
                 x.p.VatRate,
                 x.p.CostPrice,
                 x.p.UnitId,
@@ -744,6 +749,7 @@ public class ProductService : IProductService
             p.TotalStock,
             p.ReorderLevel,
             p.HasTax,
+            p.IsTaxInclusive,
             p.VatRate,
             p.UnitId,
             p.Unit?.NameAr,
