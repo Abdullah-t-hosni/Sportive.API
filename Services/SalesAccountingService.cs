@@ -119,7 +119,7 @@ public class SalesAccountingService
                     : itemOriginalTotal;
                 
                 // Actual Gross & Net (After discount)
-                decimal itemActualTotal   = item.UnitPrice * item.Quantity;
+                decimal itemActualTotal   = item.TotalPrice;
                 decimal itemActualNet     = item.HasTax
                     ? Math.Round(itemActualTotal / (1 + rate), 2)
                     : itemActualTotal;
