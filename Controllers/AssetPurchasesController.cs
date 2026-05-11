@@ -62,8 +62,7 @@ public class AssetPurchasesController : ControllerBase
         var items = await q.OrderByDescending(i => i.InvoiceDate)
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(i => new PurchaseInvoiceSummaryDto(
-                i.Id, i.InvoiceNumber, i.SupplierInvoiceNumber, i.SupplierId, 
-                i.Supplier != null ? i.Supplier.Name : "---",
+                i.Id, i.InvoiceNumber, i.SupplierInvoiceNumber, i.SupplierId, i.Supplier.Name,
                 i.PaymentTerms.ToString(), i.IsAssetPurchase, i.Status.ToString(),
                 i.InvoiceDate, i.DueDate,
                 i.TotalAmount, i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
