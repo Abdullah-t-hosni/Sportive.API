@@ -704,5 +704,9 @@
   "Reports.DefaultCashAccount": "Cashier (Auto)",
   "Reports.AutoPaymentDesc": "Auto payment for invoice {0}",
   "Reports.PriceIncreaseWarning": "Price Increase: {0} by {1}% (from {2} to {3})",
-  "Reports.PurchaseReturnLog": "Purchase Return (Invoice #{0})"
+  "Reports.PurchaseReturnLog": "Purchase Return (Invoice #{0})",
+  "HR.PayrollMustBePostedToPay": "Payroll must be posted before payment",
+  "HR.PayrollPaymentDescription": "Payment of payroll {0} for {1}/{2}",
+  "HR.SettlePayrollAccrual": "Settle payroll accrual {0}",
+  "HR.PayrollPaymentFrom": "Disbursement from {0}"
 }

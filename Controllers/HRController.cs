@@ -371,7 +371,7 @@ public class PayrollController : ControllerBase
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(p => new PayrollRunSummaryDto(
                 p.Id, p.PayrollNumber, p.PeriodYear, p.PeriodMonth,
-                p.TotalNetPayable, p.Items.Count, (int)p.Status, p.JournalEntryId, p.CreatedAt))
+                p.TotalNetPayable, p.Items.Count, (int)p.Status, p.JournalEntryId, p.PaymentJournalEntryId, p.CreatedAt))
             .ToListAsync();
 
         return Ok(new PaginatedResult<PayrollRunSummaryDto>(items, total, page, pageSize,
@@ -661,6 +661,66 @@ public class PayrollController : ControllerBase
         return Ok(new { id = run.Id, payrollNumber = run.PayrollNumber, journalEntryId = je?.Id });
     }
 
+    [HttpPost("{id}/pay")]
+    public async Task<IActionResult> Pay(int id, [FromBody] PayPayrollDto dto)
+    {
+        var run = await _db.PayrollRuns
+            .Include(p => p.Items)
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+        if (run == null) return NotFound();
+        if (run.Status != PayrollStatus.Posted)
+            return BadRequest(new { message = _t.Get("HR.PayrollMustBePostedToPay") });
+
+        var mapDict = await _core.GetSafeSystemMappingsAsync();
+        var accrualAccId = run.AccruedSalariesAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.SalariesPayable, mapDict);
+        var cashAcc = await _db.Accounts.FindAsync(dto.CashAccountId);
+        
+        if (cashAcc == null) return BadRequest(new { message = _t.Get("Accounting.PaymentVoucher.AccountNotFound") });
+
+        var jeNo = await _seq.NextAsync("JE");
+        var payJe = new JournalEntry
+        {
+            EntryNumber     = jeNo,
+            EntryDate       = dto.PaymentDate,
+            Type            = JournalEntryType.PaymentVoucher,
+            Status          = JournalEntryStatus.Posted,
+            Description     = _t.Get("HR.PayrollPaymentDescription", run.PayrollNumber, run.PeriodMonth, run.PeriodYear),
+            Reference       = run.PayrollNumber,
+            CreatedByUserId = UserId,
+            CreatedAt       = TimeHelper.GetEgyptTime(),
+            Lines           = new List<JournalLine>()
+        };
+
+        // 1. Debit Accrued Salaries (Clear Liability)
+        payJe.Lines.Add(new JournalLine
+        {
+            AccountId = accrualAccId,
+            Debit     = run.TotalNetPayable,
+            Credit    = 0,
+            Description = _t.Get("HR.SettlePayrollAccrual", run.PayrollNumber)
+        });
+
+        // 2. Credit Cash/Bank (Release Money)
+        payJe.Lines.Add(new JournalLine
+        {
+            AccountId = cashAcc.Id,
+            Debit     = 0,
+            Credit    = run.TotalNetPayable,
+            Description = _t.Get("HR.PayrollPaymentFrom", cashAcc.NameAr)
+        });
+
+        _db.JournalEntries.Add(payJe);
+        await _db.SaveChangesAsync();
+
+        run.Status = PayrollStatus.Paid;
+        run.PaymentJournalEntryId = payJe.Id;
+        run.UpdatedAt = TimeHelper.GetEgyptTime();
+        await _db.SaveChangesAsync();
+
+        return Ok(new { id = run.Id, status = (int)run.Status, paymentJournalEntryId = payJe.Id });
+    }
+
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
@@ -721,7 +781,7 @@ public class PayrollController : ControllerBase
         run.TotalFixedAllowances,
         run.TotalDeductions,
         run.TotalAdvancesDeducted, run.TotalNetPayable, (int)run.Status, run.Notes,
-        run.JournalEntryId, run.CreatedAt,
+        run.JournalEntryId, run.PaymentJournalEntryId, run.CreatedAt,
         run.Items.Select(i => new PayrollItemDto(
             i.Id, i.EmployeeId, i.Employee.Name, i.Employee.EmployeeNumber,
             i.Employee.JobTitle, i.BasicSalary, i.TransportationAllowance, i.CommunicationAllowance, i.BonusAmount,

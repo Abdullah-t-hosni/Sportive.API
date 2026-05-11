@@ -17,6 +17,7 @@ public enum PayrollStatus
 {
     Draft  = 1,  // مسودة
     Posted = 2,  // مرحّل
+    Paid   = 3,  // مسدد
 }
 
 public enum AdvanceStatus
@@ -135,6 +136,9 @@ public class PayrollRun : BaseEntity
 
     public int?          JournalEntryId { get; set; }
     public JournalEntry? JournalEntry   { get; set; }
+
+    public int?          PaymentJournalEntryId { get; set; }
+    public JournalEntry? PaymentJournalEntry   { get; set; }
 
     public ICollection<PayrollItem> Items { get; set; } = new List<PayrollItem>();
 }

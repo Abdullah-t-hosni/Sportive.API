@@ -101,6 +101,12 @@ public record CreatePayrollRunDto(
     int?    AdvancesAccountId          = null
 );
 
+public record PayPayrollDto(
+    int      CashAccountId,  // الخزنة/البنك
+    DateTime PaymentDate,
+    string?  Notes = null
+);
+
 public record CreatePayrollItemDto(
     int      EmployeeId,
     decimal? OverrideBasicSalary = null,  // لو null يأخذ راتب الموظف
@@ -129,6 +135,7 @@ public record PayrollRunDto(
     int           Status,
     string?       Notes,
     int?          JournalEntryId,
+    int?          PaymentJournalEntryId,
     DateTime      CreatedAt,
     List<PayrollItemDto> Items
 );
@@ -159,6 +166,7 @@ public record PayrollRunSummaryDto(
     int           EmployeeCount,
     int           Status,
     int?          JournalEntryId,
+    int?          PaymentJournalEntryId,
     DateTime      CreatedAt
 );
 

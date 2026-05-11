@@ -742,5 +742,9 @@
   "Inventory.OpeningBalanceEquityDesc": "مقابل حساب الأرصدة الافتتاحية",
   "Installments.AlreadyPaid": "القسط مسدد بالكامل مسبقاً",
   "Installments.Cancelled": "القسط ملغى",
-  "Installments.InvalidAmount": "المبلغ يجب أن يكون بين 1 و {0}"
+  "Installments.InvalidAmount": "المبلغ يجب أن يكون بين 1 و {0}",
+  "HR.PayrollMustBePostedToPay": "يجب ترحيل المسير أولاً قبل عملية الصرف",
+  "HR.PayrollPaymentDescription": "صرف مسير رواتب {0} للفترة {1}/{2}",
+  "HR.SettlePayrollAccrual": "سداد استحقاق رواتب المسير {0}",
+  "HR.PayrollPaymentFrom": "صرف من حساب {0}"
 }
