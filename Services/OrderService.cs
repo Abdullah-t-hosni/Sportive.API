@@ -395,6 +395,14 @@ public class OrderService : IOrderService
                         if (variant?.PriceAdjustment.HasValue == true)
                             originalUnitPrice += variant.PriceAdjustment.Value;
 
+                        // ✅ FIX: If the product is tax-exclusive, scale up the original price
+                        // so it matches the POS frontend which calculates totals inclusively.
+                        if (product.HasTax && !product.IsTaxInclusive)
+                        {
+                            var appliedRate = product.VatRate ?? store?.VatRatePercent ?? 14;
+                            originalUnitPrice = originalUnitPrice * (1 + (appliedRate / 100m));
+                        }
+
                         decimal unitPrice;
                         if (actualSource == OrderSource.POS)
                         {
