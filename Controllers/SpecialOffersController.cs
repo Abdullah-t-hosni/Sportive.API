@@ -52,12 +52,15 @@ public class SpecialOffersController : ControllerBase
             Name = dto.Name,
             Description = dto.Description,
             ThresholdQuantity = dto.ThresholdQuantity,
+            FreeQuantity = dto.FreeQuantity,
             DiscountPercentage = dto.DiscountPercentage,
             IsFullDiscount = dto.IsFullDiscount,
             ValidFrom = dto.ValidFrom,
             ValidTo = dto.ValidTo,
             IsActive = dto.IsActive,
-            ApplyTo = dto.ApplyTo
+            ApplyTo = dto.ApplyTo,
+            EligibleCategoryIds = dto.EligibleCategoryIds,
+            EligibleBrandIds = dto.EligibleBrandIds
         };
 
         _db.SpecialOffers.Add(offer);
@@ -74,12 +77,15 @@ public class SpecialOffersController : ControllerBase
         offer.Name = dto.Name;
         offer.Description = dto.Description;
         offer.ThresholdQuantity = dto.ThresholdQuantity;
+        offer.FreeQuantity = dto.FreeQuantity;
         offer.DiscountPercentage = dto.DiscountPercentage;
         offer.IsFullDiscount = dto.IsFullDiscount;
         offer.ValidFrom = dto.ValidFrom;
         offer.ValidTo = dto.ValidTo;
         offer.IsActive = dto.IsActive;
         offer.ApplyTo = dto.ApplyTo;
+        offer.EligibleCategoryIds = dto.EligibleCategoryIds;
+        offer.EligibleBrandIds = dto.EligibleBrandIds;
         offer.UpdatedAt = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
@@ -101,10 +107,13 @@ public record SpecialOfferDto(
     string Name,
     string? Description,
     int ThresholdQuantity,
+    int? FreeQuantity,
     decimal DiscountPercentage,
     bool IsFullDiscount,
     DateTime ValidFrom,
     DateTime ValidTo,
     bool IsActive,
-    DiscountApplyTo ApplyTo
+    DiscountApplyTo ApplyTo,
+    string? EligibleCategoryIds,
+    string? EligibleBrandIds
 );
