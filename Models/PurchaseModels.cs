@@ -57,6 +57,8 @@ public class PurchaseInvoice : BaseEntity
     public int    SupplierId            { get; set; }
     public Supplier Supplier            { get; set; } = null!;
 
+    public bool IsAssetPurchase         { get; set; } = false; // هل هذه فاتورة شراء أصول؟
+
     public PaymentTerms          PaymentTerms { get; set; } = PaymentTerms.Cash;
     public PurchaseInvoiceStatus Status       { get; set; } = PurchaseInvoiceStatus.Draft;
 
@@ -101,6 +103,13 @@ public class PurchaseInvoiceItem : BaseEntity
     public int?    ProductVariantId { get; set; }
     public ProductVariant? ProductVariant { get; set; }
     
+    // لربط المشتريات بالأصول الثابتة
+    public int? FixedAssetCategoryId { get; set; }
+    public FixedAssetCategory? FixedAssetCategory { get; set; }
+    public string? AssetName { get; set; }
+    public int? CreatedAssetId { get; set; }
+    public FixedAsset? CreatedAsset { get; set; }
+
     public string  Description { get; set; } = string.Empty; // وصف الصنف
     public string? Unit        { get; set; }                  // الوحدة
     public decimal Quantity    { get; set; } = 1;

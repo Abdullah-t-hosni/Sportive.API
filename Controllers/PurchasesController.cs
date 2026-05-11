@@ -268,6 +268,7 @@ public class PurchaseInvoicesController : ControllerBase
         var q = _db.PurchaseInvoices
             .AsNoTracking()
             .Include(i => i.Supplier)
+            .Where(i => !i.IsAssetPurchase)
             .AsQueryable();
 
         if (costCenter.HasValue) q = q.Where(i => i.CostCenter == costCenter.Value);
@@ -297,7 +298,7 @@ public class PurchaseInvoicesController : ControllerBase
             .Skip((page-1)*pageSize).Take(pageSize)
             .Select(i => new PurchaseInvoiceSummaryDto(
                 i.Id, i.InvoiceNumber, i.SupplierInvoiceNumber, i.SupplierId, i.Supplier.Name,
-                i.PaymentTerms.ToString(), i.Status.ToString(),
+                i.PaymentTerms.ToString(), i.IsAssetPurchase, i.Status.ToString(),
                 i.InvoiceDate, i.DueDate,
                 i.TotalAmount, i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
                 i.CostCenter,
@@ -540,7 +541,7 @@ public class PurchaseInvoicesController : ControllerBase
         return Ok(new PurchaseInvoiceDetailDto(
             inv.Id, inv.InvoiceNumber, inv.SupplierInvoiceNumber,
             new SupplierBasicDto(inv.Supplier.Id, inv.Supplier.Name, inv.Supplier.Phone, inv.Supplier.CompanyName),
-            inv.PaymentTerms.ToString(), inv.Status.ToString(),
+            inv.PaymentTerms.ToString(), inv.Status.ToString(), inv.IsAssetPurchase,
             inv.InvoiceDate, inv.DueDate,
             inv.SubTotal, inv.TaxPercent, inv.TaxAmount, inv.IsTaxInclusive, inv.DiscountAmount, inv.TotalAmount,
             inv.PaidAmount, inv.TotalAmount - inv.PaidAmount - inv.ReturnedAmount, inv.Notes,

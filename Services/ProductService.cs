@@ -132,8 +132,9 @@ public class ProductService : IProductService
                          (filter.Source.HasValue ? d.ApplyTo == filter.Source.Value : d.ApplyTo == DiscountApplyTo.Store)) &&
                         (d.ProductId == p.Id || 
                          (p.CategoryId != null && (d.CategoryId == p.CategoryId || d.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && d.CategoryId == p.Category!.Parent!.ParentId))) || 
-                         (p.BrandId != null && d.BrandId == p.BrandId)))
-                    .OrderByDescending(d => d.ProductId != null ? 3 : (d.CategoryId != null ? 2 : 1))
+                         (p.BrandId != null && d.BrandId == p.BrandId) ||
+                         (d.ProductId == null && d.CategoryId == null && d.BrandId == null)))
+                    .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
                     .FirstOrDefault()
             })
             .Skip((page - 1) * filter.PageSize)
@@ -196,10 +197,11 @@ public class ProductService : IProductService
         var d = await _db.ProductDiscounts
             .Where(x => (x.ProductId == id || 
                          (p.CategoryId != null && (x.CategoryId == p.CategoryId || x.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && x.CategoryId == p.Category!.Parent!.ParentId))) || 
-                         (p.BrandId != null && x.BrandId == p.BrandId)) 
+                         (p.BrandId != null && x.BrandId == p.BrandId) ||
+                         (x.ProductId == null && x.CategoryId == null && x.BrandId == null)) 
                     && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
             .Where(x => x.ApplyTo == DiscountApplyTo.All || (source.HasValue ? x.ApplyTo == source.Value : x.ApplyTo == DiscountApplyTo.Store))
-            .OrderByDescending(d => d.ProductId != null ? 3 : (d.CategoryId != null ? 2 : 1))
+            .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
             .FirstOrDefaultAsync();
 
         return MapToDetail(p, d);
@@ -222,10 +224,11 @@ public class ProductService : IProductService
         var d = await _db.ProductDiscounts
             .Where(x => (x.ProductId == p.Id || 
                          (p.CategoryId != null && (x.CategoryId == p.CategoryId || x.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && x.CategoryId == p.Category!.Parent!.ParentId))) || 
-                         (p.BrandId != null && x.BrandId == p.BrandId)) 
+                         (p.BrandId != null && x.BrandId == p.BrandId) ||
+                         (x.ProductId == null && x.CategoryId == null && x.BrandId == null)) 
                     && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
             .Where(x => x.ApplyTo == DiscountApplyTo.All || (source.HasValue ? x.ApplyTo == source.Value : x.ApplyTo == DiscountApplyTo.Store))
-            .OrderByDescending(d => d.ProductId != null ? 3 : (d.CategoryId != null ? 2 : 1))
+            .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
             .FirstOrDefaultAsync();
 
         return MapToDetail(p, d);
@@ -602,8 +605,9 @@ public class ProductService : IProductService
                         (d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == DiscountApplyTo.Store) &&
                         (d.ProductId == p.Id || 
                          (p.CategoryId != null && (d.CategoryId == p.CategoryId || d.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && d.CategoryId == p.Category!.Parent!.ParentId))) || 
-                         (d.BrandId != null && d.BrandId == p.BrandId)))
-                    .OrderByDescending(d => d.ProductId != null ? 3 : (d.CategoryId != null ? 2 : 1))
+                         (d.BrandId != null && d.BrandId == p.BrandId) ||
+                         (d.ProductId == null && d.CategoryId == null && d.BrandId == null)))
+                    .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
                     .FirstOrDefault()
             })
             .OrderByDescending(x => x.p.CreatedAt).ThenBy(x => x.p.Id)
@@ -663,8 +667,9 @@ public class ProductService : IProductService
                         (d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == DiscountApplyTo.Store) &&
                         (d.ProductId == p.Id || 
                          (p.CategoryId != null && (d.CategoryId == p.CategoryId || d.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && d.CategoryId == p.Category!.Parent!.ParentId))) || 
-                         (p.BrandId != null && d.BrandId == p.BrandId)))
-                    .OrderByDescending(d => d.ProductId != null ? 3 : (d.CategoryId != null ? 2 : 1))
+                         (p.BrandId != null && d.BrandId == p.BrandId) ||
+                         (d.ProductId == null && d.CategoryId == null && d.BrandId == null)))
+                    .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
                     .FirstOrDefault()
             })
             .OrderBy(_ => Guid.NewGuid())
@@ -705,9 +710,9 @@ public class ProductService : IProductService
     {
         var now = TimeHelper.GetEgyptTime();
         return await _db.ProductDiscounts
-            .Where(x => (x.ProductId == p.Id || (p.CategoryId != null && x.CategoryId == p.CategoryId) || (p.BrandId != null && x.BrandId == p.BrandId)) 
+            .Where(x => (x.ProductId == p.Id || (p.CategoryId != null && x.CategoryId == p.CategoryId) || (p.BrandId != null && x.BrandId == p.BrandId) || (x.ProductId == null && x.CategoryId == null && x.BrandId == null)) 
                     && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
-            .OrderByDescending(d => d.ProductId != null ? 3 : (d.CategoryId != null ? 2 : 1))
+            .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
             .FirstOrDefaultAsync();
     }
 

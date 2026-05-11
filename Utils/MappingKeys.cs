@@ -49,6 +49,7 @@ public static class MappingKeys
 
     public const string DepreciationExpense      = "depreciationExpenseAccountID";
     public const string AccumulatedDepreciation = "accumulatedDepreciationAccountID";
+    public const string FixedAssetRegistry       = "fixedAssetRegistryAccountID";
 
     // ── حسابات الرواتب (HR) ───────────────────────────────
     public const string SalaryExpense          = "salaryExpenseAccountID";

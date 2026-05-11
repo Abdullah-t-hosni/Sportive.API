@@ -31,6 +31,12 @@ public class PurchaseAccountingService
         if (string.IsNullOrEmpty(invoice.InvoiceNumber)) return;
         if (await _core.EntryExistsAsync(JournalEntryType.PurchaseInvoice, invoice.InvoiceNumber)) return;
 
+        if (invoice.IsAssetPurchase)
+        {
+            await PostAssetPurchaseInvoiceAsync(invoice);
+            return;
+        }
+
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
@@ -169,5 +175,64 @@ public class PurchaseAccountingService
             supplierId: pReturn.SupplierId,
             purchaseInvoiceId: pReturn.PurchaseInvoiceId,
             source: pReturn.CostCenter);
+    }
+
+    private async Task PostAssetPurchaseInvoiceAsync(PurchaseInvoice invoice)
+    {
+        var mapDict = await _core.GetSafeSystemMappingsAsync();
+        var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
+
+        var typeKey = invoice.PaymentTerms == PaymentTerms.Cash ? "Accounting.PurchaseCash" : "Accounting.PurchaseCredit";
+        var typeStr = _t.Get(typeKey);
+
+        // 1. Debit each asset line to its specific Asset Account
+        // Note: For asset purchases, we MUST have FixedAssetCategoryId linked in the item
+        var items = await _db.PurchaseInvoiceItems
+            .Include(i => i.FixedAssetCategory)
+            .Where(i => i.PurchaseInvoiceId == invoice.Id)
+            .ToListAsync();
+
+        foreach (var item in items)
+        {
+            var assetAcctId = item.FixedAssetCategory?.AssetAccountId 
+                            ?? await _core.GetRequiredMappedAccountAsync(MK.FixedAssetRegistry, mapDict);
+            
+            lines.Add(($"ID:{assetAcctId}", item.TotalCost, 0, _t.Get("Accounting.AssetPurchaseLineDesc", item.AssetName ?? item.Description, invoice.InvoiceNumber)));
+        }
+
+        // 2. VAT (Debit)
+        if (invoice.TaxAmount > 0)
+        {
+            var vatAcct = invoice.VatAccountId != null ? $"ID:{invoice.VatAccountId}" : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatInput, mapDict)}";
+            lines.Add((vatAcct, invoice.TaxAmount, 0, _t.Get("Accounting.VatDesc", typeStr, invoice.InvoiceNumber)));
+        }
+
+        // 3. Credit Supplier/Cash
+        var vendorAcct = invoice.VendorAccountId != null ? $"ID:{invoice.VendorAccountId}" 
+                        : invoice.Supplier?.MainAccountId != null ? $"ID:{invoice.Supplier.MainAccountId}" 
+                        : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Supplier, mapDict)}";
+        
+        if (invoice.PaymentTerms != PaymentTerms.Cash)
+        {
+            lines.Add((vendorAcct, 0, invoice.TotalAmount, _t.Get("Accounting.VendorLiabilityDesc", typeStr, invoice.InvoiceNumber)));
+        }
+        else
+        {
+            var cashAcct = invoice.CashAccountId != null ? $"ID:{invoice.CashAccountId}" : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Cash, mapDict)}";
+            lines.Add((cashAcct, 0, invoice.TotalAmount, _t.Get("Accounting.PurchaseCashPaymentDesc", invoice.InvoiceNumber)));
+        }
+
+        // 4. Discount (Credit)
+        if (invoice.DiscountAmount > 0)
+        {
+            var discAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.PurchaseDiscount, mapDict)}";
+            lines.Add((discAcct, 0, invoice.DiscountAmount, _t.Get("Accounting.PurchaseDiscountDesc", typeStr, invoice.InvoiceNumber)));
+        }
+
+        await _core.PostEntryAsync(
+            JournalEntryType.PurchaseInvoice, invoice.InvoiceNumber,
+            _t.Get("Accounting.AssetPurchaseEntryMainDesc", typeStr, invoice.InvoiceNumber, invoice.Supplier?.Name ?? ""),
+            invoice.InvoiceDate, lines, supplierId: invoice.SupplierId, purchaseInvoiceId: invoice.Id,
+            source: invoice.CostCenter);
     }
 }

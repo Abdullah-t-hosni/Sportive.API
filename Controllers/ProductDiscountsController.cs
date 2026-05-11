@@ -104,8 +104,7 @@ public class ProductDiscountsController : ControllerBase
         if (dto.BrandId.HasValue && !await _db.Brands.AnyAsync(b => b.Id == dto.BrandId))
             return BadRequest(new { message = _t.Get("Brands.NotFound") });
 
-        if (!dto.ProductId.HasValue && !dto.CategoryId.HasValue && !dto.BrandId.HasValue)
-            return BadRequest(new { message = _t.Get("Discounts.ProductCategoryOrBrandRequired") });
+        // Store-wide discount is allowed (all IDs null)
 
         if (dto.ValidFrom >= dto.ValidTo)
             return BadRequest(new { message = _t.Get("Discounts.StartDateBeforeEndDate") });

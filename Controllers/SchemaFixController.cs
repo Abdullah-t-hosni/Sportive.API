@@ -14,7 +14,7 @@ namespace Sportive.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[RequirePermission(ModuleKeys.Maintenance, requireEdit: true)]  // âœ… FIX: ÙƒØ§Ù† Ø¨Ø¯ÙˆÙ† Authorize â€” Ø§Ù„Ø¢Ù† Admin ÙÙ‚Ø·
+[RequirePermission(ModuleKeys.Maintenance, requireEdit: true)]  // âœ… FIX: Authorize
 public class SchemaFixController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -121,7 +121,6 @@ public class SchemaFixController : ControllerBase
                 UPDATE InventoryMovements SET ProductVariantId = NULL 
                 WHERE ProductVariantId IS NOT NULL AND ProductVariantId NOT IN (SELECT Id FROM ProductVariants);");
 
-            // 2. Ù…Ø­Ø§ÙˆÙ„Ø© Ø¥Ø¶Ø§ÙØ© Ø§Ù„Ù€ FK ÙŠØ¯ÙˆÙŠØ§Ù‹ (Ù„ÙƒÙŠ ÙŠØ¬Ø¯Ù‡Ø§ Ø§Ù„Ù€ EF ÙˆÙŠØ­Ø°ÙÙ‡Ø§ ÙÙŠ Ø§Ù„Ø®Ø·ÙˆØ© Ø§Ù„Ù‚Ø§Ø¯Ù…Ø© Ù…Ù† Migration)
             try {
                 await _db.Database.ExecuteSqlRawAsync(@"
                     ALTER TABLE InventoryMovements ADD CONSTRAINT FK_InventoryMovements_ProductVariants_ProductVariantId
@@ -296,6 +295,37 @@ public class SchemaFixController : ControllerBase
             }
 
             return Ok(new { message = "Receipt settings columns added.", skipped });
+        }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
+    [HttpGet("run-v13")]
+    public async Task<IActionResult> RunV13()
+    {
+        _logger.LogWarning("SchemaFix run-v13 (Asset Purchase Columns) triggered.");
+        try
+        {
+            var skipped = new List<string>();
+            var cmds = new[] {
+                "ALTER TABLE PurchaseInvoices ADD COLUMN IsAssetPurchase BOOLEAN DEFAULT 0 NOT NULL;",
+                "ALTER TABLE PurchaseInvoiceItems ADD COLUMN FixedAssetCategoryId INT NULL;",
+                "ALTER TABLE PurchaseInvoiceItems ADD COLUMN AssetName VARCHAR(255) NULL;",
+                "ALTER TABLE PurchaseInvoiceItems ADD COLUMN CreatedAssetId INT NULL;",
+                "ALTER TABLE PurchaseInvoiceItems ADD CONSTRAINT FK_PurchaseInvoiceItems_AssetCategories FOREIGN KEY (FixedAssetCategoryId) REFERENCES FixedAssetCategories(Id) ON DELETE SET NULL;",
+                "ALTER TABLE PurchaseInvoiceItems ADD CONSTRAINT FK_PurchaseInvoiceItems_FixedAssets FOREIGN KEY (CreatedAssetId) REFERENCES FixedAssets(Id) ON DELETE SET NULL;"
+            };
+
+            foreach (var c in cmds)
+            {
+                try { await _db.Database.ExecuteSqlRawAsync(c); }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("SchemaFix run-v13 skipped cmd: {Error}", ex.Message);
+                    skipped.Add(ex.Message);
+                }
+            }
+
+            return Ok(new { message = "Asset Purchase columns added.", skipped });
         }
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
