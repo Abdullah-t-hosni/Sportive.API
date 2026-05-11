@@ -373,6 +373,13 @@ public class OrderService : IOrderService
                                (actualSource == OrderSource.Website && d.ApplyTo == DiscountApplyTo.Store))
                     .ToListAsync();
 
+                var specialOffers = await _db.SpecialOffers
+                    .Where(o => o.IsActive && o.ValidFrom <= now && o.ValidTo >= now)
+                    .Where(o => o.ApplyTo == DiscountApplyTo.All || 
+                               (actualSource == OrderSource.POS && o.ApplyTo == DiscountApplyTo.POS) ||
+                               (actualSource == OrderSource.Website && o.ApplyTo == DiscountApplyTo.Store))
+                    .ToListAsync();
+
                 // ⚡ Preload category tree to avoid N+1 inside discount loops
                 var allCategories = await _db.Categories.AsNoTracking().ToDictionaryAsync(c => c.Id, c => c.ParentId);
 
@@ -626,6 +633,53 @@ public class OrderService : IOrderService
                     }
 
                     order.DeliveryFee = (threshold.HasValue && order.SubTotal >= threshold.Value) ? 0 : fee;
+                }
+
+                // 🎁 NEW: Special Bundle/Quantity Offers Logic
+                if (specialOffers.Any())
+                {
+                    foreach (var offer in specialOffers)
+                    {
+                        // Collect all eligible items (currently all items, can be filtered by category later)
+                        var eligibleItems = order.Items.SelectMany(i => Enumerable.Repeat(i, i.Quantity)).ToList();
+                        
+                        int countToDiscount = 0;
+                        if (offer.FreeQuantity.HasValue && offer.FreeQuantity.Value > 0)
+                        {
+                            // 🔄 REPEATING BUNDLE LOGIC (e.g. Buy 3 get 7 free -> Bundle of 10)
+                            int bundleSize = offer.ThresholdQuantity + offer.FreeQuantity.Value;
+                            if (bundleSize > 0)
+                            {
+                                int bundlesCount = eligibleItems.Count / bundleSize;
+                                countToDiscount = bundlesCount * offer.FreeQuantity.Value;
+                            }
+                        }
+                        else if (eligibleItems.Count > offer.ThresholdQuantity)
+                        {
+                            // 📈 SIMPLE THRESHOLD LOGIC (Everything after piece X is discounted)
+                            countToDiscount = eligibleItems.Count - offer.ThresholdQuantity;
+                        }
+
+                        if (countToDiscount > 0)
+                        {
+                            // Sort by UnitPrice (cheapest first) to apply discount to the lowest price items
+                            var sortedItems = eligibleItems.OrderBy(i => i.UnitPrice).ToList();
+                            decimal offerDiscount = 0;
+                            
+                            for (int i = 0; i < countToDiscount; i++)
+                            {
+                                var item = sortedItems[i];
+                                decimal discPercentage = offer.IsFullDiscount ? 100 : offer.DiscountPercentage;
+                                decimal discountPerPiece = item.UnitPrice * (discPercentage / 100m);
+                                offerDiscount += discountPerPiece;
+                            }
+                            
+                            order.TemporalDiscount += Math.Round(offerDiscount, 2);
+                            
+                            // Note: We only apply one bundle offer per order for now (the first one found)
+                            break; 
+                        }
+                    }
                 }
 
                 // 🛡️ Priority Logic: Temporal Discount (Offers) > Manual/Coupon Discount

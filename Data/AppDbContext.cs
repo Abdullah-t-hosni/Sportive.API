@@ -64,6 +64,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<InstallmentPayment>   InstallmentPayments   { get; set; }
 
     public DbSet<ProductDiscount>      ProductDiscounts      { get; set; }
+    public DbSet<SpecialOffer>         SpecialOffers         { get; set; }
 
     public DbSet<Department>           Departments           { get; set; }
 
@@ -374,6 +375,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.FixedDeliveryFee).HasPrecision(18, 2);
             e.Property(x => x.FreeDeliveryAt).HasPrecision(18, 2);
             e.Property(x => x.MinOrderAmount).HasPrecision(18, 2);
+        });
+
+        builder.Entity<SpecialOffer>(e => {
+            e.Property(x => x.DiscountPercentage).HasPrecision(18, 2);
         });
 
         builder.Entity<ShippingZone>(e => {
