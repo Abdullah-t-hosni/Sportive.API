@@ -228,7 +228,7 @@ public class StoreInfo
     public string ReceiptSectionsOrder { get; set; } = "header,order_info,items_table,totals_area,tafqeet,payment_info,footer_text,terms_conditions,barcode";
 
     // --- 5. Finance & VAT ---
-    [JsonPropertyName("vatPercent")]
+    [JsonPropertyName("vatRatePercent")]
     public decimal VatRatePercent { get; set; } = 14;
     
     [JsonPropertyName("deliveryFee")]
