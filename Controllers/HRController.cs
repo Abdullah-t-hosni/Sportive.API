@@ -679,16 +679,17 @@ public class PayrollController : ControllerBase
         if (cashAcc == null) return BadRequest(new { message = _t.Get("Accounting.PaymentVoucher.AccountNotFound") });
 
         var jeNo = await _seq.NextAsync("JE");
+        var now = TimeHelper.GetEgyptTime();
         var payJe = new JournalEntry
         {
             EntryNumber     = jeNo,
-            EntryDate       = dto.PaymentDate,
+            EntryDate       = dto.PaymentDate.Date.Add(now.TimeOfDay),
             Type            = JournalEntryType.PaymentVoucher,
             Status          = JournalEntryStatus.Posted,
             Description     = _t.Get("HR.PayrollPaymentDescription", run.PayrollNumber, run.PeriodMonth, run.PeriodYear),
             Reference       = run.PayrollNumber,
             CreatedByUserId = UserId,
-            CreatedAt       = TimeHelper.GetEgyptTime(),
+            CreatedAt       = now,
             Lines           = new List<JournalLine>()
         };
 
