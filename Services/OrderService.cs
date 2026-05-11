@@ -553,6 +553,7 @@ public class OrderService : IOrderService
                         var orderItem = new OrderItem
                         {
                             ProductId = ci.ProductId,
+                            Product = ci.Product, // Preserve for special offers logic
                             ProductVariantId = ci.ProductVariantId,
                             ProductNameAr = ci.Product.NameAr,
                             ProductNameEn = ci.Product.NameEn,
@@ -640,8 +641,35 @@ public class OrderService : IOrderService
                 {
                     foreach (var offer in specialOffers)
                     {
-                        // Collect all eligible items (currently all items, can be filtered by category later)
-                        var eligibleItems = order.Items.SelectMany(i => Enumerable.Repeat(i, i.Quantity)).ToList();
+                        // 🎯 Filter items eligible for this specific offer (Categories/Brands)
+                        var eligibleItems = order.Items
+                            .Where(i => {
+                                bool matchCategory = string.IsNullOrEmpty(offer.EligibleCategoryIds);
+                                if (!matchCategory && i.Product != null)
+                                {
+                                    var eligibleIds = offer.EligibleCategoryIds.Split(',')
+                                        .Where(s => !string.IsNullOrEmpty(s))
+                                        .Select(int.Parse).ToList();
+                                    
+                                    int? currentCatId = i.Product.CategoryId;
+                                    while (currentCatId.HasValue)
+                                    {
+                                        if (eligibleIds.Contains(currentCatId.Value))
+                                        {
+                                            matchCategory = true;
+                                            break;
+                                        }
+                                        currentCatId = allCategories.GetValueOrDefault(currentCatId.Value);
+                                    }
+                                }
+                                
+                                bool matchBrand = string.IsNullOrEmpty(offer.EligibleBrandIds) || 
+                                    (i.Product != null && offer.EligibleBrandIds.Split(',').Contains(i.Product.BrandId.ToString()));
+                                
+                                return matchCategory && matchBrand;
+                            })
+                            .SelectMany(i => Enumerable.Repeat(i, i.Quantity))
+                            .ToList();
                         
                         int countToDiscount = 0;
                         if (offer.FreeQuantity.HasValue && offer.FreeQuantity.Value > 0)
@@ -670,7 +698,23 @@ public class OrderService : IOrderService
                             {
                                 var item = sortedItems[i];
                                 decimal discPercentage = offer.IsFullDiscount ? 100 : offer.DiscountPercentage;
-                                decimal discountPerPiece = item.UnitPrice * (discPercentage / 100m);
+                                decimal discountPerPiece = Math.Round(item.UnitPrice * (discPercentage / 100m), 2);
+                                
+                                // ✅ Update item totals for accounting accuracy
+                                item.TotalPrice -= discountPerPiece;
+                                item.DiscountAmount += discountPerPiece;
+
+                                if (item.HasTax)
+                                {
+                                    var rate = (item.VatRateApplied ?? 14) / 100m;
+                                    decimal newNet = Math.Round(item.TotalPrice / (1 + rate), 2);
+                                    decimal oldVat = item.ItemVatAmount;
+                                    item.ItemVatAmount = item.TotalPrice - newNet;
+                                    
+                                    // Update global order VAT
+                                    order.TotalVatAmount += (item.ItemVatAmount - oldVat);
+                                }
+
                                 offerDiscount += discountPerPiece;
                             }
                             

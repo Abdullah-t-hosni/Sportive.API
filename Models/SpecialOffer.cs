@@ -29,7 +29,9 @@ public class SpecialOffer : BaseEntity
     /// <summary>تحديد مكان تطبيق العرض (المتجر، الكاشير، أو الكل)</summary>
     public DiscountApplyTo ApplyTo { get; set; } = DiscountApplyTo.All;
 
-    // يمكن مستقبلاً إضافة فلاتر للأقسام أو الماركات
-    // public string? EligibleCategoryIds { get; set; } // JSON list
-    // public string? EligibleBrandIds { get; set; }
+    /// <summary>قائمة المعرفات للأقسام المشمولة (مفصولة بفاصلة)</summary>
+    public string? EligibleCategoryIds { get; set; }
+
+    /// <summary>قائمة المعرفات للماركات المشمولة (مفصولة بفاصلة)</summary>
+    public string? EligibleBrandIds { get; set; }
 }
