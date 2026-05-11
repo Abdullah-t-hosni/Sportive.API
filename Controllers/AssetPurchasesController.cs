@@ -62,7 +62,8 @@ public class AssetPurchasesController : ControllerBase
         var items = await q.OrderByDescending(i => i.InvoiceDate)
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(i => new PurchaseInvoiceSummaryDto(
-                i.Id, i.InvoiceNumber, i.SupplierInvoiceNumber, i.SupplierId, i.Supplier.Name,
+                i.Id, i.InvoiceNumber, i.SupplierInvoiceNumber, i.SupplierId, 
+                i.Supplier != null ? i.Supplier.Name : "---",
                 i.PaymentTerms.ToString(), i.IsAssetPurchase, i.Status.ToString(),
                 i.InvoiceDate, i.DueDate,
                 i.TotalAmount, i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
@@ -87,7 +88,7 @@ public class AssetPurchasesController : ControllerBase
 
         return Ok(new PurchaseInvoiceDetailDto(
             inv.Id, inv.InvoiceNumber, inv.SupplierInvoiceNumber,
-            new SupplierBasicDto(inv.Supplier.Id, inv.Supplier.Name, inv.Supplier.Phone, inv.Supplier.CompanyName),
+            new SupplierBasicDto(inv.Supplier?.Id ?? 0, inv.Supplier?.Name ?? "---", inv.Supplier?.Phone ?? "---", inv.Supplier?.CompanyName),
             inv.PaymentTerms.ToString(), inv.Status.ToString(), inv.IsAssetPurchase,
             inv.InvoiceDate, inv.DueDate,
             inv.SubTotal, inv.TaxPercent, inv.TaxAmount, inv.IsTaxInclusive, inv.DiscountAmount, inv.TotalAmount,
@@ -100,7 +101,7 @@ public class AssetPurchasesController : ControllerBase
                 it.FixedAssetCategoryId, it.FixedAssetCategory?.Name, it.AssetName, it.CreatedAssetId
             )).ToList(),
             inv.Payments.Select(p => new SupplierPaymentSummaryDto(
-                p.Id, p.PaymentNumber, inv.Supplier.Name, inv.InvoiceNumber,
+                p.Id, p.PaymentNumber, inv.Supplier?.Name ?? "---", inv.InvoiceNumber,
                 p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes,
                 p.AttachmentUrl, p.AttachmentPublicId
             )).ToList(),
