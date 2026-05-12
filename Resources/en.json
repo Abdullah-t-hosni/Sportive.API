@@ -708,5 +708,6 @@
   "HR.PayrollMustBePostedToPay": "Payroll must be posted before payment",
   "HR.PayrollPaymentDescription": "Payment of payroll {0} for {1}/{2}",
   "HR.SettlePayrollAccrual": "Settle payroll accrual {0}",
-  "HR.PayrollPaymentFrom": "Disbursement from {0}"
+  "HR.PayrollPaymentFrom": "Disbursement from {0}",
+  "HR.PayrollPaymentLineDescription": "Salary payment for: {0} (Run {1})"
 }

@@ -53,6 +53,13 @@ public record SupplierBasicDto(int Id, string Name, string Phone, string? Compan
 // PURCHASE INVOICE DTOs
 // ══════════════════════════════════════════════════════
 
+public record InvoicePaymentDto(
+    decimal Amount,
+    PaymentMethod_Purchase Method,
+    int? CashAccountId,
+    string? Notes = null
+);
+
 public record CreatePurchaseInvoiceDto(
     int      SupplierId,
     PaymentTerms PaymentTerms,
@@ -60,6 +67,7 @@ public record CreatePurchaseInvoiceDto(
     decimal  TaxPercent,
     bool     IsTaxInclusive,
     List<CreatePurchaseItemDto> Items,
+    List<InvoicePaymentDto>? Payments = null,
     int?      PaymentTermDays = null,
     DateTime? DueDate = null,
     string?  SupplierInvoiceNumber = null,

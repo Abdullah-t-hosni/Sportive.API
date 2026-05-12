@@ -545,9 +545,17 @@ public class JournalEntriesController : ControllerBase
         if (includeLines) q = q.Include(e => e.Lines).ThenInclude(l => l.Account);
 
         if (!string.IsNullOrEmpty(search))
+        {
+            var isNumeric = decimal.TryParse(search, out var searchAmt);
             q = q.Where(r => r.EntryNumber.Contains(search) 
                            || (r.Description != null && r.Description.Contains(search)) 
-                           || (r.Reference != null && r.Reference.Contains(search)));
+                           || (r.Reference != null && r.Reference.Contains(search))
+                           || (isNumeric && r.Lines.Any(l => l.Debit == searchAmt || l.Credit == searchAmt))
+                           || r.Lines.Any(l => (l.Account != null && (l.Account.Code.Contains(search) || l.Account.NameAr.Contains(search) || (l.Account.NameEn != null && l.Account.NameEn.Contains(search))))
+                                           || (l.Supplier != null && l.Supplier.Name.Contains(search))
+                                           || (l.Customer != null && l.Customer.FullName.Contains(search))
+                                           || (l.Employee != null && l.Employee.Name.Contains(search))));
+        }
         
         if (fromDate.HasValue) q = q.Where(e => e.EntryDate >= fromDate.Value.Date);
         if (toDate.HasValue) q = q.Where(e => e.EntryDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
@@ -680,11 +688,23 @@ public class ReceiptVouchersController : ControllerBase
         [FromQuery] int pageSize = 20, 
         [FromQuery] DateTime? fromDate = null, 
         [FromQuery] DateTime? toDate = null,
-        [FromQuery] OrderSource? source = null,
-        [FromQuery] int? employeeId = null,
+        [FromQuery] string? search = null,
         [FromQuery] bool? onlyEmployees = null)
     {
         var q = _db.ReceiptVouchers.AsQueryable();
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            var isNumeric = decimal.TryParse(search, out var searchAmt);
+            q = q.Where(v => v.VoucherNumber.Contains(search)
+                          || (v.Description != null && v.Description.Contains(search))
+                          || (v.Reference != null && v.Reference.Contains(search))
+                          || (isNumeric && v.Amount == searchAmt)
+                          || (v.Customer != null && v.Customer.FullName.Contains(search))
+                          || (v.Employee != null && v.Employee.Name.Contains(search))
+                          || (v.CashAccount != null && (v.CashAccount.NameAr.Contains(search) || v.CashAccount.Code.Contains(search)))
+                          || (v.FromAccount != null && (v.FromAccount.NameAr.Contains(search) || v.FromAccount.Code.Contains(search))));
+        }
         if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value.Date);
         if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
         if (source.HasValue) q = q.Where(v => v.CostCenter == source.Value);
@@ -958,11 +978,23 @@ public class PaymentVouchersController : ControllerBase
         [FromQuery] int pageSize = 20, 
         [FromQuery] DateTime? fromDate = null, 
         [FromQuery] DateTime? toDate = null,
-        [FromQuery] OrderSource? source = null,
-        [FromQuery] int? employeeId = null,
+        [FromQuery] string? search = null,
         [FromQuery] bool? onlyEmployees = null)
     {
         var q = _db.PaymentVouchers.AsQueryable();
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            var isNumeric = decimal.TryParse(search, out var searchAmt);
+            q = q.Where(v => v.VoucherNumber.Contains(search)
+                          || (v.Description != null && v.Description.Contains(search))
+                          || (v.Reference != null && v.Reference.Contains(search))
+                          || (isNumeric && v.Amount == searchAmt)
+                          || (v.Supplier != null && v.Supplier.Name.Contains(search))
+                          || (v.Employee != null && v.Employee.Name.Contains(search))
+                          || (v.CashAccount != null && (v.CashAccount.NameAr.Contains(search) || v.CashAccount.Code.Contains(search)))
+                          || (v.ToAccount != null && (v.ToAccount.NameAr.Contains(search) || v.ToAccount.Code.Contains(search))));
+        }
         if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value.Date);
         if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
         if (source.HasValue) q = q.Where(v => v.CostCenter == source.Value);

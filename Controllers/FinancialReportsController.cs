@@ -519,7 +519,7 @@ public class FinancialReportsController : ControllerBase
             else if (supplierId.HasValue)
                 targetId = await _db.Accounts.Where(a => a.Code.StartsWith("2101")).Select(a => a.Id).FirstOrDefaultAsync();
             else if (employeeId.HasValue)
-                targetId = await _db.Accounts.Where(a => a.Code.StartsWith("2103") || a.Code.StartsWith("1108")).Select(a => a.Id).FirstOrDefaultAsync();
+                targetId = await _db.Accounts.Where(a => a.Code.StartsWith("2102") || a.Code.StartsWith("2103") || a.Code.StartsWith("1105") || a.Code.StartsWith("1108")).Select(a => a.Id).FirstOrDefaultAsync();
         }
 
         if (targetId == 0) return BadRequest(new { message = _t.Get("Reports.SelectAccountOrEntity") });

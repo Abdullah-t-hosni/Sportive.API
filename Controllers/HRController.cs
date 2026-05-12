@@ -693,14 +693,19 @@ public class PayrollController : ControllerBase
             Lines           = new List<JournalLine>()
         };
 
-        // 1. Debit Accrued Salaries (Clear Liability)
-        payJe.Lines.Add(new JournalLine
+        // 1. Debit Accrued Salaries (Clear Liability) - Distributed by Employee
+        foreach (var item in run.Items.Where(i => i.NetPayable > 0))
         {
-            AccountId = accrualAccId,
-            Debit     = run.TotalNetPayable,
-            Credit    = 0,
-            Description = _t.Get("HR.SettlePayrollAccrual", run.PayrollNumber)
-        });
+            payJe.Lines.Add(new JournalLine
+            {
+                AccountId = accrualAccId,
+                Debit     = item.NetPayable,
+                Credit    = 0,
+                Description = _t.Get("HR.PayrollPaymentLineDescription", item.Employee?.Name ?? "", run.PayrollNumber),
+                EmployeeId  = item.EmployeeId,
+                CostCenter  = item.Employee?.CostCenter ?? OrderSource.General
+            });
+        }
 
         // 2. Credit Cash/Bank (Release Money)
         payJe.Lines.Add(new JournalLine

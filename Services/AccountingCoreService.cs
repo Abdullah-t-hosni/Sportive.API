@@ -196,11 +196,19 @@ public class AccountingCoreService
 
             bool isReceivables = realCode.StartsWith("1103") || realCode.StartsWith("1202");
             bool isPayables = realCode.StartsWith("2101") || realCode.StartsWith("2102");
-            bool isSalesOrPurchase = type == JournalEntryType.SalesInvoice || type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseInvoice || type == JournalEntryType.PurchaseReturn;
 
-            bool isEmployeeAccount = realCode == "4109" || 
+            var mappings = await GetSafeSystemMappingsAsync();
+            var hrAccountIds = new List<int>();
+            if (mappings.TryGetValue(MK.SalariesPayable.ToLower(), out var h1) && h1.HasValue) hrAccountIds.Add(h1.Value);
+            if (mappings.TryGetValue(MK.EmployeeAdvances.ToLower(), out var h2) && h2.HasValue) hrAccountIds.Add(h2.Value);
+            if (mappings.TryGetValue(MK.EmployeeBonuses.ToLower(), out var h3) && h3.HasValue) hrAccountIds.Add(h3.Value);
+            if (mappings.TryGetValue(MK.EmployeeDeductions.ToLower(), out var h4) && h4.HasValue) hrAccountIds.Add(h4.Value);
+
+            bool isEmployeeAccount = hrAccountIds.Contains(accountId) || 
+                                     realCode == "4109" || realCode.StartsWith("2201") || realCode.StartsWith("1201") ||
                                      actualAccount?.NameAr?.Contains("موظف") == true || actualAccount?.NameEn?.ToLower().Contains("employee") == true ||
                                      actualAccount?.NameAr?.Contains("سلف") == true || actualAccount?.NameAr?.Contains("أجور") == true || actualAccount?.NameAr?.Contains("رواتب") == true;
+
             
             bool isDiscountAccount = actualAccount?.NameAr?.Contains("خصم") == true || actualAccount?.NameEn?.ToLower().Contains("discount") == true;
             
@@ -212,7 +220,7 @@ public class AccountingCoreService
                 Description = finalDesc,
                 CustomerId  = isReceivables ? customerId : null,
                 SupplierId  = isPayables ? supplierId : null,
-                EmployeeId  = (isEmployeeAccount || ((type == JournalEntryType.SalesInvoice || type == JournalEntryType.SalesReturn) && isDiscountAccount)) ? employeeId : (type == JournalEntryType.Payroll ? employeeId : null),
+                EmployeeId  = (isEmployeeAccount || ((type == JournalEntryType.SalesInvoice || type == JournalEntryType.SalesReturn) && isDiscountAccount)) ? employeeId : (type == JournalEntryType.Payroll ? employeeId : (isEmployeeAccount ? employeeId : null)),
                 OrderId     = orderId,
                 PurchaseInvoiceId = purchaseInvoiceId,
                 CostCenter  = source, // 🎯 حفظ مركز التكلفة على كل سطر محاسبي

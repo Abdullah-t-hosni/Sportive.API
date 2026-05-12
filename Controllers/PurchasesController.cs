@@ -720,11 +720,35 @@ public class PurchaseInvoicesController : ControllerBase
                 }
                 supplier.TotalPurchases += invoice.TotalAmount;
 
-                if (dto.PaymentTerms == PaymentTerms.Cash)
+                // ─── Payment Handling (Multi-Method) ───
+                decimal totalPaid = 0;
+                if (dto.Payments != null && dto.Payments.Any())
                 {
-                    invoice.PaidAmount = invoice.TotalAmount;
-                    supplier.TotalPaid += invoice.TotalAmount;
-
+                    foreach (var p in dto.Payments)
+                    {
+                        if (p.Amount <= 0) continue;
+                        
+                        var pNo = await _seq.NextAsync("SP");
+                        invoice.Payments.Add(new SupplierPayment
+                        {
+                            PaymentNumber = pNo,
+                            SupplierId    = supplier.Id,
+                            Amount        = p.Amount,
+                            PaymentDate   = invoice.InvoiceDate,
+                            PaymentMethod = p.Method,
+                            CashAccountId = p.CashAccountId > 0 ? p.CashAccountId : null,
+                            AccountName   = p.Notes ?? "سداد فاتورة",
+                            Notes         = p.Notes ?? $"سداد فاتورة {invNo}",
+                            CreatedAt     = TimeHelper.GetEgyptTime(),
+                            CostCenter    = invoice.CostCenter
+                        });
+                        totalPaid += p.Amount;
+                    }
+                }
+                else if (dto.PaymentTerms == PaymentTerms.Cash)
+                {
+                    // Backward compatibility / Simple Cash mode
+                    totalPaid = invoice.TotalAmount;
                     var pNo = await _seq.NextAsync("SP");
                     invoice.Payments.Add(new SupplierPayment
                     {
@@ -734,11 +758,24 @@ public class PurchaseInvoicesController : ControllerBase
                         PaymentDate   = invoice.InvoiceDate,
                         PaymentMethod = PaymentMethod_Purchase.Cash,
                         AccountName   = "الخزينة (آلي)",
+                        CashAccountId = dto.CashAccountId > 0 ? dto.CashAccountId : null,
                         Notes         = $"سداد تلقائي لفاتورة {invNo}",
                         CreatedAt     = TimeHelper.GetEgyptTime(),
                         CostCenter    = invoice.CostCenter
                     });
                 }
+
+                invoice.PaidAmount = Math.Round(totalPaid, 2);
+                supplier.TotalPaid += invoice.PaidAmount;
+
+                // Update Status based on payment
+                if (invoice.PaidAmount >= invoice.TotalAmount - 0.01M)
+                    invoice.Status = PurchaseInvoiceStatus.Paid;
+                else if (invoice.PaidAmount > 0)
+                    invoice.Status = PurchaseInvoiceStatus.PartPaid;
+                else
+                    invoice.Status = PurchaseInvoiceStatus.Received;
+
 
                 _db.PurchaseInvoices.Add(invoice);
                 await _db.SaveChangesAsync();

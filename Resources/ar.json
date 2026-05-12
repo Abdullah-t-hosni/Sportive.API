@@ -746,5 +746,6 @@
   "HR.PayrollMustBePostedToPay": "يجب ترحيل المسير أولاً قبل عملية الصرف",
   "HR.PayrollPaymentDescription": "صرف مسير رواتب {0} للفترة {1}/{2}",
   "HR.SettlePayrollAccrual": "سداد استحقاق رواتب المسير {0}",
-  "HR.PayrollPaymentFrom": "صرف من حساب {0}"
+  "HR.PayrollPaymentFrom": "صرف من حساب {0}",
+  "HR.PayrollPaymentLineDescription": "صرف راتب الموظف: {0} (مسير {1})"
 }
