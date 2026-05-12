@@ -342,7 +342,13 @@ public class SalesAccountingService
 
         string salesReturnAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesReturn,    mapDict)}";
         string salesDiscAcct   = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesDiscount,  mapDict)}";
-        string receivablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer,       mapDict)}";
+        
+        string receivablesAcct;
+        if (order.Customer?.MainAccountId != null)
+            receivablesAcct = $"ID:{order.Customer.MainAccountId}";
+        else
+            receivablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
+
         string inventoryAcct   = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Inventory,      mapDict)}";
         string cogsAcct        = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.COGS,           mapDict)}";
 
@@ -373,8 +379,20 @@ public class SalesAccountingService
         else if (discountReversal < 0)
             lines.Add((salesDiscAcct, Math.Abs(discountReversal), 0, _t.Get("Accounting.PartialReturnDiffAdjDesc", order.OrderNumber)));
 
+        // ✅ ROBUST MULTI-RETURN DEBT LOGIC:
+        // We calculate how much of the original debt is still "remaining" after previous returns.
+        // This prevents the system from "forgetting" previous debt reductions and over-crediting the customer.
+        int receivablesAcctId = int.Parse(receivablesAcct.Replace("ID:", ""));
+        decimal alreadySettledDebt = await _db.JournalLines
+            .Where(l => l.JournalEntry.OrderId == order.Id 
+                     && l.JournalEntry.Type == JournalEntryType.SalesReturn 
+                     && l.AccountId == receivablesAcctId)
+            .SumAsync(l => l.Credit);
+
         decimal originalDebt = Math.Round(order.TotalAmount - order.PaidAmount, 2);
-        decimal amountToCustomerCredit = Math.Min(originalDebt, refundAmount);
+        decimal currentRemainingDebt = Math.Max(0, originalDebt - alreadySettledDebt);
+
+        decimal amountToCustomerCredit = Math.Min(currentRemainingDebt, refundAmount);
         decimal amountToCashRefund = Math.Round(refundAmount - amountToCustomerCredit, 2);
 
         if (amountToCashRefund > 0)

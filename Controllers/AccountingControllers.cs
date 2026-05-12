@@ -689,7 +689,9 @@ public class ReceiptVouchersController : ControllerBase
         [FromQuery] DateTime? fromDate = null, 
         [FromQuery] DateTime? toDate = null,
         [FromQuery] string? search = null,
-        [FromQuery] bool? onlyEmployees = null)
+        [FromQuery] bool? onlyEmployees = null,
+        [FromQuery] OrderSource? source = null,
+        [FromQuery] int? employeeId = null)
     {
         var q = _db.ReceiptVouchers.AsQueryable();
 
@@ -979,7 +981,9 @@ public class PaymentVouchersController : ControllerBase
         [FromQuery] DateTime? fromDate = null, 
         [FromQuery] DateTime? toDate = null,
         [FromQuery] string? search = null,
-        [FromQuery] bool? onlyEmployees = null)
+        [FromQuery] bool? onlyEmployees = null,
+        [FromQuery] OrderSource? source = null,
+        [FromQuery] int? employeeId = null)
     {
         var q = _db.PaymentVouchers.AsQueryable();
 

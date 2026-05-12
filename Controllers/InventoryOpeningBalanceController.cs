@@ -76,7 +76,7 @@ public class InventoryOpeningBalanceController : ControllerBase
     public async Task<IActionResult> GetById(int id)
     {
         var x = await _db.InventoryOpeningBalances
-            .Include(b => b.Items).ThenInclude(i => i.Product).ThenInclude(p => p.Images)
+            .Include(b => b.Items).ThenInclude(i => i.Product).ThenInclude(p => p != null ? p.Images : null)
             .Include(b => b.Items).ThenInclude(i => i.ProductVariant)
             .FirstOrDefaultAsync(b => b.Id == id);
 
@@ -88,9 +88,9 @@ public class InventoryOpeningBalanceController : ControllerBase
                 i.Id, i.ProductId, i.Product?.NameAr, i.Product?.SKU,
                 i.ProductVariantId, i.ProductVariant?.Size, i.ProductVariant?.ColorAr,
                 i.Quantity, i.CostPrice, i.TotalCost,
-                i.ProductVariantId.HasValue && !string.IsNullOrEmpty(i.ProductVariant.ImageUrl) 
+                (i.ProductVariantId.HasValue && i.ProductVariant != null && !string.IsNullOrEmpty(i.ProductVariant.ImageUrl))
                     ? i.ProductVariant.ImageUrl 
-                    : i.Product?.Images.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? i.Product?.Images.FirstOrDefault()?.ImageUrl
+                    : i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? i.Product?.Images?.FirstOrDefault()?.ImageUrl
             )).ToList(),
             x.CostCenter
         ));

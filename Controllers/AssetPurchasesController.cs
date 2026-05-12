@@ -319,7 +319,7 @@ public class AssetPurchasesController : ControllerBase
                 await acc.PostPurchaseInvoiceAsync(inv);
                 return;
             }
-            catch (Exception ex) when (attempt < maxAttempts)
+            catch (Exception) when (attempt < maxAttempts)
             {
                 _logger.LogWarning("Journal posting attempt {At} failed for asset invoice {No}", attempt, invoiceNumber);
                 await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
