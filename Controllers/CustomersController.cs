@@ -237,8 +237,9 @@ public class CustomersController : ControllerBase
                 }
                 catch (Exception rowEx)
                 {
-                    errors.Add($"Row {r} ({rowName}): {rowEx.InnerException?.Message ?? rowEx.Message}");
-                    // Continue with next row
+                    if (customer != null) db.Entry(customer).State = EntityState.Detached;
+                    var msg = rowEx.InnerException?.Message ?? rowEx.Message;
+                    errors.Add($"Row {r} ({rowName}): {msg}");
                 }
             }
 
@@ -246,7 +247,8 @@ public class CustomersController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = _t.Get("Accounting.ProcessingError", ex.Message) });
+            var msg = ex.InnerException?.Message ?? ex.Message;
+            return BadRequest(new { message = $"Critical Save Error: {msg}", errors });
         }
 
         return Ok(new { success = true, successCount, errors });
