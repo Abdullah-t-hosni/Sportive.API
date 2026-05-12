@@ -296,8 +296,21 @@ public class SalesAccountingService
             lines.Add((vatAcct, totalVatAmount, 0, _t.Get("Accounting.SalesReturnTaxDesc", order.OrderNumber)));
         }
 
-        decimal cashRefundAmount = order.PaidAmount;
-        decimal creditRefundAmount = Math.Round(order.TotalAmount - cashRefundAmount, 2);
+        // ✅ ROBUST MULTI-RETURN DEBT LOGIC:
+        // Even in full returns, we must check if partial returns already settled some of the debt.
+        int receivablesAcctId = int.Parse(receivablesAcct.Replace("ID:", ""));
+        decimal alreadySettledDebt = await _db.JournalLines
+            .Where(l => l.JournalEntry.OrderId == order.Id 
+                     && l.JournalEntry.Type == JournalEntryType.SalesReturn 
+                     && l.AccountId == receivablesAcctId)
+            .SumAsync(l => l.Credit);
+
+        decimal originalDebt = Math.Round(order.TotalAmount - order.PaidAmount, 2);
+        decimal currentRemainingDebt = Math.Max(0, originalDebt - alreadySettledDebt);
+
+        decimal totalRefundValue = order.TotalAmount; // In full return, we refund everything
+        decimal creditRefundAmount = Math.Min(currentRemainingDebt, totalRefundValue);
+        decimal cashRefundAmount   = Math.Round(totalRefundValue - creditRefundAmount, 2);
 
         if (cashRefundAmount > 0)
         {
