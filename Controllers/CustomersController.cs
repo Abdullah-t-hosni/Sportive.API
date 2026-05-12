@@ -169,6 +169,23 @@ public class CustomersController : ControllerBase
             var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
 
             var allCustomers = await db.Customers.Include(c => c.MainAccount).ToListAsync();
+            var allAccounts = await db.Accounts.ToListAsync();
+            var parentAccount = allAccounts.FirstOrDefault(a => a.Code == "1103");
+            
+            if (parentAccount == null)
+            {
+                return BadRequest(new { message = "Main Receivables account (1103) not found in Chart of Accounts." });
+            }
+
+            // Prepare for code generation if needed
+            var existingCodes = new HashSet<string>(allAccounts.Where(a => a.Code != null).Select(a => a.Code!));
+            long nextCodeNum = 1;
+            var customerCodes = existingCodes.Where(c => c.StartsWith("1103") && c.Length > 4).ToList();
+            if (customerCodes.Any())
+            {
+                var maxCode = customerCodes.Max();
+                if (long.TryParse(maxCode.Substring(4), out var maxVal)) nextCodeNum = maxVal + 1;
+            }
 
             for (int r = 2; r <= lastRow; r++)
             {
@@ -177,45 +194,52 @@ public class CustomersController : ControllerBase
                 var rowEmail = ws.Cell(r, 3).GetString().Trim();
                 var rowNotes = ws.Cell(r, 5).GetString().Trim();
 
-                if (string.IsNullOrEmpty(rowName) || string.IsNullOrEmpty(rowPhone))
-                {
-                    errors.Add($"Row {r}: Name and Phone are mandatory (الاسم والهاتف إلزاميان).");
-                    continue;
-                }
+                if (string.IsNullOrEmpty(rowName) && string.IsNullOrEmpty(rowPhone)) continue;
 
                 var balanceCell = ws.Cell(r, 4);
                 decimal balance = 0;
-                
                 try 
                 {
-                    if (balanceCell.DataType == XLDataType.Number) {
-                        balance = balanceCell.GetValue<decimal>();
-                    } else {
+                    if (balanceCell.DataType == XLDataType.Number) balance = balanceCell.GetValue<decimal>();
+                    else {
                         var balStr = balanceCell.GetString().Trim().Replace(",", "").Replace(" ", "");
-                        if (!string.IsNullOrEmpty(balStr))
-                            decimal.TryParse(balStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out balance);
+                        if (!string.IsNullOrEmpty(balStr)) decimal.TryParse(balStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out balance);
                     }
-                } 
-                catch { /* fallback to 0 */ }
+                } catch { }
 
-                // 1. Find or Create
-                var customer = allCustomers.FirstOrDefault(c => (!string.IsNullOrEmpty(rowPhone) && c.Phone == rowPhone) || (string.IsNullOrEmpty(rowPhone) && c.FullName == rowName));
+                // 1. Find Existing (By Phone OR Email)
+                var customer = allCustomers.FirstOrDefault(c => 
+                    (!string.IsNullOrEmpty(rowPhone) && c.Phone == rowPhone) || 
+                    (!string.IsNullOrEmpty(rowEmail) && c.Email?.ToLower() == rowEmail.ToLower()) ||
+                    (string.IsNullOrEmpty(rowPhone) && string.IsNullOrEmpty(rowEmail) && c.FullName == rowName));
                 
                 try 
                 {
                     if (customer == null)
                     {
+                        // Generate a unique email if missing to avoid unique constraint on empty strings
+                        var finalEmail = rowEmail;
+                        if (string.IsNullOrEmpty(finalEmail)) {
+                            finalEmail = !string.IsNullOrEmpty(rowPhone) ? $"{rowPhone}@pos.com" : $"{Guid.NewGuid().ToString().Substring(0, 8)}@pos.com";
+                        }
+                        
+                        // Check if this generated email is already taken
+                        if (allCustomers.Any(c => c.Email?.ToLower() == finalEmail.ToLower())) {
+                             finalEmail = $"{Guid.NewGuid().ToString().Substring(0, 8)}@pos.com";
+                        }
+
                         customer = new Customer
                         {
                             FullName = string.IsNullOrEmpty(rowName) ? (string.IsNullOrEmpty(rowPhone) ? "Imported" : rowPhone) : rowName,
-                            Phone = string.IsNullOrEmpty(rowPhone) ? null : rowPhone, // Keep null if empty to avoid unique conflict with "0000"
-                            Email = rowEmail ?? "",
+                            Phone = string.IsNullOrEmpty(rowPhone) ? null : rowPhone,
+                            Email = finalEmail,
                             Notes = rowNotes,
                             IsActive = true,
+                            MainAccountId = parentAccount.Id, // Default to control account
                             CreatedAt = TimeHelper.GetEgyptTime()
                         };
                         db.Customers.Add(customer);
-                        await db.SaveChangesAsync(); // Trigger account creation
+                        await db.SaveChangesAsync(); // Persist to get ID
                         allCustomers.Add(customer);
                     }
                     else 
@@ -226,18 +250,54 @@ public class CustomersController : ControllerBase
                         customer.UpdatedAt = TimeHelper.GetEgyptTime();
                     }
 
-                    // 2. Sync Balance
-                    if (customer.MainAccount != null)
+                    // 2. Individual Account Logic (Only if balance != 0 or they already have a sub-account)
+                    // If the customer is currently pointed to the shared 1103 account but needs an individual opening balance, 
+                    // we MUST create a sub-account for them.
+                    if (balance != 0)
                     {
-                        customer.MainAccount.OpeningBalance = balance;
-                        customer.MainAccount.UpdatedAt = TimeHelper.GetEgyptTime();
+                        if (customer.MainAccount == null || customer.MainAccount.Code == "1103")
+                        {
+                            // Create Sub-Account
+                            string newCode;
+                            while (true) {
+                                newCode = $"1103{nextCodeNum:D4}";
+                                if (!existingCodes.Contains(newCode)) break;
+                                nextCodeNum++;
+                            }
+                            existingCodes.Add(newCode);
+
+                            var subAccount = new Account
+                            {
+                                Code = newCode,
+                                NameAr = $"عميل - {customer.FullName}",
+                                NameEn = $"Customer - {customer.FullName}",
+                                ParentId = parentAccount.Id,
+                                Type = AccountType.Asset,
+                                Nature = AccountNature.Debit,
+                                IsLeaf = true,
+                                AllowPosting = true,
+                                OpeningBalance = balance,
+                                CreatedAt = TimeHelper.GetEgyptTime()
+                            };
+                            db.Accounts.Add(subAccount);
+                            await db.SaveChangesAsync();
+                            
+                            customer.MainAccountId = subAccount.Id;
+                            customer.MainAccount = subAccount;
+                        }
+                        else
+                        {
+                            // Update existing sub-account
+                            customer.MainAccount.OpeningBalance = balance;
+                            customer.MainAccount.UpdatedAt = TimeHelper.GetEgyptTime();
+                        }
                     }
                     
                     successCount++;
                 }
                 catch (Exception rowEx)
                 {
-                    if (customer != null) db.Entry(customer).State = EntityState.Detached;
+                    if (customer != null && db.Entry(customer).State != EntityState.Detached) db.Entry(customer).State = EntityState.Detached;
                     var msg = rowEx.InnerException?.Message ?? rowEx.Message;
                     errors.Add($"Row {r} ({rowName}): {msg}");
                 }
@@ -250,6 +310,7 @@ public class CustomersController : ControllerBase
             var msg = ex.InnerException?.Message ?? ex.Message;
             return BadRequest(new { message = $"Critical Save Error: {msg}", errors });
         }
+
 
         return Ok(new { success = true, successCount, errors });
     }
