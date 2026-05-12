@@ -26,6 +26,10 @@ public class StoreInfo
     public string OrderNumberPrefix { get; set; } = "SPT";
 
     [MaxLength(10)]
+    [JsonPropertyName("defaultLanguage")]
+    public string DefaultLanguage { get; set; } = "ar";
+
+    [MaxLength(10)]
     [JsonPropertyName("currencyCode")]
     public string CurrencyCode { get; set; } = "EGP";
 
@@ -179,6 +183,21 @@ public class StoreInfo
     [MaxLength(20)]
     [JsonPropertyName("receiptPaperSize")]
     public string ReceiptPaperSize { get; set; } = "Receipt";
+
+    [JsonPropertyName("enablePOS")]
+    public bool EnablePOS { get; set; } = true;
+
+    [JsonPropertyName("enableECommerce")]
+    public bool EnableECommerce { get; set; } = true;
+
+    [JsonPropertyName("enableHR")]
+    public bool EnableHR { get; set; } = true;
+
+    [JsonPropertyName("enableFixedAssets")]
+    public bool EnableFixedAssets { get; set; } = true;
+
+    [JsonPropertyName("enableAccounting")]
+    public bool EnableAccounting { get; set; } = true;
 
     [JsonPropertyName("receiptWidth")]
     public int ReceiptWidth { get; set; } = 80;

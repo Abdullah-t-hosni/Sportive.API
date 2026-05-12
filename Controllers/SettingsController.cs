@@ -158,6 +158,12 @@ public class SettingsController : ControllerBase
             info.BarcodeSvgHeight         = dto.BarcodeSvgHeight;
 
             info.ReceiptPaperSize         = dto.ReceiptPaperSize ?? "Receipt";
+            info.EnablePOS                = dto.EnablePOS;
+            info.EnableECommerce          = dto.EnableECommerce;
+            info.EnableHR                 = dto.EnableHR;
+            info.EnableFixedAssets        = dto.EnableFixedAssets;
+            info.EnableAccounting         = dto.EnableAccounting;
+            info.DefaultLanguage          = dto.DefaultLanguage ?? "ar";
             info.ReceiptWidth             = dto.ReceiptWidth;
             info.ReceiptFontSize          = dto.ReceiptFontSize;
             info.ReceiptFontFamily        = dto.ReceiptFontFamily ?? "Alexandria";
