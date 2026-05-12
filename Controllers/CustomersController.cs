@@ -172,12 +172,16 @@ public class CustomersController : ControllerBase
 
             for (int r = 2; r <= lastRow; r++)
             {
-                var name  = ws.Cell(r, 1).GetString().Trim();
-                var phone = ws.Cell(r, 2).GetString().Trim();
-                var email = ws.Cell(r, 3).GetString().Trim();
-                var notes = ws.Cell(r, 5).GetString().Trim();
+                var rowName  = ws.Cell(r, 1).GetString().Trim();
+                var rowPhone = ws.Cell(r, 2).GetString().Trim();
+                var rowEmail = ws.Cell(r, 3).GetString().Trim();
+                var rowNotes = ws.Cell(r, 5).GetString().Trim();
 
-                if (string.IsNullOrEmpty(name) && string.IsNullOrEmpty(phone)) continue;
+                if (string.IsNullOrEmpty(rowName) || string.IsNullOrEmpty(rowPhone))
+                {
+                    errors.Add($"Row {r}: Name and Phone are mandatory (الاسم والهاتف إلزاميان).");
+                    continue;
+                }
 
                 var balanceCell = ws.Cell(r, 4);
                 decimal balance = 0;
@@ -195,39 +199,47 @@ public class CustomersController : ControllerBase
                 catch { /* fallback to 0 */ }
 
                 // 1. Find or Create
-                var customer = allCustomers.FirstOrDefault(c => (!string.IsNullOrEmpty(phone) && c.Phone == phone) || (string.IsNullOrEmpty(phone) && c.FullName == name));
+                var customer = allCustomers.FirstOrDefault(c => (!string.IsNullOrEmpty(rowPhone) && c.Phone == rowPhone) || (string.IsNullOrEmpty(rowPhone) && c.FullName == rowName));
                 
-                if (customer == null)
+                try 
                 {
-                    customer = new Customer
+                    if (customer == null)
                     {
-                        FullName = string.IsNullOrEmpty(name) ? (string.IsNullOrEmpty(phone) ? "Imported" : phone) : name,
-                        Phone = string.IsNullOrEmpty(phone) ? "0000" : phone,
-                        Email = email,
-                        Notes = notes,
-                        IsActive = true,
-                        CreatedAt = TimeHelper.GetEgyptTime()
-                    };
-                    db.Customers.Add(customer);
-                    await db.SaveChangesAsync(); // To trigger account creation
-                    allCustomers.Add(customer);
-                }
-                else 
-                {
-                    if (!string.IsNullOrEmpty(name))  customer.FullName = name;
-                    if (!string.IsNullOrEmpty(email)) customer.Email = email;
-                    if (!string.IsNullOrEmpty(notes)) customer.Notes = notes;
-                    customer.UpdatedAt = TimeHelper.GetEgyptTime();
-                }
+                        customer = new Customer
+                        {
+                            FullName = string.IsNullOrEmpty(rowName) ? (string.IsNullOrEmpty(rowPhone) ? "Imported" : rowPhone) : rowName,
+                            Phone = string.IsNullOrEmpty(rowPhone) ? null : rowPhone, // Keep null if empty to avoid unique conflict with "0000"
+                            Email = rowEmail ?? "",
+                            Notes = rowNotes,
+                            IsActive = true,
+                            CreatedAt = TimeHelper.GetEgyptTime()
+                        };
+                        db.Customers.Add(customer);
+                        await db.SaveChangesAsync(); // Trigger account creation
+                        allCustomers.Add(customer);
+                    }
+                    else 
+                    {
+                        if (!string.IsNullOrEmpty(rowName))  customer.FullName = rowName;
+                        if (!string.IsNullOrEmpty(rowEmail)) customer.Email = rowEmail;
+                        if (!string.IsNullOrEmpty(rowNotes)) customer.Notes = rowNotes;
+                        customer.UpdatedAt = TimeHelper.GetEgyptTime();
+                    }
 
-                // 2. Sync Balance
-                if (customer.MainAccount != null)
-                {
-                    customer.MainAccount.OpeningBalance = balance;
-                    customer.MainAccount.UpdatedAt = TimeHelper.GetEgyptTime();
+                    // 2. Sync Balance
+                    if (customer.MainAccount != null)
+                    {
+                        customer.MainAccount.OpeningBalance = balance;
+                        customer.MainAccount.UpdatedAt = TimeHelper.GetEgyptTime();
+                    }
+                    
+                    successCount++;
                 }
-                
-                successCount++;
+                catch (Exception rowEx)
+                {
+                    errors.Add($"Row {r} ({rowName}): {rowEx.InnerException?.Message ?? rowEx.Message}");
+                    // Continue with next row
+                }
             }
 
             await db.SaveChangesAsync();
