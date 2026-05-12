@@ -174,9 +174,24 @@ public class CustomersController : ControllerBase
                 var identifier = ws.Cell(r, 1).GetString().Trim(); // Name or Phone
                 if (string.IsNullOrEmpty(identifier)) continue;
 
-                var balStr = ws.Cell(r, 2).GetString().Trim();
-                if (!decimal.TryParse(balStr, out var balance))
+                var balanceCell = ws.Cell(r, 2);
+                decimal balance = 0;
+                
+                try 
                 {
+                    if (balanceCell.DataType == XLDataType.Number) {
+                        balance = balanceCell.GetDecimal();
+                    } else {
+                        var balStr = balanceCell.GetString().Trim()
+                                    .Replace(",", "") // Remove thousands separator
+                                    .Replace(" ", ""); // Remove spaces
+                        if (!decimal.TryParse(balStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out balance)) {
+                            errors.Add(_t.Get("Accounting.InvalidBalanceAtRow", r, identifier));
+                            continue;
+                        }
+                    }
+                } 
+                catch {
                     errors.Add(_t.Get("Accounting.InvalidBalanceAtRow", r, identifier));
                     continue;
                 }
@@ -206,5 +221,32 @@ public class CustomersController : ControllerBase
         }
 
         return Ok(new { success = true, successCount, errors });
+    }
+
+    [HttpGet("import-template")]
+    [RequirePermission(ModuleKeys.Customers)]
+    public IActionResult DownloadImportTemplate()
+    {
+        using var wb = new ClosedXML.Excel.XLWorkbook();
+        var ws = wb.Worksheets.Add("الرصيد الافتتاحي");
+        
+        ws.Cell(1, 1).Value = "العميل (الاسم أو الهاتف)";
+        ws.Cell(1, 2).Value = "الرصيد الافتتاحي";
+        
+        // Styling
+        var header = ws.Range(1, 1, 1, 2);
+        header.Style.Font.Bold = true;
+        header.Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.FromHtml("#1a1a2e");
+        header.Style.Font.FontColor = ClosedXML.Excel.XLColor.White;
+        header.Style.Alignment.Horizontal = ClosedXML.Excel.XLAlignmentHorizontalValues.Center;
+        
+        ws.Column(1).Width = 40;
+        ws.Column(2).Width = 20;
+        ws.RightToLeft = true;
+
+        using var stream = new System.IO.MemoryStream();
+        wb.SaveAs(stream);
+        stream.Position = 0;
+        return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "customers_import_template.xlsx");
     }
 }
