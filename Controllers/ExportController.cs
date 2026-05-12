@@ -18,7 +18,7 @@ public class ExportController : ControllerBase
 
     public ExportController(AppDbContext db) => _db = db;
 
-    // â”€â”€ ORDERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ORDERS
     // GET /api/export/orders?source=0&fromDate=2025-01-01&toDate=2025-12-31
     [HttpGet("orders")]
     public async Task<IActionResult> ExportOrders(
@@ -129,7 +129,7 @@ public class ExportController : ControllerBase
             $"orders_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
-    // â”€â”€ PRODUCTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // PRODUCTS
     // GET /api/export/products
     [HttpGet("products")]
     public async Task<IActionResult> ExportProducts()
@@ -198,12 +198,31 @@ public class ExportController : ControllerBase
             $"products_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
-    // â”€â”€ CUSTOMERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // CUSTOMERS 
     [HttpGet("customers")]
-    public async Task<IActionResult> ExportCustomers()
+    public async Task<IActionResult> ExportCustomers(
+        [FromQuery] string? search = null,
+        [FromQuery] decimal? minSpent = null,
+        [FromQuery] bool? hasDebt = null,
+        [FromQuery] DateTime? joinStartDate = null)
     {
-        var customers = await _db.Customers
+        var query = _db.Customers
             .Include(c => c.Orders)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(c => c.FullName.Contains(search) || (c.Phone != null && c.Phone.Contains(search)));
+
+        if (minSpent.HasValue)
+            query = query.Where(c => c.Orders.Sum(o => o.TotalAmount) >= minSpent.Value);
+
+        if (hasDebt == true)
+            query = query.Where(c => c.Balance > 0);
+
+        if (joinStartDate.HasValue)
+            query = query.Where(c => c.CreatedAt >= joinStartDate.Value.Date);
+
+        var customers = await query
             .OrderByDescending(c => c.Orders.Sum(o => o.TotalAmount))
             .ToListAsync();
 
@@ -234,7 +253,7 @@ public class ExportController : ControllerBase
             $"customers_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
-    // â”€â”€ POS DAY REPORT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // POS DAY REPORT
     [HttpGet("pos-report")]
     public async Task<IActionResult> ExportPosReport(
         [FromQuery] DateTime? fromDate = null,
@@ -321,7 +340,7 @@ public class ExportController : ControllerBase
             $"pos_report_{from:yyyyMMdd}.xlsx");
     }
 
-    // â”€â”€ INVENTORY FULL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // INVENTORY FULL 
     // GET /api/export/inventory-full
     [HttpGet("inventory-full")]
     public async Task<IActionResult> ExportInventoryFull()
@@ -451,7 +470,7 @@ public class ExportController : ControllerBase
             $"low_stock_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
-    // â”€â”€ VARIANTS (SIZES & COLORS) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  VARIANTS (SIZES & COLORS) 
     // GET /api/export/inventory-variants
     [HttpGet("inventory-variants")]
     public async Task<IActionResult> ExportInventoryVariants()
@@ -511,7 +530,7 @@ public class ExportController : ControllerBase
             $"variants_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
-    // â”€â”€ ACCOUNTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ACCOUNTS 
     [HttpGet("accounts")]
     public async Task<IActionResult> ExportAccounts()
     {
