@@ -6,8 +6,8 @@ namespace Sportive.API.DTOs;
 // DEPARTMENT DTOs
 // ══════════════════════════════════════════════════════
 
-public record DepartmentDto(int Id, string Name, string? Description, int EmployeeCount);
-public record CreateDepartmentDto(string Name, string? Description);
+public record DepartmentDto(int Id, string Name, string? Description, int EmployeeCount, decimal WorkHoursPerDay, decimal OvertimeMultiplier, int DaysPerMonth);
+public record CreateDepartmentDto(string Name, string? Description, decimal WorkHoursPerDay = 9, decimal OvertimeMultiplier = 1.5m, int DaysPerMonth = 26);
 
 // ══════════════════════════════════════════════════════
 // EMPLOYEE DTOs
@@ -30,8 +30,11 @@ public record CreateEmployeeDto(
     string?       Notes              = null,
     string?       AttachmentUrl      = null,
     string?       AttachmentPublicId = null,
-    string?       AppUserId          = null,   // ربط اختياري بحساب النظام
-    OrderSource?  CostCenter         = null    // مركز التكلفة
+    string?       AppUserId          = null,
+    OrderSource?  CostCenter         = null,
+    decimal       WorkHoursPerDay    = 9,
+    decimal       OvertimeMultiplier = 1.5m,
+    int           DaysPerMonth       = 26
 );
 
 public record UpdateEmployeeDto(
@@ -53,7 +56,10 @@ public record UpdateEmployeeDto(
     string?       Notes              = null,
     string?       AttachmentUrl      = null,
     string?       AttachmentPublicId = null,
-    OrderSource?  CostCenter         = null
+    OrderSource?  CostCenter         = null,
+    decimal       WorkHoursPerDay    = 9,
+    decimal       OvertimeMultiplier = 1.5m,
+    int           DaysPerMonth       = 26
 );
 
 public record EmployeeDto(
@@ -81,10 +87,13 @@ public record EmployeeDto(
     DateTime       CreatedAt,
     string?        AppUserId    = null,
     string?        AppUserName  = null,
-    OrderSource?   CostCenter   = null
+    OrderSource?   CostCenter   = null,
+    decimal        WorkHoursPerDay = 9,
+    decimal        OvertimeMultiplier = 1.5m,
+    int            DaysPerMonth = 26
 );
 
-public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, int? DepartmentId, string? DepartmentName, decimal BaseSalary, decimal TransportationAllowance, decimal CommunicationAllowance, decimal BonusAmount, decimal FixedAllowance, decimal PendingAdvancesAmount, decimal PendingBonusesAmount, decimal PendingDeductionsAmount, int Status);
+public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, int? DepartmentId, string? DepartmentName, decimal BaseSalary, decimal TransportationAllowance, decimal CommunicationAllowance, decimal BonusAmount, decimal FixedAllowance, decimal PendingAdvancesAmount, decimal PendingBonusesAmount, decimal PendingDeductionsAmount, int Status, decimal WorkHoursPerDay, decimal OvertimeMultiplier, int DaysPerMonth);
 
 // ══════════════════════════════════════════════════════
 // PAYROLL RUN DTOs
@@ -109,13 +118,17 @@ public record PayPayrollDto(
 
 public record CreatePayrollItemDto(
     int      EmployeeId,
-    decimal? OverrideBasicSalary = null,  // لو null يأخذ راتب الموظف
+    decimal? OverrideBasicSalary = null,
     decimal  TransportationAllowance = 0,
     decimal  CommunicationAllowance  = 0,
     decimal  BonusAmount             = 0,
     decimal  FixedAllowance          = 0,
     decimal  DeductionAmount         = 0,
     decimal  AdvanceDeducted         = 0,
+    int      AbsenceDays             = 0,
+    decimal  AbsenceDeduction        = 0,
+    decimal  OvertimeHours           = 0,
+    decimal  OvertimeAmount          = 0,
     string?  Notes               = null
 );
 
@@ -129,6 +142,7 @@ public record PayrollRunDto(
     decimal       TotalCommunication,
     decimal       TotalBonuses,
     decimal       TotalFixedAllowances,
+    decimal       TotalOvertimeAmount,
     decimal       TotalDeductions,
     decimal       TotalAdvancesDeducted,
     decimal       TotalNetPayable,
@@ -153,6 +167,10 @@ public record PayrollItemDto(
     decimal FixedAllowance,
     decimal DeductionAmount,
     decimal AdvanceDeducted,
+    int     AbsenceDays,
+    decimal AbsenceDeduction,
+    decimal OvertimeHours,
+    decimal OvertimeAmount,
     decimal NetPayable,
     string? Notes
 );

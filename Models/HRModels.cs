@@ -48,6 +48,11 @@ public class Department : BaseEntity
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public ICollection<Employee> Employees { get; set; } = new List<Employee>();
+
+    // Default Payroll Configuration for this department
+    public decimal WorkHoursPerDay         { get; set; } = 9;
+    public decimal OvertimeMultiplier      { get; set; } = 1.5m;
+    public int     DaysPerMonth            { get; set; } = 26;
 }
 
 // ══════════════════════════════════════════════════════
@@ -76,6 +81,11 @@ public class Employee : BaseEntity
     public decimal BonusAmount             { get; set; } = 0;
     public decimal FixedAllowance          { get; set; } = 0;
     public decimal FixedDeduction          { get; set; } = 0;
+
+    // Payroll Configuration (Configurable per employee)
+    public decimal WorkHoursPerDay         { get; set; } = 9;   // Default 9 hours
+    public decimal OvertimeMultiplier      { get; set; } = 1.5m; // Default 1.5x
+    public int     DaysPerMonth            { get; set; } = 26;  // Default 26 days
 
     public string? BankAccount     { get; set; }  // رقم الحساب البنكي
     public string? Notes           { get; set; }
@@ -116,9 +126,11 @@ public class PayrollRun : BaseEntity
     public decimal TotalCommunication        { get; set; } = 0;
     public decimal TotalBonuses              { get; set; } = 0;
     public decimal TotalFixedAllowances      { get; set; } = 0;
+    public decimal TotalOvertimeAmount       { get; set; } = 0;
     public decimal TotalDeductions           { get; set; } = 0;
+    public decimal TotalAbsenceDeduction     { get; set; } = 0;
     public decimal TotalAdvancesDeducted     { get; set; } = 0;
-    public decimal TotalNetPayable           { get; set; } = 0;  // = Basic + Trans + Comm + Bonuses + FixedAllowance - TotalDeductions - Advances
+    public decimal TotalNetPayable           { get; set; } = 0;  // = Basic + Trans + Comm + Bonuses + FixedAllowance + Overtime - TotalDeductions - TotalAbsenceDeduction - Advances
 
     public PayrollStatus Status { get; set; } = PayrollStatus.Draft;
     public string?  Notes           { get; set; }
@@ -158,7 +170,14 @@ public class PayrollItem : BaseEntity
     public decimal FixedAllowance          { get; set; } = 0;
     public decimal DeductionAmount         { get; set; } = 0;
     public decimal AdvanceDeducted         { get; set; } = 0;
-    public decimal NetPayable => BasicSalary + TransportationAllowance + CommunicationAllowance + BonusAmount + FixedAllowance - DeductionAmount - AdvanceDeducted;
+    
+    public int     AbsenceDays             { get; set; } = 0;
+    public decimal AbsenceDeduction        { get; set; } = 0;
+
+    public decimal OvertimeHours           { get; set; } = 0;
+    public decimal OvertimeAmount          { get; set; } = 0;
+
+    public decimal NetPayable => BasicSalary + TransportationAllowance + CommunicationAllowance + BonusAmount + FixedAllowance + OvertimeAmount - DeductionAmount - AdvanceDeducted - AbsenceDeduction;
 
     public string? Notes { get; set; }
 }

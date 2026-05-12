@@ -68,7 +68,8 @@ public class EmployeesController : ControllerBase
                 e.AttachmentUrl, e.AttachmentPublicId,
                 e.CreatedAt,
                 e.AppUserId, e.AppUser != null ? e.AppUser.FullName : null,
-                e.CostCenter
+                e.CostCenter,
+                e.WorkHoursPerDay, e.OvertimeMultiplier, e.DaysPerMonth
             )).ToListAsync();
 
         return Ok(new PaginatedResult<EmployeeDto>(items, total, page, pageSize,
@@ -88,7 +89,8 @@ public class EmployeesController : ControllerBase
                 e.Advances.Where(a => a.Status != AdvanceStatus.FullyDeducted).Sum(a => a.Amount - a.DeductedAmount),
                 e.Bonuses.Where(b => b.PayrollRunId == null && b.CashAccountId == null).Sum(b => b.Amount),
                 e.Deductions.Where(d => d.PayrollRunId == null && d.CashAccountId == null).Sum(d => d.Amount),
-                (int)e.Status))
+                (int)e.Status,
+                e.WorkHoursPerDay, e.OvertimeMultiplier, e.DaysPerMonth))
             .ToListAsync());
     }
 
@@ -109,7 +111,8 @@ public class EmployeesController : ControllerBase
             e.AttachmentUrl, e.AttachmentPublicId,
             e.CreatedAt,
             e.AppUserId, e.AppUser?.FullName,
-            e.CostCenter));
+            e.CostCenter,
+            e.WorkHoursPerDay, e.OvertimeMultiplier, e.DaysPerMonth));
     }
 
     [HttpPost]
@@ -154,6 +157,9 @@ public class EmployeesController : ControllerBase
             AppUserId        = string.IsNullOrEmpty(dto.AppUserId) ? null : dto.AppUserId,
             CostCenter       = dto.CostCenter,
             Status           = EmployeeStatus.Active,
+            WorkHoursPerDay  = dto.WorkHoursPerDay,
+            OvertimeMultiplier = dto.OvertimeMultiplier,
+            DaysPerMonth     = dto.DaysPerMonth,
             CreatedAt        = TimeHelper.GetEgyptTime(),
             CreatedByUserId  = UserId
         };
@@ -215,6 +221,9 @@ public class EmployeesController : ControllerBase
         emp.AttachmentPublicId = dto.AttachmentPublicId;
         emp.Status            = dto.Status;
         emp.CostCenter        = dto.CostCenter;
+        emp.WorkHoursPerDay   = dto.WorkHoursPerDay;
+        emp.OvertimeMultiplier = dto.OvertimeMultiplier;
+        emp.DaysPerMonth      = dto.DaysPerMonth;
         emp.UpdatedAt         = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
@@ -425,7 +434,7 @@ public class PayrollController : ControllerBase
                 CreatedByUserId            = UserId
             };
 
-            decimal totalBasic = 0, totalTrans = 0, totalComm = 0, totalBonus = 0, totalFixedAll = 0, totalDed = 0, totalAdv = 0;
+            decimal totalBasic = 0, totalTrans = 0, totalComm = 0, totalBonus = 0, totalFixedAll = 0, totalDed = 0, totalAdv = 0, totalAbsence = 0, totalOvertime = 0;
 
             foreach (var itemDto in dto.Items)
             {
@@ -445,6 +454,8 @@ public class PayrollController : ControllerBase
                 totalFixedAll += fixAll;
                 totalDed   += itemDto.DeductionAmount;
                 totalAdv   += itemDto.AdvanceDeducted;
+                totalAbsence += itemDto.AbsenceDeduction;
+                totalOvertime += itemDto.OvertimeAmount;
 
                 run.Items.Add(new PayrollItem
                 {
@@ -456,6 +467,10 @@ public class PayrollController : ControllerBase
                     FixedAllowance  = fixAll,
                     DeductionAmount = itemDto.DeductionAmount,
                     AdvanceDeducted = itemDto.AdvanceDeducted,
+                    AbsenceDays     = itemDto.AbsenceDays,
+                    AbsenceDeduction = itemDto.AbsenceDeduction,
+                    OvertimeHours   = itemDto.OvertimeHours,
+                    OvertimeAmount  = itemDto.OvertimeAmount,
                     Notes           = itemDto.Notes,
                     CreatedAt       = TimeHelper.GetEgyptTime()
                 });
@@ -466,9 +481,11 @@ public class PayrollController : ControllerBase
             run.TotalCommunication    = totalComm;
             run.TotalBonuses          = totalBonus;
             run.TotalFixedAllowances  = totalFixedAll;
+            run.TotalOvertimeAmount    = totalOvertime;
             run.TotalDeductions       = totalDed;
+            run.TotalAbsenceDeduction  = totalAbsence;
             run.TotalAdvancesDeducted = totalAdv;
-            run.TotalNetPayable       = totalBasic + totalTrans + totalComm + totalBonus + totalFixedAll - totalDed - totalAdv;
+            run.TotalNetPayable       = totalBasic + totalTrans + totalComm + totalBonus + totalFixedAll + totalOvertime - totalDed - totalAbsence - totalAdv;
 
             _db.PayrollRuns.Add(run);
             await _db.SaveChangesAsync();
@@ -530,15 +547,16 @@ public class PayrollController : ControllerBase
             {
                 var cc = group.Key;
                 var ccBasic = group.Sum(i => i.BasicSalary);
+                var ccOvertime = group.Sum(i => i.OvertimeAmount);
                 var ccTrans = group.Sum(i => i.TransportationAllowance);
                 var ccComm  = group.Sum(i => i.CommunicationAllowance);
                 var ccFix   = group.Sum(i => i.FixedAllowance);
                 var ccBonus = group.Sum(i => i.BonusAmount);
-                var ccDed   = group.Sum(i => i.DeductionAmount);
+                var ccDed   = group.Sum(i => i.DeductionAmount) + group.Sum(i => i.AbsenceDeduction);
 
-                if (ccBasic > 0)
+                if (ccBasic > 0 || ccOvertime > 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = wagesAccId, Debit = ccBasic, Description = _t.Get("HR.BasicSalaryDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = wagesAccId, Debit = ccBasic + ccOvertime, Description = _t.Get("HR.BasicSalaryDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
                 }
                 if (ccTrans > 0)
                 {
@@ -566,7 +584,7 @@ public class PayrollController : ControllerBase
             {
                 var employeeCC = item.Employee?.CostCenter ?? OrderSource.General;
 
-                var grossEarnings = item.BasicSalary + item.TransportationAllowance + item.CommunicationAllowance + item.FixedAllowance + item.BonusAmount;
+                var grossEarnings = item.BasicSalary + item.TransportationAllowance + item.CommunicationAllowance + item.FixedAllowance + item.BonusAmount + item.OvertimeAmount;
                 if (grossEarnings > 0)
                 {
                     je.Lines.Add(new JournalLine
@@ -602,12 +620,13 @@ public class PayrollController : ControllerBase
                     });
                 }
 
-                if (item.DeductionAmount > 0)
+                var combinedDeduction = item.DeductionAmount + item.AbsenceDeduction;
+                if (combinedDeduction > 0)
                 {
                     je.Lines.Add(new JournalLine
                     {
                         AccountId   = accrualAccId,
-                        Debit       = item.DeductionAmount,
+                        Debit       = combinedDeduction,
                         Credit      = 0,
                         Description = _t.Get("HR.DeductionLogDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
                         EmployeeId  = item.EmployeeId,
@@ -785,14 +804,15 @@ public class PayrollController : ControllerBase
         run.Id, run.PayrollNumber, run.PeriodYear, run.PeriodMonth,
         run.TotalBasicSalary, run.TotalTransportation, run.TotalCommunication, run.TotalBonuses,
         run.TotalFixedAllowances,
-        run.TotalDeductions,
+        run.TotalOvertimeAmount,
+        run.TotalDeductions + run.TotalAbsenceDeduction,
         run.TotalAdvancesDeducted, run.TotalNetPayable, (int)run.Status, run.Notes,
         run.JournalEntryId, run.PaymentJournalEntryId, run.CreatedAt,
         run.Items.Select(i => new PayrollItemDto(
             i.Id, i.EmployeeId, i.Employee.Name, i.Employee.EmployeeNumber,
             i.Employee.JobTitle, i.BasicSalary, i.TransportationAllowance, i.CommunicationAllowance, i.BonusAmount,
             i.FixedAllowance,
-            i.DeductionAmount, i.AdvanceDeducted, i.NetPayable, i.Notes
+            i.DeductionAmount, i.AdvanceDeducted, i.AbsenceDays, i.AbsenceDeduction, i.OvertimeHours, i.OvertimeAmount, i.NetPayable, i.Notes
         )).ToList()
     );
 }
@@ -1325,35 +1345,62 @@ public class DepartmentsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly ITranslator _t;
     public DepartmentsController(AppDbContext db, ITranslator t) { _db = db; _t = t; }
+
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<ActionResult<IEnumerable<DepartmentDto>>> GetDepartments()
     {
-        var list = await _db.Departments
-            .Include(d => d.Employees)
-            .OrderBy(d => d.Name)
-            .Select(d => new DepartmentDto(d.Id, d.Name, d.Description, d.Employees.Count))
+        return await _db.Departments
+            .Select(d => new DepartmentDto(d.Id, d.Name, d.Description, d.Employees.Count, d.WorkHoursPerDay, d.OvertimeMultiplier, d.DaysPerMonth))
             .ToListAsync();
-        return Ok(list);
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateDepartmentDto dto)
+    public async Task<ActionResult<DepartmentDto>> CreateDepartment(CreateDepartmentDto dto)
     {
-        var dept = new Department { Name = dto.Name.Trim(), Description = dto.Description?.Trim() };
+        var dept = new Department 
+        { 
+            Name = dto.Name, 
+            Description = dto.Description,
+            WorkHoursPerDay = dto.WorkHoursPerDay,
+            OvertimeMultiplier = dto.OvertimeMultiplier,
+            DaysPerMonth = dto.DaysPerMonth
+        };
         _db.Departments.Add(dept);
         await _db.SaveChangesAsync();
-        return Ok(new { id = dept.Id });
+        return Ok(new DepartmentDto(dept.Id, dept.Name, dept.Description, 0, dept.WorkHoursPerDay, dept.OvertimeMultiplier, dept.DaysPerMonth));
     }
 
     [HttpPut("{id}")]
-    public async Task<IActionResult> Update(int id, [FromBody] CreateDepartmentDto dto)
+    public async Task<IActionResult> UpdateDepartment(int id, CreateDepartmentDto dto)
     {
         var dept = await _db.Departments.FindAsync(id);
         if (dept == null) return NotFound();
-        dept.Name = dto.Name.Trim();
-        dept.Description = dto.Description?.Trim();
+
+        dept.Name = dto.Name;
+        dept.Description = dto.Description;
+        dept.WorkHoursPerDay = dto.WorkHoursPerDay;
+        dept.OvertimeMultiplier = dto.OvertimeMultiplier;
+        dept.DaysPerMonth = dto.DaysPerMonth;
+
         await _db.SaveChangesAsync();
         return NoContent();
+    }
+
+    [HttpPost("{id}/apply-to-employees")]
+    public async Task<IActionResult> BulkUpdateEmployeesFromDepartment(int id)
+    {
+        var dept = await _db.Departments.Include(d => d.Employees).FirstOrDefaultAsync(d => d.Id == id);
+        if (dept == null) return NotFound();
+
+        foreach (var emp in dept.Employees)
+        {
+            emp.WorkHoursPerDay = dept.WorkHoursPerDay;
+            emp.OvertimeMultiplier = dept.OvertimeMultiplier;
+            emp.DaysPerMonth = dept.DaysPerMonth;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { message = $"Settings applied to {dept.Employees.Count} employees." });
     }
 
     [HttpDelete("{id}")]
