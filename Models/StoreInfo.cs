@@ -250,10 +250,10 @@ public class StoreInfo
     [JsonPropertyName("vatRatePercent")]
     public decimal VatRatePercent { get; set; } = 14;
     
-    [JsonPropertyName("deliveryFee")]
+    [JsonPropertyName("fixedDeliveryFee")]
     public decimal FixedDeliveryFee { get; set; } = 50;
     
-    [JsonPropertyName("freeDeliveryThreshold")]
+    [JsonPropertyName("freeDeliveryAt")]
     public decimal FreeDeliveryAt { get; set; } = 2000;
     
     [JsonPropertyName("deliveryAccountId")]
