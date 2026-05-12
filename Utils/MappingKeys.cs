@@ -53,6 +53,7 @@ public static class MappingKeys
 
     // ── حسابات الرواتب (HR) ───────────────────────────────
     public const string SalaryExpense          = "salaryExpenseAccountID";
+    public const string OvertimeExpense        = "overtimeExpenseAccountID";
     public const string SalariesPayable        = "salariesPayableAccountID";
     public const string EmployeeAdvances       = "employeeAdvancesAccountID";
     public const string EmployeeBonuses        = "employeeBonusesAccountID";

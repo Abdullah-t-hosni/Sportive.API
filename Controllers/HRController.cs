@@ -514,6 +514,7 @@ public class PayrollController : ControllerBase
         var accrualAccId = run.AccruedSalariesAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.SalariesPayable, mapDict);
         var dedAccId     = run.DeductionRevenueAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.EmployeeDeductions, mapDict);
         var advAccId     = run.AdvancesAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.EmployeeAdvances, mapDict);
+        var overtimeAccId = await _core.GetRequiredMappedAccountAsync(MappingKeys.OvertimeExpense, mapDict);
         
         var transAccId   = run.TotalTransportation > 0 ? await _core.GetRequiredMappedAccountAsync(MappingKeys.TransportationAllowanceExpense, mapDict) : 0;
         var commAccId    = run.TotalCommunication > 0 ? await _core.GetRequiredMappedAccountAsync(MappingKeys.CommunicationAllowanceExpense, mapDict) : 0;
@@ -546,18 +547,28 @@ public class PayrollController : ControllerBase
             foreach (var group in itemsByCostCenter)
             {
                 var cc = group.Key;
-                var ccBasic = group.Sum(i => i.BasicSalary);
+                var ccBasic = group.Sum(i => i.BasicSalary) - group.Sum(i => i.AbsenceDeduction); // Net of absence
                 var ccOvertime = group.Sum(i => i.OvertimeAmount);
                 var ccTrans = group.Sum(i => i.TransportationAllowance);
                 var ccComm  = group.Sum(i => i.CommunicationAllowance);
                 var ccFix   = group.Sum(i => i.FixedAllowance);
                 var ccBonus = group.Sum(i => i.BonusAmount);
-                var ccDed   = group.Sum(i => i.DeductionAmount) + group.Sum(i => i.AbsenceDeduction);
+                var ccDed   = group.Sum(i => i.DeductionAmount); // Absence is handled via ccBasic netting
 
-                if (ccBasic > 0 || ccOvertime > 0)
+                if (ccBasic > 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = wagesAccId, Debit = ccBasic + ccOvertime, Description = _t.Get("HR.BasicSalaryDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = wagesAccId, Debit = ccBasic, Description = _t.Get("HR.BasicSalaryDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
                 }
+                else if (ccBasic < 0)
+                {
+                    je.Lines.Add(new JournalLine { AccountId = wagesAccId, Credit = Math.Abs(ccBasic), Description = _t.Get("HR.BasicSalaryDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
+                }
+
+                if (ccOvertime > 0)
+                {
+                    je.Lines.Add(new JournalLine { AccountId = overtimeAccId, Debit = ccOvertime, Description = _t.Get("HR.OvertimeDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
+                }
+                
                 if (ccTrans > 0)
                 {
                     je.Lines.Add(new JournalLine { AccountId = transAccId, Debit = ccTrans, Description = _t.Get("HR.TransAllowanceDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
@@ -620,15 +631,27 @@ public class PayrollController : ControllerBase
                     });
                 }
 
-                var combinedDeduction = item.DeductionAmount + item.AbsenceDeduction;
-                if (combinedDeduction > 0)
+                if (item.DeductionAmount > 0)
                 {
                     je.Lines.Add(new JournalLine
                     {
                         AccountId   = accrualAccId,
-                        Debit       = combinedDeduction,
+                        Debit       = item.DeductionAmount,
                         Credit      = 0,
                         Description = _t.Get("HR.DeductionLogDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
+                        EmployeeId  = item.EmployeeId,
+                        CostCenter  = employeeCC
+                    });
+                }
+                
+                if (item.AbsenceDeduction > 0)
+                {
+                    je.Lines.Add(new JournalLine
+                    {
+                        AccountId   = accrualAccId,
+                        Debit       = item.AbsenceDeduction,
+                        Credit      = 0,
+                        Description = _t.Get("HR.AbsenceDeductionDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
                         EmployeeId  = item.EmployeeId,
                         CostCenter  = employeeCC
                     });
