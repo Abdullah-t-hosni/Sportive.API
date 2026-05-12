@@ -114,15 +114,15 @@ public class StoreInfo
     
     [MaxLength(500)]
     [JsonPropertyName("tikTokUrl")]
-    public string TikTokPage { get; set; } = "https://tiktok.com/@sportive";
+    public string TikTokPage { get; set; } = "";
 
     [MaxLength(500)]
     [JsonPropertyName("youtubeUrl")]
-    public string? YoutubeUrl { get; set; } = "https://youtube.com/@sportive";
+    public string? YoutubeUrl { get; set; }
 
     [MaxLength(500)]
     [JsonPropertyName("twitterUrl")]
-    public string? TwitterUrl { get; set; } = "https://twitter.com/sportive";
+    public string? TwitterUrl { get; set; }
 
     // --- 4. Sales & Orders ---
     [JsonPropertyName("minOrderAmount")]
@@ -343,7 +343,7 @@ public class StoreInfo
     public string? SiteMetaDescriptionEn { get; set; }
 
     [JsonPropertyName("siteKeywords")]
-    public string? SiteKeywords { get; set; } = "sportswear, fitness, gym, clothes";
+    public string? SiteKeywords { get; set; }
 
     // --- 12. Barcode Customization ---
     [JsonPropertyName("barcodeShowPrice")]
