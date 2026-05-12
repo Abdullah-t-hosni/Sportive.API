@@ -8,6 +8,7 @@ using Sportive.API.Data;
 using Sportive.API.Utils;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using ClosedXML.Excel;
 
 namespace Sportive.API.Controllers;
 
@@ -180,7 +181,7 @@ public class CustomersController : ControllerBase
                 try 
                 {
                     if (balanceCell.DataType == XLDataType.Number) {
-                        balance = balanceCell.GetDecimal();
+                        balance = balanceCell.GetValue<decimal>();
                     } else {
                         var balStr = balanceCell.GetString().Trim()
                                     .Replace(",", "") // Remove thousands separator
