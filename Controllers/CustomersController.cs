@@ -172,10 +172,14 @@ public class CustomersController : ControllerBase
 
             for (int r = 2; r <= lastRow; r++)
             {
-                var identifier = ws.Cell(r, 1).GetString().Trim(); // Name or Phone
-                if (string.IsNullOrEmpty(identifier)) continue;
+                var name  = ws.Cell(r, 1).GetString().Trim();
+                var phone = ws.Cell(r, 2).GetString().Trim();
+                var email = ws.Cell(r, 3).GetString().Trim();
+                var notes = ws.Cell(r, 5).GetString().Trim();
 
-                var balanceCell = ws.Cell(r, 2);
+                if (string.IsNullOrEmpty(name) && string.IsNullOrEmpty(phone)) continue;
+
+                var balanceCell = ws.Cell(r, 4);
                 decimal balance = 0;
                 
                 try 
@@ -183,34 +187,46 @@ public class CustomersController : ControllerBase
                     if (balanceCell.DataType == XLDataType.Number) {
                         balance = balanceCell.GetValue<decimal>();
                     } else {
-                        var balStr = balanceCell.GetString().Trim()
-                                    .Replace(",", "") // Remove thousands separator
-                                    .Replace(" ", ""); // Remove spaces
-                        if (!decimal.TryParse(balStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out balance)) {
-                            errors.Add(_t.Get("Accounting.InvalidBalanceAtRow", r, identifier));
-                            continue;
-                        }
+                        var balStr = balanceCell.GetString().Trim().Replace(",", "").Replace(" ", "");
+                        if (!string.IsNullOrEmpty(balStr))
+                            decimal.TryParse(balStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out balance);
                     }
                 } 
-                catch {
-                    errors.Add(_t.Get("Accounting.InvalidBalanceAtRow", r, identifier));
-                    continue;
-                }
+                catch { /* fallback to 0 */ }
 
-                var customer = allCustomers.FirstOrDefault(c => c.FullName == identifier || c.Phone == identifier);
+                // 1. Find or Create
+                var customer = allCustomers.FirstOrDefault(c => (!string.IsNullOrEmpty(phone) && c.Phone == phone) || (string.IsNullOrEmpty(phone) && c.FullName == name));
+                
                 if (customer == null)
                 {
-                    errors.Add(_t.Get("Accounting.CustomerNotFoundAtRow", r, identifier));
-                    continue;
+                    customer = new Customer
+                    {
+                        FullName = string.IsNullOrEmpty(name) ? (string.IsNullOrEmpty(phone) ? "Imported" : phone) : name,
+                        Phone = string.IsNullOrEmpty(phone) ? "0000" : phone,
+                        Email = email,
+                        Notes = notes,
+                        IsActive = true,
+                        CreatedAt = TimeHelper.GetEgyptTime()
+                    };
+                    db.Customers.Add(customer);
+                    await db.SaveChangesAsync(); // To trigger account creation
+                    allCustomers.Add(customer);
+                }
+                else 
+                {
+                    if (!string.IsNullOrEmpty(name))  customer.FullName = name;
+                    if (!string.IsNullOrEmpty(email)) customer.Email = email;
+                    if (!string.IsNullOrEmpty(notes)) customer.Notes = notes;
+                    customer.UpdatedAt = TimeHelper.GetEgyptTime();
                 }
 
+                // 2. Sync Balance
                 if (customer.MainAccount != null)
                 {
                     customer.MainAccount.OpeningBalance = balance;
                     customer.MainAccount.UpdatedAt = TimeHelper.GetEgyptTime();
                 }
                 
-                customer.UpdatedAt = TimeHelper.GetEgyptTime();
                 successCount++;
             }
 
@@ -229,20 +245,26 @@ public class CustomersController : ControllerBase
     public IActionResult DownloadImportTemplate()
     {
         using var wb = new ClosedXML.Excel.XLWorkbook();
-        var ws = wb.Worksheets.Add("الرصيد الافتتاحي");
+        var ws = wb.Worksheets.Add("العملاء");
         
-        ws.Cell(1, 1).Value = "العميل (الاسم أو الهاتف)";
-        ws.Cell(1, 2).Value = "الرصيد الافتتاحي";
+        ws.Cell(1, 1).Value = "الاسم الكامل";
+        ws.Cell(1, 2).Value = "الهاتف";
+        ws.Cell(1, 3).Value = "البريد الإلكتروني";
+        ws.Cell(1, 4).Value = "الرصيد الافتتاحي";
+        ws.Cell(1, 5).Value = "ملاحظات";
         
         // Styling
-        var header = ws.Range(1, 1, 1, 2);
+        var header = ws.Range(1, 1, 1, 5);
         header.Style.Font.Bold = true;
         header.Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.FromHtml("#1a1a2e");
         header.Style.Font.FontColor = ClosedXML.Excel.XLColor.White;
         header.Style.Alignment.Horizontal = ClosedXML.Excel.XLAlignmentHorizontalValues.Center;
         
-        ws.Column(1).Width = 40;
+        ws.Column(1).Width = 30;
         ws.Column(2).Width = 20;
+        ws.Column(3).Width = 30;
+        ws.Column(4).Width = 20;
+        ws.Column(5).Width = 40;
         ws.RightToLeft = true;
 
         using var stream = new System.IO.MemoryStream();
