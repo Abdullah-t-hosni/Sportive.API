@@ -58,6 +58,18 @@ public class StoreInfo
     [JsonPropertyName("announcementEnabled")]
     public bool AnnouncementEnabled { get; set; } = false;
 
+    [JsonPropertyName("showHeroSection")]
+    public bool ShowHeroSection { get; set; } = true;
+
+    [JsonPropertyName("useGlassmorphism")]
+    public bool UseGlassmorphism { get; set; } = false;
+
+    [JsonPropertyName("enablePageTransitions")]
+    public bool EnablePageTransitions { get; set; } = true;
+
+    [JsonPropertyName("enableHoverEffects")]
+    public bool EnableHoverEffects { get; set; } = true;
+
     [MaxLength(500)]
     [JsonPropertyName("announcementText")]
     public string? AnnouncementText { get; set; }
