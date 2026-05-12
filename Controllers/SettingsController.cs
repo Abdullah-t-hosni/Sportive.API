@@ -178,6 +178,7 @@ public class SettingsController : ControllerBase
             info.ReceiptBarcodeHeight     = dto.ReceiptBarcodeHeight;
             info.ReceiptSectionsOrder     = dto.ReceiptSectionsOrder ?? "header,order_info,items_table,totals_area,tafqeet,payment_info,footer_text,terms_conditions,barcode";
 
+            info.AccountingLockDate      = dto.AccountingLockDate;
             info.LastUpdateDate          = TimeHelper.GetEgyptTime();
 
             if (!string.IsNullOrWhiteSpace(dto.TimeZoneId))

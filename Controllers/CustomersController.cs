@@ -153,7 +153,7 @@ public class CustomersController : ControllerBase
 
     [RequirePermission(ModuleKeys.Customers, requireEdit: true)]
     [HttpPost("import-opening-balances")]
-    public async Task<IActionResult> ImportOpeningBalances(IFormFile file, [FromServices] AppDbContext db)
+    public async Task<IActionResult> ImportOpeningBalances([FromForm] IFormFile file, [FromServices] AppDbContext db)
     {
         if (file == null || file.Length == 0) return BadRequest(new { message = _t.Get("Accounting.NoFileUploaded") });
 
