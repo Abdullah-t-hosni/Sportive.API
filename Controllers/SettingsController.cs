@@ -1,4 +1,4 @@
-using Sportive.API.Attributes;
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -154,8 +154,15 @@ public class SettingsController : ControllerBase
             info.BarcodeShowStoreName     = dto.BarcodeShowStoreName;
             info.BarcodeLabelWidth        = dto.BarcodeLabelWidth;
             info.BarcodeLabelHeight       = dto.BarcodeLabelHeight;
-            info.BarcodeSvgWidth          = dto.BarcodeSvgWidth;
-            info.BarcodeSvgHeight         = dto.BarcodeSvgHeight;
+                        info.BarcodeSvgWidth         = dto.BarcodeSvgWidth;
+            info.BarcodeSvgHeight        = dto.BarcodeSvgHeight;
+            info.BarcodeMarginTop        = dto.BarcodeMarginTop;
+            info.BarcodeMarginLeft       = dto.BarcodeMarginLeft;
+            info.BarcodeStoreFontSize    = dto.BarcodeStoreFontSize;
+            info.BarcodeNameFontSize     = dto.BarcodeNameFontSize;
+            info.BarcodePriceFontSize    = dto.BarcodePriceFontSize;
+            info.BarcodeVariantFontSize  = dto.BarcodeVariantFontSize;
+            info.BarcodeCodeFontSize     = dto.BarcodeCodeFontSize;
 
             info.ReceiptPaperSize         = dto.ReceiptPaperSize ?? "Receipt";
             info.EnablePOS                = dto.EnablePOS;
@@ -186,7 +193,7 @@ public class SettingsController : ControllerBase
 
             await _db.SaveChangesAsync();
 
-            // Ø¥Ù„ØºØ§Ø¡ cache Ø§Ù„ØªÙˆÙ‚ÙŠØª ÙÙˆØ±Ø§Ù‹ Ø­ØªÙ‰ ØªÙ†Ø¹ÙƒØ³ Ø§Ù„ØªØºÙŠÙŠØ±Ø§Øª Ø¹Ù„Ù‰ Ø§Ù„ÙÙˆØ±
+            // cache 
             _timeService.InvalidateCache();
 
             return Ok(info);
@@ -197,4 +204,5 @@ public class SettingsController : ControllerBase
         }
     }
 }
+
 

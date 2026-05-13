@@ -359,19 +359,41 @@ public class StoreInfo
     public bool BarcodeShowColor { get; set; } = true;
 
     [JsonPropertyName("barcodeLabelWidth")]
-    public int BarcodeLabelWidth { get; set; } = 40;
+    public int BarcodeLabelWidth { get; set; } = 50;
 
     [JsonPropertyName("barcodeLabelHeight")]
-    public int BarcodeLabelHeight { get; set; } = 25;
+    public int BarcodeLabelHeight { get; set; } = 30;
 
     [JsonPropertyName("barcodeSvgWidth")]
-    public int BarcodeSvgWidth { get; set; } = 180;
+    public int BarcodeSvgWidth { get; set; } = 40;
 
     [JsonPropertyName("barcodeSvgHeight")]
-    public int BarcodeSvgHeight { get; set; } = 50;
+    public int BarcodeSvgHeight { get; set; } = 10;
 
     [JsonPropertyName("barcodeShowStoreName")]
     public bool BarcodeShowStoreName { get; set; } = true;
+
+    // --- 13. Barcode Advanced Scaling & Margins ---
+    [JsonPropertyName("barcodeMarginLeft")]
+    public int BarcodeMarginLeft { get; set; } = 0;
+
+    [JsonPropertyName("barcodeMarginTop")]
+    public int BarcodeMarginTop { get; set; } = 0;
+
+    [JsonPropertyName("barcodeStoreFontSize")]
+    public int BarcodeStoreFontSize { get; set; } = 8;
+
+    [JsonPropertyName("barcodeNameFontSize")]
+    public int BarcodeNameFontSize { get; set; } = 10;
+
+    [JsonPropertyName("barcodePriceFontSize")]
+    public int BarcodePriceFontSize { get; set; } = 14;
+
+    [JsonPropertyName("barcodeVariantFontSize")]
+    public int BarcodeVariantFontSize { get; set; } = 9;
+
+    [JsonPropertyName("barcodeCodeFontSize")]
+    public int BarcodeCodeFontSize { get; set; } = 15;
 
     [JsonPropertyName("lastUpdatedAt")]
     public DateTime LastUpdateDate { get; set; } = DateTime.UtcNow;
