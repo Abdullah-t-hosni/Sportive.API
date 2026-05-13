@@ -397,4 +397,22 @@ public class StoreInfo
 
     [JsonPropertyName("lastUpdatedAt")]
     public DateTime LastUpdateDate { get; set; } = DateTime.UtcNow;
+
+    [JsonPropertyName("barcodeMarginRight")]
+    public int BarcodeMarginRight { get; set; } = 0;
+
+    [JsonPropertyName("barcodeMarginBottom")]
+    public int BarcodeMarginBottom { get; set; } = 0;
+
+    [JsonPropertyName("barcodePaddingTop")]
+    public int BarcodePaddingTop { get; set; } = 0;
+
+    [JsonPropertyName("barcodePaddingLeft")]
+    public int BarcodePaddingLeft { get; set; } = 0;
+
+    [JsonPropertyName("barcodePaddingRight")]
+    public int BarcodePaddingRight { get; set; } = 0;
+
+    [JsonPropertyName("barcodePaddingBottom")]
+    public int BarcodePaddingBottom { get; set; } = 0;
 }

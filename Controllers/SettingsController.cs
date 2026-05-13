@@ -156,8 +156,14 @@ public class SettingsController : ControllerBase
             info.BarcodeLabelHeight       = dto.BarcodeLabelHeight;
                         info.BarcodeSvgWidth         = dto.BarcodeSvgWidth;
             info.BarcodeSvgHeight        = dto.BarcodeSvgHeight;
-            info.BarcodeMarginTop        = dto.BarcodeMarginTop;
+                        info.BarcodeMarginTop        = dto.BarcodeMarginTop;
             info.BarcodeMarginLeft       = dto.BarcodeMarginLeft;
+            info.BarcodeMarginRight      = dto.BarcodeMarginRight;
+            info.BarcodeMarginBottom     = dto.BarcodeMarginBottom;
+            info.BarcodePaddingTop       = dto.BarcodePaddingTop;
+            info.BarcodePaddingLeft      = dto.BarcodePaddingLeft;
+            info.BarcodePaddingRight     = dto.BarcodePaddingRight;
+            info.BarcodePaddingBottom    = dto.BarcodePaddingBottom;
             info.BarcodeStoreFontSize    = dto.BarcodeStoreFontSize;
             info.BarcodeNameFontSize     = dto.BarcodeNameFontSize;
             info.BarcodePriceFontSize    = dto.BarcodePriceFontSize;
@@ -204,5 +210,6 @@ public class SettingsController : ControllerBase
         }
     }
 }
+
 
 
