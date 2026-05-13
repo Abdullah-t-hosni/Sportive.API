@@ -73,7 +73,11 @@ public record PaginatedResult<T>(
     int TotalCount,
     int Page,
     int PageSize,
-    int TotalPages
+    int TotalPages,
+    decimal? TotalVolume = null,
+    decimal? TotalRemaining = null,
+    decimal? TotalQuantity = null,
+    int? TotalItems = null
 );
 
 // ========== NOTIFICATIONS ==========

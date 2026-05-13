@@ -182,6 +182,7 @@ public record PurchaseItemDto(
     decimal TaxRate,
     bool    IsTaxInclusive,
     decimal TotalCost,
+    List<ProductVariantDto>? ProductVariants = null,
     int?    FixedAssetCategoryId = null,
     string? FixedAssetCategoryName = null,
     string? AssetName = null,

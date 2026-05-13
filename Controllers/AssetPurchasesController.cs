@@ -97,6 +97,7 @@ public class AssetPurchasesController : ControllerBase
                 null, null, 
                 null, null, null,
                 it.Unit, 1, it.Quantity, it.ReturnedQuantity, it.UnitCost, it.TaxRate, it.IsTaxInclusive, it.TotalCost,
+                null, // ProductVariants
                 it.FixedAssetCategoryId, it.FixedAssetCategory?.Name, it.AssetName, it.CreatedAssetId
             )).ToList(),
             inv.Payments.Select(p => new SupplierPaymentSummaryDto(

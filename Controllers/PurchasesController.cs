@@ -294,6 +294,12 @@ public class PurchaseInvoicesController : ControllerBase
                            || i.Supplier.Name.Contains(search));
 
         var total = await q.CountAsync();
+        
+        // Optimize: Calculate summaries in parallel or efficiently
+        var totalVolume    = await q.SumAsync(i => (decimal?)i.TotalAmount) ?? 0;
+        var totalRemaining = await q.SumAsync(i => (decimal?)(i.TotalAmount - i.PaidAmount - i.ReturnedAmount)) ?? 0;
+        var totalQuantity  = await q.SelectMany(i => i.Items).SumAsync(it => (decimal?)it.Quantity) ?? 0;
+
         var items = await q.OrderByDescending(i => i.InvoiceDate)
             .Skip((page-1)*pageSize).Take(pageSize)
             .Select(i => new PurchaseInvoiceSummaryDto(
@@ -305,8 +311,10 @@ public class PurchaseInvoicesController : ControllerBase
                 i.CostCenter == OrderSource.Website ? "الموقع" : (i.CostCenter == OrderSource.POS ? "المحل" : "عام")
             )).ToListAsync();
 
-        return Ok(new PaginatedResult<PurchaseInvoiceSummaryDto>(items, total, page, pageSize,
-            (int)Math.Ceiling((double)total / pageSize)));
+        return Ok(new PaginatedResult<PurchaseInvoiceSummaryDto>(
+            items, total, page, pageSize, (int)Math.Ceiling((double)total / pageSize),
+            totalVolume, totalRemaining, totalQuantity, total
+        ));
     }
 
     [HttpGet("returns")]
@@ -531,7 +539,7 @@ public class PurchaseInvoicesController : ControllerBase
         var pUnits = await GetUnitsListAsync();
         var inv = await _db.PurchaseInvoices
             .Include(i => i.Supplier)
-            .Include(i => i.Items).ThenInclude(it => it.Product)
+            .Include(i => i.Items).ThenInclude(it => it.Product).ThenInclude(p => p.Variants)
             .Include(i => i.Items).ThenInclude(it => it.ProductVariant)
             .Include(i => i.Payments)
             .FirstOrDefaultAsync(i => i.Id == id);
@@ -540,7 +548,7 @@ public class PurchaseInvoicesController : ControllerBase
 
         return Ok(new PurchaseInvoiceDetailDto(
             inv.Id, inv.InvoiceNumber, inv.SupplierInvoiceNumber,
-            new SupplierBasicDto(inv.Supplier.Id, inv.Supplier.Name, inv.Supplier.Phone, inv.Supplier.CompanyName),
+            new SupplierBasicDto(inv.Supplier!.Id, inv.Supplier.Name, inv.Supplier.Phone, inv.Supplier.CompanyName),
             inv.PaymentTerms.ToString(), inv.Status.ToString(), inv.IsAssetPurchase,
             inv.InvoiceDate, inv.DueDate,
             inv.SubTotal, inv.TaxPercent, inv.TaxAmount, inv.IsTaxInclusive, inv.DiscountAmount, inv.TotalAmount,
@@ -549,7 +557,8 @@ public class PurchaseInvoicesController : ControllerBase
                 it.Id, it.Description, it.ProductId, 
                 it.Product?.SKU, it.Product?.NameAr, 
                 it.ProductVariantId, it.ProductVariant?.Size, it.ProductVariant?.ColorAr ?? it.ProductVariant?.Color,
-                it.Unit, GetMultiplier(pUnits, it.Unit), it.Quantity, it.ReturnedQuantity, it.UnitCost, it.TaxRate, it.IsTaxInclusive, it.TotalCost
+                it.Unit, GetMultiplier(pUnits, it.Unit), it.Quantity, it.ReturnedQuantity, it.UnitCost, it.TaxRate, it.IsTaxInclusive, it.TotalCost,
+                it.Product?.Variants.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList()
             )).ToList(),
             inv.Payments.Select(p => new SupplierPaymentSummaryDto(
                 p.Id, p.PaymentNumber, inv.Supplier.Name, inv.InvoiceNumber,
