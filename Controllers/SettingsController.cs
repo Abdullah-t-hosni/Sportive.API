@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -165,6 +165,7 @@ public class SettingsController : ControllerBase
             info.BarcodePaddingRight     = dto.BarcodePaddingRight;
             info.BarcodePaddingBottom= dto.BarcodePaddingBottom;
             info.BarcodeDirection = dto.BarcodeDirection;
+            info.BarcodeRotation = dto.BarcodeRotation;
             info.BarcodeStoreFontSize    = dto.BarcodeStoreFontSize;
             info.BarcodeNameFontSize     = dto.BarcodeNameFontSize;
             info.BarcodePriceFontSize    = dto.BarcodePriceFontSize;
