@@ -647,7 +647,7 @@ public class OrderService : IOrderService
                                 bool matchCategory = string.IsNullOrEmpty(offer.EligibleCategoryIds);
                                 if (!matchCategory && i.Product != null)
                                 {
-                                    var eligibleIds = offer.EligibleCategoryIds.Split(',')
+                                    var eligibleIds = offer.EligibleCategoryIds!.Split(',')
                                         .Where(s => !string.IsNullOrEmpty(s))
                                         .Select(int.Parse).ToList();
                                     
@@ -1254,7 +1254,7 @@ public class OrderService : IOrderService
                     var product = await _db.Products.FindAsync(item.ProductId);
                     if (product != null)
                     {
-                        totalCost += (product.CostPrice * item.Quantity);
+                        totalCost += (product.CostPrice ?? 0) * item.Quantity;
                     }
                 }
 

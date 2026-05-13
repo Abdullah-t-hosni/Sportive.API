@@ -184,7 +184,7 @@ public class CustomersController : ControllerBase
             if (customerCodes.Any())
             {
                 var maxCode = customerCodes.Max();
-                if (long.TryParse(maxCode.Substring(4), out var maxVal)) nextCodeNum = maxVal + 1;
+                if (long.TryParse(maxCode!.Substring(4), out var maxVal)) nextCodeNum = maxVal + 1;
             }
 
             for (int r = 2; r <= lastRow; r++)
@@ -305,7 +305,6 @@ public class CustomersController : ControllerBase
 
             await db.SaveChangesAsync();
             
-            string? errorReportFile = null;
             if (errors.Any())
             {
                 using var errorWb = new XLWorkbook();

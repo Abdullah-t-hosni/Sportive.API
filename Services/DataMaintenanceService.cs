@@ -577,7 +577,7 @@ public class DataMaintenanceService : IDataMaintenanceService
             var staffCustomers = await _db.Customers
                 .Include(c => c.AppUser)
                 .Include(c => c.Orders)
-                .Where(c => c.AppUserId != null && c.AppUser.UserName.StartsWith("staff_"))
+                .Where(c => c.AppUserId != null && c.AppUser != null && c.AppUser.UserName != null && c.AppUser.UserName.StartsWith("staff_"))
                 .ToListAsync();
 
             if (!staffCustomers.Any())
