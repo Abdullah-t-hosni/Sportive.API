@@ -24,10 +24,12 @@ public class AccountsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IAccountingService _accounting;
+    private readonly AccountingCoreService _core;
     private readonly ITranslator _t;
-    public AccountsController(AppDbContext db, IAccountingService accounting, ITranslator t) {
+    public AccountsController(AppDbContext db, IAccountingService accounting, AccountingCoreService core, ITranslator t) {
         _db = db;
         _accounting = accounting;
+        _core = core;
         _t = t;
     }
 
