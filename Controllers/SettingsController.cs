@@ -163,7 +163,8 @@ public class SettingsController : ControllerBase
             info.BarcodePaddingTop       = dto.BarcodePaddingTop;
             info.BarcodePaddingLeft      = dto.BarcodePaddingLeft;
             info.BarcodePaddingRight     = dto.BarcodePaddingRight;
-            info.BarcodePaddingBottom    = dto.BarcodePaddingBottom;
+            info.BarcodePaddingBottom= dto.BarcodePaddingBottom;
+            info.BarcodeDirection = dto.BarcodeDirection;
             info.BarcodeStoreFontSize    = dto.BarcodeStoreFontSize;
             info.BarcodeNameFontSize     = dto.BarcodeNameFontSize;
             info.BarcodePriceFontSize    = dto.BarcodePriceFontSize;
@@ -210,6 +211,8 @@ public class SettingsController : ControllerBase
         }
     }
 }
+
+
 
 
 

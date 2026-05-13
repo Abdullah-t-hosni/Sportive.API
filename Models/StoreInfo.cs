@@ -415,4 +415,7 @@ public class StoreInfo
 
     [JsonPropertyName("barcodePaddingBottom")]
     public int BarcodePaddingBottom { get; set; } = 0;
+
+    [JsonPropertyName("barcodeDirection")]
+    public int BarcodeDirection { get; set; } = 0;
 }
