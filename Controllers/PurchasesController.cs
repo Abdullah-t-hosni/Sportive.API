@@ -1742,6 +1742,15 @@ public class PurchaseInvoicesController : ControllerBase
 
         if (inv == null) return NotFound();
 
+        // 🛡️ SECURITY GUARD: Only Admin/SuperAdmin can delete posted invoices
+        if (inv.Status != PurchaseInvoiceStatus.Draft && (int)inv.Status != 0)
+        {
+            if (!User.IsInRole("Admin") && !User.IsInRole("SuperAdmin"))
+            {
+                return Forbid();
+            }
+        }
+
         // 1. التحقق من وجود مرتجعات (Check for Returns)
         var hasReturns = await _db.PurchaseReturns.AnyAsync(r => r.PurchaseInvoiceId == id);
         if (hasReturns || inv.ReturnedAmount > 0)
@@ -1763,8 +1772,6 @@ public class PurchaseInvoicesController : ControllerBase
                 {
                     var productName = item.Product?.NameAr ?? item.Description;
                     return BadRequest(new { message = _t.Get("Purchases.CannotDeleteInvoiceUsedInSales", productName, qtyInPieces, currentStock) });
-
-
                 }
             }
         }
@@ -1777,19 +1784,20 @@ public class PurchaseInvoicesController : ControllerBase
             if (item.ProductId.HasValue)
             {
                 var mult = GetMultiplier(pUnits, item.Unit);
-                await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, -(item.Quantity * mult), item.ProductId, item.ProductVariantId, inv.InvoiceNumber, "Purchase Invoice Deleted", User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+                await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, -(item.Quantity * mult), item.ProductId, item.ProductVariantId, inv.InvoiceNumber, "Purchase Invoice Deleted", User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value);
             }
         }
 
+        // 3. الشامل: حذف جميع القيود المحاسبية المرتبطة بالفاتورة ومدفوعاتها
         foreach (var p in inv.Payments.ToList())
         {
-            var pEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Reference == p.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher);
-            if (pEntry != null) _db.JournalEntries.Remove(pEntry);
+            var pEntries = await _db.JournalEntries.Where(e => e.Reference == p.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher).ToListAsync();
+            if (pEntries.Any()) _db.JournalEntries.RemoveRange(pEntries);
             _db.SupplierPayments.Remove(p);
         }
 
-        var invoiceEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == inv.InvoiceNumber);
-        if (invoiceEntry != null) _db.JournalEntries.Remove(invoiceEntry);
+        var invoiceEntries = await _db.JournalEntries.Where(e => (e.Type == JournalEntryType.PurchaseInvoice || e.Type == JournalEntryType.OpeningBalance) && e.Reference == inv.InvoiceNumber).ToListAsync();
+        if (invoiceEntries.Any()) _db.JournalEntries.RemoveRange(invoiceEntries);
 
         _db.PurchaseInvoices.Remove(inv);
         await _db.SaveChangesAsync();
