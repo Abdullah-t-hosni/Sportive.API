@@ -361,6 +361,18 @@ public class OrdersController : ControllerBase
         return Ok(order);
     }
 
+
+    [HttpPost("direct-return")]
+    [RequirePermission(ModuleKeys.Orders)]
+    [AllowPosAccess]
+    public async Task<IActionResult> PostDirectReturn([FromBody] DirectReturnDto dto)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
+        var returnNumber = await _orderService.ProcessDirectReturnAsync(dto, userId);
+        return Ok(new { message = _translator.Get("Orders.DirectReturnSuccess"), returnNumber });
+    }
+
+
     // POST /api/orders/{id}/archive 
     // POST /api/orders/{id}/unarchive 
     // POST /api/orders/archive-batch 

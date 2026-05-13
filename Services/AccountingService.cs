@@ -23,6 +23,7 @@ public interface IAccountingService
     Task PostOrderRefundAsync(Order order);
     Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null);
     Task PostSupplierPaymentAsync(SupplierPayment payment);
+    Task PostDirectSalesReturnAsync(DirectReturnDto dto, string returnNumber, decimal totalCost);
     Task ReverseEntryAsync(int journalEntryId, string reason);
     Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, ClaimsPrincipal? user);
     Task<JournalEntry> UpdateManualEntryAsync(int id, UpdateJournalEntryDto dto, ClaimsPrincipal? user);
@@ -72,6 +73,9 @@ public class AccountingService : IAccountingService
     public Task PostSalesReturnAsync(Order order, int? refundAccountId = null) => _sales.PostSalesReturnAsync(order, refundAccountId);
     public Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null) 
         => _sales.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId);
+
+    public Task PostDirectSalesReturnAsync(DirectReturnDto dto, string returnNumber, decimal totalCost)
+        => _sales.PostDirectSalesReturnAsync(dto, returnNumber, totalCost);
 
     public Task PostPurchaseInvoiceAsync(PurchaseInvoice invoice) => _purchase.PostPurchaseInvoiceAsync(invoice);
     public Task PostPurchaseReturnAsync(PurchaseInvoice invoice, decimal returnedSubTotal = 0, decimal returnedTaxAmount = 0, decimal returnedDiscountAmount = 0) => _purchase.PostPurchaseReturnAsync(invoice, returnedSubTotal, returnedTaxAmount, returnedDiscountAmount);

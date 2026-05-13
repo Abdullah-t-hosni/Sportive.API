@@ -1227,6 +1227,74 @@ public class OrderService : IOrderService
         return result;
     }
 
+    public async Task<string> ProcessDirectReturnAsync(DirectReturnDto dto, string updatedByUserId)
+    {
+        var returnNumber = await _seq.NextAsync("RTN-POS");
+        decimal totalCost = 0;
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                foreach (var item in dto.Items)
+                {
+                    // 1. Inventory Update
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.ReturnIn,
+                        item.Quantity, item.ProductId, item.ProductVariantId,
+                        returnNumber, $"Direct Return: {dto.Reason}", updatedByUserId,
+                        0, // unitCost fallback
+                        OrderSource.POS,
+                        autoSave: false
+                    );
+
+                    // 2. Fetch product cost for COGS reduction
+                    var product = await _db.Products.FindAsync(item.ProductId);
+                    if (product != null)
+                    {
+                        totalCost += (product.CostPrice * item.Quantity);
+                    }
+                }
+
+                await _db.SaveChangesAsync();
+                await tx.CommitAsync();
+            }
+            catch { await tx.RollbackAsync(); throw; }
+        });
+
+        // Post Accounting
+        _ = PostDirectReturnWithRetryAsync(dto, returnNumber, totalCost);
+
+        return returnNumber;
+    }
+
+    private async Task PostDirectReturnWithRetryAsync(DirectReturnDto dto, string returnNumber, decimal totalCost)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                await accounting.PostDirectSalesReturnAsync(dto, returnNumber, totalCost);
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogWarning(ex, "[Accounting] PostDirectReturn attempt {Attempt}/{Max} failed for {Number}. Retrying...", attempt, maxAttempts, returnNumber);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Accounting] PostDirectReturn permanently failed for {Number} after {Max} attempts.", returnNumber, maxAttempts);
+            }
+        }
+    }
+
+
     public async Task<string> GenerateOrderNumberAsync(OrderSource source = OrderSource.Website)
     {
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);

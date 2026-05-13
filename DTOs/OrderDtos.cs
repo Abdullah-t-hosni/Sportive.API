@@ -216,3 +216,25 @@ public record ReturnItemRequest(
 );
 
 public record UpdateOrderDateDto(DateTime CreatedAt);
+
+// ========== DIRECT RETURN (WITHOUT INVOICE) ==========
+public record DirectReturnDto(
+    int? CustomerId,
+    string? CustomerName,
+    string? CustomerPhone,
+    List<DirectReturnItemDto> Items,
+    PaymentMethod RefundMethod,
+    int? RefundAccountId,
+    string? Reason,
+    string? Note
+);
+
+public record DirectReturnItemDto(
+    int ProductId,
+    int? ProductVariantId,
+    int Quantity,
+    decimal UnitPrice,
+    bool HasTax,
+    decimal? VatRate
+);
+

@@ -4,6 +4,7 @@ using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.Utils;
 using Sportive.API.Interfaces;
+using Sportive.API.DTOs;
 using MK = Sportive.API.Utils.MappingKeys;
 
 namespace Sportive.API.Services;
@@ -438,4 +439,88 @@ public class SalesAccountingService
             source:      order.Source
         );
     }
+
+    public async Task PostDirectSalesReturnAsync(DirectReturnDto dto, string returnNumber, decimal totalCost)
+    {
+        var mapDict = await _core.GetSafeSystemMappingsAsync();
+        var store   = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+
+        string salesReturnAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesReturn, mapDict)}";
+        string inventoryAcct   = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Inventory,   mapDict)}";
+        string cogsAcct        = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.COGS,        mapDict)}";
+
+        string receivablesAcct;
+        if (dto.CustomerId.HasValue)
+        {
+            var customer = await _db.Customers.FindAsync(dto.CustomerId.Value);
+            if (customer?.MainAccountId != null)
+                receivablesAcct = $"ID:{customer.MainAccountId}";
+            else
+                receivablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
+        }
+        else
+        {
+            receivablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
+        }
+
+        var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
+
+        decimal totalGrossAmount = 0;
+        decimal totalVatAmount   = 0;
+
+        foreach (var item in dto.Items)
+        {
+            var itemTotal = item.UnitPrice * item.Quantity;
+            totalGrossAmount += itemTotal;
+
+            if (item.HasTax)
+            {
+                var rate = (item.VatRate ?? store?.VatRatePercent ?? 14) / 100m;
+                var net = Math.Round(itemTotal / (1 + rate), 2);
+                totalVatAmount += (itemTotal - net);
+            }
+        }
+
+        decimal totalNetReturn = totalGrossAmount - totalVatAmount;
+
+        lines.Add((salesReturnAcct, totalNetReturn, 0, _t.Get("Accounting.DirectReturnNetDesc", returnNumber)));
+        if (totalVatAmount > 0)
+        {
+            string vatAcct = !string.IsNullOrEmpty(store?.StoreVatAccountId)
+                ? $"ID:{store.StoreVatAccountId}"
+                : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatOutput, mapDict)}";
+            lines.Add((vatAcct, totalVatAmount, 0, _t.Get("Accounting.DirectReturnTaxDesc", returnNumber)));
+        }
+
+        if (dto.RefundMethod == PaymentMethod.Credit && dto.CustomerId.HasValue)
+        {
+            lines.Add((receivablesAcct, 0, totalGrossAmount, _t.Get("Accounting.DirectReturnCreditDesc", dto.CustomerName ?? dto.CustomerId.Value.ToString())));
+        }
+        else
+        {
+            string cashId = dto.RefundAccountId.HasValue
+                ? $"ID:{dto.RefundAccountId.Value}"
+                : await _core.GetMappedCashAccountAsync(dto.RefundMethod, OrderSource.POS, mapDict);
+
+            string methodLabel = _core.GetMethodLabel(dto.RefundMethod);
+            lines.Add((cashId, 0, totalGrossAmount, _t.Get("Accounting.DirectReturnCashDesc", methodLabel, returnNumber)));
+        }
+
+        if (totalCost > 0)
+        {
+            lines.Add((inventoryAcct, totalCost, 0,         _t.Get("Accounting.DirectInventoryInDesc")));
+            lines.Add((cogsAcct,      0,         totalCost, _t.Get("Accounting.DirectCogsReductionDesc")));
+        }
+
+        await _core.PostEntryAsync(
+            type:        JournalEntryType.SalesReturn,
+            reference:   returnNumber,
+            description: _t.Get("Accounting.DirectReturnMainDesc", returnNumber, dto.CustomerName ?? ""),
+            date:        TimeHelper.GetEgyptTime(),
+            lines:       lines,
+            customerId:  dto.CustomerId,
+            source:      OrderSource.POS
+        );
+    }
 }
+
