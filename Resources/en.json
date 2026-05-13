@@ -39,6 +39,7 @@
   "Purchases.SupplierRequired": "Valid supplier is required",
   "Purchases.DateRequired": "Invoice date is required",
   "Purchases.DateInFuture": "Invoice date cannot be in the future",
+  "Purchases.OnlyAdminsCanEditPosted": "Posted invoices can only be modified by Administrators.",
   "Purchases.TaxPercentInvalid": "Tax percentage must be between 0 and 100",
   "Purchases.DiscountNegative": "Discount value cannot be negative",
   "Purchases.DiscountTooHigh": "Discount cannot exceed total items value",

@@ -39,6 +39,7 @@
   "Purchases.SupplierRequired": "المورد مطلوب",
   "Purchases.DateRequired": "تاريخ الفاتورة مطلوب",
   "Purchases.DateInFuture": "تاريخ الفاتورة لا يمكن أن يكون في المستقبل",
+  "Purchases.OnlyAdminsCanEditPosted": "لا يمكن تعديل الفواتير المرحلة إلا بواسطة المسؤولين (Admin) فقط.",
   "Purchases.TaxPercentInvalid": "نسبة الضريبة يجب أن تكون بين 0 و 100",
   "Purchases.DiscountNegative": "قيمة الخصم لا يمكن أن تكون سالبة",
   "Purchases.DiscountTooHigh": "الخصم لا يمكن أن يتجاوز إجمالي الأصناف",

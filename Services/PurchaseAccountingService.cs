@@ -29,7 +29,16 @@ public class PurchaseAccountingService
     public async Task PostPurchaseInvoiceAsync(PurchaseInvoice invoice)
     {
         if (string.IsNullOrEmpty(invoice.InvoiceNumber)) return;
-        if (await _core.EntryExistsAsync(JournalEntryType.PurchaseInvoice, invoice.InvoiceNumber)) return;
+
+        // 🚨 AUTO-UPDATE: Remove existing entry if it exists to allow re-posting with new values
+        var existing = await _db.JournalEntries
+            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == invoice.InvoiceNumber);
+        
+        if (existing != null)
+        {
+            _db.JournalEntries.Remove(existing);
+            await _db.SaveChangesAsync();
+        }
 
         if (invoice.IsAssetPurchase)
         {

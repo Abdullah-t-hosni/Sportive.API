@@ -813,6 +813,13 @@ public class PurchaseInvoicesController : ControllerBase
 
                 if (inv == null) return NotFound();
 
+                // 🚨 SECURITY CHECK: Only Admins/SuperAdmins can edit invoices that are already posted/received
+                bool isAdmin = User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.SuperAdmin);
+                if (inv.Status != PurchaseInvoiceStatus.Draft && !isAdmin)
+                {
+                    return BadRequest(new { message = _t.Get("Purchases.OnlyAdminsCanEditPosted") });
+                }
+
                 if (dto.Items != null)
                 {
                     foreach (var item in dto.Items)
