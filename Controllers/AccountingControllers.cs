@@ -493,8 +493,61 @@ public class AccountsController : ControllerBase
             }
         }
 
-        await _db.SaveChangesAsync();
-        return Ok(new { message = _t.Get("Accounting.PaymentFlagsInitialized"), details = results });
+    [HttpPost("post-opening-balances")]
+    public async Task<IActionResult> PostOpeningBalancesToJournal()
+    {
+        var accounts = await _db.Accounts.Where(a => a.IsLeaf && a.OpeningBalance != 0).ToListAsync();
+        if (!accounts.Any())
+            return BadRequest(_t.Get("Accounting.NoOpeningBalancesToPost"));
+
+        // Check if an OPE entry already exists for this year
+        var yearStart = new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
+        if (await _db.JournalEntries.AnyAsync(e => e.Type == JournalEntryType.OpeningBalance && e.EntryDate >= yearStart && e.Reference == "OPE-INITIAL"))
+            return BadRequest(_t.Get("Accounting.OpeningBalancesAlreadyPosted"));
+
+        var openingEquityId = await _core.GetRequiredMappedAccountAsync(MappingKeys.OpeningEquity);
+
+        decimal totalDr = 0;
+        decimal totalCr = 0;
+        var lines = new List<CreateJournalLineDto>();
+
+        foreach (var a in accounts)
+        {
+            var isDebit = a.Nature == AccountNature.Debit;
+            var dr = isDebit ? a.OpeningBalance : 0;
+            var cr = isDebit ? 0 : a.OpeningBalance;
+
+            lines.Add(new CreateJournalLineDto(
+                a.Id, dr, cr, _t.Get("Accounting.InitialOpeningBalanceEntry")
+            ));
+
+            totalDr += dr;
+            totalCr += cr;
+        }
+
+        // Balance against Opening Equity
+        var diff = totalDr - totalCr;
+        if (diff != 0)
+        {
+            lines.Add(new CreateJournalLineDto(
+                openingEquityId,
+                diff < 0 ? Math.Abs(diff) : 0, // If net credit, we need debit
+                diff > 0 ? diff : 0,           // If net debit, we need credit
+                _t.Get("Accounting.OpeningBalanceEquityBalancing")
+            ));
+        }
+
+        var dto = new CreateJournalEntryDto(
+            EntryDate: yearStart,
+            Reference: "OPE-INITIAL",
+            Description: _t.Get("Accounting.OpeningBalancesJournalDescription"),
+            Lines: lines,
+            Type: JournalEntryType.OpeningBalance,
+            CostCenter: (int)OrderSource.General
+        );
+
+        var entry = await _accounting.PostManualEntryAsync(dto, User);
+        return Ok(new { success = true, entryId = entry.Id, entryNumber = entry.EntryNumber });
     }
 }
 

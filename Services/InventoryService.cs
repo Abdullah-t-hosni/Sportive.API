@@ -36,7 +36,8 @@ public class InventoryService : IInventoryService
         decimal unitCost = 0,
         OrderSource? costCenter = null,
         bool autoSave = true,
-        bool broadcast = true)
+        bool broadcast = true,
+        bool force = false)
     {
         if (quantity == 0) return;
         if (productId == 0) productId = null;
@@ -70,7 +71,7 @@ public class InventoryService : IInventoryService
             if (variant != null)
             {
                 remainingBefore = variant.StockQuantity;
-                if (variant.StockQuantity + roundedQty < 0) 
+                if (!force && variant.StockQuantity + roundedQty < 0) 
                     throw new InvalidOperationException(_t.Get("Inventory.InsufficientStock", variant.StockQuantity, -roundedQty));
                 
                 variant.StockQuantity += roundedQty;
@@ -101,7 +102,7 @@ public class InventoryService : IInventoryService
             if (product != null)
             {
                 remainingBefore = product.TotalStock;
-                if (product.TotalStock + roundedQty < 0) 
+                if (!force && product.TotalStock + roundedQty < 0) 
                     throw new InvalidOperationException(_t.Get("Inventory.InsufficientStock", product.TotalStock, -roundedQty));
                 
                 product.TotalStock += roundedQty;

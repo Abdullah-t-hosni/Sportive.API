@@ -18,7 +18,8 @@ public interface IInventoryService
         decimal unitCost = 0,
         OrderSource? costCenter = null,
         bool autoSave = true,
-        bool broadcast = true
+        bool broadcast = true,
+        bool force = false
     );
 
     /// <summary>

@@ -249,6 +249,46 @@ public class InventoryOpeningBalanceController : ControllerBase
             return BadRequest(new { message = _t.Get("Purchases.MinOneItemRequired") });
 
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        
+        // 1. Calculate Deltas to avoid redundant movements and validation issues
+        var oldItems = ob.Items.ToList();
+        var newItems = dto.Items.ToList();
+
+        // Track items by ProductId + VariantId
+        var allKeys = oldItems.Select(i => (i.ProductId, i.ProductVariantId))
+            .Union(newItems.Select(i => (i.ProductId, i.ProductVariantId)))
+            .Distinct();
+
+        foreach (var key in allKeys)
+        {
+            var oldQty = oldItems.Where(i => i.ProductId == key.ProductId && i.ProductVariantId == key.ProductVariantId).Sum(i => i.Quantity);
+            var newQty = newItems.Where(i => i.ProductId == key.ProductId && i.ProductVariantId == key.ProductVariantId).Sum(i => i.Quantity);
+            var delta = newQty - oldQty;
+
+            if (delta != 0 && key.ProductId.HasValue)
+            {
+                var newCost = newItems.FirstOrDefault(i => i.ProductId == key.ProductId && i.ProductVariantId == key.ProductVariantId)?.CostPrice ?? 0;
+
+                // We use 'force: true' because opening balance corrections should always be allowed
+                // regardless of current stock levels (they are correcting the baseline).
+                await _inventory.LogMovementAsync(
+                    InventoryMovementType.OpeningBalance,
+                    delta,
+                    key.ProductId,
+                    key.ProductVariantId,
+                    ob.Reference,
+                    _t.Get("Inventory.OpeningBalanceLog"),
+                    userId,
+                    newCost,
+                    ob.CostCenter,
+                    autoSave: false,
+                    broadcast: true,
+                    force: true
+                );
+            }
+        }
+
+        // 2. Handle Journal Reversal/Update
         var journal = await _db.JournalEntries.FirstOrDefaultAsync(j => j.Reference == ob.Reference);
         if (journal != null)
         {
@@ -258,24 +298,7 @@ public class InventoryOpeningBalanceController : ControllerBase
                 await _accounting.ReverseEntryAsync(journal.Id, _t.Get("Inventory.OpeningBalanceCancelLog", ob.Reference));
         }
 
-        foreach (var item in ob.Items)
-        {
-            if (item.ProductId.HasValue)
-            {
-                await _inventory.LogMovementAsync(
-                    InventoryMovementType.Adjustment,
-                    -item.Quantity, 
-                    item.ProductId, 
-                    item.ProductVariantId, 
-                    ob.Reference, 
-                    _t.Get("Inventory.OpeningBalanceCancelInvLog", ob.Reference), 
-                    userId,
-                    item.CostPrice,
-                    ob.CostCenter
-                );
-            }
-        }
-
+        // 3. Update Record
         ob.Date = dto.Date;
         ob.Notes = dto.Notes;
         ob.CostCenter = dto.CostCenter;
@@ -296,21 +319,6 @@ public class InventoryOpeningBalanceController : ControllerBase
                 CreatedAt = TimeHelper.GetEgyptTime()
             });
             totalValue += total;
-
-            if (item.ProductId.HasValue)
-            {
-                await _inventory.LogMovementAsync(
-                    InventoryMovementType.OpeningBalance, 
-                    item.Quantity, 
-                    item.ProductId, 
-                    item.ProductVariantId, 
-                    ob.Reference, 
-                    _t.Get("Inventory.OpeningBalanceLog"), 
-                    userId,
-                    item.CostPrice,
-                    ob.CostCenter
-                );
-            }
         }
         
         ob.TotalValue = totalValue;
@@ -362,7 +370,10 @@ public class InventoryOpeningBalanceController : ControllerBase
                     _t.Get("Inventory.OpeningBalanceCancelInvLog", ob.Reference), 
                     userId,
                     item.CostPrice,
-                    ob.CostCenter
+                    ob.CostCenter,
+                    autoSave: false,
+                    broadcast: true,
+                    force: true
                 );
             }
         }
