@@ -492,6 +492,10 @@ public class AccountsController : ControllerBase
                 results.Add($"Allowed: {match.NameAr}");
             }
         }
+        
+        await _db.SaveChangesAsync();
+        return Ok(results);
+    }
 
     [HttpPost("post-opening-balances")]
     public async Task<IActionResult> PostOpeningBalancesToJournal()
