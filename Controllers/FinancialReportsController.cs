@@ -165,16 +165,19 @@ public class FinancialReportsController : ControllerBase
 
         if (excel) return ExcelTrialBalance(rows, from, to);
 
+        // حساب الإجماليات بشكل صحيح من الحسابات النهائية (Leaf Accounts) لضمان المطابقة مع السطور
+        var leafBalances = balances.Where(b => b.IsLeaf).ToList();
+
         return Ok(new {
             from, to, source,
             CostCenterLabel = source == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (source == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
             rows,
-            totalOpenDebit    = Math.Round(balances.Where(b => b.ParentId == null).Sum(b => b.OpenDebit), 2),
-            totalOpenCredit   = Math.Round(balances.Where(b => b.ParentId == null).Sum(b => b.OpenCredit), 2),
-            totalPeriodDebit  = Math.Round(balances.Where(b => b.ParentId == null).Sum(b => b.PeriodDebit), 2),
-            totalPeriodCredit = Math.Round(balances.Where(b => b.ParentId == null).Sum(b => b.PeriodCredit), 2),
-            totalClosingDebit = Math.Round(balances.Where(b => b.ParentId == null).Sum(b => b.ClosingBal > 0 && b.Nature == AccountNature.Debit ? b.ClosingBal : (b.ClosingBal < 0 && b.Nature == AccountNature.Credit ? -b.ClosingBal : 0)), 2),
-            totalClosingCredit= Math.Round(balances.Where(b => b.ParentId == null).Sum(b => b.ClosingBal > 0 && b.Nature == AccountNature.Credit ? b.ClosingBal : (b.ClosingBal < 0 && b.Nature == AccountNature.Debit ? -b.ClosingBal : 0)), 2),
+            totalOpenDebit    = Math.Round(leafBalances.Sum(b => b.Nature == AccountNature.Debit ? (b.OpenBalance > 0 ? b.OpenBalance : 0) : (b.OpenBalance < 0 ? -b.OpenBalance : 0)), 2),
+            totalOpenCredit   = Math.Round(leafBalances.Sum(b => b.Nature == AccountNature.Credit ? (b.OpenBalance > 0 ? b.OpenBalance : 0) : (b.OpenBalance < 0 ? -b.OpenBalance : 0)), 2),
+            totalPeriodDebit  = Math.Round(leafBalances.Sum(b => b.PeriodDebit), 2),
+            totalPeriodCredit = Math.Round(leafBalances.Sum(b => b.PeriodCredit), 2),
+            totalClosingDebit = Math.Round(leafBalances.Sum(b => b.Nature == AccountNature.Debit ? (b.ClosingBal > 0 ? b.ClosingBal : 0) : (b.ClosingBal < 0 ? -b.ClosingBal : 0)), 2),
+            totalClosingCredit= Math.Round(leafBalances.Sum(b => b.Nature == AccountNature.Credit ? (b.ClosingBal > 0 ? b.ClosingBal : 0) : (b.ClosingBal < 0 ? -b.ClosingBal : 0)), 2),
         });
     }
 
@@ -205,8 +208,8 @@ public class FinancialReportsController : ControllerBase
             .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
             .ToList();
 
-        var totalRevenues = balances.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.ParentId == null).Sum(b => b.ClosingBal);
-        var totalExpenses = balances.Where(b => b.Type == AccountType.Expense && !b.Code.StartsWith("4") && b.ParentId == null).Sum(b => b.ClosingBal);
+        var totalRevenues = balances.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.Level == 1).Sum(b => b.ClosingBal);
+        var totalExpenses = balances.Where(b => b.Type == AccountType.Expense && !b.Code.StartsWith("4") && b.Level == 1).Sum(b => b.ClosingBal);
         var netProfit     = totalRevenues - totalExpenses;
 
         if (excel) return ExcelIncomeStatement(revenues, expenses, totalRevenues, totalExpenses, netProfit, from, to);
@@ -258,8 +261,8 @@ public class FinancialReportsController : ControllerBase
         // صافي الربح للفترة يضاف لحقوق الملكية ونظهره في القائمة للشفافية
         var incomeFrom = from; 
         var incomeBals = await GetBalances(incomeFrom, to, source);
-        var totalRev   = incomeBals.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.ParentId == null).Sum(b => b.ClosingBal);
-        var totalExp   = incomeBals.Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && b.ParentId == null).Sum(b => b.ClosingBal);
+        var totalRev   = incomeBals.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.Level == 1).Sum(b => b.ClosingBal);
+        var totalExp   = incomeBals.Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && b.Level == 1).Sum(b => b.ClosingBal);
         var netProfit  = totalRev - totalExp;
 
         if (netProfit != 0)
@@ -267,9 +270,9 @@ public class FinancialReportsController : ControllerBase
             equity.Add(new BalanceSheetRow("N/P", _t.Get("Reports.NetProfitLoss"), 1, netProfit));
         }
 
-        var totalAssets      = balances.Where(b => b.Type == AccountType.Asset && b.ParentId == null).Sum(b => b.ClosingBal);
-        var totalLiabilities = balances.Where(b => b.Type == AccountType.Liability && b.ParentId == null).Sum(b => b.ClosingBal);
-        var totalEquity      = balances.Where(b => b.Type == AccountType.Equity && b.ParentId == null).Sum(b => b.ClosingBal);
+        var totalAssets      = balances.Where(b => b.Type == AccountType.Asset && b.Level == 1).Sum(b => b.ClosingBal);
+        var totalLiabilities = balances.Where(b => b.Type == AccountType.Liability && b.Level == 1).Sum(b => b.ClosingBal);
+        var totalEquity      = balances.Where(b => b.Type == AccountType.Equity && b.Level == 1).Sum(b => b.ClosingBal);
         var totalLiabEquity  = totalLiabilities + totalEquity + netProfit;
 
         if (excel) return ExcelBalanceSheet(assets, liabilities, equity, netProfit,
@@ -787,9 +790,17 @@ public class FinancialReportsController : ControllerBase
         // Totals
         ws.Cell(r, 2).Value = "الإجمالي";
         ws.Cell(r, 2).Style.Font.Bold = true;
+        
+        var leafRows = rows.Where(x => x.Level == 1).ToList();
+        ws.Cell(r, 3).Value = leafRows.Sum(x => x.OpenDebit);
+        ws.Cell(r, 4).Value = leafRows.Sum(x => x.OpenCredit);
+        ws.Cell(r, 5).Value = leafRows.Sum(x => x.PeriodDebit);
+        ws.Cell(r, 6).Value = leafRows.Sum(x => x.PeriodCredit);
+        ws.Cell(r, 7).Value = leafRows.Sum(x => x.ClosingDebit);
+        ws.Cell(r, 8).Value = leafRows.Sum(x => x.ClosingCredit);
+
         for (int c = 3; c <= 8; c++)
         {
-            ws.Cell(r, c).FormulaA1 = $"=SUM({(char)('A'+c-1)}3:{(char)('A'+c-1)}{r-1})";
             ws.Cell(r, c).Style.Font.Bold = true;
             ws.Cell(r, c).Style.NumberFormat.Format = "#,##0.00";
             ws.Cell(r, c).Style.Fill.BackgroundColor = XLColor.FromHtml("#e8f5e9");
