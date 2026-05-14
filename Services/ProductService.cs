@@ -52,7 +52,7 @@ public class ProductService : IProductService
                     (section == CategoryType.Women && (c.NameAr == "حريمي" || c.NameEn == "Women")) ||
                     (section == CategoryType.Kids && (c.NameAr == "أطفال" || c.NameEn == "Kids")) ||
                     (section == CategoryType.Equipment && (c.NameAr.Contains("أدوات") || c.NameEn == "Equipment")) ||
-                    (section == (CategoryType)6 && (c.NameAr == "مقاسات خاصة" || c.NameEn == "Special Sizes")))
+                    (section == CategoryType.SpecialSizes && (c.NameAr == "مقاسات خاصة" || c.NameEn == "Special Sizes")))
                 .Select(c => c.Id)
                 .ToListAsync();
 
