@@ -133,6 +133,7 @@ public class SettingsController : ControllerBase
             info.InMaintenance           = dto.InMaintenance;
             info.BackupTime              = dto.BackupTime;
             info.BackupUtcOffset         = dto.BackupUtcOffset;
+            info.ResendApiKey            = dto.ResendApiKey;
 
             // New fields
             info.WhatsAppOrderTemplate    = dto.WhatsAppOrderTemplate;

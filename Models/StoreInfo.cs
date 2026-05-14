@@ -305,6 +305,10 @@ public class StoreInfo
     [JsonPropertyName("accountingLockDate")]
     public DateTime? AccountingLockDate { get; set; }
 
+    [MaxLength(200)]
+    [JsonPropertyName("resendApiKey")]
+    public string? ResendApiKey { get; set; }
+
     // --- 8. WhatsApp Quick Replies ---
     [JsonPropertyName("whatsAppOrderTemplate")]
     public string? WhatsAppOrderTemplate { get; set; } = "أهلاً {customerName}، تم استلام طلبك رقم #{orderNumber} وجاري التجهيز.";

@@ -539,7 +539,7 @@ public class PurchaseInvoicesController : ControllerBase
         var pUnits = await GetUnitsListAsync();
         var inv = await _db.PurchaseInvoices
             .Include(i => i.Supplier)
-            .Include(i => i.Items).ThenInclude(it => it.Product).ThenInclude(p => p.Variants)
+            .Include(i => i.Items).ThenInclude(it => it.Product!).ThenInclude(p => p.Variants)
             .Include(i => i.Items).ThenInclude(it => it.ProductVariant)
             .Include(i => i.Payments)
             .FirstOrDefaultAsync(i => i.Id == id);
@@ -558,7 +558,7 @@ public class PurchaseInvoicesController : ControllerBase
                 it.Product?.SKU, it.Product?.NameAr, 
                 it.ProductVariantId, it.ProductVariant?.Size, it.ProductVariant?.ColorAr ?? it.ProductVariant?.Color,
                 it.Unit, GetMultiplier(pUnits, it.Unit), it.Quantity, it.ReturnedQuantity, it.UnitCost, it.TaxRate, it.IsTaxInclusive, it.TotalCost,
-                it.Product?.Variants.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList()
+                it.Product?.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList()
             )).ToList(),
             inv.Payments.Select(p => new SupplierPaymentSummaryDto(
                 p.Id, p.PaymentNumber, inv.Supplier.Name, inv.InvoiceNumber,

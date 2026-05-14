@@ -273,6 +273,7 @@ builder.Services.AddSingleton<ITranslator, Translator>();
 builder.Services.AddSingleton<SequenceService>();
 builder.Services.AddSingleton<TimeService>();
 builder.Services.AddSingleton<ITimeService>(sp => sp.GetRequiredService<TimeService>());
+builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("Paymob");
 builder.Services.AddSignalR();
 
