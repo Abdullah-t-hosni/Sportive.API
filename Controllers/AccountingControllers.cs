@@ -3,6 +3,7 @@ using Sportive.API.Attributes;
 // Controllers/AccountingControllers.cs
 // Accounting merged and content restored
 // ============================================================
+using Hangfire;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -907,7 +908,7 @@ public class ReceiptVouchersController : ControllerBase
 
         await _db.SaveChangesAsync();
         await _accounting.PostReceiptVoucherAsync(voucher, dto.OrderId);
-        await _accounting.SyncEntityBalancesAsync();
+        BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
         return Ok(voucher);
     }
 
@@ -1133,7 +1134,7 @@ public class PaymentVouchersController : ControllerBase
         _db.PaymentVouchers.Add(voucher);
         await _db.SaveChangesAsync();
         await _accounting.PostPaymentVoucherAsync(voucher);
-        await _accounting.SyncEntityBalancesAsync();
+        BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
         return Ok(voucher);
     }
 
