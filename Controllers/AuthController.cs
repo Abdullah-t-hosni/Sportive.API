@@ -46,8 +46,49 @@ public class AuthController : ControllerBase
     [EnableRateLimiting("auth")]
     public async Task<IActionResult> Register([FromBody] RegisterDto dto)
     {
-        try { return Ok(await _auth.RegisterAsync(dto)); }
+        // 🛡️ Email Verification Enforcement
+        if (string.IsNullOrEmpty(dto.Email))
+            return BadRequest(new { message = _translator.Get("Auth.EmailRequired") });
+
+        if (!_cache.TryGetValue($"RegisterCode_{dto.Email}", out string? cachedCode) || cachedCode != dto.Code)
+        {
+            return BadRequest(new { message = _translator.Get("Auth.InvalidCode") });
+        }
+
+        try { 
+            var result = await _auth.RegisterAsync(dto); 
+            _cache.Remove($"RegisterCode_{dto.Email}"); // Clean up
+            return Ok(result);
+        }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
+    [HttpPost("request-register-code")]
+    public async Task<IActionResult> RequestRegisterCode([FromBody] RequestRegisterCodeDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Email))
+            return BadRequest(new { message = _translator.Get("Auth.EmailRequired") });
+
+        var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+        _cache.Set($"RegisterCode_{dto.Email}", code, TimeSpan.FromMinutes(15));
+
+        var subject = "كود تفعيل حسابك في Sportive";
+        var body = $@"
+            <div dir='rtl' style='font-family: Arial, sans-serif; border: 1px solid #eee; padding: 20px;'>
+                <h2 style='color: #0f3460;'>Sportive Store</h2>
+                <p>مرحباً بك في Sportive،</p>
+                <p>كود تفعيل حسابك الجديد هو:</p>
+                <div style='background: #f4f4f4; padding: 15px; font-size: 24px; font-weight: bold; text-align: center; border-radius: 5px;'>{code}</div>
+                <p>هذا الكود صالح لمدة 15 دقيقة.</p>
+            </div>";
+        
+        BackgroundJob.Enqueue<IEmailService>(email => email.SendEmailAsync(dto.Email, subject, body));
+
+        bool isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
+        return Ok(new { 
+            message = _translator.Get("Auth.CodeSent"),
+            code = isDev ? code : null 
+        });
     }
 
     [HttpPost("login")]

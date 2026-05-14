@@ -676,6 +676,7 @@
   "Auth.ResetEmailCodeText": "كود استعادة كلمة السر الخاص بك هو:",
   "Auth.ResetEmailExpiryText": "هذا الكود صالح لمدة 10 دقائق فقط.",
   "Auth.ResetEmailIgnoreText": "إذا لم تكن أنت من طلب هذا الكود، يرجى تجاهل هذه الرسالة.",
+  "Auth.RegisterEmailSubject": "كود تفعيل حسابك في Sportive",
   "Reports.OpeningBalancePlus": "رصيد أول المدة (+)",
   "Reports.PurchasePlus": "مشتريات (+)",
   "Reports.SaleMinus": "مبيعات (-)",

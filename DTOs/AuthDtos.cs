@@ -9,7 +9,8 @@ public record RegisterDto(
     string FullName,
     string? Email,
     string Password,
-    string? Phone
+    string? Phone,
+    string? Code = null
 );
 
 public record LoginDto(string Identifier, string Password, bool IsStaff = false);
@@ -37,5 +38,7 @@ public record ResetPasswordDto(string Identifier, string Code, string NewPasswor
 public record RefreshTokenRequestDto(string RefreshToken);
 
 // ========== OTP VIA WHATSAPP ==========
+public record RequestRegisterCodeDto(string Email);
+
 public record SendOtpDto(string PhoneNumber);
 public record VerifyOtpDto(string PhoneNumber, string Code);
