@@ -40,8 +40,6 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponseDto> RegisterAsync(RegisterDto dto, bool isCustomer = true)
     {
-        var prefix = isCustomer ? "cust_" : "staff_";
-
         // 1. Validate Uniqueness
         if (!string.IsNullOrEmpty(dto.Email))
         {
@@ -73,7 +71,7 @@ public class AuthService : IAuthService
         var result = await _userManager.CreateAsync(user, dto.Password);
         if (!result.Succeeded)
         {
-            var msg = string.Join(", ", result.Errors.Select(e => e.Description));
+            var msg = string.Join(", ", result.Errors.Select(e => _t.Get("Auth." + e.Code)));
             throw new InvalidOperationException(msg);
         }
 
