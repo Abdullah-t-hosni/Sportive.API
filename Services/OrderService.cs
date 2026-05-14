@@ -70,11 +70,12 @@ public class OrderService : IOrderService
         if (source.HasValue) query = query.Where(o => o.Source == source.Value);
         if (paymentMethod.HasValue) query = query.Where(o => o.PaymentMethod == paymentMethod.Value);
         if (customerId.HasValue) query = query.Where(o => o.CustomerId == customerId.Value);
-        if (fromDate.HasValue) query = query.Where(o => o.CreatedAt >= fromDate.Value.Date);
+        // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
+        if (fromDate.HasValue) query = query.Where(o => o.CreatedAt >= fromDate.Value.Date.AddHours(2));
         if (toDate.HasValue) 
         {
-            var endOfDay = toDate.Value.Date.AddDays(1).AddTicks(-1);
-            query = query.Where(o => o.CreatedAt <= endOfDay);
+            var endOfBusinessDay = toDate.Value.Date.AddDays(1).AddHours(2).AddTicks(-1);
+            query = query.Where(o => o.CreatedAt <= endOfBusinessDay);
         }
         if (!string.IsNullOrEmpty(salesPersonId)) query = query.Where(o => o.SalesPersonId == salesPersonId);
 

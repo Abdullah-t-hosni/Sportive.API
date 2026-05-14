@@ -616,8 +616,9 @@ public class JournalEntriesController : ControllerBase
                                            || (l.Employee != null && l.Employee.Name.Contains(search))));
         }
         
-        if (fromDate.HasValue) q = q.Where(e => e.EntryDate >= fromDate.Value.Date);
-        if (toDate.HasValue) q = q.Where(e => e.EntryDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+        // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
+        if (fromDate.HasValue) q = q.Where(e => e.EntryDate >= fromDate.Value.Date.AddHours(2));
+        if (toDate.HasValue) q = q.Where(e => e.EntryDate <= toDate.Value.Date.AddDays(1).AddHours(2).AddTicks(-1));
         if (source.HasValue) q = q.Where(e => e.CostCenter == source.Value);
 
         var total = await q.CountAsync();
@@ -766,8 +767,9 @@ public class ReceiptVouchersController : ControllerBase
                           || (v.CashAccount != null && (v.CashAccount.NameAr.Contains(search) || v.CashAccount.Code.Contains(search)))
                           || (v.FromAccount != null && (v.FromAccount.NameAr.Contains(search) || v.FromAccount.Code.Contains(search))));
         }
-        if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value.Date);
-        if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+        // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
+        if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value.Date.AddHours(2));
+        if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddHours(2).AddTicks(-1));
         if (source.HasValue) q = q.Where(v => v.CostCenter == source.Value);
 
         if (employeeId.HasValue)
@@ -1058,8 +1060,9 @@ public class PaymentVouchersController : ControllerBase
                           || (v.CashAccount != null && (v.CashAccount.NameAr.Contains(search) || v.CashAccount.Code.Contains(search)))
                           || (v.ToAccount != null && (v.ToAccount.NameAr.Contains(search) || v.ToAccount.Code.Contains(search))));
         }
-        if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value.Date);
-        if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+        // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
+        if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value.Date.AddHours(2));
+        if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddHours(2).AddTicks(-1));
         if (source.HasValue) q = q.Where(v => v.CostCenter == source.Value);
 
         if (employeeId.HasValue)

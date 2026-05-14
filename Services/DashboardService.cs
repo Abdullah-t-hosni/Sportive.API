@@ -30,7 +30,8 @@ public class DashboardService : IDashboardService
     public async Task<DashboardStatsDto> GetStatsAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null)
     {
         var now        = TimeHelper.GetEgyptTime();
-        var todayStart = now.Date;
+        // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
+        var todayStart = (now.Hour < 2) ? now.Date.AddDays(-1).AddHours(2) : now.Date.AddHours(2);
         var todayEnd   = todayStart.AddDays(1);
         
         // Determine the targeted range for "Today" stats (used in Orders page)
@@ -446,7 +447,8 @@ public class DashboardService : IDashboardService
     private async Task<object> GetKpiInternalAsync(OrderSource? source = null)
     {
         var now        = TimeHelper.GetEgyptTime();
-        var todayStart     = now.Date;
+        // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
+        var todayStart = (now.Hour < 2) ? now.Date.AddDays(-1).AddHours(2) : now.Date.AddHours(2);
         var todayEnd       = todayStart.AddDays(1);
         var yesterdayStart = todayStart.AddDays(-1);
         var weekStart      = todayStart.AddDays(-7);
@@ -632,8 +634,11 @@ public class DashboardService : IDashboardService
     public async Task<List<SalesChartDto>> GetSalesChartAsync(string period, DateTime? fromDate = null, DateTime? toDate = null)
     {
         var now = TimeHelper.GetEgyptTime();
-        var start = fromDate ?? (period == "daily" ? now.AddDays(-29).Date : new DateTime(now.Year - 1, now.Month, 1));
-        var end = (toDate?.Date.AddDays(1)) ?? now.Date.AddDays(1);
+        // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
+        var todayStart = (now.Hour < 2) ? now.Date.AddDays(-1).AddHours(2) : now.Date.AddHours(2);
+        
+        var start = fromDate?.Date.AddHours(2) ?? (period == "daily" ? todayStart.AddDays(-29) : new DateTime(now.Year - 1, now.Month, 1, 2, 0, 0));
+        var end = toDate?.Date.AddDays(1).AddHours(2).AddTicks(-1) ?? todayStart.AddDays(1);
 
         // 1. Try to get from DailyStats first (Performance Optimized)
         IEnumerable<dynamic> stats;

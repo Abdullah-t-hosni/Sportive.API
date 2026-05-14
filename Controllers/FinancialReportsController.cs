@@ -127,8 +127,9 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] OrderSource? source = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+        // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
+        var from = fromDate?.AddHours(2) ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1, 2, 0, 0);
+        var to   = toDate?.AddDays(1).AddHours(2).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         var balances = await GetBalances(from, to, source);
         var rows = balances
@@ -189,8 +190,9 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] OrderSource? source = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+        // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
+        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(2);
+        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
 
         var balances = await GetBalances(from, to, source);
 
@@ -234,8 +236,9 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] OrderSource? source = null,
         [FromQuery] bool      excel  = false)
     {
-        var from = new DateTime(2000, 1, 1).Date;
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+        // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
+        var from = new DateTime(2000, 1, 1, 2, 0, 0);
+        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
 
         var balances = await GetBalances(from, to, source);
 
@@ -302,8 +305,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] OrderSource? source  = null,
         [FromQuery] bool      excel      = false)
     {
-        var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(2);
+        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
  
         var q = _db.JournalLines
             .Include(l => l.JournalEntry)
@@ -509,8 +512,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] OrderSource? source  = null,
         [FromQuery] bool      excel      = false)
     {
-        var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(2);
+        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
  
         int targetId = accountId ?? 0;
         
@@ -606,8 +609,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] OrderSource? source = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(2);
+        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
 
         // حسابات النقدية الحقيقية فقط (الخزينة 1101 والبنك 1102)
         // نستبعد 1103 (العملاء) لأنها ليست نقدية سائلة مباشرة بالقيد المحاسبي
