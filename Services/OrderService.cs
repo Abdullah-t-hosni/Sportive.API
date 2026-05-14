@@ -160,7 +160,7 @@ public class OrderService : IOrderService
             .SumAsync(l => l.Credit);
 
         var itemDtos = o.Items.Select(i => new OrderItemDto(
-            i.Id, i.ProductNameAr, i.ProductNameEn, i.SKU, i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
+            i.Id, i.ProductId, i.ProductVariantId, i.ProductNameAr, i.ProductNameEn, i.SKU, i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
             i.Product?.Slug,
             i.Size, i.Color, i.Quantity, i.UnitPrice, i.TotalPrice,
             i.OriginalUnitPrice, i.DiscountAmount,

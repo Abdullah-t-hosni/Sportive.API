@@ -183,6 +183,8 @@ public record OrderDetailPaymentDto(
 
 public record OrderItemDto(
     int Id,
+    int? ProductId,
+    int? ProductVariantId,
     string ProductNameAr,
     string ProductNameEn,
     string? SKU,
