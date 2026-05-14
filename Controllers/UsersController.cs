@@ -95,6 +95,10 @@ public class UsersController : ControllerBase
         var user = await _userManager.FindByIdAsync(id);
         if (user == null) return NotFound(new { message = _t.Get("Users.NotFound") });
 
+        // 🛡️ SECURITY: Prevent admin from resetting customer passwords
+        if (await _userManager.IsInRoleAsync(user, "Customer"))
+            return BadRequest(new { message = "Changing customer passwords by administrators is prohibited for security reasons." });
+
         if (string.IsNullOrWhiteSpace(dto.NewPassword)) 
             return BadRequest(new { message = _t.Get("Users.PasswordEmpty") });
 
