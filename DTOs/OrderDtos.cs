@@ -23,6 +23,7 @@ public record CartItemDto(
 );
 
 public record AddToCartDto(int ProductId, int? ProductVariantId, int Quantity);
+public record BulkAddToCartDto(List<AddToCartDto> Items);
 public record UpdateCartItemDto(int Quantity);
 
 public record CartSummaryDto(

@@ -240,6 +240,7 @@ public class ProductFilterDto
     public string SortDir { get; set; } = "desc";
     public int? SupplierId { get; set; }
     public bool? OnlyInStock { get; set; }
+    public bool? OnlyPublic { get; set; }
     public int Page { get; set; } = 1;
     public DiscountApplyTo? Source { get; set; }
     public bool? ByPrice { get; set; }

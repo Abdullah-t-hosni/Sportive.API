@@ -47,6 +47,33 @@ public class CartService : ICartService
         return await GetCartAsync(customerId);
     }
 
+    public async Task<CartSummaryDto> BulkAddToCartAsync(int customerId, BulkAddToCartDto dto)
+    {
+        if (dto.Items == null || !dto.Items.Any()) return await GetCartAsync(customerId);
+
+        foreach (var item in dto.Items)
+        {
+            var existing = await _db.CartItems.FirstOrDefaultAsync(c =>
+                c.CustomerId == customerId &&
+                c.ProductId == item.ProductId &&
+                c.ProductVariantId == item.ProductVariantId);
+
+            if (existing != null)
+                existing.Quantity += item.Quantity;
+            else
+                _db.CartItems.Add(new CartItem
+                {
+                    CustomerId = customerId,
+                    ProductId = item.ProductId,
+                    ProductVariantId = item.ProductVariantId,
+                    Quantity = item.Quantity
+                });
+        }
+
+        await _db.SaveChangesAsync();
+        return await GetCartAsync(customerId);
+    }
+
     public async Task<CartSummaryDto> UpdateCartItemAsync(int customerId, int cartItemId, UpdateCartItemDto dto)
     {
         var item = await _db.CartItems

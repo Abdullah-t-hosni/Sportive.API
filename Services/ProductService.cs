@@ -103,6 +103,12 @@ public class ProductService : IProductService
         if (filter.OnlyInStock == true)
             query = query.Where(p => p.TotalStock > 0);
 
+        if (filter.OnlyPublic == true)
+        {
+            // Only show sellable products on the store front
+            query = query.Where(p => p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock);
+        }
+
         if (filter.SupplierId.HasValue)
         {
             var supplierId = filter.SupplierId.Value;

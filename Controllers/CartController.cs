@@ -53,6 +53,16 @@ public class CartController : ControllerBase
         return Ok(cart);
     }
 
+    [HttpPost("bulk")]
+    public async Task<ActionResult<CartSummaryDto>> BulkAdd([FromBody] BulkAddToCartDto dto)
+    {
+        var customerId = await GetCustomerIdAsync();
+        if (customerId == 0) return Forbid();
+
+        var cart = await _cartService.BulkAddToCartAsync(customerId, dto);
+        return Ok(cart);
+    }
+
     [HttpPut("items/{itemId}")]
     public async Task<ActionResult<CartSummaryDto>> UpdateItem(int itemId, [FromBody] UpdateCartItemDto dto)
     {
