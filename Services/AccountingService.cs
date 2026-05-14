@@ -219,12 +219,25 @@ public class AccountingService : IAccountingService
             var batchIds = invoiceIds.Skip(i).Take(batchSize).ToList();
             var invoices = await _db.PurchaseInvoices
                 .Include(i => i.Supplier)
+                .Include(i => i.Payments)
                 .Where(i => batchIds.Contains(i.Id))
                 .ToListAsync();
 
             foreach (var inv in invoices)
             {
-                try { await PostPurchaseInvoiceAsync(inv); }
+                try 
+                { 
+                    await PostPurchaseInvoiceAsync(inv); 
+                    
+                    // ✅ NEW: Also sync payments for this invoice
+                    if (inv.Payments != null && inv.Payments.Any())
+                    {
+                        foreach (var p in inv.Payments)
+                        {
+                            await PostSupplierPaymentAsync(p);
+                        }
+                    }
+                }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to sync purchase {Number}", inv.InvoiceNumber); }
             }
             _db.ChangeTracker.Clear();

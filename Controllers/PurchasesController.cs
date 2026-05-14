@@ -1851,7 +1851,18 @@ public class PurchaseInvoicesController : ControllerBase
                 if (isReturn)
                     await acc.PostPurchaseReturnAsync(inv);
                 else
+                {
                     await acc.PostPurchaseInvoiceAsync(inv);
+                    
+                    // ✅ NEW: Post all associated payments to clear liability
+                    if (inv.Payments != null && inv.Payments.Any())
+                    {
+                        foreach (var p in inv.Payments)
+                        {
+                            await acc.PostSupplierPaymentAsync(p);
+                        }
+                    }
+                }
 
                 return; // success
             }

@@ -61,40 +61,14 @@ public class PurchaseAccountingService
             lines.Add((vatAcct, invoice.TaxAmount, 0, _t.Get("Accounting.VatDesc", typeStr, invoice.InvoiceNumber)));
         }
 
-        // ─── Credit Side: Payments & Liability ───
+        // ─── Credit Side: Liability ───
         var vendorAcct = invoice.VendorAccountId != null ? $"ID:{invoice.VendorAccountId}" 
                         : invoice.Supplier?.MainAccountId != null ? $"ID:{invoice.Supplier.MainAccountId}" 
                         : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Supplier, mapDict)}";
 
-        decimal totalCreditedFromPayments = 0;
-        foreach (var payment in invoice.Payments)
-        {
-            if (payment.Amount <= 0) continue;
-
-            var cashAcct = payment.CashAccountId != null ? $"ID:{payment.CashAccountId}" : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Cash, mapDict)}";
-            var methodLabel = payment.PaymentMethod switch {
-                PaymentMethod_Purchase.Cash => "نقدية",
-                PaymentMethod_Purchase.BankTransfer => "بنك",
-                PaymentMethod_Purchase.Vodafone => "فودافون",
-                PaymentMethod_Purchase.InstaPay => "انستاباي",
-                _ => "سداد"
-            };
-
-            lines.Add((cashAcct, 0, payment.Amount, $"{methodLabel} - {payment.AccountName} - {_t.Get("Accounting.PurchaseInvoiceDesc", typeStr, invoice.InvoiceNumber)}"));
-            totalCreditedFromPayments += payment.Amount;
-        }
-
-        // Remaining Balance -> Vendor Liability
-        var remainingBalance = invoice.TotalAmount - totalCreditedFromPayments;
-        if (remainingBalance > 0.001M)
-        {
-            lines.Add((vendorAcct, 0, remainingBalance, _t.Get("Accounting.VendorLiabilityDesc", typeStr, invoice.InvoiceNumber)));
-        }
-        else if (remainingBalance < -0.001M && invoice.Payments.Count == 0)
-        {
-            // Fallback for edge cases where payments collection might be empty but PaidAmount is set (Legacy)
-            lines.Add((vendorAcct, 0, invoice.TotalAmount, _t.Get("Accounting.VendorLiabilityDesc", typeStr, invoice.InvoiceNumber)));
-        }
+        // Always post full amount to vendor liability first. 
+        // Separate Payment Vouchers will handle clearing this liability.
+        lines.Add((vendorAcct, 0, invoice.TotalAmount, _t.Get("Accounting.VendorLiabilityDesc", typeStr, invoice.InvoiceNumber)));
 
 
         if (invoice.DiscountAmount > 0)
@@ -238,39 +212,13 @@ public class PurchaseAccountingService
             lines.Add((vatAcct, invoice.TaxAmount, 0, _t.Get("Accounting.VatDesc", typeStr, invoice.InvoiceNumber)));
         }
 
-        // 3. Credit Side: Payments & Liability
+        // 3. Credit Side: Liability
         var vendorAcct = invoice.VendorAccountId != null ? $"ID:{invoice.VendorAccountId}" 
                         : invoice.Supplier?.MainAccountId != null ? $"ID:{invoice.Supplier.MainAccountId}" 
                         : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Supplier, mapDict)}";
 
-        decimal totalCreditedFromPayments = 0;
-        foreach (var payment in invoice.Payments)
-        {
-            if (payment.Amount <= 0) continue;
-
-            var cashAcct = payment.CashAccountId != null ? $"ID:{payment.CashAccountId}" : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Cash, mapDict)}";
-            var methodLabel = payment.PaymentMethod switch {
-                PaymentMethod_Purchase.Cash => "نقدية",
-                PaymentMethod_Purchase.BankTransfer => "بنك",
-                PaymentMethod_Purchase.Vodafone => "فودافون",
-                PaymentMethod_Purchase.InstaPay => "انستاباي",
-                _ => "سداد"
-            };
-
-            lines.Add((cashAcct, 0, payment.Amount, $"{methodLabel} - {payment.AccountName} - {_t.Get("Accounting.AssetPurchaseEntryMainDesc", typeStr, invoice.InvoiceNumber, invoice.Supplier?.Name ?? "")}"));
-            totalCreditedFromPayments += payment.Amount;
-        }
-
-        // Remaining Balance -> Vendor Liability
-        var remainingBalance = invoice.TotalAmount - totalCreditedFromPayments;
-        if (remainingBalance > 0.001M)
-        {
-            lines.Add((vendorAcct, 0, remainingBalance, _t.Get("Accounting.VendorLiabilityDesc", typeStr, invoice.InvoiceNumber)));
-        }
-        else if (remainingBalance < -0.001M && invoice.Payments.Count == 0)
-        {
-            lines.Add((vendorAcct, 0, invoice.TotalAmount, _t.Get("Accounting.VendorLiabilityDesc", typeStr, invoice.InvoiceNumber)));
-        }
+        // Always post full amount to vendor liability first.
+        lines.Add((vendorAcct, 0, invoice.TotalAmount, _t.Get("Accounting.VendorLiabilityDesc", typeStr, invoice.InvoiceNumber)));
 
 
         // 4. Discount (Credit)
