@@ -41,4 +41,18 @@ public static class TimeHelper
         var utc = DateTime.UtcNow;
         return TimeZoneInfo.ConvertTimeFromUtc(utc, GetStoreTimeZone());
     }
+
+    /// <summary>
+    /// Gets the start of the current business day (2:00 AM cutoff).
+    /// If current time is 1:00 AM on May 15, it returns May 14 02:00 AM.
+    /// </summary>
+    public static DateTime GetEgyptBusinessDayStart()
+    {
+        var now = GetEgyptTime();
+        if (now.Hour < 2)
+        {
+            return now.Date.AddDays(-1).AddHours(2);
+        }
+        return now.Date.AddHours(2);
+    }
 }

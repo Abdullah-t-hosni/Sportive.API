@@ -122,58 +122,112 @@ public class AccountingService : IAccountingService
     public async Task<decimal> GetTodayDrawerBalanceAsync(string cashAccountCode)
     {
         var (accountId, _, _) = await _core.GetAccountIdAsync(cashAccountCode);
-        var todayStart = TimeHelper.GetEgyptTime().Date;
+        var bizStart = TimeHelper.GetEgyptBusinessDayStart();
         
         // 🚨 FIX: Filter by CostCenter == POS to isolate drawer cash from website online orders (COD)
+        // Also use 2 AM business day start
         return await _db.JournalLines
             .Where(l => l.AccountId == accountId 
-                     && l.JournalEntry.EntryDate >= todayStart 
+                     && l.JournalEntry.EntryDate >= bizStart 
                      && l.CostCenter == OrderSource.POS)
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
     }
 
     public async Task SyncAllOrdersAccountingAsync()
     {
-        var orders = await _db.Orders
-            .Include(o => o.Customer)
-            .Include(o => o.Items).ThenInclude(i => i.Product)
-            .Include(o => o.Payments)
+        _logger.LogInformation("[Accounting] Starting Full Sync of Orders Accounting...");
+        
+        // Use a lightweight query to get IDs first to avoid keeping massive objects in memory
+        var orderIds = await _db.Orders
             .Where(o => o.Status != OrderStatus.Cancelled)
+            .OrderByDescending(o => o.Id)
+            .Select(o => o.Id)
             .ToListAsync();
 
-        foreach (var order in orders)
+        _logger.LogInformation("[Accounting] Found {Count} orders to sync.", orderIds.Count);
+
+        int batchSize = 50;
+        for (int i = 0; i < orderIds.Count; i += batchSize)
         {
-            try { await PostSalesOrderAsync(order); }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to sync order {Number}", order.OrderNumber); }
+            var batchIds = orderIds.Skip(i).Take(batchSize).ToList();
+            var orders = await _db.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.Items).ThenInclude(i => i.Product)
+                .Include(o => o.Payments)
+                .Where(o => batchIds.Contains(o.Id))
+                .ToListAsync();
+
+            foreach (var order in orders)
+            {
+                try { await PostSalesOrderAsync(order); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to sync order {Number}", order.OrderNumber); }
+            }
+
+            // Important: Clear change tracker to prevent memory bloat
+            _db.ChangeTracker.Clear();
+            _logger.LogInformation("[Accounting] Synced batch {Batch}/{Total}", i + orders.Count, orderIds.Count);
         }
+        
+        _logger.LogInformation("[Accounting] Full Sync Completed.");
     }
 
     public async Task SyncAllPaymentAccountingAsync()
     {
+        _logger.LogInformation("[Accounting] Syncing All Payments/Receipts...");
+        
         // 1. Receipt Vouchers
-        var receipts = await _db.ReceiptVouchers.ToListAsync();
-        foreach (var r in receipts)
+        var receiptIds = await _db.ReceiptVouchers.Select(r => r.Id).ToListAsync();
+        int batchSize = 100;
+        for (int i = 0; i < receiptIds.Count; i += batchSize)
         {
-            try { await PostReceiptVoucherAsync(r, r.OrderId); }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to sync receipt {Number}", r.VoucherNumber); }
+            var batchIds = receiptIds.Skip(i).Take(batchSize).ToList();
+            var receipts = await _db.ReceiptVouchers.Where(r => batchIds.Contains(r.Id)).ToListAsync();
+            foreach (var r in receipts)
+            {
+                try { await PostReceiptVoucherAsync(r, r.OrderId); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to sync receipt {Number}", r.VoucherNumber); }
+            }
+            _db.ChangeTracker.Clear();
         }
 
         // 2. Payment Vouchers
-        var payments = await _db.PaymentVouchers.ToListAsync();
-        foreach (var p in payments)
+        var paymentIds = await _db.PaymentVouchers.Select(p => p.Id).ToListAsync();
+        for (int i = 0; i < paymentIds.Count; i += batchSize)
         {
-            try { await PostPaymentVoucherAsync(p); }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to sync payment {Number}", p.VoucherNumber); }
+            var batchIds = paymentIds.Skip(i).Take(batchSize).ToList();
+            var payments = await _db.PaymentVouchers.Where(p => batchIds.Contains(p.Id)).ToListAsync();
+            foreach (var p in payments)
+            {
+                try { await PostPaymentVoucherAsync(p); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to sync payment {Number}", p.VoucherNumber); }
+            }
+            _db.ChangeTracker.Clear();
         }
     }
 
     public async Task SyncAllPurchaseAccountingAsync()
     {
-        var invoices = await _db.PurchaseInvoices.Include(i => i.Supplier).Where(i => i.Status != PurchaseInvoiceStatus.Cancelled && i.Status != PurchaseInvoiceStatus.Draft).ToListAsync();
-        foreach (var inv in invoices)
+        _logger.LogInformation("[Accounting] Syncing All Purchase Invoices...");
+        var invoiceIds = await _db.PurchaseInvoices
+            .Where(i => i.Status != PurchaseInvoiceStatus.Cancelled && i.Status != PurchaseInvoiceStatus.Draft)
+            .Select(i => i.Id)
+            .ToListAsync();
+
+        int batchSize = 50;
+        for (int i = 0; i < invoiceIds.Count; i += batchSize)
         {
-            try { await PostPurchaseInvoiceAsync(inv); }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to sync purchase {Number}", inv.InvoiceNumber); }
+            var batchIds = invoiceIds.Skip(i).Take(batchSize).ToList();
+            var invoices = await _db.PurchaseInvoices
+                .Include(i => i.Supplier)
+                .Where(i => batchIds.Contains(i.Id))
+                .ToListAsync();
+
+            foreach (var inv in invoices)
+            {
+                try { await PostPurchaseInvoiceAsync(inv); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to sync purchase {Number}", inv.InvoiceNumber); }
+            }
+            _db.ChangeTracker.Clear();
         }
     }
 

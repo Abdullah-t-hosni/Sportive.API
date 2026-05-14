@@ -605,15 +605,17 @@ public class JournalEntriesController : ControllerBase
 
         if (!string.IsNullOrEmpty(search))
         {
-            var isNumeric = decimal.TryParse(search, out var searchAmt);
+            var isNumeric = int.TryParse(search, out var searchId);
+            var isDecimal = decimal.TryParse(search, out var searchAmt);
+
             q = q.Where(r => r.EntryNumber.Contains(search) 
                            || (r.Description != null && r.Description.Contains(search)) 
                            || (r.Reference != null && r.Reference.Contains(search))
-                           || (isNumeric && r.Lines.Any(l => l.Debit == searchAmt || l.Credit == searchAmt))
-                           || r.Lines.Any(l => (l.Account != null && (l.Account.Code.Contains(search) || l.Account.NameAr.Contains(search) || (l.Account.NameEn != null && l.Account.NameEn.Contains(search))))
-                                           || (l.Supplier != null && l.Supplier.Name.Contains(search))
-                                           || (l.Customer != null && l.Customer.FullName.Contains(search))
-                                           || (l.Employee != null && l.Employee.Name.Contains(search))));
+                           || (isNumeric && r.Id == searchId)
+                           || (isDecimal && r.Lines.Any(l => l.Debit == searchAmt || l.Credit == searchAmt)));
+            
+            // Note: We removed the deep joins for Account/Supplier/Customer/Employee names in the global search 
+            // to prioritize speed. Users can still search by ID/Reference/Amount.
         }
         
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.

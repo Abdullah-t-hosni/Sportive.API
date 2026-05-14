@@ -105,16 +105,33 @@ public class AccountingCoreService
         if (!string.IsNullOrEmpty(reference))
         {
             var cleanRef = reference.Trim().ToLower();
-            _logger.LogInformation("[Accounting] Searching for existing entry Type={Type}, Ref={Ref}", type, cleanRef);
+            _logger.LogInformation("[Accounting] Searching for existing entries Type={Type}, Ref={Ref}", type, cleanRef);
             
-            existing = await _db.JournalEntries
+            var matches = await _db.JournalEntries
                 .Include(e => e.Lines)
-                .FirstOrDefaultAsync(e => e.Type == type && e.Reference != null && e.Reference.Trim().ToLower() == cleanRef);
+                .Where(e => e.Type == type && e.Reference != null && e.Reference.Trim().ToLower() == cleanRef)
+                .ToListAsync();
 
-            if (existing != null)
+            if (matches.Any())
+            {
+                existing = matches.First();
                 _logger.LogInformation("[Accounting] Found existing entry ID={Id}, Number={Num} to update.", existing.Id, existing.EntryNumber);
+                
+                if (matches.Count > 1)
+                {
+                    _logger.LogWarning("[Accounting] Found {Count} duplicates for Ref={Ref}. Removing extras.", matches.Count, cleanRef);
+                    var extras = matches.Skip(1).ToList();
+                    foreach(var ex in extras)
+                    {
+                        _db.JournalLines.RemoveRange(ex.Lines);
+                        _db.JournalEntries.Remove(ex);
+                    }
+                }
+            }
             else
+            {
                 _logger.LogWarning("[Accounting] No existing entry found for Ref={Ref}. A new one will be created.", cleanRef);
+            }
         }
 
         var totalDr = lines.Sum(l => l.debit);
