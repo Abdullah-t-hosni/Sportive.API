@@ -37,7 +37,6 @@ public class SalesAccountingService
     // ══════════════════════════════════════════════════════
     public async Task PostSalesOrderAsync(Order order)
     {
-        if (await _core.EntryExistsAsync(JournalEntryType.SalesInvoice, order.OrderNumber)) return;
         var store  = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         var vatRate = (store?.VatRatePercent ?? 14) / 100m;
 
@@ -268,7 +267,7 @@ public class SalesAccountingService
 
     public async Task PostSalesReturnAsync(Order order, int? refundAccountId = null)
     {
-        if (await _core.EntryExistsAsync(JournalEntryType.SalesReturn, order.OrderNumber + "-RTN")) return;
+
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         var store   = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
