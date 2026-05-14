@@ -43,7 +43,23 @@ public class ProductService : IProductService
         }
 
         if (filter.Section.HasValue)
-            query = query.Where(p => p.Category != null && p.Category.Type == filter.Section.Value);
+        {
+            var rootCategoryIds = await _db.Categories
+                .AsNoTracking()
+                .Where(c => c.Type == filter.Section.Value)
+                .Select(c => c.Id)
+                .ToListAsync();
+
+            var allCategoryIds = new List<int>();
+            foreach (var id in rootCategoryIds)
+            {
+                var descendants = await GetCategoryDescendants(id);
+                allCategoryIds.AddRange(descendants);
+            }
+            
+            var distinctIds = allCategoryIds.Distinct().ToList();
+            query = query.Where(p => p.CategoryId.HasValue && distinctIds.Contains(p.CategoryId.Value));
+        }
 
         if (filter.CategoryId.HasValue)
         {
