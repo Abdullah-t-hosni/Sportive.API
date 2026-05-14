@@ -1064,10 +1064,24 @@ public class OrderService : IOrderService
                 });
 
                 // 7. SYNC ACCOUNTING: Delete old entries first
-                var oldEntries = await _db.JournalEntries.Where(e => e.OrderId == order.Id || e.Reference == order.OrderNumber).ToListAsync();
+                // We find all entries related to this order by ID or Reference (Invoice, Payments, Returns)
+                var oldEntries = await _db.JournalEntries
+                    .Where(e => e.OrderId == order.Id || e.Reference == order.OrderNumber || (e.Reference != null && e.Reference.StartsWith(order.OrderNumber + "-")))
+                    .ToListAsync();
+
                 if (oldEntries.Any())
                 {
                     var entryIds = oldEntries.Select(e => e.Id).ToList();
+                    
+                    // 🛡️ UNLINK VOUCHERS: Prevent FK violations (Receipt/Payment vouchers linked to these entries)
+                    await _db.ReceiptVouchers
+                        .Where(v => v.JournalEntryId.HasValue && entryIds.Contains(v.JournalEntryId.Value))
+                        .ExecuteUpdateAsync(s => s.SetProperty(v => v.JournalEntryId, (int?)null));
+
+                    await _db.PaymentVouchers
+                        .Where(v => v.JournalEntryId.HasValue && entryIds.Contains(v.JournalEntryId.Value))
+                        .ExecuteUpdateAsync(s => s.SetProperty(v => v.JournalEntryId, (int?)null));
+
                     var lines = await _db.JournalLines.Where(l => entryIds.Contains(l.JournalEntryId)).ToListAsync();
                     _db.JournalLines.RemoveRange(lines);
                     _db.JournalEntries.RemoveRange(oldEntries);

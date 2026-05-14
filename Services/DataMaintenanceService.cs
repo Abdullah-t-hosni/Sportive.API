@@ -624,64 +624,52 @@ public class DataMaintenanceService : IDataMaintenanceService
             {
                 await using var tx = await _db.Database.BeginTransactionAsync();
                 
-                // 1. Reset all RemainingQty to 0 or null first for positive movements
-                await _db.InventoryMovements
-                    .Where(m => m.Quantity > 0)
-                    .ExecuteUpdateAsync(s => s.SetProperty(m => m.RemainingQty, (int?)null));
+                // 1. Reset all RemainingQty to null first for positive movements
+                // Using raw SQL for reliability and performance
+                await _db.Database.ExecuteSqlRawAsync("UPDATE InventoryMovements SET RemainingQty = NULL WHERE Quantity > 0");
 
-                // 2. Process by Product/Variant
-                var productStocks = await _db.Products.Select(p => new { p.Id, p.TotalStock }).ToListAsync();
-                var variantStocks = await _db.ProductVariants.Select(v => new { v.Id, v.StockQuantity }).ToListAsync();
+                // 2. Process all positive movements in memory to calculate FIFO remaining quantities
+                // Fetch only positive movements that belong to products/variants with stock
+                var positiveMovements = await _db.InventoryMovements
+                    .Where(m => m.Quantity > 0)
+                    .OrderByDescending(m => m.CreatedAt)
+                    .ThenByDescending(m => m.Id)
+                    .ToListAsync();
+
+                var productStocks = await _db.Products.ToDictionaryAsync(p => p.Id, p => p.TotalStock);
+                var variantStocks = await _db.ProductVariants.ToDictionaryAsync(v => v.Id, v => v.StockQuantity);
 
                 int updatedCount = 0;
 
-                // Process Variants first
-                foreach (var v in variantStocks)
+                foreach (var m in positiveMovements)
                 {
-                    var stock = v.StockQuantity;
-                    if (stock <= 0) continue;
-
-                    var movements = await _db.InventoryMovements
-                        .Where(m => m.ProductVariantId == v.Id && m.Quantity > 0)
-                        .OrderByDescending(m => m.CreatedAt)
-                        .ThenByDescending(m => m.Id)
-                        .ToListAsync();
-
-                    foreach (var m in movements)
+                    int currentStock = 0;
+                    if (m.ProductVariantId.HasValue)
                     {
-                        if (stock <= 0) break;
-                        var take = Math.Min(stock, m.Quantity);
-                        m.RemainingQty = take;
-                        stock -= take;
-                        updatedCount++;
+                        if (variantStocks.TryGetValue(m.ProductVariantId.Value, out var vStock))
+                            currentStock = vStock;
                     }
-                }
-
-                // Process Products (those without variants or movements not linked to variants)
-                foreach (var p in productStocks)
-                {
-                    var stock = p.TotalStock;
-                    if (stock <= 0) continue;
-
-                    var movements = await _db.InventoryMovements
-                        .Where(m => m.ProductId == p.Id && m.ProductVariantId == null && m.Quantity > 0)
-                        .OrderByDescending(m => m.CreatedAt)
-                        .ThenByDescending(m => m.Id)
-                        .ToListAsync();
-
-                    foreach (var m in movements)
+                    else if (m.ProductId.HasValue)
                     {
-                        if (stock <= 0) break;
-                        var take = Math.Min(stock, m.Quantity);
-                        m.RemainingQty = take;
-                        stock -= take;
-                        updatedCount++;
+                        if (productStocks.TryGetValue(m.ProductId.Value, out var pStock))
+                            currentStock = pStock;
                     }
+
+                    if (currentStock <= 0) continue;
+
+                    var take = Math.Min(currentStock, m.Quantity);
+                    m.RemainingQty = take;
+                    
+                    // Update the running stock total
+                    if (m.ProductVariantId.HasValue) variantStocks[m.ProductVariantId.Value] -= take;
+                    else if (m.ProductId.HasValue) productStocks[m.ProductId.Value] -= take;
+
+                    updatedCount++;
                 }
 
                 await _db.SaveChangesAsync();
                 await tx.CommitAsync();
-                return (true, $"تم تحديث {updatedCount} حركة مخزون لتفعيل نظام FIFO.");
+                return (true, $"تم تحديث {updatedCount} حركة مخزون لتفعيل نظام FIFO بنجاح.");
             });
         }
         catch (Exception ex)
