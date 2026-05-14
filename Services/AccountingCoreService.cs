@@ -162,7 +162,7 @@ public class AccountingCoreService
                 EntryDate   = date,
                 Type        = type,
                 Status      = JournalEntryStatus.Posted,
-                Reference   = reference,
+                Reference   = string.IsNullOrWhiteSpace(reference) ? null : reference,
                 Description = description,
                 OrderId     = orderId,
                 PurchaseInvoiceId = purchaseInvoiceId,
