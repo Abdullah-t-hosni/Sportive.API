@@ -614,4 +614,80 @@ public class DataMaintenanceService : IDataMaintenanceService
             return (false, "العملية فشلت. يرجى مراجعة سجلات الخادم.");
         }
     }
+
+    public async Task<(bool Success, string Message)> BackfillFifoRemainingQtyAsync()
+    {
+        try
+        {
+            var strategy = _db.Database.CreateExecutionStrategy();
+            return await strategy.ExecuteAsync(async () =>
+            {
+                await using var tx = await _db.Database.BeginTransactionAsync();
+                
+                // 1. Reset all RemainingQty to 0 or null first for positive movements
+                await _db.InventoryMovements
+                    .Where(m => m.Quantity > 0)
+                    .ExecuteUpdateAsync(s => s.SetProperty(m => m.RemainingQty, (int?)null));
+
+                // 2. Process by Product/Variant
+                var productStocks = await _db.Products.Select(p => new { p.Id, p.TotalStock }).ToListAsync();
+                var variantStocks = await _db.ProductVariants.Select(v => new { v.Id, v.StockQuantity }).ToListAsync();
+
+                int updatedCount = 0;
+
+                // Process Variants first
+                foreach (var v in variantStocks)
+                {
+                    var stock = v.StockQuantity;
+                    if (stock <= 0) continue;
+
+                    var movements = await _db.InventoryMovements
+                        .Where(m => m.ProductVariantId == v.Id && m.Quantity > 0)
+                        .OrderByDescending(m => m.CreatedAt)
+                        .ThenByDescending(m => m.Id)
+                        .ToListAsync();
+
+                    foreach (var m in movements)
+                    {
+                        if (stock <= 0) break;
+                        var take = Math.Min(stock, m.Quantity);
+                        m.RemainingQty = take;
+                        stock -= take;
+                        updatedCount++;
+                    }
+                }
+
+                // Process Products (those without variants or movements not linked to variants)
+                foreach (var p in productStocks)
+                {
+                    var stock = p.TotalStock;
+                    if (stock <= 0) continue;
+
+                    var movements = await _db.InventoryMovements
+                        .Where(m => m.ProductId == p.Id && m.ProductVariantId == null && m.Quantity > 0)
+                        .OrderByDescending(m => m.CreatedAt)
+                        .ThenByDescending(m => m.Id)
+                        .ToListAsync();
+
+                    foreach (var m in movements)
+                    {
+                        if (stock <= 0) break;
+                        var take = Math.Min(stock, m.Quantity);
+                        m.RemainingQty = take;
+                        stock -= take;
+                        updatedCount++;
+                    }
+                }
+
+                await _db.SaveChangesAsync();
+                await tx.CommitAsync();
+                return (true, $"تم تحديث {updatedCount} حركة مخزون لتفعيل نظام FIFO.");
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "BackfillFifoRemainingQty failed");
+            return (false, "فشلت العملية. يرجى مراجعة سجلات الخادم.");
+        }
+    }
 }

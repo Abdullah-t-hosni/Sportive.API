@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -135,12 +135,33 @@ public class ProfitabilityController : ControllerBase
                 }
 
                 // Ø§Ù„ØªÙƒÙ„ÙØ© Ø§Ù„ØµØ§ÙÙŠØ© (ØªÙƒÙ„ÙØ© Ø§Ù„Ù…Ù†ØªØ¬ ÙÙ‚Ø·)
-                var costPrice = product.CostPrice;
-                var totalCost = costPrice.HasValue ? costPrice.Value * netUnits : 0;
+                // FIFO COST: Fetch the actual cost recorded in the inventory movement for this order
+                var orderNumbers = g.Select(i => i.Order.OrderNumber).Distinct().ToList();
+                var movements = _db.InventoryMovements
+                    .Where(m => m.Type == InventoryMovementType.Sale && orderNumbers.Contains(m.Reference) && m.ProductId == product.Id)
+                    .ToList();
 
-                // Ø§Ù„Ø±Ø¨Ø­ ÙˆØ§Ù„Ù‡Ø§Ù…Ø´
-                var grossProfit = costPrice.HasValue ? totalNetRevenue - totalCost : (decimal?)null;
-                var marginPct   = (totalNetRevenue > 0 && costPrice.HasValue)
+                decimal totalCost = 0;
+                bool costFound = false;
+
+                foreach (var i in g)
+                {
+                    var m = movements.FirstOrDefault(x => x.Reference == i.Order.OrderNumber && x.ProductVariantId == i.ProductVariantId);
+                    if (m != null)
+                    {
+                        totalCost += m.UnitCost * (i.Quantity - i.ReturnedQuantity);
+                        costFound = true;
+                    }
+                    else if (product.CostPrice.HasValue)
+                    {
+                        totalCost += product.CostPrice.Value * (i.Quantity - i.ReturnedQuantity);
+                        costFound = true;
+                    }
+                }
+
+                // Profit
+                var grossProfit = costFound ? totalNetRevenue - totalCost : (decimal?)null;
+                var marginPct   = (totalNetRevenue > 0 && costFound)
                     ? Math.Round((grossProfit!.Value / totalNetRevenue) * 100, 1)
                     : (decimal?)null;
 
@@ -238,6 +259,11 @@ public class ProfitabilityController : ControllerBase
         decimal totalNetRevenue = 0;
         decimal totalCost       = 0;
 
+        var orderNumbers = items.Select(i => i.Order.OrderNumber).Distinct().ToList();
+        var movements = await _db.InventoryMovements
+            .Where(m => m.Type == InventoryMovementType.Sale && orderNumbers.Contains(m.Reference))
+            .ToListAsync();
+
         foreach (var i in items)
         {
             var netQty = i.Quantity - i.ReturnedQuantity;
@@ -255,7 +281,10 @@ public class ProfitabilityController : ControllerBase
             }
 
             totalNetRevenue += (lineShareOfSubtotal - (lineOrderDiscountShare * qtyFactor));
-            totalCost       += (i.Product?.CostPrice ?? 0) * netQty;
+            
+            var m = movements.FirstOrDefault(x => x.Reference == i.Order.OrderNumber && x.ProductId == i.ProductId && x.ProductVariantId == i.ProductVariantId);
+            if (m != null) totalCost += m.UnitCost * netQty;
+            else totalCost += (i.Product?.CostPrice ?? 0) * netQty;
         }
 
         var totalProfit = totalNetRevenue - totalCost;

@@ -150,6 +150,18 @@ public class OrdersController : ControllerBase
         return Ok(order);
     }
 
+    [HttpPut("{id}")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<ActionResult<OrderDetailDto>> UpdateOrder(int id, [FromBody] UpdateOrderDto dto)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
+        var order = await _orderService.UpdateOrderAsync(id, dto, userId);
+        
+        await _audit.LogAsync("UpdateOrder", "Order", id.ToString(), $"Order {order.OrderNumber} updated by admin", userId, User.FindFirstValue(ClaimTypes.Name));
+
+        return Ok(order);
+    }
+
     [HttpPatch("{id}/note")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> UpdateAdminNote(int id, [FromBody] UpdateOrderAdminNoteDto dto)

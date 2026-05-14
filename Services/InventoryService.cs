@@ -122,12 +122,59 @@ public class InventoryService : IInventoryService
             }
         }
 
-        // 2. Cost Analysis
+        // 2. Cost Analysis & FIFO Logic
         var effectiveUnitCost = unitCost;
-        if (effectiveUnitCost <= 0 && productId.HasValue)
+        int? remainingQtyForNewMove = null;
+
+        if (roundedQty > 0)
         {
-            var p = await _db.Products.FindAsync(productId.Value);
-            effectiveUnitCost = p?.CostPrice ?? 0;
+            // Receipt: Initialize RemainingQty for FIFO
+            remainingQtyForNewMove = roundedQty;
+            
+            if (effectiveUnitCost <= 0 && productId.HasValue)
+            {
+                var p = await _db.Products.FindAsync(productId.Value);
+                effectiveUnitCost = p?.CostPrice ?? 0;
+            }
+        }
+        else if (roundedQty < 0)
+        {
+            // Sale/Adjustment Out: FIFO Consumption
+            var toConsume = -roundedQty;
+            decimal totalCogs = 0;
+            var consumedCount = 0;
+
+            // Get oldest receipts with remaining stock
+            var layers = await _db.InventoryMovements
+                .Where(m => m.ProductId == productId && 
+                            m.ProductVariantId == variantId && 
+                            m.RemainingQty > 0)
+                .OrderBy(m => m.CreatedAt)
+                .ThenBy(m => m.Id)
+                .ToListAsync();
+
+            foreach (var layer in layers)
+            {
+                if (toConsume <= 0) break;
+
+                var take = Math.Min(toConsume, layer.RemainingQty ?? 0);
+                layer.RemainingQty -= take;
+                toConsume -= take;
+                totalCogs += take * layer.UnitCost;
+                consumedCount += take;
+            }
+
+            // Calculate effective unit cost for this sale
+            if (consumedCount > 0)
+            {
+                effectiveUnitCost = totalCogs / consumedCount;
+            }
+            else if (productId.HasValue)
+            {
+                // Fallback to product cost if no layers found (e.g. initial stock without layers)
+                var p = await _db.Products.FindAsync(productId.Value);
+                effectiveUnitCost = p?.CostPrice ?? 0;
+            }
         }
 
         // 3. Create Movement Record
@@ -136,6 +183,7 @@ public class InventoryService : IInventoryService
             Type             = type,
             Quantity         = roundedQty,
             RemainingStock   = remainingBefore + roundedQty,
+            RemainingQty     = remainingQtyForNewMove,
             ProductId        = productId,
             ProductVariantId = variantId,
             Reference        = reference,

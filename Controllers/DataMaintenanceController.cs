@@ -187,4 +187,12 @@ public class DataMaintenanceController : ControllerBase
         var (success, message) = await _service.CleanupStaffCustomersAsync();
         return success ? Ok(new { success, message }) : BadRequest(new { success, message });
     }
+
+    [HttpPost("sync-fifo-inventory")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> SyncFifoInventory()
+    {
+        var (success, message) = await _service.BackfillFifoRemainingQtyAsync();
+        return success ? Ok(new { success, message }) : BadRequest(new { success, message });
+    }
 }

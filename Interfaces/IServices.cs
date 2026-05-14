@@ -65,6 +65,7 @@ public interface IOrderService
     Task<OrderDetailDto> ProcessPartialReturnAsync(int orderId, PartialReturnDto dto, string updatedByUserId);
     Task<string> GenerateOrderNumberAsync(OrderSource source = OrderSource.Website);
     Task<string> ProcessDirectReturnAsync(DirectReturnDto dto, string updatedByUserId);
+    Task<OrderDetailDto> UpdateOrderAsync(int orderId, UpdateOrderDto dto, string updatedByUserId);
     Task SyncAllOrderAccountingAsync();
 
 }

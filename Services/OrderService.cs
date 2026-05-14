@@ -909,6 +909,193 @@ public class OrderService : IOrderService
         return result;
     }
 
+
+    public async Task<OrderDetailDto> UpdateOrderAsync(int orderId, UpdateOrderDto dto, string updatedByUserId)
+    {
+        var order = await _db.Orders
+            .Include(o => o.Items)
+            .Include(o => o.Payments)
+            .Include(o => o.StatusHistory)
+            .FirstOrDefaultAsync(o => o.Id == orderId);
+
+        if (order == null) throw new KeyNotFoundException(_t.Get("Orders.NotFound"));
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        var result = await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                var now = TimeHelper.GetEgyptTime();
+                var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+
+                // 1. REVERSE OLD INVENTORY
+                foreach (var item in order.Items)
+                {
+                    if (item.ProductId > 0)
+                    {
+                        await _inventory.LogMovementAsync(
+                            InventoryMovementType.Adjustment,
+                            item.Quantity,
+                            item.ProductId,
+                            item.ProductVariantId,
+                            order.OrderNumber,
+                            "Order Edited (Old Items Reverted)",
+                            updatedByUserId,
+                            0,
+                            order.Source,
+                            autoSave: false
+                        );
+                    }
+                }
+
+                // 2. CLEAR OLD ITEMS & PAYMENTS
+                _db.OrderItems.RemoveRange(order.Items);
+                _db.OrderPayments.RemoveRange(order.Payments);
+                order.Items.Clear();
+                order.Payments.Clear();
+
+                // 3. UPDATE CUSTOMER IF CHANGED
+                if (dto.CustomerId.HasValue && dto.CustomerId != order.CustomerId)
+                {
+                    order.CustomerId = dto.CustomerId.Value;
+                }
+
+                // 4. ADD NEW ITEMS
+                order.SubTotal = 0;
+                order.TemporalDiscount = 0;
+                order.TotalVatAmount = 0;
+
+                var productIds = dto.Items.Select(i => i.ProductId).Distinct().ToList();
+                var productsDict = await _db.Products.Include(p => p.Variants).Where(p => productIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
+
+                foreach (var itemDto in dto.Items)
+                {
+                    if (!productsDict.TryGetValue(itemDto.ProductId, out var product)) continue;
+
+                    var variant = itemDto.ProductVariantId.HasValue 
+                        ? product.Variants.FirstOrDefault(v => v.Id == itemDto.ProductVariantId)
+                        : null;
+
+                    var orderItem = new OrderItem
+                    {
+                        ProductId = itemDto.ProductId,
+                        ProductVariantId = itemDto.ProductVariantId,
+                        ProductNameAr = product.NameAr,
+                        ProductNameEn = product.NameEn,
+                        SKU = product.SKU,
+                        Size = variant?.Size,
+                        Color = variant?.Color,
+                        Quantity = itemDto.Quantity,
+                        UnitPrice = itemDto.UnitPrice,
+                        OriginalUnitPrice = product.Price + (variant?.PriceAdjustment ?? 0),
+                        DiscountAmount = ((product.Price + (variant?.PriceAdjustment ?? 0)) - itemDto.UnitPrice) * itemDto.Quantity,
+                        TotalPrice = itemDto.TotalPrice > 0 ? itemDto.TotalPrice : (itemDto.UnitPrice * itemDto.Quantity),
+                        HasTax = itemDto.HasTax ?? product.HasTax,
+                        VatRateApplied = itemDto.VatRate ?? product.VatRate ?? (store?.VatRatePercent ?? 14),
+                        CreatedAt = now
+                    };
+
+                    if (orderItem.HasTax)
+                    {
+                        var rate = (orderItem.VatRateApplied ?? 14) / 100m;
+                        decimal net = Math.Round(orderItem.TotalPrice / (1 + rate), 2);
+                        orderItem.ItemVatAmount = orderItem.TotalPrice - net;
+                        order.TotalVatAmount += orderItem.ItemVatAmount;
+                    }
+
+                    order.Items.Add(orderItem);
+                    order.SubTotal += (orderItem.OriginalUnitPrice * orderItem.Quantity);
+                    order.TemporalDiscount += orderItem.DiscountAmount;
+
+                    // LOG NEW MOVEMENTS
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.Sale,
+                        -itemDto.Quantity,
+                        itemDto.ProductId,
+                        itemDto.ProductVariantId,
+                        order.OrderNumber,
+                        "Order Edited (New Items Added)",
+                        updatedByUserId,
+                        0,
+                        order.Source,
+                        autoSave: false
+                    );
+                }
+
+                // 5. UPDATE TOTALS
+                order.DiscountAmount = dto.DiscountAmount;
+                order.AdminNotes = dto.AdminNotes;
+                order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount);
+
+                // 6. UPDATE PAYMENTS
+                if (dto.Payments != null && dto.Payments.Any())
+                {
+                    decimal totalPaid = 0;
+                    foreach (var p in dto.Payments)
+                    {
+                        if (p.Amount <= 0 || p.Method == PaymentMethod.Credit) continue;
+                        totalPaid += p.Amount;
+                        order.Payments.Add(new OrderPayment { Method = p.Method, Amount = p.Amount, CreatedAt = now });
+                    }
+                    order.PaidAmount = totalPaid;
+                }
+                else if (dto.PaidAmount.HasValue)
+                {
+                    order.PaidAmount = dto.PaidAmount.Value;
+                    if (dto.PaymentMethod.HasValue && order.PaidAmount > 0)
+                    {
+                         order.Payments.Add(new OrderPayment { Method = dto.PaymentMethod.Value, Amount = order.PaidAmount, CreatedAt = now });
+                    }
+                }
+
+                // Update Payment Status
+                if (order.PaidAmount >= order.TotalAmount - 0.01m) order.PaymentStatus = PaymentStatus.Paid;
+                else if (order.PaidAmount > 0) order.PaymentStatus = PaymentStatus.PartiallyPaid;
+                else order.PaymentStatus = PaymentStatus.Pending;
+
+                order.UpdatedAt = now;
+                order.StatusHistory.Add(new OrderStatusHistory 
+                { 
+                    Status = order.Status, 
+                    Note = "Order Edited by Admin", 
+                    ChangedByUserId = updatedByUserId, 
+                    CreatedAt = now 
+                });
+
+                // 7. SYNC ACCOUNTING: Delete old entries first
+                var oldEntries = await _db.JournalEntries.Where(e => e.OrderId == order.Id || e.Reference == order.OrderNumber).ToListAsync();
+                if (oldEntries.Any())
+                {
+                    var entryIds = oldEntries.Select(e => e.Id).ToList();
+                    var lines = await _db.JournalLines.Where(l => entryIds.Contains(l.JournalEntryId)).ToListAsync();
+                    _db.JournalLines.RemoveRange(lines);
+                    _db.JournalEntries.RemoveRange(oldEntries);
+                }
+
+                await _db.SaveChangesAsync();
+
+                // POST NEW ACCOUNTING
+                await _accounting.PostSalesOrderAsync(order);
+                if (order.PaidAmount > 0)
+                {
+                    await _accounting.PostOrderPaymentAsync(order);
+                }
+
+                await tx.CommitAsync();
+                return (await GetOrderByIdAsync(order.Id))!;
+            }
+            catch (Exception ex)
+            {
+                await tx.RollbackAsync();
+                _logger.LogError(ex, "UpdateOrderAsync failed for {OrderNo}", order.OrderNumber);
+                throw;
+            }
+        });
+
+        return result;
+    }
+
     [Queue("critical")]
     public async Task SendOrderNotificationsAsync(int orderId)
     {

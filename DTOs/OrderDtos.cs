@@ -60,6 +60,16 @@ public record CreateOrderDto(
     string? AttachmentPublicId = null
 );
 
+public record UpdateOrderDto(
+    int? CustomerId,
+    List<CreateOrderItemDto> Items,
+    decimal DiscountAmount,
+    string? AdminNotes = null,
+    PaymentMethod? PaymentMethod = null,
+    List<OrderPaymentDto>? Payments = null,
+    decimal? PaidAmount = null
+);
+
 public record OrderPaymentDto(PaymentMethod Method, decimal Amount);
 
 public record CreateOrderItemDto(
