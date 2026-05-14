@@ -41,19 +41,7 @@ public class AuthService : IAuthService
     public async Task<AuthResponseDto> RegisterAsync(RegisterDto dto, bool isCustomer = true)
     {
         // 1. Validate Uniqueness
-        if (!string.IsNullOrEmpty(dto.Email))
-        {
-            var existingEmail = await _userManager.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
-            if (existingEmail != null) 
-                throw new InvalidOperationException(_t.Get("Auth.EmailInUse"));
-        }
-
-        if (!string.IsNullOrEmpty(dto.Phone))
-        {
-            var existingPhone = await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == dto.Phone);
-            if (existingPhone != null) 
-                throw new InvalidOperationException(_t.Get("Auth.PhoneInUse"));
-        }
+        await CheckUniquenessAsync(dto.Email, dto.Phone);
 
         // 2. Create User (Unified without prefixes)
         var userName = !string.IsNullOrEmpty(dto.Email) ? dto.Email : dto.Phone;
@@ -294,5 +282,22 @@ public class AuthService : IAuthService
         await _userManager.RemoveFromRolesAsync(user, currentRoles);
         var result = await _userManager.AddToRoleAsync(user, role);
         return result.Succeeded;
+    }
+
+    public async Task CheckUniquenessAsync(string? email, string? phone)
+    {
+        if (!string.IsNullOrEmpty(email))
+        {
+            var existingEmail = await _userManager.Users.FirstOrDefaultAsync(u => u.Email == email);
+            if (existingEmail != null) 
+                throw new InvalidOperationException(_t.Get("Auth.EmailInUse"));
+        }
+
+        if (!string.IsNullOrEmpty(phone))
+        {
+            var existingPhone = await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == phone);
+            if (existingPhone != null) 
+                throw new InvalidOperationException(_t.Get("Auth.PhoneInUse"));
+        }
     }
 }

@@ -69,6 +69,9 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(dto.Email))
             return BadRequest(new { message = _translator.Get("Auth.EmailRequired") });
 
+        try { await _auth.CheckUniquenessAsync(dto.Email, dto.Phone); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+
         var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
         _cache.Set($"RegisterCode_{dto.Email}", code, TimeSpan.FromMinutes(15));
 
@@ -321,7 +324,8 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> CreateStaff([FromBody] RegisterDto dto, [FromQuery] string role = "Cashier")
     {
         try {
-            var existingUser = await _userManager.FindByEmailAsync(dto.Email ?? "");
+            var existingUser = await _userManager.FindByEmailAsync(dto.Email ?? "")
+                               ?? await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == dto.Phone);
             if (existingUser != null)
             {
                 // Re-activate and update info if exists

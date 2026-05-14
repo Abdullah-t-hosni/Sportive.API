@@ -38,7 +38,7 @@ public record ResetPasswordDto(string Identifier, string Code, string NewPasswor
 public record RefreshTokenRequestDto(string RefreshToken);
 
 // ========== OTP VIA WHATSAPP ==========
-public record RequestRegisterCodeDto(string Email);
+public record RequestRegisterCodeDto(string Email, string? Phone = null);
 
 public record SendOtpDto(string PhoneNumber);
 public record VerifyOtpDto(string PhoneNumber, string Code);

@@ -12,6 +12,7 @@ public interface IAuthService
     Task<bool> AssignRoleAsync(string userId, string role);
     Task<AuthResponseDto> RefreshTokenAsync(string refreshToken);
     Task RevokeRefreshTokenAsync(string userId);
+    Task CheckUniquenessAsync(string? email, string? phone);
 }
 
 public interface IProductService
