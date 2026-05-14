@@ -78,7 +78,7 @@ public class ReviewService : IReviewService
             existing.Rating = rating;
             existing.Comment = comment;
             existing.IsApproved = false; // Reset for moderation
-            existing.UpdatedAt = DateTime.UtcNow;
+            existing.UpdatedAt = Utils.TimeHelper.GetEgyptTime();
             await _db.SaveChangesAsync();
             return existing;
         }

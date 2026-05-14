@@ -17,9 +17,9 @@ public class ProfitabilityController : ControllerBase
     private readonly AppDbContext _db;
     public ProfitabilityController(AppDbContext db) => _db = db;
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ======================================================================
     // GET /api/profitability/products
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ======================================================================
     [HttpGet("products")]
     public async Task<IActionResult> GetProductProfitability(
         [FromQuery] DateTime? fromDate   = null,
@@ -42,7 +42,7 @@ public class ProfitabilityController : ControllerBase
         var startRange = from.Date;
         var endRange   = to.Date.AddDays(1).AddTicks(-1);
 
-        // â”€â”€ Ø¬Ù„Ø¨ ÙƒÙ„ Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª ÙÙŠ Ø§Ù„ÙØªØ±Ø© (Ø¨Ø§Ø³ØªØ«Ù†Ø§Ø¡ Ø§Ù„Ù…Ù„ØºÙŠ ÙÙ‚Ø·) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // --- جلب كل المبيعات في الفترة (باستثناء الملغي فقط) ------------------
         var itemsQ = _db.OrderItems
             .Include(i => i.Order)
             .Include(i => i.Product)
@@ -78,7 +78,7 @@ public class ProfitabilityController : ControllerBase
         if (!string.IsNullOrEmpty(size))
             itemsQ = itemsQ.Where(i => i.Product != null && i.Product.Variants.Any(v => v.Size == size));
 
-        // ÙÙ„ØªØ± Ø¨Ù…Ù†ØªØ¬ Ù…Ø­Ø¯Ø¯
+        // فلتر بمنتج محدد
         if (productId.HasValue)
             itemsQ = itemsQ.Where(i => i.ProductId == productId.Value);
             
@@ -87,7 +87,7 @@ public class ProfitabilityController : ControllerBase
 
         var items = await itemsQ.ToListAsync();
 
-        // â”€â”€ ØªØ¬Ù…ÙŠØ¹ Ø­Ø³Ø¨ Ø§Ù„Ù…Ù†ØªØ¬ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // --- تجميع حسب المنتج ----------------------------
         var grouped = items
             .Where(i => i.ProductId.HasValue)
             .GroupBy(i => i.ProductId!.Value)
@@ -99,24 +99,24 @@ public class ProfitabilityController : ControllerBase
 
                 var mainImage = product.Images.FirstOrDefault()?.ImageUrl;
                 
-                // ÙÙŠ Ù†Ø¸Ø§Ù… "ÙØ§ØªÙˆØ±Ø© Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª"ØŒ Ù†Ø­ØªØ§Ø¬ Ù„Ø­Ø³Ø§Ø¨ Ø§Ù„ØµØ§ÙÙŠ Ø§Ù„Ø­Ù‚ÙŠÙ‚ÙŠ Ù„ÙƒÙ„ Ø³Ø·Ø±:
-                // 1. Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„ØµØ§ÙÙŠØ© (Ø§Ù„Ù…Ø¨Ø§Ø¹ - Ø§Ù„Ù…Ø±ØªØ¬Ø¹)
+                // في نظام "فاتورة المبيعات"، نحتاج لحساب الصافي الحقيقي لكل سطر:
+                // 1. الكمية الصافية (المباع - المرتجع)
                 var netUnits = g.Sum(i => i.Quantity - i.ReturnedQuantity);
-                if (netUnits < 0) netUnits = 0; // Ø­Ù…Ø§ÙŠØ© Ù…Ù†Ø·Ù‚ÙŠØ©
+                if (netUnits < 0) netUnits = 0; // حماية منطقية
 
-                // 2. Ø­Ø³Ø§Ø¨ Ø§Ù„Ø¥ÙŠØ±Ø§Ø¯ Ø§Ù„ØµØ§ÙÙŠ Ù„ÙƒÙ„ Ø³Ø·Ø± Ù…Ø¹ ØªÙˆØ²ÙŠØ¹ Ø®ØµÙ… Ø§Ù„ÙØ§ØªÙˆØ±Ø© (Discount Pro-rating)
+                // 2. حساب الإيراد الصافي لكل سطر مع توزيع خصم الفاتورة (Discount Pro-rating)
                 decimal totalNetRevenue      = 0;
                 decimal totalItemDiscount    = 0;
                 foreach (var i in g)
                 {
-                    // Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„Ù…Ø¨Ø§Ø¹Ø© ÙØ¹Ù„ÙŠØ§Ù‹ ÙÙŠ Ù‡Ø°Ø§ Ø§Ù„Ø³Ø·Ø± Ø¨Ø¹Ø¯ Ø§Ù„Ù…Ø±ØªØ¬Ø¹
+                    // الكمية المباعة فعلياً في هذا السطر بعد المرتجع
                     var lineNetQty = (i.Quantity - i.ReturnedQuantity);
                     if (lineNetQty <= 0) continue;
 
-                    // Ø§Ù„Ø³Ø¹Ø± Ù‚Ø¨Ù„ Ø®ØµÙ… Ø§Ù„ÙØ§ØªÙˆØ±Ø© (Ù„ÙƒÙ† Ø¨Ø¹Ø¯ Ø®ØµÙ… Ø§Ù„Ø³Ø·Ø± Ø¥Ù† ÙˆØ¬Ø¯)
+                    // السعر قبل خصم الفاتورة (لكن بعد خصم السطر إن وجد)
                     var lineSubtotal = i.TotalPrice;
                     
-                    // ØªÙˆØ²ÙŠØ¹ Ø®ØµÙ… Ø±Ø£Ø³ Ø§Ù„ÙØ§ØªÙˆØ±Ø© Ù†Ø³Ø¨ÙŠØ§Ù‹ ÙÙ‚Ø· (Ø¨Ø¯ÙˆÙ† Ø¥Ø¯Ø®Ø§Ù„ Ø±Ø³ÙˆÙ… Ø§Ù„Ø´Ø­Ù† ÙÙŠ Ø±Ø¨Ø­ÙŠØ© Ø§Ù„Ù…Ù†ØªØ¬)
+                    // توزيع خصم رأس الفاتورة نسبياً فقط (بدون إدخال رسوم الشحن في ربحية المنتج)
                     decimal lineOrderDiscountShare = 0;
 
                     if (i.Order.SubTotal > 0)
@@ -125,20 +125,20 @@ public class ProfitabilityController : ControllerBase
                         lineOrderDiscountShare = ratio * i.Order.DiscountAmount;
                     }
 
-                    // ØµØ§ÙÙŠ Ø§Ù„Ø¥ÙŠØ±Ø§Ø¯ Ù…Ù† Ù‡Ø°Ø§ Ø§Ù„Ø³Ø·Ø± Ù„Ù‡Ø°Ù‡ Ø§Ù„ÙƒÙ…ÙŠØ©
+                    // صافي الإيراد من هذا السطر لهذه الكمية
                     decimal qtyFactor = (decimal)lineNetQty / i.Quantity;
-                    // Ø§Ù„Ø¥ÙŠØ±Ø§Ø¯ = Ø³Ø¹Ø± Ø§Ù„Ø³Ø·Ø± - Ù†ØµÙŠØ¨Ù‡ Ù…Ù† Ø®ØµÙ… Ø§Ù„ÙØ§ØªÙˆØ±Ø© (ÙˆÙ„Ø§ ÙŠØ´Ù…Ù„ Ø§Ù„Ø´Ø­Ù†)
+                    // الإيراد = سعر السطر - نصيبه من خصم الفاتورة (ولا يشمل الشحن)
                     totalNetRevenue += (lineSubtotal * qtyFactor) - (lineOrderDiscountShare * qtyFactor);
                     
-                    // Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø®ØµÙˆÙ…Ø§Øª Ø§Ù„Ù…ÙˆØ²Ø¹Ø©
+                    // إجمالي الخصومات الموزعة
                     totalItemDiscount += (lineOrderDiscountShare * qtyFactor);
                 }
 
-                // Ø§Ù„ØªÙƒÙ„ÙØ© Ø§Ù„ØµØ§ÙÙŠØ© (ØªÙƒÙ„ÙØ© Ø§Ù„Ù…Ù†ØªØ¬ ÙÙ‚Ø·)
+                // التكلفة الصافية (تكلفة المنتج فقط)
                 // FIFO COST: Fetch the actual cost recorded in the inventory movement for this order
                 var orderNumbers = g.Select(i => i.Order.OrderNumber).Distinct().ToList();
                 var movements = _db.InventoryMovements
-                    .Where(m => m.Type == InventoryMovementType.Sale && orderNumbers.Contains(m.Reference) && m.ProductId == product.Id)
+                    .Where(m => m.Type == InventoryMovementType.Sale && m.Reference != null && orderNumbers.Contains(m.Reference) && m.ProductId == product.Id)
                     .ToList();
 
                 decimal totalCost = 0;
@@ -178,7 +178,7 @@ public class ProfitabilityController : ControllerBase
                     Image:            mainImage,
                     ListPrice:        product.Price,
                     DiscountPrice:    product.DiscountPrice,
-                    CostPrice:        costPrice,
+                    CostPrice:        product.CostPrice,
                     AvgSellingPrice:  netUnits > 0 ? Math.Round(totalNetRevenue / netUnits, 2) : 0,
                     UnitsSold:        g.Sum(i => i.Quantity),
                     ReturnedUnits:    g.Sum(i => i.ReturnedQuantity),
@@ -197,7 +197,7 @@ public class ProfitabilityController : ControllerBase
             .Cast<ProductProfitRow>()
             .ToList();
 
-        // ØªØ±ØªÙŠØ¨
+        // ترتيب
         grouped = sortBy switch
         {
             "margin"  => grouped.OrderByDescending(r => r.MarginPct ?? -999).ToList(),
@@ -206,7 +206,7 @@ public class ProfitabilityController : ControllerBase
             _         => grouped.OrderByDescending(r => r.NetRevenue).ToList(),
         };
 
-        // â”€â”€ Summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // --- Summary --------------------------------------------------------
         var withCost    = grouped.Where(r => r.CostPrice.HasValue).ToList();
         var summary = new
         {
@@ -224,10 +224,10 @@ public class ProfitabilityController : ControllerBase
                 : 0m,
             totalUnitsSold   = grouped.Sum(r => r.UnitsSold),
             totalReturned    = grouped.Sum(r => r.ReturnedUnits),
-            // Ø£Ø¹Ù„Ù‰ Ù‡Ø§Ù…Ø´ Ø±Ø¨Ø­
+            // أعلى هامش ربح
             topMarginProduct = withCost.OrderByDescending(r => r.MarginPct).FirstOrDefault()?.ProductNameAr,
             topMarginPct     = withCost.OrderByDescending(r => r.MarginPct).FirstOrDefault()?.MarginPct,
-            // Ø£Ù‚Ù„ Ù‡Ø§Ù…Ø´ Ø±Ø¨Ø­ (Ø£Ùˆ Ø®Ø³Ø§Ø±Ø©)
+            // أقل هامش ربح (أو خسارة)
             lowestMarginProduct = withCost.OrderBy(r => r.MarginPct).FirstOrDefault()?.ProductNameAr,
             lowestMarginPct     = withCost.OrderBy(r => r.MarginPct).FirstOrDefault()?.MarginPct,
         };
@@ -237,10 +237,10 @@ public class ProfitabilityController : ControllerBase
         return Ok(new { from, to, summary, products = grouped });
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ======================================================================
     // GET /api/profitability/summary
-    // Ù…Ù„Ø®Øµ Ø³Ø±ÙŠØ¹ Ù„Ù„Ø¯Ø§Ø´Ø¨ÙˆØ±Ø¯
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ملخص سريع للداشبورد
+    // ======================================================================
     [HttpGet("summary")]
     public async Task<IActionResult> GetSummary([FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
     {
@@ -261,7 +261,7 @@ public class ProfitabilityController : ControllerBase
 
         var orderNumbers = items.Select(i => i.Order.OrderNumber).Distinct().ToList();
         var movements = await _db.InventoryMovements
-            .Where(m => m.Type == InventoryMovementType.Sale && orderNumbers.Contains(m.Reference))
+            .Where(m => m.Type == InventoryMovementType.Sale && m.Reference != null && orderNumbers.Contains(m.Reference))
             .ToListAsync();
 
         foreach (var i in items)
@@ -269,11 +269,11 @@ public class ProfitabilityController : ControllerBase
             var netQty = i.Quantity - i.ReturnedQuantity;
             if (netQty <= 0) continue;
 
-            // Ø­ØµØ© Ø§Ù„ØµÙ†Ù Ù…Ù† Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø³Ø¹Ø± Ù‚Ø¨Ù„ Ø®ØµÙ… Ø§Ù„ÙØ§ØªÙˆØ±Ø© (Ù„ØµØ§ÙÙŠ Ø§Ù„ÙƒÙ…ÙŠØ©)
+            // حصة الصنف من إجمالي السعر قبل خصم الفاتورة (لصافي الكمية)
             decimal qtyFactor = (decimal)netQty / i.Quantity;
             decimal lineShareOfSubtotal = i.TotalPrice * qtyFactor;
 
-            // Ø­ØµØ© Ø§Ù„ØµÙ†Ù Ù…Ù† Ø®ØµÙ… Ø§Ù„ÙØ§ØªÙˆØ±Ø© (ØªÙ†Ø§Ø³Ø¨ÙŠØ§Ù‹)
+            // حصة الصنف من خصم الفاتورة (تناسبياً)
             decimal lineOrderDiscountShare = 0;
             if (i.Order.SubTotal > 0 && i.Order.DiscountAmount > 0)
             {
@@ -293,31 +293,31 @@ public class ProfitabilityController : ControllerBase
         return Ok(new { totalRevenue = totalNetRevenue, totalCost, totalProfit, marginPct = margin, from, to });
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ======================================================================
     // EXCEL EXPORT
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ======================================================================
     private IActionResult ExcelProfitability(
         List<ProductProfitRow> rows, dynamic summary, DateTime from, DateTime to)
     {
         using var wb = new XLWorkbook();
 
-        // â”€â”€ Sheet 1: ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        var ws = wb.Worksheets.Add("Ø±Ø¨Ø­ÙŠØ© Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª");
+        // --- Sheet 1: تفاصيل المنتجات ----------------------------
+        var ws = wb.Worksheets.Add("ربحية المنتجات");
         ws.RightToLeft = true;
 
         // Title
-        ws.Cell(1, 1).Value = $"ØªÙ‚Ø±ÙŠØ± Ø±Ø¨Ø­ÙŠØ© Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª â€” Ù…Ù† {from:yyyy-MM-dd} Ø¥Ù„Ù‰ {to:yyyy-MM-dd}";
+        ws.Cell(1, 1).Value = $"تقرير ربحية المنتجات — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
         ws.Cell(1, 1).Style.Font.Bold     = true;
         ws.Cell(1, 1).Style.Font.FontSize = 13;
         ws.Range(1, 1, 1, 12).Merge();
 
         // Headers
         string[] h = {
-            "Ø§Ø³Ù… Ø§Ù„Ù…Ù†ØªØ¬", "SKU", "Ø§Ù„ÙØ¦Ø©",
-            "Ø³Ø¹Ø± Ø§Ù„Ø¬Ù…Ù‡ÙˆØ±", "Ø³Ø¹Ø± Ø§Ù„ØªÙƒÙ„ÙØ©",
-            "ÙˆØ­Ø¯Ø§Øª Ù…Ø¨Ø§Ø¹Ø©", "ÙˆØ­Ø¯Ø§Øª Ù…Ø±ØªØ¬Ø¹Ø©", "ØµØ§ÙÙŠ Ø§Ù„ÙˆØ­Ø¯Ø§Øª",
-            "Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª", "Ø§Ù„Ù…Ø±ØªØ¬Ø¹Ø§Øª", "Ø§Ù„Ø®ØµÙˆÙ…Ø§Øª", "ØµØ§ÙÙŠ Ø§Ù„Ø¥ÙŠØ±Ø§Ø¯",
-            "Ø§Ù„ØªÙƒÙ„ÙØ© Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠØ©", "Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø±Ø¨Ø­", "Ù‡Ø§Ù…Ø´ Ø§Ù„Ø±Ø¨Ø­ %"
+            "اسم المنتج", "SKU", "الفئة",
+            "سعر الجمهور", "سعر التكلفة",
+            "وحدات مباعة", "وحدات مرتجعة", "صافي الوحدات",
+            "إجمالي المبيعات", "المرتجعات", "الخصومات", "صافي الإيراد",
+            "التكلفة الإجمالية", "إجمالي الربح", "هامش الربح %"
         };
         for (int c = 0; c < h.Length; c++)
         {
@@ -336,7 +336,7 @@ public class ProfitabilityController : ControllerBase
             ws.Cell(r,  2).Value = row.SKU;
             ws.Cell(r,  3).Value = row.CategoryName;
             ws.Cell(r,  4).Value = row.ListPrice;
-            ws.Cell(r,  5).Value = row.CostPrice.HasValue ? (XLCellValue)row.CostPrice.Value : (XLCellValue)"â€”";
+            ws.Cell(r,  5).Value = row.CostPrice.HasValue ? (XLCellValue)row.CostPrice.Value : (XLCellValue)"-";
             ws.Cell(r,  6).Value = row.UnitsSold;
             ws.Cell(r,  7).Value = row.ReturnedUnits;
             ws.Cell(r,  8).Value = row.NetUnits;
@@ -344,11 +344,11 @@ public class ProfitabilityController : ControllerBase
             ws.Cell(r, 10).Value = row.TotalReturns;
             ws.Cell(r, 11).Value = row.TotalDiscounts;
             ws.Cell(r, 12).Value = row.NetRevenue;
-            ws.Cell(r, 13).Value = row.TotalCost.HasValue ? (XLCellValue)row.TotalCost.Value : (XLCellValue)"â€”";
-            ws.Cell(r, 14).Value = row.GrossProfit.HasValue ? (XLCellValue)row.GrossProfit.Value : (XLCellValue)"â€”";
-            ws.Cell(r, 15).Value = row.MarginPct.HasValue ? (XLCellValue)row.MarginPct.Value : (XLCellValue)"â€”";
+            ws.Cell(r, 13).Value = row.TotalCost.HasValue ? (XLCellValue)row.TotalCost.Value : (XLCellValue)"-";
+            ws.Cell(r, 14).Value = row.GrossProfit.HasValue ? (XLCellValue)row.GrossProfit.Value : (XLCellValue)"-";
+            ws.Cell(r, 15).Value = row.MarginPct.HasValue ? (XLCellValue)row.MarginPct.Value : (XLCellValue)"-";
 
-            // ØªÙ†Ø³ÙŠÙ‚ Ø§Ù„Ø£Ø±Ù‚Ø§Ù…
+            // تنسيق الأرقام
             foreach (int col in new[] { 4, 5, 9, 10, 11, 12, 13, 14 })
                 if (ws.Cell(r, col).Value.IsNumber)
                     ws.Cell(r, col).Style.NumberFormat.Format = "#,##0.00";
@@ -356,7 +356,7 @@ public class ProfitabilityController : ControllerBase
             if (ws.Cell(r, 15).Value.IsNumber)
                 ws.Cell(r, 15).Style.NumberFormat.Format = "0.0\"%\"";
 
-            // ØªÙ„ÙˆÙŠÙ† Ø­Ø³Ø¨ Ø§Ù„Ù‡Ø§Ù…Ø´
+            // تلوين حسب الهامش
             if (row.MarginPct.HasValue)
             {
                 var bg = row.MarginPct.Value >= 30 ? XLColor.FromHtml("#e8f5e9")
@@ -368,7 +368,7 @@ public class ProfitabilityController : ControllerBase
         }
 
         // Totals row
-        ws.Cell(r, 1).Value = "Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ";
+        ws.Cell(r, 1).Value = "الإجمالي";
         ws.Cell(r, 1).Style.Font.Bold = true;
         ws.Cell(r, 9).Value = rows.Sum(x => x.TotalSales);
         ws.Cell(r, 10).Value = rows.Sum(x => x.TotalReturns);
@@ -385,27 +385,27 @@ public class ProfitabilityController : ControllerBase
 
         ws.Columns().AdjustToContents();
 
-        // â”€â”€ Sheet 2: Ù…Ù„Ø®Øµ ØªÙ†ÙÙŠØ°ÙŠ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        var ws2 = wb.Worksheets.Add("Ø§Ù„Ù…Ù„Ø®Øµ Ø§Ù„ØªÙ†ÙÙŠØ°ÙŠ");
+        // --- Sheet 2: الملخص التنفيذي ----------------------------
+        var ws2 = wb.Worksheets.Add("الملخص التنفيذي");
         ws2.RightToLeft = true;
 
-        ws2.Cell(1, 1).Value = "Ø§Ù„Ù…Ù„Ø®Øµ Ø§Ù„ØªÙ†ÙÙŠØ°ÙŠ";
+        ws2.Cell(1, 1).Value = "الملخص التنفيذي";
         ws2.Cell(1, 1).Style.Font.Bold = true;
         ws2.Cell(1, 1).Style.Font.FontSize = 14;
 
         var summaryRows = new (string Label, object Value)[]
         {
-            ("Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª (Ø¨Ø¯Ø§ÙŠØ©)",  (decimal)summary.totalSales),
-            ("Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø±ØªØ¬Ø¹Ø§Øª",         (decimal)summary.totalReturns),
-            ("Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø®ØµÙˆÙ…Ø§Øª",          (decimal)summary.totalDiscounts),
-            ("Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø¥ÙŠØ±Ø§Ø¯Ø§Øª Ø§Ù„ØµØ§ÙÙŠØ©", (decimal)summary.totalNetRevenue),
-            ("Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„ØªÙƒØ§Ù„ÙŠÙ",           (decimal)summary.totalCost),
-            ("Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø±Ø¨Ø­ Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ",    (decimal)summary.totalGrossProfit),
-            ("Ù‡Ø§Ù…Ø´ Ø§Ù„Ø±Ø¨Ø­ Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ %",    (decimal)summary.overallMargin),
-            ("Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„ÙˆØ­Ø¯Ø§Øª Ø§Ù„Ù…Ø¨Ø§Ø¹Ø©",   (int)summary.totalUnitsSold),
-            ("Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø±ØªØ¬Ø¹Ø§Øª (ÙˆØ­Ø¯Ø§Øª)", (int)summary.totalReturned),
-            ("Ù…Ù†ØªØ¬Ø§Øª Ø¨Ø³Ø¹Ø± ØªÙƒÙ„ÙØ©",        (int)summary.withCostCount),
-            ("Ù…Ù†ØªØ¬Ø§Øª Ø¨Ø¯ÙˆÙ† Ø³Ø¹Ø± ØªÙƒÙ„ÙØ©",   (int)summary.withoutCostCount),
+            ("إجمالي المبيعات (بداية)",  (decimal)summary.totalSales),
+            ("إجمالي المرتجعات",         (decimal)summary.totalReturns),
+            ("إجمالي الخصومات",          (decimal)summary.totalDiscounts),
+            ("إجمالي الإيرادات الصافية", (decimal)summary.totalNetRevenue),
+            ("إجمالي التكاليف",           (decimal)summary.totalCost),
+            ("إجمالي الربح الإجمالي",    (decimal)summary.totalGrossProfit),
+            ("هامش الربح الإجمالي %",    (decimal)summary.overallMargin),
+            ("إجمالي الوحدات المباعة",   (int)summary.totalUnitsSold),
+            ("إجمالي المرتجعات (وحدات)", (int)summary.totalReturned),
+            ("منتجات بسعر تكلفة",        (int)summary.withCostCount),
+            ("منتجات بدون سعر تكلفة",   (int)summary.withoutCostCount),
         };
 
         int sr = 3;
@@ -413,7 +413,7 @@ public class ProfitabilityController : ControllerBase
         {
             ws2.Cell(sr, 1).Value = label;
             ws2.Cell(sr, 2).Value = XLCellValue.FromObject(val);
-            if (val is decimal d && (label.Contains("Ø¥ÙŠØ±Ø§Ø¯") || label.Contains("ØªÙƒÙ„Ù") || label.Contains("Ø±Ø¨Ø­")))
+            if (val is decimal d && (label.Contains("إيراد") || label.Contains("تكلف") || label.Contains("ربح")))
                 ws2.Cell(sr, 2).Style.NumberFormat.Format = "#,##0.00";
             if (label.Contains("%"))
                 ws2.Cell(sr, 2).Style.NumberFormat.Format = "0.0\"%\"";
@@ -434,7 +434,7 @@ public class ProfitabilityController : ControllerBase
     }
 }
 
-// â”€â”€ Report DTO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Report DTO -------------------------------------------------------
 public record ProductProfitRow(
     int      ProductId,
     string   ProductNameAr,
