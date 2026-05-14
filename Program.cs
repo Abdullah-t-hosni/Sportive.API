@@ -132,7 +132,8 @@ builder.Services.AddCors(options =>
             "http://localhost:5174", "https://localhost:5174",
             "https://www.sportive-sportwear.com",
             "https://sportive-sportwear.com",
-            "https://admin.sportive-sportwear.com"
+            "https://admin.sportive-sportwear.com",
+            "https://sportive-frontend-production.up.railway.app"
         };
 
         var extra = builder.Configuration["AllowedOrigins"];
