@@ -631,7 +631,7 @@ public class JournalEntriesController : ControllerBase
                 CostCenterLabel = e.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (e.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General")),
                 LineCount = includeLines ? e.Lines.Count : _db.JournalLines.Count(l => l.JournalEntryId == e.Id),
                 TotalAmount = includeLines ? e.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit) : (_db.JournalLines.AsNoTracking().Where(l => l.JournalEntryId == e.Id && l.Debit > 0).Sum(l => (decimal?)l.Debit) ?? 0),
-                Lines = includeLines ? (object)e.Lines.Select(l => new { l.AccountId, l.Credit, l.Debit, AccountName = l.Account != null ? l.Account.NameAr : null, CostCenter = (int?)l.CostCenter }).ToList() : null
+                Lines = includeLines ? (object)e.Lines.Select(l => new { l.AccountId, AccountCode = l.Account != null ? l.Account.Code : null, l.Credit, l.Debit, AccountName = l.Account != null ? l.Account.NameAr : null, CostCenter = (int?)l.CostCenter }).ToList() : null
             })
             .ToListAsync();
 
