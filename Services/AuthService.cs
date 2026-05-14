@@ -45,21 +45,20 @@ public class AuthService : IAuthService
         // 1. Validate Uniqueness
         if (!string.IsNullOrEmpty(dto.Email))
         {
-            var existingEmail = await _userManager.Users.FirstOrDefaultAsync(u => u.Email == dto.Email && u.UserName!.StartsWith(prefix));
+            var existingEmail = await _userManager.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
             if (existingEmail != null) 
                 throw new InvalidOperationException(_t.Get("Auth.EmailInUse"));
         }
 
         if (!string.IsNullOrEmpty(dto.Phone))
         {
-            var existingPhone = await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == dto.Phone && u.UserName!.StartsWith(prefix));
+            var existingPhone = await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == dto.Phone);
             if (existingPhone != null) 
                 throw new InvalidOperationException(_t.Get("Auth.PhoneInUse"));
         }
 
-        // 2. Create User
-        // الـ UserName دايماً هايكون الموبايل كـ Unique identifier أساسي لو الميل مش موجود
-        var userName = prefix + (!string.IsNullOrEmpty(dto.Phone) ? dto.Phone : dto.Email);
+        // 2. Create User (Unified without prefixes)
+        var userName = !string.IsNullOrEmpty(dto.Email) ? dto.Email : dto.Phone;
         
         var user = new AppUser
         {
@@ -125,13 +124,14 @@ public class AuthService : IAuthService
         if (string.IsNullOrEmpty(dto.Identifier))
             throw new UnauthorizedAccessException(_t.Get("Auth.IdentifierRequired"));
 
-        var prefix = dto.IsStaff ? "staff_" : "cust_";
-
-        // البحث بالبريد أو الهاتف أو اسم المستخدم
+        // البحث الذكي الموحد: يبحث عن الإيميل، الهاتف، أو اسم المستخدم (النظيف أو القديم بالبادئات)
         var user = await _userManager.Users
             .FirstOrDefaultAsync(u => 
-                (u.Email == dto.Identifier || u.PhoneNumber == dto.Identifier || u.UserName == dto.Identifier || u.UserName == prefix + dto.Identifier)
-                && (u.UserName!.StartsWith(prefix) || u.Email == "admin@sportive.com" || u.Email == "abdullah@sportive.com" || u.UserName == dto.Identifier));
+                u.Email == dto.Identifier || 
+                u.PhoneNumber == dto.Identifier || 
+                u.UserName == dto.Identifier || 
+                u.UserName == "staff_" + dto.Identifier || 
+                u.UserName == "cust_" + dto.Identifier);
 
         if (user == null || !user.IsActive || !await _userManager.CheckPasswordAsync(user, dto.Password))
             throw new UnauthorizedAccessException(_t.Get("Auth.InvalidCredentials"));
