@@ -167,6 +167,11 @@ public class StaffController : ControllerBase
         if (staffRoles.Any())
             await _users.RemoveFromRolesAsync(user, staffRoles);
         
+        // 🛡️ RE-FETCH USER: Identity operations like RemoveFromRolesAsync modify the ConcurrencyStamp in DB.
+        // If we don't reload the object, the next operation (AddToRoleAsync) might fail with Optimistic Concurrency error.
+        user = await _users.FindByIdAsync(id);
+        if (user == null) return NotFound();
+
         var result = await _users.AddToRoleAsync(user, dto.Role);
         if (!result.Succeeded)
             return BadRequest(new { message = _t.Get("Staff.RoleChangeFailed", result.Errors.FirstOrDefault()?.Description ?? "") });

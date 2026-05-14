@@ -130,6 +130,10 @@ public class UsersController : ControllerBase
                 await _roleManager.CreateAsync(new IdentityRole(roleName));
         }
 
+        // 🛡️ RE-FETCH USER: Prevent Concurrency Failure on second update
+        user = await _userManager.FindByIdAsync(id);
+        if (user == null) return NotFound(new { message = _t.Get("Users.NotFound") });
+
         var result = await _userManager.AddToRolesAsync(user, dto.Roles);
         if (!result.Succeeded) return BadRequest(result.Errors);
 
