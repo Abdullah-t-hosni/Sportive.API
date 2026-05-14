@@ -165,19 +165,19 @@ public class FinancialReportsController : ControllerBase
 
         if (excel) return ExcelTrialBalance(rows, from, to);
 
-        // حساب الإجماليات بشكل صحيح من الحسابات النهائية (Leaf Accounts) لضمان المطابقة مع السطور
-        var leafBalances = balances.Where(b => b.IsLeaf).ToList();
+        // حساب الإجماليات من السطور الرئيسية (Level 1) لضمان المطابقة الكاملة مع ما يراه المستخدم
+        var rootRows = rows.Where(r => r.Level == 1).ToList();
 
         return Ok(new {
             from, to, source,
             CostCenterLabel = source == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (source == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
             rows,
-            totalOpenDebit    = Math.Round(leafBalances.Sum(b => b.Nature == AccountNature.Debit ? (b.OpenBalance > 0 ? b.OpenBalance : 0) : (b.OpenBalance < 0 ? -b.OpenBalance : 0)), 2),
-            totalOpenCredit   = Math.Round(leafBalances.Sum(b => b.Nature == AccountNature.Credit ? (b.OpenBalance > 0 ? b.OpenBalance : 0) : (b.OpenBalance < 0 ? -b.OpenBalance : 0)), 2),
-            totalPeriodDebit  = Math.Round(leafBalances.Sum(b => b.PeriodDebit), 2),
-            totalPeriodCredit = Math.Round(leafBalances.Sum(b => b.PeriodCredit), 2),
-            totalClosingDebit = Math.Round(leafBalances.Sum(b => b.Nature == AccountNature.Debit ? (b.ClosingBal > 0 ? b.ClosingBal : 0) : (b.ClosingBal < 0 ? -b.ClosingBal : 0)), 2),
-            totalClosingCredit= Math.Round(leafBalances.Sum(b => b.Nature == AccountNature.Credit ? (b.ClosingBal > 0 ? b.ClosingBal : 0) : (b.ClosingBal < 0 ? -b.ClosingBal : 0)), 2),
+            totalOpenDebit    = Math.Round(rootRows.Sum(r => r.OpenDebit), 2),
+            totalOpenCredit   = Math.Round(rootRows.Sum(r => r.OpenCredit), 2),
+            totalPeriodDebit  = Math.Round(rootRows.Sum(r => r.PeriodDebit), 2),
+            totalPeriodCredit = Math.Round(rootRows.Sum(r => r.PeriodCredit), 2),
+            totalClosingDebit = Math.Round(rootRows.Sum(r => r.ClosingDebit), 2),
+            totalClosingCredit= Math.Round(rootRows.Sum(r => r.ClosingCredit), 2),
         });
     }
 
