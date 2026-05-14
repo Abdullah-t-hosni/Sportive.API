@@ -9,7 +9,7 @@ public class Translator : ITranslator
     private readonly IMemoryCache _cache;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly string _resourcesPath;
-    private const string CacheKeyPrefix = "Translations_";
+    private const string CacheKeyPrefix = "Translations_v2_";
 
     public Translator(IMemoryCache cache, IWebHostEnvironment env, IHttpContextAccessor httpContextAccessor)
     {

@@ -33,7 +33,7 @@ public class EmailService : IEmailService
 
             if (settings != null && !string.IsNullOrEmpty(settings.ResendApiKey))
             {
-                await SendViaResendAsync(to, subject, body, settings.ResendApiKey, settings.StoreEmailAddr);
+                await SendViaResendAsync(to, subject, body, settings.ResendApiKey, settings.StoreEmailAddr, settings.StoreBrandName);
                 return;
             }
         }
@@ -46,16 +46,19 @@ public class EmailService : IEmailService
         await SendViaSmtpAsync(to, subject, body);
     }
 
-    private async Task SendViaResendAsync(string to, string subject, string body, string apiKey, string? fromEmail)
+    private async Task SendViaResendAsync(string to, string subject, string body, string apiKey, string? fromEmail, string fromName)
     {
         try
         {
             var client = _httpClientFactory.CreateClient();
             client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
 
+            var finalFrom = string.IsNullOrEmpty(fromEmail) ? "onboarding@resend.dev" : fromEmail;
+            var fromWithLabel = $"{fromName} <{finalFrom}>";
+
             var payload = new
             {
-                from = string.IsNullOrEmpty(fromEmail) ? "onboarding@resend.dev" : fromEmail,
+                from = fromWithLabel,
                 to = new[] { to },
                 subject = subject,
                 html = body
@@ -90,6 +93,14 @@ public class EmailService : IEmailService
         var smtpUser = _config["Email:User"];
         var smtpPass = _config["Email:Pass"];
         var fromEmail = _config["Email:From"] ?? smtpUser;
+        
+        string fromName = "Sportive Store";
+        try {
+            using var scope = _serviceProvider.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var settings = db.StoreInfo.FirstOrDefault();
+            if (settings != null) fromName = settings.StoreBrandName;
+        } catch { }
 
         if (string.IsNullOrEmpty(smtpHost) || string.IsNullOrEmpty(smtpUser))
         {
@@ -110,7 +121,7 @@ public class EmailService : IEmailService
 
             var mailMessage = new MailMessage
             {
-                From = new MailAddress(fromEmail!, "Sportive Store"),
+                From = new MailAddress(fromEmail!, fromName),
                 Subject = subject,
                 Body = body,
                 IsBodyHtml = true,

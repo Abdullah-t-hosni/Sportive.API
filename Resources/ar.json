@@ -27,7 +27,7 @@
   "Auth.CustomerNotFound": "لم يتم العثور على ملف العميل",
   "Auth.StaffCreated": "تم إنشاء حساب الموظف بنجاح",
   "Auth.StaffReactivated": "تم إعادة تفعيل الموظف وتحديث بياناته بنجاح",
-  "Auth.InvalidCredentials": "بيانات الاعتماد غير صالحة",
+  "Auth.InvalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة",
   "Auth.RefreshTokenInvalid": "توكن التنشيط غير صالح أو منتهي الصلاحية.",
   "Auth.EmailInUse": "البريد الإلكتروني مستخدم بالفعل",
   "Auth.PhoneInUse": "رقم الهاتف مستخدم بالفعل",

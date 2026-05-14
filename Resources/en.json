@@ -27,7 +27,7 @@
   "Auth.CustomerNotFound": "Customer profile not found",
   "Auth.StaffCreated": "Staff created successfully",
   "Auth.StaffReactivated": "Staff reactivated and updated successfully",
-  "Auth.InvalidCredentials": "Invalid credentials",
+  "Auth.InvalidCredentials": "Email or password is incorrect",
   "Auth.RefreshTokenInvalid": "Invalid or expired refresh token.",
   "Auth.EmailInUse": "Email already in use",
   "Auth.PhoneInUse": "Phone number already in use",
