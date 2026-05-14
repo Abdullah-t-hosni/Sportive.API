@@ -1033,6 +1033,7 @@ public class OrderService : IOrderService
                 // 6. UPDATE PAYMENTS
                 if (dto.Payments != null && dto.Payments.Any())
                 {
+                    order.Payments.Clear();
                     decimal totalPaid = 0;
                     foreach (var p in dto.Payments)
                     {
@@ -1044,10 +1045,14 @@ public class OrderService : IOrderService
                 }
                 else if (dto.PaidAmount.HasValue)
                 {
+                    // 🚨 IMPORTANT: Clear old payments to avoid accumulation when admin edits the total paid
+                    order.Payments.Clear();
                     order.PaidAmount = dto.PaidAmount.Value;
-                    if (dto.PaymentMethod.HasValue && order.PaidAmount > 0)
+                    
+                    var method = dto.PaymentMethod ?? order.PaymentMethod;
+                    if (method != PaymentMethod.Credit && order.PaidAmount > 0)
                     {
-                         order.Payments.Add(new OrderPayment { Method = dto.PaymentMethod.Value, Amount = order.PaidAmount, CreatedAt = now });
+                         order.Payments.Add(new OrderPayment { Method = method, Amount = order.PaidAmount, CreatedAt = now });
                     }
                 }
 
