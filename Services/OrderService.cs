@@ -916,6 +916,8 @@ public class OrderService : IOrderService
             .Include(o => o.Items)
             .Include(o => o.Payments)
             .Include(o => o.StatusHistory)
+            .Include(o => o.Customer)
+            .Include(o => o.DeliveryAddress)
             .FirstOrDefaultAsync(o => o.Id == orderId);
 
         if (order == null) throw new KeyNotFoundException(_t.Get("Orders.NotFound"));
@@ -1082,6 +1084,11 @@ public class OrderService : IOrderService
                         .Where(v => v.JournalEntryId.HasValue && entryIds.Contains(v.JournalEntryId.Value))
                         .ExecuteUpdateAsync(s => s.SetProperty(v => v.JournalEntryId, (int?)null));
 
+                    // 🛡️ UNLINK REVERSALS: Prevent FK violations if any of these entries were reversed
+                    await _db.JournalEntries
+                        .Where(e => e.ReversalOfId.HasValue && entryIds.Contains(e.ReversalOfId.Value))
+                        .ExecuteUpdateAsync(s => s.SetProperty(e => e.ReversalOfId, (int?)null));
+
                     var lines = await _db.JournalLines.Where(l => entryIds.Contains(l.JournalEntryId)).ToListAsync();
                     _db.JournalLines.RemoveRange(lines);
                     _db.JournalEntries.RemoveRange(oldEntries);
@@ -1103,7 +1110,7 @@ public class OrderService : IOrderService
             {
                 await tx.RollbackAsync();
                 _logger.LogError(ex, "UpdateOrderAsync failed for {OrderNo}", order.OrderNumber);
-                throw;
+                throw new InvalidOperationException($"Error updating order {order.OrderNumber}: {ex.Message}. {(ex.InnerException != null ? "Inner: " + ex.InnerException.Message : "")}");
             }
         });
 
