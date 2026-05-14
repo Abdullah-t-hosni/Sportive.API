@@ -131,7 +131,7 @@ public class AuthService : IAuthService
         var user = await _userManager.Users
             .FirstOrDefaultAsync(u => 
                 (u.Email == dto.Identifier || u.PhoneNumber == dto.Identifier || u.UserName == dto.Identifier || u.UserName == prefix + dto.Identifier)
-                && (u.UserName!.StartsWith(prefix) || u.Email == "admin@sportive.com" || u.UserName == dto.Identifier));
+                && (u.UserName!.StartsWith(prefix) || u.Email == "admin@sportive.com" || u.Email == "abdullah@sportive.com" || u.UserName == dto.Identifier));
 
         if (user == null || !user.IsActive || !await _userManager.CheckPasswordAsync(user, dto.Password))
             throw new UnauthorizedAccessException(_t.Get("Auth.InvalidCredentials"));
