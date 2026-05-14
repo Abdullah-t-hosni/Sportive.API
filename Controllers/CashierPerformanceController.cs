@@ -25,8 +25,9 @@ public class CashierPerformanceController : ControllerBase
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = fromDate?.Date ?? TimeHelper.GetEgyptTime().Date.AddDays(-30);
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+        // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
+        var from = (fromDate ?? TimeHelper.GetEgyptTime().Date.AddDays(-30)).Date.AddHours(2);
+        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
 
         var orders = await _db.Orders
             .Include(o => o.Items)
