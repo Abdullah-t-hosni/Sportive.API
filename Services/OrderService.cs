@@ -1151,7 +1151,7 @@ public class OrderService : IOrderService
         // 2. Admin Email Alert
         try 
         {
-            var adminEmails = (config["Backup:Email:To"] ?? "admin@sportive.com").Split(',');
+            var adminEmails = (config["Backup:Email:To"] ?? "abdullah.taha574@gmail.com,moshtaq_mm@yahoo.com").Split(',');
             var subject = $"🔔 طلب جديد: {order.OrderNumber}";
             var itemsHtml = string.Join("", order.Items.Select(i => $@"
                 <tr>
