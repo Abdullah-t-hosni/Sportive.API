@@ -355,12 +355,6 @@ public class StoreInfo
     [JsonPropertyName("orderSuccessMessageEn")]
     public string? OrderSuccessMessageEn { get; set; } = "Thank you for shopping with us! Our team will contact you soon to confirm your order.";
 
-    // --- 10. Smart Printing & POS ---
-    [JsonPropertyName("autoPrintReceipt")]
-    public bool AutoPrintReceipt { get; set; } = false;
-
-    [JsonPropertyName("receiptExtraCopies")]
-    public int ReceiptExtraCopies { get; set; } = 0;
 
     // --- 11. SEO & Analytics ---
     [JsonPropertyName("googleAnalyticsId")]
