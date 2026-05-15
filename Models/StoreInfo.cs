@@ -213,7 +213,7 @@ public class StoreInfo
 
     [MaxLength(200)]
     [JsonPropertyName("receiptSoftwareProvider")]
-    public string? ReceiptSoftwareProvider { get; set; } = "By Easy Store";
+    public string? ReceiptSoftwareProvider { get; set; } = "Eng.Abdullah-Taha";
 
     [MaxLength(20)]
     [JsonPropertyName("receiptPaperSize")]
