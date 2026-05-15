@@ -30,15 +30,8 @@ public class PurchaseAccountingService
     {
         if (string.IsNullOrEmpty(invoice.InvoiceNumber)) return;
 
-        // 🚨 AUTO-UPDATE: Remove existing entry if it exists to allow re-posting with new values
-        var existing = await _db.JournalEntries
-            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == invoice.InvoiceNumber);
-        
-        if (existing != null)
-        {
-            _db.JournalEntries.Remove(existing);
-            await _db.SaveChangesAsync();
-        }
+        // The core service handles updating existing entries by reference automatically.
+        // We removed the manual deletion to preserve the original CreatedAt and ID for stable sorting.
 
         if (invoice.IsAssetPurchase)
         {
@@ -124,15 +117,7 @@ public class PurchaseAccountingService
     {
         if (string.IsNullOrEmpty(pReturn.ReturnNumber)) return;
 
-        // 🚨 AUTO-UPDATE: حذف القيد القديم إن وجد للسماح بالتعديل
-        var existing = await _db.JournalEntries
-            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseReturn && e.Reference == pReturn.ReturnNumber);
-        
-        if (existing != null)
-        {
-            _db.JournalEntries.Remove(existing);
-            await _db.SaveChangesAsync();
-        }
+        // Handled by core service update logic
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
