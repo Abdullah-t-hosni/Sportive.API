@@ -1151,7 +1151,12 @@ public class OrderService : IOrderService
         // 2. Admin Email Alert
         try 
         {
-            var adminEmails = (config["Backup:Email:To"] ?? "abdullah.taha574@gmail.com,moshtaq_mm@yahoo.com").Split(',');
+            var configEmails = config["Backup:Email:To"] ?? "";
+            var adminEmails = $"{configEmails},abdullah.taha574@gmail.com,moshtaq_mm@yahoo.com"
+                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(e => e.Trim())
+                .Distinct()
+                .ToList();
             var subject = $"🔔 طلب جديد: {order.OrderNumber}";
             var itemsHtml = string.Join("", order.Items.Select(i => $@"
                 <tr>
