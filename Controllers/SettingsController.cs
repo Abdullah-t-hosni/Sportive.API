@@ -118,6 +118,26 @@ public class SettingsController : ControllerBase
             info.ReceiptShowTime         = dto.ReceiptShowTime;
             info.ReceiptShowSKU          = dto.ReceiptShowSKU;
             info.ReceiptSoftwareProvider = dto.ReceiptSoftwareProvider;
+            info.TaxNumber               = dto.TaxNumber;
+            info.CommercialRegister      = dto.CommercialRegister;
+            info.ReceiptShowTax          = dto.ReceiptShowTax;
+            info.ReceiptShowUnitPrice    = dto.ReceiptShowUnitPrice;
+            info.ReceiptShowDiscount     = dto.ReceiptShowDiscount;
+            info.ReceiptShowCashier      = dto.ReceiptShowCashier;
+            info.ReceiptShowNote         = dto.ReceiptShowNote;
+            info.AutoPrintReceipt        = dto.AutoPrintReceipt;
+            info.ReceiptExtraCopies      = dto.ReceiptExtraCopies;
+            info.OrderStatusAfterPrint   = dto.OrderStatusAfterPrint;
+            info.ReceiptLogoWidth        = dto.ReceiptLogoWidth;
+            info.ReceiptLogoPosition     = dto.ReceiptLogoPosition;
+            info.ReceiptFontFamily       = dto.ReceiptFontFamily;
+            info.ReceiptLineStyle        = dto.ReceiptLineStyle;
+            info.ReceiptPaperSize        = dto.ReceiptPaperSize;
+            info.ReceiptDensity          = dto.ReceiptDensity;
+            info.ReceiptWidth            = dto.ReceiptWidth;
+            info.ReceiptFontSize         = dto.ReceiptFontSize;
+            info.ReceiptBarcodeHeight    = dto.ReceiptBarcodeHeight;
+            info.ReceiptSectionsOrder    = dto.ReceiptSectionsOrder;
 
             info.VatRatePercent          = dto.VatRatePercent;
             info.FixedDeliveryFee        = dto.FixedDeliveryFee;

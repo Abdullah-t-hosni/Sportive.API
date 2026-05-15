@@ -144,6 +144,14 @@ public class StoreInfo
     [JsonPropertyName("allowedPaymentMethods")]
     public string AllowedPaymentMethods { get; set; } = "Cash,Vodafone,InstaPay";
 
+    [MaxLength(50)]
+    [JsonPropertyName("taxNumber")]
+    public string? TaxNumber { get; set; }
+
+    [MaxLength(50)]
+    [JsonPropertyName("commercialRegister")]
+    public string? CommercialRegister { get; set; }
+
     [JsonPropertyName("receiptHeaderText")]
     public string? ReceiptHeaderText { get; set; }
 
@@ -187,6 +195,21 @@ public class StoreInfo
 
     [JsonPropertyName("receiptShowSKU")]
     public bool ReceiptShowSKU { get; set; } = true;
+
+    [JsonPropertyName("receiptShowTax")]
+    public bool ReceiptShowTax { get; set; } = true;
+
+    [JsonPropertyName("receiptShowUnitPrice")]
+    public bool ReceiptShowUnitPrice { get; set; } = true;
+
+    [JsonPropertyName("receiptShowDiscount")]
+    public bool ReceiptShowDiscount { get; set; } = true;
+
+    [JsonPropertyName("receiptShowCashier")]
+    public bool ReceiptShowCashier { get; set; } = true;
+
+    [JsonPropertyName("receiptShowNote")]
+    public bool ReceiptShowNote { get; set; } = true;
 
     [MaxLength(200)]
     [JsonPropertyName("receiptSoftwareProvider")]
@@ -232,6 +255,12 @@ public class StoreInfo
     [JsonPropertyName("orderStatusAfterPrint")]
     public string? OrderStatusAfterPrint { get; set; }
 
+    [JsonPropertyName("autoPrintReceipt")]
+    public bool AutoPrintReceipt { get; set; } = false;
+
+    [JsonPropertyName("receiptExtraCopies")]
+    public int ReceiptExtraCopies { get; set; } = 0;
+
     [MaxLength(100)]
     [JsonPropertyName("qzReceiptPrinter")]
     public string? QzReceiptPrinter { get; set; }
@@ -249,14 +278,14 @@ public class StoreInfo
     public string ReceiptLineStyle { get; set; } = "dashed";
 
     [JsonPropertyName("receiptDensity")]
-    public int ReceiptDensity { get; set; } = 2;
+    public double ReceiptDensity { get; set; } = 1.4;
 
     [JsonPropertyName("receiptBarcodeHeight")]
     public int ReceiptBarcodeHeight { get; set; } = 10;
 
     [MaxLength(1000)]
     [JsonPropertyName("receiptSectionsOrder")]
-    public string ReceiptSectionsOrder { get; set; } = "header,order_info,items_table,totals_area,tafqeet,payment_info,footer_text,terms_conditions,barcode";
+    public string ReceiptSectionsOrder { get; set; } = "header,order_info,items_table,totals_area,tafqeet,payment_info,customer_signature,footer_text,terms_conditions,barcode";
 
     // --- 5. Finance & VAT ---
     [JsonPropertyName("vatRatePercent")]
