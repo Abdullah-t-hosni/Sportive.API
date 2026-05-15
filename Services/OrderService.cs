@@ -1237,7 +1237,7 @@ public class OrderService : IOrderService
                             </div>
 
                             <div style='margin-top: 30px; text-align: center;'>
-                                <a href='{_config["Store:Url"]}/admin/orders?search={order.OrderNumber}&viewId={order.Id}' 
+                                <a href='https://sportive-sportwear.com/admin/orders?search={order.OrderNumber}&viewId={order.Id}' 
                                    style='display: inline-block; background: #0f3460; color: white; padding: 14px 35px; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 16px;'>
                                    إدارة الطلب في لوحة التحكم
                                 </a>
