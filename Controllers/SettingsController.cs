@@ -125,8 +125,7 @@ public class SettingsController : ControllerBase
             info.ReceiptShowDiscount     = dto.ReceiptShowDiscount;
             info.ReceiptShowCashier      = dto.ReceiptShowCashier;
             info.ReceiptShowNote         = dto.ReceiptShowNote;
-            info.AutoPrintReceipt        = dto.AutoPrintReceipt;
-            info.ReceiptExtraCopies      = dto.ReceiptExtraCopies;
+            // Removed redundant AutoPrintReceipt and ReceiptExtraCopies assignments from here as they are handled below
             info.OrderStatusAfterPrint   = dto.OrderStatusAfterPrint;
             info.ReceiptLogoWidth        = dto.ReceiptLogoWidth;
             info.ReceiptLogoPosition     = dto.ReceiptLogoPosition;
@@ -229,7 +228,9 @@ public class SettingsController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { message = "Update error", error = ex.Message });
+            _logger.LogError(ex, "Settings Update failed");
+            var innerMsg = ex.InnerException != null ? $" | Inner: {ex.InnerException.Message}" : "";
+            return StatusCode(500, new { message = "Update error", error = ex.Message + innerMsg });
         }
     }
 }
