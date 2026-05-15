@@ -1427,18 +1427,17 @@ public class OrderService : IOrderService
                 if (order == null) throw new KeyNotFoundException("Order not found.");
                 if (order.Status == OrderStatus.Cancelled) throw new InvalidOperationException("Cannot return items from a cancelled order.");
 
-                // 1. Calculate Refund Amount (Proportional to Discount) First
+                // 1. Calculate Refund Amount (Proportional to Total Paid) First
                 decimal refundAmountTotal = 0;
-                var discountRatio = order.SubTotal > 0 ? (order.TotalAmount - order.DeliveryFee) / order.SubTotal : 1;
+                var itemsTotal = order.Items.Sum(i => i.TotalPrice) > 0 ? order.Items.Sum(i => i.TotalPrice) : 1;
 
                 foreach (var req in dto.Items)
                 {
                     var line = order.Items.FirstOrDefault(i => i.Id == req.OrderItemId);
                     if (line != null && req.Quantity > 0)
                     {
-                        // We refund the proportional part of what they PAID (Price after discount share)
-                        var grossPrice = line.UnitPrice * req.Quantity;
-                        refundAmountTotal += Math.Round(grossPrice * discountRatio, 2);
+                        var lineShare = line.TotalPrice * ((decimal)req.Quantity / line.Quantity);
+                        refundAmountTotal += Math.Round(lineShare * (order.TotalAmount / itemsTotal), 2);
                     }
                 }
 
@@ -1459,7 +1458,7 @@ public class OrderService : IOrderService
                        throw new InvalidOperationException($"Cannot return {req.Quantity} for item {line.ProductNameAr}. Already returned: {line.ReturnedQuantity}. Max remaining: {maxCanReturn}.");
 
                     // 1. Calculate partial values for this item
-                    var itemTotalReturn = Math.Round((line.UnitPrice * req.Quantity) * discountRatio, 2);
+                    var itemTotalReturn = Math.Round((line.TotalPrice * ((decimal)req.Quantity / line.Quantity)) * (order.TotalAmount / itemsTotal), 2);
                     var itemVatReturn = Math.Round(line.ItemVatAmount * ((decimal)req.Quantity / line.Quantity), 2);
                     
                     refundAmount += itemTotalReturn;
