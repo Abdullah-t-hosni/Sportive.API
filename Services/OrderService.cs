@@ -1132,7 +1132,11 @@ public class OrderService : IOrderService
         var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
         var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
 
-        var order = await db.Orders.Include(o => o.Customer).FirstOrDefaultAsync(o => o.Id == orderId);
+        var order = await db.Orders
+            .Include(o => o.Customer)
+            .Include(o => o.Items)
+            .Include(o => o.DeliveryAddress)
+            .FirstOrDefaultAsync(o => o.Id == orderId);
         if (order == null) return;
 
         // 1. App Notification
@@ -1149,17 +1153,101 @@ public class OrderService : IOrderService
         {
             var adminEmails = (config["Backup:Email:To"] ?? "admin@sportive.com").Split(',');
             var subject = $"🔔 طلب جديد: {order.OrderNumber}";
+            var itemsHtml = string.Join("", order.Items.Select(i => $@"
+                <tr>
+                    <td style='padding: 10px; border-bottom: 1px solid #eee; text-align: right;'>{i.ProductNameAr} {(string.IsNullOrEmpty(i.Size) ? "" : $"({i.Size})")} {(string.IsNullOrEmpty(i.Color) ? "" : $"[{i.Color}]")}</td>
+                    <td style='padding: 10px; border-bottom: 1px solid #eee; text-align: center;'>{i.Quantity}</td>
+                    <td style='padding: 10px; border-bottom: 1px solid #eee; text-align: left;'>{i.UnitPrice:N2} ج.م</td>
+                </tr>"));
+
+            var addressHtml = "";
+            if (order.FulfillmentType == FulfillmentType.Delivery && order.DeliveryAddress != null)
+            {
+                addressHtml = $@"
+                    <div style='background: #fff; border: 1px solid #eee; padding: 15px; border-radius: 8px; margin-bottom: 20px;'>
+                        <h4 style='margin-top: 0; color: #0f3460;'>📍 عنوان التوصيل</h4>
+                        <p style='margin: 5px 0;'>{order.DeliveryAddress.City}, {order.DeliveryAddress.District}</p>
+                        <p style='margin: 5px 0;'>{order.DeliveryAddress.Street}, مبنى {order.DeliveryAddress.BuildingNo}</p>
+                        {(string.IsNullOrEmpty(order.DeliveryAddress.Floor) ? "" : $"<p style='margin: 5px 0;'>الدور {order.DeliveryAddress.Floor}, شقة {order.DeliveryAddress.ApartmentNo}</p>")}
+                    </div>";
+            }
+
             var body = $@"
-                <div dir='rtl' style='font-family: Arial, sans-serif; border: 1px solid #eee; padding: 20px;'>
-                    <h2 style='color: #0f3460;'>تنبيه طلب جديد 🆕</h2>
-                    <p>رقم الطلب: <b>{order.OrderNumber}</b></p>
-                    <p>اسم العميل: {order.Customer?.FullName ?? "عميل خارجي"}</p>
-                    <p>إجمالي المبلغ: <span style='color: green; font-weight: bold;'>{order.TotalAmount:N2} ج.م</span></p>
-                    <hr/>
-                    <a href='https://admin.sportive-sportwear.com/orders/{order.Id}' 
-                       style='display: inline-block; background: #0f3460; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;'>
-                       عرض التفاصيل
-                    </a>
+                <div dir='rtl' style='font-family: Arial, sans-serif; background-color: #f6f9fc; padding: 20px;'>
+                    <div style='max-width: 600px; margin: auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05);'>
+                        <div style='background: #0f3460; color: white; padding: 25px; text-align: center;'>
+                            <h2 style='margin: 0;'>طلب جديد من المتجر 🆕</h2>
+                            <p style='margin: 10px 0 0; opacity: 0.8;'>رقم الطلب: {order.OrderNumber}</p>
+                        </div>
+
+                        <div style='padding: 25px;'>
+                            <div style='display: flex; justify-content: space-between; margin-bottom: 20px;'>
+                                <div>
+                                    <h4 style='margin: 0 0 5px; color: #666;'>العميل</h4>
+                                    <p style='margin: 0; font-weight: bold;'>{order.Customer?.FullName ?? "عميل خارجي"}</p>
+                                    <p style='margin: 3px 0; color: #888;'>{order.Customer?.Phone ?? ""}</p>
+                                </div>
+                                <div style='text-align: left;'>
+                                    <h4 style='margin: 0 0 5px; color: #666;'>التفاصيل</h4>
+                                    <p style='margin: 0; font-size: 13px;'><b>المصدر:</b> {order.Source}</p>
+                                    <p style='margin: 3px 0; font-size: 13px;'><b>النوع:</b> {order.FulfillmentType}</p>
+                                    <p style='margin: 3px 0; font-size: 13px;'><b>الدفع:</b> {order.PaymentMethod} ({order.PaymentStatus})</p>
+                                    <p style='margin: 3px 0; font-size: 13px;'><b>التاريخ:</b> {order.CreatedAt:yyyy-MM-dd}</p>
+                                </div>
+                            </div>
+
+                            {(string.IsNullOrEmpty(order.CustomerNotes) ? "" : $@"
+                            <div style='background: #fff8e1; border: 1px solid #ffe082; padding: 15px; border-radius: 8px; margin-bottom: 20px;'>
+                                <h4 style='margin-top: 0; color: #f57f17; font-size: 14px;'>📝 ملاحظات العميل</h4>
+                                <p style='margin: 5px 0; font-size: 14px;'>{order.CustomerNotes}</p>
+                            </div>")}
+
+                            {addressHtml}
+
+                            <table style='width: 100%; border-collapse: collapse; margin-bottom: 20px;'>
+                                <thead>
+                                    <tr style='background: #f8f9fa;'>
+                                        <th style='padding: 12px 10px; text-align: right; font-size: 13px;'>المنتج</th>
+                                        <th style='padding: 12px 10px; text-align: center; font-size: 13px;'>الكمية</th>
+                                        <th style='padding: 12px 10px; text-align: left; font-size: 13px;'>السعر</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {itemsHtml}
+                                </tbody>
+                            </table>
+
+                            <div style='background: #f8f9fa; padding: 15px; border-radius: 8px;'>
+                                <div style='display: flex; justify-content: space-between; margin-bottom: 8px;'>
+                                    <span>المجموع الفرعي:</span>
+                                    <span>{order.SubTotal:N2} ج.م</span>
+                                </div>
+                                {(order.DeliveryFee > 0 ? $@"<div style='display: flex; justify-content: space-between; margin-bottom: 8px;'>
+                                    <span>مصاريف الشحن:</span>
+                                    <span>{order.DeliveryFee:N2} ج.م</span>
+                                </div>" : "")}
+                                {(order.DiscountAmount + order.TemporalDiscount > 0 ? $@"<div style='display: flex; justify-content: space-between; margin-bottom: 8px; color: #e94560;'>
+                                    <span>إجمالي الخصم:</span>
+                                    <span>-{(order.DiscountAmount + order.TemporalDiscount):N2} ج.م</span>
+                                </div>" : "")}
+                                <div style='display: flex; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 2px solid #eee; font-size: 18px; font-weight: bold; color: #0f3460;'>
+                                    <span>الإجمالي:</span>
+                                    <span>{order.TotalAmount:N2} ج.م</span>
+                                </div>
+                            </div>
+
+                            <div style='margin-top: 30px; text-align: center;'>
+                                <a href='{_config["Store:Url"]}/admin/orders?search={order.OrderNumber}&viewId={order.Id}' 
+                                   style='display: inline-block; background: #0f3460; color: white; padding: 14px 35px; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 16px;'>
+                                   إدارة الطلب في لوحة التحكم
+                                </a>
+                            </div>
+                        </div>
+                        
+                        <div style='background: #f1f4f7; padding: 15px; text-align: center; font-size: 12px; color: #888;'>
+                            هذا الإيميل مرسل آلياً من نظام Sportive.
+                        </div>
+                    </div>
                 </div>";
 
             foreach (var email in adminEmails)
