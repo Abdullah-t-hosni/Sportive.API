@@ -304,47 +304,51 @@ public class ProductService : IProductService
                     Size = v.Size,
                     Color = v.Color,
                     ColorAr = v.ColorAr,
-                    StockQuantity = v.StockQuantity ?? 0,
+                    StockQuantity = 0, // Start with 0, let LogMovement handle it
                     ReorderLevel = v.ReorderLevel ?? 0,
                     PriceAdjustment = v.PriceAdjustment
                 });
             }
-            product.TotalStock = product.Variants.Sum(v => v.StockQuantity);
+            product.TotalStock = 0;
         }
         else
         {
              // For simple products (like many Equipment/Tools), we can set initial stock directly
-             product.TotalStock = dto.InitialStock ?? 0;
+             product.TotalStock = 0;
         }
 
         _db.Products.Add(product);
         await _db.SaveChangesAsync();
 
         // 3. Log initial movements
-        if (product.Variants.Any())
+        if (dto.Variants != null && dto.Variants.Any())
         {
-            foreach (var v in product.Variants)
+            foreach (var vDto in dto.Variants)
             {
-                if (v.StockQuantity != 0)
+                if (vDto.StockQuantity.HasValue && vDto.StockQuantity.Value != 0)
                 {
-                    await _inventory.LogMovementAsync(
-                        InventoryMovementType.OpeningBalance,
-                        v.StockQuantity,
-                        product.Id,
-                        v.Id,
-                        "INIT-PRODUCT",
-                        _t.Get("Products.OpeningBalance"),
-                        null
-                    );
+                    var variant = product.Variants.FirstOrDefault(v => v.Size == vDto.Size && v.Color == vDto.Color);
+                    if (variant != null)
+                    {
+                        await _inventory.LogMovementAsync(
+                            InventoryMovementType.OpeningBalance,
+                            vDto.StockQuantity.Value,
+                            product.Id,
+                            variant.Id,
+                            "INIT-PRODUCT",
+                            _t.Get("Products.OpeningBalance"),
+                            null
+                        );
+                    }
                 }
             }
         }
-        else if (product.TotalStock != 0)
+        else if (dto.InitialStock.HasValue && dto.InitialStock.Value != 0)
         {
             // For simple products without variants (Tools/Equipment)
             await _inventory.LogMovementAsync(
                 InventoryMovementType.OpeningBalance,
-                product.TotalStock,
+                dto.InitialStock.Value,
                 product.Id,
                 null,
                 "INIT-PRODUCT",
