@@ -673,7 +673,47 @@ public class JournalEntriesController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateJournalEntryDto dto)
     {
         try {
+            var advancesAccount = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1105");
+            if (advancesAccount != null)
+            {
+                foreach (var line in dto.Lines)
+                {
+                    if (line.AccountId == advancesAccount.Id && line.Debit > 0 && !line.EmployeeId.HasValue)
+                    {
+                        return BadRequest("يجب اختيار الموظف عند استخدام حساب سلف الموظفين");
+                    }
+                }
+            }
+
             var entry = await _accounting.PostManualEntryAsync(dto, User);
+
+            if (advancesAccount != null)
+            {
+                foreach (var line in dto.Lines)
+                {
+                    if (line.AccountId == advancesAccount.Id && line.EmployeeId.HasValue && line.Debit > 0)
+                    {
+                        var advNo = await _seq.NextAsync("ADV");
+                        var advance = new EmployeeAdvance
+                        {
+                            AdvanceNumber = advNo,
+                            EmployeeId = line.EmployeeId.Value,
+                            AdvanceDate = dto.EntryDate.ToStoreTime(),
+                            Amount = line.Debit,
+                            DeductedAmount = 0,
+                            Status = AdvanceStatus.Pending,
+                            Reason = line.Description ?? dto.Description,
+                            Notes = line.Description ?? dto.Description,
+                            CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                            CostCenter = (OrderSource?)dto.CostCenter,
+                            JournalEntryId = entry.Id
+                        };
+                        _db.EmployeeAdvances.Add(advance);
+                    }
+                }
+                await _db.SaveChangesAsync();
+            }
+
             return CreatedAtAction(nameof(GetById), new { id = entry.Id }, entry);
         } catch (InvalidOperationException ex) {
             return BadRequest(new { message = ex.Message });
