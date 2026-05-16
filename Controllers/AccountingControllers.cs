@@ -567,12 +567,14 @@ public class JournalEntriesController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IPdfService _pdf;
     private readonly ITranslator _t;
-    public JournalEntriesController(IAccountingService accounting, AppDbContext db, IPdfService pdf, ITranslator t)
+    private readonly SequenceService _seq;
+    public JournalEntriesController(IAccountingService accounting, AppDbContext db, IPdfService pdf, ITranslator t, SequenceService seq)
     {
         _accounting = accounting;
         _db = db;
         _pdf = pdf;
         _t = t;
+        _seq = seq;
     }
 
     [HttpGet("{id}/pdf")]
