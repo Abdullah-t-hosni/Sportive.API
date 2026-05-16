@@ -384,6 +384,79 @@ public class OrdersController : ControllerBase
         return Ok(new { message = _translator.Get("Orders.DirectReturnSuccess"), returnNumber });
     }
 
+    [HttpPatch("{id}/redistribute-payments")]
+    [RequirePermission(ModuleKeys.Orders)]
+    [AllowPosAccess]
+    public async Task<IActionResult> RedistributePayments(int id, [FromBody] RedistributePaymentsDto dto)
+    {
+        if (dto == null || dto.Payments == null || !dto.Payments.Any())
+            return BadRequest(_translator.Get("Orders.MinOneItem"));
+
+        var order = await _db.Orders
+            .Include(o => o.Payments)
+            .FirstOrDefaultAsync(o => o.Id == id);
+        if (order == null) return NotFound();
+
+        var newTotal = dto.Payments.Sum(p => p.Amount);
+        if (Math.Abs(newTotal - order.TotalAmount) > 0.1m)
+        {
+            return BadRequest(_translator.Get("Orders.TotalAmountMismatch") ?? "إجمالي المبالغ يجب أن يساوي إجمالي الفاتورة");
+        }
+
+        _db.OrderPayments.RemoveRange(order.Payments);
+        foreach (var p in dto.Payments)
+        {
+            order.Payments.Add(new OrderPayment
+            {
+                Method = p.Method,
+                Amount = p.Amount,
+                Reference = p.Reference,
+                Notes = p.Notes,
+                IsPosted = true
+            });
+        }
+
+        var journalEntry = await _db.JournalEntries
+            .Include(e => e.Lines)
+            .FirstOrDefaultAsync(e => e.OrderId == id && e.Type == JournalEntryType.ReceiptVoucher);
+
+        if (journalEntry != null)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+
+            var debitLines = journalEntry.Lines.Where(l => l.Debit > 0).ToList();
+            foreach (var line in debitLines)
+            {
+                _db.JournalLines.Remove(line);
+            }
+
+            foreach (var p in dto.Payments)
+            {
+                var accountCode = await accounting.GetMappedCashAccount(p.Method, order.Source);
+                var account = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == accountCode);
+                if (account == null) 
+                    return BadRequest($"الحساب المرتبط بطريقة الدفع {p.Method} غير موجود");
+
+                journalEntry.Lines.Add(new JournalLine
+                {
+                    AccountId = account.Id,
+                    Debit = p.Amount,
+                    Credit = 0,
+                    Description = $"تعديل طريقة دفع - {p.Method}",
+                    OrderId = order.Id,
+                    CostCenter = order.Source
+                });
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        
+        await _audit.LogAsync("RedistributePayments", "Order", id.ToString(), $"Order {order.OrderNumber} payments redistributed by cashier", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name));
+
+        return Ok(new { message = _translator.Get("Orders.PaymentsRedistributed") ?? "تم إعادة توزيع المبالغ بنجاح" });
+    }
+
 
     // POST /api/orders/{id}/archive 
     // POST /api/orders/{id}/unarchive 
@@ -472,4 +545,17 @@ public class OrdersController : ControllerBase
 }
 
 public record ArchiveBatchDto(int[] Ids, bool? Archive = true);
+
+public class RedistributePaymentsDto
+{
+    public List<PaymentItemDto> Payments { get; set; } = new List<PaymentItemDto>();
+}
+
+public class PaymentItemDto
+{
+    public PaymentMethod Method { get; set; }
+    public decimal Amount { get; set; }
+    public string? Reference { get; set; }
+    public string? Notes { get; set; }
+}
 
