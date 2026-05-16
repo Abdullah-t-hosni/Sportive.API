@@ -58,7 +58,6 @@ public class OperationalReportsController : ControllerBase
             .ToListAsync();
 
         var products = await _db.Products
-            .Where(p => p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock)
             .OrderBy(p => p.NameAr)
             .Select(p => new { p.Id, p.NameAr, p.SKU })
             .ToListAsync();
