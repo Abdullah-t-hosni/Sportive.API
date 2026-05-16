@@ -545,14 +545,16 @@ public class ImportController : ControllerBase
 
                     if (product != null)
                     {
-                        var variant = (isExisting && update) 
-                            ? product.Variants.FirstOrDefault(v => (v.Size ?? "") == (size ?? "") && (v.ColorAr ?? "") == (cAr ?? ""))
-                            : null;
+                        var variant = product.Variants.FirstOrDefault(v => (v.Size ?? "") == (size ?? "") && (v.ColorAr ?? "") == (cAr ?? ""));
 
                         if (variant != null)
                         {
-                            variant.StockQuantity = stk;
-                            variant.PriceAdjustment = vAdj;
+                            if (update)
+                            {
+                                variant.StockQuantity = stk;
+                                variant.PriceAdjustment = vAdj;
+                            }
+                            // If update is false, we skip to avoid creating duplicates
                         }
                         else
                         {
@@ -596,6 +598,8 @@ public class ImportController : ControllerBase
             return BadRequest(new { message = _t.Get("Accounting.ProcessingError", ex.Message) });
         }
     }
+
+
 
     // ── INVENTORY TEMPLATE ──────────────────────────────────
     // GET /api/import/inventory-template

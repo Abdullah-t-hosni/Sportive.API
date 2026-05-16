@@ -1152,7 +1152,7 @@ public class OrderService : IOrderService
         try 
         {
             var configEmails = config["Backup:Email:To"] ?? "";
-            var adminEmails = $"{configEmails},abdullah.taha574@gmail.com,moshtaq_mm@yahoo.com"
+            var adminEmails = $"{configEmails},abdullah.taha574@gmail.com"
                 .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(e => e.Trim())
                 .Distinct()
