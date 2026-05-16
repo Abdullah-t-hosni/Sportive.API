@@ -1333,7 +1333,7 @@ public class OperationalReportsController : ControllerBase
             var movementsQuery = _db.InventoryMovements
                 .Include(m => m.Product)
                 .Include(m => m.ProductVariant)
-                .Where(m => m.CreatedAt >= from && m.CreatedAt <= to);
+                .Where(m => (m.CreatedAt >= from && m.CreatedAt <= to) || m.Type == InventoryMovementType.OpeningBalance);
 
             if (productId > 0) movementsQuery = movementsQuery.Where(m => m.ProductId == productId);
             if (source.HasValue) movementsQuery = movementsQuery.Where(m => m.CostCenter == source.Value);
@@ -1500,7 +1500,7 @@ public class OperationalReportsController : ControllerBase
         var q = _db.InventoryMovements.AsNoTracking()
             .Include(m => m.Product)
             .Include(m => m.ProductVariant)
-            .Where(m => m.CreatedAt >= from && m.CreatedAt <= to)
+            .Where(m => (m.CreatedAt >= from && m.CreatedAt <= to) || m.Type == InventoryMovementType.OpeningBalance)
             .AsQueryable();
 
         if (productId.HasValue && productId > 0) q = q.Where(m => m.ProductId == productId.Value);
@@ -1520,10 +1520,9 @@ public class OperationalReportsController : ControllerBase
             q = q.Where(m => m.Product != null && m.Product.BrandId.HasValue && brandIds.Contains(m.Product.BrandId.Value));
         }
 
-        var periodQ = q.Where(m => m.CreatedAt >= from && m.CreatedAt <= to);
-        var totalCount = await periodQ.CountAsync();
+        var totalCount = await q.CountAsync();
         
-        var dbMovements = await periodQ
+        var dbMovements = await q
             .OrderByDescending(m => m.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
