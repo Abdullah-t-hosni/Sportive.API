@@ -340,9 +340,8 @@ public class FinancialReportsController : ControllerBase
         if (employeeId.HasValue)
             q = q.Where(l => l.EmployeeId == employeeId.Value);
 
-        var lines = await q.OrderBy(l => l.JournalEntry.EntryDate)
-                           .ThenBy(l => l.JournalEntry.Type)
-                           .ThenBy(l => l.JournalEntry.Id)
+        var lines = await q.OrderBy(l => l.JournalEntry.EntryDate.Date)
+                           .ThenBy(l => l.JournalEntry.CreatedAt)
                            .ToListAsync();
 
         // الرصيد الافتتاحي لكل حساب
@@ -583,7 +582,7 @@ public class FinancialReportsController : ControllerBase
 
         if (!string.IsNullOrEmpty(search)) q = q.Where(l => (l.Description != null && l.Description.Contains(search)) || (l.JournalEntry.Description != null && l.JournalEntry.Description.Contains(search)));
 
-        var periodLines = await q.OrderBy(l => l.JournalEntry.EntryDate).ThenBy(l => l.JournalEntry.Id).ToListAsync();
+        var periodLines = await q.OrderBy(l => l.JournalEntry.EntryDate.Date).ThenBy(l => l.JournalEntry.CreatedAt).ToListAsync();
         var runBal = openBal;
         var rows = periodLines.Select(l => {
             if (acct.Nature == AccountNature.Debit) runBal += l.Debit - l.Credit; else runBal += l.Credit - l.Debit;

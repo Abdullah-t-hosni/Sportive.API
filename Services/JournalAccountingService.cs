@@ -67,7 +67,8 @@ public class JournalAccountingService
             Type = type, 
             Status = JournalEntryStatus.Posted, 
             CreatedByUserId = userId, 
-            CostCenter = (OrderSource?)dto.CostCenter 
+            CostCenter = (OrderSource?)dto.CostCenter,
+            CreatedAt = TimeHelper.GetEgyptTime()
         };
         
         // 🎯 AUTO-RESOLVE COST CENTER: If not provided, try to infer from the first line that has an OrderId
