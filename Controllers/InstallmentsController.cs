@@ -12,7 +12,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[RequirePermission(ModuleKeys.AccountingMain)]
+[RequirePermission(ModuleKeys.Installments)]
 public class InstallmentsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -159,7 +159,7 @@ public class InstallmentsController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [RequirePermission(ModuleKeys.AccountingMain, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Installments, requireEdit: true)]
     public async Task<IActionResult> Update(int id, [FromBody] CreateInstallmentDto dto)
     {
         var installment = await _db.CustomerInstallments.FindAsync(id);
@@ -175,7 +175,7 @@ public class InstallmentsController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [RequirePermission(ModuleKeys.AccountingMain, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Installments, requireEdit: true)]
     public async Task<IActionResult> Delete(int id)
     {
         var installment = await _db.CustomerInstallments
@@ -191,7 +191,7 @@ public class InstallmentsController : ControllerBase
     }
 
     [HttpPost("sync-overdue")]
-    [RequirePermission(ModuleKeys.AccountingMain, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Installments, requireEdit: true)]
     public async Task<IActionResult> SyncOverdue()
     {
         var today = DateTime.Today;

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Sportive.API.Attributes;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using Microsoft.AspNetCore.Identity;
@@ -9,6 +10,7 @@ namespace Sportive.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize(Policy = "AdminOnly")]
+[RequirePermission(ModuleKeys.Maintenance)]
 public class DataMaintenanceController : ControllerBase
 {
     private readonly IDataMaintenanceService _service;

@@ -22,6 +22,7 @@ public static class DefaultPermissions
                 (ModuleKeys.Customers,      true, false),
                 (ModuleKeys.Products,       true, false),
                 (ModuleKeys.Dashboard,      true, false),
+                (ModuleKeys.Ai,             true, true),
             },
 
             AppRoles.Accountant => new[]
@@ -31,12 +32,14 @@ public static class DefaultPermissions
                 (ModuleKeys.Journal,        true, true),
                 (ModuleKeys.Receipts,       true, true),
                 (ModuleKeys.Payments,       true, true),
+                (ModuleKeys.Installments,   true, true),
                 (ModuleKeys.HrPayroll,      true, true),
                 (ModuleKeys.HrAdvances,     true, true),
                 (ModuleKeys.ReportsMain,    true, false),
                 (ModuleKeys.Suppliers,      true, false),
                 (ModuleKeys.Purchases,      true, false),
                 (ModuleKeys.Dashboard,      true, false),
+                (ModuleKeys.Ai,             true, true),
             },
 
             AppRoles.Staff => new[]
@@ -46,6 +49,7 @@ public static class DefaultPermissions
                 (ModuleKeys.Customers,      true, false),
                 (ModuleKeys.Inventory,      true, true),
                 (ModuleKeys.Dashboard,      true, false),
+                (ModuleKeys.Ai,             true, true),
             },
 
             _ => Array.Empty<(string, bool, bool)>()

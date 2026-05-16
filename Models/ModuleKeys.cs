@@ -21,6 +21,8 @@ public static class ModuleKeys
     public const string Brands = "brands";
     public const string Units = "units";
     public const string Barcode = "barcode";
+    public const string ColorGroups = "color-groups";
+    public const string SizeGroups = "size-groups";
 
     // Promotions
     public const string PromotionsGroup = "promotions-group";
@@ -51,6 +53,7 @@ public static class ModuleKeys
     public const string Journal = "journal";
     public const string Receipts = "receipts";
     public const string Payments = "payments";
+    public const string Installments = "installments";
 
     // Assets
     public const string AssetsGroup = "assets-group";
@@ -76,17 +79,18 @@ public static class ModuleKeys
     public const string Maintenance = "maintenance";
     public const string Diagnostics = "diagnostics";
     public const string Backup = "backup";
+    public const string Ai = "ai";
 
     public static readonly string[] All = {
         Dashboard, Pos,
         OrdersMain, Orders, ReturnsFull, ReturnsPartial, Customers, CustomerReceipts, Reviews,
-        ProductsGroup, Products, Categories, Brands, Units, Barcode,
+        ProductsGroup, Products, Categories, Brands, Units, Barcode, ColorGroups, SizeGroups,
         PromotionsGroup, Promotions, Coupons, Discounts,
         InventoryGroup, Inventory, InventoryOpening, Import, InventoryCount,
         PurchasesGroup, PurchasesMain, Suppliers, Purchases, PurchaseReturns, SupplierVouchers,
-        AccountingGroup, AccountingMain, Chart, Mapping, Journal, Receipts, Payments,
+        AccountingGroup, AccountingMain, Chart, Mapping, Journal, Receipts, Payments, Installments,
         AssetsGroup, AssetsMain, Assets, AssetCategories, AssetDepBatch, AssetDisposals,
         Hr, HrEmployees, HrEmpList, HrVouchers, HrPayroll, HrAdvances,
-        System, ReportsMain, Staff, Settings, Maintenance, Diagnostics, Backup
+        System, ReportsMain, Staff, Settings, Maintenance, Diagnostics, Backup, Ai
     };
 }

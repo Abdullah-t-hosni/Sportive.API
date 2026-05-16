@@ -9,7 +9,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[RequirePermission(ModuleKeys.ProductsGroup, requireEdit: true)]
+[RequirePermission(ModuleKeys.ColorGroups, requireEdit: true)]
 public class ColorGroupsController : ControllerBase
 {
     private readonly AppDbContext _db;

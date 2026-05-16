@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Caching.Memory;
 using Sportive.API.Interfaces;
@@ -11,6 +12,7 @@ namespace Sportive.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize(Policy = "AdminOnly")]
+[RequirePermission(ModuleKeys.Backup)]
 public class BackupController : ControllerBase
 {
     private readonly IBackupService _backup;

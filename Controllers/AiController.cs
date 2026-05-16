@@ -1,11 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.Interfaces;
+using Sportive.API.Attributes;
+using Sportive.API.Models;
 
 namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
 [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("api")]
+[RequirePermission(ModuleKeys.Ai)]
 public class AiController : ControllerBase
 {
     private readonly IAiAssistantService _ai;
