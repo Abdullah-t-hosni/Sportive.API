@@ -37,9 +37,9 @@ public class SalesAccountingService
     // ══════════════════════════════════════════════════════
     public async Task PostSalesOrderAsync(Order order)
     {
-        if (order.Customer == null && order.CustomerId.HasValue)
+        if (order.Customer == null && order.CustomerId > 0)
         {
-            order.Customer = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.CustomerId.Value);
+            order.Customer = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.CustomerId);
         }
 
         var store  = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
@@ -272,9 +272,9 @@ public class SalesAccountingService
 
     public async Task PostSalesReturnAsync(Order order, int? refundAccountId = null)
     {
-        if (order.Customer == null && order.CustomerId.HasValue)
+        if (order.Customer == null && order.CustomerId > 0)
         {
-            order.Customer = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.CustomerId.Value);
+            order.Customer = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.CustomerId);
         }
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
@@ -356,9 +356,9 @@ public class SalesAccountingService
 
     public async Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null)
     {
-        if (order.Customer == null && order.CustomerId.HasValue)
+        if (order.Customer == null && order.CustomerId > 0)
         {
-            order.Customer = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.CustomerId.Value);
+            order.Customer = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.CustomerId);
         }
 
         var suffix    = TimeHelper.GetEgyptTime().Ticks.ToString().Substring(10);
