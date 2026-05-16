@@ -1134,6 +1134,31 @@ public class PaymentVouchersController : ControllerBase
         _db.PaymentVouchers.Add(voucher);
         await _db.SaveChangesAsync();
         await _accounting.PostPaymentVoucherAsync(voucher);
+
+        // Auto-create EmployeeAdvance if posting to account 1105
+        var toAccount = await _db.Accounts.FindAsync(dto.ToAccountId);
+        if (toAccount != null && toAccount.Code == "1105" && dto.EmployeeId.HasValue)
+        {
+            var advNo = await _seq.NextAsync("ADV");
+            var advance = new EmployeeAdvance
+            {
+                AdvanceNumber = advNo,
+                EmployeeId = dto.EmployeeId.Value,
+                AdvanceDate = dto.VoucherDate.ToStoreTime(),
+                Amount = dto.Amount,
+                DeductedAmount = 0,
+                Status = AdvanceStatus.Pending,
+                Reason = dto.Description,
+                Notes = dto.Description,
+                CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                CostCenter = (OrderSource?)dto.CostCenter,
+                CashAccountId = dto.CashAccountId,
+                JournalEntryId = voucher.JournalEntryId
+            };
+            _db.EmployeeAdvances.Add(advance);
+            await _db.SaveChangesAsync();
+        }
+
         BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
         return Ok(voucher);
     }
