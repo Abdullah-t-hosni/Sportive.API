@@ -19,7 +19,8 @@ public interface IInventoryService
         OrderSource? costCenter = null,
         bool autoSave = true,
         bool broadcast = true,
-        bool force = false
+        bool force = false,
+        DateTime? date = null
     );
 
     /// <summary>

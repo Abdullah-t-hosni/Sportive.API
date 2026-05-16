@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.Data;
@@ -10,7 +10,6 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[RequirePermission(ModuleKeys.Settings, requireEdit: true)]
 public class ImagesController : ControllerBase
 {
     private readonly IImageService _images;
@@ -22,6 +21,7 @@ public class ImagesController : ControllerBase
         _db     = db;
     }
 
+    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPost("products/{productId}")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> UploadProductImage(
@@ -55,6 +55,7 @@ public class ImagesController : ControllerBase
         return Ok(new { id = productImage.Id, url = result.Url, publicId = result.PublicId, isMain });
     }
 
+    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPost("products/variants/{variantId}")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> UploadVariantImage([FromRoute] int variantId, [FromForm] IFormFile file)
@@ -72,6 +73,7 @@ public class ImagesController : ControllerBase
         return Ok(new { url = result.Url, publicId = result.PublicId });
     }
 
+    [RequirePermission(ModuleKeys.Categories, requireEdit: true)]
     [HttpPost("categories/{categoryId}")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> UploadCategoryImage([FromRoute] int categoryId, [FromForm] IFormFile file)
@@ -89,6 +91,7 @@ public class ImagesController : ControllerBase
         return Ok(new { url = result.Url, publicId = result.PublicId });
     }
 
+    [RequirePermission(ModuleKeys.Settings, requireEdit: true)]
     [HttpPost("attachments/{type}/{id}")]
     [RequestSizeLimit(10 * 1024 * 1024)] // 10MB
     public async Task<IActionResult> UploadAttachment([FromRoute] string type, [FromRoute] int id, [FromForm] IFormFile file)
@@ -148,6 +151,7 @@ public class ImagesController : ControllerBase
         return Ok(new { url = result.Url, publicId = result.PublicId });
     }
 
+    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPatch("products/images/{imageId}/metadata")]
     public async Task<IActionResult> UpdateImageMetadata(int imageId, [FromQuery] string? colorAr, [FromQuery] bool? isMain)
     {
@@ -169,6 +173,7 @@ public class ImagesController : ControllerBase
         return Ok(new { id = image.Id, colorAr = image.ColorAr, isMain = image.IsMain });
     }
 
+    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpDelete("products/images/{imageId}")]
     public async Task<IActionResult> DeleteProductImage(int imageId)
     {
@@ -183,6 +188,7 @@ public class ImagesController : ControllerBase
         return NoContent();
     }
 
+    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpDelete("products/variants/{variantId}")]
     public async Task<IActionResult> DeleteVariantImage(int variantId)
     {

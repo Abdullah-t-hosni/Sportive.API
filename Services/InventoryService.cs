@@ -37,7 +37,8 @@ public class InventoryService : IInventoryService
         OrderSource? costCenter = null,
         bool autoSave = true,
         bool broadcast = true,
-        bool force = false)
+        bool force = false,
+        DateTime? date = null)
     {
         if (quantity == 0) return;
         if (productId == 0) productId = null;
@@ -191,7 +192,7 @@ public class InventoryService : IInventoryService
             UnitCost         = effectiveUnitCost,
             CreatedByUserId  = userId,
             CostCenter       = costCenter,
-            CreatedAt        = TimeHelper.GetEgyptTime()
+            CreatedAt        = date ?? TimeHelper.GetEgyptTime()
         });
 
         if (autoSave) await _db.SaveChangesAsync();

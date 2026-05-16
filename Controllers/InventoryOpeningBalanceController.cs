@@ -149,7 +149,8 @@ public class InventoryOpeningBalanceController : ControllerBase
                     item.CostPrice,
                     ob.CostCenter,
                     autoSave: false,
-                    broadcast: false
+                    broadcast: false,
+                    date: ob.Date
                 );
 
                 // 2. Update Product Cost Price if requested
@@ -283,7 +284,8 @@ public class InventoryOpeningBalanceController : ControllerBase
                     ob.CostCenter,
                     autoSave: false,
                     broadcast: true,
-                    force: true
+                    force: true,
+                    date: dto.Date
                 );
             }
         }
