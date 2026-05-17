@@ -435,10 +435,22 @@ public class PayrollController : ControllerBase
             };
 
             decimal totalBasic = 0, totalTrans = 0, totalComm = 0, totalBonus = 0, totalFixedAll = 0, totalDed = 0, totalAdv = 0, totalAbsence = 0, totalOvertime = 0;
+            decimal totalCommission = 0;
+
+            var startOfPeriod = new DateTime(dto.PeriodYear, dto.PeriodMonth, 1);
+            var endOfPeriod = startOfPeriod.AddMonths(1).AddDays(-1);
+            
+            var orders = await _db.Orders
+                .Where(o => o.CreatedAt >= startOfPeriod && o.CreatedAt <= endOfPeriod && o.Status != OrderStatus.Cancelled)
+                .ToListAsync();
 
             foreach (var itemDto in dto.Items)
             {
-                var emp = await _db.Employees.FindAsync(itemDto.EmployeeId);
+                var emp = await _db.Employees
+                    .Include(e => e.CommissionSetting)
+                    .ThenInclude(s => s != null ? s.Tiers : null)
+                    .FirstOrDefaultAsync(e => e.Id == itemDto.EmployeeId);
+                    
                 if (emp == null) continue;
 
                 var basic = itemDto.OverrideBasicSalary ?? emp.BaseSalary;
@@ -446,6 +458,59 @@ public class PayrollController : ControllerBase
                 var comm  = itemDto.CommunicationAllowance;
                 var bonus = itemDto.BonusAmount;
                 var fixAll = itemDto.FixedAllowance;
+
+                // Calculate Commission
+                decimal earnedCommission = 0;
+                if (emp.CommissionSetting != null)
+                {
+                    var empOrders = orders.Where(o => 
+                        o.SalesPersonId == emp.AppUserId || 
+                        o.SalesPersonId == emp.Id.ToString()
+                    ).ToList();
+
+                    decimal relevantSales = emp.CommissionSetting.Basis == CommissionBasis.NetSales 
+                        ? empOrders.Sum(o => o.TotalAmount) 
+                        : empOrders.Sum(o => o.SubTotal);
+
+                    if (relevantSales >= emp.CommissionSetting.TargetAmount)
+                    {
+                        if (emp.CommissionSetting.Type == CommissionType.PercentageOfSales)
+                        {
+                            earnedCommission = relevantSales * (emp.CommissionSetting.DefaultRate / 100);
+                        }
+                        else if (emp.CommissionSetting.Type == CommissionType.FixedAmountPerItem)
+                        {
+                            var orderIds = empOrders.Select(o => o.Id).ToList();
+                            var itemsCount = await _db.OrderItems
+                                .Where(oi => orderIds.Contains(oi.OrderId))
+                                .SumAsync(oi => oi.Quantity);
+                            
+                            earnedCommission = itemsCount * emp.CommissionSetting.DefaultRate;
+                        }
+                        else if (emp.CommissionSetting.Type == CommissionType.TieredPercentage)
+                        {
+                            var tiers = emp.CommissionSetting.Tiers.OrderBy(t => t.MinAmount).ToList();
+                            var applicableTier = tiers.LastOrDefault(t => relevantSales >= t.MinAmount && relevantSales <= t.MaxAmount);
+                            
+                            if (applicableTier != null)
+                            {
+                                earnedCommission = relevantSales * (applicableTier.Rate / 100);
+                            }
+                            else
+                            {
+                                var lastTier = tiers.LastOrDefault();
+                                if (lastTier != null && relevantSales > lastTier.MaxAmount)
+                                {
+                                    earnedCommission = relevantSales * (lastTier.Rate / 100);
+                                }
+                                else
+                                {
+                                    earnedCommission = relevantSales * (emp.CommissionSetting.DefaultRate / 100);
+                                }
+                            }
+                        }
+                    }
+                }
 
                 totalBasic += basic;
                 totalTrans += trans;
@@ -456,6 +521,7 @@ public class PayrollController : ControllerBase
                 totalAdv   += itemDto.AdvanceDeducted;
                 totalAbsence += itemDto.AbsenceDeduction;
                 totalOvertime += itemDto.OvertimeAmount;
+                totalCommission += earnedCommission;
 
                 run.Items.Add(new PayrollItem
                 {
@@ -471,6 +537,7 @@ public class PayrollController : ControllerBase
                     AbsenceDeduction = itemDto.AbsenceDeduction,
                     OvertimeHours   = itemDto.OvertimeHours,
                     OvertimeAmount  = itemDto.OvertimeAmount,
+                    CommissionAmount = earnedCommission,
                     Notes           = itemDto.Notes,
                     CreatedAt       = TimeHelper.GetEgyptTime()
                 });
@@ -485,7 +552,7 @@ public class PayrollController : ControllerBase
             run.TotalDeductions       = totalDed;
             run.TotalAbsenceDeduction  = totalAbsence;
             run.TotalAdvancesDeducted = totalAdv;
-            run.TotalNetPayable       = totalBasic + totalTrans + totalComm + totalBonus + totalFixedAll + totalOvertime - totalDed - totalAbsence - totalAdv;
+            run.TotalNetPayable       = totalBasic + totalTrans + totalComm + totalBonus + totalFixedAll + totalOvertime + totalCommission - totalDed - totalAbsence - totalAdv;
 
             _db.PayrollRuns.Add(run);
             await _db.SaveChangesAsync();
@@ -1508,21 +1575,88 @@ public class EmployeeCommissionsController : ControllerBase
     [HttpGet("summary")]
     public async Task<ActionResult<IEnumerable<EmployeeCommissionSummaryDto>>> GetCommissionsSummary()
     {
-        var summaries = await _db.Employees
+        var startOfMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        
+        var orders = await _db.Orders
+            .Where(o => o.CreatedAt >= startOfMonth && o.Status != OrderStatus.Cancelled)
+            .ToListAsync();
+
+        var employees = await _db.Employees
             .Include(e => e.CommissionSetting)
-            .Select(e => new EmployeeCommissionSummaryDto(
+            .ThenInclude(s => s != null ? s.Tiers : null)
+            .ToListAsync();
+
+        var result = new List<EmployeeCommissionSummaryDto>();
+
+        foreach (var e in employees)
+        {
+            decimal earnedCommission = 0;
+            
+            if (e.CommissionSetting != null)
+            {
+                var empOrders = orders.Where(o => 
+                    o.SalesPersonId == e.AppUserId || 
+                    o.SalesPersonId == e.Id.ToString()
+                ).ToList();
+
+                decimal relevantSales = e.CommissionSetting.Basis == CommissionBasis.NetSales 
+                    ? empOrders.Sum(o => o.TotalAmount) 
+                    : empOrders.Sum(o => o.SubTotal);
+
+                if (relevantSales >= e.CommissionSetting.TargetAmount)
+                {
+                    if (e.CommissionSetting.Type == CommissionType.PercentageOfSales)
+                    {
+                        earnedCommission = relevantSales * (e.CommissionSetting.DefaultRate / 100);
+                    }
+                    else if (e.CommissionSetting.Type == CommissionType.FixedAmountPerItem)
+                    {
+                        var orderIds = empOrders.Select(o => o.Id).ToList();
+                        var itemsCount = await _db.OrderItems
+                            .Where(oi => orderIds.Contains(oi.OrderId))
+                            .SumAsync(oi => oi.Quantity);
+                        
+                        earnedCommission = itemsCount * e.CommissionSetting.DefaultRate;
+                    }
+                    else if (e.CommissionSetting.Type == CommissionType.TieredPercentage)
+                    {
+                        var tiers = e.CommissionSetting.Tiers.OrderBy(t => t.MinAmount).ToList();
+                        var applicableTier = tiers.LastOrDefault(t => relevantSales >= t.MinAmount && relevantSales <= t.MaxAmount);
+                        
+                        if (applicableTier != null)
+                        {
+                            earnedCommission = relevantSales * (applicableTier.Rate / 100);
+                        }
+                        else
+                        {
+                            var lastTier = tiers.LastOrDefault();
+                            if (lastTier != null && relevantSales > lastTier.MaxAmount)
+                            {
+                                earnedCommission = relevantSales * (lastTier.Rate / 100);
+                            }
+                            else
+                            {
+                                earnedCommission = relevantSales * (e.CommissionSetting.DefaultRate / 100);
+                            }
+                        }
+                    }
+                }
+            }
+
+            result.Add(new EmployeeCommissionSummaryDto(
                 e.Id,
                 e.Name,
                 e.JobTitle,
-                e.CommissionSetting != null ? e.CommissionSetting.CommissionSchemeId : null,
+                e.CommissionSetting?.CommissionSchemeId,
                 e.CommissionSetting != null ? e.CommissionSetting.Type : CommissionType.PercentageOfSales,
                 e.CommissionSetting != null ? e.CommissionSetting.Basis : CommissionBasis.NetSales,
                 e.CommissionSetting != null ? e.CommissionSetting.DefaultRate : 0,
-                e.CommissionSetting != null ? e.CommissionSetting.TargetAmount : 0
-            ))
-            .ToListAsync();
+                e.CommissionSetting != null ? e.CommissionSetting.TargetAmount : 0,
+                earnedCommission
+            ));
+        }
 
-        return Ok(summaries);
+        return Ok(result);
     }
 }
 
@@ -1656,5 +1790,5 @@ public record UpdateCommissionSettingDto(CommissionType Type, CommissionBasis Ba
 public record CreateCommissionTierDto(decimal MinAmount, decimal MaxAmount, decimal Rate);
 public record CommissionSchemeDto(int Id, string Name, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CommissionTierDto> Tiers);
 public record UpdateCommissionSchemeDto(string Name, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CreateCommissionTierDto> Tiers);
-public record EmployeeCommissionSummaryDto(int EmployeeId, string Name, string? JobTitle, int? CommissionSchemeId, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount);
+public record EmployeeCommissionSummaryDto(int EmployeeId, string Name, string? JobTitle, int? CommissionSchemeId, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, decimal EarnedCommission);
 
