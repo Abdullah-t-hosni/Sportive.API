@@ -452,6 +452,15 @@ public class OrdersController : ControllerBase
             });
         }
 
+        if (dto.Payments.Count == 1)
+        {
+            order.PaymentMethod = dto.Payments.First().Method;
+        }
+        else if (dto.Payments.Count > 1)
+        {
+            order.PaymentMethod = PaymentMethod.Mixed;
+        }
+
         var journalEntry = await _db.JournalEntries
             .Include(e => e.Lines)
             .FirstOrDefaultAsync(e => e.OrderId == id && e.Type == JournalEntryType.ReceiptVoucher);
