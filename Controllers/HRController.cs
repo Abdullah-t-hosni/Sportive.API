@@ -468,29 +468,39 @@ public class PayrollController : ControllerBase
                         o.SalesPersonId == emp.Id.ToString()
                     ).ToList();
 
-                    decimal relevantSales = emp.CommissionSetting.Basis == CommissionBasis.NetSales 
+                    var scheme = emp.CommissionSetting.CommissionSchemeId != null 
+                        ? await _db.CommissionSchemes.Include(s => s.Tiers).FirstOrDefaultAsync(s => s.Id == emp.CommissionSetting.CommissionSchemeId)
+                        : null;
+
+                    var basis = scheme != null ? scheme.Basis : emp.CommissionSetting.Basis;
+                    var type = scheme != null ? scheme.Type : emp.CommissionSetting.Type;
+                    var defaultRate = scheme != null ? scheme.DefaultRate : emp.CommissionSetting.DefaultRate;
+                    var targetAmount = scheme != null ? scheme.TargetAmount : emp.CommissionSetting.TargetAmount;
+                    var tiersList = scheme != null ? scheme.Tiers.ToList() : emp.CommissionSetting.Tiers.ToList();
+
+                    decimal relevantSales = basis == CommissionBasis.NetSales 
                         ? empOrders.Sum(o => o.TotalAmount) 
                         : empOrders.Sum(o => o.SubTotal);
 
-                    if (relevantSales >= emp.CommissionSetting.TargetAmount)
+                    if (relevantSales >= targetAmount)
                     {
-                        if (emp.CommissionSetting.Type == CommissionType.PercentageOfSales)
+                        if (type == CommissionType.PercentageOfSales)
                         {
-                            earnedCommission = relevantSales * (emp.CommissionSetting.DefaultRate / 100);
+                            earnedCommission = relevantSales * (defaultRate / 100);
                         }
-                        else if (emp.CommissionSetting.Type == CommissionType.FixedAmountPerItem)
+                        else if (type == CommissionType.FixedAmountPerItem)
                         {
                             var orderIds = empOrders.Select(o => o.Id).ToList();
                             var itemsCount = await _db.OrderItems
                                 .Where(oi => orderIds.Contains(oi.OrderId))
                                 .SumAsync(oi => oi.Quantity);
                             
-                            earnedCommission = itemsCount * emp.CommissionSetting.DefaultRate;
+                            earnedCommission = itemsCount * defaultRate;
                         }
-                        else if (emp.CommissionSetting.Type == CommissionType.TieredPercentage)
+                        else if (type == CommissionType.TieredPercentage)
                         {
-                            var tiers = emp.CommissionSetting.Tiers.OrderBy(t => t.MinAmount).ToList();
-                            var applicableTier = tiers.LastOrDefault(t => relevantSales >= t.MinAmount && relevantSales <= t.MaxAmount);
+                            var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                            var applicableTier = sortedTiers.LastOrDefault(t => relevantSales >= t.MinAmount && relevantSales <= t.MaxAmount);
                             
                             if (applicableTier != null)
                             {
@@ -498,14 +508,14 @@ public class PayrollController : ControllerBase
                             }
                             else
                             {
-                                var lastTier = tiers.LastOrDefault();
+                                var lastTier = sortedTiers.LastOrDefault();
                                 if (lastTier != null && relevantSales > lastTier.MaxAmount)
                                 {
                                     earnedCommission = relevantSales * (lastTier.Rate / 100);
                                 }
                                 else
                                 {
-                                    earnedCommission = relevantSales * (emp.CommissionSetting.DefaultRate / 100);
+                                    earnedCommission = relevantSales * (defaultRate / 100);
                                 }
                             }
                         }
@@ -1600,29 +1610,39 @@ public class EmployeeCommissionsController : ControllerBase
                     o.SalesPersonId == e.Id.ToString()
                 ).ToList();
 
-                relevantSales = e.CommissionSetting.Basis == CommissionBasis.NetSales 
+                var scheme = e.CommissionSetting.CommissionSchemeId != null 
+                    ? await _db.CommissionSchemes.Include(s => s.Tiers).FirstOrDefaultAsync(s => s.Id == e.CommissionSetting.CommissionSchemeId)
+                    : null;
+
+                var basis = scheme != null ? scheme.Basis : e.CommissionSetting.Basis;
+                var type = scheme != null ? scheme.Type : e.CommissionSetting.Type;
+                var defaultRate = scheme != null ? scheme.DefaultRate : e.CommissionSetting.DefaultRate;
+                var targetAmount = scheme != null ? scheme.TargetAmount : e.CommissionSetting.TargetAmount;
+                var tiersList = scheme != null ? scheme.Tiers.ToList() : e.CommissionSetting.Tiers.ToList();
+
+                relevantSales = basis == CommissionBasis.NetSales 
                     ? empOrders.Sum(o => o.TotalAmount) 
                     : empOrders.Sum(o => o.SubTotal);
 
-                if (relevantSales >= e.CommissionSetting.TargetAmount)
+                if (relevantSales >= targetAmount)
                 {
-                    if (e.CommissionSetting.Type == CommissionType.PercentageOfSales)
+                    if (type == CommissionType.PercentageOfSales)
                     {
-                        earnedCommission = relevantSales * (e.CommissionSetting.DefaultRate / 100);
+                        earnedCommission = relevantSales * (defaultRate / 100);
                     }
-                    else if (e.CommissionSetting.Type == CommissionType.FixedAmountPerItem)
+                    else if (type == CommissionType.FixedAmountPerItem)
                     {
                         var orderIds = empOrders.Select(o => o.Id).ToList();
                         var itemsCount = await _db.OrderItems
                             .Where(oi => orderIds.Contains(oi.OrderId))
                             .SumAsync(oi => oi.Quantity);
                         
-                        earnedCommission = itemsCount * e.CommissionSetting.DefaultRate;
+                        earnedCommission = itemsCount * defaultRate;
                     }
-                    else if (e.CommissionSetting.Type == CommissionType.TieredPercentage)
+                    else if (type == CommissionType.TieredPercentage)
                     {
-                        var tiers = e.CommissionSetting.Tiers.OrderBy(t => t.MinAmount).ToList();
-                        var applicableTier = tiers.LastOrDefault(t => relevantSales >= t.MinAmount && relevantSales <= t.MaxAmount);
+                        var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                        var applicableTier = sortedTiers.LastOrDefault(t => relevantSales >= t.MinAmount && relevantSales <= t.MaxAmount);
                         
                         if (applicableTier != null)
                         {
@@ -1630,32 +1650,47 @@ public class EmployeeCommissionsController : ControllerBase
                         }
                         else
                         {
-                            var lastTier = tiers.LastOrDefault();
+                            var lastTier = sortedTiers.LastOrDefault();
                             if (lastTier != null && relevantSales > lastTier.MaxAmount)
                             {
                                 earnedCommission = relevantSales * (lastTier.Rate / 100);
                             }
                             else
                             {
-                                earnedCommission = relevantSales * (e.CommissionSetting.DefaultRate / 100);
+                                earnedCommission = relevantSales * (defaultRate / 100);
                             }
                         }
                     }
                 }
-            }
 
-            result.Add(new EmployeeCommissionSummaryDto(
-                e.Id,
-                e.Name,
-                e.JobTitle,
-                e.CommissionSetting?.CommissionSchemeId,
-                e.CommissionSetting != null ? e.CommissionSetting.Type : CommissionType.PercentageOfSales,
-                e.CommissionSetting != null ? e.CommissionSetting.Basis : CommissionBasis.NetSales,
-                e.CommissionSetting != null ? e.CommissionSetting.DefaultRate : 0,
-                e.CommissionSetting != null ? e.CommissionSetting.TargetAmount : 0,
-                relevantSales,
-                earnedCommission
-            ));
+                result.Add(new EmployeeCommissionSummaryDto(
+                    e.Id,
+                    e.Name,
+                    e.JobTitle,
+                    e.CommissionSetting?.CommissionSchemeId,
+                    type,
+                    basis,
+                    defaultRate,
+                    targetAmount,
+                    relevantSales,
+                    earnedCommission
+                ));
+            }
+            else
+            {
+                result.Add(new EmployeeCommissionSummaryDto(
+                    e.Id,
+                    e.Name,
+                    e.JobTitle,
+                    null,
+                    CommissionType.PercentageOfSales,
+                    CommissionBasis.NetSales,
+                    0,
+                    0,
+                    0,
+                    0
+                ));
+            }
         }
 
         return Ok(result);
