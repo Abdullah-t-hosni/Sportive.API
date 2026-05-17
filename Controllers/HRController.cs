@@ -476,7 +476,9 @@ public class PayrollController : ControllerBase
                     var type = scheme != null ? scheme.Type : emp.CommissionSetting.Type;
                     var defaultRate = scheme != null ? scheme.DefaultRate : emp.CommissionSetting.DefaultRate;
                     var targetAmount = scheme != null ? scheme.TargetAmount : emp.CommissionSetting.TargetAmount;
-                    var tiersList = scheme != null ? scheme.Tiers.ToList() : emp.CommissionSetting.Tiers.ToList();
+                    var tiersList = scheme != null 
+                        ? scheme.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList() 
+                        : emp.CommissionSetting.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
 
                     decimal relevantSales = basis == CommissionBasis.NetSales 
                         ? empOrders.Sum(o => o.TotalAmount) 
@@ -1618,7 +1620,9 @@ public class EmployeeCommissionsController : ControllerBase
                 var type = scheme != null ? scheme.Type : e.CommissionSetting.Type;
                 var defaultRate = scheme != null ? scheme.DefaultRate : e.CommissionSetting.DefaultRate;
                 var targetAmount = scheme != null ? scheme.TargetAmount : e.CommissionSetting.TargetAmount;
-                var tiersList = scheme != null ? scheme.Tiers.ToList() : e.CommissionSetting.Tiers.ToList();
+                var tiersList = scheme != null 
+                    ? scheme.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList() 
+                    : e.CommissionSetting.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
 
                 relevantSales = basis == CommissionBasis.NetSales 
                     ? empOrders.Sum(o => o.TotalAmount) 
