@@ -122,7 +122,7 @@ public class OrdersController : ControllerBase
             posDto.CouponCode,
             posDto.PosEmployeeId ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             (OrderSource)posDto.OrderSource,
-            posDto.Items.Select(i => new CreateOrderItemDto(i.ProductId, i.ProductVariantId, i.Quantity, i.UnitPrice, i.TotalPrice)).ToList(),
+            posDto.Items.Select(i => new CreateOrderItemDto(i.ProductId, i.ProductVariantId, i.Quantity, i.UnitPrice, i.TotalPrice, i.HasTax, i.VatRate, i.Size, i.Color)).ToList(),
             posDto.CustomerPhone,
             posDto.CustomerName,
             posDto.Note,

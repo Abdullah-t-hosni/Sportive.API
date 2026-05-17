@@ -79,7 +79,9 @@ public record CreateOrderItemDto(
     decimal UnitPrice = 0,
     decimal TotalPrice = 0,
     bool? HasTax = null,
-    decimal? VatRate = null
+    decimal? VatRate = null,
+    string? Size = null,
+    string? Color = null
 );
 
 // ========== POS ==========
@@ -115,7 +117,9 @@ public record CreatePOSOrderItemDto(
     decimal UnitPrice,
     decimal TotalPrice,
     bool? HasTax = null,
-    decimal? VatRate = null
+    decimal? VatRate = null,
+    string? Size = null,
+    string? Color = null
 );
 
 // ========== ORDER RESPONSES ==========
