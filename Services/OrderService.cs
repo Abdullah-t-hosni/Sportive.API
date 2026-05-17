@@ -864,6 +864,26 @@ public class OrderService : IOrderService
                     ChangedByUserId = dto.SalesPersonId
                 });
 
+                if (isCreditOrder)
+                {
+                    decimal creditAmount = order.TotalAmount - order.PaidAmount;
+                    if (creditAmount > 0)
+                    {
+                        var installment = new CustomerInstallment
+                        {
+                            CustomerId = order.CustomerId,
+                            Order = order,
+                            TotalAmount = creditAmount,
+                            PaidAmount = 0,
+                            DueDate = now.AddDays(30),
+                            Note = $"قسط تلقائي للفاتورة رقم {order.OrderNumber} (Auto installment for order {order.OrderNumber})",
+                            Status = InstallmentStatus.Pending,
+                            CreatedAt = now
+                        };
+                        _db.CustomerInstallments.Add(installment);
+                    }
+                }
+
                 // ✅ UPDATE COUPON USAGE
                 if (!string.IsNullOrEmpty(order.CouponCode))
                 {
@@ -1098,6 +1118,51 @@ public class OrderService : IOrderService
                     var lines = await _db.JournalLines.Where(l => entryIds.Contains(l.JournalEntryId)).ToListAsync();
                     _db.JournalLines.RemoveRange(lines);
                     _db.JournalEntries.RemoveRange(oldEntries);
+                }
+
+                // 💳 SYNC INSTALLMENT ON ORDER UPDATE
+                bool isCreditOrderUpdated = (dto.PaymentMethod == PaymentMethod.Credit) || 
+                                            (dto.Payments != null && dto.Payments.Any(p => p.Method == PaymentMethod.Credit)) || 
+                                            (order.PaymentMethod == PaymentMethod.Credit);
+
+                var existingInstallment = await _db.CustomerInstallments
+                    .FirstOrDefaultAsync(i => i.OrderId == order.Id && i.Status != InstallmentStatus.Cancelled);
+
+                if (isCreditOrderUpdated)
+                {
+                    decimal creditAmount = order.TotalAmount - order.PaidAmount;
+                    if (creditAmount > 0)
+                    {
+                        if (existingInstallment != null)
+                        {
+                            existingInstallment.CustomerId = order.CustomerId;
+                            existingInstallment.TotalAmount = creditAmount;
+                            existingInstallment.UpdatedAt = now;
+                        }
+                        else
+                        {
+                            var installment = new CustomerInstallment
+                            {
+                                CustomerId = order.CustomerId,
+                                OrderId = order.Id,
+                                TotalAmount = creditAmount,
+                                PaidAmount = 0,
+                                DueDate = now.AddDays(30),
+                                Note = $"قسط تلقائي للفاتورة رقم {order.OrderNumber} (Auto installment for order {order.OrderNumber})",
+                                Status = InstallmentStatus.Pending,
+                                CreatedAt = now
+                            };
+                            _db.CustomerInstallments.Add(installment);
+                        }
+                    }
+                    else if (existingInstallment != null)
+                    {
+                        _db.CustomerInstallments.Remove(existingInstallment);
+                    }
+                }
+                else if (existingInstallment != null)
+                {
+                    _db.CustomerInstallments.Remove(existingInstallment);
                 }
 
                 await _db.SaveChangesAsync();
@@ -1399,6 +1464,30 @@ public class OrderService : IOrderService
                 {
                     coupon.CurrentUsageCount--;
                 }
+            }
+        }
+        // 💳 CANCEL OR RESTORE LINKED INSTALLMENTS ON ORDER STATUS CHANGE
+        if (dto.Status == OrderStatus.Cancelled || dto.Status == OrderStatus.Returned)
+        {
+            var linkedInstallments = await _db.CustomerInstallments
+                .Where(i => i.OrderId == orderId && i.Status != InstallmentStatus.Cancelled)
+                .ToListAsync();
+            foreach (var inst in linkedInstallments)
+            {
+                inst.Status = InstallmentStatus.Cancelled;
+                inst.UpdatedAt = TimeHelper.GetEgyptTime();
+            }
+        }
+        else if ((oldStatus == OrderStatus.Returned || oldStatus == OrderStatus.Cancelled) &&
+                 dto.Status != OrderStatus.Returned && dto.Status != OrderStatus.Cancelled)
+        {
+            var linkedInstallments = await _db.CustomerInstallments
+                .Where(i => i.OrderId == orderId && i.Status == InstallmentStatus.Cancelled)
+                .ToListAsync();
+            foreach (var inst in linkedInstallments)
+            {
+                inst.Status = inst.DueDate < DateTime.Today ? InstallmentStatus.Overdue : InstallmentStatus.Pending;
+                inst.UpdatedAt = TimeHelper.GetEgyptTime();
             }
         }
 

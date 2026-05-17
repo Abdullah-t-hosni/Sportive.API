@@ -302,6 +302,32 @@ public class OrdersController : ControllerBase
             });
         }
 
+        // 💳 SYNC INSTALLMENT STATUS ON PAYMENT STATUS CHANGE
+        if (dto.PaymentStatus == PaymentStatus.Paid)
+        {
+            var linkedInstallments = await _db.CustomerInstallments
+                .Where(i => i.OrderId == id && i.Status != InstallmentStatus.Paid && i.Status != InstallmentStatus.Cancelled)
+                .ToListAsync();
+            foreach (var inst in linkedInstallments)
+            {
+                inst.PaidAmount = inst.TotalAmount;
+                inst.Status = InstallmentStatus.Paid;
+                inst.UpdatedAt = TimeHelper.GetEgyptTime();
+            }
+        }
+        else if (oldStatus == PaymentStatus.Paid && dto.PaymentStatus != PaymentStatus.Paid)
+        {
+            var linkedInstallments = await _db.CustomerInstallments
+                .Where(i => i.OrderId == id && i.Status == InstallmentStatus.Paid)
+                .ToListAsync();
+            foreach (var inst in linkedInstallments)
+            {
+                inst.PaidAmount = 0;
+                inst.Status = inst.DueDate < DateTime.Today ? InstallmentStatus.Overdue : InstallmentStatus.Pending;
+                inst.UpdatedAt = TimeHelper.GetEgyptTime();
+            }
+        }
+
         await _db.SaveChangesAsync();
         return Ok(new { paymentStatus = order.PaymentStatus.ToString() });
     }
@@ -354,6 +380,16 @@ public class OrdersController : ControllerBase
                 coupon.CurrentUsageCount--;
             }
         }
+
+        var linkedInstallments = await _db.CustomerInstallments
+            .Include(i => i.Payments)
+            .Where(i => i.OrderId == id)
+            .ToListAsync();
+        foreach (var inst in linkedInstallments)
+        {
+            _db.InstallmentPayments.RemoveRange(inst.Payments);
+        }
+        _db.CustomerInstallments.RemoveRange(linkedInstallments);
 
         _db.Orders.Remove(order);
         await _db.SaveChangesAsync();
