@@ -78,17 +78,23 @@ public class EmployeesController : ControllerBase
 
     [HttpGet("basic")]
     [AllowPosAccess]
-    public async Task<IActionResult> GetBasic()
+    public async Task<IActionResult> GetBasic([FromQuery] int? year = null, [FromQuery] int? month = null)
     {
+        DateTime? endOfPeriod = null;
+        if (year.HasValue && month.HasValue)
+        {
+            endOfPeriod = new DateTime(year.Value, month.Value, 1).AddMonths(1).AddTicks(-1);
+        }
+
         return Ok(await _db.Employees
             .OrderBy(e => e.Name)
             .Select(e => new EmployeeBasicDto(
                 e.Id, e.EmployeeNumber, e.Name, e.JobTitle, e.DepartmentId, 
                 e.Department != null ? e.Department.Name : null, 
                 e.BaseSalary, e.TransportationAllowance, e.CommunicationAllowance, e.BonusAmount, e.FixedAllowance,
-                e.Advances.Where(a => a.Status != AdvanceStatus.FullyDeducted).Sum(a => a.Amount - a.DeductedAmount),
-                e.Bonuses.Where(b => b.PayrollRunId == null && b.CashAccountId == null).Sum(b => b.Amount),
-                e.Deductions.Where(d => d.PayrollRunId == null && d.CashAccountId == null).Sum(d => d.Amount),
+                e.Advances.Where(a => a.Status != AdvanceStatus.FullyDeducted && (!endOfPeriod.HasValue || a.AdvanceDate <= endOfPeriod.Value)).Sum(a => a.Amount - a.DeductedAmount),
+                e.Bonuses.Where(b => b.PayrollRunId == null && b.CashAccountId == null && (!endOfPeriod.HasValue || b.BonusDate <= endOfPeriod.Value)).Sum(b => b.Amount),
+                e.Deductions.Where(d => d.PayrollRunId == null && d.CashAccountId == null && (!endOfPeriod.HasValue || d.DeductionDate <= endOfPeriod.Value)).Sum(d => d.Amount),
                 (int)e.Status,
                 e.WorkHoursPerDay, e.OvertimeMultiplier, e.DaysPerMonth))
             .ToListAsync());
