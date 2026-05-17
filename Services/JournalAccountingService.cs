@@ -104,6 +104,59 @@ public class JournalAccountingService
 
         _db.JournalEntries.Add(entry);
         await _db.SaveChangesAsync();
+
+        // 🔗 HR Link: Create EmployeeAdvance or deduct if account is "Employee Advances"
+        var mappings = await _core.GetSafeSystemMappingsAsync();
+        if (mappings.TryGetValue(MappingKeys.EmployeeAdvances.ToLower(), out var advAccId) && advAccId.HasValue)
+        {
+            var employeeAdvancesAccountId = advAccId.Value;
+            foreach (var l in entry.Lines)
+            {
+                if (l.AccountId == employeeAdvancesAccountId && l.EmployeeId.HasValue)
+                {
+                    if (l.Debit > 0)
+                    {
+                        var advNo = await _seq.NextAsync("ADV");
+                        var advance = new EmployeeAdvance
+                        {
+                            AdvanceNumber = advNo,
+                            EmployeeId = l.EmployeeId.Value,
+                            AdvanceDate = entry.EntryDate,
+                            Amount = l.Debit,
+                            Reason = l.Description ?? entry.Description,
+                            Status = AdvanceStatus.Pending,
+                            CreatedAt = TimeHelper.GetEgyptTime(),
+                            CreatedByUserId = userId,
+                            JournalEntryId = entry.Id
+                        };
+                        _db.EmployeeAdvances.Add(advance);
+                    }
+                    else if (l.Credit > 0)
+                    {
+                        // Deduct from pending advances
+                        var pendingAdvances = await _db.EmployeeAdvances
+                            .Where(a => a.EmployeeId == l.EmployeeId.Value && a.Status != AdvanceStatus.FullyDeducted)
+                            .OrderBy(a => a.AdvanceDate)
+                            .ToListAsync();
+
+                        var remaining = l.Credit;
+                        foreach (var adv in pendingAdvances)
+                        {
+                            if (remaining <= 0) break;
+                            var canDeduct = Math.Min(adv.RemainingAmount, remaining);
+                            adv.DeductedAmount += canDeduct;
+                            adv.Status = adv.DeductedAmount >= adv.Amount
+                                ? AdvanceStatus.FullyDeducted
+                                : AdvanceStatus.PartiallyDeducted;
+                            remaining -= canDeduct;
+                            adv.UpdatedAt = TimeHelper.GetEgyptTime();
+                        }
+                    }
+                }
+            }
+            await _db.SaveChangesAsync();
+        }
+
         return entry;
     }
 

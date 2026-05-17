@@ -1177,9 +1177,13 @@ public class PaymentVouchersController : ControllerBase
         await _db.SaveChangesAsync();
         await _accounting.PostPaymentVoucherAsync(voucher);
 
-        // Auto-create EmployeeAdvance if posting to account 1105
-        var toAccount = await _db.Accounts.FindAsync(dto.ToAccountId);
-        if (toAccount != null && toAccount.Code == "1105" && dto.EmployeeId.HasValue)
+        // Auto-create EmployeeAdvance if posting to account mapped to EmployeeAdvances
+        var employeeAdvancesAccountId = await _db.AccountSystemMappings
+            .Where(m => m.Key == MappingKeys.EmployeeAdvances.ToLower())
+            .Select(m => m.AccountId)
+            .FirstOrDefaultAsync();
+
+        if (dto.ToAccountId == employeeAdvancesAccountId && dto.EmployeeId.HasValue)
         {
             var advNo = await _seq.NextAsync("ADV");
             var advance = new EmployeeAdvance
