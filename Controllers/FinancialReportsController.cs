@@ -537,6 +537,24 @@ public class FinancialReportsController : ControllerBase
         {
             targetAccountIds = await _db.Accounts.Where(a => a.Code.StartsWith(acct.Code)).Select(a => a.Id).ToListAsync();
         }
+
+        if (employeeId.HasValue)
+        {
+            var emp = await _db.Employees.FindAsync(employeeId.Value);
+            var empRelatedCodes = new List<string> { "2102", "1105", "2103" };
+            var empRelatedAccIds = await _db.Accounts
+                .Where(a => empRelatedCodes.Any(c => a.Code.StartsWith(c)))
+                .Select(a => a.Id)
+                .ToListAsync();
+
+            if (emp?.AccountId.HasValue == true)
+            {
+                empRelatedAccIds.Add(emp.AccountId.Value);
+            }
+
+            targetAccountIds = empRelatedAccIds.Distinct().ToList();
+        }
+
  
         var openQ = _db.JournalLines.Include(l => l.JournalEntry)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate < from);

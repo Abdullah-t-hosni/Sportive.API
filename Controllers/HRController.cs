@@ -265,8 +265,8 @@ public class EmployeesController : ControllerBase
         var emp = await _db.Employees.FindAsync(id);
         if (emp == null) return NotFound();
 
-        // في كشف الموظف الفردي، نركز فقط على حساب "الرواتب المستحقة" لبيان الرصيد الصافي (المستحقات - الاستقطاعات)
-        var personalAccountIds = new List<int> { accrualAccId };
+        // في كشف الموظف الفردي، نركز على كل حسابات الموظف (الرواتب المستحقة، السلف، المكافآت، الخصومات) بالإضافة لحسابه الشخصي
+        var personalAccountIds = new List<int>(hrAccountIds);
         if (emp.AccountId.HasValue) personalAccountIds.Add(emp.AccountId.Value);
         personalAccountIds = personalAccountIds.Distinct().ToList();
 
