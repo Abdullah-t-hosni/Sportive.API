@@ -76,6 +76,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<EmployeeDeduction>  EmployeeDeductions  { get; set; }
     public DbSet<EmployeeCommissionSetting> EmployeeCommissionSettings { get; set; }
     public DbSet<CommissionTier>     CommissionTiers     { get; set; }
+    public DbSet<CommissionScheme>     CommissionSchemes     { get; set; }
+    public DbSet<CommissionSchemeTier> CommissionSchemeTiers { get; set; }
 
     public DbSet<FixedAssetCategory> FixedAssetCategories { get; set; }
     public DbSet<FixedAsset>         FixedAssets          { get; set; }
@@ -541,6 +543,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.Basis).HasConversion<string>();
             e.HasOne(x => x.Employee).WithOne(emp => emp.CommissionSetting)
              .HasForeignKey<EmployeeCommissionSetting>(x => x.EmployeeId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.CommissionScheme).WithMany()
+             .HasForeignKey(x => x.CommissionSchemeId).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<CommissionTier>(e => {
@@ -549,6 +553,21 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.Rate).HasPrecision(18, 2);
             e.HasOne(x => x.Setting).WithMany(s => s.Tiers)
              .HasForeignKey(x => x.SettingId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<CommissionScheme>(e => {
+            e.Property(x => x.DefaultRate).HasPrecision(18, 2);
+            e.Property(x => x.TargetAmount).HasPrecision(18, 2);
+            e.Property(x => x.Type).HasConversion<string>();
+            e.Property(x => x.Basis).HasConversion<string>();
+        });
+
+        builder.Entity<CommissionSchemeTier>(e => {
+            e.Property(x => x.MinAmount).HasPrecision(18, 2);
+            e.Property(x => x.MaxAmount).HasPrecision(18, 2);
+            e.Property(x => x.Rate).HasPrecision(18, 2);
+            e.HasOne(x => x.CommissionScheme).WithMany(s => s.Tiers)
+             .HasForeignKey(x => x.CommissionSchemeId).OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<FixedAssetCategory>(e => {

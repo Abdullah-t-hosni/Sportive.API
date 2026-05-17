@@ -302,6 +302,9 @@ public class EmployeeCommissionSetting : BaseEntity
     public decimal DefaultRate { get; set; } = 0; // نسبة أو مبلغ ثابت
     public decimal TargetAmount { get; set; } = 0; // المستهدف لتفعيل العمولة
 
+    public int? CommissionSchemeId { get; set; }
+    public virtual CommissionScheme? CommissionScheme { get; set; }
+
     public ICollection<CommissionTier> Tiers { get; set; } = new List<CommissionTier>();
 }
 
@@ -313,4 +316,24 @@ public class CommissionTier : BaseEntity
     public decimal MinAmount { get; set; }
     public decimal MaxAmount { get; set; }
     public decimal Rate { get; set; } // النسبة أو المبلغ لهذه الشريحة
+}
+
+public class CommissionScheme : BaseEntity
+{
+    public string Name { get; set; } = string.Empty;
+    public CommissionType Type { get; set; } = CommissionType.PercentageOfSales;
+    public CommissionBasis Basis { get; set; } = CommissionBasis.NetSales;
+    public decimal DefaultRate { get; set; } = 0;
+    public decimal TargetAmount { get; set; } = 0;
+    public virtual ICollection<CommissionSchemeTier> Tiers { get; set; } = new List<CommissionSchemeTier>();
+}
+
+public class CommissionSchemeTier : BaseEntity
+{
+    public int CommissionSchemeId { get; set; }
+    public virtual CommissionScheme CommissionScheme { get; set; } = null!;
+
+    public decimal MinAmount { get; set; }
+    public decimal MaxAmount { get; set; }
+    public decimal Rate { get; set; }
 }

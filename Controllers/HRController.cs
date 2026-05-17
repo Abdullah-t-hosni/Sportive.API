@@ -1489,6 +1489,7 @@ public class EmployeeCommissionsController : ControllerBase
         setting.Basis = dto.Basis;
         setting.DefaultRate = dto.DefaultRate;
         setting.TargetAmount = dto.TargetAmount;
+        setting.CommissionSchemeId = dto.CommissionSchemeId;
 
         // Update Tiers
         _db.CommissionTiers.RemoveRange(setting.Tiers);
@@ -1513,6 +1514,7 @@ public class EmployeeCommissionsController : ControllerBase
                 e.Id,
                 e.Name,
                 e.JobTitle,
+                e.CommissionSetting != null ? e.CommissionSetting.CommissionSchemeId : null,
                 e.CommissionSetting != null ? e.CommissionSetting.Type : CommissionType.PercentageOfSales,
                 e.CommissionSetting != null ? e.CommissionSetting.Basis : CommissionBasis.NetSales,
                 e.CommissionSetting != null ? e.CommissionSetting.DefaultRate : 0,
@@ -1524,11 +1526,135 @@ public class EmployeeCommissionsController : ControllerBase
     }
 }
 
+[ApiController]
+[Route("api/commissions/schemes")]
+[RequirePermission(ModuleKeys.HrPayroll)]
+public class CommissionSchemesController : ControllerBase
+{
+    private readonly AppDbContext _db;
+    public CommissionSchemesController(AppDbContext db) { _db = db; }
+
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<CommissionSchemeDto>>> GetSchemes()
+    {
+        var schemes = await _db.CommissionSchemes
+            .Include(s => s.Tiers)
+            .Select(s => new CommissionSchemeDto(
+                s.Id,
+                s.Name,
+                s.Type,
+                s.Basis,
+                s.DefaultRate,
+                s.TargetAmount,
+                s.Tiers.Select(t => new CommissionTierDto(t.Id, t.MinAmount, t.MaxAmount, t.Rate)).ToList()
+            ))
+            .ToListAsync();
+
+        return Ok(schemes);
+    }
+
+    [HttpGet("{id}")]
+    public async Task<ActionResult<CommissionSchemeDto>> GetScheme(int id)
+    {
+        var s = await _db.CommissionSchemes
+            .Include(s => s.Tiers)
+            .FirstOrDefaultAsync(s => s.Id == id);
+
+        if (s == null) return NotFound();
+
+        return Ok(new CommissionSchemeDto(
+            s.Id,
+            s.Name,
+            s.Type,
+            s.Basis,
+            s.DefaultRate,
+            s.TargetAmount,
+            s.Tiers.Select(t => new CommissionTierDto(t.Id, t.MinAmount, t.MaxAmount, t.Rate)).ToList()
+        ));
+    }
+
+    [HttpPost]
+    public async Task<ActionResult<CommissionSchemeDto>> CreateScheme(UpdateCommissionSchemeDto dto)
+    {
+        var s = new CommissionScheme
+        {
+            Name = dto.Name,
+            Type = dto.Type,
+            Basis = dto.Basis,
+            DefaultRate = dto.DefaultRate,
+            TargetAmount = dto.TargetAmount,
+            CreatedAt = TimeHelper.GetEgyptTime()
+        };
+
+        s.Tiers = dto.Tiers.Select(t => new CommissionSchemeTier
+        {
+            MinAmount = t.MinAmount,
+            MaxAmount = t.MaxAmount,
+            Rate = t.Rate,
+            CreatedAt = TimeHelper.GetEgyptTime()
+        }).ToList();
+
+        _db.CommissionSchemes.Add(s);
+        await _db.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetScheme), new { id = s.Id }, new CommissionSchemeDto(
+            s.Id,
+            s.Name,
+            s.Type,
+            s.Basis,
+            s.DefaultRate,
+            s.TargetAmount,
+            s.Tiers.Select(t => new CommissionTierDto(t.Id, t.MinAmount, t.MaxAmount, t.Rate)).ToList()
+        ));
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateScheme(int id, UpdateCommissionSchemeDto dto)
+    {
+        var s = await _db.CommissionSchemes
+            .Include(s => s.Tiers)
+            .FirstOrDefaultAsync(s => s.Id == id);
+
+        if (s == null) return NotFound();
+
+        s.Name = dto.Name;
+        s.Type = dto.Type;
+        s.Basis = dto.Basis;
+        s.DefaultRate = dto.DefaultRate;
+        s.TargetAmount = dto.TargetAmount;
+
+        _db.CommissionSchemeTiers.RemoveRange(s.Tiers);
+        s.Tiers = dto.Tiers.Select(t => new CommissionSchemeTier
+        {
+            MinAmount = t.MinAmount,
+            MaxAmount = t.MaxAmount,
+            Rate = t.Rate,
+            CreatedAt = TimeHelper.GetEgyptTime()
+        }).ToList();
+
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteScheme(int id)
+    {
+        var s = await _db.CommissionSchemes.FindAsync(id);
+        if (s == null) return NotFound();
+
+        _db.CommissionSchemes.Remove(s);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+}
+
 //DTOs 
 public record LinkUserDto(string? AppUserId);
 public record CommissionSettingDto(int Id, int EmployeeId, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CommissionTierDto> Tiers);
 public record CommissionTierDto(int Id, decimal MinAmount, decimal MaxAmount, decimal Rate);
-public record UpdateCommissionSettingDto(CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CreateCommissionTierDto> Tiers);
+public record UpdateCommissionSettingDto(CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, int? CommissionSchemeId, List<CreateCommissionTierDto> Tiers);
 public record CreateCommissionTierDto(decimal MinAmount, decimal MaxAmount, decimal Rate);
-public record EmployeeCommissionSummaryDto(int EmployeeId, string Name, string? JobTitle, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount);
+public record CommissionSchemeDto(int Id, string Name, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CommissionTierDto> Tiers);
+public record UpdateCommissionSchemeDto(string Name, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CreateCommissionTierDto> Tiers);
+public record EmployeeCommissionSummaryDto(int EmployeeId, string Name, string? JobTitle, int? CommissionSchemeId, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount);
 
