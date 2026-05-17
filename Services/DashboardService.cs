@@ -35,8 +35,11 @@ public class DashboardService : IDashboardService
         var todayEnd   = todayStart.AddDays(1);
         
         // Determine the targeted range for "Today" stats (used in Orders page)
-        var targetStart = fromDate ?? todayStart;
-        var targetEnd   = (toDate?.Date.AddDays(1)) ?? (fromDate?.Date.AddDays(1)) ?? todayEnd;
+        // 🕒 BUSINESS DAY OFFSET: Apply 2 AM offset to match OrderService list logic
+        var targetStart = fromDate?.Date.AddHours(2) ?? todayStart;
+        var targetEnd   = toDate != null ? toDate.Value.Date.AddDays(1).AddHours(2) : 
+                          fromDate != null ? fromDate.Value.Date.AddDays(1).AddHours(2) : 
+                          todayEnd;
 
         var monthStart = new DateTime(now.Year, now.Month, 1);
         var lastMonthStart = monthStart.AddMonths(-1);
