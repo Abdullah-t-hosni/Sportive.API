@@ -1826,6 +1826,12 @@ public class CommissionSchemesController : ControllerBase
         var s = await _db.CommissionSchemes.FindAsync(id);
         if (s == null) return NotFound();
 
+        // Delete settings for employees linked to this scheme
+        var linkedSettings = await _db.EmployeeCommissionSettings
+            .Where(ecs => ecs.CommissionSchemeId == id)
+            .ToListAsync();
+        _db.EmployeeCommissionSettings.RemoveRange(linkedSettings);
+
         _db.CommissionSchemes.Remove(s);
         await _db.SaveChangesAsync();
         return NoContent();
