@@ -43,6 +43,20 @@ public enum BonusType
     Other       = 4,  // أخرى
 }
 
+public enum CommissionType
+{
+    PercentageOfSales = 1, // نسبة مئوية من المبيعات
+    FixedAmountPerItem = 2, // مبلغ ثابت على كل قطعة
+    TieredPercentage = 3,  // شرائح تصاعدية
+    ProductSpecific = 4     // مخصصة حسب المنتج
+}
+
+public enum CommissionBasis
+{
+    NetSales = 1,  // صافي المبيعات (بعد الخصم والمرتجع)
+    GrossSales = 2, // إجمالي المبيعات (قبل الخصم)
+}
+
 public class Department : BaseEntity
 {
     public string Name { get; set; } = string.Empty;
@@ -108,6 +122,8 @@ public class Employee : BaseEntity
     public ICollection<EmployeeAdvance>   Advances     { get; set; } = new List<EmployeeAdvance>();
     public ICollection<EmployeeBonus>     Bonuses      { get; set; } = new List<EmployeeBonus>();
     public ICollection<EmployeeDeduction> Deductions   { get; set; } = new List<EmployeeDeduction>();
+
+    public EmployeeCommissionSetting? CommissionSetting { get; set; }
 }
 
 // ══════════════════════════════════════════════════════
@@ -170,6 +186,7 @@ public class PayrollItem : BaseEntity
     public decimal FixedAllowance          { get; set; } = 0;
     public decimal DeductionAmount         { get; set; } = 0;
     public decimal AdvanceDeducted         { get; set; } = 0;
+    public decimal CommissionAmount        { get; set; } = 0;
     
     public int     AbsenceDays             { get; set; } = 0;
     public decimal AbsenceDeduction        { get; set; } = 0;
@@ -177,7 +194,7 @@ public class PayrollItem : BaseEntity
     public decimal OvertimeHours           { get; set; } = 0;
     public decimal OvertimeAmount          { get; set; } = 0;
 
-    public decimal NetPayable => BasicSalary + TransportationAllowance + CommunicationAllowance + BonusAmount + FixedAllowance + OvertimeAmount - DeductionAmount - AdvanceDeducted - AbsenceDeduction;
+    public decimal NetPayable => BasicSalary + TransportationAllowance + CommunicationAllowance + BonusAmount + FixedAllowance + OvertimeAmount + CommissionAmount - DeductionAmount - AdvanceDeducted - AbsenceDeduction;
 
     public string? Notes { get; set; }
 }
@@ -262,10 +279,38 @@ public class EmployeeDeduction : BaseEntity
     public int?        PayrollRunId { get; set; }
     public PayrollRun? PayrollRun   { get; set; }
 
-    // الحساب المدين عند تحصيل الخصم (إن كان فورياً)
+    // الحساب المدين عند تحصيل الخم (إن كان فورياً)
     public int?    CashAccountId { get; set; }
     public Account? CashAccount  { get; set; }
 
     public int?          JournalEntryId { get; set; }
     public JournalEntry? JournalEntry   { get; set; }
+}
+
+// ══════════════════════════════════════════════════════
+// تبويبة العمولات — Employee Commission
+// ══════════════════════════════════════════════════════
+
+public class EmployeeCommissionSetting : BaseEntity
+{
+    public int EmployeeId { get; set; }
+    public Employee Employee { get; set; } = null!;
+
+    public CommissionType Type { get; set; } = CommissionType.PercentageOfSales;
+    public CommissionBasis Basis { get; set; } = CommissionBasis.NetSales;
+
+    public decimal DefaultRate { get; set; } = 0; // نسبة أو مبلغ ثابت
+    public decimal TargetAmount { get; set; } = 0; // المستهدف لتفعيل العمولة
+
+    public ICollection<CommissionTier> Tiers { get; set; } = new List<CommissionTier>();
+}
+
+public class CommissionTier : BaseEntity
+{
+    public int SettingId { get; set; }
+    public EmployeeCommissionSetting Setting { get; set; } = null!;
+
+    public decimal MinAmount { get; set; }
+    public decimal MaxAmount { get; set; }
+    public decimal Rate { get; set; } // النسبة أو المبلغ لهذه الشريحة
 }

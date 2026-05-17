@@ -74,6 +74,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<EmployeeAdvance>    EmployeeAdvances    { get; set; }
     public DbSet<EmployeeBonus>      EmployeeBonuses     { get; set; }
     public DbSet<EmployeeDeduction>  EmployeeDeductions  { get; set; }
+    public DbSet<EmployeeCommissionSetting> EmployeeCommissionSettings { get; set; }
+    public DbSet<CommissionTier>     CommissionTiers     { get; set; }
 
     public DbSet<FixedAssetCategory> FixedAssetCategories { get; set; }
     public DbSet<FixedAsset>         FixedAssets          { get; set; }
@@ -500,6 +502,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.BonusAmount).HasPrecision(18, 2);
             e.Property(x => x.DeductionAmount).HasPrecision(18, 2);
             e.Property(x => x.AdvanceDeducted).HasPrecision(18, 2);
+            e.Property(x => x.CommissionAmount).HasPrecision(18, 2);
             e.HasOne(x => x.PayrollRun).WithMany(p => p.Items)
              .HasForeignKey(x => x.PayrollRunId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Employee).WithMany(emp => emp.PayrollItems)
@@ -529,6 +532,23 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => x.DeductionNumber).IsUnique();
             e.HasOne(x => x.Employee).WithMany(emp => emp.Deductions)
              .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<EmployeeCommissionSetting>(e => {
+            e.Property(x => x.DefaultRate).HasPrecision(18, 2);
+            e.Property(x => x.TargetAmount).HasPrecision(18, 2);
+            e.Property(x => x.Type).HasConversion<string>();
+            e.Property(x => x.Basis).HasConversion<string>();
+            e.HasOne(x => x.Employee).WithOne(emp => emp.CommissionSetting)
+             .HasForeignKey<EmployeeCommissionSetting>(x => x.EmployeeId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<CommissionTier>(e => {
+            e.Property(x => x.MinAmount).HasPrecision(18, 2);
+            e.Property(x => x.MaxAmount).HasPrecision(18, 2);
+            e.Property(x => x.Rate).HasPrecision(18, 2);
+            e.HasOne(x => x.Setting).WithMany(s => s.Tiers)
+             .HasForeignKey(x => x.SettingId).OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<FixedAssetCategory>(e => {

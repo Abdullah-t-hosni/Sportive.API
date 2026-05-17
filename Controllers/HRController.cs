@@ -1438,6 +1438,97 @@ public class DepartmentsController : ControllerBase
     }
 }
 
+// 7. COMMISSIONS
+
+[ApiController]
+[Route("api/commissions")]
+[RequirePermission(ModuleKeys.HrPayroll)]
+public class EmployeeCommissionsController : ControllerBase
+{
+    private readonly AppDbContext _db;
+    private readonly ITranslator _t;
+    public EmployeeCommissionsController(AppDbContext db, ITranslator t) { _db = db; _t = t; }
+
+    [HttpGet("{employeeId}")]
+    public async Task<ActionResult<CommissionSettingDto>> GetCommissionSetting(int employeeId)
+    {
+        var setting = await _db.EmployeeCommissionSettings
+            .Include(s => s.Tiers)
+            .FirstOrDefaultAsync(s => s.EmployeeId == employeeId);
+
+        if (setting == null)
+        {
+            return Ok(new CommissionSettingDto(0, employeeId, CommissionType.PercentageOfSales, CommissionBasis.NetSales, 0, 0, new List<CommissionTierDto>()));
+        }
+
+        return Ok(new CommissionSettingDto(
+            setting.Id,
+            setting.EmployeeId,
+            setting.Type,
+            setting.Basis,
+            setting.DefaultRate,
+            setting.TargetAmount,
+            setting.Tiers.Select(t => new CommissionTierDto(t.Id, t.MinAmount, t.MaxAmount, t.Rate)).ToList()
+        ));
+    }
+
+    [HttpPut("{employeeId}")]
+    public async Task<IActionResult> UpdateCommissionSetting(int employeeId, UpdateCommissionSettingDto dto)
+    {
+        var setting = await _db.EmployeeCommissionSettings
+            .Include(s => s.Tiers)
+            .FirstOrDefaultAsync(s => s.EmployeeId == employeeId);
+
+        if (setting == null)
+        {
+            setting = new EmployeeCommissionSetting { EmployeeId = employeeId, CreatedAt = TimeHelper.GetEgyptTime() };
+            _db.EmployeeCommissionSettings.Add(setting);
+        }
+
+        setting.Type = dto.Type;
+        setting.Basis = dto.Basis;
+        setting.DefaultRate = dto.DefaultRate;
+        setting.TargetAmount = dto.TargetAmount;
+
+        // Update Tiers
+        _db.CommissionTiers.RemoveRange(setting.Tiers);
+        setting.Tiers = dto.Tiers.Select(t => new CommissionTier
+        {
+            MinAmount = t.MinAmount,
+            MaxAmount = t.MaxAmount,
+            Rate = t.Rate,
+            CreatedAt = TimeHelper.GetEgyptTime()
+        }).ToList();
+
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpGet("summary")]
+    public async Task<ActionResult<IEnumerable<EmployeeCommissionSummaryDto>>> GetCommissionsSummary()
+    {
+        var summaries = await _db.Employees
+            .Include(e => e.CommissionSetting)
+            .Select(e => new EmployeeCommissionSummaryDto(
+                e.Id,
+                e.Name,
+                e.JobTitle,
+                e.CommissionSetting != null ? e.CommissionSetting.Type : CommissionType.PercentageOfSales,
+                e.CommissionSetting != null ? e.CommissionSetting.Basis : CommissionBasis.NetSales,
+                e.CommissionSetting != null ? e.CommissionSetting.DefaultRate : 0,
+                e.CommissionSetting != null ? e.CommissionSetting.TargetAmount : 0
+            ))
+            .ToListAsync();
+
+        return Ok(summaries);
+    }
+}
+
 //DTOs 
 public record LinkUserDto(string? AppUserId);
+public record CommissionSettingDto(int Id, int EmployeeId, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CommissionTierDto> Tiers);
+public record CommissionTierDto(int Id, decimal MinAmount, decimal MaxAmount, decimal Rate);
+public record UpdateCommissionSettingDto(CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CreateCommissionTierDto> Tiers);
+public record CreateCommissionTierDto(decimal MinAmount, decimal MaxAmount, decimal Rate);
+public record EmployeeCommissionSummaryDto(int EmployeeId, string Name, string? JobTitle, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount);
 
