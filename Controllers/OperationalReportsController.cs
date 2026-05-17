@@ -554,7 +554,7 @@ public class OperationalReportsController : ControllerBase
             .Include(p => p.Category)
             .Include(p => p.Variants)
             .AsNoTracking()
-            .Where(p => p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock || p.Status == ProductStatus.Discontinued);
+            .Where(p => p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock || p.Status == ProductStatus.Discontinued || p.Status == ProductStatus.Hidden);
 
         // --- Filtering ---
         if (!string.IsNullOrEmpty(search))
@@ -1990,7 +1990,7 @@ public class OperationalReportsController : ControllerBase
 
         // 1. Get filtered product list first
         var query = _db.Products
-            .Where(p => p.TotalStock > 0 && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock));
+            .Where(p => p.TotalStock > 0 && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock || p.Status == ProductStatus.Hidden));
 
         // 2. Apply Filters (Category/Brand family IDs)
         if (categoryId.HasValue && categoryId > 0)

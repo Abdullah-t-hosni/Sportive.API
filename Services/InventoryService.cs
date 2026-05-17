@@ -207,13 +207,26 @@ public class InventoryService : IInventoryService
             });
         }
 
-        // 3. Low-stock alert — Fire-and-forget to avoid blocking the main thread
+        // 3. Low-stock alert & Cache Invalidation — Fire-and-forget to avoid blocking the main thread
         _ = Task.Run(async () => {
             try {
                 using var scope = _scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
                 var t = scope.ServiceProvider.GetRequiredService<ITranslator>();
+
+                // Invalidate operational reports cache
+                var cache = scope.ServiceProvider.GetRequiredService<ICacheService>();
+                await cache.RemoveByPrefixAsync("Inventory_");
+                await cache.RemoveByPrefixAsync("ProdMovement_");
+                if (type == InventoryMovementType.Sale || type == InventoryMovementType.ReturnIn)
+                {
+                    await cache.RemoveByPrefixAsync("Sales_");
+                }
+                else if (type == InventoryMovementType.Purchase || type == InventoryMovementType.ReturnOut)
+                {
+                    await cache.RemoveByPrefixAsync("Purchases_");
+                }
 
                 if (variantId.HasValue)
                 {
