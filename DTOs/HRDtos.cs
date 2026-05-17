@@ -171,6 +171,7 @@ public record PayrollItemDto(
     decimal AbsenceDeduction,
     decimal OvertimeHours,
     decimal OvertimeAmount,
+    decimal CommissionAmount,
     decimal NetPayable,
     string? Notes
 );

@@ -902,7 +902,7 @@ public class PayrollController : ControllerBase
             i.Id, i.EmployeeId, i.Employee.Name, i.Employee.EmployeeNumber,
             i.Employee.JobTitle, i.BasicSalary, i.TransportationAllowance, i.CommunicationAllowance, i.BonusAmount,
             i.FixedAllowance,
-            i.DeductionAmount, i.AdvanceDeducted, i.AbsenceDays, i.AbsenceDeduction, i.OvertimeHours, i.OvertimeAmount, i.NetPayable, i.Notes
+            i.DeductionAmount, i.AdvanceDeducted, i.AbsenceDays, i.AbsenceDeduction, i.OvertimeHours, i.OvertimeAmount, i.CommissionAmount, i.NetPayable, i.Notes
         )).ToList()
     );
 }
