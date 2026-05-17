@@ -441,6 +441,7 @@ public class PayrollController : ControllerBase
             var endOfPeriod = startOfPeriod.AddMonths(1).AddDays(-1);
             
             var orders = await _db.Orders
+                .Include(o => o.Items)
                 .Where(o => o.CreatedAt >= startOfPeriod && o.CreatedAt <= endOfPeriod && o.Status != OrderStatus.Cancelled)
                 .ToListAsync();
 
@@ -480,9 +481,11 @@ public class PayrollController : ControllerBase
                         ? scheme.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList() 
                         : emp.CommissionSetting.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
 
+                    var returnsAmount = empOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
+
                     decimal relevantSales = basis == CommissionBasis.NetSales 
-                        ? empOrders.Sum(o => o.TotalAmount) 
-                        : empOrders.Sum(o => o.SubTotal);
+                        ? empOrders.Sum(o => o.TotalAmount) - returnsAmount
+                        : empOrders.Sum(o => o.SubTotal) - returnsAmount;
 
                     if (relevantSales >= targetAmount)
                     {
@@ -1590,6 +1593,7 @@ public class EmployeeCommissionsController : ControllerBase
         var startOfMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
         
         var orders = await _db.Orders
+            .Include(o => o.Items)
             .Where(o => o.CreatedAt >= startOfMonth && o.Status != OrderStatus.Cancelled)
             .ToListAsync();
 
@@ -1624,9 +1628,11 @@ public class EmployeeCommissionsController : ControllerBase
                     ? scheme.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList() 
                     : e.CommissionSetting.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
 
+                var returnsAmount = empOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
+
                 relevantSales = basis == CommissionBasis.NetSales 
-                    ? empOrders.Sum(o => o.TotalAmount) 
-                    : empOrders.Sum(o => o.SubTotal);
+                    ? empOrders.Sum(o => o.TotalAmount) - returnsAmount
+                    : empOrders.Sum(o => o.SubTotal) - returnsAmount;
 
                 if (relevantSales >= targetAmount)
                 {
@@ -1798,14 +1804,17 @@ public class CommissionSchemesController : ControllerBase
         s.DefaultRate = dto.DefaultRate;
         s.TargetAmount = dto.TargetAmount;
 
-        _db.CommissionSchemeTiers.RemoveRange(s.Tiers);
-        s.Tiers = dto.Tiers.Select(t => new CommissionSchemeTier
+        s.Tiers.Clear();
+        foreach (var t in dto.Tiers)
         {
-            MinAmount = t.MinAmount,
-            MaxAmount = t.MaxAmount,
-            Rate = t.Rate,
-            CreatedAt = TimeHelper.GetEgyptTime()
-        }).ToList();
+            s.Tiers.Add(new CommissionSchemeTier
+            {
+                MinAmount = t.MinAmount,
+                MaxAmount = t.MaxAmount,
+                Rate = t.Rate,
+                CreatedAt = TimeHelper.GetEgyptTime()
+            });
+        }
 
         await _db.SaveChangesAsync();
         return NoContent();
