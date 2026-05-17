@@ -689,32 +689,6 @@ public class JournalEntriesController : ControllerBase
 
             var entry = await _accounting.PostManualEntryAsync(dto, User);
 
-            if (advancesAccount != null)
-            {
-                foreach (var line in dto.Lines)
-                {
-                    if (line.AccountId == advancesAccount.Id && line.EmployeeId.HasValue && line.Debit > 0)
-                    {
-                        var advNo = await _seq.NextAsync("ADV");
-                        var advance = new EmployeeAdvance
-                        {
-                            AdvanceNumber = advNo,
-                            EmployeeId = line.EmployeeId.Value,
-                            AdvanceDate = dto.EntryDate.ToStoreTime(),
-                            Amount = line.Debit,
-                            DeductedAmount = 0,
-                            Status = AdvanceStatus.Pending,
-                            Reason = line.Description ?? dto.Description,
-                            Notes = line.Description ?? dto.Description,
-                            CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-                            CostCenter = (OrderSource?)dto.CostCenter,
-                            JournalEntryId = entry.Id
-                        };
-                        _db.EmployeeAdvances.Add(advance);
-                    }
-                }
-                await _db.SaveChangesAsync();
-            }
 
             return CreatedAtAction(nameof(GetById), new { id = entry.Id }, entry);
         } catch (InvalidOperationException ex) {
