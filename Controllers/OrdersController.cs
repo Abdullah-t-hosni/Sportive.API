@@ -462,16 +462,17 @@ public class OrdersController : ControllerBase
         }
 
         var journalEntry = await _db.JournalEntries
-            .Include(e => e.Lines)
-            .FirstOrDefaultAsync(e => e.OrderId == id && e.Type == JournalEntryType.ReceiptVoucher);
+            .Include(e => e.Lines).ThenInclude(l => l.Account)
+            .FirstOrDefaultAsync(e => e.OrderId == id && (e.Type == JournalEntryType.ReceiptVoucher || e.Type == JournalEntryType.SalesInvoice));
 
         if (journalEntry != null)
         {
             using var scope = _scopeFactory.CreateScope();
             var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
 
-            var debitLines = journalEntry.Lines.Where(l => l.Debit > 0).ToList();
-            foreach (var line in debitLines)
+            // Only remove debit lines that correspond to Cash/Bank accounts (Code starts with 1103)
+            var paymentLines = journalEntry.Lines.Where(l => l.Debit > 0 && l.Account != null && l.Account.Code.StartsWith("1103")).ToList();
+            foreach (var line in paymentLines)
             {
                 _db.JournalLines.Remove(line);
             }
