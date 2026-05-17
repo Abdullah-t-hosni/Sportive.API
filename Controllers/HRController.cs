@@ -1591,6 +1591,7 @@ public class EmployeeCommissionsController : ControllerBase
         foreach (var e in employees)
         {
             decimal earnedCommission = 0;
+            decimal relevantSales = 0;
             
             if (e.CommissionSetting != null)
             {
@@ -1599,7 +1600,7 @@ public class EmployeeCommissionsController : ControllerBase
                     o.SalesPersonId == e.Id.ToString()
                 ).ToList();
 
-                decimal relevantSales = e.CommissionSetting.Basis == CommissionBasis.NetSales 
+                relevantSales = e.CommissionSetting.Basis == CommissionBasis.NetSales 
                     ? empOrders.Sum(o => o.TotalAmount) 
                     : empOrders.Sum(o => o.SubTotal);
 
@@ -1652,6 +1653,7 @@ public class EmployeeCommissionsController : ControllerBase
                 e.CommissionSetting != null ? e.CommissionSetting.Basis : CommissionBasis.NetSales,
                 e.CommissionSetting != null ? e.CommissionSetting.DefaultRate : 0,
                 e.CommissionSetting != null ? e.CommissionSetting.TargetAmount : 0,
+                relevantSales,
                 earnedCommission
             ));
         }
@@ -1790,5 +1792,5 @@ public record UpdateCommissionSettingDto(CommissionType Type, CommissionBasis Ba
 public record CreateCommissionTierDto(decimal MinAmount, decimal MaxAmount, decimal Rate);
 public record CommissionSchemeDto(int Id, string Name, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CommissionTierDto> Tiers);
 public record UpdateCommissionSchemeDto(string Name, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CreateCommissionTierDto> Tiers);
-public record EmployeeCommissionSummaryDto(int EmployeeId, string Name, string? JobTitle, int? CommissionSchemeId, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, decimal EarnedCommission);
+public record EmployeeCommissionSummaryDto(int EmployeeId, string Name, string? JobTitle, int? CommissionSchemeId, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, decimal TotalSales, decimal EarnedCommission);
 
