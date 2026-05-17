@@ -259,7 +259,11 @@ public class EmployeesController : ControllerBase
         if (mapDict.TryGetValue(MappingKeys.EmployeeBonuses.ToLower(), out var s3) && s3.HasValue) hrAccountIds.Add(s3.Value);
         if (mapDict.TryGetValue(MappingKeys.EmployeeDeductions.ToLower(), out var s4) && s4.HasValue) hrAccountIds.Add(s4.Value);
 
-        if (id == 0) return await GetGeneralStatement(from, to, hrAccountIds);
+        // Normalize dates to match Egyptian business day ranges (from 2 AM to 2 AM of next day)
+        var egyptFrom = from.Date.AddHours(2);
+        var egyptTo   = to.Date.AddDays(1).AddHours(2).AddTicks(-1);
+
+        if (id == 0) return await GetGeneralStatement(egyptFrom, egyptTo, hrAccountIds);
 
         var accrualAccId = await _core.GetRequiredMappedAccountAsync(MappingKeys.SalariesPayable, mapDict);
         var emp = await _db.Employees.FindAsync(id);
@@ -271,7 +275,7 @@ public class EmployeesController : ControllerBase
         personalAccountIds = personalAccountIds.Distinct().ToList();
 
         var preEntries = await _db.JournalLines
-            .Where(l => l.EmployeeId == id && personalAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.EmployeeId == id && personalAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate < egyptFrom && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .Select(l => new { l.Debit, l.Credit })
             .ToListAsync();
         
@@ -279,7 +283,7 @@ public class EmployeesController : ControllerBase
 
         var lines = await _db.JournalLines
             .Include(l => l.JournalEntry)
-            .Where(l => l.EmployeeId == id && personalAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.EmployeeId == id && personalAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate >= egyptFrom && l.JournalEntry.EntryDate <= egyptTo && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .OrderBy(l => l.JournalEntry.EntryDate)
             .ToListAsync();
 
