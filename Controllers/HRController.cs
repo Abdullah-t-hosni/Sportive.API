@@ -1777,7 +1777,7 @@ public class EmployeeCommissionsController : ControllerBase
             if (g.Members.Any())
             {
                 var share = earnedCommission / g.Members.Count;
-                var salesShare = relevantSales / g.Members.Count;
+                var salesShare = relevantSales;
                 
                 foreach (var m in g.Members)
                 {
