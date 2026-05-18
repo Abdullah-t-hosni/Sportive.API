@@ -109,11 +109,18 @@ public class DashboardService : IDashboardService
             returnAmountQuery = returnAmountQuery.Where(i => i.Order!.Source == source.Value);
         }
 
-        // Returns filtered by date: we look at orders that were Returned/Modified in THIS period
+        // Returns filtered by date: we look at orders that had a Return action in THIS period
         // OR orders CREATED in this period that are returned.
-        // User's context is "Today's sales have a return", so CreatedAt is suitable for simple dashboard.
+        var returnActionOrderIds = await _db.OrderStatusHistories
+            .Where(h => h.CreatedAt >= targetStart && h.CreatedAt < targetEnd && 
+                        (h.Status == OrderStatus.Returned || h.Status == OrderStatus.PartiallyReturned))
+            .Select(h => h.OrderId)
+            .Distinct()
+            .ToListAsync();
+
         var periodReturnAmount = await returnAmountQuery
-            .Where(i => i.Order!.CreatedAt >= targetStart && i.Order!.CreatedAt < targetEnd)
+            .Where(i => returnActionOrderIds.Contains(i.OrderId) || 
+                        (i.Order!.CreatedAt >= targetStart && i.Order!.CreatedAt < targetEnd))
             .SumAsync(i => (decimal?)(i.Order!.Status == OrderStatus.Returned ? i.Quantity : i.ReturnedQuantity) * i.UnitPrice) ?? 0;
 
         // التحصيلات (سندات القبض)
