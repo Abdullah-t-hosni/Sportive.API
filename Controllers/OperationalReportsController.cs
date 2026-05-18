@@ -856,16 +856,49 @@ public class OperationalReportsController : ControllerBase
             );
         }).ToList();
 
+        var hasFilters = catIds.Any() || brIds.Any() || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size);
+
+        var summaryData = await ordersQ.Select(o => new {
+            o.TotalAmount,
+            DiscountAmount = o.DiscountAmount + o.TemporalDiscount,
+            ItemsTotal = o.Items
+                .Where(i => 
+                    (!catIds.Any() || (i.Product != null && i.Product.CategoryId.HasValue && catIds.Contains(i.Product.CategoryId.Value))) &&
+                    (!brIds.Any() || (i.Product != null && i.Product.BrandId.HasValue && brIds.Contains(i.Product.BrandId.Value))) &&
+                    (string.IsNullOrEmpty(color) || i.Color == color || (i.Color == null && i.Product != null && i.Product.Variants.Any(v => (v.Color == color || v.ColorAr == color)))) &&
+                    (string.IsNullOrEmpty(size) || i.Size == size || (i.Size == null && i.Product != null && i.Product.Variants.Any(v => v.Size == size)))
+                )
+                .Sum(i => (decimal?)i.TotalPrice) ?? 0,
+            ItemCount = o.Items
+                .Where(i => 
+                    (!catIds.Any() || (i.Product != null && i.Product.CategoryId.HasValue && catIds.Contains(i.Product.CategoryId.Value))) &&
+                    (!brIds.Any() || (i.Product != null && i.Product.BrandId.HasValue && brIds.Contains(i.Product.BrandId.Value))) &&
+                    (string.IsNullOrEmpty(color) || i.Color == color || (i.Color == null && i.Product != null && i.Product.Variants.Any(v => (v.Color == color || v.ColorAr == color)))) &&
+                    (string.IsNullOrEmpty(size) || i.Size == size || (i.Size == null && i.Product != null && i.Product.Variants.Any(v => v.Size == size)))
+                )
+                .Sum(i => (int?)i.Quantity) ?? 0,
+            PostedSales = o.JournalEntries
+                .Where(j => j.Status == JournalEntryStatus.Posted)
+                .SelectMany(j => j.Lines)
+                .Where(l => l.AccountId == salesAccId)
+                .Sum(l => (decimal?)l.Credit) ?? 0,
+            o.Source
+        }).ToListAsync();
+
+        var totalGrossRevenue = summaryData.Sum(o => hasFilters ? o.ItemsTotal : (o.PostedSales > 0 ? o.PostedSales : o.TotalAmount));
+        var totalDiscount = summaryData.Sum(o => o.DiscountAmount);
+        var totalUnits = summaryData.Sum(o => o.ItemCount);
+
         var summary = new {
             totalOrders   = totalOrdersCount,
-            totalGrossRevenue  = rows.Sum(r => r.TotalAmount),
-            totalDiscount      = rows.Sum(r => r.DiscountAmount),
-            totalUnits         = rows.Sum(r => r.ItemCount),
+            totalGrossRevenue  = totalGrossRevenue,
+            totalDiscount      = totalDiscount,
+            totalUnits         = totalUnits,
             totalReturns       = ledgerReturns,
-            totalNetRevenue    = rows.Sum(r => r.TotalAmount) - ledgerReturns,
-            avgOrder      = totalOrdersCount > 0 ? (rows.Sum(r => r.TotalAmount) - ledgerReturns) / totalOrdersCount : 0,
-            pos           = rows.Count(r => r.Source == "POS"),
-            website       = rows.Count(r => r.Source == "Website")
+            totalNetRevenue    = totalGrossRevenue - ledgerReturns,
+            avgOrder      = totalOrdersCount > 0 ? (totalGrossRevenue - ledgerReturns) / totalOrdersCount : 0,
+            pos           = summaryData.Count(o => o.Source == OrderSource.POS),
+            website       = summaryData.Count(o => o.Source == OrderSource.Website)
         };
 
         if (excel) return ExcelSales(rows, summary, from, to);
