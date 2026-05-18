@@ -433,74 +433,125 @@ public class OrdersController : ControllerBase
             .FirstOrDefaultAsync(o => o.Id == id);
         if (order == null) return NotFound();
 
+        // ── 🔴 Fix 1: منع إعادة التوزيع على فواتير مُلغاة أو مُرتجعة ──
+        if (order.Status == OrderStatus.Cancelled || order.Status == OrderStatus.Returned)
+            return BadRequest(_translator.Get("Orders.CannotRedistributeOnStatus") ?? "لا يمكن إعادة توزيع المبالغ على فاتورة ملغاة أو مرتجعة");
+
         var newTotal = dto.Payments.Sum(p => p.Amount);
         if (Math.Abs(newTotal - order.TotalAmount) > 0.1m)
-        {
             return BadRequest(_translator.Get("Orders.TotalAmountMismatch") ?? "إجمالي المبالغ يجب أن يساوي إجمالي الفاتورة");
+
+        using var scope = _scopeFactory.CreateScope();
+        var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+
+        // ── 🔴 Fix 2: جلب IDs الحسابات الحقيقية من الـ mappings بدل hard-code "1103" ──
+        var mappedAccountIds = new HashSet<int>();
+        foreach (var pm in new[] { PaymentMethod.Cash, PaymentMethod.Bank, PaymentMethod.CreditCard, PaymentMethod.Vodafone, PaymentMethod.InstaPay })
+        {
+            try
+            {
+                var code = await accounting.GetMappedCashAccount(pm, order.Source);
+                // code يكون "ID:123" أو كود حساب
+                if (code.StartsWith("ID:", StringComparison.OrdinalIgnoreCase) && int.TryParse(code.Substring(3), out var accId))
+                    mappedAccountIds.Add(accId);
+                else
+                {
+                    var acc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == code);
+                    if (acc != null) mappedAccountIds.Add(acc.Id);
+                }
+            }
+            catch { /* method not mapped — skip */ }
         }
 
+        // ── تحديث OrderPayments ──
         _db.OrderPayments.RemoveRange(order.Payments);
         foreach (var p in dto.Payments)
         {
             order.Payments.Add(new OrderPayment
             {
-                Method = p.Method,
-                Amount = p.Amount,
+                Method    = p.Method,
+                Amount    = p.Amount,
                 Reference = p.Reference,
-                Notes = p.Notes,
-                IsPosted = true
+                Notes     = p.Notes,
+                IsPosted  = true
             });
         }
 
+        // ── تحديث PaymentMethod على الـ Order ──
         if (dto.Payments.Count == 1)
-        {
             order.PaymentMethod = dto.Payments.First().Method;
-        }
         else if (dto.Payments.Count > 1)
-        {
             order.PaymentMethod = PaymentMethod.Mixed;
-        }
 
+        // ── 🔴 Fix 3: بحث أشمل — بدون تقييد Type ──
         var journalEntry = await _db.JournalEntries
             .Include(e => e.Lines).ThenInclude(l => l.Account)
-            .FirstOrDefaultAsync(e => e.OrderId == id && (e.Type == JournalEntryType.ReceiptVoucher || e.Type == JournalEntryType.SalesInvoice));
+            .Where(e => e.OrderId == id || e.Reference == order.OrderNumber)
+            .OrderByDescending(e => e.CreatedAt) // الأحدث أولاً
+            .FirstOrDefaultAsync();
 
         if (journalEntry != null)
         {
-            using var scope = _scopeFactory.CreateScope();
-            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+            // ── 🔴 Fix 4: حذف سطور الدفع باستخدام الـ IDs الحقيقية بدل "1103" ──
+            var paymentLines = journalEntry.Lines
+                .Where(l => l.Debit > 0 && mappedAccountIds.Contains(l.AccountId))
+                .ToList();
 
-            // Only remove debit lines that correspond to Cash/Bank accounts (Code starts with 1103)
-            var paymentLines = journalEntry.Lines.Where(l => l.Debit > 0 && l.Account != null && l.Account.Code.StartsWith("1103")).ToList();
-            foreach (var line in paymentLines)
+            if (!paymentLines.Any())
             {
-                _db.JournalLines.Remove(line);
+                // Fallback: لو مش لقينا سطور بالـ mapped IDs، نبحث بكود "110" (بداية حسابات الصندوق)
+                paymentLines = journalEntry.Lines
+                    .Where(l => l.Debit > 0 && l.Account != null &&
+                                (l.Account.Code!.StartsWith("110") || l.Account.Code!.StartsWith("1103")))
+                    .ToList();
             }
 
+            foreach (var line in paymentLines)
+                _db.JournalLines.Remove(line);
+
+            // إضافة سطور الدفع الجديدة
             foreach (var p in dto.Payments)
             {
-                var accountCode = await accounting.GetMappedCashAccount(p.Method, order.Source);
-                var account = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == accountCode);
-                if (account == null) 
+                string accountCode;
+                try { accountCode = await accounting.GetMappedCashAccount(p.Method, order.Source); }
+                catch { return BadRequest($"الحساب المرتبط بطريقة الدفع {p.Method} غير موجود في الإعدادات"); }
+
+                var account = accountCode.StartsWith("ID:", StringComparison.OrdinalIgnoreCase) && int.TryParse(accountCode.Substring(3), out var directId)
+                    ? await _db.Accounts.FindAsync(directId)
+                    : await _db.Accounts.FirstOrDefaultAsync(a => a.Code == accountCode);
+
+                if (account == null)
                     return BadRequest($"الحساب المرتبط بطريقة الدفع {p.Method} غير موجود");
 
                 journalEntry.Lines.Add(new JournalLine
                 {
-                    AccountId = account.Id,
-                    Debit = p.Amount,
-                    Credit = 0,
+                    AccountId   = account.Id,
+                    Debit       = p.Amount,
+                    Credit      = 0,
                     Description = $"تعديل طريقة دفع - {p.Method}",
-                    OrderId = order.Id,
-                    CostCenter = order.Source
+                    OrderId     = order.Id,
+                    CostCenter  = order.Source
                 });
             }
         }
+        else
+        {
+            // ── 🔴 Fix 5: تسجيل تحذير بدل الصمت لو مفيش قيد ──
+            _logger.LogWarning("[RedistributePayments] No journal entry found for OrderId={Id} OrderNumber={Num}. Payments updated in DB only.",
+                id, order.OrderNumber);
+        }
 
         await _db.SaveChangesAsync();
-        
-        await _audit.LogAsync("RedistributePayments", "Order", id.ToString(), $"Order {order.OrderNumber} payments redistributed by cashier", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name));
 
-        return Ok(new { message = _translator.Get("Orders.PaymentsRedistributed") ?? "تم إعادة توزيع المبالغ بنجاح" });
+        await _audit.LogAsync("RedistributePayments", "Order", id.ToString(),
+            $"Order {order.OrderNumber} payments redistributed by cashier", 
+            User.FindFirstValue(ClaimTypes.NameIdentifier), 
+            User.FindFirstValue(ClaimTypes.Name));
+
+        return Ok(new { 
+            message = _translator.Get("Orders.PaymentsRedistributed") ?? "تم إعادة توزيع المبالغ بنجاح",
+            journalUpdated = journalEntry != null
+        });
     }
 
 
