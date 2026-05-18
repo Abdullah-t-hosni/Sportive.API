@@ -1578,6 +1578,10 @@ public class DepartmentsController : ControllerBase
         var dept = await _db.Departments.Include(d => d.Employees).FirstOrDefaultAsync(d => d.Id == id);
         if (dept == null) return NotFound();
         if (dept.Employees.Any()) return BadRequest(new { message = _t.Get("HR.DepartmentHasEmployees") });
+        
+        var hasSubDepts = await _db.Departments.AnyAsync(d => d.ParentDepartmentId == id);
+        if (hasSubDepts) return BadRequest(new { message = "لا يمكن حذف قسم يحتوي على أقسام فرعية." });
+
         _db.Departments.Remove(dept);
         await _db.SaveChangesAsync();
         return NoContent();
