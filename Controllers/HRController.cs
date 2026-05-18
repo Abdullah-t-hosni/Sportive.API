@@ -1631,6 +1631,7 @@ public class EmployeeCommissionsController : ControllerBase
             .ToListAsync();
 
         var employees = await _db.Employees
+            .Include(e => e.Department)
             .Include(e => e.CommissionSetting)
             .ThenInclude(s => s != null ? s.Tiers : null)
             .ToListAsync();
@@ -1739,7 +1740,9 @@ public class EmployeeCommissionsController : ControllerBase
                     defaultRate,
                     targetAmount,
                     relevantSales,
-                    earnedCommission
+                    earnedCommission,
+                    e.DepartmentId,
+                    e.Department?.Name
                 ));
             }
             else
@@ -1754,7 +1757,9 @@ public class EmployeeCommissionsController : ControllerBase
                     0,
                     0,
                     0,
-                    0
+                    0,
+                    e.DepartmentId,
+                    e.Department?.Name
                 ));
             }
         }
@@ -1902,5 +1907,5 @@ public record UpdateCommissionSettingDto(CommissionType Type, CommissionBasis Ba
 public record CreateCommissionTierDto(decimal MinAmount, decimal MaxAmount, decimal Rate);
 public record CommissionSchemeDto(int Id, string Name, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CommissionTierDto> Tiers);
 public record UpdateCommissionSchemeDto(string Name, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CreateCommissionTierDto> Tiers);
-public record EmployeeCommissionSummaryDto(int EmployeeId, string Name, string? JobTitle, int? CommissionSchemeId, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, decimal TotalSales, decimal EarnedCommission);
+public record EmployeeCommissionSummaryDto(int EmployeeId, string Name, string? JobTitle, int? CommissionSchemeId, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, decimal TotalSales, decimal EarnedCommission, int? DepartmentId = null, string? DepartmentName = null);
 
