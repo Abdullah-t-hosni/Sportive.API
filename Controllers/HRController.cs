@@ -1671,14 +1671,148 @@ public class EmployeeCommissionsController : ControllerBase
             .ThenInclude(s => s != null ? s.Tiers : null)
             .ToListAsync();
 
+        var groups = await _db.CommissionGroups
+            .Include(g => g.Members)
+            .Include(g => g.Tiers)
+            .Include(g => g.CommissionScheme)
+            .ThenInclude(s => s != null ? s.Tiers : null)
+            .ToListAsync();
+
+        var employeeGroupCommissions = new Dictionary<int, decimal>();
+        var employeeGroupSales = new Dictionary<int, decimal>();
+        var employeeGroupName = new Dictionary<int, string>();
+
+        foreach (var g in groups)
+        {
+            var memberUserIds = g.Members.Select(m => m.AppUserId).Where(id => id != null).ToList();
+            var memberIds = g.Members.Select(m => m.Id.ToString()).ToList();
+            
+            var groupOrders = orders.Where(o => 
+                memberUserIds.Contains(o.SalesPersonId) || 
+                memberIds.Contains(o.SalesPersonId)
+            ).ToList();
+            
+            var scheme = g.CommissionSchemeId != null 
+                ? await _db.CommissionSchemes.Include(s => s.Tiers).FirstOrDefaultAsync(s => s.Id == g.CommissionSchemeId)
+                : null;
+
+            var basis = scheme != null ? scheme.Basis : g.Basis;
+            var type = scheme != null ? scheme.Type : g.Type;
+            var defaultRate = scheme != null ? scheme.DefaultRate : g.DefaultRate;
+            var targetAmount = scheme != null ? scheme.TargetAmount : g.TargetAmount;
+            var tiersList = scheme != null 
+                ? scheme.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList() 
+                : g.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
+
+            var returnsAmount = groupOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
+
+            decimal relevantSales = basis == CommissionBasis.NetSales 
+                ? groupOrders.Sum(o => o.TotalAmount) - returnsAmount
+                : groupOrders.Sum(o => o.SubTotal) - returnsAmount;
+
+            decimal earnedCommission = 0;
+
+            if (type == CommissionType.TargetAchievementTiers || relevantSales >= targetAmount)
+            {
+                if (type == CommissionType.PercentageOfSales)
+                {
+                    earnedCommission = relevantSales * (defaultRate / 100);
+                }
+                else if (type == CommissionType.FixedAmountPerItem)
+                {
+                    var orderIds = groupOrders.Select(o => o.Id).ToList();
+                    var itemsCount = await _db.OrderItems
+                        .Where(oi => orderIds.Contains(oi.OrderId))
+                        .SumAsync(oi => oi.Quantity);
+                    
+                    earnedCommission = itemsCount * defaultRate;
+                }
+                else if (type == CommissionType.TieredPercentage)
+                {
+                    var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                    var applicableTier = sortedTiers.LastOrDefault(t => relevantSales >= t.MinAmount && relevantSales <= t.MaxAmount);
+                    
+                    if (applicableTier != null)
+                    {
+                        earnedCommission = relevantSales * (applicableTier.Rate / 100);
+                    }
+                    else
+                    {
+                        var lastTier = sortedTiers.LastOrDefault();
+                        if (lastTier != null && relevantSales > lastTier.MaxAmount)
+                        {
+                            earnedCommission = relevantSales * (lastTier.Rate / 100);
+                        }
+                        else
+                        {
+                            earnedCommission = relevantSales * (defaultRate / 100);
+                        }
+                    }
+                }
+                else if (type == CommissionType.TargetAchievementTiers)
+                {
+                    var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                    decimal achievementPercentage = targetAmount > 0 ? (relevantSales / targetAmount) * 100 : 0;
+                    var applicableTier = sortedTiers.LastOrDefault(t => achievementPercentage >= t.MinAmount && achievementPercentage <= t.MaxAmount);
+                    
+                    if (applicableTier != null)
+                    {
+                        earnedCommission = relevantSales * (applicableTier.Rate / 100);
+                    }
+                    else
+                    {
+                        var lastTier = sortedTiers.LastOrDefault();
+                        if (lastTier != null && achievementPercentage > lastTier.MaxAmount)
+                        {
+                            earnedCommission = relevantSales * (lastTier.Rate / 100);
+                        }
+                        else
+                        {
+                            earnedCommission = relevantSales * (defaultRate / 100);
+                        }
+                    }
+                }
+            }
+
+            if (g.Members.Any())
+            {
+                var share = earnedCommission / g.Members.Count;
+                var salesShare = relevantSales / g.Members.Count;
+                
+                foreach (var m in g.Members)
+                {
+                    employeeGroupCommissions[m.Id] = share;
+                    employeeGroupSales[m.Id] = salesShare;
+                    employeeGroupName[m.Id] = g.Name;
+                }
+            }
+        }
+
         var result = new List<EmployeeCommissionSummaryDto>();
 
         foreach (var e in employees)
         {
             decimal earnedCommission = 0;
             decimal relevantSales = 0;
+            bool isGroup = false;
+            string? groupName = null;
             
-            if (e.CommissionSetting != null)
+            if (employeeGroupCommissions.TryGetValue(e.Id, out var groupComm))
+            {
+                earnedCommission = groupComm;
+                relevantSales = employeeGroupSales.GetValueOrDefault(e.Id, 0);
+                isGroup = true;
+                groupName = employeeGroupName.GetValueOrDefault(e.Id);
+                
+                result.Add(new EmployeeCommissionSummaryDto(
+                    e.Id, e.Name, e.JobTitle, null, 
+                    CommissionType.PercentageOfSales, CommissionBasis.NetSales, 0, 0,
+                    relevantSales, earnedCommission,
+                    e.DepartmentId, e.Department?.Name,
+                    isGroup, groupName
+                ));
+            }
+            else if (e.CommissionSetting != null)
             {
                 var empOrders = orders.Where(o => 
                     o.SalesPersonId == e.AppUserId || 
@@ -1934,6 +2068,116 @@ public class CommissionSchemesController : ControllerBase
     }
 }
 
+[ApiController]
+[Route("api/commissions/groups")]
+[RequirePermission(ModuleKeys.HrPayroll)]
+public class CommissionGroupsController : ControllerBase
+{
+    private readonly AppDbContext _db;
+    public CommissionGroupsController(AppDbContext db) { _db = db; }
+
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<CommissionGroupDto>>> GetGroups()
+    {
+        var groups = await _db.CommissionGroups
+            .Include(g => g.Members)
+            .Select(g => new CommissionGroupDto(
+                g.Id,
+                g.Name,
+                g.Description,
+                g.CommissionSchemeId,
+                g.Members.Select(m => m.Id).ToList()
+            ))
+            .ToListAsync();
+
+        return Ok(groups);
+    }
+
+    [HttpGet("{id}")]
+    public async Task<ActionResult<CommissionGroupDto>> GetGroup(int id)
+    {
+        var g = await _db.CommissionGroups
+            .Include(g => g.Members)
+            .FirstOrDefaultAsync(g => g.Id == id);
+
+        if (g == null) return NotFound();
+
+        return Ok(new CommissionGroupDto(
+            g.Id,
+            g.Name,
+            g.Description,
+            g.CommissionSchemeId,
+            g.Members.Select(m => m.Id).ToList()
+        ));
+    }
+
+    [HttpPost]
+    public async Task<ActionResult<CommissionGroupDto>> CreateGroup(CreateCommissionGroupDto dto)
+    {
+        var g = new CommissionGroup
+        {
+            Name = dto.Name,
+            Description = dto.Description,
+            CommissionSchemeId = dto.CommissionSchemeId,
+            CreatedAt = TimeHelper.GetEgyptTime()
+        };
+
+        if (dto.MemberIds != null && dto.MemberIds.Any())
+        {
+            var members = await _db.Employees.Where(e => dto.MemberIds.Contains(e.Id)).ToListAsync();
+            g.Members = members;
+        }
+
+        _db.CommissionGroups.Add(g);
+        await _db.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetGroup), new { id = g.Id }, new CommissionGroupDto(
+            g.Id,
+            g.Name,
+            g.Description,
+            g.CommissionSchemeId,
+            g.Members.Select(m => m.Id).ToList()
+        ));
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateGroup(int id, CreateCommissionGroupDto dto)
+    {
+        var g = await _db.CommissionGroups
+            .Include(g => g.Members)
+            .FirstOrDefaultAsync(g => g.Id == id);
+
+        if (g == null) return NotFound();
+
+        g.Name = dto.Name;
+        g.Description = dto.Description;
+        g.CommissionSchemeId = dto.CommissionSchemeId;
+        g.UpdatedAt = TimeHelper.GetEgyptTime();
+
+        // Update Members
+        g.Members.Clear();
+        if (dto.MemberIds != null && dto.MemberIds.Any())
+        {
+            var members = await _db.Employees.Where(e => dto.MemberIds.Contains(e.Id)).ToListAsync();
+            g.Members = members;
+        }
+
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteGroup(int id)
+    {
+        var g = await _db.CommissionGroups.FindAsync(id);
+        if (g == null) return NotFound();
+
+        _db.CommissionGroups.Remove(g);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+}
+
 //DTOs 
 public record LinkUserDto(string? AppUserId);
 public record CommissionSettingDto(int Id, int EmployeeId, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CommissionTierDto> Tiers);
@@ -1942,5 +2186,9 @@ public record UpdateCommissionSettingDto(CommissionType Type, CommissionBasis Ba
 public record CreateCommissionTierDto(decimal MinAmount, decimal MaxAmount, decimal Rate);
 public record CommissionSchemeDto(int Id, string Name, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CommissionTierDto> Tiers);
 public record UpdateCommissionSchemeDto(string Name, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CreateCommissionTierDto> Tiers);
-public record EmployeeCommissionSummaryDto(int EmployeeId, string Name, string? JobTitle, int? CommissionSchemeId, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, decimal TotalSales, decimal EarnedCommission, int? DepartmentId = null, string? DepartmentName = null);
+public record EmployeeCommissionSummaryDto(int EmployeeId, string Name, string? JobTitle, int? CommissionSchemeId, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, decimal TotalSales, decimal EarnedCommission, int? DepartmentId = null, string? DepartmentName = null, bool IsGroup = false, string? GroupName = null);
+
+public record CommissionGroupDto(int Id, string Name, string? Description, int? CommissionSchemeId, List<int> MemberIds);
+public record CreateCommissionGroupDto(string Name, string? Description, int? CommissionSchemeId, List<int> MemberIds);
+
 
