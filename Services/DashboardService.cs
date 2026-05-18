@@ -109,9 +109,11 @@ public class DashboardService : IDashboardService
             returnAmountQuery = returnAmountQuery.Where(i => i.Order!.Source == source.Value);
         }
 
-        // 🌟 حساب المرتجعات بدقة تامة من السجلات المحاسبية (القيود)
-        // هذا يضمن أننا نجمع قيمة المرتجعات التي حدثت "اليوم" فقط، سواء لطلبات اليوم أو طلبات سابقة
-        // وكذلك يشمل المرتجعات المباشرة (بدون فاتورة).
+        var salesReturnMapping = await _db.AccountSystemMappings
+            .Where(m => m.Key == "salesreturn")
+            .Select(m => m.AccountId)
+            .FirstOrDefaultAsync();
+
         var returnsQuery = _db.JournalEntries
             .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= targetStart && e.EntryDate < targetEnd);
 
@@ -122,7 +124,7 @@ public class DashboardService : IDashboardService
 
         var periodReturnAmount = await returnsQuery
             .SelectMany(e => e.Lines)
-            .Where(l => l.Debit > 0 && l.Account.Code.StartsWith("4103"))
+            .Where(l => l.Debit > 0 && (l.AccountId == salesReturnMapping || l.Account.Code.StartsWith("4103")))
             .SumAsync(l => (decimal?)l.Debit) ?? 0;
 
         // التحصيلات (سندات القبض)
