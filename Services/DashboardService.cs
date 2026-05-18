@@ -123,6 +123,22 @@ public class DashboardService : IDashboardService
                         (i.Order!.CreatedAt >= targetStart && i.Order!.CreatedAt < targetEnd))
             .SumAsync(i => (decimal?)(i.Order!.Status == OrderStatus.Returned ? i.Quantity : i.ReturnedQuantity) * i.UnitPrice) ?? 0;
 
+        // Direct Returns (Without Invoice)
+        var directReturnsQuery = _db.JournalEntries
+            .Where(e => e.Type == JournalEntryType.SalesReturn && e.OrderId == null && e.EntryDate >= targetStart && e.EntryDate < targetEnd);
+
+        if (source.HasValue)
+        {
+            directReturnsQuery = directReturnsQuery.Where(e => e.CostCenter == source.Value);
+        }
+
+        var directReturnsAmount = await directReturnsQuery
+            .SelectMany(e => e.Lines)
+            .Where(l => l.Debit > 0 && l.Account.Type != AccountType.Asset)
+            .SumAsync(l => (decimal?)l.Debit) ?? 0;
+
+        periodReturnAmount += directReturnsAmount;
+
         // التحصيلات (سندات القبض)
         var collectionQuery = _db.ReceiptVouchers
             .Where(v => v.VoucherDate >= targetStart && v.VoucherDate < targetEnd);
