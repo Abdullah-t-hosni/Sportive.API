@@ -109,35 +109,21 @@ public class DashboardService : IDashboardService
             returnAmountQuery = returnAmountQuery.Where(i => i.Order!.Source == source.Value);
         }
 
-        // Returns filtered by date: we look at orders that had a Return action in THIS period
-        // OR orders CREATED in this period that are returned.
-        var returnActionOrderIds = await _db.OrderStatusHistories
-            .Where(h => h.CreatedAt >= targetStart && h.CreatedAt < targetEnd && 
-                        (h.Status == OrderStatus.Returned || h.Status == OrderStatus.PartiallyReturned))
-            .Select(h => h.OrderId)
-            .Distinct()
-            .ToListAsync();
-
-        var periodReturnAmount = await returnAmountQuery
-            .Where(i => returnActionOrderIds.Contains(i.OrderId) || 
-                        (i.Order!.CreatedAt >= targetStart && i.Order!.CreatedAt < targetEnd))
-            .SumAsync(i => (decimal?)(i.Order!.Status == OrderStatus.Returned ? i.Quantity : i.ReturnedQuantity) * i.UnitPrice) ?? 0;
-
-        // Direct Returns (Without Invoice)
-        var directReturnsQuery = _db.JournalEntries
-            .Where(e => e.Type == JournalEntryType.SalesReturn && e.OrderId == null && e.EntryDate >= targetStart && e.EntryDate < targetEnd);
+        // 🌟 حساب المرتجعات بدقة تامة من السجلات المحاسبية (القيود)
+        // هذا يضمن أننا نجمع قيمة المرتجعات التي حدثت "اليوم" فقط، سواء لطلبات اليوم أو طلبات سابقة
+        // وكذلك يشمل المرتجعات المباشرة (بدون فاتورة).
+        var returnsQuery = _db.JournalEntries
+            .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= targetStart && e.EntryDate < targetEnd);
 
         if (source.HasValue)
         {
-            directReturnsQuery = directReturnsQuery.Where(e => e.CostCenter == source.Value);
+            returnsQuery = returnsQuery.Where(e => e.CostCenter == source.Value);
         }
 
-        var directReturnsAmount = await directReturnsQuery
+        var periodReturnAmount = await returnsQuery
             .SelectMany(e => e.Lines)
             .Where(l => l.Debit > 0 && l.Account.Type != AccountType.Asset)
             .SumAsync(l => (decimal?)l.Debit) ?? 0;
-
-        periodReturnAmount += directReturnsAmount;
 
         // التحصيلات (سندات القبض)
         var collectionQuery = _db.ReceiptVouchers
