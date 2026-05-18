@@ -37,7 +37,7 @@ public class UsersController : ControllerBase
 
         var logs = await _db.AuditLogs
             .Where(l => l.Action == "Login")
-            .Where(l => l.UserId != null && !_db.UserRoles.Any(ur => ur.UserId == l.UserId && ur.RoleId == customerRoleId))
+            .Where(l => l.UserId == null || !_db.UserRoles.Any(ur => ur.UserId == l.UserId && ur.RoleId == customerRoleId))
             .OrderByDescending(l => l.CreatedAt)
             .Select(l => new {
                 l.Id,

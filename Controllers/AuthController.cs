@@ -100,7 +100,10 @@ public class AuthController : ControllerBase
     {
         try { 
             var response = await _auth.LoginAsync(dto);
-            await _audit.LogAsync("Login", "User", null, $"User logged in via {dto.Identifier}", null, dto.Identifier);
+            var user = await _userManager.FindByEmailAsync(dto.Identifier ?? "") 
+                       ?? await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == dto.Identifier);
+            
+            await _audit.LogAsync("Login", "User", null, $"User logged in via {dto.Identifier}", user?.Id, user?.FullName);
             return Ok(response); 
         }
         catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
