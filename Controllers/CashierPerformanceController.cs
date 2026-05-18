@@ -49,6 +49,20 @@ public class CashierPerformanceController : ControllerBase
         if (!orders.Any())
             return Ok(new { from, to, cashiers = Array.Empty<object>(), summary = new { } });
 
+        var salesReturnMapping = await _db.AccountSystemMappings
+            .Where(m => m.Key == "salesReturnAccountID")
+            .Select(m => m.AccountId)
+            .FirstOrDefaultAsync();
+
+        var returnsByCashier = await _db.JournalEntries
+            .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= from && e.EntryDate <= to)
+            .Where(e => e.CostCenter == OrderSource.POS)
+            .SelectMany(e => e.Lines)
+            .Where(l => l.Debit > 0 && (l.AccountId == salesReturnMapping || l.Account.Code.StartsWith("4103")))
+            .GroupBy(l => l.JournalEntry.CreatedByUserId)
+            .Select(g => new { CashierId = g.Key, Amount = g.Sum(l => l.Debit) })
+            .ToDictionaryAsync(x => x.CashierId ?? "", x => x.Amount);
+
         var cashierIds = orders.Select(o => o.SalesPersonId!).Distinct().ToList();
         var users = await _db.Users
             .Where(u => cashierIds.Contains(u.Id))
@@ -65,7 +79,7 @@ public class CashierPerformanceController : ControllerBase
                 var allOrders  = g.ToList();
                 var totalDisc  = allOrders.Sum(o => o.DiscountAmount);
                 var grossRevenue = allOrders.Sum(o => o.TotalAmount + o.DiscountAmount);
-                var returnsAmount = allOrders.Sum(o => o.OrderReturnAmount);
+                var returnsAmount = returnsByCashier.GetValueOrDefault(g.Key, 0);
                 var netRevenue = grossRevenue - returnsAmount - totalDisc;
                 var count      = allOrders.Count;
                 var avgOrder   = count > 0 ? netRevenue / count : 0;
