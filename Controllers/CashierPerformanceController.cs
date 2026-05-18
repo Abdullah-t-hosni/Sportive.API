@@ -143,7 +143,7 @@ public class CashierPerformanceController : ControllerBase
         var journalReturnsQuery = _db.JournalEntries
             .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= from && e.EntryDate <= to);
 
-        journalReturnsQuery = journalReturnsQuery.Where(e => e.CostCenter == (int)OrderSource.POS);
+        journalReturnsQuery = journalReturnsQuery.Where(e => e.CostCenter == OrderSource.POS);
 
         var totalJournalReturns = await journalReturnsQuery
             .SelectMany(e => e.Lines)
