@@ -7,7 +7,9 @@ public enum WelcomeMessageTargetType
 {
     User = 1,
     Department = 2,
-    All = 3
+    All = 3,
+    Staff = 4,
+    Customers = 5
 }
 
 public class WelcomeMessage : BaseEntity

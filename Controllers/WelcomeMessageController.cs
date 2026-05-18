@@ -143,6 +143,10 @@ public class WelcomeMessageController : ControllerBase
         var user = await _userManager.FindByIdAsync(userId);
         if (user == null) return Unauthorized();
 
+        var roles = await _userManager.GetRolesAsync(user);
+        bool isStaff = roles.Any(r => r != "Customer");
+        bool isCustomer = roles.Contains("Customer");
+
         // Find the user's department if they are an employee
         var employee = await _db.Employees
             .FirstOrDefaultAsync(e => e.AppUserId == userId);
@@ -159,7 +163,9 @@ public class WelcomeMessageController : ControllerBase
             .Where(m => 
                 m.TargetType == WelcomeMessageTargetType.All ||
                 (m.TargetType == WelcomeMessageTargetType.User && m.TargetUserId == userId) ||
-                (m.TargetType == WelcomeMessageTargetType.Department && m.TargetDepartmentId == departmentId)
+                (m.TargetType == WelcomeMessageTargetType.Department && m.TargetDepartmentId == departmentId) ||
+                (m.TargetType == WelcomeMessageTargetType.Staff && isStaff) ||
+                (m.TargetType == WelcomeMessageTargetType.Customers && isCustomer)
             )
             .Where(m => !_db.WelcomeMessageSeens.Any(s => s.WelcomeMessageId == m.Id && s.UserId == userId))
             .OrderByDescending(m => m.CreatedAt)
