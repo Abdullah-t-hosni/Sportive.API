@@ -38,7 +38,7 @@ public class CashierPerformanceController : ControllerBase
                      && o.CreatedAt <= to)
             .Select(o => new {
                 o.Id, o.SalesPersonId, o.TotalAmount,
-                o.DiscountAmount, ItemCount = o.Items.Sum(i => i.Quantity),
+                DiscountAmount = o.DiscountAmount + o.TemporalDiscount, ItemCount = o.Items.Sum(i => i.Quantity),
                 o.PaymentMethod, o.Status, o.CreatedAt,
                 o.OrderNumber,
                 // Calculate return value for this specific order
@@ -63,12 +63,12 @@ public class CashierPerformanceController : ControllerBase
                 var user       = users.GetValueOrDefault(g.Key);
                 var name       = user?.FullName?.Trim() ?? "كاشير غير معروف";
                 var allOrders  = g.ToList();
-                var grossRevenue = allOrders.Sum(o => o.TotalAmount);
+                var totalDisc  = allOrders.Sum(o => o.DiscountAmount);
+                var grossRevenue = allOrders.Sum(o => o.TotalAmount + o.DiscountAmount);
                 var returnsAmount = allOrders.Sum(o => o.OrderReturnAmount);
-                var netRevenue = grossRevenue - returnsAmount;
+                var netRevenue = grossRevenue - returnsAmount - totalDisc;
                 var count      = allOrders.Count;
                 var avgOrder   = count > 0 ? netRevenue / count : 0;
-                var totalDisc  = allOrders.Sum(o => o.DiscountAmount);
                 var totalItems = allOrders.Sum(o => o.ItemCount);
                 var avgItems   = count > 0 ? (decimal)totalItems / count : 0;
 

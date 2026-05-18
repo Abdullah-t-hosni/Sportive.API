@@ -1256,17 +1256,17 @@ public class OperationalReportsController : ControllerBase
             .GroupBy(o => o.SalesPersonId != null && personNamesMap.ContainsKey(o.SalesPersonId) ? o.SalesPersonId : "Unknown")
             .Select(g => {
                 var ordersList = g.ToList();
-                var grossSales = ordersList.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount + o.DiscountAmount);
+                var grossSales = ordersList.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount + o.DiscountAmount + o.TemporalDiscount);
                 decimal totalReturns = 0;
                 foreach(var o in ordersList.Where(o => o.Status != OrderStatus.Cancelled)) {
-                    if (o.Status == OrderStatus.Returned) totalReturns += (o.TotalAmount + o.DiscountAmount);
+                    if (o.Status == OrderStatus.Returned) totalReturns += o.TotalAmount;
                     else {
                         foreach(var item in o.Items.Where(i => i.ReturnedQuantity > 0)) {
                             totalReturns += (item.Quantity > 0) ? (item.TotalPrice / item.Quantity) * item.ReturnedQuantity : 0;
                         }
                     }
                 }
-                var totalDiscount = ordersList.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.DiscountAmount);
+                var totalDiscount = ordersList.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.DiscountAmount + o.TemporalDiscount);
                 var netSales = grossSales - totalReturns - totalDiscount;
                 return new UserActivityRow(g.Key, personNamesMap.GetValueOrDefault(g.Key, "System/Unknown"), ordersList.Count, grossSales, totalReturns, totalDiscount, netSales, ordersList.Count(o => o.Status == OrderStatus.Cancelled));
             }).OrderByDescending(r => r.NetSales).ToList();
@@ -1275,7 +1275,7 @@ public class OperationalReportsController : ControllerBase
             o.OrderNumber, o.CreatedAt, o.SalesPersonId,
             SalesPersonName = (o.SalesPersonId != null && personNamesMap.TryGetValue(o.SalesPersonId, out var name)) ? name : "Unknown",
             CustomerName = o.Customer?.FullName ?? "",
-            o.TotalAmount, o.DiscountAmount, Status = o.Status.ToString(),
+            o.TotalAmount, DiscountAmount = o.DiscountAmount + o.TemporalDiscount, Status = o.Status.ToString(),
             ItemCount = o.Items.Sum(i => i.Quantity),
             Items = o.Items.Select(it => new { it.Product?.SKU, ProductName = it.Product?.NameAr ?? it.ProductNameAr, it.Size, it.Color, it.Quantity, it.UnitPrice, it.DiscountAmount, it.TotalPrice }).ToList()
         }).ToList();
