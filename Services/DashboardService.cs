@@ -110,7 +110,7 @@ public class DashboardService : IDashboardService
         }
 
         var salesReturnMapping = await _db.AccountSystemMappings
-            .Where(m => m.Key == "salesreturn")
+            .Where(m => m.Key == "salesReturnAccountID")
             .Select(m => m.AccountId)
             .FirstOrDefaultAsync();
 
