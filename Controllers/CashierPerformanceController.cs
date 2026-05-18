@@ -148,12 +148,6 @@ public class CashierPerformanceController : ControllerBase
             .ToList();
 
         // ---- ملخص إجمالي ----------------------------
-        // Fetch accurate returns from JournalEntries (Accounting)
-        var salesReturnMapping = await _db.AccountSystemMappings
-            .Where(m => m.Key == "salesReturnAccountID")
-            .Select(m => m.AccountId)
-            .FirstOrDefaultAsync();
-
         var journalReturnsQuery = _db.JournalEntries
             .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= from && e.EntryDate <= to);
 
