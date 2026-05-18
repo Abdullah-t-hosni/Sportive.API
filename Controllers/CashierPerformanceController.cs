@@ -134,13 +134,32 @@ public class CashierPerformanceController : ControllerBase
             .ToList();
 
         // ---- ملخص إجمالي ----------------------------
-        var totalNetRevenue = cashierStats.Sum(c => c.revenue);
+        // Fetch accurate returns from JournalEntries (Accounting)
+        var salesReturnMapping = await _db.AccountSystemMappings
+            .Where(m => m.Key == "salesReturnAccountID")
+            .Select(m => m.AccountId)
+            .FirstOrDefaultAsync();
+
+        var journalReturnsQuery = _db.JournalEntries
+            .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= from && e.EntryDate <= to);
+
+        journalReturnsQuery = journalReturnsQuery.Where(e => e.CostCenter == (int)OrderSource.POS);
+
+        var totalJournalReturns = await journalReturnsQuery
+            .SelectMany(e => e.Lines)
+            .Where(l => l.Debit > 0 && (l.AccountId == salesReturnMapping || l.Account.Code.StartsWith("4103")))
+            .SumAsync(l => (decimal?)l.Debit) ?? 0;
+
+        var totalGrossSales = cashierStats.Sum(c => c.grossSales);
+        var totalDiscounts = cashierStats.Sum(c => c.totalDiscount);
+        var totalNetRevenue = totalGrossSales - totalJournalReturns - totalDiscounts;
+
         var summary = new
         {
-            totalRevenue   = totalNetRevenue,
-            totalGrossSales = cashierStats.Sum(c => c.grossSales),
-            totalReturns   = cashierStats.Sum(c => c.returnsAmount),
-            totalDiscounts = cashierStats.Sum(c => c.totalDiscount),
+            totalRevenue   = Math.Round(totalNetRevenue, 2),
+            totalGrossSales = Math.Round(totalGrossSales, 2),
+            totalReturns   = Math.Round(totalJournalReturns, 2),
+            totalDiscounts = Math.Round(totalDiscounts, 2),
             totalOrders    = cashierStats.Sum(c => c.orderCount),
             totalCashiers  = cashierStats.Count,
             avgOrderAll    = cashierStats.Any() ? Math.Round(cashierStats.Average(c => c.avgOrder), 2) : 0,
