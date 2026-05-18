@@ -27,6 +27,31 @@ public class UsersController : ControllerBase
         _t = t;
     }
 
+    [HttpGet("login-history")]
+    public async Task<IActionResult> GetLoginHistory()
+    {
+        var customerRoleId = await _roleManager.Roles
+            .Where(r => r.Name == "Customer")
+            .Select(r => r.Id)
+            .FirstOrDefaultAsync();
+
+        var logs = await _db.AuditLogs
+            .Where(l => l.Action == "Login")
+            .Where(l => l.UserId != null && !_db.UserRoles.Any(ur => ur.UserId == l.UserId && ur.RoleId == customerRoleId))
+            .OrderByDescending(l => l.CreatedAt)
+            .Select(l => new {
+                l.Id,
+                l.UserId,
+                l.UserName,
+                l.CreatedAt,
+                l.IpAddress,
+                l.Notes
+            })
+            .ToListAsync();
+
+        return Ok(logs);
+    }
+
     // ── Get All Users (with Roles) ───────────────────────────
     [HttpGet]
     public async Task<IActionResult> GetAllUsers([FromQuery] string? search = null, [FromQuery] string? role = null)

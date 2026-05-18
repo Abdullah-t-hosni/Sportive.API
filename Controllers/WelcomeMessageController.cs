@@ -53,7 +53,7 @@ public class WelcomeMessageController : ControllerBase
                 IsSeen = x.TargetType == WelcomeMessageTargetType.User ? _db.WelcomeMessageSeens.Any(s => s.WelcomeMessageId == x.Id && s.UserId == x.TargetUserId) : false,
                 SeenUsers = _db.WelcomeMessageSeens
                     .Where(s => s.WelcomeMessageId == x.Id)
-                    .Select(s => s.User.FullName)
+                    .Select(s => new { s.User.FullName, s.SeenAt })
                     .ToList()
             })
             .ToListAsync();
