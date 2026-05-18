@@ -1488,7 +1488,21 @@ public class DepartmentsController : ControllerBase
     public async Task<ActionResult<IEnumerable<DepartmentDto>>> GetDepartments()
     {
         return await _db.Departments
-            .Select(d => new DepartmentDto(d.Id, d.Name, d.Description, d.Employees.Count, d.WorkHoursPerDay, d.OvertimeMultiplier, d.DaysPerMonth))
+            .Include(d => d.ParentDepartment)
+            .Include(d => d.Manager)
+            .Select(d => new DepartmentDto(
+                d.Id, 
+                d.Name, 
+                d.Description, 
+                d.Employees.Count, 
+                d.WorkHoursPerDay, 
+                d.OvertimeMultiplier, 
+                d.DaysPerMonth,
+                d.ParentDepartmentId,
+                d.ParentDepartment != null ? d.ParentDepartment.Name : null,
+                d.ManagerEmployeeId,
+                d.Manager != null ? d.Manager.Name : null
+            ))
             .ToListAsync();
     }
 
@@ -1501,11 +1515,26 @@ public class DepartmentsController : ControllerBase
             Description = dto.Description,
             WorkHoursPerDay = dto.WorkHoursPerDay,
             OvertimeMultiplier = dto.OvertimeMultiplier,
-            DaysPerMonth = dto.DaysPerMonth
+            DaysPerMonth = dto.DaysPerMonth,
+            ParentDepartmentId = dto.ParentDepartmentId,
+            ManagerEmployeeId = dto.ManagerEmployeeId
         };
         _db.Departments.Add(dept);
         await _db.SaveChangesAsync();
-        return Ok(new DepartmentDto(dept.Id, dept.Name, dept.Description, 0, dept.WorkHoursPerDay, dept.OvertimeMultiplier, dept.DaysPerMonth));
+        
+        return Ok(new DepartmentDto(
+            dept.Id, 
+            dept.Name, 
+            dept.Description, 
+            0, 
+            dept.WorkHoursPerDay, 
+            dept.OvertimeMultiplier, 
+            dept.DaysPerMonth,
+            dept.ParentDepartmentId,
+            null,
+            dept.ManagerEmployeeId,
+            null
+        ));
     }
 
     [HttpPut("{id}")]
@@ -1519,6 +1548,8 @@ public class DepartmentsController : ControllerBase
         dept.WorkHoursPerDay = dto.WorkHoursPerDay;
         dept.OvertimeMultiplier = dto.OvertimeMultiplier;
         dept.DaysPerMonth = dto.DaysPerMonth;
+        dept.ParentDepartmentId = dto.ParentDepartmentId;
+        dept.ManagerEmployeeId = dto.ManagerEmployeeId;
 
         await _db.SaveChangesAsync();
         return NoContent();

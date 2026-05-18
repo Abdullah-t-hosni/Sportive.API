@@ -6,8 +6,29 @@ namespace Sportive.API.DTOs;
 // DEPARTMENT DTOs
 // ══════════════════════════════════════════════════════
 
-public record DepartmentDto(int Id, string Name, string? Description, int EmployeeCount, decimal WorkHoursPerDay, decimal OvertimeMultiplier, int DaysPerMonth);
-public record CreateDepartmentDto(string Name, string? Description, decimal WorkHoursPerDay = 9, decimal OvertimeMultiplier = 1.5m, int DaysPerMonth = 26);
+public record DepartmentDto(
+    int Id, 
+    string Name, 
+    string? Description, 
+    int EmployeeCount, 
+    decimal WorkHoursPerDay, 
+    decimal OvertimeMultiplier, 
+    int DaysPerMonth,
+    int? ParentDepartmentId = null,
+    string? ParentDepartmentName = null,
+    int? ManagerEmployeeId = null,
+    string? ManagerName = null
+);
+
+public record CreateDepartmentDto(
+    string Name, 
+    string? Description, 
+    decimal WorkHoursPerDay = 9, 
+    decimal OvertimeMultiplier = 1.5m, 
+    int DaysPerMonth = 26,
+    int? ParentDepartmentId = null,
+    int? ManagerEmployeeId = null
+);
 
 // ══════════════════════════════════════════════════════
 // EMPLOYEE DTOs

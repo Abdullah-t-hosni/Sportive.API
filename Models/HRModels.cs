@@ -64,6 +64,15 @@ public class Department : BaseEntity
     public string? Description { get; set; }
     public ICollection<Employee> Employees { get; set; } = new List<Employee>();
 
+    // Hierarchy
+    public int? ParentDepartmentId { get; set; }
+    public Department? ParentDepartment { get; set; }
+    public ICollection<Department> SubDepartments { get; set; } = new List<Department>();
+
+    // Manager
+    public int? ManagerEmployeeId { get; set; }
+    public Employee? Manager { get; set; }
+
     // Default Payroll Configuration for this department
     public decimal WorkHoursPerDay         { get; set; } = 9;
     public decimal OvertimeMultiplier      { get; set; } = 1.5m;

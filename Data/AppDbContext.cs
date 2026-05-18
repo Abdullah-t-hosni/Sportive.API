@@ -606,6 +606,18 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(d => d.DisposalNumber).IsUnique();
         });
 
+        builder.Entity<Department>(e => {
+            e.HasOne(d => d.ParentDepartment)
+             .WithMany(d => d.SubDepartments)
+             .HasForeignKey(d => d.ParentDepartmentId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(d => d.Manager)
+             .WithMany()
+             .HasForeignKey(d => d.ManagerEmployeeId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
         builder.Entity<WelcomeMessage>(e => {
             e.Property(x => x.TargetType).HasConversion<string>();
             e.HasOne(x => x.TargetUser).WithMany()
