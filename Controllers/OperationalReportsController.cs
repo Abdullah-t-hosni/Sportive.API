@@ -1088,18 +1088,45 @@ public class OperationalReportsController : ControllerBase
             })
             .OrderByDescending(j => j.EntryDate).ToListAsync();
 
+        var directReturnRefs = returns.Where(r => r.Items == null).Select(r => r.Reference ?? r.EntryNumber).ToList();
+        var movements = await _db.InventoryMovements
+            .Include(m => m.Product)
+            .Include(m => m.ProductVariant)
+            .Where(m => directReturnRefs.Contains(m.Reference) && m.Type == InventoryMovementType.ReturnIn)
+            .ToListAsync();
+
+        var movementsMap = movements.GroupBy(m => m.Reference).ToDictionary(g => g.Key, g => g.ToList());
+
         var rows = returns.Select(j => {
-            var itemsList = j.Items?.Select(i => new ReportItemDto(
-                i.ProductSKU,
-                i.ProductNameAr,
-                i.Size ?? "",
-                i.Color ?? "",
-                i.ReturnedQuantity,
-                i.UnitPrice,
-                0,
-                i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1),
-                (i.UnitPrice - (i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1))) * i.ReturnedQuantity
-            )).ToList();
+            List<ReportItemDto> itemsList = null;
+            if (j.Items != null)
+            {
+                itemsList = j.Items.Select(i => new ReportItemDto(
+                    i.ProductSKU,
+                    i.ProductNameAr,
+                    i.Size ?? "",
+                    i.Color ?? "",
+                    i.ReturnedQuantity,
+                    i.UnitPrice,
+                    0,
+                    i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1),
+                    (i.UnitPrice - (i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1))) * i.ReturnedQuantity
+                )).ToList();
+            }
+            else if (movementsMap.TryGetValue(j.Reference ?? j.EntryNumber, out var movs))
+            {
+                itemsList = movs.Select(m => new ReportItemDto(
+                    m.Product?.SKU ?? "",
+                    m.Product?.NameAr ?? "",
+                    m.ProductVariant?.Size ?? "",
+                    m.ProductVariant?.ColorAr ?? m.ProductVariant?.Color ?? "",
+                    Math.Abs(m.Quantity),
+                    m.UnitCost,
+                    0,
+                    0,
+                    Math.Abs(m.Quantity) * m.UnitCost
+                )).ToList();
+            }
 
             var itemsAmount = itemsList?.Sum(it => it.LineTotal) ?? 0;
 
