@@ -86,6 +86,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<DailyStat>          DailyStats           { get; set; }
     public DbSet<OutboxMessage>      OutboxMessages       { get; set; }
     public DbSet<DbSequence>        DbSequences          { get; set; }
+    public DbSet<WelcomeMessage>     WelcomeMessages      { get; set; }
+    public DbSet<WelcomeMessageSeen> WelcomeMessageSeens  { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -602,6 +604,24 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(d => d.FixedAsset).WithMany(a => a.Disposals)
              .HasForeignKey(d => d.FixedAssetId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(d => d.DisposalNumber).IsUnique();
+        });
+
+        builder.Entity<WelcomeMessage>(e => {
+            e.Property(x => x.TargetType).HasConversion<string>();
+            e.HasOne(x => x.TargetUser).WithMany()
+             .HasForeignKey(x => x.TargetUserId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.TargetDepartment).WithMany()
+             .HasForeignKey(x => x.TargetDepartmentId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.CreatedByUser).WithMany()
+             .HasForeignKey(x => x.CreatedByUserId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<WelcomeMessageSeen>(e => {
+            e.HasOne(x => x.WelcomeMessage).WithMany()
+             .HasForeignKey(x => x.WelcomeMessageId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.User).WithMany()
+             .HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.WelcomeMessageId, x.UserId }).IsUnique();
         });
 
         builder.Entity<StoreInfo>().HasData(
