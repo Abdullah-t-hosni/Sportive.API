@@ -4,8 +4,10 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
+using Sportive.API.Hubs;
 using Sportive.API.Models;
 using Sportive.API.Utils;
 
@@ -18,11 +20,13 @@ public class WelcomeMessageController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly UserManager<AppUser> _userManager;
+    private readonly IHubContext<NotificationHub> _hubContext;
 
-    public WelcomeMessageController(AppDbContext db, UserManager<AppUser> userManager)
+    public WelcomeMessageController(AppDbContext db, UserManager<AppUser> userManager, IHubContext<NotificationHub> hubContext)
     {
         _db = db;
         _userManager = userManager;
+        _hubContext = hubContext;
     }
 
     // ── Admin Endpoints ─────────────────────────────────────
@@ -57,7 +61,8 @@ public class WelcomeMessageController : ControllerBase
         string? TargetUserId,
         int? TargetDepartmentId,
         DateTime? StartDate,
-        DateTime? EndDate
+        DateTime? EndDate,
+        bool ShowImmediately // Added flag
     );
 
     [HttpPost]
@@ -80,6 +85,19 @@ public class WelcomeMessageController : ControllerBase
 
         _db.WelcomeMessages.Add(message);
         await _db.SaveChangesAsync();
+
+        // Broadcast ONLY if requested
+        if (dto.ShowImmediately)
+        {
+            await _hubContext.Clients.All.SendAsync("ReceiveNotification", new {
+                type = "WelcomeMessage",
+                id = message.Id,
+                message = message.Message,
+                targetType = message.TargetType.ToString(),
+                targetUserId = message.TargetUserId,
+                targetDepartmentId = message.TargetDepartmentId
+            });
+        }
 
         return Ok(message);
     }
