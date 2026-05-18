@@ -35,13 +35,30 @@ public class WelcomeMessageController : ControllerBase
     [Authorize(Roles = "Admin,SuperAdmin")]
     public async Task<IActionResult> GetAll()
     {
-        var messages = await _db.WelcomeMessages
-            .Include(x => x.TargetUser)
-            .Include(x => x.TargetDepartment)
+        var result = await _db.WelcomeMessages
             .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new {
+                x.Id,
+                x.Message,
+                x.TargetType,
+                x.TargetUserId,
+                TargetUser = x.TargetUser != null ? new { x.TargetUser.FullName } : null,
+                x.TargetDepartmentId,
+                TargetDepartment = x.TargetDepartment != null ? new { x.TargetDepartment.Name } : null,
+                x.CreatedAt,
+                x.StartDate,
+                x.EndDate,
+                x.IsActive,
+                SeenCount = _db.WelcomeMessageSeens.Count(s => s.WelcomeMessageId == x.Id),
+                IsSeen = x.TargetType == WelcomeMessageTargetType.User ? _db.WelcomeMessageSeens.Any(s => s.WelcomeMessageId == x.Id && s.UserId == x.TargetUserId) : false,
+                SeenUsers = _db.WelcomeMessageSeens
+                    .Where(s => s.WelcomeMessageId == x.Id)
+                    .Select(s => s.User.FullName)
+                    .ToList()
+            })
             .ToListAsync();
-            
-        return Ok(messages);
+
+        return Ok(result);
     }
 
     [HttpGet("departments")]
