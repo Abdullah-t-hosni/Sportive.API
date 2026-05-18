@@ -48,7 +48,8 @@ public enum CommissionType
     PercentageOfSales = 1, // نسبة مئوية من المبيعات
     FixedAmountPerItem = 2, // مبلغ ثابت على كل قطعة
     TieredPercentage = 3,  // شرائح تصاعدية
-    ProductSpecific = 4     // مخصصة حسب المنتج
+    ProductSpecific = 4,     // مخصصة حسب المنتج
+    TargetAchievementTiers = 5 // شرائح نسبة الإنجاز من المستهدف
 }
 
 public enum CommissionBasis

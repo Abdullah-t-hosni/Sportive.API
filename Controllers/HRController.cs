@@ -497,7 +497,7 @@ public class PayrollController : ControllerBase
                         ? empOrders.Sum(o => o.TotalAmount) - returnsAmount
                         : empOrders.Sum(o => o.SubTotal) - returnsAmount;
 
-                    if (relevantSales >= targetAmount)
+                    if (type == CommissionType.TargetAchievementTiers || relevantSales >= targetAmount)
                     {
                         if (type == CommissionType.PercentageOfSales)
                         {
@@ -525,6 +525,29 @@ public class PayrollController : ControllerBase
                             {
                                 var lastTier = sortedTiers.LastOrDefault();
                                 if (lastTier != null && relevantSales > lastTier.MaxAmount)
+                                {
+                                    earnedCommission = relevantSales * (lastTier.Rate / 100);
+                                }
+                                else
+                                {
+                                    earnedCommission = relevantSales * (defaultRate / 100);
+                                }
+                            }
+                        }
+                        else if (type == CommissionType.TargetAchievementTiers)
+                        {
+                            var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                            decimal achievementPercentage = targetAmount > 0 ? (relevantSales / targetAmount) * 100 : 0;
+                            var applicableTier = sortedTiers.LastOrDefault(t => achievementPercentage >= t.MinAmount && achievementPercentage <= t.MaxAmount);
+                            
+                            if (applicableTier != null)
+                            {
+                                earnedCommission = relevantSales * (applicableTier.Rate / 100);
+                            }
+                            else
+                            {
+                                var lastTier = sortedTiers.LastOrDefault();
+                                if (lastTier != null && achievementPercentage > lastTier.MaxAmount)
                                 {
                                     earnedCommission = relevantSales * (lastTier.Rate / 100);
                                 }
@@ -1644,7 +1667,7 @@ public class EmployeeCommissionsController : ControllerBase
                     ? empOrders.Sum(o => o.TotalAmount) - returnsAmount
                     : empOrders.Sum(o => o.SubTotal) - returnsAmount;
 
-                if (relevantSales >= targetAmount)
+                if (type == CommissionType.TargetAchievementTiers || relevantSales >= targetAmount)
                 {
                     if (type == CommissionType.PercentageOfSales)
                     {
@@ -1672,6 +1695,29 @@ public class EmployeeCommissionsController : ControllerBase
                         {
                             var lastTier = sortedTiers.LastOrDefault();
                             if (lastTier != null && relevantSales > lastTier.MaxAmount)
+                            {
+                                earnedCommission = relevantSales * (lastTier.Rate / 100);
+                            }
+                            else
+                            {
+                                earnedCommission = relevantSales * (defaultRate / 100);
+                            }
+                        }
+                    }
+                    else if (type == CommissionType.TargetAchievementTiers)
+                    {
+                        var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                        decimal achievementPercentage = targetAmount > 0 ? (relevantSales / targetAmount) * 100 : 0;
+                        var applicableTier = sortedTiers.LastOrDefault(t => achievementPercentage >= t.MinAmount && achievementPercentage <= t.MaxAmount);
+                        
+                        if (applicableTier != null)
+                        {
+                            earnedCommission = relevantSales * (applicableTier.Rate / 100);
+                        }
+                        else
+                        {
+                            var lastTier = sortedTiers.LastOrDefault();
+                            if (lastTier != null && achievementPercentage > lastTier.MaxAmount)
                             {
                                 earnedCommission = relevantSales * (lastTier.Rate / 100);
                             }
