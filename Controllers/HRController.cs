@@ -2081,16 +2081,17 @@ public class CommissionGroupsController : ControllerBase
     {
         var groups = await _db.CommissionGroups
             .Include(g => g.Members)
-            .Select(g => new CommissionGroupDto(
-                g.Id,
-                g.Name,
-                g.Description,
-                g.CommissionSchemeId,
-                g.Members.Select(m => m.Id).ToList()
-            ))
             .ToListAsync();
 
-        return Ok(groups);
+        var result = groups.Select(g => new CommissionGroupDto(
+            g.Id,
+            g.Name,
+            g.Description,
+            g.CommissionSchemeId,
+            g.Members.Select(m => m.Id).ToList()
+        )).ToList();
+
+        return Ok(result);
     }
 
     [HttpGet("{id}")]
