@@ -78,6 +78,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<CommissionTier>     CommissionTiers     { get; set; }
     public DbSet<CommissionScheme>     CommissionSchemes     { get; set; }
     public DbSet<CommissionSchemeTier> CommissionSchemeTiers { get; set; }
+    public DbSet<CommissionGroup>      CommissionGroups      { get; set; }
+    public DbSet<CommissionGroupTier>  CommissionGroupTiers  { get; set; }
 
     public DbSet<FixedAssetCategory> FixedAssetCategories { get; set; }
     public DbSet<FixedAsset>         FixedAssets          { get; set; }
@@ -472,6 +474,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
              .HasForeignKey(x => x.AccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(x => x.Department).WithMany(d => d.Employees)
              .HasForeignKey(x => x.DepartmentId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.CommissionGroup).WithMany(g => g.Members)
+             .HasForeignKey(x => x.CommissionGroupId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(x => x.AppUser).WithMany()
              .HasForeignKey(x => x.AppUserId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(x => x.AppUserId).IsUnique();
@@ -570,6 +574,23 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.Rate).HasPrecision(18, 2);
             e.HasOne(x => x.CommissionScheme).WithMany(s => s.Tiers)
              .HasForeignKey(x => x.CommissionSchemeId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<CommissionGroup>(e => {
+            e.Property(x => x.DefaultRate).HasPrecision(18, 2);
+            e.Property(x => x.TargetAmount).HasPrecision(18, 2);
+            e.Property(x => x.Type).HasConversion<string>();
+            e.Property(x => x.Basis).HasConversion<string>();
+            e.HasOne(x => x.CommissionScheme).WithMany()
+             .HasForeignKey(x => x.CommissionSchemeId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<CommissionGroupTier>(e => {
+            e.Property(x => x.MinAmount).HasPrecision(18, 2);
+            e.Property(x => x.MaxAmount).HasPrecision(18, 2);
+            e.Property(x => x.Rate).HasPrecision(18, 2);
+            e.HasOne(x => x.CommissionGroup).WithMany(s => s.Tiers)
+             .HasForeignKey(x => x.CommissionGroupId).OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<FixedAssetCategory>(e => {

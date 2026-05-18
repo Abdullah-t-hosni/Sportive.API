@@ -134,6 +134,9 @@ public class Employee : BaseEntity
     public ICollection<EmployeeDeduction> Deductions   { get; set; } = new List<EmployeeDeduction>();
 
     public EmployeeCommissionSetting? CommissionSetting { get; set; }
+
+    public int? CommissionGroupId { get; set; }
+    public virtual CommissionGroup? CommissionGroup { get; set; }
 }
 
 // ══════════════════════════════════════════════════════
@@ -343,6 +346,34 @@ public class CommissionSchemeTier : BaseEntity
     public int CommissionSchemeId { get; set; }
     public virtual CommissionScheme CommissionScheme { get; set; } = null!;
 
+    public decimal MinAmount { get; set; }
+    public decimal MaxAmount { get; set; }
+    public decimal Rate { get; set; }
+}
+
+public class CommissionGroup : BaseEntity
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    
+    public CommissionType Type { get; set; } = CommissionType.PercentageOfSales;
+    public CommissionBasis Basis { get; set; } = CommissionBasis.NetSales;
+    
+    public decimal DefaultRate { get; set; } = 0;
+    public decimal TargetAmount { get; set; } = 0;
+    
+    public int? CommissionSchemeId { get; set; }
+    public virtual CommissionScheme? CommissionScheme { get; set; }
+    
+    public virtual ICollection<Employee> Members { get; set; } = new List<Employee>();
+    public virtual ICollection<CommissionGroupTier> Tiers { get; set; } = new List<CommissionGroupTier>();
+}
+
+public class CommissionGroupTier : BaseEntity
+{
+    public int CommissionGroupId { get; set; }
+    public virtual CommissionGroup CommissionGroup { get; set; } = null!;
+    
     public decimal MinAmount { get; set; }
     public decimal MaxAmount { get; set; }
     public decimal Rate { get; set; }
