@@ -43,7 +43,7 @@ public class SalesAccountingService
         }
 
         var store  = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
-        var vatRate = (store?.VatRatePercent ?? 14) / 100m;
+        var vatRate = (store?.VatRatePercent ?? 0) / 100m;
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
 
@@ -115,7 +115,7 @@ public class SalesAccountingService
         {
             foreach (var item in order.Items)
             {
-                decimal rate = (item.VatRateApplied ?? 14) / 100m;
+                decimal rate = (item.VatRateApplied ?? 0) / 100m;
                 
                 // Original Gross & Net
                 decimal itemOriginalTotal = item.OriginalUnitPrice * item.Quantity;
@@ -145,7 +145,7 @@ public class SalesAccountingService
         lines.Add((salesRevAcct, 0, totalOriginalNetRevenue, _t.Get("Accounting.SalesRevenueDesc", order.OrderNumber)));
         
         if (totalActualVatAmount > 0)
-            lines.Add((vatAcct, 0, totalActualVatAmount, _t.Get("Accounting.SalesTaxDesc", store?.VatRatePercent ?? 14, order.OrderNumber)));
+            lines.Add((vatAcct, 0, totalActualVatAmount, _t.Get("Accounting.SalesTaxDesc", store?.VatRatePercent ?? 0, order.OrderNumber)));
         
         if (order.DeliveryFee > 0)
         {
@@ -487,7 +487,7 @@ public class SalesAccountingService
 
             if (item.HasTax)
             {
-                var rate = (item.VatRate ?? store?.VatRatePercent ?? 14) / 100m;
+                var rate = (item.VatRate ?? store?.VatRatePercent ?? 0) / 100m;
                 var net = Math.Round(itemTotal / (1 + rate), 2);
                 totalVatAmount += (itemTotal - net);
             }

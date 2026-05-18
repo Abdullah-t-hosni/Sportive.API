@@ -122,7 +122,7 @@ public class DashboardService : IDashboardService
 
         var periodReturnAmount = await returnsQuery
             .SelectMany(e => e.Lines)
-            .Where(l => l.Debit > 0 && l.Account.Type != AccountType.Asset)
+            .Where(l => l.Debit > 0 && l.Account.Code.StartsWith("4103"))
             .SumAsync(l => (decimal?)l.Debit) ?? 0;
 
         // التحصيلات (سندات القبض)

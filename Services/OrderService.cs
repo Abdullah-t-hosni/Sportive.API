@@ -407,7 +407,7 @@ public class OrderService : IOrderService
                         // so it matches the POS frontend which calculates totals inclusively.
                         if (product.HasTax && !product.IsTaxInclusive)
                         {
-                            var appliedRate = product.VatRate ?? store?.VatRatePercent ?? 14;
+                            var appliedRate = product.VatRate ?? store?.VatRatePercent ?? 0;
                             originalUnitPrice = originalUnitPrice * (1 + (appliedRate / 100m));
                         }
 
@@ -462,13 +462,13 @@ public class OrderService : IOrderService
                             DiscountAmount = (originalUnitPrice - unitPrice) * item.Quantity,
                             TotalPrice = (actualSource == OrderSource.POS) ? item.TotalPrice : (unitPrice * item.Quantity),
                             HasTax = item.HasTax ?? product.HasTax,
-                            VatRateApplied = item.VatRate ?? product.VatRate ?? (store?.VatRatePercent ?? 14),
+                            VatRateApplied = item.VatRate ?? product.VatRate ?? (store?.VatRatePercent ?? 0),
                             CreatedAt = TimeHelper.GetEgyptTime()
                         };
 
                         if (orderItem.HasTax)
                         {
-                            var rate = (orderItem.VatRateApplied ?? 14) / 100m;
+                            var rate = (orderItem.VatRateApplied ?? 0) / 100m;
                             decimal net = Math.Round(orderItem.TotalPrice / (1 + rate), 2);
                             orderItem.ItemVatAmount = orderItem.TotalPrice - net;
                             order.TotalVatAmount += orderItem.ItemVatAmount;
