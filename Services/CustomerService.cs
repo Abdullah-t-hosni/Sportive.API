@@ -21,13 +21,23 @@ public class CustomerService : ICustomerService
         string? orderBy = null, bool isDescending = true,
         string? source = null)
     {
+        var staffRoleIds = await _db.Roles
+            .Where(r => r.Name != null && AppRoles.StaffRoles.Contains(r.Name))
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        var staffUserIds = await _db.UserRoles
+            .Where(ur => staffRoleIds.Contains(ur.RoleId))
+            .Select(ur => ur.UserId)
+            .ToListAsync();
+
         pageSize = AppConstants.ClampPrecacheSize(pageSize);
         var query = _db.Customers
             .AsNoTracking()
             .Include(c => c.MainAccount)
             .Include(c => c.Category)
             .Include(c => c.AppUser)
-            .Where(c => c.AppUser == null || (c.AppUser.UserName != null && !c.AppUser.UserName.StartsWith("staff_")))
+            .Where(c => c.AppUserId == null || !staffUserIds.Contains(c.AppUserId))
             .AsQueryable();
 
         // 1. Basic Filters
@@ -144,11 +154,22 @@ public class CustomerService : ICustomerService
             (int)Math.Ceiling((double)total / pageSize));
     }
 
-    public async Task<List<CustomerRfmDto>> GetRfmDataAsync() =>
-        await _db.Customers
+    public async Task<List<CustomerRfmDto>> GetRfmDataAsync()
+    {
+        var staffRoleIds = await _db.Roles
+            .Where(r => r.Name != null && AppRoles.StaffRoles.Contains(r.Name))
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        var staffUserIds = await _db.UserRoles
+            .Where(ur => staffRoleIds.Contains(ur.RoleId))
+            .Select(ur => ur.UserId)
+            .ToListAsync();
+
+        return await _db.Customers
             .AsNoTracking()
             .Include(c => c.AppUser)
-            .Where(c => c.AppUser == null || (c.AppUser.UserName != null && !c.AppUser.UserName.StartsWith("staff_")))
+            .Where(c => c.AppUserId == null || !staffUserIds.Contains(c.AppUserId))
             .OrderByDescending(c => c.CreatedAt)
             .Select(c => new CustomerRfmDto(
                 c.Id,
@@ -162,12 +183,22 @@ public class CustomerService : ICustomerService
 
     public async Task<CustomerDetailDto?> GetCustomerByIdAsync(int id)
     {
+        var staffRoleIds = await _db.Roles
+            .Where(r => r.Name != null && AppRoles.StaffRoles.Contains(r.Name))
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        var staffUserIds = await _db.UserRoles
+            .Where(ur => staffRoleIds.Contains(ur.RoleId))
+            .Select(ur => ur.UserId)
+            .ToListAsync();
+
         var rawResult = await _db.Customers
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
             .Include(c => c.MainAccount)
             .Include(c => c.AppUser)
-            .Where(c => c.Id == id && (c.AppUser == null || (c.AppUser.UserName != null && !c.AppUser.UserName.StartsWith("staff_"))))
+            .Where(c => c.Id == id && (c.AppUserId == null || !staffUserIds.Contains(c.AppUserId)))
             .Select(c => new
             {
                 c.Id, c.FullName, c.Email, c.Phone, c.AppUserId, c.CreatedAt,
@@ -211,11 +242,21 @@ public class CustomerService : ICustomerService
 
     public async Task<CustomerDetailDto?> GetCustomerByEmailAsync(string email)
     {
+        var staffRoleIds = await _db.Roles
+            .Where(r => r.Name != null && AppRoles.StaffRoles.Contains(r.Name))
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        var staffUserIds = await _db.UserRoles
+            .Where(ur => staffRoleIds.Contains(ur.RoleId))
+            .Select(ur => ur.UserId)
+            .ToListAsync();
+
         var rawResult = await _db.Customers
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
             .Include(c => c.AppUser)
-            .Where(c => c.Email == email && (c.AppUser == null || (c.AppUser.UserName != null && !c.AppUser.UserName.StartsWith("staff_"))))
+            .Where(c => c.Email == email && (c.AppUserId == null || !staffUserIds.Contains(c.AppUserId)))
             .Select(c => new
             {
                 c.Id, c.FullName, c.Email, c.Phone, c.AppUserId, c.CreatedAt,
@@ -259,11 +300,21 @@ public class CustomerService : ICustomerService
 
     public async Task<CustomerDetailDto?> GetCustomerByUserIdAsync(string userId)
     {
+        var staffRoleIds = await _db.Roles
+            .Where(r => r.Name != null && AppRoles.StaffRoles.Contains(r.Name))
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        var staffUserIds = await _db.UserRoles
+            .Where(ur => staffRoleIds.Contains(ur.RoleId))
+            .Select(ur => ur.UserId)
+            .ToListAsync();
+
         var rawResult = await _db.Customers
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
             .Include(c => c.AppUser)
-            .Where(c => c.AppUserId == userId && (c.AppUser == null || (c.AppUser.UserName != null && !c.AppUser.UserName.StartsWith("staff_"))))
+            .Where(c => c.AppUserId == userId && (c.AppUserId == null || !staffUserIds.Contains(c.AppUserId)))
             .Select(c => new
             {
                 c.Id, c.FullName, c.Email, c.Phone, c.AppUserId, c.CreatedAt,
@@ -317,8 +368,14 @@ public class CustomerService : ICustomerService
             throw new InvalidOperationException("هذا العميل (أو الهاتف) مسجل بالفعل في ملفات العملاء.");
 
         // 2. Check if this phone/email belongs to a system user (Staff)
+        var staffRoleIds = await _db.Roles
+            .Where(r => r.Name != null && AppRoles.StaffRoles.Contains(r.Name))
+            .Select(r => r.Id)
+            .ToListAsync();
+
         var staffExists = await _db.Users.AnyAsync(u => 
-            (u.PhoneNumber == dto.Phone || u.Email == dto.Email) && (u.UserName != null && u.UserName.StartsWith("staff_")));
+            ((u.PhoneNumber != null && u.PhoneNumber == dto.Phone) || (u.Email != null && u.Email == dto.Email)) && 
+            (_db.UserRoles.Any(ur => ur.UserId == u.Id && staffRoleIds.Contains(ur.RoleId)) || (u.UserName != null && u.UserName.StartsWith("staff_"))));
         
         if (staffExists)
             throw new InvalidOperationException("هذا الرقم/البريد مسجل كمستخدم للنظام (موظف) ولا يمكن إضافته كعميل.");
@@ -591,19 +648,30 @@ public class CustomerService : ICustomerService
 
     public async Task<int> GetOrCreateCustomerIdByUserIdAsync(string userId)
     {
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null) return 0;
+
+        var userRoles = await _db.UserRoles
+            .Where(ur => ur.UserId == userId)
+            .Select(ur => ur.RoleId)
+            .ToListAsync();
+
+        var staffRoleIds = await _db.Roles
+            .Where(r => r.Name != null && AppRoles.StaffRoles.Contains(r.Name))
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        bool isStaff = userRoles.Any(rid => staffRoleIds.Contains(rid));
+        if (isStaff) return 0;
+
         var customer = await _db.Customers
             .Include(c => c.AppUser)
             .FirstOrDefaultAsync(c => c.AppUserId == userId);
 
         if (customer != null) 
         {
-            if (customer.AppUser != null && customer.AppUser.UserName != null && customer.AppUser.UserName.StartsWith("staff_"))
-                return 0; // Don't return staff as customers
             return customer.Id;
         }
-
-        var user = await _db.Users.FindAsync(userId);
-        if (user == null || (user.UserName != null && user.UserName.StartsWith("staff_"))) return 0;
 
         var newCustomer = new Customer
         {
@@ -661,10 +729,20 @@ public class CustomerService : ICustomerService
 
     public async Task<CustomerInsightsDto> GetInsightsAsync()
     {
+        var staffRoleIds = await _db.Roles
+            .Where(r => r.Name != null && AppRoles.StaffRoles.Contains(r.Name))
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        var staffUserIds = await _db.UserRoles
+            .Where(ur => staffRoleIds.Contains(ur.RoleId))
+            .Select(ur => ur.UserId)
+            .ToListAsync();
+
         var customers = await _db.Customers
             .AsNoTracking()
             .Include(c => c.AppUser)
-            .Where(c => c.AppUser == null || (c.AppUser.UserName != null && !c.AppUser.UserName.StartsWith("staff_")))
+            .Where(c => c.AppUserId == null || !staffUserIds.Contains(c.AppUserId))
             .Select(c => new {
                 c.Id,
                 c.Tags,

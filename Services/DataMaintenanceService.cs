@@ -574,10 +574,20 @@ public class DataMaintenanceService : IDataMaintenanceService
         try
         {
             // 1. Find all customers linked to staff users
+            var staffRoleIds = await _db.Roles
+                .Where(r => r.Name != null && AppRoles.StaffRoles.Contains(r.Name))
+                .Select(r => r.Id)
+                .ToListAsync();
+
+            var staffUserIds = await _db.UserRoles
+                .Where(ur => staffRoleIds.Contains(ur.RoleId))
+                .Select(ur => ur.UserId)
+                .ToListAsync();
+
             var staffCustomers = await _db.Customers
                 .Include(c => c.AppUser)
                 .Include(c => c.Orders)
-                .Where(c => c.AppUserId != null && c.AppUser != null && c.AppUser.UserName != null && c.AppUser.UserName.StartsWith("staff_"))
+                .Where(c => c.AppUserId != null && staffUserIds.Contains(c.AppUserId))
                 .ToListAsync();
 
             if (!staffCustomers.Any())

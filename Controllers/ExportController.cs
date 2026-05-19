@@ -207,8 +207,19 @@ public class ExportController : ControllerBase
         [FromQuery] DateTime? joinStartDate = null,
         [FromQuery] string? source = null)
     {
+        var staffRoleIds = await _db.Roles
+            .Where(r => r.Name != null && AppRoles.StaffRoles.Contains(r.Name))
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        var staffUserIds = await _db.UserRoles
+            .Where(ur => staffRoleIds.Contains(ur.RoleId))
+            .Select(ur => ur.UserId)
+            .ToListAsync();
+
         var query = _db.Customers
             .Include(c => c.Orders)
+            .Where(c => c.AppUserId == null || !staffUserIds.Contains(c.AppUserId))
             .AsQueryable();
 
         if (!string.IsNullOrEmpty(source))
