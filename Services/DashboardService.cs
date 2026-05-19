@@ -233,20 +233,97 @@ public class DashboardService : IDashboardService
         );
     }
 
-    public async Task<byte[]> ExportSalesToCsvAsync(DateTime? from, DateTime? to)
+    public async Task<byte[]> ExportSalesToCsvAsync(DateTime? from, DateTime? to, OrderSource? source = null)
     {
-        var query = _db.Orders.Include(o => o.Customer).AsQueryable();
+        var query = _db.Orders
+            .Include(o => o.Customer)
+            .Include(o => o.Items)
+            .Include(o => o.DeliveryAddress)
+            .AsQueryable();
+
         if (from.HasValue) query = query.Where(o => o.CreatedAt >= from.Value);
         if (to.HasValue)   query = query.Where(o => o.CreatedAt <= to.Value);
+        if (source.HasValue) query = query.Where(o => o.Source == source.Value);
 
         var orders = await query.OrderByDescending(o => o.CreatedAt).ToListAsync();
-        
-        var csv = new StringBuilder();
-        csv.AppendLine("OrderNumber,Date,Customer,Email,Status,TotalAmount");
-        foreach(var o in orders)
+
+        var employees = await _db.Employees.Select(e => new { e.Id, e.Name }).ToListAsync();
+        var users = await _userManager.Users.Select(u => new { u.Id, u.FullName }).ToListAsync();
+
+        string GetSalesPersonName(string? staffId)
         {
-            csv.AppendLine($"{o.OrderNumber},{o.CreatedAt:yyyy-MM-dd HH:mm},{o.Customer?.FullName},{o.Customer?.Email},{o.Status},{o.TotalAmount}");
+            if (string.IsNullOrEmpty(staffId)) return string.Empty;
+            if (int.TryParse(staffId, out var empId))
+            {
+                var emp = employees.FirstOrDefault(e => e.Id == empId);
+                if (emp != null) return emp.Name;
+            }
+            var user = users.FirstOrDefault(u => u.Id == staffId);
+            if (user != null) return user.FullName;
+            return staffId;
         }
+
+        string EscapeCsv(string? value)
+        {
+            if (string.IsNullOrEmpty(value)) return string.Empty;
+            var cleanVal = value.Replace("\r", "").Replace("\n", " ");
+            if (cleanVal.Contains(",") || cleanVal.Contains("\"") || cleanVal.Contains(";"))
+            {
+                return $"\"{cleanVal.Replace("\"", "\"\"")}\"";
+            }
+            return cleanVal;
+        }
+
+        string GetAddressDetails(Address? addr)
+        {
+            if (addr == null) return string.Empty;
+            var parts = new List<string>();
+            if (!string.IsNullOrEmpty(addr.BuildingNo)) parts.Add($"Building {addr.BuildingNo}");
+            if (!string.IsNullOrEmpty(addr.Street)) parts.Add(addr.Street);
+            if (!string.IsNullOrEmpty(addr.District)) parts.Add(addr.District);
+            if (!string.IsNullOrEmpty(addr.City)) parts.Add(addr.City);
+            if (!string.IsNullOrEmpty(addr.AdditionalInfo)) parts.Add(addr.AdditionalInfo);
+            return string.Join(", ", parts);
+        }
+
+        var csv = new StringBuilder();
+        // Add UTF-8 BOM so Excel opens Arabic letters correctly
+        csv.Append("\uFEFF");
+        
+        // CSV Headers - Bilingual
+        csv.AppendLine("رقم الطلب (Order Number),التاريخ (Date),العميل (Customer),الهاتف (Phone),البريد الإلكتروني (Email),حالة الطلب (Status),المصدر (Source),طريقة الدفع (Payment Method),حالة الدفع (Payment Status),المجموع الفرعي (SubTotal),الخصم (Discount),الضريبة (VAT),مصاريف الشحن (Delivery Fee),الإجمالي (Total),المدفوع (Paid Amount),المتبقي (Remaining Amount),مسؤول المبيعات (Sales Person),كوبون الخصم (Coupon),المدينة (City),العنوان بالتفصيل (Address),المنتجات (Items)");
+
+        foreach (var o in orders)
+        {
+            var itemsList = string.Join(" | ", o.Items.Select(i => 
+                $"{i.ProductNameAr ?? i.ProductNameEn} [SKU: {i.SKU ?? "-"}] ({(string.IsNullOrEmpty(i.Color) ? "-" : i.Color)}, {(string.IsNullOrEmpty(i.Size) ? "-" : i.Size)}) x{i.Quantity}"));
+
+            var line = string.Join(",", 
+                EscapeCsv(o.OrderNumber),
+                EscapeCsv(o.CreatedAt.ToString("yyyy-MM-dd HH:mm")),
+                EscapeCsv(o.Customer?.FullName ?? "عميل كاشير"),
+                EscapeCsv(o.Customer?.Phone),
+                EscapeCsv(o.Customer?.Email),
+                EscapeCsv(o.Status.ToString()),
+                EscapeCsv(o.Source.ToString()),
+                EscapeCsv(o.PaymentMethod.ToString()),
+                EscapeCsv(o.PaymentStatus.ToString()),
+                o.SubTotal.ToString("F2"),
+                o.DiscountAmount.ToString("F2"),
+                o.TotalVatAmount.ToString("F2"),
+                o.DeliveryFee.ToString("F2"),
+                o.TotalAmount.ToString("F2"),
+                o.PaidAmount.ToString("F2"),
+                o.RemainingAmount.ToString("F2"),
+                EscapeCsv(GetSalesPersonName(o.SalesPersonId)),
+                EscapeCsv(o.CouponCode),
+                EscapeCsv(o.DeliveryAddress?.City),
+                EscapeCsv(GetAddressDetails(o.DeliveryAddress)),
+                EscapeCsv(itemsList)
+            );
+            csv.AppendLine(line);
+        }
+
         return Encoding.UTF8.GetBytes(csv.ToString());
     }
 

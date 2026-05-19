@@ -123,7 +123,7 @@ public interface IDashboardService
     Task<List<OrderStatusStatsDto>> GetOrderStatusStatsAsync();
     Task<List<OrderSummaryDto>> GetRecentOrdersAsync(int count = 10);
     Task<AnalyticsSummaryDto> GetAnalyticsSummaryAsync();
-    Task<byte[]> ExportSalesToCsvAsync(DateTime? from, DateTime? to);
+    Task<byte[]> ExportSalesToCsvAsync(DateTime? from, DateTime? to, OrderSource? source = null);
     Task<AdvancedDashboardStatsDto> GetAdvancedStatsAsync();
     Task<StaffPerformanceDto> GetStaffStatsAsync(string staffId);
     Task<object> GetKpiAsync(OrderSource? source = null);

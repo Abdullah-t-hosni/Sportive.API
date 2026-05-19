@@ -52,9 +52,9 @@ public class DashboardKpiController : ControllerBase
         Ok(await _dashboard.GetAnalyticsSummaryAsync());
 
     [HttpGet("export-sales")]
-    public async Task<IActionResult> ExportSales([FromQuery] DateTime? from, [FromQuery] DateTime? to)
+    public async Task<IActionResult> ExportSales([FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] OrderSource? source = null)
     {
-        var csvBytes = await _dashboard.ExportSalesToCsvAsync(from, to);
+        var csvBytes = await _dashboard.ExportSalesToCsvAsync(from, to, source);
         return File(csvBytes, "text/csv", $"sales-report-{TimeHelper.GetEgyptTime():yyyyMMdd}.csv");
     }
 
