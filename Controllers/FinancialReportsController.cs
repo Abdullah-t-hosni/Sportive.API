@@ -109,6 +109,7 @@ public class FinancialReportsController : ControllerBase
             var closingDr = Math.Round(b.OpenDebit + b.PeriodDebit, 2);
             var closingCr = Math.Round(b.OpenCredit + b.PeriodCredit, 2);
             b.ClosingBal = Math.Round(b.Nature == AccountNature.Debit ? closingDr - closingCr : closingCr - closingDr, 2);
+            b.PeriodBal = Math.Round(b.Nature == AccountNature.Debit ? b.PeriodDebit - b.PeriodCredit : b.PeriodCredit - b.PeriodDebit, 2);
         }
 
         return balanceList;
@@ -197,21 +198,21 @@ public class FinancialReportsController : ControllerBase
         var balances = await GetBalances(from, to, source);
 
         // الإيرادات (طبيعتها دائن ← الرصيد موجب = إيراد)
-        // ✅ تصحيح: ضم أي حساب يبدأ بكود 4 للإيرادات (مثل إيراد التوصيل)
+        // ✅ تصحيح: الدخل يجب أن يعتمد على أرصدة الفترة (PeriodBal) فقط
         var revenues = balances
-            .Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.ClosingBal != 0)
+            .Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.PeriodBal != 0)
             .OrderBy(b => b.Code)
-            .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.ClosingBal)) 
+            .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.PeriodBal)) 
             .ToList();
 
         var expenses = balances
-            .Where(b => b.Type == AccountType.Expense && !b.Code.StartsWith("4") && b.ClosingBal != 0)
+            .Where(b => b.Type == AccountType.Expense && !b.Code.StartsWith("4") && b.PeriodBal != 0)
             .OrderBy(b => b.Code)
-            .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.ClosingBal))
+            .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.PeriodBal))
             .ToList();
 
-        var totalRevenues = balances.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.Level == 1).Sum(b => b.ClosingBal);
-        var totalExpenses = balances.Where(b => b.Type == AccountType.Expense && !b.Code.StartsWith("4") && b.Level == 1).Sum(b => b.ClosingBal);
+        var totalRevenues = balances.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.Level == 1).Sum(b => b.PeriodBal);
+        var totalExpenses = balances.Where(b => b.Type == AccountType.Expense && !b.Code.StartsWith("4") && b.Level == 1).Sum(b => b.PeriodBal);
         var netProfit     = totalRevenues - totalExpenses;
 
         if (excel) return ExcelIncomeStatement(revenues, expenses, totalRevenues, totalExpenses, netProfit, from, to);
@@ -1312,6 +1313,7 @@ internal class AccountBalance
     public decimal       OpenBalance  { get; set; }
     public decimal       PeriodDebit  { get; set; }
     public decimal       PeriodCredit { get; set; }
+    public decimal       PeriodBal    { get; set; }
     public decimal       ClosingBal   { get; set; }
 }
 
