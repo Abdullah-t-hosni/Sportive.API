@@ -180,6 +180,7 @@ public class CustomerService : ICustomerService
                 c.CreatedAt
             ))
             .ToListAsync();
+    }
 
     public async Task<CustomerDetailDto?> GetCustomerByIdAsync(int id)
     {
