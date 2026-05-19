@@ -50,10 +50,13 @@ public class AuthController : ControllerBase
         if (string.IsNullOrEmpty(dto.Email))
             return BadRequest(new { message = _translator.Get("Auth.EmailRequired") });
 
+        // 💡 Verification logic is temporarily commented out to save email credits / limit issues
+        /*
         if (!_cache.TryGetValue($"RegisterCode_{dto.Email}", out string? cachedCode) || cachedCode != dto.Code)
         {
             return BadRequest(new { message = _translator.Get("Auth.InvalidCode") });
         }
+        */
 
         try { 
             var result = await _auth.RegisterAsync(dto); 
