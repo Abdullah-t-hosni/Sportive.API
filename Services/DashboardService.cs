@@ -139,6 +139,9 @@ public class DashboardService : IDashboardService
         var todayCollections = await collectionQuery
             .SumAsync(v => (decimal?)v.Amount) ?? 0;
 
+        var newCustomersToday = await _db.Customers
+            .CountAsync(c => c.CreatedAt >= targetStart && c.CreatedAt < targetEnd);
+
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         int lowStockThreshold = store?.LowStockThreshold ?? 5;
 
@@ -160,7 +163,8 @@ public class DashboardService : IDashboardService
             UncollectedAmount: uncollectedAmount,
             DebtAmount: uncollectedAmount, // Simplified consistency
             ReturnAmount: periodReturnAmount,
-            TodayCollections: todayCollections
+            TodayCollections: todayCollections,
+            NewCustomersToday: newCustomersToday
         );
     }
 
@@ -241,8 +245,16 @@ public class DashboardService : IDashboardService
             .Include(o => o.DeliveryAddress)
             .AsQueryable();
 
-        if (from.HasValue) query = query.Where(o => o.CreatedAt >= from.Value);
-        if (to.HasValue)   query = query.Where(o => o.CreatedAt <= to.Value);
+        if (from.HasValue)
+        {
+            var targetStart = from.Value.Date.AddHours(2);
+            query = query.Where(o => o.CreatedAt >= targetStart);
+        }
+        if (to.HasValue)
+        {
+            var targetEnd = to.Value.Date.AddDays(1).AddHours(2);
+            query = query.Where(o => o.CreatedAt < targetEnd);
+        }
         if (source.HasValue) query = query.Where(o => o.Source == source.Value);
 
         var orders = await query.OrderByDescending(o => o.CreatedAt).ToListAsync();
