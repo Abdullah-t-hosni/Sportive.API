@@ -18,7 +18,8 @@ public class CustomerService : ICustomerService
         decimal? minSpent = null, int? minOrders = null, 
         DateTime? joinStartDate = null, DateTime? joinEndDate = null,
         int? categoryId = null, bool? hasDebt = null,
-        string? orderBy = null, bool isDescending = true)
+        string? orderBy = null, bool isDescending = true,
+        string? source = null)
     {
         pageSize = AppConstants.ClampPrecacheSize(pageSize);
         var query = _db.Customers
@@ -30,6 +31,18 @@ public class CustomerService : ICustomerService
             .AsQueryable();
 
         // 1. Basic Filters
+        if (!string.IsNullOrEmpty(source))
+        {
+            if (source.Equals("Website", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(c => c.AppUserId != null);
+            }
+            else if (source.Equals("POS", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(c => c.AppUserId == null);
+            }
+        }
+
         if (categoryId.HasValue)
             query = query.Where(c => c.CategoryId == categoryId.Value);
 

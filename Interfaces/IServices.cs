@@ -87,7 +87,8 @@ public interface ICustomerService
         decimal? minSpent = null, int? minOrders = null, 
         DateTime? joinStartDate = null, DateTime? joinEndDate = null,
         int? categoryId = null, bool? hasDebt = null,
-        string? orderBy = null, bool isDescending = true);
+        string? orderBy = null, bool isDescending = true,
+        string? source = null);
     Task<CustomerDetailDto?> GetCustomerByIdAsync(int id);
     Task<CustomerDetailDto?> GetCustomerByEmailAsync(string email);
     Task<CustomerDetailDto?> GetCustomerByUserIdAsync(string userId);

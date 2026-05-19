@@ -204,11 +204,24 @@ public class ExportController : ControllerBase
         [FromQuery] string? search = null,
         [FromQuery] decimal? minSpent = null,
         [FromQuery] bool? hasDebt = null,
-        [FromQuery] DateTime? joinStartDate = null)
+        [FromQuery] DateTime? joinStartDate = null,
+        [FromQuery] string? source = null)
     {
         var query = _db.Customers
             .Include(c => c.Orders)
             .AsQueryable();
+
+        if (!string.IsNullOrEmpty(source))
+        {
+            if (source.Equals("Website", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(c => c.AppUserId != null);
+            }
+            else if (source.Equals("POS", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(c => c.AppUserId == null);
+            }
+        }
 
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(c => c.FullName.Contains(search) || (c.Phone != null && c.Phone.Contains(search)));
