@@ -1314,18 +1314,26 @@ public class PurchaseInvoicesController : ControllerBase
                     }
                 }
 
-                // 2. Adjust supplier balance (Reverse old return impact)
-                var supplier = await _db.Suppliers.FindAsync(pReturn.SupplierId);
-                if (supplier != null)
+                // 2. Adjust old supplier balance (Reverse old return impact)
+                var oldSupplier = await _db.Suppliers.FindAsync(pReturn.SupplierId);
+                if (oldSupplier != null)
                 {
-                    supplier.TotalPurchases += pReturn.TotalAmount;
+                    oldSupplier.TotalPurchases += pReturn.TotalAmount;
                     if (pReturn.PaymentTerms == PaymentTerms.Cash)
                     {
-                        supplier.TotalPaid += pReturn.TotalAmount;
+                        oldSupplier.TotalPaid += pReturn.TotalAmount;
                     }
                 }
 
-                // 3. Update basic info
+                // Load the NEW supplier to apply the new return's impact
+                var newSupplier = await _db.Suppliers.FindAsync(dto.SupplierId);
+                if (newSupplier == null)
+                {
+                    return BadRequest(new { message = _t.Get("Purchases.SupplierNotFound") });
+                }
+
+                // 3. Update basic info & SupplierId
+                pReturn.SupplierId = dto.SupplierId;
                 pReturn.ReturnDate = dto.ReturnDate;
                 pReturn.Notes = dto.Notes;
                 pReturn.ReferenceNumber = dto.ReferenceNumber;
@@ -1401,13 +1409,13 @@ public class PurchaseInvoicesController : ControllerBase
                 pReturn.TaxAmount = Math.Round(subtotal * (dto.TaxPercent / 100), 2);
                 pReturn.TotalAmount = Math.Round((pReturn.SubTotal + pReturn.TaxAmount) - pReturn.DiscountAmount, 2);
 
-                // Update Supplier Ledger with new total
-                if (supplier != null)
+                // Update New Supplier Ledger with new total
+                if (newSupplier != null)
                 {
-                    supplier.TotalPurchases -= pReturn.TotalAmount;
+                    newSupplier.TotalPurchases -= pReturn.TotalAmount;
                     if (pReturn.PaymentTerms == PaymentTerms.Cash)
                     {
-                        supplier.TotalPaid -= pReturn.TotalAmount;
+                        newSupplier.TotalPaid -= pReturn.TotalAmount;
                     }
                 }
 
