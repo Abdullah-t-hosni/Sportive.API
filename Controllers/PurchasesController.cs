@@ -1182,15 +1182,34 @@ public class PurchaseInvoicesController : ControllerBase
                     CostCenter = dto.CostCenter
                 };
 
+                var sentInvoiceItemIds = dto.Items
+                    .Where(x => x.PurchaseInvoiceItemId > 0)
+                    .Select(x => x.PurchaseInvoiceItemId!.Value)
+                    .Distinct()
+                    .ToList();
+
+                var validInvoiceItemIds = sentInvoiceItemIds.Any()
+                    ? await _db.PurchaseInvoiceItems
+                        .Where(ii => sentInvoiceItemIds.Contains(ii.Id))
+                        .Select(ii => ii.Id)
+                        .ToListAsync()
+                    : new List<int>();
+
                 decimal subtotal = 0;
                 foreach (var item in dto.Items)
                 {
                     var total = item.Quantity * item.UnitCost;
                     var multiplier = GetMultiplier(pUnits, item.Unit);
                     
+                    int? validInvoiceItemId = null;
+                    if (item.PurchaseInvoiceItemId.HasValue && item.PurchaseInvoiceItemId.Value > 0 && validInvoiceItemIds.Contains(item.PurchaseInvoiceItemId.Value))
+                    {
+                        validInvoiceItemId = item.PurchaseInvoiceItemId.Value;
+                    }
+
                     pReturn.Items.Add(new PurchaseReturnItem
                     {
-                        PurchaseInvoiceItemId = item.PurchaseInvoiceItemId,
+                        PurchaseInvoiceItemId = validInvoiceItemId,
                         ProductId = item.ProductId,
                         ProductVariantId = item.ProductVariantId,
                         Quantity = item.Quantity,
@@ -1323,15 +1342,34 @@ public class PurchaseInvoicesController : ControllerBase
                 pReturn.Items.Clear();
                 await _db.SaveChangesAsync(); // commit deletions before inserts
 
+                var sentInvoiceItemIds = dto.Items
+                    .Where(x => x.PurchaseInvoiceItemId > 0)
+                    .Select(x => x.PurchaseInvoiceItemId!.Value)
+                    .Distinct()
+                    .ToList();
+
+                var validInvoiceItemIds = sentInvoiceItemIds.Any()
+                    ? await _db.PurchaseInvoiceItems
+                        .Where(ii => sentInvoiceItemIds.Contains(ii.Id))
+                        .Select(ii => ii.Id)
+                        .ToListAsync()
+                    : new List<int>();
+
                 decimal subtotal = 0;
                 foreach (var item in dto.Items)
                 {
                     var total = item.Quantity * item.UnitCost;
                     var multiplier = GetMultiplier(pUnits, item.Unit);
                     
+                    int? validInvoiceItemId = null;
+                    if (item.PurchaseInvoiceItemId.HasValue && item.PurchaseInvoiceItemId.Value > 0 && validInvoiceItemIds.Contains(item.PurchaseInvoiceItemId.Value))
+                    {
+                        validInvoiceItemId = item.PurchaseInvoiceItemId.Value;
+                    }
+
                     pReturn.Items.Add(new PurchaseReturnItem
                     {
-                        PurchaseInvoiceItemId = item.PurchaseInvoiceItemId,
+                        PurchaseInvoiceItemId = validInvoiceItemId,
                         ProductId = item.ProductId,
                         ProductVariantId = item.ProductVariantId,
                         Quantity = item.Quantity,
