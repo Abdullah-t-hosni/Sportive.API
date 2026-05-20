@@ -688,4 +688,145 @@ public class DataMaintenanceService : IDataMaintenanceService
             return (false, "فشلت العملية. يرجى مراجعة سجلات الخادم.");
         }
     }
+
+    /// <summary>
+    /// يعيد بناء حركات المخزون من مصادرها الأصلية ويعيد حساب الكميات الفعلية.
+    /// يحل مشكلة مضاعفة أرصدة المخزون الناتجة عن تعديل الرصيد الافتتاحي.
+    /// الخطوات:
+    ///   1. حذف حركات الرصيد الافتتاحي وإعادة إنشائها من InventoryOpeningBalanceItems (المصدر الصحيح)
+    ///   2. إعادة حساب StockQuantity لكل Variant من مجموع الحركات
+    ///   3. إعادة حساب TotalStock لكل Product
+    ///   4. مزامنة حالة المنتج (Active/OutOfStock)
+    /// </summary>
+    public async Task<(bool Success, string Message)> RecalculateStockAsync()
+    {
+        try
+        {
+            var strategy = _db.Database.CreateExecutionStrategy();
+            return await strategy.ExecuteAsync(async () =>
+            {
+                await using var tx = await _db.Database.BeginTransactionAsync();
+
+                // ─── Phase 1: إعادة بناء حركات الرصيد الافتتاحي ───────────────────
+                // المشكلة: لما يتعمل Import ثم Edit، بعض المنتجات تتراكم لها حركات مضاعفة.
+                // الحل: حذف كل حركات OpeningBalance لكل OB Reference وإعادة إنشائها من
+                //       جدول InventoryOpeningBalanceItems (اللي بيتحدث صح في كل Edit).
+
+                var openingBalances = await _db.InventoryOpeningBalances
+                    .Include(ob => ob.Items)
+                    .ToListAsync();
+
+                int rebuiltObMovements = 0;
+
+                foreach (var ob in openingBalances)
+                {
+                    // احذف كل الحركات القديمة لهذا الـ Reference
+                    var oldMovements = await _db.InventoryMovements
+                        .Where(m => m.Type == InventoryMovementType.OpeningBalance
+                                 && m.Reference == ob.Reference)
+                        .ToListAsync();
+
+                    _db.InventoryMovements.RemoveRange(oldMovements);
+                    await _db.SaveChangesAsync(); // commit الحذف قبل الإضافة
+
+                    // أعد إنشاء الحركات من الـ Items الحالية (المصدر الصحيح)
+                    foreach (var item in ob.Items)
+                    {
+                        if (!item.ProductId.HasValue || item.Quantity <= 0) continue;
+
+                        _db.InventoryMovements.Add(new InventoryMovement
+                        {
+                            Type             = InventoryMovementType.OpeningBalance,
+                            Quantity         = item.Quantity,   // int مباشرة
+                            RemainingStock   = 0,               // سيُحسب لاحقاً
+                            RemainingQty     = item.Quantity,   // للـ FIFO
+                            ProductId        = item.ProductId,
+                            ProductVariantId = item.ProductVariantId,
+                            Reference        = ob.Reference,
+                            Note             = "إعادة بناء تلقائية — RecalculateStock",
+                            UnitCost         = item.CostPrice,
+                            CostCenter       = ob.CostCenter,
+                            CreatedAt        = ob.Date
+                        });
+                        rebuiltObMovements++;
+                    }
+                    await _db.SaveChangesAsync();
+                }
+
+                _logger.LogInformation("[RecalculateStock] Phase 1 done. OB movements rebuilt: {Count}", rebuiltObMovements);
+
+                // ─── Phase 2: إعادة حساب StockQuantity للـ Variants ──────────────────
+                // نجمع كل الحركات لكل Variant ونضع الناتج في StockQuantity
+
+                var variantSums = await _db.InventoryMovements
+                    .Where(m => m.ProductVariantId.HasValue)
+                    .GroupBy(m => m.ProductVariantId!.Value)
+                    .Select(g => new { VariantId = g.Key, TotalQty = g.Sum(m => (int?)m.Quantity) ?? 0 })
+                    .ToListAsync();
+
+                var variantQtyMap = variantSums.ToDictionary(x => x.VariantId, x => x.TotalQty);
+
+                var allVariants = await _db.ProductVariants.ToListAsync();
+                foreach (var v in allVariants)
+                {
+                    v.StockQuantity = variantQtyMap.TryGetValue(v.Id, out var q) ? q : 0;
+                }
+                await _db.SaveChangesAsync();
+
+                // ─── Phase 3: إعادة حساب TotalStock للمنتجات ─────────────────────────
+
+                // للمنتجات البسيطة (بدون Variants): نجمع الحركات المباشرة على المنتج
+                var simpleSums = await _db.InventoryMovements
+                    .Where(m => !m.ProductVariantId.HasValue && m.ProductId.HasValue)
+                    .GroupBy(m => m.ProductId!.Value)
+                    .Select(g => new { ProductId = g.Key, TotalQty = g.Sum(m => (int?)m.Quantity) ?? 0 })
+                    .ToListAsync();
+
+                var simpleQtyMap = simpleSums.ToDictionary(x => x.ProductId, x => x.TotalQty);
+
+                var allProducts = await _db.Products.Include(p => p.Variants).ToListAsync();
+                int nowOutOfStock = 0;
+                int nowBackInStock = 0;
+
+                foreach (var p in allProducts)
+                {
+                    var prevStock = p.TotalStock;
+
+                    if (p.Variants.Any())
+                        p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
+                    else
+                        p.TotalStock = simpleQtyMap.TryGetValue(p.Id, out var sq) ? sq : 0;
+
+                    // مزامنة الحالة
+                    if (p.TotalStock <= 0 && p.Status == ProductStatus.Active)
+                    {
+                        p.Status = ProductStatus.OutOfStock;
+                        nowOutOfStock++;
+                    }
+                    else if (p.TotalStock > 0 && p.Status == ProductStatus.OutOfStock)
+                    {
+                        p.Status = ProductStatus.Active;
+                        nowBackInStock++;
+                    }
+                }
+                await _db.SaveChangesAsync();
+                await tx.CommitAsync();
+
+                _logger.LogInformation(
+                    "[RecalculateStock] Done. OutOfStock: {Out}, BackInStock: {In}",
+                    nowOutOfStock, nowBackInStock);
+
+                return (true,
+                    $"✅ تمت إعادة احتساب المخزون بنجاح.\n" +
+                    $"• حركات الرصيد الافتتاحي المُعاد بناؤها: {rebuiltObMovements}\n" +
+                    $"• منتجات صارت غير متوفرة: {nowOutOfStock}\n" +
+                    $"• منتجات عادت متوفرة: {nowBackInStock}");
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "RecalculateStockAsync failed");
+            return (false, $"فشلت العملية: {ex.Message}");
+        }
+    }
 }

@@ -37,4 +37,5 @@ public interface IDataMaintenanceService
     Task<(bool Success, string Message, int UpdatedCount)> FixMissingSlugsAsync();
     Task<(bool Success, string Message)> CleanupStaffCustomersAsync();
     Task<(bool Success, string Message)> BackfillFifoRemainingQtyAsync();
+    Task<(bool Success, string Message)> RecalculateStockAsync();
 }

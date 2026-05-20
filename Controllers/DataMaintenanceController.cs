@@ -197,4 +197,16 @@ public class DataMaintenanceController : ControllerBase
         var (success, message) = await _service.BackfillFifoRemainingQtyAsync();
         return success ? Ok(new { success, message }) : BadRequest(new { success, message });
     }
+
+    /// <summary>
+    /// يعيد بناء حركات الرصيد الافتتاحي ويعيد حساب كميات المخزون الفعلية.
+    /// يُستخدم لإصلاح مشكلة مضاعفة الأرصدة الناتجة عن Import + Edit.
+    /// </summary>
+    [HttpPost("recalculate-stock")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> RecalculateStock()
+    {
+        var (success, message) = await _service.RecalculateStockAsync();
+        return success ? Ok(new { success, message }) : BadRequest(new { success, message });
+    }
 }

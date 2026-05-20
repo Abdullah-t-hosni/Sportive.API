@@ -1182,17 +1182,16 @@ public class PurchaseInvoicesController : ControllerBase
                     CostCenter = dto.CostCenter
                 };
 
+                // تحقق من صحة PurchaseInvoiceItemIds قبل الإدراج (منع FK constraint error)
                 var sentInvoiceItemIds = dto.Items
-                    .Where(x => x.PurchaseInvoiceItemId > 0)
+                    .Where(x => x.PurchaseInvoiceItemId.HasValue && x.PurchaseInvoiceItemId.Value > 0)
                     .Select(x => x.PurchaseInvoiceItemId!.Value)
-                    .Distinct()
-                    .ToList();
+                    .Distinct().ToList();
 
                 var validInvoiceItemIds = sentInvoiceItemIds.Any()
                     ? await _db.PurchaseInvoiceItems
                         .Where(ii => sentInvoiceItemIds.Contains(ii.Id))
-                        .Select(ii => ii.Id)
-                        .ToListAsync()
+                        .Select(ii => ii.Id).ToListAsync()
                     : new List<int>();
 
                 decimal subtotal = 0;
@@ -1200,12 +1199,11 @@ public class PurchaseInvoicesController : ControllerBase
                 {
                     var total = item.Quantity * item.UnitCost;
                     var multiplier = GetMultiplier(pUnits, item.Unit);
-                    
+
                     int? validInvoiceItemId = null;
-                    if (item.PurchaseInvoiceItemId.HasValue && item.PurchaseInvoiceItemId.Value > 0 && validInvoiceItemIds.Contains(item.PurchaseInvoiceItemId.Value))
-                    {
+                    if (item.PurchaseInvoiceItemId.HasValue && item.PurchaseInvoiceItemId.Value > 0
+                        && validInvoiceItemIds.Contains(item.PurchaseInvoiceItemId.Value))
                         validInvoiceItemId = item.PurchaseInvoiceItemId.Value;
-                    }
 
                     pReturn.Items.Add(new PurchaseReturnItem
                     {
@@ -1314,25 +1312,23 @@ public class PurchaseInvoicesController : ControllerBase
                     }
                 }
 
-                // 2. Adjust old supplier balance (Reverse old return impact)
+                // 2. عكس أثر المرتجع على المورد القديم
                 var oldSupplier = await _db.Suppliers.FindAsync(pReturn.SupplierId);
                 if (oldSupplier != null)
                 {
                     oldSupplier.TotalPurchases += pReturn.TotalAmount;
                     if (pReturn.PaymentTerms == PaymentTerms.Cash)
-                    {
                         oldSupplier.TotalPaid += pReturn.TotalAmount;
-                    }
                 }
 
-                // Load the NEW supplier to apply the new return's impact
+                // تحميل المورد الجديد (قد يكون مختلفاً)
                 var newSupplier = await _db.Suppliers.FindAsync(dto.SupplierId);
                 if (newSupplier == null)
-                {
                     return BadRequest(new { message = _t.Get("Purchases.SupplierNotFound") });
-                }
 
-                // 3. Update basic info & SupplierId
+                // 3. تحديث بيانات المرتجع + SupplierId
+                // نستخدم Supplier Navigation Property لضمان حفظ EF Core للمورد الجديد
+                pReturn.Supplier   = newSupplier;
                 pReturn.SupplierId = dto.SupplierId;
                 pReturn.ReturnDate = dto.ReturnDate;
                 pReturn.Notes = dto.Notes;
@@ -1343,24 +1339,20 @@ public class PurchaseInvoicesController : ControllerBase
                 pReturn.CostCenter = dto.CostCenter;
                 pReturn.UpdatedAt = TimeHelper.GetEgyptTime();
 
-                // 4. Update Items
-                // ⚠️ Flush the DELETE first so the DB FK constraint doesn't conflict
-                // when we INSERT new items that may reference the same PurchaseInvoiceItemId.
+                // 4. تحديث الأصناف مع التحقق من FK
                 _db.PurchaseReturnItems.RemoveRange(pReturn.Items);
                 pReturn.Items.Clear();
-                await _db.SaveChangesAsync(); // commit deletions before inserts
+                await _db.SaveChangesAsync(); // commit الحذف قبل الإضافة لتجنب FK conflict
 
-                var sentInvoiceItemIds = dto.Items
-                    .Where(x => x.PurchaseInvoiceItemId > 0)
+                var sentIds = dto.Items
+                    .Where(x => x.PurchaseInvoiceItemId.HasValue && x.PurchaseInvoiceItemId.Value > 0)
                     .Select(x => x.PurchaseInvoiceItemId!.Value)
-                    .Distinct()
-                    .ToList();
+                    .Distinct().ToList();
 
-                var validInvoiceItemIds = sentInvoiceItemIds.Any()
+                var validIds = sentIds.Any()
                     ? await _db.PurchaseInvoiceItems
-                        .Where(ii => sentInvoiceItemIds.Contains(ii.Id))
-                        .Select(ii => ii.Id)
-                        .ToListAsync()
+                        .Where(ii => sentIds.Contains(ii.Id))
+                        .Select(ii => ii.Id).ToListAsync()
                     : new List<int>();
 
                 decimal subtotal = 0;
@@ -1368,12 +1360,11 @@ public class PurchaseInvoicesController : ControllerBase
                 {
                     var total = item.Quantity * item.UnitCost;
                     var multiplier = GetMultiplier(pUnits, item.Unit);
-                    
+
                     int? validInvoiceItemId = null;
-                    if (item.PurchaseInvoiceItemId.HasValue && item.PurchaseInvoiceItemId.Value > 0 && validInvoiceItemIds.Contains(item.PurchaseInvoiceItemId.Value))
-                    {
+                    if (item.PurchaseInvoiceItemId.HasValue && item.PurchaseInvoiceItemId.Value > 0
+                        && validIds.Contains(item.PurchaseInvoiceItemId.Value))
                         validInvoiceItemId = item.PurchaseInvoiceItemId.Value;
-                    }
 
                     pReturn.Items.Add(new PurchaseReturnItem
                     {
@@ -1409,15 +1400,10 @@ public class PurchaseInvoicesController : ControllerBase
                 pReturn.TaxAmount = Math.Round(subtotal * (dto.TaxPercent / 100), 2);
                 pReturn.TotalAmount = Math.Round((pReturn.SubTotal + pReturn.TaxAmount) - pReturn.DiscountAmount, 2);
 
-                // Update New Supplier Ledger with new total
-                if (newSupplier != null)
-                {
-                    newSupplier.TotalPurchases -= pReturn.TotalAmount;
-                    if (pReturn.PaymentTerms == PaymentTerms.Cash)
-                    {
-                        newSupplier.TotalPaid -= pReturn.TotalAmount;
-                    }
-                }
+                // تطبيق أثر المرتجع على المورد الجديد
+                newSupplier.TotalPurchases -= pReturn.TotalAmount;
+                if (pReturn.PaymentTerms == PaymentTerms.Cash)
+                    newSupplier.TotalPaid -= pReturn.TotalAmount;
 
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
