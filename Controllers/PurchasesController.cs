@@ -1317,8 +1317,11 @@ public class PurchaseInvoicesController : ControllerBase
                 pReturn.UpdatedAt = TimeHelper.GetEgyptTime();
 
                 // 4. Update Items
+                // ⚠️ Flush the DELETE first so the DB FK constraint doesn't conflict
+                // when we INSERT new items that may reference the same PurchaseInvoiceItemId.
                 _db.PurchaseReturnItems.RemoveRange(pReturn.Items);
                 pReturn.Items.Clear();
+                await _db.SaveChangesAsync(); // commit deletions before inserts
 
                 decimal subtotal = 0;
                 foreach (var item in dto.Items)
