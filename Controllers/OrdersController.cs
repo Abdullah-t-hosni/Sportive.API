@@ -357,7 +357,8 @@ public class OrdersController : ControllerBase
                     item.ProductVariantId,
                     order.OrderNumber,
                     "Order Deleted (Cascade Cleanup)",
-                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                    ignoreIdempotency: true
                 );
             }
         }

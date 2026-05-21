@@ -967,7 +967,8 @@ public class OrderService : IOrderService
                             updatedByUserId,
                             0,
                             order.Source,
-                            autoSave: false
+                            autoSave: false,
+                            ignoreIdempotency: true
                         );
                     }
                 }
@@ -1042,7 +1043,8 @@ public class OrderService : IOrderService
                         updatedByUserId,
                         0,
                         order.Source,
-                        autoSave: false
+                        autoSave: false,
+                        ignoreIdempotency: true
                     );
                 }
 
@@ -1424,7 +1426,8 @@ public class OrderService : IOrderService
                             order.OrderNumber, "Revert: Order status changed from Returned", updatedByUserId,
                             0, // unitCost fallback
                             order.Source,
-                            autoSave: false
+                            autoSave: false,
+                            ignoreIdempotency: true
                         );
                     }
                 }
@@ -1452,7 +1455,8 @@ public class OrderService : IOrderService
                     item.Quantity, item.ProductId, item.ProductVariantId, order.OrderNumber, $"Order {dto.Status}", updatedByUserId,
                     0, // unitCost fallback
                     order.Source,
-                    autoSave: false
+                    autoSave: false,
+                    ignoreIdempotency: true
                 );
             }
 
@@ -1574,7 +1578,8 @@ public class OrderService : IOrderService
                         order.OrderNumber, $"Partial Return: {req.Quantity} units", updatedByUserId,
                         0, // unitCost fallback
                         order.Source,
-                        autoSave: false
+                        autoSave: false,
+                        ignoreIdempotency: true
                     );
                 }
 

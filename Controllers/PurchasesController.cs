@@ -1029,7 +1029,8 @@ public class PurchaseInvoicesController : ControllerBase
                             User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                             0, // unitCost fallback
                             inv.CostCenter,
-                            autoSave: false
+                            autoSave: false,
+                            ignoreIdempotency: true
                         );
                     }
                 }
@@ -1087,7 +1088,8 @@ public class PurchaseInvoicesController : ControllerBase
                         $"Purchase status changed: {oldStatus} -> {dto.Status}",
                         User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                         item.UnitCost,
-                        inv.CostCenter
+                        inv.CostCenter,
+                        ignoreIdempotency: true
                     );
                 }
             }
@@ -1109,7 +1111,8 @@ public class PurchaseInvoicesController : ControllerBase
                         $"Purchase status activated: {dto.Status}",
                         User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                         item.UnitCost,
-                        inv.CostCenter
+                        inv.CostCenter,
+                        ignoreIdempotency: true
                     );
                 }
              }
@@ -1307,7 +1310,8 @@ public class PurchaseInvoicesController : ControllerBase
                             pReturn.ReturnNumber,
                             $"Edit Return #{pReturn.ReturnNumber} (Reversal)",
                             User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-                            autoSave: false
+                            autoSave: false,
+                            ignoreIdempotency: true
                         );
                     }
                 }
@@ -1391,7 +1395,8 @@ public class PurchaseInvoicesController : ControllerBase
                             "Updated Standalone Return",
                             User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                             item.UnitCost / (multiplier > 0 ? multiplier : 1),
-                            autoSave: false
+                            autoSave: false,
+                            ignoreIdempotency: true
                         );
                     }
                 }
@@ -1464,7 +1469,8 @@ public class PurchaseInvoicesController : ControllerBase
                             pReturn.ReturnNumber,
                             $"Delete Return #{pReturn.ReturnNumber} (Reversal)",
                             User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-                            autoSave: false
+                            autoSave: false,
+                            ignoreIdempotency: true
                         );
                     }
                 }
@@ -1828,7 +1834,7 @@ public class PurchaseInvoicesController : ControllerBase
             if (item.ProductId.HasValue)
             {
                 var mult = GetMultiplier(pUnits, item.Unit);
-                await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, -(item.Quantity * mult), item.ProductId, item.ProductVariantId, inv.InvoiceNumber, "Purchase Invoice Deleted", User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value);
+                await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, -(item.Quantity * mult), item.ProductId, item.ProductVariantId, inv.InvoiceNumber, "Purchase Invoice Deleted", User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, ignoreIdempotency: true);
             }
         }
 

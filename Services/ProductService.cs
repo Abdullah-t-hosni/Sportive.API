@@ -432,7 +432,8 @@ public class ProductService : IProductService
             variant.Id,
             "MANUAL-UPDATE",
             _t.Get("Products.ManualStockUpdate"),
-            null
+            null,
+            ignoreIdempotency: true
         );
 
         await _db.SaveChangesAsync();
@@ -455,7 +456,8 @@ public class ProductService : IProductService
             null,
             "MANUAL-UPDATE",
             _t.Get("Products.ManualStockUpdate"),
-            null
+            null,
+            ignoreIdempotency: true
         );
 
         await _db.SaveChangesAsync();

@@ -20,7 +20,8 @@ public interface IInventoryService
         bool autoSave = true,
         bool broadcast = true,
         bool force = false,
-        DateTime? date = null
+        DateTime? date = null,
+        bool ignoreIdempotency = false
     );
 
     /// <summary>

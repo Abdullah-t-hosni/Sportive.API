@@ -38,7 +38,8 @@ public class InventoryService : IInventoryService
         bool autoSave = true,
         bool broadcast = true,
         bool force = false,
-        DateTime? date = null)
+        DateTime? date = null,
+        bool ignoreIdempotency = false)
     {
         if (quantity == 0) return;
         if (productId == 0) productId = null;
@@ -51,7 +52,7 @@ public class InventoryService : IInventoryService
 
         // Idempotency check: prevent duplicate movements for the same order/invoice and item
         // Skip check if it's an opening balance to speed up bulk imports
-        if (!string.IsNullOrEmpty(reference) && type != InventoryMovementType.OpeningBalance)
+        if (!ignoreIdempotency && !string.IsNullOrEmpty(reference) && type != InventoryMovementType.OpeningBalance)
         {
             bool exists = await _db.InventoryMovements.AnyAsync(m => 
                 m.Type == type && 
