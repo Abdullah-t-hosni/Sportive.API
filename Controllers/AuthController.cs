@@ -326,9 +326,7 @@ public class AuthController : ControllerBase
             user.UiPreferences = dto.UiPreferences;
         }
 
-        var result = await _userManager.UpdateAsync(user);
-        if (!result.Succeeded)
-            return BadRequest(result.Errors);
+        await _db.SaveChangesAsync();
 
         return Ok(new { message = "Preferences updated successfully" });
     }
