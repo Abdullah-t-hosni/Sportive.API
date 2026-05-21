@@ -2035,9 +2035,9 @@ public class OperationalReportsController : ControllerBase
 
     private static FileStreamResult ExcelResult(XLWorkbook wb, string filename)
     {
-        var tempFile = Path.GetTempFileName();
-        wb.SaveAs(tempFile);
-        var stream = new FileStream(tempFile, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.DeleteOnClose);
+        var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        stream.Position = 0;
         return new FileStreamResult(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") { FileDownloadName = filename };
     }    // ══════════════════════════════════════════════════════
     // 12.(Stock Aging)
