@@ -610,11 +610,11 @@ public class OperationalReportsController : ControllerBase
         var totalCount = await q.CountAsync();
         
         // جلب البيانات المطلوبة مع تفاصيلها
-        var products = await q.OrderBy(p => p.CategoryId)
-                             .ThenBy(p => p.NameAr)
-                             .Skip((page - 1) * pageSize)
-                             .Take(pageSize)
-                             .ToListAsync();
+        // عند تصدير Excel نجلب كل المنتجات بدون pagination
+        var productsQuery = q.OrderBy(p => p.CategoryId).ThenBy(p => p.NameAr);
+        var products = excel
+            ? await productsQuery.ToListAsync()
+            : await productsQuery.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
 
         // حساب القيم الإجمالية للمجموعة المفلترة بالكامل (باستخدام تجميع في قاعدة البيانات لتجنب تحميل آلاف الصفوف للذاكرة)
         var totalStats = await q.Select(p => new {
