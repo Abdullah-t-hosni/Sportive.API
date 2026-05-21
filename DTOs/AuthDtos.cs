@@ -26,7 +26,9 @@ public record AuthResponseDto(
     int? CustomerId = null,
     string? Phone = null,
     List<AddressDto>? Addresses = null,
-    List<ModulePermissionDto>? ModulePermissions = null
+    List<ModulePermissionDto>? ModulePermissions = null,
+    string? PinnedSidebarItems = "[]",
+    string? FavoriteReports = "[]"
 );
 
 public record ModulePermissionDto(string ModuleKey, bool CanView, bool CanEdit);
@@ -34,6 +36,7 @@ public record ModulePermissionDto(string ModuleKey, bool CanView, bool CanEdit);
 public record ChangePasswordDto(string CurrentPassword, string NewPassword);
 public record ForgotPasswordDto(string Identifier);
 public record ResetPasswordDto(string Identifier, string Code, string NewPassword);
+public record UpdatePreferencesDto(string? PinnedSidebarItems, string? FavoriteReports);
 
 public record RefreshTokenRequestDto(string RefreshToken);
 

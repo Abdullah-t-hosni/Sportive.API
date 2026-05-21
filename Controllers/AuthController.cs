@@ -289,6 +289,8 @@ public class AuthController : ControllerBase
             .Select(c => new { c.Id, c.Phone })
             .FirstOrDefaultAsync();
 
+        var user = await _userManager.FindByIdAsync(userId);
+
         return Ok(new {
             userId,
             email,
@@ -296,8 +298,34 @@ public class AuthController : ControllerBase
             roles,
             permissions,
             customerId = customer?.Id,
-            phone      = customer?.Phone
+            phone      = customer?.Phone,
+            pinnedSidebarItems = user?.PinnedSidebarItems ?? "[]",
+            favoriteReports = user?.FavoriteReports ?? "[]"
         });
+    }
+
+    [Authorize]
+    [HttpPut("preferences")]
+    public async Task<IActionResult> UpdatePreferences([FromBody] UpdatePreferencesDto dto)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user == null) return NotFound(new { message = _translator.Get("Auth.UserNotFound") });
+
+        if (dto.PinnedSidebarItems != null)
+        {
+            user.PinnedSidebarItems = dto.PinnedSidebarItems;
+        }
+        if (dto.FavoriteReports != null)
+        {
+            user.FavoriteReports = dto.FavoriteReports;
+        }
+
+        var result = await _userManager.UpdateAsync(user);
+        if (!result.Succeeded)
+            return BadRequest(result.Errors);
+
+        return Ok(new { message = "Preferences updated successfully" });
     }
 
     [RequirePermission(ModuleKeys.Staff)]

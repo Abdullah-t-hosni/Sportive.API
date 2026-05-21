@@ -14,6 +14,10 @@ public class AppUser : IdentityUser
     // Refresh Token — مخزن في DB لدعم التجديد والإلغاء
     public string?   RefreshToken       { get; set; }
     public DateTime? RefreshTokenExpiry { get; set; }
+
+    // User preferences (sidebar pinned items and favorite reports)
+    public string PinnedSidebarItems { get; set; } = "[]";
+    public string FavoriteReports { get; set; } = "[]";
 }
 
 public class Customer : BaseEntity

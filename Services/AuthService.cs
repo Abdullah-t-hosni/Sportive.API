@@ -223,7 +223,9 @@ public class AuthService : IAuthService
             customerId,
             user.PhoneNumber,
             addresses,
-            permissions
+            permissions,
+            user.PinnedSidebarItems,
+            user.FavoriteReports
         );
     }
 
