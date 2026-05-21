@@ -225,7 +225,8 @@ public class AuthService : IAuthService
             addresses,
             permissions,
             user.PinnedSidebarItems,
-            user.FavoriteReports
+            user.FavoriteReports,
+            user.UiPreferences
         );
     }
 

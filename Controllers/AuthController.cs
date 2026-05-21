@@ -300,7 +300,8 @@ public class AuthController : ControllerBase
             customerId = customer?.Id,
             phone      = customer?.Phone,
             pinnedSidebarItems = user?.PinnedSidebarItems ?? "[]",
-            favoriteReports = user?.FavoriteReports ?? "[]"
+            favoriteReports = user?.FavoriteReports ?? "[]",
+            uiPreferences = user?.UiPreferences ?? "{}"
         });
     }
 
@@ -319,6 +320,10 @@ public class AuthController : ControllerBase
         if (dto.FavoriteReports != null)
         {
             user.FavoriteReports = dto.FavoriteReports;
+        }
+        if (dto.UiPreferences != null)
+        {
+            user.UiPreferences = dto.UiPreferences;
         }
 
         var result = await _userManager.UpdateAsync(user);
