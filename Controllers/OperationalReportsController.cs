@@ -542,11 +542,12 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int     page        = 1,
         [FromQuery] int     pageSize    = 50,
         [FromQuery] OrderSource? source  = null,
+        [FromQuery] DateTime? toDate    = null,
         [FromQuery] bool    excel       = false)
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var cacheKey = $"Inventory_{search}_{categoryId}_{brandId}_{color}_{size}_{lowStock}_{stockStatus}_{page}_{pageSize}_{source}";
+        var cacheKey = $"Inventory_{search}_{categoryId}_{brandId}_{color}_{size}_{lowStock}_{stockStatus}_{page}_{pageSize}_{source}_{toDate}";
         if (!excel && _cache.TryGetValue(cacheKey, out var cachedData))
             return Ok(cachedData);
 
@@ -578,6 +579,129 @@ public class OperationalReportsController : ControllerBase
         if (!string.IsNullOrEmpty(size))
             q = q.Where(p => p.Variants.Any(v => v.Size == size));
 
+        if (toDate.HasValue)
+        {
+            var limit = toDate.Value.Date.AddDays(1).AddHours(2).AddTicks(-1);
+            var movementQuery = _db.InventoryMovements.Where(m => m.CreatedAt <= limit);
+            if (source.HasValue)
+            {
+                movementQuery = movementQuery.Where(m => m.CostCenter == source.Value);
+            }
+
+            var variantStocks = await movementQuery
+                .Where(m => m.ProductVariantId.HasValue)
+                .GroupBy(m => m.ProductVariantId!.Value)
+                .Select(g => new { VariantId = g.Key, Stock = g.Sum(m => m.Quantity) })
+                .ToDictionaryAsync(x => x.VariantId, x => x.Stock);
+
+            var simpleProductStocks = await movementQuery
+                .Where(m => !m.ProductVariantId.HasValue && m.ProductId.HasValue)
+                .GroupBy(m => m.ProductId!.Value)
+                .Select(g => new { ProductId = g.Key, Stock = g.Sum(m => m.Quantity) })
+                .ToDictionaryAsync(x => x.ProductId, x => x.Stock);
+
+            var productsRaw = await q.ToListAsync();
+            var allRows = new List<InventoryRow>();
+
+            foreach (var p in productsRaw)
+            {
+                var filteredVariants = p.Variants.Where(v => 
+                    (string.IsNullOrEmpty(color) || v.Color == color || v.ColorAr == color) &&
+                    (string.IsNullOrEmpty(size) || v.Size == size)
+                ).ToList();
+
+                var variantRows = filteredVariants.Select(v => {
+                    var vStock = variantStocks.GetValueOrDefault(v.Id, 0);
+                    return new VariantInventoryRow(
+                        v.Id, v.Size ?? "", v.Color ?? "", v.ColorAr ?? "",
+                        vStock,
+                        p.Price + (v.PriceAdjustment ?? 0),
+                        (decimal)vStock * (p.Price + (v.PriceAdjustment ?? 0))
+                    );
+                }).ToList();
+
+                var totalStock = p.Variants.Any()
+                    ? variantRows.Sum(v => v.StockQuantity)
+                    : simpleProductStocks.GetValueOrDefault(p.Id, 0);
+
+                if (lowStock)
+                {
+                    bool isLow = (totalStock <= (p.ReorderLevel > 0 ? p.ReorderLevel : 5)) ||
+                                 variantRows.Any(v => v.StockQuantity <= 2);
+                    if (!isLow) continue;
+                }
+
+                if (stockStatus == "positive" && totalStock <= 0)
+                    continue;
+                if (stockStatus == "zero" && totalStock > 0)
+                    continue;
+
+                allRows.Add(new InventoryRow(
+                    p.Id, p.NameAr, p.NameEn, p.SKU,
+                    p.Category?.NameAr ?? "",
+                    p.Price, p.DiscountPrice,
+                    p.CostPrice ?? 0,
+                    totalStock,
+                    (decimal)totalStock * p.Price,
+                    (decimal)totalStock * (p.CostPrice ?? 0),
+                    variantRows
+                ));
+            }
+
+            var totalUnits = allRows.Sum(r => r.TotalStock);
+            var lowStockCount = allRows.Count(r => r.TotalStock <= 5);
+            var outOfStock = allRows.Count(r => r.TotalStock <= 0);
+            var totalSalesVal = allRows.Sum(r => r.TotalValue);
+            var totalCostVal = allRows.Sum(r => r.TotalCostValue);
+
+            var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
+            var inventoryAccId = maps.GetValueOrDefault(MappingKeys.Inventory);
+            decimal ledgerInventoryValue = 0;
+            if (inventoryAccId != null) {
+                var ledgerQ = _db.JournalLines
+                    .Where(l => l.AccountId == inventoryAccId && l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate <= limit);
+                
+                if (source.HasValue) ledgerQ = ledgerQ.Where(l => l.CostCenter == source.Value);
+
+                ledgerInventoryValue = await ledgerQ.SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
+            }
+
+            var summary = new {
+                totalFilteredProducts = allRows.Count,
+                totalUnits            = totalUnits,
+                lowStockCount         = lowStockCount,
+                outOfStock            = outOfStock,
+                totalSalesValue       = totalSalesVal,
+                totalCostValue        = totalCostVal,
+                ledgerInventoryValue  = ledgerInventoryValue,
+                valuationDifference   = ledgerInventoryValue - totalCostVal,
+                agingAlerts           = allRows.Count(x => x.TotalStock > 0 && x.CostPrice > 0)
+            };
+
+            var totalCount = allRows.Count;
+            var paginatedRows = excel
+                ? allRows
+                : allRows.OrderBy(r => r.CategoryName).ThenBy(r => r.NameAr).Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+            if (excel) return ExcelInventory(paginatedRows, summary);
+
+            var result = new { 
+                rows = paginatedRows, 
+                summary,
+                pagination = new {
+                    totalCount,
+                    pageSize,
+                    currentPage = page,
+                    totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+                }
+            };
+
+            if (!excel) _cache.Set(cacheKey, result, TimeSpan.FromMinutes(5));
+
+            return Ok(result);
+        }
+
+        // --- Standard (Non-date-filtered) flow ---
         if (lowStock)
             q = q.Where(p => 
                 (p.TotalStock <= (p.ReorderLevel > 0 ? p.ReorderLevel : 5)) ||
@@ -605,18 +729,14 @@ public class OperationalReportsController : ControllerBase
                 q = q.Where(p => (p.Variants.Any() && p.Variants.Any(v => v.StockQuantity <= 0)) || (!p.Variants.Any() && p.TotalStock <= 0));
         }
 
-
         // --- Pagination ---
-        var totalCount = await q.CountAsync();
+        var dbTotalCount = await q.CountAsync();
         
-        // جلب البيانات المطلوبة مع تفاصيلها
-        // عند تصدير Excel نجلب كل المنتجات بدون pagination
         var productsQuery = q.OrderBy(p => p.CategoryId).ThenBy(p => p.NameAr);
         var products = excel
             ? await productsQuery.ToListAsync()
             : await productsQuery.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
 
-        // حساب القيم الإجمالية للمجموعة المفلترة بالكامل (باستخدام تجميع في قاعدة البيانات لتجنب تحميل آلاف الصفوف للذاكرة)
         var totalStats = await q.Select(p => new {
             Stock = p.Variants.Any() 
                 ? p.Variants.Where(v => 
@@ -635,15 +755,14 @@ public class OperationalReportsController : ControllerBase
             OutOfStock = g.Count(x => x.Stock <= 0)
         }).FirstOrDefaultAsync();
 
-        var totalUnits     = totalStats?.Units ?? 0;
-        var lowStockCount  = totalStats?.LowStock ?? 0;
-        var outOfStock     = totalStats?.OutOfStock ?? 0;
-        var totalSalesVal  = totalStats?.SalesVal ?? 0;
-        var totalCostVal   = totalStats?.CostVal ?? 0;
+        var dbTotalUnits     = totalStats?.Units ?? 0;
+        var dbLowStockCount  = totalStats?.LowStock ?? 0;
+        var dbOutOfStock     = totalStats?.OutOfStock ?? 0;
+        var dbTotalSalesVal  = totalStats?.SalesVal ?? 0;
+        var dbTotalCostVal   = totalStats?.CostVal ?? 0;
 
-        var rows = products.Select(p =>
+        var dbRows = products.Select(p =>
         {
-            // Filter variants based on the same criteria as the main query
             var filteredVariants = p.Variants.Where(v => 
                 (string.IsNullOrEmpty(color) || v.Color == color || v.ColorAr == color) &&
                 (string.IsNullOrEmpty(size) || v.Size == size) &&
@@ -673,47 +792,46 @@ public class OperationalReportsController : ControllerBase
             );
         }).ToList();
 
-        // ✅ LEDGER RECONCILIATION FOR INVENTORY
-        var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
-        var inventoryAccId = maps.GetValueOrDefault(MappingKeys.Inventory);
-        decimal ledgerInventoryValue = 0;
-        if (inventoryAccId != null) {
+        var dbMaps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
+        var dbInventoryAccId = dbMaps.GetValueOrDefault(MappingKeys.Inventory);
+        decimal dbLedgerInventoryValue = 0;
+        if (dbInventoryAccId != null) {
             var ledgerQ = _db.JournalLines
-                .Where(l => l.AccountId == inventoryAccId && l.JournalEntry.Status == JournalEntryStatus.Posted);
+                .Where(l => l.AccountId == dbInventoryAccId && l.JournalEntry.Status == JournalEntryStatus.Posted);
             
             if (source.HasValue) ledgerQ = ledgerQ.Where(l => l.CostCenter == source.Value);
 
-            ledgerInventoryValue = await ledgerQ.SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
+            dbLedgerInventoryValue = await ledgerQ.SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
         }
 
-        var summary = new {
-            totalFilteredProducts = totalCount,
-            totalUnits            = totalUnits,
-            lowStockCount         = lowStockCount,
-            outOfStock            = outOfStock,
-            totalSalesValue       = totalSalesVal,
-            totalCostValue        = totalCostVal,
-            ledgerInventoryValue  = ledgerInventoryValue, // Absolute Financial Truth
-            valuationDifference   = ledgerInventoryValue - totalCostVal, // Gap between physical and books
-            agingAlerts           = rows.Count(x => x.TotalStock > 0 && x.CostPrice > 0)
+        var dbSummary = new {
+            totalFilteredProducts = dbTotalCount,
+            totalUnits            = dbTotalUnits,
+            lowStockCount         = dbLowStockCount,
+            outOfStock            = dbOutOfStock,
+            totalSalesValue       = dbTotalSalesVal,
+            totalCostValue        = dbTotalCostVal,
+            ledgerInventoryValue  = dbLedgerInventoryValue,
+            valuationDifference   = dbLedgerInventoryValue - dbTotalCostVal,
+            agingAlerts           = dbRows.Count(x => x.TotalStock > 0 && x.CostPrice > 0)
         };
 
-        if (excel) return ExcelInventory(rows, summary);
+        if (excel) return ExcelInventory(dbRows, dbSummary);
 
-        var result = new { 
-            rows, 
-            summary,
+        var dbResult = new { 
+            rows = dbRows, 
+            summary = dbSummary,
             pagination = new {
-                totalCount,
+                totalCount = dbTotalCount,
                 pageSize,
                 currentPage = page,
-                totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+                totalPages = (int)Math.Ceiling(dbTotalCount / (double)pageSize)
             }
         };
 
-        if (!excel) _cache.Set(cacheKey, result, TimeSpan.FromMinutes(5));
+        if (!excel) _cache.Set(cacheKey, dbResult, TimeSpan.FromMinutes(5));
         
-        return Ok(result);
+        return Ok(dbResult);
     }
 
     // ══════════════════════════════════════════════════════
