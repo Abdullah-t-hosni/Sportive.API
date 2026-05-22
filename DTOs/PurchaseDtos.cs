@@ -81,7 +81,8 @@ public record CreatePurchaseInvoiceDto(
     int? ExpenseAccountId = null,
     int? VatAccountId = null,
     int? CashAccountId = null,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    decimal DeductAdvanceAmount = 0
 );
 
 public record CreatePurchaseItemDto(

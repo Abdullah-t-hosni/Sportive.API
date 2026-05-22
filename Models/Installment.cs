@@ -50,4 +50,7 @@ public class InstallmentPayment : BaseEntity
     public DateTime PaymentDate { get; set; }
     public string? Note        { get; set; }
     public string? CollectedBy { get; set; } // اسم أو ID الموظف
+
+    public int? ReceiptVoucherId { get; set; }
+    public ReceiptVoucher? ReceiptVoucher { get; set; }
 }

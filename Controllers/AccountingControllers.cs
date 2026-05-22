@@ -919,6 +919,45 @@ public class ReceiptVouchersController : ControllerBase
                         return BadRequest(_t.Get("Accounting.ReceiptVoucher.AmountExceedsCustomerBalance", currentBalance));
                     }
                 }
+
+                // AUTO-DISTRIBUTE TO INSTALLMENTS
+                if (dto.Reference == null || !dto.Reference.StartsWith("Installment-"))
+                {
+                    var pendingInstallments = await _db.CustomerInstallments
+                        .Where(i => i.CustomerId == dto.CustomerId.Value && i.Status != InstallmentStatus.Paid && i.Status != InstallmentStatus.Cancelled)
+                        .OrderBy(i => i.DueDate)
+                        .ToListAsync();
+
+                    decimal remainingToDistribute = dto.Amount;
+                    foreach (var inst in pendingInstallments)
+                    {
+                        if (remainingToDistribute <= 0) break;
+
+                        decimal amountToPay = Math.Min(remainingToDistribute, inst.RemainingAmount);
+                        remainingToDistribute -= amountToPay;
+
+                        var payment = new InstallmentPayment
+                        {
+                            CustomerInstallmentId = inst.Id,
+                            Amount = amountToPay,
+                            PaymentDate = TimeHelper.GetEgyptTime(),
+                            Note = $"سداد آلي من سند قبض رقم {vNo}",
+                            CollectedBy = voucher.CreatedByUserId,
+                            ReceiptVoucher = voucher
+                        };
+                        _db.InstallmentPayments.Add(payment);
+
+                        inst.PaidAmount += amountToPay;
+                        inst.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                        if (inst.PaidAmount >= inst.TotalAmount)
+                            inst.Status = InstallmentStatus.Paid;
+                        else if (inst.DueDate < DateTime.Today)
+                            inst.Status = InstallmentStatus.Overdue;
+                        else
+                            inst.Status = InstallmentStatus.Partial;
+                    }
+                }
             }
         }
 

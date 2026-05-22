@@ -79,6 +79,17 @@ public class SuppliersController : ControllerBase
             s.AttachmentUrl, s.AttachmentPublicId));
     }
 
+    [HttpGet("{id}/advance-balance")]
+    public async Task<IActionResult> GetAdvanceBalance(int id)
+    {
+        var advanceBalance = await _db.SupplierPayments
+            .Where(p => p.SupplierId == id && p.PurchaseInvoiceId == null)
+            .SumAsync(p => (decimal?)p.Amount) ?? 0;
+            
+        return Ok(new { advanceBalance });
+    }
+
+
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateSupplierDto dto)
     {
@@ -774,8 +785,78 @@ public class PurchaseInvoicesController : ControllerBase
                     });
                 }
 
-                invoice.PaidAmount = Math.Round(totalPaid, 2);
-                supplier.TotalPaid += invoice.PaidAmount;
+                // ─── Advance Payment Deduction ───
+                decimal advanceDeducted = 0;
+                var newlySplitAdvancePayments = new List<SupplierPayment>();
+                var advanceJournalEntriesToRemove = new List<JournalEntry>();
+
+                if (dto.DeductAdvanceAmount > 0)
+                {
+                    decimal remainingToDeduct = dto.DeductAdvanceAmount;
+                    var advancePayments = await _db.SupplierPayments
+                        .Where(p => p.SupplierId == supplier.Id && p.PurchaseInvoiceId == null && p.Amount > 0)
+                        .OrderBy(p => p.PaymentDate)
+                        .ToListAsync();
+
+                    foreach (var ap in advancePayments)
+                    {
+                        if (remainingToDeduct <= 0) break;
+
+                        // Identify the old journal entry to delete it and repost it linked to the invoice
+                        var oldJE = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Reference == ap.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher);
+                        if (oldJE != null) advanceJournalEntriesToRemove.Add(oldJE);
+
+                        if (ap.Amount <= remainingToDeduct)
+                        {
+                            // Fully consumed
+                            ap.PurchaseInvoiceId = invoice.Id; // Will be set after invoice save, but we link it to the object
+                            invoice.Payments.Add(ap); 
+                            advanceDeducted += ap.Amount;
+                            remainingToDeduct -= ap.Amount;
+                        }
+                        else
+                        {
+                            // Partially consumed: split it
+                            decimal remainder = ap.Amount - remainingToDeduct;
+                            
+                            // Consumed part becomes linked
+                            ap.Amount = remainingToDeduct;
+                            invoice.Payments.Add(ap);
+                            
+                            advanceDeducted += remainingToDeduct;
+                            remainingToDeduct = 0;
+
+                            // Remainder becomes a new unlinked advance payment
+                            var pNoSplit = await _seq.NextAsync("SP");
+                            var splitPayment = new SupplierPayment
+                            {
+                                PaymentNumber = pNoSplit,
+                                SupplierId = ap.SupplierId,
+                                Amount = remainder,
+                                PaymentDate = ap.PaymentDate,
+                                PaymentMethod = ap.PaymentMethod,
+                                CashAccountId = ap.CashAccountId,
+                                AccountName = ap.AccountName,
+                                Notes = ap.Notes + " (Split remainder)",
+                                CreatedAt = ap.CreatedAt, // retain original creation time
+                                CostCenter = ap.CostCenter,
+                                AttachmentUrl = ap.AttachmentUrl,
+                                AttachmentPublicId = ap.AttachmentPublicId,
+                                CreatedByUserId = ap.CreatedByUserId
+                            };
+                            _db.SupplierPayments.Add(splitPayment);
+                            newlySplitAdvancePayments.Add(splitPayment);
+                        }
+                    }
+
+                    if (advanceJournalEntriesToRemove.Any())
+                    {
+                        _db.JournalEntries.RemoveRange(advanceJournalEntriesToRemove);
+                    }
+                }
+
+                invoice.PaidAmount = Math.Round(totalPaid + advanceDeducted, 2);
+                supplier.TotalPaid += Math.Round(totalPaid, 2);
 
                 // Update Status based on payment
                 if (invoice.PaidAmount >= invoice.TotalAmount - 0.01M)
@@ -791,6 +872,22 @@ public class PurchaseInvoicesController : ControllerBase
                 await transaction.CommitAsync();
 
                 _ = PostJournalWithRetryAsync(invoice.Id, invoice.InvoiceNumber, isReturn: false);
+
+                if (newlySplitAdvancePayments.Any())
+                {
+                    var newlySplitIds = newlySplitAdvancePayments.Select(p => p.Id).ToList();
+                    _ = Task.Run(async () => {
+                        try {
+                            using var scope = _scopeFactory.CreateScope();
+                            var acc = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                            var innerDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                            var payments = await innerDb.SupplierPayments.Where(p => newlySplitIds.Contains(p.Id)).ToListAsync();
+                            foreach (var sp in payments) { await acc.PostSupplierPaymentAsync(sp); }
+                        } catch (Exception ex) {
+                            _logger.LogError(ex, "Failed to post journal for newly split advance payments.");
+                        }
+                    });
+                }
 
                 return CreatedAtAction(nameof(GetById), new { id = invoice.Id }, new { id = invoice.Id, invoiceNumber = invoice.InvoiceNumber, warnings });
             }
@@ -1123,19 +1220,45 @@ public class PurchaseInvoicesController : ControllerBase
         {
             // Reverse Supplier Totals (Net remaining of the invoice)
             inv.Supplier.TotalPurchases -= (inv.TotalAmount - inv.ReturnedAmount);
-            inv.Supplier.TotalPaid -= inv.PaidAmount;
+            decimal standardPaidCancel = inv.Payments.Where(p => p.CreatedAt >= inv.CreatedAt.AddSeconds(-2)).Sum(p => p.Amount);
+            inv.Supplier.TotalPaid -= standardPaidCancel;
 
             var journalEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference == inv.InvoiceNumber);
             if (journalEntry != null) { 
                 _db.JournalEntries.Remove(journalEntry);
             }
+
+            var newlyUnlinkedPaymentsCancel = new List<SupplierPayment>();
             foreach (var p in inv.Payments.ToList())
             {
-                var pEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Reference == p.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher);
-                if (pEntry != null) {
-                    _db.JournalEntries.Remove(pEntry);
+                var pEntries = await _db.JournalEntries.Where(e => e.Reference == p.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher).ToListAsync();
+                if (pEntries.Any()) _db.JournalEntries.RemoveRange(pEntries);
+
+                if (p.CreatedAt < inv.CreatedAt.AddSeconds(-2))
+                {
+                    p.PurchaseInvoiceId = null;
+                    newlyUnlinkedPaymentsCancel.Add(p);
                 }
-                _db.SupplierPayments.Remove(p);
+                else
+                {
+                    _db.SupplierPayments.Remove(p);
+                }
+            }
+
+            if (newlyUnlinkedPaymentsCancel.Any())
+            {
+                var unlinkedIds = newlyUnlinkedPaymentsCancel.Select(p => p.Id).ToList();
+                _ = Task.Run(async () => {
+                    try {
+                        using var scope = _scopeFactory.CreateScope();
+                        var acc = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                        var innerDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                        var payments = await innerDb.SupplierPayments.Where(p => unlinkedIds.Contains(p.Id)).ToListAsync();
+                        foreach (var sp in payments) { await acc.PostSupplierPaymentAsync(sp); }
+                    } catch (Exception ex) {
+                        _logger.LogError(ex, "Failed to post journal for newly unlinked advance payments on cancellation.");
+                    }
+                });
             }
         }
 
@@ -1827,7 +1950,8 @@ public class PurchaseInvoicesController : ControllerBase
         }
 
         inv.Supplier.TotalPurchases -= (inv.TotalAmount - inv.ReturnedAmount);
-        inv.Supplier.TotalPaid -= inv.PaidAmount;
+        decimal standardPaidDelete = inv.Payments.Where(p => p.CreatedAt >= inv.CreatedAt.AddSeconds(-2)).Sum(p => p.Amount);
+        inv.Supplier.TotalPaid -= standardPaidDelete;
 
         foreach (var item in inv.Items)
         {
@@ -1839,11 +1963,37 @@ public class PurchaseInvoicesController : ControllerBase
         }
 
         // 3. الشامل: حذف جميع القيود المحاسبية المرتبطة بالفاتورة ومدفوعاتها
+        var newlyUnlinkedPaymentsDelete = new List<SupplierPayment>();
         foreach (var p in inv.Payments.ToList())
         {
             var pEntries = await _db.JournalEntries.Where(e => e.Reference == p.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher).ToListAsync();
             if (pEntries.Any()) _db.JournalEntries.RemoveRange(pEntries);
-            _db.SupplierPayments.Remove(p);
+            
+            if (p.CreatedAt < inv.CreatedAt.AddSeconds(-2))
+            {
+                p.PurchaseInvoiceId = null;
+                newlyUnlinkedPaymentsDelete.Add(p);
+            }
+            else
+            {
+                _db.SupplierPayments.Remove(p);
+            }
+        }
+
+        if (newlyUnlinkedPaymentsDelete.Any())
+        {
+            var unlinkedIds = newlyUnlinkedPaymentsDelete.Select(p => p.Id).ToList();
+            _ = Task.Run(async () => {
+                try {
+                    using var scope = _scopeFactory.CreateScope();
+                    var acc = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                    var innerDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    var payments = await innerDb.SupplierPayments.Where(p => unlinkedIds.Contains(p.Id)).ToListAsync();
+                    foreach (var sp in payments) { await acc.PostSupplierPaymentAsync(sp); }
+                } catch (Exception ex) {
+                    _logger.LogError(ex, "Failed to post journal for newly unlinked advance payments on deletion.");
+                }
+            });
         }
 
         var invoiceEntries = await _db.JournalEntries.Where(e => (e.Type == JournalEntryType.PurchaseInvoice || e.Type == JournalEntryType.OpeningBalance) && e.Reference == inv.InvoiceNumber).ToListAsync();

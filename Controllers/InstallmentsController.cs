@@ -7,6 +7,7 @@ using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.Utils;
 using Sportive.API.Interfaces;
+using Sportive.API.Services;
 
 namespace Sportive.API.Controllers;
 
@@ -17,11 +18,15 @@ public class InstallmentsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ITranslator _t;
+    private readonly IAccountingService _accounting;
+    private readonly SequenceService _seq;
 
-    public InstallmentsController(AppDbContext db, ITranslator t)
+    public InstallmentsController(AppDbContext db, ITranslator t, IAccountingService accounting, SequenceService seq)
     {
         _db = db;
         _t = t;
+        _accounting = accounting;
+        _seq = seq;
     }
 
     [HttpGet]
@@ -131,16 +136,48 @@ public class InstallmentsController : ControllerBase
         if (dto.Amount <= 0 || dto.Amount > installment.RemainingAmount)
             return BadRequest(new { message = _t.Get("Installments.InvalidAmount", installment.RemainingAmount.ToString("N2")) });
 
-        var collectedBy = User.FindFirstValue(ClaimTypes.Name) ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        var cashAccount = await _db.Accounts.FindAsync(dto.CashAccountId);
+        if (cashAccount == null) return BadRequest(new { message = _t.Get("Accounting.ReceiptVoucher.AccountNotFound") });
+        if (!cashAccount.CanReceivePayment && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin")))
+            return BadRequest(new { message = _t.Get("Accounting.ReceiptVoucher.AccountCannotReceivePayment", cashAccount.NameAr) });
 
-        _db.InstallmentPayments.Add(new InstallmentPayment
+        var customerAccountId = await _db.AccountSystemMappings
+            .Where(m => m.Key == MappingKeys.Customer.ToLower())
+            .Select(m => (int?)m.AccountId)
+            .FirstOrDefaultAsync();
+
+        if (customerAccountId == null) return BadRequest(new { message = "حساب العملاء العام غير مربوط في إعدادات المحاسبة" });
+
+        var collectedBy = User.FindFirstValue(ClaimTypes.Name) ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+        
+        var vNo = await _seq.NextAsync("RV");
+        var voucher = new ReceiptVoucher {
+            VoucherNumber = vNo,
+            VoucherDate = TimeHelper.GetEgyptTime(),
+            Amount = dto.Amount,
+            CashAccountId = dto.CashAccountId,
+            FromAccountId = customerAccountId.Value,
+            CustomerId = installment.CustomerId,
+            PaymentMethod = VoucherPaymentMethod.Cash,
+            Reference = $"Installment-{id}",
+            Description = dto.Note ?? $"تحصيل قسط للعميل",
+            CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+            CreatedAt = TimeHelper.GetEgyptTime(),
+            OrderId = installment.OrderId
+        };
+
+        _db.ReceiptVouchers.Add(voucher);
+
+        var payment = new InstallmentPayment
         {
             CustomerInstallmentId = id,
             Amount      = dto.Amount,
             PaymentDate = TimeHelper.GetEgyptTime(),
             Note        = dto.Note,
             CollectedBy = collectedBy,
-        });
+            ReceiptVoucher = voucher
+        };
+        _db.InstallmentPayments.Add(payment);
 
         installment.PaidAmount += dto.Amount;
         installment.UpdatedAt  = TimeHelper.GetEgyptTime();
@@ -153,6 +190,9 @@ public class InstallmentsController : ControllerBase
             installment.Status = InstallmentStatus.Partial;
 
         await _db.SaveChangesAsync();
+        await _accounting.PostReceiptVoucherAsync(voucher, installment.OrderId);
+        Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
+
         return Ok(new {
             installment.Id, installment.PaidAmount, installment.RemainingAmount, installment.Status
         });
@@ -210,4 +250,5 @@ public class InstallmentsController : ControllerBase
 }
 
 public record CreateInstallmentDto(int CustomerId, int? OrderId, decimal TotalAmount, DateTime DueDate, string? Note);
-public record PayInstallmentDto(decimal Amount, string? Note);
+public record PayInstallmentDto(decimal Amount, int CashAccountId, string? Note);
+
