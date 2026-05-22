@@ -128,12 +128,14 @@ public class BarcodeController : ControllerBase
 
         if (invoice == null) return NotFound(new { message = "الفاتورة غير موجودة" });
 
-        var stickers = invoice.Items.Where(i => i.Product != null).Select(item => new
+        var stickers = invoice.Items.Where(i => i.Product != null).OrderBy(i => i.Id).Select(item => new
         {
             code = item.Product!.SKU, 
             productName = item.ProductVariantId != null
                 ? $"{item.Product.NameAr} - {item.ProductVariant!.Size ?? ""} {item.ProductVariant.ColorAr ?? item.ProductVariant.Color ?? ""}".Trim()
                 : item.Product.NameAr,
+            size = item.ProductVariant != null ? item.ProductVariant.Size : null,
+            color = item.ProductVariant != null ? (item.ProductVariant.ColorAr ?? item.ProductVariant.Color) : null,
             price = ((item.Product.DiscountPrice > 0) ? item.Product.DiscountPrice.Value : item.Product.Price) + (item.ProductVariant?.PriceAdjustment ?? 0),
             sku = item.Product.SKU,
             qty = item.Quantity
