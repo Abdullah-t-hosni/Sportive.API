@@ -61,7 +61,7 @@ public class OrderService : IOrderService
         int page, int pageSize, OrderStatus? status = null, string? search = null,
         int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null, OrderSource? source = null, PaymentMethod? paymentMethod = null)
     {
-        pageSize = Math.Clamp(pageSize, 1, 100);
+        pageSize = Math.Clamp(pageSize, 1, 2000);
         var query = _db.Orders
             .Include(o => o.Customer)
             .AsNoTracking();
