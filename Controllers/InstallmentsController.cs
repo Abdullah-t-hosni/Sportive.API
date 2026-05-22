@@ -241,29 +241,38 @@ public class InstallmentsController : ControllerBase
 
         if (customerAccountId == null) return BadRequest(new { message = "حساب العملاء غير مربوط" });
 
-        var customers = await _db.Customers.ToListAsync();
+        var ledgerBalances = await _db.JournalLines
+            .Where(l => l.AccountId == customerAccountId.Value && l.CustomerId != null)
+            .GroupBy(l => l.CustomerId.Value)
+            .Select(g => new { CustomerId = g.Key, Balance = g.Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0 })
+            .ToDictionaryAsync(x => x.CustomerId, x => x.Balance);
+
+        var pendingInstallmentsList = await _db.CustomerInstallments
+            .Where(i => i.Status != InstallmentStatus.Paid && i.Status != InstallmentStatus.Cancelled)
+            .OrderBy(i => i.DueDate)
+            .ToListAsync();
+            
+        var pendingInstallmentsDict = pendingInstallmentsList
+            .GroupBy(i => i.CustomerId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var customers = await _db.Customers.Select(c => c.Id).ToListAsync();
 
         int updatedCount = 0;
         int createdCount = 0;
         var egyptTime = TimeHelper.GetEgyptTime();
 
-        foreach (var c in customers)
+        foreach (var cId in customers)
         {
-            var ledgerBalance = await _db.JournalLines
-                .Where(l => l.AccountId == customerAccountId.Value && l.CustomerId == c.Id)
-                .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
-
-            var pendingInstallments = await _db.CustomerInstallments
-                .Where(i => i.CustomerId == c.Id && i.Status != InstallmentStatus.Paid && i.Status != InstallmentStatus.Cancelled)
-                .OrderBy(i => i.DueDate)
-                .ToListAsync();
-
-            var installmentsBalance = pendingInstallments.Sum(i => i.RemainingAmount);
+            decimal ledgerBalance = ledgerBalances.ContainsKey(cId) ? ledgerBalances[cId] : 0;
+            var pendingInsts = pendingInstallmentsDict.ContainsKey(cId) ? pendingInstallmentsDict[cId] : new List<CustomerInstallment>();
+            
+            var installmentsBalance = pendingInsts.Sum(i => i.RemainingAmount);
 
             if (installmentsBalance > ledgerBalance)
             {
                 var amountToPayOff = installmentsBalance - ledgerBalance;
-                foreach (var inst in pendingInstallments)
+                foreach (var inst in pendingInsts)
                 {
                     if (amountToPayOff <= 0) break;
 
@@ -298,7 +307,7 @@ public class InstallmentsController : ControllerBase
                 var missingDebt = ledgerBalance - installmentsBalance;
                 var inst = new CustomerInstallment
                 {
-                    CustomerId = c.Id,
+                    CustomerId = cId,
                     TotalAmount = missingDebt,
                     PaidAmount = 0,
                     DueDate = egyptTime.Date,
