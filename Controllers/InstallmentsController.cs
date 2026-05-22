@@ -230,6 +230,92 @@ public class InstallmentsController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("sync-ledger")]
+    [RequirePermission(ModuleKeys.Installments, requireEdit: true)]
+    public async Task<IActionResult> SyncLedgerBalances()
+    {
+        var customerAccountId = await _db.AccountSystemMappings
+            .Where(m => m.Key == MappingKeys.Customer.ToLower())
+            .Select(m => (int?)m.AccountId)
+            .FirstOrDefaultAsync();
+
+        if (customerAccountId == null) return BadRequest(new { message = "حساب العملاء غير مربوط" });
+
+        var customers = await _db.Customers.ToListAsync();
+
+        int updatedCount = 0;
+        int createdCount = 0;
+        var egyptTime = TimeHelper.GetEgyptTime();
+
+        foreach (var c in customers)
+        {
+            var ledgerBalance = await _db.JournalLines
+                .Where(l => l.AccountId == customerAccountId.Value && l.CustomerId == c.Id)
+                .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
+
+            var pendingInstallments = await _db.CustomerInstallments
+                .Where(i => i.CustomerId == c.Id && i.Status != InstallmentStatus.Paid && i.Status != InstallmentStatus.Cancelled)
+                .OrderBy(i => i.DueDate)
+                .ToListAsync();
+
+            var installmentsBalance = pendingInstallments.Sum(i => i.RemainingAmount);
+
+            if (installmentsBalance > ledgerBalance)
+            {
+                var amountToPayOff = installmentsBalance - ledgerBalance;
+                foreach (var inst in pendingInstallments)
+                {
+                    if (amountToPayOff <= 0) break;
+
+                    var payAmount = Math.Min(amountToPayOff, inst.RemainingAmount);
+                    amountToPayOff -= payAmount;
+
+                    var payment = new InstallmentPayment
+                    {
+                        CustomerInstallmentId = inst.Id,
+                        Amount = payAmount,
+                        PaymentDate = egyptTime,
+                        Note = "تسوية آلية مع الحسابات العامة (رصيد دفتر الأستاذ)",
+                        CollectedBy = "System Sync"
+                    };
+                    _db.InstallmentPayments.Add(payment);
+
+                    inst.PaidAmount += payAmount;
+                    inst.UpdatedAt = egyptTime;
+
+                    if (inst.PaidAmount >= inst.TotalAmount)
+                        inst.Status = InstallmentStatus.Paid;
+                    else if (inst.DueDate < DateTime.Today)
+                        inst.Status = InstallmentStatus.Overdue;
+                    else
+                        inst.Status = InstallmentStatus.Partial;
+                    
+                    updatedCount++;
+                }
+            }
+            else if (ledgerBalance > installmentsBalance)
+            {
+                var missingDebt = ledgerBalance - installmentsBalance;
+                var inst = new CustomerInstallment
+                {
+                    CustomerId = c.Id,
+                    TotalAmount = missingDebt,
+                    PaidAmount = 0,
+                    DueDate = egyptTime.Date,
+                    Note = "مديونية عامة مستوردة من رصيد الحسابات (تسوية)",
+                    Status = InstallmentStatus.Overdue,
+                    CreatedAt = egyptTime,
+                    UpdatedAt = egyptTime
+                };
+                _db.CustomerInstallments.Add(inst);
+                createdCount++;
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { message = $"تمت المزامنة بنجاح. تسوية أقساط: {updatedCount} | إنشاء أقساط جديدة: {createdCount}" });
+    }
+
     [HttpPost("sync-overdue")]
     [RequirePermission(ModuleKeys.Installments, requireEdit: true)]
     public async Task<IActionResult> SyncOverdue()
