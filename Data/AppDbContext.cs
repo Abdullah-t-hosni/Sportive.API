@@ -38,6 +38,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<ColorValue>   ColorValues      => Set<ColorValue>();
 
     public DbSet<AuditLog> AuditLogs            => Set<AuditLog>();
+    public DbSet<PosHeldCart> PosHeldCarts      => Set<PosHeldCart>();
 
     public DbSet<Supplier>             Suppliers            { get; set; }
     public DbSet<PurchaseInvoice>      PurchaseInvoices     { get; set; }
