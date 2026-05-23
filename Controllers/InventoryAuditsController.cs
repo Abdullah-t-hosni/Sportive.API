@@ -241,11 +241,24 @@ public class InventoryAuditsController : ControllerBase
                 // 4. Reverse or delete the journal entry
                 if (audit.JournalEntryId.HasValue)
                 {
-                    var journal = await _db.JournalEntries.FirstOrDefaultAsync(j => j.Id == audit.JournalEntryId.Value);
+                    var journal = await _db.JournalEntries.Include(j => j.Lines).FirstOrDefaultAsync(j => j.Id == audit.JournalEntryId.Value);
                     if (journal != null)
                     {
                         if (User.IsInRole("SuperAdmin") || User.IsInRole("Admin"))
                         {
+                            var childReversals = await _db.JournalEntries
+                                .Include(j => j.Lines)
+                                .Where(j => j.ReversalOfId == journal.Id)
+                                .ToListAsync();
+                            if (childReversals.Any())
+                            {
+                                foreach (var child in childReversals)
+                                {
+                                    _db.JournalLines.RemoveRange(child.Lines);
+                                }
+                                _db.JournalEntries.RemoveRange(childReversals);
+                            }
+                            _db.JournalLines.RemoveRange(journal.Lines);
                             _db.JournalEntries.Remove(journal);
                         }
                         else
@@ -444,11 +457,24 @@ public class InventoryAuditsController : ControllerBase
                 // 4. Reverse or delete the journal entry
                 if (audit.JournalEntryId.HasValue)
                 {
-                    var journal = await _db.JournalEntries.FirstOrDefaultAsync(j => j.Id == audit.JournalEntryId.Value);
+                    var journal = await _db.JournalEntries.Include(j => j.Lines).FirstOrDefaultAsync(j => j.Id == audit.JournalEntryId.Value);
                     if (journal != null)
                     {
                         if (User.IsInRole("SuperAdmin") || User.IsInRole("Admin"))
                         {
+                            var childReversals = await _db.JournalEntries
+                                .Include(j => j.Lines)
+                                .Where(j => j.ReversalOfId == journal.Id)
+                                .ToListAsync();
+                            if (childReversals.Any())
+                            {
+                                foreach (var child in childReversals)
+                                {
+                                    _db.JournalLines.RemoveRange(child.Lines);
+                                }
+                                _db.JournalEntries.RemoveRange(childReversals);
+                            }
+                            _db.JournalLines.RemoveRange(journal.Lines);
                             _db.JournalEntries.Remove(journal);
                         }
                         else
