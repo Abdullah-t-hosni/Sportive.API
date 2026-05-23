@@ -785,15 +785,97 @@ public class JournalEntriesController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id, [FromQuery] string reason = "Manual Deletion")
     {
-        var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Id == id);
+        var entry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Id == id);
         if (entry == null) return NotFound();
 
-        if (entry.Status == JournalEntryStatus.Posted && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin")))
+        bool isAdmin = User.IsInRole("SuperAdmin") || User.IsInRole("Admin");
+
+        if (entry.Status == JournalEntryStatus.Reversed && !isAdmin)
+        {
+            return BadRequest(new { message = "لا يمكن حذف قيد تم عكسه بالفعل حفاظاً على سلامة الدورة المحاسبية." });
+        }
+
+        var isReversalParent = await _db.JournalEntries.AnyAsync(e => e.ReversalOfId == id);
+        if (isReversalParent && !isAdmin)
+        {
+            return BadRequest(new { message = "لا يمكن حذف هذا القيد لأنه تم عكسه بالفعل ويوجد قيد عكسي مرتبط به." });
+        }
+
+        var isLinkedToPaymentVoucher = await _db.PaymentVouchers.AnyAsync(v => v.JournalEntryId == id);
+        if (isLinkedToPaymentVoucher)
+        {
+            return BadRequest(new { message = "لا يمكن حذف هذا القيد لأنه مرتبط بسند صرف. يرجى حذف سند الصرف نفسه أولاً." });
+        }
+
+        var isLinkedToReceiptVoucher = await _db.ReceiptVouchers.AnyAsync(v => v.JournalEntryId == id);
+        if (isLinkedToReceiptVoucher)
+        {
+            return BadRequest(new { message = "لا يمكن حذف هذا القيد لأنه مرتبط بسند قبض. يرجى حذف سند القبض نفسه أولاً." });
+        }
+
+        var isLinkedToEmployeeAdvance = await _db.EmployeeAdvances.AnyAsync(a => a.JournalEntryId == id);
+        if (isLinkedToEmployeeAdvance)
+        {
+            return BadRequest(new { message = "لا يمكن حذف هذا القيد لأنه مرتبط بسلفة موظف. يرجى حذف السلفة أولاً." });
+        }
+
+        var isLinkedToDepreciation = await _db.AssetDepreciations.AnyAsync(d => d.JournalEntryId == id);
+        if (isLinkedToDepreciation)
+        {
+            return BadRequest(new { message = "لا يمكن حذف هذا القيد لأنه مرتبط بإهلاك أصل ثابت. يرجى حذف الإهلاك أولاً." });
+        }
+
+        var isLinkedToDisposal = await _db.AssetDisposals.AnyAsync(d => d.JournalEntryId == id);
+        if (isLinkedToDisposal)
+        {
+            return BadRequest(new { message = "لا يمكن حذف هذا القيد لأنه مرتبط باستبعاد أصل ثابت. يرجى حذف عملية الاستبعاد أولاً." });
+        }
+
+        var isLinkedToInventoryAudit = await _db.InventoryAudits.AnyAsync(a => a.JournalEntryId == id);
+        if (isLinkedToInventoryAudit)
+        {
+            return BadRequest(new { message = "لا يمكن حذف هذا القيد لأنه مرتبط بجلسة جرد مخزني." });
+        }
+
+        var isLinkedToPayrollRun = await _db.PayrollRuns.AnyAsync(r => r.JournalEntryId == id);
+        if (isLinkedToPayrollRun)
+        {
+            return BadRequest(new { message = "لا يمكن حذف هذا القيد لأنه مرتبط بمسير رواتب." });
+        }
+
+        if (entry.Status == JournalEntryStatus.Posted && !isAdmin)
         {
             await _accounting.ReverseEntryAsync(id, reason);
             return Ok(new { message = _t.Get("Accounting.ReverseSuccessMessage") });
         }
 
+        if (isAdmin)
+        {
+            var childReversals = await _db.JournalEntries
+                .Include(j => j.Lines)
+                .Where(j => j.ReversalOfId == id)
+                .ToListAsync();
+            if (childReversals.Any())
+            {
+                foreach (var child in childReversals)
+                {
+                    _db.JournalLines.RemoveRange(child.Lines);
+                }
+                _db.JournalEntries.RemoveRange(childReversals);
+            }
+
+            if (entry.ReversalOfId.HasValue)
+            {
+                var parent = await _db.JournalEntries.FindAsync(entry.ReversalOfId.Value);
+                if (parent != null && parent.Status == JournalEntryStatus.Reversed)
+                {
+                    parent.Status = JournalEntryStatus.Posted;
+                    parent.UpdatedAt = TimeHelper.GetEgyptTime();
+                }
+            }
+        }
+
+        _db.JournalLines.RemoveRange(entry.Lines);
         _db.JournalEntries.Remove(entry);
         await _db.SaveChangesAsync();
         return NoContent();
@@ -1137,7 +1219,7 @@ public class ReceiptVouchersController : ControllerBase
         var voucher = await _db.ReceiptVouchers.FindAsync(id);
         if (voucher == null) return NotFound();
 
-        var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber);
+        var entry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber);
         
         if (entry != null && entry.Status == JournalEntryStatus.Posted && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin"))) {
             await _accounting.ReverseEntryAsync(entry.Id, _t.Get("Accounting.ReceiptVoucher.ReverseLog"));
@@ -1145,7 +1227,23 @@ public class ReceiptVouchersController : ControllerBase
         }
 
         _db.ReceiptVouchers.Remove(voucher);
-        if (entry != null) _db.JournalEntries.Remove(entry);
+        if (entry != null)
+        {
+            var childReversals = await _db.JournalEntries
+                .Include(j => j.Lines)
+                .Where(j => j.ReversalOfId == entry.Id)
+                .ToListAsync();
+            if (childReversals.Any())
+            {
+                foreach (var child in childReversals)
+                {
+                    _db.JournalLines.RemoveRange(child.Lines);
+                }
+                _db.JournalEntries.RemoveRange(childReversals);
+            }
+            _db.JournalLines.RemoveRange(entry.Lines);
+            _db.JournalEntries.Remove(entry);
+        }
         await _db.SaveChangesAsync();
         await _accounting.SyncEntityBalancesAsync();
         return NoContent();
@@ -1391,14 +1489,30 @@ public class PaymentVouchersController : ControllerBase
         var voucher = await _db.PaymentVouchers.FindAsync(id);
         if (voucher == null) return NotFound();
 
-        var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == voucher.VoucherNumber);
+        var entry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == voucher.VoucherNumber);
         if (entry != null && entry.Status == JournalEntryStatus.Posted && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin"))) {
             await _accounting.ReverseEntryAsync(entry.Id, _t.Get("Accounting.PaymentVoucher.ReverseLog"));
             return Ok(new { message = _t.Get("Accounting.ReceiptVoucher.ReverseSuccess") });
         }
 
         _db.PaymentVouchers.Remove(voucher);
-        if (entry != null) _db.JournalEntries.Remove(entry);
+        if (entry != null)
+        {
+            var childReversals = await _db.JournalEntries
+                .Include(j => j.Lines)
+                .Where(j => j.ReversalOfId == entry.Id)
+                .ToListAsync();
+            if (childReversals.Any())
+            {
+                foreach (var child in childReversals)
+                {
+                    _db.JournalLines.RemoveRange(child.Lines);
+                }
+                _db.JournalEntries.RemoveRange(childReversals);
+            }
+            _db.JournalLines.RemoveRange(entry.Lines);
+            _db.JournalEntries.Remove(entry);
+        }
         await _db.SaveChangesAsync();
         await _accounting.SyncEntityBalancesAsync();
         return NoContent();

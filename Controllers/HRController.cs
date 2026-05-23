@@ -899,8 +899,24 @@ public class PayrollController : ControllerBase
         {
             if (run.JournalEntryId.HasValue)
             {
-                var je = await _db.JournalEntries.FindAsync(run.JournalEntryId.Value);
-                if (je != null) _db.JournalEntries.Remove(je);
+                var je = await _db.JournalEntries.Include(j => j.Lines).FirstOrDefaultAsync(j => j.Id == run.JournalEntryId.Value);
+                if (je != null)
+                {
+                    var childReversals = await _db.JournalEntries
+                        .Include(j => j.Lines)
+                        .Where(j => j.ReversalOfId == je.Id)
+                        .ToListAsync();
+                    if (childReversals.Any())
+                    {
+                        foreach (var child in childReversals)
+                        {
+                            _db.JournalLines.RemoveRange(child.Lines);
+                        }
+                        _db.JournalEntries.RemoveRange(childReversals);
+                    }
+                    _db.JournalLines.RemoveRange(je.Lines);
+                    _db.JournalEntries.Remove(je);
+                }
             }
 
             foreach (var item in run.Items.Where(i => i.AdvanceDeducted > 0))
@@ -1102,7 +1118,23 @@ public class EmployeeAdvancesController : ControllerBase
              if (voucher.JournalEntryId.HasValue)
              {
                  var je = await _db.JournalEntries.Include(j => j.Lines).FirstOrDefaultAsync(j => j.Id == voucher.JournalEntryId);
-                 if (je != null) _db.JournalEntries.Remove(je);
+                 if (je != null)
+                 {
+                     var childReversals = await _db.JournalEntries
+                         .Include(j => j.Lines)
+                         .Where(j => j.ReversalOfId == je.Id)
+                         .ToListAsync();
+                     if (childReversals.Any())
+                     {
+                         foreach (var child in childReversals)
+                         {
+                             _db.JournalLines.RemoveRange(child.Lines);
+                         }
+                         _db.JournalEntries.RemoveRange(childReversals);
+                     }
+                     _db.JournalLines.RemoveRange(je.Lines);
+                     _db.JournalEntries.Remove(je);
+                 }
              }
              _db.PaymentVouchers.Remove(voucher);
         }
@@ -1288,7 +1320,23 @@ public class EmployeeBonusesController : ControllerBase
              if (voucher.JournalEntryId.HasValue)
              {
                  var je = await _db.JournalEntries.Include(j => j.Lines).FirstOrDefaultAsync(j => j.Id == voucher.JournalEntryId);
-                 if (je != null) _db.JournalEntries.Remove(je);
+                 if (je != null)
+                 {
+                     var childReversals = await _db.JournalEntries
+                         .Include(j => j.Lines)
+                         .Where(j => j.ReversalOfId == je.Id)
+                         .ToListAsync();
+                     if (childReversals.Any())
+                     {
+                         foreach (var child in childReversals)
+                         {
+                             _db.JournalLines.RemoveRange(child.Lines);
+                         }
+                         _db.JournalEntries.RemoveRange(childReversals);
+                     }
+                     _db.JournalLines.RemoveRange(je.Lines);
+                     _db.JournalEntries.Remove(je);
+                 }
              }
              _db.PaymentVouchers.Remove(voucher);
         }
