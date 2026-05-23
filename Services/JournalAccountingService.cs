@@ -242,6 +242,7 @@ public class JournalAccountingService
 
             order.SubTotal = newSubTotal;
             order.DiscountAmount = newDiscount;
+            order.TemporalDiscount = 0; // تصفير خصم العروض لأن القيد يدمج كل الخصومات في الحساب المالي
             order.TotalAmount = newSubTotal - newDiscount + order.DeliveryFee + order.TotalVatAmount;
 
             var mappings = await _core.GetSafeSystemMappingsAsync();
