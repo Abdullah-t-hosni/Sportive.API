@@ -214,6 +214,111 @@ public class JournalAccountingService
             });
         }
 
+        // --- مزامنة التغييرات مع الطلب المرتبط (إن وجد) ---
+        Order? order = null;
+        if (entry.OrderId.HasValue)
+        {
+            order = await _db.Orders.Include(o => o.Payments).FirstOrDefaultAsync(o => o.Id == entry.OrderId.Value);
+        }
+        else if ((entry.Type == JournalEntryType.SalesInvoice || entry.Type == JournalEntryType.Sales) && !string.IsNullOrEmpty(entry.Reference))
+        {
+            order = await _db.Orders.Include(o => o.Payments).FirstOrDefaultAsync(o => o.OrderNumber == entry.Reference);
+        }
+
+        if (order != null)
+        {
+            var salesAccountId = await _core.GetRequiredMappedAccountAsync(MappingKeys.Sales);
+            var discountAccountId = await _core.GetRequiredMappedAccountAsync(MappingKeys.SalesDiscount);
+
+            var revAccountIds = await _db.Accounts.Where(a => a.Code.StartsWith("4") && a.Id != discountAccountId).Select(a => a.Id).ToListAsync();
+
+            decimal newSubTotal = dto.Lines.Where(l => l.AccountId == salesAccountId || revAccountIds.Contains(l.AccountId)).Sum(l => l.Credit);
+            decimal newDiscount = dto.Lines.Where(l => l.AccountId == discountAccountId).Sum(l => l.Debit);
+            if (newDiscount == 0)
+            {
+                var discAccountIds = await _db.Accounts.Where(a => a.Code.StartsWith("4102") || a.Code.StartsWith("4105")).Select(a => a.Id).ToListAsync();
+                newDiscount = dto.Lines.Where(l => discAccountIds.Contains(l.AccountId)).Sum(l => l.Debit);
+            }
+
+            order.SubTotal = newSubTotal;
+            order.DiscountAmount = newDiscount;
+            order.TotalAmount = newSubTotal - newDiscount + order.DeliveryFee + order.TotalVatAmount;
+
+            var mappings = await _core.GetSafeSystemMappingsAsync();
+            var accountToMethodMap = new Dictionary<int, PaymentMethod>();
+            foreach (var kvp in mappings)
+            {
+                if (kvp.Value.HasValue)
+                {
+                    var method = kvp.Key.ToLower() switch {
+                        var k when k.Contains("vodafone") => PaymentMethod.Vodafone,
+                        var k when k.Contains("instapay") => PaymentMethod.InstaPay,
+                        var k when k.Contains("bank") || k.Contains("creditcard") => PaymentMethod.CreditCard,
+                        var k when k.Contains("cash") => PaymentMethod.Cash,
+                        _ => (PaymentMethod?)null
+                    };
+                    if (method.HasValue)
+                    {
+                        accountToMethodMap[kvp.Value.Value] = method.Value;
+                    }
+                }
+            }
+
+            // مسح المدفوعات القديمة لإعادة بنائها
+            if (order.Payments.Any())
+            {
+                _db.OrderPayments.RemoveRange(order.Payments);
+                order.Payments.Clear();
+            }
+
+            var paymentsToCreate = dto.Lines
+                .Where(l => l.Debit > 0 && accountToMethodMap.ContainsKey(l.AccountId))
+                .GroupBy(l => accountToMethodMap[l.AccountId])
+                .Select(g => new OrderPayment
+                {
+                    OrderId = order.Id,
+                    Method = g.Key,
+                    Amount = g.Sum(l => l.Debit),
+                    IsPosted = true
+                }).ToList();
+
+            foreach (var p in paymentsToCreate)
+            {
+                order.Payments.Add(p);
+            }
+
+            decimal newPaidAmount = paymentsToCreate.Sum(p => p.Amount);
+            order.PaidAmount = newPaidAmount;
+
+            // تحديث طريقة الدفع
+            if (order.Payments.Count == 1)
+            {
+                order.PaymentMethod = order.Payments.First().Method;
+            }
+            else if (order.Payments.Count > 1)
+            {
+                order.PaymentMethod = PaymentMethod.Mixed;
+            }
+            else
+            {
+                order.PaymentMethod = PaymentMethod.Credit;
+            }
+
+            // تحديث حالة الدفع
+            if (order.PaidAmount >= order.TotalAmount)
+            {
+                order.PaymentStatus = PaymentStatus.Paid;
+            }
+            else if (order.PaidAmount > 0)
+            {
+                order.PaymentStatus = PaymentStatus.PartiallyPaid;
+            }
+            else
+            {
+                order.PaymentStatus = PaymentStatus.Pending;
+            }
+        }
+
         await _db.SaveChangesAsync();
         return entry;
     }
