@@ -190,49 +190,62 @@ public class InventoryAuditsController : ControllerBase
     public async Task<IActionResult> Update(int id, [FromBody] UpdateInventoryAuditDto dto)
     {
         if (!await CheckPerms(ModuleKeys.InventoryCount, true)) return Forbid();
-        var audit = await _db.InventoryAudits.Include(a => a.Items).FirstOrDefaultAsync(a => a.Id == id);
-        if (audit == null) return NotFound();
-        
-        // If it was posted, we might want to log that we're reverting it
-        if (audit.Status == InventoryAuditStatus.Posted)
+
+        await using var transaction = await _db.Database.BeginTransactionAsync();
+        try
         {
-            _logger.LogInformation("Reverting Posted Audit {Id} to Draft for editing", id);
-            // Optional: You could reverse stock movements here, 
-            // but for simplicity we'll just let the next 'Post' recalculate everything.
-            // However, to keep stock accurate, we should probably reverse the LAST movements.
-            foreach (var item in audit.Items)
+            var audit = await _db.InventoryAudits.Include(a => a.Items).FirstOrDefaultAsync(a => a.Id == id);
+            if (audit == null) return NotFound();
+            
+            // If it was posted, we might want to log that we're reverting it
+            if (audit.Status == InventoryAuditStatus.Posted)
             {
-                await _inventory.LogMovementAsync(
-                    InventoryMovementType.Adjustment, 
-                    -item.Difference, // Reverse the previous audit impact
-                    item.ProductId, 
-                    item.ProductVariantId, 
-                    $"REVERT-AUDIT-{audit.Id}", 
-                    "Reverting for edit", 
-                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-                    0, // unitCost fallback
-                    audit.CostCenter
-                );
+                _logger.LogInformation("Reverting Posted Audit {Id} to Draft for editing", id);
+                // Optional: You could reverse stock movements here, 
+                // but for simplicity we'll just let the next 'Post' recalculate everything.
+                // However, to keep stock accurate, we should probably reverse the LAST movements.
+                foreach (var item in audit.Items)
+                {
+                    await _inventory.LogMovementAsync(
+                        type: InventoryMovementType.Adjustment, 
+                        quantity: -item.Difference, // Reverse the previous audit impact
+                        productId: item.ProductId, 
+                        variantId: item.ProductVariantId, 
+                        reference: $"REVERT-AUDIT-{audit.Id}", 
+                        note: "Reverting for edit", 
+                        userId: User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                        unitCost: 0, // unitCost fallback
+                        costCenter: audit.CostCenter,
+                        ignoreIdempotency: true
+                    );
+                }
+                audit.Status = InventoryAuditStatus.Draft;
+                audit.CostCenter = dto.CostCenter;
+                audit.JournalEntryId = null; // Entry should be reversed or ignored
             }
-            audit.Status = InventoryAuditStatus.Draft;
+
+            audit.Title = dto.Title;
+            audit.Description = dto.Description;
             audit.CostCenter = dto.CostCenter;
-            audit.JournalEntryId = null; // Entry should be reversed or ignored
+            
+            // Remove old items and re-add (Simple approach for audit)
+            _db.InventoryAuditItems.RemoveRange(audit.Items);
+            audit.Items.Clear();
+
+            await ProcessItemsAsync(audit, dto.Items);
+            
+            audit.UpdatedAt = TimeHelper.GetEgyptTime();
+            await _db.SaveChangesAsync();
+
+            await transaction.CommitAsync();
+            return Ok(new { message = _t.Get("InventoryAudits.ChangesSaved") });
         }
-
-        audit.Title = dto.Title;
-        audit.Description = dto.Description;
-        audit.CostCenter = dto.CostCenter;
-        
-        // Remove old items and re-add (Simple approach for audit)
-        _db.InventoryAuditItems.RemoveRange(audit.Items);
-        audit.Items.Clear();
-
-        await ProcessItemsAsync(audit, dto.Items);
-        
-        audit.UpdatedAt = TimeHelper.GetEgyptTime();
-        await _db.SaveChangesAsync();
-
-        return Ok(new { message = _t.Get("InventoryAudits.ChangesSaved") });
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            _logger.LogError(ex, "Error updating inventory audit {Id}", id);
+            throw;
+        }
     }
 
     private async Task ProcessItemsAsync(InventoryAudit audit, List<CreateInventoryAuditItemDto> items)
@@ -289,76 +302,104 @@ public class InventoryAuditsController : ControllerBase
     public async Task<IActionResult> PostAudit(int id)
     {
         if (!await CheckPerms(ModuleKeys.InventoryCount, true)) return Forbid();
-        var audit = await _db.InventoryAudits
-            .Include(a => a.Items)
-            .FirstOrDefaultAsync(a => a.Id == id);
 
-        if (audit == null) return NotFound();
-        if (audit.Status == InventoryAuditStatus.Posted) return BadRequest(_t.Get("InventoryAudits.AlreadyPosted"));
-
-        // Update Stock via InventoryService
-        foreach (var item in audit.Items)
+        await using var transaction = await _db.Database.BeginTransactionAsync();
+        try
         {
-            // Difference = Actual - Expected
-            await _inventory.LogMovementAsync(
-                InventoryMovementType.Audit,
-                item.Difference,
-                item.ProductId,
-                item.ProductVariantId,
-                $"AUDIT-{audit.Id}",
-                item.Note,
-                User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-                item.UnitCost,
-                audit.CostCenter
+            var audit = await _db.InventoryAudits
+                .Include(a => a.Items)
+                .FirstOrDefaultAsync(a => a.Id == id);
+
+            if (audit == null) return NotFound();
+            if (audit.Status == InventoryAuditStatus.Posted) return BadRequest(_t.Get("InventoryAudits.AlreadyPosted"));
+
+            // Update Stock via InventoryService
+            foreach (var item in audit.Items)
+            {
+                // Difference = Actual - Expected
+                await _inventory.LogMovementAsync(
+                    type: InventoryMovementType.Audit,
+                    quantity: item.Difference,
+                    productId: item.ProductId,
+                    variantId: item.ProductVariantId,
+                    reference: $"AUDIT-{audit.Id}",
+                    note: item.Note,
+                    userId: User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                    unitCost: item.UnitCost,
+                    costCenter: audit.CostCenter,
+                    ignoreIdempotency: true
+                );
+            }
+
+            audit.Status    = InventoryAuditStatus.Posted;
+            audit.UpdatedAt = TimeHelper.GetEgyptTime();
+
+            // 3. Post Accounting Journal Entry for the variance
+            var jeId = await _accounting.PostInventoryAdjustmentAsync(
+                auditId: audit.Id, 
+                netImpact: audit.ValueDifference, 
+                reference: $"AUDIT-{audit.Id}", 
+                userId: User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                costCenter: audit.CostCenter
             );
+            audit.JournalEntryId = jeId;
+
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return Ok(new { message = _t.Get("InventoryAudits.AuditApprovedSuccess") });
         }
-
-        audit.Status    = InventoryAuditStatus.Posted;
-        audit.UpdatedAt = TimeHelper.GetEgyptTime();
-
-        // 3. Post Accounting Journal Entry for the variance
-        var jeId = await _accounting.PostInventoryAdjustmentAsync(
-            auditId: audit.Id, 
-            netImpact: audit.ValueDifference, 
-            reference: $"AUDIT-{audit.Id}", 
-            userId: User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-            costCenter: audit.CostCenter
-        );
-        audit.JournalEntryId = jeId;
-
-        await _db.SaveChangesAsync();
-        return Ok(new { message = _t.Get("InventoryAudits.AuditApprovedSuccess") });
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            _logger.LogError(ex, "Error posting inventory audit {Id}", id);
+            throw;
+        }
     }
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
         if (!await CheckPerms(ModuleKeys.InventoryCount, true)) return Forbid();
-        var audit = await _db.InventoryAudits.Include(a => a.Items).FirstOrDefaultAsync(a => a.Id == id);
-        if (audit == null) return NotFound();
 
-        if (audit.Status == InventoryAuditStatus.Posted)
+        await using var transaction = await _db.Database.BeginTransactionAsync();
+        try
         {
-            // Reverse stock movements
-            foreach (var item in audit.Items)
-            {
-                await _inventory.LogMovementAsync(
-                    InventoryMovementType.Adjustment,
-                    -item.Difference,
-                    item.ProductId,
-                    item.ProductVariantId,
-                    $"DELETE-AUDIT-{audit.Id}",
-                    "Audit Deleted",
-                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-                    item.UnitCost,
-                    audit.CostCenter
-                );
-            }
-        }
+            var audit = await _db.InventoryAudits.Include(a => a.Items).FirstOrDefaultAsync(a => a.Id == id);
+            if (audit == null) return NotFound();
 
-        _db.InventoryAudits.Remove(audit);
-        await _db.SaveChangesAsync();
-        return NoContent();
+            if (audit.Status == InventoryAuditStatus.Posted)
+            {
+                // Reverse stock movements
+                foreach (var item in audit.Items)
+                {
+                    await _inventory.LogMovementAsync(
+                        type: InventoryMovementType.Adjustment,
+                        quantity: -item.Difference,
+                        productId: item.ProductId,
+                        variantId: item.ProductVariantId,
+                        reference: $"DELETE-AUDIT-{audit.Id}",
+                        note: "Audit Deleted",
+                        userId: User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                        unitCost: item.UnitCost,
+                        costCenter: audit.CostCenter,
+                        ignoreIdempotency: true
+                    );
+                }
+            }
+
+            _db.InventoryAudits.Remove(audit);
+            await _db.SaveChangesAsync();
+
+            await transaction.CommitAsync();
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            _logger.LogError(ex, "Error deleting inventory audit {Id}", id);
+            throw;
+        }
     }
 }
 
