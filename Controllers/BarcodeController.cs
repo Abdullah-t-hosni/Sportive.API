@@ -33,7 +33,6 @@ public class BarcodeController : ControllerBase
                 byPrice ? (isDecimal && (p.Price == price || p.DiscountPrice == price)) : (
                     p.SKU.ToLower() == queryVal || 
                     (isInt && p.Id == id) ||
-                    p.NameAr.ToLower().Contains(queryVal) ||
                     // البحث في المتغيرات (مثلاً لو كان الكود هو SKU-Size-Color)
                     p.Variants.Any(v => (p.SKU + "-" + v.Size + "-" + v.Color).ToLower() == queryVal)
                 )
