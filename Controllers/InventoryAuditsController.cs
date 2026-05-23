@@ -22,14 +22,16 @@ public class InventoryAuditsController : ControllerBase
     private readonly AccountingCoreService _accounting;
     private readonly ILogger<InventoryAuditsController> _logger;
     private readonly ITranslator _t;
+    private readonly IAccountingService _accountingService;
 
-    public InventoryAuditsController(AppDbContext db, IInventoryService inventory, AccountingCoreService accounting, ILogger<InventoryAuditsController> logger, ITranslator t)
+    public InventoryAuditsController(AppDbContext db, IInventoryService inventory, AccountingCoreService accounting, ILogger<InventoryAuditsController> logger, ITranslator t, IAccountingService accountingService)
     {
         _db = db;
         _inventory = inventory;
         _accounting = accounting;
         _logger = logger;
         _t = t;
+        _accountingService = accountingService;
     }
 
     private async Task<bool> CheckPerms(string perm, bool edit = false)
@@ -197,31 +199,65 @@ public class InventoryAuditsController : ControllerBase
             var audit = await _db.InventoryAudits.Include(a => a.Items).FirstOrDefaultAsync(a => a.Id == id);
             if (audit == null) return NotFound();
             
-            // If it was posted, we might want to log that we're reverting it
+            // If it was posted, we revert stock, delete movements, and reverse/delete the journal entry
             if (audit.Status == InventoryAuditStatus.Posted)
             {
                 _logger.LogInformation("Reverting Posted Audit {Id} to Draft for editing", id);
-                // Optional: You could reverse stock movements here, 
-                // but for simplicity we'll just let the next 'Post' recalculate everything.
-                // However, to keep stock accurate, we should probably reverse the LAST movements.
-                foreach (var item in audit.Items)
+                
+                // 1. Find all movements related to this audit
+                var refs = new List<string> { $"AUDIT-{audit.Id}", $"REVERT-AUDIT-{audit.Id}", $"DELETE-AUDIT-{audit.Id}" };
+                var movements = await _db.InventoryMovements
+                    .Where(m => m.Reference != null && refs.Contains(m.Reference))
+                    .ToListAsync();
+
+                // 2. Revert the stock level of each movement
+                foreach (var mv in movements)
                 {
-                    await _inventory.LogMovementAsync(
-                        type: InventoryMovementType.Adjustment, 
-                        quantity: -item.Difference, // Reverse the previous audit impact
-                        productId: item.ProductId, 
-                        variantId: item.ProductVariantId, 
-                        reference: $"REVERT-AUDIT-{audit.Id}", 
-                        note: "Reverting for edit", 
-                        userId: User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-                        unitCost: 0, // unitCost fallback
-                        costCenter: audit.CostCenter,
-                        ignoreIdempotency: true
-                    );
+                    if (mv.ProductVariantId.HasValue)
+                    {
+                        var variant = await _db.ProductVariants.Include(v => v.Product).FirstOrDefaultAsync(v => v.Id == mv.ProductVariantId.Value);
+                        if (variant != null)
+                        {
+                            variant.StockQuantity -= mv.Quantity;
+                            variant.Product.TotalStock -= mv.Quantity;
+                            variant.UpdatedAt = TimeHelper.GetEgyptTime();
+                            variant.Product.UpdatedAt = TimeHelper.GetEgyptTime();
+                        }
+                    }
+                    else if (mv.ProductId.HasValue)
+                    {
+                        var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == mv.ProductId.Value);
+                        if (product != null)
+                        {
+                            product.TotalStock -= mv.Quantity;
+                            product.UpdatedAt = TimeHelper.GetEgyptTime();
+                        }
+                    }
                 }
+
+                // 3. Delete the movements
+                _db.InventoryMovements.RemoveRange(movements);
+
+                // 4. Reverse or delete the journal entry
+                if (audit.JournalEntryId.HasValue)
+                {
+                    var journal = await _db.JournalEntries.FirstOrDefaultAsync(j => j.Id == audit.JournalEntryId.Value);
+                    if (journal != null)
+                    {
+                        if (User.IsInRole("SuperAdmin") || User.IsInRole("Admin"))
+                        {
+                            _db.JournalEntries.Remove(journal);
+                        }
+                        else
+                        {
+                            await _accountingService.ReverseEntryAsync(journal.Id, $"تعديل الجرد وتحويله لمسودة #{audit.Id}");
+                        }
+                    }
+                }
+
                 audit.Status = InventoryAuditStatus.Draft;
                 audit.CostCenter = dto.CostCenter;
-                audit.JournalEntryId = null; // Entry should be reversed or ignored
+                audit.JournalEntryId = null;
             }
 
             audit.Title = dto.Title;
@@ -327,6 +363,7 @@ public class InventoryAuditsController : ControllerBase
                     userId: User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                     unitCost: item.UnitCost,
                     costCenter: audit.CostCenter,
+                    force: true,           // Audit overrides stock — force the physical count
                     ignoreIdempotency: true
                 );
             }
@@ -370,21 +407,55 @@ public class InventoryAuditsController : ControllerBase
 
             if (audit.Status == InventoryAuditStatus.Posted)
             {
-                // Reverse stock movements
-                foreach (var item in audit.Items)
+                // 1. Find all movements related to this audit
+                var refs = new List<string> { $"AUDIT-{audit.Id}", $"REVERT-AUDIT-{audit.Id}", $"DELETE-AUDIT-{audit.Id}" };
+                var movements = await _db.InventoryMovements
+                    .Where(m => m.Reference != null && refs.Contains(m.Reference))
+                    .ToListAsync();
+
+                // 2. Revert the stock level of each movement
+                foreach (var mv in movements)
                 {
-                    await _inventory.LogMovementAsync(
-                        type: InventoryMovementType.Adjustment,
-                        quantity: -item.Difference,
-                        productId: item.ProductId,
-                        variantId: item.ProductVariantId,
-                        reference: $"DELETE-AUDIT-{audit.Id}",
-                        note: "Audit Deleted",
-                        userId: User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-                        unitCost: item.UnitCost,
-                        costCenter: audit.CostCenter,
-                        ignoreIdempotency: true
-                    );
+                    if (mv.ProductVariantId.HasValue)
+                    {
+                        var variant = await _db.ProductVariants.Include(v => v.Product).FirstOrDefaultAsync(v => v.Id == mv.ProductVariantId.Value);
+                        if (variant != null)
+                        {
+                            variant.StockQuantity -= mv.Quantity;
+                            variant.Product.TotalStock -= mv.Quantity;
+                            variant.UpdatedAt = TimeHelper.GetEgyptTime();
+                            variant.Product.UpdatedAt = TimeHelper.GetEgyptTime();
+                        }
+                    }
+                    else if (mv.ProductId.HasValue)
+                    {
+                        var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == mv.ProductId.Value);
+                        if (product != null)
+                        {
+                            product.TotalStock -= mv.Quantity;
+                            product.UpdatedAt = TimeHelper.GetEgyptTime();
+                        }
+                    }
+                }
+
+                // 3. Delete the movements
+                _db.InventoryMovements.RemoveRange(movements);
+
+                // 4. Reverse or delete the journal entry
+                if (audit.JournalEntryId.HasValue)
+                {
+                    var journal = await _db.JournalEntries.FirstOrDefaultAsync(j => j.Id == audit.JournalEntryId.Value);
+                    if (journal != null)
+                    {
+                        if (User.IsInRole("SuperAdmin") || User.IsInRole("Admin"))
+                        {
+                            _db.JournalEntries.Remove(journal);
+                        }
+                        else
+                        {
+                            await _accountingService.ReverseEntryAsync(journal.Id, $"حذف الجرد #{audit.Id}");
+                        }
+                    }
                 }
             }
 

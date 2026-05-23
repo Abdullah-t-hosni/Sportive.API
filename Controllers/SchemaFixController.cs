@@ -330,6 +330,87 @@ public class SchemaFixController : ControllerBase
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
+    [HttpGet("clean-audit-movements")]
+    public async Task<IActionResult> CleanAuditMovements()
+    {
+        _logger.LogWarning("CleanAuditMovements triggered.");
+        try
+        {
+            // 1. Find all movements that are REVERT or DELETE audits
+            var revertMovements = await _db.InventoryMovements
+                .Where(m => m.Reference != null && (m.Reference.StartsWith("REVERT-AUDIT-") || m.Reference.StartsWith("DELETE-AUDIT-")))
+                .ToListAsync();
+
+            var deletedMvCount = 0;
+            foreach (var revMv in revertMovements)
+            {
+                // Extract audit ID from reference (e.g., REVERT-AUDIT-23 -> 23)
+                var parts = revMv.Reference!.Split('-');
+                if (parts.Length > 0 && int.TryParse(parts[^1], out var auditId))
+                {
+                    // Find the matching original audit movement for the same variant/product
+                    var originalMv = await _db.InventoryMovements
+                        .FirstOrDefaultAsync(m => m.Reference == $"AUDIT-{auditId}" && 
+                                                 m.ProductId == revMv.ProductId && 
+                                                 m.ProductVariantId == revMv.ProductVariantId);
+
+                    if (originalMv != null)
+                    {
+                        _db.InventoryMovements.Remove(originalMv);
+                        deletedMvCount++;
+                    }
+                }
+                
+                _db.InventoryMovements.Remove(revMv);
+                deletedMvCount++;
+            }
+
+            // 2. Clean up journal entries for deleted audits
+            var journalEntries = await _db.JournalEntries
+                .Include(j => j.Lines)
+                .Where(j => j.Reference != null && j.Reference.StartsWith("AUDIT-"))
+                .ToListAsync();
+
+            var deletedJeCount = 0;
+            foreach (var je in journalEntries)
+            {
+                var parts = je.Reference!.Split('-');
+                if (parts.Length > 0 && int.TryParse(parts[^1], out var auditId))
+                {
+                    // Check if the audit still exists
+                    var auditExists = await _db.InventoryAudits.AnyAsync(a => a.Id == auditId);
+                    if (!auditExists)
+                    {
+                        // Find any reversals
+                        var reversals = await _db.JournalEntries
+                            .Include(j => j.Lines)
+                            .Where(j => j.ReversalOfId == je.Id)
+                            .ToListAsync();
+
+                        _db.JournalEntries.RemoveRange(reversals);
+                        _db.JournalEntries.Remove(je);
+                        deletedJeCount += 1 + reversals.Count;
+                    }
+                }
+            }
+
+            if (deletedMvCount > 0 || deletedJeCount > 0)
+            {
+                await _db.SaveChangesAsync();
+            }
+
+            return Ok(new { 
+                message = $"Cleaned up {deletedMvCount} stock movement records and {deletedJeCount} journal entry records.", 
+                deletedMovements = deletedMvCount,
+                deletedJournalEntries = deletedJeCount
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
     private int FixDescendantsInternal(int parentId, CategoryType correctType, List<Category> all)
     {
         int count = 0;
