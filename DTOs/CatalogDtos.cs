@@ -142,7 +142,8 @@ public record ProductDetailDto(
     [property: JsonPropertyName("unitSymbol")] string? UnitSymbol,
     [property: JsonPropertyName("createdAt")] DateTime CreatedAt,
     [property: JsonPropertyName("reviews")] List<ReviewListItemDto>? Reviews = null,
-    [property: JsonPropertyName("activeDiscountLabel")] string? ActiveDiscountLabel = null
+    [property: JsonPropertyName("activeDiscountLabel")] string? ActiveDiscountLabel = null,
+    [property: JsonPropertyName("sizeChartImageUrl")] string? SizeChartImageUrl = null
 );
 
 public record ProductVariantDto(
@@ -178,7 +179,8 @@ public record CreateProductDto(
     [property: JsonPropertyName("hasTax")] bool HasTax = true,
     [property: JsonPropertyName("isTaxInclusive")] bool IsTaxInclusive = true,
     [property: JsonPropertyName("vatRate")] decimal? VatRate = null,
-    [property: JsonPropertyName("sizeGroupId")] int? SizeGroupId = null
+    [property: JsonPropertyName("sizeGroupId")] int? SizeGroupId = null,
+    [property: JsonPropertyName("sizeChartImageUrl")] string? SizeChartImageUrl = null
 );
 
 public record UpdateProductDto(
@@ -199,7 +201,8 @@ public record UpdateProductDto(
     [property: JsonPropertyName("hasTax")] bool HasTax = true,
     [property: JsonPropertyName("isTaxInclusive")] bool IsTaxInclusive = true,
     [property: JsonPropertyName("vatRate")] decimal? VatRate = null,
-    [property: JsonPropertyName("sizeGroupId")] int? SizeGroupId = null
+    [property: JsonPropertyName("sizeGroupId")] int? SizeGroupId = null,
+    [property: JsonPropertyName("sizeChartImageUrl")] string? SizeChartImageUrl = null
 );
 
 public record CreateVariantDto(
