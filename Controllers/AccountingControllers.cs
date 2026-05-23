@@ -627,19 +627,92 @@ public class JournalEntriesController : ControllerBase
         if (source.HasValue) q = q.Where(e => e.CostCenter == source.Value);
 
         var total = await q.CountAsync();
-        var entries = await q.OrderByDescending(e => e.EntryDate).ThenByDescending(e => e.Id)
-            .Skip((page-1)*pageSize).Take(pageSize)
-            .Select(e => new {
-                e.Id, e.EntryNumber, e.EntryDate, e.Description, e.Reference, e.CreatedAt,
+        List<object> entries;
+        if (includeLines)
+        {
+            var rawEntries = await q.OrderByDescending(e => e.EntryDate).ThenByDescending(e => e.Id)
+                .Skip((page-1)*pageSize).Take(pageSize)
+                .Select(e => new {
+                    e.Id,
+                    e.EntryNumber,
+                    e.EntryDate,
+                    e.Description,
+                    e.Reference,
+                    e.CreatedAt,
+                    e.Status,
+                    e.Type,
+                    e.CostCenter,
+                    LineCount = e.Lines.Count,
+                    TotalAmount = e.Lines.Where(l => l.Debit > 0).Sum(l => (decimal?)l.Debit) ?? 0,
+                    Lines = e.Lines.Select(l => new {
+                        l.AccountId,
+                        AccountCode = l.Account != null ? l.Account.Code : null,
+                        l.Credit,
+                        l.Debit,
+                        AccountName = l.Account != null ? l.Account.NameAr : null,
+                        l.CostCenter
+                    }).ToList()
+                })
+                .ToListAsync();
+
+            entries = rawEntries.Select(e => (object)new {
+                e.Id,
+                e.EntryNumber,
+                e.EntryDate,
+                e.Description,
+                e.Reference,
+                e.CreatedAt,
                 Status = e.Status.ToString(),
                 Type = e.Type.ToString(),
                 CostCenter = (int?)e.CostCenter,
                 CostCenterLabel = e.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (e.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General")),
-                LineCount = includeLines ? e.Lines.Count : _db.JournalLines.Count(l => l.JournalEntryId == e.Id),
-                TotalAmount = includeLines ? e.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit) : (_db.JournalLines.AsNoTracking().Where(l => l.JournalEntryId == e.Id && l.Debit > 0).Sum(l => (decimal?)l.Debit) ?? 0),
-                Lines = includeLines ? (object)e.Lines.Select(l => new { l.AccountId, AccountCode = l.Account != null ? l.Account.Code : null, l.Credit, l.Debit, AccountName = l.Account != null ? l.Account.NameAr : null, CostCenter = (int?)l.CostCenter }).ToList() : null
-            })
-            .ToListAsync();
+                e.LineCount,
+                e.TotalAmount,
+                Lines = (object)e.Lines.Select(l => new {
+                    l.AccountId,
+                    l.AccountCode,
+                    l.Credit,
+                    l.Debit,
+                    l.AccountName,
+                    CostCenter = (int?)l.CostCenter
+                }).ToList()
+            }).ToList();
+        }
+        else
+        {
+            var rawEntries = await q.OrderByDescending(e => e.EntryDate).ThenByDescending(e => e.Id)
+                .Skip((page-1)*pageSize).Take(pageSize)
+                .Select(e => new {
+                    e.Id,
+                    e.EntryNumber,
+                    e.EntryDate,
+                    e.Description,
+                    e.Reference,
+                    e.CreatedAt,
+                    e.Status,
+                    e.Type,
+                    e.CostCenter,
+                    LineCount = e.Lines.Count,
+                    TotalAmount = e.Lines.Where(l => l.Debit > 0).Sum(l => (decimal?)l.Debit) ?? 0
+                })
+                .ToListAsync();
+
+            entries = rawEntries.Select(e => (object)new {
+                e.Id,
+                e.EntryNumber,
+                e.EntryDate,
+                e.Description,
+                e.Reference,
+                e.CreatedAt,
+                Status = e.Status.ToString(),
+                Type = e.Type.ToString(),
+                CostCenter = (int?)e.CostCenter,
+                CostCenterLabel = e.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (e.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General")),
+                e.LineCount,
+                e.TotalAmount,
+                Lines = (object?)null
+            }).ToList();
+        }
 
         return Ok(new { items = entries, total, page, pageSize, totalPages = (int)Math.Ceiling(total/(double)pageSize) });
     }
@@ -797,18 +870,28 @@ public class ReceiptVouchersController : ControllerBase
             q = q.Where(v => v.EmployeeId != null || _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId != null));
         
         var total = await q.CountAsync();
-        var items = await q.OrderByDescending(v => v.VoucherDate).ThenByDescending(v => v.Id)
+        var rawItems = await q.OrderByDescending(v => v.VoucherDate).ThenByDescending(v => v.Id)
             .Skip((page-1)*pageSize).Take(pageSize)
             .Select(v => new { 
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description, v.CreatedAt,
                 v.CashAccountId,
-                CostCenter = (int?)v.CostCenter,
-                CostCenterLabel = v.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (v.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General")),
+                v.CostCenter,
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 FromAccountName = v.FromAccount != null ? v.FromAccount.NameAr : null,
-                EntityName = v.Customer != null ? v.Customer.FullName : (v.Employee != null ? v.Employee.Name : null)
+                CustomerName = v.Customer != null ? v.Customer.FullName : null,
+                EmployeeName = v.Employee != null ? v.Employee.Name : null
             })
             .ToListAsync();
+
+        var items = rawItems.Select(v => new {
+            v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description, v.CreatedAt,
+            v.CashAccountId,
+            CostCenter = (int?)v.CostCenter,
+            CostCenterLabel = v.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (v.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General")),
+            v.CashAccountName,
+            v.FromAccountName,
+            EntityName = v.CustomerName ?? v.EmployeeName
+        }).ToList();
 
         return Ok(new { items, total, page, pageSize, totalPages = (int)Math.Ceiling(total/(double)pageSize) });
     }
@@ -816,7 +899,7 @@ public class ReceiptVouchersController : ControllerBase
     [HttpGet("order/{orderId}")]
     public async Task<IActionResult> GetByOrderId(int orderId)
     {
-        var items = await _db.ReceiptVouchers
+        var rawItems = await _db.ReceiptVouchers
             .Where(v => v.OrderId == orderId)
             .Include(v => v.CashAccount)
             .Include(v => v.FromAccount)
@@ -825,13 +908,23 @@ public class ReceiptVouchersController : ControllerBase
             .Select(v => new { 
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description,
                 v.CashAccountId,
-                CostCenter = (int?)v.CostCenter,
-                CostCenterLabel = v.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (v.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General")),
+                v.CostCenter,
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 FromAccountName = v.FromAccount != null ? v.FromAccount.NameAr : null,
-                EntityName = v.Customer != null ? v.Customer.FullName : (v.Employee != null ? v.Employee.Name : null)
+                CustomerName = v.Customer != null ? v.Customer.FullName : null,
+                EmployeeName = v.Employee != null ? v.Employee.Name : null
             })
             .ToListAsync();
+
+        var items = rawItems.Select(v => new {
+            v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description,
+            v.CashAccountId,
+            CostCenter = (int?)v.CostCenter,
+            CostCenterLabel = v.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (v.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General")),
+            v.CashAccountName,
+            v.FromAccountName,
+            EntityName = v.CustomerName ?? v.EmployeeName
+        }).ToList();
         return Ok(items);
     }
 
@@ -1129,16 +1222,26 @@ public class PaymentVouchersController : ControllerBase
             q = q.Where(v => v.EmployeeId != null || _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId != null));
 
         var total = await q.CountAsync();
-        var items = await q.OrderByDescending(v => v.VoucherDate).ThenByDescending(v => v.Id).Skip((page-1)*pageSize).Take(pageSize)
+        var rawItems = await q.OrderByDescending(v => v.VoucherDate).ThenByDescending(v => v.Id).Skip((page-1)*pageSize).Take(pageSize)
             .Select(v => new { 
                 v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description, v.CreatedAt,
                 v.CashAccountId, v.ToAccountId,
-                CostCenter = (int?)v.CostCenter,
-                CostCenterLabel = v.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (v.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General")),
+                v.CostCenter,
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
                 ToAccountName = v.ToAccount != null ? v.ToAccount.NameAr : null,
-                EntityName = v.Supplier != null ? v.Supplier.Name : (v.Employee != null ? v.Employee.Name : null)
+                SupplierName = v.Supplier != null ? v.Supplier.Name : null,
+                EmployeeName = v.Employee != null ? v.Employee.Name : null
             }).ToListAsync();
+
+        var items = rawItems.Select(v => new {
+            v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description, v.CreatedAt,
+            v.CashAccountId, v.ToAccountId,
+            CostCenter = (int?)v.CostCenter,
+            CostCenterLabel = v.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (v.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General")),
+            v.CashAccountName,
+            v.ToAccountName,
+            EntityName = v.SupplierName ?? v.EmployeeName
+        }).ToList();
 
         return Ok(new { items, total, page, pageSize, totalPages = (int)Math.Ceiling(total/(double)pageSize) });
     }
