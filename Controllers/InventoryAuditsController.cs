@@ -193,14 +193,19 @@ public class InventoryAuditsController : ControllerBase
     {
         if (!await CheckPerms(ModuleKeys.InventoryCount, true)) return Forbid();
 
+        IActionResult? result = null;
         var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        await strategy.ExecuteAsync(async () =>
         {
             await using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
                 var audit = await _db.InventoryAudits.Include(a => a.Items).FirstOrDefaultAsync(a => a.Id == id);
-                if (audit == null) return NotFound();
+                if (audit == null)
+                {
+                    result = NotFound();
+                    return;
+                }
                 
                 // If it was posted, we revert stock, delete movements, and reverse/delete the journal entry
                 if (audit.Status == InventoryAuditStatus.Posted)
@@ -290,7 +295,7 @@ public class InventoryAuditsController : ControllerBase
                 await _db.SaveChangesAsync();
 
                 await transaction.CommitAsync();
-                return Ok(new { message = _t.Get("InventoryAudits.ChangesSaved") });
+                result = Ok(new { message = _t.Get("InventoryAudits.ChangesSaved") });
             }
             catch (Exception ex)
             {
@@ -299,6 +304,8 @@ public class InventoryAuditsController : ControllerBase
                 throw;
             }
         });
+
+        return result ?? StatusCode(500);
     }
 
     private async Task ProcessItemsAsync(InventoryAudit audit, List<CreateInventoryAuditItemDto> items)
@@ -356,8 +363,9 @@ public class InventoryAuditsController : ControllerBase
     {
         if (!await CheckPerms(ModuleKeys.InventoryCount, true)) return Forbid();
 
+        IActionResult? result = null;
         var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        await strategy.ExecuteAsync(async () =>
         {
             await using var transaction = await _db.Database.BeginTransactionAsync();
             try
@@ -366,8 +374,16 @@ public class InventoryAuditsController : ControllerBase
                     .Include(a => a.Items)
                     .FirstOrDefaultAsync(a => a.Id == id);
 
-                if (audit == null) return NotFound();
-                if (audit.Status == InventoryAuditStatus.Posted) return BadRequest(_t.Get("InventoryAudits.AlreadyPosted"));
+                if (audit == null)
+                {
+                    result = NotFound();
+                    return;
+                }
+                if (audit.Status == InventoryAuditStatus.Posted)
+                {
+                    result = BadRequest(_t.Get("InventoryAudits.AlreadyPosted"));
+                    return;
+                }
 
                 // Update Stock via InventoryService
                 foreach (var item in audit.Items)
@@ -404,7 +420,7 @@ public class InventoryAuditsController : ControllerBase
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                return Ok(new { message = _t.Get("InventoryAudits.AuditApprovedSuccess") });
+                result = Ok(new { message = _t.Get("InventoryAudits.AuditApprovedSuccess") });
             }
             catch (Exception ex)
             {
@@ -413,6 +429,8 @@ public class InventoryAuditsController : ControllerBase
                 throw;
             }
         });
+
+        return result ?? StatusCode(500);
     }
 
     [HttpDelete("{id}")]
@@ -420,14 +438,19 @@ public class InventoryAuditsController : ControllerBase
     {
         if (!await CheckPerms(ModuleKeys.InventoryCount, true)) return Forbid();
 
+        IActionResult? result = null;
         var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        await strategy.ExecuteAsync(async () =>
         {
             await using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
                 var audit = await _db.InventoryAudits.Include(a => a.Items).FirstOrDefaultAsync(a => a.Id == id);
-                if (audit == null) return NotFound();
+                if (audit == null)
+                {
+                    result = NotFound();
+                    return;
+                }
 
                 if (audit.Status == InventoryAuditStatus.Posted)
                 {
@@ -500,7 +523,7 @@ public class InventoryAuditsController : ControllerBase
                 await _db.SaveChangesAsync();
 
                 await transaction.CommitAsync();
-                return NoContent();
+                result = NoContent();
             }
             catch (Exception ex)
             {
@@ -509,6 +532,8 @@ public class InventoryAuditsController : ControllerBase
                 throw;
             }
         });
+
+        return result ?? StatusCode(500);
     }
 }
 
