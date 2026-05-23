@@ -61,7 +61,7 @@ public class OrdersController : ControllerBase
         var order = await _orderService.GetOrderByIdAsync(id);
         if (order == null) return NotFound();
 
-        if (!IsOwnerOrStaff(order.Customer.Id))
+        if (!await IsOwnerOrStaffAsync(order.Customer.Id))
             return Forbid();
 
         return Ok(order);
@@ -77,10 +77,18 @@ public class OrdersController : ControllerBase
         return Ok(result);
     }
     
-    private bool IsOwnerOrStaff(int customerId)
+    private async Task<bool> IsOwnerOrStaffAsync(int customerId)
     {
         if (User.IsInRole("SuperAdmin") || User.IsInRole("Admin") || User.IsInRole("Manager") || User.IsInRole("Staff") || User.IsInRole("Cashier"))
             return true;
+
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!string.IsNullOrEmpty(userId))
+        {
+            var permissionService = HttpContext.RequestServices.GetRequiredService<IPermissionService>();
+            if (await permissionService.HasPosAccessAsync(userId))
+                return true;
+        }
 
         var currentCustomerId = User.FindFirst("CustomerId")?.Value;
         return currentCustomerId != null && int.Parse(currentCustomerId) == customerId;
@@ -219,7 +227,7 @@ public class OrdersController : ControllerBase
         var order = await _orderService.GetOrderByIdAsync(id);
         if (order == null) return NotFound();
 
-        if (!IsOwnerOrStaff(order.Customer.Id))
+        if (!await IsOwnerOrStaffAsync(order.Customer.Id))
             return Forbid();
 
         var pdfBytes = await _pdfService.GenerateOrderPdfAsync(order);
@@ -608,6 +616,7 @@ public class OrdersController : ControllerBase
 
     [HttpGet("archived")]
     [RequirePermission(ModuleKeys.Orders)]
+    [AllowPosAccess]
     public async Task<IActionResult> GetArchived(
         [FromQuery] string?   search   = null,
         [FromQuery] DateTime? fromDate = null,
