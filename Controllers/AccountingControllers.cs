@@ -601,7 +601,10 @@ public class JournalEntriesController : ControllerBase
         [FromQuery] DateTime? fromDate = null, 
         [FromQuery] DateTime? toDate = null, 
         [FromQuery] bool includeLines = false,
-        [FromQuery] OrderSource? source = null)
+        [FromQuery] OrderSource? source = null,
+        [FromQuery] JournalEntryStatus? status = null,
+        [FromQuery] string? entryNumber = null,
+        [FromQuery] string? description = null)
     {
         var q = _db.JournalEntries.AsNoTracking();
         if (includeLines) q = q.Include(e => e.Lines).ThenInclude(l => l.Account);
@@ -625,6 +628,9 @@ public class JournalEntriesController : ControllerBase
         if (fromDate.HasValue) q = q.Where(e => e.EntryDate >= fromDate.Value.Date.AddHours(2));
         if (toDate.HasValue) q = q.Where(e => e.EntryDate <= toDate.Value.Date.AddDays(1).AddHours(2).AddTicks(-1));
         if (source.HasValue) q = q.Where(e => e.CostCenter == source.Value);
+        if (status.HasValue) q = q.Where(e => e.Status == status.Value);
+        if (!string.IsNullOrEmpty(entryNumber)) q = q.Where(e => e.EntryNumber.Contains(entryNumber));
+        if (!string.IsNullOrEmpty(description)) q = q.Where(e => (e.Description != null && e.Description.Contains(description)) || (e.Reference != null && e.Reference.Contains(description)));
 
         var total = await q.CountAsync();
         List<object> entries;
