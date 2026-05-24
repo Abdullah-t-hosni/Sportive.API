@@ -604,7 +604,9 @@ public class JournalEntriesController : ControllerBase
         [FromQuery] OrderSource? source = null,
         [FromQuery] JournalEntryStatus? status = null,
         [FromQuery] string? entryNumber = null,
-        [FromQuery] string? description = null)
+        [FromQuery] string? description = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string sortDir = "desc")
     {
         var q = _db.JournalEntries.AsNoTracking();
         if (includeLines) q = q.Include(e => e.Lines).ThenInclude(l => l.Account);
@@ -634,9 +636,29 @@ public class JournalEntriesController : ControllerBase
 
         var total = await q.CountAsync();
         List<object> entries;
+
+        var desc = sortDir.Equals("desc", StringComparison.OrdinalIgnoreCase);
+        IOrderedQueryable<JournalEntry> ordered;
+
+        if (sortBy?.ToLower() == "createdat")
+        {
+            ordered = desc ? q.OrderByDescending(e => e.CreatedAt).ThenByDescending(e => e.Id)
+                           : q.OrderBy(e => e.CreatedAt).ThenBy(e => e.Id);
+        }
+        else if (sortBy?.ToLower() == "date")
+        {
+            ordered = desc ? q.OrderByDescending(e => e.EntryDate).ThenByDescending(e => e.Id)
+                           : q.OrderBy(e => e.EntryDate).ThenBy(e => e.Id);
+        }
+        else
+        {
+            ordered = desc ? q.OrderByDescending(e => e.EntryDate).ThenByDescending(e => e.Id)
+                           : q.OrderBy(e => e.EntryDate).ThenBy(e => e.Id);
+        }
+
         if (includeLines)
         {
-            var rawEntries = await q.OrderByDescending(e => e.EntryDate).ThenByDescending(e => e.Id)
+            var rawEntries = await ordered
                 .Skip((page-1)*pageSize).Take(pageSize)
                 .Select(e => new {
                     e.Id,
@@ -686,7 +708,7 @@ public class JournalEntriesController : ControllerBase
         }
         else
         {
-            var rawEntries = await q.OrderByDescending(e => e.EntryDate).ThenByDescending(e => e.Id)
+            var rawEntries = await ordered
                 .Skip((page-1)*pageSize).Take(pageSize)
                 .Select(e => new {
                     e.Id,
