@@ -168,16 +168,19 @@ public class SalesAccountingService
         // ── 2. Debits: Discount + Cash/Credit Routing ─────────
         
         // Manual/Coupon discount handling
+        decimal manualNetDisc = 0;
         if (order.DiscountAmount > 0)
         {
              // If order has a global discount (manual), we net-ify it to keep math perfect
-             decimal manualNetDisc = Math.Round(order.DiscountAmount / (1 + vatRate), 2);
+             manualNetDisc = Math.Round(order.DiscountAmount / (1 + vatRate), 2);
              lines.Add((salesDiscAcct, manualNetDisc, 0, _t.Get("Accounting.ManualDiscountDesc", order.OrderNumber, order.DiscountAmount)));
         }
 
-        if (totalNetDiscount > 0)
+        // Fix: Subtract manualNetDisc from totalNetDiscount to prevent double-counting distributed global discounts
+        decimal remainingPromoDisc = Math.Round(totalNetDiscount - manualNetDisc, 2);
+        if (remainingPromoDisc > 0.05m)
         {
-            lines.Add((salesDiscAcct, Math.Round(totalNetDiscount, 2), 0, _t.Get("Accounting.OfferDiscountDesc", order.OrderNumber, totalGrossDiscount)));
+            lines.Add((salesDiscAcct, remainingPromoDisc, 0, _t.Get("Accounting.OfferDiscountDesc", order.OrderNumber, totalGrossDiscount)));
         }
 
         // ✅ ROBUSTNESS: Ensure payments are loaded and fresh
