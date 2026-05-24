@@ -1084,6 +1084,20 @@ public class OrderService : IOrderService
                 else if (order.PaidAmount > 0) order.PaymentStatus = PaymentStatus.PartiallyPaid;
                 else order.PaymentStatus = PaymentStatus.Pending;
 
+                // 5b. UPDATE DATE if provided (sync journal entries + receipt vouchers)
+                if (dto.CreatedAt.HasValue)
+                {
+                    order.CreatedAt = dto.CreatedAt.Value;
+                    // Note: journal entries are deleted and re-posted below, so we don't need to update them here
+                    // Receipt vouchers date sync (if any exist — unlikely since they're created fresh)
+                    var existingVouchers = await _db.ReceiptVouchers.Where(v => v.OrderId == order.Id).ToListAsync();
+                    foreach (var v in existingVouchers)
+                    {
+                        v.VoucherDate = TimeHelper.GetEgyptBusinessDayDate(dto.CreatedAt.Value);
+                        v.CreatedAt   = dto.CreatedAt.Value;
+                    }
+                }
+
                 order.UpdatedAt = now;
                 order.StatusHistory.Add(new OrderStatusHistory 
                 { 

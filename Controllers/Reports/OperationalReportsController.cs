@@ -2582,6 +2582,16 @@ public class OperationalReportsController : ControllerBase
                 Inflow = orderInsta + receiptInsta,
                 Outflow = returnInsta + settlementInsta + expenseInsta,
                 Net = (orderInsta + receiptInsta) - (returnInsta + settlementInsta + expenseInsta)
+            },
+            new {
+                Key = "Credit",
+                NameAr = "آجل / دين",
+                NameEn = "Credit / Deferred",
+                // Inflow = مبيعات على الآجل (amount not yet collected from customers)
+                Inflow = orderCredit,
+                // Outflow = 0 (تُحسب عند السداد كتحصيل)
+                Outflow = 0m,
+                Net = orderCredit
             }
         };
 
@@ -2591,6 +2601,7 @@ public class OperationalReportsController : ControllerBase
             totalCollections = totalCollectionsAmount,
             totalSettlements = totalSettlementsAmount,
             totalExpenses = totalExpensesAmount,
+            totalCredit = orderCredit,
             netCashflow = totalCollectionsAmount - totalSettlementsAmount - totalExpensesAmount - totalReturnsAmount
         };
 
