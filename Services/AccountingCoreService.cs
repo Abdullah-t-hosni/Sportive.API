@@ -98,7 +98,8 @@ public class AccountingCoreService
         int? supplierId = null,
         int? purchaseInvoiceId = null,
         OrderSource? source = null,
-        int? employeeId = null)
+        int? employeeId = null,
+        DateTime? createdAt = null)
     {
         // 🛡️ SMART SYNC: If entry exists, update it instead of returning early
         JournalEntry? existing = null;
@@ -145,6 +146,10 @@ public class AccountingCoreService
             entry = existing;
             entry.Description = description;
             entry.EntryDate = date;
+            if (createdAt.HasValue)
+            {
+                entry.CreatedAt = createdAt.Value;
+            }
             entry.UpdatedAt = TimeHelper.GetEgyptTime();
             entry.OrderId = orderId;
             entry.PurchaseInvoiceId = purchaseInvoiceId;
@@ -184,7 +189,7 @@ public class AccountingCoreService
                 OrderId     = orderId,
                 PurchaseInvoiceId = purchaseInvoiceId,
                 CostCenter  = source,
-                CreatedAt   = TimeHelper.GetEgyptTime(),
+                CreatedAt   = createdAt ?? TimeHelper.GetEgyptTime(),
             };
             _db.JournalEntries.Add(entry);
         }

@@ -99,7 +99,7 @@ public class PaymentAccountingService
             throw new InvalidOperationException(_t.Get("Accounting.PaymentMatchingGeneralError", order.PaidAmount, handledPaidAmt, order.OrderNumber));
         }
 
-        await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, reference, _t.Get("Accounting.AutoReceiptVoucherMainDesc", order.OrderNumber), TimeHelper.GetEgyptTime(), lines, orderId: order.Id, customerId: order.CustomerId, source: order.Source);
+        await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, reference, _t.Get("Accounting.AutoReceiptVoucherMainDesc", order.OrderNumber), TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt), lines, orderId: order.Id, customerId: order.CustomerId, source: order.Source, createdAt: order.CreatedAt);
     }
 
     public async Task PostOrderRefundAsync(Order order)
@@ -115,7 +115,7 @@ public class PaymentAccountingService
         lines.Add((receivablesAcct, order.TotalAmount, 0, _t.Get("Accounting.DebtRefundDesc", order.OrderNumber)));
         lines.Add((cashCode, 0, order.TotalAmount, _t.Get("Accounting.OrderAmountRefundDesc", order.OrderNumber)));
 
-        await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, reference, _t.Get("Accounting.AutoPaymentVoucherMainDesc", order.OrderNumber), TimeHelper.GetEgyptTime(), lines, orderId: order.Id, customerId: order.CustomerId, source: order.Source);
+        await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, reference, _t.Get("Accounting.AutoPaymentVoucherMainDesc", order.OrderNumber), TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt), lines, orderId: order.Id, customerId: order.CustomerId, source: order.Source, createdAt: order.CreatedAt);
     }
 
     public async Task PostReceiptVoucherAsync(ReceiptVoucher voucher, int? orderId = null)

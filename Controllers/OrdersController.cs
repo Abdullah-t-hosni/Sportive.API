@@ -195,22 +195,22 @@ public class OrdersController : ControllerBase
         order.CreatedAt = dto.CreatedAt;
         order.UpdatedAt = TimeHelper.GetEgyptTime();
 
-        // âœ… SYNC ACCOUNTING: Update all Journal Entries associated with this order
+        // ✅ SYNC ACCOUNTING: Update all Journal Entries associated with this order
         var journalEntries = await _db.JournalEntries
             .Where(e => e.OrderId == id || e.Reference == order.OrderNumber)
             .ToListAsync();
 
         foreach (var entry in journalEntries)
         {
-            entry.EntryDate = dto.CreatedAt;
+            entry.EntryDate = TimeHelper.GetEgyptBusinessDayDate(dto.CreatedAt);
             entry.CreatedAt = dto.CreatedAt;
         }
 
-        // âœ… SYNC VOUCHERS: Update any Receipt/Payment vouchers linked to this order
+        // ✅ SYNC VOUCHERS: Update any Receipt/Payment vouchers linked to this order
         var vouchers = await _db.ReceiptVouchers.Where(v => v.OrderId == id).ToListAsync();
         foreach (var v in vouchers)
         {
-            v.VoucherDate = dto.CreatedAt;
+            v.VoucherDate = TimeHelper.GetEgyptBusinessDayDate(dto.CreatedAt);
             v.CreatedAt   = dto.CreatedAt;
         }
 

@@ -261,12 +261,13 @@ public class SalesAccountingService
             type:        JournalEntryType.SalesInvoice,
             reference:   order.OrderNumber,
             description: _t.Get("Accounting.SalesEntryMainDesc", order.OrderNumber, order.Customer?.FullName ?? ""),
-            date:        order.CreatedAt,
+            date:        TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt),
             lines:       lines,
             orderId:     order.Id,
             customerId:  order.CustomerId,
             source:      order.Source,
-            employeeId:  employeeId
+            employeeId:  employeeId,
+            createdAt:   order.CreatedAt
         );
     }
 
