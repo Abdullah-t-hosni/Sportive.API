@@ -2382,12 +2382,21 @@ public class OperationalReportsController : ControllerBase
 
         var returnsData = await returnsQuery.ToListAsync();
 
+        var salesReturnAccId = maps.GetValueOrDefault("salesreturnaccountid");
+        var vatOutputAccId = maps.GetValueOrDefault("vatoutputaccountid");
+
         decimal returnCash = 0, returnCard = 0, returnVoda = 0, returnInsta = 0;
         var returnsRows = new List<dynamic>();
 
         foreach (var j in returnsData)
         {
-            decimal amt = j.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit);
+            decimal amt = j.Lines
+                .Where(l => l.Debit > 0 && (
+                    l.AccountId == salesReturnAccId || 
+                    l.AccountId == vatOutputAccId || 
+                    (l.Account != null && (l.Account.Code.StartsWith("4103") || l.Account.Code.StartsWith("2105") || l.Account.Code.StartsWith("1202")))
+                ))
+                .Sum(l => l.Debit);
             
             // Determine return outflow payment method
             var creditedLine = j.Lines.FirstOrDefault(l => l.Credit > 0);
@@ -2536,11 +2545,8 @@ public class OperationalReportsController : ControllerBase
 
         var totalExpensesAmount = expensesRows.Sum(e => (decimal)e.Amount);
 
-        // Combine all collections details for UI list
-        var allCollectionsRows = new List<dynamic>();
-        allCollectionsRows.AddRange(immediatePaymentsList);
-        allCollectionsRows.AddRange(receiptsRows);
-        allCollectionsRows = allCollectionsRows.OrderByDescending(c => (DateTime)c.Date).ToList();
+        // Show only receipt vouchers in collections details to avoid duplication with sales
+        var allCollectionsRows = receiptsRows;
 
         // 6. Payment Methods Reconciliation
         var paymentMethodsSummary = new[]
