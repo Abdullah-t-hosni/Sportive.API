@@ -1,31 +1,18 @@
 using System.IO;
-using System.Text;
 using System.Text.Json;
-using System.Threading.RateLimiting;
-using FluentValidation;
-using FluentValidation.AspNetCore;
-using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Models;
-using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
 using Serilog;
 using Serilog.Events;
 using Sportive.API.Data;
-using Sportive.API.Interfaces;
 using Sportive.API.Middleware;
-using Sportive.API.Models;
-using Sportive.API.Services;
 using Sportive.API.Utils;
-using Sportive.API.Validators;
 using Sportive.API.Hubs;
 using Hangfire;
-using Hangfire.MySql;
-using System.Transactions;
-
+using Sportive.API.Extensions;
+using Sportive.API.Interfaces;
+using Sportive.API.Services;
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Is(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development" ? LogEventLevel.Debug : LogEventLevel.Information)
@@ -47,260 +34,27 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(15);
 });
 
-// ── DATABASE ──────────────────────────────────────────
+// ── DATABASE & IDENTITY ───────────────────────────────
 var connStr = Environment.GetEnvironmentVariable("DATABASE_URL")
     ?? builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string is missing.");
 
-if (!connStr.Contains("Allow User Variables=true", StringComparison.OrdinalIgnoreCase))
-    connStr = connStr.TrimEnd(';') + ";Allow User Variables=true;";
+builder.Services.AddDatabaseAndIdentityServices(connStr);
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseMySql(connStr, new MySqlServerVersion(new Version(8, 0, 0)),
-        mySqlOptions => mySqlOptions.EnableRetryOnFailure()));
+// ── JWT & AUTHORIZATION ───────────────────────────────
+builder.Services.AddJwtAuthentication(builder.Configuration);
 
-// ── IDENTITY ──────────────────────────────────────────
-builder.Services.AddIdentity<AppUser, IdentityRole>(options =>
-{
-    options.Password.RequireDigit = false;
-    options.Password.RequiredLength = 8;
-    options.Password.RequireLowercase = false;
-    options.Password.RequireUppercase = false;
-    options.Password.RequireNonAlphanumeric = false;
-    options.Password.RequiredUniqueChars = 1;
-})
-.AddEntityFrameworkStores<AppDbContext>()
-.AddDefaultTokenProviders();
+// ── CORS & RATE LIMITING ──────────────────────────────
+builder.Services.AddRateLimitingAndCors(builder.Configuration);
 
-// ── JWT ───────────────────────────────────────────────
-var jwtSecret = builder.Configuration["JWT:Secret"]
-    ?? throw new InvalidOperationException("JWT:Secret is not configured");
+// ── CACHE & VALIDATION ────────────────────────────────
+builder.Services.AddCacheAndValidationServices(builder.Configuration);
 
-if (jwtSecret.Length < 32 || jwtSecret.StartsWith("CHANGE_ME", StringComparison.OrdinalIgnoreCase))
-    throw new InvalidOperationException("JWT:Secret must be at least 32 characters and not the default placeholder value.");
-
-builder.Services.AddAuthentication(opt =>
-{
-    opt.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    opt.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(opt =>
-{
-    opt.TokenValidationParameters = new TokenValidationParameters
-    {
-        ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
-        ValidateIssuer = true,
-        ValidIssuer = builder.Configuration["JWT:Issuer"],
-        ValidateAudience = true,
-        ValidAudience = builder.Configuration["JWT:Audience"],
-        ValidateLifetime = true,
-        ClockSkew = TimeSpan.FromMinutes(5)
-    };
-
-    opt.Events = new JwtBearerEvents
-    {
-        OnMessageReceived = context =>
-        {
-            var accessToken = context.Request.Query["access_token"];
-            var path = context.HttpContext.Request.Path;
-            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/notifications-hub"))
-                context.Token = accessToken;
-            return Task.CompletedTask;
-        }
-    };
-});
-
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("Orders.Create", p => p.RequireClaim("Permission", "Orders.Create"));
-    options.AddPolicy("Orders.View",   p => p.RequireClaim("Permission", "Orders.View"));
-    options.AddPolicy("AdminOnly",     p => p.RequireRole("Admin", "SuperAdmin"));
-    options.AddPolicy("SuperAdminOnly", p => p.RequireRole("SuperAdmin"));
-});
-
-builder.Services.AddScoped<Sportive.API.Services.StaffPermissionService>();
-
-// ── CORS ──────────────────────────────────────────────
-builder.Services.AddCors(options =>
-    options.AddPolicy("AllowReactApp", policy =>
-    {
-        var origins = new List<string>
-        {
-            "http://localhost:3000", "https://localhost:3000",
-            "http://localhost:5173", "https://localhost:5173",
-            "http://localhost:5174", "https://localhost:5174",
-            "https://www.sportive-sportwear.com",
-            "https://sportive-sportwear.com",
-            "https://admin.sportive-sportwear.com",
-            "https://sportive-frontend-production.up.railway.app"
-        };
-
-        var extra = builder.Configuration["AllowedOrigins"];
-        if (!string.IsNullOrWhiteSpace(extra))
-            origins.AddRange(extra.Split(new[] { ',', ';' },
-                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-
-        policy.WithOrigins(origins.Distinct(StringComparer.OrdinalIgnoreCase).ToArray())
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
-    }));
-
-// ── RATE LIMITING ─────────────────────────────────────
-builder.Services.AddRateLimiter(options =>
-{
-    // Per-route auth policy — strict (10 req/min per user or IP)
-    options.AddPolicy("auth", httpContext =>
-        RateLimitPartition.GetSlidingWindowLimiter(
-            partitionKey: httpContext.User.Identity?.Name ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            factory: _ => new SlidingWindowRateLimiterOptions
-            {
-                PermitLimit = 10, Window = TimeSpan.FromMinutes(1),
-                SegmentsPerWindow = 3,
-                QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 0
-            }));
-
-    // Per-route AI/heavy endpoint policy — 60 req/min
-    options.AddPolicy("api", httpContext =>
-        RateLimitPartition.GetSlidingWindowLimiter(
-            partitionKey: httpContext.User.Identity?.Name ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            factory: _ => new SlidingWindowRateLimiterOptions
-            {
-                PermitLimit = 60, Window = TimeSpan.FromMinutes(1),
-                SegmentsPerWindow = 6,
-                QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 0
-            }));
-
-    // Global policy — 300 req/min keyed by authenticated user ID, falling back to IP
-    // This prevents a single shared IP (NAT/proxy) from triggering limits for all users behind it.
-    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
-        RateLimitPartition.GetSlidingWindowLimiter(
-            partitionKey: httpContext.User.Identity?.IsAuthenticated == true
-                ? $"user:{httpContext.User.Identity.Name}"
-                : $"ip:{httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown"}",
-            factory: _ => new SlidingWindowRateLimiterOptions
-            {
-                PermitLimit = 300, Window = TimeSpan.FromMinutes(1),
-                SegmentsPerWindow = 10,
-                QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 0
-            }));
-
-    options.RejectionStatusCode = 429;
-    options.OnRejected = async (context, _) =>
-    {
-        context.HttpContext.Response.ContentType = "application/json";
-        await context.HttpContext.Response.WriteAsync(
-            """{"message":"Too many requests. Please wait a minute and try again."}""");
-    };
-});
-
-// ── CACHE ─────────────────────────────────────────────
-builder.Services.AddMemoryCache();
-builder.Services.AddHttpContextAccessor();
-
-var redisConn = builder.Configuration.GetConnectionString("Redis");
-if (!string.IsNullOrEmpty(redisConn))
-{
-    builder.Services.AddStackExchangeRedisCache(opt => opt.Configuration = redisConn);
-    builder.Services.AddScoped<ICacheService, RedisCacheService>();
-}
-else
-{
-    builder.Services.AddScoped<ICacheService, MemoryCacheService>();
-}
-
-// ── VALIDATION ────────────────────────────────────────
-builder.Services.AddFluentValidationAutoValidation();
-builder.Services.AddValidatorsFromAssemblyContaining<RegisterValidator>();
-
-builder.Services.Configure<ApiBehaviorOptions>(options =>
-{
-    options.InvalidModelStateResponseFactory = context =>
-    {
-        var errors = context.ModelState
-            .Where(e => e.Value?.Errors.Count > 0)
-            .ToDictionary(
-                e => e.Key,
-                e => e.Value!.Errors
-                    .Select(x => x.ErrorMessage)
-                    .Where(m => !string.IsNullOrEmpty(m))
-                    .ToArray());
-        return new BadRequestObjectResult(new { success = false, message = "Validation failed", errors });
-    };
-});
-
-// ── SERVICES ──────────────────────────────────────────
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IBrandService, BrandService>();
-builder.Services.AddScoped<IProductService, ProductService>();
-builder.Services.AddScoped<IInventoryService, InventoryService>();
-builder.Services.AddScoped<ICategoryService, CategoryService>();
-builder.Services.AddScoped<IOrderService, OrderService>();
-builder.Services.AddScoped<ICartService, CartService>();
-builder.Services.AddScoped<ICustomerService, CustomerService>();
-builder.Services.AddScoped<ICustomerCategoryService, CustomerCategoryService>();
-builder.Services.AddScoped<IDashboardService, DashboardService>();
-builder.Services.AddScoped<ICouponService, CouponService>();
-builder.Services.AddScoped<IImageService, CloudinaryImageService>();
-builder.Services.AddScoped<IPaymobService, PaymobService>();
-builder.Services.AddScoped<INotificationService, NotificationService>();
-builder.Services.AddScoped<IPdfService, PdfService>();
-builder.Services.AddScoped<AccountingCoreService>();
-builder.Services.AddScoped<SalesAccountingService>();
-builder.Services.AddScoped<PurchaseAccountingService>();
-builder.Services.AddScoped<IAuditService, AuditService>();
-builder.Services.AddScoped<PaymentAccountingService>();
-builder.Services.AddScoped<JournalAccountingService>();
-builder.Services.AddScoped<IAccountingService, AccountingService>();
-builder.Services.AddScoped<IWaMeService, WaMeService>();
-builder.Services.AddHttpClient<IWhatsAppApiService, WhatsAppApiService>();
-builder.Services.AddScoped<IBackupService, BackupService>();
-builder.Services.AddScoped<IEmailService, EmailService>();
-builder.Services.AddScoped<IDataMaintenanceService, DataMaintenanceService>();
-builder.Services.AddScoped<IBackfillService, BackfillService>();
-builder.Services.AddHostedService<BackupHostedService>();
-builder.Services.AddHostedService<Sportive.API.Services.BackgroundServices.StartupSyncService>();
-builder.Services.AddScoped<IWishlistService, WishlistService>();
-builder.Services.AddScoped<IReviewService, ReviewService>();
-builder.Services.AddScoped<IAiAssistantService, AiAssistantService>();
-builder.Services.AddScoped<IPermissionService, PermissionService>();  // unified authz service
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<ITenantProvider, TenantProvider>();
-builder.Services.AddScoped<IStatisticsService, StatisticsService>();
-builder.Services.AddScoped<IDashboardEventService, DashboardEventService>();
-builder.Services.AddScoped<IOutboxProcessor, OutboxProcessor>();
-builder.Services.AddSingleton<ITranslator, Translator>();
-builder.Services.AddSingleton<SequenceService>();
-builder.Services.AddSingleton<TimeService>();
-builder.Services.AddSingleton<ITimeService>(sp => sp.GetRequiredService<TimeService>());
-builder.Services.AddHttpClient();
-builder.Services.AddHttpClient("Paymob");
-builder.Services.AddSignalR();
+// ── APPLICATION SERVICES ──────────────────────────────
+builder.Services.AddApplicationServices();
 
 // ── HANGFIRE (Background Jobs) ────────────────────────
-builder.Services.AddHangfire(config => config
-    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
-    .UseSimpleAssemblyNameTypeSerializer()
-    .UseRecommendedSerializerSettings()
-    .UseStorage(new MySqlStorage(connStr, new MySqlStorageOptions
-    {
-        TransactionIsolationLevel = (IsolationLevel)System.Data.IsolationLevel.ReadCommitted,
-        QueuePollInterval = TimeSpan.FromSeconds(15),
-        JobExpirationCheckInterval = TimeSpan.FromHours(1),
-        CountersAggregateInterval = TimeSpan.FromMinutes(5),
-        PrepareSchemaIfNecessary = true,
-        DashboardJobListLimit = 50000,
-        TransactionTimeout = TimeSpan.FromMinutes(1),
-        TablesPrefix = "Hangfire"
-    })));
-
-builder.Services.AddHangfireServer(opt =>
-{
-    opt.WorkerCount  = Math.Max(2, Environment.ProcessorCount);  // avoid DB pool exhaustion
-    opt.Queues       = new[] { "critical", "default", "low" };
-    opt.ServerName   = $"sportive-{Environment.MachineName}";
-});
+builder.Services.AddHangfireServices(connStr);
 
 // ── RESPONSE COMPRESSION ──────────────────────────────
 builder.Services.AddResponseCompression(options =>
@@ -317,35 +71,7 @@ builder.Services.AddHealthChecks()
     .AddDbContextCheck<AppDbContext>();
 
 // ── SWAGGER ───────────────────────────────────────────
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Sportive API", Version = "v1" });
-
-    // ✅ FIX 1: Handle any remaining duplicate routes gracefully
-    c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
-
-    // ✅ FIX 2: Use short type names to avoid FullName issues with nested/generic types
-    c.CustomSchemaIds(type => type.Name);
-
-    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Name = "Authorization",
-        Type = SecuritySchemeType.ApiKey,
-        Scheme = "Bearer",
-        BearerFormat = "JWT",
-        In = ParameterLocation.Header,
-        Description = "Enter: Bearer {token}"
-    });
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {{
-        new OpenApiSecurityScheme
-        {
-            Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
-        },
-        Array.Empty<string>()
-    }});
-});
+builder.Services.AddSwaggerAndApiExplorer();
 
 // ── CONTROLLERS ───────────────────────────────────────
 builder.Services.AddControllers()
