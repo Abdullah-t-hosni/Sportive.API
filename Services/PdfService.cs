@@ -30,15 +30,19 @@ public class PdfService : IPdfService
         if (_fontRegistered) return;
         
         try {
-            // Try common Linux Arabic fonts
-            string[] systemFonts = { "DejaVu Sans", "FreeSans", "Liberation Sans", "Noto Sans Arabic" };
-            foreach (var font in systemFonts)
+            if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
             {
-                // We just hope one of these is installed on Railway
-                _activeFont = font;
+                // Windows has Arial by default which supports Arabic glyphs perfectly
+                _activeFont = "Arial";
+            }
+            else
+            {
+                // Linux (Railway) fallback. DejaVu Sans has solid Arabic support and is widely pre-installed
+                _activeFont = "DejaVu Sans";
             }
             _fontRegistered = true;
         } catch {
+            _activeFont = "Arial";
             _fontRegistered = true;
         }
     }
