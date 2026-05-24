@@ -2234,6 +2234,375 @@ public class OperationalReportsController : ControllerBase
         });
     }
 
+    // ══════════════════════════════════════════════════════
+    // 13. التقرير اليومي الشامل (Daily Summary Report)
+    // GET /api/operationalreports/daily-report?fromDate=&toDate=&source=
+    // ══════════════════════════════════════════════════════
+    [HttpGet("daily-report")]
+    [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard + "," + ModuleKeys.Pos + "," + ModuleKeys.InventoryGroup)]
+    public async Task<IActionResult> DailyReport(
+        [FromQuery] DateTime?    fromDate   = null,
+        [FromQuery] DateTime?    toDate     = null,
+        [FromQuery] OrderSource? source     = null)
+    {
+        var now = TimeHelper.GetEgyptTime();
+        var from = (fromDate ?? now).Date.AddHours(2);
+        var to   = (toDate ?? now).Date.AddDays(1).AddHours(2).AddTicks(-1);
+
+        // 🏗️ Mappings Lookup
+        var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key.ToLower(), m => m.AccountId);
+        var posCashAccId = maps.GetValueOrDefault("poscashaccountid");
+        var posBankAccId = maps.GetValueOrDefault("posbankaccountid");
+        var posVodaAccId = maps.GetValueOrDefault("posvodafoneaccountid");
+        var posInstaAccId = maps.GetValueOrDefault("posinstapayaccountid");
+
+        var webCashAccId = maps.GetValueOrDefault("webcashaccountid");
+        var webBankAccId = maps.GetValueOrDefault("webbankaccountid");
+        var webVodaAccId = maps.GetValueOrDefault("webvodafoneaccountid");
+        var webInstaAccId = maps.GetValueOrDefault("webinstapayaccountid");
+
+        var cashAccId = maps.GetValueOrDefault("cashaccountid");
+
+        // 1. Sales Details
+        var salesQuery = _db.Orders.AsNoTracking()
+            .Include(o => o.Customer)
+            .Include(o => o.Payments)
+            .Where(o => o.CreatedAt >= from && o.CreatedAt <= to && o.Status != OrderStatus.Cancelled);
+
+        if (source.HasValue)
+        {
+            salesQuery = salesQuery.Where(o => o.Source == source.Value);
+        }
+
+        var orders = await salesQuery.OrderByDescending(o => o.CreatedAt).ToListAsync();
+
+        var salesRows = orders.Select(o => new {
+            o.Id,
+            o.OrderNumber,
+            Date = o.CreatedAt,
+            CustomerName = o.Customer != null ? o.Customer.FullName : "Walk-in",
+            Source = o.Source.ToString(),
+            PaymentMethod = o.PaymentMethod.ToString(),
+            o.TotalAmount,
+            o.PaidAmount
+        }).ToList();
+
+        var totalSalesAmount = salesRows.Sum(s => s.TotalAmount);
+
+        // Calculate immediate order payments
+        var immediatePaymentsList = new List<dynamic>();
+        decimal orderCash = 0, orderCard = 0, orderVoda = 0, orderInsta = 0, orderCredit = 0;
+
+        foreach (var o in orders)
+        {
+            if (o.Payments != null && o.Payments.Any())
+            {
+                foreach (var p in o.Payments)
+                {
+                    decimal amt = p.Amount;
+                    if (p.Method == PaymentMethod.Cash)
+                    {
+                        orderCash += amt;
+                        immediatePaymentsList.Add(new { Reference = o.OrderNumber, Date = o.CreatedAt, CustomerName = o.Customer?.FullName ?? "Walk-in", Amount = amt, Method = "Cash", Description = "دفعة نقدي للطلب" });
+                    }
+                    else if (p.Method == PaymentMethod.CreditCard || p.Method == PaymentMethod.Bank)
+                    {
+                        orderCard += amt;
+                        immediatePaymentsList.Add(new { Reference = o.OrderNumber, Date = o.CreatedAt, CustomerName = o.Customer?.FullName ?? "Walk-in", Amount = amt, Method = "Card/Bank", Description = "دفعة فيزا للطلب" });
+                    }
+                    else if (p.Method == PaymentMethod.Vodafone)
+                    {
+                        orderVoda += amt;
+                        immediatePaymentsList.Add(new { Reference = o.OrderNumber, Date = o.CreatedAt, CustomerName = o.Customer?.FullName ?? "Walk-in", Amount = amt, Method = "Vodafone Cash", Description = "دفعة فودافون كاش للطلب" });
+                    }
+                    else if (p.Method == PaymentMethod.InstaPay)
+                    {
+                        orderInsta += amt;
+                        immediatePaymentsList.Add(new { Reference = o.OrderNumber, Date = o.CreatedAt, CustomerName = o.Customer?.FullName ?? "Walk-in", Amount = amt, Method = "InstaPay", Description = "دفعة إنستاباي للطلب" });
+                    }
+                    else if (p.Method == PaymentMethod.Credit)
+                    {
+                        orderCredit += amt;
+                    }
+                }
+            }
+            else
+            {
+                decimal amt = o.PaidAmount;
+                if (amt > 0)
+                {
+                    if (o.PaymentMethod == PaymentMethod.Cash)
+                    {
+                        orderCash += amt;
+                        immediatePaymentsList.Add(new { Reference = o.OrderNumber, Date = o.CreatedAt, CustomerName = o.Customer?.FullName ?? "Walk-in", Amount = amt, Method = "Cash", Description = "سداد نقدي للطلب" });
+                    }
+                    else if (o.PaymentMethod == PaymentMethod.CreditCard || o.PaymentMethod == PaymentMethod.Bank)
+                    {
+                        orderCard += amt;
+                        immediatePaymentsList.Add(new { Reference = o.OrderNumber, Date = o.CreatedAt, CustomerName = o.Customer?.FullName ?? "Walk-in", Amount = amt, Method = "Card/Bank", Description = "سداد فيزا للطلب" });
+                    }
+                    else if (o.PaymentMethod == PaymentMethod.Vodafone)
+                    {
+                        orderVoda += amt;
+                        immediatePaymentsList.Add(new { Reference = o.OrderNumber, Date = o.CreatedAt, CustomerName = o.Customer?.FullName ?? "Walk-in", Amount = amt, Method = "Vodafone Cash", Description = "سداد فودافون كاش للطلب" });
+                    }
+                    else if (o.PaymentMethod == PaymentMethod.InstaPay)
+                    {
+                        orderInsta += amt;
+                        immediatePaymentsList.Add(new { Reference = o.OrderNumber, Date = o.CreatedAt, CustomerName = o.Customer?.FullName ?? "Walk-in", Amount = amt, Method = "InstaPay", Description = "سداد إنستاباي للطلب" });
+                    }
+                    else if (o.PaymentMethod == PaymentMethod.Mixed)
+                    {
+                        orderCash += amt;
+                        immediatePaymentsList.Add(new { Reference = o.OrderNumber, Date = o.CreatedAt, CustomerName = o.Customer?.FullName ?? "Walk-in", Amount = amt, Method = "Cash", Description = "سداد نقدي للطلب (متنوع)" });
+                    }
+                }
+                
+                if (o.PaymentMethod == PaymentMethod.Credit || o.TotalAmount - o.PaidAmount > 0.01M)
+                {
+                    orderCredit += (o.TotalAmount - o.PaidAmount);
+                }
+            }
+        }
+
+        // 2. Returns Details (Sales returns)
+        var returnsQuery = _db.JournalEntries.AsNoTracking()
+            .Include(j => j.Order)
+                .ThenInclude(o => o.Customer)
+            .Include(j => j.Lines)
+                .ThenInclude(l => l.Account)
+            .Where(j => j.Type == JournalEntryType.SalesReturn 
+                     && j.EntryDate >= from && j.EntryDate <= to
+                     && j.Status == JournalEntryStatus.Posted);
+
+        if (source.HasValue)
+        {
+            returnsQuery = returnsQuery.Where(j => j.Order != null && j.Order.Source == source.Value);
+        }
+
+        var returnsData = await returnsQuery.ToListAsync();
+
+        decimal returnCash = 0, returnCard = 0, returnVoda = 0, returnInsta = 0;
+        var returnsRows = new List<dynamic>();
+
+        foreach (var j in returnsData)
+        {
+            decimal amt = j.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit);
+            
+            // Determine return outflow payment method
+            var creditedLine = j.Lines.FirstOrDefault(l => l.Credit > 0);
+            if (creditedLine != null)
+            {
+                var accId = creditedLine.AccountId;
+                var code = creditedLine.Account?.Code ?? "";
+                
+                if (accId == posCashAccId || accId == webCashAccId || accId == cashAccId || code.StartsWith("1101"))
+                    returnCash += amt;
+                else if (accId == posBankAccId || accId == webBankAccId || code.StartsWith("1102"))
+                    returnCard += amt;
+                else if (accId == posVodaAccId || accId == webVodaAccId || code.StartsWith("110701") || code.StartsWith("110702"))
+                    returnVoda += amt;
+                else if (accId == posInstaAccId || accId == webInstaAccId || code.StartsWith("110703") || code.StartsWith("110704"))
+                    returnInsta += amt;
+                else
+                    returnCash += amt;
+            }
+            else
+            {
+                returnCash += amt;
+            }
+
+            returnsRows.Add(new {
+                Reference = j.Reference ?? j.EntryNumber,
+                Date = j.EntryDate,
+                CustomerName = j.Order != null && j.Order.Customer != null ? j.Order.Customer.FullName : "Walk-in",
+                Amount = amt,
+                Description = j.Description ?? "مرتجع مبيعات"
+            });
+        }
+
+        var totalReturnsAmount = returnsRows.Sum(r => (decimal)r.Amount);
+
+        // 3. Collections Details (Receipt Vouchers)
+        var receiptsQuery = _db.ReceiptVouchers.AsNoTracking()
+            .Include(r => r.Customer)
+            .Include(r => r.FromAccount)
+            .Where(r => r.VoucherDate >= from && r.VoucherDate <= to);
+
+        if (source.HasValue)
+        {
+            receiptsQuery = receiptsQuery.Where(r => r.CostCenter == source.Value);
+        }
+
+        var receiptsData = await receiptsQuery.OrderByDescending(r => r.VoucherDate).ToListAsync();
+
+        decimal receiptCash = 0, receiptCard = 0, receiptVoda = 0, receiptInsta = 0;
+        var receiptsRows = new List<dynamic>();
+
+        foreach (var r in receiptsData)
+        {
+            decimal amt = r.Amount;
+            string methodLabel = "Cash";
+            if (r.PaymentMethod == VoucherPaymentMethod.Cash) { receiptCash += amt; methodLabel = "Cash"; }
+            else if (r.PaymentMethod == VoucherPaymentMethod.BankTransfer || r.PaymentMethod == VoucherPaymentMethod.Check) { receiptCard += amt; methodLabel = "Card/Bank"; }
+            else if (r.PaymentMethod == VoucherPaymentMethod.Vodafone) { receiptVoda += amt; methodLabel = "Vodafone Cash"; }
+            else if (r.PaymentMethod == VoucherPaymentMethod.InstaPay) { receiptInsta += amt; methodLabel = "InstaPay"; }
+
+            receiptsRows.Add(new {
+                r.VoucherNumber,
+                Date = r.VoucherDate,
+                CustomerName = r.Customer != null ? r.Customer.FullName : (r.FromAccount != null ? r.FromAccount.NameAr : "Walk-in"),
+                Amount = amt,
+                PaymentMethod = methodLabel,
+                r.Reference,
+                Description = r.Description ?? "سند قبض / تحصيل عميل"
+            });
+        }
+
+        var totalReceiptsAmount = receiptsRows.Sum(r => (decimal)r.Amount);
+        var totalCollectionsAmount = totalReceiptsAmount + (orderCash + orderCard + orderVoda + orderInsta);
+
+        // 4. Settlements Details (Supplier Payments)
+        var settlementsQuery = _db.PaymentVouchers.AsNoTracking()
+            .Include(pv => pv.Supplier)
+            .Where(pv => pv.VoucherDate >= from && pv.VoucherDate <= to && pv.SupplierId != null);
+
+        if (source.HasValue)
+        {
+            settlementsQuery = settlementsQuery.Where(pv => pv.CostCenter == source.Value);
+        }
+
+        var settlementsData = await settlementsQuery.OrderByDescending(pv => pv.VoucherDate).ToListAsync();
+
+        decimal settlementCash = 0, settlementCard = 0, settlementVoda = 0, settlementInsta = 0;
+        var settlementsRows = new List<dynamic>();
+
+        foreach (var pv in settlementsData)
+        {
+            decimal amt = pv.Amount;
+            string methodLabel = "Cash";
+            if (pv.PaymentMethod == VoucherPaymentMethod.Cash) { settlementCash += amt; methodLabel = "Cash"; }
+            else if (pv.PaymentMethod == VoucherPaymentMethod.BankTransfer || pv.PaymentMethod == VoucherPaymentMethod.Check) { settlementCard += amt; methodLabel = "Card/Bank"; }
+            else if (pv.PaymentMethod == VoucherPaymentMethod.Vodafone) { settlementVoda += amt; methodLabel = "Vodafone Cash"; }
+            else if (pv.PaymentMethod == VoucherPaymentMethod.InstaPay) { settlementInsta += amt; methodLabel = "InstaPay"; }
+
+            settlementsRows.Add(new {
+                pv.VoucherNumber,
+                Date = pv.VoucherDate,
+                SupplierName = pv.Supplier != null ? pv.Supplier.Name : "N/A",
+                Amount = amt,
+                PaymentMethod = methodLabel,
+                pv.Reference,
+                Description = pv.Description ?? "سداد مورد"
+            });
+        }
+
+        var totalSettlementsAmount = settlementsRows.Sum(s => (decimal)s.Amount);
+
+        // 5. Expenses Details
+        var expensesQuery = _db.PaymentVouchers.AsNoTracking()
+            .Include(pv => pv.ToAccount)
+            .Where(pv => pv.VoucherDate >= from && pv.VoucherDate <= to && pv.SupplierId == null);
+
+        if (source.HasValue)
+        {
+            expensesQuery = expensesQuery.Where(pv => pv.CostCenter == source.Value);
+        }
+
+        var expensesData = await expensesQuery.OrderByDescending(pv => pv.VoucherDate).ToListAsync();
+
+        decimal expenseCash = 0, expenseCard = 0, expenseVoda = 0, expenseInsta = 0;
+        var expensesRows = new List<dynamic>();
+
+        foreach (var pv in expensesData)
+        {
+            decimal amt = pv.Amount;
+            string methodLabel = "Cash";
+            if (pv.PaymentMethod == VoucherPaymentMethod.Cash) { expenseCash += amt; methodLabel = "Cash"; }
+            else if (pv.PaymentMethod == VoucherPaymentMethod.BankTransfer || pv.PaymentMethod == VoucherPaymentMethod.Check) { expenseCard += amt; methodLabel = "Card/Bank"; }
+            else if (pv.PaymentMethod == VoucherPaymentMethod.Vodafone) { expenseVoda += amt; methodLabel = "Vodafone Cash"; }
+            else if (pv.PaymentMethod == VoucherPaymentMethod.InstaPay) { expenseInsta += amt; methodLabel = "InstaPay"; }
+
+            expensesRows.Add(new {
+                pv.VoucherNumber,
+                Date = pv.VoucherDate,
+                Amount = amt,
+                ExpenseCategory = pv.ToAccount != null ? pv.ToAccount.NameAr : "مصروفات عامة",
+                PaymentMethod = methodLabel,
+                pv.Reference,
+                Description = pv.Description ?? "سند صرف مصروفات"
+            });
+        }
+
+        var totalExpensesAmount = expensesRows.Sum(e => (decimal)e.Amount);
+
+        // Combine all collections details for UI list
+        var allCollectionsRows = new List<dynamic>();
+        allCollectionsRows.AddRange(immediatePaymentsList);
+        allCollectionsRows.AddRange(receiptsRows);
+        allCollectionsRows = allCollectionsRows.OrderByDescending(c => (DateTime)c.Date).ToList();
+
+        // 6. Payment Methods Reconciliation
+        var paymentMethodsSummary = new[]
+        {
+            new {
+                Key = "Cash",
+                NameAr = "نقدي",
+                NameEn = "Cash",
+                Inflow = orderCash + receiptCash,
+                Outflow = returnCash + settlementCash + expenseCash,
+                Net = (orderCash + receiptCash) - (returnCash + settlementCash + expenseCash)
+            },
+            new {
+                Key = "Card",
+                NameAr = "فيزا / بنك",
+                NameEn = "Card/Bank",
+                Inflow = orderCard + receiptCard,
+                Outflow = returnCard + settlementCard + expenseCard,
+                Net = (orderCard + receiptCard) - (returnCard + settlementCard + expenseCard)
+            },
+            new {
+                Key = "Vodafone",
+                NameAr = "فودافون كاش",
+                NameEn = "Vodafone Cash",
+                Inflow = orderVoda + receiptVoda,
+                Outflow = returnVoda + settlementVoda + expenseVoda,
+                Net = (orderVoda + receiptVoda) - (returnVoda + settlementVoda + expenseVoda)
+            },
+            new {
+                Key = "InstaPay",
+                NameAr = "إنستاباي",
+                NameEn = "InstaPay",
+                Inflow = orderInsta + receiptInsta,
+                Outflow = returnInsta + settlementInsta + expenseInsta,
+                Net = (orderInsta + receiptInsta) - (returnInsta + settlementInsta + expenseInsta)
+            }
+        };
+
+        var summary = new {
+            totalSales = totalSalesAmount,
+            totalReturns = totalReturnsAmount,
+            totalCollections = totalCollectionsAmount,
+            totalSettlements = totalSettlementsAmount,
+            totalExpenses = totalExpensesAmount,
+            netCashflow = totalCollectionsAmount - totalSettlementsAmount - totalExpensesAmount - totalReturnsAmount
+        };
+
+        var result = new {
+            from,
+            to,
+            summary,
+            paymentMethods = paymentMethodsSummary,
+            sales = salesRows,
+            returns = returnsRows,
+            collections = allCollectionsRows,
+            settlements = settlementsRows,
+            expenses = expensesRows
+        };
+
+        return Ok(result);
+    }
+
     private string TranslateMovementType(InventoryMovementType type) => type switch
     {
         InventoryMovementType.Purchase => _t.Get("Reports.PurchasePlus"),
