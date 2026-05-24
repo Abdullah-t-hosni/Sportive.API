@@ -11,17 +11,17 @@ namespace Sportive.API.Models
 
         [Required]
         [MaxLength(50)]
-        public string ReferenceId { get; set; }
+        public string ReferenceId { get; set; } = string.Empty;
 
         [Required]
         [MaxLength(100)]
-        public string Name { get; set; }
+        public string Name { get; set; } = string.Empty;
 
         [MaxLength(20)]
         public string? Phone { get; set; }
 
         [Required]
-        public string ItemsJson { get; set; }
+        public string ItemsJson { get; set; } = string.Empty;
 
         [Column(TypeName = "decimal(18,2)")]
         public decimal Total { get; set; }
