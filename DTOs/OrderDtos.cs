@@ -225,7 +225,8 @@ public record PartialReturnDto(
     string? Reason,
     string? Note,
     int? RefundAccountId = null,
-    int? PerformedByEmployeeId = null
+    int? PerformedByEmployeeId = null,
+    bool RefundToStoreCredit = false
 );
 
 public record ReturnItemRequest(

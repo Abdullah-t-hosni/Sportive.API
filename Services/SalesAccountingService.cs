@@ -358,7 +358,7 @@ public class SalesAccountingService
         );
     }
 
-    public async Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null)
+    public async Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false)
     {
         if (order.Customer == null && order.CustomerId > 0)
         {
@@ -422,8 +422,20 @@ public class SalesAccountingService
         decimal originalDebt = Math.Round(order.TotalAmount - order.PaidAmount, 2);
         decimal currentRemainingDebt = Math.Max(0, originalDebt - alreadySettledDebt);
 
-        decimal amountToCustomerCredit = Math.Min(currentRemainingDebt, refundAmount);
-        decimal amountToCashRefund = Math.Round(refundAmount - amountToCustomerCredit, 2);
+        decimal amountToCustomerCredit;
+        decimal amountToCashRefund;
+
+        if (refundToStoreCredit)
+        {
+            amountToCustomerCredit = refundAmount;
+            amountToCashRefund = 0;
+        }
+        else
+        {
+            decimal amountToCustomerCreditRaw = Math.Min(currentRemainingDebt, refundAmount);
+            amountToCustomerCredit = amountToCustomerCreditRaw;
+            amountToCashRefund = Math.Round(refundAmount - amountToCustomerCreditRaw, 2);
+        }
 
         if (amountToCashRefund > 0)
         {

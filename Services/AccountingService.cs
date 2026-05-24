@@ -21,7 +21,7 @@ public interface IAccountingService
     Task PostOrderPaymentAsync(Order order);
     Task PostOrderPaymentByIdAsync(int orderId);
     Task PostOrderRefundAsync(Order order);
-    Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null);
+    Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false);
     Task PostSupplierPaymentAsync(SupplierPayment payment);
     Task PostDirectSalesReturnAsync(DirectReturnDto dto, string returnNumber, decimal totalCost);
     Task ReverseEntryAsync(int journalEntryId, string reason);
@@ -71,8 +71,8 @@ public class AccountingService : IAccountingService
 
     public Task PostSalesOrderAsync(Order order) => _sales.PostSalesOrderAsync(order);
     public Task PostSalesReturnAsync(Order order, int? refundAccountId = null) => _sales.PostSalesReturnAsync(order, refundAccountId);
-    public Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null) 
-        => _sales.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId);
+    public Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false) 
+        => _sales.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId, refundToStoreCredit);
 
     public Task PostDirectSalesReturnAsync(DirectReturnDto dto, string returnNumber, decimal totalCost)
         => _sales.PostDirectSalesReturnAsync(dto, returnNumber, totalCost);
