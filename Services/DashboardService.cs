@@ -127,6 +127,20 @@ public class DashboardService : IDashboardService
             .Where(l => l.Debit > 0 && (l.AccountId == salesReturnMapping || l.Account.Code.StartsWith("4103")))
             .SumAsync(l => (decimal?)l.Debit) ?? 0;
 
+        // --- All Time Returns ---
+        var totalReturnsQuery = _db.JournalEntries
+            .Where(e => e.Type == JournalEntryType.SalesReturn);
+
+        if (source.HasValue)
+        {
+            totalReturnsQuery = totalReturnsQuery.Where(e => e.CostCenter == source.Value);
+        }
+
+        var totalReturnAmount = await totalReturnsQuery
+            .SelectMany(e => e.Lines)
+            .Where(l => l.Debit > 0 && (l.AccountId == salesReturnMapping || l.Account.Code.StartsWith("4103")))
+            .SumAsync(l => (decimal?)l.Debit) ?? 0;
+
         // التحصيلات (سندات القبض)
         var collectionQuery = _db.ReceiptVouchers
             .Where(v => v.VoucherDate >= targetStart && v.VoucherDate < targetEnd);
@@ -164,7 +178,8 @@ public class DashboardService : IDashboardService
             DebtAmount: uncollectedAmount, // Simplified consistency
             ReturnAmount: periodReturnAmount,
             TodayCollections: todayCollections,
-            NewCustomersToday: newCustomersToday
+            NewCustomersToday: newCustomersToday,
+            TotalReturnAmount: totalReturnAmount
         );
     }
 

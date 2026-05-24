@@ -24,7 +24,8 @@ public record DashboardStatsDto(
     decimal DebtAmount = 0,
     decimal ReturnAmount = 0,
     decimal TodayCollections = 0,
-    int NewCustomersToday = 0
+    int NewCustomersToday = 0,
+    decimal TotalReturnAmount = 0
 );
 
 public record AnalyticsSummaryDto(
