@@ -562,40 +562,95 @@ public class FinancialReportsController : ControllerBase
   
         if (source.HasValue) openQ = openQ.Where(l => l.CostCenter == source.Value);
         
-        if (customerId.HasValue) 
-            openQ = openQ.Where(l => l.CustomerId == customerId && targetAccountIds.Contains(l.AccountId));
-        else if (supplierId.HasValue) 
-            openQ = openQ.Where(l => l.SupplierId == supplierId && targetAccountIds.Contains(l.AccountId));
-        else if (employeeId.HasValue) 
-            openQ = openQ.Where(l => l.EmployeeId == employeeId && targetAccountIds.Contains(l.AccountId));
+        if (customerId.HasValue)
+        {
+            if (acct.Code == "1103")
+            {
+                openQ = openQ.Where(l => l.CustomerId == customerId && targetAccountIds.Contains(l.AccountId));
+            }
+            else
+            {
+                var controlAccountIds = await _db.Accounts.Where(a => a.Code == "1103").Select(a => a.Id).ToListAsync();
+                openQ = openQ.Where(l => targetAccountIds.Contains(l.AccountId) || (controlAccountIds.Contains(l.AccountId) && l.CustomerId == customerId));
+            }
+        }
+        else if (supplierId.HasValue)
+        {
+            if (acct.Code == "2101")
+            {
+                openQ = openQ.Where(l => l.SupplierId == supplierId && targetAccountIds.Contains(l.AccountId));
+            }
+            else
+            {
+                var controlAccountIds = await _db.Accounts.Where(a => a.Code == "2101").Select(a => a.Id).ToListAsync();
+                openQ = openQ.Where(l => targetAccountIds.Contains(l.AccountId) || (controlAccountIds.Contains(l.AccountId) && l.SupplierId == supplierId));
+            }
+        }
+        else if (employeeId.HasValue)
+        {
+            var empRelatedCodes = new List<string> { "2102", "1105", "2103" };
+            var controlAccountIds = await _db.Accounts.Where(a => empRelatedCodes.Any(c => a.Code == c)).Select(a => a.Id).ToListAsync();
+            openQ = openQ.Where(l => targetAccountIds.Contains(l.AccountId) || (controlAccountIds.Contains(l.AccountId) && l.EmployeeId == employeeId));
+        }
         else
+        {
             openQ = openQ.Where(l => targetAccountIds.Contains(l.AccountId));
+        }
  
         var openLines = await openQ.ToListAsync();
         var openDr  = openLines.Sum(l => l.Debit);
         var openCr  = openLines.Sum(l => l.Credit);
         
-        if (!customerId.HasValue && !supplierId.HasValue && !employeeId.HasValue)
-        {
-             var openingSum = await _db.Accounts.Where(a => a.Code.StartsWith(acct.Code))
-                .SumAsync(a => (decimal?)a.OpeningBalance) ?? 0;
-            if (acct.Nature == AccountNature.Debit) openDr += openingSum;
-            else openCr += openingSum;
-        }
-
         var openBal = acct.Nature == AccountNature.Debit ? openDr - openCr : openCr - openDr;
+
+        if (acct.Code.Length > 4)
+        {
+            openBal += acct.OpeningBalance;
+        }
+        else if (!customerId.HasValue && !supplierId.HasValue && !employeeId.HasValue)
+        {
+            var openingSum = await _db.Accounts.Where(a => a.Code.StartsWith(acct.Code))
+                .SumAsync(a => (decimal?)a.OpeningBalance) ?? 0;
+            openBal += openingSum;
+        }
 
         var q = _db.JournalLines.Include(l => l.JournalEntry).Include(l => l.Customer).Include(l => l.Supplier).Include(l => l.Employee)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to);
 
-        if (customerId.HasValue) 
-            q = q.Where(l => l.CustomerId == customerId && targetAccountIds.Contains(l.AccountId));
-        else if (supplierId.HasValue) 
-            q = q.Where(l => l.SupplierId == supplierId && targetAccountIds.Contains(l.AccountId));
-        else if (employeeId.HasValue) 
-            q = q.Where(l => l.EmployeeId == employeeId && targetAccountIds.Contains(l.AccountId));
+        if (customerId.HasValue)
+        {
+            if (acct.Code == "1103")
+            {
+                q = q.Where(l => l.CustomerId == customerId && targetAccountIds.Contains(l.AccountId));
+            }
+            else
+            {
+                var controlAccountIds = await _db.Accounts.Where(a => a.Code == "1103").Select(a => a.Id).ToListAsync();
+                q = q.Where(l => targetAccountIds.Contains(l.AccountId) || (controlAccountIds.Contains(l.AccountId) && l.CustomerId == customerId));
+            }
+        }
+        else if (supplierId.HasValue)
+        {
+            if (acct.Code == "2101")
+            {
+                q = q.Where(l => l.SupplierId == supplierId && targetAccountIds.Contains(l.AccountId));
+            }
+            else
+            {
+                var controlAccountIds = await _db.Accounts.Where(a => a.Code == "2101").Select(a => a.Id).ToListAsync();
+                q = q.Where(l => targetAccountIds.Contains(l.AccountId) || (controlAccountIds.Contains(l.AccountId) && l.SupplierId == supplierId));
+            }
+        }
+        else if (employeeId.HasValue)
+        {
+            var empRelatedCodes = new List<string> { "2102", "1105", "2103" };
+            var controlAccountIds = await _db.Accounts.Where(a => empRelatedCodes.Any(c => a.Code == c)).Select(a => a.Id).ToListAsync();
+            q = q.Where(l => targetAccountIds.Contains(l.AccountId) || (controlAccountIds.Contains(l.AccountId) && l.EmployeeId == employeeId));
+        }
         else
+        {
             q = q.Where(l => targetAccountIds.Contains(l.AccountId));
+        }
 
         if (source.HasValue) q = q.Where(l => l.CostCenter == source.Value);
 
