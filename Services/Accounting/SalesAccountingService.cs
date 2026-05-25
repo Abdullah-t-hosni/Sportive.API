@@ -199,6 +199,9 @@ public class SalesAccountingService
             {
                 if (p.Method == PaymentMethod.CustomerBalance)
                 {
+                    // CustomerBalance: Customer uses their stored credit balance to pay.
+                    // This is debited directly to the Receivables account (1103), reducing the customer's credit balance.
+                    // We do NOT debit POS Cash, to avoid introducing phantom cash in the shift/daily closing.
                     lines.Add((receivablesAcct, p.Amount, 0, "تسديد باستخدام رصيد العميل المتاح"));
                     handledPaidAmt += p.Amount;
                 }

@@ -904,6 +904,19 @@ public class OrderService : IOrderService
 
                 await _db.SaveChangesAsync();
 
+                // 💳 CUSTOMER BALANCE DEDUCTION: When paying via stored balance, we must
+                // update the customer's TotalSales immediately to reflect the new order.
+                // We do NOT update TotalPaid because no new cash was received (it consumes existing balance).
+                if (order.PaymentMethod == PaymentMethod.CustomerBalance && order.PaidAmount > 0)
+                {
+                    var custToUpdate = await _db.Customers.FindAsync(customerId.Value);
+                    if (custToUpdate != null)
+                    {
+                        custToUpdate.TotalSales += order.TotalAmount;
+                        await _db.SaveChangesAsync();
+                    }
+                }
+
                 // 💳 ATOMIC ACCOUNTING: Post to ledger BEFORE committing the transaction
                 // This ensures order and accounting are 1:1 and either both succeed or both fail.
                 await _accounting.PostSalesOrderAsync(order);
