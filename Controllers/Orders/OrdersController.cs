@@ -352,9 +352,16 @@ public class OrdersController : ControllerBase
 
         if (order == null) return NotFound();
 
+        // 1. Guard against deleting orders with returns (partial or full)
+        if (order.Status == OrderStatus.Returned || order.Status == OrderStatus.PartiallyReturned)
+        {
+            return BadRequest("لا يمكن حذف فاتورة تحتوي على مرتجع جزئي أو كلي. يرجى إلغاء المرتجع أولاً.");
+        }
+
         using var scope = _scopeFactory.CreateScope();
         var inventory = scope.ServiceProvider.GetRequiredService<IInventoryService>();
 
+        // Adjust stock back to warehouse
         foreach (var item in order.Items)
         {
             if (item.ProductId > 0)
@@ -372,16 +379,54 @@ public class OrdersController : ControllerBase
             }
         }
 
-        var salesEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.SalesInvoice && e.Reference == order.OrderNumber);
-        if (salesEntry != null) _db.JournalEntries.Remove(salesEntry);
+        // Clean up linked receipt vouchers and their journal entries
+        var linkedReceiptVouchers = await _db.ReceiptVouchers.Where(v => v.OrderId == id).ToListAsync();
+        foreach (var voucher in linkedReceiptVouchers)
+        {
+            var voucherEntry = await _db.JournalEntries
+                .Include(e => e.Lines)
+                .FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber);
+            if (voucherEntry != null)
+            {
+                var childReversals = await _db.JournalEntries
+                    .Include(j => j.Lines)
+                    .Where(j => j.ReversalOfId == voucherEntry.Id)
+                    .ToListAsync();
+                foreach (var child in childReversals)
+                {
+                    _db.JournalLines.RemoveRange(child.Lines);
+                }
+                _db.JournalEntries.RemoveRange(childReversals);
 
-        var paymentEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == order.OrderNumber);
-        if (paymentEntry != null) _db.JournalEntries.Remove(paymentEntry);
+                _db.JournalLines.RemoveRange(voucherEntry.Lines);
+                _db.JournalEntries.Remove(voucherEntry);
+            }
+            _db.ReceiptVouchers.Remove(voucher);
+        }
 
-        var refundEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == order.OrderNumber + "-RFD");
-        if (refundEntry != null) _db.JournalEntries.Remove(refundEntry);
+        // Clean up direct journal entries of the order itself
+        var salesEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.SalesInvoice && e.Reference == order.OrderNumber);
+        if (salesEntry != null)
+        {
+            _db.JournalLines.RemoveRange(salesEntry.Lines);
+            _db.JournalEntries.Remove(salesEntry);
+        }
 
-        // âœ… RESTORE COUPON USAGE IF DELETED
+        var paymentEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == order.OrderNumber);
+        if (paymentEntry != null)
+        {
+            _db.JournalLines.RemoveRange(paymentEntry.Lines);
+            _db.JournalEntries.Remove(paymentEntry);
+        }
+
+        var refundEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == order.OrderNumber + "-RFD");
+        if (refundEntry != null)
+        {
+            _db.JournalLines.RemoveRange(refundEntry.Lines);
+            _db.JournalEntries.Remove(refundEntry);
+        }
+
+        // Restore coupon usage count
         if (!string.IsNullOrEmpty(order.CouponCode))
         {
             var coupon = await _db.Coupons.FirstOrDefaultAsync(c => c.Code.ToUpper() == order.CouponCode.ToUpper());
@@ -391,6 +436,7 @@ public class OrdersController : ControllerBase
             }
         }
 
+        // Clean up installments
         var linkedInstallments = await _db.CustomerInstallments
             .Include(i => i.Payments)
             .Where(i => i.OrderId == id)
@@ -401,10 +447,23 @@ public class OrdersController : ControllerBase
         }
         _db.CustomerInstallments.RemoveRange(linkedInstallments);
 
+        // Remove order and save changes
         _db.Orders.Remove(order);
         await _db.SaveChangesAsync();
-        
+
+        // Log audit
         await _audit.LogAsync("DeleteOrder", "Order", id.ToString(), $"Order {order.OrderNumber} deleted with its journal entries", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name));
+
+        // Recalculate and sync customer balances
+        try
+        {
+            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+            await accounting.SyncEntityBalancesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error syncing entity balances after deleting order {OrderId}", id);
+        }
 
         return NoContent();
     }
