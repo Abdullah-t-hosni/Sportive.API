@@ -88,6 +88,7 @@ public static class ModuleKeys
     public const string Backup = "backup";
     public const string Ai = "ai";
     public const string Performance = "performance";
+    public const string Profitability = "profitability";
 
     public static readonly string[] All = {
         Dashboard, Pos, PosSellAtCost, Cashier,
@@ -99,6 +100,6 @@ public static class ModuleKeys
         AccountingGroup, AccountingMain, Chart, Mapping, Journal, Receipts, Payments, Installments,
         AssetsGroup, AssetsMain, Assets, AssetCategories, AssetDepBatch, AssetDisposals, AssetPurchases,
         Hr, HrEmployees, HrEmpList, HrVouchers, HrPayroll, HrAdvances, HrCommissions, HrCommissionsDist, HrDepartments,
-        System, ReportsMain, Staff, Settings, WelcomeMessages, Maintenance, Diagnostics, Backup, Ai, Performance
+        System, ReportsMain, Staff, Settings, WelcomeMessages, Maintenance, Diagnostics, Backup, Ai, Performance, Profitability
     };
 }

@@ -28,7 +28,8 @@ public enum PaymentMethod
     Credit     = 5, // آجل / مديونية
     Bank       = 6, // بنك / فيزا
     Mixed      = 7, // جزء وجزء
-    CostPrice  = 8  // بيع بسعر التكلفة
+    CostPrice  = 8, // بيع بسعر التكلفة
+    CustomerBalance = 9 // استخدام رصيد العميل
 }
 
 public enum PaymentStatus

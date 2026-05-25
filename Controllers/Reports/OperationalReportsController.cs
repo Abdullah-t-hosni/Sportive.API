@@ -2620,6 +2620,78 @@ public class OperationalReportsController : ControllerBase
         return Ok(result);
     }
 
+    // ══════════════════════════════════════════════════════
+    // 14. تقرير ربحية الفواتير (Invoice Profitability Report)
+    // GET /api/operationalreports/invoice-profitability
+    // ══════════════════════════════════════════════════════
+    [HttpGet("invoice-profitability")]
+    [RequirePermission(ModuleKeys.Profitability)]
+    public async Task<IActionResult> InvoiceProfitability(
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null)
+    {
+        var now = TimeHelper.GetEgyptTime();
+        var from = (fromDate ?? new DateTime(now.Year, now.Month, 1)).Date;
+        var to = (toDate ?? now).Date.AddDays(1).AddTicks(-1);
+
+        var orders = await _db.Orders.AsNoTracking()
+            .Include(o => o.Customer)
+            .Include(o => o.Items)
+                .ThenInclude(i => i.Product)
+            .Where(o => o.CreatedAt >= from && o.CreatedAt <= to && o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned)
+            .ToListAsync();
+
+        var invoiceRows = new List<Sportive.API.DTOs.Reports.InvoiceProfitabilityDto>();
+
+        foreach (var order in orders)
+        {
+            decimal revenue = order.TotalAmount - order.TotalVatAmount; // net revenue without tax
+            decimal cost = 0;
+
+            foreach (var item in order.Items)
+            {
+                decimal itemCost = item.Product?.CostPrice ?? 0;
+                // If the order is partially returned, the ReturnedQuantity should be subtracted from Cost
+                // Wait! Revenue (TotalAmount) is NOT updated by Returns in this system! Returns are separate.
+                // So if Revenue is for the original full amount, Cost should also be for the original full amount.
+                cost += itemCost * item.Quantity;
+            }
+
+            decimal profit = revenue - cost;
+            decimal margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+
+            invoiceRows.Add(new Sportive.API.DTOs.Reports.InvoiceProfitabilityDto {
+                OrderId = order.Id,
+                OrderNumber = order.OrderNumber,
+                Date = order.CreatedAt,
+                CustomerName = order.Customer?.FullName ?? "Walk-in",
+                Revenue = revenue,
+                Cost = cost,
+                Profit = profit,
+                Margin = margin
+            });
+        }
+
+        invoiceRows = invoiceRows.OrderByDescending(x => x.Date).ToList();
+
+        var totalInvoices = invoiceRows.Count;
+        var totalRevenue = invoiceRows.Sum(x => x.Revenue);
+        var totalCost = invoiceRows.Sum(x => x.Cost);
+        var totalProfit = totalRevenue - totalCost;
+        var averageMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+
+        return Ok(new Sportive.API.DTOs.Reports.InvoiceProfitabilityReportDto {
+            FromDate = from,
+            ToDate = to,
+            TotalInvoices = totalInvoices,
+            TotalRevenue = totalRevenue,
+            TotalCost = totalCost,
+            TotalProfit = totalProfit,
+            AverageMargin = averageMargin,
+            Invoices = invoiceRows
+        });
+    }
+
     private string TranslateMovementType(InventoryMovementType type) => type switch
     {
         InventoryMovementType.Purchase => _t.Get("Reports.PurchasePlus"),

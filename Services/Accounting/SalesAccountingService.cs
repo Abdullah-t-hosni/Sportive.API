@@ -197,10 +197,18 @@ public class SalesAccountingService
         {
             foreach (var p in payments)
             {
-                var cashAcct = await _core.GetMappedCashAccountAsync(p.Method, order.Source, mapDict);
-                string methodLabel = _core.GetMethodLabel(p.Method);
-                lines.Add((cashAcct, p.Amount, 0, _t.Get("Accounting.CollectionDesc", methodLabel, order.OrderNumber)));
-                handledPaidAmt += p.Amount;
+                if (p.Method == PaymentMethod.CustomerBalance)
+                {
+                    lines.Add((receivablesAcct, p.Amount, 0, "تسديد باستخدام رصيد العميل المتاح"));
+                    handledPaidAmt += p.Amount;
+                }
+                else
+                {
+                    var cashAcct = await _core.GetMappedCashAccountAsync(p.Method, order.Source, mapDict);
+                    string methodLabel = _core.GetMethodLabel(p.Method);
+                    lines.Add((cashAcct, p.Amount, 0, _t.Get("Accounting.CollectionDesc", methodLabel, order.OrderNumber)));
+                    handledPaidAmt += p.Amount;
+                }
             }
         }
         else
