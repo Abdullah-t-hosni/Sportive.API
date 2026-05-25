@@ -641,36 +641,64 @@ public class AccountingCoreService
 
     public async Task SyncEntityBalancesAsync()
     {
-        // 1. Sync Orders PaidAmount (The root cause for dashboard debt discrepancies)
+        _logger.LogInformation("[Sync] Starting high-performance bulk synchronization of entity balances.");
+
+        // 1. Sync Orders PaidAmount
+        // Group journal lines by OrderId and sum debit - credit in ONE query
+        var orderLedgerBalances = await _db.JournalLines
+            .Where(l => l.OrderId != null && l.JournalEntry.Type != JournalEntryType.SalesReturn)
+            .Where(l => l.Account.Code != null && (l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1201")))
+            .GroupBy(l => l.OrderId)
+            .Select(g => new {
+                OrderId = g.Key!.Value,
+                Balance = g.Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
+            })
+            .ToDictionaryAsync(x => x.OrderId, x => x.Balance);
+
         var orders = await _db.Orders.Where(o => o.Status != OrderStatus.Cancelled).ToListAsync();
         foreach (var o in orders)
         {
-            // 💡 REFINED LOGIC: PaidAmount = TotalAmount - CurrentReceivableBalance
-            // CurrentReceivableBalance is (Sum of Debits to 1103 - Sum of Credits to 1103) for this Order
-            // Excluding Sales Returns so that refunds/returns do not artificially double the calculated PaidAmount.
-            var ledgerBalance = await _db.JournalLines
-                .Where(l => l.OrderId == o.Id && l.JournalEntry.Type != JournalEntryType.SalesReturn)
-                .Where(l => l.Account.Code != null && (l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1201")))
-                .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
-
-            // If ledger balance is 100, then (1500 - 100) = 1400 paid. Perfect!
+            var ledgerBalance = orderLedgerBalances.GetValueOrDefault(o.Id, 0);
             o.PaidAmount = Math.Max(0, o.TotalAmount - ledgerBalance);
         }
         await _db.SaveChangesAsync();
+        _logger.LogInformation("[Sync] Completed order balances sync.");
 
         // 2. Sync Purchase Invoices
+        // Group journal lines by PurchaseInvoiceId and sum Debit (payment) in ONE query
+        var invoiceLedgerPaid = await _db.JournalLines
+            .Where(l => l.PurchaseInvoiceId != null && l.Debit > 0)
+            .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("2101"))
+            .GroupBy(l => l.PurchaseInvoiceId)
+            .Select(g => new {
+                InvoiceId = g.Key!.Value,
+                Paid = g.Sum(l => (decimal?)l.Debit) ?? 0
+            })
+            .ToDictionaryAsync(x => x.InvoiceId, x => x.Paid);
+
+        // Group journal lines by Reference (fallback) in ONE query
+        var refLedgerPaid = await _db.JournalLines
+            .Where(l => l.JournalEntry != null && l.JournalEntry.Reference != null && l.Debit > 0)
+            .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("2101"))
+            .GroupBy(l => l.JournalEntry.Reference)
+            .Select(g => new {
+                Ref = g.Key!,
+                Paid = g.Sum(l => (decimal?)l.Debit) ?? 0
+            })
+            .ToDictionaryAsync(x => x.Ref, x => x.Paid);
+
         var pInvoices = await _db.PurchaseInvoices
             .Include(i => i.Supplier)
             .Where(i => i.Status != PurchaseInvoiceStatus.Cancelled && i.Status != PurchaseInvoiceStatus.Draft)
             .ToListAsync();
+
         foreach (var inv in pInvoices)
         {
-            // Sum all DEBITS to Payables (2101) for this PurchaseInvoice
-            // Check by ID or fallback to InvoiceNumber Reference
-            var ledgerPaidAmount = await _db.JournalLines
-                .Where(l => (l.PurchaseInvoiceId == inv.Id || (l.JournalEntry != null && l.JournalEntry.Reference == inv.InvoiceNumber)) && l.Debit > 0)
-                .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("2101"))
-                .SumAsync(l => (decimal?)l.Debit) ?? 0;
+            var ledgerPaidAmount = invoiceLedgerPaid.GetValueOrDefault(inv.Id, 0);
+            if (ledgerPaidAmount == 0 && inv.InvoiceNumber != null)
+            {
+                ledgerPaidAmount = refLedgerPaid.GetValueOrDefault(inv.InvoiceNumber, 0);
+            }
 
             inv.PaidAmount = ledgerPaidAmount;
 
@@ -720,45 +748,75 @@ public class AccountingCoreService
             }
         }
         await _db.SaveChangesAsync();
+        _logger.LogInformation("[Sync] Completed purchase invoice balances sync.");
 
         // 3. Sync Suppliers
+        // Group purchase invoices by SupplierId and sum TotalAmount in ONE query
+        var supplierInvoicesTotal = await _db.PurchaseInvoices
+            .Where(i => i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
+            .GroupBy(i => i.SupplierId)
+            .Select(g => new {
+                SupplierId = g.Key,
+                Total = g.Sum(i => (decimal?)i.TotalAmount) ?? 0
+            })
+            .ToDictionaryAsync(x => x.SupplierId, x => x.Total);
+
+        // Group journal lines by SupplierId and sum credit - debit in ONE query
+        var supplierLedgerBalances = await _db.JournalLines
+            .Where(l => l.SupplierId != null)
+            .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("2101"))
+            .GroupBy(l => l.SupplierId)
+            .Select(g => new {
+                SupplierId = g.Key!.Value,
+                Debt = g.Sum(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0
+            })
+            .ToDictionaryAsync(x => x.SupplierId, x => x.Debt);
+
         var suppliers = await _db.Suppliers.ToListAsync();
         foreach (var s in suppliers)
         {
-            // A. Volume (All non-cancelled invoices)
-            var volume = await _db.PurchaseInvoices
-                .Where(i => i.SupplierId == s.Id && i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
-                .SumAsync(i => (decimal?)i.TotalAmount) ?? 0;
-            
-            // B. DEBT (From Ledger - Account 2101)
-            // Balance = Credit (Liability) - Debit (Payment/Return)
-            var debt = await _db.JournalLines
-                .Where(l => l.SupplierId == s.Id && l.Account.Code != null && l.Account.Code.StartsWith("2101"))
-                .SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0;
+            var volume = supplierInvoicesTotal.GetValueOrDefault(s.Id, 0);
+            var debt = supplierLedgerBalances.GetValueOrDefault(s.Id, 0);
 
             s.TotalPurchases = volume;
             s.TotalPaid      = volume - debt; 
         }
+        await _db.SaveChangesAsync();
+        _logger.LogInformation("[Sync] Completed supplier balances sync.");
 
         // 4. Sync Customers
+        // Group orders by CustomerId and sum TotalAmount in ONE query
+        var customerOrdersTotal = await _db.Orders
+            .Where(o => o.Status != OrderStatus.Cancelled)
+            .GroupBy(o => o.CustomerId)
+            .Select(g => new {
+                CustomerId = g.Key,
+                Total = g.Sum(o => (decimal?)o.TotalAmount) ?? 0
+            })
+            .ToDictionaryAsync(x => x.CustomerId, x => x.Total);
+
+        // Group journal lines by CustomerId and sum debit - credit in ONE query
+        var customerLedgerBalances = await _db.JournalLines
+            .Where(l => l.CustomerId != null)
+            .Where(l => l.Account.Code != null && (l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1201")))
+            .GroupBy(l => l.CustomerId)
+            .Select(g => new {
+                CustomerId = g.Key!.Value,
+                Debt = g.Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
+            })
+            .ToDictionaryAsync(x => x.CustomerId, x => x.Debt);
+
         var customers = await _db.Customers.ToListAsync();
         foreach (var c in customers)
         {
-            // A. Volume (All non-cancelled orders)
-            var volume = await _db.Orders
-                .Where(o => o.CustomerId == c.Id && o.Status != OrderStatus.Cancelled)
-                .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
-            
-            // B. DEBT (From Ledger - Account 1103/1201)
-            // Balance = Debit (Sales) - Credit (Payments/Returns)
-            var debt = await _db.JournalLines
-                .Where(l => l.CustomerId == c.Id && (l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1201")))
-                .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
+            var volume = customerOrdersTotal.GetValueOrDefault(c.Id, 0);
+            var debt = customerLedgerBalances.GetValueOrDefault(c.Id, 0);
 
             c.TotalSales = volume;
             c.TotalPaid  = volume - debt; 
         }
 
         await _db.SaveChangesAsync();
+        _logger.LogInformation("[Sync] Completed customer balances sync. All sync completed successfully.");
     }
 }
