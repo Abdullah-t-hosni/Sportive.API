@@ -27,7 +27,8 @@ public enum PaymentMethod
     InstaPay   = 4,
     Credit     = 5, // آجل / مديونية
     Bank       = 6, // بنك / فيزا
-    Mixed      = 7  // جزء وجزء
+    Mixed      = 7, // جزء وجزء
+    CostPrice  = 8  // بيع بسعر التكلفة
 }
 
 public enum PaymentStatus

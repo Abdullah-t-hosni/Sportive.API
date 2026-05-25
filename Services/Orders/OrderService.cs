@@ -1901,4 +1901,155 @@ public class OrderService : IOrderService
             }
         }
     }
+
+    public async Task<OrderDetailDto> ConvertToCostAsync(int orderId, string refundMethod, string updatedByUserId)
+    {
+        decimal originalTotalAmount = 0;
+        decimal originalVatAmount = 0;
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        var result = await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                var order = await _db.Orders
+                    .Include(o => o.Items)
+                    .Include(o => o.Payments)
+                    .FirstOrDefaultAsync(o => o.Id == orderId);
+
+                if (order == null) throw new KeyNotFoundException("Order not found.");
+                if (order.Status == OrderStatus.Cancelled || order.Status == OrderStatus.Returned)
+                    throw new InvalidOperationException("لا يمكن تحويل الفواتير الملغاة أو المرتجعة بالكامل لسعر التكلفة.");
+
+                // Preload products of items
+                var productIds = order.Items.Select(i => i.ProductId).Where(id => id.HasValue).Select(id => id!.Value).ToList();
+                var products = await _db.Products.Where(p => productIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
+
+                originalTotalAmount = order.TotalAmount;
+                originalVatAmount = order.TotalVatAmount;
+
+                decimal newSubTotal = 0;
+                foreach (var item in order.Items)
+                {
+                    if (item.ProductId.HasValue && products.TryGetValue(item.ProductId.Value, out var product))
+                    {
+                        decimal costPrice = product.CostPrice ?? item.UnitPrice;
+                        item.UnitPrice = costPrice;
+                    }
+                    
+                    item.TotalPrice = item.UnitPrice * item.Quantity;
+                    if (item.HasTax)
+                    {
+                        var rate = (item.VatRateApplied ?? 0) / 100m;
+                        decimal net = Math.Round(item.TotalPrice / (1 + rate), 2);
+                        item.ItemVatAmount = item.TotalPrice - net;
+                    }
+                    else
+                    {
+                        item.ItemVatAmount = 0;
+                    }
+                    newSubTotal += item.TotalPrice;
+                }
+
+                decimal newTotalAmount = newSubTotal;
+                decimal difference = originalTotalAmount - newTotalAmount;
+
+                if (difference <= 0)
+                {
+                    throw new InvalidOperationException("الفاتورة بالفعل بسعر التكلفة أو أن سعر التكلفة أعلى من سعر البيع الحالي.");
+                }
+
+                // Reset discount fields
+                order.DiscountAmount = 0;
+                order.TemporalDiscount = 0;
+                order.CouponCode = null;
+
+                order.SubTotal = newSubTotal;
+                order.TotalVatAmount = order.Items.Sum(i => i.ItemVatAmount);
+                order.TotalAmount = newTotalAmount;
+                order.PaymentMethod = PaymentMethod.CostPrice;
+
+                // Adjust PaidAmount & Payments
+                decimal excessPaid = order.PaidAmount - newTotalAmount;
+                if (excessPaid > 0)
+                {
+                    order.PaidAmount = newTotalAmount;
+                    decimal remainingExcess = excessPaid;
+                    foreach (var p in order.Payments.OrderByDescending(p => p.Amount))
+                    {
+                        if (remainingExcess <= 0) break;
+                        if (p.Amount >= remainingExcess)
+                        {
+                            p.Amount -= remainingExcess;
+                            remainingExcess = 0;
+                        }
+                        else
+                        {
+                            remainingExcess -= p.Amount;
+                            p.Amount = 0;
+                        }
+                    }
+                    var zeroPayments = order.Payments.Where(p => p.Amount == 0).ToList();
+                    foreach (var zp in zeroPayments)
+                    {
+                        order.Payments.Remove(zp);
+                    }
+                }
+
+                order.StatusHistory.Add(new OrderStatusHistory
+                {
+                    Status = order.Status,
+                    Note = $"[تحويل لسعر التكلفة] تم تحويل أسعار الفاتورة لسعر التكلفة وإرجاع الفرق ({difference:N2} جنيه) بطريقة: {(refundMethod == "cash" ? "استرداد نقدي" : "إضافة لرصيد الحساب")}",
+                    ChangedByUserId = updatedByUserId,
+                    CreatedAt = TimeHelper.GetEgyptTime()
+                });
+
+                order.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                await _db.SaveChangesAsync();
+                await tx.CommitAsync();
+                return (await GetOrderByIdAsync(orderId))!;
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        });
+
+        // Post Accounting entry in background
+        _ = PostCostPriceAdjustmentWithRetryAsync(orderId, originalTotalAmount, originalVatAmount, refundMethod);
+
+        return result;
+    }
+
+    private async Task PostCostPriceAdjustmentWithRetryAsync(int orderId, decimal originalTotalAmount, decimal originalVatAmount, string refundMethod)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var order = await db.Orders
+                    .Include(o => o.Customer)
+                    .Include(o => o.Payments)
+                    .FirstAsync(o => o.Id == orderId);
+                await accounting.PostCostPriceAdjustmentAsync(order, originalTotalAmount, originalVatAmount, refundMethod);
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogWarning(ex, "[Accounting] PostCostPriceAdjustment attempt {Attempt}/{Max} failed for order {OrderId}. Retrying...", attempt, maxAttempts, orderId);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Accounting] PostCostPriceAdjustment permanently failed for order {OrderId} after {Max} attempts.", orderId, maxAttempts);
+            }
+        }
+    }
 }

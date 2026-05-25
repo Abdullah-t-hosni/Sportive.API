@@ -1,4 +1,4 @@
-﻿using Sportive.API.DTOs;
+using Sportive.API.DTOs;
 using Sportive.API.Models;
 
 namespace Sportive.API.Interfaces;
@@ -14,5 +14,6 @@ public interface IOrderService
     Task<string> GenerateOrderNumberAsync(OrderSource source = OrderSource.Website);
     Task<string> ProcessDirectReturnAsync(DirectReturnDto dto, string updatedByUserId);
     Task<OrderDetailDto> UpdateOrderAsync(int orderId, UpdateOrderDto dto, string updatedByUserId);
+    Task<OrderDetailDto> ConvertToCostAsync(int orderId, string refundMethod, string updatedByUserId);
     Task SyncAllOrderAccountingAsync();
 }

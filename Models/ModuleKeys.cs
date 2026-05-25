@@ -4,6 +4,7 @@ public static class ModuleKeys
 {
     public const string Dashboard = "dashboard";
     public const string Pos = "pos";
+    public const string PosSellAtCost = "pos-sell-at-cost";
 
     // Sales
     public const string OrdersMain = "orders-main";
@@ -82,7 +83,7 @@ public static class ModuleKeys
     public const string Ai = "ai";
 
     public static readonly string[] All = {
-        Dashboard, Pos,
+        Dashboard, Pos, PosSellAtCost,
         OrdersMain, Orders, ReturnsFull, ReturnsPartial, Customers, CustomerReceipts, Reviews,
         ProductsGroup, Products, Categories, Brands, Units, Barcode, ColorGroups, SizeGroups,
         PromotionsGroup, Promotions, Coupons, Discounts,

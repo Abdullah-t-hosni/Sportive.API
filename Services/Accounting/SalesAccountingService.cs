@@ -550,5 +550,70 @@ public class SalesAccountingService
             source:      OrderSource.POS
         );
     }
+
+    public async Task PostCostPriceAdjustmentAsync(Order order, decimal originalTotalAmount, decimal originalVatAmount, string refundMethod)
+    {
+        if (order.Customer == null && order.CustomerId > 0)
+        {
+            order.Customer = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.CustomerId);
+        }
+
+        var mapDict = await _core.GetSafeSystemMappingsAsync();
+
+        string salesReturnAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesReturn,    mapDict)}";
+        string receivablesAcct = order.Customer?.MainAccountId != null
+            ? $"ID:{order.Customer.MainAccountId}"
+            : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
+
+        var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
+
+        decimal difference = originalTotalAmount - order.TotalAmount;
+        decimal vatDiff = originalVatAmount - order.TotalVatAmount;
+        decimal netDiff = difference - vatDiff;
+
+        lines.Add((salesReturnAcct, netDiff, 0, $"تخفيض المبيعات لتعديل التكلفة - فاتورة {order.OrderNumber}"));
+
+        if (vatDiff > 0)
+        {
+            string vatAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatOutput, mapDict)}";
+            lines.Add((vatAcct, vatDiff, 0, $"تخفيض ضريبة المبيعات لتعديل التكلفة - فاتورة {order.OrderNumber}"));
+        }
+
+        if (refundMethod == "cash")
+        {
+            decimal unpaidDebt = Math.Max(0, originalTotalAmount - order.PaidAmount);
+            decimal amountToReceivables = Math.Min(unpaidDebt, difference);
+            decimal amountToCash = difference - amountToReceivables;
+
+            if (amountToReceivables > 0)
+            {
+                lines.Add((receivablesAcct, 0, amountToReceivables, $"تخفيض مديونية العميل لتعديل التكلفة - فاتورة {order.OrderNumber}"));
+            }
+
+            if (amountToCash > 0)
+            {
+                string cashId = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
+                lines.Add((cashId, 0, amountToCash, $"استرداد نقدي لفرق التكلفة - فاتورة {order.OrderNumber}"));
+            }
+        }
+        else // refundMethod == "credit"
+        {
+            lines.Add((receivablesAcct, 0, difference, $"إضافة فرق تعديل التكلفة لرصيد الحساب - فاتورة {order.OrderNumber}"));
+        }
+
+        var suffix = TimeHelper.GetEgyptTime().Ticks.ToString().Substring(10);
+        var reference = $"{order.OrderNumber}-CST-{suffix}";
+
+        await _core.PostEntryAsync(
+            type:        JournalEntryType.SalesReturn,
+            reference:   reference,
+            description: $"تعديل الفاتورة رقم {order.OrderNumber} لسعر التكلفة",
+            date:        TimeHelper.GetEgyptTime(),
+            lines:       lines,
+            orderId:     order.Id,
+            customerId:  order.CustomerId,
+            source:      order.Source
+        );
+    }
 }
 

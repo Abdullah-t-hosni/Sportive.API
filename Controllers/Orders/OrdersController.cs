@@ -419,6 +419,15 @@ public class OrdersController : ControllerBase
         return Ok(order);
     }
 
+    [HttpPost("{id}/convert-to-cost")]
+    [RequirePermission(ModuleKeys.PosSellAtCost, requireEdit: true)]
+    public async Task<ActionResult<OrderDetailDto>> ConvertToCost(int id, [FromBody] ConvertToCostDto dto)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
+        var order = await _orderService.ConvertToCostAsync(id, dto.RefundMethod, userId);
+        return Ok(order);
+    }
+
 
     [HttpPost("direct-return")]
     [RequirePermission(ModuleKeys.Orders)]
@@ -665,5 +674,10 @@ public class PaymentItemDto
     public decimal Amount { get; set; }
     public string? Reference { get; set; }
     public string? Notes { get; set; }
+}
+
+public class ConvertToCostDto
+{
+    public string RefundMethod { get; set; } = "credit"; // "cash" | "credit"
 }
 

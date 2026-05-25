@@ -351,6 +351,8 @@ public class AccountingCoreService
             (PaymentMethod.Bank, OrderSource.Website)       => MappingKeys.WebBank,
             (PaymentMethod.Cash, OrderSource.POS)           => MappingKeys.PosCash,
             (PaymentMethod.Cash, OrderSource.Website)       => MappingKeys.WebCash,
+            (PaymentMethod.CostPrice, OrderSource.POS)      => MappingKeys.PosCash,
+            (PaymentMethod.CostPrice, OrderSource.Website)  => MappingKeys.WebCash,
             _ => null
         };
 
@@ -370,6 +372,7 @@ public class AccountingCoreService
         PaymentMethod.Vodafone   => _t.Get("PaymentMethod.Vodafone"),
         PaymentMethod.InstaPay   => _t.Get("PaymentMethod.InstaPay"),
         PaymentMethod.Credit     => _t.Get("PaymentMethod.Credit"),
+        PaymentMethod.CostPrice  => _t.Get("PaymentMethod.CostPrice"),
         _                        => method.ToString()
     };
 
