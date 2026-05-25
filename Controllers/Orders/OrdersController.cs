@@ -40,6 +40,14 @@ public class OrdersController : ControllerBase
         _translator   = translator;
     }
 
+    [HttpGet("temp-sync")]
+    [AllowAnonymous]
+    public async Task<IActionResult> TempSync([FromServices] IAccountingService accounting)
+    {
+        await accounting.SyncEntityBalancesAsync();
+        return Ok("Sync Completed");
+    }
+
     [HttpGet]
     [RequirePermission(ModuleKeys.Orders)]
     [AllowPosAccess]
