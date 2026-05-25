@@ -647,8 +647,10 @@ public class AccountingCoreService
         {
             // 💡 REFINED LOGIC: PaidAmount = TotalAmount - CurrentReceivableBalance
             // CurrentReceivableBalance is (Sum of Debits to 1103 - Sum of Credits to 1103) for this Order
+            // Excluding Sales Returns so that refunds/returns do not artificially double the calculated PaidAmount.
             var ledgerBalance = await _db.JournalLines
-                .Where(l => l.OrderId == o.Id && l.Account.Code != null && (l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1201")))
+                .Where(l => l.OrderId == o.Id && l.JournalEntry.Type != JournalEntryType.SalesReturn)
+                .Where(l => l.Account.Code != null && (l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1201")))
                 .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
             // If ledger balance is 100, then (1500 - 100) = 1400 paid. Perfect!
