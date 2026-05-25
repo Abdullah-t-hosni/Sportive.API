@@ -131,11 +131,12 @@ public class WaMeService : IWaMeService
 
     private string PaymentMethodLabel(PaymentMethod method) => method switch
     {
-        PaymentMethod.Cash       => _t.Get("WhatsApp.Payment.Cash"),
-        PaymentMethod.CreditCard => _t.Get("WhatsApp.Payment.CreditCard"),
-        PaymentMethod.Vodafone   => _t.Get("WhatsApp.Payment.Vodafone"),
-        PaymentMethod.InstaPay   => _t.Get("WhatsApp.Payment.InstaPay"),
-        _                        => method.ToString()
+        PaymentMethod.Cash            => _t.Get("WhatsApp.Payment.Cash"),
+        PaymentMethod.CreditCard      => _t.Get("WhatsApp.Payment.CreditCard"),
+        PaymentMethod.Vodafone        => _t.Get("WhatsApp.Payment.Vodafone"),
+        PaymentMethod.InstaPay        => _t.Get("WhatsApp.Payment.InstaPay"),
+        PaymentMethod.CustomerBalance => _t.Get("WhatsApp.Payment.CustomerBalance"),
+        _                             => method.ToString()
     };
 
     private string FulfillmentLabel(FulfillmentType type) => type switch

@@ -251,6 +251,7 @@
   "WhatsApp.Payment.CreditCard": "فيزا / ماستر كارد",
   "WhatsApp.Payment.Vodafone": "فودافون كاش",
   "WhatsApp.Payment.InstaPay": "انستاباي",
+  "WhatsApp.Payment.CustomerBalance": "رصيد العميل المتاح",
   "WhatsApp.Fulfillment.Delivery": "توصيل للمنزل",
   "WhatsApp.Fulfillment.Pickup": "استلام من الفرع",
   "Users.NotFound": "المستخدم غير موجود",

@@ -251,6 +251,7 @@
   "WhatsApp.Payment.CreditCard": "Visa / Master Card",
   "WhatsApp.Payment.Vodafone": "Vodafone Cash",
   "WhatsApp.Payment.InstaPay": "InstaPay",
+  "WhatsApp.Payment.CustomerBalance": "Customer Balance",
   "WhatsApp.Fulfillment.Delivery": "Home Delivery",
   "WhatsApp.Fulfillment.Pickup": "In-Store Pickup",
   "Users.NotFound": "User not found",
