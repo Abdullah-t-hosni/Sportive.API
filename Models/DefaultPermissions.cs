@@ -46,7 +46,7 @@ public static class DefaultPermissions
 
             AppRoles.Staff => new[]
             {
-                (ModuleKeys.Orders,         true, false),
+                (ModuleKeys.OrdersMain,     true, false),
                 (ModuleKeys.Products,       true, false),
                 (ModuleKeys.Customers,      true, false),
                 (ModuleKeys.Inventory,      true, true),
