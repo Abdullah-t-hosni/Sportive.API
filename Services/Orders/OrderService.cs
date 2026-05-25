@@ -109,7 +109,9 @@ public class OrderService : IOrderService
                 o.CouponCode,
                 o.Payments.Select(p => new OrderDetailPaymentDto(p.Method.ToString(), p.Amount, null, null, p.CreatedAt)).ToList(),
                 o.Items.Sum(i => (decimal?)i.ReturnedQuantity * i.UnitPrice) ?? 0,
-                o.SalesPersonId
+                o.SalesPersonId,
+                o.DiscountAmount,
+                o.TemporalDiscount
             ))
             .ToListAsync();
 

@@ -862,7 +862,9 @@ public class DashboardService : IDashboardService
             o.CouponCode,
             o.Payments?.Select(p => new OrderDetailPaymentDto(p.Method.ToString(), p.Amount, p.Reference, p.Notes, p.CreatedAt)).ToList(),
             o.Items.Where(i => i.ReturnedQuantity > 0).Sum(i => i.ReturnedQuantity * i.UnitPrice),
-            o.SalesPersonId))
+            o.SalesPersonId,
+            o.DiscountAmount,
+            o.TemporalDiscount))
             .ToList();
     }
 }

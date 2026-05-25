@@ -143,7 +143,9 @@ public record OrderSummaryDto(
     string? CouponCode,
     List<OrderDetailPaymentDto>? Payments,
     decimal? ReturnedAmount,
-    string? SalesPersonId
+    string? SalesPersonId,
+    decimal? DiscountAmount = 0,
+    decimal? TemporalDiscount = 0
 );
 
 
