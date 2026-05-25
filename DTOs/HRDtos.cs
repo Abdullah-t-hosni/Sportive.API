@@ -341,3 +341,20 @@ public record EmployeeStatementDto(
     decimal TotalCredit,
     decimal ClosingBalance
 );
+
+// ══════════════════════════════════════════════════════
+// COMMISSION DTOs
+// ══════════════════════════════════════════════════════
+
+public record LinkUserDto(string? AppUserId);
+public record CommissionSettingDto(int Id, int EmployeeId, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CommissionTierDto> Tiers);
+public record CommissionTierDto(int Id, decimal MinAmount, decimal MaxAmount, decimal Rate);
+public record UpdateCommissionSettingDto(CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, int? CommissionSchemeId, List<CreateCommissionTierDto> Tiers);
+public record CreateCommissionTierDto(decimal MinAmount, decimal MaxAmount, decimal Rate);
+public record CommissionSchemeDto(int Id, string Name, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CommissionTierDto> Tiers);
+public record UpdateCommissionSchemeDto(string Name, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, List<CreateCommissionTierDto> Tiers);
+public record EmployeeCommissionSummaryDto(int EmployeeId, string Name, string? JobTitle, int? CommissionSchemeId, CommissionType Type, CommissionBasis Basis, decimal DefaultRate, decimal TargetAmount, decimal TotalSales, decimal EarnedCommission, int? DepartmentId = null, string? DepartmentName = null, bool IsGroup = false, string? GroupName = null);
+
+public record CommissionGroupDto(int Id, string Name, string? Description, int? CommissionSchemeId, List<int> MemberIds);
+public record CreateCommissionGroupDto(string Name, string? Description, int? CommissionSchemeId, List<int> MemberIds);
+
