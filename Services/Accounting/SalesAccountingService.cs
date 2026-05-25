@@ -229,10 +229,17 @@ public class SalesAccountingService
             }
             else if (order.PaymentMethod != PaymentMethod.Credit && order.PaidAmount > 0)
             {
-                var cashAcct = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
-                decimal payAmt = order.PaidAmount;
-                lines.Add((cashAcct, payAmt, 0, _t.Get("Accounting.CollectionDesc", _core.GetMethodLabel(order.PaymentMethod), order.OrderNumber)));
-                handledPaidAmt = payAmt;
+                if (order.PaymentMethod == PaymentMethod.CustomerBalance)
+                {
+                    lines.Add((receivablesAcct, order.PaidAmount, 0, "تسديد باستخدام رصيد العميل المتاح"));
+                }
+                else
+                {
+                    var cashAcct = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
+                    decimal payAmt = order.PaidAmount;
+                    lines.Add((cashAcct, payAmt, 0, _t.Get("Accounting.CollectionDesc", _core.GetMethodLabel(order.PaymentMethod), order.OrderNumber)));
+                }
+                handledPaidAmt = order.PaidAmount;
             }
         }
 
@@ -337,9 +344,17 @@ public class SalesAccountingService
 
         if (cashRefundAmount > 0)
         {
-            string cashId = refundAccountId.HasValue
-                ? $"ID:{refundAccountId.Value}"
-                : await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
+            string cashId;
+            if (order.PaymentMethod == PaymentMethod.CustomerBalance)
+            {
+                cashId = receivablesAcct;
+            }
+            else
+            {
+                cashId = refundAccountId.HasValue
+                    ? $"ID:{refundAccountId.Value}"
+                    : await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
+            }
 
             string methodLabel = _core.GetMethodLabel(order.PaymentMethod);
             lines.Add((cashId, 0, cashRefundAmount, _t.Get("Accounting.SalesReturnRefundDesc", methodLabel, order.OrderNumber)));
@@ -450,9 +465,17 @@ public class SalesAccountingService
 
         if (amountToCashRefund > 0)
         {
-            string cashId = refundAccountId.HasValue
-                ? $"ID:{refundAccountId.Value}"
-                : await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
+            string cashId;
+            if (order.PaymentMethod == PaymentMethod.CustomerBalance)
+            {
+                cashId = receivablesAcct;
+            }
+            else
+            {
+                cashId = refundAccountId.HasValue
+                    ? $"ID:{refundAccountId.Value}"
+                    : await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
+            }
             lines.Add((cashId, 0, amountToCashRefund, _t.Get("Accounting.PartialReturnCashRefundDesc", _core.GetMethodLabel(order.PaymentMethod), order.OrderNumber)));
         }
 
@@ -531,7 +554,7 @@ public class SalesAccountingService
             lines.Add((vatAcct, totalVatAmount, 0, _t.Get("Accounting.DirectReturnTaxDesc", returnNumber)));
         }
 
-        if (dto.RefundMethod == PaymentMethod.Credit && dto.CustomerId.HasValue)
+        if ((dto.RefundMethod == PaymentMethod.Credit || dto.RefundMethod == PaymentMethod.CustomerBalance) && dto.CustomerId.HasValue)
         {
             lines.Add((receivablesAcct, 0, totalGrossAmount, _t.Get("Accounting.DirectReturnCreditDesc", dto.CustomerName ?? dto.CustomerId.Value.ToString())));
         }
@@ -603,8 +626,16 @@ public class SalesAccountingService
 
             if (amountToCash > 0)
             {
-                string cashId = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
-                lines.Add((cashId, 0, amountToCash, $"استرداد نقدي لفرق التكلفة - فاتورة {order.OrderNumber}"));
+                string cashId;
+                if (order.PaymentMethod == PaymentMethod.CustomerBalance)
+                {
+                    cashId = receivablesAcct;
+                }
+                else
+                {
+                    cashId = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
+                }
+                lines.Add((cashId, 0, amountToCash, $"استرداد لفرق التكلفة - فاتورة {order.OrderNumber}"));
             }
         }
         else // refundMethod == "credit"

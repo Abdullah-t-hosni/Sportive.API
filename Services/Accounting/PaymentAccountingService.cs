@@ -61,10 +61,18 @@ public class PaymentAccountingService
         {
             foreach (var p in payments)
             {
-                var code = await _core.GetMappedCashAccountAsync(p.Method, order.Source, mapDict);
-                var methodLabel = _core.GetMethodLabel(p.Method);
-                lines.Add((code, p.Amount, 0, _t.Get("Accounting.CollectionShortDesc", methodLabel, order.OrderNumber)));
-                lines.Add((receivablesAcct, 0, p.Amount, _t.Get("Accounting.DebtClosureDesc", methodLabel, order.OrderNumber)));
+                if (p.Method == PaymentMethod.CustomerBalance)
+                {
+                    lines.Add((receivablesAcct, p.Amount, 0, "تسديد باستخدام رصيد العميل المتاح"));
+                    lines.Add((receivablesAcct, 0, p.Amount, "إغلاق الدين برصيد العميل المتاح"));
+                }
+                else
+                {
+                    var code = await _core.GetMappedCashAccountAsync(p.Method, order.Source, mapDict);
+                    var methodLabel = _core.GetMethodLabel(p.Method);
+                    lines.Add((code, p.Amount, 0, _t.Get("Accounting.CollectionShortDesc", methodLabel, order.OrderNumber)));
+                    lines.Add((receivablesAcct, 0, p.Amount, _t.Get("Accounting.DebtClosureDesc", methodLabel, order.OrderNumber)));
+                }
                 handledPaidAmt += p.Amount;
             }
         }
@@ -75,19 +83,35 @@ public class PaymentAccountingService
             {
                 foreach (var (m, v) in splits)
                 {
-                    var code = await _core.GetMappedCashAccountAsync(m, order.Source, mapDict);
-                    var methodLabel = _core.GetMethodLabel(m);
-                    lines.Add((code, v, 0, _t.Get("Accounting.CollectionShortDesc", methodLabel, order.OrderNumber)));
-                    lines.Add((receivablesAcct, 0, v, _t.Get("Accounting.DebtClosureDesc", methodLabel, order.OrderNumber)));
+                    if (m == PaymentMethod.CustomerBalance)
+                    {
+                        lines.Add((receivablesAcct, v, 0, "تسديد باستخدام رصيد العميل المتاح"));
+                        lines.Add((receivablesAcct, 0, v, "إغلاق الدين برصيد العميل المتاح"));
+                    }
+                    else
+                    {
+                        var code = await _core.GetMappedCashAccountAsync(m, order.Source, mapDict);
+                        var methodLabel = _core.GetMethodLabel(m);
+                        lines.Add((code, v, 0, _t.Get("Accounting.CollectionShortDesc", methodLabel, order.OrderNumber)));
+                        lines.Add((receivablesAcct, 0, v, _t.Get("Accounting.DebtClosureDesc", methodLabel, order.OrderNumber)));
+                    }
                     handledPaidAmt += v;
                 }
             }
             else if (order.PaymentMethod != PaymentMethod.Credit && order.TotalAmount > 0)
             {
-                var cashCode = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
-                var methodLabel = _core.GetMethodLabel(order.PaymentMethod);
-                lines.Add((cashCode, order.TotalAmount, 0, _t.Get("Accounting.OrderCollectionDesc", order.OrderNumber, methodLabel)));
-                lines.Add((receivablesAcct, 0, order.TotalAmount, _t.Get("Accounting.OrderDebtClosureDesc", order.OrderNumber)));
+                if (order.PaymentMethod == PaymentMethod.CustomerBalance)
+                {
+                    lines.Add((receivablesAcct, order.TotalAmount, 0, "تسديد باستخدام رصيد العميل المتاح"));
+                    lines.Add((receivablesAcct, 0, order.TotalAmount, "إغلاق الدين برصيد العميل المتاح"));
+                }
+                else
+                {
+                    var cashCode = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
+                    var methodLabel = _core.GetMethodLabel(order.PaymentMethod);
+                    lines.Add((cashCode, order.TotalAmount, 0, _t.Get("Accounting.OrderCollectionDesc", order.OrderNumber, methodLabel)));
+                    lines.Add((receivablesAcct, 0, order.TotalAmount, _t.Get("Accounting.OrderDebtClosureDesc", order.OrderNumber)));
+                }
                 handledPaidAmt = order.TotalAmount;
             }
         }
@@ -109,11 +133,20 @@ public class PaymentAccountingService
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         string receivablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
-        var cashCode = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
-
+        
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
-        lines.Add((receivablesAcct, order.TotalAmount, 0, _t.Get("Accounting.DebtRefundDesc", order.OrderNumber)));
-        lines.Add((cashCode, 0, order.TotalAmount, _t.Get("Accounting.OrderAmountRefundDesc", order.OrderNumber)));
+        
+        if (order.PaymentMethod == PaymentMethod.CustomerBalance)
+        {
+            lines.Add((receivablesAcct, order.TotalAmount, 0, _t.Get("Accounting.DebtRefundDesc", order.OrderNumber)));
+            lines.Add((receivablesAcct, 0, order.TotalAmount, "رد القيمة لرصيد العميل المتاح"));
+        }
+        else
+        {
+            var cashCode = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
+            lines.Add((receivablesAcct, order.TotalAmount, 0, _t.Get("Accounting.DebtRefundDesc", order.OrderNumber)));
+            lines.Add((cashCode, 0, order.TotalAmount, _t.Get("Accounting.OrderAmountRefundDesc", order.OrderNumber)));
+        }
 
         await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, reference, _t.Get("Accounting.AutoPaymentVoucherMainDesc", order.OrderNumber), TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt), lines, orderId: order.Id, customerId: order.CustomerId, source: order.Source, createdAt: order.CreatedAt);
     }
