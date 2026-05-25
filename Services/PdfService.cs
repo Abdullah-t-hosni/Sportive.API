@@ -1,3 +1,4 @@
+using System;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
@@ -30,19 +31,41 @@ public class PdfService : IPdfService
         if (_fontRegistered) return;
         
         try {
-            if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+            string fontDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Fonts");
+            if (!Directory.Exists(fontDir))
             {
-                // Windows has Arial by default which supports Arabic glyphs perfectly
-                _activeFont = "Arial";
+                Directory.CreateDirectory(fontDir);
+            }
+            
+            string fontPath = Path.Combine(fontDir, "Cairo-Regular.ttf");
+            if (!File.Exists(fontPath))
+            {
+                // Download Cairo-Regular.ttf from Google Fonts raw repository
+                using (var client = new HttpClient())
+                {
+                    client.Timeout = TimeSpan.FromSeconds(15);
+                    var bytes = client.GetByteArrayAsync("https://github.com/google/fonts/raw/main/ofl/cairo/Cairo-Regular.ttf").GetAwaiter().GetResult();
+                    File.WriteAllBytes(fontPath, bytes);
+                }
+            }
+
+            if (File.Exists(fontPath))
+            {
+                using (var stream = File.OpenRead(fontPath))
+                {
+                    QuestPDF.Drawing.FontManager.RegisterFont(stream);
+                }
+                _activeFont = "Cairo";
             }
             else
             {
-                // Linux (Railway) fallback. DejaVu Sans has solid Arabic support and is widely pre-installed
-                _activeFont = "DejaVu Sans";
+                _activeFont = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows) ? "Arial" : "DejaVu Sans";
             }
+            
             _fontRegistered = true;
-        } catch {
-            _activeFont = "Arial";
+        } catch (Exception ex) {
+            Console.WriteLine($"[PdfService] Error loading custom Cairo font: {ex.Message}");
+            _activeFont = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows) ? "Arial" : "DejaVu Sans";
             _fontRegistered = true;
         }
     }
