@@ -5,6 +5,7 @@ public static class ModuleKeys
     public const string Dashboard = "dashboard";
     public const string Pos = "pos";
     public const string PosSellAtCost = "pos-sell-at-cost";
+    public const string Cashier = "cashier";
 
     // Sales
     public const string OrdersMain = "orders-main";
@@ -63,6 +64,7 @@ public static class ModuleKeys
     public const string AssetCategories = "asset-categories";
     public const string AssetDepBatch = "asset-dep-batch";
     public const string AssetDisposals = "asset-disposals";
+    public const string AssetPurchases = "asset-purchases";
 
     // HR
     public const string Hr = "hr";
@@ -71,27 +73,32 @@ public static class ModuleKeys
     public const string HrVouchers = "hr-vouchers";
     public const string HrPayroll = "hr-payroll";
     public const string HrAdvances = "hr-advances";
+    public const string HrCommissions = "hr-commissions";
+    public const string HrCommissionsDist = "hr-commissions-dist";
+    public const string HrDepartments = "hr-departments";
 
     // System
     public const string System = "system";
     public const string ReportsMain = "reports-main";
     public const string Staff = "staff";
     public const string Settings = "settings";
+    public const string WelcomeMessages = "welcome-messages";
     public const string Maintenance = "maintenance";
     public const string Diagnostics = "diagnostics";
     public const string Backup = "backup";
     public const string Ai = "ai";
+    public const string Performance = "performance";
 
     public static readonly string[] All = {
-        Dashboard, Pos, PosSellAtCost,
+        Dashboard, Pos, PosSellAtCost, Cashier,
         OrdersMain, Orders, ReturnsFull, ReturnsPartial, Customers, CustomerReceipts, Reviews,
         ProductsGroup, Products, Categories, Brands, Units, Barcode, ColorGroups, SizeGroups,
         PromotionsGroup, Promotions, Coupons, Discounts,
         InventoryGroup, Inventory, InventoryOpening, Import, InventoryCount,
         PurchasesGroup, PurchasesMain, Suppliers, Purchases, PurchaseReturns, SupplierVouchers,
         AccountingGroup, AccountingMain, Chart, Mapping, Journal, Receipts, Payments, Installments,
-        AssetsGroup, AssetsMain, Assets, AssetCategories, AssetDepBatch, AssetDisposals,
-        Hr, HrEmployees, HrEmpList, HrVouchers, HrPayroll, HrAdvances,
-        System, ReportsMain, Staff, Settings, Maintenance, Diagnostics, Backup, Ai
+        AssetsGroup, AssetsMain, Assets, AssetCategories, AssetDepBatch, AssetDisposals, AssetPurchases,
+        Hr, HrEmployees, HrEmpList, HrVouchers, HrPayroll, HrAdvances, HrCommissions, HrCommissionsDist, HrDepartments,
+        System, ReportsMain, Staff, Settings, WelcomeMessages, Maintenance, Diagnostics, Backup, Ai, Performance
     };
 }

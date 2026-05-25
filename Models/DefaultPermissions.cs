@@ -16,6 +16,8 @@ public static class DefaultPermissions
             AppRoles.Cashier => new[]
             {
                 (ModuleKeys.Pos,            true, true),
+                (ModuleKeys.Cashier,        true, true),
+                (ModuleKeys.Performance,    true, true),
                 (ModuleKeys.Orders,         true, true),
                 (ModuleKeys.ReturnsFull,    true, true),
                 (ModuleKeys.ReturnsPartial, true, true),
