@@ -14,6 +14,10 @@ using Sportive.API.Utils;
 using ClosedXML.Excel;
 
 namespace Sportive.API.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+[Authorize]
 public class PurchaseInvoicesController : ControllerBase
 {
     private readonly AppDbContext _db;
