@@ -554,6 +554,92 @@ public class ExportController : ControllerBase
             $"variants_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
+    // JOURNAL ENTRIES
+    // GET /api/export/journalentries?search=xyz&fromDate=2025-01-01&toDate=2025-12-31&status=Posted&source=1
+    [HttpGet("journalentries")]
+    public async Task<IActionResult> ExportJournalEntries(
+        [FromQuery] string? search = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] OrderSource? source = null,
+        [FromQuery] JournalEntryStatus? status = null)
+    {
+        var query = _db.JournalEntries
+            .Include(j => j.Lines)
+                .ThenInclude(l => l.Account)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(j => 
+                j.EntryNumber.Contains(search) || 
+                (j.Reference != null && j.Reference.Contains(search)) ||
+                (j.Description != null && j.Description.Contains(search)));
+        }
+
+        if (source.HasValue)   query = query.Where(j => j.CostCenter == source.Value);
+        if (status.HasValue)   query = query.Where(j => j.Status == status.Value);
+        if (fromDate.HasValue) query = query.Where(j => j.EntryDate >= fromDate.Value.Date);
+        if (toDate.HasValue)   query = query.Where(j => j.EntryDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+
+        var entries = await query.OrderByDescending(j => j.EntryDate).ToListAsync();
+
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("القيود اليومية");
+
+        var headers = new[] {
+            "رقم القيد", "التاريخ", "البيان الرئيسي", "المرجع", "مركز التكلفة", "الحالة", 
+            "كود الحساب", "اسم الحساب", "المدين", "الدائن", "بيان السطر"
+        };
+        StyleHeader(ws, headers);
+
+        int row = 2;
+        foreach (var j in entries)
+        {
+            if (j.Lines == null || !j.Lines.Any())
+            {
+                ws.Cell(row, 1).Value = j.EntryNumber;
+                ws.Cell(row, 2).Value = j.EntryDate.ToString("yyyy-MM-dd HH:mm");
+                ws.Cell(row, 3).Value = j.Description ?? "";
+                ws.Cell(row, 4).Value = j.Reference ?? "";
+                ws.Cell(row, 5).Value = j.CostCenter?.ToString() ?? "";
+                ws.Cell(row, 6).Value = j.Status.ToString();
+                row++;
+                continue;
+            }
+
+            foreach (var l in j.Lines)
+            {
+                ws.Cell(row, 1).Value = j.EntryNumber;
+                ws.Cell(row, 2).Value = j.EntryDate.ToString("yyyy-MM-dd HH:mm");
+                ws.Cell(row, 3).Value = j.Description ?? "";
+                ws.Cell(row, 4).Value = j.Reference ?? "";
+                ws.Cell(row, 5).Value = j.CostCenter?.ToString() ?? "";
+                ws.Cell(row, 6).Value = j.Status.ToString();
+                
+                ws.Cell(row, 7).Value = l.Account?.Code ?? "";
+                ws.Cell(row, 8).Value = l.Account?.NameAr ?? "";
+                ws.Cell(row, 9).Value = l.Debit;
+                ws.Cell(row, 10).Value = l.Credit;
+                ws.Cell(row, 11).Value = l.Description ?? "";
+
+                ws.Cell(row, 9).Style.NumberFormat.Format = "#,##0.00";
+                ws.Cell(row, 10).Style.NumberFormat.Format = "#,##0.00";
+                row++;
+            }
+        }
+
+        ws.Columns().AdjustToContents();
+        ws.RightToLeft = true;
+
+        var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        stream.Position = 0;
+
+        return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"journal_entries_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
+    }
+
     // ACCOUNTS 
     [HttpGet("accounts")]
     public async Task<IActionResult> ExportAccounts()
