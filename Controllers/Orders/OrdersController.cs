@@ -508,6 +508,7 @@ public class OrdersController : ControllerBase
 
         var order = await _db.Orders
             .Include(o => o.Payments)
+            .Include(o => o.Customer)
             .FirstOrDefaultAsync(o => o.Id == id);
         if (order == null) return NotFound();
 
@@ -521,25 +522,7 @@ public class OrdersController : ControllerBase
 
         using var scope = _scopeFactory.CreateScope();
         var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-
-        // ── 🔴 Fix 2: جلب IDs الحسابات الحقيقية من الـ mappings بدل hard-code "1103" ──
-        var mappedAccountIds = new HashSet<int>();
-        foreach (var pm in new[] { PaymentMethod.Cash, PaymentMethod.Bank, PaymentMethod.CreditCard, PaymentMethod.Vodafone, PaymentMethod.InstaPay })
-        {
-            try
-            {
-                var code = await accounting.GetMappedCashAccount(pm, order.Source);
-                // code يكون "ID:123" أو كود حساب
-                if (code.StartsWith("ID:", StringComparison.OrdinalIgnoreCase) && int.TryParse(code.Substring(3), out var accId))
-                    mappedAccountIds.Add(accId);
-                else
-                {
-                    var acc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == code);
-                    if (acc != null) mappedAccountIds.Add(acc.Id);
-                }
-            }
-            catch { /* method not mapped — skip */ }
-        }
+        var accountingCore = scope.ServiceProvider.GetRequiredService<AccountingCoreService>();
 
         // ── تحديث OrderPayments ──
         _db.OrderPayments.RemoveRange(order.Payments);
@@ -555,32 +538,79 @@ public class OrdersController : ControllerBase
             });
         }
 
+        // ── تحديث PaidAmount على الـ Order (المبالغ المسددة فعلاً تستبعد الآجل) ──
+        order.PaidAmount = dto.Payments
+            .Where(p => p.Method != PaymentMethod.Credit)
+            .Sum(p => p.Amount);
+
+        // ── تحديث PaymentStatus على الـ Order ──
+        if (order.PaidAmount >= order.TotalAmount - 0.1m)
+        {
+            order.PaymentStatus = PaymentStatus.Paid;
+        }
+        else if (order.PaidAmount > 0)
+        {
+            order.PaymentStatus = PaymentStatus.PartiallyPaid;
+        }
+        else
+        {
+            order.PaymentStatus = PaymentStatus.Pending;
+        }
+
         // ── تحديث PaymentMethod على الـ Order ──
         if (dto.Payments.Count == 1)
             order.PaymentMethod = dto.Payments.First().Method;
         else if (dto.Payments.Count > 1)
             order.PaymentMethod = PaymentMethod.Mixed;
 
-        // ── 🔴 Fix 3: بحث أشمل — بدون تقييد Type ──
+        // ── 🔴 Fix 2: جلب IDs الحسابات الحقيقية من الـ mappings بدل hard-code "1103" ──
+        var mappedAccountIds = new HashSet<int>();
+        foreach (var pm in new[] { PaymentMethod.Cash, PaymentMethod.Bank, PaymentMethod.CreditCard, PaymentMethod.Vodafone, PaymentMethod.InstaPay })
+        {
+            try
+            {
+                var code = await accounting.GetMappedCashAccount(pm, order.Source);
+                if (code.StartsWith("ID:", StringComparison.OrdinalIgnoreCase) && int.TryParse(code.Substring(3), out var accId))
+                    mappedAccountIds.Add(accId);
+                else
+                {
+                    var acc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == code);
+                    if (acc != null) mappedAccountIds.Add(acc.Id);
+                }
+            }
+            catch { /* method not mapped — skip */ }
+        }
+
+        // ── جلب حساب العملاء للطلب ──
+        var mapDict = await accountingCore.GetSafeSystemMappingsAsync();
+        int receivablesAccountId;
+        if (order.Customer?.MainAccountId != null)
+        {
+            receivablesAccountId = order.Customer.MainAccountId.Value;
+        }
+        else
+        {
+            receivablesAccountId = await accountingCore.GetRequiredMappedAccountAsync(MappingKeys.Customer, mapDict);
+        }
+
+        // ── 🔴 Fix 3: بحث عن قيد المبيعات الخاص بالطلب تحديداً ──
         var journalEntry = await _db.JournalEntries
             .Include(e => e.Lines).ThenInclude(l => l.Account)
-            .Where(e => e.OrderId == id || e.Reference == order.OrderNumber)
-            .OrderByDescending(e => e.CreatedAt) // الأحدث أولاً
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(e => (e.OrderId == id || e.Reference == order.OrderNumber) && e.Type == JournalEntryType.SalesInvoice);
 
         if (journalEntry != null)
         {
-            // ── 🔴 Fix 4: حذف سطور الدفع باستخدام الـ IDs الحقيقية بدل "1103" ──
+            // ── 🔴 Fix 4: حذف سطور الدفع السابقة وسطور المديونية لتعديلها بشكل متوازن ──
             var paymentLines = journalEntry.Lines
-                .Where(l => l.Debit > 0 && mappedAccountIds.Contains(l.AccountId))
+                .Where(l => l.Debit > 0 && (mappedAccountIds.Contains(l.AccountId) || l.AccountId == receivablesAccountId))
                 .ToList();
 
             if (!paymentLines.Any())
             {
-                // Fallback: لو مش لقينا سطور بالـ mapped IDs، نبحث بكود "110" (بداية حسابات الصندوق)
+                // Fallback: لو لم نجد السطور باستخدام الـ IDs الحقيقية، نبحث بكود "110" أو "1103" أو "1201"
                 paymentLines = journalEntry.Lines
                     .Where(l => l.Debit > 0 && l.Account != null &&
-                                (l.Account.Code!.StartsWith("110") || l.Account.Code!.StartsWith("1103")))
+                                (l.Account.Code!.StartsWith("110") || l.Account.Code!.StartsWith("1103") || l.Account.Code!.StartsWith("1201")))
                     .ToList();
             }
 
@@ -590,36 +620,82 @@ public class OrdersController : ControllerBase
             // إضافة سطور الدفع الجديدة
             foreach (var p in dto.Payments)
             {
-                string accountCode;
-                try { accountCode = await accounting.GetMappedCashAccount(p.Method, order.Source); }
-                catch { return BadRequest($"الحساب المرتبط بطريقة الدفع {p.Method} غير موجود في الإعدادات"); }
+                if (p.Method == PaymentMethod.Credit)
+                    continue; // الآجل يُحسب من المديونية المتبقية تلقائياً بالأسفل
 
-                var account = accountCode.StartsWith("ID:", StringComparison.OrdinalIgnoreCase) && int.TryParse(accountCode.Substring(3), out var directId)
-                    ? await _db.Accounts.FindAsync(directId)
-                    : await _db.Accounts.FirstOrDefaultAsync(a => a.Code == accountCode);
+                if (p.Method == PaymentMethod.CustomerBalance)
+                {
+                    // الدفع من رصيد العميل المتاح (يُخصم مباشرة من حساب المدينين)
+                    journalEntry.Lines.Add(new JournalLine
+                    {
+                        AccountId   = receivablesAccountId,
+                        Debit       = p.Amount,
+                        Credit      = 0,
+                        Description = "تسديد باستخدام رصيد العميل المتاح",
+                        OrderId     = order.Id,
+                        CostCenter  = order.Source,
+                        CreatedAt   = TimeHelper.GetEgyptTime()
+                    });
+                }
+                else
+                {
+                    string accountCode;
+                    try { accountCode = await accounting.GetMappedCashAccount(p.Method, order.Source); }
+                    catch { return BadRequest($"الحساب المرتبط بطريقة الدفع {p.Method} غير موجود في الإعدادات"); }
 
-                if (account == null)
-                    return BadRequest($"الحساب المرتبط بطريقة الدفع {p.Method} غير موجود");
+                    var account = accountCode.StartsWith("ID:", StringComparison.OrdinalIgnoreCase) && int.TryParse(accountCode.Substring(3), out var directId)
+                        ? await _db.Accounts.FindAsync(directId)
+                        : await _db.Accounts.FirstOrDefaultAsync(a => a.Code == accountCode);
 
+                    if (account == null)
+                        return BadRequest($"الحساب المرتبط بطريقة الدفع {p.Method} غير موجود");
+
+                    journalEntry.Lines.Add(new JournalLine
+                    {
+                        AccountId   = account.Id,
+                        Debit       = p.Amount,
+                        Credit      = 0,
+                        Description = $"تعديل طريقة دفع - {p.Method}",
+                        OrderId     = order.Id,
+                        CostCenter  = order.Source,
+                        CreatedAt   = TimeHelper.GetEgyptTime()
+                    });
+                }
+            }
+
+            // إضافة سطر المديونية المتبقية (الآجل الفعلي) ليتوازن القيد تماماً
+            var remainingDebt = Math.Round(order.TotalAmount - order.PaidAmount, 2);
+            if (remainingDebt > 0.01m)
+            {
                 journalEntry.Lines.Add(new JournalLine
                 {
-                    AccountId   = account.Id,
-                    Debit       = p.Amount,
+                    AccountId   = receivablesAccountId,
+                    Debit       = remainingDebt,
                     Credit      = 0,
-                    Description = $"تعديل طريقة دفع - {p.Method}",
+                    Description = $"إثبات مديونية الطلب المتبقية - {order.OrderNumber}",
                     OrderId     = order.Id,
-                    CostCenter  = order.Source
+                    CostCenter  = order.Source,
+                    CreatedAt   = TimeHelper.GetEgyptTime()
                 });
             }
         }
         else
         {
-            // ── 🔴 Fix 5: تسجيل تحذير بدل الصمت لو مفيش قيد ──
-            _logger.LogWarning("[RedistributePayments] No journal entry found for OrderId={Id} OrderNumber={Num}. Payments updated in DB only.",
+            _logger.LogWarning("[RedistributePayments] No sales invoice journal entry found for OrderId={Id} OrderNumber={Num}. Payments updated in DB only.",
                 id, order.OrderNumber);
         }
 
         await _db.SaveChangesAsync();
+
+        // ── 🔴 Fix 5: إعادة مزامنة أرصدة المديونيات وحسابات العملاء تلقائياً ──
+        try
+        {
+            await accounting.SyncEntityBalancesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error syncing entity balances after redistributing payments for order {OrderId}", id);
+        }
 
         await _audit.LogAsync("RedistributePayments", "Order", id.ToString(),
             $"Order {order.OrderNumber} payments redistributed by cashier", 

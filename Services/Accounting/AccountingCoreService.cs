@@ -658,9 +658,37 @@ public class AccountingCoreService
             })
             .ToDictionaryAsync(x => x.OrderId, x => x.Balance);
 
+        // 🔧 FIX: Orders with CustomerBalance payments have TWO debits to receivables:
+        //   1. The balance-consumption debit (NOT a debt — represents consuming customer's stored credit)
+        //   2. The remaining outstanding debt debit (actual money still owed)
+        // The ledger-based formula (TotalAmount - NetDebit) treats both as debt → PaidAmount becomes 0.
+        // Fix: For such orders, compute PaidAmount directly from OrderPayments (sum of all non-Credit payments).
+        // 💡 EF CORE nested enum conversion bug fix: we fetch the IDs direct from OrderPayments first to avoid the SQL translation issue.
+        var customerBalanceOrderIds = await _db.OrderPayments
+            .Where(p => p.Method == PaymentMethod.CustomerBalance && p.Amount > 0)
+            .Select(p => p.OrderId)
+            .Distinct()
+            .ToListAsync();
+
+        var customerBalancePaidAmounts = await _db.Orders
+            .Where(o => o.Status != OrderStatus.Cancelled && customerBalanceOrderIds.Contains(o.Id))
+            .Select(o => new {
+                o.Id,
+                PaidAmount = o.Payments
+                    .Where(p => p.Method != PaymentMethod.Credit && p.Amount > 0)
+                    .Sum(p => (decimal?)p.Amount) ?? 0
+            })
+            .ToDictionaryAsync(x => x.Id, x => x.PaidAmount);
+
         var orders = await _db.Orders.Where(o => o.Status != OrderStatus.Cancelled).ToListAsync();
         foreach (var o in orders)
         {
+            // CustomerBalance orders: use actual payment sum (not ledger)
+            if (customerBalancePaidAmounts.TryGetValue(o.Id, out var correctPaid))
+            {
+                o.PaidAmount = correctPaid;
+                continue;
+            }
             var ledgerBalance = orderLedgerBalances.GetValueOrDefault(o.Id, 0);
             o.PaidAmount = Math.Max(0, o.TotalAmount - ledgerBalance);
         }
