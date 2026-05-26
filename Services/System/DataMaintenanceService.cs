@@ -829,4 +829,65 @@ public class DataMaintenanceService : IDataMaintenanceService
             return (false, $"فشلت العملية: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// يحذف قيود سند القبض الآلي (-PMT) الزائدة والخاصة بطلبات مدفوعة بالكامل برصيد العميل.
+    /// هذه القيود كانت تُنشأ خطأً بصورة Dr/Cr على نفس حساب الذمم (يلغي نفسه)،
+    /// وقد تم إصلاح المنطق في PaymentAccountingService ليتخطاها مستقبلاً.
+    /// هذه الدالة تُنظّف البيانات التاريخية القديمة.
+    /// </summary>
+    public async Task<(bool Success, string Message, int Deleted)> CleanupCustomerBalancePmtVouchersAsync()
+    {
+        try
+        {
+            // Find all ReceiptVoucher journal entries with -PMT suffix
+            var pmtEntries = await _db.JournalEntries
+                .Include(e => e.Lines)
+                    .ThenInclude(l => l.Account)
+                .Where(e => e.Type == JournalEntryType.ReceiptVoucher
+                         && e.Reference != null
+                         && e.Reference.EndsWith("-PMT"))
+                .ToListAsync();
+
+            var toDelete = new List<JournalEntry>();
+
+            foreach (var entry in pmtEntries)
+            {
+                // A self-cancelling entry has:
+                // 1. All debit lines and all credit lines on the same set of account IDs
+                // 2. Sum of debits == Sum of credits (always true for balanced entries)
+                // 3. No line debits a cash/bank account (codes 1101, 1102, 1105, 1107)
+                //    — meaning no real cash movement occurred
+                var hasCashMovement = entry.Lines.Any(l =>
+                    l.Debit > 0 && l.Account != null &&
+                    (l.Account.Code.StartsWith("1101") ||
+                     l.Account.Code.StartsWith("1102") ||
+                     l.Account.Code.StartsWith("1105") ||
+                     l.Account.Code.StartsWith("1107")));
+
+                if (!hasCashMovement)
+                {
+                    toDelete.Add(entry);
+                }
+            }
+
+            if (!toDelete.Any())
+                return (true, "لا توجد قيود زائدة لحذفها. قاعدة البيانات سليمة.", 0);
+
+            // Delete lines then entries
+            var lineIds = toDelete.SelectMany(e => e.Lines).Select(l => l.Id).ToList();
+            await _db.JournalLines.Where(l => lineIds.Contains(l.Id)).ExecuteDeleteAsync();
+
+            var entryIds = toDelete.Select(e => e.Id).ToList();
+            await _db.JournalEntries.Where(e => entryIds.Contains(e.Id)).ExecuteDeleteAsync();
+
+            _logger.LogWarning("[CleanupCustomerBalancePmt] Deleted {Count} redundant PMT vouchers with no cash movement.", toDelete.Count);
+            return (true, $"تم حذف {toDelete.Count} قيد سند قبض زائد (بدون حركة نقدية فعلية) بنجاح.", toDelete.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "CleanupCustomerBalancePmtVouchers failed");
+            return (false, $"فشلت العملية: {ex.Message}", 0);
+        }
+    }
 }

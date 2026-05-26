@@ -209,4 +209,16 @@ public class DataMaintenanceController : ControllerBase
         var (success, message) = await _service.RecalculateStockAsync();
         return success ? Ok(new { success, message }) : BadRequest(new { success, message });
     }
+
+    /// <summary>
+    /// يحذف قيود سند القبض الآلي الزائدة (-PMT) للطلبات المدفوعة برصيد العميل.
+    /// هذه القيود لا تحتوي على حركة نقدية فعلية وكانت تُشوّش كشوف الحسابات.
+    /// </summary>
+    [HttpPost("cleanup-customer-balance-pmt")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> CleanupCustomerBalancePmtVouchers()
+    {
+        var (success, message, deleted) = await _service.CleanupCustomerBalancePmtVouchersAsync();
+        return success ? Ok(new { success, message, deleted }) : BadRequest(new { success, message });
+    }
 }
