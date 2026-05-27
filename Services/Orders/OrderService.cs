@@ -393,6 +393,8 @@ public class OrderService : IOrderService
                     var productIds = dto.Items.Select(i => i.ProductId).Distinct().ToList();
                     var productsDict = await _db.Products.Include(p => p.Variants).Where(p => productIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
 
+                    bool isCostSale = dto.Note != null && dto.Note.Contains("[CostSale]");
+
                     foreach (var item in dto.Items)
                     {
                         if (!productsDict.TryGetValue(item.ProductId, out var product)) continue;
@@ -460,8 +462,8 @@ public class OrderService : IOrderService
                             Color = item.Color ?? variant?.Color,
                             Quantity = item.Quantity,
                             UnitPrice = unitPrice,
-                            OriginalUnitPrice = originalUnitPrice,
-                            DiscountAmount = (originalUnitPrice - unitPrice) * item.Quantity,
+                            OriginalUnitPrice = isCostSale ? unitPrice : originalUnitPrice,
+                            DiscountAmount = isCostSale ? 0 : (originalUnitPrice - unitPrice) * item.Quantity,
                             TotalPrice = (actualSource == OrderSource.POS) ? item.TotalPrice : (unitPrice * item.Quantity),
                             HasTax = item.HasTax ?? product.HasTax,
                             VatRateApplied = item.VatRate ?? product.VatRate ?? (store?.VatRatePercent ?? 0),
@@ -1008,6 +1010,8 @@ public class OrderService : IOrderService
                 var productIds = dto.Items.Select(i => i.ProductId).Distinct().ToList();
                 var productsDict = await _db.Products.Include(p => p.Variants).Where(p => productIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
 
+                bool isCostSale = dto.AdminNotes != null && dto.AdminNotes.Contains("[CostSale]");
+
                 foreach (var itemDto in dto.Items)
                 {
                     if (!productsDict.TryGetValue(itemDto.ProductId, out var product)) continue;
@@ -1027,8 +1031,8 @@ public class OrderService : IOrderService
                         Color = variant?.Color,
                         Quantity = itemDto.Quantity,
                         UnitPrice = itemDto.UnitPrice,
-                        OriginalUnitPrice = product.Price + (variant?.PriceAdjustment ?? 0),
-                        DiscountAmount = ((product.Price + (variant?.PriceAdjustment ?? 0)) - itemDto.UnitPrice) * itemDto.Quantity,
+                        OriginalUnitPrice = isCostSale ? itemDto.UnitPrice : (product.Price + (variant?.PriceAdjustment ?? 0)),
+                        DiscountAmount = isCostSale ? 0 : ((product.Price + (variant?.PriceAdjustment ?? 0)) - itemDto.UnitPrice) * itemDto.Quantity,
                         TotalPrice = itemDto.TotalPrice > 0 ? itemDto.TotalPrice : (itemDto.UnitPrice * itemDto.Quantity),
                         HasTax = itemDto.HasTax ?? product.HasTax,
                         VatRateApplied = itemDto.VatRate ?? product.VatRate ?? (store?.VatRatePercent ?? 14),
