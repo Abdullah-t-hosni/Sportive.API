@@ -379,14 +379,16 @@ public class OrdersController : ControllerBase
             }
         }
 
-        // Clean up linked receipt vouchers and their journal entries
+        // Clean up linked receipt vouchers and their associated journal entries
         var linkedReceiptVouchers = await _db.ReceiptVouchers.Where(v => v.OrderId == id).ToListAsync();
         foreach (var voucher in linkedReceiptVouchers)
         {
-            var voucherEntry = await _db.JournalEntries
+            var voucherEntries = await _db.JournalEntries
                 .Include(e => e.Lines)
-                .FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber);
-            if (voucherEntry != null)
+                .Where(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber)
+                .ToListAsync();
+
+            foreach (var voucherEntry in voucherEntries)
             {
                 var childReversals = await _db.JournalEntries
                     .Include(j => j.Lines)
@@ -404,26 +406,32 @@ public class OrdersController : ControllerBase
             _db.ReceiptVouchers.Remove(voucher);
         }
 
-        // Clean up direct journal entries of the order itself
-        var salesEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.SalesInvoice && e.Reference == order.OrderNumber);
-        if (salesEntry != null)
-        {
-            _db.JournalLines.RemoveRange(salesEntry.Lines);
-            _db.JournalEntries.Remove(salesEntry);
-        }
+        // Clean up direct journal entries of the order itself (Sales Invoice, direct Payment/Receipt Vouchers, Reversals, etc.)
+        var relatedEntries = await _db.JournalEntries
+            .Include(e => e.Lines)
+            .Where(e => e.OrderId == id || e.Reference == order.OrderNumber || e.Reference == order.OrderNumber + "-RFD")
+            .ToListAsync();
 
-        var paymentEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == order.OrderNumber);
-        if (paymentEntry != null)
+        foreach (var entry in relatedEntries)
         {
-            _db.JournalLines.RemoveRange(paymentEntry.Lines);
-            _db.JournalEntries.Remove(paymentEntry);
-        }
+            if (_db.Entry(entry).State == EntityState.Deleted || _db.Entry(entry).State == EntityState.Detached)
+                continue;
 
-        var refundEntry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == order.OrderNumber + "-RFD");
-        if (refundEntry != null)
-        {
-            _db.JournalLines.RemoveRange(refundEntry.Lines);
-            _db.JournalEntries.Remove(refundEntry);
+            var childReversals = await _db.JournalEntries
+                .Include(j => j.Lines)
+                .Where(j => j.ReversalOfId == entry.Id)
+                .ToListAsync();
+            foreach (var child in childReversals)
+            {
+                if (_db.Entry(child).State != EntityState.Deleted && _db.Entry(child).State != EntityState.Detached)
+                {
+                    _db.JournalLines.RemoveRange(child.Lines);
+                }
+            }
+            _db.JournalEntries.RemoveRange(childReversals.Where(c => _db.Entry(c).State != EntityState.Deleted && _db.Entry(c).State != EntityState.Detached));
+
+            _db.JournalLines.RemoveRange(entry.Lines);
+            _db.JournalEntries.Remove(entry);
         }
 
         // Restore coupon usage count
@@ -446,6 +454,52 @@ public class OrdersController : ControllerBase
             _db.InstallmentPayments.RemoveRange(inst.Payments);
         }
         _db.CustomerInstallments.RemoveRange(linkedInstallments);
+
+        // 3. Nullify OrderId on all remaining entities to prevent foreign key violations (absolute safety guard)
+        var remainingJournalEntries = await _db.JournalEntries.Where(e => e.OrderId == id).ToListAsync();
+        foreach (var entry in remainingJournalEntries)
+        {
+            if (_db.Entry(entry).State != EntityState.Deleted && _db.Entry(entry).State != EntityState.Detached)
+            {
+                entry.OrderId = null;
+            }
+        }
+
+        var remainingReceiptVouchers = await _db.ReceiptVouchers.Where(v => v.OrderId == id).ToListAsync();
+        foreach (var voucher in remainingReceiptVouchers)
+        {
+            if (_db.Entry(voucher).State != EntityState.Deleted && _db.Entry(voucher).State != EntityState.Detached)
+            {
+                voucher.OrderId = null;
+            }
+        }
+
+        var remainingJournalLines = await _db.JournalLines.Where(l => l.OrderId == id).ToListAsync();
+        foreach (var line in remainingJournalLines)
+        {
+            if (_db.Entry(line).State != EntityState.Deleted && _db.Entry(line).State != EntityState.Detached)
+            {
+                line.OrderId = null;
+            }
+        }
+
+        var remainingNotifications = await _db.Notifications.Where(n => n.OrderId == id).ToListAsync();
+        foreach (var notification in remainingNotifications)
+        {
+            if (_db.Entry(notification).State != EntityState.Deleted && _db.Entry(notification).State != EntityState.Detached)
+            {
+                notification.OrderId = null;
+            }
+        }
+
+        var remainingInstallments = await _db.CustomerInstallments.Where(i => i.OrderId == id).ToListAsync();
+        foreach (var inst in remainingInstallments)
+        {
+            if (_db.Entry(inst).State != EntityState.Deleted && _db.Entry(inst).State != EntityState.Detached)
+            {
+                inst.OrderId = null;
+            }
+        }
 
         // Remove order and save changes
         _db.Orders.Remove(order);
