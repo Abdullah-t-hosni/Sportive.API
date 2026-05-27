@@ -2647,15 +2647,36 @@ public class OperationalReportsController : ControllerBase
         {
             decimal revenue = order.TotalAmount - order.TotalVatAmount; // net revenue without tax
             decimal cost = 0;
+            decimal totalReturnedValue = 0;
 
             foreach (var item in order.Items)
             {
                 decimal itemCost = item.Product?.CostPrice ?? 0;
-                // If the order is partially returned, the ReturnedQuantity should be subtracted from Cost
-                // Wait! Revenue (TotalAmount) is NOT updated by Returns in this system! Returns are separate.
-                // So if Revenue is for the original full amount, Cost should also be for the original full amount.
-                cost += itemCost * item.Quantity;
+                // Deduct cost of returned items
+                int netQty = item.Quantity - item.ReturnedQuantity;
+                cost += itemCost * Math.Max(0, netQty);
+
+                if (item.ReturnedQuantity > 0)
+                {
+                    // Calculate returned ratio and its share of the pre-tax item total
+                    decimal returnedRatio = (decimal)item.ReturnedQuantity / item.Quantity;
+                    decimal returnedLineTotal = item.TotalPrice * returnedRatio;
+
+                    // Subtract prorated order-level coupon discount if applicable
+                    decimal returnedDiscountShare = 0;
+                    if (order.SubTotal > 0 && order.DiscountAmount > 0)
+                    {
+                        returnedDiscountShare = (item.TotalPrice / order.SubTotal) * order.DiscountAmount * returnedRatio;
+                    }
+
+                    // Pre-tax net value of returned items to be subtracted from the pre-tax order revenue
+                    decimal netItemReturn = returnedLineTotal - returnedDiscountShare;
+                    totalReturnedValue += netItemReturn;
+                }
             }
+
+            // Deduct the returned pre-tax value from the order's net revenue
+            revenue = Math.Max(0, revenue - totalReturnedValue);
 
             decimal profit = revenue - cost;
             decimal margin = revenue > 0 ? (profit / revenue) * 100 : 0;

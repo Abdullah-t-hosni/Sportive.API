@@ -71,20 +71,30 @@ public class FinancialReportsController : ControllerBase
         var openCrMap   = openingBalances.ToDictionary(x => x.AccountId, x => x.Cr);
 
         // 4. Initialize balance objects
-        var balanceList = accounts.Select(a => new AccountBalance
-        {
-            Id           = a.Id,
-            Code         = a.Code,
-            NameAr       = a.NameAr,
-            Type         = a.Type,
-            Nature       = a.Nature,
-            ParentId     = a.ParentId,
-            Level        = a.Level,
-            IsLeaf       = a.IsLeaf,
-            OpenDebit    = Math.Round((a.Nature == AccountNature.Debit  ? a.OpeningBalance : 0) + openDrMap.GetValueOrDefault(a.Id, 0), 2),
-            OpenCredit   = Math.Round((a.Nature == AccountNature.Credit ? a.OpeningBalance : 0) + openCrMap.GetValueOrDefault(a.Id, 0), 2),
-            PeriodDebit  = Math.Round(periodDrMap.GetValueOrDefault(a.Id, 0), 2),
-            PeriodCredit = Math.Round(periodCrMap.GetValueOrDefault(a.Id, 0), 2)
+        var balanceList = accounts.Select(a => {
+            var nature = a.Nature;
+            // Dynamically override contra-revenue accounts (e.g. Sales Discount starting with 4101 or containing "خصم", and Sales Returns starting with 4103)
+            // to Debit nature so their natural debit balances are correctly calculated as positive numbers in reports.
+            if (a.Code.StartsWith("4101") || a.Code.StartsWith("4103") || (a.NameAr != null && a.NameAr.Contains("خصم")) || (a.NameEn != null && a.NameEn.ToLower().Contains("discount")))
+            {
+                nature = AccountNature.Debit;
+            }
+
+            return new AccountBalance
+            {
+                Id           = a.Id,
+                Code         = a.Code ?? "",
+                NameAr       = a.NameAr ?? "",
+                Type         = a.Type,
+                Nature       = nature,
+                ParentId     = a.ParentId,
+                Level        = a.Level,
+                IsLeaf       = a.IsLeaf,
+                OpenDebit    = Math.Round((nature == AccountNature.Debit  ? a.OpeningBalance : 0) + openDrMap.GetValueOrDefault(a.Id, 0), 2),
+                OpenCredit   = Math.Round((nature == AccountNature.Credit ? a.OpeningBalance : 0) + openCrMap.GetValueOrDefault(a.Id, 0), 2),
+                PeriodDebit  = Math.Round(periodDrMap.GetValueOrDefault(a.Id, 0), 2),
+                PeriodCredit = Math.Round(periodCrMap.GetValueOrDefault(a.Id, 0), 2)
+            };
         }).ToList();
 
         // We sort by Level descending to ensure children are processed before parents
