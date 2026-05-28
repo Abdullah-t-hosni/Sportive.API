@@ -39,6 +39,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
     public DbSet<AuditLog> AuditLogs            => Set<AuditLog>();
     public DbSet<PosHeldCart> PosHeldCarts      => Set<PosHeldCart>();
+    public DbSet<POSShiftClosure> POSShiftClosures => Set<POSShiftClosure>();
 
     public DbSet<Supplier>             Suppliers            { get; set; }
     public DbSet<PurchaseInvoice>      PurchaseInvoices     { get; set; }
