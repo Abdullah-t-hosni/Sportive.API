@@ -149,7 +149,6 @@ public class PdfService : IPdfService
                     page.Margin(4, Unit.Millimetre);
                     page.PageColor(Colors.White);
                     
-                    // Set default font size from settings
                     int fs = settings?.ReceiptFontSize ?? 9;
                     page.DefaultTextStyle(x => x.FontSize(fs).FontFamily(_activeFont));
                     page.ContentFromRightToLeft();
@@ -174,7 +173,8 @@ public class PdfService : IPdfService
                                         {
                                             using var client = new HttpClient();
                                             var logoBytes = client.GetByteArrayAsync(settings.LogoUrl).GetAwaiter().GetResult();
-                                            hCol.Item().AlignCenter().Width(settings.ReceiptLogoWidth, Unit.Percentage).Image(logoBytes);
+                                            float logoWidthMm = paperWidth * (settings.ReceiptLogoWidth / 100f);
+                                            hCol.Item().AlignCenter().Width(logoWidthMm, Unit.Millimetre).Image(logoBytes);
                                         }
                                         catch
                                         {
@@ -221,11 +221,12 @@ public class PdfService : IPdfService
                                     {
                                         hCol.Item().PaddingTop(1).AlignCenter().Text(x =>
                                         {
+                                            x.DefaultTextStyle(style => style.FontSize(7.5f).Bold());
                                             if (!string.IsNullOrEmpty(settings.TaxNumber))
                                                 x.Span($"{_t.Get("Pdf.TaxNumber") ?? "الرقم الضريبي"}: {settings.TaxNumber}   ");
                                             if (!string.IsNullOrEmpty(settings.CommercialRegister))
                                                 x.Span($"{_t.Get("Pdf.CommercialRegister") ?? "السجل التجاري"}: {settings.CommercialRegister}");
-                                        }).FontSize(7.5f).Bold();
+                                        });
                                     }
                                 });
                             }
@@ -416,17 +417,28 @@ public class PdfService : IPdfService
                                     payCol.Item().Row(row =>
                                     {
                                         row.RelativeItem().Text(_t.Get("Pdf.PaymentMethod") ?? "طريقة الدفع").FontSize(8).Bold();
-                                        row.RelativeItem().AlignLeft().AutoItem().Border(0.5f).BorderColor(Colors.Black).PaddingHorizontal(3).PaddingVertical(0.5f)
+                                        row.AutoItem().Border(0.5f).BorderColor(Colors.Black).PaddingHorizontal(3).PaddingVertical(0.5f)
                                             .Text(order.PaymentMethod).FontSize(7).Bold();
                                     });
 
                                     // Current Balance
                                     if (settings?.ReceiptShowBalance != false && order.Customer != null)
                                     {
+                                        decimal customerBalance = 0;
+                                        try
+                                        {
+                                            var customer = _db.Customers.FirstOrDefault(c => c.Id == order.Customer.Id);
+                                            if (customer != null)
+                                            {
+                                                customerBalance = customer.Balance;
+                                            }
+                                        }
+                                        catch { }
+
                                         payCol.Item().Row(row =>
                                         {
                                             row.RelativeItem().Text("رصيد العميل الحالي").FontSize(8).Bold();
-                                            row.RelativeItem().AlignLeft().Text($"{order.Customer.Balance:N2}").FontSize(8).Bold();
+                                            row.RelativeItem().AlignLeft().Text($"{customerBalance:N2}").FontSize(8).Bold();
                                         });
                                     }
                                 });
@@ -473,7 +485,7 @@ public class PdfService : IPdfService
                                             }
                                             int totalSlots = bitString.Length;
                                             float moduleW = 150f / totalSlots;
-                                            return barContainer.Row(row =>
+                                            barContainer.Row(row =>
                                             {
                                                 foreach (char bit in bitString.ToString())
                                                 {
@@ -483,6 +495,7 @@ public class PdfService : IPdfService
                                                         row.ConstantItem(moduleW).Height(25).Background(Colors.White);
                                                 }
                                             });
+                                            return barContainer;
                                         });
                                         barCol.Item().AlignCenter().Text(barcodeText).FontSize(7.5f).Bold();
                                     });
