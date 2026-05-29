@@ -17,7 +17,7 @@ public class AppUser : IdentityUser
 
     // User preferences (sidebar pinned items and favorite reports)
     public string PinnedSidebarItems { get; set; } = "[]";
-    public string FavoriteReports { get; set; } = "[]";
+    public string FavoriteReports { get; set; } = "[\"trial\", \"sales\"]";
     public string UiPreferences { get; set; } = "{}";
 }
 
