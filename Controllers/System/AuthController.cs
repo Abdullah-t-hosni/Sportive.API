@@ -301,7 +301,8 @@ public class AuthController : ControllerBase
             phone      = customer?.Phone,
             pinnedSidebarItems = user?.PinnedSidebarItems ?? "[]",
             favoriteReports = user?.FavoriteReports ?? "[]",
-            uiPreferences = user?.UiPreferences ?? "{}"
+            uiPreferences = user?.UiPreferences ?? "{}",
+            modulePermissions = overrides.Select(p => new { p.ModuleKey, p.CanView, p.CanEdit }).ToList()
         });
     }
 
