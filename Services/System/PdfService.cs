@@ -223,9 +223,9 @@ public class PdfService : IPdfService
                                         {
                                             x.DefaultTextStyle(style => style.FontSize(7.5f).Bold());
                                             if (!string.IsNullOrEmpty(settings.TaxNumber))
-                                                x.Span($"{_t.Get("Pdf.TaxNumber") ?? "الرقم الضريبي"}: {settings.TaxNumber}   ");
+                                                x.Span($"{_t.Get("Pdf.TaxNumber")}: {settings.TaxNumber}   ");
                                             if (!string.IsNullOrEmpty(settings.CommercialRegister))
-                                                x.Span($"{_t.Get("Pdf.CommercialRegister") ?? "السجل التجاري"}: {settings.CommercialRegister}");
+                                                x.Span($"{_t.Get("Pdf.CommercialRegister")}: {settings.CommercialRegister}");
                                         });
                                     }
                                 });
@@ -237,17 +237,17 @@ public class PdfService : IPdfService
                                     // Order Number and Date
                                     infoCol.Item().Row(row =>
                                     {
-                                        row.RelativeItem().Text($"{_t.Get("Pdf.Number") ?? "الرقم"}: #{order.OrderNumber}").Bold().FontSize(8.5f);
+                                        row.RelativeItem().Text(_t.Get("Pdf.Number", order.OrderNumber)).Bold().FontSize(8.5f);
                                         row.RelativeItem().AlignLeft().Text(order.CreatedAt.ToString("yyyy/MM/dd HH:mm")).FontSize(8);
                                     });
 
                                     // Customer Details
                                     if (settings?.ReceiptShowCustomerDetails == true)
                                     {
-                                        var custName = order.Customer?.FullName ?? _t.Get("Pdf.CashCustomer") ?? "عميل نقدي";
+                                        var custName = order.Customer?.FullName ?? _t.Get("Pdf.CashCustomer");
                                         infoCol.Item().Row(row =>
                                         {
-                                            row.RelativeItem().Text($"{_t.Get("Pdf.Customer") ?? "العميل"}: {custName}").Bold().FontSize(8.5f);
+                                            row.RelativeItem().Text(_t.Get("Pdf.Customer", custName)).Bold().FontSize(8.5f);
                                             if (!string.IsNullOrEmpty(order.Customer?.Phone))
                                                 row.RelativeItem().AlignLeft().Text(order.Customer.Phone).FontSize(8).Bold();
                                         });
@@ -257,18 +257,24 @@ public class PdfService : IPdfService
                                     infoCol.Item().Row(row =>
                                     {
                                         if (settings?.ReceiptShowCashier != false && !string.IsNullOrEmpty(order.SalesPersonName))
-                                            row.RelativeItem().Text($"{_t.Get("Pdf.Seller") ?? "البائع"}: {order.SalesPersonName}").FontSize(7.5f).Bold();
+                                            row.RelativeItem().Text(_t.Get("Pdf.Seller", order.SalesPersonName)).FontSize(7.5f).Bold();
                                         else
                                             row.RelativeItem().Text("");
 
-                                        row.RelativeItem().AlignLeft().Text($"{_t.Get("Pdf.Status") ?? "الحالة"}: {order.Status}").FontSize(7.5f).Bold();
+                                        var statusKey = $"Status.{order.Status}";
+                                        var translatedStatus = _t.Get(statusKey);
+                                        if (translatedStatus == statusKey)
+                                        {
+                                            translatedStatus = order.Status;
+                                        }
+                                        row.RelativeItem().AlignLeft().Text(_t.Get("Pdf.Status", translatedStatus)).FontSize(7.5f).Bold();
                                     });
 
                                     // Note
                                     if (settings?.ReceiptShowNote != false && !string.IsNullOrEmpty(order.CustomerNotes))
                                     {
                                         infoCol.Item().PaddingTop(2).Border(0.5f).BorderColor(Colors.Black).Padding(3)
-                                            .Text($"{_t.Get("Pdf.Note") ?? "ملاحظة"}: {order.CustomerNotes}").FontSize(7.5f).Bold();
+                                            .Text(_t.Get("Pdf.Note", order.CustomerNotes)).FontSize(7.5f).Bold();
                                     }
                                 });
                             }
@@ -330,12 +336,12 @@ public class PdfService : IPdfService
                                     {
                                         totCol.Item().Row(row =>
                                         {
-                                            row.RelativeItem().Text(_t.Get("Pdf.SubTotal") ?? "الإجمالي الفرعي").FontSize(8).Bold();
+                                            row.RelativeItem().Text(_t.Get("Pdf.SubTotal")).FontSize(8).Bold();
                                             row.RelativeItem().AlignLeft().Text($"{(order.TotalAmount + totalSavings):N2}").FontSize(8).Bold();
                                         });
                                         totCol.Item().Row(row =>
                                         {
-                                            row.RelativeItem().Text("إجمالي الخصومات").FontSize(8).Bold().FontColor(Colors.Red.Medium);
+                                            row.RelativeItem().Text(_t.Get("Pdf.TotalDiscount")).FontSize(8).Bold().FontColor(Colors.Red.Medium);
                                             row.RelativeItem().AlignLeft().Text($"-{totalSavings:N2}").FontSize(8).Bold().FontColor(Colors.Red.Medium);
                                         });
                                     }
@@ -348,7 +354,7 @@ public class PdfService : IPdfService
                                         var vatRate = commonVatItem?.VatRateApplied ?? settings.VatRatePercent;
                                         totCol.Item().Row(row =>
                                         {
-                                            row.RelativeItem().Text($"ضريبة القيمة المضافة ({vatRate}%)").FontSize(8).Bold();
+                                            row.RelativeItem().Text(_t.Get("Pdf.Vat", vatRate)).FontSize(8).Bold();
                                             row.RelativeItem().AlignLeft().Text($"{totalVat:N2}").FontSize(8).Bold();
                                         });
                                     }
@@ -356,7 +362,7 @@ public class PdfService : IPdfService
                                     // Net Total Box
                                     totCol.Item().PaddingVertical(2).Border(1.5f).BorderColor(Colors.Black).Padding(4).Row(row =>
                                     {
-                                        row.RelativeItem().Text(_t.Get("Pdf.NetTotal") ?? "الصافي").Bold().FontSize(10.5f);
+                                        row.RelativeItem().Text(_t.Get("Pdf.NetTotal")).Bold().FontSize(10.5f);
                                         row.RelativeItem().AlignLeft().Text($"{order.TotalAmount:N2} {settings?.CurrencySymbol ?? "ج.م"}").Bold().FontSize(10.5f);
                                     });
 
@@ -364,12 +370,12 @@ public class PdfService : IPdfService
                                     totCol.Item().Row(row =>
                                     {
                                         if (settings?.ReceiptShowItemCount != false)
-                                            row.RelativeItem().Text($"إجمالي عدد الأصناف: {order.Items.Count}").FontSize(7.5f).Bold();
+                                            row.RelativeItem().Text(_t.Get("Pdf.ItemsCount", order.Items.Count)).FontSize(7.5f).Bold();
                                         
                                         if (settings?.ReceiptShowTotalPieceCount != false)
                                         {
                                             var totalQty = order.Items.Sum(i => i.Quantity);
-                                            row.RelativeItem().AlignLeft().Text($"إجمالي الكمية: {totalQty}").FontSize(7.5f).Bold();
+                                            row.RelativeItem().AlignLeft().Text(_t.Get("Pdf.TotalQty", totalQty)).FontSize(7.5f).Bold();
                                         }
                                     });
 
@@ -378,7 +384,7 @@ public class PdfService : IPdfService
                                     {
                                         totCol.Item().PaddingTop(1).Row(row =>
                                         {
-                                            row.RelativeItem().Text(_t.Get("Pdf.PreviousBalance") ?? "الرصيد السابق").FontSize(8).Bold();
+                                            row.RelativeItem().Text(_t.Get("Pdf.PreviousBalance")).FontSize(8).Bold();
                                             row.RelativeItem().AlignLeft().Text($"{order.PreviousBalance:N2} {settings?.CurrencySymbol ?? "ج.م"}").FontSize(8).Bold();
                                         });
                                     }
@@ -398,7 +404,7 @@ public class PdfService : IPdfService
                                     // Paid
                                     payCol.Item().Row(row =>
                                     {
-                                        row.RelativeItem().Text(_t.Get("Pdf.AmountPaid") ?? "المبلغ المدفوع").FontSize(8).Bold();
+                                        row.RelativeItem().Text(_t.Get("Pdf.AmountPaid")).FontSize(8).Bold();
                                         row.RelativeItem().AlignLeft().Text($"{order.PaidAmount:N2}").FontSize(8).Bold();
                                     });
 
@@ -408,7 +414,7 @@ public class PdfService : IPdfService
                                     {
                                         payCol.Item().Row(row =>
                                         {
-                                            row.RelativeItem().Text(_t.Get("Pdf.Remaining") ?? "المتبقي").FontSize(8).Bold();
+                                            row.RelativeItem().Text(_t.Get("Pdf.Remaining")).FontSize(8).Bold();
                                             row.RelativeItem().AlignLeft().Text($"{remaining:N2}").FontSize(8).Bold();
                                         });
                                     }
@@ -416,9 +422,17 @@ public class PdfService : IPdfService
                                     // Method
                                     payCol.Item().Row(row =>
                                     {
-                                        row.RelativeItem().Text(_t.Get("Pdf.PaymentMethod") ?? "طريقة الدفع").FontSize(8).Bold();
+                                        row.RelativeItem().Text(_t.Get("Pdf.PaymentMethod")).FontSize(8).Bold();
+                                        
+                                        var methodKey = $"Pdf.Method.{order.PaymentMethod}";
+                                        var translatedMethod = _t.Get(methodKey);
+                                        if (translatedMethod == methodKey)
+                                        {
+                                            translatedMethod = order.PaymentMethod;
+                                        }
+
                                         row.AutoItem().Border(0.5f).BorderColor(Colors.Black).PaddingHorizontal(3).PaddingVertical(0.5f)
-                                            .Text(order.PaymentMethod).FontSize(7).Bold();
+                                            .Text(translatedMethod).FontSize(7).Bold();
                                     });
 
                                     // Current Balance
@@ -437,7 +451,7 @@ public class PdfService : IPdfService
 
                                         payCol.Item().Row(row =>
                                         {
-                                            row.RelativeItem().Text("رصيد العميل الحالي").FontSize(8).Bold();
+                                            row.RelativeItem().Text(_t.Get("Pdf.CurrentBalance")).FontSize(8).Bold();
                                             row.RelativeItem().AlignLeft().Text($"{customerBalance:N2}").FontSize(8).Bold();
                                         });
                                     }
@@ -454,7 +468,7 @@ public class PdfService : IPdfService
                                     if (!string.IsNullOrEmpty(settings?.ReceiptComplaintsPhone))
                                     {
                                         fCol.Item().PaddingTop(2).AlignCenter().Background(Colors.Black).PaddingHorizontal(6).PaddingVertical(1)
-                                            .Text($"{_t.Get("Pdf.Complaints") ?? "شكاوى"}: {settings.ReceiptComplaintsPhone}").FontSize(7.5f).Bold().FontColor(Colors.White);
+                                            .Text(_t.Get("Pdf.Complaints", settings.ReceiptComplaintsPhone)).FontSize(7.5f).Bold().FontColor(Colors.White);
                                     }
                                     fCol.Item().PaddingTop(2).AlignCenter().Text(settings?.ReceiptSoftwareProvider ?? "By Sportive Team").FontSize(6.5f).Bold().FontColor(Colors.Grey.Darken1);
                                 });
