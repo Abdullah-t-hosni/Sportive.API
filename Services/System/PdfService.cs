@@ -140,7 +140,7 @@ public class PdfService : IPdfService
 
         return await Task.Run(() =>
         {
-            return Document.Create(container =>
+            var doc = Document.Create(container =>
             {
                 container.Page(page =>
                 {
@@ -504,15 +504,827 @@ public class PdfService : IPdfService
                         }
                     });
                 });
+            });
+
+            // Convert to Images and rebuild as a flat PDF document
+            var images = doc.GenerateImages();
+            var finalDoc = Document.Create(finalContainer =>
+            {
+                foreach (var img in images)
+                {
+                    finalContainer.Page(page =>
+                    {
+                        int paperWidth = settings?.ReceiptWidth ?? 80;
+                        page.Size(paperWidth, 297, Unit.Millimetre);
+                        page.Margin(0);
+                        page.Content().Image(img);
+                    });
+                }
+            });
+
+            return finalDoc.GeneratePdf();
+        });
+    }
+
+    public async Task<byte[]> GeneratePurchaseInvoicePdfAsync(PurchaseInvoice invoice)
+    {
+        EnsureFontLoaded();
+        var settings = await _db.StoreInfo.FirstOrDefaultAsync();
+
+        return await Task.Run(() =>
+        {
+            return Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.Margin(1.2f, Unit.Centimetre);
+                    page.PageColor(Colors.White);
+                    page.DefaultTextStyle(x => x.FontSize(9).FontFamily(_activeFont));
+                    page.ContentFromRightToLeft();
+
+                    page.Header().Column(col =>
+                    {
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem().Column(storeCol =>
+                            {
+                                storeCol.Item().Text(settings?.StoreBrandName ?? "SPORTIVE").FontSize(16).Bold().FontColor(Colors.Black);
+                                if (!string.IsNullOrEmpty(settings?.StoreSlogan))
+                                    storeCol.Item().Text(settings.StoreSlogan).FontSize(9).FontColor(Colors.Grey.Medium);
+                                if (!string.IsNullOrEmpty(settings?.TaxNumber))
+                                    storeCol.Item().Text($"الرقم الضريبي: {settings.TaxNumber}").FontSize(8.5f);
+                                if (!string.IsNullOrEmpty(settings?.CommercialRegister))
+                                    storeCol.Item().Text($"السجل التجاري: {settings.CommercialRegister}").FontSize(8.5f);
+                            });
+
+                            row.RelativeItem().AlignLeft().Column(titleCol =>
+                            {
+                                titleCol.Item().Text("فاتورة مشتريات").FontSize(18).Bold().FontColor(Colors.Black);
+                                titleCol.Item().PaddingTop(2).Text($"رقم الفاتورة: {invoice.InvoiceNumber}").Bold().FontSize(10);
+                                if (!string.IsNullOrEmpty(invoice.SupplierInvoiceNumber))
+                                    titleCol.Item().Text($"فاتورة المورد: {invoice.SupplierInvoiceNumber}").FontSize(9);
+                            });
+                        });
+
+                        col.Item().PaddingTop(10).LineHorizontal(1).LineColor(Colors.Grey.Lighten1);
+                    });
+
+                    page.Content().PaddingVertical(15).Column(col =>
+                    {
+                        // Info section (Supplier details vs Invoice metadata)
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem().Column(suppCol =>
+                            {
+                                suppCol.Item().Text("بيانات المورد").Bold().FontSize(10.5f).Underline();
+                                suppCol.Item().PaddingTop(4).Text($"الاسم: {invoice.Supplier?.Name}").Bold();
+                                if (!string.IsNullOrEmpty(invoice.Supplier?.Phone))
+                                    suppCol.Item().Text($"الهاتف: {invoice.Supplier.Phone}");
+                                if (!string.IsNullOrEmpty(invoice.Supplier?.TaxNumber))
+                                    suppCol.Item().Text($"الرقم الضريبي للمورد: {invoice.Supplier.TaxNumber}");
+                                if (!string.IsNullOrEmpty(invoice.Supplier?.Address))
+                                    suppCol.Item().Text($"العنوان: {invoice.Supplier.Address}");
+                            });
+
+                            row.RelativeItem().AlignLeft().Column(metaCol =>
+                            {
+                                metaCol.Item().Text("تفاصيل المستند").Bold().FontSize(10.5f).Underline();
+                                metaCol.Item().PaddingTop(4).Text($"التاريخ: {invoice.InvoiceDate:yyyy/MM/dd}");
+                                if (invoice.DueDate.HasValue)
+                                    metaCol.Item().Text($"تاريخ الاستحقاق: {invoice.DueDate.Value:yyyy/MM/dd}");
+                                metaCol.Item().Text($"طريقة الدفع: {(invoice.PaymentTerms == PaymentTerms.Cash ? "نقدي" : "آجل")}");
+                                metaCol.Item().Text($"حالة الفاتورة: {invoice.Status}");
+                                if (invoice.CostCenter.HasValue)
+                                    metaCol.Item().Text($"مركز التكلفة: {invoice.CostCenter}");
+                            });
+                        });
+
+                        col.Item().PaddingTop(15);
+
+                        // Items Table
+                        col.Item().Table(table =>
+                        {
+                            table.ColumnsDefinition(columns =>
+                            {
+                                columns.ConstantColumn(30); // #
+                                columns.RelativeColumn(3);  // Product Name
+                                columns.RelativeColumn(1.5f); // SKU
+                                columns.RelativeColumn(1.2f); // Quantity
+                                columns.RelativeColumn(1.2f); // Unit Cost
+                                columns.RelativeColumn(1);   // Tax %
+                                columns.RelativeColumn(1.5f); // Total
+                            });
+
+                            table.Header(header =>
+                            {
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("#").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignRight().Text("الصنف").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("الكود").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("الكمية").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("سعر الوحدة").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("الضريبة").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignLeft().Text("الإجمالي").Bold();
+                            });
+
+                            int index = 1;
+                            foreach (var item in invoice.Items)
+                            {
+                                var cellStyle = TextStyle.Default.FontSize(8.5f);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text(index++.ToString()).Style(cellStyle);
+                                
+                                var productName = item.Product?.NameAr ?? item.Description;
+                                if (item.ProductVariant != null)
+                                {
+                                    var variantDetails = new List<string>();
+                                    if (!string.IsNullOrEmpty(item.ProductVariant.Size)) variantDetails.Add(item.ProductVariant.Size);
+                                    if (!string.IsNullOrEmpty(item.ProductVariant.ColorAr)) variantDetails.Add(item.ProductVariant.ColorAr);
+                                    else if (!string.IsNullOrEmpty(item.ProductVariant.Color)) variantDetails.Add(item.ProductVariant.Color);
+                                    
+                                    if (variantDetails.Any())
+                                        productName += $" ({string.Join(" - ", variantDetails)})";
+                                }
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignRight().Text(productName).Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text(item.Product?.SKU ?? "—").Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text($"{item.Quantity} {item.Unit}").Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text(item.UnitCost.ToString("N2")).Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text($"{item.TaxRate}%").Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignLeft().Text(item.TotalCost.ToString("N2")).Style(cellStyle);
+                            }
+                        });
+
+                        col.Item().PaddingTop(15);
+
+                        // Totals block & Tafqeet
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem(2).Column(tafCol =>
+                            {
+                                var tafqeet = CurrencyHelper.ToArabicWords(invoice.TotalAmount);
+                                tafCol.Item().Padding(4).Background(Colors.Grey.Lighten4).Text(tafqeet).Bold().FontSize(9);
+                                if (!string.IsNullOrEmpty(invoice.Notes))
+                                {
+                                    tafCol.Item().PaddingTop(8).Text($"ملاحظات: {invoice.Notes}").FontSize(8.5f);
+                                }
+                            });
+
+                            row.RelativeItem(1.5f).Column(totCol =>
+                            {
+                                totCol.Item().Row(r => { r.RelativeItem().Text("الإجمالي الفرعي:"); r.RelativeItem().AlignLeft().Text(invoice.SubTotal.ToString("N2")); });
+                                if (invoice.DiscountAmount > 0)
+                                    totCol.Item().Row(r => { r.RelativeItem().Text("الخصم:"); r.RelativeItem().AlignLeft().Text($"-{invoice.DiscountAmount:N2}"); });
+                                if (invoice.TaxAmount > 0)
+                                    totCol.Item().Row(r => { r.RelativeItem().Text("الضريبة:"); r.RelativeItem().AlignLeft().Text(invoice.TaxAmount.ToString("N2")); });
+                                
+                                totCol.Item().PaddingTop(4).BorderTop(1).BorderColor(Colors.Black).Row(r => 
+                                { 
+                                    r.RelativeItem().Text("الإجمالي النهائي:").Bold(); 
+                                    r.RelativeItem().AlignLeft().Text($"{invoice.TotalAmount:N2}").Bold(); 
+                                });
+
+                                if (invoice.PaidAmount > 0)
+                                {
+                                    totCol.Item().Row(r => { r.RelativeItem().Text("المبلغ المدفوع:"); r.RelativeItem().AlignLeft().Text(invoice.PaidAmount.ToString("N2")); });
+                                    var remaining = invoice.RemainingAmount;
+                                    if (remaining > 0)
+                                        totCol.Item().Row(r => { r.RelativeItem().Text("المتبقي:").Bold(); r.RelativeItem().AlignLeft().Text(remaining.ToString("N2")).Bold(); });
+                                }
+                            });
+                        });
+                    });
+
+                    page.Footer().Column(col =>
+                    {
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem().AlignCenter().Text("إعداد: __________________").FontSize(9);
+                            row.RelativeItem().AlignCenter().Text("اعتماد المشتريات: __________________").FontSize(9);
+                        });
+                        col.Item().PaddingTop(8).AlignCenter().Text(x =>
+                        {
+                            x.CurrentPageNumber();
+                            x.Span(" / ");
+                            x.TotalPages();
+                        });
+                    });
+                });
             }).GeneratePdf();
         });
     }
 
-    public async Task<byte[]> GeneratePurchaseInvoicePdfAsync(PurchaseInvoice invoice) { return await Task.FromResult(new byte[0]); }
-    public async Task<byte[]> GenerateVoucherPdfAsync(ReceiptVoucher? receiptVoucher, PaymentVoucher? paymentVoucher) { return await Task.FromResult(new byte[0]); }
-    public async Task<byte[]> GenerateOpeningBalancePdfAsync(InventoryOpeningBalance openingBalance) { return await Task.FromResult(new byte[0]); }
-    public async Task<byte[]> GeneratePurchaseReturnPdfAsync(PurchaseReturn pReturn) { return await Task.FromResult(new byte[0]); }
-    public async Task<byte[]> GenerateJournalEntryPdfAsync(JournalEntry entry) { return await Task.FromResult(new byte[0]); }
+    public async Task<byte[]> GeneratePurchaseReturnPdfAsync(PurchaseReturn pReturn)
+    {
+        EnsureFontLoaded();
+        var settings = await _db.StoreInfo.FirstOrDefaultAsync();
+
+        return await Task.Run(() =>
+        {
+            return Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.Margin(1.2f, Unit.Centimetre);
+                    page.PageColor(Colors.White);
+                    page.DefaultTextStyle(x => x.FontSize(9).FontFamily(_activeFont));
+                    page.ContentFromRightToLeft();
+
+                    page.Header().Column(col =>
+                    {
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem().Column(storeCol =>
+                            {
+                                storeCol.Item().Text(settings?.StoreBrandName ?? "SPORTIVE").FontSize(16).Bold().FontColor(Colors.Black);
+                                if (!string.IsNullOrEmpty(settings?.StoreSlogan))
+                                    storeCol.Item().Text(settings.StoreSlogan).FontSize(9).FontColor(Colors.Grey.Medium);
+                            });
+
+                            row.RelativeItem().AlignLeft().Column(titleCol =>
+                            {
+                                titleCol.Item().Text("مرتجع مشتريات").FontSize(18).Bold().FontColor(Colors.Black);
+                                titleCol.Item().PaddingTop(2).Text($"رقم الإرجاع: {pReturn.ReturnNumber}").Bold().FontSize(10);
+                                if (pReturn.Invoice != null)
+                                    titleCol.Item().Text($"فاتورة الشراء المرتبطة: {pReturn.Invoice.InvoiceNumber}").FontSize(9);
+                            });
+                        });
+
+                        col.Item().PaddingTop(10).LineHorizontal(1).LineColor(Colors.Grey.Lighten1);
+                    });
+
+                    page.Content().PaddingVertical(15).Column(col =>
+                    {
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem().Column(suppCol =>
+                            {
+                                suppCol.Item().Text("بيانات المورد").Bold().FontSize(10.5f).Underline();
+                                suppCol.Item().PaddingTop(4).Text($"الاسم: {pReturn.Supplier?.Name}").Bold();
+                                if (!string.IsNullOrEmpty(pReturn.Supplier?.Phone))
+                                    suppCol.Item().Text($"الهاتف: {pReturn.Supplier.Phone}");
+                                if (!string.IsNullOrEmpty(pReturn.Supplier?.Address))
+                                    suppCol.Item().Text($"العنوان: {pReturn.Supplier.Address}");
+                            });
+
+                            row.RelativeItem().AlignLeft().Column(metaCol =>
+                            {
+                                metaCol.Item().Text("تفاصيل المستند").Bold().FontSize(10.5f).Underline();
+                                metaCol.Item().PaddingTop(4).Text($"التاريخ: {pReturn.ReturnDate:yyyy/MM/dd}");
+                                metaCol.Item().Text($"طريقة الدفع للمرتجع: {(pReturn.PaymentTerms == PaymentTerms.Cash ? "نقدي" : "آجل / رصيد مورد")}");
+                                if (pReturn.CostCenter.HasValue)
+                                    metaCol.Item().Text($"مركز التكلفة: {pReturn.CostCenter}");
+                            });
+                        });
+
+                        col.Item().PaddingTop(15);
+
+                        // Items Table
+                        col.Item().Table(table =>
+                        {
+                            table.ColumnsDefinition(columns =>
+                            {
+                                columns.ConstantColumn(30); // #
+                                columns.RelativeColumn(3);  // Product Name
+                                columns.RelativeColumn(1.5f); // SKU
+                                columns.RelativeColumn(1.2f); // Quantity
+                                columns.RelativeColumn(1.2f); // Unit Cost
+                                columns.RelativeColumn(1.5f); // Total
+                            });
+
+                            table.Header(header =>
+                            {
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("#").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignRight().Text("الصنف").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("الكود").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("الكمية المرتجعة").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("سعر التكلفة").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignLeft().Text("الإجمالي").Bold();
+                            });
+
+                            int index = 1;
+                            foreach (var item in pReturn.Items)
+                            {
+                                var cellStyle = TextStyle.Default.FontSize(8.5f);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text(index++.ToString()).Style(cellStyle);
+                                
+                                var productName = item.Product?.NameAr ?? "مرتجع صنف";
+                                if (item.ProductVariant != null)
+                                {
+                                    var variantDetails = new List<string>();
+                                    if (!string.IsNullOrEmpty(item.ProductVariant.Size)) variantDetails.Add(item.ProductVariant.Size);
+                                    if (!string.IsNullOrEmpty(item.ProductVariant.ColorAr)) variantDetails.Add(item.ProductVariant.ColorAr);
+                                    else if (!string.IsNullOrEmpty(item.ProductVariant.Color)) variantDetails.Add(item.ProductVariant.Color);
+                                    
+                                    if (variantDetails.Any())
+                                        productName += $" ({string.Join(" - ", variantDetails)})";
+                                }
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignRight().Text(productName).Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text(item.Product?.SKU ?? "—").Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text($"{item.Quantity} {item.Unit}").Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text(item.UnitCost.ToString("N2")).Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignLeft().Text(item.TotalCost.ToString("N2")).Style(cellStyle);
+                            }
+                        });
+
+                        col.Item().PaddingTop(15);
+
+                        // Totals & Tafqeet
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem(2).Column(tafCol =>
+                            {
+                                var tafqeet = CurrencyHelper.ToArabicWords(pReturn.TotalAmount);
+                                tafCol.Item().Padding(4).Background(Colors.Grey.Lighten4).Text(tafqeet).Bold().FontSize(9);
+                                if (!string.IsNullOrEmpty(pReturn.Notes))
+                                {
+                                    tafCol.Item().PaddingTop(8).Text($"ملاحظات: {pReturn.Notes}").FontSize(8.5f);
+                                }
+                            });
+
+                            row.RelativeItem(1.5f).Column(totCol =>
+                            {
+                                totCol.Item().Row(r => { r.RelativeItem().Text("الإجمالي الفرعي:"); r.RelativeItem().AlignLeft().Text(pReturn.SubTotal.ToString("N2")); });
+                                if (pReturn.DiscountAmount > 0)
+                                    totCol.Item().Row(r => { r.RelativeItem().Text("الخصم:"); r.RelativeItem().AlignLeft().Text($"-{pReturn.DiscountAmount:N2}"); });
+                                if (pReturn.TaxAmount > 0)
+                                    totCol.Item().Row(r => { r.RelativeItem().Text("الضريبة:"); r.RelativeItem().AlignLeft().Text(pReturn.TaxAmount.ToString("N2")); });
+                                
+                                totCol.Item().PaddingTop(4).BorderTop(1).BorderColor(Colors.Black).Row(r => 
+                                { 
+                                    r.RelativeItem().Text("إجمالي المرتجع:").Bold(); 
+                                    r.RelativeItem().AlignLeft().Text($"{pReturn.TotalAmount:N2}").Bold(); 
+                                });
+                            });
+                        });
+                    });
+
+                    page.Footer().Column(col =>
+                    {
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem().AlignCenter().Text("إعداد: __________________").FontSize(9);
+                            row.RelativeItem().AlignCenter().Text("اعتماد المخزن: __________________").FontSize(9);
+                        });
+                        col.Item().PaddingTop(8).AlignCenter().Text(x =>
+                        {
+                            x.CurrentPageNumber();
+                            x.Span(" / ");
+                            x.TotalPages();
+                        });
+                    });
+                });
+            }).GeneratePdf();
+        });
+    }
+
+    public async Task<byte[]> GenerateVoucherPdfAsync(ReceiptVoucher? receiptVoucher, PaymentVoucher? paymentVoucher)
+    {
+        EnsureFontLoaded();
+        var settings = await _db.StoreInfo.FirstOrDefaultAsync();
+
+        return await Task.Run(() =>
+        {
+            bool isReceipt = receiptVoucher != null;
+            string voucherTitle = isReceipt ? "سند قبض" : "سند صرف / دفع";
+            string voucherNumber = isReceipt ? receiptVoucher!.VoucherNumber : paymentVoucher!.VoucherNumber;
+            DateTime voucherDate = isReceipt ? receiptVoucher!.VoucherDate : paymentVoucher!.VoucherDate;
+            decimal amount = isReceipt ? receiptVoucher!.Amount : paymentVoucher!.Amount;
+            string paymentMethod = isReceipt ? receiptVoucher!.PaymentMethod.ToString() : paymentVoucher!.PaymentMethod.ToString();
+            string? reference = isReceipt ? receiptVoucher!.Reference : paymentVoucher!.Reference;
+            string? description = isReceipt ? receiptVoucher!.Description : paymentVoucher!.Description;
+            string cashAccountName = isReceipt ? (receiptVoucher!.CashAccount?.NameAr ?? "حساب الخزينة/البنك") : (paymentVoucher!.CashAccount?.NameAr ?? "حساب الخزينة/البنك");
+            
+            string paidToOrReceivedFromTitle = isReceipt ? "مستلم من:" : "مدفوع لـ:";
+            string partyName = "عام";
+            if (isReceipt)
+            {
+                if (receiptVoucher!.Customer != null)
+                    partyName = $"العميل: {receiptVoucher.Customer.FullName}";
+                else if (receiptVoucher.Employee != null)
+                    partyName = $"الموظف: {receiptVoucher.Employee.Name}";
+                else if (receiptVoucher.FromAccount != null)
+                    partyName = $"الحساب الدائن: {receiptVoucher.FromAccount.NameAr}";
+            }
+            else
+            {
+                if (paymentVoucher!.Supplier != null)
+                    partyName = $"المورد: {paymentVoucher.Supplier.Name}";
+                else if (paymentVoucher.Employee != null)
+                    partyName = $"الموظف: {paymentVoucher.Employee.Name}";
+                else if (paymentVoucher.ToAccount != null)
+                    partyName = $"الحساب المدين: {paymentVoucher.ToAccount.NameAr}";
+            }
+
+            OrderSource? costCenter = isReceipt ? receiptVoucher!.CostCenter : paymentVoucher!.CostCenter;
+
+            return Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.Margin(1.5f, Unit.Centimetre);
+                    page.PageColor(Colors.White);
+                    page.DefaultTextStyle(x => x.FontSize(9.5f).FontFamily(_activeFont));
+                    page.ContentFromRightToLeft();
+
+                    page.Header().Column(col =>
+                    {
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem().Column(storeCol =>
+                            {
+                                storeCol.Item().Text(settings?.StoreBrandName ?? "SPORTIVE").FontSize(16).Bold().FontColor(Colors.Black);
+                                if (!string.IsNullOrEmpty(settings?.StoreSlogan))
+                                    storeCol.Item().Text(settings.StoreSlogan).FontSize(9).FontColor(Colors.Grey.Medium);
+                            });
+
+                            row.RelativeItem().AlignLeft().Column(titleCol =>
+                            {
+                                titleCol.Item().Text(voucherTitle).FontSize(18).Bold().FontColor(Colors.Black);
+                                titleCol.Item().PaddingTop(2).Text($"رقم السند: {voucherNumber}").Bold().FontSize(10);
+                            });
+                        });
+
+                        col.Item().PaddingTop(10).LineHorizontal(1).LineColor(Colors.Grey.Lighten1);
+                    });
+
+                    page.Content().PaddingVertical(20).Column(col =>
+                    {
+                        // Main amount card
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem().Column(infoCol =>
+                            {
+                                infoCol.Item().Text($"تاريخ السند: {voucherDate:yyyy/MM/dd}").Bold();
+                                infoCol.Item().Text($"طريقة الدفع: {paymentMethod}");
+                                if (!string.IsNullOrEmpty(reference))
+                                    infoCol.Item().Text($"رقم المرجع: {reference}");
+                                if (costCenter.HasValue)
+                                    infoCol.Item().Text($"مركز التكلفة: {costCenter}");
+                            });
+
+                            row.ConstantItem(180).Border(1.5f).BorderColor(Colors.Black).Background(Colors.Grey.Lighten4).Padding(10).Column(amtCol =>
+                            {
+                                amtCol.Item().AlignCenter().Text("المبلغ الإجمالي").FontSize(9).Bold();
+                                amtCol.Item().AlignCenter().Text($"{amount:N2} {settings?.CurrencySymbol ?? "ج.م"}").FontSize(16).Bold();
+                            });
+                        });
+
+                        col.Item().PaddingTop(20).Border(0.5f).BorderColor(Colors.Grey.Lighten1).Padding(12).Column(box =>
+                        {
+                            box.Item().Row(r =>
+                            {
+                                r.ConstantItem(80).Text(paidToOrReceivedFromTitle).Bold();
+                                r.RelativeItem().Text(partyName).Bold();
+                            });
+
+                            box.Item().PaddingTop(8).Row(r =>
+                            {
+                                r.ConstantItem(80).Text("مبلغ وقدره:").Bold();
+                                r.RelativeItem().Text(CurrencyHelper.ToArabicWords(amount)).Bold();
+                            });
+
+                            box.Item().PaddingTop(8).Row(r =>
+                            {
+                                r.ConstantItem(80).Text("حساب النقدية:").Bold();
+                                r.RelativeItem().Text(cashAccountName);
+                            });
+
+                            if (!string.IsNullOrEmpty(description))
+                            {
+                                box.Item().PaddingTop(12).BorderTop(0.5f).BorderColor(Colors.Grey.Lighten2).PaddingTop(8).Row(r =>
+                                {
+                                    r.ConstantItem(80).Text("وذلك قيمة:").Bold();
+                                    r.RelativeItem().Text(description).LineHeight(1.3f);
+                                });
+                            }
+                        });
+                    });
+
+                    page.Footer().Column(col =>
+                    {
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem().AlignCenter().Text("المُستلم: __________________").FontSize(9.5f);
+                            row.RelativeItem().AlignCenter().Text("المُحاسب: __________________").FontSize(9.5f);
+                            row.RelativeItem().AlignCenter().Text("المدير المالي: __________________").FontSize(9.5f);
+                        });
+                        col.Item().PaddingTop(10).AlignCenter().Text(x =>
+                        {
+                            x.CurrentPageNumber();
+                            x.Span(" / ");
+                            x.TotalPages();
+                        });
+                    });
+                });
+            }).GeneratePdf();
+        });
+    }
+
+    public async Task<byte[]> GenerateOpeningBalancePdfAsync(InventoryOpeningBalance openingBalance)
+    {
+        EnsureFontLoaded();
+        
+        // Eager load items and products if not already loaded to prevent null reference errors
+        if (openingBalance.Items == null || openingBalance.Items.Any(i => i.Product == null))
+        {
+            await _db.InventoryOpeningBalanceItems
+                .Where(i => i.InventoryOpeningBalanceId == openingBalance.Id)
+                .Include(i => i.Product)
+                .Include(i => i.ProductVariant)
+                .LoadAsync();
+        }
+
+        var settings = await _db.StoreInfo.FirstOrDefaultAsync();
+
+        return await Task.Run(() =>
+        {
+            return Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.Margin(1.5f, Unit.Centimetre);
+                    page.PageColor(Colors.White);
+                    page.DefaultTextStyle(x => x.FontSize(9).FontFamily(_activeFont));
+                    page.ContentFromRightToLeft();
+
+                    page.Header().Column(col =>
+                    {
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem().Column(storeCol =>
+                            {
+                                storeCol.Item().Text(settings?.StoreBrandName ?? "SPORTIVE").FontSize(16).Bold().FontColor(Colors.Black);
+                                if (!string.IsNullOrEmpty(settings?.StoreSlogan))
+                                    storeCol.Item().Text(settings.StoreSlogan).FontSize(9).FontColor(Colors.Grey.Medium);
+                            });
+
+                            row.RelativeItem().AlignLeft().Column(titleCol =>
+                            {
+                                titleCol.Item().Text("الأرصدة الافتتاحية للمخزون").FontSize(16).Bold().FontColor(Colors.Black);
+                                titleCol.Item().PaddingTop(2).Text($"الرقم المرجعي: {openingBalance.Reference}").Bold().FontSize(10);
+                                titleCol.Item().Text($"تاريخ القيد: {openingBalance.Date:yyyy/MM/dd}").FontSize(9);
+                            });
+                        });
+
+                        col.Item().PaddingTop(10).LineHorizontal(1).LineColor(Colors.Grey.Lighten1);
+                    });
+
+                    page.Content().PaddingVertical(15).Column(col =>
+                    {
+                        if (!string.IsNullOrEmpty(openingBalance.Notes))
+                        {
+                            col.Item().PaddingBottom(10).Text($"ملاحظات: {openingBalance.Notes}").FontSize(9).Italic();
+                        }
+                        
+                        if (openingBalance.CostCenter.HasValue)
+                        {
+                            col.Item().PaddingBottom(10).Text($"مركز التكلفة: {openingBalance.CostCenter}").FontSize(9).Bold();
+                        }
+
+                        // Items Table
+                        col.Item().Table(table =>
+                        {
+                            table.ColumnsDefinition(columns =>
+                            {
+                                columns.ConstantColumn(30); // #
+                                columns.RelativeColumn(3.5f);  // Product Name
+                                columns.RelativeColumn(1.5f); // SKU
+                                columns.RelativeColumn(1.5f); // Size / Color
+                                columns.RelativeColumn(1);   // Quantity
+                                columns.RelativeColumn(1.2f); // Cost Price
+                                columns.RelativeColumn(1.5f); // Total Cost
+                            });
+
+                            table.Header(header =>
+                            {
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("#").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignRight().Text("الصنف").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("الكود (SKU)").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("المقاس / اللون").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("الكمية").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("سعر التكلفة").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignLeft().Text("إجمالي التكلفة").Bold();
+                            });
+
+                            int index = 1;
+                            foreach (var item in openingBalance.Items)
+                            {
+                                var cellStyle = TextStyle.Default.FontSize(8.5f);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text(index++.ToString()).Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignRight().Text(item.Product?.NameAr ?? "منتج").Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text(item.Product?.SKU ?? "—").Style(cellStyle);
+                                
+                                var sizeColorText = "—";
+                                if (item.ProductVariant != null)
+                                {
+                                    var details = new List<string>();
+                                    if (!string.IsNullOrEmpty(item.ProductVariant.Size)) details.Add(item.ProductVariant.Size);
+                                    if (!string.IsNullOrEmpty(item.ProductVariant.ColorAr)) details.Add(item.ProductVariant.ColorAr);
+                                    else if (!string.IsNullOrEmpty(item.ProductVariant.Color)) details.Add(item.ProductVariant.Color);
+                                    
+                                    if (details.Any())
+                                        sizeColorText = string.Join(" / ", details);
+                                }
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text(sizeColorText).Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text(item.Quantity.ToString()).Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text(item.CostPrice.ToString("N2")).Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignLeft().Text(item.TotalCost.ToString("N2")).Style(cellStyle);
+                            }
+                        });
+
+                        col.Item().PaddingTop(15);
+
+                        // Grand Total & Tafqeet
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem(2).Column(tafCol =>
+                            {
+                                var tafqeet = CurrencyHelper.ToArabicWords(openingBalance.TotalValue);
+                                tafCol.Item().Padding(4).Background(Colors.Grey.Lighten4).Text(tafqeet).Bold().FontSize(9);
+                            });
+
+                            row.RelativeItem(1.5f).Column(totCol =>
+                            {
+                                totCol.Item().Border(1).BorderColor(Colors.Black).Background(Colors.Grey.Lighten4).Padding(6).Row(r => 
+                                { 
+                                    r.RelativeItem().Text("إجمالي القيمة:").Bold(); 
+                                    r.RelativeItem().AlignLeft().Text($"{openingBalance.TotalValue:N2}").Bold(); 
+                                });
+                            });
+                        });
+                    });
+
+                    page.Footer().Column(col =>
+                    {
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem().AlignCenter().Text("أمين المستودع: __________________").FontSize(9);
+                            row.RelativeItem().AlignCenter().Text("المدير المالي: __________________").FontSize(9);
+                        });
+                        col.Item().PaddingTop(8).AlignCenter().Text(x =>
+                        {
+                            x.CurrentPageNumber();
+                            x.Span(" / ");
+                            x.TotalPages();
+                        });
+                    });
+                });
+            }).GeneratePdf();
+        });
+    }
+
+    public async Task<byte[]> GenerateJournalEntryPdfAsync(JournalEntry entry)
+    {
+        EnsureFontLoaded();
+        var settings = await _db.StoreInfo.FirstOrDefaultAsync();
+
+        return await Task.Run(() =>
+        {
+            return Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.Margin(1.5f, Unit.Centimetre);
+                    page.PageColor(Colors.White);
+                    page.DefaultTextStyle(x => x.FontSize(9).FontFamily(_activeFont));
+                    page.ContentFromRightToLeft();
+
+                    page.Header().Column(col =>
+                    {
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem().Column(storeCol =>
+                            {
+                                storeCol.Item().Text(settings?.StoreBrandName ?? "SPORTIVE").FontSize(16).Bold().FontColor(Colors.Black);
+                                if (!string.IsNullOrEmpty(settings?.StoreSlogan))
+                                    storeCol.Item().Text(settings.StoreSlogan).FontSize(9).FontColor(Colors.Grey.Medium);
+                            });
+
+                            row.RelativeItem().AlignLeft().Column(titleCol =>
+                            {
+                                titleCol.Item().Text("قيد يومية").FontSize(18).Bold().FontColor(Colors.Black);
+                                titleCol.Item().PaddingTop(2).Text($"رقم القيد: {entry.EntryNumber}").Bold().FontSize(10);
+                                titleCol.Item().Text($"تاريخ القيد: {entry.EntryDate:yyyy/MM/dd}").FontSize(9);
+                            });
+                        });
+
+                        col.Item().PaddingTop(10).LineHorizontal(1).LineColor(Colors.Grey.Lighten1);
+                    });
+
+                    page.Content().PaddingVertical(15).Column(col =>
+                    {
+                        // Metadata Block
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem().Column(infoCol =>
+                            {
+                                infoCol.Item().Text($"نوع القيد: {entry.Type}");
+                                infoCol.Item().Text($"حالة القيد: {entry.Status}");
+                                if (!string.IsNullOrEmpty(entry.Reference))
+                                    infoCol.Item().Text($"المرجع: {entry.Reference}");
+                                if (entry.CostCenter.HasValue)
+                                    infoCol.Item().Text($"مركز التكلفة: {entry.CostCenter}");
+                            });
+
+                            row.RelativeItem().AlignLeft().Column(descCol =>
+                            {
+                                if (!string.IsNullOrEmpty(entry.Description))
+                                    descCol.Item().Text($"البيان العام: {entry.Description}").LineHeight(1.2f);
+                            });
+                        });
+
+                        col.Item().PaddingTop(15);
+
+                        // Double Entry Table
+                        col.Item().Table(table =>
+                        {
+                            table.ColumnsDefinition(columns =>
+                            {
+                                columns.ConstantColumn(30); // #
+                                columns.RelativeColumn(1.2f); // Account Code
+                                columns.RelativeColumn(3);    // Account Name
+                                columns.RelativeColumn(1.2f); // Debit
+                                columns.RelativeColumn(1.2f); // Credit
+                                columns.RelativeColumn(2.5f); // Line Description / Entity
+                            });
+
+                            table.Header(header =>
+                            {
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("#").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("رقم الحساب").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignRight().Text("اسم الحساب").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("مدين").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignCenter().Text("دائن").Bold();
+                                header.Cell().Background(Colors.Grey.Lighten3).Padding(6).AlignRight().Text("البيان / الجهة").Bold();
+                            });
+
+                            int index = 1;
+                            foreach (var line in entry.Lines)
+                            {
+                                var cellStyle = TextStyle.Default.FontSize(8.5f);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text(index++.ToString()).Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text(line.Account?.Code ?? "—").Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignRight().Text(line.Account?.NameAr ?? "حساب").Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text(line.Debit > 0 ? line.Debit.ToString("N2") : "—").Style(cellStyle);
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text(line.Credit > 0 ? line.Credit.ToString("N2") : "—").Style(cellStyle);
+
+                                // Line Description + Entity (Supplier/Customer/Employee)
+                                var details = new List<string>();
+                                if (!string.IsNullOrEmpty(line.Description)) details.Add(line.Description);
+                                if (line.Supplier != null) details.Add($"المورد: {line.Supplier.Name}");
+                                else if (line.Customer != null) details.Add($"العميل: {line.Customer.FullName}");
+                                else if (line.Employee != null) details.Add($"الموظف: {line.Employee.Name}");
+
+                                table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignRight().Text(string.Join(" | ", details)).Style(cellStyle);
+                            }
+                        });
+
+                        col.Item().PaddingTop(15);
+
+                        // Totals Summary and Balance status
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem().Column(balCol =>
+                            {
+                                if (entry.IsBalanced)
+                                    balCol.Item().Padding(4).Background(Colors.Green.Lighten5).Text("حالة القيد: متزن").Bold().FontSize(9).FontColor(Colors.Green.Darken3);
+                                else
+                                    balCol.Item().Padding(4).Background(Colors.Red.Lighten5).Text("حالة القيد: غير متزن").Bold().FontSize(9).FontColor(Colors.Red.Darken3);
+                                
+                                var totalWords = CurrencyHelper.ToArabicWords(entry.TotalDebit);
+                                balCol.Item().PaddingTop(8).Text(totalWords).FontSize(8.5f).Bold();
+                            });
+
+                            row.RelativeItem(1.5f).Column(totCol =>
+                            {
+                                totCol.Item().Row(r => { r.RelativeItem().Text("إجمالي المدين:"); r.RelativeItem().AlignLeft().Text(entry.TotalDebit.ToString("N2")).Bold(); });
+                                totCol.Item().Row(r => { r.RelativeItem().Text("إجمالي الدائن:"); r.RelativeItem().AlignLeft().Text(entry.TotalCredit.ToString("N2")).Bold(); });
+                            });
+                        });
+                    });
+
+                    page.Footer().Column(col =>
+                    {
+                        col.Item().Row(row =>
+                        {
+                            row.RelativeItem().AlignCenter().Text("مدخل البيانات: __________________").FontSize(9);
+                            row.RelativeItem().AlignCenter().Text("المراجع: __________________").FontSize(9);
+                            row.RelativeItem().AlignCenter().Text("المدير المالي: __________________").FontSize(9);
+                        });
+                        col.Item().PaddingTop(8).AlignCenter().Text(x =>
+                        {
+                            x.CurrentPageNumber();
+                            x.Span(" / ");
+                            x.TotalPages();
+                        });
+                    });
+                });
+            }).GeneratePdf();
+        });
+    }
 
     private string Reshape(string input)
     {
