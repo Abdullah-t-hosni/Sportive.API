@@ -237,7 +237,7 @@ public class PdfService : IPdfService
                                     // Order Number and Date
                                     infoCol.Item().Row(row =>
                                     {
-                                        row.RelativeItem().Text(_t.Get("Pdf.Number", order.OrderNumber)).Bold().FontSize(8.5f);
+                                        row.RelativeItem().Text(_t.Get("Pdf.Number", order.OrderNumber ?? "")).Bold().FontSize(8.5f);
                                         row.RelativeItem().AlignLeft().Text(order.CreatedAt.ToString("yyyy/MM/dd HH:mm")).FontSize(8);
                                     });
 
@@ -257,15 +257,15 @@ public class PdfService : IPdfService
                                     infoCol.Item().Row(row =>
                                     {
                                         if (settings?.ReceiptShowCashier != false && !string.IsNullOrEmpty(order.SalesPersonName))
-                                            row.RelativeItem().Text(_t.Get("Pdf.Seller", order.SalesPersonName)).FontSize(7.5f).Bold();
+                                            row.RelativeItem().Text(_t.Get("Pdf.Seller", order.SalesPersonName ?? "")).FontSize(7.5f).Bold();
                                         else
                                             row.RelativeItem().Text("");
 
-                                        var statusKey = $"Status.{order.Status}";
+                                        var statusKey = $"Status.{order.Status ?? ""}";
                                         var translatedStatus = _t.Get(statusKey);
                                         if (translatedStatus == statusKey)
                                         {
-                                            translatedStatus = order.Status;
+                                            translatedStatus = order.Status ?? "";
                                         }
                                         row.RelativeItem().AlignLeft().Text(_t.Get("Pdf.Status", translatedStatus)).FontSize(7.5f).Bold();
                                     });
@@ -274,7 +274,7 @@ public class PdfService : IPdfService
                                     if (settings?.ReceiptShowNote != false && !string.IsNullOrEmpty(order.CustomerNotes))
                                     {
                                         infoCol.Item().PaddingTop(2).Border(0.5f).BorderColor(Colors.Black).Padding(3)
-                                            .Text(_t.Get("Pdf.Note", order.CustomerNotes)).FontSize(7.5f).Bold();
+                                            .Text(_t.Get("Pdf.Note", order.CustomerNotes ?? "")).FontSize(7.5f).Bold();
                                     }
                                 });
                             }
@@ -351,7 +351,7 @@ public class PdfService : IPdfService
                                     if (totalVat > 0 && settings?.ReceiptShowTax != false)
                                     {
                                         var commonVatItem = order.Items.FirstOrDefault(i => i.VatRateApplied > 0);
-                                        var vatRate = commonVatItem?.VatRateApplied ?? settings.VatRatePercent;
+                                        var vatRate = commonVatItem?.VatRateApplied ?? settings?.VatRatePercent ?? 0;
                                         totCol.Item().Row(row =>
                                         {
                                             row.RelativeItem().Text(_t.Get("Pdf.Vat", vatRate)).FontSize(8).Bold();
@@ -468,7 +468,7 @@ public class PdfService : IPdfService
                                     if (!string.IsNullOrEmpty(settings?.ReceiptComplaintsPhone))
                                     {
                                         fCol.Item().PaddingTop(2).AlignCenter().Background(Colors.Black).PaddingHorizontal(6).PaddingVertical(1)
-                                            .Text(_t.Get("Pdf.Complaints", settings.ReceiptComplaintsPhone)).FontSize(7.5f).Bold().FontColor(Colors.White);
+                                            .Text(_t.Get("Pdf.Complaints", settings?.ReceiptComplaintsPhone ?? "")).FontSize(7.5f).Bold().FontColor(Colors.White);
                                     }
                                     fCol.Item().PaddingTop(2).AlignCenter().Text(settings?.ReceiptSoftwareProvider ?? "By Sportive Team").FontSize(6.5f).Bold().FontColor(Colors.Grey.Darken1);
                                 });
