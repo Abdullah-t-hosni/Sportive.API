@@ -139,18 +139,24 @@ public class SequenceService
 
         name = name.Trim();
 
+        // Normalize Arabic letters for easier contains check (he/te marbuta, and various alefs)
+        var normalized = name.ToLower()
+            .Replace("أ", "ا")
+            .Replace("إ", "ا")
+            .Replace("آ", "ا")
+            .Replace("ة", "ه");
+
         // 1. Check a mapping of common Arabic/English names
-        var lower = name.ToLower();
-        if (lower.Contains("مبيعات") || lower.Contains("sales")) return "SAL";
-        if (lower.Contains("حسابات") || lower.Contains("مالي") || lower.Contains("finance") || lower.Contains("accounting") || lower.Contains("acc")) return "ACC";
-        if (lower.Contains("بشرية") || lower.Contains("hr") || lower.Contains("human")) return "HR";
-        if (lower.Contains("تسويق") || lower.Contains("marketing") || lower.Contains("mkt")) return "MKT";
-        if (lower.Contains("تشغيل") || lower.Contains("operation") || lower.Contains("ops")) return "OPS";
-        if (lower.Contains("صيانة") || lower.Contains("maintenance") || lower.Contains("mnt")) return "MNT";
-        if (lower.Contains("ادارة") || lower.Contains("إدارة") || lower.Contains("admin")) return "ADM";
-        if (lower.Contains("مشتريات") || lower.Contains("purchase") || lower.Contains("procurement")) return "PUR";
-        if (lower.Contains("مخازن") || lower.Contains("مخزن") || lower.Contains("store") || lower.Contains("inventory")) return "INV";
-        if (lower.Contains("تقنية") || lower.Contains("تكنولوجيا") || lower.Contains("it") || lower.Contains("tech") || lower.Contains("information")) return "IT";
+        if (normalized.Contains("مبيعات") || normalized.Contains("sales")) return "SAL";
+        if (normalized.Contains("حسابات") || normalized.Contains("مالي") || normalized.Contains("finance") || normalized.Contains("accounting") || normalized.Contains("acc")) return "ACC";
+        if (normalized.Contains("بشريه") || normalized.Contains("hr") || normalized.Contains("human")) return "HR";
+        if (normalized.Contains("تسويق") || normalized.Contains("marketing") || normalized.Contains("mkt")) return "MKT";
+        if (normalized.Contains("تشغيل") || normalized.Contains("operation") || normalized.Contains("ops")) return "OPS";
+        if (normalized.Contains("صيانه") || normalized.Contains("maintenance") || normalized.Contains("mnt")) return "MNT";
+        if (normalized.Contains("اداره") || normalized.Contains("ادرا") || normalized.Contains("admin") || normalized.Contains("mng")) return "ADM";
+        if (normalized.Contains("مشتريات") || normalized.Contains("purchase") || normalized.Contains("procurement")) return "PUR";
+        if (normalized.Contains("مخازن") || normalized.Contains("مخزن") || normalized.Contains("store") || normalized.Contains("inventory")) return "INV";
+        if (normalized.Contains("تقنيه") || normalized.Contains("تكنولوجيا") || normalized.Contains("it") || normalized.Contains("tech") || normalized.Contains("information")) return "IT";
 
         // 2. If it is English, extract first letters of words or first 3 letters
         var isEnglish = System.Text.RegularExpressions.Regex.IsMatch(name, @"^[a-zA-Z\s]+$");
@@ -226,17 +232,13 @@ public class SequenceService
 
     private static string TransliterateWord(string word)
     {
+        if (word.StartsWith("ال"))
+        {
+            word = word.Substring(2);
+        }
         var sb = new System.Text.StringBuilder();
         foreach (var c in word)
         {
-            if (word.StartsWith("ال") && sb.Length == 0)
-            {
-                continue;
-            }
-            if (word.StartsWith("ال") && sb.Length < 2 && (c == 'ا' || c == 'ل'))
-            {
-                continue;
-            }
             sb.Append(TransliterateChar(c));
         }
         return sb.ToString();
