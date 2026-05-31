@@ -448,4 +448,17 @@ public class StoreInfo
 
     [JsonPropertyName("barcodeRotation")]
     public int BarcodeRotation { get; set; } = 0;
+
+    // --- 14. Attendance Delay Deduction Policy ---
+    [JsonPropertyName("enableGraduatedDelayPolicy")]
+    public bool EnableGraduatedDelayPolicy { get; set; } = true;
+
+    [JsonPropertyName("delayGraceMinutes")]
+    public int DelayGraceMinutes { get; set; } = 15;
+
+    [JsonPropertyName("delayQuarterDayLimitMinutes")]
+    public int DelayQuarterDayLimitMinutes { get; set; } = 30;
+
+    [JsonPropertyName("delayHalfDayLimitMinutes")]
+    public int DelayHalfDayLimitMinutes { get; set; } = 60;
 }

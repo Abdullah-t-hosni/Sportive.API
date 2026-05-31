@@ -216,6 +216,11 @@ public class SettingsController : ControllerBase
             info.AccountingLockDate      = dto.AccountingLockDate;
             info.LastUpdateDate          = TimeHelper.GetEgyptTime();
 
+            info.EnableGraduatedDelayPolicy = dto.EnableGraduatedDelayPolicy;
+            info.DelayGraceMinutes       = dto.DelayGraceMinutes;
+            info.DelayQuarterDayLimitMinutes = dto.DelayQuarterDayLimitMinutes;
+            info.DelayHalfDayLimitMinutes = dto.DelayHalfDayLimitMinutes;
+
             if (!string.IsNullOrWhiteSpace(dto.TimeZoneId))
                 info.TimeZoneId = dto.TimeZoneId;
 

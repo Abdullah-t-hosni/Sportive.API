@@ -63,6 +63,12 @@ public class PayrollController : ControllerBase
         var startOfPeriod = new DateTime(year, month, 1);
         var endOfPeriod = startOfPeriod.AddMonths(1).AddDays(-1);
 
+        var settings = await _db.StoreInfo.FirstOrDefaultAsync(x => x.StoreConfigId == 1);
+        var enableGradPolicy = settings?.EnableGraduatedDelayPolicy ?? true;
+        var graceMins = settings?.DelayGraceMinutes ?? 15;
+        var quarterLimit = settings?.DelayQuarterDayLimitMinutes ?? 30;
+        var halfLimit = settings?.DelayHalfDayLimitMinutes ?? 60;
+
         var activeEmployees = await _db.Employees
             .Include(e => e.Advances)
             .Include(e => e.Bonuses)
@@ -122,7 +128,35 @@ public class PayrollController : ControllerBase
 
             var absenceDeduction = Math.Round(absenceDays * (baseSalary / daysPerMonth), 2);
             var overtimeAmount = Math.Round(overtimeHours * (baseSalary / daysPerMonth / workHoursPerDay) * emp.OvertimeMultiplier, 2);
-            var delayDeduction = Math.Round((delayMinutes / 60m) * (baseSalary / daysPerMonth / workHoursPerDay), 2);
+
+            decimal delayDeduction = 0m;
+            if (enableGradPolicy)
+            {
+                decimal totalDeductedDays = 0m;
+                foreach (var att in empAttendances)
+                {
+                    if (att.DelayMinutes > 0 && !att.IsAbsent)
+                    {
+                        if (att.DelayMinutes > graceMins && att.DelayMinutes <= quarterLimit)
+                        {
+                            totalDeductedDays += 0.25m; // ربع يوم
+                        }
+                        else if (att.DelayMinutes > quarterLimit && att.DelayMinutes <= halfLimit)
+                        {
+                            totalDeductedDays += 0.50m; // نصف يوم
+                        }
+                        else if (att.DelayMinutes > halfLimit)
+                        {
+                            totalDeductedDays += 1.00m; // يوم كامل
+                        }
+                    }
+                }
+                delayDeduction = Math.Round(totalDeductedDays * (baseSalary / daysPerMonth), 2);
+            }
+            else
+            {
+                delayDeduction = Math.Round((delayMinutes / 60m) * (baseSalary / daysPerMonth / workHoursPerDay), 2);
+            }
 
             // Advances
             var remainingAdvance = emp.Advances
