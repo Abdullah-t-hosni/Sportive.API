@@ -26,6 +26,12 @@ public class SequenceService
         var now   = TimeHelper.GetEgyptTime();
         var stamp = $"{now.Year % 100:D2}{now.Month:D2}";
 
+        // Employees do not use date stamp (YYMM) in their sequential ID (e.g. EMP-0001 instead of EMP-2605-0001)
+        if (prefix == "EMP")
+        {
+            stamp = string.Empty;
+        }
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -34,7 +40,8 @@ public class SequenceService
         {
             try
             {
-                var currentMax = await maxSelector(db, $"{prefix}-{stamp}-%");
+                var searchPattern = string.IsNullOrEmpty(stamp) ? $"{prefix}-%" : $"{prefix}-{stamp}-%";
+                var currentMax = await maxSelector(db, searchPattern);
                 var seq = new DbSequence
                 {
                     Prefix = prefix,
@@ -56,14 +63,20 @@ public class SequenceService
     }
 
     /// <summary>
-    /// Returns the next document number, e.g. "PO-2504-0042".
-    /// Format: {prefix}-{YY}{MM}-{seq:D4}
+    /// Returns the next document number, e.g. "PO-2504-0042" or "EMP-0005".
+    /// Format: {prefix}-{YY}{MM}-{seq:D4} (or {prefix}-{seq:D4} if no stamp)
     /// Database-backed and safe across multiple server instances.
     /// </summary>
     public async Task<string> NextAsync(string prefix)
     {
         var now   = TimeHelper.GetEgyptTime();
         var stamp = $"{now.Year % 100:D2}{now.Month:D2}";
+
+        // Employees do not use date stamp (YYMM) in their sequential ID (e.g. EMP-0001 instead of EMP-2605-0001)
+        if (prefix == "EMP")
+        {
+            stamp = string.Empty;
+        }
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -98,6 +111,10 @@ public class SequenceService
                 await db.SaveChangesAsync();
                 await tx.CommitAsync();
 
+                if (string.IsNullOrEmpty(stamp))
+                {
+                    return $"{prefix}-{seq.LastValue:D4}";
+                }
                 return $"{prefix}-{stamp}-{seq.LastValue:D4}";
             }
             catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Duplicate") == true || ex.InnerException?.Message.Contains("unique") == true)
@@ -113,5 +130,115 @@ public class SequenceService
                 throw;
             }
         });
+    }
+
+    public static string GetDepartmentPrefix(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return "EMP";
+
+        name = name.Trim();
+
+        // 1. Check a mapping of common Arabic/English names
+        var lower = name.ToLower();
+        if (lower.Contains("مبيعات") || lower.Contains("sales")) return "SAL";
+        if (lower.Contains("حسابات") || lower.Contains("مالي") || lower.Contains("finance") || lower.Contains("accounting") || lower.Contains("acc")) return "ACC";
+        if (lower.Contains("بشرية") || lower.Contains("hr") || lower.Contains("human")) return "HR";
+        if (lower.Contains("تسويق") || lower.Contains("marketing") || lower.Contains("mkt")) return "MKT";
+        if (lower.Contains("تشغيل") || lower.Contains("operation") || lower.Contains("ops")) return "OPS";
+        if (lower.Contains("صيانة") || lower.Contains("maintenance") || lower.Contains("mnt")) return "MNT";
+        if (lower.Contains("ادارة") || lower.Contains("إدارة") || lower.Contains("admin")) return "ADM";
+        if (lower.Contains("مشتريات") || lower.Contains("purchase") || lower.Contains("procurement")) return "PUR";
+        if (lower.Contains("مخازن") || lower.Contains("مخزن") || lower.Contains("store") || lower.Contains("inventory")) return "INV";
+        if (lower.Contains("تقنية") || lower.Contains("تكنولوجيا") || lower.Contains("it") || lower.Contains("tech") || lower.Contains("information")) return "IT";
+
+        // 2. If it is English, extract first letters of words or first 3 letters
+        var isEnglish = System.Text.RegularExpressions.Regex.IsMatch(name, @"^[a-zA-Z\s]+$");
+        if (isEnglish)
+        {
+            var words = name.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length > 1)
+            {
+                var initials = string.Join("", words.Select(w => w[0])).ToUpper();
+                return initials.Length <= 4 ? initials : initials.Substring(0, 4);
+            }
+            else
+            {
+                var clean = name.ToUpper();
+                return clean.Length > 3 ? clean.Substring(0, 3) : clean;
+            }
+        }
+
+        // 3. For any other Arabic or mixed name:
+        // Strip common prefixes like "ال" or "قسم" or "ادارة"
+        var cleanArabic = name;
+        var wordsAr = cleanArabic.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                                 .Where(w => w != "قسم" && w != "ادارة" && w != "إدارة" && w != "فرع")
+                                 .ToArray();
+
+        if (wordsAr.Length > 1)
+        {
+            // Take the first letter of each word (transliterated)
+            var prefix = string.Join("", wordsAr.Select(w => TransliterateChar(w[0]))).ToUpper();
+            return prefix.Length > 4 ? prefix.Substring(0, 4) : prefix;
+        }
+        else if (wordsAr.Length == 1)
+        {
+            // Transliterate the single word and take first 3 letters
+            var trans = TransliterateWord(wordsAr[0]);
+            return trans.Length > 3 ? trans.Substring(0, 3).ToUpper() : trans.ToUpper();
+        }
+
+        return "EMP";
+    }
+
+    private static char TransliterateChar(char c)
+    {
+        return c switch
+        {
+            'أ' or 'ا' or 'إ' or 'آ' => 'A',
+            'ب' => 'B',
+            'ت' or 'ة' => 'T',
+            'ث' => 'T',
+            'ج' => 'J',
+            'ح' or 'خ' => 'K',
+            'د' => 'D',
+            'ذ' => 'Z',
+            'ر' => 'R',
+            'ز' => 'Z',
+            'س' or 'ص' => 'S',
+            'ش' => 'S',
+            'ض' => 'D',
+            'ط' or 'ظ' => 'T',
+            'ع' or 'غ' => 'A',
+            'ف' => 'F',
+            'ق' => 'Q',
+            'ك' => 'K',
+            'ل' => 'L',
+            'م' => 'M',
+            'ن' => 'N',
+            'ه' => 'H',
+            'و' => 'W',
+            'ي' or 'ى' => 'Y',
+            _ => char.ToUpper(c)
+        };
+    }
+
+    private static string TransliterateWord(string word)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var c in word)
+        {
+            if (word.StartsWith("ال") && sb.Length == 0)
+            {
+                continue;
+            }
+            if (word.StartsWith("ال") && sb.Length < 2 && (c == 'ا' || c == 'ل'))
+            {
+                continue;
+            }
+            sb.Append(TransliterateChar(c));
+        }
+        return sb.ToString();
     }
 }

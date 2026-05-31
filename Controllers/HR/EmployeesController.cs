@@ -135,6 +135,15 @@ public class EmployeesController : ControllerBase
         }
 
         var empNo = await _seq.NextAsync("EMP");
+        if (dto.DepartmentId.HasValue)
+        {
+            var dept = await _db.Departments.FindAsync(dto.DepartmentId.Value);
+            if (dept != null)
+            {
+                var deptPrefix = SequenceService.GetDepartmentPrefix(dept.Name);
+                empNo = empNo.Replace("EMP-", deptPrefix + "-");
+            }
+        }
 
         var core = (AccountingCoreService)HttpContext.RequestServices.GetService(typeof(AccountingCoreService))!;
         var maps = await core.GetSafeSystemMappingsAsync();
@@ -364,5 +373,59 @@ public class EmployeesController : ControllerBase
             from, to, openingBalance, rows,
             rows.Sum(r => r.Debit), rows.Sum(r => r.Credit), runningBalance
         ));
+    }
+
+    [HttpPost("backfill-prefixes")]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    public async Task<IActionResult> BackfillPrefixes()
+    {
+        var employees = await _db.Employees
+            .Include(e => e.Department)
+            .OrderBy(e => e.Id)
+            .ToListAsync();
+
+        int counter = 0;
+        foreach (var emp in employees)
+        {
+            counter++;
+            string prefix = "EMP";
+            if (emp.Department != null)
+            {
+                prefix = SequenceService.GetDepartmentPrefix(emp.Department.Name);
+            }
+
+            emp.EmployeeNumber = $"{prefix}-{counter:D4}";
+        }
+
+        await _db.SaveChangesAsync();
+
+        // Also seed the global "EMP" sequence counter to the total count
+        var now = TimeHelper.GetEgyptTime();
+        var seq = await _db.DbSequences
+            .FirstOrDefaultAsync(s => s.Prefix == "EMP" && s.Stamp == string.Empty);
+
+        if (seq == null)
+        {
+            seq = new DbSequence
+            {
+                Prefix = "EMP",
+                Stamp = string.Empty,
+                LastValue = counter,
+                LastUpdatedAt = now
+            };
+            _db.DbSequences.Add(seq);
+        }
+        else
+        {
+            if (seq.LastValue < counter)
+            {
+                seq.LastValue = counter;
+                seq.LastUpdatedAt = now;
+            }
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new { message = $"Successfully updated {employees.Count} employees globally and seeded the EMP sequence to {counter}." });
     }
 }
