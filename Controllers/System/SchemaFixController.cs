@@ -330,6 +330,36 @@ public class SchemaFixController : ControllerBase
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
+    [HttpGet("run-v14")]
+    [AllowAnonymous]
+    public async Task<IActionResult> RunV14()
+    {
+        _logger.LogWarning("SchemaFix run-v14 (Graduated Delay Policy Settings) triggered.");
+        try
+        {
+            var skipped = new List<string>();
+            var cmds = new[] {
+                "ALTER TABLE StoreSettings ADD COLUMN DelayGraceMinutes INT DEFAULT 15 NOT NULL;",
+                "ALTER TABLE StoreSettings ADD COLUMN DelayHalfDayLimitMinutes INT DEFAULT 60 NOT NULL;",
+                "ALTER TABLE StoreSettings ADD COLUMN DelayQuarterDayLimitMinutes INT DEFAULT 30 NOT NULL;",
+                "ALTER TABLE StoreSettings ADD COLUMN EnableGraduatedDelayPolicy TINYINT(1) DEFAULT 1 NOT NULL;"
+            };
+
+            foreach (var c in cmds)
+            {
+                try { await _db.Database.ExecuteSqlRawAsync(c); }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("SchemaFix run-v14 skipped cmd: {Error}", ex.Message);
+                    skipped.Add(ex.Message);
+                }
+            }
+
+            return Ok(new { message = "Graduated Delay Policy columns added to StoreSettings.", skipped });
+        }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
     [HttpGet("clean-audit-movements")]
     public async Task<IActionResult> CleanAuditMovements()
     {
