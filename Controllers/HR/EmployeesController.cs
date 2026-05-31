@@ -381,11 +381,16 @@ public class EmployeesController : ControllerBase
     {
         var employees = await _db.Employees
             .Include(e => e.Department)
-            .OrderBy(e => e.Id)
             .ToListAsync();
 
+        // Sort: ADM employees first (ordered by Id), then the rest (ordered by Id)
+        var orderedEmployees = employees
+            .OrderBy(e => e.Department != null && SequenceService.GetDepartmentPrefix(e.Department.Name) == "ADM" ? 0 : 1)
+            .ThenBy(e => e.Id)
+            .ToList();
+
         int counter = 0;
-        foreach (var emp in employees)
+        foreach (var emp in orderedEmployees)
         {
             counter++;
             string prefix = "EMP";
