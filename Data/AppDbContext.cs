@@ -674,14 +674,5 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<ZkDevice>(e => {
             e.HasIndex(x => x.SerialNumber).IsUnique();
         });
-
-        builder.Entity<StoreInfo>().HasData(
-            new StoreInfo { 
-                StoreConfigId = 1, 
-                StoreBrandName = "Sportive", 
-                StoreEmailAddr = "contact@sportive-sportwear.com",
-                LastUpdateDate = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) 
-            }
-        );
     }
 }
