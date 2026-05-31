@@ -409,3 +409,15 @@ public record UpdateAttendanceDto(
     string? Notes
 );
 
+public record RegisterDeviceDto(
+    string SerialNumber,
+    string Name,
+    string? Notes = null
+);
+
+public record SyncPunchDto(
+    string EmployeeNumber,
+    DateTime Timestamp,
+    string? SerialNumber = null
+);
+

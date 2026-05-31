@@ -24,6 +24,7 @@ using Sportive.API.Services;
 using Sportive.API.Services.BackgroundServices;
 using Sportive.API.Utils;
 using Sportive.API.Validators;
+using Sportive.API.Services.HR;
 using Sportive.API.Hubs;
 
 namespace Sportive.API.Extensions;
@@ -262,6 +263,7 @@ public static class DependencyInjection
         services.AddScoped<IStatisticsService, StatisticsService>();
         services.AddScoped<IDashboardEventService, DashboardEventService>();
         services.AddScoped<IOutboxProcessor, OutboxProcessor>();
+        services.AddScoped<ZKDeviceService>();
         services.AddSingleton<ITranslator, Translator>();
         services.AddSingleton<SequenceService>();
         services.AddSingleton<TimeService>();

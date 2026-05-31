@@ -77,6 +77,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<EmployeeBonus>      EmployeeBonuses     { get; set; }
     public DbSet<EmployeeDeduction>  EmployeeDeductions  { get; set; }
     public DbSet<EmployeeAttendance> EmployeeAttendances { get; set; }
+    public DbSet<ZkDevice>           ZkDevices           { get; set; }
     public DbSet<EmployeeCommissionSetting> EmployeeCommissionSettings { get; set; }
     public DbSet<CommissionTier>     CommissionTiers     { get; set; }
     public DbSet<CommissionScheme>     CommissionSchemes     { get; set; }
@@ -668,6 +669,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(x => x.User).WithMany()
              .HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.WelcomeMessageId, x.UserId }).IsUnique();
+        });
+
+        builder.Entity<ZkDevice>(e => {
+            e.HasIndex(x => x.SerialNumber).IsUnique();
         });
 
         builder.Entity<StoreInfo>().HasData(

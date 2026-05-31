@@ -7,9 +7,10 @@ using Sportive.API.Attributes;
 using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Models;
-using Sportive.API.Services;
-using Sportive.API.Utils;
+using Sportive.API.Services.HR;
+using Microsoft.Extensions.Logging;
 using Sportive.API.Interfaces;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Controllers;
 
@@ -20,11 +21,15 @@ public class EmployeeAttendancesController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ITranslator _t;
+    private readonly ZKDeviceService _zkService;
+    private readonly ILogger<EmployeeAttendancesController> _logger;
 
-    public EmployeeAttendancesController(AppDbContext db, ITranslator t)
+    public EmployeeAttendancesController(AppDbContext db, ITranslator t, ZKDeviceService zkService, ILogger<EmployeeAttendancesController> logger)
     {
         _db = db;
         _t = t;
+        _zkService = zkService;
+        _logger = logger;
     }
 
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
@@ -376,5 +381,91 @@ public class EmployeeAttendancesController : ControllerBase
             updatedCount = logsUpdated,
             warnings = warnings
         });
+    }
+
+    [HttpGet("devices")]
+    [RequirePermission(ModuleKeys.Hr)]
+    public async Task<IActionResult> GetDevices()
+    {
+        var devices = await _db.ZkDevices
+            .OrderBy(d => d.Name)
+            .ToListAsync();
+        return Ok(devices);
+    }
+
+    [HttpPost("devices")]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    public async Task<IActionResult> RegisterDevice([FromBody] RegisterDeviceDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.SerialNumber) || string.IsNullOrWhiteSpace(dto.Name))
+        {
+            return BadRequest(new { message = "Serial Number and Name are required." });
+        }
+
+        var exists = await _db.ZkDevices.AnyAsync(d => d.SerialNumber == dto.SerialNumber);
+        if (exists)
+        {
+            return BadRequest(new { message = "A device with this Serial Number is already registered." });
+        }
+
+        var device = new ZkDevice
+        {
+            SerialNumber = dto.SerialNumber.Trim(),
+            Name = dto.Name.Trim(),
+            Notes = dto.Notes?.Trim(),
+            CreatedAt = TimeHelper.GetEgyptTime()
+        };
+
+        _db.ZkDevices.Add(device);
+        await _db.SaveChangesAsync();
+
+        return Ok(device);
+    }
+
+    [HttpDelete("devices/{id}")]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    public async Task<IActionResult> DeleteDevice(int id)
+    {
+        var device = await _db.ZkDevices.FindAsync(id);
+        if (device == null) return NotFound();
+
+        _db.ZkDevices.Remove(device);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpPost("sync-punch")]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    public async Task<IActionResult> SyncPunches([FromBody] List<SyncPunchDto> punches)
+    {
+        if (punches == null || !punches.Any())
+        {
+            return BadRequest(new { message = "No punches provided." });
+        }
+
+        var count = 0;
+        foreach (var punch in punches)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(punch.SerialNumber))
+                {
+                    var registered = await _db.ZkDevices.AnyAsync(d => d.SerialNumber == punch.SerialNumber);
+                    if (!registered)
+                    {
+                        continue;
+                    }
+                }
+
+                await _zkService.ProcessPunchAsync(punch.EmployeeNumber, punch.Timestamp, punch.SerialNumber);
+                count++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error syncing punch for employee {Emp}", punch.EmployeeNumber);
+            }
+        }
+
+        return Ok(new { success = true, count = count, message = $"Successfully synced {count} punches." });
     }
 }
