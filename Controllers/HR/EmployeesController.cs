@@ -134,15 +134,25 @@ public class EmployeesController : ControllerBase
             if (conflict) return BadRequest(new { message = _t.Get("HR.AccountLinkedAlready") });
         }
 
-        var empNo = await _seq.NextAsync("EMP");
+        string prefix = "EMP";
         if (dto.DepartmentId.HasValue)
         {
             var dept = await _db.Departments.FindAsync(dto.DepartmentId.Value);
             if (dept != null)
             {
-                var deptPrefix = SequenceService.GetDepartmentPrefix(dept.Name);
-                empNo = empNo.Replace("EMP-", deptPrefix + "-");
+                prefix = SequenceService.GetDepartmentPrefix(dept.Name);
             }
+        }
+
+        string empNo;
+        if (prefix == "ADM")
+        {
+            empNo = await _seq.NextAsync("ADM");
+        }
+        else
+        {
+            empNo = await _seq.NextAsync("EMP");
+            empNo = empNo.Replace("EMP-", prefix + "-");
         }
 
         var core = (AccountingCoreService)HttpContext.RequestServices.GetService(typeof(AccountingCoreService))!;
@@ -383,54 +393,86 @@ public class EmployeesController : ControllerBase
             .Include(e => e.Department)
             .ToListAsync();
 
-        // Sort: ADM employees first (ordered by Id), then the rest (ordered by Id)
-        var orderedEmployees = employees
-            .OrderBy(e => e.Department != null && SequenceService.GetDepartmentPrefix(e.Department.Name) == "ADM" ? 0 : 1)
-            .ThenBy(e => e.Id)
-            .ToList();
+        int admCounter = 0;
+        int otherCounter = 100; // starts at 100, so first other employee is 101
 
-        int counter = 0;
-        foreach (var emp in orderedEmployees)
+        foreach (var emp in employees)
         {
-            counter++;
             string prefix = "EMP";
             if (emp.Department != null)
             {
                 prefix = SequenceService.GetDepartmentPrefix(emp.Department.Name);
             }
 
-            emp.EmployeeNumber = $"{prefix}-{counter:D4}";
-        }
-
-        await _db.SaveChangesAsync();
-
-        // Also seed the global "EMP" sequence counter to the total count
-        var now = TimeHelper.GetEgyptTime();
-        var seq = await _db.DbSequences
-            .FirstOrDefaultAsync(s => s.Prefix == "EMP" && s.Stamp == string.Empty);
-
-        if (seq == null)
-        {
-            seq = new DbSequence
+            if (prefix == "ADM")
             {
-                Prefix = "EMP",
-                Stamp = string.Empty,
-                LastValue = counter,
-                LastUpdatedAt = now
-            };
-            _db.DbSequences.Add(seq);
-        }
-        else
-        {
-            if (seq.LastValue < counter)
+                admCounter++;
+                emp.EmployeeNumber = $"ADM-{admCounter:D4}";
+            }
+            else
             {
-                seq.LastValue = counter;
-                seq.LastUpdatedAt = now;
+                otherCounter++;
+                emp.EmployeeNumber = $"{prefix}-{otherCounter:D4}";
             }
         }
 
         await _db.SaveChangesAsync();
 
-        return Ok(new { message = $"Successfully updated {employees.Count} employees globally and seeded the EMP sequence to {counter}." });
+        var now = TimeHelper.GetEgyptTime();
+
+        // 1. Seed the "ADM" sequence counter to the max admCounter (or 1 if none)
+        var seqAdm = await _db.DbSequences
+            .FirstOrDefaultAsync(s => s.Prefix == "ADM" && s.Stamp == string.Empty);
+
+        if (seqAdm == null)
+        {
+            seqAdm = new DbSequence
+            {
+                Prefix = "ADM",
+                Stamp = string.Empty,
+                LastValue = Math.Max(1, admCounter),
+                LastUpdatedAt = now
+            };
+            _db.DbSequences.Add(seqAdm);
+        }
+        else
+        {
+            if (seqAdm.LastValue < admCounter)
+            {
+                seqAdm.LastValue = admCounter;
+                seqAdm.LastUpdatedAt = now;
+            }
+        }
+
+        // 2. Seed the global "EMP" sequence counter to the max otherCounter (or 100 if none)
+        var seqEmp = await _db.DbSequences
+            .FirstOrDefaultAsync(s => s.Prefix == "EMP" && s.Stamp == string.Empty);
+
+        if (seqEmp == null)
+        {
+            seqEmp = new DbSequence
+            {
+                Prefix = "EMP",
+                Stamp = string.Empty,
+                LastValue = Math.Max(100, otherCounter),
+                LastUpdatedAt = now
+            };
+            _db.DbSequences.Add(seqEmp);
+        }
+        else
+        {
+            if (seqEmp.LastValue < otherCounter)
+            {
+                seqEmp.LastValue = otherCounter;
+                seqEmp.LastUpdatedAt = now;
+            }
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new { 
+            message = $"Successfully updated {employees.Count} employees globally.", 
+            details = new { admCount = admCounter, otherCount = otherCounter } 
+        });
     }
 }
