@@ -55,7 +55,10 @@ public record CreateEmployeeDto(
     OrderSource?  CostCenter         = null,
     decimal       WorkHoursPerDay    = 9,
     decimal       OvertimeMultiplier = 1.5m,
-    int           DaysPerMonth       = 26
+    int           DaysPerMonth       = 26,
+    AttendanceMode AttendanceMode    = AttendanceMode.Fixed,
+    string        ShiftStartTime     = "09:00",
+    string        WeeklyDaysOff      = "Friday"
 );
 
 public record UpdateEmployeeDto(
@@ -80,7 +83,10 @@ public record UpdateEmployeeDto(
     OrderSource?  CostCenter         = null,
     decimal       WorkHoursPerDay    = 9,
     decimal       OvertimeMultiplier = 1.5m,
-    int           DaysPerMonth       = 26
+    int           DaysPerMonth       = 26,
+    AttendanceMode AttendanceMode    = AttendanceMode.Fixed,
+    string        ShiftStartTime     = "09:00",
+    string        WeeklyDaysOff      = "Friday"
 );
 
 public record EmployeeDto(
@@ -111,7 +117,10 @@ public record EmployeeDto(
     OrderSource?   CostCenter   = null,
     decimal        WorkHoursPerDay = 9,
     decimal        OvertimeMultiplier = 1.5m,
-    int            DaysPerMonth = 26
+    int            DaysPerMonth = 26,
+    AttendanceMode AttendanceMode  = AttendanceMode.Fixed,
+    string         ShiftStartTime  = "09:00",
+    string         WeeklyDaysOff   = "Friday"
 );
 
 public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, int? DepartmentId, string? DepartmentName, decimal BaseSalary, decimal TransportationAllowance, decimal CommunicationAllowance, decimal BonusAmount, decimal FixedAllowance, decimal PendingAdvancesAmount, decimal PendingBonusesAmount, decimal PendingDeductionsAmount, int Status, decimal WorkHoursPerDay, decimal OvertimeMultiplier, int DaysPerMonth);
@@ -357,4 +366,46 @@ public record EmployeeCommissionSummaryDto(int EmployeeId, string Name, string? 
 
 public record CommissionGroupDto(int Id, string Name, string? Description, int? CommissionSchemeId, List<int> MemberIds);
 public record CreateCommissionGroupDto(string Name, string? Description, int? CommissionSchemeId, List<int> MemberIds);
+
+// ══════════════════════════════════════════════════════
+// ATTENDANCE DTOs
+// ══════════════════════════════════════════════════════
+public record EmployeeAttendanceDto(
+    int Id,
+    int EmployeeId,
+    string EmployeeName,
+    string EmployeeNumber,
+    DateTime Date,
+    DateTime? CheckIn,
+    DateTime? CheckOut,
+    decimal WorkHours,
+    decimal OvertimeHours,
+    decimal DelayMinutes,
+    bool IsAbsent,
+    string? Notes,
+    string? CreatedByUserId,
+    DateTime CreatedAt
+);
+
+public record CreateAttendanceDto(
+    int EmployeeId,
+    DateTime Date,
+    DateTime? CheckIn,
+    DateTime? CheckOut,
+    decimal WorkHours,
+    decimal OvertimeHours,
+    decimal DelayMinutes,
+    bool IsAbsent,
+    string? Notes
+);
+
+public record UpdateAttendanceDto(
+    DateTime? CheckIn,
+    DateTime? CheckOut,
+    decimal WorkHours,
+    decimal OvertimeHours,
+    decimal DelayMinutes,
+    bool IsAbsent,
+    string? Notes
+);
 

@@ -1,0 +1,380 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
+using ClosedXML.Excel;
+using Sportive.API.Attributes;
+using Sportive.API.Data;
+using Sportive.API.DTOs;
+using Sportive.API.Models;
+using Sportive.API.Services;
+using Sportive.API.Utils;
+using Sportive.API.Interfaces;
+
+namespace Sportive.API.Controllers;
+
+[ApiController]
+[Route("api/employee-attendances")]
+[RequirePermission(ModuleKeys.HrPayroll)]
+public class EmployeeAttendancesController : ControllerBase
+{
+    private readonly AppDbContext _db;
+    private readonly ITranslator _t;
+
+    public EmployeeAttendancesController(AppDbContext db, ITranslator t)
+    {
+        _db = db;
+        _t = t;
+    }
+
+    private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
+
+    [HttpGet]
+    [RequirePermission(ModuleKeys.Hr)]
+    public async Task<IActionResult> GetAll(
+        [FromQuery] int? employeeId = null,
+        [FromQuery] int? departmentId = null,
+        [FromQuery] DateTime? startDate = null,
+        [FromQuery] DateTime? endDate = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        var q = _db.EmployeeAttendances
+            .Include(a => a.Employee)
+            .ThenInclude(e => e.Department)
+            .AsQueryable();
+
+        if (employeeId.HasValue)
+            q = q.Where(a => a.EmployeeId == employeeId.Value);
+        
+        if (departmentId.HasValue)
+            q = q.Where(a => a.Employee.DepartmentId == departmentId.Value);
+
+        if (startDate.HasValue)
+            q = q.Where(a => a.Date >= startDate.Value.Date);
+
+        if (endDate.HasValue)
+            q = q.Where(a => a.Date <= endDate.Value.Date);
+
+        var total = await q.CountAsync();
+        var items = await q.OrderByDescending(a => a.Date).ThenBy(a => a.Employee.Name)
+            .Skip((page - 1) * pageSize).Take(pageSize)
+            .Select(a => new EmployeeAttendanceDto(
+                a.Id,
+                a.EmployeeId,
+                a.Employee.Name,
+                a.Employee.EmployeeNumber,
+                a.Date,
+                a.CheckIn,
+                a.CheckOut,
+                a.WorkHours,
+                a.OvertimeHours,
+                a.DelayMinutes,
+                a.IsAbsent,
+                a.Notes,
+                a.CreatedByUserId,
+                a.CreatedAt
+            )).ToListAsync();
+
+        return Ok(new PaginatedResult<EmployeeAttendanceDto>(items, total, page, pageSize,
+            (int)Math.Ceiling((double)total / pageSize)));
+    }
+
+    [HttpPost]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    public async Task<IActionResult> Create([FromBody] CreateAttendanceDto dto)
+    {
+        var emp = await _db.Employees.FindAsync(dto.EmployeeId);
+        if (emp == null) return NotFound(new { message = "Employee not found." });
+
+        // Check if record exists for this date
+        var existing = await _db.EmployeeAttendances
+            .FirstOrDefaultAsync(a => a.EmployeeId == dto.EmployeeId && a.Date == dto.Date.Date);
+        if (existing != null)
+            return BadRequest(new { message = _t.Get("HR.AttendanceRecordExists") ?? "An attendance record already exists for this employee on this date." });
+
+        var attendance = new EmployeeAttendance
+        {
+            EmployeeId = dto.EmployeeId,
+            Date = dto.Date.Date,
+            CheckIn = dto.CheckIn,
+            CheckOut = dto.CheckOut,
+            WorkHours = dto.WorkHours,
+            OvertimeHours = dto.OvertimeHours,
+            DelayMinutes = dto.DelayMinutes,
+            IsAbsent = dto.IsAbsent,
+            Notes = dto.Notes,
+            CreatedByUserId = UserId,
+            CreatedAt = TimeHelper.GetEgyptTime()
+        };
+
+        _db.EmployeeAttendances.Add(attendance);
+        await _db.SaveChangesAsync();
+
+        return Ok(attendance);
+    }
+
+    [HttpPut("{id}")]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateAttendanceDto dto)
+    {
+        var attendance = await _db.EmployeeAttendances.FindAsync(id);
+        if (attendance == null) return NotFound();
+
+        attendance.CheckIn = dto.CheckIn;
+        attendance.CheckOut = dto.CheckOut;
+        attendance.WorkHours = dto.WorkHours;
+        attendance.OvertimeHours = dto.OvertimeHours;
+        attendance.DelayMinutes = dto.DelayMinutes;
+        attendance.IsAbsent = dto.IsAbsent;
+        attendance.Notes = dto.Notes;
+        attendance.UpdatedAt = TimeHelper.GetEgyptTime();
+
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpDelete("{id}")]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var attendance = await _db.EmployeeAttendances.FindAsync(id);
+        if (attendance == null) return NotFound();
+
+        _db.EmployeeAttendances.Remove(attendance);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpPost("upload")]
+    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    public async Task<IActionResult> UploadExcel(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "No file uploaded." });
+
+        if (!Path.GetExtension(file.FileName).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "Please upload an Excel file (.xlsx)." });
+
+        var employees = await _db.Employees.ToDictionaryAsync(e => e.EmployeeNumber.Trim(), e => e);
+        var logsAdded = 0;
+        var logsUpdated = 0;
+        var warnings = new List<string>();
+
+        using (var stream = new MemoryStream())
+        {
+            await file.CopyToAsync(stream);
+            using (var workbook = new XLWorkbook(stream))
+            {
+                var worksheet = workbook.Worksheets.FirstOrDefault();
+                if (worksheet == null)
+                    return BadRequest(new { message = "Worksheet is empty." });
+
+                // Find header indexes
+                int empNumCol = 1, dateCol = 2, checkInCol = 3, checkOutCol = 4, notesCol = 5;
+                var firstRow = worksheet.Row(1);
+                
+                for (int col = 1; col <= worksheet.ColumnsUsed().Count(); col++)
+                {
+                    var cellVal = firstRow.Cell(col).Value.ToString().Trim().ToLower();
+                    if (cellVal.Contains("رقم") || cellVal.Contains("كود") || cellVal.Contains("employee") || cellVal.Contains("id") || cellVal.Contains("code") || cellVal.Contains("ac-no"))
+                        empNumCol = col;
+                    else if (cellVal.Contains("تاريخ") || cellVal.Contains("يوم") || cellVal.Contains("date"))
+                        dateCol = col;
+                    else if (cellVal.Contains("حضور") || cellVal.Contains("دخول") || cellVal.Contains("in") || cellVal.Contains("checkin"))
+                        checkInCol = col;
+                    else if (cellVal.Contains("انصراف") || cellVal.Contains("خروج") || cellVal.Contains("out") || cellVal.Contains("checkout"))
+                        checkOutCol = col;
+                    else if (cellVal.Contains("ملاحظات") || cellVal.Contains("notes") || cellVal.Contains("بيان"))
+                        notesCol = col;
+                }
+
+                var rowCount = worksheet.RowsUsed().Count();
+                for (int r = 2; r <= rowCount; r++)
+                {
+                    var row = worksheet.Row(r);
+                    
+                    var rawEmpNum = row.Cell(empNumCol).Value.ToString().Trim();
+                    if (string.IsNullOrEmpty(rawEmpNum)) continue;
+
+                    // Match Employee
+                    if (!employees.TryGetValue(rawEmpNum, out var emp))
+                    {
+                        warnings.Add($"السطر {r}: لم يتم العثور على موظف برقم ({rawEmpNum})");
+                        continue;
+                    }
+
+                    // Parse Date
+                    var rawDateVal = row.Cell(dateCol).Value;
+                    DateTime attendanceDate;
+                    
+                    if (rawDateVal.IsDateTime)
+                    {
+                        attendanceDate = rawDateVal.GetDateTime().Date;
+                    }
+                    else
+                    {
+                        if (!DateTime.TryParse(rawDateVal.ToString(), out attendanceDate))
+                        {
+                            warnings.Add($"السطر {r}: تنسيق تاريخ غير صالح ({rawDateVal}) للموظف ({emp.Name})");
+                            continue;
+                        }
+                        attendanceDate = attendanceDate.Date;
+                    }
+
+                    // Parse times
+                    DateTime? checkIn = null;
+                    DateTime? checkOut = null;
+                    bool isAbsent = false;
+
+                    var rawIn = row.Cell(checkInCol).Value.ToString().Trim();
+                    var rawOut = row.Cell(checkOutCol).Value.ToString().Trim();
+                    
+                    if (string.IsNullOrEmpty(rawIn))
+                    {
+                        isAbsent = true;
+                    }
+                    else
+                    {
+                        if (DateTime.TryParse(rawIn, out var parsedIn))
+                        {
+                            // If Excel stored a full DateTime, use it. If only time, combine with date.
+                            checkIn = parsedIn.Year > 1900 ? parsedIn : attendanceDate.Add(parsedIn.TimeOfDay);
+                        }
+                        else if (TimeSpan.TryParse(rawIn, out var parsedTimeIn))
+                        {
+                            checkIn = attendanceDate.Add(parsedTimeIn);
+                        }
+                        else
+                        {
+                            warnings.Add($"السطر {r}: تنسيق وقت الحضور غير صالح ({rawIn}) للموظف ({emp.Name})");
+                            continue;
+                        }
+                    }
+
+                    if (!isAbsent && !string.IsNullOrEmpty(rawOut))
+                    {
+                        if (DateTime.TryParse(rawOut, out var parsedOut))
+                        {
+                            checkOut = parsedOut.Year > 1900 ? parsedOut : attendanceDate.Add(parsedOut.TimeOfDay);
+                        }
+                        else if (TimeSpan.TryParse(rawOut, out var parsedTimeOut))
+                        {
+                            checkOut = attendanceDate.Add(parsedTimeOut);
+                        }
+                        
+                        if (checkOut.HasValue && checkIn.HasValue && checkOut < checkIn)
+                        {
+                            // Shift crosses midnight, so checkout is next day
+                            checkOut = checkOut.Value.AddDays(1);
+                        }
+                    }
+
+                    // Calculate Hours and Delays
+                    decimal workHours = 0;
+                    decimal overtime = 0;
+                    decimal delayMinutes = 0;
+
+                    if (!isAbsent && checkIn.HasValue && checkOut.HasValue)
+                    {
+                        workHours = (decimal)(checkOut.Value - checkIn.Value).TotalHours;
+                        
+                        // Overtime
+                        var stdHours = emp.WorkHoursPerDay;
+                        if (workHours > stdHours)
+                        {
+                            overtime = workHours - stdHours;
+                        }
+
+                        // Delay (only in Fixed Shift mode)
+                        if (emp.AttendanceMode == AttendanceMode.Fixed && !string.IsNullOrEmpty(emp.ShiftStartTime))
+                        {
+                            if (TimeSpan.TryParse(emp.ShiftStartTime, out var shiftStart))
+                            {
+                                var stdCheckIn = attendanceDate.Add(shiftStart);
+                                if (checkIn.Value > stdCheckIn)
+                                {
+                                    var diff = (checkIn.Value - stdCheckIn).TotalMinutes;
+                                    if (diff > 0)
+                                    {
+                                        delayMinutes = (decimal)diff;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    var notes = row.Cell(notesCol).Value.ToString().Trim();
+
+                    // Check if weekend day (WeeklyDaysOff)
+                    var weekendDays = (emp.WeeklyDaysOff ?? "Friday")
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Select(d => d.Trim().ToLower())
+                        .ToList();
+                    
+                    var dayNameAr = attendanceDate.ToString("dddd", new System.Globalization.CultureInfo("ar-EG")).ToLower();
+                    var dayNameEn = attendanceDate.ToString("dddd", new System.Globalization.CultureInfo("en-US")).ToLower();
+
+                    // If it is a weekend, we don't mark as absent or count delay
+                    var isWeekend = weekendDays.Contains(dayNameEn) || weekendDays.Contains(dayNameAr);
+                    if (isWeekend)
+                    {
+                        delayMinutes = 0;
+                        if (isAbsent)
+                        {
+                            // Skip weekend days off completely from absent penalties
+                            continue; 
+                        }
+                    }
+
+                    // Save or Update
+                    var attendance = await _db.EmployeeAttendances
+                        .FirstOrDefaultAsync(a => a.EmployeeId == emp.Id && a.Date == attendanceDate);
+
+                    if (attendance == null)
+                    {
+                        attendance = new EmployeeAttendance
+                        {
+                            EmployeeId = emp.Id,
+                            Date = attendanceDate,
+                            CheckIn = checkIn,
+                            CheckOut = checkOut,
+                            WorkHours = workHours,
+                            OvertimeHours = overtime,
+                            DelayMinutes = delayMinutes,
+                            IsAbsent = isAbsent,
+                            Notes = notes,
+                            CreatedByUserId = UserId,
+                            CreatedAt = TimeHelper.GetEgyptTime()
+                        };
+                        _db.EmployeeAttendances.Add(attendance);
+                        logsAdded++;
+                    }
+                    else
+                    {
+                        attendance.CheckIn = checkIn;
+                        attendance.CheckOut = checkOut;
+                        attendance.WorkHours = workHours;
+                        attendance.OvertimeHours = overtime;
+                        attendance.DelayMinutes = delayMinutes;
+                        attendance.IsAbsent = isAbsent;
+                        attendance.Notes = string.IsNullOrEmpty(notes) ? attendance.Notes : notes;
+                        attendance.UpdatedAt = TimeHelper.GetEgyptTime();
+                        logsUpdated++;
+                    }
+                }
+            }
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            success = true,
+            message = $"تم رفع الحضور بنجاح. المضاف: {logsAdded}، المحدّث: {logsUpdated}",
+            addedCount = logsAdded,
+            updatedCount = logsUpdated,
+            warnings = warnings
+        });
+    }
+}

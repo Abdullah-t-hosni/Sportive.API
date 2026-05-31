@@ -58,6 +58,12 @@ public enum CommissionBasis
     GrossSales = 2, // إجمالي المبيعات (قبل الخصم)
 }
 
+public enum AttendanceMode
+{
+    Fixed    = 1, // ثابت
+    Flexible = 2  // مرن
+}
+
 public class Department : BaseEntity
 {
     public string Name { get; set; } = string.Empty;
@@ -111,6 +117,10 @@ public class Employee : BaseEntity
     public decimal OvertimeMultiplier      { get; set; } = 1.5m; // Default 1.5x
     public int     DaysPerMonth            { get; set; } = 26;  // Default 26 days
 
+    public AttendanceMode AttendanceMode   { get; set; } = AttendanceMode.Fixed;
+    public string         ShiftStartTime   { get; set; } = "09:00";
+    public string         WeeklyDaysOff    { get; set; } = "Friday"; // Comma-separated list of days (e.g. "Friday,Saturday")
+
     public string? BankAccount     { get; set; }  // رقم الحساب البنكي
     public string? Notes           { get; set; }
     public string? AttachmentUrl   { get; set; }
@@ -132,6 +142,7 @@ public class Employee : BaseEntity
     public ICollection<EmployeeAdvance>   Advances     { get; set; } = new List<EmployeeAdvance>();
     public ICollection<EmployeeBonus>     Bonuses      { get; set; } = new List<EmployeeBonus>();
     public ICollection<EmployeeDeduction> Deductions   { get; set; } = new List<EmployeeDeduction>();
+    public ICollection<EmployeeAttendance> Attendances   { get; set; } = new List<EmployeeAttendance>();
 
     public EmployeeCommissionSetting? CommissionSetting { get; set; }
 
@@ -377,4 +388,25 @@ public class CommissionGroupTier : BaseEntity
     public decimal MinAmount { get; set; }
     public decimal MaxAmount { get; set; }
     public decimal Rate { get; set; }
+}
+
+// ══════════════════════════════════════════════════════
+// سجل الحضور والانصراف — Employee Attendance
+// ══════════════════════════════════════════════════════
+public class EmployeeAttendance : BaseEntity
+{
+    public int EmployeeId { get; set; }
+    public Employee Employee { get; set; } = null!;
+    
+    public DateTime Date { get; set; } // يوم العمل
+    public DateTime? CheckIn { get; set; } // وقت الدخول الفعلي
+    public DateTime? CheckOut { get; set; } // وقت الانصراف الفعلي
+    
+    public decimal WorkHours { get; set; } = 0; // ساعات العمل المحتسبة
+    public decimal OvertimeHours { get; set; } = 0; // العمل الإضافي المحتسب
+    public decimal DelayMinutes { get; set; } = 0; // التأخير بالدقائق
+    public bool IsAbsent { get; set; } = false; // غياب
+    
+    public string? Notes { get; set; }
+    public string? CreatedByUserId { get; set; }
 }

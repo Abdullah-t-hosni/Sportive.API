@@ -57,6 +57,122 @@ public class PayrollController : ControllerBase
         return Ok(ToDto(run));
     }
 
+    [HttpGet("calculate-attendance")]
+    public async Task<IActionResult> CalculateAttendance([FromQuery] int year, [FromQuery] int month)
+    {
+        var startOfPeriod = new DateTime(year, month, 1);
+        var endOfPeriod = startOfPeriod.AddMonths(1).AddDays(-1);
+
+        var activeEmployees = await _db.Employees
+            .Include(e => e.Advances)
+            .Include(e => e.Bonuses)
+            .Include(e => e.Deductions)
+            .Where(e => e.Status == EmployeeStatus.Active)
+            .ToListAsync();
+
+        var attendances = await _db.EmployeeAttendances
+            .Where(a => a.Date >= startOfPeriod.Date && a.Date <= endOfPeriod.Date)
+            .ToListAsync();
+
+        var result = new List<CreatePayrollItemDto>();
+
+        foreach (var emp in activeEmployees)
+        {
+            var empAttendances = attendances.Where(a => a.EmployeeId == emp.Id).ToList();
+
+            // Calculate Absence (explicitly logged IsAbsent, or missing records on workdays)
+            var weekendDays = (emp.WeeklyDaysOff ?? "Friday")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(d => d.Trim().ToLower())
+                .ToList();
+
+            var today = TimeHelper.GetEgyptTime().Date;
+            var daysInPeriod = DateTime.DaysInMonth(year, month);
+            var missingDays = 0;
+
+            for (int day = 1; day <= daysInPeriod; day++)
+            {
+                var date = new DateTime(year, month, day);
+                if (date > today) continue; // Don't count future days as absent
+
+                var dayNameAr = date.ToString("dddd", new System.Globalization.CultureInfo("ar-EG")).ToLower();
+                var dayNameEn = date.ToString("dddd", new System.Globalization.CultureInfo("en-US")).ToLower();
+
+                var isWeekend = weekendDays.Contains(dayNameEn) || weekendDays.Contains(dayNameAr);
+                if (isWeekend) continue; // Weekend is not absent
+
+                if (!empAttendances.Any(a => a.Date == date))
+                {
+                    missingDays++;
+                }
+            }
+
+            var absenceDays = empAttendances.Count(a => a.IsAbsent) + missingDays;
+
+            // Calculate Overtime
+            var overtimeHours = empAttendances.Sum(a => a.OvertimeHours);
+
+            // Calculate Delay
+            var delayMinutes = empAttendances.Sum(a => a.DelayMinutes);
+
+            // Financial Calculations
+            var baseSalary = emp.BaseSalary;
+            var daysPerMonth = emp.DaysPerMonth > 0 ? emp.DaysPerMonth : 26;
+            var workHoursPerDay = emp.WorkHoursPerDay > 0 ? (decimal)emp.WorkHoursPerDay : 9m;
+
+            var absenceDeduction = Math.Round(absenceDays * (baseSalary / daysPerMonth), 2);
+            var overtimeAmount = Math.Round(overtimeHours * (baseSalary / daysPerMonth / workHoursPerDay) * emp.OvertimeMultiplier, 2);
+            var delayDeduction = Math.Round((delayMinutes / 60m) * (baseSalary / daysPerMonth / workHoursPerDay), 2);
+
+            // Advances
+            var remainingAdvance = emp.Advances
+                .Where(a => a.Status != AdvanceStatus.FullyDeducted && a.AdvanceDate <= endOfPeriod)
+                .Sum(a => a.Amount - a.DeductedAmount);
+            var proposedAdvanceDeduct = Math.Min(remainingAdvance, Math.Round(baseSalary * 0.25m, 2));
+
+            // Bonuses (Pending)
+            var pendingBonuses = emp.Bonuses
+                .Where(b => b.PayrollRunId == null && b.CashAccountId == null && b.BonusDate <= endOfPeriod)
+                .Sum(b => b.Amount);
+
+            // Deductions (Pending)
+            var pendingDeductions = emp.Deductions
+                .Where(d => d.PayrollRunId == null && d.CashAccountId == null && d.DeductionDate <= endOfPeriod)
+                .Sum(d => d.Amount);
+
+            // Total Deduction = Fixed Deduction + Pending Deductions + Delay Deduction
+            var totalDeduction = emp.FixedDeduction + pendingDeductions + delayDeduction;
+
+            var notesList = new List<string>();
+            if (delayMinutes > 0)
+                notesList.Add($"خصم تأخير: {(int)delayMinutes} دقيقة بقيمة {delayDeduction} ج.م");
+            if (absenceDays > 0)
+                notesList.Add($"غياب: {absenceDays} أيام بقيمة {absenceDeduction} ج.م");
+            if (overtimeHours > 0)
+                notesList.Add($"إضافي: {overtimeHours:F1} ساعة بقيمة {overtimeAmount} ج.م");
+
+            var notes = string.Join(" | ", notesList);
+
+            result.Add(new CreatePayrollItemDto(
+                emp.Id,
+                null, // OverrideBasicSalary = null to use BaseSalary
+                emp.TransportationAllowance,
+                emp.CommunicationAllowance,
+                emp.BonusAmount + pendingBonuses,
+                emp.FixedAllowance,
+                totalDeduction,
+                proposedAdvanceDeduct,
+                absenceDays,
+                absenceDeduction,
+                overtimeHours,
+                overtimeAmount,
+                notes
+            ));
+        }
+
+        return Ok(result);
+    }
+
     // POST /api/payroll 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreatePayrollRunDto dto)

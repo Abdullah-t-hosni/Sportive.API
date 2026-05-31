@@ -76,6 +76,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<EmployeeAdvance>    EmployeeAdvances    { get; set; }
     public DbSet<EmployeeBonus>      EmployeeBonuses     { get; set; }
     public DbSet<EmployeeDeduction>  EmployeeDeductions  { get; set; }
+    public DbSet<EmployeeAttendance> EmployeeAttendances { get; set; }
     public DbSet<EmployeeCommissionSetting> EmployeeCommissionSettings { get; set; }
     public DbSet<CommissionTier>     CommissionTiers     { get; set; }
     public DbSet<CommissionScheme>     CommissionSchemes     { get; set; }
@@ -471,6 +472,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.FixedAllowance).HasPrecision(18, 2);
             e.Property(x => x.FixedDeduction).HasPrecision(18, 2);
             e.Property(x => x.Status).HasConversion<string>();
+            e.Property(x => x.AttendanceMode).HasConversion<string>();
             e.HasIndex(x => x.EmployeeNumber).IsUnique();
             e.HasOne(x => x.Account).WithMany()
              .HasForeignKey(x => x.AccountId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
@@ -542,6 +544,15 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => x.DeductionNumber).IsUnique();
             e.HasOne(x => x.Employee).WithMany(emp => emp.Deductions)
              .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<EmployeeAttendance>(e => {
+            e.Property(x => x.WorkHours).HasPrecision(18, 2);
+            e.Property(x => x.OvertimeHours).HasPrecision(18, 2);
+            e.Property(x => x.DelayMinutes).HasPrecision(18, 2);
+            e.HasIndex(x => new { x.EmployeeId, x.Date }).IsUnique();
+            e.HasOne(x => x.Employee).WithMany(emp => emp.Attendances)
+             .HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<EmployeeCommissionSetting>(e => {
