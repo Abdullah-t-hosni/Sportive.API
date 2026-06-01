@@ -201,6 +201,7 @@ public class FinancialReportsController : ControllerBase
         var rootRows = rows.Where(r => r.Level == 1).ToList();
 
         return Ok(new {
+            Version = "v2-deterministic-rollup",
             from, to, source,
             CostCenterLabel = source == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (source == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
             rows,
@@ -248,6 +249,7 @@ public class FinancialReportsController : ControllerBase
         if (excel) return ExcelIncomeStatement(revenues, expenses, totalRevenues, totalExpenses, netProfit, from, to);
 
         return Ok(new {
+            Version = "v2-deterministic-rollup",
             from, to, source,
             CostCenterLabel = source == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (source == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
             revenues,
@@ -313,6 +315,7 @@ public class FinancialReportsController : ControllerBase
             totalAssets, totalLiabilities, totalEquity, to);
 
         return Ok(new {
+            Version = "v2-deterministic-rollup",
             to, source,
             CostCenterLabel = source == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (source == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
             assets, liabilities, equity, netProfit,
