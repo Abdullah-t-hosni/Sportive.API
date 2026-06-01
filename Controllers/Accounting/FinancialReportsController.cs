@@ -70,6 +70,8 @@ public class FinancialReportsController : ControllerBase
         var openDrMap   = openingBalances.ToDictionary(x => x.AccountId, x => x.Dr);
         var openCrMap   = openingBalances.ToDictionary(x => x.AccountId, x => x.Cr);
 
+        var accountDict = accounts.ToDictionary(a => a.Id);
+
         // 4. Initialize balance objects
         var balanceList = accounts.Select(a => {
             var nature = a.Nature;
@@ -82,6 +84,20 @@ public class FinancialReportsController : ControllerBase
                 nature = AccountNature.Debit;
             }
 
+            int computedLevel = 1;
+            var curr = a;
+            var visited = new HashSet<int> { a.Id };
+            while (curr.ParentId.HasValue && accountDict.TryGetValue(curr.ParentId.Value, out var p))
+            {
+                if (visited.Contains(p.Id))
+                {
+                    break; // Protect against circular parent-child loops
+                }
+                visited.Add(p.Id);
+                computedLevel++;
+                curr = p;
+            }
+
             return new AccountBalance
             {
                 Id           = a.Id,
@@ -90,7 +106,7 @@ public class FinancialReportsController : ControllerBase
                 Type         = a.Type,
                 Nature       = nature,
                 ParentId     = a.ParentId,
-                Level        = a.Level,
+                Level        = computedLevel,
                 IsLeaf       = a.IsLeaf,
                 IsActive     = a.IsActive,
                 OpenDebit    = Math.Round((nature == AccountNature.Debit  ? a.OpeningBalance : 0) + openDrMap.GetValueOrDefault(a.Id, 0), 2),
@@ -100,10 +116,10 @@ public class FinancialReportsController : ControllerBase
             };
         }).ToList();
 
-        // We sort by Code.Length descending to ensure children are processed before parents
-        // This is extremely robust against database Level column mismatches.
+        // We sort by Level descending to mathematically guarantee that children are processed before their parents.
+        // This is 100% stable and immune to database column drifts.
         var balanceDict = balanceList.ToDictionary(b => b.Id);
-        var itemsToRollUp = balanceList.OrderByDescending(b => b.Code.Length).ToList();
+        var itemsToRollUp = balanceList.OrderByDescending(b => b.Level).ToList();
         
         foreach (var b in itemsToRollUp)
         {
