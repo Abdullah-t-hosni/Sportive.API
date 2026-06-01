@@ -59,6 +59,7 @@ public class OperationalReportsController : ControllerBase
                 // Reload fresh context each retry to avoid stale tracking state
                 var order = await _db.Orders
                     .Include(o => o.Items)
+                        .ThenInclude(i => i.Product)
                     .Include(o => o.Payments)
                     .FirstOrDefaultAsync(o => o.OrderNumber == orderNum);
 
