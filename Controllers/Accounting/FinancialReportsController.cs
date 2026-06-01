@@ -1302,61 +1302,259 @@ public class FinancialReportsController : ControllerBase
         var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        // Sales VAT â€” from Orders
-        var salesOrders = await _db.Orders
+        // 1. Fetch system mappings to resolve VAT and Sales Return accounts
+        var mappings = await _db.AccountSystemMappings
             .AsNoTracking()
-            .Where(o => o.CreatedAt >= from && o.CreatedAt <= to
-                     && o.Status != OrderStatus.Cancelled)
-            .Select(o => new {
-                o.Id, o.OrderNumber, o.CreatedAt,
-                o.TotalAmount, o.TotalVatAmount,
-                CustomerName = o.Customer != null ? o.Customer.FullName : "Anonymous Customer"
-            })
-            .OrderBy(o => o.CreatedAt)
+            .ToDictionaryAsync(m => m.Key, m => m.AccountId, StringComparer.OrdinalIgnoreCase);
+
+        mappings.TryGetValue(MappingKeys.VatOutput, out var vatOutputId);
+        mappings.TryGetValue(MappingKeys.VatInput, out var vatInputId);
+        mappings.TryGetValue(MappingKeys.SalesReturn, out var salesReturnAccountId);
+
+        // ==========================================
+        // SALES GRID CALCULATIONS (المبيعات)
+        // ==========================================
+
+        // Query all OrderItems within the period
+        var orderItems = await _db.OrderItems
+            .AsNoTracking()
+            .Include(oi => oi.Order)
+            .Where(oi => oi.Order.CreatedAt >= from && oi.Order.CreatedAt <= to
+                      && oi.Order.Status != OrderStatus.Cancelled)
             .ToListAsync();
 
-        var totalSalesVat   = salesOrders.Sum(o => o.TotalVatAmount);
-        var totalSalesNet   = salesOrders.Sum(o => o.TotalAmount - o.TotalVatAmount);
-        var totalSalesGross = salesOrders.Sum(o => o.TotalAmount);
+        // Categorize OrderItems by tax type
+        decimal salesVat14Net = 0;
+        decimal salesVat14Tax = 0;
+        decimal salesZeroNet = 0;
+        decimal salesExemptNet = 0;
 
-        // Purchase VAT â€” from PurchaseInvoices
-        var purchases = await _db.PurchaseInvoices
+        foreach (var oi in orderItems)
+        {
+            var itemTotalNet = oi.TotalPrice - oi.ItemVatAmount;
+            if (oi.HasTax && oi.VatRateApplied > 0)
+            {
+                salesVat14Net += itemTotalNet;
+                salesVat14Tax += oi.ItemVatAmount;
+            }
+            else if (oi.HasTax && (oi.VatRateApplied == 0 || oi.ItemVatAmount == 0))
+            {
+                salesZeroNet += oi.TotalPrice;
+            }
+            else
+            {
+                salesExemptNet += oi.TotalPrice;
+            }
+        }
+
+        // Fetch Sales Returns Adjustments (Net) from SalesReturn account lines in the period
+        decimal returnedSalesVat14Net = 0;
+        decimal returnedSalesZeroNet = 0;
+        decimal returnedSalesExemptNet = 0;
+
+        if (salesReturnAccountId.HasValue)
+        {
+            var salesReturnLines = await _db.JournalLines
+                .Include(l => l.JournalEntry)
+                .AsNoTracking()
+                .Where(l => l.AccountId == salesReturnAccountId.Value
+                         && l.JournalEntry.Status == JournalEntryStatus.Posted
+                         && l.JournalEntry.EntryDate >= from
+                         && l.JournalEntry.EntryDate <= to)
+                .ToListAsync();
+
+            // Typically sales returns in the system are 14% VAT unless they are specifically mapped,
+            // so we classify them under returnedSalesVat14Net
+            returnedSalesVat14Net = salesReturnLines.Sum(l => l.Debit - l.Credit);
+        }
+
+        // Fetch Sales Returns VAT (to subtract from Tax Accrued)
+        decimal returnedSalesVat14Tax = 0;
+        if (vatOutputId.HasValue)
+        {
+            var salesReturnVatLines = await _db.JournalLines
+                .Include(l => l.JournalEntry)
+                .AsNoTracking()
+                .Where(l => l.AccountId == vatOutputId.Value
+                         && l.JournalEntry.Status == JournalEntryStatus.Posted
+                         && l.JournalEntry.EntryDate >= from
+                         && l.JournalEntry.EntryDate <= to
+                         && l.JournalEntry.Type == JournalEntryType.SalesReturn)
+                .ToListAsync();
+
+            // When a return is posted, Output VAT is debited to decrease the liability
+            returnedSalesVat14Tax = salesReturnVatLines.Sum(l => l.Debit - l.Credit);
+        }
+
+        // Fetch Manual Journal Entries for Sales VAT
+        decimal manualSalesNet = 0;
+        decimal manualSalesTax = 0;
+
+        if (vatOutputId.HasValue)
+        {
+            var manualSalesLines = await _db.JournalLines
+                .Include(l => l.JournalEntry)
+                .AsNoTracking()
+                .Where(l => l.AccountId == vatOutputId.Value
+                         && l.JournalEntry.Status == JournalEntryStatus.Posted
+                         && l.JournalEntry.EntryDate >= from
+                         && l.JournalEntry.EntryDate <= to
+                         && l.OrderId == null && l.JournalEntry.OrderId == null
+                         && l.PurchaseInvoiceId == null && l.JournalEntry.PurchaseInvoiceId == null
+                         && l.JournalEntry.Type != JournalEntryType.SalesReturn)
+                .ToListAsync();
+
+            foreach (var line in manualSalesLines)
+            {
+                var vatAmount = line.Credit - line.Debit;
+                if (vatAmount == 0) continue;
+
+                decimal netAmount = Math.Round(vatAmount / 0.14m, 2);
+                manualSalesNet += netAmount;
+                manualSalesTax += vatAmount;
+            }
+        }
+
+        // Build Sales Rows
+        var salesVat14Row = new VatRowDto(Math.Round(salesVat14Net, 2), Math.Round(-returnedSalesVat14Net, 2), Math.Round(salesVat14Tax - returnedSalesVat14Tax, 2));
+        var salesZeroRow = new VatRowDto(Math.Round(salesZeroNet, 2), Math.Round(-returnedSalesZeroNet, 2), 0.00m);
+        var salesExemptRow = new VatRowDto(Math.Round(salesExemptNet, 2), Math.Round(-returnedSalesExemptNet, 2), 0.00m);
+        var salesManualRow = new VatRowDto(Math.Round(manualSalesNet, 2), 0.00m, Math.Round(manualSalesTax, 2));
+        
+        var salesTotalRow = new VatRowDto(
+            Math.Round(salesVat14Row.Net + salesZeroRow.Net + salesExemptRow.Net + salesManualRow.Net, 2),
+            Math.Round(salesVat14Row.Adjustment + salesZeroRow.Adjustment + salesExemptRow.Adjustment + salesManualRow.Adjustment, 2),
+            Math.Round(salesVat14Row.Tax + salesZeroRow.Tax + salesExemptRow.Tax + salesManualRow.Tax, 2)
+        );
+
+        var salesGrid = new VatGridDto(salesVat14Row, salesZeroRow, salesExemptRow, salesManualRow, salesTotalRow);
+
+        // ==========================================
+        // PURCHASES GRID CALCULATIONS (المشتريات)
+        // ==========================================
+
+        // Query all PurchaseInvoiceItems within the period (excluding cancelled ones)
+        var purchaseItems = await _db.PurchaseInvoiceItems
             .AsNoTracking()
-            .Where(p => p.InvoiceDate >= from && p.InvoiceDate <= to
-                     && p.Status != PurchaseInvoiceStatus.Cancelled)
-            .Select(p => new {
-                p.Id, p.InvoiceNumber, p.InvoiceDate,
-                p.TotalAmount, p.TaxAmount,
-                SupplierName = p.Supplier != null ? p.Supplier.Name : ""
-            })
-            .OrderBy(p => p.InvoiceDate)
+            .Include(pi => pi.Invoice)
+            .Where(pi => pi.Invoice.InvoiceDate >= from && pi.Invoice.InvoiceDate <= to
+                      && pi.Invoice.Status != PurchaseInvoiceStatus.Cancelled)
             .ToListAsync();
 
-        var totalPurchaseVat   = purchases.Sum(p => p.TaxAmount);
-        var totalPurchaseNet   = purchases.Sum(p => p.TotalAmount - p.TaxAmount);
-        var totalPurchaseGross = purchases.Sum(p => p.TotalAmount);
+        decimal purchaseVat14Net = 0;
+        decimal purchaseVat14Tax = 0;
+        decimal purchaseZeroNet = 0;
+        decimal purchaseExemptNet = 0;
 
-        var netVatPosition = totalSalesVat - totalPurchaseVat; // positive = payable to authority
+        foreach (var pi in purchaseItems)
+        {
+            decimal lineVat = 0;
+            decimal lineNet = pi.TotalCost;
+            if (pi.TaxRate > 0)
+            {
+                if (pi.IsTaxInclusive)
+                {
+                    var basePrice = pi.TotalCost / (1 + (pi.TaxRate / 100));
+                    lineVat = pi.TotalCost - basePrice;
+                    lineNet = basePrice;
+                }
+                else
+                {
+                    lineVat = pi.TotalCost * (pi.TaxRate / 100);
+                    lineNet = pi.TotalCost;
+                }
+            }
+
+            if (pi.TaxRate > 0)
+            {
+                purchaseVat14Net += lineNet;
+                purchaseVat14Tax += lineVat;
+            }
+            else
+            {
+                purchaseZeroNet += pi.TotalCost;
+            }
+        }
+
+        // Fetch Purchase Returns from PurchaseReturns table
+        var purchaseReturns = await _db.PurchaseReturns
+            .AsNoTracking()
+            .Where(r => r.ReturnDate >= from && r.ReturnDate <= to)
+            .ToListAsync();
+
+        decimal returnedPurchaseVat14Net = 0;
+        decimal returnedPurchaseVat14Tax = 0;
+        decimal returnedPurchaseZeroNet = 0;
+
+        foreach (var r in purchaseReturns)
+        {
+            if (r.TaxAmount > 0)
+            {
+                returnedPurchaseVat14Net += (r.TotalAmount - r.TaxAmount);
+                returnedPurchaseVat14Tax += r.TaxAmount;
+            }
+            else
+            {
+                returnedPurchaseZeroNet += r.TotalAmount;
+            }
+        }
+
+        // Fetch Manual Journal Entries for Purchase VAT
+        decimal manualPurchaseNet = 0;
+        decimal manualPurchaseTax = 0;
+
+        if (vatInputId.HasValue)
+        {
+            var manualPurchaseLines = await _db.JournalLines
+                .Include(l => l.JournalEntry)
+                .AsNoTracking()
+                .Where(l => l.AccountId == vatInputId.Value
+                         && l.JournalEntry.Status == JournalEntryStatus.Posted
+                         && l.JournalEntry.EntryDate >= from
+                         && l.JournalEntry.EntryDate <= to
+                         && l.OrderId == null && l.JournalEntry.OrderId == null
+                         && l.PurchaseInvoiceId == null && l.JournalEntry.PurchaseInvoiceId == null)
+                .ToListAsync();
+
+            foreach (var line in manualPurchaseLines)
+            {
+                var vatAmount = line.Debit - line.Credit;
+                if (vatAmount == 0) continue;
+
+                decimal netAmount = Math.Round(vatAmount / 0.14m, 2);
+                manualPurchaseNet += netAmount;
+                manualPurchaseTax += vatAmount;
+            }
+        }
+
+        // Build Purchases Rows
+        var purchaseVat14Row = new VatRowDto(Math.Round(purchaseVat14Net, 2), Math.Round(-returnedPurchaseVat14Net, 2), Math.Round(purchaseVat14Tax - returnedPurchaseVat14Tax, 2));
+        var purchaseZeroRow = new VatRowDto(Math.Round(purchaseZeroNet, 2), Math.Round(-returnedPurchaseZeroNet, 2), 0.00m);
+        var purchaseExemptRow = new VatRowDto(Math.Round(purchaseExemptNet, 2), 0.00m, 0.00m);
+        var purchaseManualRow = new VatRowDto(Math.Round(manualPurchaseNet, 2), 0.00m, Math.Round(manualPurchaseTax, 2));
+
+        var purchaseTotalRow = new VatRowDto(
+            Math.Round(purchaseVat14Row.Net + purchaseZeroRow.Net + purchaseExemptRow.Net + purchaseManualRow.Net, 2),
+            Math.Round(purchaseVat14Row.Adjustment + purchaseZeroRow.Adjustment + purchaseExemptRow.Adjustment + purchaseManualRow.Adjustment, 2),
+            Math.Round(purchaseVat14Row.Tax + purchaseZeroRow.Tax + purchaseExemptRow.Tax + purchaseManualRow.Tax, 2)
+        );
+
+        var purchasesGrid = new VatGridDto(purchaseVat14Row, purchaseZeroRow, purchaseExemptRow, purchaseManualRow, purchaseTotalRow);
+
+        // ==========================================
+        // REPORT SUMMARY
+        // ==========================================
+        var netVatPosition = salesTotalRow.Tax - purchaseTotalRow.Tax;
 
         return Ok(new {
             from, to,
-            sales = new {
-                totalNet   = Math.Round(totalSalesNet,   2),
-                totalVat   = Math.Round(totalSalesVat,   2),
-                totalGross = Math.Round(totalSalesGross, 2),
-                items = salesOrders
-            },
-            purchases = new {
-                totalNet   = Math.Round(totalPurchaseNet,   2),
-                totalVat   = Math.Round(totalPurchaseVat,   2),
-                totalGross = Math.Round(totalPurchaseGross, 2),
-                items = purchases
-            },
+            salesGrid,
+            purchasesGrid,
             summary = new {
-                outputVat  = Math.Round(totalSalesVat,    2),
-                inputVat   = Math.Round(totalPurchaseVat, 2),
-                netPosition= Math.Round(netVatPosition,   2),
-                status = netVatPosition > 0 ? "payable" : netVatPosition < 0 ? "refundable" : "zero"
+                outputVat   = Math.Round(salesTotalRow.Tax, 2),
+                inputVat    = Math.Round(purchaseTotalRow.Tax, 2),
+                netPosition = Math.Round(netVatPosition, 2),
+                status      = netVatPosition > 0 ? "payable" : netVatPosition < 0 ? "refundable" : "zero"
             }
         });
     }
@@ -1401,4 +1599,8 @@ public record LedgerRow(
     int? OrderId = null,
     int? PurchaseId = null);
 public record CashFlowItem(DateTime Date, string EntryNumber, string Description, string Account, decimal Amount);
+
+public record VatRowDto(decimal Net, decimal Adjustment, decimal Tax);
+public record VatGridDto(VatRowDto Vat14, VatRowDto Zero, VatRowDto Exempt, VatRowDto Manual, VatRowDto Total);
+
 
