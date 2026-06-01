@@ -78,13 +78,17 @@ public class EmployeeCommissionsController : ControllerBase
     }
 
     [HttpGet("summary")]
-    public async Task<ActionResult<IEnumerable<EmployeeCommissionSummaryDto>>> GetCommissionsSummary()
+    public async Task<ActionResult<IEnumerable<EmployeeCommissionSummaryDto>>> GetCommissionsSummary([FromQuery] int? year = null, [FromQuery] int? month = null)
     {
-        var startOfMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        var egyptTime = TimeHelper.GetEgyptTime();
+        var startOfMonth = year.HasValue && month.HasValue
+            ? new DateTime(year.Value, month.Value, 1)
+            : new DateTime(egyptTime.Year, egyptTime.Month, 1);
+        var endOfMonth = startOfMonth.AddMonths(1);
         
         var orders = await _db.Orders
             .Include(o => o.Items)
-            .Where(o => o.CreatedAt >= startOfMonth && o.Status != OrderStatus.Cancelled)
+            .Where(o => o.CreatedAt >= startOfMonth && o.CreatedAt < endOfMonth && o.Status != OrderStatus.Cancelled)
             .ToListAsync();
 
         var employees = await _db.Employees

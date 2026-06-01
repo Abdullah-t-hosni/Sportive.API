@@ -248,11 +248,11 @@ public class PayrollController : ControllerBase
             decimal totalCommission = 0;
 
             var startOfPeriod = new DateTime(dto.PeriodYear, dto.PeriodMonth, 1);
-            var endOfPeriod = startOfPeriod.AddMonths(1).AddDays(-1);
+            var endOfPeriod = startOfPeriod.AddMonths(1);
             
             var orders = await _db.Orders
                 .Include(o => o.Items)
-                .Where(o => o.CreatedAt >= startOfPeriod && o.CreatedAt <= endOfPeriod && o.Status != OrderStatus.Cancelled)
+                .Where(o => o.CreatedAt >= startOfPeriod && o.CreatedAt < endOfPeriod && o.Status != OrderStatus.Cancelled)
                 .ToListAsync();
 
             foreach (var itemDto in dto.Items)
