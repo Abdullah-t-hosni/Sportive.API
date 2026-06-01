@@ -271,8 +271,8 @@ public class PayrollController : ControllerBase
                 var fixAll = itemDto.FixedAllowance;
 
                 // Calculate Commission
-                decimal earnedCommission = 0;
-                if (emp.CommissionSetting != null)
+                decimal earnedCommission = itemDto.CommissionAmount ?? 0;
+                if (itemDto.CommissionAmount == null && emp.CommissionSetting != null)
                 {
                     var empOrders = orders.Where(o => 
                         o.SalesPersonId == emp.AppUserId || 
@@ -409,6 +409,206 @@ public class PayrollController : ControllerBase
         catch (Exception ex)
         {
             return StatusCode(500, new { message = _t.Get("HR.PayrollCreateError"), details = ex.Message });
+        }
+    }
+
+    // PUT /api/payroll/{id}
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] CreatePayrollRunDto dto)
+    {
+        try 
+        {
+            if (dto == null || dto.Items == null || !dto.Items.Any()) 
+                return BadRequest(new { message = _t.Get("HR.PayrollMinOneEmployee") });
+
+            var run = await _db.PayrollRuns
+                .Include(p => p.Items)
+                .FirstOrDefaultAsync(p => p.Id == id);
+
+            if (run == null) return NotFound();
+            if (run.Status != PayrollStatus.Draft)
+                return BadRequest(new { message = "Only draft payroll runs can be updated." });
+
+            var lang = Request.Headers["Accept-Language"].ToString().StartsWith("en") ? "en" : "ar";
+
+            // Update basic fields
+            run.PeriodYear                 = dto.PeriodYear;
+            run.PeriodMonth                = dto.PeriodMonth;
+            run.Notes                      = dto.Notes?.Trim();
+            if (dto.WagesExpenseAccountId.HasValue) run.WagesExpenseAccountId = dto.WagesExpenseAccountId;
+            if (dto.AccruedSalariesAccountId.HasValue) run.AccruedSalariesAccountId = dto.AccruedSalariesAccountId;
+            if (dto.DeductionRevenueAccountId.HasValue) run.DeductionRevenueAccountId = dto.DeductionRevenueAccountId;
+            if (dto.AdvancesAccountId.HasValue) run.AdvancesAccountId = dto.AdvancesAccountId;
+            run.UpdatedAt                  = TimeHelper.GetEgyptTime();
+
+            // Clear old items
+            _db.PayrollItems.RemoveRange(run.Items);
+            run.Items.Clear();
+
+            decimal totalBasic = 0, totalTrans = 0, totalComm = 0, totalBonus = 0, totalFixedAll = 0, totalDed = 0, totalAdv = 0, totalAbsence = 0, totalOvertime = 0;
+            decimal totalCommission = 0;
+
+            var startOfPeriod = new DateTime(dto.PeriodYear, dto.PeriodMonth, 1);
+            var endOfPeriod = startOfPeriod.AddMonths(1);
+            
+            var orders = await _db.Orders
+                .Include(o => o.Items)
+                .Where(o => o.CreatedAt >= startOfPeriod && o.CreatedAt < endOfPeriod && o.Status != OrderStatus.Cancelled)
+                .ToListAsync();
+
+            foreach (var itemDto in dto.Items)
+            {
+                var emp = await _db.Employees
+                    .Include(e => e.CommissionSetting)
+                    .ThenInclude(s => s != null ? s.Tiers : null)
+                    .FirstOrDefaultAsync(e => e.Id == itemDto.EmployeeId);
+                    
+                if (emp == null) continue;
+
+                var basic = itemDto.OverrideBasicSalary ?? emp.BaseSalary;
+                var trans = itemDto.TransportationAllowance;
+                var comm  = itemDto.CommunicationAllowance;
+                var bonus = itemDto.BonusAmount;
+                var fixAll = itemDto.FixedAllowance;
+
+                // Calculate Commission
+                decimal earnedCommission = itemDto.CommissionAmount ?? 0;
+                if (itemDto.CommissionAmount == null && emp.CommissionSetting != null)
+                {
+                    var empOrders = orders.Where(o => 
+                        o.SalesPersonId == emp.AppUserId || 
+                        o.SalesPersonId == emp.Id.ToString()
+                    ).ToList();
+
+                    var scheme = emp.CommissionSetting.CommissionSchemeId != null 
+                        ? await _db.CommissionSchemes.Include(s => s.Tiers).FirstOrDefaultAsync(s => s.Id == emp.CommissionSetting.CommissionSchemeId)
+                        : null;
+
+                    var basis = scheme != null ? scheme.Basis : emp.CommissionSetting.Basis;
+                    var type = scheme != null ? scheme.Type : emp.CommissionSetting.Type;
+                    var defaultRate = scheme != null ? scheme.DefaultRate : emp.CommissionSetting.DefaultRate;
+                    var targetAmount = scheme != null ? scheme.TargetAmount : emp.CommissionSetting.TargetAmount;
+                    var tiersList = scheme != null 
+                        ? scheme.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList() 
+                        : emp.CommissionSetting.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
+
+                    var returnsAmount = empOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
+
+                    decimal relevantSales = basis == CommissionBasis.NetSales 
+                        ? empOrders.Sum(o => o.TotalAmount) - returnsAmount
+                        : empOrders.Sum(o => o.SubTotal) - returnsAmount;
+
+                    if (type == CommissionType.TargetAchievementTiers || relevantSales >= targetAmount)
+                    {
+                        if (type == CommissionType.PercentageOfSales)
+                        {
+                            earnedCommission = relevantSales * (defaultRate / 100);
+                        }
+                        else if (type == CommissionType.FixedAmountPerItem)
+                        {
+                            var orderIds = empOrders.Select(o => o.Id).ToList();
+                            var itemsCount = await _db.OrderItems
+                                .Where(oi => orderIds.Contains(oi.OrderId))
+                                .SumAsync(oi => oi.Quantity);
+                            
+                            earnedCommission = itemsCount * defaultRate;
+                        }
+                        else if (type == CommissionType.TieredPercentage)
+                        {
+                            var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                            var applicableTier = sortedTiers.LastOrDefault(t => relevantSales >= t.MinAmount && relevantSales <= t.MaxAmount);
+                            
+                            if (applicableTier != null)
+                            {
+                                earnedCommission = relevantSales * (applicableTier.Rate / 100);
+                            }
+                            else
+                            {
+                                var lastTier = sortedTiers.LastOrDefault();
+                                if (lastTier != null && relevantSales > lastTier.MaxAmount)
+                                {
+                                    earnedCommission = relevantSales * (lastTier.Rate / 100);
+                                }
+                                else
+                                {
+                                    earnedCommission = relevantSales * (defaultRate / 100);
+                                }
+                            }
+                        }
+                        else if (type == CommissionType.TargetAchievementTiers)
+                        {
+                            var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                            decimal achievementPercentage = targetAmount > 0 ? (relevantSales / targetAmount) * 100 : 0;
+                            var applicableTier = sortedTiers.LastOrDefault(t => achievementPercentage >= t.MinAmount && achievementPercentage <= t.MaxAmount);
+                            
+                            if (applicableTier != null)
+                            {
+                                earnedCommission = relevantSales * (applicableTier.Rate / 100);
+                            }
+                            else
+                            {
+                                var lastTier = sortedTiers.LastOrDefault();
+                                if (lastTier != null && achievementPercentage > lastTier.MaxAmount)
+                                {
+                                    earnedCommission = relevantSales * (lastTier.Rate / 100);
+                                }
+                                else
+                                {
+                                    earnedCommission = relevantSales * (defaultRate / 100);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                totalBasic += basic;
+                totalTrans += trans;
+                totalComm  += comm;
+                totalBonus += bonus;
+                totalFixedAll += fixAll;
+                totalDed   += itemDto.DeductionAmount;
+                totalAdv   += itemDto.AdvanceDeducted;
+                totalAbsence += itemDto.AbsenceDeduction;
+                totalOvertime += itemDto.OvertimeAmount;
+                totalCommission += earnedCommission;
+
+                run.Items.Add(new PayrollItem
+                {
+                    EmployeeId      = emp.Id,
+                    BasicSalary     = basic,
+                    TransportationAllowance = trans,
+                    CommunicationAllowance  = comm,
+                    BonusAmount     = bonus,
+                    FixedAllowance  = fixAll,
+                    DeductionAmount = itemDto.DeductionAmount,
+                    AdvanceDeducted = itemDto.AdvanceDeducted,
+                    AbsenceDays     = itemDto.AbsenceDays,
+                    AbsenceDeduction = itemDto.AbsenceDeduction,
+                    OvertimeHours   = itemDto.OvertimeHours,
+                    OvertimeAmount  = itemDto.OvertimeAmount,
+                    CommissionAmount = earnedCommission,
+                    Notes           = itemDto.Notes,
+                    CreatedAt       = TimeHelper.GetEgyptTime()
+                });
+            }
+
+            run.TotalBasicSalary      = totalBasic;
+            run.TotalTransportation   = totalTrans;
+            run.TotalCommunication    = totalComm;
+            run.TotalBonuses          = totalBonus;
+            run.TotalFixedAllowances  = totalFixedAll;
+            run.TotalOvertimeAmount    = totalOvertime;
+            run.TotalDeductions       = totalDed;
+            run.TotalAbsenceDeduction  = totalAbsence;
+            run.TotalAdvancesDeducted = totalAdv;
+            run.TotalNetPayable       = totalBasic + totalTrans + totalComm + totalBonus + totalFixedAll + totalOvertime + totalCommission - totalDed - totalAbsence - totalAdv;
+
+            await _db.SaveChangesAsync();
+            return Ok(new { id = run.Id, payrollNumber = run.PayrollNumber });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Error updating payroll run.", details = ex.Message });
         }
     }
 

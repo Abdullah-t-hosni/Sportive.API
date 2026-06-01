@@ -127,6 +127,8 @@ public class OperationalReportsController : ControllerBase
             .Include(l => l.JournalEntry)
             .Where(l => l.CustomerId == customerId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .OrderBy(l => l.JournalEntry.EntryDate)
+            .ThenBy(l => l.JournalEntryId)
+            .ThenBy(l => l.Id)
             .ToListAsync();
 
         var lines = new List<CustomerStatementLine>();
@@ -240,6 +242,8 @@ public class OperationalReportsController : ControllerBase
             .Include(l => l.JournalEntry)
             .Where(l => l.SupplierId == supplierId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .OrderBy(l => l.JournalEntry.EntryDate)
+            .ThenBy(l => l.JournalEntryId)
+            .ThenBy(l => l.Id)
             .ToListAsync();
 
         var lines = new List<CustomerStatementLine>();

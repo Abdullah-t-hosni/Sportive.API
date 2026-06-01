@@ -284,7 +284,7 @@ public class OrdersController : ControllerBase
         {
             // Only force total amount if no vouchers/payments exist yet to avoid double counting
             var currentVouchersSum = await _db.JournalLines
-                .Where(l => l.OrderId == id && l.Credit > 0 && l.JournalEntry.Type != JournalEntryType.SalesReturn)
+                .Where(l => l.OrderId == id && l.Credit > 0)
                 .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("1103"))
                 .SumAsync(l => l.Credit);
 

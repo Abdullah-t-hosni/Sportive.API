@@ -159,7 +159,8 @@ public record CreatePayrollItemDto(
     decimal  AbsenceDeduction        = 0,
     decimal  OvertimeHours           = 0,
     decimal  OvertimeAmount          = 0,
-    string?  Notes               = null
+    string?  Notes               = null,
+    decimal? CommissionAmount    = null
 );
 
 public record PayrollRunDto(

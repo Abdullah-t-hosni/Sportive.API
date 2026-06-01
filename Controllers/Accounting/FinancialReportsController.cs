@@ -158,6 +158,7 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] OrderSource? source = null,
         [FromQuery] bool      excel    = false)
     {
+        using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead);
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
         var from = fromDate?.AddHours(2) ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1, 2, 0, 0);
         var to   = toDate?.AddDays(1).AddHours(2).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
@@ -195,11 +196,16 @@ public class FinancialReportsController : ControllerBase
                 );
             }).ToList();
 
-        if (excel) return ExcelTrialBalance(rows, from, to);
+        if (excel)
+        {
+            await transaction.CommitAsync();
+            return ExcelTrialBalance(rows, from, to);
+        }
 
         // حساب الإجماليات من السطور الرئيسية (Level 1) لضمان المطابقة الكاملة مع ما يراه المستخدم
         var rootRows = rows.Where(r => r.Level == 1).ToList();
 
+        await transaction.CommitAsync();
         return Ok(new {
             Version = "v2-deterministic-rollup",
             from, to, source,
@@ -222,6 +228,7 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] OrderSource? source = null,
         [FromQuery] bool      excel    = false)
     {
+        using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead);
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
         var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(2);
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
@@ -246,8 +253,13 @@ public class FinancialReportsController : ControllerBase
         var totalExpenses = balances.Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && !b.Code.StartsWith("4") && b.Level == 1).Sum(b => b.PeriodBal);
         var netProfit     = totalRevenues - totalExpenses;
 
-        if (excel) return ExcelIncomeStatement(revenues, expenses, totalRevenues, totalExpenses, netProfit, from, to);
+        if (excel)
+        {
+            await transaction.CommitAsync();
+            return ExcelIncomeStatement(revenues, expenses, totalRevenues, totalExpenses, netProfit, from, to);
+        }
 
+        await transaction.CommitAsync();
         return Ok(new {
             Version = "v2-deterministic-rollup",
             from, to, source,
@@ -269,6 +281,7 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] OrderSource? source = null,
         [FromQuery] bool      excel  = false)
     {
+        using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead);
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
         var from = new DateTime(2000, 1, 1, 2, 0, 0);
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
@@ -311,9 +324,14 @@ public class FinancialReportsController : ControllerBase
         var totalEquity      = balances.Where(b => b.Type == AccountType.Equity && b.Level == 1).Sum(b => b.ClosingBal);
         var totalLiabEquity  = totalLiabilities + totalEquity + netProfit;
 
-        if (excel) return ExcelBalanceSheet(assets, liabilities, equity, netProfit,
-            totalAssets, totalLiabilities, totalEquity, to);
+        if (excel)
+        {
+            await transaction.CommitAsync();
+            return ExcelBalanceSheet(assets, liabilities, equity, netProfit,
+                totalAssets, totalLiabilities, totalEquity, to);
+        }
 
+        await transaction.CommitAsync();
         return Ok(new {
             Version = "v2-deterministic-rollup",
             to, source,
@@ -324,9 +342,7 @@ public class FinancialReportsController : ControllerBase
         });
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // 4. دفتر الأستاذ  GET /api/financialreports/ledger
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     [HttpGet("ledger")]
     public async Task<IActionResult> Ledger(
         [FromQuery] int?      accountId  = null,
@@ -339,6 +355,7 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] OrderSource? source  = null,
         [FromQuery] bool      excel      = false)
     {
+        using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead);
         var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(2);
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
  
@@ -430,8 +447,11 @@ public class FinancialReportsController : ControllerBase
             ));
         }
 
-        if (excel) return ExcelLedger(ledgerRows, openingMap, from, to);
-
+        if (excel)
+        {
+            await transaction.CommitAsync();
+            return ExcelLedger(ledgerRows, openingMap, from, to);
+        }
       
         // تحسين: تجميع العملاء والموردين تحت حسابات رقابة إذا لم يكن هناك فلترة محددة
         var grouped = ledgerRows
@@ -472,10 +492,11 @@ public class FinancialReportsController : ControllerBase
                                       .ThenBy(r => r.JournalEntryId).LastOrDefault()?.RunningBalance ?? 0
                 };
             }).ToList();
+
+        await transaction.CommitAsync();
         return Ok(new { from, to, source, CostCenterLabel = source == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (source == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")), accounts = grouped });
     }
 
-   
     // 5. تشخيص الصحة المحاسبية (Accounting Health Check)
    
     [HttpGet("health-check")]
@@ -545,6 +566,7 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] OrderSource? source  = null,
         [FromQuery] bool      excel      = false)
     {
+        using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead);
         var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(2);
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
  
@@ -561,10 +583,18 @@ public class FinancialReportsController : ControllerBase
                 targetId = await _db.Accounts.Where(a => a.Code.StartsWith("2102") || a.Code.StartsWith("2103") || a.Code.StartsWith("1105") || a.Code.StartsWith("1108")).Select(a => a.Id).FirstOrDefaultAsync();
         }
 
-        if (targetId == 0) return BadRequest(new { message = _t.Get("Reports.SelectAccountOrEntity") });
+        if (targetId == 0)
+        {
+            await transaction.CommitAsync();
+            return BadRequest(new { message = _t.Get("Reports.SelectAccountOrEntity") });
+        }
 
         var acct = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == targetId);
-        if (acct == null) return NotFound(new { message = _t.Get("Reports.AccountNotFound") });
+        if (acct == null)
+        {
+            await transaction.CommitAsync();
+            return NotFound(new { message = _t.Get("Reports.AccountNotFound") });
+        }
 
         var targetAccountIds = new List<int> { targetId };
         if (!acct.IsLeaf)
@@ -700,7 +730,13 @@ public class FinancialReportsController : ControllerBase
                 l.JournalEntry.OrderId, l.JournalEntry.PurchaseInvoiceId);
         }).ToList();
 
-        if (excel) return ExcelAccountStatement(acct, rows, openBal, from, to);
+        if (excel)
+        {
+            await transaction.CommitAsync();
+            return ExcelAccountStatement(acct, rows, openBal, from, to);
+        }
+        
+        await transaction.CommitAsync();
         return Ok(new { from, to, source, CostCenterLabel = source == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (source == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")), account = new { acct.Id, acct.Code, acct.NameAr, Nature = acct.Nature.ToString() }, openingBalance = openBal, rows, totalDebit = rows.Sum(r => r.Debit), totalCredit = rows.Sum(r => r.Credit), closingBalance = rows.LastOrDefault()?.RunningBalance ?? openBal });
     }
 
@@ -715,6 +751,7 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] OrderSource? source = null,
         [FromQuery] bool      excel    = false)
     {
+        using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead);
         var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(2);
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
 
@@ -740,6 +777,8 @@ public class FinancialReportsController : ControllerBase
 
         var cashLines = await cashLinesQuery
             .OrderBy(l => l.JournalEntry.EntryDate)
+            .ThenBy(l => l.JournalEntryId)
+            .ThenBy(l => l.Id)
             .ToListAsync();
 
         // لجلب الطرف الآخر من القيد، نحتاج كل سطور القيود المعنية
@@ -843,8 +882,13 @@ public class FinancialReportsController : ControllerBase
 
         var netCashFlow = operating + investing + financing;
 
-        if (excel) return ExcelCashFlow(opItems, invItems, finItems, openCash, from, to);
+        if (excel)
+        {
+            await transaction.CommitAsync();
+            return ExcelCashFlow(opItems, invItems, finItems, openCash, from, to);
+        }
 
+        await transaction.CommitAsync();
         return Ok(new {
             from, to, source,
             openingCashBalance = openCash,
@@ -1208,6 +1252,7 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? toDate    = null,
         [FromQuery] bool      excel     = false)
     {
+        using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead);
         var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
@@ -1220,7 +1265,9 @@ public class FinancialReportsController : ControllerBase
                      && l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to)
-            .OrderBy(l => l.JournalEntry.EntryDate).ThenBy(l => l.JournalEntry.Id)
+            .OrderBy(l => l.JournalEntry.EntryDate)
+            .ThenBy(l => l.JournalEntryId)
+            .ThenBy(l => l.Id)
             .ToListAsync();
 
         var openLines = await _db.JournalLines
@@ -1284,7 +1331,11 @@ public class FinancialReportsController : ControllerBase
             })
             .ToListAsync();
 
-        if (excel) return ExcelEmployeeStatement(emp, rows, openBal, from, to);
+        if (excel)
+        {
+            await transaction.CommitAsync();
+            return ExcelEmployeeStatement(emp, rows, openBal, from, to);
+        }
 
         var statementRows = rows.Concat(payrollItems.Select(p => new EmployeeStatementRowDto(
             new DateTime(p.PeriodYear, p.PeriodMonth, 1),
@@ -1307,6 +1358,7 @@ public class FinancialReportsController : ControllerBase
             // We can't mutate row.Balance if it's a record without { get; set; }, but let's assume it's just a summary.
         }
 
+        await transaction.CommitAsync();
         return Ok(new EmployeeStatementDto(
             emp.Id, emp.Name, emp.EmployeeNumber, emp.JobTitle, emp.Account?.NameAr ??  "Employee Advances Account",
             from, to, openBal, statementRows,
@@ -1325,6 +1377,7 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate   = null)
     {
+        using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead);
         var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
@@ -1636,6 +1689,7 @@ public class FinancialReportsController : ControllerBase
         // ==========================================
         var netVatPosition = salesTotalRow.Tax - purchaseTotalRow.Tax;
 
+        await transaction.CommitAsync();
         return Ok(new {
             from, to,
             salesGrid,
