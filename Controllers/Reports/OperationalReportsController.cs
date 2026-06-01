@@ -1229,6 +1229,8 @@ public class OperationalReportsController : ControllerBase
                     .OrderByDescending(h => h.CreatedAt)
                     .Select(h => h.Note)
                     .FirstOrDefault() ?? j.Description : j.Description,
+                CreatedByUserId = j.CreatedByUserId,
+                SalesPersonId = j.Order != null ? j.Order.SalesPersonId : null,
                 Items = j.Order != null ? j.Order.Items
                     .Where(i => i.ReturnedQuantity > 0)
                     .Where(i => 
@@ -1252,6 +1254,25 @@ public class OperationalReportsController : ControllerBase
             .ToListAsync();
 
         var movementsMap = movements.GroupBy(m => m.Reference).ToDictionary(g => g.Key, g => g.ToList());
+
+        // Resolve staff names for the report
+        var personIds = returns.Select(r => r.CreatedByUserId)
+            .Concat(returns.Select(r => r.SalesPersonId))
+            .Where(id => !string.IsNullOrEmpty(id))
+            .Distinct()
+            .ToList();
+
+        var numericIds = personIds.Where(id => int.TryParse(id, out _)).Select(id => int.Parse(id!)).ToList();
+        var empNames = await _db.Employees.Where(e => numericIds.Contains(e.Id)).ToDictionaryAsync(e => e.Id.ToString(), e => e.Name);
+        var remainingIds = personIds.Where(id => id != null && !empNames.ContainsKey(id)).ToList();
+        var userNamesResult = await _db.Users.Where(u => remainingIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.FullName);
+
+        var personNamesMap = empNames;
+        foreach (var un in userNamesResult) 
+        {
+            if (!personNamesMap.ContainsKey(un.Key)) 
+                personNamesMap[un.Key] = un.Value;
+        }
 
         var rows = returns.Select(j => {
             List<ReportItemDto> itemsList = null;
@@ -1293,13 +1314,16 @@ public class OperationalReportsController : ControllerBase
                 (catIds.Any() || brIds.Any() || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size)) ? itemsAmount : j.OriginalAmount,
                 j.Description ?? "",
                 itemsList,
-                j.OrderId
+                j.OrderId,
+                (j.SalesPersonId != null && personNamesMap.TryGetValue(j.SalesPersonId, out var creator)) ? creator : "System/Unknown",
+                (j.CreatedByUserId != null && personNamesMap.TryGetValue(j.CreatedByUserId, out var returner)) ? returner : "System/Unknown"
             );
         }).ToList();
 
         var summary = new {
             count        = rows.Count,
             totalAmount  = rows.Sum(r => r.Amount),
+            totalReturnedItems = rows.Sum(r => r.Items?.Sum(it => it.Quantity) ?? 0)
         };
 
         if (excel) return ExcelReturns(rows, summary, from, to, "مرتجعات المبيعات");
@@ -1980,7 +2004,21 @@ public class OperationalReportsController : ControllerBase
         ws.Cell(1,1).Value = _t.Get("Reports.DetailedReturnsTitle", title, from.ToString("yyyy-MM-dd"), to.ToString("yyyy-MM-dd"));
         ws.Cell(1,1).Style.Font.Bold=true;
         
-        string[] h={_t.Get("Reports.ReferenceHeader"), _t.Get("Reports.DateHeader"), _t.Get("Reports.CustomerHeader"), _t.Get("Reports.PhoneHeader"), _t.Get("Reports.SkuHeader"), _t.Get("Reports.ProductNameHeader"), _t.Get("Reports.SizeHeader"), _t.Get("Reports.ColorHeader"), _t.Get("Reports.QtyHeader"), _t.Get("Reports.AmountHeader"), _t.Get("Reports.ReasonHeader")};
+        string[] h = {
+            _t.Get("Reports.ReferenceHeader"),
+            _t.Get("Reports.DateHeader"),
+            _t.Get("Reports.CustomerHeader"),
+            _t.Get("Reports.PhoneHeader"),
+            _t.Get("Reports.SkuHeader"),
+            _t.Get("Reports.ProductNameHeader"),
+            _t.Get("Reports.SizeHeader"),
+            _t.Get("Reports.ColorHeader"),
+            _t.Get("Reports.QtyHeader"),
+            _t.Get("Reports.AmountHeader"),
+            _t.Get("Reports.ReasonHeader"),
+            "عامل الفاتورة",
+            "مسؤول المرتجع"
+        };
         for(int i=0;i<h.Length;i++){
             var cell = ws.Cell(2,i+1);
             cell.Value=h[i];
@@ -2000,6 +2038,8 @@ public class OperationalReportsController : ControllerBase
                 ws.Cell(r, 4).Value = ret.Phone;
                 ws.Cell(r, 10).Value = ret.Amount;
                 ws.Cell(r, 11).Value = ret.Reason;
+                ws.Cell(r, 12).Value = ret.CreatorName;
+                ws.Cell(r, 13).Value = ret.ReturnerName;
                 r++;
                 continue;
             }
@@ -2018,6 +2058,8 @@ public class OperationalReportsController : ControllerBase
                 ws.Cell(r, 9).Value = item.Quantity;
                 ws.Cell(r, 10).Value = item.LineTotal;
                 ws.Cell(r, 11).Value = ret.Reason;
+                ws.Cell(r, 12).Value = ret.CreatorName;
+                ws.Cell(r, 13).Value = ret.ReturnerName;
                 
                 ws.Cell(r, 10).Style.NumberFormat.Format="#,##0.00";
                 r++;
@@ -2736,7 +2778,7 @@ public record InventoryRow(int Id, string NameAr, string NameEn, string SKU, str
 public record VariantInventoryRow(int Id, string Size, string Color, string ColorAr, int StockQuantity, decimal Price, decimal Value);
 public record SalesRow(int Id, string OrderNumber, DateTime Date, string CustomerName, string Phone, string Source, string Status, string PaymentMethod, decimal SubTotal, decimal DiscountAmount, decimal TotalAmount, int ItemCount, List<ReportItemDto>? Items = null, string? PaymentDetails = null);
 public record PurchaseRow(int Id, string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal ReturnedAmount, decimal PaidAmount, decimal RemainingAmount, List<ReportItemDto>? Items = null);
-public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason, List<ReportItemDto>? Items = null, int? OrderId = null);
+public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason, List<ReportItemDto>? Items = null, int? OrderId = null, string CreatorName = "", string ReturnerName = "");
 public record ReportItemDto(string SKU, string ProductName, string Size, string Color, decimal Quantity, decimal UnitPrice = 0, decimal UnitCost = 0, decimal Discount = 0, decimal LineTotal = 0);
 public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal GrossSales, decimal TotalReturns, decimal TotalDiscount, decimal NetSales, int Cancellations);
 public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "", int Balance = 0, int? SourceId = null, string Size = "", string Color = "");

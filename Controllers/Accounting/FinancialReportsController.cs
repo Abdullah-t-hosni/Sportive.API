@@ -1386,9 +1386,44 @@ public class FinancialReportsController : ControllerBase
                          && l.JournalEntry.EntryDate <= to)
                 .ToListAsync();
 
-            // Typically sales returns in the system are 14% VAT unless they are specifically mapped,
-            // so we classify them under returnedSalesVat14Net
-            returnedSalesVat14Net = salesReturnLines.Sum(l => l.Debit - l.Credit);
+            // Extract OrderIds for return entries to determine correct tax brackets dynamically
+            var orderIds = salesReturnLines
+                .Where(l => l.JournalEntry.OrderId.HasValue)
+                .Select(l => l.JournalEntry.OrderId.Value)
+                .Distinct()
+                .ToList();
+
+            var orderItemsMap = await _db.OrderItems
+                .AsNoTracking()
+                .Where(oi => orderIds.Contains(oi.OrderId))
+                .ToListAsync();
+
+            var orderItemsGrouped = orderItemsMap.GroupBy(oi => oi.OrderId).ToDictionary(g => g.Key, g => g.ToList());
+
+            foreach (var l in salesReturnLines)
+            {
+                var netAmount = l.Debit - l.Credit;
+                if (l.JournalEntry.OrderId.HasValue && orderItemsGrouped.TryGetValue(l.JournalEntry.OrderId.Value, out var items))
+                {
+                    if (items.All(oi => !oi.HasTax))
+                    {
+                        returnedSalesExemptNet += netAmount;
+                    }
+                    else if (items.All(oi => oi.HasTax && (oi.VatRateApplied == 0 || oi.ItemVatAmount == 0)))
+                    {
+                        returnedSalesZeroNet += netAmount;
+                    }
+                    else
+                    {
+                        returnedSalesVat14Net += netAmount;
+                    }
+                }
+                else
+                {
+                    // Fallback
+                    returnedSalesVat14Net += netAmount;
+                }
+            }
         }
 
         // Fetch Sales Returns VAT (to subtract from Tax Accrued)
@@ -1409,34 +1444,9 @@ public class FinancialReportsController : ControllerBase
             returnedSalesVat14Tax = salesReturnVatLines.Sum(l => l.Debit - l.Credit);
         }
 
-        // Fetch Manual Journal Entries for Sales VAT
+        // Fetch Manual Journal Entries for Sales VAT (Disabled per request - only allowed in Purchases)
         decimal manualSalesNet = 0;
         decimal manualSalesTax = 0;
-
-        if (vatOutputId.HasValue)
-        {
-            var manualSalesLines = await _db.JournalLines
-                .Include(l => l.JournalEntry)
-                .AsNoTracking()
-                .Where(l => l.AccountId == vatOutputId.Value
-                         && l.JournalEntry.Status == JournalEntryStatus.Posted
-                         && l.JournalEntry.EntryDate >= from
-                         && l.JournalEntry.EntryDate <= to
-                         && l.OrderId == null && l.JournalEntry.OrderId == null
-                         && l.PurchaseInvoiceId == null && l.JournalEntry.PurchaseInvoiceId == null
-                         && l.JournalEntry.Type != JournalEntryType.SalesReturn)
-                .ToListAsync();
-
-            foreach (var line in manualSalesLines)
-            {
-                var vatAmount = line.Credit - line.Debit;
-                if (vatAmount == 0) continue;
-
-                decimal netAmount = Math.Round(vatAmount / 0.14m, 2);
-                manualSalesNet += netAmount;
-                manualSalesTax += vatAmount;
-            }
-        }
 
         // Build Sales Rows
         var salesVat14Row = new VatRowDto(Math.Round(salesVat14Net, 2), Math.Round(-returnedSalesVat14Net, 2), Math.Round(salesVat14Tax - returnedSalesVat14Tax, 2));
@@ -1499,26 +1509,65 @@ public class FinancialReportsController : ControllerBase
             }
         }
 
-        // Fetch Purchase Returns from PurchaseReturns table
+        // Fetch Purchase Returns from PurchaseReturns table with Items and InvoiceItem loaded
         var purchaseReturns = await _db.PurchaseReturns
             .AsNoTracking()
+            .Include(r => r.Items)
+                .ThenInclude(ri => ri.InvoiceItem)
             .Where(r => r.ReturnDate >= from && r.ReturnDate <= to)
             .ToListAsync();
 
         decimal returnedPurchaseVat14Net = 0;
         decimal returnedPurchaseVat14Tax = 0;
         decimal returnedPurchaseZeroNet = 0;
+        decimal returnedPurchaseExemptNet = 0;
 
         foreach (var r in purchaseReturns)
         {
-            if (r.TaxAmount > 0)
+            foreach (var item in r.Items)
             {
-                returnedPurchaseVat14Net += (r.TotalAmount - r.TaxAmount);
-                returnedPurchaseVat14Tax += r.TaxAmount;
+                decimal rate = item.InvoiceItem?.TaxRate ?? (r.TaxAmount > 0 ? 14m : 0m);
+                bool hasTax = item.InvoiceItem != null ? (item.InvoiceItem.TaxRate > 0) : (r.TaxAmount > 0);
+                
+                decimal itemNet = item.TotalCost;
+                decimal itemTax = 0;
+
+                if (hasTax)
+                {
+                    if (item.InvoiceItem != null && item.InvoiceItem.IsTaxInclusive)
+                    {
+                        var baseCost = item.TotalCost / (1 + (rate / 100));
+                        itemTax = item.TotalCost - baseCost;
+                        itemNet = baseCost;
+                    }
+                    else
+                    {
+                        itemTax = item.TotalCost * (rate / 100);
+                        itemNet = item.TotalCost;
+                    }
+
+                    returnedPurchaseVat14Net += itemNet;
+                    returnedPurchaseVat14Tax += itemTax;
+                }
+                else
+                {
+                    // Non-taxed purchases are zero-rated in our grid
+                    returnedPurchaseZeroNet += itemNet;
+                }
             }
-            else
+
+            // Fallback for returns without item-level details
+            if (!r.Items.Any())
             {
-                returnedPurchaseZeroNet += r.TotalAmount;
+                if (r.TaxAmount > 0)
+                {
+                    returnedPurchaseVat14Net += (r.TotalAmount - r.TaxAmount);
+                    returnedPurchaseVat14Tax += r.TaxAmount;
+                }
+                else
+                {
+                    returnedPurchaseZeroNet += r.TotalAmount;
+                }
             }
         }
 
@@ -1553,7 +1602,7 @@ public class FinancialReportsController : ControllerBase
         // Build Purchases Rows
         var purchaseVat14Row = new VatRowDto(Math.Round(purchaseVat14Net, 2), Math.Round(-returnedPurchaseVat14Net, 2), Math.Round(purchaseVat14Tax - returnedPurchaseVat14Tax, 2));
         var purchaseZeroRow = new VatRowDto(Math.Round(purchaseZeroNet, 2), Math.Round(-returnedPurchaseZeroNet, 2), 0.00m);
-        var purchaseExemptRow = new VatRowDto(Math.Round(purchaseExemptNet, 2), 0.00m, 0.00m);
+        var purchaseExemptRow = new VatRowDto(Math.Round(purchaseExemptNet, 2), Math.Round(-returnedPurchaseExemptNet, 2), 0.00m);
         var purchaseManualRow = new VatRowDto(Math.Round(manualPurchaseNet, 2), 0.00m, Math.Round(manualPurchaseTax, 2));
 
         var purchaseTotalRow = new VatRowDto(
