@@ -57,15 +57,12 @@ public static class TimeHelper
     }
 
     /// <summary>
-    /// Gets the business date for a given datetime, maintaining the same time component
-    /// but shifting the day back by 1 if it falls before the 2:00 AM cutoff.
+    /// Gets the business date for a given datetime.
+    /// Since our SQL query filters already apply the 2:00 AM cutoff to EntryDate,
+    /// we just return the actual timestamp to prevent double-shifting the date by 48 hours.
     /// </summary>
     public static DateTime GetEgyptBusinessDayDate(DateTime dt)
     {
-        if (dt.Hour < 2)
-        {
-            return dt.AddDays(-1);
-        }
         return dt;
     }
 }
