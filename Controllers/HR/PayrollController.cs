@@ -69,16 +69,135 @@ public class PayrollController : ControllerBase
         var quarterLimit = settings?.DelayQuarterDayLimitMinutes ?? 30;
         var halfLimit = settings?.DelayHalfDayLimitMinutes ?? 60;
 
-        var activeEmployees = await _db.Employees
+                var activeEmployees = await _db.Employees
             .Include(e => e.Advances)
             .Include(e => e.Bonuses)
             .Include(e => e.Deductions)
+            .Include(e => e.CommissionSetting)
+            .ThenInclude(s => s != null ? s.Tiers : null)
             .Where(e => e.Status == EmployeeStatus.Active)
             .ToListAsync();
 
         var attendances = await _db.EmployeeAttendances
             .Where(a => a.Date >= startOfPeriod.Date && a.Date <= endOfPeriod.Date)
             .ToListAsync();
+
+        // Calculate commissions for the period
+        var endOfPeriodExclusive = startOfPeriod.AddMonths(1);
+        var orders = await _db.Orders
+            .Include(o => o.Items)
+            .Where(o => o.CreatedAt >= startOfPeriod && o.CreatedAt < endOfPeriodExclusive && o.Status != OrderStatus.Cancelled)
+            .ToListAsync();
+
+        var groups = await _db.CommissionGroups
+            .Include(g => g.Members)
+            .Include(g => g.Tiers)
+            .Include(g => g.CommissionScheme)
+            .ThenInclude(s => s != null ? s.Tiers : null)
+            .ToListAsync();
+
+        var employeeGroupCommissions = new Dictionary<int, decimal>();
+        foreach (var g in groups)
+        {
+            var memberUserIds = g.Members.Select(m => m.AppUserId).Where(id => !string.IsNullOrEmpty(id)).ToList();
+            var memberIds = g.Members.Select(m => m.Id.ToString()).ToList();
+            
+            var groupOrders = orders.Where(o => 
+                memberUserIds.Contains(o.SalesPersonId) || 
+                memberIds.Contains(o.SalesPersonId)
+            ).ToList();
+            
+            var scheme = g.CommissionSchemeId != null 
+                ? await _db.CommissionSchemes.Include(s => s.Tiers).FirstOrDefaultAsync(s => s.Id == g.CommissionSchemeId)
+                : null;
+
+            var basis = scheme != null ? scheme.Basis : g.Basis;
+            var type = scheme != null ? scheme.Type : g.Type;
+            var defaultRate = scheme != null ? scheme.DefaultRate : g.DefaultRate;
+            var targetAmount = scheme != null ? scheme.TargetAmount : g.TargetAmount;
+            var tiersList = scheme != null 
+                ? scheme.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList() 
+                : g.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
+
+            var returnsAmount = groupOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
+
+            decimal relevantSales = basis == CommissionBasis.NetSales 
+                ? groupOrders.Sum(o => o.TotalAmount) - returnsAmount
+                : groupOrders.Sum(o => o.SubTotal) - returnsAmount;
+
+            decimal earnedGroupCommission = 0;
+
+            if (type == CommissionType.TargetAchievementTiers || relevantSales >= targetAmount)
+            {
+                if (type == CommissionType.PercentageOfSales)
+                {
+                    earnedGroupCommission = relevantSales * (defaultRate / 100);
+                }
+                else if (type == CommissionType.FixedAmountPerItem)
+                {
+                    var orderIds = groupOrders.Select(o => o.Id).ToList();
+                    var itemsCount = await _db.OrderItems
+                        .Where(oi => orderIds.Contains(oi.OrderId))
+                        .SumAsync(oi => oi.Quantity);
+                    
+                    earnedGroupCommission = itemsCount * defaultRate;
+                }
+                else if (type == CommissionType.TieredPercentage)
+                {
+                    var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                    var applicableTier = sortedTiers.LastOrDefault(t => relevantSales >= t.MinAmount && relevantSales <= t.MaxAmount);
+                    
+                    if (applicableTier != null)
+                    {
+                        earnedGroupCommission = relevantSales * (applicableTier.Rate / 100);
+                    }
+                    else
+                    {
+                        var lastTier = sortedTiers.LastOrDefault();
+                        if (lastTier != null && relevantSales > lastTier.MaxAmount)
+                        {
+                            earnedGroupCommission = relevantSales * (lastTier.Rate / 100);
+                        }
+                        else
+                        {
+                            earnedGroupCommission = relevantSales * (defaultRate / 100);
+                        }
+                    }
+                }
+                else if (type == CommissionType.TargetAchievementTiers)
+                {
+                    var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                    decimal achievementPercentage = targetAmount > 0 ? (relevantSales / targetAmount) * 100 : 0;
+                    var applicableTier = sortedTiers.LastOrDefault(t => achievementPercentage >= t.MinAmount && achievementPercentage <= t.MaxAmount);
+                    
+                    if (applicableTier != null)
+                    {
+                        earnedGroupCommission = relevantSales * (applicableTier.Rate / 100);
+                    }
+                    else
+                    {
+                        var lastTier = sortedTiers.LastOrDefault();
+                        if (lastTier != null && achievementPercentage > lastTier.MaxAmount)
+                        {
+                            earnedGroupCommission = relevantSales * (lastTier.Rate / 100);
+                        }
+                        else
+                        {
+                            earnedGroupCommission = relevantSales * (defaultRate / 100);
+                        }
+                    }
+                }
+            }
+
+            if (g.Members.Any())
+            {
+                var share = earnedGroupCommission / g.Members.Count;
+                foreach (var m in g.Members)
+                {
+                    employeeGroupCommissions[m.Id] = share;
+                }
+            }
+        }
 
         var result = new List<CreatePayrollItemDto>();
 
@@ -187,6 +306,101 @@ public class PayrollController : ControllerBase
 
             var notes = string.Join(" | ", notesList);
 
+            // Calculate Commission Amount for Draft
+            decimal earnedCommission = 0;
+            if (employeeGroupCommissions.TryGetValue(emp.Id, out var groupComm))
+            {
+                earnedCommission = Math.Round(groupComm, 2);
+            }
+            else if (emp.CommissionSetting != null)
+            {
+                var empOrders = orders.Where(o => 
+                    o.SalesPersonId == emp.AppUserId || 
+                    o.SalesPersonId == emp.Id.ToString()
+                ).ToList();
+
+                var scheme = emp.CommissionSetting.CommissionSchemeId != null 
+                    ? await _db.CommissionSchemes.Include(s => s.Tiers).FirstOrDefaultAsync(s => s.Id == emp.CommissionSetting.CommissionSchemeId)
+                    : null;
+
+                var basis = scheme != null ? scheme.Basis : emp.CommissionSetting.Basis;
+                var type = scheme != null ? scheme.Type : emp.CommissionSetting.Type;
+                var defaultRate = scheme != null ? scheme.DefaultRate : emp.CommissionSetting.DefaultRate;
+                var targetAmount = scheme != null ? scheme.TargetAmount : emp.CommissionSetting.TargetAmount;
+                var tiersList = scheme != null 
+                    ? scheme.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList() 
+                    : emp.CommissionSetting.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
+
+                var returnsAmount = empOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
+
+                decimal relevantSales = basis == CommissionBasis.NetSales 
+                    ? empOrders.Sum(o => o.TotalAmount) - returnsAmount
+                    : empOrders.Sum(o => o.SubTotal) - returnsAmount;
+
+                if (type == CommissionType.TargetAchievementTiers || relevantSales >= targetAmount)
+                {
+                    if (type == CommissionType.PercentageOfSales)
+                    {
+                        earnedCommission = relevantSales * (defaultRate / 100);
+                    }
+                    else if (type == CommissionType.FixedAmountPerItem)
+                    {
+                        var orderIds = empOrders.Select(o => o.Id).ToList();
+                        var itemsCount = await _db.OrderItems
+                            .Where(oi => orderIds.Contains(oi.OrderId))
+                            .SumAsync(oi => oi.Quantity);
+                        
+                        earnedCommission = itemsCount * defaultRate;
+                    }
+                    else if (type == CommissionType.TieredPercentage)
+                    {
+                        var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                        var applicableTier = sortedTiers.LastOrDefault(t => relevantSales >= t.MinAmount && relevantSales <= t.MaxAmount);
+                        
+                        if (applicableTier != null)
+                        {
+                            earnedCommission = relevantSales * (applicableTier.Rate / 100);
+                        }
+                        else
+                        {
+                            var lastTier = sortedTiers.LastOrDefault();
+                            if (lastTier != null && relevantSales > lastTier.MaxAmount)
+                            {
+                                earnedCommission = relevantSales * (lastTier.Rate / 100);
+                            }
+                            else
+                            {
+                                earnedCommission = relevantSales * (defaultRate / 100);
+                            }
+                        }
+                    }
+                    else if (type == CommissionType.TargetAchievementTiers)
+                    {
+                        var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                        decimal achievementPercentage = targetAmount > 0 ? (relevantSales / targetAmount) * 100 : 0;
+                        var applicableTier = sortedTiers.LastOrDefault(t => achievementPercentage >= t.MinAmount && achievementPercentage <= t.MaxAmount);
+                        
+                        if (applicableTier != null)
+                        {
+                            earnedCommission = relevantSales * (applicableTier.Rate / 100);
+                        }
+                        else
+                        {
+                            var lastTier = sortedTiers.LastOrDefault();
+                            if (lastTier != null && achievementPercentage > lastTier.MaxAmount)
+                            {
+                                earnedCommission = relevantSales * (lastTier.Rate / 100);
+                            }
+                            else
+                            {
+                                earnedCommission = relevantSales * (defaultRate / 100);
+                            }
+                        }
+                    }
+                }
+                earnedCommission = Math.Round(earnedCommission, 2);
+            }
+
             result.Add(new CreatePayrollItemDto(
                 emp.Id,
                 null, // OverrideBasicSalary = null to use BaseSalary
@@ -200,7 +414,8 @@ public class PayrollController : ControllerBase
                 absenceDeduction,
                 overtimeHours,
                 overtimeAmount,
-                notes
+                notes,
+                earnedCommission
             ));
         }
 
@@ -255,6 +470,116 @@ public class PayrollController : ControllerBase
                 .Where(o => o.CreatedAt >= startOfPeriod && o.CreatedAt < endOfPeriod && o.Status != OrderStatus.Cancelled)
                 .ToListAsync();
 
+            var groups = await _db.CommissionGroups
+                .Include(g => g.Members)
+                .Include(g => g.Tiers)
+                .Include(g => g.CommissionScheme)
+                .ThenInclude(s => s != null ? s.Tiers : null)
+                .ToListAsync();
+
+            var employeeGroupCommissions = new Dictionary<int, decimal>();
+            foreach (var g in groups)
+            {
+                var memberUserIds = g.Members.Select(m => m.AppUserId).Where(id => !string.IsNullOrEmpty(id)).ToList();
+                var memberIds = g.Members.Select(m => m.Id.ToString()).ToList();
+                
+                var groupOrders = orders.Where(o => 
+                    memberUserIds.Contains(o.SalesPersonId) || 
+                    memberIds.Contains(o.SalesPersonId)
+                ).ToList();
+                
+                var scheme = g.CommissionSchemeId != null 
+                    ? await _db.CommissionSchemes.Include(s => s.Tiers).FirstOrDefaultAsync(s => s.Id == g.CommissionSchemeId)
+                    : null;
+
+                var basis = scheme != null ? scheme.Basis : g.Basis;
+                var type = scheme != null ? scheme.Type : g.Type;
+                var defaultRate = scheme != null ? scheme.DefaultRate : g.DefaultRate;
+                var targetAmount = scheme != null ? scheme.TargetAmount : g.TargetAmount;
+                var tiersList = scheme != null 
+                    ? scheme.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList() 
+                    : g.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
+
+                var returnsAmount = groupOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
+
+                decimal relevantSales = basis == CommissionBasis.NetSales 
+                    ? groupOrders.Sum(o => o.TotalAmount) - returnsAmount
+                    : groupOrders.Sum(o => o.SubTotal) - returnsAmount;
+
+                decimal earnedGroupCommission = 0;
+
+                if (type == CommissionType.TargetAchievementTiers || relevantSales >= targetAmount)
+                {
+                    if (type == CommissionType.PercentageOfSales)
+                    {
+                        earnedGroupCommission = relevantSales * (defaultRate / 100);
+                    }
+                    else if (type == CommissionType.FixedAmountPerItem)
+                    {
+                        var orderIds = groupOrders.Select(o => o.Id).ToList();
+                        var itemsCount = await _db.OrderItems
+                            .Where(oi => orderIds.Contains(oi.OrderId))
+                            .SumAsync(oi => oi.Quantity);
+                        
+                        earnedGroupCommission = itemsCount * defaultRate;
+                    }
+                    else if (type == CommissionType.TieredPercentage)
+                    {
+                        var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                        var applicableTier = sortedTiers.LastOrDefault(t => relevantSales >= t.MinAmount && relevantSales <= t.MaxAmount);
+                        
+                        if (applicableTier != null)
+                        {
+                            earnedGroupCommission = relevantSales * (applicableTier.Rate / 100);
+                        }
+                        else
+                        {
+                            var lastTier = sortedTiers.LastOrDefault();
+                            if (lastTier != null && relevantSales > lastTier.MaxAmount)
+                            {
+                                earnedGroupCommission = relevantSales * (lastTier.Rate / 100);
+                            }
+                            else
+                            {
+                                earnedGroupCommission = relevantSales * (defaultRate / 100);
+                            }
+                        }
+                    }
+                    else if (type == CommissionType.TargetAchievementTiers)
+                    {
+                        var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                        decimal achievementPercentage = targetAmount > 0 ? (relevantSales / targetAmount) * 100 : 0;
+                        var applicableTier = sortedTiers.LastOrDefault(t => achievementPercentage >= t.MinAmount && achievementPercentage <= t.MaxAmount);
+                        
+                        if (applicableTier != null)
+                        {
+                            earnedGroupCommission = relevantSales * (applicableTier.Rate / 100);
+                        }
+                        else
+                        {
+                            var lastTier = sortedTiers.LastOrDefault();
+                            if (lastTier != null && achievementPercentage > lastTier.MaxAmount)
+                            {
+                                earnedGroupCommission = relevantSales * (lastTier.Rate / 100);
+                            }
+                            else
+                            {
+                                earnedGroupCommission = relevantSales * (defaultRate / 100);
+                            }
+                        }
+                    }
+                }
+
+                if (g.Members.Any())
+                {
+                    var share = earnedGroupCommission / g.Members.Count;
+                    foreach (var m in g.Members)
+                    {
+                        employeeGroupCommissions[m.Id] = share;
+                    }
+                }
+            }
+
             foreach (var itemDto in dto.Items)
             {
                 var emp = await _db.Employees
@@ -272,91 +597,99 @@ public class PayrollController : ControllerBase
 
                 // Calculate Commission
                 decimal earnedCommission = itemDto.CommissionAmount ?? 0;
-                if (itemDto.CommissionAmount == null && emp.CommissionSetting != null)
+                if (itemDto.CommissionAmount == null)
                 {
-                    var empOrders = orders.Where(o => 
-                        o.SalesPersonId == emp.AppUserId || 
-                        o.SalesPersonId == emp.Id.ToString()
-                    ).ToList();
-
-                    var scheme = emp.CommissionSetting.CommissionSchemeId != null 
-                        ? await _db.CommissionSchemes.Include(s => s.Tiers).FirstOrDefaultAsync(s => s.Id == emp.CommissionSetting.CommissionSchemeId)
-                        : null;
-
-                    var basis = scheme != null ? scheme.Basis : emp.CommissionSetting.Basis;
-                    var type = scheme != null ? scheme.Type : emp.CommissionSetting.Type;
-                    var defaultRate = scheme != null ? scheme.DefaultRate : emp.CommissionSetting.DefaultRate;
-                    var targetAmount = scheme != null ? scheme.TargetAmount : emp.CommissionSetting.TargetAmount;
-                    var tiersList = scheme != null 
-                        ? scheme.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList() 
-                        : emp.CommissionSetting.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
-
-                    var returnsAmount = empOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
-
-                    decimal relevantSales = basis == CommissionBasis.NetSales 
-                        ? empOrders.Sum(o => o.TotalAmount) - returnsAmount
-                        : empOrders.Sum(o => o.SubTotal) - returnsAmount;
-
-                    if (type == CommissionType.TargetAchievementTiers || relevantSales >= targetAmount)
+                    if (employeeGroupCommissions.TryGetValue(emp.Id, out var groupComm))
                     {
-                        if (type == CommissionType.PercentageOfSales)
+                        earnedCommission = Math.Round(groupComm, 2);
+                    }
+                    else if (emp.CommissionSetting != null)
+                    {
+                        var empOrders = orders.Where(o => 
+                            o.SalesPersonId == emp.AppUserId || 
+                            o.SalesPersonId == emp.Id.ToString()
+                        ).ToList();
+
+                        var scheme = emp.CommissionSetting.CommissionSchemeId != null 
+                            ? await _db.CommissionSchemes.Include(s => s.Tiers).FirstOrDefaultAsync(s => s.Id == emp.CommissionSetting.CommissionSchemeId)
+                            : null;
+
+                        var basis = scheme != null ? scheme.Basis : emp.CommissionSetting.Basis;
+                        var type = scheme != null ? scheme.Type : emp.CommissionSetting.Type;
+                        var defaultRate = scheme != null ? scheme.DefaultRate : emp.CommissionSetting.DefaultRate;
+                        var targetAmount = scheme != null ? scheme.TargetAmount : emp.CommissionSetting.TargetAmount;
+                        var tiersList = scheme != null 
+                            ? scheme.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList() 
+                            : emp.CommissionSetting.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
+
+                        var returnsAmount = empOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
+
+                        decimal relevantSales = basis == CommissionBasis.NetSales 
+                            ? empOrders.Sum(o => o.TotalAmount) - returnsAmount
+                            : empOrders.Sum(o => o.SubTotal) - returnsAmount;
+
+                        if (type == CommissionType.TargetAchievementTiers || relevantSales >= targetAmount)
                         {
-                            earnedCommission = relevantSales * (defaultRate / 100);
-                        }
-                        else if (type == CommissionType.FixedAmountPerItem)
-                        {
-                            var orderIds = empOrders.Select(o => o.Id).ToList();
-                            var itemsCount = await _db.OrderItems
-                                .Where(oi => orderIds.Contains(oi.OrderId))
-                                .SumAsync(oi => oi.Quantity);
-                            
-                            earnedCommission = itemsCount * defaultRate;
-                        }
-                        else if (type == CommissionType.TieredPercentage)
-                        {
-                            var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
-                            var applicableTier = sortedTiers.LastOrDefault(t => relevantSales >= t.MinAmount && relevantSales <= t.MaxAmount);
-                            
-                            if (applicableTier != null)
+                            if (type == CommissionType.PercentageOfSales)
                             {
-                                earnedCommission = relevantSales * (applicableTier.Rate / 100);
+                                earnedCommission = relevantSales * (defaultRate / 100);
                             }
-                            else
+                            else if (type == CommissionType.FixedAmountPerItem)
                             {
-                                var lastTier = sortedTiers.LastOrDefault();
-                                if (lastTier != null && relevantSales > lastTier.MaxAmount)
+                                var orderIds = empOrders.Select(o => o.Id).ToList();
+                                var itemsCount = await _db.OrderItems
+                                    .Where(oi => orderIds.Contains(oi.OrderId))
+                                    .SumAsync(oi => oi.Quantity);
+                                
+                                earnedCommission = itemsCount * defaultRate;
+                            }
+                            else if (type == CommissionType.TieredPercentage)
+                            {
+                                var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                                var applicableTier = sortedTiers.LastOrDefault(t => relevantSales >= t.MinAmount && relevantSales <= t.MaxAmount);
+                                
+                                if (applicableTier != null)
                                 {
-                                    earnedCommission = relevantSales * (lastTier.Rate / 100);
+                                    earnedCommission = relevantSales * (applicableTier.Rate / 100);
                                 }
                                 else
                                 {
-                                    earnedCommission = relevantSales * (defaultRate / 100);
+                                    var lastTier = sortedTiers.LastOrDefault();
+                                    if (lastTier != null && relevantSales > lastTier.MaxAmount)
+                                    {
+                                        earnedCommission = relevantSales * (lastTier.Rate / 100);
+                                    }
+                                    else
+                                    {
+                                        earnedCommission = relevantSales * (defaultRate / 100);
+                                    }
                                 }
                             }
-                        }
-                        else if (type == CommissionType.TargetAchievementTiers)
-                        {
-                            var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
-                            decimal achievementPercentage = targetAmount > 0 ? (relevantSales / targetAmount) * 100 : 0;
-                            var applicableTier = sortedTiers.LastOrDefault(t => achievementPercentage >= t.MinAmount && achievementPercentage <= t.MaxAmount);
-                            
-                            if (applicableTier != null)
+                            else if (type == CommissionType.TargetAchievementTiers)
                             {
-                                earnedCommission = relevantSales * (applicableTier.Rate / 100);
-                            }
-                            else
-                            {
-                                var lastTier = sortedTiers.LastOrDefault();
-                                if (lastTier != null && achievementPercentage > lastTier.MaxAmount)
+                                var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                                decimal achievementPercentage = targetAmount > 0 ? (relevantSales / targetAmount) * 100 : 0;
+                                var applicableTier = sortedTiers.LastOrDefault(t => achievementPercentage >= t.MinAmount && achievementPercentage <= t.MaxAmount);
+                                
+                                if (applicableTier != null)
                                 {
-                                    earnedCommission = relevantSales * (lastTier.Rate / 100);
+                                    earnedCommission = relevantSales * (applicableTier.Rate / 100);
                                 }
                                 else
                                 {
-                                    earnedCommission = relevantSales * (defaultRate / 100);
+                                    var lastTier = sortedTiers.LastOrDefault();
+                                    if (lastTier != null && achievementPercentage > lastTier.MaxAmount)
+                                    {
+                                        earnedCommission = relevantSales * (lastTier.Rate / 100);
+                                    }
+                                    else
+                                    {
+                                        earnedCommission = relevantSales * (defaultRate / 100);
+                                    }
                                 }
                             }
                         }
+                        earnedCommission = Math.Round(earnedCommission, 2);
                     }
                 }
 
@@ -456,6 +789,116 @@ public class PayrollController : ControllerBase
                 .Where(o => o.CreatedAt >= startOfPeriod && o.CreatedAt < endOfPeriod && o.Status != OrderStatus.Cancelled)
                 .ToListAsync();
 
+            var groups = await _db.CommissionGroups
+                .Include(g => g.Members)
+                .Include(g => g.Tiers)
+                .Include(g => g.CommissionScheme)
+                .ThenInclude(s => s != null ? s.Tiers : null)
+                .ToListAsync();
+
+            var employeeGroupCommissions = new Dictionary<int, decimal>();
+            foreach (var g in groups)
+            {
+                var memberUserIds = g.Members.Select(m => m.AppUserId).Where(id => !string.IsNullOrEmpty(id)).ToList();
+                var memberIds = g.Members.Select(m => m.Id.ToString()).ToList();
+                
+                var groupOrders = orders.Where(o => 
+                    memberUserIds.Contains(o.SalesPersonId) || 
+                    memberIds.Contains(o.SalesPersonId)
+                ).ToList();
+                
+                var scheme = g.CommissionSchemeId != null 
+                    ? await _db.CommissionSchemes.Include(s => s.Tiers).FirstOrDefaultAsync(s => s.Id == g.CommissionSchemeId)
+                    : null;
+
+                var basis = scheme != null ? scheme.Basis : g.Basis;
+                var type = scheme != null ? scheme.Type : g.Type;
+                var defaultRate = scheme != null ? scheme.DefaultRate : g.DefaultRate;
+                var targetAmount = scheme != null ? scheme.TargetAmount : g.TargetAmount;
+                var tiersList = scheme != null 
+                    ? scheme.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList() 
+                    : g.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
+
+                var returnsAmount = groupOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
+
+                decimal relevantSales = basis == CommissionBasis.NetSales 
+                    ? groupOrders.Sum(o => o.TotalAmount) - returnsAmount
+                    : groupOrders.Sum(o => o.SubTotal) - returnsAmount;
+
+                decimal earnedGroupCommission = 0;
+
+                if (type == CommissionType.TargetAchievementTiers || relevantSales >= targetAmount)
+                {
+                    if (type == CommissionType.PercentageOfSales)
+                    {
+                        earnedGroupCommission = relevantSales * (defaultRate / 100);
+                    }
+                    else if (type == CommissionType.FixedAmountPerItem)
+                    {
+                        var orderIds = groupOrders.Select(o => o.Id).ToList();
+                        var itemsCount = await _db.OrderItems
+                            .Where(oi => orderIds.Contains(oi.OrderId))
+                            .SumAsync(oi => oi.Quantity);
+                        
+                        earnedGroupCommission = itemsCount * defaultRate;
+                    }
+                    else if (type == CommissionType.TieredPercentage)
+                    {
+                        var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                        var applicableTier = sortedTiers.LastOrDefault(t => relevantSales >= t.MinAmount && relevantSales <= t.MaxAmount);
+                        
+                        if (applicableTier != null)
+                        {
+                            earnedGroupCommission = relevantSales * (applicableTier.Rate / 100);
+                        }
+                        else
+                        {
+                            var lastTier = sortedTiers.LastOrDefault();
+                            if (lastTier != null && relevantSales > lastTier.MaxAmount)
+                            {
+                                earnedGroupCommission = relevantSales * (lastTier.Rate / 100);
+                            }
+                            else
+                            {
+                                earnedGroupCommission = relevantSales * (defaultRate / 100);
+                            }
+                        }
+                    }
+                    else if (type == CommissionType.TargetAchievementTiers)
+                    {
+                        var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                        decimal achievementPercentage = targetAmount > 0 ? (relevantSales / targetAmount) * 100 : 0;
+                        var applicableTier = sortedTiers.LastOrDefault(t => achievementPercentage >= t.MinAmount && achievementPercentage <= t.MaxAmount);
+                        
+                        if (applicableTier != null)
+                        {
+                            earnedGroupCommission = relevantSales * (applicableTier.Rate / 100);
+                        }
+                        else
+                        {
+                            var lastTier = sortedTiers.LastOrDefault();
+                            if (lastTier != null && achievementPercentage > lastTier.MaxAmount)
+                            {
+                                earnedGroupCommission = relevantSales * (lastTier.Rate / 100);
+                            }
+                            else
+                            {
+                                earnedGroupCommission = relevantSales * (defaultRate / 100);
+                            }
+                        }
+                    }
+                }
+
+                if (g.Members.Any())
+                {
+                    var share = earnedGroupCommission / g.Members.Count;
+                    foreach (var m in g.Members)
+                    {
+                        employeeGroupCommissions[m.Id] = share;
+                    }
+                }
+            }
+
             foreach (var itemDto in dto.Items)
             {
                 var emp = await _db.Employees
@@ -473,91 +916,99 @@ public class PayrollController : ControllerBase
 
                 // Calculate Commission
                 decimal earnedCommission = itemDto.CommissionAmount ?? 0;
-                if (itemDto.CommissionAmount == null && emp.CommissionSetting != null)
+                if (itemDto.CommissionAmount == null)
                 {
-                    var empOrders = orders.Where(o => 
-                        o.SalesPersonId == emp.AppUserId || 
-                        o.SalesPersonId == emp.Id.ToString()
-                    ).ToList();
-
-                    var scheme = emp.CommissionSetting.CommissionSchemeId != null 
-                        ? await _db.CommissionSchemes.Include(s => s.Tiers).FirstOrDefaultAsync(s => s.Id == emp.CommissionSetting.CommissionSchemeId)
-                        : null;
-
-                    var basis = scheme != null ? scheme.Basis : emp.CommissionSetting.Basis;
-                    var type = scheme != null ? scheme.Type : emp.CommissionSetting.Type;
-                    var defaultRate = scheme != null ? scheme.DefaultRate : emp.CommissionSetting.DefaultRate;
-                    var targetAmount = scheme != null ? scheme.TargetAmount : emp.CommissionSetting.TargetAmount;
-                    var tiersList = scheme != null 
-                        ? scheme.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList() 
-                        : emp.CommissionSetting.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
-
-                    var returnsAmount = empOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
-
-                    decimal relevantSales = basis == CommissionBasis.NetSales 
-                        ? empOrders.Sum(o => o.TotalAmount) - returnsAmount
-                        : empOrders.Sum(o => o.SubTotal) - returnsAmount;
-
-                    if (type == CommissionType.TargetAchievementTiers || relevantSales >= targetAmount)
+                    if (employeeGroupCommissions.TryGetValue(emp.Id, out var groupComm))
                     {
-                        if (type == CommissionType.PercentageOfSales)
+                        earnedCommission = Math.Round(groupComm, 2);
+                    }
+                    else if (emp.CommissionSetting != null)
+                    {
+                        var empOrders = orders.Where(o => 
+                            o.SalesPersonId == emp.AppUserId || 
+                            o.SalesPersonId == emp.Id.ToString()
+                        ).ToList();
+
+                        var scheme = emp.CommissionSetting.CommissionSchemeId != null 
+                            ? await _db.CommissionSchemes.Include(s => s.Tiers).FirstOrDefaultAsync(s => s.Id == emp.CommissionSetting.CommissionSchemeId)
+                            : null;
+
+                        var basis = scheme != null ? scheme.Basis : emp.CommissionSetting.Basis;
+                        var type = scheme != null ? scheme.Type : emp.CommissionSetting.Type;
+                        var defaultRate = scheme != null ? scheme.DefaultRate : emp.CommissionSetting.DefaultRate;
+                        var targetAmount = scheme != null ? scheme.TargetAmount : emp.CommissionSetting.TargetAmount;
+                        var tiersList = scheme != null 
+                            ? scheme.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList() 
+                            : emp.CommissionSetting.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
+
+                        var returnsAmount = empOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
+
+                        decimal relevantSales = basis == CommissionBasis.NetSales 
+                            ? empOrders.Sum(o => o.TotalAmount) - returnsAmount
+                            : empOrders.Sum(o => o.SubTotal) - returnsAmount;
+
+                        if (type == CommissionType.TargetAchievementTiers || relevantSales >= targetAmount)
                         {
-                            earnedCommission = relevantSales * (defaultRate / 100);
-                        }
-                        else if (type == CommissionType.FixedAmountPerItem)
-                        {
-                            var orderIds = empOrders.Select(o => o.Id).ToList();
-                            var itemsCount = await _db.OrderItems
-                                .Where(oi => orderIds.Contains(oi.OrderId))
-                                .SumAsync(oi => oi.Quantity);
-                            
-                            earnedCommission = itemsCount * defaultRate;
-                        }
-                        else if (type == CommissionType.TieredPercentage)
-                        {
-                            var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
-                            var applicableTier = sortedTiers.LastOrDefault(t => relevantSales >= t.MinAmount && relevantSales <= t.MaxAmount);
-                            
-                            if (applicableTier != null)
+                            if (type == CommissionType.PercentageOfSales)
                             {
-                                earnedCommission = relevantSales * (applicableTier.Rate / 100);
+                                earnedCommission = relevantSales * (defaultRate / 100);
                             }
-                            else
+                            else if (type == CommissionType.FixedAmountPerItem)
                             {
-                                var lastTier = sortedTiers.LastOrDefault();
-                                if (lastTier != null && relevantSales > lastTier.MaxAmount)
+                                var orderIds = empOrders.Select(o => o.Id).ToList();
+                                var itemsCount = await _db.OrderItems
+                                    .Where(oi => orderIds.Contains(oi.OrderId))
+                                    .SumAsync(oi => oi.Quantity);
+                                
+                                earnedCommission = itemsCount * defaultRate;
+                            }
+                            else if (type == CommissionType.TieredPercentage)
+                            {
+                                var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                                var applicableTier = sortedTiers.LastOrDefault(t => relevantSales >= t.MinAmount && relevantSales <= t.MaxAmount);
+                                
+                                if (applicableTier != null)
                                 {
-                                    earnedCommission = relevantSales * (lastTier.Rate / 100);
+                                    earnedCommission = relevantSales * (applicableTier.Rate / 100);
                                 }
                                 else
                                 {
-                                    earnedCommission = relevantSales * (defaultRate / 100);
+                                    var lastTier = sortedTiers.LastOrDefault();
+                                    if (lastTier != null && relevantSales > lastTier.MaxAmount)
+                                    {
+                                        earnedCommission = relevantSales * (lastTier.Rate / 100);
+                                    }
+                                    else
+                                    {
+                                        earnedCommission = relevantSales * (defaultRate / 100);
+                                    }
                                 }
                             }
-                        }
-                        else if (type == CommissionType.TargetAchievementTiers)
-                        {
-                            var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
-                            decimal achievementPercentage = targetAmount > 0 ? (relevantSales / targetAmount) * 100 : 0;
-                            var applicableTier = sortedTiers.LastOrDefault(t => achievementPercentage >= t.MinAmount && achievementPercentage <= t.MaxAmount);
-                            
-                            if (applicableTier != null)
+                            else if (type == CommissionType.TargetAchievementTiers)
                             {
-                                earnedCommission = relevantSales * (applicableTier.Rate / 100);
-                            }
-                            else
-                            {
-                                var lastTier = sortedTiers.LastOrDefault();
-                                if (lastTier != null && achievementPercentage > lastTier.MaxAmount)
+                                var sortedTiers = tiersList.OrderBy(t => t.MinAmount).ToList();
+                                decimal achievementPercentage = targetAmount > 0 ? (relevantSales / targetAmount) * 100 : 0;
+                                var applicableTier = sortedTiers.LastOrDefault(t => achievementPercentage >= t.MinAmount && achievementPercentage <= t.MaxAmount);
+                                
+                                if (applicableTier != null)
                                 {
-                                    earnedCommission = relevantSales * (lastTier.Rate / 100);
+                                    earnedCommission = relevantSales * (applicableTier.Rate / 100);
                                 }
                                 else
                                 {
-                                    earnedCommission = relevantSales * (defaultRate / 100);
+                                    var lastTier = sortedTiers.LastOrDefault();
+                                    if (lastTier != null && achievementPercentage > lastTier.MaxAmount)
+                                    {
+                                        earnedCommission = relevantSales * (lastTier.Rate / 100);
+                                    }
+                                    else
+                                    {
+                                        earnedCommission = relevantSales * (defaultRate / 100);
+                                    }
                                 }
                             }
                         }
+                        earnedCommission = Math.Round(earnedCommission, 2);
                     }
                 }
 
