@@ -73,9 +73,11 @@ public class FinancialReportsController : ControllerBase
         // 4. Initialize balance objects
         var balanceList = accounts.Select(a => {
             var nature = a.Nature;
-            // Dynamically override contra-revenue accounts (e.g. Sales Discount starting with 4101 or containing "خصم", and Sales Returns starting with 4103)
-            // to Debit nature so their natural debit balances are correctly calculated as positive numbers in reports.
-            if (a.Code.StartsWith("4101") || a.Code.StartsWith("4103") || (a.NameAr != null && a.NameAr.Contains("خصم")) || (a.NameEn != null && a.NameEn.ToLower().Contains("discount")))
+            // Dynamically override contra-revenue accounts (e.g. Sales Discount starting with 410101 or containing "الخصم الممنوح"/"الخصم المسموح",
+            // and Sales Returns starting with 4102 or 4103) to Debit nature so their natural debit balances are correctly calculated as positive numbers in reports.
+            if (a.Code.StartsWith("410101") || a.Code.StartsWith("4102") || a.Code.StartsWith("4103") || 
+                (a.NameAr != null && (a.NameAr.Contains("الخصم الممنوح") || a.NameAr.Contains("الخصم المسموح") || a.NameAr.Contains("مرتجع المبيعات"))) || 
+                (a.NameEn != null && (a.NameEn.ToLower().Contains("allowed discount") || a.NameEn.ToLower().Contains("sales return") || a.NameEn.ToLower().Contains("sales discount"))))
             {
                 nature = AccountNature.Debit;
             }
@@ -212,19 +214,19 @@ public class FinancialReportsController : ControllerBase
         // الإيرادات (طبيعتها دائن ← الرصيد موجب = إيراد)
         // ✅ تصحيح: الدخل يجب أن يعتمد على أرصدة الفترة (PeriodBal) فقط
         var revenues = balances
-            .Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && (b.IsActive || b.PeriodBal != 0))
+            .Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.PeriodBal != 0)
             .OrderBy(b => b.Code)
             .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.PeriodBal)) 
             .ToList();
 
         var expenses = balances
-            .Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && !b.Code.StartsWith("4") && (b.IsActive || b.PeriodBal != 0))
+            .Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && !b.Code.StartsWith("4") && b.PeriodBal != 0)
             .OrderBy(b => b.Code)
             .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.PeriodBal))
             .ToList();
 
-        var totalRevenues = balances.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.IsLeaf).Sum(b => b.PeriodBal);
-        var totalExpenses = balances.Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && !b.Code.StartsWith("4") && b.IsLeaf).Sum(b => b.PeriodBal);
+        var totalRevenues = balances.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.Level == 1).Sum(b => b.PeriodBal);
+        var totalExpenses = balances.Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && !b.Code.StartsWith("4") && b.Level == 1).Sum(b => b.PeriodBal);
         var netProfit     = totalRevenues - totalExpenses;
 
         if (excel) return ExcelIncomeStatement(revenues, expenses, totalRevenues, totalExpenses, netProfit, from, to);
@@ -277,8 +279,8 @@ public class FinancialReportsController : ControllerBase
         // صافي الربح للفترة يضاف لحقوق الملكية ونظهره في القائمة للشفافية
         var incomeFrom = from; 
         var incomeBals = await GetBalances(incomeFrom, to, source);
-        var totalRev   = incomeBals.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.IsLeaf).Sum(b => b.ClosingBal);
-        var totalExp   = incomeBals.Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && !b.Code.StartsWith("4") && b.IsLeaf).Sum(b => b.ClosingBal);
+        var totalRev   = incomeBals.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.Level == 1).Sum(b => b.ClosingBal);
+        var totalExp   = incomeBals.Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && !b.Code.StartsWith("4") && b.Level == 1).Sum(b => b.ClosingBal);
         var netProfit  = totalRev - totalExp;
 
         if (netProfit != 0)
@@ -286,9 +288,9 @@ public class FinancialReportsController : ControllerBase
             equity.Add(new BalanceSheetRow("N/P", _t.Get("Reports.NetProfitLoss"), 1, netProfit));
         }
 
-        var totalAssets      = balances.Where(b => b.Type == AccountType.Asset && b.IsLeaf).Sum(b => b.ClosingBal);
-        var totalLiabilities = balances.Where(b => b.Type == AccountType.Liability && b.IsLeaf).Sum(b => b.ClosingBal);
-        var totalEquity      = balances.Where(b => b.Type == AccountType.Equity && b.IsLeaf).Sum(b => b.ClosingBal);
+        var totalAssets      = balances.Where(b => b.Type == AccountType.Asset && b.Level == 1).Sum(b => b.ClosingBal);
+        var totalLiabilities = balances.Where(b => b.Type == AccountType.Liability && b.Level == 1).Sum(b => b.ClosingBal);
+        var totalEquity      = balances.Where(b => b.Type == AccountType.Equity && b.Level == 1).Sum(b => b.ClosingBal);
         var totalLiabEquity  = totalLiabilities + totalEquity + netProfit;
 
         if (excel) return ExcelBalanceSheet(assets, liabilities, equity, netProfit,
