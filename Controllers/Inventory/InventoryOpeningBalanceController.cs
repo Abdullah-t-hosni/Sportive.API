@@ -221,6 +221,10 @@ public class InventoryOpeningBalanceController : ControllerBase
                 row++;
             }
 
+            if (row > 6)
+            {
+                sheet.Range(5, 1, row - 1, 6).SetAutoFilter();
+            }
             sheet.Columns().AdjustToContents();
 
             using (var stream = new System.IO.MemoryStream())

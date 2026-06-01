@@ -1801,6 +1801,7 @@ public class OperationalReportsController : ControllerBase
         foreach(var l in lines){ws.Cell(r,1).Value=l.Date.ToString("yyyy-MM-dd");ws.Cell(r,2).Value=l.Type;ws.Cell(r,3).Value=l.Reference;ws.Cell(r,4).Value=l.Description;ws.Cell(r,5).Value=l.Debit;ws.Cell(r,6).Value=l.Credit;ws.Cell(r,7).Value=l.Balance;for(int c2=5;c2<=7;c2++)ws.Cell(r,c2).Style.NumberFormat.Format="#,##0.00";r++;}
 
         ws.Cell(r,4).Value = _t.Get("Reports.Total"); ws.Cell(r,4).Style.Font.Bold=true;ws.Cell(r,5).Value=invoiced;ws.Cell(r,6).Value=paid;ws.Cell(r,7).Value=outstanding;for(int c2=5;c2<=7;c2++){ws.Cell(r,c2).Style.Font.Bold=true;ws.Cell(r,c2).Style.NumberFormat.Format="#,##0.00";}
+        if (r > 4) ws.Range(3, 1, r - 1, h.Length).SetAutoFilter();
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"customer_{c.Id}_{from:yyyyMMdd}.xlsx");
     }
@@ -1819,7 +1820,7 @@ public class OperationalReportsController : ControllerBase
 
         int r=3;
         foreach(var row in rows){ws.Cell(r,1).Value=row.Name;ws.Cell(r,2).Value=row.Phone;ws.Cell(r,3).Value=row.Total;ws.Cell(r,4).Value=row.Current;ws.Cell(r,5).Value=row.Days60;ws.Cell(r,6).Value=row.Days90;ws.Cell(r,7).Value=row.Over90;for(int c=3;c<=7;c++)ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";if(row.Over90>0)ws.Row(r).Style.Font.FontColor=XLColor.Red;r++;}
-
+        if (r > 3) ws.Range(2, 1, r - 1, h.Length).SetAutoFilter();
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"customer_aging_{asOf:yyyyMMdd}.xlsx");
     }
@@ -1837,6 +1838,7 @@ public class OperationalReportsController : ControllerBase
 
         int r=3;
         foreach(var row in rows){ws.Cell(r,1).Value=row.Name;ws.Cell(r,2).Value=row.Phone;ws.Cell(r,3).Value=row.CompanyName;ws.Cell(r,4).Value=row.Total;ws.Cell(r,5).Value=row.Current;ws.Cell(r,6).Value=row.Days60;ws.Cell(r,7).Value=row.Days90;ws.Cell(r,8).Value=row.Over90;for(int c=4;c<=8;c++)ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";r++;}
+        if (r > 3) ws.Range(2, 1, r - 1, h.Length).SetAutoFilter();
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"supplier_aging_{asOf:yyyyMMdd}.xlsx");
     }
@@ -1855,7 +1857,7 @@ public class OperationalReportsController : ControllerBase
 
         int r=4;
         foreach(var l in lines){ws.Cell(r,1).Value=l.Date.ToString("yyyy-MM-dd");ws.Cell(r,2).Value=l.Type;ws.Cell(r,3).Value=l.Reference;ws.Cell(r,4).Value=l.Description;ws.Cell(r,5).Value=l.Debit;ws.Cell(r,6).Value=l.Credit;ws.Cell(r,7).Value=l.Balance;for(int c=5;c<=7;c++)ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";r++;}
-
+        if (r > 4) ws.Range(3, 1, r - 1, h.Length).SetAutoFilter();
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"supplier_statement_{s.Id}_{from:yyyyMMdd}.xlsx");
     }
@@ -1869,6 +1871,7 @@ public class OperationalReportsController : ControllerBase
         for(int i=0;i<h1.Length;i++){ws1.Cell(1,i+1).Value=h1[i];ws1.Cell(1,i+1).Style.Font.Bold=true;ws1.Cell(1,i+1).Style.Fill.BackgroundColor=XLColor.FromHtml("#1b5e20");ws1.Cell(1,i+1).Style.Font.FontColor=XLColor.White;}
         int r=2;
         foreach(var row in rows){ws1.Cell(r,1).Value=row.NameAr;ws1.Cell(r,2).Value=row.SKU;ws1.Cell(r,3).Value=row.CategoryName;ws1.Cell(r,4).Value=row.Price;ws1.Cell(r,5).Value=row.Price;ws1.Cell(r,6).Value=row.TotalStock;ws1.Cell(r,7).Value=row.TotalValue;ws1.Cell(r,4).Style.NumberFormat.Format="#,##0.00";ws1.Cell(r,5).Style.NumberFormat.Format="#,##0.00";ws1.Cell(r,7).Style.NumberFormat.Format="#,##0.00";if(row.TotalStock<=5)ws1.Row(r).Style.Fill.BackgroundColor=XLColor.FromHtml("#fff3e0");if(row.TotalStock==0)ws1.Row(r).Style.Fill.BackgroundColor=XLColor.FromHtml("#ffebee");r++;}
+        if (r > 2) ws1.Range(1, 1, r - 1, h1.Length).SetAutoFilter();
         ws1.Columns().AdjustToContents();
 
         var ws2 = wb.Worksheets.Add(_t.Get("Reports.VariantDetailsSheet"));
@@ -1877,6 +1880,7 @@ public class OperationalReportsController : ControllerBase
         for(int i=0;i<h2.Length;i++){ws2.Cell(1,i+1).Value=h2[i];ws2.Cell(1,i+1).Style.Font.Bold=true;}
         int r2=2;
         foreach(var p in rows)foreach(var v in p.Variants){ws2.Cell(r2,1).Value=p.NameAr;ws2.Cell(r2,2).Value=p.SKU;ws2.Cell(r2,3).Value=v.Size;ws2.Cell(r2,4).Value=v.Color;ws2.Cell(r2,5).Value=v.StockQuantity;ws2.Cell(r2,6).Value=v.Price;ws2.Cell(r2,7).Value=v.Value;ws2.Cell(r2,6).Style.NumberFormat.Format="#,##0.00";ws2.Cell(r2,7).Style.NumberFormat.Format="#,##0.00";r2++;}
+        if (r2 > 2) ws2.Range(1, 1, r2 - 1, h2.Length).SetAutoFilter();
         ws2.Columns().AdjustToContents();
 
         return ExcelResult(wb, $"inventory_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
@@ -1943,6 +1947,7 @@ public class OperationalReportsController : ControllerBase
                 r++;
             }
         }
+        if (r > 3) ws.Range(2, 1, r - 1, h.Length).SetAutoFilter();
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"detailed_sales_{from:yyyyMMdd}_{to:yyyyMMdd}.xlsx");
     }
@@ -1999,6 +2004,7 @@ public class OperationalReportsController : ControllerBase
                 r++;
             }
         }
+        if (r > 2) ws.Range(1, 1, r - 1, h.Length).SetAutoFilter();
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"detailed_purchases_{from:yyyyMMdd}_{to:yyyyMMdd}.xlsx");
     }
@@ -2156,6 +2162,7 @@ public class OperationalReportsController : ControllerBase
             if (col == 10) cell.Style.NumberFormat.Format = "#,##0.00";
         }
         ws.Row(r).Height = 22;
+        if (r > 3) ws.Range(2, 1, r - 1, h.Length).SetAutoFilter();
 
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"detailed_returns_{from:yyyyMMdd}.xlsx");
@@ -2264,6 +2271,7 @@ public class OperationalReportsController : ControllerBase
             r++; // Space between cashiers
         }
 
+        if (r > 3) ws.Range(2, 1, r - 1, h.Length).SetAutoFilter();
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"cashier_performance_{from:yyyyMMdd}.xlsx");
     }
@@ -2304,6 +2312,7 @@ public class OperationalReportsController : ControllerBase
             r++;
         }
 
+        if (r > 4) ws.Range(3, 1, r - 1, h.Length).SetAutoFilter();
         ws.Columns().AdjustToContents();
         var fileName = p != null ? $"product_{p.SKU}_{from:yyyyMMdd}.xlsx" : $"all_products_movement_{from:yyyyMMdd}.xlsx";
         return ExcelResult(wb, fileName);
@@ -2401,7 +2410,8 @@ public class OperationalReportsController : ControllerBase
     public async Task<IActionResult> DailyReport(
         [FromQuery] DateTime?    fromDate   = null,
         [FromQuery] DateTime?    toDate     = null,
-        [FromQuery] OrderSource? source     = null)
+        [FromQuery] OrderSource? source     = null,
+        [FromQuery] bool         excel      = false)
     {
         var now = TimeHelper.GetEgyptTime();
         var from = (fromDate ?? now).Date.AddHours(2);
@@ -2434,16 +2444,16 @@ public class OperationalReportsController : ControllerBase
 
         var orders = await salesQuery.OrderByDescending(o => o.CreatedAt).ToListAsync();
 
-        var salesRows = orders.Select(o => new {
+        var salesRows = orders.Select(o => new DailyReportSale(
             o.Id,
             o.OrderNumber,
-            Date = o.CreatedAt,
-            CustomerName = o.Customer != null ? o.Customer.FullName : "Walk-in",
-            Source = o.Source.ToString(),
-            PaymentMethod = o.PaymentMethod.ToString(),
+            o.CreatedAt,
+            o.Customer != null ? o.Customer.FullName : "Walk-in",
+            o.Source.ToString(),
+            o.PaymentMethod.ToString(),
             o.TotalAmount,
             o.PaidAmount
-        }).ToList();
+        )).ToList();
 
         var totalSalesAmount = salesRows.Sum(s => s.TotalAmount);
 
@@ -2544,7 +2554,7 @@ public class OperationalReportsController : ControllerBase
         var vatOutputAccId = maps.GetValueOrDefault("vatoutputaccountid");
 
         decimal returnCash = 0, returnCard = 0, returnVoda = 0, returnInsta = 0;
-        var returnsRows = new List<dynamic>();
+        var returnsRows = new List<DailyReportReturn>();
 
         foreach (var j in returnsData)
         {
@@ -2579,16 +2589,16 @@ public class OperationalReportsController : ControllerBase
                 returnCash += amt;
             }
 
-            returnsRows.Add(new {
-                Reference = j.Reference ?? j.EntryNumber,
-                Date = j.EntryDate,
-                CustomerName = j.Order != null && j.Order.Customer != null ? j.Order.Customer.FullName : "Walk-in",
-                Amount = amt,
-                Description = j.Description ?? "مرتجع مبيعات"
-            });
+            returnsRows.Add(new DailyReportReturn(
+                j.Reference ?? j.EntryNumber,
+                j.EntryDate,
+                j.Order != null && j.Order.Customer != null ? j.Order.Customer.FullName : "Walk-in",
+                amt,
+                j.Description ?? "مرتجع مبيعات"
+            ));
         }
 
-        var totalReturnsAmount = returnsRows.Sum(r => (decimal)r.Amount);
+        var totalReturnsAmount = returnsRows.Sum(r => r.Amount);
 
         // 3. Collections Details (Receipt Vouchers)
         var receiptsQuery = _db.ReceiptVouchers.AsNoTracking()
@@ -2604,7 +2614,7 @@ public class OperationalReportsController : ControllerBase
         var receiptsData = await receiptsQuery.OrderByDescending(r => r.VoucherDate).ToListAsync();
 
         decimal receiptCash = 0, receiptCard = 0, receiptVoda = 0, receiptInsta = 0;
-        var receiptsRows = new List<dynamic>();
+        var receiptsRows = new List<DailyReportCollection>();
 
         foreach (var r in receiptsData)
         {
@@ -2615,18 +2625,18 @@ public class OperationalReportsController : ControllerBase
             else if (r.PaymentMethod == VoucherPaymentMethod.Vodafone) { receiptVoda += amt; methodLabel = "Vodafone Cash"; }
             else if (r.PaymentMethod == VoucherPaymentMethod.InstaPay) { receiptInsta += amt; methodLabel = "InstaPay"; }
 
-            receiptsRows.Add(new {
+            receiptsRows.Add(new DailyReportCollection(
                 r.VoucherNumber,
-                Date = r.VoucherDate,
-                CustomerName = r.Customer != null ? r.Customer.FullName : (r.FromAccount != null ? r.FromAccount.NameAr : "Walk-in"),
-                Amount = amt,
-                PaymentMethod = methodLabel,
+                r.VoucherDate,
+                r.Customer != null ? r.Customer.FullName : (r.FromAccount != null ? r.FromAccount.NameAr : "Walk-in"),
+                amt,
+                methodLabel,
                 r.Reference,
-                Description = r.Description ?? "سند قبض / تحصيل عميل"
-            });
+                r.Description ?? "سند قبض / تحصيل عميل"
+            ));
         }
 
-        var totalReceiptsAmount = receiptsRows.Sum(r => (decimal)r.Amount);
+        var totalReceiptsAmount = receiptsRows.Sum(r => r.Amount);
         var totalCollectionsAmount = totalReceiptsAmount + (orderCash + orderCard + orderVoda + orderInsta);
 
         // 4. Settlements Details (Supplier Payments)
@@ -2642,7 +2652,7 @@ public class OperationalReportsController : ControllerBase
         var settlementsData = await settlementsQuery.OrderByDescending(pv => pv.VoucherDate).ToListAsync();
 
         decimal settlementCash = 0, settlementCard = 0, settlementVoda = 0, settlementInsta = 0;
-        var settlementsRows = new List<dynamic>();
+        var settlementsRows = new List<DailyReportSettlement>();
 
         foreach (var pv in settlementsData)
         {
@@ -2653,18 +2663,18 @@ public class OperationalReportsController : ControllerBase
             else if (pv.PaymentMethod == VoucherPaymentMethod.Vodafone) { settlementVoda += amt; methodLabel = "Vodafone Cash"; }
             else if (pv.PaymentMethod == VoucherPaymentMethod.InstaPay) { settlementInsta += amt; methodLabel = "InstaPay"; }
 
-            settlementsRows.Add(new {
+            settlementsRows.Add(new DailyReportSettlement(
                 pv.VoucherNumber,
-                Date = pv.VoucherDate,
-                SupplierName = pv.Supplier != null ? pv.Supplier.Name : "N/A",
-                Amount = amt,
-                PaymentMethod = methodLabel,
+                pv.VoucherDate,
+                pv.Supplier != null ? pv.Supplier.Name : "N/A",
+                amt,
+                methodLabel,
                 pv.Reference,
-                Description = pv.Description ?? "سداد مورد"
-            });
+                pv.Description ?? "سداد مورد"
+            ));
         }
 
-        var totalSettlementsAmount = settlementsRows.Sum(s => (decimal)s.Amount);
+        var totalSettlementsAmount = settlementsRows.Sum(s => s.Amount);
 
         // 5. Expenses Details
         var expensesQuery = _db.PaymentVouchers.AsNoTracking()
@@ -2679,7 +2689,7 @@ public class OperationalReportsController : ControllerBase
         var expensesData = await expensesQuery.OrderByDescending(pv => pv.VoucherDate).ToListAsync();
 
         decimal expenseCash = 0, expenseCard = 0, expenseVoda = 0, expenseInsta = 0;
-        var expensesRows = new List<dynamic>();
+        var expensesRows = new List<DailyReportExpense>();
 
         foreach (var pv in expensesData)
         {
@@ -2690,78 +2700,78 @@ public class OperationalReportsController : ControllerBase
             else if (pv.PaymentMethod == VoucherPaymentMethod.Vodafone) { expenseVoda += amt; methodLabel = "Vodafone Cash"; }
             else if (pv.PaymentMethod == VoucherPaymentMethod.InstaPay) { expenseInsta += amt; methodLabel = "InstaPay"; }
 
-            expensesRows.Add(new {
+            expensesRows.Add(new DailyReportExpense(
                 pv.VoucherNumber,
-                Date = pv.VoucherDate,
-                Amount = amt,
-                ExpenseCategory = pv.ToAccount != null ? pv.ToAccount.NameAr : "مصروفات عامة",
-                PaymentMethod = methodLabel,
+                pv.VoucherDate,
+                amt,
+                pv.ToAccount != null ? pv.ToAccount.NameAr : "مصروفات عامة",
+                methodLabel,
                 pv.Reference,
-                Description = pv.Description ?? "سند صرف مصروفات"
-            });
+                pv.Description ?? "سند صرف مصروفات"
+            ));
         }
 
-        var totalExpensesAmount = expensesRows.Sum(e => (decimal)e.Amount);
+        var totalExpensesAmount = expensesRows.Sum(e => e.Amount);
 
         // Show only receipt vouchers in collections details to avoid duplication with sales
         var allCollectionsRows = receiptsRows;
 
         // 6. Payment Methods Reconciliation
-        var paymentMethodsSummary = new[]
+        var paymentMethodsSummary = new List<DailyReportPaymentMethod>
         {
-            new {
-                Key = "Cash",
-                NameAr = "نقدي",
-                NameEn = "Cash",
-                Inflow = orderCash + receiptCash,
-                Outflow = returnCash + settlementCash + expenseCash,
-                Net = (orderCash + receiptCash) - (returnCash + settlementCash + expenseCash)
-            },
-            new {
-                Key = "Card",
-                NameAr = "فيزا / بنك",
-                NameEn = "Card/Bank",
-                Inflow = orderCard + receiptCard,
-                Outflow = returnCard + settlementCard + expenseCard,
-                Net = (orderCard + receiptCard) - (returnCard + settlementCard + expenseCard)
-            },
-            new {
-                Key = "Vodafone",
-                NameAr = "فودافون كاش",
-                NameEn = "Vodafone Cash",
-                Inflow = orderVoda + receiptVoda,
-                Outflow = returnVoda + settlementVoda + expenseVoda,
-                Net = (orderVoda + receiptVoda) - (returnVoda + settlementVoda + expenseVoda)
-            },
-            new {
-                Key = "InstaPay",
-                NameAr = "إنستاباي",
-                NameEn = "InstaPay",
-                Inflow = orderInsta + receiptInsta,
-                Outflow = returnInsta + settlementInsta + expenseInsta,
-                Net = (orderInsta + receiptInsta) - (returnInsta + settlementInsta + expenseInsta)
-            },
-            new {
-                Key = "Credit",
-                NameAr = "آجل / دين",
-                NameEn = "Credit / Deferred",
+            new DailyReportPaymentMethod(
+                "Cash",
+                "نقدي",
+                "Cash",
+                orderCash + receiptCash,
+                returnCash + settlementCash + expenseCash,
+                (orderCash + receiptCash) - (returnCash + settlementCash + expenseCash)
+            ),
+            new DailyReportPaymentMethod(
+                "Card",
+                "فيزا / بنك",
+                "Card/Bank",
+                orderCard + receiptCard,
+                returnCard + settlementCard + expenseCard,
+                (orderCard + receiptCard) - (returnCard + settlementCard + expenseCard)
+            ),
+            new DailyReportPaymentMethod(
+                "Vodafone",
+                "فودافون كاش",
+                "Vodafone Cash",
+                orderVoda + receiptVoda,
+                returnVoda + settlementVoda + expenseVoda,
+                (orderVoda + receiptVoda) - (returnVoda + settlementVoda + expenseVoda)
+            ),
+            new DailyReportPaymentMethod(
+                "InstaPay",
+                "إنستاباي",
+                "InstaPay",
+                orderInsta + receiptInsta,
+                returnInsta + settlementInsta + expenseInsta,
+                (orderInsta + receiptInsta) - (returnInsta + settlementInsta + expenseInsta)
+            ),
+            new DailyReportPaymentMethod(
+                "Credit",
+                "آجل / دين",
+                "Credit / Deferred",
                 // Inflow = مبيعات على الآجل (amount not yet collected from customers)
-                Inflow = orderCredit,
+                orderCredit,
                 // Outflow = 0 (تُحسب عند السداد كتحصيل)
-                Outflow = 0m,
-                Net = orderCredit
-            }
+                0m,
+                orderCredit
+            )
         };
 
-        var summary = new {
-            totalSales = totalSalesAmount,
-            totalReturns = totalReturnsAmount,
-            totalCollections = totalCollectionsAmount,
-            totalSettlements = totalSettlementsAmount,
-            totalExpenses = totalExpensesAmount,
-            totalCredit = orderCredit,
-            netCashflow = totalCollectionsAmount - totalSettlementsAmount - totalExpensesAmount - totalReturnsAmount
-        };
+        var summary = new DailyReportSummary(
+            totalSalesAmount,
+            totalReturnsAmount,
+            totalCollectionsAmount,
+            totalSettlementsAmount,
+            totalExpensesAmount,
+            orderCredit,
+            totalCollectionsAmount - totalSettlementsAmount - totalExpensesAmount - totalReturnsAmount
+        );
 
         var result = new {
             from,
@@ -2775,7 +2785,320 @@ public class OperationalReportsController : ControllerBase
             expenses = expensesRows
         };
 
+        if (excel)
+        {
+            return ExcelDailyReport(
+                summary,
+                paymentMethodsSummary,
+                salesRows,
+                returnsRows,
+                allCollectionsRows,
+                settlementsRows,
+                expensesRows,
+                from, to);
+        }
+
         return Ok(result);
+    }
+
+    private IActionResult ExcelDailyReport(
+        DailyReportSummary summary,
+        IEnumerable<DailyReportPaymentMethod> paymentMethods,
+        IEnumerable<DailyReportSale> sales,
+        IEnumerable<DailyReportReturn> returns,
+        IEnumerable<DailyReportCollection> collections,
+        IEnumerable<DailyReportSettlement> settlements,
+        IEnumerable<DailyReportExpense> expenses,
+        DateTime from, DateTime to)
+    {
+        using var wb = new XLWorkbook();
+
+        // ── Sheet 1: الملخص اليومي (Daily Summary) ───────────────────
+        var wsSum = wb.Worksheets.Add("الملخص اليومي");
+        wsSum.RightToLeft = true;
+
+        // Title
+        wsSum.Cell(1, 1).Value = $"التقرير اليومي الشامل — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        wsSum.Cell(1, 1).Style.Font.Bold = true;
+        wsSum.Cell(1, 1).Style.Font.FontSize = 13;
+        wsSum.Range(1, 1, 1, 4).Merge();
+
+        // Section 1: المؤشرات المالية (Financial Metrics)
+        wsSum.Cell(3, 1).Value = "المؤشر المالي";
+        wsSum.Cell(3, 2).Value = "القيمة";
+        wsSum.Range(3, 1, 3, 2).Style.Font.Bold = true;
+        wsSum.Range(3, 1, 3, 2).Style.Fill.BackgroundColor = XLColor.FromHtml("#1a237e");
+        wsSum.Range(3, 1, 3, 2).Style.Font.FontColor = XLColor.White;
+
+        var metrics = new (string Name, decimal Value)[]
+        {
+            ("إجمالي المبيعات",      (decimal)summary.totalSales),
+            ("إجمالي المرتجعات",     (decimal)summary.totalReturns),
+            ("إجمالي المقبوضات والتحصيلات", (decimal)summary.totalCollections),
+            ("إجمالي المدفوعات للموردين",  (decimal)summary.totalSettlements),
+            ("إجمالي المصروفات",     (decimal)summary.totalExpenses),
+            ("إجمالي المبيعات الآجلة", (decimal)summary.totalCredit),
+            ("صافي التدفق النقدي",   (decimal)summary.netCashflow)
+        };
+
+        int r = 4;
+        foreach (var m in metrics)
+        {
+            wsSum.Cell(r, 1).Value = m.Name;
+            wsSum.Cell(r, 2).Value = m.Value;
+            wsSum.Cell(r, 2).Style.NumberFormat.Format = "#,##0.00";
+            if (m.Name.Contains("صافي") || m.Name.Contains("إجمالي"))
+            {
+                wsSum.Cell(r, 1).Style.Font.Bold = true;
+                wsSum.Cell(r, 2).Style.Font.Bold = true;
+            }
+            wsSum.Cell(r, 1).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            wsSum.Cell(r, 2).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            wsSum.Cell(r, 1).Style.Border.OutsideBorderColor = XLColor.FromHtml("#cfd8dc");
+            wsSum.Cell(r, 2).Style.Border.OutsideBorderColor = XLColor.FromHtml("#cfd8dc");
+            r++;
+        }
+
+        // Section 2: تسوية طرق الدفع (Payment Methods)
+        r += 2;
+        wsSum.Cell(r, 1).Value = "تسوية طرق الدفع";
+        wsSum.Cell(r, 1).Style.Font.Bold = true;
+        wsSum.Cell(r, 1).Style.Font.FontSize = 11;
+        wsSum.Range(r, 1, r, 4).Merge();
+        r++;
+
+        string[] pmHeaders = { "طريقة الدفع", "المقبوضات (الداخل)", "المدفوعات (الخارج)", "الصافي" };
+        for (int i = 0; i < pmHeaders.Length; i++)
+        {
+            var cell = wsSum.Cell(r, i + 1);
+            cell.Value = pmHeaders[i];
+            cell.Style.Font.Bold = true;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#37474f");
+            cell.Style.Font.FontColor = XLColor.White;
+        }
+        r++;
+
+        foreach (var pm in paymentMethods)
+        {
+            wsSum.Cell(r, 1).Value = pm.NameAr;
+            wsSum.Cell(r, 2).Value = pm.Inflow;
+            wsSum.Cell(r, 3).Value = pm.Outflow;
+            wsSum.Cell(r, 4).Value = pm.Net;
+
+            for (int col = 2; col <= 4; col++)
+            {
+                wsSum.Cell(r, col).Style.NumberFormat.Format = "#,##0.00";
+            }
+
+            for (int col = 1; col <= 4; col++)
+            {
+                wsSum.Cell(r, col).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                wsSum.Cell(r, col).Style.Border.OutsideBorderColor = XLColor.FromHtml("#cfd8dc");
+            }
+            r++;
+        }
+        wsSum.Columns().AdjustToContents();
+
+        // ── Sheet 2: تفاصيل المبيعات (Sales Details) ──────────────────
+        var wsSales = wb.Worksheets.Add("تفاصيل المبيعات");
+        wsSales.RightToLeft = true;
+        wsSales.Cell(1, 1).Value = "تفاصيل المبيعات اليومية";
+        wsSales.Cell(1, 1).Style.Font.Bold = true;
+        wsSales.Cell(1, 1).Style.Font.FontSize = 12;
+
+        string[] salesH = { "رقم الطلب", "التاريخ", "العميل", "القناة", "طريقة الدفع", "إجمالي الطلب", "المدفوع" };
+        for (int i = 0; i < salesH.Length; i++)
+        {
+            var cell = wsSales.Cell(3, i + 1);
+            cell.Value = salesH[i];
+            cell.Style.Font.Bold = true;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1a237e");
+            cell.Style.Font.FontColor = XLColor.White;
+        }
+
+        int sr = 4;
+        foreach (var s in sales)
+        {
+            wsSales.Cell(sr, 1).Value = s.OrderNumber;
+            wsSales.Cell(sr, 2).Value = s.Date.ToString("yyyy-MM-dd HH:mm");
+            wsSales.Cell(sr, 3).Value = s.CustomerName;
+            wsSales.Cell(sr, 4).Value = s.Source;
+            wsSales.Cell(sr, 5).Value = s.PaymentMethod;
+            wsSales.Cell(sr, 6).Value = s.TotalAmount;
+            wsSales.Cell(sr, 7).Value = s.PaidAmount;
+
+            wsSales.Cell(sr, 6).Style.NumberFormat.Format = "#,##0.00";
+            wsSales.Cell(sr, 7).Style.NumberFormat.Format = "#,##0.00";
+
+            for (int col = 1; col <= 7; col++)
+            {
+                wsSales.Cell(sr, col).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                wsSales.Cell(sr, col).Style.Border.OutsideBorderColor = XLColor.FromHtml("#cfd8dc");
+            }
+            sr++;
+        }
+        if (sr > 4) wsSales.Range(3, 1, sr - 1, salesH.Length).SetAutoFilter();
+        wsSales.Columns().AdjustToContents();
+
+        // ── Sheet 3: تفاصيل المرتجعات (Returns Details) ────────────────
+        var wsReturns = wb.Worksheets.Add("تفاصيل المرتجعات");
+        wsReturns.RightToLeft = true;
+        wsReturns.Cell(1, 1).Value = "تفاصيل مرتجعات المبيعات اليومية";
+        wsReturns.Cell(1, 1).Style.Font.Bold = true;
+        wsReturns.Cell(1, 1).Style.Font.FontSize = 12;
+
+        string[] returnsH = { "المرجع", "التاريخ", "العميل", "القيمة", "البيان / السبب" };
+        for (int i = 0; i < returnsH.Length; i++)
+        {
+            var cell = wsReturns.Cell(3, i + 1);
+            cell.Value = returnsH[i];
+            cell.Style.Font.Bold = true;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#c62828");
+            cell.Style.Font.FontColor = XLColor.White;
+        }
+
+        int rr = 4;
+        foreach (var ret in returns)
+        {
+            wsReturns.Cell(rr, 1).Value = ret.Reference;
+            wsReturns.Cell(rr, 2).Value = ret.Date.ToString("yyyy-MM-dd HH:mm");
+            wsReturns.Cell(rr, 3).Value = ret.CustomerName;
+            wsReturns.Cell(rr, 4).Value = ret.Amount;
+            wsReturns.Cell(rr, 5).Value = GetCleanReason(ret.Description);
+
+            wsReturns.Cell(rr, 4).Style.NumberFormat.Format = "#,##0.00";
+
+            for (int col = 1; col <= 5; col++)
+            {
+                wsReturns.Cell(rr, col).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                wsReturns.Cell(rr, col).Style.Border.OutsideBorderColor = XLColor.FromHtml("#cfd8dc");
+            }
+            rr++;
+        }
+        if (rr > 4) wsReturns.Range(3, 1, rr - 1, returnsH.Length).SetAutoFilter();
+        wsReturns.Columns().AdjustToContents();
+
+        // ── Sheet 4: تفاصيل التحصيلات (Collections Details) ──────────────
+        var wsColl = wb.Worksheets.Add("تفاصيل التحصيلات");
+        wsColl.RightToLeft = true;
+        wsColl.Cell(1, 1).Value = "تفاصيل المقبوضات والتحصيلات اليومية";
+        wsColl.Cell(1, 1).Style.Font.Bold = true;
+        wsColl.Cell(1, 1).Style.Font.FontSize = 12;
+
+        string[] collH = { "رقم السند / الطلب", "التاريخ", "العميل / الحساب", "القيمة", "طريقة التحصيل", "المرجع", "البيان" };
+        for (int i = 0; i < collH.Length; i++)
+        {
+            var cell = wsColl.Cell(3, i + 1);
+            cell.Value = collH[i];
+            cell.Style.Font.Bold = true;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1b5e20");
+            cell.Style.Font.FontColor = XLColor.White;
+        }
+
+        int cr = 4;
+        foreach (var c in collections)
+        {
+            wsColl.Cell(cr, 1).Value = c.VoucherNumber;
+            wsColl.Cell(cr, 2).Value = c.Date.ToString("yyyy-MM-dd HH:mm");
+            wsColl.Cell(cr, 3).Value = c.CustomerName;
+            wsColl.Cell(cr, 4).Value = c.Amount;
+            wsColl.Cell(cr, 5).Value = c.PaymentMethod;
+            wsColl.Cell(cr, 6).Value = c.Reference;
+            wsColl.Cell(cr, 7).Value = c.Description;
+
+            wsColl.Cell(cr, 4).Style.NumberFormat.Format = "#,##0.00";
+
+            for (int col = 1; col <= 7; col++)
+            {
+                wsColl.Cell(cr, col).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                wsColl.Cell(cr, col).Style.Border.OutsideBorderColor = XLColor.FromHtml("#cfd8dc");
+            }
+            cr++;
+        }
+        if (cr > 4) wsColl.Range(3, 1, cr - 1, collH.Length).SetAutoFilter();
+        wsColl.Columns().AdjustToContents();
+
+        // ── Sheet 5: سداد الموردين (Settlements Details) ─────────────────
+        var wsSett = wb.Worksheets.Add("سداد الموردين");
+        wsSett.RightToLeft = true;
+        wsSett.Cell(1, 1).Value = "تفاصيل مدفوعات الموردين اليومية";
+        wsSett.Cell(1, 1).Style.Font.Bold = true;
+        wsSett.Cell(1, 1).Style.Font.FontSize = 12;
+
+        string[] settH = { "رقم السند", "التاريخ", "المورد", "القيمة", "طريقة الدفع", "المرجع", "البيان" };
+        for (int i = 0; i < settH.Length; i++)
+        {
+            var cell = wsSett.Cell(3, i + 1);
+            cell.Value = settH[i];
+            cell.Style.Font.Bold = true;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#b71c1c");
+            cell.Style.Font.FontColor = XLColor.White;
+        }
+
+        int srow = 4;
+        foreach (var s in settlements)
+        {
+            wsSett.Cell(srow, 1).Value = s.VoucherNumber;
+            wsSett.Cell(srow, 2).Value = s.Date.ToString("yyyy-MM-dd HH:mm");
+            wsSett.Cell(srow, 3).Value = s.SupplierName;
+            wsSett.Cell(srow, 4).Value = s.Amount;
+            wsSett.Cell(srow, 5).Value = s.PaymentMethod;
+            wsSett.Cell(srow, 6).Value = s.Reference;
+            wsSett.Cell(srow, 7).Value = s.Description;
+
+            wsSett.Cell(srow, 4).Style.NumberFormat.Format = "#,##0.00";
+
+            for (int col = 1; col <= 7; col++)
+            {
+                wsSett.Cell(srow, col).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                wsSett.Cell(srow, col).Style.Border.OutsideBorderColor = XLColor.FromHtml("#cfd8dc");
+            }
+            srow++;
+        }
+        if (srow > 4) wsSett.Range(3, 1, srow - 1, settH.Length).SetAutoFilter();
+        wsSett.Columns().AdjustToContents();
+
+        // ── Sheet 6: تفاصيل المصروفات (Expenses Details) ─────────────────
+        var wsExp = wb.Worksheets.Add("تفاصيل المصروفات");
+        wsExp.RightToLeft = true;
+        wsExp.Cell(1, 1).Value = "تفاصيل سندات صرف المصروفات اليومية";
+        wsExp.Cell(1, 1).Style.Font.Bold = true;
+        wsExp.Cell(1, 1).Style.Font.FontSize = 12;
+
+        string[] expH = { "رقم السند", "التاريخ", "بند المصروف", "القيمة", "طريقة الدفع", "المرجع", "البيان" };
+        for (int i = 0; i < expH.Length; i++)
+        {
+            var cell = wsExp.Cell(3, i + 1);
+            cell.Value = expH[i];
+            cell.Style.Font.Bold = true;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#4a148c");
+            cell.Style.Font.FontColor = XLColor.White;
+        }
+
+        int er = 4;
+        foreach (var e in expenses)
+        {
+            wsExp.Cell(er, 1).Value = e.VoucherNumber;
+            wsExp.Cell(er, 2).Value = e.Date.ToString("yyyy-MM-dd HH:mm");
+            wsExp.Cell(er, 3).Value = e.ExpenseCategory;
+            wsExp.Cell(er, 4).Value = e.Amount;
+            wsExp.Cell(er, 5).Value = e.PaymentMethod;
+            wsExp.Cell(er, 6).Value = e.Reference;
+            wsExp.Cell(er, 7).Value = e.Description;
+
+            wsExp.Cell(er, 4).Style.NumberFormat.Format = "#,##0.00";
+
+            for (int col = 1; col <= 7; col++)
+            {
+                wsExp.Cell(er, col).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                wsExp.Cell(er, col).Style.Border.OutsideBorderColor = XLColor.FromHtml("#cfd8dc");
+            }
+            er++;
+        }
+        if (er > 4) wsExp.Range(3, 1, er - 1, expH.Length).SetAutoFilter();
+        wsExp.Columns().AdjustToContents();
+
+        return ExcelResult(wb, $"daily_report_{from:yyyyMMdd}_{to:yyyyMMdd}.xlsx");
     }
 
     // ══════════════════════════════════════════════════════
@@ -2954,6 +3277,7 @@ public class OperationalReportsController : ControllerBase
         }
         ws.Row(r).Style.Fill.BackgroundColor = XLColor.FromHtml("#e8f5e9");
 
+        if (r > 3) ws.Range(2, 1, r - 1, h.Length).SetAutoFilter();
         ws.Columns().AdjustToContents();
 
         // --- Sheet 2: الملخص التنفيذي ----------------------------
@@ -3016,4 +3340,14 @@ public record ReturnRow(string Reference, DateTime Date, string Name, string Pho
 public record ReportItemDto(string SKU, string ProductName, string Size, string Color, decimal Quantity, decimal UnitPrice = 0, decimal UnitCost = 0, decimal Discount = 0, decimal LineTotal = 0);
 public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal GrossSales, decimal TotalReturns, decimal TotalDiscount, decimal NetSales, int Cancellations);
 public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "", int Balance = 0, int? SourceId = null, string Size = "", string Color = "");
+
+// Daily Report DTOs
+public record DailyReportSummary(decimal totalSales, decimal totalReturns, decimal totalCollections, decimal totalSettlements, decimal totalExpenses, decimal totalCredit, decimal netCashflow);
+public record DailyReportPaymentMethod(string Key, string NameAr, string NameEn, decimal Inflow, decimal Outflow, decimal Net);
+public record DailyReportSale(int Id, string OrderNumber, DateTime Date, string CustomerName, string Source, string PaymentMethod, decimal TotalAmount, decimal PaidAmount);
+public record DailyReportReturn(string Reference, DateTime Date, string CustomerName, decimal Amount, string Description);
+public record DailyReportCollection(string VoucherNumber, DateTime Date, string CustomerName, decimal Amount, string PaymentMethod, string? Reference, string Description);
+public record DailyReportSettlement(string VoucherNumber, DateTime Date, string SupplierName, decimal Amount, string PaymentMethod, string? Reference, string Description);
+public record DailyReportExpense(string VoucherNumber, DateTime Date, decimal Amount, string ExpenseCategory, string PaymentMethod, string? Reference, string Description);
+
 

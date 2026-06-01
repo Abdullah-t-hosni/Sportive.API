@@ -1046,6 +1046,7 @@ public class FinancialReportsController : ControllerBase
             ws.Cell(r,9).Style.NumberFormat.Format = "General";
             r++;
         }
+        if (r > 2) ws.Range(1, 1, r - 1, hdrs.Length).SetAutoFilter();
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"ledger_{from:yyyyMMdd}_{to:yyyyMMdd}.xlsx");
     }
@@ -1088,6 +1089,7 @@ public class FinancialReportsController : ControllerBase
         ws.Cell(r, 6).Value = rows.Sum(x => x.Credit); ws.Cell(r, 6).Style.Font.Bold = true;
         ws.Cell(r, 5).Style.NumberFormat.Format = "#,##0.00";
         ws.Cell(r, 6).Style.NumberFormat.Format = "#,##0.00";
+        if (r > 4) ws.Range(3, 1, r - 1, hdrs.Length).SetAutoFilter();
 
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"account_statement_{acct.Code}_{from:yyyyMMdd}.xlsx");
@@ -1181,6 +1183,7 @@ public class FinancialReportsController : ControllerBase
         ws.Cell(r,5).Style.NumberFormat.Format = "General";
         ws.Cell(r,6).Style.NumberFormat.Format = "General";
         ws.Cell(r,7).Style.NumberFormat.Format = "General";
+        if (r > 4) ws.Range(3, 1, r - 1, hdrs.Length).SetAutoFilter();
 
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"employee_statement_{emp.EmployeeNumber}_{from:yyyyMMdd}.xlsx");

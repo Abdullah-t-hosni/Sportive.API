@@ -382,6 +382,7 @@ public class ProfitabilityController : ControllerBase
             if (col < 15) ws.Cell(r, col).Style.NumberFormat.Format = "#,##0.00";
         }
         ws.Row(r).Style.Fill.BackgroundColor = XLColor.FromHtml("#e8f5e9");
+        if (r > 3) ws.Range(2, 1, r - 1, h.Length).SetAutoFilter();
 
         ws.Columns().AdjustToContents();
 
