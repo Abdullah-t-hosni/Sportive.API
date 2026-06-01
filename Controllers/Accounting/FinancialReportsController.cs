@@ -1415,13 +1415,28 @@ public class FinancialReportsController : ControllerBase
                     }
                     else
                     {
-                        returnedSalesVat14Net += netAmount;
+                        // If there are no active 14% sales in the period, classify returns as Zero-rated (0%)
+                        if (salesVat14Net == 0)
+                        {
+                            returnedSalesZeroNet += netAmount;
+                        }
+                        else
+                        {
+                            returnedSalesVat14Net += netAmount;
+                        }
                     }
                 }
                 else
                 {
-                    // Fallback
-                    returnedSalesVat14Net += netAmount;
+                    // Fallback: If there are no active 14% sales in the period, direct returns / unmapped returns go to Zero-rated (0%)
+                    if (salesVat14Net == 0)
+                    {
+                        returnedSalesZeroNet += netAmount;
+                    }
+                    else
+                    {
+                        returnedSalesVat14Net += netAmount;
+                    }
                 }
             }
         }

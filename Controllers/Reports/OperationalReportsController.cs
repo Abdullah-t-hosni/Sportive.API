@@ -1229,7 +1229,11 @@ public class OperationalReportsController : ControllerBase
                     .OrderByDescending(h => h.CreatedAt)
                     .Select(h => h.Note)
                     .FirstOrDefault() ?? j.Description : j.Description,
-                CreatedByUserId = j.CreatedByUserId,
+                CreatedByUserId = j.Order != null ? j.Order.StatusHistory
+                    .Where(h => (int)h.Status == (int)OrderStatus.PartiallyReturned || (int)h.Status == (int)OrderStatus.Returned)
+                    .OrderByDescending(h => h.CreatedAt)
+                    .Select(h => h.ChangedByUserId)
+                    .FirstOrDefault() ?? j.CreatedByUserId : j.CreatedByUserId,
                 SalesPersonId = j.Order != null ? j.Order.SalesPersonId : null,
                 Items = j.Order != null ? j.Order.Items
                     .Where(i => i.ReturnedQuantity > 0)
