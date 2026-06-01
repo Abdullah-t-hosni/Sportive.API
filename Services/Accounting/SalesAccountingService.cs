@@ -345,8 +345,10 @@ public class SalesAccountingService
         if (cashRefundAmount > 0)
         {
             string cashId;
-            if (order.PaymentMethod == PaymentMethod.CustomerBalance)
+            if (order.PaymentMethod == PaymentMethod.CustomerBalance ||
+                order.PaymentMethod == PaymentMethod.Credit)
             {
+                // For Credit (آجل) orders: refund reduces customer receivables, not cash
                 cashId = receivablesAcct;
             }
             else
