@@ -90,6 +90,7 @@ public class FinancialReportsController : ControllerBase
                 ParentId     = a.ParentId,
                 Level        = a.Level,
                 IsLeaf       = a.IsLeaf,
+                IsActive     = a.IsActive,
                 OpenDebit    = Math.Round((nature == AccountNature.Debit  ? a.OpeningBalance : 0) + openDrMap.GetValueOrDefault(a.Id, 0), 2),
                 OpenCredit   = Math.Round((nature == AccountNature.Credit ? a.OpeningBalance : 0) + openCrMap.GetValueOrDefault(a.Id, 0), 2),
                 PeriodDebit  = Math.Round(periodDrMap.GetValueOrDefault(a.Id, 0), 2),
@@ -210,19 +211,19 @@ public class FinancialReportsController : ControllerBase
         // الإيرادات (طبيعتها دائن ← الرصيد موجب = إيراد)
         // ✅ تصحيح: الدخل يجب أن يعتمد على أرصدة الفترة (PeriodBal) فقط
         var revenues = balances
-            .Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.PeriodBal != 0)
+            .Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && (b.IsActive || b.PeriodBal != 0))
             .OrderBy(b => b.Code)
             .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.PeriodBal)) 
             .ToList();
 
         var expenses = balances
-            .Where(b => b.Type == AccountType.Expense && !b.Code.StartsWith("4") && b.PeriodBal != 0)
+            .Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && !b.Code.StartsWith("4") && (b.IsActive || b.PeriodBal != 0))
             .OrderBy(b => b.Code)
             .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.PeriodBal))
             .ToList();
 
-        var totalRevenues = balances.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.Level == 1).Sum(b => b.PeriodBal);
-        var totalExpenses = balances.Where(b => b.Type == AccountType.Expense && !b.Code.StartsWith("4") && b.Level == 1).Sum(b => b.PeriodBal);
+        var totalRevenues = balances.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.IsLeaf).Sum(b => b.PeriodBal);
+        var totalExpenses = balances.Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && !b.Code.StartsWith("4") && b.IsLeaf).Sum(b => b.PeriodBal);
         var netProfit     = totalRevenues - totalExpenses;
 
         if (excel) return ExcelIncomeStatement(revenues, expenses, totalRevenues, totalExpenses, netProfit, from, to);
@@ -275,8 +276,8 @@ public class FinancialReportsController : ControllerBase
         // صافي الربح للفترة يضاف لحقوق الملكية ونظهره في القائمة للشفافية
         var incomeFrom = from; 
         var incomeBals = await GetBalances(incomeFrom, to, source);
-        var totalRev   = incomeBals.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.Level == 1).Sum(b => b.ClosingBal);
-        var totalExp   = incomeBals.Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && b.Level == 1).Sum(b => b.ClosingBal);
+        var totalRev   = incomeBals.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.IsLeaf).Sum(b => b.ClosingBal);
+        var totalExp   = incomeBals.Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && !b.Code.StartsWith("4") && b.IsLeaf).Sum(b => b.ClosingBal);
         var netProfit  = totalRev - totalExp;
 
         if (netProfit != 0)
@@ -284,9 +285,9 @@ public class FinancialReportsController : ControllerBase
             equity.Add(new BalanceSheetRow("N/P", _t.Get("Reports.NetProfitLoss"), 1, netProfit));
         }
 
-        var totalAssets      = balances.Where(b => b.Type == AccountType.Asset && b.Level == 1).Sum(b => b.ClosingBal);
-        var totalLiabilities = balances.Where(b => b.Type == AccountType.Liability && b.Level == 1).Sum(b => b.ClosingBal);
-        var totalEquity      = balances.Where(b => b.Type == AccountType.Equity && b.Level == 1).Sum(b => b.ClosingBal);
+        var totalAssets      = balances.Where(b => b.Type == AccountType.Asset && b.IsLeaf).Sum(b => b.ClosingBal);
+        var totalLiabilities = balances.Where(b => b.Type == AccountType.Liability && b.IsLeaf).Sum(b => b.ClosingBal);
+        var totalEquity      = balances.Where(b => b.Type == AccountType.Equity && b.IsLeaf).Sum(b => b.ClosingBal);
         var totalLiabEquity  = totalLiabilities + totalEquity + netProfit;
 
         if (excel) return ExcelBalanceSheet(assets, liabilities, equity, netProfit,
@@ -1571,6 +1572,7 @@ internal class AccountBalance
     public int?          ParentId     { get; set; }
     public int           Level        { get; set; }
     public bool          IsLeaf       { get; set; }
+    public bool          IsActive     { get; set; }
     public decimal       OpenDebit    { get; set; }
     public decimal       OpenCredit   { get; set; }
     public decimal       OpenBalance  { get; set; }
