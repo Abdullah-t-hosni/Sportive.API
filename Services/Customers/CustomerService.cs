@@ -19,7 +19,8 @@ public class CustomerService : ICustomerService
         DateTime? joinStartDate = null, DateTime? joinEndDate = null,
         int? categoryId = null, bool? hasDebt = null,
         string? orderBy = null, bool isDescending = true,
-        string? source = null)
+        string? source = null,
+        bool? hasLedgerActivity = null)
     {
         var staffRoleIds = await _db.Roles
             .Where(r => r.Name != null && AppRoles.StaffRoles.Contains(r.Name))
@@ -31,7 +32,15 @@ public class CustomerService : ICustomerService
             .Select(ur => ur.UserId)
             .ToListAsync();
 
-        pageSize = AppConstants.ClampPrecacheSize(pageSize);
+        if (pageSize != 9999)
+        {
+            pageSize = AppConstants.ClampPrecacheSize(pageSize);
+        }
+        else
+        {
+            pageSize = 100000;
+        }
+
         var query = _db.Customers
             .AsNoTracking()
             .Include(c => c.MainAccount)
@@ -55,6 +64,14 @@ public class CustomerService : ICustomerService
 
         if (categoryId.HasValue)
             query = query.Where(c => c.CategoryId == categoryId.Value);
+
+        if (hasLedgerActivity.HasValue && hasLedgerActivity.Value)
+        {
+            query = query.Where(c => 
+                (c.MainAccount != null && c.MainAccount.OpeningBalance != 0) ||
+                _db.JournalLines.Any(l => l.CustomerId == c.Id)
+            );
+        }
 
         if (minSpent.HasValue) 
             query = query.Where(c => c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) >= minSpent.Value);

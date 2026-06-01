@@ -35,8 +35,9 @@ public class CustomersController : ControllerBase
         [FromQuery] bool? hasDebt = null,
         [FromQuery] string? orderBy = null,
         [FromQuery] bool isDescending = true,
-        [FromQuery] string? source = null) =>
-        Ok(await _customers.GetCustomersAsync(page, pageSize, search, minSpent, minOrders, joinStartDate, joinEndDate, categoryId, hasDebt, orderBy, isDescending, source));
+        [FromQuery] string? source = null,
+        [FromQuery] bool? hasLedgerActivity = null) =>
+        Ok(await _customers.GetCustomersAsync(page, pageSize, search, minSpent, minOrders, joinStartDate, joinEndDate, categoryId, hasDebt, orderBy, isDescending, source, hasLedgerActivity));
 
     [RequirePermission(ModuleKeys.Customers + "," + ModuleKeys.Pos + "," + ModuleKeys.Orders)]
     [HttpGet("rfm")]
