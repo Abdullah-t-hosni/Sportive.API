@@ -891,7 +891,7 @@ public class OperationalReportsController : ControllerBase
 
         var totalOrdersCount = await ordersQ.CountAsync();
 
-        var orders = await ordersQ
+        var ordersQuery = ordersQ
             .Select(o => new {
                 o.Id,
                 o.OrderNumber,
@@ -929,10 +929,11 @@ public class OperationalReportsController : ControllerBase
                     .Sum(l => l.Credit),
                 Payments = o.Payments.Select(p => new { p.Method, p.Amount }).ToList()
             })
-            .OrderByDescending(o => o.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
+            .OrderByDescending(o => o.CreatedAt);
+
+        var orders = excel
+            ? await ordersQuery.ToListAsync()
+            : await ordersQuery.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
 
         var salesReturnAccId = maps.GetValueOrDefault(MappingKeys.SalesReturn);
         var returnsQ = _db.JournalLines
@@ -1093,7 +1094,7 @@ public class OperationalReportsController : ControllerBase
                 q = q.Where(i => i.Items.Any(it => it.ProductVariant != null && it.ProductVariant.Size == size));
 
             var totalCount = await q.CountAsync();
-            var invoices = await q
+            var invoicesQuery = q
                 .Select(i => new {
                     i.Id, i.InvoiceNumber, i.SupplierInvoiceNumber, i.InvoiceDate,
                     SupplierName = i.Supplier != null ? i.Supplier.Name : "N/A",
@@ -1118,10 +1119,11 @@ public class OperationalReportsController : ControllerBase
                         .Where(l => l.AccountId == purchaseAccId)
                         .Sum(l => l.Debit)
                 })
-                .OrderByDescending(i => i.InvoiceDate)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
+                .OrderByDescending(i => i.InvoiceDate);
+
+            var invoices = excel
+                ? await invoicesQuery.ToListAsync()
+                : await invoicesQuery.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
 
             var rows = invoices.Select(i => {
                 var itemsTotal = i.Items.Sum(it => it.TotalCost);
@@ -1378,7 +1380,7 @@ public class OperationalReportsController : ControllerBase
         if (!string.IsNullOrEmpty(size))
             q = q.Where(r => r.Items.Any(it => it.ProductVariant != null && it.ProductVariant.Size == size));
 
-        var returns = await q
+        var returnsQuery = q
             .Select(r => new {
                 r.ReturnNumber, r.ReturnDate,
                 SupplierName = r.Supplier != null ? r.Supplier.Name : "N/A",
@@ -1400,10 +1402,11 @@ public class OperationalReportsController : ControllerBase
                         it.Quantity, it.UnitCost, it.TotalCost
                     }).ToList()
             })
-            .OrderByDescending(r => r.ReturnDate)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
+            .OrderByDescending(r => r.ReturnDate);
+
+        var returns = excel
+            ? await returnsQuery.ToListAsync()
+            : await returnsQuery.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
 
         var totalCount = await q.CountAsync();
 
@@ -2005,8 +2008,12 @@ public class OperationalReportsController : ControllerBase
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add(title);
         ws.RightToLeft = true;
+        
         ws.Cell(1,1).Value = _t.Get("Reports.DetailedReturnsTitle", title, from.ToString("yyyy-MM-dd"), to.ToString("yyyy-MM-dd"));
-        ws.Cell(1,1).Style.Font.Bold=true;
+        ws.Cell(1,1).Style.Font.Bold = true;
+        ws.Cell(1,1).Style.Font.FontSize = 13;
+        ws.Cell(1,1).Style.Font.FontColor = XLColor.FromHtml("#c62828");
+        ws.Range(1, 1, 1, 13).Merge();
         
         string[] h = {
             _t.Get("Reports.ReferenceHeader"),
@@ -2027,50 +2034,155 @@ public class OperationalReportsController : ControllerBase
             var cell = ws.Cell(2,i+1);
             cell.Value=h[i];
             cell.Style.Font.Bold=true;
-            cell.Style.Fill.BackgroundColor=XLColor.FromHtml("#c62828");
+            cell.Style.Font.FontSize = 11;
+            cell.Style.Fill.BackgroundColor=XLColor.FromHtml("#37474f"); // Dark Slate Gray
             cell.Style.Font.FontColor=XLColor.White;
+            cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            cell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+            cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            cell.Style.Border.OutsideBorderColor = XLColor.FromHtml("#cfd8dc");
         }
+        ws.Row(2).Height = 25;
 
         int r=3;
+        bool alternateColor = false;
         foreach(var ret in rows)
         {
+            int startRow = r;
             if (ret.Items == null || ret.Items.Count == 0)
             {
                 ws.Cell(r, 1).Value = ret.Reference;
                 ws.Cell(r, 2).Value = ret.Date.ToString("yyyy-MM-dd");
                 ws.Cell(r, 3).Value = ret.Name;
                 ws.Cell(r, 4).Value = ret.Phone;
+                ws.Cell(r, 5).Value = "-";
+                ws.Cell(r, 6).Value = "-";
+                ws.Cell(r, 7).Value = "-";
+                ws.Cell(r, 8).Value = "-";
+                ws.Cell(r, 9).Value = 0;
                 ws.Cell(r, 10).Value = ret.Amount;
-                ws.Cell(r, 11).Value = ret.Reason;
+                ws.Cell(r, 11).Value = GetCleanReason(ret.Reason);
                 ws.Cell(r, 12).Value = ret.CreatorName;
                 ws.Cell(r, 13).Value = ret.ReturnerName;
-                r++;
-                continue;
-            }
 
-            foreach(var item in ret.Items)
+                for (int c = 1; c <= 13; c++)
+                {
+                    var cell = ws.Cell(r, c);
+                    cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                    cell.Style.Border.OutsideBorderColor = XLColor.FromHtml("#cfd8dc");
+                    
+                    if (c == 3 || c == 6 || c == 11 || c == 12 || c == 13)
+                        cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+                    else
+                        cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                    cell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+                    if (c == 10) cell.Style.NumberFormat.Format = "#,##0.00";
+                    if (alternateColor) cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#f7f9fa");
+                }
+                r++;
+            }
+            else
             {
-                ws.Cell(r, 1).Value = ret.Reference;
-                ws.Cell(r, 2).Value = ret.Date.ToString("yyyy-MM-dd");
-                ws.Cell(r, 3).Value = ret.Name;
-                ws.Cell(r, 4).Value = ret.Phone;
+                foreach(var item in ret.Items)
+                {
+                    ws.Cell(r, 1).Value = ret.Reference;
+                    ws.Cell(r, 2).Value = ret.Date.ToString("yyyy-MM-dd");
+                    ws.Cell(r, 3).Value = ret.Name;
+                    ws.Cell(r, 4).Value = ret.Phone;
 
-                ws.Cell(r, 5).Value = item.SKU;
-                ws.Cell(r, 6).Value = item.ProductName;
-                ws.Cell(r, 7).Value = item.Size;
-                ws.Cell(r, 8).Value = item.Color;
-                ws.Cell(r, 9).Value = item.Quantity;
-                ws.Cell(r, 10).Value = item.LineTotal;
-                ws.Cell(r, 11).Value = ret.Reason;
-                ws.Cell(r, 12).Value = ret.CreatorName;
-                ws.Cell(r, 13).Value = ret.ReturnerName;
-                
-                ws.Cell(r, 10).Style.NumberFormat.Format="#,##0.00";
-                r++;
+                    ws.Cell(r, 5).Value = item.SKU;
+                    ws.Cell(r, 6).Value = item.ProductName;
+                    ws.Cell(r, 7).Value = item.Size;
+                    ws.Cell(r, 8).Value = item.Color;
+                    ws.Cell(r, 9).Value = item.Quantity;
+                    ws.Cell(r, 10).Value = item.LineTotal;
+                    ws.Cell(r, 11).Value = GetCleanReason(ret.Reason);
+                    ws.Cell(r, 12).Value = ret.CreatorName;
+                    ws.Cell(r, 13).Value = ret.ReturnerName;
+
+                    for (int c = 1; c <= 13; c++)
+                    {
+                        var cell = ws.Cell(r, c);
+                        cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                        cell.Style.Border.OutsideBorderColor = XLColor.FromHtml("#cfd8dc");
+                        
+                        if (c == 3 || c == 6 || c == 11 || c == 12 || c == 13)
+                            cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+                        else
+                            cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                        cell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+                        if (c == 10) cell.Style.NumberFormat.Format = "#,##0.00";
+                        if (alternateColor) cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#f7f9fa");
+                    }
+                    r++;
+                }
+
+                int endRow = r - 1;
+                if (endRow > startRow)
+                {
+                    int[] columnsToMerge = { 1, 2, 3, 4, 11, 12, 13 };
+                    foreach (int col in columnsToMerge)
+                    {
+                        var range = ws.Range(startRow, col, endRow, col);
+                        range.Merge();
+                        
+                        if (col == 3 || col == 11 || col == 12 || col == 13)
+                            range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+                        else
+                            range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                        range.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+                    }
+                }
             }
+            alternateColor = !alternateColor;
         }
+
+        // Totals Row
+        ws.Cell(r, 1).Value = "الإجمالي";
+        ws.Cell(r, 1).Style.Font.Bold = true;
+        ws.Cell(r, 9).Value = rows.Sum(x => x.Items?.Sum(it => it.Quantity) ?? 0);
+        ws.Cell(r, 10).Value = rows.Sum(x => x.Amount);
+
+        for (int col = 1; col <= 13; col++)
+        {
+            var cell = ws.Cell(r, col);
+            cell.Style.Font.Bold = true;
+            cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            cell.Style.Border.OutsideBorderColor = XLColor.FromHtml("#cfd8dc");
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#eceff1");
+            if (col == 10) cell.Style.NumberFormat.Format = "#,##0.00";
+        }
+        ws.Row(r).Height = 22;
+
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"detailed_returns_{from:yyyyMMdd}.xlsx");
+    }
+
+    private static string GetCleanReason(string reason)
+    {
+        if (string.IsNullOrEmpty(reason)) return "—";
+        
+        string[] validReasons = {
+            "منتج تالف",
+            "صنف خاطئ",
+            "مقاس غير مناسب",
+            "جودة غير مرضية",
+            "تغيير رأي",
+            "سبب آخر"
+        };
+        
+        foreach (var r in validReasons)
+        {
+            if (reason.Contains(r)) return r;
+        }
+        
+        return reason
+            .Replace("Direct Return: ", "")
+            .Replace("Direct Return:", "")
+            .Trim();
     }
 
     private IActionResult ExcelUserActivity(List<UserActivityRow> summary, dynamic detail, DateTime from, DateTime to)
@@ -2674,7 +2786,8 @@ public class OperationalReportsController : ControllerBase
     [RequirePermission(ModuleKeys.Profitability)]
     public async Task<IActionResult> InvoiceProfitability(
         [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate = null)
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] bool excel = false)
     {
         var now = TimeHelper.GetEgyptTime();
         var from = (fromDate ?? new DateTime(now.Year, now.Month, 1)).Date;
@@ -2747,6 +2860,11 @@ public class OperationalReportsController : ControllerBase
         var totalProfit = totalRevenue - totalCost;
         var averageMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
+        if (excel)
+        {
+            return ExcelInvoiceProfitability(invoiceRows, totalInvoices, totalRevenue, totalCost, totalProfit, averageMargin, from, to);
+        }
+
         return Ok(new Sportive.API.DTOs.Reports.InvoiceProfitabilityReportDto {
             FromDate = from,
             ToDate = to,
@@ -2757,6 +2875,118 @@ public class OperationalReportsController : ControllerBase
             AverageMargin = averageMargin,
             Invoices = invoiceRows
         });
+    }
+
+    private IActionResult ExcelInvoiceProfitability(
+        List<Sportive.API.DTOs.Reports.InvoiceProfitabilityDto> rows,
+        int totalInvoices, decimal totalRevenue, decimal totalCost, decimal totalProfit, decimal averageMargin,
+        DateTime from, DateTime to)
+    {
+        using var wb = new XLWorkbook();
+
+        // --- Sheet 1: تفاصيل ربحية الفواتير ----------------------------
+        var ws = wb.Worksheets.Add("ربحية الفواتير");
+        ws.RightToLeft = true;
+
+        // Title
+        ws.Cell(1, 1).Value = $"تقرير ربحية الفواتير — من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+        ws.Cell(1, 1).Style.Font.Bold = true;
+        ws.Cell(1, 1).Style.Font.FontSize = 13;
+        ws.Range(1, 1, 1, 7).Merge();
+
+        // Headers
+        string[] h = {
+            "رقم الفاتورة", "التاريخ", "العميل",
+            "الإيراد", "التكلفة", "الربح", "هامش الربح %"
+        };
+        for (int c = 0; c < h.Length; c++)
+        {
+            var cell = ws.Cell(2, c + 1);
+            cell.Value = h[c];
+            cell.Style.Font.Bold = true;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#0f3460");
+            cell.Style.Font.FontColor = XLColor.White;
+            cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+
+        int r = 3;
+        foreach (var row in rows)
+        {
+            ws.Cell(r, 1).Value = row.OrderNumber;
+            ws.Cell(r, 2).Value = row.Date.ToString("yyyy-MM-dd HH:mm");
+            ws.Cell(r, 3).Value = row.CustomerName;
+            ws.Cell(r, 4).Value = row.Revenue;
+            ws.Cell(r, 5).Value = row.Cost;
+            ws.Cell(r, 6).Value = row.Profit;
+            ws.Cell(r, 7).Value = row.Margin;
+
+            // تنسيق الأرقام
+            foreach (int col in new[] { 4, 5, 6 })
+            {
+                ws.Cell(r, col).Style.NumberFormat.Format = "#,##0.00";
+            }
+
+            ws.Cell(r, 7).Style.NumberFormat.Format = "0.0\"%\"";
+
+            // تلوين حسب الهامش
+            var bg = row.Margin >= 30 ? XLColor.FromHtml("#e8f5e9")
+                   : row.Margin >= 10 ? XLColor.FromHtml("#fff8e1")
+                   : XLColor.FromHtml("#ffebee");
+            ws.Cell(r, 7).Style.Fill.BackgroundColor = bg;
+            r++;
+        }
+
+        // Totals row
+        ws.Cell(r, 1).Value = "الإجمالي";
+        ws.Cell(r, 1).Style.Font.Bold = true;
+        ws.Cell(r, 4).Value = totalRevenue;
+        ws.Cell(r, 5).Value = totalCost;
+        ws.Cell(r, 6).Value = totalProfit;
+        ws.Cell(r, 7).Value = averageMargin;
+
+        for (int col = 4; col <= 7; col++)
+        {
+            ws.Cell(r, col).Style.Font.Bold = true;
+            if (col < 7) 
+                ws.Cell(r, col).Style.NumberFormat.Format = "#,##0.00";
+            else 
+                ws.Cell(r, col).Style.NumberFormat.Format = "0.0\"%\"";
+        }
+        ws.Row(r).Style.Fill.BackgroundColor = XLColor.FromHtml("#e8f5e9");
+
+        ws.Columns().AdjustToContents();
+
+        // --- Sheet 2: الملخص التنفيذي ----------------------------
+        var ws2 = wb.Worksheets.Add("الملخص التنفيذي");
+        ws2.RightToLeft = true;
+
+        ws2.Cell(1, 1).Value = "الملخص التنفيذي";
+        ws2.Cell(1, 1).Style.Font.Bold = true;
+        ws2.Cell(1, 1).Style.Font.FontSize = 14;
+
+        var summaryRows = new (string Label, object Value)[]
+        {
+            ("إجمالي عدد الفواتير",       totalInvoices),
+            ("إجمالي الإيرادات",          totalRevenue),
+            ("إجمالي التكاليف",           totalCost),
+            ("إجمالي الأرباح",            totalProfit),
+            ("متوسط هامش الربح %",       averageMargin)
+        };
+
+        int sr = 3;
+        foreach (var (label, val) in summaryRows)
+        {
+            ws2.Cell(sr, 1).Value = label;
+            ws2.Cell(sr, 2).Value = XLCellValue.FromObject(val);
+            if (val is decimal d && (label.Contains("الإيرادات") || label.Contains("التكاليف") || label.Contains("الأرباح")))
+                ws2.Cell(sr, 2).Style.NumberFormat.Format = "#,##0.00";
+            if (label.Contains("%"))
+                ws2.Cell(sr, 2).Style.NumberFormat.Format = "0.0\"%\"";
+            sr++;
+        }
+        ws2.Columns().AdjustToContents();
+
+        return ExcelResult(wb, $"invoice_profitability_{from:yyyyMMdd}_{to:yyyyMMdd}.xlsx");
     }
 
     private string TranslateMovementType(InventoryMovementType type) => type switch
