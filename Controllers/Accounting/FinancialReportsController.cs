@@ -98,9 +98,10 @@ public class FinancialReportsController : ControllerBase
             };
         }).ToList();
 
-        // We sort by Level descending to ensure children are processed before parents
+        // We sort by Code.Length descending to ensure children are processed before parents
+        // This is extremely robust against database Level column mismatches.
         var balanceDict = balanceList.ToDictionary(b => b.Id);
-        var itemsToRollUp = balanceList.OrderByDescending(b => b.Level).ToList();
+        var itemsToRollUp = balanceList.OrderByDescending(b => b.Code.Length).ToList();
         
         foreach (var b in itemsToRollUp)
         {
