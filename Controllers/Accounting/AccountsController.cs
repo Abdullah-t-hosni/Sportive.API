@@ -92,6 +92,40 @@ public class AccountsController : ControllerBase
         if (dto.OpeningBalance != 0 && !account.IsLeaf)
             return BadRequest(_t.Get("Accounting.NoParentOpeningBalance"));
 
+        if (!string.IsNullOrEmpty(dto.Code) && account.Code != dto.Code)
+        {
+            if (await _db.Accounts.AnyAsync(a => a.Code == dto.Code && a.Id != id))
+                return BadRequest(_t.Get("Accounting.AccountCodeExists"));
+            account.Code = dto.Code;
+        }
+
+        if (dto.ParentId != account.ParentId)
+        {
+            account.ParentId = dto.ParentId;
+            if (dto.ParentId.HasValue)
+            {
+                var parent = await _db.Accounts.FindAsync(dto.ParentId.Value);
+                if (parent != null)
+                {
+                    account.Level = parent.Level + 1;
+                }
+            }
+            else
+            {
+                account.Level = 1;
+            }
+        }
+
+        if (dto.Type.HasValue)
+        {
+            account.Type = dto.Type.Value;
+        }
+
+        if (dto.Nature.HasValue)
+        {
+            account.Nature = dto.Nature.Value;
+        }
+
         account.NameAr            = dto.NameAr;
         account.NameEn            = dto.NameEn;
         account.IsActive          = dto.IsActive;

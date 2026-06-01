@@ -63,7 +63,11 @@ public record UpdateAccountDto(
     bool    AllowPosting,
     bool    CanReceivePayment,
     bool    IsActive,
-    decimal OpeningBalance
+    decimal OpeningBalance,
+    string? Code = null,
+    int?    ParentId = null,
+    AccountType? Type = null,
+    AccountNature? Nature = null
 );
 
 // ══════════════════════════════════════════════════════
