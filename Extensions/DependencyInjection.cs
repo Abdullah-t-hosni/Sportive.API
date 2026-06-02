@@ -289,6 +289,7 @@ public static class DependencyInjection
                 MaximumPoolSize       = 3,   // Hangfire only needs a few workers
                 ConnectionIdleTimeout = 60,  // release idle connections after 60s
                 ConnectionTimeout     = 30,
+                DefaultCommandTimeout = 120, // ✅ allow up to 120s command timeout to handle slow Hostinger responses
                 AllowUserVariables    = true
             };
             hangfireConnStr = hfBuilder.ConnectionString;

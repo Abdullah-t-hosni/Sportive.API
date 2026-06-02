@@ -49,7 +49,8 @@ try
         ConnectionIdleTimeout = 30,  // ✅ release idle connections after 30s
         Keepalive = 60,
         AllowUserVariables = true,
-        ConnectionTimeout = 30
+        ConnectionTimeout = 30,
+        DefaultCommandTimeout = 120  // ✅ allow up to 120s command timeout to prevent transient DB timeouts
     };
     connStr = connBuilder.ConnectionString;
 }
@@ -191,16 +192,25 @@ app.MapGet("/", () => Results.Ok("Sportive API is running"));
 app.MapHub<NotificationHub>("/notifications-hub");
 
 // ── RECURRING JOBS ────────────────────────────────────
-var backgroundJobs = app.Services.GetRequiredService<IRecurringJobManager>();
-backgroundJobs.AddOrUpdate<IStatisticsService>(
-    "UpdateTodayStats", 
-    service => service.UpdateDailyStatsAsync(TimeHelper.GetEgyptTime()), 
-    "*/15 * * * *");
-    
-backgroundJobs.AddOrUpdate<IOutboxProcessor>(
-    "ProcessOutbox", 
-    processor => processor.ProcessMessagesAsync(), 
-    "*/5 * * * *"); // ✅ was every 1 min (60/hour) — now every 5 min (12/hour)
+try
+{
+    Log.Information("Registering Hangfire recurring jobs...");
+    var backgroundJobs = app.Services.GetRequiredService<IRecurringJobManager>();
+    backgroundJobs.AddOrUpdate<IStatisticsService>(
+        "UpdateTodayStats", 
+        service => service.UpdateDailyStatsAsync(TimeHelper.GetEgyptTime()), 
+        "*/15 * * * *");
+        
+    backgroundJobs.AddOrUpdate<IOutboxProcessor>(
+        "ProcessOutbox", 
+        processor => processor.ProcessMessagesAsync(), 
+        "*/5 * * * *"); // ✅ was every 1 min (60/hour) — now every 5 min (12/hour)
+    Log.Information("Hangfire recurring jobs registered successfully.");
+}
+catch (Exception ex)
+{
+    Log.Error(ex, "Failed to register or update Hangfire recurring jobs. The application will continue starting up.");
+}
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Run($"http://0.0.0.0:{port}");
