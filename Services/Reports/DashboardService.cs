@@ -52,13 +52,35 @@ public class DashboardService : IDashboardService
         }
 
         // --- Target Period Stats (Displays as 'Today Sales' in UI) ---
-        var periodSales = await query
+        var periodSalesRaw = await query
             .Where(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd)
             .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
 
-        var periodDiscount = await query
+        var periodDiscountRaw = await query
             .Where(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd)
             .SumAsync(o => (decimal?)(o.DiscountAmount + o.TemporalDiscount)) ?? 0;
+
+        // Calculate Discount Returns from Journal Entries to accurately reflect net discounts
+        var discountReturnMapping = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "410101");
+        decimal periodDiscountReturned = 0;
+        if (discountReturnMapping != null)
+        {
+            var discountReturnsQuery = _db.JournalEntries
+                .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= targetStart && e.EntryDate < targetEnd);
+
+            if (source.HasValue)
+            {
+                discountReturnsQuery = discountReturnsQuery.Where(e => e.CostCenter == source.Value);
+            }
+
+            periodDiscountReturned = await discountReturnsQuery
+                .SelectMany(e => e.Lines)
+                .Where(l => l.Credit > 0 && l.AccountId == discountReturnMapping.Id)
+                .SumAsync(l => (decimal?)l.Credit) ?? 0;
+        }
+
+        var periodDiscount = periodDiscountRaw - periodDiscountReturned;
+        var periodSales = periodSalesRaw + periodDiscountReturned;
 
         var periodTax = await query
             .Where(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd)
