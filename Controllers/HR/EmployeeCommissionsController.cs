@@ -110,12 +110,12 @@ public class EmployeeCommissionsController : ControllerBase
 
         foreach (var g in groups)
         {
-            var memberUserIds = g.Members.Select(m => m.AppUserId).Where(id => id != null).ToList();
+            var memberUserIds = g.Members.Select(m => m.AppUserId).Where(id => id != null).OfType<string>().ToList();
             var memberIds = g.Members.Select(m => m.Id.ToString()).ToList();
             
             var groupOrders = orders.Where(o => 
-                memberUserIds.Contains(o.SalesPersonId) || 
-                memberIds.Contains(o.SalesPersonId)
+                (o.SalesPersonId != null && memberUserIds.Contains(o.SalesPersonId)) || 
+                (o.SalesPersonId != null && memberIds.Contains(o.SalesPersonId))
             ).ToList();
             
             var scheme = g.CommissionSchemeId != null 

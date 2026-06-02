@@ -1421,7 +1421,7 @@ public class FinancialReportsController : ControllerBase
             // Extract OrderIds for return entries to determine correct tax brackets dynamically
             var orderIds = salesReturnLines
                 .Where(l => l.JournalEntry.OrderId.HasValue)
-                .Select(l => l.JournalEntry.OrderId.Value)
+                .Select(l => l.JournalEntry.OrderId!.Value)
                 .Distinct()
                 .ToList();
 

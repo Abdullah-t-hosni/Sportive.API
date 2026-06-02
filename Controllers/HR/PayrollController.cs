@@ -103,8 +103,8 @@ public class PayrollController : ControllerBase
             var memberIds = g.Members.Select(m => m.Id.ToString()).ToList();
             
             var groupOrders = orders.Where(o => 
-                memberUserIds.Contains(o.SalesPersonId) || 
-                memberIds.Contains(o.SalesPersonId)
+                (o.SalesPersonId != null && memberUserIds.Contains(o.SalesPersonId)) || 
+                (o.SalesPersonId != null && memberIds.Contains(o.SalesPersonId))
             ).ToList();
             
             var scheme = g.CommissionSchemeId != null 
@@ -484,8 +484,8 @@ public class PayrollController : ControllerBase
                 var memberIds = g.Members.Select(m => m.Id.ToString()).ToList();
                 
                 var groupOrders = orders.Where(o => 
-                    memberUserIds.Contains(o.SalesPersonId) || 
-                    memberIds.Contains(o.SalesPersonId)
+                    (o.SalesPersonId != null && memberUserIds.Contains(o.SalesPersonId)) || 
+                    (o.SalesPersonId != null && memberIds.Contains(o.SalesPersonId))
                 ).ToList();
                 
                 var scheme = g.CommissionSchemeId != null 
@@ -803,8 +803,8 @@ public class PayrollController : ControllerBase
                 var memberIds = g.Members.Select(m => m.Id.ToString()).ToList();
                 
                 var groupOrders = orders.Where(o => 
-                    memberUserIds.Contains(o.SalesPersonId) || 
-                    memberIds.Contains(o.SalesPersonId)
+                    (o.SalesPersonId != null && memberUserIds.Contains(o.SalesPersonId)) || 
+                    (o.SalesPersonId != null && memberIds.Contains(o.SalesPersonId))
                 ).ToList();
                 
                 var scheme = g.CommissionSchemeId != null 

@@ -243,7 +243,7 @@ public class InstallmentsController : ControllerBase
 
         var ledgerBalances = await _db.JournalLines
             .Where(l => l.AccountId == customerAccountId.Value && l.CustomerId != null)
-            .GroupBy(l => l.CustomerId.Value)
+            .GroupBy(l => l.CustomerId!.Value)
             .Select(g => new { CustomerId = g.Key, Balance = g.Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0 })
             .ToDictionaryAsync(x => x.CustomerId, x => x.Balance);
 

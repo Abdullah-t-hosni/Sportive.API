@@ -1123,7 +1123,7 @@ public class PdfService : IPdfService
                             });
 
                             int index = 1;
-                            foreach (var item in openingBalance.Items)
+                            foreach (var item in openingBalance.Items!)
                             {
                                 var cellStyle = TextStyle.Default.FontSize(8.5f);
                                 table.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(6).AlignCenter().Text(index++.ToString()).Style(cellStyle);

@@ -1261,10 +1261,10 @@ public class OperationalReportsController : ControllerBase
         var movements = await _db.InventoryMovements
             .Include(m => m.Product)
             .Include(m => m.ProductVariant)
-            .Where(m => directReturnRefs.Contains(m.Reference) && m.Type == InventoryMovementType.ReturnIn)
+            .Where(m => m.Reference != null && directReturnRefs.Contains(m.Reference) && m.Type == InventoryMovementType.ReturnIn)
             .ToListAsync();
 
-        var movementsMap = movements.GroupBy(m => m.Reference).ToDictionary(g => g.Key, g => g.ToList());
+        var movementsMap = movements.GroupBy(m => m.Reference!).ToDictionary(g => g.Key!, g => g.ToList());
 
         // Resolve staff names for the report
         var personIds = returns.Select(r => r.CreatedByUserId)
@@ -1286,7 +1286,7 @@ public class OperationalReportsController : ControllerBase
         }
 
         var rows = returns.Select(j => {
-            List<ReportItemDto> itemsList = null;
+        List<ReportItemDto>? itemsList = null;
             if (j.Items != null)
             {
                 itemsList = j.Items.Select(i => new ReportItemDto(
@@ -2541,7 +2541,7 @@ public class OperationalReportsController : ControllerBase
         // 2. Returns Details (Sales returns)
         var returnsQuery = _db.JournalEntries.AsNoTracking()
             .Include(j => j.Order)
-                .ThenInclude(o => o.Customer)
+                .ThenInclude(o => o!.Customer)
             .Include(j => j.Lines)
                 .ThenInclude(l => l.Account)
             .Where(j => j.Type == JournalEntryType.SalesReturn 
