@@ -163,7 +163,7 @@ public class SalesAccountingService
                 .Where(z => z.IsActive && z.Fee > 0)
                 .Select(z => new { z.Fee, z.Governorates })
                 .ToListAsync();
-            var matchedZone = activeZones.FirstOrDefault(z => z.Governorates.ToLower().Split(',').Any(g => g.Trim() == city));
+            var matchedZone = activeZones.FirstOrDefault(z => z.Governorates != null && z.Governorates.ToLower().Split(',').Any(g => g.Trim() == city));
 
             if (matchedZone != null && matchedZone.Fee > 0)
             {

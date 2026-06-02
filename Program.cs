@@ -191,17 +191,16 @@ app.MapGet("/", () => Results.Ok("Sportive API is running"));
 app.MapHub<NotificationHub>("/notifications-hub");
 
 // ── RECURRING JOBS ────────────────────────────────────
-using (var scope = app.Services.CreateScope())
-{
-    var backgroundJobs = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
-    backgroundJobs.AddOrUpdate("UpdateTodayStats", 
-        () => scope.ServiceProvider.GetRequiredService<IStatisticsService>().UpdateDailyStatsAsync(TimeHelper.GetEgyptTime()), 
-        "*/15 * * * *");
-        
-    backgroundJobs.AddOrUpdate("ProcessOutbox", 
-        () => scope.ServiceProvider.GetRequiredService<IOutboxProcessor>().ProcessMessagesAsync(), 
-        "*/5 * * * *"); // ✅ was every 1 min (60/hour) — now every 5 min (12/hour)
-}
+var backgroundJobs = app.Services.GetRequiredService<IRecurringJobManager>();
+backgroundJobs.AddOrUpdate<IStatisticsService>(
+    "UpdateTodayStats", 
+    service => service.UpdateDailyStatsAsync(TimeHelper.GetEgyptTime()), 
+    "*/15 * * * *");
+    
+backgroundJobs.AddOrUpdate<IOutboxProcessor>(
+    "ProcessOutbox", 
+    processor => processor.ProcessMessagesAsync(), 
+    "*/5 * * * *"); // ✅ was every 1 min (60/hour) — now every 5 min (12/hour)
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Run($"http://0.0.0.0:{port}");
