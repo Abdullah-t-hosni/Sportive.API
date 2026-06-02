@@ -2498,6 +2498,11 @@ public class OperationalReportsController : ControllerBase
                         orderCredit += amt;
                     }
                 }
+                var remaining = o.TotalAmount - o.PaidAmount;
+                if (remaining > 0.01M)
+                {
+                    orderCredit += remaining;
+                }
             }
             else
             {
