@@ -1010,8 +1010,26 @@ public class OperationalReportsController : ControllerBase
         }).ToListAsync();
 
         var totalGrossRevenue = summaryData.Sum(o => hasFilters ? o.ItemsTotal : (o.PostedSales > 0 ? o.PostedSales : o.TotalAmount));
-        var totalDiscount = summaryData.Sum(o => o.DiscountAmount);
+        var totalDiscountRaw = summaryData.Sum(o => o.DiscountAmount);
         var totalUnits = summaryData.Sum(o => o.ItemCount);
+
+        // ✅ Subtract discount returns (same logic as Dashboard & Daily Report)
+        // When a sales return reverses a discount, it credits the Sales Discount account.
+        // We must deduct those credits to get the net applied discount.
+        var salesDiscountAccId = maps.GetValueOrDefault("salesDiscountAccountID");
+        decimal periodDiscountReturned = 0;
+        if (salesDiscountAccId != null)
+        {
+            var discountReturnsQ = _db.JournalEntries
+                .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= from && e.EntryDate <= to && e.Status == JournalEntryStatus.Posted);
+            if (source.HasValue)
+                discountReturnsQ = discountReturnsQ.Where(e => e.CostCenter == source.Value);
+            periodDiscountReturned = await discountReturnsQ
+                .SelectMany(e => e.Lines)
+                .Where(l => l.Credit > 0 && l.AccountId == salesDiscountAccId)
+                .SumAsync(l => (decimal?)l.Credit) ?? 0;
+        }
+        var totalDiscount = totalDiscountRaw - periodDiscountReturned;
 
         var summary = new {
             totalOrders   = totalOrdersCount,
@@ -2773,7 +2791,25 @@ public class OperationalReportsController : ControllerBase
             )
         };
 
-        decimal totalDiscounts = orders.Sum(o => o.DiscountAmount + o.TemporalDiscount);
+        var salesDiscountAccId = maps.GetValueOrDefault("salesdiscountaccountid");
+        decimal periodDiscountReturned = 0;
+        if (salesDiscountAccId != null)
+        {
+            var discountReturnsQuery = _db.JournalEntries
+                .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= from && e.EntryDate <= to && e.Status == JournalEntryStatus.Posted);
+
+            if (source.HasValue)
+            {
+                discountReturnsQuery = discountReturnsQuery.Where(e => e.CostCenter == source.Value);
+            }
+
+            periodDiscountReturned = await discountReturnsQuery
+                .SelectMany(e => e.Lines)
+                .Where(l => l.Credit > 0 && l.AccountId == salesDiscountAccId)
+                .SumAsync(l => (decimal?)l.Credit) ?? 0;
+        }
+
+        decimal totalDiscounts = orders.Sum(o => o.DiscountAmount + o.TemporalDiscount) - periodDiscountReturned;
         var summary = new DailyReportSummary(
             totalSalesAmount,
             totalReturnsAmount,
