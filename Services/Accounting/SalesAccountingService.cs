@@ -39,7 +39,8 @@ public class SalesAccountingService
     {
         if (order.Customer == null && order.CustomerId > 0)
         {
-            order.Customer = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.CustomerId) ?? order.Customer;
+            var found = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.CustomerId);
+            if (found != null) order.Customer = found;
         }
 
         var store  = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
@@ -296,7 +297,8 @@ public class SalesAccountingService
     {
         if (order.Customer == null && order.CustomerId > 0)
         {
-            order.Customer = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.CustomerId) ?? order.Customer;
+            var found = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.CustomerId);
+            if (found != null) order.Customer = found;
         }
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
@@ -390,7 +392,8 @@ public class SalesAccountingService
     {
         if (order.Customer == null && order.CustomerId > 0)
         {
-            order.Customer = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.CustomerId) ?? order.Customer;
+            var found = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.CustomerId);
+            if (found != null) order.Customer = found;
         }
 
         var suffix    = TimeHelper.GetEgyptTime().Ticks.ToString().Substring(10);
@@ -591,7 +594,8 @@ public class SalesAccountingService
     {
         if (order.Customer == null && order.CustomerId > 0)
         {
-            order.Customer = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.CustomerId) ?? order.Customer;
+            var found = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.CustomerId);
+            if (found != null) order.Customer = found;
         }
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
