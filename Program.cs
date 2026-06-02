@@ -86,8 +86,7 @@ builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompre
     options => options.Level = System.IO.Compression.CompressionLevel.Fastest);
 
 // ── HEALTH CHECKS ─────────────────────────────────────
-builder.Services.AddHealthChecks()
-    .AddDbContextCheck<AppDbContext>();
+builder.Services.AddHealthChecks();
 
 // ── SWAGGER ───────────────────────────────────────────
 builder.Services.AddSwaggerAndApiExplorer();
