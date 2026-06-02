@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -277,7 +277,7 @@ public class PurchaseReturnsController : ControllerBase
         var strategy = _db.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync<IActionResult>(async () =>
         {
-            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
             try
             {
                 var pReturn = new PurchaseReturn
@@ -403,7 +403,7 @@ public class PurchaseReturnsController : ControllerBase
         var strategy = _db.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync<IActionResult>(async () =>
         {
-            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
             try
             {
                 // 1. Reverse old stock movements
@@ -562,7 +562,7 @@ public class PurchaseReturnsController : ControllerBase
         
         return await strategy.ExecuteAsync<IActionResult>(async () =>
         {
-            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
             try
             {
                 // 1. Reverse Stock Movements
@@ -668,7 +668,7 @@ public class PurchaseReturnsController : ControllerBase
         var strategy = _db.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync<IActionResult>(async () =>
         {
-            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
             try
             {
                 _logger.LogInformation("Processing purchase return {ReturnNo} for invoice {Id}", returnNo, id);

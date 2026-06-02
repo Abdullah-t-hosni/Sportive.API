@@ -175,7 +175,7 @@ public class PurchaseInvoicesController : ControllerBase
         var strategy = _db.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync<IActionResult>(async () =>
         {
-            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
             try
             {
                 var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
@@ -475,7 +475,7 @@ public class PurchaseInvoicesController : ControllerBase
         var strategy = _db.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync<IActionResult>(async () => 
         {
-            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
             try 
             {
                 var inv = await _db.PurchaseInvoices

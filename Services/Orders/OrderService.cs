@@ -271,7 +271,7 @@ public class OrderService : IOrderService
         var strategy = _db.Database.CreateExecutionStrategy();
         var result = await strategy.ExecuteAsync(async () =>
         {
-            await using var tx = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            await using var tx = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
             try
             {
                 var now = TimeHelper.GetEgyptTime();
