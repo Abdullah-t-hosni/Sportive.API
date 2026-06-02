@@ -2768,6 +2768,7 @@ public class OperationalReportsController : ControllerBase
             )
         };
 
+        decimal totalDiscounts = orders.Sum(o => o.DiscountAmount + o.TemporalDiscount);
         var summary = new DailyReportSummary(
             totalSalesAmount,
             totalReturnsAmount,
@@ -2775,7 +2776,8 @@ public class OperationalReportsController : ControllerBase
             totalSettlementsAmount,
             totalExpensesAmount,
             orderCredit,
-            totalCollectionsAmount - totalSettlementsAmount - totalExpensesAmount - totalReturnsAmount
+            totalCollectionsAmount - totalSettlementsAmount - totalExpensesAmount - totalReturnsAmount,
+            totalDiscounts
         );
 
         var result = new {
@@ -2837,6 +2839,8 @@ public class OperationalReportsController : ControllerBase
 
         var metrics = new (string Name, decimal Value)[]
         {
+            ("المبيعات قبل الخصم", (decimal)(summary.totalSales + summary.totalDiscounts)),
+            ("إجمالي الخصومات", (decimal)summary.totalDiscounts),
             ("إجمالي المبيعات",      (decimal)summary.totalSales),
             ("إجمالي المرتجعات",     (decimal)summary.totalReturns),
             ("إجمالي المقبوضات والتحصيلات", (decimal)summary.totalCollections),
@@ -3347,7 +3351,7 @@ public record UserActivityRow(string UserId, string UserName, int OrderCount, de
 public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "", int Balance = 0, int? SourceId = null, string Size = "", string Color = "");
 
 // Daily Report DTOs
-public record DailyReportSummary(decimal totalSales, decimal totalReturns, decimal totalCollections, decimal totalSettlements, decimal totalExpenses, decimal totalCredit, decimal netCashflow);
+public record DailyReportSummary(decimal totalSales, decimal totalReturns, decimal totalCollections, decimal totalSettlements, decimal totalExpenses, decimal totalCredit, decimal netCashflow, decimal totalDiscounts = 0);
 public record DailyReportPaymentMethod(string Key, string NameAr, string NameEn, decimal Inflow, decimal Outflow, decimal Net);
 public record DailyReportSale(int Id, string OrderNumber, DateTime Date, string CustomerName, string Source, string PaymentMethod, decimal TotalAmount, decimal PaidAmount);
 public record DailyReportReturn(string Reference, DateTime Date, string CustomerName, decimal Amount, string Description);
