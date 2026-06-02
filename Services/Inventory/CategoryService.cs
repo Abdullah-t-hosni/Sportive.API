@@ -71,20 +71,38 @@ public class CategoryService : ICategoryService
     // ──────────────────────────────────────────────────────────
     public async Task<CategoryDto?> GetByIdAsync(int id)
     {
-        // نجيب الكل ونبني الشجرة في الذاكرة (أسرع من Include المتداخل)
-        var allCats = await _db.Categories
+        // ✅ Optimized: only load the target category + all its descendants
+        //    by doing a targeted DB query. We still need all descendants to build the tree,
+        //    but we fetch only the subtree rooted at 'id' instead of the entire table.
+        var target = await _db.Categories
             .Include(c => c.SizeGroup)
             .Include(c => c.Products)
-            .ToListAsync();
+            .FirstOrDefaultAsync(c => c.Id == id);
 
-        var target = allCats.FirstOrDefault(c => c.Id == id);
         if (target == null) return null;
 
-        // نجيب الأب منفصلاً للاسم
+        // Load its parent for NameAr/NameEn display
         if (target.ParentId.HasValue)
-            target.Parent = allCats.FirstOrDefault(c => c.Id == target.ParentId.Value);
+            target.Parent = await _db.Categories.FindAsync(target.ParentId.Value);
 
-        return BuildTreeRecursive(target, allCats);
+        // Build subtree: load descendants recursively — efficient for most category trees
+        var subtree = new List<Category> { target };
+        await LoadDescendantsAsync(subtree, id);
+
+        return BuildTreeRecursive(target, subtree);
+    }
+
+    private async Task LoadDescendantsAsync(List<Category> result, int parentId)
+    {
+        var children = await _db.Categories
+            .Include(c => c.SizeGroup)
+            .Include(c => c.Products)
+            .Where(c => c.ParentId == parentId)
+            .ToListAsync();
+
+        result.AddRange(children);
+        foreach (var child in children)
+            await LoadDescendantsAsync(result, child.Id);
     }
 
     // ──────────────────────────────────────────────────────────

@@ -122,10 +122,14 @@ public class StartupSyncService : BackgroundService
             var accountingService = scope.ServiceProvider.GetRequiredService<IAccountingService>();
 
             await customerService.SyncAllMissingAccountsAsync();
+            // ✅ Incremental: only fixes products with wrong status/missing slug (not full table scan)
             await productService.SyncAllProductsStatusAndStockAsync();
-            await productService.SyncAllProductRatingsAsync();
-            await orderService.SyncAllOrderAccountingAsync();
-            await accountingService.SyncAllPurchaseAccountingAsync();
+            // ⛔ Removed from startup: SyncAllProductRatingsAsync() loads ALL products+reviews into RAM.
+            //    Ratings are already kept in sync atomically in ReviewService on every approval.
+            //    Call manually from admin dashboard if a repair is needed.
+            // ✅ Incremental: only syncs last 30 days of orders/purchases
+            await orderService.SyncAllOrderAccountingAsync(daysLimit: 30);
+            await accountingService.SyncAllPurchaseAccountingAsync(daysLimit: 30);
 
             // ── DASHBOARD PRE-AGGREGATION BACKFILL ────────────
             var statsService = scope.ServiceProvider.GetRequiredService<IStatisticsService>();

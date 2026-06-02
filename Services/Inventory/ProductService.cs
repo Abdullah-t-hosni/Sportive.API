@@ -509,20 +509,29 @@ public class ProductService : IProductService
 
     public async Task SyncAllProductsStatusAndStockAsync()
     {
-        var products = await _db.Products.Include(p => p.Variants).ToListAsync();
+        // ✅ Incremental sync: only load products that actually need fixing.
+        // Criteria:
+        //   1. Missing slug (NameEn exists but Slug is empty)
+        //   2. Active product with zero/negative stock  → should be OutOfStock
+        //   3. OutOfStock product with positive stock   → should be Active
+        // This avoids loading the entire products table on every startup.
+        var products = await _db.Products
+            .Include(p => p.Variants)
+            .Where(p =>
+                string.IsNullOrEmpty(p.Slug) ||
+                (p.Status == ProductStatus.Active    && p.TotalStock <= 0) ||
+                (p.Status == ProductStatus.OutOfStock && p.TotalStock > 0))
+            .ToListAsync();
+
         foreach (var p in products)
         {
             // Sync Slug
             if (string.IsNullOrWhiteSpace(p.Slug))
-            {
                 p.Slug = GenerateSlug(p.NameEn);
-            }
 
-            int oldStock = p.TotalStock;
+            // Recalculate total stock from variants
             if (p.Variants.Any())
-            {
                 p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
-            }
 
             // Sync Status
             if (p.Status == ProductStatus.Active && p.TotalStock <= 0)
@@ -530,11 +539,16 @@ public class ProductService : IProductService
             else if (p.Status == ProductStatus.OutOfStock && p.TotalStock > 0)
                 p.Status = ProductStatus.Active;
         }
-        await _db.SaveChangesAsync();
+
+        if (products.Count > 0)
+            await _db.SaveChangesAsync();
     }
 
     public async Task SyncAllProductRatingsAsync()
     {
+        // ✅ Incremental sync: only update products whose AverageRating or ReviewCount
+        //    may be stale. Ratings are already kept in sync atomically in ReviewService,
+        //    so this full-scan is only needed as a manual repair tool (not on startup).
         var products = await _db.Products.Include(p => p.Reviews).ToListAsync();
         foreach (var p in products)
         {

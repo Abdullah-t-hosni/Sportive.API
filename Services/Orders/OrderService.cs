@@ -1737,10 +1737,18 @@ public class OrderService : IOrderService
         return await _seq.NextAsync(prefix);
     }
 
-    public async Task SyncAllOrderAccountingAsync()
+    public async Task SyncAllOrderAccountingAsync(int? daysLimit = null)
     {
-        var orders = await _db.Orders.Include(o => o.Customer).Include(o => o.Items).ThenInclude(i => i.Product)
-            .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Pending).ToListAsync();
+        var query = _db.Orders.Include(o => o.Customer).Include(o => o.Items).ThenInclude(i => i.Product)
+            .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Pending);
+
+        if (daysLimit.HasValue)
+        {
+            var limitDate = TimeHelper.GetEgyptTime().AddDays(-daysLimit.Value);
+            query = query.Where(o => o.CreatedAt >= limitDate);
+        }
+
+        var orders = await query.ToListAsync();
 
         var orderNums = orders.Select(o => o.OrderNumber.Trim().ToLower()).ToList();
         var entries = await _db.JournalEntries.Include(j => j.Lines)

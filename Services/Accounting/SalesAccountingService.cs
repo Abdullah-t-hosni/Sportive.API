@@ -155,10 +155,16 @@ public class SalesAccountingService
         else if (order.FulfillmentType == FulfillmentType.Delivery && !string.IsNullOrEmpty(order.DeliveryAddress?.City))
         {
             // ✅ Free Shipping Logic: record as revenue vs discount
+            // ✅ Optimized: load only active zones with non-zero fees, then match in memory
+            //    (avoids full ToListAsync() on every invoice — only zones with IsActive=true and Fee>0)
             var city = order.DeliveryAddress.City.Trim().ToLower();
-            var zones = await _db.ShippingZones.AsNoTracking().ToListAsync();
-            var matchedZone = zones.FirstOrDefault(z => z.IsActive && z.Governorates.ToLower().Split(',').Any(g => g.Trim() == city));
-            
+            var activeZones = await _db.ShippingZones
+                .AsNoTracking()
+                .Where(z => z.IsActive && z.Fee > 0)
+                .Select(z => new { z.Fee, z.Governorates })
+                .ToListAsync();
+            var matchedZone = activeZones.FirstOrDefault(z => z.Governorates.ToLower().Split(',').Any(g => g.Trim() == city));
+
             if (matchedZone != null && matchedZone.Fee > 0)
             {
                 lines.Add((deliveryRevAcct, 0, matchedZone.Fee, _t.Get("Accounting.FreeShippingRevenueDesc", order.OrderNumber)));

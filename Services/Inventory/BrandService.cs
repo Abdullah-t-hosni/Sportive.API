@@ -70,12 +70,12 @@ public class BrandService : IBrandService
 
     public async Task DeleteAsync(int id)
     {
-        var allBrands = await _db.Set<Brand>().ToListAsync();
-        var brand = allBrands.FirstOrDefault(b => b.Id == id)
+        // ✅ Optimized: fetch only the target brand and its direct children — not the full table
+        var brand = await _db.Set<Brand>().FindAsync(id)
             ?? throw new KeyNotFoundException($"Brand {id} not found");
 
         // أعد تعيين الأبناء المباشرين ليرثوا الجد (إذا وجد) لتجنب حدوث خطأ عند الحذف
-        var directChildren = allBrands.Where(b => b.ParentId == id).ToList();
+        var directChildren = await _db.Set<Brand>().Where(b => b.ParentId == id).ToListAsync();
         foreach (var child in directChildren)
         {
             child.ParentId = brand.ParentId;

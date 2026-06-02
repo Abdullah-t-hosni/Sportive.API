@@ -33,9 +33,9 @@ public interface IAccountingService
     Task<string> GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, int?>? map = null);
     Task<decimal> GetAccountBalanceAsync(string code);
     Task<decimal> GetTodayDrawerBalanceAsync(string cashAccountCode);
-    Task SyncAllOrdersAccountingAsync();
+    Task SyncAllOrdersAccountingAsync(int? daysLimit = null);
     Task SyncAllPaymentAccountingAsync();
-    Task SyncAllPurchaseAccountingAsync();
+    Task SyncAllPurchaseAccountingAsync(int? daysLimit = null);
     Task SyncAllEntityIdsAsync();
     Task SyncEntityBalancesAsync();
     Task ConsolidateSubAccountsToControlAsync();
@@ -137,13 +137,20 @@ public class AccountingService : IAccountingService
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
     }
 
-    public async Task SyncAllOrdersAccountingAsync()
+    public async Task SyncAllOrdersAccountingAsync(int? daysLimit = null)
     {
-        _logger.LogInformation("[Accounting] Starting Full Sync of Orders Accounting...");
+        _logger.LogInformation("[Accounting] Starting Sync of Orders Accounting...");
         
-        // Use a lightweight query to get IDs first to avoid keeping massive objects in memory
-        var orderIds = await _db.Orders
-            .Where(o => o.Status != OrderStatus.Cancelled)
+        var query = _db.Orders
+            .Where(o => o.Status != OrderStatus.Cancelled);
+
+        if (daysLimit.HasValue)
+        {
+            var limitDate = TimeHelper.GetEgyptTime().AddDays(-daysLimit.Value);
+            query = query.Where(o => o.CreatedAt >= limitDate);
+        }
+
+        var orderIds = await query
             .OrderByDescending(o => o.Id)
             .Select(o => o.Id)
             .ToListAsync();
@@ -209,11 +216,19 @@ public class AccountingService : IAccountingService
         }
     }
 
-    public async Task SyncAllPurchaseAccountingAsync()
+    public async Task SyncAllPurchaseAccountingAsync(int? daysLimit = null)
     {
-        _logger.LogInformation("[Accounting] Syncing All Purchase Invoices...");
-        var invoiceIds = await _db.PurchaseInvoices
-            .Where(i => i.Status != PurchaseInvoiceStatus.Cancelled && i.Status != PurchaseInvoiceStatus.Draft)
+        _logger.LogInformation("[Accounting] Syncing Purchase Invoices...");
+        var query = _db.PurchaseInvoices
+            .Where(i => i.Status != PurchaseInvoiceStatus.Cancelled && i.Status != PurchaseInvoiceStatus.Draft);
+
+        if (daysLimit.HasValue)
+        {
+            var limitDate = TimeHelper.GetEgyptTime().AddDays(-daysLimit.Value);
+            query = query.Where(i => i.InvoiceDate >= limitDate);
+        }
+
+        var invoiceIds = await query
             .Select(i => i.Id)
             .ToListAsync();
 
