@@ -711,6 +711,10 @@ public class DashboardService : IDashboardService
             .Take(5)
             .ToListAsync();
 
+        var totalDebts = await _db.Orders.AsNoTracking()
+            .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned)
+            .SumAsync(o => (decimal?)(o.TotalAmount - o.PaidAmount)) ?? 0;
+
         // ── 7. توزيع طرق الدفع ──────────
         var todayPaymentsRaw = await _db.OrderPayments.AsNoTracking()
             .Where(p => p.Order.Status != OrderStatus.Cancelled && p.Order.CreatedAt >= todayStart && p.Order.CreatedAt < todayEnd && (source == null || p.Order.Source == source))
@@ -742,7 +746,7 @@ public class DashboardService : IDashboardService
             },
             topProducts = topProducts.Select(p => new { p.ProductId, p.ProductNameAr, p.ProductNameEn, p.TotalSold, p.TotalRevenue, p.OrderCount, image = imagesMap.GetValueOrDefault(p.ProductId) }),
             charts = new { byHour = salesByHour, byDay = salesByDay },
-            aging = new { debtors = topDebtors, creditors = topCreditors },
+            aging = new { debtors = topDebtors, creditors = topCreditors, sales = new { total = totalDebts } },
             paymentBreakdown = todayPaymentBreakdown,
             insights = new {
                 peakHour = salesByHourRaw.OrderByDescending(x => x.revenue).FirstOrDefault()?.hour ?? 0,
