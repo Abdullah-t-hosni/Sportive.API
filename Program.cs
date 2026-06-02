@@ -187,6 +187,7 @@ app.UseHangfireDashboard("/jobs", new DashboardOptions
 
 app.MapControllers();
 app.MapHealthChecks("/health");
+app.MapGet("/", () => Results.Ok("Sportive API is running"));
 app.MapHub<NotificationHub>("/notifications-hub");
 
 // ── RECURRING JOBS ────────────────────────────────────
