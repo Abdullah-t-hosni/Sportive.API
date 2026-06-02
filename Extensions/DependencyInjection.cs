@@ -277,25 +277,46 @@ public static class DependencyInjection
 
     public static IServiceCollection AddHangfireServices(this IServiceCollection services, string connStr)
     {
+        // ✅ Build a separate limited connection string for Hangfire
+        // Hangfire has its own pool — we must cap it to avoid exceeding Hostinger's 500/hour limit
+        string hangfireConnStr;
+        try
+        {
+            var hfBuilder = new MySqlConnector.MySqlConnectionStringBuilder(connStr)
+            {
+                Pooling               = true,
+                MinimumPoolSize       = 0,   // don't pre-open connections at startup
+                MaximumPoolSize       = 3,   // Hangfire only needs a few workers
+                ConnectionIdleTimeout = 60,  // release idle connections after 60s
+                ConnectionTimeout     = 30,
+                AllowUserVariables    = true
+            };
+            hangfireConnStr = hfBuilder.ConnectionString;
+        }
+        catch
+        {
+            hangfireConnStr = connStr; // fallback to original if parsing fails
+        }
+
         services.AddHangfire(config => config
             .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
             .UseSimpleAssemblyNameTypeSerializer()
             .UseRecommendedSerializerSettings()
-            .UseStorage(new MySqlStorage(connStr, new MySqlStorageOptions
+            .UseStorage(new MySqlStorage(hangfireConnStr, new MySqlStorageOptions
             {
                 TransactionIsolationLevel = (IsolationLevel)System.Data.IsolationLevel.ReadCommitted,
-                QueuePollInterval = TimeSpan.FromSeconds(30),
-                JobExpirationCheckInterval = TimeSpan.FromHours(1),
-                CountersAggregateInterval = TimeSpan.FromMinutes(5),
-                PrepareSchemaIfNecessary = true,
-                DashboardJobListLimit = 50000,
-                TransactionTimeout = TimeSpan.FromMinutes(1),
-                TablesPrefix = "Hangfire"
+                QueuePollInterval         = TimeSpan.FromSeconds(60), // ✅ was 30s — poll less often
+                JobExpirationCheckInterval = TimeSpan.FromHours(6),   // ✅ was 1h — check less often
+                CountersAggregateInterval = TimeSpan.FromMinutes(15), // ✅ was 5min
+                PrepareSchemaIfNecessary  = true,
+                DashboardJobListLimit     = 1000,                     // ✅ was 50000 — reduce memory
+                TransactionTimeout        = TimeSpan.FromMinutes(1),
+                TablesPrefix              = "Hangfire"
             })));
 
         services.AddHangfireServer(opt =>
         {
-            opt.WorkerCount  = Math.Max(2, Environment.ProcessorCount);
+            opt.WorkerCount  = 2;  // ✅ fixed at 2 — don't scale with CPU (saves connections)
             opt.Queues       = new[] { "critical", "default", "low" };
             opt.ServerName   = $"sportive-{Environment.MachineName}";
         });

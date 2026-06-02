@@ -44,10 +44,12 @@ try
     var connBuilder = new MySqlConnector.MySqlConnectionStringBuilder(connStr)
     {
         Pooling = true,
-        MinimumPoolSize = 3,
-        ConnectionIdleTimeout = 0,
-        Keepalive = 30,
-        AllowUserVariables = true
+        MinimumPoolSize = 1,   // ✅ was 3 — only open connections when actually needed
+        MaximumPoolSize = 10,  // ✅ hard cap: EF Core won't exceed 10 simultaneous DB connections
+        ConnectionIdleTimeout = 30,  // ✅ release idle connections after 30s
+        Keepalive = 60,
+        AllowUserVariables = true,
+        ConnectionTimeout = 30
     };
     connStr = connBuilder.ConnectionString;
 }
@@ -198,7 +200,7 @@ using (var scope = app.Services.CreateScope())
         
     backgroundJobs.AddOrUpdate("ProcessOutbox", 
         () => scope.ServiceProvider.GetRequiredService<IOutboxProcessor>().ProcessMessagesAsync(), 
-        "*/1 * * * *"); // Every minute for near real-time analytics
+        "*/5 * * * *"); // ✅ was every 1 min (60/hour) — now every 5 min (12/hour)
 }
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
