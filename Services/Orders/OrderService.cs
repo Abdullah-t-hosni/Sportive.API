@@ -938,11 +938,32 @@ public class OrderService : IOrderService
             }
         });
 
-        // ✅ HANGFIRE: Offload customer category evaluation to background
-        _backgroundJobs.Enqueue<ICustomerService>(s => s.EvaluateCustomerCategoryAsync(customerId.GetValueOrDefault()));
+        // ✅ Background tasks: bypass Hangfire to avoid MySQL lock contention / timeouts on Hostinger during critical checkout flow
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var customerService = scope.ServiceProvider.GetRequiredService<ICustomerService>();
+                await customerService.EvaluateCustomerCategoryAsync(customerId.GetValueOrDefault());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Background customer category evaluation failed for {CustomerId}", customerId);
+            }
+        });
 
-        // ✅ HANGFIRE: Offload notifications & emails to background
-        _backgroundJobs.Enqueue(() => SendOrderNotificationsAsync(result.Id));
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await SendOrderNotificationsAsync(result.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Background order notification failed for order {OrderId}", result.Id);
+            }
+        });
 
         return result;
     }

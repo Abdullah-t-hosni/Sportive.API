@@ -2,7 +2,8 @@ using Sportive.API.Models;
 using Sportive.API.Data;
 using Sportive.API.Utils;
 using System.Text.Json;
-using Hangfire;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Sportive.API.Services
 {
@@ -16,17 +17,17 @@ namespace Sportive.API.Services
     {
         private readonly AppDbContext _db;
         private readonly ITenantProvider _tenantProvider;
-        private readonly IBackgroundJobClient _backgroundJobs;
         private readonly ICacheService _cache;
         private readonly ILogger<DashboardEventService> _logger;
+        private readonly IServiceScopeFactory _scopeFactory;
 
-        public DashboardEventService(AppDbContext db, ITenantProvider tenantProvider, IBackgroundJobClient backgroundJobs, ICacheService cache, ILogger<DashboardEventService> logger)
+        public DashboardEventService(AppDbContext db, ITenantProvider tenantProvider, ICacheService cache, ILogger<DashboardEventService> logger, IServiceScopeFactory scopeFactory)
         {
             _db = db;
             _tenantProvider = tenantProvider;
-            _backgroundJobs = backgroundJobs;
             _cache = cache;
             _logger = logger;
+            _scopeFactory = scopeFactory;
         }
 
         public void NotifyTransactionOccurred(DateTime date)
@@ -51,8 +52,20 @@ namespace Sportive.API.Services
             // Only trigger if not already triggered in the last 2 seconds
             if (_cache.GetOrCreateAsync(debounceKey, () => Task.FromResult(true), TimeSpan.FromSeconds(2)).Result)
             {
-                _backgroundJobs.Enqueue<IOutboxProcessor>(p => p.ProcessMessagesAsync());
-                _logger.LogDebug("Triggered immediate outbox processing (debounced)");
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        using var scope = _scopeFactory.CreateScope();
+                        var processor = scope.ServiceProvider.GetRequiredService<IOutboxProcessor>();
+                        await processor.ProcessMessagesAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Background outbox processing failed.");
+                    }
+                });
+                _logger.LogDebug("Triggered immediate outbox processing (debounced via Task.Run)");
             }
         }
     }
