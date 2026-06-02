@@ -284,7 +284,7 @@ public static class DependencyInjection
             .UseStorage(new MySqlStorage(connStr, new MySqlStorageOptions
             {
                 TransactionIsolationLevel = (IsolationLevel)System.Data.IsolationLevel.ReadCommitted,
-                QueuePollInterval = TimeSpan.FromSeconds(15),
+                QueuePollInterval = TimeSpan.FromSeconds(30),
                 JobExpirationCheckInterval = TimeSpan.FromHours(1),
                 CountersAggregateInterval = TimeSpan.FromMinutes(5),
                 PrepareSchemaIfNecessary = true,

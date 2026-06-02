@@ -39,6 +39,23 @@ var connStr = Environment.GetEnvironmentVariable("DATABASE_URL")
     ?? builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string is missing.");
 
+try
+{
+    var connBuilder = new MySqlConnector.MySqlConnectionStringBuilder(connStr)
+    {
+        Pooling = true,
+        MinimumPoolSize = 3,
+        ConnectionIdleTimeout = 0,
+        Keepalive = 30,
+        AllowUserVariables = true
+    };
+    connStr = connBuilder.ConnectionString;
+}
+catch (Exception ex)
+{
+    Log.Warning(ex, "Failed to parse connection string with MySqlConnectionStringBuilder. Using raw connection string.");
+}
+
 builder.Services.AddDatabaseAndIdentityServices(connStr);
 
 // ── JWT & AUTHORIZATION ───────────────────────────────
