@@ -13,6 +13,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Hangfire;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Sportive.API.Controllers;
 
@@ -28,8 +29,9 @@ public class OrdersController : ControllerBase
     private readonly ILogger<OrdersController> _logger;
     private readonly IAuditService _audit;
     private readonly ITranslator _translator;
+    private readonly IMemoryCache _cache;
 
-    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<OrdersController> logger, IAuditService audit, ITranslator translator)
+    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<OrdersController> logger, IAuditService audit, ITranslator translator, IMemoryCache cache)
     {
         _orderService = orderService;
         _pdfService   = pdfService;
@@ -38,6 +40,7 @@ public class OrdersController : ControllerBase
         _logger       = logger;
         _audit        = audit;
         _translator   = translator;
+        _cache        = cache;
     }
 
     [HttpGet]
@@ -121,6 +124,37 @@ public class OrdersController : ControllerBase
         if (posDto == null || posDto.Items == null || !posDto.Items.Any())
             return BadRequest(_translator.Get("Orders.MinOneItem"));
 
+        // ✅ Strong Idempotency: التحقق من وجود الطلب بمفتاح الأوفلاين الفريد لمنع تكرار المزامنة نهائياً
+        if (!string.IsNullOrEmpty(posDto.OfflineRef))
+        {
+            var existingOrder = await _db.Orders
+                .FirstOrDefaultAsync(o => o.AdminNotes != null && o.AdminNotes.Contains($"[OfflineRef: {posDto.OfflineRef}]"));
+            if (existingOrder != null)
+            {
+                _logger.LogWarning("[Idempotency] Order with OfflineRef {OfflineRef} already exists. Returning existing order {OrderId}", posDto.OfflineRef, existingOrder.Id);
+                var orderDetail = await _orderService.GetOrderByIdAsync(existingOrder.Id);
+                return Ok(orderDetail);
+            }
+        }
+
+        // ✅ Idempotency Guard (Short-term cache): منع تكرار الطلب خلال 10 ثواني من نفس الكاشير بنفس الإجمالي ونفس الأصناف
+        var cashierId = posDto.PosEmployeeId ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "anonymous";
+        var itemsKey  = string.Join("|", posDto.Items.Select(i => $"{i.ProductId}:{i.ProductVariantId}:{i.Quantity}").OrderBy(x => x));
+        var idempotencyKey = $"pos_order:{cashierId}:{posDto.TotalAmount}:{posDto.CustomerId}:{itemsKey}";
+
+        if (_cache.TryGetValue(idempotencyKey, out _))
+        {
+            _logger.LogWarning("[Idempotency] Duplicate POS order blocked for cashier={Cashier} total={Total}", cashierId, posDto.TotalAmount);
+            return Conflict(_translator.Get("Orders.DuplicateOrderBlocked") ?? "تم حجب طلب مكرر. الفاتورة السابقة تمت بنجاح.");
+        }
+
+        // تسجيل المفتاح لمدة 10 ثواني لمنع التكرار
+        _cache.Set(idempotencyKey, true, TimeSpan.FromSeconds(10));
+
+        var finalNote = string.IsNullOrEmpty(posDto.OfflineRef)
+            ? posDto.Note
+            : $"[OfflineRef: {posDto.OfflineRef}] {posDto.Note}".Trim();
+
         var dto = new CreateOrderDto(
             FulfillmentType.Pickup,
             (PaymentMethod)posDto.PaymentMethod,
@@ -133,7 +167,7 @@ public class OrdersController : ControllerBase
             posDto.Items.Select(i => new CreateOrderItemDto(i.ProductId, i.ProductVariantId, i.Quantity, i.UnitPrice, i.TotalPrice, i.HasTax, i.VatRate, i.Size, i.Color)).ToList(),
             posDto.CustomerPhone,
             posDto.CustomerName,
-            posDto.Note,
+            finalNote,
             posDto.DiscountAmount,
             posDto.TemporalDiscount,
             posDto.Subtotal,
@@ -284,7 +318,7 @@ public class OrdersController : ControllerBase
         {
             // Only force total amount if no vouchers/payments exist yet to avoid double counting
             var currentVouchersSum = await _db.JournalLines
-                .Where(l => l.OrderId == id && l.Credit > 0)
+                .Where(l => l.OrderId == id && l.Credit > 0 && l.JournalEntry.Type != JournalEntryType.SalesReturn)
                 .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("1103"))
                 .SumAsync(l => l.Credit);
 

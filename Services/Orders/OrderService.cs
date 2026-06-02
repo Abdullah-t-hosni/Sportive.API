@@ -156,7 +156,7 @@ public class OrderService : IOrderService
         // 💡 SMART FINANCE: Calculate actual paid amount from Journal Entries
         // Use a safe query that handles null accounts or missing lines
         var paidAmountQuery = _db.JournalLines
-            .Where(l => l.OrderId == id && l.Credit > 0);
+            .Where(l => l.OrderId == id && l.Credit > 0 && l.JournalEntry.Type != JournalEntryType.SalesReturn);
             
         var paidAmount = await paidAmountQuery
             .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("1103"))

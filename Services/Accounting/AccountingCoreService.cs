@@ -649,7 +649,7 @@ public class AccountingCoreService
         // 1. Sync Orders PaidAmount
         // Group journal lines by OrderId and sum debit - credit in ONE query
         var orderLedgerBalances = await _db.JournalLines
-            .Where(l => l.OrderId != null)
+            .Where(l => l.OrderId != null && l.JournalEntry.Type != JournalEntryType.SalesReturn)
             .Where(l => l.Account.Code != null && (l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1201")))
             .GroupBy(l => l.OrderId)
             .Select(g => new {

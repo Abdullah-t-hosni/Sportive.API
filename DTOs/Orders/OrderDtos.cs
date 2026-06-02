@@ -108,7 +108,9 @@ public record CreatePOSOrderDto(
     [property: System.Text.Json.Serialization.JsonPropertyName("attachmentUrl")]
     string? AttachmentUrl = null,
     [property: System.Text.Json.Serialization.JsonPropertyName("attachmentPublicId")]
-    string? AttachmentPublicId = null
+    string? AttachmentPublicId = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("offlineRef")]
+    string? OfflineRef = null
 );
 
 public record CreatePOSOrderItemDto(

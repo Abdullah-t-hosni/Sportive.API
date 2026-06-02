@@ -597,7 +597,7 @@ public class PayrollController : ControllerBase
 
                 // Calculate Commission
                 decimal earnedCommission = itemDto.CommissionAmount ?? 0;
-                if (itemDto.CommissionAmount == null)
+                if (itemDto.CommissionAmount == null || itemDto.CommissionAmount == 0)
                 {
                     if (employeeGroupCommissions.TryGetValue(emp.Id, out var groupComm))
                     {
@@ -916,7 +916,7 @@ public class PayrollController : ControllerBase
 
                 // Calculate Commission
                 decimal earnedCommission = itemDto.CommissionAmount ?? 0;
-                if (itemDto.CommissionAmount == null)
+                if (itemDto.CommissionAmount == null || itemDto.CommissionAmount == 0)
                 {
                     if (employeeGroupCommissions.TryGetValue(emp.Id, out var groupComm))
                     {
