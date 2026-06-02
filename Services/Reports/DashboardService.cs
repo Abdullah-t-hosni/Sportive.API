@@ -56,6 +56,16 @@ public class DashboardService : IDashboardService
             .Where(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd)
             .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
 
+        var periodDiscount = await query
+            .Where(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd)
+            .SumAsync(o => (decimal?)(o.DiscountAmount + o.TemporalDiscount)) ?? 0;
+
+        var periodTax = await query
+            .Where(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd)
+            .SumAsync(o => (decimal?)o.TotalVatAmount) ?? 0;
+
+        var periodGross = periodSales + periodDiscount;
+
         // --- Monthly & Global Stats ---
         var monthSales = await query
             .Where(o => o.CreatedAt >= monthStart)
@@ -179,7 +189,10 @@ public class DashboardService : IDashboardService
             ReturnAmount: periodReturnAmount,
             TodayCollections: todayCollections,
             NewCustomersToday: newCustomersToday,
-            TotalReturnAmount: totalReturnAmount
+            TotalReturnAmount: totalReturnAmount,
+            PeriodGrossSales: periodGross,
+            PeriodDiscounts: periodDiscount,
+            PeriodTaxes: periodTax
         );
     }
 
