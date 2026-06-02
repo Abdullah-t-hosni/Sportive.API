@@ -108,8 +108,6 @@ public class POSReportController : ControllerBase
             grossSales += oTotal + o.DiscountAmount + o.TemporalDiscount;
             totalDiscounts += o.DiscountAmount + o.TemporalDiscount;
 
-            if (o.Status == OrderStatus.Returned) continue; // returns handled separately
-
             var pm = o.PaymentMethod.ToString().ToLower();
             decimal paidAmt = o.PaymentStatus == PaymentStatus.Paid ? oTotal : o.PaidAmount;
 
@@ -145,6 +143,7 @@ public class POSReportController : ControllerBase
         decimal expenses      = 0;
         decimal safeDrops     = 0;
         decimal cashReceipts  = 0; // debt collections
+        decimal cashReturns   = 0;
 
         foreach (var j in posEntries)
         {
@@ -169,9 +168,18 @@ public class POSReportController : ControllerBase
                 if (isExpense && aid == effectiveDrawerId && credit > 0)
                     expenses += credit;
 
-                // Safe drops: manual debit from POS cash → main safe
+                // Safe drops: manual debit from POS cash → main safe (excluding shift closure entries)
                 if (isManual && aid == effectiveDrawerId && credit > 0)
-                    safeDrops += credit;
+                {
+                    if (string.IsNullOrEmpty(j.Reference) || !j.Reference.StartsWith("SHIFT-CLOSE-", StringComparison.OrdinalIgnoreCase))
+                    {
+                        safeDrops += credit;
+                    }
+                }
+
+                // Cash returns: credit to POS cash drawer from a return entry
+                if (isReturn && aid == effectiveDrawerId && credit > 0)
+                    cashReturns += credit;
 
                 // Debt collections: receipt voucher cash received
                 if (isReceipt && aid == effectiveDrawerId && debit > 0)
@@ -181,7 +189,7 @@ public class POSReportController : ControllerBase
 
         // ── 6. Net Sales & Expected Cash ──────────────────────────────────────
         var netSales     = grossSales - totalDiscounts - totalReturns;
-        var expectedCash = cashSales + cashReceipts - expenses - safeDrops;
+        var expectedCash = cashSales + cashReceipts - expenses - safeDrops - cashReturns;
 
         // ── 7. Build drawer movements list (for shift closure UI) ─────────────
         var drawerMovements = posEntries
@@ -230,6 +238,7 @@ public class POSReportController : ControllerBase
             cashReceipts    = Math.Round(cashReceipts, 2),
             expenses        = Math.Round(expenses, 2),
             safeDrops       = Math.Round(safeDrops, 2),
+            cashReturns     = Math.Round(cashReturns, 2),
             expectedCash    = Math.Round(expectedCash, 2),
 
             // Counts
