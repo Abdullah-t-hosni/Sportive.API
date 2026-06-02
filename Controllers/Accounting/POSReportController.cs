@@ -62,7 +62,7 @@ public class POSReportController : ControllerBase
         var posAccountIds = new HashSet<int>(
             new[] { effectiveDrawerId, posBankId, posVodaId, posInstaId }
                 .Where(x => x != 0)
-                .Select(x => (int)x));
+                .Select(x => x!.Value));
 
         // ── 2. Load ALL POS orders for the business day (no pageSize limit) ─
         var orders = await _db.Orders
