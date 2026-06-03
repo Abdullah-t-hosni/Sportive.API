@@ -2580,19 +2580,26 @@ public class OperationalReportsController : ControllerBase
 
         var salesReturnAccId = maps.GetValueOrDefault("salesreturnaccountid");
         var vatOutputAccId = maps.GetValueOrDefault("vatoutputaccountid");
+        var salesDiscountAccId = maps.GetValueOrDefault("salesdiscountaccountid");
 
         decimal returnCash = 0, returnCard = 0, returnVoda = 0, returnInsta = 0;
         var returnsRows = new List<DailyReportReturn>();
 
         foreach (var j in returnsData)
         {
-            decimal amt = j.Lines
+            decimal debitAmt = j.Lines
                 .Where(l => l.Debit > 0 && (
                     l.AccountId == salesReturnAccId || 
                     l.AccountId == vatOutputAccId || 
                     (l.Account != null && (l.Account.Code.StartsWith("4103") || l.Account.Code.StartsWith("2105") || l.Account.Code.StartsWith("1202")))
                 ))
                 .Sum(l => l.Debit);
+
+            decimal discountCredit = j.Lines
+                .Where(l => l.Credit > 0 && (l.AccountId == salesDiscountAccId || (l.Account != null && l.Account.Code.StartsWith("4102"))))
+                .Sum(l => l.Credit);
+
+            decimal amt = debitAmt - discountCredit;
             
             // Determine return outflow payment method
             var creditedLine = j.Lines.FirstOrDefault(l => l.Credit > 0);
@@ -2791,7 +2798,7 @@ public class OperationalReportsController : ControllerBase
             )
         };
 
-        var salesDiscountAccId = maps.GetValueOrDefault("salesdiscountaccountid");
+        salesDiscountAccId = maps.GetValueOrDefault("salesdiscountaccountid");
         decimal periodDiscountReturned = 0;
         if (salesDiscountAccId != null)
         {
@@ -3170,7 +3177,7 @@ public class OperationalReportsController : ControllerBase
             .Include(o => o.Customer)
             .Include(o => o.Items)
                 .ThenInclude(i => i.Product)
-            .Where(o => o.CreatedAt >= from && o.CreatedAt <= to && o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned)
+            .Where(o => o.CreatedAt >= from && o.CreatedAt <= to && o.Status != OrderStatus.Cancelled)
             .ToListAsync();
 
         var invoiceRows = new List<Sportive.API.DTOs.Reports.InvoiceProfitabilityDto>();
@@ -3179,36 +3186,12 @@ public class OperationalReportsController : ControllerBase
         {
             decimal revenue = order.TotalAmount - order.TotalVatAmount; // net revenue without tax
             decimal cost = 0;
-            decimal totalReturnedValue = 0;
 
             foreach (var item in order.Items)
             {
                 decimal itemCost = item.Product?.CostPrice ?? 0;
-                // Deduct cost of returned items
-                int netQty = item.Quantity - item.ReturnedQuantity;
-                cost += itemCost * Math.Max(0, netQty);
-
-                if (item.ReturnedQuantity > 0)
-                {
-                    // Calculate returned ratio and its share of the pre-tax item total
-                    decimal returnedRatio = (decimal)item.ReturnedQuantity / item.Quantity;
-                    decimal returnedLineTotal = item.TotalPrice * returnedRatio;
-
-                    // Subtract prorated order-level coupon discount if applicable
-                    decimal returnedDiscountShare = 0;
-                    if (order.SubTotal > 0 && order.DiscountAmount > 0)
-                    {
-                        returnedDiscountShare = (item.TotalPrice / order.SubTotal) * order.DiscountAmount * returnedRatio;
-                    }
-
-                    // Pre-tax net value of returned items to be subtracted from the pre-tax order revenue
-                    decimal netItemReturn = returnedLineTotal - returnedDiscountShare;
-                    totalReturnedValue += netItemReturn;
-                }
+                cost += itemCost * item.Quantity; // Full quantity sold (returns handled as separate rows)
             }
-
-            // Deduct the returned pre-tax value from the order's net revenue
-            revenue = Math.Max(0, revenue - totalReturnedValue);
 
             decimal profit = revenue - cost;
             decimal margin = revenue > 0 ? (profit / revenue) * 100 : 0;
@@ -3223,6 +3206,81 @@ public class OperationalReportsController : ControllerBase
                 Profit = profit,
                 Margin = margin
             });
+        }
+
+        // Fetch SalesReturn journal entries in the period to represent all kinds of returns (including direct and partial ones)
+        var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key.ToLower(), m => m.AccountId);
+        var salesReturnAccId = maps.GetValueOrDefault("salesreturnaccountid");
+        var salesDiscountAccId = maps.GetValueOrDefault("salesdiscountaccountid");
+        var cogsAccId = maps.GetValueOrDefault("costofgoodssoldaccountid");
+
+        if (salesReturnAccId.HasValue)
+        {
+            var returnEntries = await _db.JournalEntries.AsNoTracking()
+                .Include(j => j.Lines)
+                    .ThenInclude(l => l.Account)
+                .Where(j => j.Type == JournalEntryType.SalesReturn 
+                         && j.EntryDate >= from && j.EntryDate <= to
+                         && j.Status == JournalEntryStatus.Posted)
+                .ToListAsync();
+
+            var customerIds = returnEntries.SelectMany(e => e.Lines)
+                .Where(l => l.CustomerId.HasValue)
+                .Select(l => l.CustomerId!.Value)
+                .Distinct()
+                .ToList();
+            var customersMap = await _db.Customers.AsNoTracking()
+                .Where(c => customerIds.Contains(c.Id))
+                .ToDictionaryAsync(c => c.Id);
+
+            foreach (var j in returnEntries)
+            {
+                decimal salesReturnDebit = j.Lines
+                    .Where(l => l.Debit > 0 && l.AccountId == salesReturnAccId)
+                    .Sum(l => l.Debit);
+
+                decimal discountCredit = salesDiscountAccId.HasValue
+                    ? j.Lines
+                        .Where(l => l.Credit > 0 && l.AccountId == salesDiscountAccId)
+                        .Sum(l => l.Credit)
+                    : 0;
+
+                decimal netReturn = salesReturnDebit - discountCredit;
+
+                decimal costReturn = cogsAccId.HasValue
+                    ? j.Lines
+                        .Where(l => l.Credit > 0 && l.AccountId == cogsAccId)
+                        .Sum(l => l.Credit)
+                    : 0;
+
+                int? customerId = j.Lines.FirstOrDefault(l => l.CustomerId.HasValue)?.CustomerId;
+                string customerName = "Walk-in";
+                if (customerId.HasValue && customersMap.TryGetValue(customerId.Value, out var cust))
+                {
+                    customerName = cust.FullName;
+                }
+                else
+                {
+                    // Fallback to parsing from description or default to Walk-in
+                    customerName = j.Description?.Contains(" - ") == true 
+                        ? j.Description.Split(" - ").Last() 
+                        : "Walk-in";
+                }
+
+                decimal profit = -netReturn - (-costReturn);
+                decimal margin = netReturn > 0 ? (profit / -netReturn) * 100 : 0;
+
+                invoiceRows.Add(new Sportive.API.DTOs.Reports.InvoiceProfitabilityDto {
+                    OrderId = j.OrderId ?? 0,
+                    OrderNumber = j.Reference ?? j.EntryNumber,
+                    Date = j.EntryDate,
+                    CustomerName = customerName,
+                    Revenue = -netReturn, // negative revenue
+                    Cost = -costReturn,   // negative cost
+                    Profit = profit,
+                    Margin = margin
+                });
+            }
         }
 
         invoiceRows = invoiceRows.OrderByDescending(x => x.Date).ToList();
