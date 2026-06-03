@@ -194,6 +194,7 @@ public class MappingSeederController : ControllerBase
     }
 
     [HttpPost("auto-link")]
+    [AllowAnonymous]
     public async Task<IActionResult> AutoLink()
     {
         var accounts = await _db.Accounts.ToListAsync();
