@@ -79,13 +79,16 @@ public class DashboardService : IDashboardService
                 .SumAsync(l => (decimal?)l.Credit) ?? 0;
         }
 
+        // ✅ صافي الخصم = الخصم الخام - الخصومات المُعادة (المرتجعات)
         var periodDiscount = periodDiscountRaw - periodDiscountReturned;
-        var periodSales = periodSalesRaw + periodDiscountReturned;
+        // ✅ المبيعات = TotalAmount فقط (بدون إضافة discountReturned)
+        var periodSales = periodSalesRaw;
 
         var periodTax = await query
             .Where(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd)
             .SumAsync(o => (decimal?)o.TotalVatAmount) ?? 0;
 
+        // ✅ المبيعات قبل الخصم = صافي المبيعات + صافي الخصم
         var periodGross = periodSales + periodDiscount;
 
         // --- Monthly & Global Stats ---
