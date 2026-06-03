@@ -64,7 +64,9 @@ public class CashierPerformanceController : ControllerBase
             .Where(e => e.CostCenter == OrderSource.POS)
             .SelectMany(e => e.Lines)
             .Where(l => l.Debit > 0 && (l.AccountId == salesReturnMapping || l.Account.Code.StartsWith("4102")))
-            .GroupBy(l => l.JournalEntry.CreatedByUserId)
+            .GroupBy(l => (l.JournalEntry.Order != null && !string.IsNullOrEmpty(l.JournalEntry.Order.SalesPersonId))
+                ? l.JournalEntry.Order.SalesPersonId 
+                : l.JournalEntry.CreatedByUserId)
             .Select(g => new { CashierId = g.Key, Amount = g.Sum(l => l.Debit) })
             .ToDictionaryAsync(x => x.CashierId ?? "", x => x.Amount);
 
@@ -73,7 +75,9 @@ public class CashierPerformanceController : ControllerBase
             .Where(e => e.CostCenter == OrderSource.POS)
             .SelectMany(e => e.Lines)
             .Where(l => l.Credit > 0 && (l.AccountId == salesDiscountMapping || l.Account.Code.StartsWith("410101")))
-            .GroupBy(l => l.JournalEntry.CreatedByUserId)
+            .GroupBy(l => (l.JournalEntry.Order != null && !string.IsNullOrEmpty(l.JournalEntry.Order.SalesPersonId))
+                ? l.JournalEntry.Order.SalesPersonId 
+                : l.JournalEntry.CreatedByUserId)
             .Select(g => new { CashierId = g.Key, Amount = g.Sum(l => l.Credit) })
             .ToDictionaryAsync(x => x.CashierId ?? "", x => x.Amount);
 
