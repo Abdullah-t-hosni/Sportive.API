@@ -1030,16 +1030,15 @@ public class OperationalReportsController : ControllerBase
                 .SumAsync(l => (decimal?)l.Credit) ?? 0;
         }
         var totalDiscount = totalDiscountRaw - periodDiscountReturned;
-        var netReturns = ledgerReturns - periodDiscountReturned;
 
         var summary = new {
             totalOrders   = totalOrdersCount,
             totalGrossRevenue  = totalGrossRevenue,
             totalDiscount      = totalDiscount,
             totalUnits         = totalUnits,
-            totalReturns       = netReturns,
-            totalNetRevenue    = totalGrossRevenue - totalDiscount - netReturns,
-            avgOrder      = totalOrdersCount > 0 ? (totalGrossRevenue - totalDiscount - netReturns) / totalOrdersCount : 0,
+            totalReturns       = ledgerReturns,
+            totalNetRevenue    = totalGrossRevenue - totalDiscount - ledgerReturns,
+            avgOrder      = totalOrdersCount > 0 ? (totalGrossRevenue - totalDiscount - ledgerReturns) / totalOrdersCount : 0,
             pos           = summaryData.Count(o => o.Source == OrderSource.POS),
             website       = summaryData.Count(o => o.Source == OrderSource.Website)
         };
