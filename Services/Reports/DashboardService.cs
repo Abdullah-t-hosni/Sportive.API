@@ -149,6 +149,11 @@ public class DashboardService : IDashboardService
             .Select(m => m.AccountId)
             .FirstOrDefaultAsync();
 
+        var salesDiscountMapping = await _db.AccountSystemMappings
+            .Where(m => m.Key == "salesDiscountAccountID")
+            .Select(m => m.AccountId)
+            .FirstOrDefaultAsync();
+
         var returnsQuery = _db.JournalEntries
             .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= targetStart && e.EntryDate < targetEnd);
 
@@ -157,10 +162,17 @@ public class DashboardService : IDashboardService
             returnsQuery = returnsQuery.Where(e => e.CostCenter == source.Value);
         }
 
-        var periodReturnAmount = await returnsQuery
+        var periodReturnDebit = await returnsQuery
             .SelectMany(e => e.Lines)
             .Where(l => l.Debit > 0 && (l.AccountId == salesReturnMapping || l.Account.Code.StartsWith("4103")))
             .SumAsync(l => (decimal?)l.Debit) ?? 0;
+
+        var periodReturnDiscountCredit = await returnsQuery
+            .SelectMany(e => e.Lines)
+            .Where(l => l.Credit > 0 && (l.AccountId == salesDiscountMapping || l.Account.Code.StartsWith("4102")))
+            .SumAsync(l => (decimal?)l.Credit) ?? 0;
+
+        var periodReturnAmount = periodReturnDebit - periodReturnDiscountCredit;
 
         // --- All Time Returns ---
         var totalReturnsQuery = _db.JournalEntries
@@ -171,10 +183,17 @@ public class DashboardService : IDashboardService
             totalReturnsQuery = totalReturnsQuery.Where(e => e.CostCenter == source.Value);
         }
 
-        var totalReturnAmount = await totalReturnsQuery
+        var totalReturnDebit = await totalReturnsQuery
             .SelectMany(e => e.Lines)
             .Where(l => l.Debit > 0 && (l.AccountId == salesReturnMapping || l.Account.Code.StartsWith("4103")))
             .SumAsync(l => (decimal?)l.Debit) ?? 0;
+
+        var totalReturnDiscountCredit = await totalReturnsQuery
+            .SelectMany(e => e.Lines)
+            .Where(l => l.Credit > 0 && (l.AccountId == salesDiscountMapping || l.Account.Code.StartsWith("4102")))
+            .SumAsync(l => (decimal?)l.Credit) ?? 0;
+
+        var totalReturnAmount = totalReturnDebit - totalReturnDiscountCredit;
 
         // التحصيلات (سندات القبض)
         var collectionQuery = _db.ReceiptVouchers
