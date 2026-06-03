@@ -236,7 +236,8 @@ public class DashboardService : IDashboardService
             TotalReturnAmount: totalReturnAmount,
             PeriodGrossSales: periodGross,
             PeriodDiscounts: periodDiscount,
-            PeriodTaxes: periodTax
+            PeriodTaxes: periodTax,
+            PeriodDiscountReturned: periodDiscountReturned
         );
     }
 

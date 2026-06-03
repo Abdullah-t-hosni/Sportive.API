@@ -50,7 +50,12 @@ public class CashierPerformanceController : ControllerBase
             return Ok(new { from, to, cashiers = Array.Empty<object>(), summary = new { } });
 
         var salesReturnMapping = await _db.AccountSystemMappings
-            .Where(m => m.Key == "salesReturnAccountID")
+            .Where(m => m.Key == MappingKeys.SalesReturn)
+            .Select(m => m.AccountId)
+            .FirstOrDefaultAsync();
+
+        var salesDiscountMapping = await _db.AccountSystemMappings
+            .Where(m => m.Key == MappingKeys.SalesDiscount)
             .Select(m => m.AccountId)
             .FirstOrDefaultAsync();
 
@@ -58,9 +63,18 @@ public class CashierPerformanceController : ControllerBase
             .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= from && e.EntryDate <= to)
             .Where(e => e.CostCenter == OrderSource.POS)
             .SelectMany(e => e.Lines)
-            .Where(l => l.Debit > 0 && (l.AccountId == salesReturnMapping || l.Account.Code.StartsWith("4103")))
+            .Where(l => l.Debit > 0 && (l.AccountId == salesReturnMapping || l.Account.Code.StartsWith("4102")))
             .GroupBy(l => l.JournalEntry.CreatedByUserId)
             .Select(g => new { CashierId = g.Key, Amount = g.Sum(l => l.Debit) })
+            .ToDictionaryAsync(x => x.CashierId ?? "", x => x.Amount);
+
+        var discountReturnsByCashier = await _db.JournalEntries
+            .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= from && e.EntryDate <= to)
+            .Where(e => e.CostCenter == OrderSource.POS)
+            .SelectMany(e => e.Lines)
+            .Where(l => l.Credit > 0 && (l.AccountId == salesDiscountMapping || l.Account.Code.StartsWith("410101")))
+            .GroupBy(l => l.JournalEntry.CreatedByUserId)
+            .Select(g => new { CashierId = g.Key, Amount = g.Sum(l => l.Credit) })
             .ToDictionaryAsync(x => x.CashierId ?? "", x => x.Amount);
 
         var cashierIds = orders.Select(o => o.SalesPersonId!).Distinct().ToList();
@@ -79,7 +93,9 @@ public class CashierPerformanceController : ControllerBase
                 var allOrders  = g.ToList();
                 var totalDisc  = allOrders.Sum(o => o.DiscountAmount);
                 var grossRevenue = allOrders.Sum(o => o.TotalAmount + o.DiscountAmount);
-                var returnsAmount = returnsByCashier.GetValueOrDefault(g.Key, 0);
+                var returnsAmountRaw = returnsByCashier.GetValueOrDefault(g.Key, 0);
+                var discountReturned = discountReturnsByCashier.GetValueOrDefault(g.Key, 0);
+                var returnsAmount = returnsAmountRaw - discountReturned;
                 var netRevenue = grossRevenue - returnsAmount - totalDisc;
                 var count      = allOrders.Count;
                 var avgOrder   = count > 0 ? netRevenue / count : 0;
@@ -155,18 +171,25 @@ public class CashierPerformanceController : ControllerBase
 
         var totalJournalReturns = await journalReturnsQuery
             .SelectMany(e => e.Lines)
-            .Where(l => l.Debit > 0 && (l.AccountId == salesReturnMapping || l.Account.Code.StartsWith("4103")))
+            .Where(l => l.Debit > 0 && (l.AccountId == salesReturnMapping || l.Account.Code.StartsWith("4102")))
             .SumAsync(l => (decimal?)l.Debit) ?? 0;
+
+        var totalDiscountReturns = await journalReturnsQuery
+            .SelectMany(e => e.Lines)
+            .Where(l => l.Credit > 0 && (l.AccountId == salesDiscountMapping || l.Account.Code.StartsWith("410101")))
+            .SumAsync(l => (decimal?)l.Credit) ?? 0;
+
+        var netJournalReturns = totalJournalReturns - totalDiscountReturns;
 
         var totalGrossSales = cashierStats.Sum(c => c.grossSales);
         var totalDiscounts = cashierStats.Sum(c => c.totalDiscount);
-        var totalNetRevenue = totalGrossSales - totalJournalReturns - totalDiscounts;
+        var totalNetRevenue = totalGrossSales - netJournalReturns - totalDiscounts;
 
         var summary = new
         {
             totalRevenue   = Math.Round(totalNetRevenue, 2),
             totalGrossSales = Math.Round(totalGrossSales, 2),
-            totalReturns   = Math.Round(totalJournalReturns, 2),
+            totalReturns   = Math.Round(netJournalReturns, 2),
             totalDiscounts = Math.Round(totalDiscounts, 2),
             totalOrders    = cashierStats.Sum(c => c.orderCount),
             totalCashiers  = cashierStats.Count,
