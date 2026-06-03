@@ -317,6 +317,7 @@ public class AccountsController : ControllerBase
             new { key = MappingKeys.EmployeeAdvances, description = _t.Get("Accounting.Mapping.EmployeeAdvances") },
             new { key = MappingKeys.EmployeeBonuses, description = _t.Get("Accounting.Mapping.EmployeeBonuses") },
             new { key = MappingKeys.EmployeeDeductions, description = _t.Get("Accounting.Mapping.EmployeeDeductions") },
+            new { key = MappingKeys.OvertimeExpense, description = _t.Get("Accounting.MappingRegistry.OvertimeExpense") ?? "مصروف الساعات الإضافية" },
  
             // --- Fixed Assets ---
             new { key = MappingKeys.DepreciationExpense, description = _t.Get("Accounting.Mapping.DepreciationExpense") },
