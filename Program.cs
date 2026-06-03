@@ -50,7 +50,8 @@ try
         Keepalive = 60,
         AllowUserVariables = true,
         ConnectionTimeout = 30,
-        DefaultCommandTimeout = 120  // ✅ allow up to 120s command timeout to prevent transient DB timeouts
+        DefaultCommandTimeout = 120, // ✅ allow up to 120s command timeout to prevent transient DB timeouts
+        ConvertZeroDateTime = true  // ✅ convert '0000-00-00 00:00:00' to DateTime.MinValue
     };
     connStr = connBuilder.ConnectionString;
 }
