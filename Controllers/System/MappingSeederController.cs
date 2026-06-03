@@ -95,6 +95,7 @@ public class MappingSeederController : ControllerBase
                 new Account { Code = "5204", NameAr = "مصروف بدل انتقال", NameEn = "Transportation Allowance Expense", Type = AccountType.Expense, Nature = AccountNature.Debit, Level = 3, ParentId = adminExpenses.Id, IsLeaf = true, AllowPosting = true, IsSystem = true, CreatedAt = TimeHelper.GetEgyptTime() },
                 new Account { Code = "5205", NameAr = "مصروف بدل اتصالات", NameEn = "Communication Allowance Expense", Type = AccountType.Expense, Nature = AccountNature.Debit, Level = 3, ParentId = adminExpenses.Id, IsLeaf = true, AllowPosting = true, IsSystem = true, CreatedAt = TimeHelper.GetEgyptTime() },
                 new Account { Code = "5206", NameAr = "مصروف بدلات ثابتة", NameEn = "Fixed Allowance Expense", Type = AccountType.Expense, Nature = AccountNature.Debit, Level = 3, ParentId = adminExpenses.Id, IsLeaf = true, AllowPosting = true, IsSystem = true, CreatedAt = TimeHelper.GetEgyptTime() },
+                new Account { Code = "51202", NameAr = "مصروف عمولات البيع", NameEn = "Sales Commissions Expense", Type = AccountType.Expense, Nature = AccountNature.Debit, Level = 3, ParentId = adminExpenses.Id, IsLeaf = true, AllowPosting = true, IsSystem = true, CreatedAt = TimeHelper.GetEgyptTime() },
                 new Account { Code = "51203", NameAr = "مصروف إضافي الموظفين", NameEn = "Overtime Expense", Type = AccountType.Expense, Nature = AccountNature.Debit, Level = 3, ParentId = adminExpenses.Id, IsLeaf = true, AllowPosting = true, IsSystem = true, CreatedAt = TimeHelper.GetEgyptTime() }
             };
 
@@ -148,6 +149,7 @@ public class MappingSeederController : ControllerBase
             { MappingKeys.WebInstaPay, new[] { "انستاباي", "Instapay" } },
             { MappingKeys.SalaryExpense, new[] { "5202", "رواتب", " wages", "Salaries" } },
             { MappingKeys.OvertimeExpense, new[] { "51203", "5202", "إضافي", "Overtime" } },
+            { MappingKeys.SalesCommissionExpense, new[] { "51202", "عمولات بيع", "عمولات البيع", "Commission" } },
             { MappingKeys.SalariesPayable, new[] { "2103", "رواتب مستحقة - موظفين", "رواتب مستحقة موظفين", "رواتب مستحقة" } },
             { MappingKeys.EmployeeAdvances, new[] { "1201", "سلف", "Advances" } },
             { MappingKeys.EmployeeBonuses, new[] { "5202", "مكافآت" } },
@@ -224,6 +226,7 @@ public class MappingSeederController : ControllerBase
             { MappingKeys.WebInstaPay, new[] { "انستاباي", "Instapay" } },
             { MappingKeys.SalaryExpense, new[] { "5202", "رواتب", " wages", "Salaries" } },
             { MappingKeys.OvertimeExpense, new[] { "51203", "5202", "إضافي", "Overtime" } },
+            { MappingKeys.SalesCommissionExpense, new[] { "51202", "عمولات بيع", "عمولات البيع", "Commission" } },
             { MappingKeys.SalariesPayable, new[] { "2103", "رواتب مستحقة - موظفين", "رواتب مستحقة موظفين", "رواتب مستحقة" } },
             { MappingKeys.EmployeeAdvances, new[] { "1201", "سلف", "Advances" } },
             { MappingKeys.EmployeeBonuses, new[] { "5202", "مكافآت" } },

@@ -1086,6 +1086,7 @@ public class PayrollController : ControllerBase
         var commAccId    = run.TotalCommunication > 0 ? await _core.GetRequiredMappedAccountAsync(MappingKeys.CommunicationAllowanceExpense, mapDict) : 0;
         var bonusAccId   = (run.TotalBonuses > 0 || run.Items.Any(i => i.BonusAmount > 0)) ? await _core.GetRequiredMappedAccountAsync(MappingKeys.EmployeeBonuses, mapDict) : 0;
         var fixAllAccId  = run.TotalFixedAllowances > 0 ? await _core.GetRequiredMappedAccountAsync(MappingKeys.FixedAllowanceExpense, mapDict) : 0;
+        var commissionAccId = run.Items.Any(i => i.CommissionAmount > 0) ? await _core.GetRequiredMappedAccountAsync(MappingKeys.SalesCommissionExpense, mapDict) : 0;
 
         JournalEntry? je = null;
 
@@ -1119,6 +1120,7 @@ public class PayrollController : ControllerBase
                 var ccComm  = group.Sum(i => i.CommunicationAllowance);
                 var ccFix   = group.Sum(i => i.FixedAllowance);
                 var ccBonus = group.Sum(i => i.BonusAmount);
+                var ccCommission = group.Sum(i => i.CommissionAmount);
                 var ccDed   = group.Sum(i => i.DeductionAmount); // Absence is handled via ccBasic netting
 
                 if (ccBasic > 0)
@@ -1151,6 +1153,10 @@ public class PayrollController : ControllerBase
                 {
                     je.Lines.Add(new JournalLine { AccountId = bonusAccId, Debit = ccBonus, Description = _t.Get("HR.BonusDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
                 }
+                if (ccCommission > 0)
+                {
+                    je.Lines.Add(new JournalLine { AccountId = commissionAccId, Debit = ccCommission, Description = _t.Get("HR.CommissionDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
+                }
                 if (ccDed > 0)
                 {
                     je.Lines.Add(new JournalLine { AccountId = dedAccId, Credit = ccDed, Description = _t.Get("HR.DeductionDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
@@ -1161,7 +1167,7 @@ public class PayrollController : ControllerBase
             {
                 var employeeCC = item.Employee?.CostCenter ?? OrderSource.General;
 
-                var grossEarnings = item.BasicSalary + item.TransportationAllowance + item.CommunicationAllowance + item.FixedAllowance + item.BonusAmount + item.OvertimeAmount;
+                var grossEarnings = item.BasicSalary + item.TransportationAllowance + item.CommunicationAllowance + item.FixedAllowance + item.BonusAmount + item.OvertimeAmount + item.CommissionAmount;
                 if (grossEarnings > 0)
                 {
                     je.Lines.Add(new JournalLine
