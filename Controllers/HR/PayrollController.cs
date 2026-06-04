@@ -1501,8 +1501,8 @@ public class PayrollController : ControllerBase
         run.TotalAdvancesDeducted, run.TotalNetPayable, (int)run.Status, run.Notes,
         run.JournalEntryId, run.PaymentJournalEntryId, run.CreatedAt,
         run.Items.Select(i => new PayrollItemDto(
-            i.Id, i.EmployeeId, i.Employee.Name, i.Employee.EmployeeNumber,
-            i.Employee.JobTitle, i.Employee.Department?.Name,
+            i.Id, i.EmployeeId, i.Employee?.Name ?? "موظف محذوف", i.Employee?.EmployeeNumber ?? "",
+            i.Employee?.JobTitle, i.Employee?.Department?.Name,
             i.BasicSalary, i.TransportationAllowance, i.CommunicationAllowance, i.BonusAmount,
             i.FixedAllowance,
             i.DeductionAmount, i.AdvanceDeducted, i.AbsenceDays, i.AbsenceDeduction, i.OvertimeHours, i.OvertimeAmount, i.CommissionAmount, i.NetPayable, i.Notes,
