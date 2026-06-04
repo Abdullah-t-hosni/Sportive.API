@@ -1784,13 +1784,8 @@ public class OrderService : IOrderService
                 var orderNum = order.OrderNumber.Trim().ToLower();
                 entryMap.TryGetValue(orderNum, out var entry);
 
-                if (entry == null || !entry.Lines.Any() || entry.Lines.All(l => l.CustomerId == null))
+                if (entry == null || !entry.Lines.Any())
                 {
-                    if (entry != null) { 
-                        _db.JournalLines.RemoveRange(entry.Lines); 
-                        _db.JournalEntries.Remove(entry); 
-                        await _db.SaveChangesAsync(); 
-                    }
                     await _accounting.PostSalesOrderAsync(order);
                 }
                 if (order.PaymentStatus == PaymentStatus.Paid) await _accounting.PostOrderPaymentAsync(order);
