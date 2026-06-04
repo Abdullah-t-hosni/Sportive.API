@@ -471,8 +471,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Employee>(e => {
             e.Property(x => x.BaseSalary).HasPrecision(18, 2);
             e.Property(x => x.FixedAllowance).HasPrecision(18, 2);
-            e.Property(x => x.FixedDeduction).HasPrecision(18, 2);
             e.Property(x => x.Status).HasConversion<string>();
+
             e.Property(x => x.AttendanceMode).HasConversion<string>();
             e.HasIndex(x => x.EmployeeNumber).IsUnique();
             e.HasOne(x => x.Account).WithMany()

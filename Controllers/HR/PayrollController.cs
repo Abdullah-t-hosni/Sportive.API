@@ -48,6 +48,7 @@ public class PayrollController : ControllerBase
     }
 
     [HttpGet("{id}")]
+
     public async Task<IActionResult> GetById(int id)
     {
         var run = await _db.PayrollRuns
@@ -292,9 +293,8 @@ public class PayrollController : ControllerBase
             var pendingDeductions = emp.Deductions
                 .Where(d => d.PayrollRunId == null && d.CashAccountId == null && d.DeductionDate <= endOfPeriod)
                 .Sum(d => d.Amount);
-
-            // Total Deduction = Fixed Deduction + Pending Deductions + Delay Deduction
-            var totalDeduction = emp.FixedDeduction + pendingDeductions + delayDeduction;
+            // Total Deduction = Pending Deductions + Delay Deduction (FixedDeduction has been deprecated/removed)
+            var totalDeduction = pendingDeductions + delayDeduction;
 
             var notesList = new List<string>();
             if (delayMinutes > 0)

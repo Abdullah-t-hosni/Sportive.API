@@ -110,7 +110,6 @@ public class Employee : BaseEntity
     public decimal CommunicationAllowance  { get; set; } = 0;
     public decimal BonusAmount             { get; set; } = 0;
     public decimal FixedAllowance          { get; set; } = 0;
-    public decimal FixedDeduction          { get; set; } = 0;
 
     // Payroll Configuration (Configurable per employee)
     public decimal WorkHoursPerDay         { get; set; } = 9;   // Default 9 hours
