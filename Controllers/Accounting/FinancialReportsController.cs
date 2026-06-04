@@ -613,33 +613,15 @@ public class FinancialReportsController : ControllerBase
         
         if (customerId.HasValue)
         {
-            if (acct.Code == "1103")
-            {
-                openQ = openQ.Where(l => l.CustomerId == customerId && targetAccountIds.Contains(l.AccountId));
-            }
-            else
-            {
-                var controlAccountIds = await _db.Accounts.Where(a => a.Code == "1103").Select(a => a.Id).ToListAsync();
-                openQ = openQ.Where(l => targetAccountIds.Contains(l.AccountId) || (controlAccountIds.Contains(l.AccountId) && l.CustomerId == customerId));
-            }
+            openQ = openQ.Where(l => l.CustomerId == customerId && targetAccountIds.Contains(l.AccountId));
         }
         else if (supplierId.HasValue)
         {
-            if (acct.Code == "2101")
-            {
-                openQ = openQ.Where(l => l.SupplierId == supplierId && targetAccountIds.Contains(l.AccountId));
-            }
-            else
-            {
-                var controlAccountIds = await _db.Accounts.Where(a => a.Code == "2101").Select(a => a.Id).ToListAsync();
-                openQ = openQ.Where(l => targetAccountIds.Contains(l.AccountId) || (controlAccountIds.Contains(l.AccountId) && l.SupplierId == supplierId));
-            }
+            openQ = openQ.Where(l => l.SupplierId == supplierId && targetAccountIds.Contains(l.AccountId));
         }
         else if (employeeId.HasValue)
         {
-            var empRelatedCodes = new List<string> { "2102", "1105", "2103" };
-            var controlAccountIds = await _db.Accounts.Where(a => empRelatedCodes.Any(c => a.Code == c)).Select(a => a.Id).ToListAsync();
-            openQ = openQ.Where(l => targetAccountIds.Contains(l.AccountId) || (controlAccountIds.Contains(l.AccountId) && l.EmployeeId == employeeId));
+            openQ = openQ.Where(l => l.EmployeeId == employeeId && targetAccountIds.Contains(l.AccountId));
         }
         else
         {
@@ -668,33 +650,15 @@ public class FinancialReportsController : ControllerBase
 
         if (customerId.HasValue)
         {
-            if (acct.Code == "1103")
-            {
-                q = q.Where(l => l.CustomerId == customerId && targetAccountIds.Contains(l.AccountId));
-            }
-            else
-            {
-                var controlAccountIds = await _db.Accounts.Where(a => a.Code == "1103").Select(a => a.Id).ToListAsync();
-                q = q.Where(l => targetAccountIds.Contains(l.AccountId) || (controlAccountIds.Contains(l.AccountId) && l.CustomerId == customerId));
-            }
+            q = q.Where(l => l.CustomerId == customerId && targetAccountIds.Contains(l.AccountId));
         }
         else if (supplierId.HasValue)
         {
-            if (acct.Code == "2101")
-            {
-                q = q.Where(l => l.SupplierId == supplierId && targetAccountIds.Contains(l.AccountId));
-            }
-            else
-            {
-                var controlAccountIds = await _db.Accounts.Where(a => a.Code == "2101").Select(a => a.Id).ToListAsync();
-                q = q.Where(l => targetAccountIds.Contains(l.AccountId) || (controlAccountIds.Contains(l.AccountId) && l.SupplierId == supplierId));
-            }
+            q = q.Where(l => l.SupplierId == supplierId && targetAccountIds.Contains(l.AccountId));
         }
         else if (employeeId.HasValue)
         {
-            var empRelatedCodes = new List<string> { "2102", "1105", "2103" };
-            var controlAccountIds = await _db.Accounts.Where(a => empRelatedCodes.Any(c => a.Code == c)).Select(a => a.Id).ToListAsync();
-            q = q.Where(l => targetAccountIds.Contains(l.AccountId) || (controlAccountIds.Contains(l.AccountId) && l.EmployeeId == employeeId));
+            q = q.Where(l => l.EmployeeId == employeeId && targetAccountIds.Contains(l.AccountId));
         }
         else
         {
