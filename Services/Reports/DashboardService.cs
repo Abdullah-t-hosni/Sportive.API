@@ -733,6 +733,52 @@ public class DashboardService : IDashboardService
             return new { date = date.ToString("MM/dd"), dayName = date.DayOfWeek.ToString()[..3], revenue = data?.revenue ?? 0, orders = data?.orders ?? 0 };
         }).ToList();
 
+        // Calculate income/expenses for the last 12 months (Cash Flow)
+        var startPeriod = monthStart.AddMonths(-11);
+
+        // Query monthly revenue
+        var monthlyRevenueQuery = _db.Orders.AsNoTracking()
+            .Where(o => o.Status != OrderStatus.Cancelled && o.CreatedAt >= startPeriod);
+        if (source.HasValue)
+        {
+            monthlyRevenueQuery = monthlyRevenueQuery.Where(o => o.Source == source.Value);
+        }
+        var monthlyRevenue = await monthlyRevenueQuery
+            .GroupBy(o => new { o.CreatedAt.Year, o.CreatedAt.Month })
+            .Select(g => new {
+                g.Key.Year,
+                g.Key.Month,
+                Revenue = g.Sum(o => o.TotalAmount)
+            })
+            .ToListAsync();
+
+        // Query monthly expenses
+        var monthlyExpensesQuery = _db.PaymentVouchers.AsNoTracking()
+            .Where(v => v.VoucherDate >= startPeriod);
+        if (source.HasValue)
+        {
+            monthlyExpensesQuery = monthlyExpensesQuery.Where(v => v.CostCenter == source.Value);
+        }
+        var monthlyExpenses = await monthlyExpensesQuery
+            .GroupBy(v => new { v.VoucherDate.Year, v.VoucherDate.Month })
+            .Select(g => new {
+                g.Key.Year,
+                g.Key.Month,
+                Expenses = g.Sum(v => v.Amount)
+            })
+            .ToListAsync();
+
+        var incomeChartData = Enumerable.Range(0, 12).Select(i => {
+            var date = startPeriod.AddMonths(i);
+            var revData = monthlyRevenue.FirstOrDefault(r => r.Year == date.Year && r.Month == date.Month);
+            var expData = monthlyExpenses.FirstOrDefault(e => e.Year == date.Year && e.Month == date.Month);
+            return new {
+                label = date.ToString("MM/yyyy"),
+                revenue = revData?.Revenue ?? 0,
+                expenses = expData?.Expenses ?? 0
+            };
+        }).ToList();
+
         // ── 6. أعمار الديون (Aging) ──────────
         var topDebtors = await _db.Customers.AsNoTracking()
             .Where(c => c.Orders.Any(o => o.Status != OrderStatus.Cancelled))
@@ -790,7 +836,7 @@ public class DashboardService : IDashboardService
                 vsLastMonth = new { revenue = lastMonthRevenue, growth = GrowthPct(thisMonthRevenue, lastMonthRevenue), orders = lastMonthOrdersCount }
             },
             topProducts = topProducts.Select(p => new { p.ProductId, p.ProductNameAr, p.ProductNameEn, p.TotalSold, p.TotalRevenue, p.OrderCount, image = imagesMap.GetValueOrDefault(p.ProductId) }),
-            charts = new { byHour = salesByHour, byDay = salesByDay },
+            charts = new { byHour = salesByHour, byDay = salesByDay, income = incomeChartData },
             aging = new { debtors = topDebtors, creditors = topCreditors, sales = new { total = totalDebts } },
             paymentBreakdown = todayPaymentBreakdown,
             insights = new {
