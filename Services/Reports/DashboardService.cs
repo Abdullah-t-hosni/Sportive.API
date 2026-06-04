@@ -461,7 +461,9 @@ public class DashboardService : IDashboardService
             .Select(g => new { ProductId = g.Key, TotalSold = g.Sum(i => i.Quantity) })
             .ToListAsync();
 
+        var soldProductIds = recentSales.Where(s => s.ProductId.HasValue).Select(s => s.ProductId!.Value).ToList();
         var products = await _db.Products
+            .Where(p => soldProductIds.Contains(p.Id))
             .Include(p => p.Variants)
             .Select(p => new { 
                 p.Id, 
@@ -604,14 +606,14 @@ public class DashboardService : IDashboardService
         );
     }
 
-    public async Task<object> GetKpiAsync(OrderSource? source = null)
+    public async Task<object> GetKpiAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null)
     {
         var EgyptTime = TimeHelper.GetEgyptTime();
-        var cacheKey = $"KPI_DASHBOARD_{source}_{EgyptTime:yyyyMMdd_HHmm}";
+        var cacheKey = $"KPI_DASHBOARD_{source}_{fromDate:yyyyMMdd}_{toDate:yyyyMMdd}_{EgyptTime:yyyyMMdd_HHmm}";
 
         return await _cache.GetOrCreateAsync(cacheKey, async () => 
         {
-            return await GetKpiInternalAsync(source);
+            return await GetKpiInternalAsync(source, fromDate, toDate);
         }, TimeSpan.FromSeconds(30)) ?? new {};
     }
 
@@ -620,7 +622,7 @@ public class DashboardService : IDashboardService
         await _hub.Clients.Group("Admin").SendAsync("DashboardUpdated", new { date = TimeHelper.GetEgyptTime() });
     }
 
-    private async Task<object> GetKpiInternalAsync(OrderSource? source = null)
+    private async Task<object> GetKpiInternalAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null)
     {
         var now        = TimeHelper.GetEgyptTime();
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
@@ -709,14 +711,16 @@ public class DashboardService : IDashboardService
             .ToDictionaryAsync(img => img.ProductId, img => img.ImageUrl);
 
         // ── 5. المخططات (Charts) ──────────
-        var last24h = now.AddHours(-24);
-        var salesByHourRaw = await allOrdersQuery.Where(o => o.CreatedAt >= last24h)
+        var startHourRange = fromDate ?? now.AddHours(-24);
+        var endHourRange = toDate ?? now;
+
+        var salesByHourRaw = await allOrdersQuery.Where(o => o.CreatedAt >= startHourRange && o.CreatedAt < endHourRange)
             .GroupBy(o => o.CreatedAt.Hour)
             .Select(g => new { hour = g.Key, revenue = g.Sum(o => o.TotalAmount), orders = g.Count() })
             .ToListAsync();
         
         var salesByHour = Enumerable.Range(0, 24).Select(h => {
-            var hour = now.AddHours(-23 + h).Hour;
+            var hour = fromDate.HasValue ? h : now.AddHours(-23 + h).Hour;
             var data = salesByHourRaw.FirstOrDefault(x => x.hour == hour);
             return new { hour, revenue = data?.revenue ?? 0, orders = data?.orders ?? 0 };
         }).ToList();

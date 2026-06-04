@@ -1,4 +1,4 @@
-﻿using Sportive.API.DTOs;
+using Sportive.API.DTOs;
 using Sportive.API.Models;
 
 namespace Sportive.API.Interfaces;
@@ -14,6 +14,6 @@ public interface IDashboardService
     Task<byte[]> ExportSalesToCsvAsync(DateTime? from, DateTime? to, OrderSource? source = null);
     Task<AdvancedDashboardStatsDto> GetAdvancedStatsAsync();
     Task<StaffPerformanceDto> GetStaffStatsAsync(string staffId);
-    Task<object> GetKpiAsync(OrderSource? source = null);
+    Task<object> GetKpiAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null);
     Task TriggerLiveUpdateAsync();
 }

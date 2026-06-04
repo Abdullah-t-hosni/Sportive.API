@@ -85,9 +85,12 @@ public class DashboardKpiController : ControllerBase
     }
 
     [HttpGet("kpi")]
-    public async Task<IActionResult> GetKpi([FromQuery] OrderSource? source = null)
+    public async Task<IActionResult> GetKpi(
+        [FromQuery] OrderSource? source = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null)
     {
-        return Ok(await _dashboard.GetKpiAsync(source));
+        return Ok(await _dashboard.GetKpiAsync(source, fromDate, toDate));
     }
 
     private static decimal GrowthPct(decimal current, decimal previous) =>

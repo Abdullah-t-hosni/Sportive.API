@@ -1114,14 +1114,14 @@ public class PayrollController : ControllerBase
             foreach (var group in itemsByCostCenter)
             {
                 var cc = group.Key;
-                var ccBasic = group.Sum(i => i.BasicSalary) - group.Sum(i => i.AbsenceDeduction); // Net of absence
+                var ccBasic = group.Sum(i => i.BasicSalary); // Gross basic salary (not net of absence)
                 var ccOvertime = group.Sum(i => i.OvertimeAmount);
                 var ccTrans = group.Sum(i => i.TransportationAllowance);
                 var ccComm  = group.Sum(i => i.CommunicationAllowance);
                 var ccFix   = group.Sum(i => i.FixedAllowance);
                 var ccBonus = group.Sum(i => i.BonusAmount);
                 var ccCommission = group.Sum(i => i.CommissionAmount);
-                var ccDed   = group.Sum(i => i.DeductionAmount); // Absence is handled via ccBasic netting
+                var ccDed   = group.Sum(i => i.DeductionAmount) + group.Sum(i => i.AbsenceDeduction); // All deductions & absences go here
 
                 if (ccBasic > 0)
                 {
@@ -1167,63 +1167,41 @@ public class PayrollController : ControllerBase
             {
                 var employeeCC = item.Employee?.CostCenter ?? OrderSource.General;
 
-                var grossEarnings = item.BasicSalary + item.TransportationAllowance + item.CommunicationAllowance + item.FixedAllowance + item.BonusAmount + item.OvertimeAmount + item.CommissionAmount;
-                if (grossEarnings > 0)
+                // Accrued Salaries gets the net amount due (صافي المستحق)
+                if (item.NetPayable > 0)
                 {
                     je.Lines.Add(new JournalLine
                     {
                         AccountId   = accrualAccId,
                         Debit       = 0,
-                        Credit      = grossEarnings,
-                        Description = _t.Get("HR.GrossEarningsDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
+                        Credit      = item.NetPayable,
+                        Description = _t.Get("HR.NetPayableDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
+                        EmployeeId  = item.EmployeeId,
+                        CostCenter  = employeeCC
+                    });
+                }
+                else if (item.NetPayable < 0)
+                {
+                    je.Lines.Add(new JournalLine
+                    {
+                        AccountId   = accrualAccId,
+                        Debit       = Math.Abs(item.NetPayable),
+                        Credit      = 0,
+                        Description = _t.Get("HR.NetPayableDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
                         EmployeeId  = item.EmployeeId,
                         CostCenter  = employeeCC
                     });
                 }
 
+                // Employee Advances is credited directly for advance repayments (سلف موظفين)
                 if (item.AdvanceDeducted > 0)
                 {
-                    je.Lines.Add(new JournalLine
-                    {
-                        AccountId   = accrualAccId,
-                        Debit       = item.AdvanceDeducted,
-                        Credit      = 0,
-                        Description = _t.Get("HR.AdvanceDeductionDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
-                        EmployeeId  = item.EmployeeId,
-                        CostCenter  = employeeCC
-                    });
-                    
                     je.Lines.Add(new JournalLine
                     {
                         AccountId   = advAccId,
                         Debit       = 0,
                         Credit      = item.AdvanceDeducted,
                         Description = _t.Get("HR.AdvanceSettlementDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
-                        CostCenter  = employeeCC
-                    });
-                }
-
-                if (item.DeductionAmount > 0)
-                {
-                    je.Lines.Add(new JournalLine
-                    {
-                        AccountId   = accrualAccId,
-                        Debit       = item.DeductionAmount,
-                        Credit      = 0,
-                        Description = _t.Get("HR.DeductionLogDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
-                        EmployeeId  = item.EmployeeId,
-                        CostCenter  = employeeCC
-                    });
-                }
-                
-                if (item.AbsenceDeduction > 0)
-                {
-                    je.Lines.Add(new JournalLine
-                    {
-                        AccountId   = accrualAccId,
-                        Debit       = item.AbsenceDeduction,
-                        Credit      = 0,
-                        Description = _t.Get("HR.AbsenceDeductionDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
                         EmployeeId  = item.EmployeeId,
                         CostCenter  = employeeCC
                     });
