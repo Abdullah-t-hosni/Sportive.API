@@ -146,6 +146,14 @@ public record PayPayrollDto(
     string?  Notes = null
 );
 
+// صرف جزئي — يحدد المستخدم قائمة من PayrollItem IDs
+public record PayPartialPayrollDto(
+    int         CashAccountId,
+    DateTime    PaymentDate,
+    List<int>   ItemIds,
+    string?     Notes = null
+);
+
 public record CreatePayrollItemDto(
     int      EmployeeId,
     decimal? OverrideBasicSalary = null,
@@ -186,25 +194,29 @@ public record PayrollRunDto(
 );
 
 public record PayrollItemDto(
-    int     Id,
-    int     EmployeeId,
-    string  EmployeeName,
-    string  EmployeeNumber,
-    string? JobTitle,
-    decimal BasicSalary,
-    decimal TransportationAllowance,
-    decimal CommunicationAllowance,
-    decimal BonusAmount,
-    decimal FixedAllowance,
-    decimal DeductionAmount,
-    decimal AdvanceDeducted,
-    int     AbsenceDays,
-    decimal AbsenceDeduction,
-    decimal OvertimeHours,
-    decimal OvertimeAmount,
-    decimal CommissionAmount,
-    decimal NetPayable,
-    string? Notes
+    int      Id,
+    int      EmployeeId,
+    string   EmployeeName,
+    string   EmployeeNumber,
+    string?  JobTitle,
+    string?  DepartmentName,
+    decimal  BasicSalary,
+    decimal  TransportationAllowance,
+    decimal  CommunicationAllowance,
+    decimal  BonusAmount,
+    decimal  FixedAllowance,
+    decimal  DeductionAmount,
+    decimal  AdvanceDeducted,
+    int      AbsenceDays,
+    decimal  AbsenceDeduction,
+    decimal  OvertimeHours,
+    decimal  OvertimeAmount,
+    decimal  CommissionAmount,
+    decimal  NetPayable,
+    string?  Notes,
+    bool     IsPaid               = false,
+    DateTime? PaidAt              = null,
+    int?     PaymentJournalEntryId = null
 );
 
 public record PayrollRunSummaryDto(

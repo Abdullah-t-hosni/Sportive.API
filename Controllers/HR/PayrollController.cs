@@ -51,7 +51,7 @@ public class PayrollController : ControllerBase
     public async Task<IActionResult> GetById(int id)
     {
         var run = await _db.PayrollRuns
-            .Include(p => p.Items).ThenInclude(i => i.Employee)
+            .Include(p => p.Items).ThenInclude(i => i.Employee).ThenInclude(e => e.Department)
             .FirstOrDefaultAsync(p => p.Id == id);
         if (run == null) return NotFound();
         return Ok(ToDto(run));
@@ -1319,6 +1319,109 @@ public class PayrollController : ControllerBase
         return Ok(new { id = run.Id, status = (int)run.Status, paymentJournalEntryId = payJe.Id });
     }
 
+    // POST /api/payroll/{id}/pay-partial
+    [HttpPost("{id}/pay-partial")]
+    public async Task<IActionResult> PayPartial(int id, [FromBody] PayPartialPayrollDto dto)
+    {
+        if (dto.ItemIds == null || !dto.ItemIds.Any())
+            return BadRequest(new { message = "يجب اختيار موظف واحد على الأقل للصرف." });
+
+        var run = await _db.PayrollRuns
+            .Include(p => p.Items).ThenInclude(i => i.Employee)
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+        if (run == null) return NotFound();
+        if (run.Status != PayrollStatus.Posted)
+            return BadRequest(new { message = _t.Get("HR.PayrollMustBePostedToPay") });
+
+        // التحقق من البنود المطلوبة وأنها غير مدفوعة
+        var itemsToPay = run.Items
+            .Where(i => dto.ItemIds.Contains(i.Id) && !i.IsPaid && i.NetPayable > 0)
+            .ToList();
+
+        if (!itemsToPay.Any())
+            return BadRequest(new { message = "لا توجد بنود صالحة للصرف. ربما تم صرف هذه البنود مسبقاً." });
+
+        var mapDict  = await _core.GetSafeSystemMappingsAsync();
+        var accrualAccId = run.AccruedSalariesAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.SalariesPayable, mapDict);
+        var cashAcc  = await _db.Accounts.FindAsync(dto.CashAccountId);
+        if (cashAcc == null) return BadRequest(new { message = _t.Get("Accounting.PaymentVoucher.AccountNotFound") });
+
+        var partialTotal = itemsToPay.Sum(i => i.NetPayable);
+        var jeNo = await _seq.NextAsync("JE");
+        var now  = TimeHelper.GetEgyptTime();
+
+        var payJe = new JournalEntry
+        {
+            EntryNumber     = jeNo,
+            EntryDate       = dto.PaymentDate.Date.Add(now.TimeOfDay),
+            Type            = JournalEntryType.PaymentVoucher,
+            Status          = JournalEntryStatus.Posted,
+            Description     = _t.Get("HR.PayrollPaymentDescription", run.PayrollNumber, run.PeriodMonth, run.PeriodYear)
+                              + $" ({(dto.Notes?.Trim() ?? (itemsToPay.Count == 1 ? itemsToPay[0].Employee?.Name ?? "" : $"{itemsToPay.Count} موظفين"))})",
+            Reference       = run.PayrollNumber,
+            CreatedByUserId = UserId,
+            CreatedAt       = now,
+            Lines           = new List<JournalLine>()
+        };
+
+        // 1. مدين: رواتب مستحقة (تصفية الالتزام) — لكل موظف منفرداً
+        foreach (var item in itemsToPay)
+        {
+            var employeeCC = item.Employee?.CostCenter ?? OrderSource.General;
+            payJe.Lines.Add(new JournalLine
+            {
+                AccountId   = accrualAccId,
+                Debit       = item.NetPayable,
+                Credit      = 0,
+                Description = _t.Get("HR.PayrollPaymentLineDescription", item.Employee?.Name ?? "", run.PayrollNumber),
+                EmployeeId  = item.EmployeeId,
+                CostCenter  = employeeCC
+            });
+        }
+
+        // 2. دائن: الخزينة/البنك — إجمالي الصرف الجزئي
+        payJe.Lines.Add(new JournalLine
+        {
+            AccountId   = cashAcc.Id,
+            Debit       = 0,
+            Credit      = partialTotal,
+            Description = _t.Get("HR.PayrollPaymentFrom", cashAcc.NameAr)
+        });
+
+        _db.JournalEntries.Add(payJe);
+        await _db.SaveChangesAsync();
+
+        // علّم البنود المدفوعة
+        foreach (var item in itemsToPay)
+        {
+            item.IsPaid                = true;
+            item.PaidAt                = now;
+            item.PaymentJournalEntryId = payJe.Id;
+        }
+
+        // إذا كل البنود تم صرفها → المسير ينتقل لـ Paid
+        bool allPaid = run.Items.All(i => i.IsPaid || i.NetPayable <= 0);
+        if (allPaid)
+        {
+            run.Status                = PayrollStatus.Paid;
+            run.PaymentJournalEntryId = payJe.Id;
+        }
+
+        run.UpdatedAt = now;
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            id                     = run.Id,
+            status                 = (int)run.Status,
+            allPaid,
+            paidCount              = itemsToPay.Count,
+            partialTotal,
+            paymentJournalEntryId  = payJe.Id
+        });
+    }
+
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
@@ -1399,9 +1502,12 @@ public class PayrollController : ControllerBase
         run.JournalEntryId, run.PaymentJournalEntryId, run.CreatedAt,
         run.Items.Select(i => new PayrollItemDto(
             i.Id, i.EmployeeId, i.Employee.Name, i.Employee.EmployeeNumber,
-            i.Employee.JobTitle, i.BasicSalary, i.TransportationAllowance, i.CommunicationAllowance, i.BonusAmount,
+            i.Employee.JobTitle, i.Employee.Department?.Name,
+            i.BasicSalary, i.TransportationAllowance, i.CommunicationAllowance, i.BonusAmount,
             i.FixedAllowance,
-            i.DeductionAmount, i.AdvanceDeducted, i.AbsenceDays, i.AbsenceDeduction, i.OvertimeHours, i.OvertimeAmount, i.CommissionAmount, i.NetPayable, i.Notes
+            i.DeductionAmount, i.AdvanceDeducted, i.AbsenceDays, i.AbsenceDeduction, i.OvertimeHours, i.OvertimeAmount, i.CommissionAmount, i.NetPayable, i.Notes,
+            i.IsPaid, i.PaidAt, i.PaymentJournalEntryId
         )).ToList()
     );
 }
+

@@ -740,35 +740,40 @@ public class DashboardService : IDashboardService
         // Calculate income/expenses for the last 12 months (Cash Flow)
         var startPeriod = monthStart.AddMonths(-11);
 
-        // Query monthly revenue
-        var monthlyRevenueQuery = _db.Orders.AsNoTracking()
-            .Where(o => o.Status != OrderStatus.Cancelled && o.CreatedAt >= startPeriod);
+        // Query monthly revenue from general ledger (Income Statement logic)
+        var monthlyRevenueQuery = _db.JournalLines.AsNoTracking()
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+                     && l.JournalEntry.EntryDate >= startPeriod
+                     && (l.Account.Type == AccountType.Revenue || l.Account.Code.StartsWith("4")));
         if (source.HasValue)
         {
-            monthlyRevenueQuery = monthlyRevenueQuery.Where(o => o.Source == source.Value);
+            monthlyRevenueQuery = monthlyRevenueQuery.Where(l => l.CostCenter == source.Value);
         }
         var monthlyRevenue = await monthlyRevenueQuery
-            .GroupBy(o => new { o.CreatedAt.Year, o.CreatedAt.Month })
+            .GroupBy(l => new { l.JournalEntry.EntryDate.Year, l.JournalEntry.EntryDate.Month })
             .Select(g => new {
                 g.Key.Year,
                 g.Key.Month,
-                Revenue = g.Sum(o => o.TotalAmount)
+                Revenue = g.Sum(l => l.Credit - l.Debit)
             })
             .ToListAsync();
 
-        // Query monthly expenses
-        var monthlyExpensesQuery = _db.PaymentVouchers.AsNoTracking()
-            .Where(v => v.VoucherDate >= startPeriod);
+        // Query monthly expenses from general ledger (Income Statement logic)
+        var monthlyExpensesQuery = _db.JournalLines.AsNoTracking()
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+                     && l.JournalEntry.EntryDate >= startPeriod
+                     && (l.Account.Type == AccountType.Expense || l.Account.Code.StartsWith("5"))
+                     && !l.Account.Code.StartsWith("4"));
         if (source.HasValue)
         {
-            monthlyExpensesQuery = monthlyExpensesQuery.Where(v => v.CostCenter == source.Value);
+            monthlyExpensesQuery = monthlyExpensesQuery.Where(l => l.CostCenter == source.Value);
         }
         var monthlyExpenses = await monthlyExpensesQuery
-            .GroupBy(v => new { v.VoucherDate.Year, v.VoucherDate.Month })
+            .GroupBy(l => new { l.JournalEntry.EntryDate.Year, l.JournalEntry.EntryDate.Month })
             .Select(g => new {
                 g.Key.Year,
                 g.Key.Month,
-                Expenses = g.Sum(v => v.Amount)
+                Expenses = g.Sum(l => l.Debit - l.Credit)
             })
             .ToListAsync();
 

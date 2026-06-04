@@ -221,6 +221,11 @@ public class PayrollItem : BaseEntity
     public decimal NetPayable => BasicSalary + TransportationAllowance + CommunicationAllowance + BonusAmount + FixedAllowance + OvertimeAmount + CommissionAmount - DeductionAmount - AdvanceDeducted - AbsenceDeduction;
 
     public string? Notes { get; set; }
+
+    // Partial payment tracking
+    public bool      IsPaid               { get; set; } = false;
+    public DateTime? PaidAt               { get; set; }
+    public int?      PaymentJournalEntryId { get; set; }
 }
 
 // ══════════════════════════════════════════════════════
