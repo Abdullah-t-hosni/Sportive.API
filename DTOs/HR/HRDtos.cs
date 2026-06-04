@@ -190,7 +190,8 @@ public record PayrollRunDto(
     int?          JournalEntryId,
     int?          PaymentJournalEntryId,
     DateTime      CreatedAt,
-    List<PayrollItemDto> Items
+    List<PayrollItemDto> Items,
+    int           PaidCount = 0
 );
 
 public record PayrollItemDto(
@@ -229,7 +230,8 @@ public record PayrollRunSummaryDto(
     int           Status,
     int?          JournalEntryId,
     int?          PaymentJournalEntryId,
-    DateTime      CreatedAt
+    DateTime      CreatedAt,
+    int           PaidCount = 0
 );
 
 // ══════════════════════════════════════════════════════

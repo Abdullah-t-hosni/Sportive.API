@@ -40,7 +40,8 @@ public class PayrollController : ControllerBase
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(p => new PayrollRunSummaryDto(
                 p.Id, p.PayrollNumber, p.PeriodYear, p.PeriodMonth,
-                p.TotalNetPayable, p.Items.Count, (int)p.Status, p.JournalEntryId, p.PaymentJournalEntryId, p.CreatedAt))
+                p.TotalNetPayable, p.Items.Count, (int)p.Status, p.JournalEntryId, p.PaymentJournalEntryId, p.CreatedAt,
+                p.Items.Count(i => i.IsPaid)))
             .ToListAsync();
 
         return Ok(new PaginatedResult<PayrollRunSummaryDto>(items, total, page, pageSize,
@@ -1507,7 +1508,8 @@ public class PayrollController : ControllerBase
             i.FixedAllowance,
             i.DeductionAmount, i.AdvanceDeducted, i.AbsenceDays, i.AbsenceDeduction, i.OvertimeHours, i.OvertimeAmount, i.CommissionAmount, i.NetPayable, i.Notes,
             i.IsPaid, i.PaidAt, i.PaymentJournalEntryId
-        )).ToList()
+        )).ToList(),
+        run.Items.Count(i => i.IsPaid)
     );
 }
 
