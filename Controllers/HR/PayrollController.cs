@@ -1492,6 +1492,19 @@ public class PayrollController : ControllerBase
         await _db.SaveChangesAsync();
         return NoContent();
     }
+
+    [HttpPost("{id}/send-emails")]
+    public async Task<IActionResult> SendEmails(int id)
+    {
+        var exists = await _db.PayrollRuns.AnyAsync(p => p.Id == id);
+        if (!exists) return NotFound();
+
+        var requestBaseUrl = $"{Request.Scheme}://{Request.Host}";
+        Hangfire.BackgroundJob.Enqueue<IEmailService>(e => e.SendBulkPayrollEmailsAsync(id, requestBaseUrl));
+
+        return Ok(new { message = "Bulk emails enqueued successfully." });
+    }
+
     [AllowAnonymous]
     [HttpGet("public/payslip")]
     public async Task<IActionResult> GetPublicPayslip([FromQuery] int id, [FromQuery] string hash)
