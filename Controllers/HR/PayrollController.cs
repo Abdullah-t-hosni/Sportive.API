@@ -1500,7 +1500,9 @@ public class PayrollController : ControllerBase
             return BadRequest(new { message = "Hash is required." });
 
         var expectedHash = GeneratePayslipHash(id);
-        if (expectedHash != hash.ToLower())
+        var clientHash = hash.ToLower();
+        if (clientHash.Length > 10) clientHash = clientHash.Substring(0, 10);
+        if (expectedHash != clientHash)
             return Unauthorized(new { message = "Invalid hash signature." });
 
         var item = await _db.PayrollItems
@@ -1547,7 +1549,7 @@ public class PayrollController : ControllerBase
     {
         using var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes("SportiveSecretPayslipSaltKey2026"));
         var hashBytes = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes($"payslip-{payrollItemId}"));
-        return Convert.ToHexString(hashBytes).ToLower();
+        return Convert.ToHexString(hashBytes).ToLower().Substring(0, 10);
     }
 
     private static PayrollRunDto ToDto(PayrollRun run) => new(
