@@ -248,8 +248,16 @@ public class OrderService : IOrderService
             o.Source.ToString(),
             o.AttachmentUrl, 
             o.AttachmentPublicId,
-            o.CouponCode
+            o.CouponCode,
+            GenerateOrderHash(o.OrderNumber)
         );
+    }
+
+    private static string GenerateOrderHash(string orderNumber)
+    {
+        using var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes("SportiveSecretInvoiceSaltKey2026"));
+        var hashBytes = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes($"invoice-{orderNumber}"));
+        return Convert.ToHexString(hashBytes).ToLower().Substring(0, 10);
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetCustomerOrdersAsync(int customerId, int page, int pageSize)

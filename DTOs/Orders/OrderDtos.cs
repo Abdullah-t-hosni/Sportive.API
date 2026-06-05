@@ -179,7 +179,8 @@ public record OrderDetailDto(
     string Source = "Website",
     string? AttachmentUrl = null,
     string? AttachmentPublicId = null,
-    string? CouponCode = null
+    string? CouponCode = null,
+    string? ShareHash = null
 );
 
 public record OrderDetailPaymentDto(

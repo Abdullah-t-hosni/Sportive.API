@@ -270,8 +270,17 @@ public class OrdersController : ControllerBase
 
     [HttpGet("public-invoice/{orderNumber}")]
     [AllowAnonymous]
-    public async Task<IActionResult> GetPublicOrderPdf(string orderNumber)
+    public async Task<IActionResult> GetPublicOrderPdf(string orderNumber, [FromQuery] string hash)
     {
+        if (string.IsNullOrEmpty(hash))
+            return BadRequest(new { message = "Hash is required." });
+
+        var expectedHash = GenerateOrderHash(orderNumber);
+        var clientHash = hash.ToLower();
+        if (clientHash.Length > 10) clientHash = clientHash.Substring(0, 10);
+        if (expectedHash != clientHash)
+            return Unauthorized(new { message = "Invalid hash signature." });
+
         var order = await _db.Orders
             .Include(o => o.Customer)
             .Include(o => o.Items)
@@ -285,10 +294,20 @@ public class OrdersController : ControllerBase
         var pdfBytes = await _pdfService.GenerateOrderPdfAsync(dto);
         return File(pdfBytes, "application/pdf", $"Invoice-{orderNumber}.pdf");
     }
+
     [AllowAnonymous]
     [HttpGet("public-data/{orderNumber}")]
-    public async Task<IActionResult> GetPublicOrderData(string orderNumber)
+    public async Task<IActionResult> GetPublicOrderData(string orderNumber, [FromQuery] string hash)
     {
+        if (string.IsNullOrEmpty(hash))
+            return BadRequest(new { message = "Hash is required." });
+
+        var expectedHash = GenerateOrderHash(orderNumber);
+        var clientHash = hash.ToLower();
+        if (clientHash.Length > 10) clientHash = clientHash.Substring(0, 10);
+        if (expectedHash != clientHash)
+            return Unauthorized(new { message = "Invalid hash signature." });
+
         var order = await _db.Orders
             .Include(o => o.Customer)
             .FirstOrDefaultAsync(o => o.OrderNumber == orderNumber);
@@ -299,6 +318,13 @@ public class OrdersController : ControllerBase
         if (dto == null) return NotFound(_translator.Get("Orders.InvoiceDetailsNotFound"));
 
         return Ok(dto);
+    }
+
+    private static string GenerateOrderHash(string orderNumber)
+    {
+        using var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes("SportiveSecretInvoiceSaltKey2026"));
+        var hashBytes = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes($"invoice-{orderNumber}"));
+        return Convert.ToHexString(hashBytes).ToLower().Substring(0, 10);
     }
 
     [Authorize(Policy = "AdminOnly")]
