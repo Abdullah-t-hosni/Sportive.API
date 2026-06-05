@@ -231,20 +231,27 @@ public class FinancialReportsController : ControllerBase
 
         var balances = await GetBalances(from, to, source);
 
-        // الإيرادات (طبيعتها دائن ← الرصيد موجب = إيراد)
-        // ✅ تصحيح: الدخل يجب أن يعتمد على أرصدة الفترة (PeriodBal) فقط
+        // الإيرادات:
+        // • الحسابات ذات الطبيعة الدائنة (مبيعات) → قيمة موجبة
+        // • الحسابات ذات الطبيعة المدينة (مرتجعات، خصومات ممنوحة) → قيمة سالبة (خصم من الإيراد)
         var revenues = balances
             .Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.PeriodBal != 0)
             .OrderBy(b => b.Code)
-            .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.PeriodBal)) 
+            .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level,
+                b.Nature == AccountNature.Credit ? b.PeriodBal : -b.PeriodBal))
             .ToList();
 
+        // المصاريف:
+        // • الحسابات ذات الطبيعة المدينة (مصاريف عادية) → قيمة موجبة
+        // • الحسابات ذات الطبيعة الدائنة (خصم مكتسب، إيرادات مقابل مصروف) → قيمة سالبة
         var expenses = balances
             .Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && !b.Code.StartsWith("4") && b.PeriodBal != 0)
             .OrderBy(b => b.Code)
-            .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level, b.PeriodBal))
+            .Select(b => new IncomeRow(b.Code, b.NameAr, b.Level,
+                b.Nature == AccountNature.Debit ? b.PeriodBal : -b.PeriodBal))
             .ToList();
 
+        // الإجماليات من الحسابات الجذرية (Level 1) — PeriodBal هو الصافي بعد rollup
         var totalRevenues = balances.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.Level == 1).Sum(b => b.PeriodBal);
         var totalExpenses = balances.Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && !b.Code.StartsWith("4") && b.Level == 1).Sum(b => b.PeriodBal);
         var netProfit     = totalRevenues - totalExpenses;
