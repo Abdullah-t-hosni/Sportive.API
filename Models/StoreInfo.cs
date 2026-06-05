@@ -465,4 +465,8 @@ public class StoreInfo
     // --- 15. Linktree Customizations ---
     [JsonPropertyName("linktreeConfig")]
     public string? LinktreeConfig { get; set; }
+
+    // --- 16. Sales Target ---
+    [JsonPropertyName("dailyTarget")]
+    public decimal DailyTarget { get; set; } = 15000;
 }

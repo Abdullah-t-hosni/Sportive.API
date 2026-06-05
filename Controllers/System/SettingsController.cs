@@ -215,6 +215,7 @@ public class SettingsController : ControllerBase
 
             info.AccountingLockDate      = dto.AccountingLockDate;
             info.LinktreeConfig          = dto.LinktreeConfig;
+            info.DailyTarget             = dto.DailyTarget;
             info.LastUpdateDate          = TimeHelper.GetEgyptTime();
 
             info.EnableGraduatedDelayPolicy = dto.EnableGraduatedDelayPolicy;
