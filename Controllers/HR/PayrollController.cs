@@ -1492,6 +1492,63 @@ public class PayrollController : ControllerBase
         await _db.SaveChangesAsync();
         return NoContent();
     }
+    [AllowAnonymous]
+    [HttpGet("public/payslip")]
+    public async Task<IActionResult> GetPublicPayslip([FromQuery] int id, [FromQuery] string hash)
+    {
+        if (string.IsNullOrEmpty(hash))
+            return BadRequest(new { message = "Hash is required." });
+
+        var expectedHash = GeneratePayslipHash(id);
+        if (expectedHash != hash.ToLower())
+            return Unauthorized(new { message = "Invalid hash signature." });
+
+        var item = await _db.PayrollItems
+            .Include(i => i.Employee).ThenInclude(e => e.Department)
+            .Include(i => i.PayrollRun)
+            .FirstOrDefaultAsync(i => i.Id == id);
+
+        if (item == null)
+            return NotFound(new { message = "Payslip item not found." });
+
+        var totalAllowances = item.TransportationAllowance + item.CommunicationAllowance + item.FixedAllowance;
+        var gross = item.BasicSalary + totalAllowances + item.OvertimeAmount + item.BonusAmount + item.CommissionAmount;
+        var deductions = item.AbsenceDeduction + item.DeductionAmount + item.AdvanceDeducted;
+
+        var slipInfo = new
+        {
+            employeeName = item.Employee.Name,
+            employeeNumber = item.Employee.EmployeeNumber,
+            jobTitle = item.Employee.JobTitle ?? "",
+            departmentName = item.Employee.Department?.Name ?? "",
+            basicSalary = item.BasicSalary,
+            transportationAllowance = item.TransportationAllowance,
+            communicationAllowance = item.CommunicationAllowance,
+            fixedAllowance = item.FixedAllowance,
+            overtimeAmount = item.OvertimeAmount,
+            overtimeHours = item.OvertimeHours,
+            bonusAmount = item.BonusAmount,
+            commissionAmount = item.CommissionAmount,
+            absenceDeduction = item.AbsenceDeduction,
+            absenceDays = item.AbsenceDays,
+            deductionAmount = item.DeductionAmount,
+            advanceDeducted = item.AdvanceDeducted,
+            gross = gross,
+            deductions = deductions,
+            netPayable = item.NetPayable,
+            periodMonth = item.PayrollRun.PeriodMonth,
+            periodYear = item.PayrollRun.PeriodYear
+        };
+
+        return Ok(slipInfo);
+    }
+
+    private static string GeneratePayslipHash(int payrollItemId)
+    {
+        using var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes("SportiveSecretPayslipSaltKey2026"));
+        var hashBytes = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes($"payslip-{payrollItemId}"));
+        return Convert.ToHexString(hashBytes).ToLower();
+    }
 
     private static PayrollRunDto ToDto(PayrollRun run) => new(
         run.Id, run.PayrollNumber, run.PeriodYear, run.PeriodMonth,
@@ -1507,7 +1564,8 @@ public class PayrollController : ControllerBase
             i.BasicSalary, i.TransportationAllowance, i.CommunicationAllowance, i.BonusAmount,
             i.FixedAllowance,
             i.DeductionAmount, i.AdvanceDeducted, i.AbsenceDays, i.AbsenceDeduction, i.OvertimeHours, i.OvertimeAmount, i.CommissionAmount, i.NetPayable, i.Notes,
-            i.IsPaid, i.PaidAt, i.PaymentJournalEntryId
+            i.IsPaid, i.PaidAt, i.PaymentJournalEntryId,
+            GeneratePayslipHash(i.Id)
         )).ToList(),
         run.Items.Count(i => i.IsPaid)
     );

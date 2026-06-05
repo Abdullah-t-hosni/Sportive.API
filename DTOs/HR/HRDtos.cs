@@ -217,7 +217,8 @@ public record PayrollItemDto(
     string?  Notes,
     bool     IsPaid               = false,
     DateTime? PaidAt              = null,
-    int?     PaymentJournalEntryId = null
+    int?     PaymentJournalEntryId = null,
+    string?  ShareHash            = null
 );
 
 public record PayrollRunSummaryDto(
