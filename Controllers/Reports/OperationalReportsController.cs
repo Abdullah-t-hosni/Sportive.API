@@ -1279,11 +1279,11 @@ public class OperationalReportsController : ControllerBase
             })
             .OrderByDescending(j => j.EntryDate).ToListAsync();
 
-        var directReturnRefs = returns.Where(r => r.Items == null).Select(r => r.Reference ?? r.EntryNumber).ToList();
+        var allReturnRefs = returns.Select(r => r.Reference ?? r.EntryNumber).ToList();
         var movements = await _db.InventoryMovements
             .Include(m => m.Product)
             .Include(m => m.ProductVariant)
-            .Where(m => m.Reference != null && directReturnRefs.Contains(m.Reference) && m.Type == InventoryMovementType.ReturnIn)
+            .Where(m => m.Reference != null && allReturnRefs.Contains(m.Reference) && m.Type == InventoryMovementType.ReturnIn)
             .ToListAsync();
 
         var movementsMap = movements.GroupBy(m => m.Reference!).ToDictionary(g => g.Key!, g => g.ToList());
@@ -1308,8 +1308,39 @@ public class OperationalReportsController : ControllerBase
         }
 
         var rows = returns.Select(j => {
-        List<ReportItemDto>? itemsList = null;
-            if (j.Items != null)
+            List<ReportItemDto>? itemsList = null;
+            var refKey = j.Reference ?? j.EntryNumber;
+
+            if (movementsMap.TryGetValue(refKey, out var movs) && movs.Any())
+            {
+                itemsList = movs.Select(m => {
+                    decimal unitPrice = m.UnitCost;
+                    if (j.OrderId != null && j.Items != null)
+                    {
+                        var orderItem = j.Items.FirstOrDefault(oi => 
+                            oi.ProductSKU == (m.Product?.SKU ?? "") && 
+                            (oi.Size ?? "") == (m.ProductVariant?.Size ?? "") && 
+                            (oi.Color ?? "") == (m.ProductVariant?.ColorAr ?? m.ProductVariant?.Color ?? "")
+                        );
+                        if (orderItem != null)
+                        {
+                            unitPrice = orderItem.UnitPrice;
+                        }
+                    }
+                    return new ReportItemDto(
+                        m.Product?.SKU ?? "",
+                        m.Product?.NameAr ?? "",
+                        m.ProductVariant?.Size ?? "",
+                        m.ProductVariant?.ColorAr ?? m.ProductVariant?.Color ?? "",
+                        Math.Abs(m.Quantity),
+                        unitPrice,
+                        0,
+                        0,
+                        Math.Abs(m.Quantity) * unitPrice
+                    );
+                }).ToList();
+            }
+            else if (j.Items != null)
             {
                 itemsList = j.Items.Select(i => new ReportItemDto(
                     i.ProductSKU,
@@ -1321,20 +1352,6 @@ public class OperationalReportsController : ControllerBase
                     0,
                     i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1),
                     (i.UnitPrice - (i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1))) * i.ReturnedQuantity
-                )).ToList();
-            }
-            else if (movementsMap.TryGetValue(j.Reference ?? j.EntryNumber, out var movs))
-            {
-                itemsList = movs.Select(m => new ReportItemDto(
-                    m.Product?.SKU ?? "",
-                    m.Product?.NameAr ?? "",
-                    m.ProductVariant?.Size ?? "",
-                    m.ProductVariant?.ColorAr ?? m.ProductVariant?.Color ?? "",
-                    Math.Abs(m.Quantity),
-                    m.UnitCost,
-                    0,
-                    0,
-                    Math.Abs(m.Quantity) * m.UnitCost
                 )).ToList();
             }
 
