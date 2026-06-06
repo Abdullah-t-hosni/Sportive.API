@@ -798,10 +798,27 @@ public class DashboardService : IDashboardService
         // ── 6. أعمار الديون (Aging) ──────────
         var asOf = toDate ?? now;
 
-        // Calculate customer balances from ledger (JournalLines)
-        var customerBalances = await _db.JournalLines.AsNoTracking()
-            .Where(l => l.CustomerId != null && (l.Account.Code.StartsWith("1104") || l.Account.Code.StartsWith("1201")))
-            .Where(l => l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status == JournalEntryStatus.Posted)
+        // Get mapped customer & supplier account IDs from AccountSystemMappings
+        var customerMappedAccountId = await _db.AccountSystemMappings
+            .Where(m => m.Key == MappingKeys.Customer)
+            .Select(m => (int?)m.AccountId)
+            .FirstOrDefaultAsync();
+
+        var supplierMappedAccountId = await _db.AccountSystemMappings
+            .Where(m => m.Key == MappingKeys.Supplier)
+            .Select(m => (int?)m.AccountId)
+            .FirstOrDefaultAsync();
+
+        // Calculate customer balances from ledger — use mapped account or fallback to common AR codes
+        var customerBalancesQuery = _db.JournalLines.AsNoTracking()
+            .Where(l => l.CustomerId != null && l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status == JournalEntryStatus.Posted);
+
+        if (customerMappedAccountId.HasValue)
+            customerBalancesQuery = customerBalancesQuery.Where(l => l.AccountId == customerMappedAccountId.Value);
+        else
+            customerBalancesQuery = customerBalancesQuery.Where(l => l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1104") || l.Account.Code.StartsWith("1201"));
+
+        var customerBalances = await customerBalancesQuery
             .GroupBy(l => l.CustomerId)
             .Select(g => new { CustomerId = g.Key!.Value, Balance = g.Sum(l => l.Debit - l.Credit) })
             .ToListAsync();
@@ -829,10 +846,16 @@ public class DashboardService : IDashboardService
             })
             .ToList();
 
-        // Calculate supplier balances from ledger (JournalLines)
-        var supplierBalances = await _db.JournalLines.AsNoTracking()
-            .Where(l => l.SupplierId != null && l.Account.Code.StartsWith("2101"))
-            .Where(l => l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status == JournalEntryStatus.Posted)
+        // Calculate supplier balances from ledger — use mapped account or fallback to common AP codes
+        var supplierBalancesQuery = _db.JournalLines.AsNoTracking()
+            .Where(l => l.SupplierId != null && l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status == JournalEntryStatus.Posted);
+
+        if (supplierMappedAccountId.HasValue)
+            supplierBalancesQuery = supplierBalancesQuery.Where(l => l.AccountId == supplierMappedAccountId.Value);
+        else
+            supplierBalancesQuery = supplierBalancesQuery.Where(l => l.Account.Code.StartsWith("2101") || l.Account.Code.StartsWith("2201"));
+
+        var supplierBalances = await supplierBalancesQuery
             .GroupBy(l => l.SupplierId)
             .Select(g => new { SupplierId = g.Key!.Value, Balance = g.Sum(l => l.Credit - l.Debit) })
             .ToListAsync();

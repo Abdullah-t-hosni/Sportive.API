@@ -73,13 +73,15 @@ public class PurchaseReturnsController : ControllerBase
                            || r.Supplier.Name.Contains(search));
 
         var total = await q.CountAsync();
+        var totalVolume = await q.SumAsync(r => (decimal?)r.TotalAmount) ?? 0;
+
         var items = await q.OrderByDescending(r => r.ReturnDate)
-            .Skip((page-1)*pageSize).Take(pageSize)
+            .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(r => new {
                 r.Id,
                 r.ReturnNumber,
                 r.PurchaseInvoiceId,
-                InvoiceNumber = r.Invoice != null ? r.Invoice.InvoiceNumber : "Ø¨Ø¯ÙˆÙ† ÙØ§ØªÙˆØ±Ø©",
+                InvoiceNumber = r.Invoice != null ? r.Invoice.InvoiceNumber : "بدون فاتورة",
                 r.SupplierId,
                 SupplierName = r.Supplier.Name,
                 r.ReturnDate,
@@ -92,8 +94,15 @@ public class PurchaseReturnsController : ControllerBase
                 CostCenterLabel = r.CostCenter == OrderSource.Website ? "الموقع" : (r.CostCenter == OrderSource.POS ? "المحل" : "عام")
             }).ToListAsync();
 
-        return Ok(new PaginatedResult<object>(items.Cast<object>().ToList(), total, page, pageSize,
-            (int)Math.Ceiling((double)total / pageSize)));
+        return Ok(new {
+            items,
+            totalCount = total,
+            totalItems = total,
+            totalVolume,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize)
+        });
     }
 
     [HttpGet("returns/{idOrNumber}")]
