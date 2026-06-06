@@ -1493,14 +1493,25 @@ public class PayrollController : ControllerBase
         return NoContent();
     }
 
+    public class SendEmailsDto
+    {
+        public List<int>? EmployeeIds { get; set; }
+        public string? StoreUrl { get; set; }
+    }
+
     [HttpPost("{id}/send-emails")]
-    public async Task<IActionResult> SendEmails(int id)
+    public async Task<IActionResult> SendEmails(int id, [FromBody] SendEmailsDto? dto = null)
     {
         var exists = await _db.PayrollRuns.AnyAsync(p => p.Id == id);
         if (!exists) return NotFound();
 
-        var requestBaseUrl = $"{Request.Scheme}://{Request.Host}";
-        Hangfire.BackgroundJob.Enqueue<IEmailService>(e => e.SendBulkPayrollEmailsAsync(id, requestBaseUrl));
+        var requestBaseUrl = dto?.StoreUrl;
+        if (string.IsNullOrEmpty(requestBaseUrl))
+        {
+            requestBaseUrl = $"{Request.Scheme}://{Request.Host}";
+        }
+
+        Hangfire.BackgroundJob.Enqueue<IEmailService>(e => e.SendBulkPayrollEmailsAsync(id, requestBaseUrl, dto != null ? dto.EmployeeIds : null));
 
         return Ok(new { message = "Bulk emails enqueued successfully." });
     }

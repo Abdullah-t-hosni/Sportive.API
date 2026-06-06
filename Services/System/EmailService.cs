@@ -144,7 +144,7 @@ public class EmailService : IEmailService
         }
     }
 
-    public async Task SendBulkPayrollEmailsAsync(int payrollRunId, string storeUrl)
+    public async Task SendBulkPayrollEmailsAsync(int payrollRunId, string storeUrl, List<int>? employeeIds = null)
     {
         using var scope = _serviceProvider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -164,7 +164,13 @@ public class EmailService : IEmailService
         var currency = settings?.CurrencySymbol ?? "ج.م";
         var storeName = settings?.StoreBrandName ?? "Sportive";
 
-        foreach (var item in run.Items)
+        var items = run.Items.AsEnumerable();
+        if (employeeIds != null && employeeIds.Any())
+        {
+            items = items.Where(i => employeeIds.Contains(i.EmployeeId));
+        }
+
+        foreach (var item in items)
         {
             var email = item.Employee?.Email?.Trim();
             if (string.IsNullOrEmpty(email))
