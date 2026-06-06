@@ -1224,6 +1224,9 @@ public class OperationalReportsController : ControllerBase
         var catIds = categoryId.HasValue && categoryId > 0 ? await FilterHelper.GetCategoryFamilyIds(_db, categoryId) : new List<int>();
         var brIds = brandId.HasValue && brandId > 0 ? await FilterHelper.GetBrandFamilyIds(_db, brandId) : new List<int>();
 
+        var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
+        var inventoryAccId = maps.GetValueOrDefault(MappingKeys.Inventory);
+
         // Get all SalesReturn journal entries
         var returnsQ = _db.JournalEntries.AsNoTracking()
             .Where(j => j.Type == JournalEntryType.SalesReturn 
@@ -1252,7 +1255,7 @@ public class OperationalReportsController : ControllerBase
                 OrderId = j.Order != null ? (int?)j.Order.Id : null,
                 CustomerName = j.Order != null && j.Order.Customer != null ? j.Order.Customer.FullName : "Walk-in",
                 CustomerPhone = j.Order != null && j.Order.Customer != null ? j.Order.Customer.Phone : "",
-                OriginalAmount = j.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit),
+                OriginalAmount = j.Lines.Where(l => l.Debit > 0 && (!inventoryAccId.HasValue || l.AccountId != inventoryAccId.Value)).Sum(l => (decimal?)l.Debit) ?? 0,
                 Description = j.Order != null ? j.Order.StatusHistory
                     .Where(h => h.Status == OrderStatus.PartiallyReturned || h.Status == OrderStatus.Returned)
                     .OrderByDescending(h => h.CreatedAt)
