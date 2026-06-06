@@ -262,3 +262,23 @@ public record DirectReturnItemDto(
     decimal? VatRate
 );
 
+// ========== UPDATE SALES RETURN ==========
+public record UpdateSalesReturnDto(
+    List<UpdateSalesReturnItemDto> Items,
+    string Reason,
+    string Note,
+    int? RefundAccountId = null,
+    DateTime? ReturnDate = null,
+    PaymentMethod? RefundMethod = null,
+    int? CustomerId = null,
+    string? CustomerName = null
+);
+
+public record UpdateSalesReturnItemDto(
+    int ProductId,
+    int? ProductVariantId,
+    int Quantity,
+    decimal UnitPrice = 0
+);
+
+

@@ -2115,4 +2115,222 @@ public class OrderService : IOrderService
             }
         }
     }
+
+    public async Task UpdateSalesReturnAsync(string reference, UpdateSalesReturnDto dto, string updatedByUserId)
+    {
+        var journalEntry = await _db.JournalEntries
+            .Include(e => e.Lines)
+            .Include(e => e.Order)
+            .ThenInclude(o => o.Items)
+            .FirstOrDefaultAsync(e => e.Reference == reference && e.Type == JournalEntryType.SalesReturn);
+
+        if (journalEntry == null)
+        {
+            throw new KeyNotFoundException("Sales return entry not found.");
+        }
+
+        var order = journalEntry.Order;
+        var now = TimeHelper.GetEgyptTime();
+
+        var oldMovements = await _db.InventoryMovements
+            .Where(m => m.Reference == reference && m.Type == InventoryMovementType.ReturnIn)
+            .ToListAsync();
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                foreach (var mov in oldMovements)
+                {
+                    if (mov.ProductId > 0)
+                    {
+                        await _inventory.LogMovementAsync(
+                            InventoryMovementType.Sale,
+                            -mov.Quantity,
+                            mov.ProductId,
+                            mov.ProductVariantId,
+                            mov.Reference,
+                            $"Revert Return: {reference}",
+                            updatedByUserId,
+                            0,
+                            order?.Source ?? OrderSource.POS,
+                            autoSave: false,
+                            ignoreIdempotency: true
+                        );
+                    }
+                }
+
+                if (order != null)
+                {
+                    foreach (var mov in oldMovements)
+                    {
+                        var line = order.Items.FirstOrDefault(i => i.ProductId == mov.ProductId && i.ProductVariantId == mov.ProductVariantId);
+                        if (line != null)
+                        {
+                            line.ReturnedQuantity = Math.Max(0, line.ReturnedQuantity - mov.Quantity);
+                        }
+                    }
+                }
+
+                _db.InventoryMovements.RemoveRange(oldMovements);
+                _db.JournalLines.RemoveRange(journalEntry.Lines);
+                _db.JournalEntries.Remove(journalEntry);
+                await _db.SaveChangesAsync();
+
+                var newReturnItems = dto.Items.Where(i => i.Quantity > 0).ToList();
+                if (newReturnItems.Any())
+                {
+                    var returnDate = dto.ReturnDate ?? now;
+
+                    if (order != null)
+                    {
+                        var returnedOrderItems = new List<OrderItem>();
+                        decimal refundAmount = 0;
+                        var itemsTotal = order.Items.Sum(i => i.TotalPrice) > 0 ? order.Items.Sum(i => i.TotalPrice) : 1;
+
+                        foreach (var req in newReturnItems)
+                        {
+                            var line = order.Items.FirstOrDefault(i => i.ProductId == req.ProductId && i.ProductVariantId == req.ProductVariantId);
+                            if (line == null) continue;
+
+                            int maxCanReturn = line.Quantity - line.ReturnedQuantity;
+                            if (req.Quantity > maxCanReturn) 
+                               throw new InvalidOperationException($"Cannot return {req.Quantity} for item {line.ProductNameAr}. Already returned: {line.ReturnedQuantity}. Max remaining: {maxCanReturn}.");
+
+                            var itemTotalReturn = Math.Round((line.TotalPrice * ((decimal)req.Quantity / line.Quantity)) * (order.TotalAmount / itemsTotal), 2);
+                            var itemVatReturn = Math.Round(line.ItemVatAmount * ((decimal)req.Quantity / line.Quantity), 2);
+                            
+                            refundAmount += itemTotalReturn;
+                            line.ReturnedQuantity += req.Quantity;
+
+                            var returnClone = new OrderItem
+                            {
+                                ProductId = line.ProductId,
+                                ProductVariantId = line.ProductVariantId,
+                                ProductNameAr = line.ProductNameAr,
+                                Quantity = req.Quantity,
+                                UnitPrice = line.UnitPrice,
+                                TotalPrice = itemTotalReturn,
+                                ItemVatAmount = itemVatReturn,
+                                Product = line.Product
+                            };
+                            returnedOrderItems.Add(returnClone);
+
+                            await _inventory.LogMovementAsync(
+                                InventoryMovementType.ReturnIn,
+                                req.Quantity, line.ProductId, line.ProductVariantId,
+                                reference, $"Return: {req.Quantity} units (Updated)", updatedByUserId,
+                                0,
+                                order.Source,
+                                autoSave: false,
+                                ignoreIdempotency: true
+                            );
+                        }
+
+                        if (order.Items.All(i => i.Quantity == i.ReturnedQuantity))
+                        {
+                            order.Status = OrderStatus.Returned;
+                            order.PaymentStatus = PaymentStatus.Refunded;
+                        }
+                        else if (order.Items.Any(i => i.ReturnedQuantity > 0))
+                        {
+                            order.Status = OrderStatus.PartiallyReturned;
+                        }
+                        else
+                        {
+                            order.Status = order.Source == OrderSource.POS ? OrderStatus.Confirmed : OrderStatus.Delivered;
+                            order.PaymentStatus = PaymentStatus.Paid;
+                        }
+
+                        order.StatusHistory.Add(new OrderStatusHistory {
+                            Status = order.Status,
+                            Note = $"[تعديل مرتجع] {dto.Reason}: {dto.Note}",
+                            ChangedByUserId = updatedByUserId,
+                            CreatedAt = returnDate
+                        });
+
+                        await _db.SaveChangesAsync();
+
+                        bool refundToStoreCredit = dto.RefundMethod == PaymentMethod.CustomerBalance;
+                        await _accounting.PostPartialSalesReturnAsync(
+                            order, 
+                            returnedOrderItems, 
+                            refundAmount, 
+                            dto.RefundAccountId, 
+                            refundToStoreCredit, 
+                            overrideReference: reference, 
+                            overrideDate: returnDate
+                        );
+                    }
+                    else
+                    {
+                        decimal totalCost = 0;
+                        var directItems = new List<DirectReturnItemDto>();
+
+                        foreach (var req in newReturnItems)
+                        {
+                            var product = await _db.Products.FindAsync(req.ProductId);
+                            if (product == null) continue;
+
+                            directItems.Add(new DirectReturnItemDto(
+                                req.ProductId,
+                                req.ProductVariantId,
+                                req.Quantity,
+                                req.UnitPrice,
+                                product.HasTax,
+                                product.VatRate
+                            ));
+
+                            await _inventory.LogMovementAsync(
+                                InventoryMovementType.ReturnIn,
+                                req.Quantity, req.ProductId, req.ProductVariantId,
+                                reference, $"Direct Return: {dto.Reason} (Updated)", updatedByUserId,
+                                0,
+                                OrderSource.POS,
+                                autoSave: false
+                            );
+
+                            totalCost += (product.CostPrice ?? 0) * req.Quantity;
+                        }
+
+                        await _db.SaveChangesAsync();
+
+                        var directDto = new DirectReturnDto(
+                            dto.CustomerId,
+                            dto.CustomerName,
+                            string.Empty,
+                            directItems,
+                            dto.RefundMethod ?? PaymentMethod.Cash,
+                            dto.RefundAccountId,
+                            dto.Reason,
+                            dto.Note
+                        );
+
+                        await _accounting.PostDirectSalesReturnAsync(directDto, reference, totalCost, overrideDate: returnDate);
+                    }
+                }
+                else
+                {
+                    if (order != null)
+                    {
+                        order.Status = order.Source == OrderSource.POS ? OrderStatus.Confirmed : OrderStatus.Delivered;
+                        order.PaymentStatus = PaymentStatus.Paid;
+                        order.StatusHistory.Add(new OrderStatusHistory {
+                            Status = order.Status,
+                            Note = $"[إلغاء المرتجع بالكامل]: {dto.Note}",
+                            ChangedByUserId = updatedByUserId,
+                            CreatedAt = now
+                        });
+                        await _db.SaveChangesAsync();
+                    }
+                }
+
+                await tx.CommitAsync();
+            }
+            catch { await tx.RollbackAsync(); throw; }
+        });
+    }
 }
+

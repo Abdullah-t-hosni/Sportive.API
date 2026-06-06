@@ -1233,17 +1233,63 @@ public class FinancialReportsController : ControllerBase
             .ToListAsync();
         var openBal = openLines.Sum(l => l.Debit) - openLines.Sum(l => l.Credit);
 
+        var advancesList = await _db.EmployeeAdvances
+            .Where(a => a.EmployeeId == employeeId)
+            .ToDictionaryAsync(a => a.AdvanceNumber, a => new { a.Reason, a.Notes });
+
+        var bonusesList = await _db.EmployeeBonuses
+            .Where(b => b.EmployeeId == employeeId)
+            .ToDictionaryAsync(b => b.BonusNumber, b => new { b.Reason, b.Notes });
+
+        var deductionsList = await _db.EmployeeDeductions
+            .Where(d => d.EmployeeId == employeeId)
+            .ToDictionaryAsync(d => d.DeductionNumber, d => new { d.Reason, d.Notes });
+
         var runBal = openBal;
         var rows   = new List<EmployeeStatementRowDto>();
 
         foreach (var l in jeLines)
         {
             runBal += l.Debit - l.Credit;
+
+            string detailDesc = "";
+            var refNo = l.JournalEntry.Reference ?? "";
+            if (refNo.StartsWith("ADV-") && advancesList.TryGetValue(refNo, out var advInfo))
+            {
+                var parts = new List<string>();
+                if (!string.IsNullOrEmpty(advInfo.Reason)) parts.Add(advInfo.Reason);
+                if (!string.IsNullOrEmpty(advInfo.Notes)) parts.Add(advInfo.Notes);
+                detailDesc = parts.Count > 0 ? $" ({string.Join(" - ", parts)})" : "";
+            }
+            else if (refNo.StartsWith("BON-") && bonusesList.TryGetValue(refNo, out var bonInfo))
+            {
+                var parts = new List<string>();
+                if (!string.IsNullOrEmpty(bonInfo.Reason)) parts.Add(bonInfo.Reason);
+                if (!string.IsNullOrEmpty(bonInfo.Notes)) parts.Add(bonInfo.Notes);
+                detailDesc = parts.Count > 0 ? $" ({string.Join(" - ", parts)})" : "";
+            }
+            else if (refNo.StartsWith("DED-") && deductionsList.TryGetValue(refNo, out var dedInfo))
+            {
+                var parts = new List<string>();
+                if (!string.IsNullOrEmpty(dedInfo.Reason)) parts.Add(dedInfo.Reason);
+                if (!string.IsNullOrEmpty(dedInfo.Notes)) parts.Add(dedInfo.Notes);
+                detailDesc = parts.Count > 0 ? $" ({string.Join(" - ", parts)})" : "";
+            }
+
+            var mainDesc = l.Description ?? l.JournalEntry.Description ?? "";
+            if ((mainDesc.StartsWith("سند صرف") || mainDesc.StartsWith("سند قبض") || mainDesc.StartsWith("Payment Voucher") || mainDesc.StartsWith("Receipt Voucher")) 
+                && !string.IsNullOrEmpty(l.JournalEntry.Description))
+            {
+                mainDesc = l.JournalEntry.Description;
+            }
+
+            var finalDesc = mainDesc + detailDesc;
+
             rows.Add(new EmployeeStatementRowDto(
                 l.JournalEntry.EntryDate,
                 l.JournalEntry.EntryNumber,
                 l.JournalEntry.Type.ToString(),
-                l.JournalEntry.Description ?? l.Description ?? "",
+                finalDesc,
                 l.Debit,
                 l.Credit,
                 runBal

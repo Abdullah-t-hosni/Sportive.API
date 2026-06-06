@@ -796,31 +796,71 @@ public class DashboardService : IDashboardService
         }).ToList();
 
         // ── 6. أعمار الديون (Aging) ──────────
-        var topDebtors = await _db.Customers.AsNoTracking()
-            .Where(c => c.Orders.Any(o => o.Status != OrderStatus.Cancelled))
-            .Select(c => new { 
-                c.Id, c.FullName, c.Phone, 
-                Balance = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount - o.PaidAmount) ?? 0 
-            })
+        var asOf = toDate ?? now;
+
+        // Calculate customer balances from ledger (JournalLines)
+        var customerBalances = await _db.JournalLines.AsNoTracking()
+            .Where(l => l.CustomerId != null && (l.Account.Code.StartsWith("1104") || l.Account.Code.StartsWith("1201")))
+            .Where(l => l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .GroupBy(l => l.CustomerId)
+            .Select(g => new { CustomerId = g.Key!.Value, Balance = g.Sum(l => l.Debit - l.Credit) })
+            .ToListAsync();
+
+        var topDebtorBalances = customerBalances
             .Where(x => x.Balance > 0.01M)
             .OrderByDescending(x => x.Balance)
             .Take(5)
+            .ToList();
+
+        var topDebtorIds = topDebtorBalances.Select(x => x.CustomerId).ToList();
+        var debtorsInfo = await _db.Customers.AsNoTracking()
+            .Where(c => topDebtorIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, c => new { c.FullName, c.Phone });
+
+        var topDebtors = topDebtorBalances
+            .Select(x => {
+                var info = debtorsInfo.GetValueOrDefault(x.CustomerId);
+                return new {
+                    Id = x.CustomerId,
+                    FullName = info?.FullName ?? "Unknown",
+                    Phone = info?.Phone ?? "",
+                    Balance = x.Balance
+                };
+            })
+            .ToList();
+
+        // Calculate supplier balances from ledger (JournalLines)
+        var supplierBalances = await _db.JournalLines.AsNoTracking()
+            .Where(l => l.SupplierId != null && l.Account.Code.StartsWith("2101"))
+            .Where(l => l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .GroupBy(l => l.SupplierId)
+            .Select(g => new { SupplierId = g.Key!.Value, Balance = g.Sum(l => l.Credit - l.Debit) })
             .ToListAsync();
 
-        var topCreditors = await _db.Suppliers.AsNoTracking()
-            .Where(s => s.Invoices.Any(i => i.Status != PurchaseInvoiceStatus.Cancelled))
-            .Select(s => new { 
-                s.Id, s.Name, s.Phone, 
-                Balance = s.Invoices.Where(i => i.Status != PurchaseInvoiceStatus.Cancelled).Sum(i => (decimal?)i.TotalAmount - i.PaidAmount) ?? 0 
-            })
+        var topCreditorBalances = supplierBalances
             .Where(x => x.Balance > 0.01M)
             .OrderByDescending(x => x.Balance)
             .Take(5)
-            .ToListAsync();
+            .ToList();
 
-        var totalDebts = await _db.Orders.AsNoTracking()
-            .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned)
-            .SumAsync(o => (decimal?)(o.TotalAmount - o.PaidAmount)) ?? 0;
+        var topCreditorIds = topCreditorBalances.Select(x => x.SupplierId).ToList();
+        var creditorsInfo = await _db.Suppliers.AsNoTracking()
+            .Where(s => topCreditorIds.Contains(s.Id))
+            .ToDictionaryAsync(s => s.Id, s => new { s.Name, s.Phone });
+
+        var topCreditors = topCreditorBalances
+            .Select(x => {
+                var info = creditorsInfo.GetValueOrDefault(x.SupplierId);
+                return new {
+                    Id = x.SupplierId,
+                    Name = info?.Name ?? "Unknown",
+                    Phone = info?.Phone ?? "",
+                    Balance = x.Balance
+                };
+            })
+            .ToList();
+
+        var totalDebts = customerBalances.Where(x => x.Balance > 0.01M).Sum(x => x.Balance);
 
         // ── 7. توزيع طرق الدفع ──────────
         var todayPaymentsRaw = await _db.OrderPayments.AsNoTracking()

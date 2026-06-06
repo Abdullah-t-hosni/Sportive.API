@@ -320,17 +320,63 @@ public class EmployeesController : ControllerBase
             .ThenBy(l => l.Id)
             .ToListAsync();
 
+        var advances = await _db.EmployeeAdvances
+            .Where(a => a.EmployeeId == id)
+            .ToDictionaryAsync(a => a.AdvanceNumber, a => new { a.Reason, a.Notes });
+
+        var bonuses = await _db.EmployeeBonuses
+            .Where(b => b.EmployeeId == id)
+            .ToDictionaryAsync(b => b.BonusNumber, b => new { b.Reason, b.Notes });
+
+        var deductions = await _db.EmployeeDeductions
+            .Where(d => d.EmployeeId == id)
+            .ToDictionaryAsync(d => d.DeductionNumber, d => new { d.Reason, d.Notes });
+
         var rows = new List<EmployeeStatementRowDto>();
         var runningBalance = openingBalance;
 
         foreach (var l in lines)
         {
             runningBalance += (l.Debit - l.Credit);
+            
+            string detailDesc = "";
+            var refNo = l.JournalEntry.Reference ?? "";
+            if (refNo.StartsWith("ADV-") && advances.TryGetValue(refNo, out var advInfo))
+            {
+                var parts = new List<string>();
+                if (!string.IsNullOrEmpty(advInfo.Reason)) parts.Add(advInfo.Reason);
+                if (!string.IsNullOrEmpty(advInfo.Notes)) parts.Add(advInfo.Notes);
+                detailDesc = parts.Count > 0 ? $" ({string.Join(" - ", parts)})" : "";
+            }
+            else if (refNo.StartsWith("BON-") && bonuses.TryGetValue(refNo, out var bonInfo))
+            {
+                var parts = new List<string>();
+                if (!string.IsNullOrEmpty(bonInfo.Reason)) parts.Add(bonInfo.Reason);
+                if (!string.IsNullOrEmpty(bonInfo.Notes)) parts.Add(bonInfo.Notes);
+                detailDesc = parts.Count > 0 ? $" ({string.Join(" - ", parts)})" : "";
+            }
+            else if (refNo.StartsWith("DED-") && deductions.TryGetValue(refNo, out var dedInfo))
+            {
+                var parts = new List<string>();
+                if (!string.IsNullOrEmpty(dedInfo.Reason)) parts.Add(dedInfo.Reason);
+                if (!string.IsNullOrEmpty(dedInfo.Notes)) parts.Add(dedInfo.Notes);
+                detailDesc = parts.Count > 0 ? $" ({string.Join(" - ", parts)})" : "";
+            }
+
+            var mainDesc = l.Description ?? l.JournalEntry.Description ?? "";
+            if ((mainDesc.StartsWith("سند صرف") || mainDesc.StartsWith("سند قبض") || mainDesc.StartsWith("Payment Voucher") || mainDesc.StartsWith("Receipt Voucher")) 
+                && !string.IsNullOrEmpty(l.JournalEntry.Description))
+            {
+                mainDesc = l.JournalEntry.Description;
+            }
+
+            var finalDesc = mainDesc + detailDesc;
+
             rows.Add(new EmployeeStatementRowDto(
                 l.JournalEntry.EntryDate,
                 l.JournalEntry.EntryNumber,
                 l.JournalEntry.Type.ToString(),
-                l.Description ?? l.JournalEntry.Description ?? "",
+                finalDesc,
                 l.Debit,
                 l.Credit,
                 runningBalance
@@ -365,17 +411,60 @@ public class EmployeesController : ControllerBase
             .ThenBy(l => l.Id)
             .ToListAsync();
 
+        var advances = await _db.EmployeeAdvances
+            .ToDictionaryAsync(a => a.AdvanceNumber, a => new { a.Reason, a.Notes });
+
+        var bonuses = await _db.EmployeeBonuses
+            .ToDictionaryAsync(b => b.BonusNumber, b => new { b.Reason, b.Notes });
+
+        var deductions = await _db.EmployeeDeductions
+            .ToDictionaryAsync(d => d.DeductionNumber, d => new { d.Reason, d.Notes });
+
         var rows = new List<EmployeeStatementRowDto>();
         var runningBalance = openingBalance;
 
         foreach (var l in lines)
         {
             runningBalance += (l.Debit - l.Credit);
+
+            string detailDesc = "";
+            var refNo = l.JournalEntry.Reference ?? "";
+            if (refNo.StartsWith("ADV-") && advances.TryGetValue(refNo, out var advInfo))
+            {
+                var parts = new List<string>();
+                if (!string.IsNullOrEmpty(advInfo.Reason)) parts.Add(advInfo.Reason);
+                if (!string.IsNullOrEmpty(advInfo.Notes)) parts.Add(advInfo.Notes);
+                detailDesc = parts.Count > 0 ? $" ({string.Join(" - ", parts)})" : "";
+            }
+            else if (refNo.StartsWith("BON-") && bonuses.TryGetValue(refNo, out var bonInfo))
+            {
+                var parts = new List<string>();
+                if (!string.IsNullOrEmpty(bonInfo.Reason)) parts.Add(bonInfo.Reason);
+                if (!string.IsNullOrEmpty(bonInfo.Notes)) parts.Add(bonInfo.Notes);
+                detailDesc = parts.Count > 0 ? $" ({string.Join(" - ", parts)})" : "";
+            }
+            else if (refNo.StartsWith("DED-") && deductions.TryGetValue(refNo, out var dedInfo))
+            {
+                var parts = new List<string>();
+                if (!string.IsNullOrEmpty(dedInfo.Reason)) parts.Add(dedInfo.Reason);
+                if (!string.IsNullOrEmpty(dedInfo.Notes)) parts.Add(dedInfo.Notes);
+                detailDesc = parts.Count > 0 ? $" ({string.Join(" - ", parts)})" : "";
+            }
+
+            var mainDesc = l.Description ?? l.JournalEntry.Description ?? "";
+            if ((mainDesc.StartsWith("سند صرف") || mainDesc.StartsWith("سند قبض") || mainDesc.StartsWith("Payment Voucher") || mainDesc.StartsWith("Receipt Voucher")) 
+                && !string.IsNullOrEmpty(l.JournalEntry.Description))
+            {
+                mainDesc = l.JournalEntry.Description;
+            }
+
+            var finalDesc = $"[{l.Employee?.Name}] " + mainDesc + detailDesc;
+
             rows.Add(new EmployeeStatementRowDto(
                 l.JournalEntry.EntryDate,
                 l.JournalEntry.EntryNumber,
                 l.JournalEntry.Type.ToString(),
-                $"[{l.Employee?.Name}] " + (l.Description ?? l.JournalEntry.Description ?? ""),
+                finalDesc,
                 l.Debit,
                 l.Credit,
                 runningBalance

@@ -612,6 +612,16 @@ public class OrdersController : ControllerBase
         return Ok(new { message = _translator.Get("Orders.DirectReturnSuccess"), returnNumber });
     }
 
+    [HttpPost("returns/{reference}/update")]
+    [RequirePermission(ModuleKeys.Orders)]
+    [AllowPosAccess]
+    public async Task<IActionResult> UpdateSalesReturn(string reference, [FromBody] UpdateSalesReturnDto dto)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
+        await _orderService.UpdateSalesReturnAsync(reference, dto, userId);
+        return Ok(new { message = "Sales return updated successfully." });
+    }
+
     [HttpPatch("{id}/redistribute-payments")]
     [RequirePermission(ModuleKeys.Orders)]
     [AllowPosAccess]
@@ -891,9 +901,12 @@ public class OrdersController : ControllerBase
         if (from.HasValue) q = q.Where(o => o.ArchivedAt >= from);
         if (to.HasValue)   q = q.Where(o => o.ArchivedAt <= to);
         if (!string.IsNullOrEmpty(search))
+        {
+            var searchHash = Customer.EncryptionHelper?.ComputeSearchHash(search);
             q = q.Where(o => o.OrderNumber.Contains(search)
                            || (o.Customer != null && o.Customer.FullName.Contains(search))
-                           || (o.Customer != null && o.Customer.Phone != null && o.Customer.Phone.Contains(search)));
+                           || (o.Customer != null && searchHash != null && o.Customer.PhoneHash == searchHash));
+        }
 
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(o => o.ArchivedAt).Skip((page - 1) * pageSize).Take(pageSize)

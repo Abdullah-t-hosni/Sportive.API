@@ -15,7 +15,7 @@ using ClosedXML.Excel;
 
 namespace Sportive.API.Controllers;
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/purchaseinvoices")]
 [RequirePermission(ModuleKeys.PurchasesMain + "," + ModuleKeys.SupplierVouchers)]
 public class PurchaseReturnsController : ControllerBase
 {

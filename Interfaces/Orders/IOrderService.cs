@@ -16,4 +16,5 @@ public interface IOrderService
     Task<OrderDetailDto> UpdateOrderAsync(int orderId, UpdateOrderDto dto, string updatedByUserId);
     Task<OrderDetailDto> ConvertToCostAsync(int orderId, string refundMethod, string updatedByUserId);
     Task SyncAllOrderAccountingAsync(int? daysLimit = null);
+    Task UpdateSalesReturnAsync(string reference, UpdateSalesReturnDto dto, string updatedByUserId);
 }

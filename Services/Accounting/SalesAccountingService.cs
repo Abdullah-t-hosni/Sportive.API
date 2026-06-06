@@ -394,7 +394,7 @@ public class SalesAccountingService
         );
     }
 
-    public async Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false)
+    public async Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? overrideReference = null, DateTime? overrideDate = null)
     {
         if (order.Customer == null && order.CustomerId > 0)
         {
@@ -402,8 +402,8 @@ public class SalesAccountingService
             if (found != null) order.Customer = found;
         }
 
-        var suffix    = TimeHelper.GetEgyptTime().Ticks.ToString().Substring(10);
-        var reference = $"{order.OrderNumber}-PRT-{suffix}";
+        var reference = overrideReference ?? $"{order.OrderNumber}-PRT-{TimeHelper.GetEgyptTime().Ticks.ToString().Substring(10)}";
+        var entryDate = overrideDate ?? TimeHelper.GetEgyptTime();
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
 
@@ -505,15 +505,16 @@ public class SalesAccountingService
             type:        JournalEntryType.SalesReturn,
             reference:   reference,
             description: _t.Get("Accounting.PartialReturnUnifiedMainDesc", order.OrderNumber, returnedItems.Count),
-            date:        TimeHelper.GetEgyptTime(),
+            date:        entryDate,
             lines:       lines,
             orderId:     order.Id,
             customerId:  order.CustomerId,
-            source:      order.Source
+            source:      order.Source,
+            createdAt:   entryDate
         );
     }
 
-    public async Task PostDirectSalesReturnAsync(DirectReturnDto dto, string returnNumber, decimal totalCost)
+    public async Task PostDirectSalesReturnAsync(DirectReturnDto dto, string returnNumber, decimal totalCost, DateTime? overrideDate = null)
     {
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         var store   = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
@@ -585,14 +586,17 @@ public class SalesAccountingService
             lines.Add((cogsAcct,      0,         totalCost, _t.Get("Accounting.DirectCogsReductionDesc")));
         }
 
+        var entryDate = overrideDate ?? TimeHelper.GetEgyptTime();
+
         await _core.PostEntryAsync(
             type:        JournalEntryType.SalesReturn,
             reference:   returnNumber,
             description: _t.Get("Accounting.DirectReturnMainDesc", returnNumber, dto.CustomerName ?? ""),
-            date:        TimeHelper.GetEgyptTime(),
+            date:        entryDate,
             lines:       lines,
             customerId:  dto.CustomerId,
-            source:      OrderSource.POS
+            source:      OrderSource.POS,
+            createdAt:   entryDate
         );
     }
 

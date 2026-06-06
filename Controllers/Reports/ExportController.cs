@@ -235,7 +235,10 @@ public class ExportController : ControllerBase
         }
 
         if (!string.IsNullOrWhiteSpace(search))
-            query = query.Where(c => c.FullName.Contains(search) || (c.Phone != null && c.Phone.Contains(search)));
+        {
+            var searchHash = Customer.EncryptionHelper?.ComputeSearchHash(search);
+            query = query.Where(c => c.FullName.Contains(search) || (searchHash != null && c.PhoneHash == searchHash));
+        }
 
         if (minSpent.HasValue)
             query = query.Where(c => c.Orders.Sum(o => o.TotalAmount) >= minSpent.Value);

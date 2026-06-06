@@ -93,8 +93,9 @@ public class OperationalReportsController : ControllerBase
 
         if (customerId == null && !string.IsNullOrEmpty(search))
         {
+            var searchHash = Customer.EncryptionHelper?.ComputeSearchHash(search);
             var found = await _db.Customers
-                .Where(c => c.FullName.Contains(search) || (c.Phone != null && c.Phone.Contains(search)))
+                .Where(c => c.FullName.Contains(search) || (searchHash != null && c.PhoneHash == searchHash))
                 .Select(c => c.Id)
                 .FirstOrDefaultAsync();
             if (found > 0) customerId = found;
@@ -314,7 +315,10 @@ public class OperationalReportsController : ControllerBase
         var customersQuery = _db.Customers.AsNoTracking().AsQueryable();
 
         if (!string.IsNullOrEmpty(search))
-            customersQuery = customersQuery.Where(c => c.FullName.Contains(search) || (c.Phone != null && c.Phone.Contains(search)));
+        {
+            var searchHash = Customer.EncryptionHelper?.ComputeSearchHash(search);
+            customersQuery = customersQuery.Where(c => c.FullName.Contains(search) || (searchHash != null && c.PhoneHash == searchHash));
+        }
 
         var customers = await customersQuery
             .Select(c => new {
