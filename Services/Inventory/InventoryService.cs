@@ -41,6 +41,15 @@ public class InventoryService : IInventoryService
         DateTime? date = null,
         bool ignoreIdempotency = false)
     {
+        using var activity = Sportive.API.Utils.Telemetry.ActivitySource.StartActivity("Inventory Adjustment");
+        if (activity != null)
+        {
+            activity.SetTag("movement.type", type.ToString());
+            activity.SetTag("movement.quantity", quantity.ToString());
+            activity.SetTag("product.id", productId?.ToString());
+            activity.SetTag("reference", reference);
+        }
+
         if (quantity == 0) return;
         if (productId == 0) productId = null;
         if (variantId == 0) variantId = null;

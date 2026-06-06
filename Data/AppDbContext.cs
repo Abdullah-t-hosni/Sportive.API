@@ -40,6 +40,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<AuditLog> AuditLogs            => Set<AuditLog>();
     public DbSet<PosHeldCart> PosHeldCarts      => Set<PosHeldCart>();
     public DbSet<POSShiftClosure> POSShiftClosures => Set<POSShiftClosure>();
+    public DbSet<UserSession> UserSessions      => Set<UserSession>();
+    public DbSet<SecurityEvent> SecurityEvents    => Set<SecurityEvent>();
 
     public DbSet<Supplier>             Suppliers            { get; set; }
     public DbSet<PurchaseInvoice>      PurchaseInvoices     { get; set; }
@@ -107,8 +109,24 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(u => u.PhoneNumber);
         });
 
+        builder.Entity<UserSession>(e => {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.UserId);
+            e.HasIndex(x => x.RefreshTokenHash).IsUnique();
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<SecurityEvent>(e => {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.UserId);
+            e.HasIndex(x => x.IpAddress);
+            e.HasIndex(x => x.CorrelationId);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
         builder.Entity<Customer>(e => {
-            e.HasIndex(c => c.Phone);
+            e.HasIndex(c => c.PhoneHash);
+            e.HasIndex(c => c.EmailHash);
         });
 
         builder.Entity<Category>(e => {

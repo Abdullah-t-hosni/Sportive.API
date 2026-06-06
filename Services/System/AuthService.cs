@@ -21,6 +21,8 @@ public class AuthService : IAuthService
     private readonly AppDbContext _db;
     private readonly ICustomerService _customerService;
     private readonly ITranslator _t;
+    private readonly Microsoft.AspNetCore.Http.IHttpContextAccessor _httpContextAccessor;
+    private readonly EncryptionHelper _encryptionHelper;
 
     public AuthService(
         UserManager<AppUser> userManager, 
@@ -28,7 +30,9 @@ public class AuthService : IAuthService
         IConfiguration config,
         AppDbContext db,
         ICustomerService customerService,
-        ITranslator t)
+        ITranslator t,
+        Microsoft.AspNetCore.Http.IHttpContextAccessor httpContextAccessor,
+        EncryptionHelper encryptionHelper)
     {
         _userManager = userManager;
         _roleManager = roleManager;
@@ -36,6 +40,8 @@ public class AuthService : IAuthService
         _db = db;
         _customerService = customerService;
         _t = t;
+        _httpContextAccessor = httpContextAccessor;
+        _encryptionHelper = encryptionHelper;
     }
 
     public async Task<AuthResponseDto> RegisterAsync(RegisterDto dto, bool isCustomer = true)
@@ -74,8 +80,9 @@ public class AuthService : IAuthService
         if (isCustomer)
         {
             // 3. Link or Create Customer record
+            var phoneHash = !string.IsNullOrEmpty(dto.Phone) ? _encryptionHelper.ComputeSearchHash(dto.Phone) : "";
             var customer = await _db.Customers
-                .FirstOrDefaultAsync(c => c.Phone == dto.Phone);
+                .FirstOrDefaultAsync(c => c.PhoneHash == phoneHash);
 
             if (customer != null)
             {
@@ -136,7 +143,7 @@ public class AuthService : IAuthService
         return await LoginInternalAsync(user);
     }
 
-    private async Task<AuthResponseDto> LoginInternalAsync(AppUser user)
+    private async Task<AuthResponseDto> LoginInternalAsync(AppUser user, UserSession? existingSession = null)
     {
         var roles = await _userManager.GetRolesAsync(user);
         var claims = new List<Claim>
@@ -166,7 +173,8 @@ public class AuthService : IAuthService
                                    (!string.IsNullOrEmpty(user.PhoneNumber) ? $"{user.PhoneNumber}@sportive.com" : $"{user.Id.Substring(0, 8)}@temp.sportive.com");
 
                 // Ensure uniqueness even for fallback
-                if (await _db.Customers.AnyAsync(c => c.Email == fallbackEmail))
+                var fallbackEmailHash = _encryptionHelper.ComputeSearchHash(fallbackEmail);
+                if (await _db.Customers.AnyAsync(c => c.EmailHash == fallbackEmailHash))
                 {
                     fallbackEmail = $"{Guid.NewGuid().ToString().Substring(0, 8)}@temp.sportive.com";
                 }
@@ -203,6 +211,53 @@ public class AuthService : IAuthService
             .Select(p => new ModulePermissionDto(p.ModuleKey, p.CanView, p.CanEdit))
             .ToListAsync();
 
+        // ── Generate User Session ──
+        var refreshToken = GenerateSecureRefreshToken();
+        var hashedRefreshToken = HashRefreshToken(refreshToken);
+        Guid sessionId;
+
+        if (existingSession != null)
+        {
+            var (deviceName, fingerprint) = ParseDeviceAndFingerprint();
+            existingSession.RefreshTokenHash = hashedRefreshToken;
+            existingSession.ExpiresAt = DateTime.UtcNow.AddDays(30);
+            existingSession.LastSeen = TimeHelper.GetEgyptTime();
+            existingSession.IpAddress = _httpContextAccessor.HttpContext?.Connection?.RemoteIpAddress?.ToString() ?? "Unknown";
+            existingSession.DeviceName = deviceName;
+            existingSession.DeviceFingerprint = fingerprint;
+            existingSession.UserAgent = _httpContextAccessor.HttpContext?.Request?.Headers["User-Agent"].ToString() ?? "";
+            existingSession.IsRevoked = false;
+            existingSession.RevokedAt = null;
+
+            _db.UserSessions.Update(existingSession);
+            await _db.SaveChangesAsync();
+            sessionId = existingSession.Id;
+        }
+        else
+        {
+            var (deviceName, fingerprint) = ParseDeviceAndFingerprint();
+            var newSession = new UserSession
+            {
+                Id = Guid.NewGuid(),
+                UserId = user.Id,
+                DeviceName = deviceName,
+                DeviceFingerprint = fingerprint,
+                UserAgent = _httpContextAccessor.HttpContext?.Request?.Headers["User-Agent"].ToString() ?? "",
+                IpAddress = _httpContextAccessor.HttpContext?.Connection?.RemoteIpAddress?.ToString() ?? "Unknown",
+                CreatedAt = TimeHelper.GetEgyptTime(),
+                LastSeen = TimeHelper.GetEgyptTime(),
+                ExpiresAt = DateTime.UtcNow.AddDays(30),
+                RefreshTokenHash = hashedRefreshToken,
+                IsRevoked = false
+            };
+
+            _db.UserSessions.Add(newSession);
+            await _db.SaveChangesAsync();
+            sessionId = newSession.Id;
+        }
+
+        claims.Add(new Claim("SessionId", sessionId.ToString()));
+
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["JWT:Secret"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         // ⚠️ Access Token: short-lived (2h default). Refresh token handles re-auth silently.
@@ -216,12 +271,6 @@ public class AuthService : IAuthService
             expires: expires,
             signingCredentials: creds
         );
-
-        // توليد refresh token وتخزينه في DB
-        var refreshToken = GenerateSecureRefreshToken();
-        user.RefreshToken       = refreshToken;
-        user.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
-        await _userManager.UpdateAsync(user);
 
         return new AuthResponseDto(
             user.Id,
@@ -244,25 +293,168 @@ public class AuthService : IAuthService
     /// <summary>تجديد الـ access token باستخدام refresh token صالح</summary>
     public async Task<AuthResponseDto> RefreshTokenAsync(string refreshToken)
     {
-        var user = await _userManager.Users
-            .FirstOrDefaultAsync(u => u.RefreshToken == refreshToken);
+        var hashedToken = HashRefreshToken(refreshToken);
 
-        if (user == null || !user.IsActive
-            || user.RefreshTokenExpiry == null
-            || user.RefreshTokenExpiry < DateTime.UtcNow)
-            throw new UnauthorizedAccessException(_t.Get("Auth.RefreshTokenInvalid"));
+        // 1. Search in UserSessions
+        var session = await _db.UserSessions
+            .FirstOrDefaultAsync(s => s.RefreshTokenHash == hashedToken);
 
-        return await LoginInternalAsync(user);
+        if (session != null)
+        {
+            if (session.IsRevoked || (session.ExpiresAt != null && session.ExpiresAt < DateTime.UtcNow))
+            {
+                if (!session.IsRevoked)
+                {
+                    session.IsRevoked = true;
+                    session.RevokedAt = TimeHelper.GetEgyptTime();
+                    await _db.SaveChangesAsync();
+                }
+                throw new UnauthorizedAccessException(_t.Get("Auth.RefreshTokenInvalid"));
+            }
+
+            var user = await _userManager.FindByIdAsync(session.UserId);
+            if (user == null || !user.IsActive)
+                throw new UnauthorizedAccessException(_t.Get("Auth.RefreshTokenInvalid"));
+
+            return await LoginInternalAsync(user, session);
+        }
+
+        // 2. Migration Fallback: Check AspNetUsers (AppUser)
+        var fallbackUser = await _userManager.Users
+            .FirstOrDefaultAsync(u => u.RefreshTokenHash == hashedToken);
+
+        if (fallbackUser == null)
+        {
+            fallbackUser = await _userManager.Users
+                .FirstOrDefaultAsync(u => u.RefreshTokenHash == refreshToken);
+        }
+
+        if (fallbackUser != null)
+        {
+            if (fallbackUser.IsActive && fallbackUser.RefreshTokenExpiry != null && fallbackUser.RefreshTokenExpiry >= DateTime.UtcNow)
+            {
+                // Create a new session for this migrated user session
+                var (deviceName, fingerprint) = ParseDeviceAndFingerprint();
+                var newSession = new UserSession
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = fallbackUser.Id,
+                    DeviceName = deviceName,
+                    DeviceFingerprint = fingerprint,
+                    UserAgent = _httpContextAccessor.HttpContext?.Request?.Headers["User-Agent"].ToString() ?? "",
+                    IpAddress = _httpContextAccessor.HttpContext?.Connection?.RemoteIpAddress?.ToString() ?? "Unknown",
+                    CreatedAt = TimeHelper.GetEgyptTime(),
+                    LastSeen = TimeHelper.GetEgyptTime(),
+                    ExpiresAt = DateTime.UtcNow.AddDays(30),
+                    RefreshTokenHash = hashedToken,
+                    IsRevoked = false
+                };
+
+                _db.UserSessions.Add(newSession);
+
+                // Clear legacy token fields from user
+                fallbackUser.RefreshTokenHash = null;
+                fallbackUser.RefreshTokenExpiry = null;
+                await _userManager.UpdateAsync(fallbackUser);
+                await _db.SaveChangesAsync();
+
+                return await LoginInternalAsync(fallbackUser, newSession);
+            }
+        }
+
+        throw new UnauthorizedAccessException(_t.Get("Auth.RefreshTokenInvalid"));
     }
 
     /// <summary>إلغاء الـ refresh token (تسجيل خروج)</summary>
     public async Task RevokeRefreshTokenAsync(string userId)
     {
+        var httpContext = _httpContextAccessor.HttpContext;
+        var sessionIdClaim = httpContext?.User?.FindFirst("SessionId")?.Value;
+        if (!string.IsNullOrEmpty(sessionIdClaim) && Guid.TryParse(sessionIdClaim, out var sessionId))
+        {
+            var session = await _db.UserSessions.FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == userId);
+            if (session != null)
+            {
+                session.IsRevoked = true;
+                session.RevokedAt = TimeHelper.GetEgyptTime();
+                await _db.SaveChangesAsync();
+            }
+        }
+        else
+        {
+            // Fallback: revoke all active sessions for this user if no current session found
+            var activeSessions = await _db.UserSessions
+                .Where(s => s.UserId == userId && !s.IsRevoked)
+                .ToListAsync();
+
+            foreach (var session in activeSessions)
+            {
+                session.IsRevoked = true;
+                session.RevokedAt = TimeHelper.GetEgyptTime();
+            }
+            await _db.SaveChangesAsync();
+        }
+
+        // Also clean up any legacy user level token
         var user = await _userManager.FindByIdAsync(userId);
-        if (user == null) return;
-        user.RefreshToken       = null;
-        user.RefreshTokenExpiry = null;
-        await _userManager.UpdateAsync(user);
+        if (user != null)
+        {
+            user.RefreshTokenHash = null;
+            user.RefreshTokenExpiry = null;
+            await _userManager.UpdateAsync(user);
+        }
+    }
+
+    private (string DeviceName, string Fingerprint) ParseDeviceAndFingerprint()
+    {
+        var httpContext = _httpContextAccessor.HttpContext;
+        if (httpContext == null)
+        {
+            return ("Unknown Device", "");
+        }
+
+        var userAgent = httpContext.Request.Headers["User-Agent"].ToString() ?? "";
+        var acceptLanguage = httpContext.Request.Headers["Accept-Language"].ToString() ?? "";
+
+        var platform = "Unknown Platform";
+        if (userAgent.Contains("Windows")) platform = "Windows";
+        else if (userAgent.Contains("Android")) platform = "Android";
+        else if (userAgent.Contains("iPhone") || userAgent.Contains("iPad")) platform = "iOS";
+        else if (userAgent.Contains("Macintosh") || userAgent.Contains("Mac OS X")) platform = "macOS";
+        else if (userAgent.Contains("Linux")) platform = "Linux";
+
+        var browser = "Unknown Browser";
+        if (userAgent.Contains("Edg")) browser = "Edge";
+        else if (userAgent.Contains("Chrome") && !userAgent.Contains("Chromium")) browser = "Chrome";
+        else if (userAgent.Contains("Safari") && !userAgent.Contains("Chrome")) browser = "Safari";
+        else if (userAgent.Contains("Firefox")) browser = "Firefox";
+        else if (userAgent.Contains("Opera") || userAgent.Contains("OPR")) browser = "Opera";
+
+        var deviceName = $"{browser} {platform}";
+
+        var rawFingerprint = $"{userAgent}|{platform}|{browser}|{acceptLanguage}";
+        using var sha256 = SHA256.Create();
+        var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(rawFingerprint));
+        var fingerprint = BitConverter.ToString(hashBytes).Replace("-", "").ToLower();
+
+        return (deviceName, fingerprint);
+    }
+
+    private string HashRefreshToken(string token)
+    {
+        var secret = _config["Security:RefreshTokenSecret"];
+        if (string.IsNullOrEmpty(secret) || secret == "${REFRESH_TOKEN_SECRET}")
+        {
+            secret = Environment.GetEnvironmentVariable("REFRESH_TOKEN_SECRET");
+        }
+        if (string.IsNullOrEmpty(secret))
+        {
+            throw new InvalidOperationException("Security:RefreshTokenSecret is not configured.");
+        }
+
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
+        var hashBytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(token));
+        return Convert.ToBase64String(hashBytes);
     }
 
     /// <summary>

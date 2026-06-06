@@ -6,6 +6,7 @@ Welcome to the Sportive project documentation. This guide provides a comprehensi
 - [**Architecture**](./ARCHITECTURE.md): High-level overview of the system structure.
 - [**Technologies**](./TECHNOLOGIES.md): The tech stack used for backend and frontend.
 - [**System Workflow**](./WORKFLOW.md): How the backend and frontend interact.
+- [**Key Rotation Strategy**](./key_rotation_strategy.md): Cryptographic keys lifecycle management.
 
 ## Feature Documentation
 Each major module of the system is documented in detail below:

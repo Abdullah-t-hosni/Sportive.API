@@ -29,8 +29,18 @@ public class AuthController : ControllerBase
     private readonly IWhatsAppApiService _whatsappApi;
     private readonly IAuditService _audit;
     private readonly ITranslator _translator;
+    private readonly ISecurityEventsEngine _securityEngine;
 
-    public AuthController(IAuthService auth, AppDbContext db, UserManager<AppUser> userManager, IMemoryCache cache, IEmailService email, IWhatsAppApiService whatsappApi, IAuditService audit, ITranslator translator)
+    public AuthController(
+        IAuthService auth, 
+        AppDbContext db, 
+        UserManager<AppUser> userManager, 
+        IMemoryCache cache, 
+        IEmailService email, 
+        IWhatsAppApiService whatsappApi, 
+        IAuditService audit, 
+        ITranslator translator,
+        ISecurityEventsEngine securityEngine)
     {
         _auth = auth;
         _db = db;
@@ -40,6 +50,7 @@ public class AuthController : ControllerBase
         _whatsappApi = whatsappApi;
         _audit = audit;
         _translator = translator;
+        _securityEngine = securityEngine;
     }
 
     [HttpPost("register")]
@@ -109,7 +120,27 @@ public class AuthController : ControllerBase
             await _audit.LogAsync("Login", "User", null, $"User logged in via {dto.Identifier}", user?.Id, user?.FullName);
             return Ok(response); 
         }
-        catch (UnauthorizedAccessException ex) { return Unauthorized(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException ex) 
+        {
+            var user = await _userManager.FindByEmailAsync(dto.Identifier ?? "") 
+                       ?? await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == dto.Identifier);
+
+            var correlationId = HttpContext.TraceIdentifier;
+            var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+            var userAgent = Request.Headers["User-Agent"].ToString() ?? "Unknown";
+
+            await _securityEngine.TrackEventAsync(
+                user?.Id,
+                ip,
+                userAgent,
+                SecurityEventType.FailedLogin,
+                SecuritySeverity.Low,
+                5,
+                correlationId
+            );
+
+            return Unauthorized(new { message = ex.Message }); 
+        }
     }
 
     /// <summary>تجديد الـ access token — الفرونت يبعت refreshToken يجيب access token جديد</summary>

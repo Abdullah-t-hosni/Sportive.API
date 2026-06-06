@@ -11,7 +11,13 @@ namespace Sportive.API.Services;
 public class CustomerService : ICustomerService
 {
     private readonly AppDbContext _db;
-    public CustomerService(AppDbContext db) => _db = db;
+    private readonly EncryptionHelper _encryptionHelper;
+
+    public CustomerService(AppDbContext db, EncryptionHelper encryptionHelper)
+    {
+        _db = db;
+        _encryptionHelper = encryptionHelper;
+    }
 
     public async Task<PaginatedResult<CustomerDetailDto>> GetCustomersAsync(
         int page, int pageSize, string? search = null, 
@@ -88,10 +94,11 @@ public class CustomerService : ICustomerService
         if (!string.IsNullOrWhiteSpace(search))
         {
             var s = search.ToLower();
+            var searchHash = _encryptionHelper.ComputeSearchHash(search);
             query = query.Where(c =>
                 c.FullName.ToLower().Contains(s) ||
-                c.Email.ToLower().Contains(s)     ||
-                (c.Phone != null && c.Phone.Contains(s)));
+                c.EmailHash == searchHash ||
+                c.PhoneHash == searchHash);
         }
 
         // 2. Map to a rich projection for filtering and sorting
@@ -270,11 +277,12 @@ public class CustomerService : ICustomerService
             .Select(ur => ur.UserId)
             .ToListAsync();
 
+        var emailHash = _encryptionHelper.ComputeSearchHash(email);
         var rawResult = await _db.Customers
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
             .Include(c => c.AppUser)
-            .Where(c => c.Email == email && (c.AppUserId == null || !staffUserIds.Contains(c.AppUserId)))
+            .Where(c => c.EmailHash == emailHash && (c.AppUserId == null || !staffUserIds.Contains(c.AppUserId)))
             .Select(c => new
             {
                 c.Id, c.FullName, c.Email, c.Phone, c.AppUserId, c.CreatedAt,
@@ -377,10 +385,12 @@ public class CustomerService : ICustomerService
     public async Task<CustomerDetailDto> CreateCustomerAsync(CreateCustomerDto dto)
     {
         // 1. Check for existing customer
+        var phoneHash = !string.IsNullOrEmpty(dto.Phone) ? _encryptionHelper.ComputeSearchHash(dto.Phone) : "";
+        var emailHash = !string.IsNullOrEmpty(dto.Email) ? _encryptionHelper.ComputeSearchHash(dto.Email) : "";
         Customer? existing = await _db.Customers
             .FirstOrDefaultAsync(c => 
-                (!string.IsNullOrEmpty(dto.Phone) && c.Phone == dto.Phone) || 
-                (!string.IsNullOrEmpty(dto.Email) && c.Email.ToLower() == dto.Email.ToLower()));
+                (!string.IsNullOrEmpty(dto.Phone) && c.PhoneHash == phoneHash) || 
+                (!string.IsNullOrEmpty(dto.Email) && c.EmailHash == emailHash));
         
         if (existing != null)
             throw new InvalidOperationException("هذا العميل (أو الهاتف) مسجل بالفعل في ملفات العملاء.");

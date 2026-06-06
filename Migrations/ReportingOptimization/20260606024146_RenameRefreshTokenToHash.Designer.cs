@@ -3,17 +3,20 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sportive.API.Data;
 
 #nullable disable
 
-namespace Sportive.API.Migrations
+namespace Sportive.API.Migrations.ReportingOptimization
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260606024146_RenameRefreshTokenToHash")]
+    partial class RenameRefreshTokenToHash
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -598,10 +601,6 @@ namespace Sportive.API.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)");
 
-                    b.Property<string>("Hash")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
                     b.Property<string>("IpAddress")
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)");
@@ -615,10 +614,6 @@ namespace Sportive.API.Migrations
 
                     b.Property<string>("OldValues")
                         .HasColumnType("longtext");
-
-                    b.Property<string>("PreviousHash")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
 
                     b.Property<string>("UserId")
                         .HasMaxLength(450)
@@ -652,10 +647,6 @@ namespace Sportive.API.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("Algorithm")
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
@@ -671,10 +662,6 @@ namespace Sportive.API.Migrations
                     b.Property<string>("Error")
                         .HasColumnType("longtext");
 
-                    b.Property<string>("FileHash")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
                     b.Property<string>("FileName")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -686,10 +673,6 @@ namespace Sportive.API.Migrations
 
                     b.Property<long>("FileSizeBytes")
                         .HasColumnType("bigint");
-
-                    b.Property<string>("SignatureVersion")
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)");
 
                     b.Property<bool>("Success")
                         .HasColumnType("tinyint(1)");
@@ -1191,17 +1174,6 @@ namespace Sportive.API.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("varchar(200)");
 
-                    b.Property<string>("EmailEncrypted")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("EmailHash")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<int>("EmailKeyVersion")
-                        .HasColumnType("int");
-
                     b.Property<decimal>("FixedDiscount")
                         .HasColumnType("decimal(65,30)");
 
@@ -1218,14 +1190,8 @@ namespace Sportive.API.Migrations
                     b.Property<string>("Notes")
                         .HasColumnType("longtext");
 
-                    b.Property<string>("PhoneEncrypted")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("PhoneHash")
+                    b.Property<string>("Phone")
                         .HasColumnType("varchar(255)");
-
-                    b.Property<int>("PhoneKeyVersion")
-                        .HasColumnType("int");
 
                     b.Property<string>("Tags")
                         .IsRequired()
@@ -1251,11 +1217,9 @@ namespace Sportive.API.Migrations
                     b.HasIndex("Email")
                         .IsUnique();
 
-                    b.HasIndex("EmailHash");
-
                     b.HasIndex("MainAccountId");
 
-                    b.HasIndex("PhoneHash");
+                    b.HasIndex("Phone");
 
                     b.ToTable("Customers");
                 });
@@ -4001,56 +3965,6 @@ namespace Sportive.API.Migrations
                     b.ToTable("Reviews");
                 });
 
-            modelBuilder.Entity("Sportive.API.Models.SecurityEvent", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("CorrelationId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("Device")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("varchar(200)");
-
-                    b.Property<int>("EventType")
-                        .HasColumnType("int");
-
-                    b.Property<string>("IpAddress")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)");
-
-                    b.Property<int>("RiskScore")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Severity")
-                        .HasColumnType("int");
-
-                    b.Property<string>("UserId")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CorrelationId");
-
-                    b.HasIndex("IpAddress");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("SecurityEvents");
-                });
-
             modelBuilder.Entity("Sportive.API.Models.ShippingZone", b =>
                 {
                     b.Property<int>("Id")
@@ -5007,61 +4921,6 @@ namespace Sportive.API.Migrations
                     b.HasIndex("UserAccountID");
 
                     b.ToTable("UserModulePermissions");
-                });
-
-            modelBuilder.Entity("Sportive.API.Models.UserSession", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("DeviceFingerprint")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("DeviceName")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<DateTime?>("ExpiresAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("IpAddress")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<bool>("IsRevoked")
-                        .HasColumnType("tinyint(1)");
-
-                    b.Property<DateTime>("LastSeen")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("RefreshTokenHash")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<DateTime?>("RevokedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("UserAgent")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RefreshTokenHash")
-                        .IsUnique();
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("UserSessions");
                 });
 
             modelBuilder.Entity("Sportive.API.Models.WelcomeMessage", b =>
@@ -6275,16 +6134,6 @@ namespace Sportive.API.Migrations
                     b.Navigation("Product");
                 });
 
-            modelBuilder.Entity("Sportive.API.Models.SecurityEvent", b =>
-                {
-                    b.HasOne("Sportive.API.Models.AppUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("Sportive.API.Models.SizeValue", b =>
                 {
                     b.HasOne("Sportive.API.Models.SizeGroup", "SizeGroup")
@@ -6333,17 +6182,6 @@ namespace Sportive.API.Migrations
                     b.HasOne("Sportive.API.Models.AppUser", "User")
                         .WithMany()
                         .HasForeignKey("UserAccountID")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Sportive.API.Models.UserSession", b =>
-                {
-                    b.HasOne("Sportive.API.Models.AppUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 

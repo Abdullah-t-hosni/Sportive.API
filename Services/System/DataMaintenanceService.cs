@@ -890,4 +890,86 @@ public class DataMaintenanceService : IDataMaintenanceService
             return (false, $"فشلت العملية: {ex.Message}", 0);
         }
     }
+
+    public async Task<(bool Success, string Message)> MigrateExistingCustomersAsync()
+    {
+        try
+        {
+            var helper = Customer.EncryptionHelper;
+            if (helper == null)
+            {
+                return (false, "فشلت العملية: لم يتم تهيئة EncryptionHelper عند بدء التشغيل.");
+            }
+
+            var conn = _db.Database.GetDbConnection();
+            if (conn.State != System.Data.ConnectionState.Open)
+                await conn.OpenAsync();
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT Id, Email, PhoneHash FROM Customers";
+            
+            var rawData = new List<(int Id, string Email, string? Phone)>();
+            using (var reader = await cmd.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    int id = Convert.ToInt32(reader.GetValue(0));
+                    string email = reader.GetString(1);
+                    string? phone = reader.IsDBNull(2) ? null : reader.GetString(2);
+                    rawData.Add((id, email, phone));
+                }
+            }
+
+            int migratedCount = 0;
+            foreach (var row in rawData)
+            {
+                var customer = await _db.Customers.FindAsync(row.Id);
+                if (customer != null)
+                {
+                    bool updated = false;
+
+                    // Encrypt email if not yet encrypted
+                    if (string.IsNullOrEmpty(customer.EmailEncrypted) || string.IsNullOrEmpty(customer.EmailHash))
+                    {
+                        customer.EmailEncrypted = helper.Encrypt(row.Email);
+                        customer.EmailHash = helper.ComputeSearchHash(row.Email);
+                        customer.EmailKeyVersion = 1;
+                        updated = true;
+                    }
+
+                    // Encrypt phone if present and not yet encrypted/hashed
+                    if (!string.IsNullOrEmpty(row.Phone) && string.IsNullOrEmpty(customer.PhoneEncrypted))
+                    {
+                        // Avoid hashing if it is already a 64-char hex string (already migrated)
+                        bool isAlreadyHashed = row.Phone.Length == 64 && System.Text.RegularExpressions.Regex.IsMatch(row.Phone, @"^[a-f0-9]+$");
+                        if (!isAlreadyHashed)
+                        {
+                            customer.PhoneEncrypted = helper.Encrypt(row.Phone);
+                            customer.PhoneHash = helper.ComputeSearchHash(row.Phone);
+                            customer.PhoneKeyVersion = 1;
+                            updated = true;
+                        }
+                    }
+
+                    if (updated)
+                    {
+                        migratedCount++;
+                    }
+                }
+            }
+
+            if (migratedCount > 0)
+            {
+                await _db.SaveChangesAsync();
+            }
+
+            _logger.LogWarning("[MigrateExistingCustomers] Successfully encrypted and hashed {Count} customers.", migratedCount);
+            return (true, $"تم تشفير وترحيل بيانات {migratedCount} عميل بنجاح.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "MigrateExistingCustomers failed");
+            return (false, $"فشلت العملية: {ex.Message}");
+        }
+    }
 }

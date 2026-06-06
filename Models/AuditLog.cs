@@ -53,4 +53,12 @@ public class AuditLog
 
     /// <summary>وقت الحدث — دائماً UTC</summary>
     public DateTime CreatedAt { get; set; } = TimeHelper.GetEgyptTime();
+
+    /// <summary>توقيع السجل الحالي باستخدام HMAC-SHA256</summary>
+    [MaxLength(100)]
+    public string? Hash { get; set; }
+
+    /// <summary>توقيع السجل السابق في السلسلة</summary>
+    [MaxLength(100)]
+    public string? PreviousHash { get; set; }
 }

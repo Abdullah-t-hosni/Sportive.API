@@ -16,6 +16,15 @@ public class BackupRecord : BaseEntity
     public bool EmailSent { get; set; } = false;
     public string? EmailError { get; set; }
     public string? Error { get; set; }
+
+    [MaxLength(100)]
+    public string? FileHash { get; set; }
+
+    [MaxLength(50)]
+    public string? Algorithm { get; set; }
+
+    [MaxLength(20)]
+    public string? SignatureVersion { get; set; }
     
     [MaxLength(20)]
     public string TriggerType { get; set; } = "auto"; // auto or manual

@@ -3,17 +3,20 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sportive.API.Data;
 
 #nullable disable
 
-namespace Sportive.API.Migrations
+namespace Sportive.API.Migrations.ReportingOptimization
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260606034210_AddSecurityEventsAndBackupProperties")]
+    partial class AddSecurityEventsAndBackupProperties
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -598,10 +601,6 @@ namespace Sportive.API.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)");
 
-                    b.Property<string>("Hash")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
                     b.Property<string>("IpAddress")
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)");
@@ -615,10 +614,6 @@ namespace Sportive.API.Migrations
 
                     b.Property<string>("OldValues")
                         .HasColumnType("longtext");
-
-                    b.Property<string>("PreviousHash")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
 
                     b.Property<string>("UserId")
                         .HasMaxLength(450)
@@ -1191,17 +1186,6 @@ namespace Sportive.API.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("varchar(200)");
 
-                    b.Property<string>("EmailEncrypted")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("EmailHash")
-                        .IsRequired()
-                        .HasColumnType("varchar(255)");
-
-                    b.Property<int>("EmailKeyVersion")
-                        .HasColumnType("int");
-
                     b.Property<decimal>("FixedDiscount")
                         .HasColumnType("decimal(65,30)");
 
@@ -1218,14 +1202,8 @@ namespace Sportive.API.Migrations
                     b.Property<string>("Notes")
                         .HasColumnType("longtext");
 
-                    b.Property<string>("PhoneEncrypted")
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("PhoneHash")
+                    b.Property<string>("Phone")
                         .HasColumnType("varchar(255)");
-
-                    b.Property<int>("PhoneKeyVersion")
-                        .HasColumnType("int");
 
                     b.Property<string>("Tags")
                         .IsRequired()
@@ -1251,11 +1229,9 @@ namespace Sportive.API.Migrations
                     b.HasIndex("Email")
                         .IsUnique();
 
-                    b.HasIndex("EmailHash");
-
                     b.HasIndex("MainAccountId");
 
-                    b.HasIndex("PhoneHash");
+                    b.HasIndex("Phone");
 
                     b.ToTable("Customers");
                 });

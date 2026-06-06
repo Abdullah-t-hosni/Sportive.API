@@ -68,6 +68,56 @@ public static class DependencyInjection
         if (jwtSecret.Length < 32 || jwtSecret.StartsWith("CHANGE_ME", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("JWT:Secret must be at least 32 characters and not the default placeholder value.");
 
+        var refreshSecret = configuration["Security:RefreshTokenSecret"];
+        if (string.IsNullOrEmpty(refreshSecret) || refreshSecret == "${REFRESH_TOKEN_SECRET}")
+        {
+            refreshSecret = Environment.GetEnvironmentVariable("REFRESH_TOKEN_SECRET");
+        }
+        if (string.IsNullOrEmpty(refreshSecret))
+        {
+            throw new InvalidOperationException("Security:RefreshTokenSecret is not configured.");
+        }
+
+        var backupSecret = configuration["Security:BackupSecret"];
+        if (string.IsNullOrEmpty(backupSecret) || backupSecret == "${BACKUP_SECRET}")
+        {
+            backupSecret = Environment.GetEnvironmentVariable("BACKUP_SECRET");
+        }
+        if (string.IsNullOrEmpty(backupSecret))
+        {
+            throw new InvalidOperationException("Security:BackupSecret is not configured.");
+        }
+
+        var searchSecret = configuration["Security:SearchSecret"];
+        if (string.IsNullOrEmpty(searchSecret) || searchSecret == "${SEARCH_SECRET}")
+        {
+            searchSecret = Environment.GetEnvironmentVariable("SEARCH_SECRET");
+        }
+        if (string.IsNullOrEmpty(searchSecret))
+        {
+            throw new InvalidOperationException("Security:SearchSecret is not configured.");
+        }
+
+        var auditSecret = configuration["Security:AuditSecret"];
+        if (string.IsNullOrEmpty(auditSecret) || auditSecret == "${AUDIT_SECRET}")
+        {
+            auditSecret = Environment.GetEnvironmentVariable("AUDIT_SECRET");
+        }
+        if (string.IsNullOrEmpty(auditSecret))
+        {
+            throw new InvalidOperationException("Security:AuditSecret is not configured.");
+        }
+
+        var encryptionKey = configuration["Security:EncryptionKeyV1"];
+        if (string.IsNullOrEmpty(encryptionKey) || encryptionKey == "${ENCRYPTION_KEY_V1}")
+        {
+            encryptionKey = Environment.GetEnvironmentVariable("ENCRYPTION_KEY_V1");
+        }
+        if (string.IsNullOrEmpty(encryptionKey))
+        {
+            throw new InvalidOperationException("Security:EncryptionKeyV1 is not configured.");
+        }
+
         services.AddAuthentication(opt =>
         {
             opt.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -182,6 +232,29 @@ public static class DependencyInjection
                 context.HttpContext.Response.ContentType = "application/json";
                 await context.HttpContext.Response.WriteAsync(
                     """{"message":"Too many requests. Please wait a minute and try again."}""");
+
+                try
+                {
+                    var securityEngine = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventsEngine>();
+                    var userId = context.HttpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                    var ip = context.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+                    var userAgent = context.HttpContext.Request.Headers["User-Agent"].ToString() ?? "Unknown";
+                    var correlationId = context.HttpContext.TraceIdentifier;
+
+                    await securityEngine.TrackEventAsync(
+                        userId,
+                        ip,
+                        userAgent,
+                        SecurityEventType.RateLimitViolation,
+                        SecuritySeverity.Medium,
+                        20,
+                        correlationId
+                    );
+                }
+                catch
+                {
+                    // Fail silently
+                }
             };
         });
 
@@ -230,6 +303,7 @@ public static class DependencyInjection
     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
     {
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<ISecurityEventsEngine, SecurityEventsEngine>();
         services.AddScoped<IBrandService, BrandService>();
         services.AddScoped<IProductService, ProductService>();
         services.AddScoped<IInventoryService, InventoryService>();
@@ -248,6 +322,7 @@ public static class DependencyInjection
         services.AddScoped<SalesAccountingService>();
         services.AddScoped<PurchaseAccountingService>();
         services.AddScoped<IAuditService, AuditService>();
+        services.AddScoped<IAuditIntegrityService, AuditIntegrityService>();
         services.AddScoped<PaymentAccountingService>();
         services.AddScoped<JournalAccountingService>();
         services.AddScoped<IAccountingService, AccountingService>();
@@ -273,6 +348,7 @@ public static class DependencyInjection
         services.AddSingleton<SequenceService>();
         services.AddSingleton<TimeService>();
         services.AddSingleton<ITimeService>(sp => sp.GetRequiredService<TimeService>());
+        services.AddSingleton<Sportive.API.Utils.EncryptionHelper>();
         services.AddHttpClient();
         services.AddHttpClient("Paymob");
         services.AddSignalR();

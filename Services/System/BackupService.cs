@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Mail;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
@@ -82,6 +84,9 @@ public class BackupService : IBackupService
                 catch (Exception ex) { emailError = ex.Message; _log.LogWarning("[Backup] Email failed: {e}", ex.Message); }
             }
 
+            // Compute HMAC hash of the generated backup zip file
+            var fileHash = ComputeFileHmac(zipFile);
+
             // ── 4. Save to DB log ─────────────────────
             var record = new BackupRecord
             {
@@ -93,6 +98,9 @@ public class BackupService : IBackupService
                 EmailError   = emailError,
                 TriggerType  = triggerType,
                 CreatedAt    = DateTime.UtcNow,
+                FileHash     = fileHash,
+                Algorithm    = "HMACSHA256",
+                SignatureVersion = "v1"
             };
             _db.BackupRecords.Add(record);
             await _db.SaveChangesAsync(ct);
@@ -312,6 +320,31 @@ public class BackupService : IBackupService
                 await fileStream.CopyToAsync(fs, ct);
             }
 
+            // ── Verify HMAC signature prior to database execution ──
+            var computedHash = ComputeFileHmac(tempFile);
+            var dbRecord = await _db.BackupRecords
+                .FirstOrDefaultAsync(r => r.FileName == safeFileName && r.Success, ct);
+
+            if (dbRecord == null)
+            {
+                // If there are zero backups in database, we permit the restore (disaster recovery).
+                // Otherwise, reject it as untracked.
+                var anyBackups = await _db.BackupRecords.AnyAsync(ct);
+                if (anyBackups)
+                {
+                    return new BackupResult(false, fileName, 0, sw.Elapsed, Error: "No successful database record found for this backup filename. Cannot verify integrity.");
+                }
+                else
+                {
+                    _log.LogWarning("[Restore] Permitting restore of untracked backup {file} on empty database.", safeFileName);
+                }
+            }
+            else if (dbRecord.FileHash != computedHash)
+            {
+                _log.LogCritical("[Restore] TAMPERING DETECTED! Backup file {file} signature {computed} does not match the database signature {stored}.", safeFileName, computedHash, dbRecord.FileHash);
+                return new BackupResult(false, fileName, 0, sw.Elapsed, Error: "Backup file signature validation failed. Tampering detected.");
+            }
+
             // 2. If compressed, decompress
             if (fileName.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
             {
@@ -428,5 +461,23 @@ public class BackupService : IBackupService
             throw new InvalidOperationException($"Cannot parse connection string: {connStr[..Math.Min(50, connStr.Length)]}...");
 
         return (host, port, dbName, user, pass);
+    }
+
+    private string ComputeFileHmac(string filePath)
+    {
+        var secret = _config["Security:BackupSecret"];
+        if (string.IsNullOrEmpty(secret) || secret == "${BACKUP_SECRET}")
+        {
+            secret = Environment.GetEnvironmentVariable("BACKUP_SECRET");
+        }
+        if (string.IsNullOrEmpty(secret))
+        {
+            throw new InvalidOperationException("Security:BackupSecret is not configured.");
+        }
+
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
+        using var stream = File.OpenRead(filePath);
+        var hashBytes = hmac.ComputeHash(stream);
+        return BitConverter.ToString(hashBytes).Replace("-", "").ToLower();
     }
 }

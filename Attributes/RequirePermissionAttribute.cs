@@ -36,15 +36,18 @@ public class RequirePermissionFilter : IAsyncAuthorizationFilter
     private readonly bool              _requireEdit;
     private readonly IPermissionService _permissions;
     private readonly ITranslator        _t;
+    private readonly ISecurityEventsEngine _securityEngine;
 
     public RequirePermissionFilter(
         string module, bool requireEdit,
-        IPermissionService permissions, ITranslator t)
+        IPermissionService permissions, ITranslator t,
+        ISecurityEventsEngine securityEngine)
     {
         _module      = module;
         _requireEdit = requireEdit;
         _permissions = permissions;
         _t           = t;
+        _securityEngine = securityEngine;
     }
 
     public async Task OnAuthorizationAsync(AuthorizationFilterContext context)
@@ -87,6 +90,20 @@ public class RequirePermissionFilter : IAsyncAuthorizationFilter
 
         if (!await _permissions.CanViewAsync(userId, modules))
         {
+            var ip = context.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+            var userAgent = context.HttpContext.Request.Headers["User-Agent"].ToString() ?? "Unknown";
+            var correlationId = context.HttpContext.TraceIdentifier;
+
+            await _securityEngine.TrackEventAsync(
+                userId,
+                ip,
+                userAgent,
+                SecurityEventType.AccessDenied,
+                SecuritySeverity.Low,
+                15,
+                correlationId
+            );
+
             context.Result = new ObjectResult(new { message = _t.Get("Auth.NoViewPermission") })
                 { StatusCode = 403 };
             return;
@@ -94,6 +111,20 @@ public class RequirePermissionFilter : IAsyncAuthorizationFilter
 
         if (_requireEdit && !await _permissions.CanEditAsync(userId, modules))
         {
+            var ip = context.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+            var userAgent = context.HttpContext.Request.Headers["User-Agent"].ToString() ?? "Unknown";
+            var correlationId = context.HttpContext.TraceIdentifier;
+
+            await _securityEngine.TrackEventAsync(
+                userId,
+                ip,
+                userAgent,
+                SecurityEventType.AccessDenied,
+                SecuritySeverity.Low,
+                15,
+                correlationId
+            );
+
             context.Result = new ObjectResult(new { message = _t.Get("Auth.NoEditPermission") })
                 { StatusCode = 403 };
         }

@@ -13,6 +13,9 @@ using Hangfire;
 using Sportive.API.Extensions;
 using Sportive.API.Interfaces;
 using Sportive.API.Services;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using OpenTelemetry.Metrics;
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Is(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development" ? LogEventLevel.Debug : LogEventLevel.Information)
@@ -74,6 +77,26 @@ builder.Services.AddCacheAndValidationServices(builder.Configuration);
 // ── APPLICATION SERVICES ──────────────────────────────
 builder.Services.AddApplicationServices();
 
+// ── OPENTELEMETRY ─────────────────────────────────────
+var otelEndpoint = builder.Configuration["OpenTelemetry:Endpoint"] ?? "http://localhost:4317";
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource
+        .AddService(serviceName: "Sportive.API", serviceVersion: "1.0.0")
+        .AddAttributes(new Dictionary<string, object>
+        {
+            { "deployment.environment", Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production" }
+        }))
+    .WithTracing(tracing => tracing
+        .AddSource("Sportive.API")
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddOtlpExporter(opt => opt.Endpoint = new Uri(otelEndpoint)))
+    .WithMetrics(metrics => metrics
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddRuntimeInstrumentation()
+        .AddOtlpExporter(opt => opt.Endpoint = new Uri(otelEndpoint)));
+
 // ── HANGFIRE (Background Jobs) ────────────────────────
 builder.Services.AddHangfireServices(connStr);
 
@@ -111,6 +134,9 @@ var app = builder.Build();
 
 // Wire TimeHelper to the DI-managed TimeService
 TimeHelper.Initialize(app.Services.GetRequiredService<ITimeService>());
+
+// Wire Customer to the DI-managed EncryptionHelper
+Sportive.API.Models.Customer.EncryptionHelper = app.Services.GetRequiredService<Sportive.API.Utils.EncryptionHelper>();
 
 // ── AUTOMATIC MIGRATIONS (Production Sync) ────────────
 using (var scope = app.Services.CreateScope())
@@ -181,6 +207,7 @@ app.UseStaticFiles(new StaticFileOptions
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<Sportive.API.Middleware.SessionLastSeenMiddleware>();
 
 app.UseHangfireDashboard("/jobs", new DashboardOptions
 {

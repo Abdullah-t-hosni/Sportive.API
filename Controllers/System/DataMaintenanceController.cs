@@ -221,4 +221,23 @@ public class DataMaintenanceController : ControllerBase
         var (success, message, deleted) = await _service.CleanupCustomerBalancePmtVouchersAsync();
         return success ? Ok(new { success, message, deleted }) : BadRequest(new { success, message });
     }
+
+    [HttpGet("verify-audit-chain")]
+    public async Task<IActionResult> VerifyAuditChain([FromServices] Sportive.API.Services.IAuditIntegrityService integrityService)
+    {
+        var isValid = await integrityService.VerifyEntireChainAsync();
+        if (isValid)
+        {
+            return Ok(new { success = true, message = "Audit log integrity chain is verified and intact." });
+        }
+        return BadRequest(new { success = false, message = "Audit log integrity chain is broken or has been tampered with!" });
+    }
+
+    [HttpPost("migrate-customers-encryption")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> MigrateCustomersEncryption()
+    {
+        var (success, message) = await _service.MigrateExistingCustomersAsync();
+        return success ? Ok(new { success, message }) : BadRequest(new { success, message });
+    }
 }

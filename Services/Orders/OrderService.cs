@@ -26,6 +26,7 @@ public class OrderService : IOrderService
     private readonly ITranslator _t;
     private readonly IBackgroundJobClient _backgroundJobs;
     private readonly IDashboardEventService _dashboardEvents;
+    private readonly EncryptionHelper _encryptionHelper;
 
     public OrderService(
         AppDbContext db,
@@ -40,7 +41,8 @@ public class OrderService : IOrderService
         SequenceService seq,
         ITranslator t,
         IBackgroundJobClient backgroundJobs,
-        IDashboardEventService dashboardEvents)
+        IDashboardEventService dashboardEvents,
+        EncryptionHelper encryptionHelper)
     {
         _db = db;
         _notificationService = notificationService;
@@ -55,6 +57,7 @@ public class OrderService : IOrderService
         _t = t;
         _backgroundJobs = backgroundJobs;
         _dashboardEvents = dashboardEvents;
+        _encryptionHelper = encryptionHelper;
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
@@ -267,6 +270,13 @@ public class OrderService : IOrderService
 
     public async Task<OrderDetailDto> CreateOrderAsync(int? customerId, CreateOrderDto dto)
     {
+        using var activity = Sportive.API.Utils.Telemetry.ActivitySource.StartActivity("Create Order");
+        if (activity != null)
+        {
+            activity.SetTag("order.source", dto.Source.ToString());
+            activity.SetTag("customer.id", customerId?.ToString() ?? "Guest");
+        }
+
         if (customerId.HasValue && (customerId.Value <= 0 || !await _db.Customers.AnyAsync(c => c.Id == customerId.Value)))
         {
             customerId = null;
@@ -294,7 +304,9 @@ public class OrderService : IOrderService
                     try
                     {
                         var generatedEmail = $"{phone}@sportive.com";
-                        var existing = await _db.Customers.FirstOrDefaultAsync(c => c.Phone == phone || c.Email == generatedEmail);
+                        var phoneHash = _encryptionHelper.ComputeSearchHash(phone);
+                        var emailHash = _encryptionHelper.ComputeSearchHash(generatedEmail);
+                        var existing = await _db.Customers.FirstOrDefaultAsync(c => c.PhoneHash == phoneHash || c.EmailHash == emailHash);
 
                         if (existing != null)
                         {
@@ -325,7 +337,9 @@ public class OrderService : IOrderService
                         // Refresh the context and try to find them.
                         _db.ChangeTracker.Clear();
                         var fallbackEmail = $"{phone}@sportive.com";
-                        var resolved = await _db.Customers.FirstOrDefaultAsync(c => c.Phone == phone || c.Email == fallbackEmail);
+                        var phoneHash = _encryptionHelper.ComputeSearchHash(phone);
+                        var fallbackEmailHash = _encryptionHelper.ComputeSearchHash(fallbackEmail);
+                        var resolved = await _db.Customers.FirstOrDefaultAsync(c => c.PhoneHash == phoneHash || c.EmailHash == fallbackEmailHash);
                         if (resolved != null) customerId = resolved.Id;
                         else throw; // If still not found, rethrow the original exception
                     }

@@ -37,6 +37,13 @@ public class PaymobService : IPaymobService
 
     public async Task<PaymobPaymentResponse> CreatePaymentAsync(PaymobOrderRequest request)
     {
+        using var activity = Sportive.API.Utils.Telemetry.ActivitySource.StartActivity("Process Payment");
+        if (activity != null)
+        {
+            activity.SetTag("order.id", request.OrderId.ToString());
+            activity.SetTag("order.amount", request.Amount.ToString());
+        }
+
         try
         {
             var client = _httpFactory.CreateClient("Paymob");

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using System.ComponentModel.DataAnnotations.Schema;
 using Sportive.API.Utils;
 
 namespace Sportive.API.Models;
@@ -12,7 +13,7 @@ public class AppUser : IdentityUser
     public decimal FixedDiscount { get; set; } = 0;
 
     // Refresh Token — مخزن في DB لدعم التجديد والإلغاء
-    public string?   RefreshToken       { get; set; }
+    public string?   RefreshTokenHash   { get; set; }
     public DateTime? RefreshTokenExpiry { get; set; }
 
     // User preferences (sidebar pinned items and favorite reports)
@@ -23,9 +24,49 @@ public class AppUser : IdentityUser
 
 public class Customer : BaseEntity
 {
+    public static EncryptionHelper? EncryptionHelper { get; set; }
+
     public string FullName { get; set; } = string.Empty;
-    public string Email { get; set; } = string.Empty;
-    public string? Phone { get; set; }
+
+    public string EmailEncrypted { get; set; } = string.Empty;
+    public string EmailHash { get; set; } = string.Empty;
+    public int EmailKeyVersion { get; set; } = 1;
+
+    public string? PhoneEncrypted { get; set; }
+    public string? PhoneHash { get; set; }
+    public int PhoneKeyVersion { get; set; } = 1;
+
+    [NotMapped]
+    public string Email
+    {
+        get => EncryptionHelper != null ? EncryptionHelper.Decrypt(EmailEncrypted) : EmailEncrypted;
+        set
+        {
+            EmailEncrypted = EncryptionHelper != null ? EncryptionHelper.Encrypt(value) : value;
+            EmailHash = EncryptionHelper != null ? EncryptionHelper.ComputeSearchHash(value) : "";
+            EmailKeyVersion = 1;
+        }
+    }
+
+    [NotMapped]
+    public string? Phone
+    {
+        get => EncryptionHelper != null && PhoneEncrypted != null ? EncryptionHelper.Decrypt(PhoneEncrypted) : PhoneEncrypted;
+        set
+        {
+            if (value == null)
+            {
+                PhoneEncrypted = null;
+                PhoneHash = null;
+            }
+            else
+            {
+                PhoneEncrypted = EncryptionHelper != null ? EncryptionHelper.Encrypt(value) : value;
+                PhoneHash = EncryptionHelper != null ? EncryptionHelper.ComputeSearchHash(value) : "";
+                PhoneKeyVersion = 1;
+            }
+        }
+    }
     public string? AppUserId { get; set; }
     public AppUser? AppUser { get; set; }
     public DateTime? DateOfBirth { get; set; }
