@@ -135,8 +135,7 @@ public class BackupService : IBackupService
 
         var (host, port, db, user, password) = ParseConnectionString(connStr);
 
-        var args = $"--host={host} --port={port} --user={user} " +
-                   $"--password={password} --single-transaction " +
+        var args = $"--host={host} --port={port} --user={user} --single-transaction " +
                    $"--routines --triggers --no-tablespaces {db}";
 
         var psi = new ProcessStartInfo
@@ -148,6 +147,7 @@ public class BackupService : IBackupService
             UseShellExecute        = false,
             CreateNoWindow         = true,
         };
+        psi.EnvironmentVariables["MYSQL_PWD"] = password;
 
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException("mysqldump process failed to start");
@@ -357,9 +357,7 @@ public class BackupService : IBackupService
 
         var (host, port, db, user, password) = ParseConnectionString(connStr);
 
-        // Note: We use mysql command instead of mysqldump
-        // Passing password via command line can be risky but is common in this setup
-        var args = $"--host={host} --port={port} --user={user} --password={password} {db}";
+        var args = $"--host={host} --port={port} --user={user} {db}";
 
         var psi = new ProcessStartInfo
         {
@@ -370,6 +368,7 @@ public class BackupService : IBackupService
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        psi.EnvironmentVariables["MYSQL_PWD"] = password;
 
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException("mysql process failed to start");

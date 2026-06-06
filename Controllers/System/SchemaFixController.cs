@@ -331,7 +331,6 @@ public class SchemaFixController : ControllerBase
     }
 
     [HttpGet("run-v14")]
-    [AllowAnonymous]
     public async Task<IActionResult> RunV14()
     {
         _logger.LogWarning("SchemaFix run-v14 (Graduated Delay Policy Settings) triggered.");

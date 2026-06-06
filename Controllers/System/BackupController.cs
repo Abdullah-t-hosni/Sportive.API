@@ -91,7 +91,7 @@ public class BackupController : ControllerBase
         var user = await _userManager.GetUserAsync(User);
         if (user == null) return Unauthorized();
 
-        var otp = new Random().Next(100000, 999999).ToString();
+        var otp = System.Security.Cryptography.RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
         var cacheKey = $"RestoreOtp_{user.Id}";
         
         _cache.Set(cacheKey, otp, TimeSpan.FromMinutes(5));

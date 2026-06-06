@@ -29,7 +29,12 @@ public class AiAssistantService : IAiAssistantService
             userMessage = userMessage.Substring(0, 1000); // hard cap ~250 tokens
 
         var apiKey = _config["AI:GeminiKey"];
-        if (string.IsNullOrEmpty(apiKey))
+        if (string.IsNullOrEmpty(apiKey) || apiKey == "${GEMINI_KEY}")
+        {
+            apiKey = Environment.GetEnvironmentVariable("GEMINI_KEY") ?? Environment.GetEnvironmentVariable("AI_GEMINI_KEY");
+        }
+
+        if (string.IsNullOrEmpty(apiKey) || apiKey == "${GEMINI_KEY}")
         {
             return "عذراً، لم يتم ضبط مفتاح الذكاء الاصطناعي (Gemini API Key) بعد. يرجى التواصل مع الدعم الفني.";
         }

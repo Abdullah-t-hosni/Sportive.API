@@ -119,8 +119,19 @@ public class AuthService : IAuthService
                 u.UserName == "staff_" + dto.Identifier || 
                 u.UserName == "cust_" + dto.Identifier);
 
-        if (user == null || !user.IsActive || !await _userManager.CheckPasswordAsync(user, dto.Password))
+        if (user == null || !user.IsActive)
             throw new UnauthorizedAccessException(_t.Get("Auth.InvalidCredentials"));
+
+        if (await _userManager.IsLockedOutAsync(user))
+            throw new UnauthorizedAccessException(_t.Get("Auth.AccountLocked") ?? "تم قفل الحساب مؤقتاً لكثرة المحاولات الخاطئة. يرجى المحاولة لاحقاً.");
+
+        if (!await _userManager.CheckPasswordAsync(user, dto.Password))
+        {
+            await _userManager.AccessFailedAsync(user);
+            throw new UnauthorizedAccessException(_t.Get("Auth.InvalidCredentials"));
+        }
+
+        await _userManager.ResetAccessFailedCountAsync(user);
 
         return await LoginInternalAsync(user);
     }
