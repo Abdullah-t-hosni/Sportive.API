@@ -1528,7 +1528,9 @@ public class OrderService : IOrderService
             {
                 await _inventory.LogMovementAsync(
                     dto.Status == OrderStatus.Returned ? InventoryMovementType.ReturnIn : InventoryMovementType.Adjustment,
-                    item.Quantity, item.ProductId, item.ProductVariantId, order.OrderNumber, $"Order {dto.Status}", updatedByUserId,
+                    item.Quantity, item.ProductId, item.ProductVariantId, 
+                    dto.Status == OrderStatus.Returned ? order.OrderNumber + "-RTN" : order.OrderNumber, 
+                    $"Order {dto.Status}", updatedByUserId,
                     0, // unitCost fallback
                     order.Source,
                     autoSave: false,
@@ -1585,6 +1587,7 @@ public class OrderService : IOrderService
     {
         var returnedOrderItems = new List<OrderItem>();
         decimal refundAmount = 0;
+        string? reference = null;
 
         var strategy = _db.Database.CreateExecutionStrategy();
         var result = await strategy.ExecuteAsync(async () =>
@@ -1595,6 +1598,9 @@ public class OrderService : IOrderService
                 var order = await _db.Orders.Include(o => o.Items).ThenInclude(i => i.Product).FirstOrDefaultAsync(o => o.Id == orderId);
                 if (order == null) throw new KeyNotFoundException("Order not found.");
                 if (order.Status == OrderStatus.Cancelled) throw new InvalidOperationException("Cannot return items from a cancelled order.");
+
+                var ticksSuffix = TimeHelper.GetEgyptTime().Ticks.ToString().Substring(10);
+                reference = $"{order.OrderNumber}-PRT-{ticksSuffix}";
 
                 // 1. Calculate Refund Amount (Proportional to Total Paid) First
                 decimal refundAmountTotal = 0;
@@ -1651,7 +1657,7 @@ public class OrderService : IOrderService
                     await _inventory.LogMovementAsync(
                         InventoryMovementType.ReturnIn,
                         req.Quantity, line.ProductId, line.ProductVariantId,
-                        order.OrderNumber, $"Partial Return: {req.Quantity} units", updatedByUserId,
+                        reference, $"Partial Return: {req.Quantity} units", updatedByUserId,
                         0, // unitCost fallback
                         order.Source,
                         autoSave: false,
@@ -1698,7 +1704,7 @@ public class OrderService : IOrderService
         });
 
         // 6. Post Accounting
-        _ = PostPartialReturnWithRetryAsync(orderId, returnedOrderItems, refundAmount, dto.RefundAccountId, dto.RefundToStoreCredit);
+        _ = PostPartialReturnWithRetryAsync(orderId, returnedOrderItems, refundAmount, dto.RefundAccountId, dto.RefundToStoreCredit, reference);
 
         return result;
     }
@@ -1936,7 +1942,7 @@ public class OrderService : IOrderService
         }
     }
 
-    private async Task PostPartialReturnWithRetryAsync(int orderId, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false)
+    private async Task PostPartialReturnWithRetryAsync(int orderId, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? reference = null)
     {
         const int maxAttempts = 3;
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
@@ -1950,7 +1956,7 @@ public class OrderService : IOrderService
                     .Include(o => o.Customer)
                     .Include(o => o.Payments)
                     .FirstAsync(o => o.Id == orderId);
-                await accounting.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId, refundToStoreCredit);
+                await accounting.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId, refundToStoreCredit, overrideReference: reference);
                 return;
             }
             catch (Exception ex) when (attempt < maxAttempts)
@@ -2118,11 +2124,12 @@ public class OrderService : IOrderService
 
     public async Task UpdateSalesReturnAsync(string reference, UpdateSalesReturnDto dto, string updatedByUserId)
     {
+        var trimmedRef = reference?.Trim() ?? string.Empty;
         var journalEntry = await _db.JournalEntries
             .Include(e => e.Lines)
             .Include(e => e.Order)
-            .ThenInclude(o => o.Items)
-            .FirstOrDefaultAsync(e => e.Reference == reference && e.Type == JournalEntryType.SalesReturn);
+            .ThenInclude(o => o!.Items)
+            .FirstOrDefaultAsync(e => (e.Reference == trimmedRef || e.EntryNumber == trimmedRef) && e.Type == JournalEntryType.SalesReturn);
 
         if (journalEntry == null)
         {
@@ -2133,8 +2140,19 @@ public class OrderService : IOrderService
         var now = TimeHelper.GetEgyptTime();
 
         var oldMovements = await _db.InventoryMovements
-            .Where(m => m.Reference == reference && m.Type == InventoryMovementType.ReturnIn)
+            .Where(m => m.Reference == trimmedRef && m.Type == InventoryMovementType.ReturnIn)
             .ToListAsync();
+
+        if (!oldMovements.Any() && order != null)
+        {
+            var candidateMovements = await _db.InventoryMovements
+                .Where(m => m.Reference == order.OrderNumber && m.Type == InventoryMovementType.ReturnIn)
+                .ToListAsync();
+
+            oldMovements = candidateMovements
+                .Where(m => Math.Abs((m.CreatedAt - journalEntry.EntryDate).TotalMinutes) < 5)
+                .ToList();
+        }
 
         var strategy = _db.Database.CreateExecutionStrategy();
         await strategy.ExecuteAsync(async () =>
@@ -2221,7 +2239,7 @@ public class OrderService : IOrderService
                             await _inventory.LogMovementAsync(
                                 InventoryMovementType.ReturnIn,
                                 req.Quantity, line.ProductId, line.ProductVariantId,
-                                reference, $"Return: {req.Quantity} units (Updated)", updatedByUserId,
+                                trimmedRef, $"Return: {req.Quantity} units (Updated)", updatedByUserId,
                                 0,
                                 order.Source,
                                 autoSave: false,
@@ -2260,7 +2278,7 @@ public class OrderService : IOrderService
                             refundAmount, 
                             dto.RefundAccountId, 
                             refundToStoreCredit, 
-                            overrideReference: reference, 
+                            overrideReference: trimmedRef, 
                             overrideDate: returnDate
                         );
                     }
@@ -2286,7 +2304,7 @@ public class OrderService : IOrderService
                             await _inventory.LogMovementAsync(
                                 InventoryMovementType.ReturnIn,
                                 req.Quantity, req.ProductId, req.ProductVariantId,
-                                reference, $"Direct Return: {dto.Reason} (Updated)", updatedByUserId,
+                                trimmedRef, $"Direct Return: {dto.Reason} (Updated)", updatedByUserId,
                                 0,
                                 OrderSource.POS,
                                 autoSave: false
@@ -2308,7 +2326,7 @@ public class OrderService : IOrderService
                             dto.Note
                         );
 
-                        await _accounting.PostDirectSalesReturnAsync(directDto, reference, totalCost, overrideDate: returnDate);
+                        await _accounting.PostDirectSalesReturnAsync(directDto, trimmedRef, totalCost, overrideDate: returnDate);
                     }
                 }
                 else
