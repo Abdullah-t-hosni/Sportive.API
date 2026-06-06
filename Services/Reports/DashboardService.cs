@@ -738,7 +738,8 @@ public class DashboardService : IDashboardService
         }).ToList();
 
         // Calculate income/expenses for the last 12 months (Cash Flow)
-        var startPeriod = monthStart.AddMonths(-11);
+        var startPeriodCal = monthStart.AddMonths(-11);
+        var startPeriod = startPeriodCal.AddHours(2);
 
         // Query monthly revenue from general ledger (Income Statement logic)
         var monthlyRevenueQuery = _db.JournalLines.AsNoTracking()
@@ -750,7 +751,10 @@ public class DashboardService : IDashboardService
             monthlyRevenueQuery = monthlyRevenueQuery.Where(l => l.CostCenter == source.Value);
         }
         var monthlyRevenue = await monthlyRevenueQuery
-            .GroupBy(l => new { l.JournalEntry.EntryDate.Year, l.JournalEntry.EntryDate.Month })
+            .GroupBy(l => new { 
+                Year = l.JournalEntry.EntryDate.AddHours(-2).Year, 
+                Month = l.JournalEntry.EntryDate.AddHours(-2).Month 
+            })
             .Select(g => new {
                 g.Key.Year,
                 g.Key.Month,
@@ -769,7 +773,10 @@ public class DashboardService : IDashboardService
             monthlyExpensesQuery = monthlyExpensesQuery.Where(l => l.CostCenter == source.Value);
         }
         var monthlyExpenses = await monthlyExpensesQuery
-            .GroupBy(l => new { l.JournalEntry.EntryDate.Year, l.JournalEntry.EntryDate.Month })
+            .GroupBy(l => new { 
+                Year = l.JournalEntry.EntryDate.AddHours(-2).Year, 
+                Month = l.JournalEntry.EntryDate.AddHours(-2).Month 
+            })
             .Select(g => new {
                 g.Key.Year,
                 g.Key.Month,
@@ -778,7 +785,7 @@ public class DashboardService : IDashboardService
             .ToListAsync();
 
         var incomeChartData = Enumerable.Range(0, 12).Select(i => {
-            var date = startPeriod.AddMonths(i);
+            var date = startPeriodCal.AddMonths(i);
             var revData = monthlyRevenue.FirstOrDefault(r => r.Year == date.Year && r.Month == date.Month);
             var expData = monthlyExpenses.FirstOrDefault(e => e.Year == date.Year && e.Month == date.Month);
             return new {
