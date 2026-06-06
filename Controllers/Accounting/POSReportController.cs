@@ -113,27 +113,67 @@ public class POSReportController : ControllerBase
 
             if (o.Payments.Any())
             {
+                decimal paidThroughMethods = 0;
                 foreach (var p in o.Payments)
                 {
                     var m = p.Method.ToString().ToLower();
                     var amt = p.Amount;
-                    if (m.Contains("credit") || m == "5") { creditSales += amt; }
-                    else if (m.Contains("customerbalance") || m == "9") { walletSales += amt; }
-                    else if (m.Contains("cash") || m == "1") { cashSales += amt; }
-                    else if (m.Contains("bank") || m.Contains("card") || m.Contains("visa") || m == "2") { cardSales += amt; }
-                    else if (m.Contains("vodafone") || m == "3") { vodafoneSales += amt; }
-                    else if (m.Contains("instapay") || m == "4") { instapaySales += amt; }
-                    else { cashSales += amt; }
+                    if (m.Contains("customerbalance") || m == "9")
+                    {
+                        walletSales += amt;
+                        paidThroughMethods += amt;
+                    }
+                    else if (m.Contains("cash") || m == "1")
+                    {
+                        cashSales += amt;
+                        paidThroughMethods += amt;
+                    }
+                    else if (m.Contains("bank") || m.Contains("card") || m.Contains("visa") || m == "2")
+                    {
+                        cardSales += amt;
+                        paidThroughMethods += amt;
+                    }
+                    else if (m.Contains("vodafone") || m == "3")
+                    {
+                        vodafoneSales += amt;
+                        paidThroughMethods += amt;
+                    }
+                    else if (m.Contains("instapay") || m == "4")
+                    {
+                        instapaySales += amt;
+                        paidThroughMethods += amt;
+                    }
+                    else if (m.Contains("credit") || m == "5")
+                    {
+                        // Credit is not cash/card, so it goes to creditSales remainder
+                    }
+                    else
+                    {
+                        cashSales += amt;
+                        paidThroughMethods += amt;
+                    }
                 }
+                decimal orderDebt = Math.Max(0, oTotal - paidThroughMethods);
+                creditSales += orderDebt;
             }
             else
             {
-                if (pm.Contains("credit") || pm == "5") { creditSales += paidAmt; }
-                else if (pm.Contains("customerbalance") || pm == "9") { walletSales += paidAmt; }
+                bool isCreditPm = pm.Contains("credit") || pm == "5" || pm.Contains("ajel") || pm.Contains("debt") || pm.Contains("آجل") || pm.Contains("مديونية");
+                decimal paidThroughMethods = 0;
+                if (!isCreditPm)
+                {
+                    paidThroughMethods = paidAmt;
+                }
+
+                decimal orderDebt = Math.Max(0, oTotal - paidThroughMethods);
+                creditSales += orderDebt;
+
+                if (pm.Contains("customerbalance") || pm == "9") { walletSales += paidAmt; }
                 else if (pm.Contains("cash") || pm == "1") { cashSales += paidAmt; }
                 else if (pm.Contains("bank") || pm.Contains("card") || pm.Contains("visa") || pm == "2") { cardSales += paidAmt; }
                 else if (pm.Contains("vodafone") || pm == "3") { vodafoneSales += paidAmt; }
                 else if (pm.Contains("instapay") || pm == "4") { instapaySales += paidAmt; }
+                else if (isCreditPm) { /* Fully credit, handled by orderDebt */ }
                 else { cashSales += paidAmt; }
             }
         }
