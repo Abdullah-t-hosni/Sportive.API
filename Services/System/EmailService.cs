@@ -146,6 +146,21 @@ public class EmailService : IEmailService
 
     public async Task SendBulkPayrollEmailsAsync(int payrollRunId, string storeUrl, List<int>? employeeIds = null)
     {
+        var finalStoreUrl = storeUrl;
+        if (string.IsNullOrEmpty(finalStoreUrl) || 
+            finalStoreUrl.Contains("sportiveapi") || 
+            finalStoreUrl.Contains("railway.app") || 
+            (finalStoreUrl.Contains("localhost") && !finalStoreUrl.Contains("5173") && !finalStoreUrl.Contains("3000")) ||
+            finalStoreUrl.Contains("127.0.0.1") || 
+            finalStoreUrl.Contains("::1"))
+        {
+            var configuredUrl = _config["Store:Url"];
+            if (!string.IsNullOrEmpty(configuredUrl))
+            {
+                finalStoreUrl = configuredUrl;
+            }
+        }
+
         using var scope = _serviceProvider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -182,7 +197,7 @@ public class EmailService : IEmailService
             try
             {
                 var hash = GeneratePayslipHash(item.Id);
-                var payslipUrl = $"{storeUrl.TrimEnd('/')}/admin/payslip?id={item.Id}&hash={hash}";
+                var payslipUrl = $"{finalStoreUrl.TrimEnd('/')}/admin/payslip?id={item.Id}&hash={hash}";
                 
                 var subject = $"قسيمة الراتب - شهر {run.PeriodMonth}/{run.PeriodYear}";
                 var body = BuildPayslipEmailBody(item.Employee!.Name, run.PeriodMonth, run.PeriodYear, item.NetPayable, currency, payslipUrl, storeName);
