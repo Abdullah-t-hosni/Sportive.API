@@ -664,7 +664,7 @@ public class PurchaseInvoicesController : ControllerBase
                                 PurchaseInvoiceId = inv.Id,
                                 Amount = pmDto.Amount,
                                 PaymentDate = inv.InvoiceDate,
-                                PaymentMethod = (PaymentMethod_Purchase)pmDto.Method,
+                                PaymentMethod = pmDto.Method,
                                 CashAccountId = pmDto.CashAccountId > 0 ? pmDto.CashAccountId : null,
                                 Notes = pmDto.Notes ?? $"دفعة لفاتورة {inv.InvoiceNumber}",
                                 CreatedAt = TimeHelper.GetEgyptTime(),
