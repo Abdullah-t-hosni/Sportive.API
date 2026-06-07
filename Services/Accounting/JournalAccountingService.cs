@@ -41,6 +41,7 @@ public class JournalAccountingService
         _db.JournalEntries.Add(reversal);
         await _db.SaveChangesAsync();
         await PayrollSyncHelper.SyncPayrollRunsForJournalEntryAsync(_db, _core, entry);
+        await _core.SyncEntityBalancesAsync();
     }
 
     public async Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, ClaimsPrincipal? user)
@@ -158,6 +159,7 @@ public class JournalAccountingService
             await _db.SaveChangesAsync();
         }
 
+        await _core.SyncEntityBalancesAsync();
         return entry;
     }
 
@@ -322,6 +324,7 @@ public class JournalAccountingService
         }
 
         await _db.SaveChangesAsync();
+        await _core.SyncEntityBalancesAsync();
         return entry;
     }
 }

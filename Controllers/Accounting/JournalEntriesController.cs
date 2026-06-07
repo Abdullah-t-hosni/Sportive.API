@@ -361,6 +361,7 @@ public class JournalEntriesController : ControllerBase
         _db.JournalLines.RemoveRange(entry.Lines);
         _db.JournalEntries.Remove(entry);
         await _db.SaveChangesAsync();
+        await _accounting.SyncEntityBalancesAsync();
 
         foreach (var run in runsToSync)
         {
