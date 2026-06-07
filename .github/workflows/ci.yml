@@ -21,15 +21,15 @@ jobs:
           dotnet-version: '9.0.x'
 
       - name: Restore dependencies
-        run: dotnet restore Sportive.API/Sportive.API.csproj
+        run: dotnet restore Sportive.API.csproj
 
       - name: Build (Release)
-        run: dotnet build Sportive.API/Sportive.API.csproj --configuration Release --no-restore
+        run: dotnet build Sportive.API.csproj --configuration Release --no-restore
 
       - name: Check for secrets in code
         # ✅ يمنع رفع credentials حقيقية بالخطأ
         run: |
-          if grep -r "Password=Abdo\|ApiSecret.*swm\|ApiKey.*771912\|HmacSecret.*1C96" Sportive.API/ --include="*.cs" --include="*.json" 2>/dev/null; then
+          if grep -r "Password=Abdo\|ApiSecret.*swm\|ApiKey.*771912\|HmacSecret.*1C96" ./ --include="*.cs" --include="*.json" 2>/dev/null; then
             echo "❌ SECURITY: Found hardcoded credentials! Please use environment variables."
             exit 1
           fi
@@ -37,7 +37,7 @@ jobs:
 
       - name: Verify appsettings.json is gitignored
         run: |
-          if git ls-files --error-unmatch Sportive.API/appsettings.json 2>/dev/null; then
+          if git ls-files --error-unmatch appsettings.json 2>/dev/null; then
             echo "❌ SECURITY: appsettings.json is tracked by git! Add it to .gitignore immediately."
             exit 1
           fi
@@ -45,7 +45,7 @@ jobs:
 
       - name: Check for TODO/FIXME security items
         run: |
-          count=$(grep -r "CHANGE_ME\|REPLACE_WITH\|YOUR_DB_PASSWORD" Sportive.API/ --include="*.cs" 2>/dev/null | wc -l)
+          count=$(grep -r "CHANGE_ME\|REPLACE_WITH\|YOUR_DB_PASSWORD" ./ --include="*.cs" 2>/dev/null | wc -l)
           echo "Found $count placeholder(s) in .cs files (these are OK — placeholders only)"
 
   # ── Run Tests (when added) ──────────────────────────────────
