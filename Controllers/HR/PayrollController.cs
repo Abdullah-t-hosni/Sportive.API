@@ -1280,7 +1280,7 @@ public class PayrollController : ControllerBase
             Type            = JournalEntryType.PaymentVoucher,
             Status          = JournalEntryStatus.Posted,
             Description     = _t.Get("HR.PayrollPaymentDescription", run.PayrollNumber, run.PeriodMonth, run.PeriodYear),
-            Reference       = run.PayrollNumber,
+            Reference       = $"{run.PayrollNumber}-PAY-{jeNo}",
             CreatedByUserId = UserId,
             CreatedAt       = now,
             Lines           = new List<JournalLine>()
@@ -1360,7 +1360,7 @@ public class PayrollController : ControllerBase
             Status          = JournalEntryStatus.Posted,
             Description     = _t.Get("HR.PayrollPaymentDescription", run.PayrollNumber, run.PeriodMonth, run.PeriodYear)
                               + $" ({(dto.Notes?.Trim() ?? (itemsToPay.Count == 1 ? itemsToPay[0].Employee?.Name ?? "" : $"{itemsToPay.Count} موظفين"))})",
-            Reference       = run.PayrollNumber,
+            Reference       = $"{run.PayrollNumber}-PAY-{jeNo}",
             CreatedByUserId = UserId,
             CreatedAt       = now,
             Lines           = new List<JournalLine>()
