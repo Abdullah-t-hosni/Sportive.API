@@ -81,14 +81,32 @@ public class SuppliersController : ControllerBase
     [HttpGet("{id}/advance-balance")]
     public async Task<IActionResult> GetAdvanceBalance(int id)
     {
-        var advanceBalance = await _db.SupplierPayments
-            .Where(p => p.SupplierId == id && p.PurchaseInvoiceId == null)
+        // 1. Sum unlinked advance payments (payments not tied to any invoice)
+        var unlinkedPayments = await _db.SupplierPayments
+            .Where(p => p.SupplierId == id && p.PurchaseInvoiceId == null && p.Amount > 0)
             .SumAsync(p => (decimal?)p.Amount) ?? 0;
+
+        // 2. Also check if supplier has an overall credit balance (TotalPaid > TotalPurchases)
+        //    This can happen from purchase returns or manual adjustments
+        var supplier = await _db.Suppliers.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == id);
+        
+        decimal returnCredit = 0;
+        if (supplier != null)
+        {
+            var supplierCredit = supplier.TotalPaid - supplier.TotalPurchases;
+            // Only count credit that isn't already covered by unlinked payments
+            if (supplierCredit > unlinkedPayments)
+                returnCredit = supplierCredit - unlinkedPayments;
+        }
+
+        var advanceBalance = unlinkedPayments + returnCredit;
             
         return Ok(new { advanceBalance });
     }
 
     [HttpPost]
+
     public async Task<IActionResult> Create([FromBody] CreateSupplierDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Name) || string.IsNullOrWhiteSpace(dto.Phone))

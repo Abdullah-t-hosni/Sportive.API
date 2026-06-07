@@ -116,8 +116,11 @@ public record UpdatePurchaseInvoiceDto(
     int? CashAccountId = null,
     int? VendorAccountId = null,
     int? InventoryAccountId = null,
-    int? VatAccountId = null
+    int? VatAccountId = null,
+    List<InvoicePaymentDto>? Payments = null,
+    decimal DeductAdvanceAmount = 0
 );
+
 
 public record PurchaseInvoiceSummaryDto(
     int      Id,
