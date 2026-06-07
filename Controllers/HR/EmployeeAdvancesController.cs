@@ -33,6 +33,29 @@ public class EmployeeAdvancesController : ControllerBase
         [FromQuery] AdvanceStatus? status = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
+        // ⚡ DATA INTEGRITY FIX: Auto-correct advance status based on DeductedAmount
+        var mismatchedAdvances = await _db.EmployeeAdvances
+            .Where(a => (a.DeductedAmount >= a.Amount && a.Status != AdvanceStatus.FullyDeducted) ||
+                        (a.DeductedAmount > 0 && a.DeductedAmount < a.Amount && a.Status != AdvanceStatus.PartiallyDeducted) ||
+                        (a.DeductedAmount == 0 && a.Status != AdvanceStatus.Pending))
+            .ToListAsync();
+
+        if (mismatchedAdvances.Any())
+        {
+            foreach (var adv in mismatchedAdvances)
+            {
+                if (adv.DeductedAmount >= adv.Amount)
+                    adv.Status = AdvanceStatus.FullyDeducted;
+                else if (adv.DeductedAmount > 0)
+                    adv.Status = AdvanceStatus.PartiallyDeducted;
+                else
+                    adv.Status = AdvanceStatus.Pending;
+                
+                adv.UpdatedAt = TimeHelper.GetEgyptTime();
+            }
+            await _db.SaveChangesAsync();
+        }
+
         var q = _db.EmployeeAdvances
             .Include(a => a.Employee)
             .Include(a => a.CashAccount)
