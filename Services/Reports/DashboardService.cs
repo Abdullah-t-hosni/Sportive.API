@@ -91,6 +91,31 @@ public class DashboardService : IDashboardService
         // ✅ المبيعات قبل الخصم = صافي المبيعات + صافي الخصم
         var periodGross = periodSales + periodDiscount;
 
+        // --- All Time Discounts ---
+        var totalDiscountRaw = await query
+            .SumAsync(o => (decimal?)(o.DiscountAmount + o.TemporalDiscount)) ?? 0;
+
+        decimal totalDiscountReturned = 0;
+        if (discountReturnMapping != null)
+        {
+            var discountReturnsQuery = _db.JournalEntries
+                .Where(e => e.Type == JournalEntryType.SalesReturn);
+
+            if (source.HasValue)
+            {
+                discountReturnsQuery = discountReturnsQuery.Where(e => e.CostCenter == source.Value);
+            }
+
+            totalDiscountReturned = await discountReturnsQuery
+                .SelectMany(e => e.Lines)
+                .Where(l => l.Credit > 0 && l.AccountId == discountReturnMapping.Id)
+                .SumAsync(l => (decimal?)l.Credit) ?? 0;
+        }
+
+        var totalDiscount = totalDiscountRaw - totalDiscountReturned;
+
+        var totalTaxes = await query.SumAsync(o => (decimal?)o.TotalVatAmount) ?? 0;
+
         // --- Monthly & Global Stats ---
         var monthSales = await query
             .Where(o => o.CreatedAt >= monthStart)
@@ -213,6 +238,22 @@ public class DashboardService : IDashboardService
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         int lowStockThreshold = store?.LowStockThreshold ?? 5;
 
+        // --- Expenses Calculation (From Posted General Ledger Expense Accounts) ---
+        var expenseQuery = _db.JournalLines.AsNoTracking()
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+                     && (l.Account.Type == AccountType.Expense || l.Account.Code.StartsWith("5")));
+
+        if (source.HasValue)
+        {
+            expenseQuery = expenseQuery.Where(l => l.CostCenter == source.Value);
+        }
+
+        var totalExpenses = await expenseQuery.SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
+        
+        var periodExpenses = await expenseQuery
+            .Where(l => l.JournalEntry.EntryDate >= targetStart && l.JournalEntry.EntryDate < targetEnd)
+            .SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
+
         return new DashboardStatsDto(
             TodaySales: periodSales,
             TodaySalesGrowth: todayGrowth,
@@ -237,7 +278,11 @@ public class DashboardService : IDashboardService
             PeriodGrossSales: periodGross,
             PeriodDiscounts: periodDiscount,
             PeriodTaxes: periodTax,
-            PeriodDiscountReturned: periodDiscountReturned
+            PeriodDiscountReturned: periodDiscountReturned,
+            TotalExpenses: totalExpenses,
+            PeriodExpenses: periodExpenses,
+            TotalDiscount: totalDiscount,
+            TotalTaxes: totalTaxes
         );
     }
 

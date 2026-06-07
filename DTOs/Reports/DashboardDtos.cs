@@ -29,7 +29,11 @@ public record DashboardStatsDto(
     decimal PeriodGrossSales = 0,
     decimal PeriodDiscounts = 0,
     decimal PeriodTaxes = 0,
-    decimal PeriodDiscountReturned = 0
+    decimal PeriodDiscountReturned = 0,
+    decimal TotalExpenses = 0,
+    decimal PeriodExpenses = 0,
+    decimal TotalDiscount = 0,
+    decimal TotalTaxes = 0
 );
 
 public record AnalyticsSummaryDto(
