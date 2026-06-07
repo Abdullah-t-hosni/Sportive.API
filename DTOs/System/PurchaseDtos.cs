@@ -222,7 +222,11 @@ public record SupplierPaymentSummaryDto(
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
     OrderSource? CostCenter = null,
-    string? CostCenterLabel = null
+    string? CostCenterLabel = null,
+    int?     SupplierId = null,
+    int?     PurchaseInvoiceId = null,
+    int?     CashAccountId = null,
+    string?  ReferenceNumber = null
 );
 
 // ══════════════════════════════════════════════════════

@@ -40,6 +40,7 @@ public class SupplierPaymentsController : ControllerBase
         [FromQuery] int? purchaseInvoiceId = null,
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null,
+        [FromQuery] string? search = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
         var q = _db.SupplierPayments
@@ -53,6 +54,19 @@ public class SupplierPaymentsController : ControllerBase
         if (fromDate.HasValue) q = q.Where(p => p.PaymentDate >= fromDate.Value);
         if (toDate.HasValue) q = q.Where(p => p.PaymentDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
 
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var searchLower = search.Trim().ToLower();
+            q = q.Where(p => 
+                p.PaymentNumber.ToLower().Contains(searchLower) ||
+                p.Supplier.Name.ToLower().Contains(searchLower) ||
+                (p.Invoice != null && p.Invoice.InvoiceNumber.ToLower().Contains(searchLower)) ||
+                (p.AccountName != null && p.AccountName.ToLower().Contains(searchLower)) ||
+                (p.Notes != null && p.Notes.ToLower().Contains(searchLower)) ||
+                (p.ReferenceNumber != null && p.ReferenceNumber.ToLower().Contains(searchLower))
+            );
+        }
+
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(p => p.PaymentDate)
             .Skip((page - 1) * pageSize).Take(pageSize)
@@ -62,7 +76,11 @@ public class SupplierPaymentsController : ControllerBase
                 p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes,
                 p.AttachmentUrl, p.AttachmentPublicId,
                 p.CostCenter,
-                p.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (p.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General"))
+                p.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (p.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
+                p.SupplierId,
+                p.PurchaseInvoiceId,
+                p.CashAccountId,
+                p.ReferenceNumber
             )).ToListAsync();
 
         return Ok(new PaginatedResult<SupplierPaymentSummaryDto>(items, total, page, pageSize,
@@ -85,7 +103,11 @@ public class SupplierPaymentsController : ControllerBase
             p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes,
             p.AttachmentUrl, p.AttachmentPublicId,
             p.CostCenter,
-            p.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (p.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General"))
+            p.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (p.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
+            p.SupplierId,
+            p.PurchaseInvoiceId,
+            p.CashAccountId,
+            p.ReferenceNumber
         ));
     }
 
@@ -155,7 +177,127 @@ public class SupplierPaymentsController : ControllerBase
             payment.AccountName, payment.Notes,
             payment.AttachmentUrl, payment.AttachmentPublicId,
             payment.CostCenter,
-            payment.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (payment.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General"))
+            payment.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (payment.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
+            payment.SupplierId,
+            payment.PurchaseInvoiceId,
+            payment.CashAccountId,
+            payment.ReferenceNumber
+        ));
+    }
+
+    [HttpPut("{id}")]
+    [RequirePermission(ModuleKeys.SupplierVouchers, requireEdit: true)]
+    public async Task<IActionResult> Update(int id, [FromBody] CreateSupplierPaymentDto dto)
+    {
+        if (dto.Amount <= 0) return BadRequest(new { message = _t.Get("SupplierPayments.AmountGreaterThanZero") });
+
+        var payment = await _db.SupplierPayments
+            .Include(p => p.Supplier)
+            .Include(p => p.Invoice)
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        if (payment == null) return NotFound();
+
+        decimal oldAmount = payment.Amount;
+
+        // 1. Reverse old supplier total paid
+        payment.Supplier.TotalPaid -= oldAmount;
+
+        // 2. Reverse old invoice paid amount
+        if (payment.Invoice != null)
+        {
+            payment.Invoice.PaidAmount -= oldAmount;
+            var oldNetTotal = payment.Invoice.TotalAmount - payment.Invoice.ReturnedAmount;
+            if (payment.Invoice.PaidAmount <= 0) 
+                payment.Invoice.Status = PurchaseInvoiceStatus.Received;
+            else 
+                payment.Invoice.Status = payment.Invoice.PaidAmount >= oldNetTotal - 0.1m ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.PartPaid;
+        }
+
+        // 3. Load new Supplier if changed
+        var newSupplier = payment.Supplier;
+        if (payment.SupplierId != dto.SupplierId)
+        {
+            newSupplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
+            if (newSupplier == null)
+                return BadRequest(new { message = _t.Get("SupplierPayments.SupplierNotFound", dto.SupplierId.ToString()) });
+        }
+
+        // 4. Load new Invoice if changed or added
+        PurchaseInvoice? newInvoice = null;
+        if (dto.PurchaseInvoiceId.HasValue && dto.PurchaseInvoiceId > 0)
+        {
+            if (payment.PurchaseInvoiceId == dto.PurchaseInvoiceId.Value)
+            {
+                newInvoice = payment.Invoice;
+            }
+            else
+            {
+                newInvoice = await _db.PurchaseInvoices.FirstOrDefaultAsync(i => i.Id == dto.PurchaseInvoiceId.Value);
+                if (newInvoice == null) return BadRequest(new { message = _t.Get("SupplierPayments.InvoiceNotFound") });
+            }
+        }
+
+        // 5. Validate new Amount against remaining invoice debt
+        if (newInvoice != null)
+        {
+            var remaining = newInvoice.TotalAmount - newInvoice.PaidAmount - newInvoice.ReturnedAmount;
+            if (dto.Amount > remaining + 0.1m)
+            {
+                return BadRequest(new { message = _t.Get("SupplierPayments.AmountExceedsDebt", dto.Amount.ToString(), remaining.ToString()) });
+            }
+            newInvoice.PaidAmount += dto.Amount;
+            var netTotal = newInvoice.TotalAmount - newInvoice.ReturnedAmount;
+            newInvoice.Status = newInvoice.PaidAmount >= netTotal - 0.1m ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.PartPaid;
+        }
+
+        // 6. Update Supplier Balance
+        newSupplier.TotalPaid += dto.Amount;
+
+        // 7. Update payment properties
+        payment.SupplierId = dto.SupplierId;
+        payment.Supplier = newSupplier;
+        payment.PurchaseInvoiceId = (dto.PurchaseInvoiceId > 0) ? dto.PurchaseInvoiceId : null;
+        payment.Invoice = newInvoice;
+        payment.Amount = dto.Amount;
+        payment.PaymentDate = dto.PaymentDate;
+        payment.PaymentMethod = dto.PaymentMethod;
+        payment.AccountName = dto.AccountName;
+        payment.CashAccountId = (dto.CashAccountId > 0) ? dto.CashAccountId : null;
+        payment.Notes = dto.Notes ?? _t.Get("SupplierPayments.PaymentDescription", newSupplier.Name);
+        payment.ReferenceNumber = dto.ReferenceNumber;
+        payment.AttachmentUrl = dto.AttachmentUrl;
+        payment.AttachmentPublicId = dto.AttachmentPublicId;
+        payment.CostCenter = dto.CostCenter;
+
+        // 8. Delete old Journal Entry
+        var entry = await _db.JournalEntries.FirstOrDefaultAsync(e => 
+            e.Type == JournalEntryType.PaymentVoucher && 
+            e.Reference != null &&
+            e.Reference.Trim().ToLower() == payment.PaymentNumber.Trim().ToLower());
+        
+        if (entry != null)
+        {
+            _db.JournalEntries.Remove(entry);
+        }
+
+        await _db.SaveChangesAsync();
+
+        // 9. Post updated Journal Entry
+        _ = PostSupplierPaymentWithRetryAsync(payment.Id, payment.PaymentNumber);
+
+        return Ok(new SupplierPaymentSummaryDto(
+            payment.Id, payment.PaymentNumber, newSupplier.Name,
+            newInvoice?.InvoiceNumber,
+            payment.PaymentDate, payment.Amount, payment.PaymentMethod.ToString(),
+            payment.AccountName, payment.Notes,
+            payment.AttachmentUrl, payment.AttachmentPublicId,
+            payment.CostCenter,
+            payment.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (payment.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
+            payment.SupplierId,
+            payment.PurchaseInvoiceId,
+            payment.CashAccountId,
+            payment.ReferenceNumber
         ));
     }
 
