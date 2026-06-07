@@ -39,6 +39,37 @@ public class SettingsController : ControllerBase
                 _db.StoreInfo.Add(info);
                 await _db.SaveChangesAsync();
             }
+
+            // Populate rich default templates if database values are empty or contain old simple defaults
+            if (string.IsNullOrWhiteSpace(info.WhatsAppOrderTemplate) || info.WhatsAppOrderTemplate.Contains("تم تأكيد طلبك رقم #{orderNumber} في {storeName}"))
+            {
+                info.WhatsAppOrderTemplate = "أهلاً {customerName} 👋\n✅ *تم تأكيد طلبك بنجاح!*\n🔢 رقم الطلب: *{orderNumber}*\n📦 الطلب:\n{itemsList}\n💰 الإجمالي: *{totalAmount} ج.م*\n{discountPart}💳 الدفع: *{paymentMethod}*\n📍 النوع: *{fulfillmentType}*\nسنتواصل معك قريباً لتأكيد موعد التوصيل 🙏\n📄 الفاتورة الإلكترونية: {storeUrl}/invoice/{orderNumber}";
+            }
+            if (string.IsNullOrWhiteSpace(info.WhatsAppShippingTemplate) || info.WhatsAppShippingTemplate.Contains("تم شحن طلبك رقم #{orderNumber}! سيصلك خلال"))
+            {
+                info.WhatsAppShippingTemplate = "أهلاً {customerName} 🚚\n*طلبك رقم #{orderNumber} في الطريق إليك!*\n{trackingPart}⏱ الموعد المتوقع: خلال 2-3 أيام عمل\n📞 للاستفسار: {storePhone}";
+            }
+            if (string.IsNullOrWhiteSpace(info.WhatsAppReturnTemplate) || info.WhatsAppReturnTemplate.Contains("تم استلام طلب المرتجع الخاص بك رقم #{orderNumber}، وجاري مراجعته"))
+            {
+                info.WhatsAppReturnTemplate = "أهلاً {customerName} 🔄\n*تم استلام طلب المرتجع*\n🔢 رقم الطلب: *{orderNumber}*\n💰 المبلغ المسترد: *{totalAmount} ج.م*\nسيتم معالجة المبلغ خلال 3-5 أيام عمل 🙏\nنعتذر عن الإزعاج ونتمنى رؤيتك قريباً!";
+            }
+            if (string.IsNullOrWhiteSpace(info.WhatsAppProcessingTemplate) || info.WhatsAppProcessingTemplate.Contains("طلبك رقم #{orderNumber} قيد التجهيز الآن"))
+            {
+                info.WhatsAppProcessingTemplate = "أهلاً {customerName} 🎉\n*طلبك رقم #{orderNumber} جاهز للاستلام!*\n📍 العنوان: {storeAddress}\n🕐 مواعيد العمل: من 10 صباحاً لـ 10 مساءً يومياً\n📞 للتواصل: {storePhone}\nفي انتظارك! 💪";
+            }
+            if (string.IsNullOrWhiteSpace(info.WhatsAppPaymentReminderTemplate))
+            {
+                info.WhatsAppPaymentReminderTemplate = "أهلاً {customerName} 💬\nتذكير بخصوص طلبك *#{orderNumber}*\n💰 المبلغ المتبقي: *{totalAmount} ج.م*\n💳 طرق الدفع: كاش / فودافون كاش / انستاباي\nللسداد أو الاستفسار تواصل معنا:\n{storePhone}\nشكراً لتسوقك معنا 🙏";
+            }
+            if (string.IsNullOrWhiteSpace(info.WhatsAppPosOrderTemplate))
+            {
+                info.WhatsAppPosOrderTemplate = "مرحباً {customerName} 👋\n\nشكراً لتسوّقك معنا في {storeName} 🏃‍♂️\nفاتورتك جاهزة!\n\n🧾 رقم الفاتورة: *{orderNumber}*\n\n📲 لعرض الفاتورة الإلكترونية أو تحميلها:\n{invoiceUrl}\n\nنتمنى لك تجربة ممتازة دائماً 💪";
+            }
+            if (string.IsNullOrWhiteSpace(info.WhatsAppPayrollTemplate))
+            {
+                info.WhatsAppPayrollTemplate = "السلام عليكم ورحمة الله وبركاته،\n\nيسعدنا مشاركة تفاصيل راتب شهر {periodMonth} لعام {periodYear} معكم.\n\n👤 الموظف: {employeeName}\n💵 صافي الراتب المستحق: {netPayable}\n\nللاطلاع على تفاصيل الراتب كاملة وتحميل قسيمة الراتب كـ PDF، يرجى الضغط على الرابط التالي:\n{payslipUrl}\n\nشكرًا لجهودكم المميزة،\nإدارة الموارد البشرية - {storeName}";
+            }
+
             return Ok(info);
         }
         catch (Exception ex)
@@ -158,6 +189,16 @@ public class SettingsController : ControllerBase
             info.WhatsAppOrderTemplate    = dto.WhatsAppOrderTemplate;
             info.WhatsAppShippingTemplate = dto.WhatsAppShippingTemplate;
             info.WhatsAppReturnTemplate   = dto.WhatsAppReturnTemplate;
+            info.WhatsAppProcessingTemplate = dto.WhatsAppProcessingTemplate;
+            info.WhatsAppDeliveredTemplate  = dto.WhatsAppDeliveredTemplate;
+            info.WhatsAppCancelTemplate     = dto.WhatsAppCancelTemplate;
+            info.WhatsAppWebsiteConfirmTemplate = dto.WhatsAppWebsiteConfirmTemplate;
+            info.WhatsAppPaymentReminderTemplate = dto.WhatsAppPaymentReminderTemplate;
+            info.WhatsAppPosOrderTemplate = dto.WhatsAppPosOrderTemplate;
+            info.WhatsAppPayrollTemplate = dto.WhatsAppPayrollTemplate;
+            info.WhatsAppInstallmentFriendlyTemplate = dto.WhatsAppInstallmentFriendlyTemplate;
+            info.WhatsAppInstallmentNoticeTemplate   = dto.WhatsAppInstallmentNoticeTemplate;
+            info.WhatsAppInstallmentWarningTemplate  = dto.WhatsAppInstallmentWarningTemplate;
             info.OrderSuccessMessageAr    = dto.OrderSuccessMessageAr;
             info.OrderSuccessMessageEn    = dto.OrderSuccessMessageEn;
             info.AutoPrintReceipt         = dto.AutoPrintReceipt;

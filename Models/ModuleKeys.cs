@@ -76,6 +76,7 @@ public static class ModuleKeys
     public const string HrCommissions = "hr-commissions";
     public const string HrCommissionsDist = "hr-commissions-dist";
     public const string HrDepartments = "hr-departments";
+    public const string HrAttendance = "hr-attendance";
 
     // System
     public const string System = "system";
@@ -100,7 +101,7 @@ public static class ModuleKeys
         PurchasesGroup, PurchasesMain, Suppliers, Purchases, PurchaseReturns, SupplierVouchers,
         AccountingGroup, AccountingMain, Chart, Mapping, Journal, Receipts, Payments, Installments,
         AssetsGroup, AssetsMain, Assets, AssetCategories, AssetDepBatch, AssetDisposals, AssetPurchases,
-        Hr, HrEmployees, HrEmpList, HrVouchers, HrPayroll, HrAdvances, HrCommissions, HrCommissionsDist, HrDepartments,
+        Hr, HrEmployees, HrEmpList, HrVouchers, HrPayroll, HrAdvances, HrCommissions, HrCommissionsDist, HrDepartments, HrAttendance,
         System, ReportsMain, Staff, Settings, WelcomeMessages, LinksManager, Maintenance, Diagnostics, Backup, Ai, Performance, Profitability
     };
 }

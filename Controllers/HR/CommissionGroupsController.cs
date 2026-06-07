@@ -14,7 +14,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/commissions/groups")]
-[RequirePermission(ModuleKeys.HrPayroll)]
+[RequirePermission(ModuleKeys.HrCommissions)]
 public class CommissionGroupsController : ControllerBase
 {
     private readonly AppDbContext _db;

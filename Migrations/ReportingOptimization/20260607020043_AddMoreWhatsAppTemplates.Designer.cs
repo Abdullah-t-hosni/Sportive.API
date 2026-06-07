@@ -3,17 +3,20 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sportive.API.Data;
 
 #nullable disable
 
-namespace Sportive.API.Migrations
+namespace Sportive.API.Migrations.ReportingOptimization
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260607020043_AddMoreWhatsAppTemplates")]
+    partial class AddMoreWhatsAppTemplates
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -4866,18 +4869,6 @@ namespace Sportive.API.Migrations
                     b.Property<string>("WhatsAppOrderTemplate")
                         .HasColumnType("longtext")
                         .HasAnnotation("Relational:JsonPropertyName", "whatsAppOrderTemplate");
-
-                    b.Property<string>("WhatsAppPaymentReminderTemplate")
-                        .HasColumnType("longtext")
-                        .HasAnnotation("Relational:JsonPropertyName", "whatsAppPaymentReminderTemplate");
-
-                    b.Property<string>("WhatsAppPayrollTemplate")
-                        .HasColumnType("longtext")
-                        .HasAnnotation("Relational:JsonPropertyName", "whatsAppPayrollTemplate");
-
-                    b.Property<string>("WhatsAppPosOrderTemplate")
-                        .HasColumnType("longtext")
-                        .HasAnnotation("Relational:JsonPropertyName", "whatsAppPosOrderTemplate");
 
                     b.Property<string>("WhatsAppProcessingTemplate")
                         .HasColumnType("longtext")

@@ -16,7 +16,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/employee-attendances")]
-[RequirePermission(ModuleKeys.HrPayroll)]
+[RequirePermission(ModuleKeys.HrAttendance)]
 public class EmployeeAttendancesController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -35,7 +35,7 @@ public class EmployeeAttendancesController : ControllerBase
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
     [HttpGet]
-    [RequirePermission(ModuleKeys.Hr)]
+    [RequirePermission(ModuleKeys.HrAttendance)]
     public async Task<IActionResult> GetAll(
         [FromQuery] int? employeeId = null,
         [FromQuery] int? departmentId = null,
@@ -86,7 +86,7 @@ public class EmployeeAttendancesController : ControllerBase
     }
 
     [HttpPost]
-    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.HrAttendance, requireEdit: true)]
     public async Task<IActionResult> Create([FromBody] CreateAttendanceDto dto)
     {
         var emp = await _db.Employees.FindAsync(dto.EmployeeId);
@@ -120,7 +120,7 @@ public class EmployeeAttendancesController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.HrAttendance, requireEdit: true)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateAttendanceDto dto)
     {
         var attendance = await _db.EmployeeAttendances.FindAsync(id);
@@ -140,7 +140,7 @@ public class EmployeeAttendancesController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.HrAttendance, requireEdit: true)]
     public async Task<IActionResult> Delete(int id)
     {
         var attendance = await _db.EmployeeAttendances.FindAsync(id);
@@ -152,7 +152,7 @@ public class EmployeeAttendancesController : ControllerBase
     }
 
     [HttpPost("upload")]
-    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.HrAttendance, requireEdit: true)]
     public async Task<IActionResult> UploadExcel(IFormFile file)
     {
         if (file == null || file.Length == 0)
@@ -384,7 +384,7 @@ public class EmployeeAttendancesController : ControllerBase
     }
 
     [HttpGet("devices")]
-    [RequirePermission(ModuleKeys.Hr)]
+    [RequirePermission(ModuleKeys.HrAttendance)]
     public async Task<IActionResult> GetDevices()
     {
         var devices = await _db.ZkDevices
@@ -394,7 +394,7 @@ public class EmployeeAttendancesController : ControllerBase
     }
 
     [HttpPost("devices")]
-    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.HrAttendance, requireEdit: true)]
     public async Task<IActionResult> RegisterDevice([FromBody] RegisterDeviceDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.SerialNumber) || string.IsNullOrWhiteSpace(dto.Name))
@@ -423,7 +423,7 @@ public class EmployeeAttendancesController : ControllerBase
     }
 
     [HttpDelete("devices/{id}")]
-    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.HrAttendance, requireEdit: true)]
     public async Task<IActionResult> DeleteDevice(int id)
     {
         var device = await _db.ZkDevices.FindAsync(id);
@@ -435,7 +435,7 @@ public class EmployeeAttendancesController : ControllerBase
     }
 
     [HttpPost("sync-punch")]
-    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.HrAttendance, requireEdit: true)]
     public async Task<IActionResult> SyncPunches([FromBody] List<SyncPunchDto> punches)
     {
         if (punches == null || !punches.Any())

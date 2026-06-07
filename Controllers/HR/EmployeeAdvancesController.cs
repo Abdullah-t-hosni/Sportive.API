@@ -14,7 +14,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/employee-advances")]
-[RequirePermission(ModuleKeys.HrPayroll)]
+[RequirePermission(ModuleKeys.HrAdvances)]
 public class EmployeeAdvancesController : ControllerBase
 {
     private readonly AppDbContext    _db;
@@ -57,7 +57,7 @@ public class EmployeeAdvancesController : ControllerBase
     }
 
     [HttpPost]
-    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.HrAdvances, requireEdit: true)]
     public async Task<IActionResult> Create([FromBody] CreateAdvanceDto dto)
     {
         var emp = await _db.Employees.FindAsync(dto.EmployeeId);
@@ -184,7 +184,7 @@ public class EmployeeAdvancesController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.HrAdvances, requireEdit: true)]
     public async Task<IActionResult> Update(int id, [FromBody] CreateAdvanceDto dto)
     {
         var adv = await _db.EmployeeAdvances.FindAsync(id);

@@ -14,7 +14,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/departments")]
-[RequirePermission(ModuleKeys.HrPayroll)]
+[RequirePermission(ModuleKeys.HrDepartments)]
 public class DepartmentsController : ControllerBase
 {
     private readonly AppDbContext _db;

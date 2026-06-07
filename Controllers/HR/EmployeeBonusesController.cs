@@ -14,7 +14,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/employee-bonuses")]
-[RequirePermission(ModuleKeys.HrPayroll)]
+[RequirePermission(ModuleKeys.HrAdvances)]
 public class EmployeeBonusesController : ControllerBase
 {
     private readonly AppDbContext    _db;
@@ -54,7 +54,7 @@ public class EmployeeBonusesController : ControllerBase
     }
 
     [HttpPost]
-    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.HrAdvances, requireEdit: true)]
     public async Task<IActionResult> Create([FromBody] CreateBonusDto dto)
     {
         var emp = await _db.Employees.FindAsync(dto.EmployeeId);
@@ -177,7 +177,7 @@ public class EmployeeBonusesController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.HrAdvances, requireEdit: true)]
     public async Task<IActionResult> Update(int id, [FromBody] CreateBonusDto dto)
     {
         var bon = await _db.EmployeeBonuses.FindAsync(id);

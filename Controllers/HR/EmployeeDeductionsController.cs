@@ -14,7 +14,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/employee-deductions")]
-[RequirePermission(ModuleKeys.HrPayroll)]
+[RequirePermission(ModuleKeys.HrVouchers)]
 public class EmployeeDeductionsController : ControllerBase
 {
     private readonly AppDbContext    _db;
@@ -128,7 +128,7 @@ public class EmployeeDeductionsController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [RequirePermission(ModuleKeys.Hr, requireEdit: true)]
+    [RequirePermission(ModuleKeys.HrVouchers, requireEdit: true)]
     public async Task<IActionResult> Update(int id, [FromBody] CreateDeductionDto dto)
     {
         var ded = await _db.EmployeeDeductions.FindAsync(id);

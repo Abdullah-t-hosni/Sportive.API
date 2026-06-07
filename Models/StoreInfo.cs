@@ -361,13 +361,43 @@ public class StoreInfo
 
     // --- 8. WhatsApp Quick Replies ---
     [JsonPropertyName("whatsAppOrderTemplate")]
-    public string? WhatsAppOrderTemplate { get; set; } = "أهلاً {customerName}، تم استلام طلبك رقم #{orderNumber} وجاري التجهيز.";
+    public string? WhatsAppOrderTemplate { get; set; } = "أهلاً {customerName} 👋\n✅ *تم تأكيد طلبك بنجاح!*\n🔢 رقم الطلب: *{orderNumber}*\n📦 الطلب:\n{itemsList}\n💰 الإجمالي: *{totalAmount} ج.م*\n{discountPart}💳 الدفع: *{paymentMethod}*\n📍 النوع: *{fulfillmentType}*\nسنتواصل معك قريباً لتأكيد موعد التوصيل 🙏\n📄 الفاتورة الإلكترونية: {storeUrl}/invoice/{orderNumber}";
 
     [JsonPropertyName("whatsAppShippingTemplate")]
-    public string? WhatsAppShippingTemplate { get; set; } = "طلبك #{orderNumber} في الطريق مع المندوب، سيصلك قريباً.";
+    public string? WhatsAppShippingTemplate { get; set; } = "أهلاً {customerName} 🚚\n*طلبك رقم #{orderNumber} في الطريق إليك!*\n{trackingPart}⏱ الموعد المتوقع: خلال 2-3 أيام عمل\n📞 للاستفسار: {storePhone}";
 
     [JsonPropertyName("whatsAppReturnTemplate")]
-    public string? WhatsAppReturnTemplate { get; set; } = "تم استلام طلب المرتجع الخاص بك رقم #{orderNumber}، وجاري مراجعته.";
+    public string? WhatsAppReturnTemplate { get; set; } = "أهلاً {customerName} 🔄\n*تم استلام طلب المرتجع*\n🔢 رقم الطلب: *{orderNumber}*\n💰 المبلغ المسترد: *{totalAmount} ج.م*\nسيتم معالجة المبلغ خلال 3-5 أيام عمل 🙏\nنعتذر عن الإزعاج ونتمنى رؤيتك قريباً!";
+
+    [JsonPropertyName("whatsAppProcessingTemplate")]
+    public string? WhatsAppProcessingTemplate { get; set; } = "أهلاً {customerName} 🎉\n*طلبك رقم #{orderNumber} جاهز للاستلام!*\n📍 العنوان: {storeAddress}\n🕐 مواعيد العمل: من 10 صباحاً لـ 10 مساءً يومياً\n📞 للتواصل: {storePhone}\nفي انتظارك! 💪";
+
+    [JsonPropertyName("whatsAppDeliveredTemplate")]
+    public string? WhatsAppDeliveredTemplate { get; set; } = "🎉 تم توصيل طلبك رقم #{orderNumber} بنجاح! نتمنى أن ينال إعجابك. {storeName}";
+
+    [JsonPropertyName("whatsAppCancelTemplate")]
+    public string? WhatsAppCancelTemplate { get; set; } = "❌ تم إلغاء طلبك رقم #{orderNumber}. للاستفسار تواصل معنا.";
+
+    [JsonPropertyName("whatsAppWebsiteConfirmTemplate")]
+    public string? WhatsAppWebsiteConfirmTemplate { get; set; } = "🛍️ *طلب جديد - {storeName}*\nرقم الطلب: {orderNumber}\n─────────────────\n{itemsList}\n─────────────────\nالإجمالي: *{totalAmount}*\n\nتم تأكيد الطلب بنجاح! ✅";
+
+    [JsonPropertyName("whatsAppPaymentReminderTemplate")]
+    public string? WhatsAppPaymentReminderTemplate { get; set; } = "أهلاً {customerName} 💬\nتذكير بخصوص طلبك *#{orderNumber}*\n💰 المبلغ المتبقي: *{totalAmount} ج.م*\n💳 طرق الدفع: كاش / فودافون كاش / انستاباي\nللسداد أو الاستفسار تواصل معنا:\n{storePhone}\nشكراً لتسوقك معنا 🙏";
+
+    [JsonPropertyName("whatsAppPosOrderTemplate")]
+    public string? WhatsAppPosOrderTemplate { get; set; } = "مرحباً {customerName} 👋\n\nشكراً لتسوّقك معنا في {storeName} 🏃‍♂️\nفاتورتك جاهزة!\n\n🧾 رقم الفاتورة: *{orderNumber}*\n\n📲 لعرض الفاتورة الإلكترونية أو تحميلها:\n{invoiceUrl}\n\nنتمنى لك تجربة ممتازة دائماً 💪";
+
+    [JsonPropertyName("whatsAppPayrollTemplate")]
+    public string? WhatsAppPayrollTemplate { get; set; } = "السلام عليكم ورحمة الله وبركاته،\n\nيسعدنا مشاركة تفاصيل راتب شهر {periodMonth} لعام {periodYear} معكم.\n\n👤 الموظف: {employeeName}\n💵 صافي الراتب المستحق: {netPayable}\n\nللاطلاع على تفاصيل الراتب كاملة وتحميل قسيمة الراتب كـ PDF، يرجى الضغط على الرابط التالي:\n{payslipUrl}\n\nشكرًا لجهودكم المميزة،\nإدارة الموارد البشرية - {storeName}";
+
+    [JsonPropertyName("whatsAppInstallmentFriendlyTemplate")]
+    public string? WhatsAppInstallmentFriendlyTemplate { get; set; } = "مرحباً {name}، تذكير ودي بقيمة الأقساط المستحقة بقيمة {remaining} ج.م. نتمنى لك يوماً سعيداً.";
+
+    [JsonPropertyName("whatsAppInstallmentNoticeTemplate")]
+    public string? WhatsAppInstallmentNoticeTemplate { get; set; } = "عزيزي {name}، نود تذكيرك بأن إجمالي مستحقات الأقساط بقيمة {remaining} ج.م يستحق أقرب موعد لها بتاريخ {formattedDueDate}. يرجى التكرم بالسداد في الموعد المحدد. شكراً لك.";
+
+    [JsonPropertyName("whatsAppInstallmentWarningTemplate")]
+    public string? WhatsAppInstallmentWarningTemplate { get; set; } = "تنبيه عاجل: العميل {name}، نود إعلامك بتأخر سداد قسط مستحق بقيمة {remaining} ج.م (تاريخ الاستحقاق: {formattedDueDate}). يرجى السداد فوراً أو التواصل معنا لتسوية المديونية.";
 
     // --- 9. Order Success Page ---
     [JsonPropertyName("orderSuccessMessageAr")]
