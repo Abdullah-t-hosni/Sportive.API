@@ -9,7 +9,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[RequirePermission(ModuleKeys.ColorGroups, requireEdit: true)]
+[RequirePermission(ModuleKeys.ColorGroups)]
 public class ColorGroupsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -28,6 +28,7 @@ public class ColorGroupsController : ControllerBase
         return group == null ? NotFound() : Ok(group);
     }
 
+    [RequirePermission(ModuleKeys.ColorGroups, requireEdit: true)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] ColorGroup group)
     {
@@ -36,6 +37,7 @@ public class ColorGroupsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = group.Id }, group);
     }
 
+    [RequirePermission(ModuleKeys.ColorGroups, requireEdit: true)]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] ColorGroup group)
     {
@@ -65,6 +67,7 @@ public class ColorGroupsController : ControllerBase
         return NoContent();
     }
 
+    [RequirePermission(ModuleKeys.ColorGroups, requireEdit: true)]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {

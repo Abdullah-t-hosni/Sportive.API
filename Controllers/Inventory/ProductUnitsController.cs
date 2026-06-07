@@ -11,7 +11,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[RequirePermission(ModuleKeys.Units, requireEdit: true)]
+[RequirePermission(ModuleKeys.Units)]
 public class ProductUnitsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -55,6 +55,7 @@ public class ProductUnitsController : ControllerBase
         return Ok(unit);
     }
 
+    [RequirePermission(ModuleKeys.Units, requireEdit: true)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] ProductUnit unit)
     {
@@ -67,6 +68,7 @@ public class ProductUnitsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = unit.Id }, unit);
     }
 
+    [RequirePermission(ModuleKeys.Units, requireEdit: true)]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] ProductUnit dto)
     {
@@ -84,6 +86,7 @@ public class ProductUnitsController : ControllerBase
         return Ok(unit);
     }
 
+    [RequirePermission(ModuleKeys.Units, requireEdit: true)]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {

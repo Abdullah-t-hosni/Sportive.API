@@ -43,6 +43,7 @@ public class DepartmentsController : ControllerBase
             .ToListAsync();
     }
 
+    [RequirePermission(ModuleKeys.HrDepartments, requireEdit: true)]
     [HttpPost]
     public async Task<ActionResult<DepartmentDto>> CreateDepartment(CreateDepartmentDto dto)
     {
@@ -74,6 +75,7 @@ public class DepartmentsController : ControllerBase
         ));
     }
 
+    [RequirePermission(ModuleKeys.HrDepartments, requireEdit: true)]
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateDepartment(int id, CreateDepartmentDto dto)
     {
@@ -92,6 +94,7 @@ public class DepartmentsController : ControllerBase
         return NoContent();
     }
 
+    [RequirePermission(ModuleKeys.HrDepartments, requireEdit: true)]
     [HttpPost("{id}/apply-to-employees")]
     public async Task<IActionResult> BulkUpdateEmployeesFromDepartment(int id)
     {
@@ -109,6 +112,7 @@ public class DepartmentsController : ControllerBase
         return Ok(new { message = $"Settings applied to {dept.Employees.Count} employees." });
     }
 
+    [RequirePermission(ModuleKeys.HrDepartments, requireEdit: true)]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {

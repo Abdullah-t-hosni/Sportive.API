@@ -9,7 +9,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[RequirePermission(ModuleKeys.SizeGroups, requireEdit: true)]
+[RequirePermission(ModuleKeys.SizeGroups)]
 public class SizeGroupsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -28,6 +28,7 @@ public class SizeGroupsController : ControllerBase
         return group == null ? NotFound() : Ok(group);
     }
 
+    [RequirePermission(ModuleKeys.SizeGroups, requireEdit: true)]
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] SizeGroup group)
     {
@@ -36,7 +37,8 @@ public class SizeGroupsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = group.Id }, group);
     }
 
-        [HttpPut("{id}")]
+    [RequirePermission(ModuleKeys.SizeGroups, requireEdit: true)]
+    [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] SizeGroup group)
     {
         if (id != group.Id) return BadRequest();
@@ -65,6 +67,7 @@ public class SizeGroupsController : ControllerBase
         return NoContent();
     }
 
+    [RequirePermission(ModuleKeys.SizeGroups, requireEdit: true)]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
