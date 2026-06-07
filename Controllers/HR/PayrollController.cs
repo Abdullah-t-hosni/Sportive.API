@@ -49,13 +49,49 @@ public class PayrollController : ControllerBase
     }
 
     [HttpGet("{id}")]
-
     public async Task<IActionResult> GetById(int id)
     {
         var run = await _db.PayrollRuns
             .Include(p => p.Items).ThenInclude(i => i.Employee).ThenInclude(e => e.Department)
             .FirstOrDefaultAsync(p => p.Id == id);
         if (run == null) return NotFound();
+
+        // Proactive self-healing check for deleted payment journal entries
+        bool hasChanges = false;
+        foreach (var item in run.Items.Where(i => i.IsPaid && i.PaymentJournalEntryId.HasValue))
+        {
+            var exists = await _db.JournalEntries.AnyAsync(je => je.Id == item.PaymentJournalEntryId.Value);
+            if (!exists)
+            {
+                item.IsPaid = false;
+                item.PaidAt = null;
+                item.PaymentJournalEntryId = null;
+                hasChanges = true;
+            }
+        }
+
+        if (run.PaymentJournalEntryId.HasValue)
+        {
+            var exists = await _db.JournalEntries.AnyAsync(je => je.Id == run.PaymentJournalEntryId.Value);
+            if (!exists)
+            {
+                run.PaymentJournalEntryId = null;
+                hasChanges = true;
+            }
+        }
+
+        if (hasChanges)
+        {
+            // Recompute overall payroll run status if we reset items
+            bool allPaid = run.Items.All(i => i.IsPaid || i.NetPayable <= 0);
+            if (!allPaid && run.Status == PayrollStatus.Paid)
+            {
+                run.Status = PayrollStatus.Posted;
+            }
+            run.UpdatedAt = TimeHelper.GetEgyptTime();
+            await _db.SaveChangesAsync();
+        }
+
         return Ok(ToDto(run));
     }
 

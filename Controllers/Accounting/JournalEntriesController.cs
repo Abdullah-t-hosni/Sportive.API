@@ -349,6 +349,33 @@ public class JournalEntriesController : ControllerBase
             }
         }
 
+        // Reset payroll payment status if this was a payroll payment journal entry
+        var linkedPayrollItems = await _db.PayrollItems
+            .Where(i => i.PaymentJournalEntryId == id)
+            .ToListAsync();
+        if (linkedPayrollItems.Any())
+        {
+            foreach (var item in linkedPayrollItems)
+            {
+                item.IsPaid = false;
+                item.PaidAt = null;
+                item.PaymentJournalEntryId = null;
+            }
+        }
+
+        var linkedPayrollRuns = await _db.PayrollRuns
+            .Where(r => r.PaymentJournalEntryId == id)
+            .ToListAsync();
+        if (linkedPayrollRuns.Any())
+        {
+            foreach (var run in linkedPayrollRuns)
+            {
+                run.Status = PayrollStatus.Posted;
+                run.PaymentJournalEntryId = null;
+                run.UpdatedAt = TimeHelper.GetEgyptTime();
+            }
+        }
+
         _db.JournalLines.RemoveRange(entry.Lines);
         _db.JournalEntries.Remove(entry);
         await _db.SaveChangesAsync();
