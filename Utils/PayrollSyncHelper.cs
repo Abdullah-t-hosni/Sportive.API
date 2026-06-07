@@ -11,6 +11,79 @@ namespace Sportive.API.Utils
 {
     public static class PayrollSyncHelper
     {
+        public static bool IsTextMatchingPayrollPeriod(string? text, string payrollNumber, int year, int month)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            
+            var textLower = text.ToLower();
+            
+            // 1. Direct match with payroll number
+            if (textLower.Contains(payrollNumber.ToLower())) return true;
+            
+            // 2. Match month names and year
+            string[] arMonths = { "", "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر" };
+            string[] enMonths = { "", "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec" };
+            
+            var arMonth = arMonths[month];
+            var enMonth = enMonths[month];
+            
+            var yearStr = year.ToString();
+            var shortYearStr = (year % 100).ToString("D2"); // e.g. "26"
+            
+            // Check if it mentions the month and the 4-digit year
+            if (textLower.Contains(yearStr))
+            {
+                if (textLower.Contains(arMonth) || textLower.Contains(enMonth))
+                {
+                    return true;
+                }
+                
+                // Also check numerical patterns: e.g. "5/2026", "05/2026", "2026/5", "2026/05", "5-2026", "05-2026", "2026-5", "2026-05"
+                var pattern1 = $"{month}/{yearStr}";
+                var pattern2 = $"{month:D2}/{yearStr}";
+                var pattern3 = $"{yearStr}/{month}";
+                var pattern4 = $"{yearStr}/{month:D2}";
+                var pattern5 = $"{month}-{yearStr}";
+                var pattern6 = $"{month:D2}-{yearStr}";
+                var pattern7 = $"{yearStr}-{month}";
+                var pattern8 = $"{yearStr}-{month:D2}";
+                
+                if (textLower.Contains(pattern1) || textLower.Contains(pattern2) || 
+                    textLower.Contains(pattern3) || textLower.Contains(pattern4) ||
+                    textLower.Contains(pattern5) || textLower.Contains(pattern6) ||
+                    textLower.Contains(pattern7) || textLower.Contains(pattern8))
+                {
+                    return true;
+                }
+            }
+            
+            // Check if it mentions the month and the 2-digit year (with standard separator, e.g. "5/26", "05-26", "26/5")
+            if (textLower.Contains(arMonth) || textLower.Contains(enMonth))
+            {
+                if (textLower.Contains($" {shortYearStr}") || textLower.Contains($"/{shortYearStr}") || textLower.Contains($"-{shortYearStr}"))
+                {
+                    return true;
+                }
+            }
+            
+            // Check numeric short year: e.g. "5/26", "05/26", "26/5", "26/05", "5-26", "05-26"
+            var p1 = $"{month}/{shortYearStr}";
+            var p2 = $"{month:D2}/{shortYearStr}";
+            var p3 = $"{shortYearStr}/{month}";
+            var p4 = $"{shortYearStr}/{month:D2}";
+            var p5 = $"{month}-{shortYearStr}";
+            var p6 = $"{month:D2}-{shortYearStr}";
+            
+            if (textLower.Contains(p1) || textLower.Contains(p2) || 
+                textLower.Contains(p3) || textLower.Contains(p4) ||
+                textLower.Contains(p5) || textLower.Contains(p6))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
         public static async Task SyncPayrollRunPaymentsAsync(AppDbContext db, AccountingCoreService core, int payrollRunId)
         {
             var run = await db.PayrollRuns
@@ -40,22 +113,24 @@ namespace Sportive.API.Utils
                 }
             }
 
-            var payrollNumberLower = run.PayrollNumber.Trim().ToLower();
-
             // Find all posted journal lines debiting the accrued salaries account for this payroll run.
-            // We search for mentions of the payroll number in entry Reference, Description, or line Description.
-            var matchingLines = await db.JournalLines
+            // We fetch the candidate lines from the database.
+            var candidateLines = await db.JournalLines
                 .Include(l => l.JournalEntry)
                 .Where(l => l.AccountId == accrualAccId 
                             && l.Debit > 0 
                             && l.JournalEntry.Status == JournalEntryStatus.Posted
-                            && l.JournalEntryId != run.JournalEntryId
-                            && (
-                                (l.JournalEntry.Reference != null && l.JournalEntry.Reference.ToLower().Contains(payrollNumberLower)) ||
-                                (l.JournalEntry.Description != null && l.JournalEntry.Description.ToLower().Contains(payrollNumberLower)) ||
-                                (l.Description != null && l.Description.ToLower().Contains(payrollNumberLower))
-                            ))
+                            && l.JournalEntryId != run.JournalEntryId)
                 .ToListAsync();
+
+            // Filter lines in-memory using our flexible pattern matcher
+            var matchingLines = candidateLines
+                .Where(l => 
+                    IsTextMatchingPayrollPeriod(l.JournalEntry.Reference, run.PayrollNumber, run.PeriodYear, run.PeriodMonth) ||
+                    IsTextMatchingPayrollPeriod(l.JournalEntry.Description, run.PayrollNumber, run.PeriodYear, run.PeriodMonth) ||
+                    IsTextMatchingPayrollPeriod(l.Description, run.PayrollNumber, run.PeriodYear, run.PeriodMonth)
+                )
+                .ToList();
 
             bool hasChanges = false;
 
@@ -124,14 +199,15 @@ namespace Sportive.API.Utils
         {
             if (entry == null) return;
 
-            // Gather all text fields from this journal entry to look for payroll numbers
-            var textToSearch = $"{entry.Reference} {entry.Description} {string.Join(" ", entry.Lines.Select(l => l.Description))}".ToLower();
-
             // Fetch all posted/paid payroll runs
             var payrollRuns = await db.PayrollRuns.Where(r => r.Status != PayrollStatus.Draft).ToListAsync();
             
             // Identify which runs are mentioned in the journal entry
-            var runsToSync = payrollRuns.Where(r => textToSearch.Contains(r.PayrollNumber.ToLower())).ToList();
+            var runsToSync = payrollRuns.Where(r => 
+                IsTextMatchingPayrollPeriod(entry.Reference, r.PayrollNumber, r.PeriodYear, r.PeriodMonth) ||
+                IsTextMatchingPayrollPeriod(entry.Description, r.PayrollNumber, r.PeriodYear, r.PeriodMonth) ||
+                entry.Lines.Any(l => IsTextMatchingPayrollPeriod(l.Description, r.PayrollNumber, r.PeriodYear, r.PeriodMonth))
+            ).ToList();
 
             foreach (var run in runsToSync)
             {
