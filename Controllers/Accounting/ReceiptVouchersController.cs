@@ -329,7 +329,7 @@ public class ReceiptVouchersController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
-        await _accounting.SyncEntityBalancesAsync();
+        BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
         return Ok(voucher);
     }
 
@@ -365,7 +365,7 @@ public class ReceiptVouchersController : ControllerBase
             _db.JournalEntries.Remove(entry);
         }
         await _db.SaveChangesAsync();
-        await _accounting.SyncEntityBalancesAsync();
+        BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
         return NoContent();
     }
 }

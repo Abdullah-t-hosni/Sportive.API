@@ -40,6 +40,8 @@ public interface IAccountingService
     Task SyncEntityBalancesAsync();
     Task ConsolidateSubAccountsToControlAsync();
     Task<int> PurgeInactiveSubAccountsAsync();
+    Task SyncPayrollForVoucherAsync(int journalEntryId);
+    Task SyncPayrollRunPaymentsAsync(int payrollRunId);
 }
 
 public class AccountingService : IAccountingService
@@ -286,4 +288,15 @@ public class AccountingService : IAccountingService
         _logger.LogInformation("PurgeInactiveSubAccountsAsync called");
         return await _core.PurgeInactiveSubAccountsAsync();
     }
+
+    public async Task SyncPayrollForVoucherAsync(int journalEntryId)
+    {
+        var je = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Id == journalEntryId);
+        if (je != null)
+        {
+            await PayrollSyncHelper.SyncPayrollRunsForJournalEntryAsync(_db, _core, je);
+        }
+    }
+
+    public Task SyncPayrollRunPaymentsAsync(int payrollRunId) => PayrollSyncHelper.SyncPayrollRunPaymentsAsync(_db, _core, payrollRunId);
 }

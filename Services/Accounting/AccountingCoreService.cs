@@ -209,6 +209,14 @@ public class AccountingCoreService
             }
         }
 
+        // ⚡ PERF FIX: fetch mappings ONCE outside the loop (was causing N+1 DB queries per journal line)
+        var mappings = await GetSafeSystemMappingsAsync();
+        var hrAccountIds = new List<int>();
+        if (mappings.TryGetValue(MK.SalariesPayable.ToLower(), out var h1) && h1.HasValue) hrAccountIds.Add(h1.Value);
+        if (mappings.TryGetValue(MK.EmployeeAdvances.ToLower(), out var h2) && h2.HasValue) hrAccountIds.Add(h2.Value);
+        if (mappings.TryGetValue(MK.EmployeeBonuses.ToLower(), out var h3) && h3.HasValue) hrAccountIds.Add(h3.Value);
+        if (mappings.TryGetValue(MK.EmployeeDeductions.ToLower(), out var h4) && h4.HasValue) hrAccountIds.Add(h4.Value);
+
         foreach (var (code, debit, credit, desc) in lines)
         {
             if (debit == 0 && credit == 0) continue;
@@ -219,13 +227,6 @@ public class AccountingCoreService
 
             bool isReceivables = realCode.StartsWith("1103") || realCode.StartsWith("1202");
             bool isPayables = realCode.StartsWith("2101") || realCode.StartsWith("2102");
-
-            var mappings = await GetSafeSystemMappingsAsync();
-            var hrAccountIds = new List<int>();
-            if (mappings.TryGetValue(MK.SalariesPayable.ToLower(), out var h1) && h1.HasValue) hrAccountIds.Add(h1.Value);
-            if (mappings.TryGetValue(MK.EmployeeAdvances.ToLower(), out var h2) && h2.HasValue) hrAccountIds.Add(h2.Value);
-            if (mappings.TryGetValue(MK.EmployeeBonuses.ToLower(), out var h3) && h3.HasValue) hrAccountIds.Add(h3.Value);
-            if (mappings.TryGetValue(MK.EmployeeDeductions.ToLower(), out var h4) && h4.HasValue) hrAccountIds.Add(h4.Value);
 
             bool isEmployeeAccount = hrAccountIds.Contains(accountId) || 
                                      realCode == "4109" || realCode.StartsWith("2201") || realCode.StartsWith("1201") ||

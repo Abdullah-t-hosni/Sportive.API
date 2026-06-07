@@ -153,11 +153,9 @@ public class PaymentVouchersController : ControllerBase
 
         if (voucher.JournalEntryId.HasValue)
         {
-            var je = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Id == voucher.JournalEntryId.Value);
-            if (je != null)
-            {
-                await PayrollSyncHelper.SyncPayrollRunsForJournalEntryAsync(_db, _core, je);
-            }
+            // ⚡ PERF FIX: run payroll sync in background to avoid blocking the HTTP response
+            var jeId = voucher.JournalEntryId.Value;
+            BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(jeId));
         }
 
         var employeeAdvancesAccountId = await _db.AccountSystemMappings
@@ -246,11 +244,11 @@ public class PaymentVouchersController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
-        await _accounting.SyncEntityBalancesAsync();
+        BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
 
         if (entry != null)
         {
-            await PayrollSyncHelper.SyncPayrollRunsForJournalEntryAsync(_db, _core, entry);
+            BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id));
         }
 
         return Ok(voucher);
@@ -295,11 +293,11 @@ public class PaymentVouchersController : ControllerBase
             _db.JournalEntries.Remove(entry);
         }
         await _db.SaveChangesAsync();
-        await _accounting.SyncEntityBalancesAsync();
+        BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
 
         foreach (var run in runsToSync)
         {
-            await PayrollSyncHelper.SyncPayrollRunPaymentsAsync(_db, _core, run.Id);
+            BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollRunPaymentsAsync(run.Id));
         }
 
         return NoContent();
