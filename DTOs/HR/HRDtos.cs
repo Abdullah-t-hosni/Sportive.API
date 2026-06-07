@@ -266,7 +266,7 @@ public record EmployeeAdvanceDto(
     decimal        Amount,
     decimal        DeductedAmount,
     decimal        RemainingAmount,
-    int            Status,
+    AdvanceStatus  Status,
     string?        Reason,
     string?        Notes,
     int?           CashAccountId,

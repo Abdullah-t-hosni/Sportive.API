@@ -70,7 +70,7 @@ public class EmployeeAdvancesController : ControllerBase
             .Select(a => new EmployeeAdvanceDto(
                 a.Id, a.AdvanceNumber, a.EmployeeId, a.Employee.Name,
                 a.AdvanceDate, a.Amount, a.DeductedAmount, a.Amount - a.DeductedAmount,
-                (int)a.Status, a.Reason, a.Notes,
+                a.Status, a.Reason, a.Notes,
                 a.CashAccountId, a.CashAccount != null ? a.CashAccount.NameAr : null,
                 a.JournalEntryId, a.CreatedAt, a.CostCenter
             )).ToListAsync();
