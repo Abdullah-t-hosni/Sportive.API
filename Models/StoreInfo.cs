@@ -287,6 +287,27 @@ public class StoreInfo
     [JsonPropertyName("receiptSectionsOrder")]
     public string ReceiptSectionsOrder { get; set; } = "header,order_info,items_table,totals_area,tafqeet,payment_info,customer_signature,footer_text,terms_conditions,barcode";
 
+    [JsonPropertyName("receiptShowRecipientSignature")]
+    public bool ReceiptShowRecipientSignature { get; set; } = true;
+
+    [JsonPropertyName("receiptShowStoreSeal")]
+    public bool ReceiptShowStoreSeal { get; set; } = true;
+
+    [JsonPropertyName("receiptStoreNameFontSize")]
+    public int ReceiptStoreNameFontSize { get; set; } = 24;
+
+    [JsonPropertyName("receiptHeaderFontSize")]
+    public int ReceiptHeaderFontSize { get; set; } = 11;
+
+    [JsonPropertyName("receiptItemsFontSize")]
+    public int ReceiptItemsFontSize { get; set; } = 11;
+
+    [JsonPropertyName("receiptTotalsFontSize")]
+    public int ReceiptTotalsFontSize { get; set; } = 11;
+
+    [JsonPropertyName("receiptFooterFontSize")]
+    public int ReceiptFooterFontSize { get; set; } = 10;
+
     // --- 5. Finance & VAT ---
     [JsonPropertyName("vatRatePercent")]
     public decimal VatRatePercent { get; set; } = 14;

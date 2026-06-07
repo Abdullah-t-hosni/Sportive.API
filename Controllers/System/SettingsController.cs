@@ -213,6 +213,14 @@ public class SettingsController : ControllerBase
             info.ReceiptBarcodeHeight     = dto.ReceiptBarcodeHeight;
             info.ReceiptSectionsOrder     = dto.ReceiptSectionsOrder ?? "header,order_info,items_table,totals_area,tafqeet,payment_info,footer_text,terms_conditions,barcode";
 
+            info.ReceiptShowRecipientSignature = dto.ReceiptShowRecipientSignature;
+            info.ReceiptShowStoreSeal          = dto.ReceiptShowStoreSeal;
+            info.ReceiptStoreNameFontSize      = dto.ReceiptStoreNameFontSize;
+            info.ReceiptHeaderFontSize         = dto.ReceiptHeaderFontSize;
+            info.ReceiptItemsFontSize          = dto.ReceiptItemsFontSize;
+            info.ReceiptTotalsFontSize         = dto.ReceiptTotalsFontSize;
+            info.ReceiptFooterFontSize         = dto.ReceiptFooterFontSize;
+
             info.AccountingLockDate      = dto.AccountingLockDate;
             info.LinktreeConfig          = dto.LinktreeConfig;
             info.DailyTarget             = dto.DailyTarget;
