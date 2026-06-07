@@ -41,7 +41,8 @@ public class PayrollController : ControllerBase
             .Select(p => new PayrollRunSummaryDto(
                 p.Id, p.PayrollNumber, p.PeriodYear, p.PeriodMonth,
                 p.TotalNetPayable, p.Items.Count, (int)p.Status, p.JournalEntryId, p.PaymentJournalEntryId, p.CreatedAt,
-                p.Items.Count(i => i.IsPaid)))
+                p.Items.Count(i => i.IsPaid),
+                p.Items.Sum(i => i.PaidAmount)))
             .ToListAsync();
 
         return Ok(new PaginatedResult<PayrollRunSummaryDto>(items, total, page, pageSize,
@@ -1643,7 +1644,8 @@ public class PayrollController : ControllerBase
             i.IsPaid, i.PaidAt, i.PaymentJournalEntryId,
             GeneratePayslipHash(i.Id), i.PaidAmount
         )).ToList(),
-        run.Items.Count(i => i.IsPaid)
+        run.Items.Count(i => i.IsPaid),
+        run.Items.Sum(i => i.PaidAmount)
     );
 }
 
