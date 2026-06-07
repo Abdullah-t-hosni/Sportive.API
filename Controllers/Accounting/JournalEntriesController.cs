@@ -237,6 +237,7 @@ public class JournalEntriesController : ControllerBase
             }
 
             var entry = await _accounting.PostManualEntryAsync(dto, User);
+            await PayrollSyncHelper.SyncPayrollRunsForJournalEntryAsync(_db, _core, entry);
             return CreatedAtAction(nameof(GetById), new { id = entry.Id }, entry);
         } catch (InvalidOperationException ex) {
             return BadRequest(new { message = ex.Message });
@@ -248,6 +249,7 @@ public class JournalEntriesController : ControllerBase
     {
         try {
             var entry = await _accounting.UpdateManualEntryAsync(id, dto, User);
+            await PayrollSyncHelper.SyncPayrollRunsForJournalEntryAsync(_db, _core, entry);
             return Ok(entry);
         } catch (InvalidOperationException ex) {
             return BadRequest(new { message = ex.Message });
@@ -349,36 +351,20 @@ public class JournalEntriesController : ControllerBase
             }
         }
 
-        // Reset payroll payment status if this was a payroll payment journal entry
-        var linkedPayrollItems = await _db.PayrollItems
-            .Where(i => i.PaymentJournalEntryId == id)
-            .ToListAsync();
-        if (linkedPayrollItems.Any())
-        {
-            foreach (var item in linkedPayrollItems)
-            {
-                item.IsPaid = false;
-                item.PaidAt = null;
-                item.PaymentJournalEntryId = null;
-            }
-        }
-
-        var linkedPayrollRuns = await _db.PayrollRuns
-            .Where(r => r.PaymentJournalEntryId == id)
-            .ToListAsync();
-        if (linkedPayrollRuns.Any())
-        {
-            foreach (var run in linkedPayrollRuns)
-            {
-                run.Status = PayrollStatus.Posted;
-                run.PaymentJournalEntryId = null;
-                run.UpdatedAt = TimeHelper.GetEgyptTime();
-            }
-        }
+        // Extract runs to sync before the entry is deleted
+        var textToSearch = $"{entry.Reference} {entry.Description} {string.Join(" ", entry.Lines.Select(l => l.Description))}".ToLower();
+        var payrollRuns = await _db.PayrollRuns.Where(r => r.Status != PayrollStatus.Draft).ToListAsync();
+        var runsToSync = payrollRuns.Where(r => textToSearch.Contains(r.PayrollNumber.ToLower())).ToList();
 
         _db.JournalLines.RemoveRange(entry.Lines);
         _db.JournalEntries.Remove(entry);
         await _db.SaveChangesAsync();
+
+        foreach (var run in runsToSync)
+        {
+            await PayrollSyncHelper.SyncPayrollRunPaymentsAsync(_db, _core, run.Id);
+        }
+
         return NoContent();
     }
 }

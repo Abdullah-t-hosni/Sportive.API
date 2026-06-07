@@ -56,41 +56,8 @@ public class PayrollController : ControllerBase
             .FirstOrDefaultAsync(p => p.Id == id);
         if (run == null) return NotFound();
 
-        // Proactive self-healing check for deleted payment journal entries
-        bool hasChanges = false;
-        foreach (var item in run.Items.Where(i => i.IsPaid && i.PaymentJournalEntryId.HasValue))
-        {
-            var exists = await _db.JournalEntries.AnyAsync(je => je.Id == item.PaymentJournalEntryId.Value);
-            if (!exists)
-            {
-                item.IsPaid = false;
-                item.PaidAt = null;
-                item.PaymentJournalEntryId = null;
-                hasChanges = true;
-            }
-        }
-
-        if (run.PaymentJournalEntryId.HasValue)
-        {
-            var exists = await _db.JournalEntries.AnyAsync(je => je.Id == run.PaymentJournalEntryId.Value);
-            if (!exists)
-            {
-                run.PaymentJournalEntryId = null;
-                hasChanges = true;
-            }
-        }
-
-        if (hasChanges)
-        {
-            // Recompute overall payroll run status if we reset items
-            bool allPaid = run.Items.All(i => i.IsPaid || i.NetPayable <= 0);
-            if (!allPaid && run.Status == PayrollStatus.Paid)
-            {
-                run.Status = PayrollStatus.Posted;
-            }
-            run.UpdatedAt = TimeHelper.GetEgyptTime();
-            await _db.SaveChangesAsync();
-        }
+        // Dynamically sync and self-heal manual and automatic payments
+        await PayrollSyncHelper.SyncPayrollRunPaymentsAsync(_db, _core, run.Id);
 
         return Ok(ToDto(run));
     }
@@ -1294,7 +1261,7 @@ public class PayrollController : ControllerBase
     public async Task<IActionResult> Pay(int id, [FromBody] PayPayrollDto dto)
     {
         var run = await _db.PayrollRuns
-            .Include(p => p.Items)
+            .Include(p => p.Items).ThenInclude(i => i.Employee)
             .FirstOrDefaultAsync(p => p.Id == id);
 
         if (run == null) return NotFound();
@@ -1306,6 +1273,13 @@ public class PayrollController : ControllerBase
         var cashAcc = await _db.Accounts.FindAsync(dto.CashAccountId);
         
         if (cashAcc == null) return BadRequest(new { message = _t.Get("Accounting.PaymentVoucher.AccountNotFound") });
+
+        // Filter items that have remaining amount to pay
+        var itemsToPay = run.Items.Where(i => (i.NetPayable - i.PaidAmount) > 0).ToList();
+        if (!itemsToPay.Any())
+        {
+            return BadRequest(new { message = "تم صرف كافة الرواتب في هذا المسير بالفعل." });
+        }
 
         var jeNo = await _seq.NextAsync("JE");
         var now = TimeHelper.GetEgyptTime();
@@ -1322,13 +1296,18 @@ public class PayrollController : ControllerBase
             Lines           = new List<JournalLine>()
         };
 
-        // 1. Debit Accrued Salaries (Clear Liability) - Distributed by Employee
-        foreach (var item in run.Items.Where(i => i.NetPayable > 0))
+        decimal payTotal = 0;
+
+        // 1. Debit Accrued Salaries (Clear Liability) - Distributed by Employee for remaining amounts
+        foreach (var item in itemsToPay)
         {
+            var remaining = item.NetPayable - item.PaidAmount;
+            payTotal += remaining;
+
             payJe.Lines.Add(new JournalLine
             {
                 AccountId = accrualAccId,
-                Debit     = item.NetPayable,
+                Debit     = remaining,
                 Credit    = 0,
                 Description = _t.Get("HR.PayrollPaymentLineDescription", item.Employee?.Name ?? "", run.PayrollNumber),
                 EmployeeId  = item.EmployeeId,
@@ -1341,16 +1320,25 @@ public class PayrollController : ControllerBase
         {
             AccountId = cashAcc.Id,
             Debit     = 0,
-            Credit    = run.TotalNetPayable,
+            Credit    = payTotal,
             Description = _t.Get("HR.PayrollPaymentFrom", cashAcc.NameAr)
         });
 
         _db.JournalEntries.Add(payJe);
         await _db.SaveChangesAsync();
 
+        // Mark items as paid
+        foreach (var item in itemsToPay)
+        {
+            item.PaidAmount = item.NetPayable;
+            item.IsPaid = true;
+            item.PaidAt = now;
+            item.PaymentJournalEntryId = payJe.Id;
+        }
+
         run.Status = PayrollStatus.Paid;
         run.PaymentJournalEntryId = payJe.Id;
-        run.UpdatedAt = TimeHelper.GetEgyptTime();
+        run.UpdatedAt = now;
         await _db.SaveChangesAsync();
 
         return Ok(new { id = run.Id, status = (int)run.Status, paymentJournalEntryId = payJe.Id });
@@ -1360,7 +1348,7 @@ public class PayrollController : ControllerBase
     [HttpPost("{id}/pay-partial")]
     public async Task<IActionResult> PayPartial(int id, [FromBody] PayPartialPayrollDto dto)
     {
-        if (dto.ItemIds == null || !dto.ItemIds.Any())
+        if (dto.Items == null || !dto.Items.Any())
             return BadRequest(new { message = "يجب اختيار موظف واحد على الأقل للصرف." });
 
         var run = await _db.PayrollRuns
@@ -1371,20 +1359,39 @@ public class PayrollController : ControllerBase
         if (run.Status != PayrollStatus.Posted)
             return BadRequest(new { message = _t.Get("HR.PayrollMustBePostedToPay") });
 
-        // التحقق من البنود المطلوبة وأنها غير مدفوعة
+        // Retrieve items to pay by finding their matching IDs in dto.Items
+        var inputItemIds = dto.Items.Select(x => x.ItemId).ToList();
         var itemsToPay = run.Items
-            .Where(i => dto.ItemIds.Contains(i.Id) && !i.IsPaid && i.NetPayable > 0)
+            .Where(i => inputItemIds.Contains(i.Id) && !i.IsPaid && i.NetPayable > 0)
             .ToList();
 
         if (!itemsToPay.Any())
             return BadRequest(new { message = "لا توجد بنود صالحة للصرف. ربما تم صرف هذه البنود مسبقاً." });
+
+        // Create a dictionary for quick lookup of amount to pay
+        var amountMap = dto.Items.ToDictionary(x => x.ItemId, x => x.AmountToPay);
+
+        // Validate that amounts to pay are positive and don't exceed the remaining payable
+        foreach (var item in itemsToPay)
+        {
+            if (!amountMap.TryGetValue(item.Id, out var amountToPay) || amountToPay <= 0)
+            {
+                return BadRequest(new { message = $"يجب تحديد مبلغ صرف صالح أكبر من الصفر للموظف {item.Employee?.Name}." });
+            }
+
+            var remaining = item.NetPayable - item.PaidAmount;
+            if (amountToPay > remaining)
+            {
+                return BadRequest(new { message = $"المبلغ المحدد للصرف ({amountToPay}) يتجاوز المتبقي للموظف {item.Employee?.Name} وهو ({remaining})." });
+            }
+        }
 
         var mapDict  = await _core.GetSafeSystemMappingsAsync();
         var accrualAccId = run.AccruedSalariesAccountId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.SalariesPayable, mapDict);
         var cashAcc  = await _db.Accounts.FindAsync(dto.CashAccountId);
         if (cashAcc == null) return BadRequest(new { message = _t.Get("Accounting.PaymentVoucher.AccountNotFound") });
 
-        var partialTotal = itemsToPay.Sum(i => i.NetPayable);
+        decimal partialTotal = 0;
         var jeNo = await _seq.NextAsync("JE");
         var now  = TimeHelper.GetEgyptTime();
 
@@ -1402,14 +1409,16 @@ public class PayrollController : ControllerBase
             Lines           = new List<JournalLine>()
         };
 
-        // 1. مدين: رواتب مستحقة (تصفية الالتزام) — لكل موظف منفرداً
+        // 1. مدين: رواتب مستحقة (تصفية الالتزام) — لكل موظف منفرداً بالمبلغ المصروف له
         foreach (var item in itemsToPay)
         {
+            var amountToPay = amountMap[item.Id];
+            partialTotal += amountToPay;
             var employeeCC = item.Employee?.CostCenter ?? OrderSource.General;
             payJe.Lines.Add(new JournalLine
             {
                 AccountId   = accrualAccId,
-                Debit       = item.NetPayable,
+                Debit       = amountToPay,
                 Credit      = 0,
                 Description = _t.Get("HR.PayrollPaymentLineDescription", item.Employee?.Name ?? "", run.PayrollNumber),
                 EmployeeId  = item.EmployeeId,
@@ -1429,11 +1438,16 @@ public class PayrollController : ControllerBase
         _db.JournalEntries.Add(payJe);
         await _db.SaveChangesAsync();
 
-        // علّم البنود المدفوعة
+        // علّم البنود المدفوعة وتحديث القيمة المصروفة
         foreach (var item in itemsToPay)
         {
-            item.IsPaid                = true;
-            item.PaidAt                = now;
+            var amountToPay = amountMap[item.Id];
+            item.PaidAmount += amountToPay;
+            if (item.PaidAmount >= item.NetPayable)
+            {
+                item.IsPaid = true;
+                item.PaidAt = now;
+            }
             item.PaymentJournalEntryId = payJe.Id;
         }
 
@@ -1627,7 +1641,7 @@ public class PayrollController : ControllerBase
             i.FixedAllowance,
             i.DeductionAmount, i.AdvanceDeducted, i.AbsenceDays, i.AbsenceDeduction, i.OvertimeHours, i.OvertimeAmount, i.CommissionAmount, i.NetPayable, i.Notes,
             i.IsPaid, i.PaidAt, i.PaymentJournalEntryId,
-            GeneratePayslipHash(i.Id)
+            GeneratePayslipHash(i.Id), i.PaidAmount
         )).ToList(),
         run.Items.Count(i => i.IsPaid)
     );

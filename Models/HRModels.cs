@@ -223,6 +223,7 @@ public class PayrollItem : BaseEntity
 
     // Partial payment tracking
     public bool      IsPaid               { get; set; } = false;
+    public decimal   PaidAmount           { get; set; } = 0;
     public DateTime? PaidAt               { get; set; }
     public int?      PaymentJournalEntryId { get; set; }
 }

@@ -21,12 +21,14 @@ public class PaymentVouchersController : ControllerBase
     private readonly AppDbContext _db;
     private readonly SequenceService _seq;
     private readonly IPdfService _pdf;
-    public PaymentVouchersController(IAccountingService accounting, AppDbContext db, SequenceService seq, IPdfService pdf, ITranslator t) {
+    private readonly AccountingCoreService _core;
+    public PaymentVouchersController(IAccountingService accounting, AppDbContext db, SequenceService seq, IPdfService pdf, ITranslator t, AccountingCoreService core) {
         _accounting = accounting;
         _db = db;
         _seq = seq;
         _pdf = pdf;
         _t = t;
+        _core = core;
     }
 
     [HttpGet("{id}/pdf")]
@@ -149,6 +151,15 @@ public class PaymentVouchersController : ControllerBase
         await _db.SaveChangesAsync();
         await _accounting.PostPaymentVoucherAsync(voucher);
 
+        if (voucher.JournalEntryId.HasValue)
+        {
+            var je = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Id == voucher.JournalEntryId.Value);
+            if (je != null)
+            {
+                await PayrollSyncHelper.SyncPayrollRunsForJournalEntryAsync(_db, _core, je);
+            }
+        }
+
         var employeeAdvancesAccountId = await _db.AccountSystemMappings
             .Where(m => m.Key == MappingKeys.EmployeeAdvances.ToLower())
             .Select(m => m.AccountId)
@@ -236,6 +247,12 @@ public class PaymentVouchersController : ControllerBase
 
         await _db.SaveChangesAsync();
         await _accounting.SyncEntityBalancesAsync();
+
+        if (entry != null)
+        {
+            await PayrollSyncHelper.SyncPayrollRunsForJournalEntryAsync(_db, _core, entry);
+        }
+
         return Ok(voucher);
     }
 
@@ -249,6 +266,14 @@ public class PaymentVouchersController : ControllerBase
         if (entry != null && entry.Status == JournalEntryStatus.Posted && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin"))) {
             await _accounting.ReverseEntryAsync(entry.Id, _t.Get("Accounting.PaymentVoucher.ReverseLog"));
             return Ok(new { message = _t.Get("Accounting.ReceiptVoucher.ReverseSuccess") });
+        }
+
+        List<PayrollRun> runsToSync = new();
+        if (entry != null)
+        {
+            var textToSearch = $"{entry.Reference} {entry.Description} {string.Join(" ", entry.Lines.Select(l => l.Description))}".ToLower();
+            var payrollRuns = await _db.PayrollRuns.Where(r => r.Status != PayrollStatus.Draft).ToListAsync();
+            runsToSync = payrollRuns.Where(r => textToSearch.Contains(r.PayrollNumber.ToLower())).ToList();
         }
 
         _db.PaymentVouchers.Remove(voucher);
@@ -271,6 +296,12 @@ public class PaymentVouchersController : ControllerBase
         }
         await _db.SaveChangesAsync();
         await _accounting.SyncEntityBalancesAsync();
+
+        foreach (var run in runsToSync)
+        {
+            await PayrollSyncHelper.SyncPayrollRunPaymentsAsync(_db, _core, run.Id);
+        }
+
         return NoContent();
     }
 }

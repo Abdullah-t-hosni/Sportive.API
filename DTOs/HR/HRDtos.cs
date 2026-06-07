@@ -146,12 +146,17 @@ public record PayPayrollDto(
     string?  Notes = null
 );
 
-// صرف جزئي — يحدد المستخدم قائمة من PayrollItem IDs
+public record PayPartialItemDto(
+    int     ItemId,
+    decimal AmountToPay
+);
+
+// صرف جزئي — يحدد المستخدم قائمة من الموظفين والمبالغ المراد صرفها لكل منهم
 public record PayPartialPayrollDto(
-    int         CashAccountId,
-    DateTime    PaymentDate,
-    List<int>   ItemIds,
-    string?     Notes = null
+    int                     CashAccountId,
+    DateTime                PaymentDate,
+    List<PayPartialItemDto> Items,
+    string?                 Notes = null
 );
 
 public record CreatePayrollItemDto(
@@ -218,7 +223,8 @@ public record PayrollItemDto(
     bool     IsPaid               = false,
     DateTime? PaidAt              = null,
     int?     PaymentJournalEntryId = null,
-    string?  ShareHash            = null
+    string?  ShareHash            = null,
+    decimal  PaidAmount           = 0
 );
 
 public record PayrollRunSummaryDto(

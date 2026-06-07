@@ -40,6 +40,7 @@ public class JournalAccountingService
         entry.Status = JournalEntryStatus.Reversed;
         _db.JournalEntries.Add(reversal);
         await _db.SaveChangesAsync();
+        await PayrollSyncHelper.SyncPayrollRunsForJournalEntryAsync(_db, _core, entry);
     }
 
     public async Task<JournalEntry> PostManualEntryAsync(CreateJournalEntryDto dto, ClaimsPrincipal? user)
