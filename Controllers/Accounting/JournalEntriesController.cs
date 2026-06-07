@@ -20,13 +20,15 @@ public class JournalEntriesController : ControllerBase
     private readonly IPdfService _pdf;
     private readonly ITranslator _t;
     private readonly SequenceService _seq;
-    public JournalEntriesController(IAccountingService accounting, AppDbContext db, IPdfService pdf, ITranslator t, SequenceService seq)
+    private readonly AccountingCoreService _core;
+    public JournalEntriesController(IAccountingService accounting, AppDbContext db, IPdfService pdf, ITranslator t, SequenceService seq, AccountingCoreService core)
     {
         _accounting = accounting;
         _db = db;
         _pdf = pdf;
         _t = t;
         _seq = seq;
+        _core = core;
     }
 
     [HttpGet("{id}/pdf")]
