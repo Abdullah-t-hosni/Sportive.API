@@ -401,7 +401,8 @@ public class EmployeesController : ControllerBase
                 l.Debit,
                 l.Credit,
                 runningBalance,
-                Notes: rowNotes
+                Notes: rowNotes,
+                JournalEntryId: l.JournalEntryId
             ));
         }
 
@@ -489,7 +490,8 @@ public class EmployeesController : ControllerBase
                 finalDesc,
                 l.Debit,
                 l.Credit,
-                runningBalance
+                runningBalance,
+                JournalEntryId: l.JournalEntryId
             ));
         }
 

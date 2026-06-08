@@ -358,7 +358,8 @@ public record EmployeeStatementRowDto(
     int?     PeriodMonth   = null,
     string?  PayrollNumber = null,
     decimal? NetPayable    = null,
-    string?  Notes         = null
+    string?  Notes         = null,
+    int?     JournalEntryId = null
 );
 
 public record EmployeeStatementDto(

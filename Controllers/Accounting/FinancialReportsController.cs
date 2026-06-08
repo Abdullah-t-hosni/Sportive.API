@@ -1292,7 +1292,8 @@ public class FinancialReportsController : ControllerBase
                 finalDesc,
                 l.Debit,
                 l.Credit,
-                runBal
+                runBal,
+                JournalEntryId: l.JournalEntryId
             ));
         }
 
