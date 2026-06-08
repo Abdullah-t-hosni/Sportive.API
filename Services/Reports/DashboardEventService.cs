@@ -46,27 +46,33 @@ namespace Sportive.API.Services
 
         public void TriggerImmediateProcessing()
         {
-            // ⚡ Debouncing Trigger: Avoid "Trigger Storms" under high load (e.g. POS)
-            var debounceKey = "DASHBOARD_OUTBOX_TRIGGER_LOCK";
-            
-            // Only trigger if not already triggered in the last 2 seconds
-            if (_cache.GetOrCreateAsync(debounceKey, () => Task.FromResult(true), TimeSpan.FromSeconds(2)).Result)
+            _ = Task.Run(async () =>
             {
-                _ = Task.Run(async () =>
+                try
                 {
-                    try
+                    // ⚡ Debouncing Trigger: Avoid "Trigger Storms" under high load (e.g. POS)
+                    var debounceKey = "DASHBOARD_OUTBOX_TRIGGER_LOCK";
+                    
+                    var isProcessing = await _cache.GetAsync<string>(debounceKey);
+                    if (isProcessing != null)
                     {
-                        using var scope = _scopeFactory.CreateScope();
-                        var processor = scope.ServiceProvider.GetRequiredService<IOutboxProcessor>();
-                        await processor.ProcessMessagesAsync();
+                        return; // already triggered recently, skip/debounce
                     }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Background outbox processing failed.");
-                    }
-                });
-                _logger.LogDebug("Triggered immediate outbox processing (debounced via Task.Run)");
-            }
+
+                    // Set debounce lock for 2 seconds
+                    await _cache.SetAsync(debounceKey, "locked", TimeSpan.FromSeconds(2));
+
+                    using var scope = _scopeFactory.CreateScope();
+                    var processor = scope.ServiceProvider.GetRequiredService<IOutboxProcessor>();
+                    await processor.ProcessMessagesAsync();
+                    
+                    _logger.LogDebug("Triggered immediate outbox processing (debounced via Task.Run)");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Background outbox processing failed.");
+                }
+            });
         }
     }
 }
