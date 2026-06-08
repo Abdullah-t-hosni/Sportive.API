@@ -362,28 +362,28 @@ public class EmployeesController : ControllerBase
         {
             runningBalance += (l.Debit - l.Credit);
             
-            string detailDesc = "";
+            string? rowNotes = null;
             var refNo = l.JournalEntry.Reference ?? "";
             if (refNo.StartsWith("ADV-") && advances.TryGetValue(refNo, out var advInfo))
             {
                 var parts = new List<string>();
                 if (!string.IsNullOrEmpty(advInfo.Reason)) parts.Add(advInfo.Reason);
                 if (!string.IsNullOrEmpty(advInfo.Notes)) parts.Add(advInfo.Notes);
-                detailDesc = parts.Count > 0 ? $" ({string.Join(" - ", parts)})" : "";
+                rowNotes = parts.Count > 0 ? string.Join(" - ", parts) : null;
             }
             else if (refNo.StartsWith("BON-") && bonuses.TryGetValue(refNo, out var bonInfo))
             {
                 var parts = new List<string>();
                 if (!string.IsNullOrEmpty(bonInfo.Reason)) parts.Add(bonInfo.Reason);
                 if (!string.IsNullOrEmpty(bonInfo.Notes)) parts.Add(bonInfo.Notes);
-                detailDesc = parts.Count > 0 ? $" ({string.Join(" - ", parts)})" : "";
+                rowNotes = parts.Count > 0 ? string.Join(" - ", parts) : null;
             }
             else if (refNo.StartsWith("DED-") && deductions.TryGetValue(refNo, out var dedInfo))
             {
                 var parts = new List<string>();
                 if (!string.IsNullOrEmpty(dedInfo.Reason)) parts.Add(dedInfo.Reason);
                 if (!string.IsNullOrEmpty(dedInfo.Notes)) parts.Add(dedInfo.Notes);
-                detailDesc = parts.Count > 0 ? $" ({string.Join(" - ", parts)})" : "";
+                rowNotes = parts.Count > 0 ? string.Join(" - ", parts) : null;
             }
 
             var mainDesc = l.Description ?? l.JournalEntry.Description ?? "";
@@ -393,16 +393,15 @@ public class EmployeesController : ControllerBase
                 mainDesc = l.JournalEntry.Description;
             }
 
-            var finalDesc = mainDesc + detailDesc;
-
             rows.Add(new EmployeeStatementRowDto(
                 l.JournalEntry.EntryDate,
                 l.JournalEntry.EntryNumber,
                 l.JournalEntry.Type.ToString(),
-                finalDesc,
+                mainDesc,
                 l.Debit,
                 l.Credit,
-                runningBalance
+                runningBalance,
+                Notes: rowNotes
             ));
         }
 
