@@ -313,9 +313,9 @@ public class EmployeesController : ControllerBase
         if (mapDict.TryGetValue(MappingKeys.EmployeeBonuses.ToLower(), out var s3) && s3.HasValue) hrAccountIds.Add(s3.Value);
         if (mapDict.TryGetValue(MappingKeys.EmployeeDeductions.ToLower(), out var s4) && s4.HasValue) hrAccountIds.Add(s4.Value);
 
-        // Normalize dates to cover full calendar days (from midnight to end of day)
-        var egyptFrom = from.Date;  // Start of day: 00:00:00
-        var egyptTo   = to.Date.AddDays(1).AddTicks(-1); // End of day: 23:59:59.999
+        // Normalize dates to match Egyptian business day ranges (from 2 AM to 2 AM of next day)
+        var egyptFrom = from.Date.AddHours(2);
+        var egyptTo   = to.Date.AddDays(1).AddHours(2).AddTicks(-1);
 
         if (id == 0) return await GetGeneralStatement(egyptFrom, egyptTo, hrAccountIds);
 
