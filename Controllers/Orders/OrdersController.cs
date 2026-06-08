@@ -51,10 +51,11 @@ public class OrdersController : ControllerBase
         [FromQuery] OrderStatus? status = null, [FromQuery] string? search = null,
         [FromQuery] int? customerId = null, [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null, [FromQuery] string? salesPersonId = null,
-        [FromQuery] OrderSource? source = null, [FromQuery] PaymentMethod? paymentMethod = null)
+        [FromQuery] OrderSource? source = null, [FromQuery] PaymentMethod? paymentMethod = null,
+        [FromQuery] string? orderBy = null, [FromQuery] bool descending = false)
     {
         pageSize = Math.Clamp(pageSize, 1, 2000);
-        var result = await _orderService.GetOrdersAsync(page, pageSize, status, search, customerId, fromDate, toDate, salesPersonId, source, paymentMethod);
+        var result = await _orderService.GetOrdersAsync(page, pageSize, status, search, customerId, fromDate, toDate, salesPersonId, source, paymentMethod, orderBy, descending);
         return Ok(result);
     }
 

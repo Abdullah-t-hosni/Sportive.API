@@ -150,6 +150,26 @@ using (var scope = app.Services.CreateScope())
             Log.Information("Applying pending migrations...");
             context.Database.Migrate();
             Log.Information("Database is up to date.");
+
+            try
+            {
+                Log.Information("Syncing UpdatedAt for existing returned orders...");
+                var rowsAffected = await context.Database.ExecuteSqlRawAsync(@"
+                    UPDATE Orders
+                    SET UpdatedAt = (
+                        SELECT MAX(CreatedAt)
+                        FROM OrderStatusHistory
+                        WHERE OrderId = Orders.Id
+                          AND (Status = 8 OR Status = 9)
+                    )
+                    WHERE (Status = 8 OR Status = 9) AND UpdatedAt IS NULL;
+                ");
+                Log.Information("Synced UpdatedAt for {Count} returned orders.", rowsAffected);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Failed to sync UpdatedAt for returned orders on startup.");
+            }
         }
     }
     catch (Exception ex)

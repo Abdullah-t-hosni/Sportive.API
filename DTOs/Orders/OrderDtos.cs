@@ -147,7 +147,8 @@ public record OrderSummaryDto(
     decimal? ReturnedAmount,
     string? SalesPersonId,
     decimal? DiscountAmount = 0,
-    decimal? TemporalDiscount = 0
+    decimal? TemporalDiscount = 0,
+    DateTime? UpdatedAt = null
 );
 
 

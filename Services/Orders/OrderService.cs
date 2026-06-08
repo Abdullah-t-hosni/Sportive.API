@@ -62,7 +62,8 @@ public class OrderService : IOrderService
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
         int page, int pageSize, OrderStatus? status = null, string? search = null,
-        int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null, OrderSource? source = null, PaymentMethod? paymentMethod = null)
+        int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null, OrderSource? source = null, PaymentMethod? paymentMethod = null,
+        string? orderBy = null, bool descending = false)
     {
         pageSize = Math.Clamp(pageSize, 1, 2000);
         var query = _db.Orders
@@ -89,8 +90,19 @@ public class OrderService : IOrderService
         }
 
         var total = await query.CountAsync();
+
+        if (!string.IsNullOrEmpty(orderBy) && orderBy.Equals("updatedAt", StringComparison.OrdinalIgnoreCase))
+        {
+            query = descending 
+                ? query.OrderByDescending(o => o.UpdatedAt ?? o.CreatedAt)
+                : query.OrderBy(o => o.UpdatedAt ?? o.CreatedAt);
+        }
+        else
+        {
+            query = query.OrderByDescending(o => o.CreatedAt);
+        }
+
         var items = await query
-            .OrderByDescending(o => o.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(o => new OrderSummaryDto(
@@ -114,7 +126,8 @@ public class OrderService : IOrderService
                 o.Items.Sum(i => (decimal?)i.ReturnedQuantity * i.UnitPrice) ?? 0,
                 o.SalesPersonId,
                 o.DiscountAmount,
-                o.TemporalDiscount
+                o.TemporalDiscount,
+                o.UpdatedAt
             ))
             .ToListAsync();
 
@@ -1696,6 +1709,8 @@ public class OrderService : IOrderService
                     CreatedAt = TimeHelper.GetEgyptTime()
                 });
 
+                order.UpdatedAt = TimeHelper.GetEgyptTime();
+
                 await _db.SaveChangesAsync();
                 await tx.CommitAsync();
                 return (await GetOrderByIdAsync(orderId))!;
@@ -2268,6 +2283,8 @@ public class OrderService : IOrderService
                             ChangedByUserId = updatedByUserId,
                             CreatedAt = returnDate
                         });
+
+                        order.UpdatedAt = returnDate;
 
                         await _db.SaveChangesAsync();
 

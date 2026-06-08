@@ -1096,7 +1096,8 @@ public class DashboardService : IDashboardService
             o.Items.Where(i => i.ReturnedQuantity > 0).Sum(i => i.ReturnedQuantity * i.UnitPrice),
             o.SalesPersonId,
             o.DiscountAmount,
-            o.TemporalDiscount))
+            o.TemporalDiscount,
+            o.UpdatedAt))
             .ToList();
     }
 }
