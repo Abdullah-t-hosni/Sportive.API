@@ -143,7 +143,7 @@ public class AuthService : IAuthService
         return await LoginInternalAsync(user);
     }
 
-    private async Task<AuthResponseDto> LoginInternalAsync(AppUser user, UserSession? existingSession = null)
+    private async Task<AuthResponseDto> LoginInternalAsync(AppUser user, UserSession? existingSession = null, string? currentRawRefreshToken = null)
     {
         var roles = await _userManager.GetRolesAsync(user);
         var claims = new List<Claim>
@@ -212,14 +212,17 @@ public class AuthService : IAuthService
             .ToListAsync();
 
         // ── Generate User Session ──
-        var refreshToken = GenerateSecureRefreshToken();
+        var refreshToken = currentRawRefreshToken ?? GenerateSecureRefreshToken();
         var hashedRefreshToken = HashRefreshToken(refreshToken);
         Guid sessionId;
 
         if (existingSession != null)
         {
             var (deviceName, fingerprint) = ParseDeviceAndFingerprint();
-            existingSession.RefreshTokenHash = hashedRefreshToken;
+            if (currentRawRefreshToken == null)
+            {
+                existingSession.RefreshTokenHash = hashedRefreshToken;
+            }
             existingSession.ExpiresAt = DateTime.UtcNow.AddDays(30);
             existingSession.LastSeen = TimeHelper.GetEgyptTime();
             existingSession.IpAddress = _httpContextAccessor.HttpContext?.Connection?.RemoteIpAddress?.ToString() ?? "Unknown";
@@ -316,7 +319,7 @@ public class AuthService : IAuthService
             if (user == null || !user.IsActive)
                 throw new UnauthorizedAccessException(_t.Get("Auth.RefreshTokenInvalid"));
 
-            return await LoginInternalAsync(user, session);
+            return await LoginInternalAsync(user, session, refreshToken);
         }
 
         // 2. Migration Fallback: Check AspNetUsers (AppUser)
@@ -358,7 +361,7 @@ public class AuthService : IAuthService
                 await _userManager.UpdateAsync(fallbackUser);
                 await _db.SaveChangesAsync();
 
-                return await LoginInternalAsync(fallbackUser, newSession);
+                return await LoginInternalAsync(fallbackUser, newSession, refreshToken);
             }
         }
 
