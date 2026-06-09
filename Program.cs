@@ -158,11 +158,11 @@ using (var scope = app.Services.CreateScope())
                     UPDATE Orders
                     SET UpdatedAt = (
                         SELECT MAX(CreatedAt)
-                        FROM OrderStatusHistory
+                        FROM OrderStatusHistories
                         WHERE OrderId = Orders.Id
-                          AND (Status = 8 OR Status = 9)
+                          AND (Status = 'Returned' OR Status = 'PartiallyReturned')
                     )
-                    WHERE (Status = 8 OR Status = 9) AND UpdatedAt IS NULL;
+                    WHERE (Status = 'Returned' OR Status = 'PartiallyReturned') AND UpdatedAt IS NULL;
                 ");
                 Log.Information("Synced UpdatedAt for {Count} returned orders.", rowsAffected);
             }
