@@ -929,6 +929,7 @@ public class DashboardService : IDashboardService
             .ToList();
 
         var totalDebts = customerBalances.Where(x => x.Balance > 0.01M).Sum(x => x.Balance);
+        var totalSupplierDebts = supplierBalances.Where(x => x.Balance > 0.01M).Sum(x => x.Balance);
 
         // ── 7. توزيع طرق الدفع ──────────
         var todayPaymentsRaw = await _db.OrderPayments.AsNoTracking()
@@ -961,7 +962,7 @@ public class DashboardService : IDashboardService
             },
             topProducts = topProducts.Select(p => new { p.ProductId, p.ProductNameAr, p.ProductNameEn, p.TotalSold, p.TotalRevenue, p.OrderCount, image = imagesMap.GetValueOrDefault(p.ProductId) }),
             charts = new { byHour = salesByHour, byDay = salesByDay, income = incomeChartData },
-            aging = new { debtors = topDebtors, creditors = topCreditors, sales = new { total = totalDebts } },
+            aging = new { debtors = topDebtors, creditors = topCreditors, sales = new { total = totalDebts }, creditorsTotal = totalSupplierDebts },
             paymentBreakdown = todayPaymentBreakdown,
             insights = new {
                 peakHour = salesByHourRaw.OrderByDescending(x => x.revenue).FirstOrDefault()?.hour ?? 0,
