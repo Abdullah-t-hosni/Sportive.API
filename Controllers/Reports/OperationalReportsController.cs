@@ -1267,6 +1267,8 @@ public class OperationalReportsController : ControllerBase
                     .Select(h => h.ChangedByUserId)
                     .FirstOrDefault() ?? j.CreatedByUserId : j.CreatedByUserId,
                 SalesPersonId = j.Order != null ? j.Order.SalesPersonId : null,
+                RefundMethod = j.Lines.Where(l => l.Credit > 0 && l.Account != null).Select(l => l.Account.NameAr).FirstOrDefault() ?? "نقدي",
+                OrderStatus = j.Order != null ? j.Order.Status.ToString() : "",
                 Items = j.Order != null ? j.Order.Items
                     .Where(i => i.ReturnedQuantity > 0)
                     .Where(i => 
@@ -1369,7 +1371,9 @@ public class OperationalReportsController : ControllerBase
                 itemsList,
                 j.OrderId,
                 (j.SalesPersonId != null && personNamesMap.TryGetValue(j.SalesPersonId, out var creator)) ? creator : "System/Unknown",
-                (j.CreatedByUserId != null && personNamesMap.TryGetValue(j.CreatedByUserId, out var returner)) ? returner : "System/Unknown"
+                (j.CreatedByUserId != null && personNamesMap.TryGetValue(j.CreatedByUserId, out var returner)) ? returner : "System/Unknown",
+                j.RefundMethod,
+                j.OrderStatus
             );
         }).ToList();
 
@@ -3468,7 +3472,7 @@ public record InventoryRow(int Id, string NameAr, string NameEn, string SKU, str
 public record VariantInventoryRow(int Id, string Size, string Color, string ColorAr, int StockQuantity, decimal Price, decimal Value);
 public record SalesRow(int Id, string OrderNumber, DateTime Date, string CustomerName, string Phone, string Source, string Status, string PaymentMethod, decimal SubTotal, decimal DiscountAmount, decimal TotalAmount, int ItemCount, List<ReportItemDto>? Items = null, string? PaymentDetails = null);
 public record PurchaseRow(int Id, string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal ReturnedAmount, decimal PaidAmount, decimal RemainingAmount, List<ReportItemDto>? Items = null);
-public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason, List<ReportItemDto>? Items = null, int? OrderId = null, string CreatorName = "", string ReturnerName = "");
+public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason, List<ReportItemDto>? Items = null, int? OrderId = null, string CreatorName = "", string ReturnerName = "", string RefundMethod = "", string OrderStatus = "");
 public record ReportItemDto(string SKU, string ProductName, string Size, string Color, decimal Quantity, decimal UnitPrice = 0, decimal UnitCost = 0, decimal Discount = 0, decimal LineTotal = 0);
 public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal GrossSales, decimal TotalReturns, decimal TotalDiscount, decimal NetSales, int Cancellations);
 public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "", int Balance = 0, int? SourceId = null, string Size = "", string Color = "");
