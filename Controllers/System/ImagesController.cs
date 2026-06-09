@@ -1,6 +1,7 @@
 using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.Services;
@@ -203,5 +204,94 @@ public class ImagesController : ControllerBase
         await _db.SaveChangesAsync();
         return NoContent();
     }
-}
 
+    // ══════════════════════════════════════════════════════
+    // Multi-Attachment Endpoints (EntityAttachments table)
+    // ══════════════════════════════════════════════════════
+
+    private static readonly HashSet<string> AllowedEntityTypes = new(StringComparer.OrdinalIgnoreCase)
+        { "order", "purchase", "journalentry", "assetpurchase" };
+
+    /// <summary>رفع مرفق جديد لـ entity (يضاف للقائمة ولا يستبدل)</summary>
+    [Authorize]
+    [HttpPost("entity-attachments/{type}/{id}")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> UploadEntityAttachment(
+        [FromRoute] string type, [FromRoute] int id, [FromForm] IFormFile file)
+    {
+        if (!AllowedEntityTypes.Contains(type))
+            return BadRequest(new { message = $"Entity type '{type}' is not supported" });
+
+        var result = await _images.UploadAttachmentAsync(file, $"{type}/{id}");
+        if (!result.Success) return BadRequest(new { message = result.Error });
+
+        var attachment = new EntityAttachment
+        {
+            EntityType       = type.ToLower(),
+            EntityId         = id,
+            Url              = result.Url!,
+            PublicId         = result.PublicId,
+            FileName         = file.FileName,
+            ContentType      = file.ContentType,
+            FileSizeBytes    = file.Length,
+            UploadedByUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+        };
+
+        _db.EntityAttachments.Add(attachment);
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            attachment.Id,
+            attachment.Url,
+            attachment.PublicId,
+            attachment.FileName,
+            attachment.ContentType,
+            attachment.FileSizeBytes,
+            attachment.CreatedAt
+        });
+    }
+
+    /// <summary>جلب كل المرفقات لـ entity معين</summary>
+    [Authorize]
+    [HttpGet("entity-attachments/{type}/{id}")]
+    public async Task<IActionResult> GetEntityAttachments(
+        [FromRoute] string type, [FromRoute] int id)
+    {
+        if (!AllowedEntityTypes.Contains(type))
+            return BadRequest(new { message = $"Entity type '{type}' is not supported" });
+
+        var attachments = await _db.EntityAttachments
+            .AsNoTracking()
+            .Where(a => a.EntityType == type.ToLower() && a.EntityId == id)
+            .OrderBy(a => a.CreatedAt)
+            .Select(a => new
+            {
+                a.Id,
+                a.Url,
+                a.FileName,
+                a.ContentType,
+                a.FileSizeBytes,
+                a.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(attachments);
+    }
+
+    /// <summary>حذف مرفق واحد بالـ ID</summary>
+    [Authorize]
+    [HttpDelete("entity-attachments/{attachmentId:int}")]
+    public async Task<IActionResult> DeleteEntityAttachment([FromRoute] int attachmentId)
+    {
+        var attachment = await _db.EntityAttachments.FindAsync(attachmentId);
+        if (attachment == null) return NotFound();
+
+        if (!string.IsNullOrEmpty(attachment.PublicId))
+            await _images.DeleteImageAsync(attachment.PublicId);
+
+        _db.EntityAttachments.Remove(attachment);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+}

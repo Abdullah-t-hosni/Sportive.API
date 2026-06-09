@@ -42,6 +42,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<POSShiftClosure> POSShiftClosures => Set<POSShiftClosure>();
     public DbSet<UserSession> UserSessions      => Set<UserSession>();
     public DbSet<SecurityEvent> SecurityEvents    => Set<SecurityEvent>();
+    public DbSet<EntityAttachment> EntityAttachments => Set<EntityAttachment>();
 
     public DbSet<Supplier>             Suppliers            { get; set; }
     public DbSet<PurchaseInvoice>      PurchaseInvoices     { get; set; }
