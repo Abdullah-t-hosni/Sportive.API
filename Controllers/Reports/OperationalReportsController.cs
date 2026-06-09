@@ -1216,6 +1216,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] string?   color      = null,
         [FromQuery] string?   size       = null,
         [FromQuery] OrderSource? source     = null,
+        [FromQuery] int       page       = 1,
+        [FromQuery] int       pageSize   = 50,
         [FromQuery] bool      excel      = false)
     {
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
@@ -1249,7 +1251,10 @@ public class OperationalReportsController : ControllerBase
         if (!string.IsNullOrEmpty(size))
             returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Size == size || (it.Size == null && it.Product != null && it.Product.Variants.Any(v => v.Size == size))));
 
-        var returns = await returnsQ
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var totalCount = await returnsQ.CountAsync();
+
+        var returnsQuery = returnsQ
             .Select(j => new {
                 j.Reference, j.EntryNumber, j.EntryDate,
                 OrderId = j.Order != null ? (int?)j.Order.Id : null,
@@ -1282,7 +1287,11 @@ public class OperationalReportsController : ControllerBase
                         i.Size, i.Color, i.ReturnedQuantity, i.UnitPrice, i.Quantity, i.DiscountAmount
                     }).ToList() : null
             })
-            .OrderByDescending(j => j.EntryDate).ToListAsync();
+            .OrderByDescending(j => j.EntryDate);
+
+        var returns = excel
+            ? await returnsQuery.ToListAsync()
+            : await returnsQuery.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
 
         var allReturnRefs = returns.Select(r => r.Reference ?? r.EntryNumber).ToList();
         var movements = await _db.InventoryMovements
@@ -1377,15 +1386,39 @@ public class OperationalReportsController : ControllerBase
             );
         }).ToList();
 
+        decimal totalAmount = 0;
+        if (totalCount > 0)
+        {
+            totalAmount = await returnsQ.Select(j => j.Lines
+                .Where(l => l.Debit > 0 && (!inventoryAccId.HasValue || l.AccountId != inventoryAccId.Value))
+                .Sum(l => (decimal?)l.Debit) ?? 0
+            ).SumAsync();
+        }
+
+        var totalReturnedItems = await _db.InventoryMovements
+            .Where(m => m.CreatedAt >= from && m.CreatedAt <= to && m.Type == InventoryMovementType.ReturnIn)
+            .SumAsync(m => (int?)m.Quantity) ?? 0;
+
         var summary = new {
-            count        = rows.Count,
-            totalAmount  = rows.Sum(r => r.Amount),
-            totalReturnedItems = rows.Sum(r => r.Items?.Sum(it => it.Quantity) ?? 0)
+            count        = totalCount,
+            totalAmount  = totalAmount,
+            totalReturnedItems = totalReturnedItems
         };
 
         if (excel) return ExcelReturns(rows, summary, from, to, "مرتجعات المبيعات");
 
-        return Ok(new { from, to, rows, summary });
+        return Ok(new { 
+            from, 
+            to, 
+            rows, 
+            summary,
+            pagination = new {
+                totalCount,
+                pageSize,
+                currentPage = page,
+                totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+            }
+        });
     }
 
     // ══════════════════════════════════════════════════════
@@ -1817,7 +1850,13 @@ public class OperationalReportsController : ControllerBase
             from, 
             to, 
             rows, 
-            movements = rows // Duplicate for compatibility with different report versions
+            movements = rows, // Duplicate for compatibility with different report versions
+            pagination = new {
+                totalCount,
+                pageSize,
+                currentPage = page,
+                totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+            }
         });
     }
 
@@ -3195,6 +3234,8 @@ public class OperationalReportsController : ControllerBase
     public async Task<IActionResult> InvoiceProfitability(
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
         [FromQuery] bool excel = false)
     {
         var now = TimeHelper.GetEgyptTime();
@@ -3324,7 +3365,10 @@ public class OperationalReportsController : ControllerBase
             return ExcelInvoiceProfitability(invoiceRows, totalInvoices, totalRevenue, totalCost, totalProfit, averageMargin, from, to);
         }
 
-        return Ok(new Sportive.API.DTOs.Reports.InvoiceProfitabilityReportDto {
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var paginatedRows = invoiceRows.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+        return Ok(new {
             FromDate = from,
             ToDate = to,
             TotalInvoices = totalInvoices,
@@ -3332,7 +3376,13 @@ public class OperationalReportsController : ControllerBase
             TotalCost = totalCost,
             TotalProfit = totalProfit,
             AverageMargin = averageMargin,
-            Invoices = invoiceRows
+            Invoices = paginatedRows,
+            Pagination = new {
+                TotalCount = totalInvoices,
+                PageSize = pageSize,
+                CurrentPage = page,
+                TotalPages = (int)Math.Ceiling(totalInvoices / (double)pageSize)
+            }
         });
     }
 

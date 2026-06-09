@@ -131,7 +131,10 @@ public class InventoryIntelligenceController : ControllerBase
         [FromQuery] int   threshold  = 2,
         [FromQuery] int?  categoryId = null,
         [FromQuery] int?  brandId    = null,
-        [FromQuery] bool  zeroOnly   = false)
+        [FromQuery] bool  zeroOnly   = false,
+        [FromQuery] int   page       = 1,
+        [FromQuery] int   pageSize   = 50,
+        [FromQuery] bool  excel      = false)
     {
         var q = _db.ProductVariants
             .Include(v => v.Product).ThenInclude(p => p!.Category)
@@ -156,7 +159,10 @@ public class InventoryIntelligenceController : ControllerBase
             q = q.Where(v => v.Product!.BrandId.HasValue && bIds.Contains(v.Product.BrandId.Value));
         }
 
-        var variants = await q
+        var totalAlerts = await q.CountAsync();
+        pageSize = Math.Clamp(pageSize, 1, 200);
+
+        var variantsQuery = q
             .OrderBy(v => v.StockQuantity)
             .ThenBy(v => v.Product!.NameAr)
             .Select(v => new
@@ -174,16 +180,25 @@ public class InventoryIntelligenceController : ControllerBase
                 isZero            = v.StockQuantity <= 0,
                 isCritical        = v.StockQuantity == 1,
                 costValue         = (decimal)v.StockQuantity * (v.Product!.CostPrice ?? 0)
-            })
-            .ToListAsync();
+            });
+
+        var variants = excel
+            ? await variantsQuery.ToListAsync()
+            : await variantsQuery.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
 
         return Ok(new
         {
             threshold,
-            totalAlerts    = variants.Count,
-            zeroStockCount = variants.Count(v => v.isZero),
-            criticalCount  = variants.Count(v => v.isCritical),
-            rows           = variants
+            totalAlerts    = totalAlerts,
+            zeroStockCount = await q.CountAsync(v => v.StockQuantity <= 0),
+            criticalCount  = await q.CountAsync(v => v.StockQuantity == 1),
+            rows           = variants,
+            pagination     = new {
+                totalCount = totalAlerts,
+                pageSize,
+                currentPage = page,
+                totalPages = (int)Math.Ceiling(totalAlerts / (double)pageSize)
+            }
         });
     }
 
