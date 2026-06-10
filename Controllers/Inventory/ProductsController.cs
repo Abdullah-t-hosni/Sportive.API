@@ -38,12 +38,12 @@ public class ProductsController : ControllerBase
     }
 
     [HttpGet("featured")]
-    public async Task<IActionResult> GetFeatured([FromQuery] int count = 8) =>
-        Ok(await _products.GetFeaturedProductsAsync(count));
+    public async Task<IActionResult> GetFeatured([FromQuery] int count = 8, [FromQuery] int? warehouseId = null) =>
+        Ok(await _products.GetFeaturedProductsAsync(count, warehouseId));
 
     [HttpGet("{id}/related")]
-    public async Task<IActionResult> GetRelated(int id, [FromQuery] int count = 4) =>
-        Ok(await _products.GetRelatedProductsAsync(id, count));
+    public async Task<IActionResult> GetRelated(int id, [FromQuery] int count = 4, [FromQuery] int? warehouseId = null) =>
+        Ok(await _products.GetRelatedProductsAsync(id, count, warehouseId));
 
     [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPost]

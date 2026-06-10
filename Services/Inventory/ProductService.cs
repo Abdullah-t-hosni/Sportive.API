@@ -39,7 +39,16 @@ public class ProductService : IProductService
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         if (store != null && store.HideOutOfStock && !filter.Status.HasValue && string.IsNullOrWhiteSpace(filter.Search))
         {
-            query = query.Where(p => p.TotalStock > 0);
+            if (filter.WarehouseId.HasValue)
+            {
+                query = query.Where(p => _db.ProductWarehouseStocks
+                    .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == filter.WarehouseId.Value)
+                    .Sum(w => (int?)w.Quantity) > 0);
+            }
+            else
+            {
+                query = query.Where(p => p.TotalStock > 0);
+            }
         }
 
         if (filter.Section.HasValue)
@@ -123,7 +132,18 @@ public class ProductService : IProductService
             query = query.Where(p => p.Status == filter.Status);
 
         if (filter.OnlyInStock == true)
-            query = query.Where(p => p.TotalStock > 0);
+        {
+            if (filter.WarehouseId.HasValue)
+            {
+                query = query.Where(p => _db.ProductWarehouseStocks
+                    .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == filter.WarehouseId.Value)
+                    .Sum(w => (int?)w.Quantity) > 0);
+            }
+            else
+            {
+                query = query.Where(p => p.TotalStock > 0);
+            }
+        }
 
         if (filter.OnlyPublic == true)
         {
@@ -682,15 +702,32 @@ public class ProductService : IProductService
         await _notifications.BroadcastStockUpdateAsync(productId, variantId, 0);
         return true;
     }
-    public async Task<List<ProductSummaryDto>> GetFeaturedProductsAsync(int count = 8)
+    public async Task<List<ProductSummaryDto>> GetFeaturedProductsAsync(int count = 8, int? warehouseId = null)
     {
         var now = TimeHelper.GetEgyptTime();
-        return await _db.Products
+        var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        var query = _db.Products
             .Include(p => p.Category)
             .Include(p => p.Brand)
             .Include(p => p.Images)
             .Include(p => p.Unit)
-            .Where(p => p.IsFeatured && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock))
+            .Where(p => p.IsFeatured && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock));
+
+        if (store != null && store.HideOutOfStock)
+        {
+            if (warehouseId.HasValue)
+            {
+                query = query.Where(p => _db.ProductWarehouseStocks
+                    .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == warehouseId.Value)
+                    .Sum(w => (int?)w.Quantity) > 0);
+            }
+            else
+            {
+                query = query.Where(p => p.TotalStock > 0);
+            }
+        }
+
+        return await query
             .Select(p => new {
                 p,
                 d = _db.ProductDiscounts
@@ -723,11 +760,19 @@ public class ProductService : IProductService
                 x.p.Status.ToString(),
                 x.p.AverageRating,
                 x.p.ReviewCount,
-                x.p.TotalStock,
+                warehouseId.HasValue 
+                    ? (_db.ProductWarehouseStocks.Where(w => w.ProductVariant.ProductId == x.p.Id && w.WarehouseId == warehouseId.Value).Sum(w => (int?)w.Quantity) ?? 0) 
+                    : x.p.TotalStock,
                 x.p.ReorderLevel,
                 x.p.SKU,
                 x.p.Variants != null && x.p.Variants.Any(),
-                x.p.Variants!.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList(),
+                x.p.Variants!.Select(v => new ProductVariantDto(
+                    v.Id, v.Size, v.Color, v.ColorAr, 
+                    warehouseId.HasValue 
+                        ? (_db.ProductWarehouseStocks.Where(w => w.ProductVariantId == v.Id && w.WarehouseId == warehouseId.Value).Select(w => w.Quantity).FirstOrDefault()) 
+                        : v.StockQuantity, 
+                    v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId
+                )).ToList(),
                 x.p.HasTax,
                 x.p.IsTaxInclusive,
                 x.p.VatRate,
@@ -742,18 +787,35 @@ public class ProductService : IProductService
             .ToListAsync();
     }
 
-    public async Task<List<ProductSummaryDto>> GetRelatedProductsAsync(int productId, int count = 4)
+    public async Task<List<ProductSummaryDto>> GetRelatedProductsAsync(int productId, int count = 4, int? warehouseId = null)
     {
         var product = await _db.Products.FindAsync(productId);
         if (product == null) return new List<ProductSummaryDto>();
 
         var now = TimeHelper.GetEgyptTime();
-        return await _db.Products
+        var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        var query = _db.Products
             .Include(p => p.Category)
             .Include(p => p.Brand)
             .Include(p => p.Images)
             .Include(p => p.Unit)
-            .Where(p => p.CategoryId == product.CategoryId && p.Id != productId && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock))
+            .Where(p => p.CategoryId == product.CategoryId && p.Id != productId && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock));
+
+        if (store != null && store.HideOutOfStock)
+        {
+            if (warehouseId.HasValue)
+            {
+                query = query.Where(p => _db.ProductWarehouseStocks
+                    .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == warehouseId.Value)
+                    .Sum(w => (int?)w.Quantity) > 0);
+            }
+            else
+            {
+                query = query.Where(p => p.TotalStock > 0);
+            }
+        }
+
+        return await query
             .Select(p => new {
                 p,
                 d = _db.ProductDiscounts
@@ -782,11 +844,19 @@ public class ProductService : IProductService
                 x.p.Status.ToString(),
                 x.p.AverageRating,
                 x.p.ReviewCount,
-                x.p.TotalStock,
+                warehouseId.HasValue 
+                    ? (_db.ProductWarehouseStocks.Where(w => w.ProductVariant.ProductId == x.p.Id && w.WarehouseId == warehouseId.Value).Sum(w => (int?)w.Quantity) ?? 0) 
+                    : x.p.TotalStock,
                 x.p.ReorderLevel,
                 x.p.SKU,
                 x.p.Variants != null && x.p.Variants.Any(),
-                x.p.Variants!.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList(),
+                x.p.Variants!.Select(v => new ProductVariantDto(
+                    v.Id, v.Size, v.Color, v.ColorAr, 
+                    warehouseId.HasValue 
+                        ? (_db.ProductWarehouseStocks.Where(w => w.ProductVariantId == v.Id && w.WarehouseId == warehouseId.Value).Select(w => w.Quantity).FirstOrDefault()) 
+                        : v.StockQuantity, 
+                    v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId
+                )).ToList(),
                 x.p.HasTax,
                 x.p.IsTaxInclusive,
                 x.p.VatRate,

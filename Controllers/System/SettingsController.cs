@@ -180,6 +180,7 @@ public class SettingsController : ControllerBase
             info.AllowBackorders         = dto.AllowBackorders;
             info.HideOutOfStock          = dto.HideOutOfStock;
 
+            info.WebsiteWarehouseId      = dto.WebsiteWarehouseId;
             info.InMaintenance           = dto.InMaintenance;
             info.BackupTime              = dto.BackupTime;
             info.BackupUtcOffset         = dto.BackupUtcOffset;

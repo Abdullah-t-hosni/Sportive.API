@@ -20,6 +20,6 @@ public interface IProductService
     Task UpdateTotalStockAsync(int productId);
     Task SyncAllProductsStatusAndStockAsync();
     Task SyncAllProductRatingsAsync();
-    Task<List<ProductSummaryDto>> GetFeaturedProductsAsync(int count = 8);
-    Task<List<ProductSummaryDto>> GetRelatedProductsAsync(int productId, int count = 4);
+    Task<List<ProductSummaryDto>> GetFeaturedProductsAsync(int count = 8, int? warehouseId = null);
+    Task<List<ProductSummaryDto>> GetRelatedProductsAsync(int productId, int count = 4, int? warehouseId = null);
 }
