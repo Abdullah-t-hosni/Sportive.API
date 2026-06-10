@@ -114,6 +114,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<AppUser>(e => {
             e.HasIndex(u => u.PhoneNumber);
+            e.HasOne(u => u.Branch).WithMany().HasForeignKey(u => u.BranchId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(u => u.Warehouse).WithMany().HasForeignKey(u => u.WarehouseId).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<UserSession>(e => {

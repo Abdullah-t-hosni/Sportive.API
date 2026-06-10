@@ -261,6 +261,46 @@ public class AuthService : IAuthService
 
         claims.Add(new Claim("SessionId", sessionId.ToString()));
 
+        // Resolve Branch & Warehouse directly from user, fallback to employee link
+        int? branchId = user.BranchId;
+        int? warehouseId = user.WarehouseId;
+        string? branchName = null;
+        string? warehouseName = null;
+
+        if (branchId.HasValue)
+        {
+            branchName = await _db.Branches.Where(b => b.Id == branchId.Value).Select(b => b.Name).FirstOrDefaultAsync();
+            if (warehouseId.HasValue)
+            {
+                warehouseName = await _db.Warehouses.Where(w => w.Id == warehouseId.Value).Select(w => w.Name).FirstOrDefaultAsync();
+            }
+        }
+        else
+        {
+            var employee = await _db.Employees
+                .Where(e => e.AppUserId == user.Id && e.BranchId != null)
+                .Select(e => new { e.BranchId, BranchName = e.Branch != null ? e.Branch.Name : null })
+                .FirstOrDefaultAsync();
+
+            if (employee?.BranchId != null)
+            {
+                branchId = employee.BranchId;
+                branchName = employee.BranchName;
+
+                var warehouse = await _db.Warehouses
+                    .Where(w => w.BranchId == branchId && w.IsActive)
+                    .OrderBy(w => w.Id)
+                    .Select(w => new { w.Id, w.Name })
+                    .FirstOrDefaultAsync();
+
+                if (warehouse != null)
+                {
+                    warehouseId = warehouse.Id;
+                    warehouseName = warehouse.Name;
+                }
+            }
+        }
+
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["JWT:Secret"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         // ⚠️ Access Token: short-lived (2h default). Refresh token handles re-auth silently.
@@ -289,7 +329,11 @@ public class AuthService : IAuthService
             permissions,
             user.PinnedSidebarItems,
             user.FavoriteReports,
-            user.UiPreferences
+            user.UiPreferences,
+            branchId,
+            branchName,
+            warehouseId,
+            warehouseName
         );
     }
 

@@ -322,33 +322,44 @@ public class AuthController : ControllerBase
 
         var user = await _userManager.FindByIdAsync(userId);
 
-        // 3. Branch & Warehouse — resolved from the employee record linked to this user
-        int? branchId = null;
-        int? warehouseId = null;
+        // 3. Branch & Warehouse — resolved from user record first, fallback to employee link
+        int? branchId = user?.BranchId;
+        int? warehouseId = user?.WarehouseId;
         string? branchName = null;
         string? warehouseName = null;
 
-        var employee = await _db.Employees
-            .Where(e => e.AppUserId == userId && e.BranchId != null)
-            .Select(e => new { e.BranchId, BranchName = e.Branch != null ? e.Branch.Name : null })
-            .FirstOrDefaultAsync();
-
-        if (employee?.BranchId != null)
+        if (branchId.HasValue)
         {
-            branchId = employee.BranchId;
-            branchName = employee.BranchName;
-
-            // Auto-pick the first active warehouse in this branch
-            var warehouse = await _db.Warehouses
-                .Where(w => w.BranchId == branchId && w.IsActive)
-                .OrderBy(w => w.Id)
-                .Select(w => new { w.Id, w.Name })
+            branchName = await _db.Branches.Where(b => b.Id == branchId.Value).Select(b => b.Name).FirstOrDefaultAsync();
+            if (warehouseId.HasValue)
+            {
+                warehouseName = await _db.Warehouses.Where(w => w.Id == warehouseId.Value).Select(w => w.Name).FirstOrDefaultAsync();
+            }
+        }
+        else
+        {
+            var employee = await _db.Employees
+                .Where(e => e.AppUserId == userId && e.BranchId != null)
+                .Select(e => new { e.BranchId, BranchName = e.Branch != null ? e.Branch.Name : null })
                 .FirstOrDefaultAsync();
 
-            if (warehouse != null)
+            if (employee?.BranchId != null)
             {
-                warehouseId = warehouse.Id;
-                warehouseName = warehouse.Name;
+                branchId = employee.BranchId;
+                branchName = employee.BranchName;
+
+                // Auto-pick the first active warehouse in this branch
+                var warehouse = await _db.Warehouses
+                    .Where(w => w.BranchId == branchId && w.IsActive)
+                    .OrderBy(w => w.Id)
+                    .Select(w => new { w.Id, w.Name })
+                    .FirstOrDefaultAsync();
+
+                if (warehouse != null)
+                {
+                    warehouseId = warehouse.Id;
+                    warehouseName = warehouse.Name;
+                }
             }
         }
 

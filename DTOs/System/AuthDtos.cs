@@ -29,7 +29,11 @@ public record AuthResponseDto(
     List<ModulePermissionDto>? ModulePermissions = null,
     string? PinnedSidebarItems = "[]",
     string? FavoriteReports = "[]",
-    string? UiPreferences = "{}"
+    string? UiPreferences = "{}",
+    int? BranchId = null,
+    string? BranchName = null,
+    int? WarehouseId = null,
+    string? WarehouseName = null
 );
 
 public record ModulePermissionDto(string ModuleKey, bool CanView, bool CanEdit);

@@ -81,6 +81,8 @@ public class StaffController : ControllerBase
                 createdAt      = user.CreatedAt,
                 employeeId     = link?.Id,
                 employeeNumber = link?.EmployeeNumber,
+                branchId       = user.BranchId,
+                warehouseId    = user.WarehouseId
             });
         }
 
@@ -118,6 +120,8 @@ public class StaffController : ControllerBase
             PhoneNumber = dto.Phone,
             IsActive    = true,
             CreatedAt   = TimeHelper.GetEgyptTime(),
+            BranchId    = dto.BranchId,
+            WarehouseId = dto.WarehouseId
         };
 
         var result = await _users.CreateAsync(user, dto.Password);
@@ -237,6 +241,7 @@ public class StaffController : ControllerBase
         employee.Email = user.Email;
         employee.Phone = user.PhoneNumber;
         employee.JobTitle = role; // المسمى الوظيفي يتبع الدور
+        employee.BranchId = user.BranchId;
 
         await _db.SaveChangesAsync();
         await _customerService.EnsureCustomerAccountAsync(0, isEmployee: true, employeeId: employee.Id);
@@ -472,7 +477,9 @@ public record CreateStaffDto(
     string Phone,
     string Password,
     string Role,
-    bool IsEmployee = true
+    bool IsEmployee = true,
+    int? BranchId = null,
+    int? WarehouseId = null
 );
 
 public record ChangeRoleDto(string Role);

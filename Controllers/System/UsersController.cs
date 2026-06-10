@@ -74,7 +74,9 @@ public class UsersController : ControllerBase
                               phone       = g.First().u.PhoneNumber,
                               isActive    = g.First().u.IsActive,
                               createdAt   = g.First().u.CreatedAt,
-                              roles       = g.Where(x => x.Role != null).Select(x => x.Role).ToList()
+                              roles       = g.Where(x => x.Role != null).Select(x => x.Role).ToList(),
+                              branchId    = g.First().u.BranchId,
+                              warehouseId = g.First().u.WarehouseId
                           });
 
         if (!string.IsNullOrEmpty(search))
@@ -93,7 +95,7 @@ public class UsersController : ControllerBase
     }
 
     // ── Update User Basic Info ───────────────────────────────
-    public record UpdateUserDto(string FullName, string Email, string? Phone, bool? IsActive);
+    public record UpdateUserDto(string FullName, string Email, string? Phone, bool? IsActive, int? BranchId = null, int? WarehouseId = null);
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateUser(string id, [FromBody] UpdateUserDto dto)
     {
@@ -105,9 +107,19 @@ public class UsersController : ControllerBase
         user.UserName    = dto.Email; // Keep UserName and Email same for simplicity
         user.PhoneNumber = dto.Phone;
         if (dto.IsActive.HasValue) user.IsActive = dto.IsActive.Value;
+        user.BranchId    = dto.BranchId;
+        user.WarehouseId = dto.WarehouseId;
 
         var result = await _userManager.UpdateAsync(user);
         if (!result.Succeeded) return BadRequest(result.Errors);
+
+        // Sync to employee record if exists
+        var employee = await _db.Employees.FirstOrDefaultAsync(e => e.AppUserId == user.Id);
+        if (employee != null)
+        {
+            employee.BranchId = dto.BranchId;
+            await _db.SaveChangesAsync();
+        }
 
         return Ok(new { message = _t.Get("Users.UpdateSuccess") });
     }
