@@ -552,11 +552,12 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int     pageSize    = 50,
         [FromQuery] OrderSource? source  = null,
         [FromQuery] DateTime? toDate    = null,
+        [FromQuery] int?    branchId    = null,
         [FromQuery] bool    excel       = false)
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var cacheKey = $"Inventory_{search}_{categoryId}_{brandId}_{color}_{size}_{lowStock}_{stockStatus}_{page}_{pageSize}_{source}_{toDate}";
+        var cacheKey = $"Inventory_{search}_{categoryId}_{brandId}_{color}_{size}_{lowStock}_{stockStatus}_{page}_{pageSize}_{source}_{toDate}_{branchId}";
         if (!excel && _cache.TryGetValue(cacheKey, out var cachedData))
             return Ok(cachedData);
 
@@ -588,26 +589,54 @@ public class OperationalReportsController : ControllerBase
         if (!string.IsNullOrEmpty(size))
             q = q.Where(p => p.Variants.Any(v => v.Size == size));
 
-        if (toDate.HasValue)
+        if (toDate.HasValue || branchId.HasValue)
         {
-            var limit = toDate.Value.Date.AddDays(1).AddHours(2).AddTicks(-1);
-            var movementQuery = _db.InventoryMovements.Where(m => m.CreatedAt <= limit);
-            if (source.HasValue)
+            Dictionary<int, int> variantStocks;
+            Dictionary<int, int> simpleProductStocks;
+
+            if (toDate.HasValue)
             {
-                movementQuery = movementQuery.Where(m => m.CostCenter == source.Value);
+                var limit = toDate.Value.Date.AddDays(1).AddHours(2).AddTicks(-1);
+                var movementQuery = _db.InventoryMovements.Where(m => m.CreatedAt <= limit);
+                if (source.HasValue)
+                {
+                    movementQuery = movementQuery.Where(m => m.CostCenter == source.Value);
+                }
+                if (branchId.HasValue)
+                {
+                    var branchWarehouseIds = await _db.Warehouses.Where(w => w.BranchId == branchId.Value).Select(w => w.Id).ToListAsync();
+                    movementQuery = movementQuery.Where(m => m.WarehouseId.HasValue && branchWarehouseIds.Contains(m.WarehouseId.Value));
+                }
+
+                variantStocks = await movementQuery
+                    .Where(m => m.ProductVariantId.HasValue)
+                    .GroupBy(m => m.ProductVariantId!.Value)
+                    .Select(g => new { VariantId = g.Key, Stock = g.Sum(m => m.Quantity) })
+                    .ToDictionaryAsync(x => x.VariantId, x => x.Stock);
+
+                simpleProductStocks = await movementQuery
+                    .Where(m => !m.ProductVariantId.HasValue && m.ProductId.HasValue)
+                    .GroupBy(m => m.ProductId!.Value)
+                    .Select(g => new { ProductId = g.Key, Stock = g.Sum(m => m.Quantity) })
+                    .ToDictionaryAsync(x => x.ProductId, x => x.Stock);
             }
+            else
+            {
+                // toDate is null, but branchId.HasValue
+                var branchWarehouseIds = await _db.Warehouses.Where(w => w.BranchId == branchId.Value).Select(w => w.Id).ToListAsync();
 
-            var variantStocks = await movementQuery
-                .Where(m => m.ProductVariantId.HasValue)
-                .GroupBy(m => m.ProductVariantId!.Value)
-                .Select(g => new { VariantId = g.Key, Stock = g.Sum(m => m.Quantity) })
-                .ToDictionaryAsync(x => x.VariantId, x => x.Stock);
+                variantStocks = await _db.ProductWarehouseStocks
+                    .Where(w => branchWarehouseIds.Contains(w.WarehouseId))
+                    .GroupBy(w => w.ProductVariantId)
+                    .Select(g => new { VariantId = g.Key, Stock = g.Sum(w => w.Quantity) })
+                    .ToDictionaryAsync(x => x.VariantId, x => x.Stock);
 
-            var simpleProductStocks = await movementQuery
-                .Where(m => !m.ProductVariantId.HasValue && m.ProductId.HasValue)
-                .GroupBy(m => m.ProductId!.Value)
-                .Select(g => new { ProductId = g.Key, Stock = g.Sum(m => m.Quantity) })
-                .ToDictionaryAsync(x => x.ProductId, x => x.Stock);
+                simpleProductStocks = await _db.InventoryMovements
+                    .Where(m => !m.ProductVariantId.HasValue && m.ProductId.HasValue && m.WarehouseId.HasValue && branchWarehouseIds.Contains(m.WarehouseId.Value))
+                    .GroupBy(m => m.ProductId!.Value)
+                    .Select(g => new { ProductId = g.Key, Stock = g.Sum(m => m.Quantity) })
+                    .ToDictionaryAsync(x => x.ProductId, x => x.Stock);
+            }
 
             var productsRaw = await q.ToListAsync();
             var allRows = new List<InventoryRow>();
@@ -668,8 +697,14 @@ public class OperationalReportsController : ControllerBase
             decimal ledgerInventoryValue = 0;
             if (inventoryAccId != null) {
                 var ledgerQ = _db.JournalLines
-                    .Where(l => l.AccountId == inventoryAccId && l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate <= limit);
+                    .Where(l => l.AccountId == inventoryAccId && l.JournalEntry.Status == JournalEntryStatus.Posted);
                 
+                if (toDate.HasValue)
+                {
+                    var limit = toDate.Value.Date.AddDays(1).AddHours(2).AddTicks(-1);
+                    ledgerQ = ledgerQ.Where(l => l.JournalEntry.EntryDate <= limit);
+                }
+
                 if (source.HasValue) ledgerQ = ledgerQ.Where(l => l.CostCenter == source.Value);
 
                 ledgerInventoryValue = await ledgerQ.SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
@@ -859,7 +894,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] string?      size       = null,
         [FromQuery] int          page       = 1,
         [FromQuery] int          pageSize   = 50,
-        [FromQuery] bool         excel      = false)
+        [FromQuery] bool         excel      = false,
+        [FromQuery] int?         branchId   = null)
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
         var cacheKey = $"Sales_{fromDate}_{toDate}_{source}_{categoryId}_{brandId}_{color}_{size}_{page}_{pageSize}";
@@ -881,6 +917,11 @@ public class OperationalReportsController : ControllerBase
         if (source.HasValue)
         {
             ordersQ = ordersQ.Where(o => o.Source == source.Value);
+        }
+
+        if (branchId.HasValue)
+        {
+            ordersQ = ordersQ.Where(o => o.BranchId == branchId.Value);
         }
 
         var catIds = categoryId.HasValue && categoryId > 0 ? await FilterHelper.GetCategoryFamilyIds(_db, categoryId) : new List<int>();
@@ -1081,7 +1122,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] OrderSource? source     = null,
         [FromQuery] int       page       = 1,
         [FromQuery] int       pageSize   = 50,
-        [FromQuery] bool      excel      = false)
+        [FromQuery] bool      excel      = false,
+        [FromQuery] int?      branchId   = null)
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
         var cacheKey = $"Purchases_{fromDate}_{toDate}_{supplierId}_{categoryId}_{brandId}_{color}_{size}_{source}_{page}_{pageSize}";
@@ -1107,6 +1149,12 @@ public class OperationalReportsController : ControllerBase
 
             if (supplierId.HasValue) q = q.Where(i => i.SupplierId == supplierId.Value);
             if (source.HasValue) q = q.Where(i => i.CostCenter == source.Value);
+            if (branchId.HasValue)
+            {
+                var branchWarehouseIds = await _db.Warehouses.Where(w => w.BranchId == branchId.Value).Select(w => w.Id).ToListAsync();
+                if (branchWarehouseIds.Any()) q = q.Where(i => i.WarehouseId.HasValue && branchWarehouseIds.Contains(i.WarehouseId.Value));
+                else q = q.Where(i => false); // No warehouses for this branch — return empty
+            }
 
             if (catIds.Any())
                 q = q.Where(i => i.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && catIds.Contains(it.Product.CategoryId.Value)));
@@ -1218,7 +1266,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] OrderSource? source     = null,
         [FromQuery] int       page       = 1,
         [FromQuery] int       pageSize   = 50,
-        [FromQuery] bool      excel      = false)
+        [FromQuery] bool      excel      = false,
+        [FromQuery] int?      branchId   = null)
     {
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
@@ -1237,6 +1286,11 @@ public class OperationalReportsController : ControllerBase
         if (source.HasValue)
         {
             returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Source == source.Value);
+        }
+
+        if (branchId.HasValue)
+        {
+            returnsQ = returnsQ.Where(j => j.Order != null && j.Order.BranchId == branchId.Value);
         }
 
         if (catIds.Any())
@@ -1438,7 +1492,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] OrderSource? source     = null,
         [FromQuery] int       page       = 1,
         [FromQuery] int       pageSize   = 50,
-        [FromQuery] bool      excel      = false)
+        [FromQuery] bool      excel      = false,
+        [FromQuery] int?      branchId   = null)
     {
         var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
@@ -1451,6 +1506,12 @@ public class OperationalReportsController : ControllerBase
 
         if (supplierId.HasValue) q = q.Where(r => r.SupplierId == supplierId.Value);
         if (source.HasValue) q = q.Where(r => r.CostCenter == source.Value);
+        if (branchId.HasValue)
+        {
+            var branchWarehouseIds = await _db.Warehouses.Where(w => w.BranchId == branchId.Value).Select(w => w.Id).ToListAsync();
+            if (branchWarehouseIds.Any()) q = q.Where(r => r.WarehouseId.HasValue && branchWarehouseIds.Contains(r.WarehouseId.Value));
+            else q = q.Where(r => false);
+        }
 
         if (catIds.Any())
             q = q.Where(r => r.Items.Any(it => it.Product != null && it.Product.CategoryId.HasValue && catIds.Contains(it.Product.CategoryId.Value)));
@@ -1526,7 +1587,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] string?   userId   = null,
-        [FromQuery] bool      excel    = false)
+        [FromQuery] bool      excel    = false,
+        [FromQuery] int?      branchId = null)
     {
         var from = fromDate ?? TimeHelper.GetEgyptTime().Date;
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
@@ -1539,6 +1601,7 @@ public class OperationalReportsController : ControllerBase
                      && !string.IsNullOrEmpty(o.SalesPersonId));
 
         if (!string.IsNullOrEmpty(userId)) q = q.Where(o => o.SalesPersonId == userId);
+        if (branchId.HasValue) q = q.Where(o => o.BranchId == branchId.Value);
 
         var orders = await q.OrderByDescending(o => o.CreatedAt).ToListAsync();
         var personIds = orders.Select(o => o.SalesPersonId).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
@@ -1600,7 +1663,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] OrderSource? source  = null,
         [FromQuery] int       page       = 1,
         [FromQuery] int       pageSize   = 50,
-        [FromQuery] bool      excel      = false)
+        [FromQuery] bool      excel      = false,
+        [FromQuery] int?      branchId   = null)
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
         var cacheKey = $"ProdMovement_{productId}_{search}_{categoryId}_{brandId}_{fromDate}_{toDate}_{color}_{size}_{source}_{page}_{pageSize}";
@@ -1635,6 +1699,12 @@ public class OperationalReportsController : ControllerBase
 
             if (productId > 0) movementsQuery = movementsQuery.Where(m => m.ProductId == productId);
             if (source.HasValue) movementsQuery = movementsQuery.Where(m => m.CostCenter == source.Value);
+            if (branchId.HasValue)
+            {
+                var branchWarehouseIds = await _db.Warehouses.Where(w => w.BranchId == branchId.Value).Select(w => w.Id).ToListAsync();
+                if (branchWarehouseIds.Any()) movementsQuery = movementsQuery.Where(m => m.WarehouseId.HasValue && branchWarehouseIds.Contains(m.WarehouseId.Value));
+                else movementsQuery = movementsQuery.Where(m => false);
+            }
 
             if (categoryId.HasValue && categoryId > 0)
             {
@@ -1788,6 +1858,7 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? toDate    = null,
         [FromQuery] OrderSource? source = null,
         [FromQuery] InventoryMovementType? type = null,
+        [FromQuery] int?      branchId   = null,
         [FromQuery] int       page       = 1,
         [FromQuery] int       pageSize   = 50,
         [FromQuery] bool      excel      = false)
@@ -1800,6 +1871,13 @@ public class OperationalReportsController : ControllerBase
             .Include(m => m.ProductVariant)
             .Where(m => (m.CreatedAt >= from && m.CreatedAt <= to) || m.Type == InventoryMovementType.OpeningBalance)
             .AsQueryable();
+
+        if (branchId.HasValue)
+        {
+            var branchWarehouseIds = await _db.Warehouses.Where(w => w.BranchId == branchId.Value).Select(w => w.Id).ToListAsync();
+            if (branchWarehouseIds.Any()) q = q.Where(m => m.WarehouseId.HasValue && branchWarehouseIds.Contains(m.WarehouseId.Value));
+            else q = q.Where(m => false);
+        }
 
         if (productId.HasValue && productId > 0) q = q.Where(m => m.ProductId == productId.Value);
         if (variantId.HasValue && variantId > 0) q = q.Where(m => m.ProductVariantId == variantId.Value);
@@ -2425,13 +2503,14 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int?    categoryId = null,
         [FromQuery] int?    brandId    = null,
         [FromQuery] string? color      = null,
-        [FromQuery] string? size       = null)
+        [FromQuery] string? size       = null,
+        [FromQuery] int?    branchId   = null)
     {
         var cutoff = TimeHelper.GetEgyptTime().AddDays(-days);
 
         // 1. Get filtered product list first
         var query = _db.Products
-            .Where(p => p.TotalStock > 0 && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock || p.Status == ProductStatus.Hidden));
+            .Where(p => p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock || p.Status == ProductStatus.Hidden);
 
         // 2. Apply Filters (Category/Brand family IDs)
         if (categoryId.HasValue && categoryId > 0)
@@ -2453,16 +2532,28 @@ public class OperationalReportsController : ControllerBase
             query = query.Where(p => p.Variants.Any(v => v.Size == size));
         }
 
+        List<int>? branchWarehouseIds = null;
+        if (branchId.HasValue)
+        {
+            branchWarehouseIds = await _db.Warehouses.Where(w => w.BranchId == branchId.Value).Select(w => w.Id).ToListAsync();
+        }
+
         // 3. Project data and LastSaleDate
         var productsData = await query
             .Select(p => new {
-                p.Id, p.NameAr, p.SKU, p.TotalStock, p.Price, p.CreatedAt,
+                p.Id, p.NameAr, p.SKU, p.Price, p.CreatedAt,
+                TotalStock = branchId.HasValue
+                    ? (p.Variants.Any()
+                        ? (_db.ProductWarehouseStocks.Where(w => w.ProductVariant.ProductId == p.Id && branchWarehouseIds!.Contains(w.WarehouseId)).Sum(w => (int?)w.Quantity) ?? 0)
+                        : (_db.InventoryMovements.Where(m => m.ProductId == p.Id && !m.ProductVariantId.HasValue && m.WarehouseId.HasValue && branchWarehouseIds!.Contains(m.WarehouseId.Value)).Sum(m => (int?)m.Quantity) ?? 0))
+                    : p.TotalStock,
                 LastSaleDate = _db.InventoryMovements
-                    .Where(m => m.ProductId == p.Id && m.Type == InventoryMovementType.Sale)
+                    .Where(m => m.ProductId == p.Id && m.Type == InventoryMovementType.Sale && (!branchId.HasValue || (m.WarehouseId.HasValue && branchWarehouseIds!.Contains(m.WarehouseId.Value))))
                     .OrderByDescending(m => m.CreatedAt)
                     .Select(m => (DateTime?)m.CreatedAt)
                     .FirstOrDefault()
             })
+            .Where(p => p.TotalStock > 0)
             .ToListAsync();
 
         // 4. Filter by Aging Cutoff
@@ -2501,6 +2592,7 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime?    fromDate   = null,
         [FromQuery] DateTime?    toDate     = null,
         [FromQuery] OrderSource? source     = null,
+        [FromQuery] int?         branchId   = null,
         [FromQuery] bool         excel      = false)
     {
         var now = TimeHelper.GetEgyptTime();
@@ -2526,6 +2618,11 @@ public class OperationalReportsController : ControllerBase
             .Include(o => o.Customer)
             .Include(o => o.Payments)
             .Where(o => o.CreatedAt >= from && o.CreatedAt <= to && o.Status != OrderStatus.Cancelled);
+
+        if (branchId.HasValue)
+        {
+            salesQuery = salesQuery.Where(o => o.BranchId == branchId.Value);
+        }
 
         if (source.HasValue)
         {
@@ -2638,6 +2735,11 @@ public class OperationalReportsController : ControllerBase
                      && j.EntryDate >= from && j.EntryDate <= to
                      && j.Status == JournalEntryStatus.Posted);
 
+        if (branchId.HasValue)
+        {
+            returnsQuery = returnsQuery.Where(j => (j.Order != null && j.Order.BranchId == branchId.Value) || j.Lines.Any(l => l.BranchId == branchId.Value));
+        }
+
         if (source.HasValue)
         {
             returnsQuery = returnsQuery.Where(j => j.Order != null && j.Order.Source == source.Value);
@@ -2708,6 +2810,11 @@ public class OperationalReportsController : ControllerBase
             .Include(r => r.FromAccount)
             .Where(r => r.VoucherDate >= from && r.VoucherDate <= to);
 
+        if (branchId.HasValue)
+        {
+            receiptsQuery = receiptsQuery.Where(r => r.BranchId == branchId.Value);
+        }
+
         if (source.HasValue)
         {
             receiptsQuery = receiptsQuery.Where(r => r.CostCenter == source.Value);
@@ -2746,6 +2853,11 @@ public class OperationalReportsController : ControllerBase
             .Include(pv => pv.Supplier)
             .Where(pv => pv.VoucherDate >= from && pv.VoucherDate <= to && pv.SupplierId != null);
 
+        if (branchId.HasValue)
+        {
+            settlementsQuery = settlementsQuery.Where(pv => pv.BranchId == branchId.Value);
+        }
+
         if (source.HasValue)
         {
             settlementsQuery = settlementsQuery.Where(pv => pv.CostCenter == source.Value);
@@ -2782,6 +2894,11 @@ public class OperationalReportsController : ControllerBase
         var expensesQuery = _db.PaymentVouchers.AsNoTracking()
             .Include(pv => pv.ToAccount)
             .Where(pv => pv.VoucherDate >= from && pv.VoucherDate <= to && pv.SupplierId == null);
+
+        if (branchId.HasValue)
+        {
+            expensesQuery = expensesQuery.Where(pv => pv.BranchId == branchId.Value);
+        }
 
         if (source.HasValue)
         {
@@ -2871,6 +2988,11 @@ public class OperationalReportsController : ControllerBase
         {
             var discountReturnsQuery = _db.JournalEntries
                 .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= from && e.EntryDate <= to && e.Status == JournalEntryStatus.Posted);
+
+            if (branchId.HasValue)
+            {
+                discountReturnsQuery = discountReturnsQuery.Where(e => (e.Order != null && e.Order.BranchId == branchId.Value) || e.Lines.Any(l => l.BranchId == branchId.Value));
+            }
 
             if (source.HasValue)
             {
