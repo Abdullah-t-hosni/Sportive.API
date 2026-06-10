@@ -234,6 +234,7 @@
   "Accounting.SupplierSettlementDesc": "Supplier settlement - {0}",
   "Accounting.SupplierPaymentVoucherMainDesc": "Supplier payment voucher {0}",
   "Inventory.InsufficientStock": "Insufficient stock. (Available: {0} | Requested: {1})",
+  "Inventory.InsufficientStockInWarehouse": "Insufficient stock in the selected warehouse. (Available: {0} | Requested: {1})",
   "Inventory.LowStockAlertTitle": "Low Stock Alert",
   "Inventory.LowStockAlertDesc": "Product \"{0}\" reached {1} units (Reorder level: {2})",
   "Reviews.EligibilityError": "You can only review products you have purchased and received.",

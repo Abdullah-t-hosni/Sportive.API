@@ -19,21 +19,21 @@ public class ProductsController : ControllerBase
         Ok(await _products.GetProductsAsync(filter));
 
     [HttpGet("{id}")]
-    public async Task<IActionResult> GetById(int id, [FromQuery] DiscountApplyTo? source = null)
+    public async Task<IActionResult> GetById(int id, [FromQuery] DiscountApplyTo? source = null, [FromQuery] int? warehouseId = null)
     {
-        var product = await _products.GetProductByIdAsync(id, source);
+        var product = await _products.GetProductByIdAsync(id, source, warehouseId);
         return product == null ? NotFound() : Ok(product);
     }
 
     [HttpGet("slug/{slug}")]
-    public async Task<IActionResult> GetBySlug(string slug, [FromQuery] DiscountApplyTo? source = null)
+    public async Task<IActionResult> GetBySlug(string slug, [FromQuery] DiscountApplyTo? source = null, [FromQuery] int? warehouseId = null)
     {
         if (int.TryParse(slug, out int id))
         {
-            var productById = await _products.GetProductByIdAsync(id, source);
+            var productById = await _products.GetProductByIdAsync(id, source, warehouseId);
             if (productById != null) return Ok(productById);
         }
-        var product = await _products.GetProductBySlugAsync(slug, source);
+        var product = await _products.GetProductBySlugAsync(slug, source, warehouseId);
         return product == null ? NotFound() : Ok(product);
     }
 

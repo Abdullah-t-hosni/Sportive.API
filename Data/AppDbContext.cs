@@ -74,6 +74,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<Department>           Departments           { get; set; }
 
     public DbSet<Employee>           Employees           { get; set; }
+
+    public DbSet<Branch> Branches { get; set; }
+    public DbSet<Warehouse> Warehouses { get; set; }
+    public DbSet<ProductWarehouseStock> ProductWarehouseStocks { get; set; }
+    public DbSet<StockTransfer> StockTransfers { get; set; }
+    public DbSet<StockTransferItem> StockTransferItems { get; set; }
     public DbSet<PayrollRun>         PayrollRuns         { get; set; }
     public DbSet<PayrollItem>        PayrollItems        { get; set; }
     public DbSet<EmployeeAdvance>    EmployeeAdvances    { get; set; }
@@ -257,6 +263,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => new { x.CreatedAt, x.Status, x.TotalAmount });
             e.HasIndex(x => x.SalesPersonId);
             e.HasIndex(x => x.IsArchived);
+            e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<OrderPayment>(e => {
@@ -344,6 +352,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(i => i.Status).HasConversion<string>();
             e.Property(i => i.CostCenter).HasConversion<string>();
             e.HasIndex(x => x.InvoiceDate);
+            e.HasOne(i => i.Warehouse).WithMany().HasForeignKey(i => i.WarehouseId).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<PurchaseInvoiceItem>(e => {
@@ -369,6 +378,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(r => r.Invoice).WithMany().HasForeignKey(r => r.PurchaseInvoiceId).IsRequired(false);
             e.HasOne(r => r.Supplier).WithMany().HasForeignKey(r => r.SupplierId).IsRequired();
             e.Property(r => r.CostCenter).HasConversion<string>();
+            e.HasOne(r => r.Warehouse).WithMany().HasForeignKey(r => r.WarehouseId).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<PurchaseReturnItem>(e => {
@@ -430,6 +440,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(l => l.SupplierId);
             e.HasIndex(l => l.AccountId);
             e.HasIndex(l => l.CostCenter);
+            e.HasOne(l => l.Branch).WithMany().HasForeignKey(l => l.BranchId).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<ReceiptVoucher>(e => {
@@ -441,6 +452,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(v => v.Reference);
             // ⚡ Performance: covering index for collection summaries
             e.HasIndex(v => new { v.VoucherDate, v.Amount });
+            e.HasOne(v => v.Branch).WithMany().HasForeignKey(v => v.BranchId).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<PaymentVoucher>(e => {
@@ -452,6 +464,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(v => v.Reference);
             // ⚡ Performance: covering index for expense summaries
             e.HasIndex(v => new { v.VoucherDate, v.Amount });
+            e.HasOne(v => v.Branch).WithMany().HasForeignKey(v => v.BranchId).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<InventoryMovement>(e => {
@@ -464,11 +477,13 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => x.ProductVariantId);
             // ⚡ Performance: reference-based lookup (order number)
             e.HasIndex(x => x.Reference);
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<InventoryAudit>(e => {
             e.Property(x => x.TotalExpectedValue).HasPrecision(18, 2);
             e.Property(x => x.TotalActualValue).HasPrecision(18, 2);
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.SetNull);
             e.HasMany(a => a.Items).WithOne(i => i.InventoryAudit).HasForeignKey(i => i.InventoryAuditId);
         });
 
@@ -503,6 +518,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(x => x.AppUser).WithMany()
              .HasForeignKey(x => x.AppUserId).IsRequired(false).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(x => x.AppUserId).IsUnique();
+            e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<PayrollRun>(e => {
@@ -692,6 +708,41 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<ZkDevice>(e => {
             e.HasIndex(x => x.SerialNumber).IsUnique();
+        });
+
+        builder.Entity<Branch>(e => {
+            e.Property(x => x.Name).HasMaxLength(150).IsRequired();
+            e.Property(x => x.Address).HasMaxLength(500);
+            e.Property(x => x.PhoneNumber).HasMaxLength(50);
+        });
+
+        builder.Entity<Warehouse>(e => {
+            e.Property(x => x.Name).HasMaxLength(150).IsRequired();
+            e.Property(x => x.Location).HasMaxLength(500);
+            e.HasOne(x => x.Branch).WithMany(b => b.Warehouses).HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<ProductWarehouseStock>(e => {
+            e.HasIndex(x => new { x.ProductVariantId, x.WarehouseId }).IsUnique();
+            e.HasOne(x => x.ProductVariant).WithMany().HasForeignKey(x => x.ProductVariantId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<StockTransfer>(e => {
+            e.Property(x => x.TransferNumber).HasMaxLength(50).IsRequired();
+            e.HasIndex(x => x.TransferNumber).IsUnique();
+            e.HasOne(x => x.SourceWarehouse).WithMany().HasForeignKey(x => x.SourceWarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.DestinationWarehouse).WithMany().HasForeignKey(x => x.DestinationWarehouseId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.Status).HasConversion<string>();
+        });
+
+        builder.Entity<StockTransferItem>(e => {
+            e.HasOne(x => x.StockTransfer).WithMany(t => t.Items).HasForeignKey(x => x.StockTransferId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.ProductVariant).WithMany().HasForeignKey(x => x.ProductVariantId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<POSShiftClosure>(e => {
+            e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

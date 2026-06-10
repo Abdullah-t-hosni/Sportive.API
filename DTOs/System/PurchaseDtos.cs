@@ -82,7 +82,8 @@ public record CreatePurchaseInvoiceDto(
     int? VatAccountId = null,
     int? CashAccountId = null,
     OrderSource? CostCenter = null,
-    decimal DeductAdvanceAmount = 0
+    decimal DeductAdvanceAmount = 0,
+    int? WarehouseId = null
 );
 
 public record CreatePurchaseItemDto(
@@ -118,7 +119,8 @@ public record UpdatePurchaseInvoiceDto(
     int? InventoryAccountId = null,
     int? VatAccountId = null,
     List<InvoicePaymentDto>? Payments = null,
-    decimal DeductAdvanceAmount = 0
+    decimal DeductAdvanceAmount = 0,
+    int? WarehouseId = null
 );
 
 
@@ -137,7 +139,9 @@ public record PurchaseInvoiceSummaryDto(
     decimal  PaidAmount,
     decimal  RemainingAmount,
     OrderSource? CostCenter = null,
-    string? CostCenterLabel = null
+    string? CostCenterLabel = null,
+    int? WarehouseId = null,
+    string? WarehouseName = null
 );
 
 public record PurchaseInvoiceDetailDto(
@@ -166,7 +170,9 @@ public record PurchaseInvoiceDetailDto(
     OrderSource? CostCenter = null,
     int?     CashAccountId = null,
     int?     SupplierId = null,
-    string?  CostCenterLabel = null
+    string?  CostCenterLabel = null,
+    int?     WarehouseId = null,
+    string?  WarehouseName = null
 );
 
 public record PurchaseItemDto(
@@ -264,7 +270,8 @@ public record ReturnPurchaseInvoiceDto(
     string? Notes,
     string? ReferenceNumber,
     List<ReturnPurchaseItemDto> Items,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    int? WarehouseId = null
 );
 
 public record CreateStandaloneReturnDto(
@@ -277,7 +284,8 @@ public record CreateStandaloneReturnDto(
     decimal DiscountAmount = 0,
     PaymentTerms PaymentTerms = PaymentTerms.Credit,
     int? CashAccountId = null,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    int? WarehouseId = null
 );
 
 public record CreateStandaloneReturnItemDto(

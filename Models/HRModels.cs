@@ -135,6 +135,10 @@ public class Employee : BaseEntity
     public int?    AccountId { get; set; }
     public Account? Account  { get; set; }
 
+    // ربط الفرع
+    public int? BranchId { get; set; }
+    public Branch? Branch { get; set; }
+
     public OrderSource? CostCenter { get; set; } // مركز التكلفة (موقع/محل/عام)
 
     public ICollection<PayrollItem>       PayrollItems { get; set; } = new List<PayrollItem>();

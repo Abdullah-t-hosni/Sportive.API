@@ -234,6 +234,7 @@
   "Accounting.SupplierSettlementDesc": "تسوية مورد - {0}",
   "Accounting.SupplierPaymentVoucherMainDesc": "سند صرف مورد {0}",
   "Inventory.InsufficientStock": "رصيد غير كافي. (المتوفر: {0} | المطلوب: {1})",
+  "Inventory.InsufficientStockInWarehouse": "رصيد غير كافي في المخزن المحدد. (المتوفر: {0} | المطلوب: {1})",
   "Inventory.LowStockAlertTitle": "تنبيه نقص مخزون",
   "Inventory.LowStockAlertDesc": "المنتج \"{0}\" وصل إلى {1} وحدة (حد إعادة الطلب: {2})",
   "Reviews.EligibilityError": "يمكنك فقط تقييم المنتجات التي قمت بشرائها واستلامها بالفعل.",

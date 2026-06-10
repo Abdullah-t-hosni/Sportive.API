@@ -322,6 +322,36 @@ public class AuthController : ControllerBase
 
         var user = await _userManager.FindByIdAsync(userId);
 
+        // 3. Branch & Warehouse — resolved from the employee record linked to this user
+        int? branchId = null;
+        int? warehouseId = null;
+        string? branchName = null;
+        string? warehouseName = null;
+
+        var employee = await _db.Employees
+            .Where(e => e.AppUserId == userId && e.BranchId != null)
+            .Select(e => new { e.BranchId, BranchName = e.Branch != null ? e.Branch.Name : null })
+            .FirstOrDefaultAsync();
+
+        if (employee?.BranchId != null)
+        {
+            branchId = employee.BranchId;
+            branchName = employee.BranchName;
+
+            // Auto-pick the first active warehouse in this branch
+            var warehouse = await _db.Warehouses
+                .Where(w => w.BranchId == branchId && w.IsActive)
+                .OrderBy(w => w.Id)
+                .Select(w => new { w.Id, w.Name })
+                .FirstOrDefaultAsync();
+
+            if (warehouse != null)
+            {
+                warehouseId = warehouse.Id;
+                warehouseName = warehouse.Name;
+            }
+        }
+
         return Ok(new {
             userId,
             email,
@@ -333,7 +363,12 @@ public class AuthController : ControllerBase
             pinnedSidebarItems = user?.PinnedSidebarItems ?? "[]",
             favoriteReports = user?.FavoriteReports ?? "[]",
             uiPreferences = user?.UiPreferences ?? "{}",
-            modulePermissions = overrides.Select(p => new { p.ModuleKey, p.CanView, p.CanEdit }).ToList()
+            modulePermissions = overrides.Select(p => new { p.ModuleKey, p.CanView, p.CanEdit }).ToList(),
+            // 🏢 Branch & Warehouse context for POS and stock operations
+            branchId,
+            branchName,
+            warehouseId,
+            warehouseName
         });
     }
 

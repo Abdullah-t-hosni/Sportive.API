@@ -190,7 +190,8 @@ public record CreateReceiptVoucherDto(
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
     int?     CostCenter = null,
-    int?     EmployeeId = null
+    int?     EmployeeId = null,
+    int?     BranchId = null
 );
 
 public record UpdateReceiptVoucherDto(
@@ -206,7 +207,8 @@ public record UpdateReceiptVoucherDto(
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
     int?     CostCenter = null,
-    int?     EmployeeId = null
+    int?     EmployeeId = null,
+    int?     BranchId = null
 );
 
 public record VoucherSummaryDto(
@@ -242,7 +244,8 @@ public record CreatePaymentVoucherDto(
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
     int?     CostCenter = null,
-    int?     EmployeeId = null
+    int?     EmployeeId = null,
+    int?     BranchId = null
 );
 
 public record UpdatePaymentVoucherDto(
@@ -258,7 +261,8 @@ public record UpdatePaymentVoucherDto(
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
     int?     CostCenter = null,
-    int?     EmployeeId = null
+    int?     EmployeeId = null,
+    int?     BranchId = null
 );
 
 // ══════════════════════════════════════════════════════

@@ -175,7 +175,9 @@ public class OrdersController : ControllerBase
             posDto.Payments,
             posDto.PaidAmount,
             posDto.AttachmentUrl,
-            posDto.AttachmentPublicId
+            posDto.AttachmentPublicId,
+            posDto.BranchId,
+            posDto.WarehouseId
         );
 
         var order = await _orderService.CreateOrderAsync(posDto.CustomerId, dto);

@@ -67,7 +67,9 @@ public class AssetPurchasesController : ControllerBase
                 i.InvoiceDate, i.DueDate,
                 i.TotalAmount, i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
                 i.CostCenter,
-                i.CostCenter == OrderSource.Website ? "الموقع" : (i.CostCenter == OrderSource.POS ? "المحل" : "عام")
+                i.CostCenter == OrderSource.Website ? "الموقع" : (i.CostCenter == OrderSource.POS ? "المحل" : "عام"),
+                null,
+                null
             )).ToListAsync();
 
         return Ok(new PaginatedResult<PurchaseInvoiceSummaryDto>(items, total, page, pageSize,
@@ -109,7 +111,9 @@ public class AssetPurchasesController : ControllerBase
             inv.CostCenter,
             inv.CashAccountId,
             inv.SupplierId,
-            inv.CostCenter == OrderSource.Website ? "الموقع" : (inv.CostCenter == OrderSource.POS ? "المحل" : "عام")
+            inv.CostCenter == OrderSource.Website ? "الموقع" : (inv.CostCenter == OrderSource.POS ? "المحل" : "عام"),
+            null,
+            null
         ));
     }
 

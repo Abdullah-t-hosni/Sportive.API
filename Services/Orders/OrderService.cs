@@ -379,7 +379,23 @@ public class OrderService : IOrderService
                     }
                 }
 
-                var actualSource = ((int)dto.Source == 0) ? OrderSource.Website : dto.Source;
+                 var actualSource = ((int)dto.Source == 0) ? OrderSource.Website : dto.Source;
+
+                int? branchIdToUse = dto.BranchId;
+                int? warehouseIdToUse = dto.WarehouseId;
+
+                if (!branchIdToUse.HasValue)
+                {
+                    var defaultBranch = await _db.Branches.FirstOrDefaultAsync(b => b.Name == "الفرع الرئيسي" || b.IsActive);
+                    if (defaultBranch != null) branchIdToUse = defaultBranch.Id;
+                }
+
+                if (!warehouseIdToUse.HasValue)
+                {
+                    var defaultWarehouse = await _db.Warehouses.FirstOrDefaultAsync(w => w.Name == "المخزن الرئيسي" || w.IsActive);
+                    if (defaultWarehouse != null) warehouseIdToUse = defaultWarehouse.Id;
+                }
+
                 order = new Order
                 {
                     CustomerId = customerId.Value,
@@ -401,6 +417,8 @@ public class OrderService : IOrderService
                     TemporalDiscount = 0,
                     AttachmentUrl = dto.AttachmentUrl,
                     AttachmentPublicId = dto.AttachmentPublicId,
+                    BranchId = branchIdToUse,
+                    WarehouseId = warehouseIdToUse,
                     CreatedAt = now
                 };
 
@@ -536,7 +554,8 @@ public class OrderService : IOrderService
                             order.SalesPersonId,
                             0, // unitCost fallback
                             order.Source,
-                            autoSave: false
+                            autoSave: false,
+                            warehouseId: warehouseIdToUse
                         );
                     }
                 }
@@ -632,7 +651,8 @@ public class OrderService : IOrderService
                             null,
                             0, // unitCost fallback
                             order.Source,
-                            autoSave: false
+                            autoSave: false,
+                            warehouseId: warehouseIdToUse
                         );
                         
                         _db.CartItems.Remove(ci);

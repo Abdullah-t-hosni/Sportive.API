@@ -39,7 +39,8 @@ public class InventoryService : IInventoryService
         bool broadcast = true,
         bool force = false,
         DateTime? date = null,
-        bool ignoreIdempotency = false)
+        bool ignoreIdempotency = false,
+        int? warehouseId = null)
     {
         using var activity = Sportive.API.Utils.Telemetry.ActivitySource.StartActivity("Inventory Adjustment");
         if (activity != null)
@@ -75,6 +76,17 @@ public class InventoryService : IInventoryService
         int remainingBefore = 0;
         int newStock = 0;
 
+        // Resolve warehouseId first
+        int? warehouseIdToUse = warehouseId;
+        if (!warehouseIdToUse.HasValue)
+        {
+            var defaultWarehouse = await _db.Warehouses.FirstOrDefaultAsync(w => w.Name == "المخزن الرئيسي" || w.IsActive);
+            if (defaultWarehouse != null)
+            {
+                warehouseIdToUse = defaultWarehouse.Id;
+            }
+        }
+
         // 1. Update Actual Stock levels in Product/Variant
         if (variantId.HasValue)
         {
@@ -84,6 +96,30 @@ public class InventoryService : IInventoryService
                 remainingBefore = variant.StockQuantity;
                 if (!force && variant.StockQuantity + roundedQty < 0) 
                     throw new InvalidOperationException(_t.Get("Inventory.InsufficientStock", variant.StockQuantity, -roundedQty));
+
+                // Dual-write: Update ProductWarehouseStock as well
+                if (warehouseIdToUse.HasValue)
+                {
+                    var warehouseStock = await _db.ProductWarehouseStocks
+                        .FirstOrDefaultAsync(pws => pws.ProductVariantId == variantId.Value && pws.WarehouseId == warehouseIdToUse.Value);
+                    if (warehouseStock == null)
+                    {
+                        warehouseStock = new ProductWarehouseStock
+                        {
+                            ProductVariantId = variantId.Value,
+                            WarehouseId = warehouseIdToUse.Value,
+                            Quantity = 0,
+                            CreatedAt = TimeHelper.GetEgyptTime()
+                        };
+                        _db.ProductWarehouseStocks.Add(warehouseStock);
+                    }
+
+                    if (!force && warehouseStock.Quantity + roundedQty < 0)
+                        throw new InvalidOperationException(_t.Get("Inventory.InsufficientStockInWarehouse", warehouseStock.Quantity, -roundedQty));
+
+                    warehouseStock.Quantity += roundedQty;
+                    warehouseStock.UpdatedAt = TimeHelper.GetEgyptTime();
+                }
                 
                 variant.StockQuantity += roundedQty;
                 newStock = variant.StockQuantity;
@@ -202,6 +238,7 @@ public class InventoryService : IInventoryService
             UnitCost         = effectiveUnitCost,
             CreatedByUserId  = userId,
             CostCenter       = costCenter,
+            WarehouseId      = warehouseIdToUse,
             CreatedAt        = date ?? TimeHelper.GetEgyptTime()
         });
 

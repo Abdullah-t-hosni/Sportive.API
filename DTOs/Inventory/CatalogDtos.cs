@@ -247,6 +247,7 @@ public class ProductFilterDto
     public int Page { get; set; } = 1;
     public DiscountApplyTo? Source { get; set; }
     public bool? ByPrice { get; set; }
+    public int? WarehouseId { get; set; }
 
     private int _pageSize = 12;
     public int PageSize

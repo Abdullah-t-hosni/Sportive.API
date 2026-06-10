@@ -134,6 +134,7 @@ public class PaymentVouchersController : ControllerBase
             AttachmentPublicId = dto.AttachmentPublicId,
             CostCenter = (OrderSource?)dto.CostCenter,
             EmployeeId = dto.EmployeeId,
+            BranchId = dto.BranchId,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value, CreatedAt = TimeHelper.GetEgyptTime(), PurchaseInvoiceId = dto.PurchaseInvoiceId
         };
 
@@ -204,6 +205,7 @@ public class PaymentVouchersController : ControllerBase
         voucher.ToAccountId = dto.ToAccountId; voucher.SupplierId = dto.SupplierId; voucher.EmployeeId = dto.EmployeeId; voucher.Description = dto.Description;
         voucher.PurchaseInvoiceId = dto.PurchaseInvoiceId;
         voucher.CostCenter = (OrderSource?)dto.CostCenter;
+        voucher.BranchId = dto.BranchId;
         voucher.UpdatedAt = TimeHelper.GetEgyptTime();
 
         if (voucher.PurchaseInvoiceId.HasValue)

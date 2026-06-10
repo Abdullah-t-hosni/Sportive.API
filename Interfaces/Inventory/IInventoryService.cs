@@ -21,7 +21,8 @@ public interface IInventoryService
         bool broadcast = true,
         bool force = false,
         DateTime? date = null,
-        bool ignoreIdempotency = false
+        bool ignoreIdempotency = false,
+        int? warehouseId = null
     );
 
     /// <summary>

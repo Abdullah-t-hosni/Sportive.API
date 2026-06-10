@@ -174,6 +174,8 @@ public static class DependencyInjection
                     "http://localhost:3000", "https://localhost:3000",
                     "http://localhost:5173", "https://localhost:5173",
                     "http://localhost:5174", "https://localhost:5174",
+                    "http://localhost:5175", "https://localhost:5175",
+                    "http://localhost:5176", "https://localhost:5176",
                     "https://www.sportive-sportwear.com",
                     "https://sportive-sportwear.com",
                     "https://admin.sportive-sportwear.com",

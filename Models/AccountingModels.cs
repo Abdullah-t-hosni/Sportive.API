@@ -118,6 +118,8 @@ public class JournalLine : BaseEntity
     public int?          EmployeeId    { get; set; }
     public Employee?     Employee      { get; set; }
     public OrderSource?  CostCenter    { get; set; } // مركز التكلفة للسطر
+    public int?          BranchId      { get; set; }
+    public Branch?       Branch        { get; set; }
 }
 
 // ══════════════════════════════════════════════════════
@@ -157,6 +159,8 @@ public class ReceiptVoucher : BaseEntity
     public OrderSource? CostCenter   { get; set; } // مركز التكلفة للسند
     public int?     EmployeeId       { get; set; }
     public Employee? Employee        { get; set; }
+    public int?     BranchId         { get; set; }
+    public Branch?  Branch           { get; set; }
 }
 
 // ══════════════════════════════════════════════════════
@@ -187,4 +191,6 @@ public class PaymentVoucher : BaseEntity
     public OrderSource? CostCenter   { get; set; } // مركز التكلفة للسند
     public int?     EmployeeId       { get; set; }
     public Employee? Employee        { get; set; }
+    public int?     BranchId         { get; set; }
+    public Branch?  Branch           { get; set; }
 }

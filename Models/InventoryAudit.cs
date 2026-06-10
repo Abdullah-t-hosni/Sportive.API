@@ -21,6 +21,9 @@ public class InventoryAudit : BaseEntity
     public string? Description { get; set; }
     public string? CreatedByUserId { get; set; }
     public InventoryAuditStatus Status { get; set; } = InventoryAuditStatus.Draft;
+    public int? WarehouseId { get; set; }
+    public Warehouse? Warehouse { get; set; }
+
     public OrderSource? CostCenter { get; set; } // مركز التكلفة (موقع أو POS)
 
     // المجموع المالي لفوارق الجرد (سواء عجز أو زيادة)

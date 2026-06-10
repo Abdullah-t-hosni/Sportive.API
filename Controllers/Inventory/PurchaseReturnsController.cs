@@ -59,6 +59,7 @@ public class PurchaseReturnsController : ControllerBase
             .AsNoTracking()
             .Include(r => r.Supplier)
             .Include(r => r.Invoice)
+            .Include(r => r.Warehouse)
             .AsQueryable();
 
         if (costCenter.HasValue) q = q.Where(r => r.CostCenter == costCenter.Value);
@@ -91,7 +92,9 @@ public class PurchaseReturnsController : ControllerBase
                 r.DiscountAmount,
                 r.Notes,
                 CostCenter = (int?)r.CostCenter,
-                CostCenterLabel = r.CostCenter == OrderSource.Website ? "الموقع" : (r.CostCenter == OrderSource.POS ? "المحل" : "عام")
+                CostCenterLabel = r.CostCenter == OrderSource.Website ? "الموقع" : (r.CostCenter == OrderSource.POS ? "المحل" : "عام"),
+                r.WarehouseId,
+                WarehouseName = r.Warehouse != null ? r.Warehouse.Name : null
             }).ToListAsync();
 
         return Ok(new {
@@ -116,6 +119,7 @@ public class PurchaseReturnsController : ControllerBase
             rtn = await _db.PurchaseReturns
                 .Include(r => r.Supplier)
                 .Include(r => r.Invoice)
+                .Include(r => r.Warehouse)
                 .Include(r => r.Items).ThenInclude(ri => ri.Product)
                 .Include(r => r.Items).ThenInclude(ri => ri.ProductVariant)
                 .FirstOrDefaultAsync(r => r.Id == id);
@@ -126,6 +130,7 @@ public class PurchaseReturnsController : ControllerBase
                 rtn = await _db.PurchaseReturns
                     .Include(r => r.Supplier)
                     .Include(r => r.Invoice)
+                    .Include(r => r.Warehouse)
                     .Include(r => r.Items).ThenInclude(ri => ri.Product)
                     .Include(r => r.Items).ThenInclude(ri => ri.ProductVariant)
                     .OrderByDescending(r => r.Id)
@@ -185,6 +190,7 @@ public class PurchaseReturnsController : ControllerBase
             rtn = await _db.PurchaseReturns
                 .Include(r => r.Supplier)
                 .Include(r => r.Invoice)
+                .Include(r => r.Warehouse)
                 .Include(r => r.Items).ThenInclude(ri => ri.Product)
                 .Include(r => r.Items).ThenInclude(ri => ri.ProductVariant)
                 .FirstOrDefaultAsync(r => r.ReturnNumber == idOrNumber);
@@ -210,6 +216,8 @@ public class PurchaseReturnsController : ControllerBase
             rtn.PaymentTerms,
             rtn.CashAccountId,
             rtn.CostCenter,
+            rtn.WarehouseId,
+            WarehouseName = rtn.Warehouse?.Name,
             Items = rtn.Items.Select(ri => new {
                 ri.Id,
                 ri.PurchaseInvoiceItemId,
@@ -301,7 +309,8 @@ public class PurchaseReturnsController : ControllerBase
                     DiscountAmount = dto.DiscountAmount,
                     PaymentTerms = dto.PaymentTerms,
                     CashAccountId = dto.CashAccountId > 0 ? dto.CashAccountId : null,
-                    CostCenter = dto.CostCenter
+                    CostCenter = dto.CostCenter,
+                    WarehouseId = dto.WarehouseId > 0 ? dto.WarehouseId : null
                 };
 
                 // التحقق من صحة PurchaseInvoiceItemIds Ù‚Ø¨Ù„ Ø§Ù„Ø¥Ø¯Ø±Ø§Ø¬ (منع FK constraint error)
@@ -352,7 +361,8 @@ public class PurchaseReturnsController : ControllerBase
                             "Standalone Purchase Return",
                             pReturn.CreatedByUserId,
                             item.UnitCost / (multiplier > 0 ? multiplier : 1),
-                            autoSave: false
+                            autoSave: false,
+                            warehouseId: pReturn.WarehouseId
                         );
                     }
                 }
@@ -430,7 +440,8 @@ public class PurchaseReturnsController : ControllerBase
                             $"Edit Return #{pReturn.ReturnNumber} (Reversal)",
                             User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                             autoSave: false,
-                            ignoreIdempotency: true
+                            ignoreIdempotency: true,
+                            warehouseId: pReturn.WarehouseId
                         );
                     }
                 }
@@ -460,6 +471,7 @@ public class PurchaseReturnsController : ControllerBase
                 pReturn.PaymentTerms = dto.PaymentTerms;
                 pReturn.CashAccountId = dto.CashAccountId > 0 ? dto.CashAccountId : null;
                 pReturn.CostCenter = dto.CostCenter;
+                pReturn.WarehouseId = dto.WarehouseId > 0 ? dto.WarehouseId : null;
                 pReturn.UpdatedAt = TimeHelper.GetEgyptTime();
 
                 // 4. ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø£ØµÙ†Ø§Ù مع التحقق من FK
@@ -515,7 +527,8 @@ public class PurchaseReturnsController : ControllerBase
                             User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                             item.UnitCost / (multiplier > 0 ? multiplier : 1),
                             autoSave: false,
-                            ignoreIdempotency: true
+                            ignoreIdempotency: true,
+                            warehouseId: pReturn.WarehouseId
                         );
                     }
                 }
@@ -589,7 +602,8 @@ public class PurchaseReturnsController : ControllerBase
                             $"Delete Return #{pReturn.ReturnNumber} (Reversal)",
                             User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                             autoSave: false,
-                            ignoreIdempotency: true
+                            ignoreIdempotency: true,
+                            warehouseId: pReturn.WarehouseId
                         );
                     }
                 }
@@ -705,7 +719,8 @@ public class PurchaseReturnsController : ControllerBase
                     Notes             = dto.Notes,
                     ReferenceNumber   = dto.ReferenceNumber,
                     CreatedByUserId   = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
-                    CostCenter        = inv.CostCenter  // Always inherit from the linked invoice
+                    CostCenter        = inv.CostCenter,  // Always inherit from the linked invoice
+                    WarehouseId       = dto.WarehouseId > 0 ? dto.WarehouseId : inv.WarehouseId
                 };
 
                 decimal totalSubTotal = 0;
@@ -764,10 +779,11 @@ public class PurchaseReturnsController : ControllerBase
                             invItem.ProductId,
                             invItem.ProductVariantId,
                             returnNo,
-                            $"مرتجع مشتريات (ÙØ§ØªÙˆØ±Ø© Ø±Ù‚Ù… #{inv.InvoiceNumber})",
+                            $"مرتجع مشتريات (Ù Ø§ØªÙˆØ±Ø© Ø±Ù‚Ù… #{inv.InvoiceNumber})",
                             pReturn.CreatedByUserId,
                             unitCostPerPiece,
-                            autoSave: false
+                            autoSave: false,
+                            warehouseId: pReturn.WarehouseId
                         );
                     }
                 }

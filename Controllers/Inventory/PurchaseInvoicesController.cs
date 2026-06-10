@@ -61,6 +61,7 @@ public class PurchaseInvoicesController : ControllerBase
         var q = _db.PurchaseInvoices
             .AsNoTracking()
             .Include(i => i.Supplier)
+            .Include(i => i.Warehouse)
             .Where(i => !i.IsAssetPurchase)
             .AsQueryable();
 
@@ -101,7 +102,9 @@ public class PurchaseInvoicesController : ControllerBase
                 i.InvoiceDate, i.DueDate,
                 i.TotalAmount, i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
                 i.CostCenter,
-                i.CostCenter == OrderSource.Website ? "الموقع" : (i.CostCenter == OrderSource.POS ? "المحل" : "عام")
+                i.CostCenter == OrderSource.Website ? "الموقع" : (i.CostCenter == OrderSource.POS ? "المحل" : "عام"),
+                i.WarehouseId,
+                i.Warehouse != null ? i.Warehouse.Name : null
             )).ToListAsync();
 
         return Ok(new PaginatedResult<PurchaseInvoiceSummaryDto>(
@@ -117,6 +120,7 @@ public class PurchaseInvoicesController : ControllerBase
         var pUnits = await GetUnitsListAsync();
         var inv = await _db.PurchaseInvoices
             .Include(i => i.Supplier)
+            .Include(i => i.Warehouse)
             .Include(i => i.Items).ThenInclude(it => it.Product!).ThenInclude(p => p.Variants)
             .Include(i => i.Items).ThenInclude(it => it.ProductVariant)
             .Include(i => i.Payments)
@@ -147,7 +151,9 @@ public class PurchaseInvoicesController : ControllerBase
             inv.CostCenter,
             inv.CashAccountId,
             inv.SupplierId,
-            inv.CostCenter == OrderSource.Website ? "الموقع" : (inv.CostCenter == OrderSource.POS ? "المحل" : "عام")
+            inv.CostCenter == OrderSource.Website ? "الموقع" : (inv.CostCenter == OrderSource.POS ? "المحل" : "عام"),
+            inv.WarehouseId,
+            inv.Warehouse?.Name
         ));
 
     }
@@ -206,7 +212,8 @@ public class PurchaseInvoicesController : ControllerBase
                     VatAccountId          = dto.VatAccountId > 0 ? dto.VatAccountId : null,
                     CashAccountId         = dto.CashAccountId > 0 ? dto.CashAccountId : null,
                     CostCenter            = dto.CostCenter,
-                    IsTaxInclusive        = dto.IsTaxInclusive
+                    IsTaxInclusive        = dto.IsTaxInclusive,
+                    WarehouseId           = dto.WarehouseId > 0 ? dto.WarehouseId : null
                 };
 
                 var warnings = new List<string>();
@@ -259,7 +266,8 @@ public class PurchaseInvoicesController : ControllerBase
                             User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                             item.UnitCost,
                             invoice.CostCenter,
-                            autoSave: false
+                            autoSave: false,
+                            warehouseId: invoice.WarehouseId
                         );
                         
                         var product = await _db.Products.FindAsync(item.ProductId.Value);
@@ -531,6 +539,7 @@ public class PurchaseInvoicesController : ControllerBase
                 if (dto.InventoryAccountId.HasValue && dto.InventoryAccountId.Value > 0) inv.InventoryAccountId = dto.InventoryAccountId.Value;
                 if (dto.VatAccountId.HasValue && dto.VatAccountId.Value > 0) inv.VatAccountId = dto.VatAccountId.Value;
                 inv.IsTaxInclusive = dto.IsTaxInclusive;
+                inv.WarehouseId = dto.WarehouseId > 0 ? dto.WarehouseId : null;
 
                 _db.PurchaseInvoiceItems.RemoveRange(inv.Items);
                 inv.Items.Clear();
@@ -781,7 +790,8 @@ public class PurchaseInvoicesController : ControllerBase
                             0, // unitCost fallback
                             inv.CostCenter,
                             autoSave: false,
-                            ignoreIdempotency: true
+                            ignoreIdempotency: true,
+                            warehouseId: inv.WarehouseId
                         );
                     }
                 }
@@ -840,7 +850,8 @@ public class PurchaseInvoicesController : ControllerBase
                         User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                         item.UnitCost,
                         inv.CostCenter,
-                        ignoreIdempotency: true
+                        ignoreIdempotency: true,
+                        warehouseId: inv.WarehouseId
                     );
                 }
             }
@@ -863,7 +874,8 @@ public class PurchaseInvoicesController : ControllerBase
                         User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
                         item.UnitCost,
                         inv.CostCenter,
-                        ignoreIdempotency: true
+                        ignoreIdempotency: true,
+                        warehouseId: inv.WarehouseId
                     );
                 }
              }
@@ -983,7 +995,7 @@ public class PurchaseInvoicesController : ControllerBase
             if (item.ProductId.HasValue)
             {
                 var mult = GetMultiplier(pUnits, item.Unit);
-                await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, -(item.Quantity * mult), item.ProductId, item.ProductVariantId, inv.InvoiceNumber, "Purchase Invoice Deleted", User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, ignoreIdempotency: true);
+                await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, -(item.Quantity * mult), item.ProductId, item.ProductVariantId, inv.InvoiceNumber, "Purchase Invoice Deleted", User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, ignoreIdempotency: true, warehouseId: inv.WarehouseId);
             }
         }
 

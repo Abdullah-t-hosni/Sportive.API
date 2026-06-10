@@ -36,5 +36,8 @@ public class InventoryMovement : BaseEntity
     public decimal UnitCost { get; set; }    // تكلفة الوحدة وقت الحركة
     public int? RemainingQty { get; set; }  // الكمية المتبقية من هذه الشحنة (لأغراض FIFO)
     public OrderSource? CostCenter { get; set; } // مركز التكلفة (موقع أو POS)
+    public int? WarehouseId { get; set; }
+    public Warehouse? Warehouse { get; set; }
+
     public string? CreatedByUserId { get; set; }
 }

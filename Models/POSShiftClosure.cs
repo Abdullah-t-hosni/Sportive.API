@@ -10,6 +10,9 @@ namespace Sportive.API.Models
         [MaxLength(50)]
         public string StationId { get; set; } = string.Empty;
 
+        public int? BranchId { get; set; }
+        public Branch? Branch { get; set; }
+
         [Required]
         [MaxLength(20)]
         public string ClosureDate { get; set; } = string.Empty; // format: "yyyy-MM-dd"

@@ -68,7 +68,8 @@ public class EmployeesController : ControllerBase
                 e.AppUserId, e.AppUser != null ? e.AppUser.FullName : null,
                 e.CostCenter,
                 e.WorkHoursPerDay, e.OvertimeMultiplier, e.DaysPerMonth,
-                e.AttendanceMode, e.ShiftStartTime, e.WeeklyDaysOff
+                e.AttendanceMode, e.ShiftStartTime, e.WeeklyDaysOff,
+                e.BranchId
             )).ToListAsync();
 
         return Ok(new PaginatedResult<EmployeeDto>(items, total, page, pageSize,
@@ -141,7 +142,8 @@ public class EmployeesController : ControllerBase
             e.AppUserId, e.AppUser?.FullName,
             e.CostCenter,
             e.WorkHoursPerDay, e.OvertimeMultiplier, e.DaysPerMonth,
-            e.AttendanceMode, e.ShiftStartTime, e.WeeklyDaysOff));
+            e.AttendanceMode, e.ShiftStartTime, e.WeeklyDaysOff,
+            e.BranchId));
     }
 
     [HttpPost]
@@ -211,6 +213,7 @@ public class EmployeesController : ControllerBase
             AttendanceMode   = dto.AttendanceMode,
             ShiftStartTime   = dto.ShiftStartTime ?? "09:00",
             WeeklyDaysOff    = dto.WeeklyDaysOff ?? "Friday",
+            BranchId         = dto.BranchId,
             CreatedAt        = TimeHelper.GetEgyptTime(),
             CreatedByUserId  = UserId
         };
@@ -278,6 +281,7 @@ public class EmployeesController : ControllerBase
         emp.AttendanceMode   = dto.AttendanceMode;
         emp.ShiftStartTime   = dto.ShiftStartTime ?? "09:00";
         emp.WeeklyDaysOff    = dto.WeeklyDaysOff ?? "Friday";
+        emp.BranchId         = dto.BranchId;
         emp.UpdatedAt         = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();

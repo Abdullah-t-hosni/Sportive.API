@@ -166,6 +166,7 @@ public class ReceiptVouchersController : ControllerBase
             AttachmentPublicId = dto.AttachmentPublicId,
             CostCenter = (OrderSource?)dto.CostCenter,
             EmployeeId = dto.EmployeeId,
+            BranchId = dto.BranchId,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value, CreatedAt = TimeHelper.GetEgyptTime(), OrderId = dto.OrderId
         };
 
@@ -289,6 +290,7 @@ public class ReceiptVouchersController : ControllerBase
         voucher.AttachmentUrl = dto.AttachmentUrl;
         voucher.AttachmentPublicId = dto.AttachmentPublicId;
         voucher.CostCenter = (OrderSource?)dto.CostCenter;
+        voucher.BranchId = dto.BranchId;
         voucher.UpdatedAt = TimeHelper.GetEgyptTime();
 
         if (voucher.OrderId.HasValue)

@@ -185,11 +185,25 @@ public class ProductService : IProductService
                 x.p.Status.ToString(),
                 x.p.AverageRating,
                 x.p.ReviewCount,
-                x.p.TotalStock,
+                filter.WarehouseId.HasValue 
+                    ? (_db.ProductWarehouseStocks.Where(w => w.ProductVariant.ProductId == x.p.Id && w.WarehouseId == filter.WarehouseId.Value).Sum(w => (int?)w.Quantity) ?? 0) 
+                    : x.p.TotalStock,
                 x.p.ReorderLevel,
                 x.p.SKU,
                 x.p.Variants != null && x.p.Variants.Any(),
-                x.p.Variants!.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList(),
+                x.p.Variants!.Select(v => new ProductVariantDto(
+                    v.Id, 
+                    v.Size, 
+                    v.Color, 
+                    v.ColorAr, 
+                    filter.WarehouseId.HasValue 
+                        ? (_db.ProductWarehouseStocks.Where(w => w.ProductVariantId == v.Id && w.WarehouseId == filter.WarehouseId.Value).Select(w => w.Quantity).FirstOrDefault()) 
+                        : v.StockQuantity, 
+                    v.ReorderLevel, 
+                    v.PriceAdjustment ?? 0, 
+                    v.ImageUrl, 
+                    v.ImagePublicId
+                )).ToList(),
                 x.p.HasTax,
                 x.p.IsTaxInclusive,
                 x.p.VatRate,
@@ -209,7 +223,7 @@ public class ProductService : IProductService
         );
     }
 
-    public async Task<ProductDetailDto?> GetProductByIdAsync(int id, DiscountApplyTo? source = null)
+    public async Task<ProductDetailDto?> GetProductByIdAsync(int id, DiscountApplyTo? source = null, int? warehouseId = null)
     {
         var p = await _db.Products
             .Include(x => x.Category)
@@ -221,6 +235,19 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (p == null) return null;
+
+        if (warehouseId.HasValue)
+        {
+            var warehouseStocks = await _db.ProductWarehouseStocks
+                .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == warehouseId.Value)
+                .ToDictionaryAsync(w => w.ProductVariantId, w => w.Quantity);
+
+            foreach (var v in p.Variants)
+            {
+                v.StockQuantity = warehouseStocks.TryGetValue(v.Id, out var qty) ? qty : 0;
+            }
+            p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
+        }
 
         var now = TimeHelper.GetEgyptTime();
         var d = await _db.ProductDiscounts
@@ -236,7 +263,7 @@ public class ProductService : IProductService
         return MapToDetail(p, d);
     }
 
-    public async Task<ProductDetailDto?> GetProductBySlugAsync(string slug, DiscountApplyTo? source = null)
+    public async Task<ProductDetailDto?> GetProductBySlugAsync(string slug, DiscountApplyTo? source = null, int? warehouseId = null)
     {
         var p = await _db.Products
             .Include(x => x.Category)
@@ -248,6 +275,19 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync(x => x.Slug == slug);
 
         if (p == null) return null;
+
+        if (warehouseId.HasValue)
+        {
+            var warehouseStocks = await _db.ProductWarehouseStocks
+                .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == warehouseId.Value)
+                .ToDictionaryAsync(w => w.ProductVariantId, w => w.Quantity);
+
+            foreach (var v in p.Variants)
+            {
+                v.StockQuantity = warehouseStocks.TryGetValue(v.Id, out var qty) ? qty : 0;
+            }
+            p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
+        }
 
         var now = TimeHelper.GetEgyptTime();
         var d = await _db.ProductDiscounts

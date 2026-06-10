@@ -94,6 +94,13 @@ public class Order : BaseEntity
     // Target Tracking
     public string? SalesPersonId { get; set; } // The ID of the employee who made the sale using POS
 
+    // ربط الفرع والمخزن للطلبية
+    public int? BranchId { get; set; }
+    public Branch? Branch { get; set; }
+
+    public int? WarehouseId { get; set; }
+    public Warehouse? Warehouse { get; set; }
+
     // Archive
     public bool IsArchived { get; set; } = false;
     public DateTime? ArchivedAt { get; set; }

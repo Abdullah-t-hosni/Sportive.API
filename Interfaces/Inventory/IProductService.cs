@@ -1,4 +1,4 @@
-﻿using Sportive.API.DTOs;
+using Sportive.API.DTOs;
 using Sportive.API.Models;
 
 namespace Sportive.API.Interfaces;
@@ -6,8 +6,8 @@ namespace Sportive.API.Interfaces;
 public interface IProductService
 {
     Task<PaginatedResult<ProductSummaryDto>> GetProductsAsync(ProductFilterDto filter);
-    Task<ProductDetailDto?> GetProductByIdAsync(int id, DiscountApplyTo? source = null);
-    Task<ProductDetailDto?> GetProductBySlugAsync(string slug, DiscountApplyTo? source = null);
+    Task<ProductDetailDto?> GetProductByIdAsync(int id, DiscountApplyTo? source = null, int? warehouseId = null);
+    Task<ProductDetailDto?> GetProductBySlugAsync(string slug, DiscountApplyTo? source = null, int? warehouseId = null);
     Task<ProductDetailDto> CreateProductAsync(CreateProductDto dto);
     Task<ProductDetailDto> UpdateProductAsync(int id, UpdateProductDto dto);
     Task DeleteProductAsync(int id);

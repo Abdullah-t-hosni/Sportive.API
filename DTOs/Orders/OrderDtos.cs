@@ -57,7 +57,11 @@ public record CreateOrderDto(
     [property: System.Text.Json.Serialization.JsonPropertyName("attachmentUrl")]
     string? AttachmentUrl = null,
     [property: System.Text.Json.Serialization.JsonPropertyName("attachmentPublicId")]
-    string? AttachmentPublicId = null
+    string? AttachmentPublicId = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("branchId")]
+    int? BranchId = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("warehouseId")]
+    int? WarehouseId = null
 );
 
 public record UpdateOrderDto(
@@ -110,7 +114,11 @@ public record CreatePOSOrderDto(
     [property: System.Text.Json.Serialization.JsonPropertyName("attachmentPublicId")]
     string? AttachmentPublicId = null,
     [property: System.Text.Json.Serialization.JsonPropertyName("offlineRef")]
-    string? OfflineRef = null
+    string? OfflineRef = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("branchId")]
+    int? BranchId = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("warehouseId")]
+    int? WarehouseId = null
 );
 
 public record CreatePOSOrderItemDto(
