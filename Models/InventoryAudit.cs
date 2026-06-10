@@ -24,6 +24,9 @@ public class InventoryAudit : BaseEntity
     public int? WarehouseId { get; set; }
     public Warehouse? Warehouse { get; set; }
 
+    public int? BranchId { get; set; }
+    public Branch? Branch { get; set; }
+
     public OrderSource? CostCenter { get; set; } // مركز التكلفة (موقع أو POS)
 
     // المجموع المالي لفوارق الجرد (سواء عجز أو زيادة)

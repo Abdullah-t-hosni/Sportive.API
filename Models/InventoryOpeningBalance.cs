@@ -10,6 +10,12 @@ public class InventoryOpeningBalance : BaseEntity
     public string? Notes { get; set; }
     public decimal TotalValue { get; set; }
     public OrderSource? CostCenter { get; set; } // مركز التكلفة
+
+    public int? BranchId { get; set; }
+    public Branch? Branch { get; set; }
+
+    public int? WarehouseId { get; set; }
+    public Warehouse? Warehouse { get; set; }
     
     public ICollection<InventoryOpeningBalanceItem> Items { get; set; } = new List<InventoryOpeningBalanceItem>();
 }

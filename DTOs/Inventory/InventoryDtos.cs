@@ -7,7 +7,9 @@ public record CreateInventoryAuditDto(
     string Title,
     string? Description,
     List<CreateInventoryAuditItemDto> Items,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    int? BranchId = null,
+    int? WarehouseId = null
 );
 
 public record CreateInventoryAuditItemDto(
@@ -22,7 +24,9 @@ public record UpdateInventoryAuditDto(
     string? Description,
     InventoryAuditStatus Status,
     List<CreateInventoryAuditItemDto> Items,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    int? BranchId = null,
+    int? WarehouseId = null
 );
 
 public record InventoryAuditSummaryDto(
@@ -34,7 +38,11 @@ public record InventoryAuditSummaryDto(
     decimal TotalActualValue,
     decimal ValueDifference,
     int ItemCount,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    int? BranchId = null,
+    string? BranchName = null,
+    int? WarehouseId = null,
+    string? WarehouseName = null
 );
 
 public record InventoryAuditDetailDto(
@@ -48,7 +56,11 @@ public record InventoryAuditDetailDto(
     decimal ValueDifference,
     List<InventoryAuditItemDto> Items,
     int? JournalEntryId = null,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    int? BranchId = null,
+    string? BranchName = null,
+    int? WarehouseId = null,
+    string? WarehouseName = null
 );
 
 public record InventoryAuditItemDto(

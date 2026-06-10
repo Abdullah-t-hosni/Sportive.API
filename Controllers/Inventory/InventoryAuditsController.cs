@@ -87,7 +87,11 @@ public class InventoryAuditsController : ControllerBase
                     a.TotalExpectedValue, 
                     a.TotalActualValue,
                     ItemCount = a.Items.Count,
-                    a.CostCenter
+                    a.CostCenter,
+                    a.BranchId,
+                    BranchName = a.Branch != null ? a.Branch.Name : null,
+                    a.WarehouseId,
+                    WarehouseName = a.Warehouse != null ? a.Warehouse.Name : null
                 })
                 .ToListAsync();
 
@@ -102,7 +106,11 @@ public class InventoryAuditsController : ControllerBase
                 a.TotalActualValue, 
                 a.TotalActualValue - a.TotalExpectedValue,
                 a.ItemCount,
-                a.CostCenter
+                a.CostCenter,
+                a.BranchId,
+                a.BranchName,
+                a.WarehouseId,
+                a.WarehouseName
             )).ToList();
 
             var totalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)pageSize);
@@ -130,6 +138,8 @@ public class InventoryAuditsController : ControllerBase
         try
         {
             var a = await _db.InventoryAudits
+                .Include(a => a.Branch)
+                .Include(a => a.Warehouse)
                 .Include(a => a.Items).ThenInclude(i => i.Product)
                 .Include(a => a.Items).ThenInclude(i => i.ProductVariant)
                 .AsNoTracking()
@@ -153,7 +163,9 @@ public class InventoryAuditsController : ControllerBase
                     );
                 }).ToList(),
                 a.JournalEntryId,
-                a.CostCenter
+                a.CostCenter,
+                a.BranchId, a.Branch?.Name,
+                a.WarehouseId, a.Warehouse?.Name
             ));
         }
         catch (Exception ex)
@@ -174,7 +186,9 @@ public class InventoryAuditsController : ControllerBase
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             Status = InventoryAuditStatus.Draft,
             AuditDate = TimeHelper.GetEgyptTime(),
-            CostCenter = dto.CostCenter
+            CostCenter = dto.CostCenter,
+            BranchId = dto.BranchId,
+            WarehouseId = dto.WarehouseId
         };
 
         if (dto.Items != null && dto.Items.Any())
@@ -230,6 +244,18 @@ public class InventoryAuditsController : ControllerBase
                                 variant.Product.TotalStock -= mv.Quantity;
                                 variant.UpdatedAt = TimeHelper.GetEgyptTime();
                                 variant.Product.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                                // Fix: Also revert warehouse-specific stock
+                                if (mv.WarehouseId.HasValue)
+                                {
+                                    var warehouseStock = await _db.ProductWarehouseStocks
+                                        .FirstOrDefaultAsync(s => s.ProductVariantId == mv.ProductVariantId.Value && s.WarehouseId == mv.WarehouseId.Value);
+                                    if (warehouseStock != null)
+                                    {
+                                        warehouseStock.Quantity -= mv.Quantity;
+                                        warehouseStock.UpdatedAt = TimeHelper.GetEgyptTime();
+                                    }
+                                }
                             }
                         }
                         else if (mv.ProductId.HasValue)
@@ -278,12 +304,16 @@ public class InventoryAuditsController : ControllerBase
 
                     audit.Status = InventoryAuditStatus.Draft;
                     audit.CostCenter = dto.CostCenter;
+                    audit.BranchId = dto.BranchId;
+                    audit.WarehouseId = dto.WarehouseId;
                     audit.JournalEntryId = null;
                 }
 
                 audit.Title = dto.Title;
                 audit.Description = dto.Description;
                 audit.CostCenter = dto.CostCenter;
+                audit.BranchId = dto.BranchId;
+                audit.WarehouseId = dto.WarehouseId;
                 
                 // Remove old items and re-add (Simple approach for audit)
                 _db.InventoryAuditItems.RemoveRange(audit.Items);
@@ -400,7 +430,8 @@ public class InventoryAuditsController : ControllerBase
                         unitCost: item.UnitCost,
                         costCenter: audit.CostCenter,
                         force: true,           // Audit overrides stock — force the physical count
-                        ignoreIdempotency: true
+                        ignoreIdempotency: true,
+                        warehouseId: audit.WarehouseId
                     );
                 }
 
@@ -472,6 +503,18 @@ public class InventoryAuditsController : ControllerBase
                                 variant.Product.TotalStock -= mv.Quantity;
                                 variant.UpdatedAt = TimeHelper.GetEgyptTime();
                                 variant.Product.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                                // Fix: Also revert warehouse-specific stock
+                                if (mv.WarehouseId.HasValue)
+                                {
+                                    var warehouseStock = await _db.ProductWarehouseStocks
+                                        .FirstOrDefaultAsync(s => s.ProductVariantId == mv.ProductVariantId.Value && s.WarehouseId == mv.WarehouseId.Value);
+                                    if (warehouseStock != null)
+                                    {
+                                        warehouseStock.Quantity -= mv.Quantity;
+                                        warehouseStock.UpdatedAt = TimeHelper.GetEgyptTime();
+                                    }
+                                }
                             }
                         }
                         else if (mv.ProductId.HasValue)

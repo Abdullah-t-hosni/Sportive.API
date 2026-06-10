@@ -486,6 +486,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.TotalExpectedValue).HasPrecision(18, 2);
             e.Property(x => x.TotalActualValue).HasPrecision(18, 2);
             e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.SetNull);
             e.HasMany(a => a.Items).WithOne(i => i.InventoryAudit).HasForeignKey(i => i.InventoryAuditId);
         });
 
@@ -498,6 +499,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<InventoryOpeningBalance>(e => {
             e.Property(x => x.TotalValue).HasPrecision(18, 2);
             e.HasMany(x => x.Items).WithOne(x => x.InventoryOpeningBalance).HasForeignKey(x => x.InventoryOpeningBalanceId);
+            e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.Warehouse).WithMany().HasForeignKey(x => x.WarehouseId).OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<InventoryOpeningBalanceItem>(e => {

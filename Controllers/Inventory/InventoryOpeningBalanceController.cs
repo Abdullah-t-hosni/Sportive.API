@@ -65,7 +65,9 @@ public class InventoryOpeningBalanceController : ControllerBase
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(x => new OpeningBalanceSummaryDto(
-                x.Id, x.Reference, x.Date, x.TotalValue, x.Items.Count, x.CostCenter
+                x.Id, x.Reference, x.Date, x.TotalValue, x.Items.Count, x.CostCenter,
+                x.BranchId, x.Branch != null ? x.Branch.Name : null,
+                x.WarehouseId, x.Warehouse != null ? x.Warehouse.Name : null
             ))
             .ToListAsync();
 
@@ -76,6 +78,8 @@ public class InventoryOpeningBalanceController : ControllerBase
     public async Task<IActionResult> GetById(int id)
     {
         var x = await _db.InventoryOpeningBalances
+            .Include(b => b.Branch)
+            .Include(b => b.Warehouse)
             .Include(b => b.Items).ThenInclude(i => i.Product).ThenInclude(p => p != null ? p.Images : null)
             .Include(b => b.Items).ThenInclude(i => i.ProductVariant)
             .FirstOrDefaultAsync(b => b.Id == id);
@@ -92,7 +96,9 @@ public class InventoryOpeningBalanceController : ControllerBase
                     ? i.ProductVariant.ImageUrl 
                     : i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? i.Product?.Images?.FirstOrDefault()?.ImageUrl
             )).ToList(),
-            x.CostCenter
+            x.CostCenter,
+            x.BranchId, x.Branch?.Name,
+            x.WarehouseId, x.Warehouse?.Name
         ));
     }
 
@@ -116,6 +122,8 @@ public class InventoryOpeningBalanceController : ControllerBase
             Date      = dto.Date,
             Notes     = dto.Notes,
             CostCenter = dto.CostCenter,
+            BranchId   = dto.BranchId,
+            WarehouseId = dto.WarehouseId,
             CreatedAt = TimeHelper.GetEgyptTime()
         };
 
@@ -150,7 +158,8 @@ public class InventoryOpeningBalanceController : ControllerBase
                     ob.CostCenter,
                     autoSave: false,
                     broadcast: false,
-                    date: ob.Date
+                    date: ob.Date,
+                    warehouseId: dto.WarehouseId
                 );
 
                 // 2. Update Product Cost Price if requested
@@ -289,7 +298,8 @@ public class InventoryOpeningBalanceController : ControllerBase
                     autoSave: false,
                     broadcast: true,
                     force: true,
-                    date: dto.Date
+                    date: dto.Date,
+                    warehouseId: dto.WarehouseId
                 );
             }
         }
@@ -308,6 +318,8 @@ public class InventoryOpeningBalanceController : ControllerBase
         ob.Date = dto.Date;
         ob.Notes = dto.Notes;
         ob.CostCenter = dto.CostCenter;
+        ob.BranchId = dto.BranchId;
+        ob.WarehouseId = dto.WarehouseId;
 
         _db.InventoryOpeningBalanceItems.RemoveRange(ob.Items);
         ob.Items.Clear();
@@ -379,7 +391,8 @@ public class InventoryOpeningBalanceController : ControllerBase
                     ob.CostCenter,
                     autoSave: false,
                     broadcast: true,
-                    force: true
+                    force: true,
+                    warehouseId: ob.WarehouseId
                 );
             }
         }

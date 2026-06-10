@@ -9,7 +9,9 @@ public record CreateOpeningBalanceDto(
     string? Notes,
     List<CreateOpeningBalanceItemDto> Items,
     bool UpdateProductCost = false,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    int? BranchId = null,
+    int? WarehouseId = null
 );
 
 public record CreateOpeningBalanceItemDto(
@@ -25,7 +27,11 @@ public record OpeningBalanceSummaryDto(
     DateTime Date,
     decimal TotalValue,
     int ItemsCount,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    int? BranchId = null,
+    string? BranchName = null,
+    int? WarehouseId = null,
+    string? WarehouseName = null
 );
 
 public record OpeningBalanceDetailDto(
@@ -35,7 +41,11 @@ public record OpeningBalanceDetailDto(
     string? Notes,
     decimal TotalValue,
     List<OpeningBalanceItemDto> Items,
-    OrderSource? CostCenter = null
+    OrderSource? CostCenter = null,
+    int? BranchId = null,
+    string? BranchName = null,
+    int? WarehouseId = null,
+    string? WarehouseName = null
 );
 
 public record OpeningBalanceItemDto(
