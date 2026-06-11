@@ -185,6 +185,7 @@ public class SettingsController : ControllerBase
             info.BackupTime              = dto.BackupTime;
             info.BackupUtcOffset         = dto.BackupUtcOffset;
             info.ResendApiKey            = dto.ResendApiKey;
+            info.BusinessDayEndHour      = dto.BusinessDayEndHour;
 
             // New fields
             info.WhatsAppOrderTemplate    = dto.WhatsAppOrderTemplate;

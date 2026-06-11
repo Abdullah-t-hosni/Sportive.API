@@ -363,6 +363,9 @@ public class StoreInfo
     [JsonPropertyName("resendApiKey")]
     public string? ResendApiKey { get; set; }
 
+    [JsonPropertyName("businessDayEndHour")]
+    public int? BusinessDayEndHour { get; set; }
+
     // --- 8. WhatsApp Quick Replies ---
     [JsonPropertyName("whatsAppOrderTemplate")]
     public string? WhatsAppOrderTemplate { get; set; } = "أهلاً {customerName} 👋\n✅ *تم تأكيد طلبك بنجاح!*\n🔢 رقم الطلب: *{orderNumber}*\n📦 الطلب:\n{itemsList}\n💰 الإجمالي: *{totalAmount} ج.م*\n{discountPart}💳 الدفع: *{paymentMethod}*\n📍 النوع: *{fulfillmentType}*\nسنتواصل معك قريباً لتأكيد موعد التوصيل 🙏\n📄 الفاتورة الإلكترونية: {storeUrl}/invoice/{orderNumber}";
