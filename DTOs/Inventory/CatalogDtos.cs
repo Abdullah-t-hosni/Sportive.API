@@ -143,7 +143,8 @@ public record ProductDetailDto(
     [property: JsonPropertyName("createdAt")] DateTime CreatedAt,
     [property: JsonPropertyName("reviews")] List<ReviewListItemDto>? Reviews = null,
     [property: JsonPropertyName("activeDiscountLabel")] string? ActiveDiscountLabel = null,
-    [property: JsonPropertyName("sizeChartImageUrl")] string? SizeChartImageUrl = null
+    [property: JsonPropertyName("sizeChartImageUrl")] string? SizeChartImageUrl = null,
+    [property: JsonPropertyName("sizeChartJson")] string? SizeChartJson = null
 );
 
 public record ProductVariantDto(
@@ -180,7 +181,8 @@ public record CreateProductDto(
     [property: JsonPropertyName("isTaxInclusive")] bool IsTaxInclusive = true,
     [property: JsonPropertyName("vatRate")] decimal? VatRate = null,
     [property: JsonPropertyName("sizeGroupId")] int? SizeGroupId = null,
-    [property: JsonPropertyName("sizeChartImageUrl")] string? SizeChartImageUrl = null
+    [property: JsonPropertyName("sizeChartImageUrl")] string? SizeChartImageUrl = null,
+    [property: JsonPropertyName("sizeChartJson")] string? SizeChartJson = null
 );
 
 public record UpdateProductDto(
@@ -202,7 +204,8 @@ public record UpdateProductDto(
     [property: JsonPropertyName("isTaxInclusive")] bool IsTaxInclusive = true,
     [property: JsonPropertyName("vatRate")] decimal? VatRate = null,
     [property: JsonPropertyName("sizeGroupId")] int? SizeGroupId = null,
-    [property: JsonPropertyName("sizeChartImageUrl")] string? SizeChartImageUrl = null
+    [property: JsonPropertyName("sizeChartImageUrl")] string? SizeChartImageUrl = null,
+    [property: JsonPropertyName("sizeChartJson")] string? SizeChartJson = null
 );
 
 public record CreateVariantDto(

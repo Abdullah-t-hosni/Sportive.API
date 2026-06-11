@@ -352,6 +352,7 @@ public class ProductService : IProductService
             UnitId = dto.UnitId,
             SizeGroupId = dto.SizeGroupId,
             SizeChartImageUrl = dto.SizeChartImageUrl,
+            SizeChartJson = dto.SizeChartJson,
             Status = ProductStatus.Active,
             Slug = GenerateSlug(dto.NameEn ?? dto.NameAr) + "-" + Guid.NewGuid().ToString().Substring(0, 4)
         };
@@ -457,6 +458,7 @@ public class ProductService : IProductService
         product.UnitId = dto.UnitId;
         product.SizeGroupId = dto.SizeGroupId;
         product.SizeChartImageUrl = dto.SizeChartImageUrl;
+        product.SizeChartJson = dto.SizeChartJson;
         product.UpdatedAt = TimeHelper.GetEgyptTime();
 
         // إعادة حساب إجمالي المخزون وتحديث الحالة للتأكد من الدقة
@@ -918,7 +920,8 @@ public class ProductService : IProductService
             p.CreatedAt,
             p.Reviews?.Where(r => r.IsApproved).OrderByDescending(r => r.CreatedAt).Select(r => new ReviewListItemDto(r.Id, r.Customer?.FullName ?? _t.Get("Products.AnonymousReviewer"), r.Rating, r.Comment, r.CreatedAt)).ToList(),
             activeLabel,
-            p.SizeChartImageUrl
+            p.SizeChartImageUrl,
+            p.SizeChartJson
         );
     }
 
