@@ -613,55 +613,64 @@ public class PurchaseInvoicesController : ControllerBase
                 }
                 inv.Supplier.TotalPurchases += inv.TotalAmount;
 
-                // --- Sync Payment for Cash Invoices ---
-                if (inv.PaymentTerms == PaymentTerms.Cash)
+                // ─── Reset/Clear Existing Payments (to avoid double-payment & duplicates on edit) ───
+                var newlyUnlinkedPayments = new List<SupplierPayment>();
+                var oldPayments = inv.Payments.ToList();
+                foreach (var op in oldPayments)
                 {
-                    var oldPaid = inv.PaidAmount;
-                    inv.PaidAmount = inv.TotalAmount;
-                    inv.Supplier.TotalPaid += (inv.PaidAmount - oldPaid);
+                    // Remove journal entries associated with the payment
+                    var pEntries = await _db.JournalEntries
+                        .Where(e => e.Reference == op.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher)
+                        .ToListAsync();
+                    if (pEntries.Any()) _db.JournalEntries.RemoveRange(pEntries);
 
-                    // Update the automatic payment record if exists
-                    var autoPayment = inv.Payments.FirstOrDefault(p => p.Notes != null && p.Notes.Contains(inv.InvoiceNumber));
-                    if (autoPayment != null)
+                    // Revert supplier total paid
+                    inv.Supplier.TotalPaid -= op.Amount;
+
+                    if (op.CreatedAt < inv.CreatedAt.AddSeconds(-2))
                     {
-                        autoPayment.Amount = inv.TotalAmount;
-                        autoPayment.PaymentDate = inv.InvoiceDate;
-                        autoPayment.CostCenter = inv.CostCenter;
+                        // Unlink advance payment
+                        op.PurchaseInvoiceId = null;
+                        newlyUnlinkedPayments.Add(op);
                     }
                     else
                     {
-                        // Create payment if it was changed from Credit to Cash
-                        var pNo = await _seq.NextAsync("SP");
-                        inv.Payments.Add(new SupplierPayment
-                        {
-                            PaymentNumber = pNo,
-                            SupplierId = inv.SupplierId,
-                            Amount = inv.TotalAmount,
-                            PaymentDate = inv.InvoiceDate,
-                            PaymentMethod = PaymentMethod_Purchase.Cash,
-                            AccountName = "الخزينة (آلي)",
-                            Notes = $"سداد تلقائي لفاتورة {inv.InvoiceNumber}",
-                            CreatedAt = TimeHelper.GetEgyptTime(),
-                            CostCenter = inv.CostCenter
-                        });
+                        // Delete invoice-specific payment
+                        _db.SupplierPayments.Remove(op);
                     }
+                    inv.Payments.Remove(op);
+                }
+                inv.PaidAmount = 0;
+
+                // --- Sync Payment for Cash Invoices ---
+                if (inv.PaymentTerms == PaymentTerms.Cash)
+                {
+                    inv.PaidAmount = inv.TotalAmount;
+                    inv.Supplier.TotalPaid += inv.TotalAmount;
+
+                    var pNo = await _seq.NextAsync("SP");
+                    var newPm = new SupplierPayment
+                    {
+                        PaymentNumber = pNo,
+                        SupplierId = inv.SupplierId,
+                        Amount = inv.TotalAmount,
+                        PaymentDate = inv.InvoiceDate,
+                        PaymentMethod = PaymentMethod_Purchase.Cash,
+                        AccountName = "الخزينة (آلي)",
+                        Notes = $"سداد تلقائي لفاتورة {inv.InvoiceNumber}",
+                        CreatedAt = TimeHelper.GetEgyptTime(),
+                        CostCenter = inv.CostCenter,
+                        CashAccountId = inv.CashAccountId > 0 ? inv.CashAccountId : null
+                    };
+                    inv.Payments.Add(newPm);
                     inv.Status = PurchaseInvoiceStatus.Paid;
                 }
                 else 
                 {
                     // ─── Process new Payments (Credit mode) ───
+                    decimal totalNewPaid = 0;
                     if (dto.Payments != null && dto.Payments.Any())
                     {
-                        // Remove old advance-linked payments so we don't double-count
-                        var oldAdvancePayments = inv.Payments.Where(p => p.Notes == null || (!p.Notes.Contains(inv.InvoiceNumber))).ToList();
-                        foreach (var op in oldAdvancePayments)
-                        {
-                            inv.Supplier.TotalPaid -= op.Amount;
-                            _db.SupplierPayments.Remove(op);
-                            inv.Payments.Remove(op);
-                        }
-
-                        decimal totalNewPaid = 0;
                         foreach (var pmDto in dto.Payments)
                         {
                             if (pmDto.Amount <= 0) continue;
@@ -682,9 +691,9 @@ public class PurchaseInvoicesController : ControllerBase
                             inv.Payments.Add(newPm);
                             totalNewPaid += pmDto.Amount;
                         }
-                        inv.PaidAmount = totalNewPaid;
-                        inv.Supplier.TotalPaid += totalNewPaid;
                     }
+                    inv.PaidAmount = totalNewPaid;
+                    inv.Supplier.TotalPaid += totalNewPaid;
 
                     // ─── Process Advance Deduction ───
                     if (dto.DeductAdvanceAmount > 0)
@@ -800,6 +809,22 @@ public class PurchaseInvoicesController : ControllerBase
                 await transaction.CommitAsync();
 
                 _ = PostJournalWithRetryAsync(id, inv.InvoiceNumber, isReturn: false);
+
+                if (newlyUnlinkedPayments.Any())
+                {
+                    var unlinkedIds = newlyUnlinkedPayments.Select(p => p.Id).ToList();
+                    _ = Task.Run(async () => {
+                        try {
+                            using var scope = _scopeFactory.CreateScope();
+                            var acc = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                            var innerDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                            var payments = await innerDb.SupplierPayments.Where(p => unlinkedIds.Contains(p.Id)).ToListAsync();
+                            foreach (var sp in payments) { await acc.PostSupplierPaymentAsync(sp); }
+                        } catch (Exception ex) {
+                            _logger.LogError(ex, "Failed to post journal for newly unlinked advance payments on update.");
+                        }
+                    });
+                }
 
                 return Ok(new { id = inv.Id, invoiceNumber = inv.InvoiceNumber, warnings });
             }
