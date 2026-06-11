@@ -16,7 +16,7 @@ using ClosedXML.Excel;
 namespace Sportive.API.Controllers;
 [ApiController]
 [Route("api/purchaseinvoices")]
-[RequirePermission(ModuleKeys.PurchasesMain + "," + ModuleKeys.SupplierVouchers)]
+[RequirePermission(ModuleKeys.PurchasesMain + "," + ModuleKeys.PurchaseReturns + "," + ModuleKeys.SupplierVouchers)]
 public class PurchaseReturnsController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -46,6 +46,7 @@ public class PurchaseReturnsController : ControllerBase
         if (string.IsNullOrWhiteSpace(unitStr)) return 1M;
         return units.FirstOrDefault(u => u.Symbol == unitStr || u.NameAr == unitStr || u.NameEn == unitStr)?.Multiplier ?? 1M;
     }
+
     [HttpGet("returns")]
     public async Task<IActionResult> GetReturns(
         [FromQuery] int? supplierId = null,
@@ -628,6 +629,7 @@ public class PurchaseReturnsController : ControllerBase
                     var totalReturnedQty = await _db.PurchaseInvoiceItems.Where(i => i.PurchaseInvoiceId == pReturn.PurchaseInvoiceId).SumAsync(i => i.ReturnedQuantity);
                     
                     // Note: Since we are deleting THIS return, we need to adjust the ReturnedQuantity of the items too
+                    decimal newTotalReturnedQty = totalReturnedQty;
                     foreach(var rItem in pReturn.Items)
                     {
                         if (rItem.PurchaseInvoiceItemId.HasValue)
@@ -638,17 +640,24 @@ public class PurchaseReturnsController : ControllerBase
                                 var mult = GetMultiplier(pUnits, invItem.Unit);
                                 decimal returnedInOriginalUnits = mult > 0 ? (rItem.Quantity / mult) : rItem.Quantity;
                                 invItem.ReturnedQuantity -= returnedInOriginalUnits;
+                                newTotalReturnedQty -= returnedInOriginalUnits;
                             }
                         }
                     }
 
-                    // Refresh totals for status
-                    totalReturnedQty = await _db.PurchaseInvoiceItems.Where(i => i.PurchaseInvoiceId == pReturn.PurchaseInvoiceId).SumAsync(i => i.ReturnedQuantity);
-
-                    if (totalReturnedQty <= 0.001M)
-                        pReturn.Invoice.Status = PurchaseInvoiceStatus.Received; // Or Paid if it was paid
+                    if (newTotalReturnedQty <= 0.001M)
+                    {
+                        if (pReturn.Invoice.PaidAmount >= pReturn.Invoice.TotalAmount - 0.01M)
+                            pReturn.Invoice.Status = PurchaseInvoiceStatus.Paid;
+                        else if (pReturn.Invoice.PaidAmount > 0)
+                            pReturn.Invoice.Status = PurchaseInvoiceStatus.PartPaid;
+                        else
+                            pReturn.Invoice.Status = PurchaseInvoiceStatus.Received;
+                    }
                     else
+                    {
                         pReturn.Invoice.Status = PurchaseInvoiceStatus.PartiallyReturned;
+                    }
 
                     pReturn.Invoice.UpdatedAt = TimeHelper.GetEgyptTime();
                 }
