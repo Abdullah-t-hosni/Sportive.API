@@ -1,0 +1,75 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Sportive.API.Data;
+using Sportive.API.Models;
+
+namespace Sportive.API.Controllers;
+
+[Route("api/system/audit-logs")]
+[ApiController]
+[Authorize(Roles = "SuperAdmin,Admin")]
+public class AuditLogsController : ControllerBase
+{
+    private readonly AppDbContext _db;
+
+    public AuditLogsController(AppDbContext db)
+    {
+        _db = db;
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetLogs(
+        [FromQuery] string? action,
+        [FromQuery] string? entityType,
+        [FromQuery] string? userId,
+        [FromQuery] string? fromDate,
+        [FromQuery] string? toDate,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50)
+    {
+        var query = _db.AuditLogs.AsNoTracking().AsQueryable();
+
+        if (!string.IsNullOrEmpty(action))
+            query = query.Where(x => x.Action.Contains(action));
+
+        if (!string.IsNullOrEmpty(entityType))
+            query = query.Where(x => x.EntityType.Contains(entityType));
+
+        if (!string.IsNullOrEmpty(userId))
+            query = query.Where(x => x.UserId == userId);
+
+        if (!string.IsNullOrEmpty(fromDate) && DateTime.TryParse(fromDate, out var fromDt))
+            query = query.Where(x => x.CreatedAt >= fromDt);
+
+        if (!string.IsNullOrEmpty(toDate) && DateTime.TryParse(toDate, out var toDt))
+        {
+            toDt = toDt.Date.AddDays(1).AddTicks(-1);
+            query = query.Where(x => x.CreatedAt <= toDt);
+        }
+
+        var total = await query.CountAsync();
+
+        var items = await query
+            .OrderByDescending(x => x.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return Ok(new
+        {
+            Total = total,
+            Page = page,
+            PageSize = pageSize,
+            Items = items
+        });
+    }
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetLogById(int id)
+    {
+        var log = await _db.AuditLogs.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+        if (log == null) return NotFound("Audit log not found");
+        return Ok(log);
+    }
+}

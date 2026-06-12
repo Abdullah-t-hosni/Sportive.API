@@ -163,13 +163,14 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] OrderSource? source = null,
-        [FromQuery] bool      excel    = false)
+        [FromQuery] bool      excel    = false,
+        [FromQuery] int?      branchId = null)
     {
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
         var from = fromDate?.AddHours(TimeHelper.GetBusinessDayEndHour()) ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1, TimeHelper.GetBusinessDayEndHour(), 0, 0);
         var to   = toDate?.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        int? isolatedBranchId = await User.HasViewAllBranchesAsync(HttpContext) ? null : User.GetBranchId();
+        int? isolatedBranchId = await User.HasViewAllBranchesAsync(HttpContext) ? branchId : User.GetBranchId();
 
         var balances = await GetBalances(from, to, source, isolatedBranchId);
         var rows = balances
@@ -232,13 +233,14 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] OrderSource? source = null,
-        [FromQuery] bool      excel    = false)
+        [FromQuery] bool      excel    = false,
+        [FromQuery] int?      branchId = null)
     {
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
         var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
-        int? isolatedBranchId = await User.HasViewAllBranchesAsync(HttpContext) ? null : User.GetBranchId();
+        int? isolatedBranchId = await User.HasViewAllBranchesAsync(HttpContext) ? branchId : User.GetBranchId();
 
         var balances = await GetBalances(from, to, source, isolatedBranchId);
 
@@ -291,13 +293,14 @@ public class FinancialReportsController : ControllerBase
     public async Task<IActionResult> BalanceSheet(
         [FromQuery] DateTime? toDate = null,
         [FromQuery] OrderSource? source = null,
-        [FromQuery] bool      excel  = false)
+        [FromQuery] bool      excel  = false,
+        [FromQuery] int?      branchId = null)
     {
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
         var from = new DateTime(2000, 1, 1, 2, 0, 0);
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
-        int? isolatedBranchId = await User.HasViewAllBranchesAsync(HttpContext) ? null : User.GetBranchId();
+        int? isolatedBranchId = await User.HasViewAllBranchesAsync(HttpContext) ? branchId : User.GetBranchId();
 
         var balances = await GetBalances(from, to, source, isolatedBranchId);
 
@@ -769,7 +772,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] OrderSource? source = null,
-        [FromQuery] bool      excel    = false)
+        [FromQuery] bool      excel    = false,
+        [FromQuery] int?      branchId = null)
     {
         var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
@@ -799,6 +803,10 @@ public class FinancialReportsController : ControllerBase
             {
                 cashLinesQuery = cashLinesQuery.Where(l => l.BranchId == isolatedBranchId.Value);
             }
+        }
+        else if (branchId.HasValue)
+        {
+            cashLinesQuery = cashLinesQuery.Where(l => l.BranchId == branchId.Value);
         }
 
         if (source.HasValue)
