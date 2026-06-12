@@ -3725,7 +3725,7 @@ public class OperationalReportsController : ControllerBase
         var expensesBreakdown = expensesBreakdownQuery.Select(x => new PartnersReportExpenseCategory(x.Category, x.Amount)).ToList();
 
         // 3. Collections (ReceiptVouchers)
-        var colQuery = _db.JournalEntries.AsNoTracking().Where(e => e.Type == JournalEntryType.ReceiptVoucher);
+        var colQuery = _db.JournalEntries.AsNoTracking();
         if (branchId.HasValue) colQuery = colQuery.Where(e => e.Lines.Any(l => l.BranchId == branchId.Value));
 
         var cashAccTypes = new[] { "1101", "1102", "1105", "1107" };
@@ -3863,6 +3863,7 @@ public record PartnersComprehensiveReportResponse(
     IEnumerable<PartnersReportPaymentMethodSale> SalesByPaymentMethod,
     IEnumerable<PartnersReportSalesTrend> SalesTrend
 );
+
 
 
 
