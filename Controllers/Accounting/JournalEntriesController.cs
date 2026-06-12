@@ -77,8 +77,8 @@ public class JournalEntriesController : ControllerBase
                            || (isDecimal && r.Lines.Any(l => l.Debit == searchAmt || l.Credit == searchAmt)));
         }
         
-        if (fromDate.HasValue) q = q.Where(e => e.EntryDate >= fromDate.Value.Date.AddHours(2));
-        if (toDate.HasValue) q = q.Where(e => e.EntryDate <= toDate.Value.Date.AddDays(1).AddHours(2).AddTicks(-1));
+        if (fromDate.HasValue) q = q.Where(e => e.EntryDate >= fromDate.Value.Date.AddHours(TimeHelper.GetBusinessDayEndHour()));
+        if (toDate.HasValue) q = q.Where(e => e.EntryDate <= toDate.Value.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1));
         if (source.HasValue) q = q.Where(e => e.CostCenter == source.Value);
         if (status.HasValue) q = q.Where(e => e.Status == status.Value);
         if (!string.IsNullOrEmpty(entryNumber)) q = q.Where(e => e.EntryNumber.Contains(entryNumber));

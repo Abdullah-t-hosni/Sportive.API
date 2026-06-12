@@ -31,14 +31,14 @@ public class DashboardService : IDashboardService
     {
         var now        = TimeHelper.GetEgyptTime();
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
-        var todayStart = (now.Hour < 2) ? now.Date.AddDays(-1).AddHours(2) : now.Date.AddHours(2);
+        var todayStart = (now.Hour < TimeHelper.GetBusinessDayEndHour()) ? now.Date.AddDays(-1).AddHours(TimeHelper.GetBusinessDayEndHour()) : now.Date.AddHours(TimeHelper.GetBusinessDayEndHour());
         var todayEnd   = todayStart.AddDays(1);
         
         // Determine the targeted range for "Today" stats (used in Orders page)
         // 🕒 BUSINESS DAY OFFSET: Apply 2 AM offset to match OrderService list logic
-        var targetStart = fromDate?.Date.AddHours(2) ?? todayStart;
-        var targetEnd   = toDate != null ? toDate.Value.Date.AddDays(1).AddHours(2) : 
-                          fromDate != null ? fromDate.Value.Date.AddDays(1).AddHours(2) : 
+        var targetStart = fromDate?.Date.AddHours(TimeHelper.GetBusinessDayEndHour()) ?? todayStart;
+        var targetEnd   = toDate != null ? toDate.Value.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()) : 
+                          fromDate != null ? fromDate.Value.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()) : 
                           todayEnd;
 
         var monthStart = new DateTime(now.Year, now.Month, 1);
@@ -365,12 +365,12 @@ public class DashboardService : IDashboardService
 
         if (from.HasValue)
         {
-            var targetStart = from.Value.Date.AddHours(2);
+            var targetStart = from.Value.Date.AddHours(TimeHelper.GetBusinessDayEndHour());
             query = query.Where(o => o.CreatedAt >= targetStart);
         }
         if (to.HasValue)
         {
-            var targetEnd = to.Value.Date.AddDays(1).AddHours(2);
+            var targetEnd = to.Value.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour());
             query = query.Where(o => o.CreatedAt < targetEnd);
         }
         if (source.HasValue) query = query.Where(o => o.Source == source.Value);
@@ -671,7 +671,7 @@ public class DashboardService : IDashboardService
     {
         var now        = TimeHelper.GetEgyptTime();
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
-        var todayStart = (now.Hour < 2) ? now.Date.AddDays(-1).AddHours(2) : now.Date.AddHours(2);
+        var todayStart = (now.Hour < TimeHelper.GetBusinessDayEndHour()) ? now.Date.AddDays(-1).AddHours(TimeHelper.GetBusinessDayEndHour()) : now.Date.AddHours(TimeHelper.GetBusinessDayEndHour());
         var todayEnd       = todayStart.AddDays(1);
         var yesterdayStart = todayStart.AddDays(-1);
         var weekStart      = todayStart.AddDays(-7);
@@ -784,7 +784,7 @@ public class DashboardService : IDashboardService
 
         // Calculate income/expenses for the last 12 months (Cash Flow)
         var startPeriodCal = monthStart.AddMonths(-11);
-        var startPeriod = startPeriodCal.AddHours(2);
+        var startPeriod = startPeriodCal.AddHours(TimeHelper.GetBusinessDayEndHour());
 
         // Query monthly revenue from general ledger (Income Statement logic)
         var monthlyRevenueQuery = _db.JournalLines.AsNoTracking()
@@ -797,8 +797,8 @@ public class DashboardService : IDashboardService
         }
         var monthlyRevenue = await monthlyRevenueQuery
             .GroupBy(l => new { 
-                Year = l.JournalEntry.EntryDate.AddHours(-2).Year, 
-                Month = l.JournalEntry.EntryDate.AddHours(-2).Month 
+                Year = l.JournalEntry.EntryDate.AddHours(-TimeHelper.GetBusinessDayEndHour()).Year, 
+                Month = l.JournalEntry.EntryDate.AddHours(-TimeHelper.GetBusinessDayEndHour()).Month 
             })
             .Select(g => new {
                 g.Key.Year,
@@ -819,8 +819,8 @@ public class DashboardService : IDashboardService
         }
         var monthlyExpenses = await monthlyExpensesQuery
             .GroupBy(l => new { 
-                Year = l.JournalEntry.EntryDate.AddHours(-2).Year, 
-                Month = l.JournalEntry.EntryDate.AddHours(-2).Month 
+                Year = l.JournalEntry.EntryDate.AddHours(-TimeHelper.GetBusinessDayEndHour()).Year, 
+                Month = l.JournalEntry.EntryDate.AddHours(-TimeHelper.GetBusinessDayEndHour()).Month 
             })
             .Select(g => new {
                 g.Key.Year,
@@ -986,10 +986,10 @@ public class DashboardService : IDashboardService
     {
         var now = TimeHelper.GetEgyptTime();
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
-        var todayStart = (now.Hour < 2) ? now.Date.AddDays(-1).AddHours(2) : now.Date.AddHours(2);
+        var todayStart = (now.Hour < TimeHelper.GetBusinessDayEndHour()) ? now.Date.AddDays(-1).AddHours(TimeHelper.GetBusinessDayEndHour()) : now.Date.AddHours(TimeHelper.GetBusinessDayEndHour());
         
-        var start = fromDate?.Date.AddHours(2) ?? (period == "daily" ? todayStart.AddDays(-29) : new DateTime(now.Year - 1, now.Month, 1, 2, 0, 0));
-        var end = toDate?.Date.AddDays(1).AddHours(2).AddTicks(-1) ?? todayStart.AddDays(1);
+        var start = fromDate?.Date.AddHours(TimeHelper.GetBusinessDayEndHour()) ?? (period == "daily" ? todayStart.AddDays(-29) : new DateTime(now.Year - 1, now.Month, 1, TimeHelper.GetBusinessDayEndHour(), 0, 0));
+        var end = toDate?.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1) ?? todayStart.AddDays(1);
 
         // 1. Try to get from DailyStats first (Performance Optimized)
         IEnumerable<dynamic> stats;

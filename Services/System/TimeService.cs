@@ -15,6 +15,9 @@ public interface ITimeService
     
     /// <summary>Returns the current TimeZoneInfo configured for the store.</summary>
     TimeZoneInfo GetTimeZone();
+
+    /// <summary>Returns the configured Business Day End Hour (e.g. 2 for 2:00 AM).</summary>
+    int GetBusinessDayEndHour();
 }
 
 /// <summary>
@@ -27,6 +30,7 @@ public class TimeService : ITimeService
     private readonly IMemoryCache _cache;
     private readonly ILogger<TimeService> _logger;
     private const string CacheKey = "store_timezone";
+    private const string EndHourCacheKey = "store_business_end_hour";
 
     public TimeService(IServiceScopeFactory scopeFactory, IMemoryCache cache, ILogger<TimeService> logger)
     {
@@ -78,6 +82,37 @@ public class TimeService : ITimeService
         }
     }
 
+    public int GetBusinessDayEndHour()
+    {
+        if (_cache.TryGetValue(EndHourCacheKey, out int cached))
+            return cached;
+
+        var endHour = LoadBusinessDayEndHourFromDb() ?? 2;
+        _cache.Set(EndHourCacheKey, endHour, TimeSpan.FromMinutes(10));
+        return endHour;
+    }
+
+    private int? LoadBusinessDayEndHourFromDb()
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var endHour = db.StoreInfo
+                .AsNoTracking()
+                .Where(s => s.StoreConfigId == 1)
+                .Select(s => s.BusinessDayEndHour)
+                .FirstOrDefault();
+
+            return endHour > 0 ? endHour : 2;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static TimeZoneInfo FallbackEgyptZone()
     {
         try { return TimeZoneInfo.FindSystemTimeZoneById("Egypt Standard Time"); }
@@ -90,5 +125,9 @@ public class TimeService : ITimeService
     /// <summary>
     /// Call this after saving a new TimeZoneId to StoreInfo so the cached value is refreshed immediately.
     /// </summary>
-    public void InvalidateCache() => _cache.Remove(CacheKey);
+    public void InvalidateCache() 
+    {
+        _cache.Remove(CacheKey);
+        _cache.Remove(EndHourCacheKey);
+    }
 }

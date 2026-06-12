@@ -16,6 +16,8 @@ public static class TimeHelper
 
     public static DateTime GetEgyptTime() => _service?.Now ?? FallbackEgyptTime();
 
+    public static int GetBusinessDayEndHour() => _service?.GetBusinessDayEndHour() ?? 2;
+
     public static DateTime ToStoreTime(this DateTime dt)
     {
         if (dt.Kind == DateTimeKind.Utc)
@@ -43,17 +45,18 @@ public static class TimeHelper
     }
 
     /// <summary>
-    /// Gets the start of the current business day (2:00 AM cutoff).
-    /// If current time is 1:00 AM on May 15, it returns May 14 02:00 AM.
+    /// Gets the start of the current business day (using the dynamic cutoff).
+    /// If current time is 1:00 AM on May 15 and cutoff is 2, it returns May 14 02:00 AM.
     /// </summary>
     public static DateTime GetEgyptBusinessDayStart()
     {
         var now = GetEgyptTime();
-        if (now.Hour < 2)
+        var endHour = GetBusinessDayEndHour();
+        if (now.Hour < endHour)
         {
-            return now.Date.AddDays(-1).AddHours(2);
+            return now.Date.AddDays(-1).AddHours(endHour);
         }
-        return now.Date.AddHours(2);
+        return now.Date.AddHours(endHour);
     }
 
     /// <summary>

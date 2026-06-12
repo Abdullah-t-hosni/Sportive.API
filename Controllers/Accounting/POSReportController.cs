@@ -38,8 +38,8 @@ public class POSReportController : ControllerBase
             return BadRequest(new { message = "Invalid date format. Use yyyy-MM-dd." });
 
         // Business day window: starts at 02:00 AM on 'date', ends at 02:00 AM next day
-        var from = parsedDate.Date.AddHours(2);
-        var to   = parsedDate.Date.AddDays(1).AddHours(2).AddTicks(-1);
+        var from = parsedDate.Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to   = parsedDate.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         // ── 1. Load account mappings ────────────────────────────────────────
         var mappings = await _db.AccountSystemMappings

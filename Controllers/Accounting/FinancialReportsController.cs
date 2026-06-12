@@ -159,8 +159,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] bool      excel    = false)
     {
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
-        var from = fromDate?.AddHours(2) ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1, 2, 0, 0);
-        var to   = toDate?.AddDays(1).AddHours(2).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+        var from = fromDate?.AddHours(TimeHelper.GetBusinessDayEndHour()) ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1, TimeHelper.GetBusinessDayEndHour(), 0, 0);
+        var to   = toDate?.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
         var balances = await GetBalances(from, to, source);
         var rows = balances
@@ -226,8 +226,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] bool      excel    = false)
     {
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
-        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(2);
-        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
+        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         var balances = await GetBalances(from, to, source);
 
@@ -284,7 +284,7 @@ public class FinancialReportsController : ControllerBase
     {
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
         var from = new DateTime(2000, 1, 1, 2, 0, 0);
-        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
+        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         var balances = await GetBalances(from, to, source);
 
@@ -353,8 +353,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] OrderSource? source  = null,
         [FromQuery] bool      excel      = false)
     {
-        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(2);
-        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
+        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
  
         var q = _db.JournalLines
             .Include(l => l.JournalEntry)
@@ -562,8 +562,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] OrderSource? source  = null,
         [FromQuery] bool      excel      = false)
     {
-        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(2);
-        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
+        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
  
         int targetId = accountId ?? 0;
         
@@ -710,8 +710,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] OrderSource? source = null,
         [FromQuery] bool      excel    = false)
     {
-        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(2);
-        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
+        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         // حسابات النقدية الحقيقية فقط (الخزينة 1101 والبنك 1102)
         // نستبعد 1103 (العملاء) لأنها ليست نقدية سائلة مباشرة بالقيد المحاسبي

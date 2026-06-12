@@ -26,8 +26,8 @@ public class CashierPerformanceController : ControllerBase
         [FromQuery] bool      excel    = false)
     {
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
-        var from = (fromDate ?? TimeHelper.GetEgyptTime().Date.AddDays(-30)).Date.AddHours(2);
-        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
+        var from = (fromDate ?? TimeHelper.GetEgyptTime().Date.AddDays(-30)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         var orders = await _db.Orders
             .Include(o => o.Items)

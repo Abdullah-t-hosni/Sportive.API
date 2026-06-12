@@ -73,8 +73,8 @@ public class PaymentVouchersController : ControllerBase
                           || (v.ToAccount != null && (v.ToAccount.NameAr.Contains(search) || v.ToAccount.Code.Contains(search))));
         }
         
-        if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value.Date.AddHours(2));
-        if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddHours(2).AddTicks(-1));
+        if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value.Date.AddHours(TimeHelper.GetBusinessDayEndHour()));
+        if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1));
         if (source.HasValue) q = q.Where(v => v.CostCenter == source.Value);
 
         if (employeeId.HasValue)

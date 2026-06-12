@@ -88,8 +88,8 @@ public class OperationalReportsController : ControllerBase
         if (!excel && _cache.TryGetValue(cacheKey, out var cachedData))
             return Ok(cachedData);
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
-        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(2);
-        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
+        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         if (customerId == null && !string.IsNullOrEmpty(search))
         {
@@ -207,8 +207,8 @@ public class OperationalReportsController : ControllerBase
         if (!excel && _cache.TryGetValue(cacheKey, out var cachedData))
             return Ok(cachedData);
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
-        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(2);
-        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
+        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         if (supplierId == null && !string.IsNullOrEmpty(search))
         {
@@ -310,7 +310,7 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] bool      excel   = false)
     {
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
-        var asOf = (asOfDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
+        var asOf = (asOfDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         var customersQuery = _db.Customers.AsNoTracking().AsQueryable();
 
@@ -423,7 +423,7 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] bool      excel    = false)
     {
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
-        var asOf = (asOfDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
+        var asOf = (asOfDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
         _logger.LogInformation("Generating Supplier Aging report as of {AsOf}", asOf);
 
         try
@@ -596,7 +596,7 @@ public class OperationalReportsController : ControllerBase
 
             if (toDate.HasValue)
             {
-                var limit = toDate.Value.Date.AddDays(1).AddHours(2).AddTicks(-1);
+                var limit = toDate.Value.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
                 var movementQuery = _db.InventoryMovements.Where(m => m.CreatedAt <= limit);
                 if (source.HasValue)
                 {
@@ -701,7 +701,7 @@ public class OperationalReportsController : ControllerBase
                 
                 if (toDate.HasValue)
                 {
-                    var limit = toDate.Value.Date.AddDays(1).AddHours(2).AddTicks(-1);
+                    var limit = toDate.Value.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
                     ledgerQ = ledgerQ.Where(l => l.JournalEntry.EntryDate <= limit);
                 }
 
@@ -902,8 +902,8 @@ public class OperationalReportsController : ControllerBase
         if (!excel && _cache.TryGetValue(cacheKey, out var cachedData))
             return Ok(cachedData);
 
-        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(2);
-        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(2).AddTicks(-1);
+        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         // ✅ LEDGER-BASED RECONCILIATION
         var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
@@ -2596,8 +2596,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] bool         excel      = false)
     {
         var now = TimeHelper.GetEgyptTime();
-        var from = (fromDate ?? now).Date.AddHours(2);
-        var to   = (toDate ?? now).Date.AddDays(1).AddHours(2).AddTicks(-1);
+        var from = (fromDate ?? now).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to   = (toDate ?? now).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         // 🏗️ Mappings Lookup
         var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key.ToLower(), m => m.AccountId);
