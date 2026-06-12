@@ -3789,10 +3789,10 @@ public class OperationalReportsController : ControllerBase
             .ToListAsync();
         var salesTrend = salesTrendQuery.Select(x => new PartnersReportSalesTrend(x.Date, x.Amount)).ToList();
 
-        var totalCustomerDebt = await _db.Customers.SumAsync(c => c.TotalSales - c.TotalPaid);
-        var totalSupplierDebt = await _db.Suppliers.SumAsync(s => s.OpeningBalance + s.TotalPurchases - s.TotalPaid);
+        var totalCustomerDebt = await _db.Customers.SumAsync(c => (decimal?)(c.TotalSales - c.TotalPaid)) ?? 0m;
+        var totalSupplierDebt = await _db.Suppliers.SumAsync(s => (decimal?)(s.OpeningBalance + s.TotalPurchases - s.TotalPaid)) ?? 0m;
 
-        var totalInventoryValue = await _db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active).SumAsync(p => p.TotalStock * p.CostPrice);
+        var totalInventoryValue = await _db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active).SumAsync(p => (decimal?)(p.TotalStock * p.CostPrice)) ?? 0m;
 
         var summary = new PartnersReportSummary(
             posDailySales, posTotalSales,
@@ -3863,5 +3863,6 @@ public record PartnersComprehensiveReportResponse(
     IEnumerable<PartnersReportPaymentMethodSale> SalesByPaymentMethod,
     IEnumerable<PartnersReportSalesTrend> SalesTrend
 );
+
 
 
