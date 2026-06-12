@@ -3718,6 +3718,12 @@ public class OperationalReportsController : ControllerBase
         var dailyExpenses = await expQuery.Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
         var totalExpenses = await expQuery.Where(l => l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
 
+        var expensesBreakdownQuery = await expQuery.Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd)
+            .GroupBy(l => l.Account.NameAr)
+            .Select(g => new { Category = g.Key, Amount = g.Sum(l => l.Debit - l.Credit) })
+            .ToListAsync();
+        var expensesBreakdown = expensesBreakdownQuery.Select(x => new PartnersReportExpenseCategory(x.Category, x.Amount)).ToList();
+
         // 3. Collections (ReceiptVouchers)
         var colQuery = _db.JournalEntries.AsNoTracking().Where(e => e.Type == JournalEntryType.ReceiptVoucher);
         if (branchId.HasValue) colQuery = colQuery.Where(e => e.Lines.Any(l => l.BranchId == branchId.Value));
@@ -3766,14 +3772,46 @@ public class OperationalReportsController : ControllerBase
             accInfos.Add(new PartnersReportAccountInfo(acc.Id, acc.NameAr, dailyNet, cumulative));
         }
 
+        // 5. New Analytics
+        var dailyNetCashFlow = dailyCol - dailyExpenses;
+        var totalNetCashFlow = totalCol - totalExpenses;
+
+        var salesByPaymentQuery = await salesQuery.Where(o => o.CreatedAt >= dayStart && o.CreatedAt <= dayEnd)
+            .GroupBy(o => o.PaymentMethod)
+            .Select(g => new { Method = g.Key.ToString(), Amount = g.Sum(o => o.TotalAmount) })
+            .ToListAsync();
+        var salesByPayment = salesByPaymentQuery.Select(x => new PartnersReportPaymentMethodSale(x.Method, x.Amount)).ToList();
+
+        var sevenDaysAgo = targetDate.AddDays(-6).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var salesTrendQuery = await salesQuery.Where(o => o.CreatedAt >= sevenDaysAgo && o.CreatedAt <= dayEnd)
+            .GroupBy(o => o.CreatedAt.Date)
+            .Select(g => new { Date = g.Key, Amount = g.Sum(o => o.TotalAmount) })
+            .ToListAsync();
+        var salesTrend = salesTrendQuery.Select(x => new PartnersReportSalesTrend(x.Date, x.Amount)).ToList();
+
+        var totalCustomerDebt = await _db.Accounts.AsNoTracking().Where(a => a.Type == AccountType.Customer).SumAsync(a => a.OpeningBalance) + await _db.JournalLines.AsNoTracking().Where(l => l.Account.Type == AccountType.Customer).SumAsync(l => l.Debit - l.Credit);
+        var totalSupplierDebt = await _db.Accounts.AsNoTracking().Where(a => a.Type == AccountType.Supplier).SumAsync(a => a.OpeningBalance) + await _db.JournalLines.AsNoTracking().Where(l => l.Account.Type == AccountType.Supplier).SumAsync(l => l.Credit - l.Debit);
+
+        var totalInventoryValue = await _db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active).SumAsync(p => p.TotalStock * p.CostPrice);
+
         var summary = new PartnersReportSummary(
             posDailySales, posTotalSales,
             webDailySales, webTotalSales,
             dailyExpenses, totalExpenses,
-            dailyCol, totalCol
+            dailyCol, totalCol,
+            dailyNetCashFlow, totalNetCashFlow,
+            totalCustomerDebt, totalSupplierDebt,
+            totalInventoryValue
         );
 
-        return Ok(new PartnersComprehensiveReportResponse(targetDate, summary, accInfos));
+        return Ok(new PartnersComprehensiveReportResponse(
+            targetDate, 
+            summary, 
+            accInfos,
+            expensesBreakdown,
+            salesByPayment,
+            salesTrend
+        ));
     }
 }
 
@@ -3801,6 +3839,28 @@ public record DailyReportExpense(string VoucherNumber, DateTime Date, decimal Am
 
 
 
-public record PartnersReportSummary(decimal PosDailySales, decimal PosTotalSales, decimal WebDailySales, decimal WebTotalSales, decimal DailyExpenses, decimal TotalExpenses, decimal DailyCollections, decimal TotalCollections);
+public record PartnersReportExpenseCategory(string Category, decimal Amount);
+public record PartnersReportPaymentMethodSale(string PaymentMethod, decimal Amount);
+public record PartnersReportSalesTrend(DateTime Date, decimal Amount);
+
+public record PartnersReportSummary(
+    decimal PosDailySales, decimal PosTotalSales, 
+    decimal WebDailySales, decimal WebTotalSales, 
+    decimal DailyExpenses, decimal TotalExpenses, 
+    decimal DailyCollections, decimal TotalCollections,
+    decimal DailyNetCashFlow, decimal TotalNetCashFlow,
+    decimal TotalCustomerDebt, decimal TotalSupplierDebt,
+    decimal TotalInventoryValue
+);
+
 public record PartnersReportAccountInfo(int AccountId, string AccountName, decimal DailyChange, decimal CumulativeBalance);
-public record PartnersComprehensiveReportResponse(DateTime Date, PartnersReportSummary Summary, IEnumerable<PartnersReportAccountInfo> Accounts);
+
+public record PartnersComprehensiveReportResponse(
+    DateTime Date, 
+    PartnersReportSummary Summary, 
+    IEnumerable<PartnersReportAccountInfo> Accounts,
+    IEnumerable<PartnersReportExpenseCategory> ExpenseBreakdown,
+    IEnumerable<PartnersReportPaymentMethodSale> SalesByPaymentMethod,
+    IEnumerable<PartnersReportSalesTrend> SalesTrend
+);
+
