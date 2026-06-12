@@ -3691,7 +3691,7 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? date = null,
         [FromQuery] int? branchId = null)
     {
-        var targetDate = (date ?? TimeHelper.GetEgyptTime()).Date;
+        var targetDate = (date ?? TimeHelper.GetEgyptBusinessDayStart()).Date;
         var dayStart = targetDate.AddHours(TimeHelper.GetBusinessDayEndHour());
         var dayEnd = targetDate.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
