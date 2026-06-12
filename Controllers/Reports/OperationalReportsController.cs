@@ -3687,7 +3687,6 @@ public class OperationalReportsController : ControllerBase
         _ => type.ToString()
     };
     [HttpGet("partners-comprehensive")]
-    [HttpGet("partners-comprehensive")]
     public async Task<IActionResult> PartnersComprehensiveReport(
         [FromQuery] DateTime? date = null,
         [FromQuery] int? branchId = null)
