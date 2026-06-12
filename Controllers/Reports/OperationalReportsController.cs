@@ -3686,6 +3686,95 @@ public class OperationalReportsController : ControllerBase
         InventoryMovementType.OpeningBalance => _t.Get("Reports.OpeningBalancePlus"),
         _ => type.ToString()
     };
+    [HttpGet("partners-comprehensive")]
+    public async Task<IActionResult> PartnersComprehensiveReport(
+        [FromQuery] DateTime? date = null,
+        [FromQuery] int? branchId = null)
+    {
+        var targetDate = (date ?? TimeHelper.GetEgyptTime()).Date;
+        var dayStart = targetDate.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var dayEnd = targetDate.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
+
+        // 1. Sales
+        var salesQuery = _db.Orders.AsNoTracking().Where(o => o.Status != OrderStatus.Cancelled);
+        if (branchId.HasValue) salesQuery = salesQuery.Where(o => o.BranchId == branchId.Value);
+
+        var posDailySales = await salesQuery.Where(o => o.Source == OrderSource.POS && o.CreatedAt >= dayStart && o.CreatedAt <= dayEnd).SumAsync(o => o.TotalAmount);
+        var posTotalSales = await salesQuery.Where(o => o.Source == OrderSource.POS && o.CreatedAt <= dayEnd).SumAsync(o => o.TotalAmount);
+        
+        var webDailySales = await salesQuery.Where(o => o.Source == OrderSource.Website && o.CreatedAt >= dayStart && o.CreatedAt <= dayEnd).SumAsync(o => o.TotalAmount);
+        var webTotalSales = await salesQuery.Where(o => o.Source == OrderSource.Website && o.CreatedAt <= dayEnd).SumAsync(o => o.TotalAmount);
+
+        // 2. Expenses
+        // Mapping Keys for Expenses
+        var expKeys = new[] { MappingKeys.SalaryExpense, MappingKeys.DepreciationExpense, MappingKeys.OvertimeExpense, MappingKeys.SalesCommissionExpense };
+        var expAccIds = await _db.AccountSystemMappings.Where(m => expKeys.Contains(m.Key)).Select(m => m.AccountId).ToListAsync();
+        var allExpenseAccounts = await _db.Accounts.Where(a => a.Type == AccountType.Expense).Select(a => a.Id).ToListAsync();
+        var finalExpAccIds = expAccIds.OfType<int>().Union(allExpenseAccounts).Distinct().ToList();
+
+        var expQuery = _db.JournalLines.AsNoTracking().Where(l => finalExpAccIds.Contains(l.AccountId));
+        if (branchId.HasValue) expQuery = expQuery.Where(l => l.BranchId == branchId.Value);
+
+        var dailyExpenses = await expQuery.Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
+        var totalExpenses = await expQuery.Where(l => l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
+
+        // 3. Collections (ReceiptVouchers)
+        var colQuery = _db.JournalEntries.AsNoTracking().Where(e => e.Type == JournalEntryType.ReceiptVoucher);
+        if (branchId.HasValue) colQuery = colQuery.Where(e => e.Lines.Any(l => l.BranchId == branchId.Value));
+
+        var cashAccTypes = new[] { "1101", "1102", "1105", "1107" };
+        var cashAccounts = await _db.Accounts.Where(a => cashAccTypes.Any(c => a.Code.StartsWith(c))).Select(a => a.Id).ToListAsync();
+
+        var dailyCol = await colQuery.Where(e => e.EntryDate >= dayStart && e.EntryDate <= dayEnd)
+            .SelectMany(e => e.Lines).Where(l => cashAccounts.Contains(l.AccountId)).SumAsync(l => l.Debit);
+        var totalCol = await colQuery.Where(e => e.EntryDate <= dayEnd)
+            .SelectMany(e => e.Lines).Where(l => cashAccounts.Contains(l.AccountId)).SumAsync(l => l.Debit);
+
+        // 4. Balances
+        var targetNames = new[] {
+            "نقدية الحسابات", "انستاباي الحسابات", "فودافون كاش الحسابات",
+            "نقدية الكاشير", "انستاباي الكاشير", "فودافون كاش الكاشير",
+            "نقدية الموقع", "انستاباي الموقع", "فودافون كاش الموقع",
+            "التقفيلات اليومية", "التقفيلات اليوميه"
+        };
+
+        var balanceAccounts = await _db.Accounts.AsNoTracking()
+            .Where(a => targetNames.Any(n => a.NameAr.Contains(n)))
+            .ToListAsync();
+
+        var accInfos = new List<PartnersReportAccountInfo>();
+
+        foreach (var acc in balanceAccounts)
+        {
+            var lq = _db.JournalLines.AsNoTracking().Where(l => l.AccountId == acc.Id);
+            if (branchId.HasValue) lq = lq.Where(l => l.BranchId == branchId.Value);
+
+            var dailyNet = await lq.Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
+            var cumulative = await lq.Where(l => l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
+
+            // If account is credit nature, flip sign
+            if (acc.Nature == AccountNature.Credit)
+            {
+                dailyNet = -dailyNet;
+                cumulative = -cumulative;
+            }
+
+            // Also add opening balance for cumulative
+            if (acc.Nature == AccountNature.Debit) cumulative += acc.OpeningBalance;
+            else cumulative -= acc.OpeningBalance; // Actually OpeningBalance is absolute, so if nature is credit, OpeningBalance is credit. Since cumulative = - (debit - credit) = credit - debit. So cumulative += OpeningBalance.
+
+            accInfos.Add(new PartnersReportAccountInfo(acc.Id, acc.NameAr, dailyNet, cumulative));
+        }
+
+        var summary = new PartnersReportSummary(
+            posDailySales, posTotalSales,
+            webDailySales, webTotalSales,
+            dailyExpenses, totalExpenses,
+            dailyCol, totalCol
+        );
+
+        return Ok(new PartnersComprehensiveReportResponse(targetDate, summary, accInfos));
+    }
 }
 
 //  Report DTOs 
@@ -3711,3 +3800,7 @@ public record DailyReportSettlement(string VoucherNumber, DateTime Date, string 
 public record DailyReportExpense(string VoucherNumber, DateTime Date, decimal Amount, string ExpenseCategory, string PaymentMethod, string? Reference, string Description);
 
 
+
+public record PartnersReportSummary(decimal PosDailySales, decimal PosTotalSales, decimal WebDailySales, decimal WebTotalSales, decimal DailyExpenses, decimal TotalExpenses, decimal DailyCollections, decimal TotalCollections);
+public record PartnersReportAccountInfo(int AccountId, string AccountName, decimal DailyChange, decimal CumulativeBalance);
+public record PartnersComprehensiveReportResponse(DateTime Date, PartnersReportSummary Summary, IEnumerable<PartnersReportAccountInfo> Accounts);
