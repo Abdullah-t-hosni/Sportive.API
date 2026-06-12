@@ -560,7 +560,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? toDate     = null,
         [FromQuery] string?   search     = null,
         [FromQuery] OrderSource? source  = null,
-        [FromQuery] bool      excel      = false)
+        [FromQuery] bool      excel      = false,
+        [FromQuery] int?      branchId   = null)
     {
         var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
@@ -617,6 +618,7 @@ public class FinancialReportsController : ControllerBase
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate < from);
   
         if (source.HasValue) openQ = openQ.Where(l => l.CostCenter == source.Value);
+        if (branchId.HasValue) openQ = openQ.Where(l => l.BranchId == branchId.Value);
         
         if (customerId.HasValue)
         {
@@ -654,6 +656,8 @@ public class FinancialReportsController : ControllerBase
 
         var q = _db.JournalLines.Include(l => l.JournalEntry).Include(l => l.Customer).Include(l => l.Supplier).Include(l => l.Employee)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to);
+
+        if (branchId.HasValue) q = q.Where(l => l.BranchId == branchId.Value);
 
         if (customerId.HasValue)
         {

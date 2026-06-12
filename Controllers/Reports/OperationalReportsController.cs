@@ -81,10 +81,11 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] bool      excel      = false,
         [FromQuery] bool      unpaidOnly = false,
         [FromQuery] int       page       = 1,
-        [FromQuery] int       pageSize   = 50)
+        [FromQuery] int       pageSize   = 50,
+        [FromQuery] int?      branchId   = null)
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
-        var cacheKey = $"CustStatement_{customerId}_{search}_{fromDate}_{toDate}_{unpaidOnly}_{page}_{pageSize}";
+        var cacheKey = $"CustStatement_{customerId}_{search}_{fromDate}_{toDate}_{unpaidOnly}_{page}_{pageSize}_{branchId}";
         if (!excel && _cache.TryGetValue(cacheKey, out var cachedData))
             return Ok(cachedData);
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
@@ -119,14 +120,27 @@ public class OperationalReportsController : ControllerBase
 
         // ✅ REFACTORED TO LEDGER-BASED (Source of Truth)
         // 1. Calculate Prior Balance
-        decimal priorBalance = await _db.JournalLines
-            .Where(l => l.CustomerId == customerId && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
-            .SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
+        var priorQuery = _db.JournalLines
+            .Where(l => l.CustomerId == customerId && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted);
+        
+        if (branchId.HasValue)
+        {
+            priorQuery = priorQuery.Where(l => l.BranchId == branchId.Value);
+        }
+
+        decimal priorBalance = await priorQuery.SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
 
         // 2. ديون العملاء (عمر الدين)
-        var entries = await _db.JournalLines
+        var entriesQuery = _db.JournalLines
             .Include(l => l.JournalEntry)
-            .Where(l => l.CustomerId == customerId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.CustomerId == customerId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted);
+
+        if (branchId.HasValue)
+        {
+            entriesQuery = entriesQuery.Where(l => l.BranchId == branchId.Value);
+        }
+
+        var entries = await entriesQuery
             .OrderBy(l => l.JournalEntry.EntryDate)
             .ThenBy(l => l.JournalEntryId)
             .ThenBy(l => l.Id)
@@ -200,10 +214,11 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] bool      excel      = false,
         [FromQuery] bool      unpaidOnly = false,
         [FromQuery] int       page       = 1,
-        [FromQuery] int       pageSize   = 50)
+        [FromQuery] int       pageSize   = 50,
+        [FromQuery] int?      branchId   = null)
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
-        var cacheKey = $"SuppStatement_{supplierId}_{search}_{fromDate}_{toDate}_{unpaidOnly}_{page}_{pageSize}";
+        var cacheKey = $"SuppStatement_{supplierId}_{search}_{fromDate}_{toDate}_{unpaidOnly}_{page}_{pageSize}_{branchId}";
         if (!excel && _cache.TryGetValue(cacheKey, out var cachedData))
             return Ok(cachedData);
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
@@ -235,13 +250,26 @@ public class OperationalReportsController : ControllerBase
         if (supplier == null) return NotFound();
 
         // ✅ REFACTORED TO LEDGER-BASED
-        decimal priorBalance = await _db.JournalLines
-            .Where(l => l.SupplierId == supplierId && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
-            .SumAsync(l => (decimal?)(l.Credit - l.Debit)) ?? 0;
+        var priorQuery = _db.JournalLines
+            .Where(l => l.SupplierId == supplierId && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted);
 
-        var entries = await _db.JournalLines
+        if (branchId.HasValue)
+        {
+            priorQuery = priorQuery.Where(l => l.BranchId == branchId.Value);
+        }
+
+        decimal priorBalance = await priorQuery.SumAsync(l => (decimal?)(l.Credit - l.Debit)) ?? 0;
+
+        var entriesQuery = _db.JournalLines
             .Include(l => l.JournalEntry)
-            .Where(l => l.SupplierId == supplierId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.SupplierId == supplierId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted);
+
+        if (branchId.HasValue)
+        {
+            entriesQuery = entriesQuery.Where(l => l.BranchId == branchId.Value);
+        }
+
+        var entries = await entriesQuery
             .OrderBy(l => l.JournalEntry.EntryDate)
             .ThenBy(l => l.JournalEntryId)
             .ThenBy(l => l.Id)
@@ -305,9 +333,10 @@ public class OperationalReportsController : ControllerBase
     [HttpGet("customer-aging")]
     [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard + "," + ModuleKeys.Pos + "," + ModuleKeys.InventoryGroup)]
     public async Task<IActionResult> CustomerAging(
-        [FromQuery] string?   search  = null,
+        [FromQuery] string?   search   = null,
         [FromQuery] DateTime? asOfDate = null,
-        [FromQuery] bool      excel   = false)
+        [FromQuery] bool      excel    = false,
+        [FromQuery] int?      branchId = null)
     {
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
         var asOf = (asOfDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
@@ -328,7 +357,8 @@ public class OperationalReportsController : ControllerBase
                 Orders = c.Orders
                     .Where(o => o.Status != OrderStatus.Cancelled 
                              && o.CreatedAt <= asOf
-                             && (o.PaymentMethod == PaymentMethod.Credit || o.PaymentMethod == PaymentMethod.Mixed || (o.TotalAmount - o.PaidAmount) > 0))
+                             && (o.PaymentMethod == PaymentMethod.Credit || o.PaymentMethod == PaymentMethod.Mixed || (o.TotalAmount - o.PaidAmount) > 0)
+                             && (!branchId.HasValue || o.BranchId == branchId.Value))
                     .Select(o => new {
                         o.CreatedAt,
                         o.TotalAmount,
@@ -339,9 +369,16 @@ public class OperationalReportsController : ControllerBase
             .ToListAsync();
 
         // ✅ FIX: Use Ledger (JournalLines) to get all movements accurately
-        var ledgerBalances = await _db.JournalLines
+        var ledgerQuery = _db.JournalLines
             .Where(l => (l.Account.Code.StartsWith("1104") || l.Account.Code.StartsWith("1201")))
-            .Where(l => l.JournalEntry.EntryDate <= asOf && (l.JournalEntry.Status == JournalEntryStatus.Posted))
+            .Where(l => l.JournalEntry.EntryDate <= asOf && (l.JournalEntry.Status == JournalEntryStatus.Posted));
+
+        if (branchId.HasValue)
+        {
+            ledgerQuery = ledgerQuery.Where(l => l.BranchId == branchId.Value);
+        }
+
+        var ledgerBalances = await ledgerQuery
             .GroupBy(l => l.CustomerId)
             .Select(g => new { CustomerId = g.Key, Balance = g.Sum(l => l.Debit - l.Credit) })
             .ToListAsync();
@@ -420,7 +457,8 @@ public class OperationalReportsController : ControllerBase
     public async Task<IActionResult> SupplierAging(
         [FromQuery] string?   search   = null,
         [FromQuery] DateTime? asOfDate = null,
-        [FromQuery] bool      excel    = false)
+        [FromQuery] bool      excel    = false,
+        [FromQuery] int?      branchId = null)
     {
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
         var asOf = (asOfDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
@@ -452,10 +490,17 @@ public class OperationalReportsController : ControllerBase
                 .ToListAsync();
 
             // ✅ FIX: Use Ledger (JournalLines) for accurate balance
-            var ledgerBalances = await _db.JournalLines
+            var ledgerQuery = _db.JournalLines
                 .AsNoTracking()
                 .Where(l => l.SupplierId != null && l.Account.Code.StartsWith("2101"))
-                .Where(l => l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status == JournalEntryStatus.Posted)
+                .Where(l => l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status == JournalEntryStatus.Posted);
+
+            if (branchId.HasValue)
+            {
+                ledgerQuery = ledgerQuery.Where(l => l.BranchId == branchId.Value);
+            }
+
+            var ledgerBalances = await ledgerQuery
                 .GroupBy(l => l.SupplierId)
                 .Select(g => new { SupplierId = g.Key, Balance = g.Sum(l => l.Credit - l.Debit) })
                 .ToListAsync();
@@ -623,7 +668,7 @@ public class OperationalReportsController : ControllerBase
             else
             {
                 // toDate is null, but branchId.HasValue
-                var branchWarehouseIds = await _db.Warehouses.Where(w => w.BranchId == branchId.Value).Select(w => w.Id).ToListAsync();
+                var branchWarehouseIds = await _db.Warehouses.Where(w => w.BranchId == branchId).Select(w => w.Id).ToListAsync();
 
                 variantStocks = await _db.ProductWarehouseStocks
                     .Where(w => branchWarehouseIds.Contains(w.WarehouseId))
@@ -3358,18 +3403,25 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] DateTime? toDate = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
-        [FromQuery] bool excel = false)
+        [FromQuery] bool excel = false,
+        [FromQuery] int? branchId = null)
     {
         var now = TimeHelper.GetEgyptTime();
         var from = (fromDate ?? new DateTime(now.Year, now.Month, 1)).Date;
         var to = (toDate ?? now).Date.AddDays(1).AddTicks(-1);
 
-        var orders = await _db.Orders.AsNoTracking()
+        var ordersQuery = _db.Orders.AsNoTracking()
             .Include(o => o.Customer)
             .Include(o => o.Items)
                 .ThenInclude(i => i.Product)
-            .Where(o => o.CreatedAt >= from && o.CreatedAt <= to && o.Status != OrderStatus.Cancelled)
-            .ToListAsync();
+            .Where(o => o.CreatedAt >= from && o.CreatedAt <= to && o.Status != OrderStatus.Cancelled);
+
+        if (branchId.HasValue)
+        {
+            ordersQuery = ordersQuery.Where(o => o.BranchId == branchId.Value);
+        }
+
+        var orders = await ordersQuery.ToListAsync();
 
         var invoiceRows = new List<Sportive.API.DTOs.Reports.InvoiceProfitabilityDto>();
 
