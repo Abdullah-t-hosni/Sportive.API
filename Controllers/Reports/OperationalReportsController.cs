@@ -3687,6 +3687,7 @@ public class OperationalReportsController : ControllerBase
         _ => type.ToString()
     };
     [HttpGet("partners-comprehensive")]
+    [HttpGet("partners-comprehensive")]
     public async Task<IActionResult> PartnersComprehensiveReport(
         [FromQuery] DateTime? date = null,
         [FromQuery] int? branchId = null)
@@ -3695,8 +3696,8 @@ public class OperationalReportsController : ControllerBase
         var dayStart = targetDate.AddHours(TimeHelper.GetBusinessDayEndHour());
         var dayEnd = targetDate.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
-        // 1. Sales
-        var salesQuery = _db.Orders.AsNoTracking().Where(o => o.Status != OrderStatus.Cancelled);
+        // --- 1. Sales (Strict Accounting) ---
+        var salesQuery = _db.Orders.AsNoTracking().Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned);
         if (branchId.HasValue) salesQuery = salesQuery.Where(o => o.BranchId == branchId.Value);
 
         var posDailySales = await salesQuery.Where(o => o.Source == OrderSource.POS && o.CreatedAt >= dayStart && o.CreatedAt <= dayEnd).SumAsync(o => o.TotalAmount);
@@ -3705,14 +3706,45 @@ public class OperationalReportsController : ControllerBase
         var webDailySales = await salesQuery.Where(o => o.Source == OrderSource.Website && o.CreatedAt >= dayStart && o.CreatedAt <= dayEnd).SumAsync(o => o.TotalAmount);
         var webTotalSales = await salesQuery.Where(o => o.Source == OrderSource.Website && o.CreatedAt <= dayEnd).SumAsync(o => o.TotalAmount);
 
-        // 2. Expenses
-        // Mapping Keys for Expenses
-        var expKeys = new[] { MappingKeys.SalaryExpense, MappingKeys.DepreciationExpense, MappingKeys.OvertimeExpense, MappingKeys.SalesCommissionExpense };
-        var expAccIds = await _db.AccountSystemMappings.Where(m => expKeys.Contains(m.Key)).Select(m => m.AccountId).ToListAsync();
-        var allExpenseAccounts = await _db.Accounts.Where(a => a.Type == AccountType.Expense).Select(a => a.Id).ToListAsync();
-        var finalExpAccIds = expAccIds.OfType<int>().Union(allExpenseAccounts).Distinct().ToList();
+        // Subtract Returns (from JournalEntries because OrderItems returned might be partial)
+        var salesReturnsQuery = _db.JournalEntries.AsNoTracking().Where(j => j.Type == JournalEntryType.SalesReturn);
+        if (branchId.HasValue) salesReturnsQuery = salesReturnsQuery.Where(j => j.Lines.Any(l => l.BranchId == branchId.Value));
 
-        var expQuery = _db.JournalLines.AsNoTracking().Where(l => finalExpAccIds.Contains(l.AccountId));
+        // Returns usually debit Sales and credit Customer/Cash. To get gross return including VAT, we sum the Credit on Asset accounts.
+        var dailyPosReturns = await salesReturnsQuery.Where(j => j.EntryDate >= dayStart && j.EntryDate <= dayEnd && j.Order != null && j.Order.Source == OrderSource.POS)
+            .SelectMany(j => j.Lines).Where(l => l.Account.Type == AccountType.Asset).SumAsync(l => l.Credit);
+        var totalPosReturns = await salesReturnsQuery.Where(j => j.EntryDate <= dayEnd && j.Order != null && j.Order.Source == OrderSource.POS)
+            .SelectMany(j => j.Lines).Where(l => l.Account.Type == AccountType.Asset).SumAsync(l => l.Credit);
+            
+        var dailyWebReturns = await salesReturnsQuery.Where(j => j.EntryDate >= dayStart && j.EntryDate <= dayEnd && j.Order != null && j.Order.Source == OrderSource.Website)
+            .SelectMany(j => j.Lines).Where(l => l.Account.Type == AccountType.Asset).SumAsync(l => l.Credit);
+        var totalWebReturns = await salesReturnsQuery.Where(j => j.EntryDate <= dayEnd && j.Order != null && j.Order.Source == OrderSource.Website)
+            .SelectMany(j => j.Lines).Where(l => l.Account.Type == AccountType.Asset).SumAsync(l => l.Credit);
+
+        posDailySales -= dailyPosReturns;
+        posTotalSales -= totalPosReturns;
+        webDailySales -= dailyWebReturns;
+        webTotalSales -= totalWebReturns;
+
+        // --- 2. Cash Flow (Collections & Payments from Cash Accounts) ---
+        var cashAccTypes = new[] { "1101", "1102", "1105", "1107" };
+        var cashAccounts = await _db.Accounts.AsNoTracking().Where(a => cashAccTypes.Any(c => a.Code.StartsWith(c)) && a.IsLeaf).Select(a => a.Id).ToListAsync();
+
+        var jlQuery = _db.JournalLines.AsNoTracking().Where(l => cashAccounts.Contains(l.AccountId));
+        if (branchId.HasValue) jlQuery = jlQuery.Where(l => l.BranchId == branchId.Value);
+
+        var dailyCollections = await jlQuery.Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit);
+        var totalCollections = await jlQuery.Where(l => l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit);
+        
+        var dailyPayments = await jlQuery.Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Credit);
+        var totalPayments = await jlQuery.Where(l => l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Credit);
+
+        var dailyNetCashFlow = dailyCollections - dailyPayments;
+        var totalNetCashFlow = totalCollections - totalPayments;
+
+        // --- 3. True Expenses (For Expense Breakdown) ---
+        var expenseAccounts = await _db.Accounts.AsNoTracking().Where(a => a.Type == AccountType.Expense).Select(a => a.Id).ToListAsync();
+        var expQuery = _db.JournalLines.AsNoTracking().Where(l => expenseAccounts.Contains(l.AccountId));
         if (branchId.HasValue) expQuery = expQuery.Where(l => l.BranchId == branchId.Value);
 
         var dailyExpenses = await expQuery.Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
@@ -3724,32 +3756,12 @@ public class OperationalReportsController : ControllerBase
             .ToListAsync();
         var expensesBreakdown = expensesBreakdownQuery.Select(x => new PartnersReportExpenseCategory(x.Category, x.Amount)).ToList();
 
-        // 3. Collections (ReceiptVouchers)
-        var colQuery = _db.JournalEntries.AsNoTracking();
-        if (branchId.HasValue) colQuery = colQuery.Where(e => e.Lines.Any(l => l.BranchId == branchId.Value));
-
-        var cashAccTypes = new[] { "1101", "1102", "1105", "1107" };
-        var cashAccounts = await _db.Accounts.Where(a => cashAccTypes.Any(c => a.Code.StartsWith(c))).Select(a => a.Id).ToListAsync();
-
-        var dailyCol = await colQuery.Where(e => e.EntryDate >= dayStart && e.EntryDate <= dayEnd)
-            .SelectMany(e => e.Lines).Where(l => cashAccounts.Contains(l.AccountId)).SumAsync(l => l.Debit);
-        var totalCol = await colQuery.Where(e => e.EntryDate <= dayEnd)
-            .SelectMany(e => e.Lines).Where(l => cashAccounts.Contains(l.AccountId)).SumAsync(l => l.Debit);
-
-        // 4. Balances
-        var targetNames = new[] {
-            "نقدية الحسابات", "انستاباي الحسابات", "فودافون كاش الحسابات",
-            "نقدية الكاشير", "انستاباي الكاشير", "فودافون كاش الكاشير",
-            "نقدية الموقع", "انستاباي الموقع", "فودافون كاش الموقع",
-            "التقفيلات اليومية", "التقفيلات اليوميه"
-        };
-
+        // --- 4. Operational Balances ---
         var balanceAccounts = await _db.Accounts.AsNoTracking()
-            .Where(a => targetNames.Any(n => a.NameAr.Contains(n)))
+            .Where(a => a.IsLeaf && cashAccTypes.Any(c => a.Code.StartsWith(c)))
             .ToListAsync();
 
         var accInfos = new List<PartnersReportAccountInfo>();
-
         foreach (var acc in balanceAccounts)
         {
             var lq = _db.JournalLines.AsNoTracking().Where(l => l.AccountId == acc.Id);
@@ -3758,24 +3770,27 @@ public class OperationalReportsController : ControllerBase
             var dailyNet = await lq.Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
             var cumulative = await lq.Where(l => l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
 
-            // If account is credit nature, flip sign
-            if (acc.Nature == AccountNature.Credit)
-            {
-                dailyNet = -dailyNet;
-                cumulative = -cumulative;
-            }
-
-            // Also add opening balance for cumulative
-            if (acc.Nature == AccountNature.Debit) cumulative += acc.OpeningBalance;
-            else cumulative -= acc.OpeningBalance; // Actually OpeningBalance is absolute, so if nature is credit, OpeningBalance is credit. Since cumulative = - (debit - credit) = credit - debit. So cumulative += OpeningBalance.
+            cumulative += acc.OpeningBalance; // Cash accounts are always Debit nature
 
             accInfos.Add(new PartnersReportAccountInfo(acc.Id, acc.NameAr, dailyNet, cumulative));
         }
 
-        // 5. New Analytics
-        var dailyNetCashFlow = dailyCol - dailyExpenses;
-        var totalNetCashFlow = totalCol - totalExpenses;
+        // --- 5. Debts and Inventory (Strict Accounting Balances) ---
+        // 1104 = Customers, 2101 = Suppliers
+        var customerAccounts = await _db.Accounts.AsNoTracking().Where(a => a.IsLeaf && a.Code.StartsWith("1104")).Select(a => a.Id).ToListAsync();
+        var supplierAccounts = await _db.Accounts.AsNoTracking().Where(a => a.IsLeaf && a.Code.StartsWith("2101")).Select(a => a.Id).ToListAsync();
+        
+        var totalCustomerDebtLines = await _db.JournalLines.AsNoTracking().Where(l => customerAccounts.Contains(l.AccountId)).SumAsync(l => l.Debit - l.Credit);
+        var totalCustomerDebtOpening = await _db.Accounts.AsNoTracking().Where(a => a.IsLeaf && a.Code.StartsWith("1104")).SumAsync(a => a.OpeningBalance);
+        var totalCustomerDebt = totalCustomerDebtOpening + totalCustomerDebtLines;
 
+        var totalSupplierDebtLines = await _db.JournalLines.AsNoTracking().Where(l => supplierAccounts.Contains(l.AccountId)).SumAsync(l => l.Credit - l.Debit); // Credit nature
+        var totalSupplierDebtOpening = await _db.Accounts.AsNoTracking().Where(a => a.IsLeaf && a.Code.StartsWith("2101")).SumAsync(a => a.OpeningBalance);
+        var totalSupplierDebt = totalSupplierDebtOpening + totalSupplierDebtLines;
+
+        var totalInventoryValue = await _db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active).SumAsync(p => (decimal?)(p.TotalStock * p.CostPrice)) ?? 0m;
+
+        // --- 6. Trends and Charts ---
         var salesByPaymentQuery = await salesQuery.Where(o => o.CreatedAt >= dayStart && o.CreatedAt <= dayEnd)
             .GroupBy(o => o.PaymentMethod)
             .Select(g => new { Method = g.Key.ToString(), Amount = g.Sum(o => o.TotalAmount) })
@@ -3789,16 +3804,11 @@ public class OperationalReportsController : ControllerBase
             .ToListAsync();
         var salesTrend = salesTrendQuery.Select(x => new PartnersReportSalesTrend(x.Date, x.Amount)).ToList();
 
-        var totalCustomerDebt = await _db.Customers.SumAsync(c => (decimal?)(c.TotalSales - c.TotalPaid)) ?? 0m;
-        var totalSupplierDebt = await _db.Suppliers.SumAsync(s => (decimal?)(s.OpeningBalance + s.TotalPurchases - s.TotalPaid)) ?? 0m;
-
-        var totalInventoryValue = await _db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active).SumAsync(p => (decimal?)(p.TotalStock * p.CostPrice)) ?? 0m;
-
         var summary = new PartnersReportSummary(
             posDailySales, posTotalSales,
             webDailySales, webTotalSales,
-            dailyExpenses, totalExpenses,
-            dailyCol, totalCol,
+            dailyExpenses, totalExpenses, // Sent as pure expenses for P&L look, but dailyNetCashFlow is the true cash out
+            dailyCollections, totalCollections,
             dailyNetCashFlow, totalNetCashFlow,
             totalCustomerDebt, totalSupplierDebt,
             totalInventoryValue
