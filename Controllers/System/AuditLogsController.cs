@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 
 namespace Sportive.API.Controllers;
 
@@ -12,10 +14,12 @@ namespace Sportive.API.Controllers;
 public class AuditLogsController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly IWebHostEnvironment _env;
 
-    public AuditLogsController(AppDbContext db)
+    public AuditLogsController(AppDbContext db, IWebHostEnvironment env)
     {
         _db = db;
+        _env = env;
     }
 
     [HttpGet]
@@ -71,5 +75,38 @@ public class AuditLogsController : ControllerBase
         var log = await _db.AuditLogs.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
         if (log == null) return NotFound("Audit log not found");
         return Ok(log);
+    }
+
+    [HttpPost("archive")]
+    [Authorize(Roles = "SuperAdmin")]
+    public async Task<IActionResult> ArchiveOldLogs()
+    {
+        var oneMonthAgo = DateTime.UtcNow.AddMonths(-1);
+        var oldLogs = await _db.AuditLogs
+            .Where(x => x.CreatedAt < oneMonthAgo)
+            .OrderBy(x => x.CreatedAt)
+            .ToListAsync();
+
+        if (!oldLogs.Any())
+        {
+            return Ok(new { message = "No logs to archive.", count = 0 });
+        }
+
+        var backupDir = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "backups", "audit_logs");
+        if (!Directory.Exists(backupDir))
+        {
+            Directory.CreateDirectory(backupDir);
+        }
+
+        var fileName = $"audit_logs_archive_{DateTime.UtcNow:yyyyMMdd_HHmmss}.json";
+        var filePath = Path.Combine(backupDir, fileName);
+
+        var json = JsonSerializer.Serialize(oldLogs, new JsonSerializerOptions { WriteIndented = true });
+        await System.IO.File.WriteAllTextAsync(filePath, json);
+
+        _db.AuditLogs.RemoveRange(oldLogs);
+        await _db.SaveChangesAsync();
+
+        return Ok(new { message = "Archive successful", count = oldLogs.Count, file = fileName });
     }
 }

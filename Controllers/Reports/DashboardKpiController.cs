@@ -29,94 +29,94 @@ public class DashboardKpiController : ControllerBase
     }
 
     [HttpGet("stats")]
-    public async Task<IActionResult> GetStats([FromQuery] OrderSource? source = null, [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
+    public async Task<IActionResult> GetStats([FromQuery] OrderSource? source = null, [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null, [FromQuery] int? filterBranchId = null)
     {
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
-        int? branchId = !canViewAll ? User.GetBranchId() : null;
+        int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
         return Ok(await _dashboard.GetStatsAsync(source, fromDate, toDate, branchId));
     }
 
     [HttpGet("sales-chart")]
-    public async Task<IActionResult> GetSalesChart([FromQuery] string period = "monthly", [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
+    public async Task<IActionResult> GetSalesChart([FromQuery] string period = "monthly", [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null, [FromQuery] int? filterBranchId = null)
     {
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
-        int? branchId = !canViewAll ? User.GetBranchId() : null;
+        int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
         return Ok(await _dashboard.GetSalesChartAsync(period, fromDate, toDate, branchId));
     }
 
     [HttpGet("top-products")]
-    public async Task<IActionResult> GetTopProductsList([FromQuery] int count = 10)
+    public async Task<IActionResult> GetTopProductsList([FromQuery] int count = 10, [FromQuery] int? filterBranchId = null)
     {
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
-        int? branchId = !canViewAll ? User.GetBranchId() : null;
+        int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
         return Ok(await _dashboard.GetTopProductsAsync(count, branchId));
     }
 
     [HttpGet("order-status-stats")]
-    public async Task<IActionResult> GetOrderStatusStats()
+    public async Task<IActionResult> GetOrderStatusStats([FromQuery] int? filterBranchId = null)
     {
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
-        int? branchId = !canViewAll ? User.GetBranchId() : null;
+        int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
         return Ok(await _dashboard.GetOrderStatusStatsAsync(branchId));
     }
 
     [HttpGet("recent-orders")]
-    public async Task<IActionResult> GetRecentOrders([FromQuery] int count = 10)
+    public async Task<IActionResult> GetRecentOrders([FromQuery] int count = 10, [FromQuery] int? filterBranchId = null)
     {
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
-        int? branchId = !canViewAll ? User.GetBranchId() : null;
+        int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
         return Ok(await _dashboard.GetRecentOrdersAsync(count, branchId));
     }
 
     [HttpGet("analytics-summary")]
-    public async Task<IActionResult> GetAnalyticsSummary()
+    public async Task<IActionResult> GetAnalyticsSummary([FromQuery] int? filterBranchId = null)
     {
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
-        int? branchId = !canViewAll ? User.GetBranchId() : null;
+        int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
         return Ok(await _dashboard.GetAnalyticsSummaryAsync(branchId));
     }
 
     [HttpGet("export-sales")]
-    public async Task<IActionResult> ExportSales([FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] OrderSource? source = null)
+    public async Task<IActionResult> ExportSales([FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] OrderSource? source = null, [FromQuery] int? filterBranchId = null)
     {
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
-        int? branchId = !canViewAll ? User.GetBranchId() : null;
+        int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
         var csvBytes = await _dashboard.ExportSalesToCsvAsync(from, to, source, branchId);
         return File(csvBytes, "text/csv", $"sales-report-{TimeHelper.GetEgyptTime():yyyyMMdd}.csv");
     }
 
     [HttpGet("advanced-stats")]
-    public async Task<IActionResult> GetAdvancedStats()
+    public async Task<IActionResult> GetAdvancedStats([FromQuery] int? filterBranchId = null)
     {
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
-        int? branchId = !canViewAll ? User.GetBranchId() : null;
+        int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
         return Ok(await _dashboard.GetAdvancedStatsAsync(branchId));
     }
 
     [HttpGet("staff-stats")]
-    public async Task<IActionResult> GetStaffStats([FromQuery] string staffId)
+    public async Task<IActionResult> GetStaffStats([FromQuery] string staffId, [FromQuery] int? filterBranchId = null)
     {
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
-        int? branchId = !canViewAll ? User.GetBranchId() : null;
+        int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
         return Ok(await _dashboard.GetStaffStatsAsync(staffId, branchId));
     }
 
-    // âœ… Compatibility Aliases
+    // ✅ Compatibility Aliases
     [HttpGet("/api/analytics/admin-stats")]
     [ApiExplorerSettings(IgnoreApi = true)]
-    public async Task<IActionResult> GetStatsAlias([FromQuery] OrderSource? source = null)
+    public async Task<IActionResult> GetStatsAlias([FromQuery] OrderSource? source = null, [FromQuery] int? filterBranchId = null)
     {
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
-        int? branchId = !canViewAll ? User.GetBranchId() : null;
+        int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
         return Ok(await _dashboard.GetStatsAsync(source, null, null, branchId));
     }
 
     [HttpGet("/api/analytics/summary")]
     [ApiExplorerSettings(IgnoreApi = true)]
-    public async Task<IActionResult> GetAnalyticsSummaryAlias()
+    public async Task<IActionResult> GetAnalyticsSummaryAlias([FromQuery] int? filterBranchId = null)
     {
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
-        int? branchId = !canViewAll ? User.GetBranchId() : null;
+        int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
         return Ok(await _dashboard.GetAnalyticsSummaryAsync(branchId));
     }
 
@@ -131,10 +131,11 @@ public class DashboardKpiController : ControllerBase
     public async Task<IActionResult> GetKpi(
         [FromQuery] OrderSource? source = null,
         [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate = null)
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] int? filterBranchId = null)
     {
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
-        int? branchId = !canViewAll ? User.GetBranchId() : null;
+        int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
         return Ok(await _dashboard.GetKpiAsync(source, fromDate, toDate, branchId));
     }
 

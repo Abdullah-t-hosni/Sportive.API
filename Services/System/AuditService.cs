@@ -25,13 +25,15 @@ public interface IAuditService
 public class AuditService : IAuditService
 {
     private readonly AppDbContext _db;
+    private readonly INotificationService _notificationService;
     private readonly string _auditSecret;
     private static readonly JsonSerializerOptions _jsonOpts =
         new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-    public AuditService(AppDbContext db, IConfiguration config)
+    public AuditService(AppDbContext db, INotificationService notificationService, IConfiguration config)
     {
         _db = db;
+        _notificationService = notificationService;
         var secret = config["Security:AuditSecret"];
         if (string.IsNullOrEmpty(secret) || secret == "${AUDIT_SECRET}")
         {
@@ -66,6 +68,8 @@ public class AuditService : IAuditService
             Hash         = hash
         });
         await _db.SaveChangesAsync();
+
+        await CheckAndTriggerAlertAsync(action, entityType, entityId, userName);
     }
 
     public async Task LogChangeAsync<T>(
@@ -96,6 +100,47 @@ public class AuditService : IAuditService
             Hash         = hash
         });
         await _db.SaveChangesAsync();
+
+        await CheckAndTriggerAlertAsync(action, entityType, entityId, userName);
+    }
+
+    private async Task CheckAndTriggerAlertAsync(string action, string entityType, string? entityId, string? userName)
+    {
+        // Critical Actions that require SuperAdmin Notification
+        var isCritical = false;
+        var alertTitleEn = "Security Alert";
+        var alertTitleAr = "تنبيه أمني";
+        var alertMsgEn = "";
+        var alertMsgAr = "";
+
+        if (action.Contains("DELETE", StringComparison.OrdinalIgnoreCase))
+        {
+            if (entityType == "JournalEntry" || entityType == "Account" || entityType == "PaymentVoucher" || entityType == "ReceiptVoucher" || entityType == "AuditLog")
+            {
+                isCritical = true;
+                alertMsgEn = $"Critical Deletion: {entityType} ({entityId}) deleted by {userName}.";
+                alertMsgAr = $"حذف حرج: تم حذف {entityType} ({entityId}) بواسطة {userName}.";
+            }
+        }
+        else if (action.Contains("UPDATE", StringComparison.OrdinalIgnoreCase) && entityType == "OpeningBalance")
+        {
+            isCritical = true;
+            alertMsgEn = $"Opening Balance modified by {userName}.";
+            alertMsgAr = $"تعديل رصيد افتتاحي بواسطة {userName}.";
+        }
+
+        if (isCritical)
+        {
+            // Send to SuperAdmins (userId null, but Type Alert broadcasts to Admins)
+            await _notificationService.SendAsync(
+                userId: null,
+                titleAr: alertTitleAr,
+                titleEn: alertTitleEn,
+                msgAr: alertMsgAr,
+                msgEn: alertMsgEn,
+                type: "Alert"
+            );
+        }
     }
 
     private string ComputeAuditHash(string action, string? userId, DateTime createdAt, string previousHash)
