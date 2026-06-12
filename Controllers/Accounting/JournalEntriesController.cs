@@ -59,8 +59,8 @@ public class JournalEntriesController : ControllerBase
         [FromQuery] JournalEntryStatus? status = null,
         [FromQuery] string? entryNumber = null,
         [FromQuery] string? description = null,
-        [FromQuery] JournalEntryType? type = null,
-        [FromQuery] JournalEntryType? excludeType = null,
+        [FromQuery] string? types = null,
+        [FromQuery] string? excludeTypes = null,
         [FromQuery] string? sortBy = null,
         [FromQuery] string sortDir = "desc")
     {
@@ -83,8 +83,16 @@ public class JournalEntriesController : ControllerBase
         if (toDate.HasValue) q = q.Where(e => e.EntryDate <= toDate.Value.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1));
         if (source.HasValue) q = q.Where(e => e.CostCenter == source.Value);
         if (status.HasValue) q = q.Where(e => e.Status == status.Value);
-        if (type.HasValue) q = q.Where(e => e.Type == type.Value);
-        if (excludeType.HasValue) q = q.Where(e => e.Type != excludeType.Value);
+        if (!string.IsNullOrEmpty(types))
+        {
+            var typeList = types.Split(',').Where(x => int.TryParse(x, out _)).Select(int.Parse).Cast<JournalEntryType>().ToList();
+            if (typeList.Any()) q = q.Where(e => typeList.Contains(e.Type));
+        }
+        if (!string.IsNullOrEmpty(excludeTypes))
+        {
+            var excludeList = excludeTypes.Split(',').Where(x => int.TryParse(x, out _)).Select(int.Parse).Cast<JournalEntryType>().ToList();
+            if (excludeList.Any()) q = q.Where(e => !excludeList.Contains(e.Type));
+        }
         if (!string.IsNullOrEmpty(entryNumber)) q = q.Where(e => e.EntryNumber.Contains(entryNumber));
         if (!string.IsNullOrEmpty(description)) q = q.Where(e => (e.Description != null && e.Description.Contains(description)) || (e.Reference != null && e.Reference.Contains(description)));
 
