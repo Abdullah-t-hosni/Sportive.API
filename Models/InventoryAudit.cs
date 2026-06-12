@@ -23,9 +23,10 @@ public class InventoryAudit : BaseEntity
     public InventoryAuditStatus Status { get; set; } = InventoryAuditStatus.Draft;
     public int? WarehouseId { get; set; }
     public Warehouse? Warehouse { get; set; }
-
     public int? BranchId { get; set; }
     public Branch? Branch { get; set; }
+
+
 
     public OrderSource? CostCenter { get; set; } // مركز التكلفة (موقع أو POS)
 

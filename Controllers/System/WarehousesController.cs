@@ -4,6 +4,7 @@ using Sportive.API.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Utils;
+using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers;
 
@@ -22,7 +23,17 @@ public class WarehousesController : ControllerBase
     public async Task<IActionResult> GetAll([FromQuery] int? branchId)
     {
         var query = _db.Warehouses.Include(w => w.Branch).AsQueryable();
-        if (branchId.HasValue)
+
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedBranchId = User.GetBranchId();
+            if (isolatedBranchId.HasValue)
+            {
+                query = query.Where(w => w.BranchId == isolatedBranchId.Value);
+            }
+        }
+        else if (branchId.HasValue)
         {
             query = query.Where(w => w.BranchId == branchId.Value);
         }

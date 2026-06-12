@@ -5,7 +5,7 @@ namespace Sportive.API.Interfaces;
 
 public interface IOrderService
 {
-    Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(int page, int pageSize, OrderStatus? status = null, string? search = null, int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null, OrderSource? source = null, PaymentMethod? paymentMethod = null, string? orderBy = null, bool descending = false);
+    Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(int page, int pageSize, OrderStatus? status = null, string? search = null, int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null, OrderSource? source = null, PaymentMethod? paymentMethod = null, string? orderBy = null, bool descending = false, int? branchId = null, int? warehouseId = null);
     Task<OrderDetailDto?> GetOrderByIdAsync(int id);
     Task<PaginatedResult<OrderSummaryDto>> GetCustomerOrdersAsync(int customerId, int page, int pageSize);
     Task<OrderDetailDto> CreateOrderAsync(int? customerId, CreateOrderDto dto);

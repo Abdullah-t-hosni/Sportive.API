@@ -59,10 +59,10 @@ public static class ModuleKeys
 
     // Assets
     public const string AssetsGroup = "assets-group";
-    public const string AssetsMain = "fixed-assets-main";
-    public const string Assets = "assets";
+    public const string AssetsMain = "fixed-assets";
+    public const string Assets = "asset-list";
     public const string AssetCategories = "asset-categories";
-    public const string AssetDepBatch = "asset-dep-batch";
+    public const string AssetDepBatch = "asset-batch";
     public const string AssetDisposals = "asset-disposals";
     public const string AssetPurchases = "asset-purchases";
 
@@ -91,6 +91,7 @@ public static class ModuleKeys
     public const string Ai = "ai";
     public const string Performance = "performance";
     public const string Profitability = "profitability";
+    public const string ViewAllBranches = "view-all-branches";
 
     public static readonly string[] All = {
         Dashboard, Pos, PosSellAtCost, Cashier,
@@ -102,6 +103,6 @@ public static class ModuleKeys
         AccountingGroup, AccountingMain, Chart, Mapping, Journal, Receipts, Payments, Installments,
         AssetsGroup, AssetsMain, Assets, AssetCategories, AssetDepBatch, AssetDisposals, AssetPurchases,
         Hr, HrEmployees, HrEmpList, HrVouchers, HrPayroll, HrAdvances, HrCommissions, HrCommissionsDist, HrDepartments, HrAttendance,
-        System, ReportsMain, Staff, Settings, WelcomeMessages, LinksManager, Maintenance, Diagnostics, Backup, Ai, Performance, Profitability
+        System, ReportsMain, Staff, Settings, WelcomeMessages, LinksManager, Maintenance, Diagnostics, Backup, Ai, Performance, Profitability, ViewAllBranches
     };
 }

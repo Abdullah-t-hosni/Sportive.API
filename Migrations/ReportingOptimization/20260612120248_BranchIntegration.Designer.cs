@@ -3,17 +3,20 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sportive.API.Data;
 
 #nullable disable
 
-namespace Sportive.API.Migrations
+namespace Sportive.API.Migrations.ReportingOptimization
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260612120248_BranchIntegration")]
+    partial class BranchIntegration
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -456,9 +459,6 @@ namespace Sportive.API.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
-                    b.Property<int?>("BranchId")
-                        .HasColumnType("int");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
@@ -496,8 +496,6 @@ namespace Sportive.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("BranchId");
-
                     b.HasIndex("DepreciationNumber")
                         .IsUnique();
 
@@ -529,9 +527,6 @@ namespace Sportive.API.Migrations
                     b.Property<decimal>("BookValueAtDisposal")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
-
-                    b.Property<int?>("BranchId")
-                        .HasColumnType("int");
 
                     b.Property<string>("Buyer")
                         .HasColumnType("longtext");
@@ -579,8 +574,6 @@ namespace Sportive.API.Migrations
                         .HasColumnType("datetime(6)");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("BranchId");
 
                     b.HasIndex("DisposalNumber")
                         .IsUnique();
@@ -2046,9 +2039,6 @@ namespace Sportive.API.Migrations
                     b.Property<string>("AttachmentUrl")
                         .HasColumnType("longtext");
 
-                    b.Property<int?>("BranchId")
-                        .HasColumnType("int");
-
                     b.Property<int>("CategoryId")
                         .HasColumnType("int");
 
@@ -2122,8 +2112,6 @@ namespace Sportive.API.Migrations
 
                     b.HasIndex("AssetNumber")
                         .IsUnique();
-
-                    b.HasIndex("BranchId");
 
                     b.HasIndex("CategoryId");
 
@@ -5780,10 +5768,6 @@ namespace Sportive.API.Migrations
 
             modelBuilder.Entity("Sportive.API.Models.AssetDepreciation", b =>
                 {
-                    b.HasOne("Sportive.API.Models.Branch", "Branch")
-                        .WithMany()
-                        .HasForeignKey("BranchId");
-
                     b.HasOne("Sportive.API.Models.FixedAsset", "FixedAsset")
                         .WithMany("Depreciations")
                         .HasForeignKey("FixedAssetId")
@@ -5794,8 +5778,6 @@ namespace Sportive.API.Migrations
                         .WithMany()
                         .HasForeignKey("JournalEntryId");
 
-                    b.Navigation("Branch");
-
                     b.Navigation("FixedAsset");
 
                     b.Navigation("JournalEntry");
@@ -5803,10 +5785,6 @@ namespace Sportive.API.Migrations
 
             modelBuilder.Entity("Sportive.API.Models.AssetDisposal", b =>
                 {
-                    b.HasOne("Sportive.API.Models.Branch", "Branch")
-                        .WithMany()
-                        .HasForeignKey("BranchId");
-
                     b.HasOne("Sportive.API.Models.FixedAsset", "FixedAsset")
                         .WithMany("Disposals")
                         .HasForeignKey("FixedAssetId")
@@ -5828,8 +5806,6 @@ namespace Sportive.API.Migrations
                     b.HasOne("Sportive.API.Models.Account", "ProceedsAccount")
                         .WithMany()
                         .HasForeignKey("ProceedsAccountId");
-
-                    b.Navigation("Branch");
 
                     b.Navigation("FixedAsset");
 
@@ -6186,10 +6162,6 @@ namespace Sportive.API.Migrations
                         .WithMany()
                         .HasForeignKey("AssetAccountId");
 
-                    b.HasOne("Sportive.API.Models.Branch", "Branch")
-                        .WithMany()
-                        .HasForeignKey("BranchId");
-
                     b.HasOne("Sportive.API.Models.FixedAssetCategory", "Category")
                         .WithMany("Assets")
                         .HasForeignKey("CategoryId")
@@ -6207,8 +6179,6 @@ namespace Sportive.API.Migrations
                     b.Navigation("AccumDepreciationAccount");
 
                     b.Navigation("AssetAccount");
-
-                    b.Navigation("Branch");
 
                     b.Navigation("Category");
 

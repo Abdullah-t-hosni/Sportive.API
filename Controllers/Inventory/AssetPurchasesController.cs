@@ -9,6 +9,7 @@ using Sportive.API.Services;
 using Sportive.API.Interfaces;
 using Sportive.API.Utils;
 using System.Security.Claims;
+using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers;
 
@@ -41,6 +42,7 @@ public class AssetPurchasesController : ControllerBase
         [FromQuery] string? search = null,
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null,
+        [FromQuery] int? branchId = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
         var q = _db.PurchaseInvoices
@@ -52,6 +54,16 @@ public class AssetPurchasesController : ControllerBase
         if (supplierId.HasValue) q = q.Where(i => i.SupplierId == supplierId.Value);
         if (fromDate.HasValue)   q = q.Where(i => i.InvoiceDate >= fromDate.Value.Date);
         if (toDate.HasValue)     q = q.Where(i => i.InvoiceDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        int? isolatedBranchId = canViewAll ? (branchId ?? User.GetBranchId()) : User.GetBranchId();
+        if (!canViewAll || branchId.HasValue)
+        {
+            if (isolatedBranchId.HasValue)
+            {
+                q = q.Where(i => i.BranchId == isolatedBranchId.Value);
+            }
+        }
         
         if (!string.IsNullOrEmpty(search))
             q = q.Where(i => i.InvoiceNumber.Contains(search)
@@ -156,7 +168,8 @@ public class AssetPurchasesController : ControllerBase
                     CashAccountId         = dto.CashAccountId > 0 ? dto.CashAccountId : null,
                     CostCenter            = dto.CostCenter,
                     IsTaxInclusive        = dto.IsTaxInclusive,
-                    IsAssetPurchase       = true
+                    IsAssetPurchase       = true,
+                    BranchId              = User.GetBranchId() // Will use user's branch
                 };
 
                 decimal subtotal = 0;
@@ -223,7 +236,8 @@ public class AssetPurchasesController : ControllerBase
                             UsefulLifeYears = 5, // Default
                             DepreciationMethod = DepreciationMethod.StraightLine,
                             SalvageValue = 0,
-                            DepreciationStartDate = dto.InvoiceDate
+                            DepreciationStartDate = dto.InvoiceDate,
+                            BranchId = invoice.BranchId
                         };
                         _db.FixedAssets.Add(asset);
                         

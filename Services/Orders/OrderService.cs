@@ -63,7 +63,7 @@ public class OrderService : IOrderService
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
         int page, int pageSize, OrderStatus? status = null, string? search = null,
         int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null, OrderSource? source = null, PaymentMethod? paymentMethod = null,
-        string? orderBy = null, bool descending = false)
+        string? orderBy = null, bool descending = false, int? branchId = null, int? warehouseId = null)
     {
         pageSize = Math.Clamp(pageSize, 1, 2000);
         var query = _db.Orders
@@ -82,6 +82,8 @@ public class OrderService : IOrderService
             query = query.Where(o => o.CreatedAt <= endOfBusinessDay);
         }
         if (!string.IsNullOrEmpty(salesPersonId)) query = query.Where(o => o.SalesPersonId == salesPersonId);
+        if (branchId.HasValue) query = query.Where(o => o.BranchId == branchId.Value);
+        if (warehouseId.HasValue) query = query.Where(o => o.WarehouseId == warehouseId.Value);
 
         if (!string.IsNullOrEmpty(search))
         {

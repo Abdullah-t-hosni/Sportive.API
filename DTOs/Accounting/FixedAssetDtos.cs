@@ -65,7 +65,8 @@ public record CreateFixedAssetDto(
     int?              AssetAccountId               = null,
     int?              AccumDepreciationAccountId   = null,
     int?              DepreciationExpenseAccountId = null,
-    OrderSource?      CostCenter                   = null
+    OrderSource?      CostCenter                   = null,
+    int?              BranchId                     = null
 );
 
 public record UpdateFixedAssetDto(
@@ -88,7 +89,8 @@ public record UpdateFixedAssetDto(
     int?              AssetAccountId               = null,
     int?              AccumDepreciationAccountId   = null,
     int?              DepreciationExpenseAccountId = null,
-    OrderSource?      CostCenter                   = null
+    OrderSource?      CostCenter                   = null,
+    int?              BranchId                     = null
 );
 
 public record FixedAssetDto(
@@ -121,7 +123,8 @@ public record FixedAssetDto(
     int?              DepreciationExpenseAccountId,
     string?           DepreciationExpenseAccountName,
     OrderSource?      CostCenter,
-    DateTime          CreatedAt
+    DateTime          CreatedAt,
+    int?              BranchId
 );
 
 public record FixedAssetDetailDto(
@@ -157,7 +160,8 @@ public record AssetDepreciationDto(
     decimal  BookValueAfter,
     string?  Notes,
     int?     JournalEntryId,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    int?     BranchId
 );
 
 // ══════════════════════════════════════════════════════
@@ -193,5 +197,6 @@ public record AssetDisposalDto(
     string?      Notes,
     string?      AttachmentUrl,
     int?         JournalEntryId,
-    DateTime     CreatedAt
+    DateTime     CreatedAt,
+    int?         BranchId
 );

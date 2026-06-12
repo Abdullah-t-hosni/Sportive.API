@@ -301,6 +301,15 @@ public class AuthService : IAuthService
             }
         }
 
+        if (branchId.HasValue)
+        {
+            claims.Add(new Claim("BranchId", branchId.Value.ToString()));
+        }
+        if (warehouseId.HasValue)
+        {
+            claims.Add(new Claim("WarehouseId", warehouseId.Value.ToString()));
+        }
+
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["JWT:Secret"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         // ⚠️ Access Token: short-lived (2h default). Refresh token handles re-auth silently.

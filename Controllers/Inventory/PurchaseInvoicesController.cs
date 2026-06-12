@@ -11,6 +11,7 @@ using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Interfaces;
 using Sportive.API.Utils;
+using Sportive.API.Extensions;
 using ClosedXML.Excel;
 
 namespace Sportive.API.Controllers;
@@ -56,6 +57,8 @@ public class PurchaseInvoicesController : ControllerBase
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] OrderSource? costCenter = null,
+        [FromQuery] int? branchId = null,
+        [FromQuery] int? warehouseId = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
         var q = _db.PurchaseInvoices
@@ -66,6 +69,20 @@ public class PurchaseInvoicesController : ControllerBase
             .AsQueryable();
 
         if (costCenter.HasValue) q = q.Where(i => i.CostCenter == costCenter.Value);
+
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        int? isolatedBranchId = canViewAll ? branchId : User.GetBranchId();
+        int? isolatedWarehouseId = canViewAll ? warehouseId : User.GetWarehouseId();
+
+        // Warehouse is directly on PurchaseInvoice
+        if (isolatedWarehouseId.HasValue) 
+        {
+            q = q.Where(i => i.WarehouseId == isolatedWarehouseId.Value);
+        }
+        if (isolatedBranchId.HasValue)
+        {
+            q = q.Where(i => i.BranchId == isolatedBranchId.Value);
+        }
 
         if (supplierId.HasValue) q = q.Where(i => i.SupplierId == supplierId.Value);
         if (fromDate.HasValue)   q = q.Where(i => i.InvoiceDate >= fromDate.Value.Date);

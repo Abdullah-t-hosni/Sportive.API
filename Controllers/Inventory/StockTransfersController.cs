@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Utils;
 using System.Security.Claims;
+using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers;
 
@@ -26,12 +27,28 @@ public class StockTransfersController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var transfers = await _db.StockTransfers
+        var q = _db.StockTransfers
             .Include(t => t.SourceWarehouse)
             .Include(t => t.DestinationWarehouse)
-            .OrderByDescending(t => t.CreatedAt)
-            .ToListAsync();
+            .AsQueryable();
 
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedBranchId = User.GetBranchId();
+            int? isolatedWarehouseId = User.GetWarehouseId();
+
+            if (isolatedWarehouseId.HasValue)
+            {
+                q = q.Where(t => t.SourceWarehouseId == isolatedWarehouseId.Value || t.DestinationWarehouseId == isolatedWarehouseId.Value);
+            }
+            else if (isolatedBranchId.HasValue)
+            {
+                q = q.Where(t => t.SourceWarehouse.BranchId == isolatedBranchId.Value || t.DestinationWarehouse.BranchId == isolatedBranchId.Value);
+            }
+        }
+
+        var transfers = await q.OrderByDescending(t => t.CreatedAt).ToListAsync();
         return Ok(transfers);
     }
 

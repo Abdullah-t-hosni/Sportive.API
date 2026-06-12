@@ -14,6 +14,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Hangfire;
 using Microsoft.Extensions.Caching.Memory;
+using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers;
 
@@ -52,10 +53,15 @@ public class OrdersController : ControllerBase
         [FromQuery] int? customerId = null, [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null, [FromQuery] string? salesPersonId = null,
         [FromQuery] OrderSource? source = null, [FromQuery] PaymentMethod? paymentMethod = null,
-        [FromQuery] string? orderBy = null, [FromQuery] bool descending = false)
+        [FromQuery] string? orderBy = null, [FromQuery] bool descending = false,
+        [FromQuery] int? branchId = null, [FromQuery] int? warehouseId = null)
     {
         pageSize = Math.Clamp(pageSize, 1, 2000);
-        var result = await _orderService.GetOrdersAsync(page, pageSize, status, search, customerId, fromDate, toDate, salesPersonId, source, paymentMethod, orderBy, descending);
+
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        int? isolatedBranchId = canViewAll ? branchId : User.GetBranchId();
+
+        var result = await _orderService.GetOrdersAsync(page, pageSize, status, search, customerId, fromDate, toDate, salesPersonId, source, paymentMethod, orderBy, descending, isolatedBranchId, warehouseId);
         return Ok(result);
     }
 
@@ -176,8 +182,8 @@ public class OrdersController : ControllerBase
             posDto.PaidAmount,
             posDto.AttachmentUrl,
             posDto.AttachmentPublicId,
-            posDto.BranchId,
-            posDto.WarehouseId
+            User.GetBranchId() ?? posDto.BranchId,
+            User.GetWarehouseId() ?? posDto.WarehouseId
         );
 
         var order = await _orderService.CreateOrderAsync(posDto.CustomerId, dto);

@@ -8,6 +8,7 @@ using Sportive.API.Models;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers
 {
@@ -36,6 +37,7 @@ namespace Sportive.API.Controllers
                 var closure = new POSShiftClosure
                 {
                     StationId = dto.StationId,
+                    BranchId = User.GetBranchId(),
                     ClosureDate = dto.ClosureDate,
                     ClosedBy = !string.IsNullOrEmpty(dto.ClosedBy) ? dto.ClosedBy : (User.Identity?.Name ?? "Cashier"),
                     StartingBalance = dto.StartingBalance,
@@ -74,6 +76,16 @@ namespace Sportive.API.Controllers
             try
             {
                 var query = _db.POSShiftClosures.AsQueryable();
+
+                bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+                if (!canViewAll)
+                {
+                    int? isolatedBranchId = User.GetBranchId();
+                    if (isolatedBranchId.HasValue)
+                    {
+                        query = query.Where(c => c.BranchId == isolatedBranchId.Value);
+                    }
+                }
 
                 if (!string.IsNullOrEmpty(date))
                 {

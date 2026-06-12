@@ -67,6 +67,9 @@ public class FixedAsset : BaseEntity
     public int             CategoryId { get; set; }
     public FixedAssetCategory Category { get; set; } = null!;
 
+    public int?    BranchId { get; set; }
+    public Branch? Branch   { get; set; }
+
     // بيانات الشراء
     public DateTime PurchaseDate  { get; set; }
     public decimal  PurchaseCost  { get; set; } = 0;   // تكلفة الشراء
@@ -119,6 +122,9 @@ public class AssetDepreciation : BaseEntity
     public int        FixedAssetId { get; set; }
     public FixedAsset FixedAsset   { get; set; } = null!;
 
+    public int?    BranchId { get; set; }
+    public Branch? Branch   { get; set; }
+
     public DateTime DepreciationDate   { get; set; }           // تاريخ الإهلاك
     public int      PeriodYear         { get; set; }           // السنة
     public int      PeriodMonth        { get; set; }           // الشهر (1-12)
@@ -146,6 +152,9 @@ public class AssetDisposal : BaseEntity
 
     public int        FixedAssetId { get; set; }
     public FixedAsset FixedAsset   { get; set; } = null!;
+
+    public int?    BranchId { get; set; }
+    public Branch? Branch   { get; set; }
 
     public DisposalType DisposalType  { get; set; } = DisposalType.Sale;
     public DateTime     DisposalDate  { get; set; }

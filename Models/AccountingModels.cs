@@ -37,6 +37,8 @@ public class Account : BaseEntity
     public bool     IsSystem    { get; set; } = false;         // لا يمكن حذفه
     public bool     CanReceivePayment { get; set; } = false;   // يقبل التحصيل
     public decimal  OpeningBalance { get; set; } = 0;          // الرصيد الافتتاحي
+    public int?     BranchId       { get; set; }               // مرتبط بفرع معين
+    public Branch?  Branch         { get; set; }
     public ICollection<Account>      Children { get; set; } = new List<Account>();
     public ICollection<JournalLine>  Lines    { get; set; } = new List<JournalLine>();
 }

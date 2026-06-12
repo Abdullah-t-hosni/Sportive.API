@@ -8,6 +8,7 @@ using Sportive.API.DTOs;
 using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Utils;
+using Sportive.API.Extensions;
 using Sportive.API.Interfaces;
 
 namespace Sportive.API.Controllers;
@@ -36,6 +37,17 @@ public class EmployeeDeductionsController : ControllerBase
             .Include(d => d.Employee)
             .Include(d => d.CashAccount)
             .AsQueryable();
+
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedBranchId = User.GetBranchId();
+            if (isolatedBranchId.HasValue)
+            {
+                q = q.Where(d => d.Employee.BranchId == isolatedBranchId.Value);
+            }
+        }
+
         if (employeeId.HasValue) q = q.Where(d => d.EmployeeId == employeeId.Value);
 
         var total = await q.CountAsync();

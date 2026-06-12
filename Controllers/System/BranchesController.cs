@@ -52,6 +52,35 @@ public class BranchesController : ControllerBase
         _db.Branches.Add(branch);
         await _db.SaveChangesAsync();
 
+        // ── Auto-generate Financial Accounts for the new branch ──
+        var currentAssetsAcc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "11");
+        if (currentAssetsAcc != null)
+        {
+            // Find highest existing code under "11"
+            var childCodes = await _db.Accounts
+                .Where(a => a.ParentId == currentAssetsAcc.Id && a.Code.StartsWith("110"))
+                .Select(a => a.Code)
+                .ToListAsync();
+
+            int maxCode = 1100;
+            foreach (var c in childCodes)
+            {
+                if (int.TryParse(c, out int parsed) && parsed > maxCode)
+                    maxCode = parsed;
+            }
+
+            var accountsToAdd = new List<Account>
+            {
+                new Account { Code = (++maxCode).ToString(), NameAr = $"نقدية كاشير - {branch.Name}", NameEn = $"Cashier - {branch.Name}", Type = AccountType.Asset, Nature = AccountNature.Debit, Level = 3, ParentId = currentAssetsAcc.Id, IsLeaf = true, AllowPosting = true, IsSystem = true, CreatedAt = TimeHelper.GetEgyptTime(), CanReceivePayment = true, BranchId = branch.Id },
+                new Account { Code = (++maxCode).ToString(), NameAr = $"فودافون كاش - {branch.Name}", NameEn = $"Vodafone Cash - {branch.Name}", Type = AccountType.Asset, Nature = AccountNature.Debit, Level = 3, ParentId = currentAssetsAcc.Id, IsLeaf = true, AllowPosting = true, IsSystem = true, CreatedAt = TimeHelper.GetEgyptTime(), CanReceivePayment = true, BranchId = branch.Id },
+                new Account { Code = (++maxCode).ToString(), NameAr = $"إنستاباي - {branch.Name}", NameEn = $"InstaPay - {branch.Name}", Type = AccountType.Asset, Nature = AccountNature.Debit, Level = 3, ParentId = currentAssetsAcc.Id, IsLeaf = true, AllowPosting = true, IsSystem = true, CreatedAt = TimeHelper.GetEgyptTime(), CanReceivePayment = true, BranchId = branch.Id },
+                new Account { Code = (++maxCode).ToString(), NameAr = $"شبكات تحت التحصيل - {branch.Name}", NameEn = $"Networks Under Collection - {branch.Name}", Type = AccountType.Asset, Nature = AccountNature.Debit, Level = 3, ParentId = currentAssetsAcc.Id, IsLeaf = true, AllowPosting = true, IsSystem = true, CreatedAt = TimeHelper.GetEgyptTime(), CanReceivePayment = true, BranchId = branch.Id }
+            };
+
+            _db.Accounts.AddRange(accountsToAdd);
+            await _db.SaveChangesAsync();
+        }
+
         return CreatedAtAction(nameof(GetById), new { id = branch.Id }, branch);
     }
 

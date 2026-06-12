@@ -195,6 +195,9 @@ public class PayrollRun : BaseEntity
     public int?          PaymentJournalEntryId { get; set; }
     public JournalEntry? PaymentJournalEntry   { get; set; }
 
+    public int? BranchId { get; set; }
+    public Branch? Branch { get; set; }
+
     public ICollection<PayrollItem> Items { get; set; } = new List<PayrollItem>();
 }
 
@@ -259,6 +262,9 @@ public class EmployeeAdvance : BaseEntity
 
     public int?          JournalEntryId { get; set; }
     public JournalEntry? JournalEntry   { get; set; }
+
+    public int? BranchId { get; set; }
+    public Branch? Branch { get; set; }
 }
 
 // ══════════════════════════════════════════════════════
@@ -288,6 +294,9 @@ public class EmployeeBonus : BaseEntity
 
     public int?          JournalEntryId { get; set; }
     public JournalEntry? JournalEntry   { get; set; }
+
+    public int? BranchId { get; set; }
+    public Branch? Branch { get; set; }
 }
 
 // ══════════════════════════════════════════════════════
@@ -318,6 +327,9 @@ public class EmployeeDeduction : BaseEntity
 
     public int?          JournalEntryId { get; set; }
     public JournalEntry? JournalEntry   { get; set; }
+
+    public int? BranchId { get; set; }
+    public Branch? Branch { get; set; }
 }
 
 // ══════════════════════════════════════════════════════

@@ -9,6 +9,7 @@ using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Utils;
 using System.Security.Claims;
+using Sportive.API.Extensions;
 using ClosedXML.Excel;
 using System.IO;
 
@@ -59,6 +60,23 @@ public class InventoryOpeningBalanceController : ControllerBase
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
         var query = _db.InventoryOpeningBalances.AsNoTracking();
+
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedBranchId = User.GetBranchId();
+            int? isolatedWarehouseId = User.GetWarehouseId();
+
+            if (isolatedWarehouseId.HasValue)
+            {
+                query = query.Where(x => x.WarehouseId == isolatedWarehouseId.Value);
+            }
+            else if (isolatedBranchId.HasValue)
+            {
+                query = query.Where(x => x.BranchId == isolatedBranchId.Value);
+            }
+        }
+
         var total = await query.CountAsync();
         var items = await query
             .OrderByDescending(x => x.Date)

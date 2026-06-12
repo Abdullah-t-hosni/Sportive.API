@@ -8,6 +8,7 @@ using Sportive.API.Interfaces;
 using Sportive.API.Services;
 using Sportive.API.DTOs;
 using Sportive.API.Utils;
+using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers;
 
@@ -62,7 +63,8 @@ public class JournalEntriesController : ControllerBase
         [FromQuery] string? types = null,
         [FromQuery] string? excludeTypes = null,
         [FromQuery] string? sortBy = null,
-        [FromQuery] string sortDir = "desc")
+        [FromQuery] string sortDir = "desc",
+        [FromQuery] int? branchId = null)
     {
         var q = _db.JournalEntries.AsNoTracking();
         if (includeLines) q = q.Include(e => e.Lines).ThenInclude(l => l.Account);
@@ -82,6 +84,21 @@ public class JournalEntriesController : ControllerBase
         if (fromDate.HasValue) q = q.Where(e => e.EntryDate >= fromDate.Value.Date.AddHours(TimeHelper.GetBusinessDayEndHour()));
         if (toDate.HasValue) q = q.Where(e => e.EntryDate <= toDate.Value.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1));
         if (source.HasValue) q = q.Where(e => e.CostCenter == source.Value);
+
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedBranchId = User.GetBranchId();
+            if (isolatedBranchId.HasValue)
+            {
+                q = q.Where(e => e.Lines.Any(l => l.BranchId == isolatedBranchId.Value));
+            }
+        }
+        else if (branchId.HasValue) 
+        {
+            q = q.Where(e => e.Lines.Any(l => l.BranchId == branchId.Value));
+        }
+
         if (status.HasValue) q = q.Where(e => e.Status == status.Value);
         if (!string.IsNullOrEmpty(types))
         {

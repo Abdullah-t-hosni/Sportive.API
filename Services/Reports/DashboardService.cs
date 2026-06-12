@@ -27,7 +27,7 @@ public class DashboardService : IDashboardService
         _cache = cache;
     }
 
-    public async Task<DashboardStatsDto> GetStatsAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null)
+    public async Task<DashboardStatsDto> GetStatsAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null)
     {
         var now        = TimeHelper.GetEgyptTime();
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
@@ -50,6 +50,10 @@ public class DashboardService : IDashboardService
         {
             query = query.Where(o => o.Source == source.Value);
         }
+        if (branchId.HasValue)
+        {
+            query = query.Where(o => o.BranchId == branchId.Value);
+        }
 
         // --- Target Period Stats (Displays as 'Today Sales' in UI) ---
         var periodSalesRaw = await query
@@ -71,6 +75,10 @@ public class DashboardService : IDashboardService
             if (source.HasValue)
             {
                 discountReturnsQuery = discountReturnsQuery.Where(e => e.CostCenter == source.Value);
+            }
+            if (branchId.HasValue)
+            {
+                discountReturnsQuery = discountReturnsQuery.Where(e => e.Lines.Any(l => l.BranchId == branchId.Value));
             }
 
             periodDiscountReturned = await discountReturnsQuery
@@ -104,6 +112,10 @@ public class DashboardService : IDashboardService
             if (source.HasValue)
             {
                 discountReturnsQuery = discountReturnsQuery.Where(e => e.CostCenter == source.Value);
+            }
+            if (branchId.HasValue)
+            {
+                discountReturnsQuery = discountReturnsQuery.Where(e => e.Lines.Any(l => l.BranchId == branchId.Value));
             }
 
             totalDiscountReturned = await discountReturnsQuery
@@ -168,6 +180,10 @@ public class DashboardService : IDashboardService
         {
             returnAmountQuery = returnAmountQuery.Where(i => i.Order!.Source == source.Value);
         }
+        if (branchId.HasValue)
+        {
+            returnAmountQuery = returnAmountQuery.Where(i => i.Order!.BranchId == branchId.Value);
+        }
 
         var salesReturnMapping = await _db.AccountSystemMappings
             .Where(m => m.Key == "salesReturnAccountID")
@@ -185,6 +201,10 @@ public class DashboardService : IDashboardService
         if (source.HasValue)
         {
             returnsQuery = returnsQuery.Where(e => e.CostCenter == source.Value);
+        }
+        if (branchId.HasValue)
+        {
+            returnsQuery = returnsQuery.Where(e => e.Lines.Any(l => l.BranchId == branchId.Value));
         }
 
         var periodReturnDebit = await returnsQuery
@@ -207,6 +227,10 @@ public class DashboardService : IDashboardService
         {
             totalReturnsQuery = totalReturnsQuery.Where(e => e.CostCenter == source.Value);
         }
+        if (branchId.HasValue)
+        {
+            totalReturnsQuery = totalReturnsQuery.Where(e => e.Lines.Any(l => l.BranchId == branchId.Value));
+        }
 
         var totalReturnDebit = await totalReturnsQuery
             .SelectMany(e => e.Lines)
@@ -228,6 +252,10 @@ public class DashboardService : IDashboardService
         {
             collectionQuery = collectionQuery.Where(v => v.CostCenter == source.Value);
         }
+        if (branchId.HasValue)
+        {
+            collectionQuery = collectionQuery.Where(v => v.BranchId == branchId.Value);
+        }
 
         var todayCollections = await collectionQuery
             .SumAsync(v => (decimal?)v.Amount) ?? 0;
@@ -246,6 +274,10 @@ public class DashboardService : IDashboardService
         if (source.HasValue)
         {
             expenseQuery = expenseQuery.Where(l => l.CostCenter == source.Value);
+        }
+        if (branchId.HasValue)
+        {
+            expenseQuery = expenseQuery.Where(l => l.BranchId == branchId.Value);
         }
 
         var totalExpenses = await expenseQuery.SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
@@ -286,14 +318,18 @@ public class DashboardService : IDashboardService
         );
     }
 
-    public async Task<AnalyticsSummaryDto> GetAnalyticsSummaryAsync()
+    public async Task<AnalyticsSummaryDto> GetAnalyticsSummaryAsync(int? branchId = null)
     {
         var now = TimeHelper.GetEgyptTime();
         var monthStart = new DateTime(now.Year, now.Month, 1);
 
-        // Category Sales
-        var catSales = await _db.OrderItems
+        var orderQuery = _db.OrderItems
             .Include(i => i.Product).ThenInclude(p => p!.Category)
+            .AsQueryable();
+
+        if (branchId.HasValue) orderQuery = orderQuery.Where(i => i.Order!.BranchId == branchId.Value);
+
+        var catSales = await orderQuery
             .GroupBy(i => new { 
                 CategoryId = (i.Product != null && i.Product.Category != null) ? (int?)i.Product.Category.Id : null, 
                 CategoryNameAr = (i.Product != null && i.Product.Category != null) ? i.Product.Category.NameAr : "Category Missing", 
@@ -306,10 +342,14 @@ public class DashboardService : IDashboardService
             ))
             .ToListAsync();
 
-        // Daily Sales & New Customers for last 30 days
         var startDate = now.AddDays(-30);
-        var orders = await _db.Orders
-            .Where(o => o.CreatedAt >= startDate && o.Status != OrderStatus.Cancelled)
+
+        var ordersQuery2 = _db.Orders
+            .Where(o => o.CreatedAt >= startDate && o.Status != OrderStatus.Cancelled);
+        
+        if (branchId.HasValue) ordersQuery2 = ordersQuery2.Where(o => o.BranchId == branchId.Value);
+
+        var orders = await ordersQuery2
             .Select(o => new { o.CreatedAt, o.TotalAmount, o.Source }) // ✅ Added Source
             .ToListAsync();
 
@@ -333,8 +373,12 @@ public class DashboardService : IDashboardService
         var totalOrd = orders.Count;
 
         // Retention Rate calculation: (Customers with > 1 order / Total customers with at least 1 order)
-        var orderCountsByCustomer = await _db.Orders
-            .Where(o => o.Status != OrderStatus.Cancelled)
+        var retentionQuery = _db.Orders
+            .Where(o => o.Status != OrderStatus.Cancelled);
+
+        if (branchId.HasValue) retentionQuery = retentionQuery.Where(o => o.BranchId == branchId.Value);
+
+        var orderCountsByCustomer = await retentionQuery
             .GroupBy(o => o.CustomerId)
             .Select(g => g.Count())
             .ToListAsync();
@@ -355,7 +399,7 @@ public class DashboardService : IDashboardService
         );
     }
 
-    public async Task<byte[]> ExportSalesToCsvAsync(DateTime? from, DateTime? to, OrderSource? source = null)
+    public async Task<byte[]> ExportSalesToCsvAsync(DateTime? from, DateTime? to, OrderSource? source = null, int? branchId = null)
     {
         var query = _db.Orders
             .Include(o => o.Customer)
@@ -374,6 +418,7 @@ public class DashboardService : IDashboardService
             query = query.Where(o => o.CreatedAt < targetEnd);
         }
         if (source.HasValue) query = query.Where(o => o.Source == source.Value);
+        if (branchId.HasValue) query = query.Where(o => o.BranchId == branchId.Value);
 
         var orders = await query.OrderByDescending(o => o.CreatedAt).ToListAsync();
 
@@ -457,14 +502,17 @@ public class DashboardService : IDashboardService
         return Encoding.UTF8.GetBytes(csv.ToString());
     }
 
-    public async Task<AdvancedDashboardStatsDto> GetAdvancedStatsAsync()
+    public async Task<AdvancedDashboardStatsDto> GetAdvancedStatsAsync(int? branchId = null)
     {
         var now = TimeHelper.GetEgyptTime();
         var thirtyDaysAgo = now.AddDays(-30);
 
-        // 1. Sales by City (Heatmap)
-        var salesByCityRaw = await _db.Orders
-            .Where(o => o.Status != OrderStatus.Cancelled && o.DeliveryAddressId != null)
+        var salesByCityQuery = _db.Orders
+            .Where(o => o.Status != OrderStatus.Cancelled && o.DeliveryAddressId != null);
+        
+        if (branchId.HasValue) salesByCityQuery = salesByCityQuery.Where(o => o.BranchId == branchId.Value);
+
+        var salesByCityRaw = await salesByCityQuery
             .Select(o => new { City = o.DeliveryAddress!.City, o.TotalAmount }) 
             .GroupBy(x => x.City)
             .Select(g => new { 
@@ -480,15 +528,17 @@ public class DashboardService : IDashboardService
             .Select(s => new LocationStatDto(s.City ?? "Unknown", s.Count, s.Total))
             .ToList();
 
-        // 2. VIP Customers
+        var vipQuery = _db.Orders
+            .Where(o => o.Status != OrderStatus.Cancelled);
+        if (branchId.HasValue) vipQuery = vipQuery.Where(o => o.BranchId == branchId.Value);
+
         var topCustomersRaw = await _db.Customers
-            .Include(c => c.Orders)
             .Select(c => new {
                 c.Id,
                 c.FullName,
                 c.Email,
-                TotalSpent = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
-                OrderCount = c.Orders.Count(o => o.Status != OrderStatus.Cancelled)
+                TotalSpent = vipQuery.Where(o => o.CustomerId == c.Id).Sum(o => (decimal?)o.TotalAmount) ?? 0,
+                OrderCount = vipQuery.Count(o => o.CustomerId == c.Id)
             })
             .OrderByDescending(x => x.TotalSpent)
             .Take(10)
@@ -500,8 +550,12 @@ public class DashboardService : IDashboardService
 
         // 3. Inventory Insights (Run-out predictor & Stock health)
         // Calculating AvgDailySales based on last 30 days
-        var recentSales = await _db.OrderItems
-            .Where(i => i.CreatedAt >= thirtyDaysAgo)
+        var recentSalesQuery = _db.OrderItems
+            .Where(i => i.CreatedAt >= thirtyDaysAgo);
+        
+        if (branchId.HasValue) recentSalesQuery = recentSalesQuery.Where(i => i.Order!.BranchId == branchId.Value);
+
+        var recentSales = await recentSalesQuery
             .GroupBy(i => i.ProductId)
             .Select(g => new { ProductId = g.Key, TotalSold = g.Sum(i => i.Quantity) })
             .ToListAsync();
@@ -545,7 +599,10 @@ public class DashboardService : IDashboardService
         );
 
         // 5. Payment Methods
-        var paymentMethodsRaw = await _db.Orders
+        var paymentsQuery = _db.Orders.AsQueryable();
+        if (branchId.HasValue) paymentsQuery = paymentsQuery.Where(o => o.BranchId == branchId.Value);
+
+        var paymentMethodsRaw = await paymentsQuery
             .Select(o => new { o.PaymentMethod, o.TotalAmount })
             .GroupBy(o => o.PaymentMethod)
             .Select(g => new {
@@ -624,11 +681,13 @@ public class DashboardService : IDashboardService
         );
     }
 
-    public async Task<StaffPerformanceDto> GetStaffStatsAsync(string staffId)
+    public async Task<StaffPerformanceDto> GetStaffStatsAsync(string staffId, int? branchId = null)
     {
-        var orders = await _db.Orders
-            .Where(o => o.SalesPersonId == staffId && o.Status != OrderStatus.Cancelled)
-            .ToListAsync();
+        var ordersQuery = _db.Orders
+            .Where(o => o.SalesPersonId == staffId && o.Status != OrderStatus.Cancelled);
+        if (branchId.HasValue) ordersQuery = ordersQuery.Where(o => o.BranchId == branchId.Value);
+
+        var orders = await ordersQuery.ToListAsync();
 
         string name = "Unknown Staff";
         if (int.TryParse(staffId, out var empId))
@@ -651,14 +710,14 @@ public class DashboardService : IDashboardService
         );
     }
 
-    public async Task<object> GetKpiAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null)
+    public async Task<object> GetKpiAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null)
     {
         var EgyptTime = TimeHelper.GetEgyptTime();
         var cacheKey = $"KPI_DASHBOARD_{source}_{fromDate:yyyyMMdd}_{toDate:yyyyMMdd}_{EgyptTime:yyyyMMdd_HHmm}";
 
         return await _cache.GetOrCreateAsync(cacheKey, async () => 
         {
-            return await GetKpiInternalAsync(source, fromDate, toDate);
+            return await GetKpiInternalAsync(source, fromDate, toDate, branchId);
         }, TimeSpan.FromSeconds(30)) ?? new {};
     }
 
@@ -667,7 +726,7 @@ public class DashboardService : IDashboardService
         await _hub.Clients.Group("Admin").SendAsync("DashboardUpdated", new { date = TimeHelper.GetEgyptTime() });
     }
 
-    private async Task<object> GetKpiInternalAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null)
+    private async Task<object> GetKpiInternalAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null)
     {
         var now        = TimeHelper.GetEgyptTime();
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
@@ -684,6 +743,7 @@ public class DashboardService : IDashboardService
         // ── 1. جلب الإحصائيات الأساسية من قاعدة البيانات (Aggregate Queries) ──────────
         var allOrdersQuery = _db.Orders.AsNoTracking().Where(o => o.Status != OrderStatus.Cancelled);
         if (source.HasValue) allOrdersQuery = allOrdersQuery.Where(o => o.Source == source.Value);
+        if (branchId.HasValue) allOrdersQuery = allOrdersQuery.Where(o => o.BranchId == branchId.Value);
 
         var stats = await allOrdersQuery.GroupBy(x => 1).Select(g => new {
             TodayRev = g.Where(o => o.CreatedAt >= todayStart && o.CreatedAt < todayEnd).Sum(o => (decimal?)o.TotalAmount) ?? 0,
@@ -714,6 +774,7 @@ public class DashboardService : IDashboardService
         // ── 2. جلب التحصيلات (سندات القبض) ──────────
         var allCollectionsQuery = _db.ReceiptVouchers.AsNoTracking().Where(v => v.VoucherDate >= lastMonthStart);
         if (source.HasValue) allCollectionsQuery = allCollectionsQuery.Where(v => v.CostCenter == source.Value);
+        if (branchId.HasValue) allCollectionsQuery = allCollectionsQuery.Where(v => v.BranchId == branchId.Value);
 
         var collStats = await allCollectionsQuery.GroupBy(x => 1).Select(g => new {
             Today = g.Where(v => v.VoucherDate >= todayStart && v.VoucherDate < todayEnd).Sum(v => (decimal?)v.Amount) ?? 0,
@@ -730,13 +791,19 @@ public class DashboardService : IDashboardService
         var lastMonthCollections = collStats?.LastMonth ?? 0;
 
         // ── 3. جلب المصروفات اليومية ──────────
-        var todayExpenses = await _db.PaymentVouchers.AsNoTracking()
-            .Where(v => v.VoucherDate >= todayStart && v.VoucherDate < todayEnd && (source == null || v.CostCenter == source))
+        var todayExpensesQuery = _db.PaymentVouchers.AsNoTracking()
+            .Where(v => v.VoucherDate >= todayStart && v.VoucherDate < todayEnd && (source == null || v.CostCenter == source));
+        if (branchId.HasValue) todayExpensesQuery = todayExpensesQuery.Where(v => v.BranchId == branchId.Value);
+
+        var todayExpenses = await todayExpensesQuery
             .SumAsync(v => (decimal?)v.Amount) ?? 0;
 
         // ── 4. أفضل المنتجات ──────────
-        var topProducts = await _db.OrderItems.AsNoTracking()
-            .Where(i => i.Order!.Status != OrderStatus.Cancelled && i.Order.CreatedAt >= monthStart && i.ProductId.HasValue && (source == null || i.Order.Source == source))
+        var topProductsQuery = _db.OrderItems.AsNoTracking()
+            .Where(i => i.Order!.Status != OrderStatus.Cancelled && i.Order.CreatedAt >= monthStart && i.ProductId.HasValue && (source == null || i.Order.Source == source));
+        if (branchId.HasValue) topProductsQuery = topProductsQuery.Where(i => i.Order!.BranchId == branchId.Value);
+
+        var topProducts = await topProductsQuery
             .GroupBy(i => new { i.ProductId, i.ProductNameAr, i.ProductNameEn })
             .Select(g => new {
                 ProductId = g.Key.ProductId!.Value,
@@ -982,7 +1049,7 @@ public class DashboardService : IDashboardService
     private static decimal GrowthPct(decimal current, decimal previous) =>
         previous == 0 ? (current > 0 ? 100 : 0) : Math.Round((current - previous) / previous * 100, 1);
 
-    public async Task<List<SalesChartDto>> GetSalesChartAsync(string period, DateTime? fromDate = null, DateTime? toDate = null)
+    public async Task<List<SalesChartDto>> GetSalesChartAsync(string period, DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null)
     {
         var now = TimeHelper.GetEgyptTime();
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
@@ -995,8 +1062,10 @@ public class DashboardService : IDashboardService
         IEnumerable<dynamic> stats;
         try
         {
-            stats = await _db.DailyStats.AsNoTracking()
-                .Where(s => s.Date >= start && s.Date < end && s.Source == OrderSource.General)
+            var dailyStatsQuery = _db.DailyStats.AsNoTracking()
+                .Where(s => s.Date >= start && s.Date < end && s.Source == OrderSource.General);
+            
+            stats = await dailyStatsQuery
                 .OrderBy(s => s.Date)
                 .Select(s => new { Date = s.Date, TotalSales = s.TotalSales, OrdersCount = s.OrdersCount })
                 .ToListAsync();
@@ -1009,8 +1078,12 @@ public class DashboardService : IDashboardService
         // 2. Fallback to Orders table if DailyStats is empty or failed (Source of Truth)
         if (!stats.Any())
         {
-            stats = await _db.Orders.AsNoTracking()
-                .Where(o => o.CreatedAt >= start && o.CreatedAt < end && o.Status != OrderStatus.Cancelled)
+            var fallbackQuery = _db.Orders.AsNoTracking()
+                .Where(o => o.CreatedAt >= start && o.CreatedAt < end && o.Status != OrderStatus.Cancelled);
+            
+            if (branchId.HasValue) fallbackQuery = fallbackQuery.Where(o => o.BranchId == branchId.Value);
+
+            stats = await fallbackQuery
                 .GroupBy(o => o.CreatedAt.Date)
                 .Select(g => new { Date = g.Key, TotalSales = g.Sum(o => o.TotalAmount), OrdersCount = g.Count() })
                 .OrderBy(s => s.Date)
@@ -1043,9 +1116,12 @@ public class DashboardService : IDashboardService
         }
     }
 
-    public async Task<List<TopProductDto>> GetTopProductsAsync(int count = 10)
+    public async Task<List<TopProductDto>> GetTopProductsAsync(int count = 10, int? branchId = null)
     {
-        var top = await _db.OrderItems.AsNoTracking().Where(i => i.Order!.Status != OrderStatus.Cancelled)
+        var topProductsQuery2 = _db.OrderItems.AsNoTracking().Where(i => i.Order!.Status != OrderStatus.Cancelled);
+        if (branchId.HasValue) topProductsQuery2 = topProductsQuery2.Where(i => i.Order!.BranchId == branchId.Value);
+
+        var top = await topProductsQuery2
             .GroupBy(i => new { i.ProductId, i.ProductNameAr, i.ProductNameEn })
             .Select(g => new { 
                 ProductId = g.Key.ProductId, ProductNameAr = g.Key.ProductNameAr, ProductNameEn = g.Key.ProductNameEn, 
@@ -1059,19 +1135,26 @@ public class DashboardService : IDashboardService
         return top.Select(t => new TopProductDto(t.ProductId, t.ProductNameAr, t.ProductNameEn, t.ProductId.HasValue ? imgs.GetValueOrDefault(t.ProductId.Value) : null, t.Sold, t.Revenue)).ToList();
     }
 
-    public async Task<List<OrderStatusStatsDto>> GetOrderStatusStatsAsync()
+    public async Task<List<OrderStatusStatsDto>> GetOrderStatusStatsAsync(int? branchId = null)
     {
-        var stats = await _db.Orders.AsNoTracking().GroupBy(o => o.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync();
+        var query = _db.Orders.AsNoTracking().AsQueryable();
+        if (branchId.HasValue) query = query.Where(o => o.BranchId == branchId.Value);
+        var stats = await query.GroupBy(o => o.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync();
         var total = stats.Sum(s => s.Count);
         return stats.Select(s => new OrderStatusStatsDto(s.Status.ToString(), s.Count, total > 0 ? Math.Round((decimal)s.Count / total * 100, 1) : 0)).ToList();
     }
 
-    public async Task<List<OrderSummaryDto>> GetRecentOrdersAsync(int count = 10)
+    public async Task<List<OrderSummaryDto>> GetRecentOrdersAsync(int count = 10, int? branchId = null)
     {
-        var orders = await _db.Orders.AsNoTracking()
+        var recentOrdersQuery = _db.Orders.AsNoTracking()
             .Include(o => o.Customer)
             .Include(o => o.Items)
             .Include(o => o.Payments)
+            .AsQueryable();
+
+        if (branchId.HasValue) recentOrdersQuery = recentOrdersQuery.Where(o => o.BranchId == branchId.Value);
+
+        var orders = await recentOrdersQuery
             .OrderByDescending(o => o.CreatedAt)
             .Take(count)
             .ToListAsync();

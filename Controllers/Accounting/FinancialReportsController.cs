@@ -9,6 +9,7 @@ using Sportive.API.DTOs;
 using Sportive.API.Utils;
 using Sportive.API.Services;
 using Sportive.API.Interfaces;
+using Sportive.API.Extensions;
 
 using Microsoft.Extensions.DependencyInjection;
 
@@ -32,7 +33,7 @@ public class FinancialReportsController : ControllerBase
 
     // 
     // SHARED: حساب أرصدة كل الحسابات في فترة زمنية
-    private async Task<List<AccountBalance>> GetBalances(DateTime from, DateTime to, OrderSource? source = null)
+    private async Task<List<AccountBalance>> GetBalances(DateTime from, DateTime to, OrderSource? source = null, int? isolatedBranchId = null)
     {
         var accounts = await _db.Accounts
             .OrderBy(a => a.Code)
@@ -52,6 +53,12 @@ public class FinancialReportsController : ControllerBase
         {
             query = query.Where(l => l.CostCenter == source.Value);
             openingQuery = openingQuery.Where(l => l.CostCenter == source.Value);
+        }
+
+        if (isolatedBranchId.HasValue)
+        {
+            query = query.Where(l => l.BranchId == isolatedBranchId.Value);
+            openingQuery = openingQuery.Where(l => l.BranchId == isolatedBranchId.Value);
         }
 
         var periodBalances = await query
@@ -162,7 +169,9 @@ public class FinancialReportsController : ControllerBase
         var from = fromDate?.AddHours(TimeHelper.GetBusinessDayEndHour()) ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1, TimeHelper.GetBusinessDayEndHour(), 0, 0);
         var to   = toDate?.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
 
-        var balances = await GetBalances(from, to, source);
+        int? isolatedBranchId = await User.HasViewAllBranchesAsync(HttpContext) ? null : User.GetBranchId();
+
+        var balances = await GetBalances(from, to, source, isolatedBranchId);
         var rows = balances
             .OrderBy(b => b.Code)
             .Select(b => {
@@ -229,7 +238,9 @@ public class FinancialReportsController : ControllerBase
         var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
-        var balances = await GetBalances(from, to, source);
+        int? isolatedBranchId = await User.HasViewAllBranchesAsync(HttpContext) ? null : User.GetBranchId();
+
+        var balances = await GetBalances(from, to, source, isolatedBranchId);
 
         // الإيرادات:
         // • الحسابات ذات الطبيعة الدائنة (مبيعات) → قيمة موجبة
@@ -286,7 +297,9 @@ public class FinancialReportsController : ControllerBase
         var from = new DateTime(2000, 1, 1, 2, 0, 0);
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
-        var balances = await GetBalances(from, to, source);
+        int? isolatedBranchId = await User.HasViewAllBranchesAsync(HttpContext) ? null : User.GetBranchId();
+
+        var balances = await GetBalances(from, to, source, isolatedBranchId);
 
         // الأصول — طبيعة مدين (closingBal = Dr - Cr)
         var assets = balances
@@ -309,7 +322,7 @@ public class FinancialReportsController : ControllerBase
 
         // صافي الربح للفترة يضاف لحقوق الملكية ونظهره في القائمة للشفافية
         var incomeFrom = from; 
-        var incomeBals = await GetBalances(incomeFrom, to, source);
+        var incomeBals = await GetBalances(incomeFrom, to, source, isolatedBranchId);
         var totalRev   = incomeBals.Where(b => (b.Type == AccountType.Revenue || b.Code.StartsWith("4")) && b.Level == 1).Sum(b => b.ClosingBal);
         var totalExp   = incomeBals.Where(b => (b.Type == AccountType.Expense || b.Code.StartsWith("5")) && !b.Code.StartsWith("4") && b.Level == 1).Sum(b => b.ClosingBal);
         var netProfit  = totalRev - totalExp;
@@ -365,6 +378,16 @@ public class FinancialReportsController : ControllerBase
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to);
+
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedBranchId = User.GetBranchId();
+            if (isolatedBranchId.HasValue)
+            {
+                q = q.Where(l => l.BranchId == isolatedBranchId.Value);
+            }
+        }
  
         if (source.HasValue)
             q = q.Where(l => l.CostCenter == source.Value);
@@ -402,12 +425,22 @@ public class FinancialReportsController : ControllerBase
             var acct = await _db.Accounts.FindAsync(aId);
             if (acct == null) continue;
 
-            var openLines = await _db.JournalLines
+            var openQ = _db.JournalLines
                 .Include(l => l.JournalEntry)
                 .Where(l => l.AccountId == aId
                          && l.JournalEntry.Status == JournalEntryStatus.Posted
-                         && l.JournalEntry.EntryDate < from)
-                .ToListAsync();
+                         && l.JournalEntry.EntryDate < from);
+
+            if (!canViewAll)
+            {
+                int? isolatedBranchId = User.GetBranchId();
+                if (isolatedBranchId.HasValue)
+                {
+                    openQ = openQ.Where(l => l.BranchId == isolatedBranchId.Value);
+                }
+            }
+
+            var openLines = await openQ.ToListAsync();
 
             var openDr = openLines.Sum(l => l.Debit)  + (acct.Nature == AccountNature.Debit  ? acct.OpeningBalance : 0);
             var openCr = openLines.Sum(l => l.Credit) + (acct.Nature == AccountNature.Credit ? acct.OpeningBalance : 0);
@@ -618,7 +651,20 @@ public class FinancialReportsController : ControllerBase
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate < from);
   
         if (source.HasValue) openQ = openQ.Where(l => l.CostCenter == source.Value);
-        if (branchId.HasValue) openQ = openQ.Where(l => l.BranchId == branchId.Value);
+
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedBranchId = User.GetBranchId();
+            if (isolatedBranchId.HasValue)
+            {
+                openQ = openQ.Where(l => l.BranchId == isolatedBranchId.Value);
+            }
+        }
+        else if (branchId.HasValue) 
+        {
+            openQ = openQ.Where(l => l.BranchId == branchId.Value);
+        }
         
         if (customerId.HasValue)
         {
@@ -657,7 +703,18 @@ public class FinancialReportsController : ControllerBase
         var q = _db.JournalLines.Include(l => l.JournalEntry).Include(l => l.Customer).Include(l => l.Supplier).Include(l => l.Employee)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to);
 
-        if (branchId.HasValue) q = q.Where(l => l.BranchId == branchId.Value);
+        if (!canViewAll)
+        {
+            int? isolatedBranchId = User.GetBranchId();
+            if (isolatedBranchId.HasValue)
+            {
+                q = q.Where(l => l.BranchId == isolatedBranchId.Value);
+            }
+        }
+        else if (branchId.HasValue) 
+        {
+            q = q.Where(l => l.BranchId == branchId.Value);
+        }
 
         if (customerId.HasValue)
         {
@@ -733,6 +790,16 @@ public class FinancialReportsController : ControllerBase
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to
                      && cashIds.Contains(l.AccountId));
+
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedBranchId = User.GetBranchId();
+            if (isolatedBranchId.HasValue)
+            {
+                cashLinesQuery = cashLinesQuery.Where(l => l.BranchId == isolatedBranchId.Value);
+            }
+        }
 
         if (source.HasValue)
             cashLinesQuery = cashLinesQuery.Where(l => l.CostCenter == source.Value);

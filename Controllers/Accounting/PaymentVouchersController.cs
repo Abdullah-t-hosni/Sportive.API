@@ -8,6 +8,7 @@ using Sportive.API.Services;
 using Sportive.API.DTOs;
 using System.Security.Claims;
 using Sportive.API.Utils;
+using Sportive.API.Extensions;
 using Hangfire;
 
 namespace Sportive.API.Controllers;
@@ -56,7 +57,8 @@ public class PaymentVouchersController : ControllerBase
         [FromQuery] string? search = null,
         [FromQuery] bool? onlyEmployees = null,
         [FromQuery] OrderSource? source = null,
-        [FromQuery] int? employeeId = null)
+        [FromQuery] int? employeeId = null,
+        [FromQuery] int? branchId = null)
     {
         var q = _db.PaymentVouchers.AsQueryable();
 
@@ -76,6 +78,20 @@ public class PaymentVouchersController : ControllerBase
         if (fromDate.HasValue) q = q.Where(v => v.VoucherDate >= fromDate.Value.Date.AddHours(TimeHelper.GetBusinessDayEndHour()));
         if (toDate.HasValue) q = q.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1));
         if (source.HasValue) q = q.Where(v => v.CostCenter == source.Value);
+
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedBranchId = User.GetBranchId();
+            if (isolatedBranchId.HasValue)
+            {
+                q = q.Where(v => v.BranchId == isolatedBranchId.Value);
+            }
+        }
+        else if (branchId.HasValue) 
+        {
+            q = q.Where(v => v.BranchId == branchId.Value);
+        }
 
         if (employeeId.HasValue)
             q = q.Where(v => v.EmployeeId == employeeId.Value || _db.JournalLines.Any(l => l.JournalEntryId == v.JournalEntryId && l.EmployeeId == employeeId.Value));

@@ -90,6 +90,8 @@ public class PurchaseInvoice : BaseEntity
 
     public int? WarehouseId { get; set; }
     public Warehouse? Warehouse { get; set; }
+    public int? BranchId { get; set; }
+    public Branch? Branch { get; set; }
 
     public ICollection<PurchaseInvoiceItem> Items    { get; set; } = new List<PurchaseInvoiceItem>();
     public ICollection<SupplierPayment>     Payments { get; set; } = new List<SupplierPayment>();
@@ -188,6 +190,8 @@ public class PurchaseReturn : BaseEntity
 
     public int? WarehouseId { get; set; }
     public Warehouse? Warehouse { get; set; }
+    public int? BranchId { get; set; }
+    public Branch? Branch { get; set; }
 
     public ICollection<PurchaseReturnItem> Items { get; set; } = new List<PurchaseReturnItem>();
 }

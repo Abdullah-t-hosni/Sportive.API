@@ -9,6 +9,7 @@ using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using Sportive.API.Services;
 using System.Security.Claims;
+using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers;
 
@@ -70,6 +71,22 @@ public class InventoryAuditsController : ControllerBase
             if (pageSize < 1) pageSize = 50; // Cap at 50
 
             var itemsQuery = _db.InventoryAudits.AsNoTracking();
+
+            bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+            if (!canViewAll)
+            {
+                int? isolatedBranchId = User.GetBranchId();
+                int? isolatedWarehouseId = User.GetWarehouseId();
+
+                if (isolatedWarehouseId.HasValue)
+                {
+                    itemsQuery = itemsQuery.Where(x => x.WarehouseId == isolatedWarehouseId.Value);
+                }
+                else if (isolatedBranchId.HasValue)
+                {
+                    itemsQuery = itemsQuery.Where(x => x.BranchId == isolatedBranchId.Value);
+                }
+            }
             
             _logger.LogInformation("InventoryAudits: Counting records...");
             var total = await itemsQuery.CountAsync();

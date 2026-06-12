@@ -9,6 +9,7 @@ using Sportive.API.DTOs;
 using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Utils;
+using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers;
 
@@ -165,6 +166,14 @@ public class FixedAssetsController : ControllerBase
             .Include(a => a.DepreciationExpenseAccount)
             .AsQueryable();
 
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        int? isolatedBranchId = canViewAll ? null : User.GetBranchId();
+
+        if (isolatedBranchId.HasValue)
+        {
+            q = q.Where(a => a.BranchId == isolatedBranchId.Value);
+        }
+
         if (categoryId.HasValue) q = q.Where(a => a.CategoryId == categoryId.Value);
         if (status.HasValue)     q = q.Where(a => a.Status == status.Value);
         if (!string.IsNullOrWhiteSpace(search))
@@ -190,7 +199,8 @@ public class FixedAssetsController : ControllerBase
                 a.DepreciationExpenseAccountId ?? a.Category.DepreciationExpenseAccountId,
                 a.DepreciationExpenseAccount != null ? a.DepreciationExpenseAccount.NameAr : (a.Category.DepreciationExpenseAccount != null ? a.Category.DepreciationExpenseAccount.NameAr : null),
                 a.CostCenter ?? a.Category.CostCenter,
-                a.CreatedAt
+                a.CreatedAt,
+                a.BranchId
             )).ToListAsync();
 
         return Ok(new PaginatedResult<FixedAssetDto>(items, total, page, pageSize,
@@ -234,6 +244,9 @@ public class FixedAssetsController : ControllerBase
 
         var assetNo = await _seq.NextAsync("FA");
 
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        int? isolatedBranchId = canViewAll ? (dto.BranchId ?? User.GetBranchId()) : User.GetBranchId();
+
 
         var asset = new FixedAsset
         {
@@ -260,7 +273,8 @@ public class FixedAssetsController : ControllerBase
             CostCenter                   = dto.CostCenter,
             Status                       = AssetStatus.Active,
             CreatedAt                    = TimeHelper.GetEgyptTime(),
-            CreatedByUserId              = UserId
+            CreatedByUserId              = UserId,
+            BranchId                     = isolatedBranchId
         };
 
         _db.FixedAssets.Add(asset);
@@ -342,7 +356,7 @@ public class FixedAssetsController : ControllerBase
                 d.Id, d.DepreciationNumber, d.FixedAssetId, asset.Name,
                 d.DepreciationDate, d.PeriodYear, d.PeriodMonth,
                 d.DepreciationAmount, d.AccumulatedBefore, d.AccumulatedAfter,
-                d.BookValueAfter, d.Notes, d.JournalEntryId, d.CreatedAt
+                d.BookValueAfter, d.Notes, d.JournalEntryId, d.CreatedAt, d.BranchId
             )).ToListAsync();
 
         return Ok(list);
@@ -395,10 +409,11 @@ public class FixedAssetsController : ControllerBase
             BookValueAfter     = asset.PurchaseCost - accumAfter,
             Notes              = dto.Notes,
             CreatedAt          = TimeHelper.GetEgyptTime(),
-            CreatedByUserId    = UserId
+            CreatedByUserId    = UserId,
+            BranchId           = asset.BranchId
         };
 
-        // ØªØ­Ø¯ÙŠØ« Ù…Ø¬Ù…Ø¹ Ø§Ù„Ø¥Ù‡Ù„Ø§Ùƒ Ø¹Ù„Ù‰ Ø§Ù„Ø£ØµÙ„
+        // تحديث مجمع الإهلاك على الأصل
         asset.AccumulatedDepreciation = accumAfter;
         if (asset.PurchaseCost - accumAfter <= asset.SalvageValue)
             asset.Status = AssetStatus.FullyDepreciated;
@@ -422,15 +437,15 @@ public class FixedAssetsController : ControllerBase
             EntryDate       = dto.DepreciationDate,
             Type            = JournalEntryType.AssetDepreciation,
             Status          = JournalEntryStatus.Posted,
-            Description     = $"{_t.Get("Assets.DepreciationLabel")} [{asset.AssetNumber}] {asset.Name} â€” {dto.PeriodMonth}/{dto.PeriodYear}",
+            Description     = $"{_t.Get("Assets.DepreciationLabel")} [{asset.AssetNumber}] {asset.Name} — {dto.PeriodMonth}/{dto.PeriodYear}",
             Reference       = $"{asset.AssetNumber}/{dto.PeriodMonth:D2}-{dto.PeriodYear}",
             CostCenter      = costCenter,
             CreatedByUserId = UserId,
             CreatedAt       = TimeHelper.GetEgyptTime(),
             Lines = new List<JournalLine>
             {
-                new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"{_t.Get("Assets.DepreciationExpenseLabel")} [{asset.AssetNumber}] â€” {asset.Name}", CostCenter = costCenter, CreatedAt = TimeHelper.GetEgyptTime() },
-                new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"{_t.Get("Assets.AccumulatedDepreciationLabel")} [{asset.AssetNumber}] â€” {asset.Name}",   CostCenter = costCenter, CreatedAt = TimeHelper.GetEgyptTime() }
+                new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"{_t.Get("Assets.DepreciationExpenseLabel")} [{asset.AssetNumber}] — {asset.Name}", CostCenter = costCenter, BranchId = asset.BranchId, CreatedAt = TimeHelper.GetEgyptTime() },
+                new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"{_t.Get("Assets.AccumulatedDepreciationLabel")} [{asset.AssetNumber}] — {asset.Name}",   CostCenter = costCenter, BranchId = asset.BranchId, CreatedAt = TimeHelper.GetEgyptTime() }
             }
         };
         _db.JournalEntries.Add(je);
@@ -443,23 +458,31 @@ public class FixedAssetsController : ControllerBase
         return Ok(new { id = dep.Id, depreciationNumber = dep.DepreciationNumber, amount, journalEntryId = je?.Id });
     }
 
-    // POST /api/fixed-assets/depreciations/run-batch  â€” ØªØ±Ø­ÙŠÙ„ Ø¥Ù‡Ù„Ø§Ùƒ Ø´Ù‡Ø±ÙŠ Ù„Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø£ØµÙˆÙ„ Ø§Ù„Ù†Ø´Ø·Ø©
+    // POST /api/fixed-assets/depreciations/run-batch — ترحيل إهلاك شهري لجميع الأصول النشطة
     [HttpPost("depreciations/run-batch")]
     public async Task<IActionResult> RunBatchDepreciation([FromBody] RunBatchDepreciationDto dto)
     {
-        var assets = await _db.FixedAssets
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        int? isolatedBranchId = canViewAll ? null : User.GetBranchId();
+
+        var q = _db.FixedAssets
             .Include(a => a.Category)
             .Where(a => a.Status == AssetStatus.Active)
-            .Where(a => a.DepreciationStartDate == null || a.DepreciationStartDate.Value <= dto.AsOfDate)
-            .ToListAsync();
+            .Where(a => a.DepreciationStartDate == null || a.DepreciationStartDate.Value <= dto.AsOfDate);
+
+        if (isolatedBranchId.HasValue)
+        {
+            q = q.Where(a => a.BranchId == isolatedBranchId.Value);
+        }
+
+        var assets = await q.ToListAsync();
 
         int posted = 0, skipped = 0;
         var details = new List<object>();
-        var comboKey = $"BATCH-{dto.PeriodYear}-{dto.PeriodMonth}";
 
         foreach (var asset in assets)
         {
-            // ØªØ­Ù‚Ù‚ Ù…Ù† Ø¹Ø¯Ù… ØªÙƒØ±Ø§Ø±
+            // تحقق من عدم تكرار
             if (await _db.AssetDepreciations.AnyAsync(d =>
                     d.FixedAssetId == asset.Id &&
                     d.PeriodYear   == dto.PeriodYear &&
@@ -492,7 +515,8 @@ public class FixedAssetsController : ControllerBase
                 BookValueAfter     = asset.PurchaseCost - accumAfter,
                 Notes              = _t.Get("Assets.BatchDepreciationNote", dto.PeriodMonth, dto.PeriodYear),
                 CreatedAt          = TimeHelper.GetEgyptTime(),
-                CreatedByUserId    = UserId
+                CreatedByUserId    = UserId,
+                BranchId           = asset.BranchId
             };
 
             asset.AccumulatedDepreciation = accumAfter;
@@ -502,11 +526,11 @@ public class FixedAssetsController : ControllerBase
 
             _db.AssetDepreciations.Add(dep);
 
-            // Ù‚ÙŠØ¯ Ù…Ø­Ø§Ø³Ø¨ÙŠ
+            // قيد محاسبي
             var (_, accumAccId, expenseAccId) = ResolveAccounts(asset, asset.Category);
             var batchSource = ResolveCostCenter(asset, asset.Category);
             
-            // Ø¬Ù„Ø¨ Ø§Ù„Ø±Ø¨Ø· Ø§Ù„Ø¹Ø§Ù… ÙÙŠ Ø­Ø§Ù„ Ø¹Ø¯Ù… ÙˆØ¬ÙˆØ¯ Ø±Ø¨Ø· Ù…Ø®ØµØµ Ù„Ù„Ø£ØµÙ„/Ø§Ù„ÙØ¦Ø©
+            // جلب الربط العام في حال عدم وجود ربط مخصص للأصل/الفئة
             var mapDict = await _core.GetSafeSystemMappingsAsync();
             var finalAccumAcc   = accumAccId   ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.AccumulatedDepreciation, mapDict);
             var finalExpenseAcc = expenseAccId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.DepreciationExpense, mapDict);
@@ -521,15 +545,15 @@ public class FixedAssetsController : ControllerBase
                     EntryDate       = dto.AsOfDate,
                     Type            = JournalEntryType.AssetDepreciation,
                     Status          = JournalEntryStatus.Posted,
-                    Description     = $"{_t.Get("Assets.DepreciationLabel")} [{asset.AssetNumber}] {asset.Name} â€” {dto.PeriodMonth}/{dto.PeriodYear}",
+                    Description     = $"{_t.Get("Assets.DepreciationLabel")} [{asset.AssetNumber}] {asset.Name} — {dto.PeriodMonth}/{dto.PeriodYear}",
                     Reference       = $"{asset.AssetNumber}/{dto.PeriodMonth:D2}-{dto.PeriodYear}",
                     CostCenter      = batchSource,
                     CreatedByUserId = UserId,
                     CreatedAt       = TimeHelper.GetEgyptTime(),
                     Lines = new List<JournalLine>
                     {
-                        new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"{_t.Get("Assets.DepreciationExpenseLabel")} [{asset.AssetNumber}] â€” {asset.Name}", CostCenter = batchSource, CreatedAt = TimeHelper.GetEgyptTime() },
-                        new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"{_t.Get("Assets.AccumulatedDepreciationLabel")} [{asset.AssetNumber}] â€” {asset.Name}",   CostCenter = batchSource, CreatedAt = TimeHelper.GetEgyptTime() }
+                        new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"{_t.Get("Assets.DepreciationExpenseLabel")} [{asset.AssetNumber}] — {asset.Name}", CostCenter = batchSource, BranchId = asset.BranchId, CreatedAt = TimeHelper.GetEgyptTime() },
+                        new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"{_t.Get("Assets.AccumulatedDepreciationLabel")} [{asset.AssetNumber}] — {asset.Name}",   CostCenter = batchSource, BranchId = asset.BranchId, CreatedAt = TimeHelper.GetEgyptTime() }
                     }
                 };
                 _db.JournalEntries.Add(je);
@@ -545,9 +569,9 @@ public class FixedAssetsController : ControllerBase
         return Ok(new { posted, skipped, details });
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    // ØªØ¨ÙˆÙŠØ¨Ø© Ø§Ù„Ø§Ø³ØªØ¨Ø¹Ø§Ø¯Ø§Øª
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ----------------------------------------------------
+    // تبويبة الاستبعادات
+    // ----------------------------------------------------
 
     // GET /api/fixed-assets/{id}/disposal
     [HttpGet("{id}/disposal")]
@@ -560,14 +584,29 @@ public class FixedAssetsController : ControllerBase
         return Ok(ToDisDto(dis, dis.FixedAsset.Name));
     }
 
-    // GET /api/fixed-assets/disposals  â€” ÙƒÙ„ Ø§Ù„Ø§Ø³ØªØ¨Ø¹Ø§Ø¯Ø§Øª
+    // GET /api/fixed-assets/disposals — كل الاستبعادات
     [HttpGet("disposals")]
     public async Task<IActionResult> GetAllDisposals(
+        [FromQuery] int? branchId = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var total = await _db.AssetDisposals.CountAsync();
-        var list  = await _db.AssetDisposals
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        int? isolatedBranchId = canViewAll ? (branchId ?? User.GetBranchId()) : User.GetBranchId();
+
+        var q = _db.AssetDisposals
             .Include(d => d.FixedAsset)
+            .AsQueryable();
+
+        if (!canViewAll || branchId.HasValue)
+        {
+            if (isolatedBranchId.HasValue)
+            {
+                q = q.Where(d => d.BranchId == isolatedBranchId.Value);
+            }
+        }
+
+        var total = await q.CountAsync();
+        var list  = await q
             .OrderByDescending(d => d.DisposalDate)
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(d => ToDisDto(d, d.FixedAsset.Name))
@@ -616,7 +655,8 @@ public class FixedAssetsController : ControllerBase
             AttachmentUrl          = dto.AttachmentUrl,
             AttachmentPublicId     = dto.AttachmentPublicId,
             CreatedAt              = TimeHelper.GetEgyptTime(),
-            CreatedByUserId        = UserId
+            CreatedByUserId        = UserId,
+            BranchId               = asset.BranchId
         };
 
         asset.Status    = AssetStatus.Disposed;
@@ -650,18 +690,18 @@ public class FixedAssetsController : ControllerBase
             };
 
             if (accumAtDis > 0)
-                je.Lines.Add(new() { AccountId = accumAccId.Value, Debit = accumAtDis, Credit = 0, Description = $"{_t.Get("Assets.AccumulatedDepreciationLabel")} â€” {_t.Get("Assets.DisposalLabel")}" });
+                je.Lines.Add(new() { AccountId = accumAccId.Value, Debit = accumAtDis, Credit = 0, Description = $"{_t.Get("Assets.AccumulatedDepreciationLabel")} - {_t.Get("Assets.DisposalLabel")}", BranchId = asset.BranchId });
 
             if (dto.SaleProceeds > 0 && dto.ProceedsAccountId.HasValue)
-                je.Lines.Add(new() { AccountId = dto.ProceedsAccountId.Value, Debit = dto.SaleProceeds, Credit = 0, Description = _t.Get("Assets.DisposalProceedsLabel") });
+                je.Lines.Add(new() { AccountId = dto.ProceedsAccountId.Value, Debit = dto.SaleProceeds, Credit = 0, Description = _t.Get("Assets.DisposalProceedsLabel"), BranchId = asset.BranchId });
 
             if (gainLoss < 0 && lossAccId.HasValue)
-                je.Lines.Add(new() { AccountId = lossAccId.Value, Debit = Math.Abs(gainLoss), Credit = 0, Description = _t.Get("Assets.DisposalLossLabel") });
+                je.Lines.Add(new() { AccountId = lossAccId.Value, Debit = Math.Abs(gainLoss), Credit = 0, Description = _t.Get("Assets.DisposalLossLabel"), BranchId = asset.BranchId });
 
-            je.Lines.Add(new() { AccountId = assetAccId.Value, Debit = 0, Credit = asset.PurchaseCost, Description = $"{_t.Get("Assets.DisposalLabel")} {asset.Name}" });
+            je.Lines.Add(new() { AccountId = assetAccId.Value, Debit = 0, Credit = asset.PurchaseCost, Description = $"{_t.Get("Assets.DisposalLabel")} {asset.Name}", BranchId = asset.BranchId });
 
             if (gainLoss > 0 && gainAccId.HasValue)
-                je.Lines.Add(new() { AccountId = gainAccId.Value, Debit = 0, Credit = gainLoss, Description = _t.Get("Assets.DisposalGainLabel") });
+                je.Lines.Add(new() { AccountId = gainAccId.Value, Debit = 0, Credit = gainLoss, Description = _t.Get("Assets.DisposalGainLabel"), BranchId = asset.BranchId });
 
             _db.JournalEntries.Add(je);
         }
@@ -690,14 +730,15 @@ public class FixedAssetsController : ControllerBase
         a.DepreciationExpenseAccountId ?? a.Category?.DepreciationExpenseAccountId,
         a.DepreciationExpenseAccount != null ? a.DepreciationExpenseAccount.NameAr : (a.Category?.DepreciationExpenseAccount != null ? a.Category.DepreciationExpenseAccount.NameAr : null),
         a.CostCenter ?? a.Category?.CostCenter,
-        a.CreatedAt
+        a.CreatedAt,
+        a.BranchId
     );
 
     private static AssetDepreciationDto ToDepDto(AssetDepreciation d, string assetName) => new(
         d.Id, d.DepreciationNumber, d.FixedAssetId, assetName,
         d.DepreciationDate, d.PeriodYear, d.PeriodMonth,
         d.DepreciationAmount, d.AccumulatedBefore, d.AccumulatedAfter,
-        d.BookValueAfter, d.Notes, d.JournalEntryId, d.CreatedAt
+        d.BookValueAfter, d.Notes, d.JournalEntryId, d.CreatedAt, d.BranchId
     );
 
     private static AssetDisposalDto ToDisDto(AssetDisposal d, string assetName) => new(
@@ -706,7 +747,7 @@ public class FixedAssetsController : ControllerBase
         d.BookValueAtDisposal, d.AccumulatedAtDisposal,
         d.SaleProceeds, d.SaleProceeds - d.BookValueAtDisposal,
         d.Buyer, d.Notes, d.AttachmentUrl,
-        d.JournalEntryId, d.CreatedAt
+        d.JournalEntryId, d.CreatedAt, d.BranchId
     );
 }
 

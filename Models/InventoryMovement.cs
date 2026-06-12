@@ -38,6 +38,8 @@ public class InventoryMovement : BaseEntity
     public OrderSource? CostCenter { get; set; } // مركز التكلفة (موقع أو POS)
     public int? WarehouseId { get; set; }
     public Warehouse? Warehouse { get; set; }
+    public int? BranchId { get; set; }
+    public Branch? Branch { get; set; }
 
     public string? CreatedByUserId { get; set; }
 }

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using Sportive.API.Extensions;
 using Sportive.API.Interfaces;
 using Sportive.API.Services;
 using Sportive.API.DTOs;
@@ -33,6 +34,17 @@ public class AccountsController : ControllerBase
         [FromQuery] bool? allowPosting = null)
     {
         var q = _db.Accounts.AsQueryable();
+
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedBranchId = User.GetBranchId();
+            if (isolatedBranchId.HasValue)
+            {
+                q = q.Where(a => a.BranchId == null || a.BranchId == isolatedBranchId.Value);
+            }
+        }
+
         if (onlyActive) q = q.Where(a => a.IsActive);
         if (isLeaf.HasValue) q = q.Where(a => a.IsLeaf == isLeaf.Value);
         if (allowPosting.HasValue) q = q.Where(a => a.AllowPosting == allowPosting.Value);

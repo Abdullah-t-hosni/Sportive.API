@@ -5,6 +5,7 @@ using Sportive.API.Data;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using System.Security.Claims;
+using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers;
 
@@ -32,6 +33,9 @@ public class InventoryAdjustmentsController : ControllerBase
     {
         if (dto.Quantity == 0) return BadRequest(new { message = _t.Get("Inventory.AdjustmentZeroQty") });
 
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        int? isolatedWarehouseId = canViewAll ? dto.WarehouseId : (User.GetWarehouseId() ?? dto.WarehouseId);
+
         await _inventory.LogMovementAsync(
             InventoryMovementType.Adjustment,
             dto.Quantity,
@@ -39,7 +43,8 @@ public class InventoryAdjustmentsController : ControllerBase
             dto.ProductVariantId,
             "MANUAL-ADJ",
             dto.Note ?? _t.Get("Inventory.ManualAdminAdjustment"),
-            User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+            warehouseId: isolatedWarehouseId
         );
 
         await _db.SaveChangesAsync();
@@ -47,4 +52,4 @@ public class InventoryAdjustmentsController : ControllerBase
     }
 }
 
-public record QuickAdjustmentDto(int? ProductId, int? ProductVariantId, int Quantity, string? Note);
+public record QuickAdjustmentDto(int? ProductId, int? ProductVariantId, int Quantity, string? Note, int? WarehouseId = null);

@@ -8,6 +8,7 @@ using Sportive.API.DTOs;
 using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Utils;
+using Sportive.API.Extensions;
 using Sportive.API.Interfaces;
 
 namespace Sportive.API.Controllers;
@@ -31,9 +32,19 @@ public class PayrollController : ControllerBase
         [FromQuery] int? year = null, [FromQuery] int? month = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var q = _db.PayrollRuns.Include(p => p.Items).AsQueryable();
+        var q = _db.PayrollRuns.Include(p => p.Items).ThenInclude(i => i.Employee).AsQueryable();
         if (year.HasValue)  q = q.Where(p => p.PeriodYear  == year.Value);
         if (month.HasValue) q = q.Where(p => p.PeriodMonth == month.Value);
+
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedBranchId = User.GetBranchId();
+            if (isolatedBranchId.HasValue)
+            {
+                q = q.Where(p => p.Items.Any(i => i.Employee.BranchId == isolatedBranchId.Value));
+            }
+        }
 
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(p => p.PeriodYear).ThenByDescending(p => p.PeriodMonth)
@@ -75,14 +86,25 @@ public class PayrollController : ControllerBase
         var quarterLimit = settings?.DelayQuarterDayLimitMinutes ?? 30;
         var halfLimit = settings?.DelayHalfDayLimitMinutes ?? 60;
 
-                var activeEmployees = await _db.Employees
+        var empQuery = _db.Employees
             .Include(e => e.Advances)
             .Include(e => e.Bonuses)
             .Include(e => e.Deductions)
             .Include(e => e.CommissionSetting)
             .ThenInclude(s => s != null ? s.Tiers : null)
-            .Where(e => e.Status == EmployeeStatus.Active)
-            .ToListAsync();
+            .Where(e => e.Status == EmployeeStatus.Active);
+
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedBranchId = User.GetBranchId();
+            if (isolatedBranchId.HasValue)
+            {
+                empQuery = empQuery.Where(e => e.BranchId == isolatedBranchId.Value);
+            }
+        }
+
+        var activeEmployees = await empQuery.ToListAsync();
 
         var attendances = await _db.EmployeeAttendances
             .Where(a => a.Date >= startOfPeriod.Date && a.Date <= endOfPeriod.Date)
