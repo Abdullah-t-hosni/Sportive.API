@@ -127,8 +127,11 @@ public class PaymentVouchersController : ControllerBase
         if (!cashAccount.CanReceivePayment && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin")))
             return BadRequest(_t.Get("Accounting.ReceiptVoucher.AccountCannotReceivePayment", cashAccount.NameAr));
 
+        var vDate = dto.VoucherDate.ToStoreTime();
+        if (vDate.TimeOfDay == TimeSpan.Zero) vDate = vDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
+
         var voucher = new PaymentVoucher {
-            VoucherNumber = vNo, VoucherDate = dto.VoucherDate.ToStoreTime(), Amount = dto.Amount, CashAccountId = dto.CashAccountId,
+            VoucherNumber = vNo, VoucherDate = vDate, Amount = dto.Amount, CashAccountId = dto.CashAccountId,
             ToAccountId = dto.ToAccountId, SupplierId = dto.SupplierId, PaymentMethod = dto.PaymentMethod,
             Reference = dto.Reference, Description = dto.Description, AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
@@ -201,7 +204,10 @@ public class PaymentVouchersController : ControllerBase
             return BadRequest(_t.Get("Accounting.PaymentVoucher.CannotEditPosted"));
 
         var oldAmount = voucher.Amount;
-        voucher.VoucherDate = dto.VoucherDate.ToStoreTime(); voucher.Amount = dto.Amount; voucher.CashAccountId = dto.CashAccountId;
+        var vDate = dto.VoucherDate.ToStoreTime();
+        if (vDate.TimeOfDay == TimeSpan.Zero) vDate = vDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
+
+        voucher.VoucherDate = vDate; voucher.Amount = dto.Amount; voucher.CashAccountId = dto.CashAccountId;
         voucher.ToAccountId = dto.ToAccountId; voucher.SupplierId = dto.SupplierId; voucher.EmployeeId = dto.EmployeeId; voucher.Description = dto.Description;
         voucher.PurchaseInvoiceId = dto.PurchaseInvoiceId;
         voucher.CostCenter = (OrderSource?)dto.CostCenter;

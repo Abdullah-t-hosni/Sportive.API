@@ -61,9 +61,12 @@ public class JournalAccountingService
         // 💡 AUTO-REFERENCE: If reference is empty, default to the generated EntryNumber
         var finalReference = string.IsNullOrWhiteSpace(dto.Reference) ? entryNumber : dto.Reference;
 
+        var vDate = dto.EntryDate.ToStoreTime();
+        if (vDate.TimeOfDay == TimeSpan.Zero) vDate = vDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
+
         var entry = new JournalEntry { 
             EntryNumber = entryNumber, 
-            EntryDate = dto.EntryDate.ToStoreTime(), 
+            EntryDate = vDate, 
             Description = dto.Description, 
             Reference = finalReference, 
             Type = type, 
@@ -181,8 +184,11 @@ public class JournalAccountingService
         if (Math.Round(totalDr, 2) != Math.Round(totalCr, 2))
             throw new InvalidOperationException($"القيد غير متوازن: مجموع المدين ({totalDr}) لا يساوي مجموع الدائن ({totalCr})");
 
+        var vDate = dto.EntryDate.ToStoreTime();
+        if (vDate.TimeOfDay == TimeSpan.Zero) vDate = vDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
+
         // تحديث البيانات الأساسية
-        entry.EntryDate = dto.EntryDate.ToStoreTime();
+        entry.EntryDate = vDate;
         entry.Description = dto.Description;
         if (!string.IsNullOrWhiteSpace(dto.Reference) && await _db.JournalEntries.AnyAsync(e => e.Reference == dto.Reference && e.Type == entry.Type && e.Id != id))
         {

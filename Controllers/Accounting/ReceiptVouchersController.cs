@@ -159,8 +159,11 @@ public class ReceiptVouchersController : ControllerBase
         if (!cashAccount.CanReceivePayment && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin")))
             return BadRequest(_t.Get("Accounting.ReceiptVoucher.AccountCannotReceivePayment", cashAccount.NameAr));
 
+        var vDate = dto.VoucherDate.ToStoreTime();
+        if (vDate.TimeOfDay == TimeSpan.Zero) vDate = vDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
+
         var voucher = new ReceiptVoucher {
-            VoucherNumber = vNo, VoucherDate = dto.VoucherDate.ToStoreTime(), Amount = dto.Amount, CashAccountId = dto.CashAccountId,
+            VoucherNumber = vNo, VoucherDate = vDate, Amount = dto.Amount, CashAccountId = dto.CashAccountId,
             FromAccountId = dto.FromAccountId, CustomerId = dto.CustomerId, PaymentMethod = dto.PaymentMethod,
             Reference = dto.Reference, Description = dto.Description, AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
@@ -278,7 +281,10 @@ public class ReceiptVouchersController : ControllerBase
             return BadRequest(_t.Get("Accounting.ReceiptVoucher.CannotEditPosted"));
 
         var oldAmount = voucher.Amount;
-        voucher.VoucherDate = dto.VoucherDate.ToStoreTime();
+        var vDate = dto.VoucherDate.ToStoreTime();
+        if (vDate.TimeOfDay == TimeSpan.Zero) vDate = vDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
+        
+        voucher.VoucherDate = vDate;
         voucher.Amount = dto.Amount;
         voucher.CashAccountId = dto.CashAccountId;
         voucher.FromAccountId = dto.FromAccountId;
