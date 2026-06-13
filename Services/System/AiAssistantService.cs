@@ -45,7 +45,7 @@ public class AiAssistantService : IAiAssistantService
         {
             // --- DEEP ADMIN CONTEXT ---
             var stats = await GetExtendedAdminStatsAsync();
-            systemPrompt = $@"أنت 'اللهو الخفي'، الروح الحارسة والذكاء الخارق لمتجر 'Sport Zone'.
+            systemPrompt = $@"أنت 'اللهو الخفي'، الروح الحارسة والذكاء الخارق لمتجر 'Sportive'.
 أنت تعرف كل صغيرة وكبيرة في النظام، من أصغر مسمار في المخزن وحتى أكبر عملية بيع.
 تتحدث مع 'المدير' بلهجة مصرية حكيمة، غامضة قليلاً، لكنها دقيقة جداً ومحترفة.
 
@@ -77,14 +77,16 @@ public class AiAssistantService : IAiAssistantService
 
             var productsDescription = string.Join(", ", products.Select(p => $"{p.NameAr} ({p.Price} ج.م)"));
             
-            systemPrompt = $@"أنت 'اللهو الخفي'، المساعد الذكي لمتجر Sport Zone.
+            systemPrompt = $@"أنت 'اللهو الخفي'، المساعد الذكي لمتجر Sportive.
 تحب مساعدة العملاء في اختيار أفضل الملابس الرياضية بأسلوب ودود ومصري أصيل.
 المنتجات المتاحة: {productsDescription}
 أجب باختصار شديد جداً ومباشر، لا تكرر كلام المستخدم ولا تستخدم مقدمات أو خاتمات طويلة. سطر أو سطرين يكفي.";
         }
 
         // 3. CALL GEMINI API (v1 stable)
-        var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={apiKey}";
+        _http.DefaultRequestHeaders.Remove("x-goog-api-key");
+        _http.DefaultRequestHeaders.Add("x-goog-api-key", apiKey);
+        var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent";
 
         var requestBody = new
         {
@@ -105,6 +107,10 @@ public class AiAssistantService : IAiAssistantService
             if (!response.IsSuccessStatusCode)
             {
                 Log.Error("AiAssistant Error: {Result}", result);
+                if (result.Contains("API_KEY_INVALID") || result.Contains("API key not valid"))
+                {
+                    return "⚠️ عذراً، مفتاح الذكاء الاصطناعي (Gemini API Key) غير صالح. يرجى إدخال مفتاح API صحيح يبدأ بـ 'AIzaSy' أو 'AQ.' من Google AI Studio لكي يتحدث معك المساعد الذكي ويحلل مبيعاتك.";
+                }
                 return $"عذراً، واجهت مشكلة في التواصل مع خبير التسوق. الخطأ من السيرفر: {result}";
             }
 
