@@ -346,6 +346,10 @@ public class AiAssistantService : IAiAssistantService
                     {
                         return "⚠️ عذراً، مفتاح الذكاء الاصطناعي (Gemini API Key) غير صالح. يرجى إدخال مفتاح API صحيح يبدأ بـ 'AIzaSy' أو 'AQ.' من Google AI Studio لكي يتحدث معك المساعد الذكي ويحلل مبيعاتك.";
                     }
+                    if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests || result.Contains("Quota exceeded") || result.Contains("RESOURCE_EXHAUSTED"))
+                    {
+                        return "⚠️ لقد تجاوزت حد الاستهلاك المجاني لطلبات الذكاء الاصطناعي (Quota Exceeded) في Google AI Studio. يرجى الانتظار لعدة ثوانٍ والمحاولة مرة أخرى، أو ربط بطاقة دفع بالخطة المجانية لترقية الحساب إلى الخطة المدفوعة (Pay-as-you-go) لزيادة الميزانية وتجنب هذا التوقف.";
+                    }
                     return $"عذراً، واجهت مشكلة في التواصل مع خبير التسوق. الخطأ من السيرفر: {result}";
                 }
 
