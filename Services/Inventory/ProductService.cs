@@ -552,6 +552,17 @@ public class ProductService : IProductService
         return true;
     }
 
+    public async Task<bool> UpdateSizeChartAsync(int productId, string? sizeChartJson, string? sizeChartImageUrl)
+    {
+        var product = await _db.Products.FindAsync(productId);
+        if (product == null) return false;
+        product.SizeChartJson = sizeChartJson;
+        product.SizeChartImageUrl = sizeChartImageUrl;
+        product.UpdatedAt = TimeHelper.GetEgyptTime();
+        await _db.SaveChangesAsync();
+        return true;
+    }
+
     public async Task UpdateTotalStockAsync(int productId)
     {
         var product = await _db.Products

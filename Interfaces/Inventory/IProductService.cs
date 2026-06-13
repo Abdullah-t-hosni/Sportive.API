@@ -17,6 +17,7 @@ public interface IProductService
     Task<ProductVariantDto> UpdateVariantAsync(int variantId, CreateVariantDto dto);
     Task<bool> DeleteVariantAsync(int variantId);
     Task<bool> UpdateCostPriceAsync(int productId, decimal? costPrice);
+    Task<bool> UpdateSizeChartAsync(int productId, string? sizeChartJson, string? sizeChartImageUrl);
     Task UpdateTotalStockAsync(int productId);
     Task SyncAllProductsStatusAndStockAsync();
     Task SyncAllProductRatingsAsync();

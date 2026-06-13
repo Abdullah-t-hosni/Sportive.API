@@ -208,6 +208,12 @@ public record UpdateProductDto(
     [property: JsonPropertyName("sizeChartJson")] string? SizeChartJson = null
 );
 
+public record UpdateSizeChartDto(
+    [property: JsonPropertyName("sizeChartJson")] string? SizeChartJson = null,
+    [property: JsonPropertyName("sizeChartImageUrl")] string? SizeChartImageUrl = null
+);
+
+
 public record CreateVariantDto(
     string? Size,
     string? Color,
