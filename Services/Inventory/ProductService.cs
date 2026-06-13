@@ -95,11 +95,12 @@ public class ProductService : IProductService
             else
             {
                 // Name, SKU, and Variant search (EXCLUDES price to avoid conflicts)
+                bool isNumeric = s.All(char.IsDigit);
                 query = query.Where(p =>
                     p.NameAr.ToLower().Contains(s) ||
-                    p.NameEn.ToLower().Contains(s) ||
+                    (!isNumeric && p.NameEn.ToLower().Contains(s)) ||
                     p.SKU.ToLower().Contains(s) ||
-                    (p.Brand != null && (p.Brand.NameAr.ToLower().Contains(s) || p.Brand.NameEn.ToLower().Contains(s))) ||
+                    (p.Brand != null && (p.Brand.NameAr.ToLower().Contains(s) || (!isNumeric && p.Brand.NameEn.ToLower().Contains(s)))) ||
                     p.Variants.Any(v => 
                         (v.Size != null && v.Size.ToLower().Contains(s)) || 
                         (v.Color != null && v.Color.ToLower().Contains(s)) || 
