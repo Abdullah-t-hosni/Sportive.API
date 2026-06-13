@@ -191,6 +191,118 @@ public class AiAssistantService : IAiAssistantService
                             },
                             Required = new[] { "query" }
                         }
+                    },
+                    new
+                    {
+                        Name = "searchSuppliers",
+                        Description = "البحث عن مورد أو موردين باستخدام الاسم أو رقم الهاتف. ترجع تفاصيل المورد ومديونيته ورابط تعديله.",
+                        Parameters = new
+                        {
+                            Type = "object",
+                            Properties = new
+                            {
+                                Query = new { Type = "string", Description = "اسم المورد أو جزء منه أو الهاتف" }
+                            },
+                            Required = new[] { "query" }
+                        }
+                    },
+                    new
+                    {
+                        Name = "searchPurchaseInvoices",
+                        Description = "البحث عن فواتير الشراء من الموردين باستخدام كلمة بحث وتواريخ اختيارية. ترجع الفواتير وقيمتها والمورد ورابط تفاصيلها.",
+                        Parameters = new
+                        {
+                            Type = "object",
+                            Properties = new
+                            {
+                                Query = new { Type = "string", Description = "رقم الفاتورة أو اسم المورد" },
+                                StartDate = new { Type = "string", Description = "تاريخ البدء YYYY-MM-DD" },
+                                EndDate = new { Type = "string", Description = "تاريخ الانتهاء YYYY-MM-DD" }
+                            }
+                        }
+                    },
+                    new
+                    {
+                        Name = "searchEmployees",
+                        Description = "البحث عن موظف أو موظفين في شؤون العاملين بالاسم أو المسمى الوظيفي أو الهاتف. ترجع بيانات الموظف والراتب ورابط تعديله.",
+                        Parameters = new
+                        {
+                            Type = "object",
+                            Properties = new
+                            {
+                                Query = new { Type = "string", Description = "اسم الموظف أو المسمى الوظيفي" }
+                            },
+                            Required = new[] { "query" }
+                        }
+                    },
+                    new
+                    {
+                        Name = "searchPayrollRuns",
+                        Description = "البحث عن مسيرات الرواتب الشهرية للموظفين. ترجع المسيرات وإجمالي المبالغ والرواتب المصروفة وحالتها.",
+                        Parameters = new
+                        {
+                            Type = "object",
+                            Properties = new
+                            {
+                                Year = new { Type = "integer", Description = "السنة المالية (مثل 2026)" },
+                                Month = new { Type = "integer", Description = "الشهر المالي (1-12)" }
+                            }
+                        }
+                    },
+                    new
+                    {
+                        Name = "searchVouchers",
+                        Description = "البحث عن سندات القبض أو الصرف المحاسبية باستخدام رقم السند أو البيان وتواريخ اختيارية. ترجع السندات وقيمتها ونوعها ورابط تعديلها.",
+                        Parameters = new
+                        {
+                            Type = "object",
+                            Properties = new
+                            {
+                                Query = new { Type = "string", Description = "رقم السند أو البيان المحاسبي" },
+                                Type = new { Type = "string", Description = "نوع السند: receipt (سند قبض) أو payment (سند صرف)" },
+                                StartDate = new { Type = "string", Description = "تاريخ البدء YYYY-MM-DD" },
+                                EndDate = new { Type = "string", Description = "تاريخ الانتهاء YYYY-MM-DD" }
+                            }
+                        }
+                    },
+                    new
+                    {
+                        Name = "searchJournalEntries",
+                        Description = "البحث في القيود المحاسبية العامة (دفتر اليومية العامة) برقم القيد أو البيان. ترجع أرقام القيود وتاريخها وإجمالي المدين والدائن وروابط تعديلها.",
+                        Parameters = new
+                        {
+                            Type = "object",
+                            Properties = new
+                            {
+                                Query = new { Type = "string", Description = "رقم القيد أو البيان" },
+                                StartDate = new { Type = "string", Description = "تاريخ البدء YYYY-MM-DD" },
+                                EndDate = new { Type = "string", Description = "تاريخ الانتهاء YYYY-MM-DD" }
+                            }
+                        }
+                    },
+                    new
+                    {
+                        Name = "searchFixedAssets",
+                        Description = "البحث في سجل الأصول الثابتة بالاسم أو رقم الأصل. ترجع قيمة الأصل، وتاريخ الشراء، ومجمع الإهلاك، ورابط تفاصيله.",
+                        Parameters = new
+                        {
+                            Type = "object",
+                            Properties = new
+                            {
+                                Query = new { Type = "string", Description = "اسم الأصل أو رقم الأصول" }
+                            },
+                            Required = new[] { "query" }
+                        }
+                    },
+                    new
+                    {
+                        Name = "listBranchesAndWarehouses",
+                        Description = "جلب قائمة بكافة الفروع والمستودعات والمسجلة في النظام وعناوينها.",
+                        Parameters = new
+                        {
+                            Type = "object",
+                            Properties = new { }
+                        }
                     }
                 }
             }
@@ -564,6 +676,398 @@ public class AiAssistantService : IAiAssistantService
                     }).ToList();
 
                     return decryptedCustomers;
+                }
+
+            case "searchSuppliers":
+                {
+                    string? query = null;
+                    if (args.HasValue && args.Value.TryGetProperty("query", out var pQuery))
+                    {
+                        query = pQuery.GetString();
+                    }
+
+                    if (string.IsNullOrEmpty(query))
+                    {
+                        return new { error = "يجب تحديد كلمة بحث للمورد." };
+                    }
+
+                    var qLower = query.ToLower();
+                    var suppliers = await _db.Suppliers.AsNoTracking()
+                        .Where(s => s.Name.ToLower().Contains(qLower) || 
+                                    (s.Phone != null && s.Phone.ToLower().Contains(qLower)) || 
+                                    (s.CompanyName != null && s.CompanyName.ToLower().Contains(qLower)))
+                        .Take(15)
+                        .Select(s => new {
+                            s.Id,
+                            s.Name,
+                            s.Phone,
+                            s.CompanyName,
+                            s.TaxNumber,
+                            s.Email,
+                            s.Address,
+                            s.IsActive,
+                            s.OpeningBalance,
+                            s.TotalPurchases,
+                            s.TotalPaid,
+                            s.Balance,
+                            EditLink = $"[تعديل المورد {s.Name}](/admin/suppliers/edit/{s.Id})"
+                        })
+                        .ToListAsync();
+
+                    return suppliers;
+                }
+
+            case "searchPurchaseInvoices":
+                {
+                    string? query = null;
+                    string? startDate = null;
+                    string? endDate = null;
+
+                    if (args.HasValue)
+                    {
+                        if (args.Value.TryGetProperty("query", out var pQuery)) query = pQuery.GetString();
+                        if (args.Value.TryGetProperty("startDate", out var pStart)) startDate = pStart.GetString();
+                        if (args.Value.TryGetProperty("endDate", out var pEnd)) endDate = pEnd.GetString();
+                    }
+
+                    var q = _db.PurchaseInvoices.AsNoTracking().Include(pi => pi.Supplier).AsQueryable();
+
+                    if (!string.IsNullOrEmpty(query))
+                    {
+                        var qLower = query.ToLower();
+                        q = q.Where(pi => pi.InvoiceNumber.ToLower().Contains(qLower) || 
+                                          (pi.SupplierInvoiceNumber != null && pi.SupplierInvoiceNumber.ToLower().Contains(qLower)) ||
+                                          (pi.Supplier != null && pi.Supplier.Name.ToLower().Contains(qLower)));
+                    }
+
+                    if (!string.IsNullOrEmpty(startDate) && DateTime.TryParse(startDate, out var start))
+                    {
+                        q = q.Where(pi => pi.InvoiceDate >= start);
+                    }
+
+                    if (!string.IsNullOrEmpty(endDate) && DateTime.TryParse(endDate, out var end))
+                    {
+                        var endLimit = end.Date.AddDays(1);
+                        q = q.Where(pi => pi.InvoiceDate < endLimit);
+                    }
+
+                    var invoices = await q
+                        .OrderByDescending(pi => pi.InvoiceDate)
+                        .Take(15)
+                        .Select(pi => new {
+                            pi.Id,
+                            pi.InvoiceNumber,
+                            pi.SupplierInvoiceNumber,
+                            SupplierName = pi.Supplier != null ? pi.Supplier.Name : "غير معروف",
+                            pi.PaymentTerms,
+                            Status = pi.Status.ToString(),
+                            pi.InvoiceDate,
+                            pi.TotalAmount,
+                            pi.PaidAmount,
+                            pi.RemainingAmount,
+                            DetailsLink = $"[تفاصيل الفاتورة {pi.InvoiceNumber}](/admin/purchases/{pi.Id})"
+                        })
+                        .ToListAsync();
+
+                    return invoices;
+                }
+
+            case "searchEmployees":
+                {
+                    string? query = null;
+                    if (args.HasValue && args.Value.TryGetProperty("query", out var pQuery))
+                    {
+                        query = pQuery.GetString();
+                    }
+
+                    if (string.IsNullOrEmpty(query))
+                    {
+                        return new { error = "يجب تحديد كلمة بحث للموظف." };
+                    }
+
+                    var qLower = query.ToLower();
+                    var employees = await _db.Employees.AsNoTracking()
+                        .Include(e => e.Department)
+                        .Where(e => e.Name.ToLower().Contains(qLower) || 
+                                    (e.JobTitle != null && e.JobTitle.ToLower().Contains(qLower)) || 
+                                    (e.Phone != null && e.Phone.ToLower().Contains(qLower)))
+                        .Take(15)
+                        .Select(e => new {
+                            e.Id,
+                            e.EmployeeNumber,
+                            e.Name,
+                            e.Phone,
+                            e.Email,
+                            e.JobTitle,
+                            DepartmentName = e.Department != null ? e.Department.Name : "غير محدد",
+                            e.BaseSalary,
+                            e.HireDate,
+                            Status = e.Status.ToString(),
+                            EditLink = $"[تعديل الموظف {e.Name}](/admin/hr/employees/edit/{e.Id})"
+                        })
+                        .ToListAsync();
+
+                    return employees;
+                }
+
+            case "searchPayrollRuns":
+                {
+                    int? year = null;
+                    int? month = null;
+
+                    if (args.HasValue)
+                    {
+                        if (args.Value.TryGetProperty("year", out var pYear) && pYear.ValueKind == JsonValueKind.Number) year = pYear.GetInt32();
+                        if (args.Value.TryGetProperty("month", out var pMonth) && pMonth.ValueKind == JsonValueKind.Number) month = pMonth.GetInt32();
+                    }
+
+                    var q = _db.PayrollRuns.AsNoTracking().AsQueryable();
+
+                    if (year.HasValue)
+                    {
+                        q = q.Where(pr => pr.PeriodYear == year.Value);
+                    }
+                    if (month.HasValue)
+                    {
+                        q = q.Where(pr => pr.PeriodMonth == month.Value);
+                    }
+
+                    var runs = await q
+                        .OrderByDescending(pr => pr.PeriodYear)
+                        .ThenByDescending(pr => pr.PeriodMonth)
+                        .Take(10)
+                        .Select(pr => new {
+                            pr.Id,
+                            pr.PayrollNumber,
+                            pr.PeriodYear,
+                            pr.PeriodMonth,
+                            pr.TotalBasicSalary,
+                            pr.TotalBonuses,
+                            pr.TotalDeductions,
+                            pr.TotalAdvancesDeducted,
+                            pr.TotalNetPayable,
+                            Status = pr.Status.ToString(),
+                            pr.Notes,
+                            DetailsLink = $"[عرض مسير الرواتب {pr.PayrollNumber}](/admin/hr/payroll)"
+                        })
+                        .ToListAsync();
+
+                    return runs;
+                }
+
+            case "searchVouchers":
+                {
+                    string? query = null;
+                    string? type = null;
+                    string? startDate = null;
+                    string? endDate = null;
+
+                    if (args.HasValue)
+                    {
+                        if (args.Value.TryGetProperty("query", out var pQuery)) query = pQuery.GetString();
+                        if (args.Value.TryGetProperty("type", out var pType)) type = pType.GetString();
+                        if (args.Value.TryGetProperty("startDate", out var pStart)) startDate = pStart.GetString();
+                        if (args.Value.TryGetProperty("endDate", out var pEnd)) endDate = pEnd.GetString();
+                    }
+
+                    var qLower = query?.ToLower();
+                    var isReceipt = string.IsNullOrEmpty(type) || type.Equals("receipt", StringComparison.OrdinalIgnoreCase);
+                    var isPayment = string.IsNullOrEmpty(type) || type.Equals("payment", StringComparison.OrdinalIgnoreCase);
+
+                    var results = new List<object>();
+
+                    if (isReceipt)
+                    {
+                        var rq = _db.ReceiptVouchers.AsNoTracking()
+                            .Include(rv => rv.Customer)
+                            .Include(rv => rv.Employee)
+                            .AsQueryable();
+
+                        if (!string.IsNullOrEmpty(qLower))
+                        {
+                            rq = rq.Where(rv => rv.VoucherNumber.ToLower().Contains(qLower) || 
+                                                (rv.Description != null && rv.Description.ToLower().Contains(qLower)) ||
+                                                (rv.Customer != null && rv.Customer.FullName.ToLower().Contains(qLower)));
+                        }
+
+                        if (!string.IsNullOrEmpty(startDate) && DateTime.TryParse(startDate, out var start))
+                        {
+                            rq = rq.Where(rv => rv.VoucherDate >= start);
+                        }
+
+                        if (!string.IsNullOrEmpty(endDate) && DateTime.TryParse(endDate, out var end))
+                        {
+                            var endLimit = end.Date.AddDays(1);
+                            rq = rq.Where(rv => rv.VoucherDate < endLimit);
+                        }
+
+                        var receipts = await rq
+                            .OrderByDescending(rv => rv.VoucherDate)
+                            .Take(10)
+                            .Select(rv => new {
+                                rv.Id,
+                                VoucherNumber = rv.VoucherNumber,
+                                Type = "سند قبض (Receipt)",
+                                rv.VoucherDate,
+                                rv.Amount,
+                                Party = rv.Customer != null ? rv.Customer.FullName : (rv.Employee != null ? rv.Employee.Name : "حساب عام"),
+                                rv.PaymentMethod,
+                                rv.Description,
+                                EditLink = $"[تعديل السند {rv.VoucherNumber}](/admin/vouchers/edit/{rv.Id})"
+                            })
+                            .ToListAsync();
+
+                        results.AddRange(receipts.Cast<object>());
+                    }
+
+                    if (isPayment)
+                    {
+                        var pq = _db.PaymentVouchers.AsNoTracking()
+                            .Include(pv => pv.Supplier)
+                            .Include(pv => pv.Employee)
+                            .AsQueryable();
+
+                        if (!string.IsNullOrEmpty(qLower))
+                        {
+                            pq = pq.Where(pv => pv.VoucherNumber.ToLower().Contains(qLower) || 
+                                                (pv.Description != null && pv.Description.ToLower().Contains(qLower)) ||
+                                                (pv.Supplier != null && pv.Supplier.Name.ToLower().Contains(qLower)));
+                        }
+
+                        if (!string.IsNullOrEmpty(startDate) && DateTime.TryParse(startDate, out var start))
+                        {
+                            pq = pq.Where(pv => pv.VoucherDate >= start);
+                        }
+
+                        if (!string.IsNullOrEmpty(endDate) && DateTime.TryParse(endDate, out var end))
+                        {
+                            var endLimit = end.Date.AddDays(1);
+                            pq = pq.Where(pv => pv.VoucherDate < endLimit);
+                        }
+
+                        var payments = await pq
+                            .OrderByDescending(pv => pv.VoucherDate)
+                            .Take(10)
+                            .Select(pv => new {
+                                pv.Id,
+                                VoucherNumber = pv.VoucherNumber,
+                                Type = "سند صرف (Payment)",
+                                pv.VoucherDate,
+                                pv.Amount,
+                                Party = pv.Supplier != null ? pv.Supplier.Name : (pv.Employee != null ? pv.Employee.Name : "حساب عام"),
+                                pv.PaymentMethod,
+                                pv.Description,
+                                EditLink = $"[تعديل السند {pv.VoucherNumber}](/admin/vouchers/edit/{pv.Id})"
+                            })
+                            .ToListAsync();
+
+                        results.AddRange(payments.Cast<object>());
+                    }
+
+                    return results.OrderByDescending(x => ((dynamic)x).VoucherDate).Take(15).ToList();
+                }
+
+            case "searchJournalEntries":
+                {
+                    string? query = null;
+                    string? startDate = null;
+                    string? endDate = null;
+
+                    if (args.HasValue)
+                    {
+                        if (args.Value.TryGetProperty("query", out var pQuery)) query = pQuery.GetString();
+                        if (args.Value.TryGetProperty("startDate", out var pStart)) startDate = pStart.GetString();
+                        if (args.Value.TryGetProperty("endDate", out var pEnd)) endDate = pEnd.GetString();
+                    }
+
+                    var q = _db.JournalEntries.AsNoTracking().AsQueryable();
+
+                    if (!string.IsNullOrEmpty(query))
+                    {
+                        var qLower = query.ToLower();
+                        q = q.Where(je => je.EntryNumber.ToLower().Contains(qLower) || 
+                                          (je.Description != null && je.Description.ToLower().Contains(qLower)) ||
+                                          (je.Reference != null && je.Reference.ToLower().Contains(qLower)));
+                    }
+
+                    if (!string.IsNullOrEmpty(startDate) && DateTime.TryParse(startDate, out var start))
+                    {
+                        q = q.Where(je => je.EntryDate >= start);
+                    }
+
+                    if (!string.IsNullOrEmpty(endDate) && DateTime.TryParse(endDate, out var end))
+                    {
+                        var endLimit = end.Date.AddDays(1);
+                        q = q.Where(je => je.EntryDate < endLimit);
+                    }
+
+                    var entries = await q
+                        .OrderByDescending(je => je.EntryDate)
+                        .Take(15)
+                        .Select(je => new {
+                            je.Id,
+                            je.EntryNumber,
+                            je.EntryDate,
+                            Type = je.Type.ToString(),
+                            Status = je.Status.ToString(),
+                            je.Reference,
+                            je.Description,
+                            Debit = je.Lines.Sum(l => l.Debit),
+                            Credit = je.Lines.Sum(l => l.Credit),
+                            EditLink = $"[تعديل القيد {je.EntryNumber}](/admin/journal/edit/{je.Id})"
+                        })
+                        .ToListAsync();
+
+                    return entries;
+                }
+
+            case "searchFixedAssets":
+                {
+                    string? query = null;
+                    if (args.HasValue && args.Value.TryGetProperty("query", out var pQuery))
+                    {
+                        query = pQuery.GetString();
+                    }
+
+                    if (string.IsNullOrEmpty(query))
+                    {
+                        return new { error = "يجب تحديد كلمة بحث للأصل." };
+                    }
+
+                    var qLower = query.ToLower();
+                    var assets = await _db.FixedAssets.AsNoTracking()
+                        .Include(fa => fa.Category)
+                        .Where(fa => fa.Name.ToLower().Contains(qLower) || 
+                                    fa.AssetNumber.ToLower().Contains(qLower) || 
+                                    (fa.Location != null && fa.Location.ToLower().Contains(qLower)))
+                        .Take(15)
+                        .Select(fa => new {
+                            fa.Id,
+                            fa.AssetNumber,
+                            fa.Name,
+                            CategoryName = fa.Category != null ? fa.Category.Name : "عام",
+                            fa.PurchaseDate,
+                            fa.PurchaseCost,
+                            fa.AccumulatedDepreciation,
+                            fa.BookValue,
+                            Status = fa.Status.ToString(),
+                            fa.Location,
+                            DetailsLink = $"[تفاصيل الأصل {fa.Name}](/admin/assets/{fa.Id})"
+                        })
+                        .ToListAsync();
+
+                    return assets;
+                }
+
+            case "listBranchesAndWarehouses":
+                {
+                    var branches = await _db.Branches.AsNoTracking().ToListAsync();
+                    var warehouses = await _db.Warehouses.AsNoTracking().ToListAsync();
+
+                    return new {
+                        Branches = branches.Select(b => new { b.Id, b.Name, b.Address, b.PhoneNumber, b.IsActive }),
+                        Warehouses = warehouses.Select(w => new { w.Id, w.Name, w.Location, w.BranchId, w.IsActive })
+                    };
                 }
 
             default:
