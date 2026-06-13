@@ -767,7 +767,8 @@ public class OrdersController : ControllerBase
                         Description = "تسديد باستخدام رصيد العميل المتاح",
                         OrderId     = order.Id,
                         CostCenter  = order.Source,
-                        CreatedAt   = TimeHelper.GetEgyptTime()
+                        CreatedAt   = TimeHelper.GetEgyptTime(),
+                        BranchId    = order.BranchId
                     });
                 }
                 else
@@ -791,7 +792,8 @@ public class OrdersController : ControllerBase
                         Description = $"تعديل طريقة دفع - {p.Method}",
                         OrderId     = order.Id,
                         CostCenter  = order.Source,
-                        CreatedAt   = TimeHelper.GetEgyptTime()
+                        CreatedAt   = TimeHelper.GetEgyptTime(),
+                        BranchId    = order.BranchId
                     });
                 }
             }
@@ -808,7 +810,8 @@ public class OrdersController : ControllerBase
                     Description = $"إثبات مديونية الطلب المتبقية - {order.OrderNumber}",
                     OrderId     = order.Id,
                     CostCenter  = order.Source,
-                    CreatedAt   = TimeHelper.GetEgyptTime()
+                    CreatedAt   = TimeHelper.GetEgyptTime(),
+                    BranchId    = order.BranchId
                 });
             }
         }

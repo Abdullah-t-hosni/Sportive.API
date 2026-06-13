@@ -50,6 +50,7 @@ public class JournalEntriesController : ControllerBase
         return File(pdfBytes, "application/pdf", $"JV-{entry.EntryNumber}.pdf");
     }
 
+
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1, 

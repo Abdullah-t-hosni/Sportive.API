@@ -339,7 +339,8 @@ public class ReceiptVouchersController : ControllerBase
                 Description = _t.Get("Accounting.ReceiptVoucher.UpdateLog", voucher.VoucherNumber),
                 CustomerId = voucher.CustomerId,
                 EmployeeId = voucher.EmployeeId,
-                CostCenter = voucher.CostCenter
+                CostCenter = voucher.CostCenter,
+                BranchId = voucher.BranchId
             });
             entry.Lines.Add(new JournalLine { 
                 AccountId = voucher.FromAccountId, 
@@ -348,7 +349,8 @@ public class ReceiptVouchersController : ControllerBase
                 Description = _t.Get("Accounting.FromAccountDesc", voucher.FromAccount?.NameAr ?? ""),
                 CustomerId = voucher.CustomerId,
                 EmployeeId = voucher.EmployeeId,
-                CostCenter = voucher.CostCenter
+                CostCenter = voucher.CostCenter,
+                BranchId = voucher.BranchId
             });
         }
 

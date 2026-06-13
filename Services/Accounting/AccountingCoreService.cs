@@ -99,7 +99,8 @@ public class AccountingCoreService
         int? purchaseInvoiceId = null,
         OrderSource? source = null,
         int? employeeId = null,
-        DateTime? createdAt = null)
+        DateTime? createdAt = null,
+        int? branchId = null)
     {
         // 🛡️ SMART SYNC: If entry exists, update it instead of returning early
         JournalEntry? existing = null;
@@ -209,6 +210,20 @@ public class AccountingCoreService
             }
         }
 
+        int? resolvedBranchId = branchId;
+        if (!resolvedBranchId.HasValue && orderId.HasValue)
+        {
+            resolvedBranchId = await _db.Orders.Where(o => o.Id == orderId.Value).Select(o => o.BranchId).FirstOrDefaultAsync();
+        }
+        if (!resolvedBranchId.HasValue && purchaseInvoiceId.HasValue)
+        {
+            resolvedBranchId = await _db.PurchaseInvoices.Where(i => i.Id == purchaseInvoiceId.Value).Select(i => i.BranchId).FirstOrDefaultAsync();
+        }
+        if (!resolvedBranchId.HasValue && employeeId.HasValue)
+        {
+            resolvedBranchId = await _db.Employees.Where(e => e.Id == employeeId.Value).Select(e => e.BranchId).FirstOrDefaultAsync();
+        }
+
         // ⚡ PERF FIX: fetch mappings ONCE outside the loop (was causing N+1 DB queries per journal line)
         var mappings = await GetSafeSystemMappingsAsync();
         var hrAccountIds = new List<int>();
@@ -249,6 +264,7 @@ public class AccountingCoreService
                 PurchaseInvoiceId = purchaseInvoiceId,
                 CostCenter  = source, // 🎯 حفظ مركز التكلفة على كل سطر محاسبي
                 CreatedAt   = TimeHelper.GetEgyptTime(),
+                BranchId    = resolvedBranchId ?? actualAccount?.BranchId,
             });
         }
 
@@ -278,6 +294,8 @@ public class AccountingCoreService
         var jePrefix = "JE-ADJ";
         var entryNo = await _seq.NextAsync(jePrefix);
 
+        int? auditBranchId = await _db.InventoryAudits.Where(a => a.Id == auditId).Select(a => a.BranchId).FirstOrDefaultAsync();
+
         var entry = new JournalEntry
         {
             EntryNumber = entryNo,
@@ -292,10 +310,10 @@ public class AccountingCoreService
         };
 
         // 1. Inventory Account
-        entry.Lines.Add(new JournalLine { AccountId = inventoryId, Debit = isIncrease ? absVal : 0, Credit = isIncrease ? 0 : absVal, Description = _t.Get("Accounting.InventoryAdjItemDesc", auditId), CreatedAt = TimeHelper.GetEgyptTime(), CostCenter = costCenter });
+        entry.Lines.Add(new JournalLine { AccountId = inventoryId, Debit = isIncrease ? absVal : 0, Credit = isIncrease ? 0 : absVal, Description = _t.Get("Accounting.InventoryAdjItemDesc", auditId), CreatedAt = TimeHelper.GetEgyptTime(), CostCenter = costCenter, BranchId = auditBranchId });
         
         // 2. Variance Account
-        entry.Lines.Add(new JournalLine { AccountId = varianceId, Debit = isIncrease ? 0 : absVal, Credit = isIncrease ? absVal : 0, Description = _t.Get("Accounting.InventoryVarianceDesc", auditId), CreatedAt = TimeHelper.GetEgyptTime(), CostCenter = costCenter });
+        entry.Lines.Add(new JournalLine { AccountId = varianceId, Debit = isIncrease ? 0 : absVal, Credit = isIncrease ? absVal : 0, Description = _t.Get("Accounting.InventoryVarianceDesc", auditId), CreatedAt = TimeHelper.GetEgyptTime(), CostCenter = costCenter, BranchId = auditBranchId });
 
         _db.JournalEntries.Add(entry);
         await _db.SaveChangesAsync();

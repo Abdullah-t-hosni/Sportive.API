@@ -254,7 +254,8 @@ public class PaymentVouchersController : ControllerBase
                 Description = _t.Get("Accounting.ReceiptVoucher.UpdateLog", voucher.VoucherNumber),
                 SupplierId = voucher.SupplierId,
                 EmployeeId = voucher.EmployeeId,
-                CostCenter = voucher.CostCenter
+                CostCenter = voucher.CostCenter,
+                BranchId = voucher.BranchId
             });
             entry.Lines.Add(new JournalLine { 
                 AccountId = voucher.CashAccountId, 
@@ -263,7 +264,8 @@ public class PaymentVouchersController : ControllerBase
                 Description = _t.Get("Accounting.FromAccountDesc", voucher.CashAccount?.NameAr ?? ""),
                 SupplierId = voucher.SupplierId,
                 EmployeeId = voucher.EmployeeId,
-                CostCenter = voucher.CostCenter
+                CostCenter = voucher.CostCenter,
+                BranchId = voucher.BranchId
             });
         }
 

@@ -4,6 +4,7 @@ using Sportive.API.Models;
 using Sportive.API.Utils;
 using Sportive.API.DTOs;
 using System.Security.Claims;
+using Sportive.API.Extensions;
 
 namespace Sportive.API.Services;
 
@@ -35,7 +36,7 @@ public class JournalAccountingService
         };
 
         foreach (var line in entry.Lines) {
-            reversal.Lines.Add(new JournalLine { AccountId = line.AccountId, Debit = line.Credit, Credit = line.Debit, Description = line.Description, CustomerId = line.CustomerId, SupplierId = line.SupplierId, CostCenter = line.CostCenter, CreatedAt = TimeHelper.GetEgyptTime() });
+            reversal.Lines.Add(new JournalLine { AccountId = line.AccountId, Debit = line.Credit, Credit = line.Debit, Description = line.Description, CustomerId = line.CustomerId, SupplierId = line.SupplierId, CostCenter = line.CostCenter, CreatedAt = TimeHelper.GetEgyptTime(), BranchId = line.BranchId });
         }
         entry.Status = JournalEntryStatus.Reversed;
         _db.JournalEntries.Add(reversal);
@@ -49,6 +50,7 @@ public class JournalAccountingService
         await _core.CheckDateLockAsync(dto.EntryDate, user);
         
         var userId = user?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userBranchId = user?.GetBranchId();
         var type = dto.Type ?? JournalEntryType.Manual;
         var prefix = type == JournalEntryType.OpeningBalance ? "OPE" : "JE";
         var entryNumber = await _seq.NextAsync(prefix);
@@ -98,7 +100,13 @@ public class JournalAccountingService
             if (!account.AllowPosting && !((user?.IsInRole("Admin") ?? false) || (user?.IsInRole("SuperAdmin") ?? false)))
                 throw new InvalidOperationException($"الحساب '{account.NameAr}' لا يقبل الترحيل المباشر.");
 
-            entry.Lines.Add(new JournalLine { AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit, Description = l.Description, CustomerId = l.CustomerId, SupplierId = l.SupplierId, EmployeeId = l.EmployeeId, OrderId = l.OrderId, CostCenter = (OrderSource?)l.CostCenter ?? entry.CostCenter });
+            int? lineBranchId = userBranchId;
+            if (l.OrderId.HasValue)
+            {
+                lineBranchId = await _db.Orders.Where(o => o.Id == l.OrderId.Value).Select(o => o.BranchId).FirstOrDefaultAsync() ?? userBranchId;
+            }
+
+            entry.Lines.Add(new JournalLine { AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit, Description = l.Description, CustomerId = l.CustomerId, SupplierId = l.SupplierId, EmployeeId = l.EmployeeId, OrderId = l.OrderId, CostCenter = (OrderSource?)l.CostCenter ?? entry.CostCenter, BranchId = lineBranchId });
         }
 
         // التحقق من التوازن قبل الحفظ
@@ -199,6 +207,8 @@ public class JournalAccountingService
         entry.CostCenter = (OrderSource?)dto.CostCenter;
         entry.UpdatedAt = TimeHelper.GetEgyptTime();
 
+        var userBranchId = user?.GetBranchId();
+
         // تحديث الأسطر (مسح الحالية وإعادتها)
         _db.JournalLines.RemoveRange(entry.Lines);
         foreach (var l in dto.Lines)
@@ -207,6 +217,12 @@ public class JournalAccountingService
             if (account == null) throw new InvalidOperationException($"الحساب رقم {l.AccountId} غير موجود.");
             if (!account.AllowPosting && !((user?.IsInRole("Admin") ?? false) || (user?.IsInRole("SuperAdmin") ?? false)))
                 throw new InvalidOperationException($"الحساب '{account.NameAr}' لا يقبل الترحيل المباشر.");
+
+            int? lineBranchId = userBranchId;
+            if (l.OrderId.HasValue)
+            {
+                lineBranchId = await _db.Orders.Where(o => o.Id == l.OrderId.Value).Select(o => o.BranchId).FirstOrDefaultAsync() ?? userBranchId;
+            }
 
             entry.Lines.Add(new JournalLine
             {
@@ -219,7 +235,8 @@ public class JournalAccountingService
                 EmployeeId = l.EmployeeId,
                 OrderId = l.OrderId,
                 CostCenter = (OrderSource?)l.CostCenter ?? entry.CostCenter,
-                CreatedAt = TimeHelper.GetEgyptTime()
+                CreatedAt = TimeHelper.GetEgyptTime(),
+                BranchId = lineBranchId
             });
         }
 
