@@ -442,6 +442,7 @@ public class StaffController : ControllerBase
             new { value = AppRoles.Cashier,    labelAr = _t.Get("Roles.Cashier"),    labelEn = "Cashier",        permissions = _t.Get("Roles.Cashier.Perms") },
             new { value = AppRoles.Accountant, labelAr = _t.Get("Roles.Accountant"), labelEn = "Accountant",     permissions = _t.Get("Roles.Accountant.Perms") },
             new { value = AppRoles.Staff,      labelAr = _t.Get("Roles.Staff"),      labelEn = "Staff",          permissions = _t.Get("Roles.Staff.Perms") },
+            new { value = AppRoles.Custom,     labelAr = "مخصص (بدون صلاحيات افتراضية)", labelEn = "Custom", permissions = "بدون صلاحيات افتراضية - حدد الصلاحيات يدوياً" },
         });
     }
 
@@ -454,7 +455,7 @@ public class StaffController : ControllerBase
 
     private static string GetPrimaryRole(IList<string> roles)
     {
-        foreach (var r in new[] { AppRoles.SuperAdmin, AppRoles.Admin, AppRoles.Manager, AppRoles.Accountant, AppRoles.Cashier, AppRoles.Staff })
+        foreach (var r in new[] { AppRoles.SuperAdmin, AppRoles.Admin, AppRoles.Manager, AppRoles.Accountant, AppRoles.Cashier, AppRoles.Staff, AppRoles.Custom })
             if (roles.Contains(r)) return r;
         return AppRoles.Customer;
     }
@@ -467,6 +468,7 @@ public class StaffController : ControllerBase
         AppRoles.Cashier    => _t.Get("Roles.Cashier"),
         AppRoles.Accountant => _t.Get("Roles.Accountant"),
         AppRoles.Staff      => _t.Get("Roles.Staff"),
+        AppRoles.Custom     => "مخصص (بدون صلاحيات)",
         _                   => role
     };
 }

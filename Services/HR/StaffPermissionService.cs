@@ -83,7 +83,7 @@ public class StaffPermissionService
 
     private static string GetPrimaryRole(IList<string> roles)
     {
-        foreach (var r in new[] { AppRoles.Admin, AppRoles.Manager, AppRoles.Accountant, AppRoles.Cashier, AppRoles.Staff })
+        foreach (var r in new[] { AppRoles.Admin, AppRoles.Manager, AppRoles.Accountant, AppRoles.Cashier, AppRoles.Staff, AppRoles.Custom })
             if (roles.Contains(r)) return r;
         return AppRoles.Customer;
     }

@@ -23,6 +23,7 @@ public static class AppRoles
     public const string Accountant = "Accountant";
     public const string Staff      = "Staff";
     public const string Customer   = "Customer";
+    public const string Custom     = "Custom";
 
     // Groups للـ Authorize attributes
     public const string AdminOrManager    = "Admin,Manager";
@@ -33,10 +34,10 @@ public static class AppRoles
     public const string OrdersAccess      = "Admin,Manager,Staff,Cashier";
 
     public static readonly string[] All = {
-        SuperAdmin, Admin, Manager, Cashier, Accountant, Staff, Customer
+        SuperAdmin, Admin, Manager, Cashier, Accountant, Staff, Customer, Custom
     };
 
     public static readonly string[] StaffRoles = {
-        SuperAdmin, Admin, Manager, Cashier, Accountant, Staff
+        SuperAdmin, Admin, Manager, Cashier, Accountant, Staff, Custom
     };
 }
