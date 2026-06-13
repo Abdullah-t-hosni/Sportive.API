@@ -22,7 +22,8 @@ public class JournalEntriesController : ControllerBase
     private readonly ITranslator _t;
     private readonly SequenceService _seq;
     private readonly AccountingCoreService _core;
-    public JournalEntriesController(IAccountingService accounting, AppDbContext db, IPdfService pdf, ITranslator t, SequenceService seq, AccountingCoreService core)
+    private readonly IAuditService _audit;
+    public JournalEntriesController(IAccountingService accounting, AppDbContext db, IPdfService pdf, ITranslator t, SequenceService seq, AccountingCoreService core, IAuditService audit)
     {
         _accounting = accounting;
         _db = db;
@@ -30,6 +31,7 @@ public class JournalEntriesController : ControllerBase
         _t = t;
         _seq = seq;
         _core = core;
+        _audit = audit;
     }
 
     [HttpGet("{id}/pdf")]
@@ -269,6 +271,12 @@ public class JournalEntriesController : ControllerBase
 
             var entry = await _accounting.PostManualEntryAsync(dto, User);
             await PayrollSyncHelper.SyncPayrollRunsForJournalEntryAsync(_db, _core, entry);
+
+            // Log Audit
+            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            var userName = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
+            await _audit.LogAsync("Create", "JournalEntry", entry.Id.ToString(), $"Created journal entry #{entry.EntryNumber}", userId, userName);
+
             return CreatedAtAction(nameof(GetById), new { id = entry.Id }, entry);
         } catch (InvalidOperationException ex) {
             return BadRequest(new { message = ex.Message });
@@ -281,6 +289,12 @@ public class JournalEntriesController : ControllerBase
         try {
             var entry = await _accounting.UpdateManualEntryAsync(id, dto, User);
             await PayrollSyncHelper.SyncPayrollRunsForJournalEntryAsync(_db, _core, entry);
+
+            // Log Audit
+            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            var userName = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
+            await _audit.LogAsync("Update", "JournalEntry", entry.Id.ToString(), $"Updated journal entry #{entry.EntryNumber}", userId, userName);
+
             return Ok(entry);
         } catch (InvalidOperationException ex) {
             return BadRequest(new { message = ex.Message });
@@ -350,9 +364,16 @@ public class JournalEntriesController : ControllerBase
             return BadRequest(new { message = "لا يمكن حذف هذا القيد لأنه مرتبط بمسير رواتب." });
         }
 
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var userName = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
+
         if (entry.Status == JournalEntryStatus.Posted && !isAdmin)
         {
             await _accounting.ReverseEntryAsync(id, reason);
+
+            // Log Audit Reversal
+            await _audit.LogAsync("Reverse", "JournalEntry", id.ToString(), $"Reversed journal entry #{entry.EntryNumber}: {reason}", userId, userName);
+
             return Ok(new { message = _t.Get("Accounting.ReverseSuccessMessage") });
         }
 
@@ -386,6 +407,9 @@ public class JournalEntriesController : ControllerBase
         var textToSearch = $"{entry.Reference} {entry.Description} {string.Join(" ", entry.Lines.Select(l => l.Description))}".ToLower();
         var payrollRuns = await _db.PayrollRuns.Where(r => r.Status != PayrollStatus.Draft).ToListAsync();
         var runsToSync = payrollRuns.Where(r => textToSearch.Contains(r.PayrollNumber.ToLower())).ToList();
+
+        // Log Audit Deletion
+        await _audit.LogAsync("Delete", "JournalEntry", id.ToString(), $"Deleted journal entry #{entry.EntryNumber}: {reason}", userId, userName);
 
         _db.JournalLines.RemoveRange(entry.Lines);
         _db.JournalEntries.Remove(entry);

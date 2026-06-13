@@ -26,6 +26,7 @@ public class AuditLogsController : ControllerBase
     public async Task<IActionResult> GetLogs(
         [FromQuery] string? action,
         [FromQuery] string? entityType,
+        [FromQuery] string? entityId,
         [FromQuery] string? userId,
         [FromQuery] string? fromDate,
         [FromQuery] string? toDate,
@@ -39,6 +40,9 @@ public class AuditLogsController : ControllerBase
 
         if (!string.IsNullOrEmpty(entityType))
             query = query.Where(x => x.EntityType.Contains(entityType));
+
+        if (!string.IsNullOrEmpty(entityId))
+            query = query.Where(x => x.EntityId == entityId);
 
         if (!string.IsNullOrEmpty(userId))
             query = query.Where(x => x.UserId == userId);
