@@ -83,7 +83,7 @@ public class AiAssistantService : IAiAssistantService
         }
 
         // 3. CALL GEMINI API (v1 stable)
-        var url = $"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={apiKey}";
+        var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={apiKey}";
 
         var requestBody = new
         {
@@ -104,7 +104,7 @@ public class AiAssistantService : IAiAssistantService
             if (!response.IsSuccessStatusCode)
             {
                 Log.Error("AiAssistant Error: {Result}", result);
-                return "عذراً، واجهت مشكلة في التواصل مع خبير التسوق. يرجى المحاولة لاحقاً.";
+                return $"عذراً، واجهت مشكلة في التواصل مع خبير التسوق. الخطأ من السيرفر: {result}";
             }
 
             using var doc = JsonDocument.Parse(result);
