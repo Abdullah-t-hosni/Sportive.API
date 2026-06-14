@@ -415,7 +415,7 @@ public class FinancialReportsController : ControllerBase
             q = q.Where(l => l.EmployeeId == employeeId.Value);
 
         var lines = await q.ToListAsync();
-        lines = lines.OrderBy(l => l.JournalEntry.EntryDate.Date)
+        lines = lines.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
                      .ThenBy(l => {
                          var type = l.JournalEntry.Type;
                          var reference = l.JournalEntry.Reference ?? "";
@@ -523,7 +523,7 @@ public class FinancialReportsController : ControllerBase
                     AccountCode = g.Key.Code,
                     AccountName = g.Key.Name,
                     openingBalance = totalOpen,
-                    rows = g.OrderBy(r => r.Date.Date)
+                    rows = g.OrderBy(r => TimeHelper.GetBusinessDate(r.Date))
                             .ThenBy(r => {
                                 if (Enum.TryParse<JournalEntryType>(r.EntryType, out var t))
                                 {
@@ -539,7 +539,7 @@ public class FinancialReportsController : ControllerBase
                             })
                             .ThenBy(r => r.Date)
                             .ThenBy(r => r.JournalEntryId).ToList(),
-                    closingBalance = g.OrderBy(r => r.Date.Date)
+                    closingBalance = g.OrderBy(r => TimeHelper.GetBusinessDate(r.Date))
                                       .ThenBy(r => {
                                           if (Enum.TryParse<JournalEntryType>(r.EntryType, out var t))
                                           {
@@ -773,7 +773,7 @@ public class FinancialReportsController : ControllerBase
         if (!string.IsNullOrEmpty(search)) q = q.Where(l => (l.Description != null && l.Description.Contains(search)) || (l.JournalEntry.Description != null && l.JournalEntry.Description.Contains(search)));
 
         var periodLines = await q.ToListAsync();
-        periodLines = periodLines.OrderBy(l => l.JournalEntry.EntryDate.Date)
+        periodLines = periodLines.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
                      .ThenBy(l => {
                          var type = l.JournalEntry.Type;
                          var reference = l.JournalEntry.Reference ?? "";
@@ -856,7 +856,7 @@ public class FinancialReportsController : ControllerBase
             cashLinesQuery = cashLinesQuery.Where(l => l.CostCenter == source.Value);
 
         var cashLines = await cashLinesQuery.ToListAsync();
-        cashLines = cashLines.OrderBy(l => l.JournalEntry.EntryDate.Date)
+        cashLines = cashLines.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
                      .ThenBy(l => {
                          var type = l.JournalEntry.Type;
                          var reference = l.JournalEntry.Reference ?? "";
@@ -1355,7 +1355,7 @@ public class FinancialReportsController : ControllerBase
                      && l.JournalEntry.EntryDate <= to)
             .ToListAsync();
 
-        jeLines = jeLines.OrderBy(l => l.JournalEntry.EntryDate.Date)
+        jeLines = jeLines.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
                      .ThenBy(l => {
                          var type = l.JournalEntry.Type;
                          var reference = l.JournalEntry.Reference ?? "";
@@ -1496,7 +1496,7 @@ public class FinancialReportsController : ControllerBase
             p.PeriodMonth,
             p.PayrollNumber,
             p.NetPayable
-        ))).OrderBy(r => r.Date.Date)
+        ))).OrderBy(r => TimeHelper.GetBusinessDate(r.Date))
           .ThenBy(r => {
               if (Enum.TryParse<JournalEntryType>(r.Type, out var t))
               {

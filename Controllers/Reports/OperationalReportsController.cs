@@ -141,7 +141,7 @@ public class OperationalReportsController : ControllerBase
         }
 
         var entries = await entriesQuery.ToListAsync();
-        entries = entries.OrderBy(l => l.JournalEntry.EntryDate.Date)
+        entries = entries.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
                      .ThenBy(l => {
                          var type = l.JournalEntry.Type;
                          var reference = l.JournalEntry.Reference ?? "";
@@ -281,7 +281,7 @@ public class OperationalReportsController : ControllerBase
         }
 
         var entries = await entriesQuery.ToListAsync();
-        entries = entries.OrderBy(l => l.JournalEntry.EntryDate.Date)
+        entries = entries.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
                      .ThenBy(l => {
                          var type = l.JournalEntry.Type;
                          var reference = l.JournalEntry.Reference ?? "";

@@ -355,7 +355,7 @@ public class EmployeesController : ControllerBase
             .Where(l => l.EmployeeId == id && personalAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate >= egyptFrom && l.JournalEntry.EntryDate <= egyptTo && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .ToListAsync();
 
-        lines = lines.OrderBy(l => l.JournalEntry.EntryDate.Date)
+        lines = lines.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
                      .ThenBy(l => {
                          var type = l.JournalEntry.Type;
                          var reference = l.JournalEntry.Reference ?? "";
@@ -459,7 +459,7 @@ public class EmployeesController : ControllerBase
             .Where(l => l.EmployeeId != null && hrAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
             .ToListAsync();
 
-        lines = lines.OrderBy(l => l.JournalEntry.EntryDate.Date)
+        lines = lines.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
                      .ThenBy(l => {
                          var type = l.JournalEntry.Type;
                          var reference = l.JournalEntry.Reference ?? "";

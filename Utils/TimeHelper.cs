@@ -68,5 +68,11 @@ public static class TimeHelper
     {
         return dt;
     }
+
+    public static DateTime GetBusinessDate(DateTime dt)
+    {
+        var endHour = GetBusinessDayEndHour();
+        return dt.Hour < endHour ? dt.Date.AddDays(-1) : dt.Date;
+    }
 }
 
