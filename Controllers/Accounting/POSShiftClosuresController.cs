@@ -34,10 +34,17 @@ namespace Sportive.API.Controllers
 
             try
             {
+                int? resolvedBranchId = User.GetBranchId();
+                bool canChangeBranch = await User.HasViewAllBranchesAsync(HttpContext);
+                if (canChangeBranch && dto.BranchId.HasValue)
+                {
+                    resolvedBranchId = dto.BranchId.Value;
+                }
+
                 var closure = new POSShiftClosure
                 {
                     StationId = dto.StationId,
-                    BranchId = User.GetBranchId(),
+                    BranchId = resolvedBranchId,
                     ClosureDate = dto.ClosureDate,
                     ClosedBy = !string.IsNullOrEmpty(dto.ClosedBy) ? dto.ClosedBy : (User.Identity?.Name ?? "Cashier"),
                     StartingBalance = dto.StartingBalance,
@@ -71,7 +78,7 @@ namespace Sportive.API.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> Get([FromQuery] string? date = null, [FromQuery] string? stationId = null)
+        public async Task<IActionResult> Get([FromQuery] string? date = null, [FromQuery] string? stationId = null, [FromQuery] int? branchId = null)
         {
             try
             {
@@ -85,6 +92,10 @@ namespace Sportive.API.Controllers
                     {
                         query = query.Where(c => c.BranchId == isolatedBranchId.Value);
                     }
+                }
+                else if (branchId.HasValue)
+                {
+                    query = query.Where(c => c.BranchId == branchId.Value);
                 }
 
                 if (!string.IsNullOrEmpty(date))

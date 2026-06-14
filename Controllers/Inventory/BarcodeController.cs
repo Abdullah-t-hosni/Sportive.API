@@ -16,7 +16,10 @@ public class BarcodeController : ControllerBase
     public BarcodeController(AppDbContext db) => _db = db;
 
     [HttpGet("scan")]
-    public async Task<IActionResult> Scan([FromQuery] string q, [FromQuery] bool byPrice = false)
+    public async Task<IActionResult> Scan(
+        [FromQuery] string q, 
+        [FromQuery] bool byPrice = false, 
+        [FromQuery] int? warehouseId = null)
     {
         if (string.IsNullOrWhiteSpace(q)) return BadRequest();
 
@@ -45,6 +48,20 @@ public class BarcodeController : ControllerBase
             (product.SKU + "-" + v.Size + "-" + v.Color).ToLower() == queryVal
         );
 
+        var warehouseStocks = new Dictionary<int, int>();
+        if (warehouseId.HasValue)
+        {
+            var variantIds = product.Variants.Select(v => v.Id).ToList();
+            warehouseStocks = await _db.ProductWarehouseStocks
+                .AsNoTracking()
+                .Where(w => w.WarehouseId == warehouseId.Value && variantIds.Contains(w.ProductVariantId))
+                .ToDictionaryAsync(w => w.ProductVariantId, w => w.Quantity);
+        }
+
+        int totalStock = warehouseId.HasValue 
+            ? warehouseStocks.Values.Sum() 
+            : product.Variants.Sum(v => v.StockQuantity);
+
         // التنسيق المطلوب للـ Frontend (POS & Inventory Count)
         return Ok(new
         {
@@ -56,7 +73,7 @@ public class BarcodeController : ControllerBase
             discountPrice = product.DiscountPrice,
             costPrice = product.CostPrice,
             image = product.Images.FirstOrDefault(i => i.IsMain)?.ImageUrl ?? product.Images.FirstOrDefault()?.ImageUrl,
-            totalStock = product.Variants.Sum(v => v.StockQuantity),
+            totalStock = totalStock,
             matchedVariantId = matchedVariant?.Id,
             variants = product.Variants.Select(v => new
             {
@@ -64,7 +81,7 @@ public class BarcodeController : ControllerBase
                 size = v.Size,
                 color = v.Color,
                 colorAr = v.ColorAr,
-                stockQuantity = v.StockQuantity,
+                stockQuantity = warehouseId.HasValue ? (warehouseStocks.TryGetValue(v.Id, out var qty) ? qty : 0) : v.StockQuantity,
                 finalPrice = ((product.DiscountPrice > 0) ? product.DiscountPrice.Value : product.Price) + (v.PriceAdjustment ?? 0)
             })
         });

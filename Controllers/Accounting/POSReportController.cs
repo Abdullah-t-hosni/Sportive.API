@@ -4,6 +4,7 @@ using Sportive.API.Attributes;
 using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.Utils;
+using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers;
 
@@ -32,10 +33,18 @@ public class POSReportController : ControllerBase
     [HttpGet("summary")]
     public async Task<IActionResult> GetDailySummary(
         [FromQuery] string date,
-        [FromQuery] string? stationId = null)
+        [FromQuery] string? stationId = null,
+        [FromQuery] int? branchId = null)
     {
         if (!DateTime.TryParse(date, out var parsedDate))
             return BadRequest(new { message = "Invalid date format. Use yyyy-MM-dd." });
+
+        int? resolvedBranchId = branchId;
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            resolvedBranchId = User.GetBranchId();
+        }
 
         // Business day window: starts at 02:00 AM on 'date', ends at 02:00 AM next day
         var from = parsedDate.Date.AddHours(TimeHelper.GetBusinessDayEndHour());
@@ -65,23 +74,37 @@ public class POSReportController : ControllerBase
                 .Select(x => x!.Value));
 
         // ── 2. Load ALL POS orders for the business day (no pageSize limit) ─
-        var orders = await _db.Orders
+        var ordersQuery = _db.Orders
             .AsNoTracking()
             .Include(o => o.Payments)
             .Where(o => o.Source == OrderSource.POS
                      && o.CreatedAt >= from
                      && o.CreatedAt <= to
-                     && o.Status != OrderStatus.Cancelled)
+                     && o.Status != OrderStatus.Cancelled);
+
+        if (resolvedBranchId.HasValue)
+        {
+            ordersQuery = ordersQuery.Where(o => o.BranchId == resolvedBranchId.Value);
+        }
+
+        var orders = await ordersQuery
             .OrderBy(o => o.CreatedAt)
             .ToListAsync();
 
         // ── 3. Load ALL journal entries for the business day ─────────────────
-        var journalEntries = await _db.JournalEntries
+        var journalQuery = _db.JournalEntries
             .AsNoTracking()
             .Include(j => j.Lines)
             .Where(j => j.EntryDate >= from
                      && j.EntryDate <= to
-                     && j.Status == JournalEntryStatus.Posted)
+                     && j.Status == JournalEntryStatus.Posted);
+
+        if (resolvedBranchId.HasValue)
+        {
+            journalQuery = journalQuery.Where(j => j.Lines.Any(l => l.BranchId == resolvedBranchId.Value));
+        }
+
+        var journalEntries = await journalQuery
             .OrderBy(j => j.EntryDate).ThenBy(j => j.Id)
             .ToListAsync();
 

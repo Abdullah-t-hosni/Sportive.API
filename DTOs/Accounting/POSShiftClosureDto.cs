@@ -34,5 +34,7 @@ namespace Sportive.API.DTOs
 
         [MaxLength(100)]
         public string? JournalEntryReference { get; set; }
+
+        public int? BranchId { get; set; }
     }
 }
