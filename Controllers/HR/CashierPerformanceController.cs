@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using ClosedXML.Excel;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers;
 
@@ -23,19 +24,34 @@ public class CashierPerformanceController : ControllerBase
     public async Task<IActionResult> GetPerformance(
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate   = null,
+        [FromQuery] int?      branchId = null,
         [FromQuery] bool      excel    = false)
     {
+        int? resolvedBranchId = branchId;
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            resolvedBranchId = User.GetBranchId();
+        }
+
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
         var from = (fromDate ?? TimeHelper.GetEgyptTime().Date.AddDays(-30)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
-        var orders = await _db.Orders
+        var ordersQuery = _db.Orders
             .Include(o => o.Items)
             .Where(o => o.Status != OrderStatus.Cancelled
                      && o.Source == OrderSource.POS
                      && !string.IsNullOrEmpty(o.SalesPersonId)
                      && o.CreatedAt >= from
-                     && o.CreatedAt <= to)
+                     && o.CreatedAt <= to);
+
+        if (resolvedBranchId.HasValue)
+        {
+            ordersQuery = ordersQuery.Where(o => o.BranchId == resolvedBranchId.Value);
+        }
+
+        var orders = await ordersQuery
             .Select(o => new {
                 o.Id, o.SalesPersonId, o.TotalAmount,
                 DiscountAmount = o.DiscountAmount + o.TemporalDiscount, ItemCount = o.Items.Sum(i => i.Quantity),
@@ -59,9 +75,16 @@ public class CashierPerformanceController : ControllerBase
             .Select(m => m.AccountId)
             .FirstOrDefaultAsync();
 
-        var returnsByCashier = await _db.JournalEntries
+        var returnsQuery = _db.JournalEntries
             .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= from && e.EntryDate <= to)
-            .Where(e => e.CostCenter == OrderSource.POS)
+            .Where(e => e.CostCenter == OrderSource.POS);
+
+        if (resolvedBranchId.HasValue)
+        {
+            returnsQuery = returnsQuery.Where(e => e.Lines.Any(l => l.BranchId == resolvedBranchId.Value));
+        }
+
+        var returnsByCashier = await returnsQuery
             .SelectMany(e => e.Lines)
             .Where(l => l.Debit > 0 && (l.AccountId == salesReturnMapping || l.Account.Code.StartsWith("4102")))
             .GroupBy(l => (l.JournalEntry.Order != null && !string.IsNullOrEmpty(l.JournalEntry.Order.SalesPersonId))
@@ -70,9 +93,16 @@ public class CashierPerformanceController : ControllerBase
             .Select(g => new { CashierId = g.Key, Amount = g.Sum(l => l.Debit) })
             .ToDictionaryAsync(x => x.CashierId ?? "", x => x.Amount);
 
-        var discountReturnsByCashier = await _db.JournalEntries
+        var discountReturnsQuery = _db.JournalEntries
             .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= from && e.EntryDate <= to)
-            .Where(e => e.CostCenter == OrderSource.POS)
+            .Where(e => e.CostCenter == OrderSource.POS);
+
+        if (resolvedBranchId.HasValue)
+        {
+            discountReturnsQuery = discountReturnsQuery.Where(e => e.Lines.Any(l => l.BranchId == resolvedBranchId.Value));
+        }
+
+        var discountReturnsByCashier = await discountReturnsQuery
             .SelectMany(e => e.Lines)
             .Where(l => l.Credit > 0 && (l.AccountId == salesDiscountMapping || l.Account.Code.StartsWith("410101")))
             .GroupBy(l => (l.JournalEntry.Order != null && !string.IsNullOrEmpty(l.JournalEntry.Order.SalesPersonId))
@@ -172,6 +202,11 @@ public class CashierPerformanceController : ControllerBase
             .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= from && e.EntryDate <= to);
 
         journalReturnsQuery = journalReturnsQuery.Where(e => e.CostCenter == OrderSource.POS);
+
+        if (resolvedBranchId.HasValue)
+        {
+            journalReturnsQuery = journalReturnsQuery.Where(e => e.Lines.Any(l => l.BranchId == resolvedBranchId.Value));
+        }
 
         var totalJournalReturns = await journalReturnsQuery
             .SelectMany(e => e.Lines)
