@@ -414,10 +414,22 @@ public class FinancialReportsController : ControllerBase
         if (employeeId.HasValue)
             q = q.Where(l => l.EmployeeId == employeeId.Value);
 
-        var lines = await q.OrderBy(l => l.JournalEntry.EntryDate.Date)
-                           .ThenBy(l => l.JournalEntryId)
-                           .ThenBy(l => l.Id)
-                           .ToListAsync();
+        var lines = await q.ToListAsync();
+        lines = lines.OrderBy(l => l.JournalEntry.EntryDate.Date)
+                     .ThenBy(l => {
+                         var type = l.JournalEntry.Type;
+                         var reference = l.JournalEntry.Reference ?? "";
+                         if (type == JournalEntryType.OpeningBalance) return 0;
+                         if (type == JournalEntryType.SalesInvoice || type == JournalEntryType.PurchaseInvoice) return 10;
+                         if (type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseReturn) return 20;
+                         if (type == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
+                         if (type == JournalEntryType.ReceiptVoucher || type == JournalEntryType.PaymentVoucher) return 40;
+                         return 50;
+                     })
+                     .ThenBy(l => l.JournalEntry.EntryDate)
+                     .ThenBy(l => l.JournalEntryId)
+                     .ThenBy(l => l.Id)
+                     .ToList();
 
         // الرصيد الافتتاحي لكل حساب
         var accountIds = lines.Select(l => l.AccountId).Distinct().ToList();
@@ -513,15 +525,35 @@ public class FinancialReportsController : ControllerBase
                     openingBalance = totalOpen,
                     rows = g.OrderBy(r => r.Date.Date)
                             .ThenBy(r => {
-                                if (Enum.TryParse<JournalEntryType>(r.EntryType, out var t)) return (int)t;
+                                if (Enum.TryParse<JournalEntryType>(r.EntryType, out var t))
+                                {
+                                    var reference = r.Reference ?? "";
+                                    if (t == JournalEntryType.OpeningBalance) return 0;
+                                    if (t == JournalEntryType.SalesInvoice || t == JournalEntryType.PurchaseInvoice) return 10;
+                                    if (t == JournalEntryType.SalesReturn || t == JournalEntryType.PurchaseReturn) return 20;
+                                    if (t == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
+                                    if (t == JournalEntryType.ReceiptVoucher || t == JournalEntryType.PaymentVoucher) return 40;
+                                    return 50;
+                                }
                                 return 99;
                             })
+                            .ThenBy(r => r.Date)
                             .ThenBy(r => r.JournalEntryId).ToList(),
                     closingBalance = g.OrderBy(r => r.Date.Date)
                                       .ThenBy(r => {
-                                          if (Enum.TryParse<JournalEntryType>(r.EntryType, out var t)) return (int)t;
+                                          if (Enum.TryParse<JournalEntryType>(r.EntryType, out var t))
+                                          {
+                                              var reference = r.Reference ?? "";
+                                              if (t == JournalEntryType.OpeningBalance) return 0;
+                                              if (t == JournalEntryType.SalesInvoice || t == JournalEntryType.PurchaseInvoice) return 10;
+                                              if (t == JournalEntryType.SalesReturn || t == JournalEntryType.PurchaseReturn) return 20;
+                                              if (t == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
+                                              if (t == JournalEntryType.ReceiptVoucher || t == JournalEntryType.PaymentVoucher) return 40;
+                                              return 50;
+                                          }
                                           return 99;
                                       })
+                                      .ThenBy(r => r.Date)
                                       .ThenBy(r => r.JournalEntryId).LastOrDefault()?.RunningBalance ?? 0
                 };
             }).ToList();
@@ -740,11 +772,22 @@ public class FinancialReportsController : ControllerBase
 
         if (!string.IsNullOrEmpty(search)) q = q.Where(l => (l.Description != null && l.Description.Contains(search)) || (l.JournalEntry.Description != null && l.JournalEntry.Description.Contains(search)));
 
-        var periodLines = await q
-            .OrderBy(l => l.JournalEntry.EntryDate.Date)
-            .ThenBy(l => l.JournalEntryId)
-            .ThenBy(l => l.Id)
-            .ToListAsync();
+        var periodLines = await q.ToListAsync();
+        periodLines = periodLines.OrderBy(l => l.JournalEntry.EntryDate.Date)
+                     .ThenBy(l => {
+                         var type = l.JournalEntry.Type;
+                         var reference = l.JournalEntry.Reference ?? "";
+                         if (type == JournalEntryType.OpeningBalance) return 0;
+                         if (type == JournalEntryType.SalesInvoice || type == JournalEntryType.PurchaseInvoice) return 10;
+                         if (type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseReturn) return 20;
+                         if (type == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
+                         if (type == JournalEntryType.ReceiptVoucher || type == JournalEntryType.PaymentVoucher) return 40;
+                         return 50;
+                     })
+                     .ThenBy(l => l.JournalEntry.EntryDate)
+                     .ThenBy(l => l.JournalEntryId)
+                     .ThenBy(l => l.Id)
+                     .ToList();
         var runBal = openBal;
         var rows = periodLines.Select(l => {
             if (acct.Nature == AccountNature.Debit) runBal += l.Debit - l.Credit; else runBal += l.Credit - l.Debit;
@@ -812,11 +855,22 @@ public class FinancialReportsController : ControllerBase
         if (source.HasValue)
             cashLinesQuery = cashLinesQuery.Where(l => l.CostCenter == source.Value);
 
-        var cashLines = await cashLinesQuery
-            .OrderBy(l => l.JournalEntry.EntryDate.Date)
-            .ThenBy(l => l.JournalEntryId)
-            .ThenBy(l => l.Id)
-            .ToListAsync();
+        var cashLines = await cashLinesQuery.ToListAsync();
+        cashLines = cashLines.OrderBy(l => l.JournalEntry.EntryDate.Date)
+                     .ThenBy(l => {
+                         var type = l.JournalEntry.Type;
+                         var reference = l.JournalEntry.Reference ?? "";
+                         if (type == JournalEntryType.OpeningBalance) return 0;
+                         if (type == JournalEntryType.SalesInvoice || type == JournalEntryType.PurchaseInvoice) return 10;
+                         if (type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseReturn) return 20;
+                         if (type == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
+                         if (type == JournalEntryType.ReceiptVoucher || type == JournalEntryType.PaymentVoucher) return 40;
+                         return 50;
+                     })
+                     .ThenBy(l => l.JournalEntry.EntryDate)
+                     .ThenBy(l => l.JournalEntryId)
+                     .ThenBy(l => l.Id)
+                     .ToList();
 
         // لجلب الطرف الآخر من القيد، نحتاج كل سطور القيود المعنية
         var entryIds = cashLines.Select(l => l.JournalEntryId).Distinct().ToList();
@@ -1299,10 +1353,23 @@ public class FinancialReportsController : ControllerBase
                      && l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to)
-            .OrderBy(l => l.JournalEntry.EntryDate.Date)
-            .ThenBy(l => l.JournalEntryId)
-            .ThenBy(l => l.Id)
             .ToListAsync();
+
+        jeLines = jeLines.OrderBy(l => l.JournalEntry.EntryDate.Date)
+                     .ThenBy(l => {
+                         var type = l.JournalEntry.Type;
+                         var reference = l.JournalEntry.Reference ?? "";
+                         if (type == JournalEntryType.OpeningBalance) return 0;
+                         if (type == JournalEntryType.SalesInvoice || type == JournalEntryType.PurchaseInvoice) return 10;
+                         if (type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseReturn) return 20;
+                         if (type == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
+                         if (type == JournalEntryType.ReceiptVoucher || type == JournalEntryType.PaymentVoucher) return 40;
+                         return 50;
+                     })
+                     .ThenBy(l => l.JournalEntry.EntryDate)
+                     .ThenBy(l => l.JournalEntryId)
+                     .ThenBy(l => l.Id)
+                     .ToList();
 
         var openLines = await _db.JournalLines
             .Include(l => l.JournalEntry)
@@ -1429,7 +1496,23 @@ public class FinancialReportsController : ControllerBase
             p.PeriodMonth,
             p.PayrollNumber,
             p.NetPayable
-        ))).OrderBy(r => r.Date.Date).ThenBy(r => r.JournalEntryId ?? 0).ToList();
+        ))).OrderBy(r => r.Date.Date)
+          .ThenBy(r => {
+              if (Enum.TryParse<JournalEntryType>(r.Type, out var t))
+              {
+                  var reference = r.Reference ?? "";
+                  if (t == JournalEntryType.OpeningBalance) return 0;
+                  if (t == JournalEntryType.SalesInvoice || t == JournalEntryType.PurchaseInvoice) return 10;
+                  if (t == JournalEntryType.SalesReturn || t == JournalEntryType.PurchaseReturn) return 20;
+                  if (t == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
+                  if (t == JournalEntryType.ReceiptVoucher || t == JournalEntryType.PaymentVoucher) return 40;
+                  return 50;
+              }
+              return 99;
+          })
+          .ThenBy(r => r.Date)
+          .ThenBy(r => r.JournalEntryId ?? 0)
+          .ToList();
 
         // Calculate running balance
         decimal currentBal = openBal;
