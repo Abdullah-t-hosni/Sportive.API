@@ -172,6 +172,63 @@ public class BranchesController : ControllerBase
         if (hasEmployees)
             return BadRequest(new { message = "Cannot delete branch linked to employees." });
 
+        // Check other critical entities to preserve history
+        var hasOrders = await _db.Orders.AnyAsync(o => o.BranchId == id);
+        if (hasOrders)
+            return BadRequest(new { message = "Cannot delete branch linked to historic orders." });
+
+        var hasReceipts = await _db.ReceiptVouchers.AnyAsync(v => v.BranchId == id);
+        if (hasReceipts)
+            return BadRequest(new { message = "Cannot delete branch linked to receipt vouchers." });
+
+        var hasPayments = await _db.PaymentVouchers.AnyAsync(v => v.BranchId == id);
+        if (hasPayments)
+            return BadRequest(new { message = "Cannot delete branch linked to payment vouchers." });
+
+        var hasJournalLines = await _db.JournalLines.AnyAsync(l => l.BranchId == id);
+        if (hasJournalLines)
+            return BadRequest(new { message = "Cannot delete branch linked to journal lines." });
+
+        // Retrieve default financial accounts created for this branch
+        var branchAccounts = await _db.Accounts.Where(a => a.BranchId == id).ToListAsync();
+        var branchAccountIds = branchAccounts.Select(a => a.Id).ToList();
+
+        if (branchAccountIds.Any())
+        {
+            // Verify if any of the branch's accounts have transaction history
+            var hasAccountJournalLines = await _db.JournalLines.AnyAsync(l => branchAccountIds.Contains(l.AccountId));
+            if (hasAccountJournalLines)
+                return BadRequest(new { message = "Cannot delete branch. Its financial accounts have transaction history." });
+
+            var hasAccountVouchers = await _db.ReceiptVouchers.AnyAsync(v => branchAccountIds.Contains(v.CashAccountId) || branchAccountIds.Contains(v.FromAccountId))
+                || await _db.PaymentVouchers.AnyAsync(v => branchAccountIds.Contains(v.CashAccountId) || branchAccountIds.Contains(v.ToAccountId));
+            if (hasAccountVouchers)
+                return BadRequest(new { message = "Cannot delete branch. Its financial accounts are referenced in vouchers." });
+
+            // Collect parent IDs to restore leaf state if they contain no other children
+            var parentIds = branchAccounts.Where(a => a.ParentId.HasValue).Select(a => a.ParentId!.Value).Distinct().ToList();
+
+            // Delete branch financial accounts
+            _db.Accounts.RemoveRange(branchAccounts);
+            await _db.SaveChangesAsync();
+
+            // Restore parent accounts' Leaf and Posting states if they no longer have child accounts
+            foreach (var parentId in parentIds)
+            {
+                var hasOtherChildren = await _db.Accounts.AnyAsync(a => a.ParentId == parentId);
+                if (!hasOtherChildren)
+                {
+                    var parentAcc = await _db.Accounts.FindAsync(parentId);
+                    if (parentAcc != null)
+                    {
+                        parentAcc.IsLeaf = true;
+                        parentAcc.AllowPosting = true;
+                    }
+                }
+            }
+            await _db.SaveChangesAsync();
+        }
+
         _db.Branches.Remove(branch);
         await _db.SaveChangesAsync();
 
