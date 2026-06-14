@@ -353,7 +353,7 @@ public class EmployeesController : ControllerBase
         var lines = await _db.JournalLines
             .Include(l => l.JournalEntry)
             .Where(l => l.EmployeeId == id && personalAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate >= egyptFrom && l.JournalEntry.EntryDate <= egyptTo && l.JournalEntry.Status == JournalEntryStatus.Posted)
-            .OrderBy(l => l.JournalEntry.EntryDate)
+            .OrderBy(l => l.JournalEntry.EntryDate.Date)
             .ThenBy(l => l.JournalEntryId)
             .ThenBy(l => l.Id)
             .ToListAsync();
@@ -444,7 +444,7 @@ public class EmployeesController : ControllerBase
             .Include(l => l.JournalEntry)
             .Include(l => l.Employee)
             .Where(l => l.EmployeeId != null && hrAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
-            .OrderBy(l => l.JournalEntry.EntryDate)
+            .OrderBy(l => l.JournalEntry.EntryDate.Date)
             .ThenBy(l => l.JournalEntryId)
             .ThenBy(l => l.Id)
             .ToListAsync();

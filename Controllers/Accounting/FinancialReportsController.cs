@@ -414,7 +414,7 @@ public class FinancialReportsController : ControllerBase
         if (employeeId.HasValue)
             q = q.Where(l => l.EmployeeId == employeeId.Value);
 
-        var lines = await q.OrderBy(l => l.JournalEntry.EntryDate)
+        var lines = await q.OrderBy(l => l.JournalEntry.EntryDate.Date)
                            .ThenBy(l => l.JournalEntryId)
                            .ThenBy(l => l.Id)
                            .ToListAsync();
@@ -511,13 +511,13 @@ public class FinancialReportsController : ControllerBase
                     AccountCode = g.Key.Code,
                     AccountName = g.Key.Name,
                     openingBalance = totalOpen,
-                    rows = g.OrderBy(r => r.Date)
+                    rows = g.OrderBy(r => r.Date.Date)
                             .ThenBy(r => {
                                 if (Enum.TryParse<JournalEntryType>(r.EntryType, out var t)) return (int)t;
                                 return 99;
                             })
                             .ThenBy(r => r.JournalEntryId).ToList(),
-                    closingBalance = g.OrderBy(r => r.Date)
+                    closingBalance = g.OrderBy(r => r.Date.Date)
                                       .ThenBy(r => {
                                           if (Enum.TryParse<JournalEntryType>(r.EntryType, out var t)) return (int)t;
                                           return 99;
@@ -741,7 +741,7 @@ public class FinancialReportsController : ControllerBase
         if (!string.IsNullOrEmpty(search)) q = q.Where(l => (l.Description != null && l.Description.Contains(search)) || (l.JournalEntry.Description != null && l.JournalEntry.Description.Contains(search)));
 
         var periodLines = await q
-            .OrderBy(l => l.JournalEntry.EntryDate)
+            .OrderBy(l => l.JournalEntry.EntryDate.Date)
             .ThenBy(l => l.JournalEntryId)
             .ThenBy(l => l.Id)
             .ToListAsync();
@@ -813,7 +813,7 @@ public class FinancialReportsController : ControllerBase
             cashLinesQuery = cashLinesQuery.Where(l => l.CostCenter == source.Value);
 
         var cashLines = await cashLinesQuery
-            .OrderBy(l => l.JournalEntry.EntryDate)
+            .OrderBy(l => l.JournalEntry.EntryDate.Date)
             .ThenBy(l => l.JournalEntryId)
             .ThenBy(l => l.Id)
             .ToListAsync();
@@ -1299,7 +1299,7 @@ public class FinancialReportsController : ControllerBase
                      && l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to)
-            .OrderBy(l => l.JournalEntry.EntryDate)
+            .OrderBy(l => l.JournalEntry.EntryDate.Date)
             .ThenBy(l => l.JournalEntryId)
             .ThenBy(l => l.Id)
             .ToListAsync();
@@ -1429,7 +1429,7 @@ public class FinancialReportsController : ControllerBase
             p.PeriodMonth,
             p.PayrollNumber,
             p.NetPayable
-        ))).OrderBy(r => r.Date).ToList();
+        ))).OrderBy(r => r.Date.Date).ThenBy(r => r.JournalEntryId ?? 0).ToList();
 
         // Calculate running balance
         decimal currentBal = openBal;

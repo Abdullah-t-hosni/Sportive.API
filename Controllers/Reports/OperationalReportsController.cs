@@ -141,7 +141,7 @@ public class OperationalReportsController : ControllerBase
         }
 
         var entries = await entriesQuery
-            .OrderBy(l => l.JournalEntry.EntryDate)
+            .OrderBy(l => l.JournalEntry.EntryDate.Date)
             .ThenBy(l => l.JournalEntryId)
             .ThenBy(l => l.Id)
             .ToListAsync();
@@ -270,7 +270,7 @@ public class OperationalReportsController : ControllerBase
         }
 
         var entries = await entriesQuery
-            .OrderBy(l => l.JournalEntry.EntryDate)
+            .OrderBy(l => l.JournalEntry.EntryDate.Date)
             .ThenBy(l => l.JournalEntryId)
             .ThenBy(l => l.Id)
             .ToListAsync();
