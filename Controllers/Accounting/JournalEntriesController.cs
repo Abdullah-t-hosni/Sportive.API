@@ -160,7 +160,8 @@ public class JournalEntriesController : ControllerBase
                         l.Credit,
                         l.Debit,
                         AccountName = l.Account != null ? l.Account.NameAr : null,
-                        l.CostCenter
+                        l.CostCenter,
+                        l.BranchId
                     }).ToList()
                 })
                 .ToListAsync();
@@ -184,7 +185,8 @@ public class JournalEntriesController : ControllerBase
                     l.Credit,
                     l.Debit,
                     l.AccountName,
-                    CostCenter = (int?)l.CostCenter
+                    CostCenter = (int?)l.CostCenter,
+                    l.BranchId
                 }).ToList()
             }).ToList();
         }
@@ -247,10 +249,12 @@ public class JournalEntriesController : ControllerBase
                 l.Debit, l.Credit, l.Description, l.CustomerId, l.SupplierId, l.EmployeeId,
                 l.Supplier?.Name ?? l.Customer?.FullName ?? l.Employee?.Name ?? null,
                 (int?)l.CostCenter,
-                l.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (l.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General"))
+                l.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (l.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General")),
+                l.BranchId
             )).ToList(),
             e.AttachmentUrl, e.AttachmentPublicId, null, null, (int?)e.CostCenter,
-            e.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (e.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General"))
+            e.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (e.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General")),
+            e.Lines.FirstOrDefault()?.BranchId
         ));
     }
 

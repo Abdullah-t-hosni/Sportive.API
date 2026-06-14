@@ -83,7 +83,8 @@ public record CreateJournalEntryDto(
     string?           AttachmentUrl = null,
     string?           AttachmentPublicId = null,
     int?              CostCenter = null,
-    bool              AsDraft = false
+    bool              AsDraft = false,
+    int?              BranchId = null
 );
 
 public record UpdateJournalEntryDto(
@@ -94,7 +95,8 @@ public record UpdateJournalEntryDto(
     string?           AttachmentUrl = null,
     string?           AttachmentPublicId = null,
     int?              CostCenter = null,
-    bool              PostAfterUpdate = false
+    bool              PostAfterUpdate = false,
+    int?              BranchId = null
 );
 
 public record CreateJournalLineDto(
@@ -106,7 +108,8 @@ public record CreateJournalLineDto(
     int?    SupplierId  = null,
     int?    EmployeeId  = null,
     int?    OrderId     = null,
-    int?    CostCenter = null
+    int?    CostCenter = null,
+    int?    BranchId = null
 );
 
 public record JournalEntryDto(
@@ -127,7 +130,8 @@ public record JournalEntryDto(
     int?     CustomerId = null,
     int?     SupplierId = null,
     int?     CostCenter = null,
-    string? CostCenterLabel = null
+    string?  CostCenterLabel = null,
+    int?     BranchId = null
 );
 
 public record JournalLineSummaryDto(
@@ -154,7 +158,8 @@ public record JournalLineDto(
     int?     EmployeeId = null,
     string?  EntityName = null,
     int?     CostCenter = null,
-    string? CostCenterLabel = null
+    string?  CostCenterLabel = null,
+    int?     BranchId = null
 );
 
 public record JournalEntrySummaryDto(

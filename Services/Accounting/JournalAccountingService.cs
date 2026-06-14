@@ -100,7 +100,7 @@ public class JournalAccountingService
             if (!account.AllowPosting && !((user?.IsInRole("Admin") ?? false) || (user?.IsInRole("SuperAdmin") ?? false)))
                 throw new InvalidOperationException($"الحساب '{account.NameAr}' لا يقبل الترحيل المباشر.");
 
-            int? lineBranchId = userBranchId;
+            int? lineBranchId = l.BranchId ?? dto.BranchId ?? userBranchId;
             if (l.OrderId.HasValue)
             {
                 lineBranchId = await _db.Orders.Where(o => o.Id == l.OrderId.Value).Select(o => o.BranchId).FirstOrDefaultAsync() ?? userBranchId;
@@ -218,7 +218,7 @@ public class JournalAccountingService
             if (!account.AllowPosting && !((user?.IsInRole("Admin") ?? false) || (user?.IsInRole("SuperAdmin") ?? false)))
                 throw new InvalidOperationException($"الحساب '{account.NameAr}' لا يقبل الترحيل المباشر.");
 
-            int? lineBranchId = userBranchId;
+            int? lineBranchId = l.BranchId ?? dto.BranchId ?? userBranchId;
             if (l.OrderId.HasValue)
             {
                 lineBranchId = await _db.Orders.Where(o => o.Id == l.OrderId.Value).Select(o => o.BranchId).FirstOrDefaultAsync() ?? userBranchId;
