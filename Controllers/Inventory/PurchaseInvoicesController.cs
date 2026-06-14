@@ -1052,39 +1052,50 @@ public class PurchaseInvoicesController : ControllerBase
                                      && m.ProductVariantId == item.ProductVariantId)
                             .FirstOrDefaultAsync();
 
-                        if (purchaseMovement != null)
-                        {
-                            var query = _db.InventoryMovements.Where(m =>
-                                m.ProductId == item.ProductId &&
-                                m.ProductVariantId == item.ProductVariantId &&
-                                m.CreatedAt > purchaseMovement.CreatedAt &&
-                                (m.Type == InventoryMovementType.Sale || 
-                                 m.Type == InventoryMovementType.TransferOut || 
-                                 m.Type == InventoryMovementType.ReturnOut));
+                        DateTime cutoffTime = purchaseMovement?.CreatedAt ?? inv.CreatedAt;
+                        var subsequentMovements = await _db.InventoryMovements
+                            .Where(m => m.ProductId == item.ProductId 
+                                     && m.ProductVariantId == item.ProductVariantId 
+                                     && m.CreatedAt > cutoffTime 
+                                     && (m.Type == InventoryMovementType.Sale 
+                                      || m.Type == InventoryMovementType.TransferOut 
+                                      || m.Type == InventoryMovementType.ReturnOut))
+                            .ToListAsync();
 
-                            if (inv.WarehouseId.HasValue)
+                        foreach (var m in subsequentMovements)
+                        {
+                            if (inv.WarehouseId.HasValue && m.WarehouseId != inv.WarehouseId.Value)
                             {
-                                query = query.Where(m => m.WarehouseId == inv.WarehouseId.Value);
+                                continue;
                             }
 
-                            hasSubsequentOutgoing = await query.AnyAsync();
-                        }
-                        else
-                        {
-                            var query = _db.InventoryMovements.Where(m =>
-                                m.ProductId == item.ProductId &&
-                                m.ProductVariantId == item.ProductVariantId &&
-                                m.CreatedAt >= inv.CreatedAt &&
-                                (m.Type == InventoryMovementType.Sale || 
-                                 m.Type == InventoryMovementType.TransferOut || 
-                                 m.Type == InventoryMovementType.ReturnOut));
-
-                            if (inv.WarehouseId.HasValue)
+                            if (m.Type == InventoryMovementType.Sale)
                             {
-                                query = query.Where(m => m.WarehouseId == inv.WarehouseId.Value);
+                                var order = await _db.Orders.FirstOrDefaultAsync(o => o.OrderNumber == m.Reference);
+                                if (order != null && order.Status != OrderStatus.Cancelled)
+                                {
+                                    hasSubsequentOutgoing = true;
+                                    break;
+                                }
                             }
-
-                            hasSubsequentOutgoing = await query.AnyAsync();
+                            else if (m.Type == InventoryMovementType.TransferOut)
+                            {
+                                var transfer = await _db.StockTransfers.FirstOrDefaultAsync(t => t.TransferNumber == m.Reference);
+                                if (transfer != null && transfer.Status != StockTransferStatus.Cancelled)
+                                {
+                                    hasSubsequentOutgoing = true;
+                                    break;
+                                }
+                            }
+                            else if (m.Type == InventoryMovementType.ReturnOut)
+                            {
+                                var returnObj = await _db.PurchaseReturns.FirstOrDefaultAsync(r => r.ReturnNumber == m.Reference);
+                                if (returnObj != null)
+                                {
+                                    hasSubsequentOutgoing = true;
+                                    break;
+                                }
+                            }
                         }
 
                         if (hasSubsequentOutgoing)
