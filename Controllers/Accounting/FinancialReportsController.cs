@@ -735,7 +735,7 @@ public class FinancialReportsController : ControllerBase
             openBal += openingSum;
         }
 
-        var q = _db.JournalLines.Include(l => l.JournalEntry).Include(l => l.Customer).Include(l => l.Supplier).Include(l => l.Employee)
+        var q = _db.JournalLines.Include(l => l.JournalEntry).Include(l => l.Customer).Include(l => l.Supplier).Include(l => l.Employee).Include(l => l.Branch)
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to);
 
         if (!canViewAll)
@@ -794,7 +794,7 @@ public class FinancialReportsController : ControllerBase
             return new LedgerRow(targetId, acct.Code, acct.NameAr, l.JournalEntry.EntryDate, l.JournalEntry.EntryNumber, l.JournalEntry.Type.ToString(), l.JournalEntry.Description ?? l.Description ?? "", l.Debit, l.Credit, runBal, l.JournalEntry.Reference, l.JournalEntry.Id, 
                 l.JournalEntry.Type == JournalEntryType.AssetDepreciation || l.JournalEntry.Type == JournalEntryType.AssetDisposal 
                     ? l.JournalEntry.Reference 
-                    : (l.Supplier?.Name ?? l.Customer?.FullName ?? l.Employee?.Name),
+                    : (l.Supplier?.Name ?? l.Customer?.FullName ?? l.Employee?.Name ?? l.Branch?.Name ?? "فرع المسلة"),
                 l.JournalEntry.OrderId, l.JournalEntry.PurchaseInvoiceId);
         }).ToList();
 
@@ -1196,7 +1196,9 @@ public class FinancialReportsController : ControllerBase
         ws.Cell(2,1).Value = $"From {from:yyyy-MM-dd} To {to:yyyy-MM-dd}";
         ws.Cell(2,1).Style.Font.FontColor = XLColor.Gray;
 
-        string[] hdrs = { "Date", "Entry", "Name", "Notes", "Debit", "Credit", "Balance" };
+        bool isClosuresAccount = acct.NameAr.Contains("تقفيلات") || (acct.NameEn != null && acct.NameEn.ToLower().Contains("closure"));
+        string nameHeader = isClosuresAccount ? "Branch" : "Name";
+        string[] hdrs = { "Date", "Entry", nameHeader, "Notes", "Debit", "Credit", "Balance" };
         for (int c = 0; c < hdrs.Length; c++) { ws.Cell(3, c + 1).Value = hdrs[c]; ws.Cell(3, c + 1).Style.Font.Bold = true; }
 
         ws.Cell(4, 4).Value = "Opening Balance"; ws.Cell(4, 7).Value = openBal;
