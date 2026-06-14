@@ -170,6 +170,114 @@ using (var scope = app.Services.CreateScope())
             {
                 Log.Warning(ex, "Failed to sync UpdatedAt for returned orders on startup.");
             }
+
+            try
+            {
+                Log.Information("Fixing existing branch accounts tree structure...");
+                var accounts = await context.Accounts.ToListAsync();
+                
+                var currentAssetsAcc = accounts.FirstOrDefault(a => a.Code == "11");
+                if (currentAssetsAcc != null)
+                {
+                    var cashParent = accounts.FirstOrDefault(a => a.NameAr.Contains("النقدية والصناديق"))
+                        ?? accounts.FirstOrDefault(a => a.Code == "1101");
+                    var bankParent = accounts.FirstOrDefault(a => a.NameAr.Contains("النقدية في البنك") || a.NameAr.Contains("البنك"))
+                        ?? accounts.FirstOrDefault(a => a.Code == "1102");
+                    var walletParent = accounts.FirstOrDefault(a => a.NameAr.Contains("النقدية في المحافظ") || a.NameAr.Contains("المحافظ"))
+                        ?? accounts.FirstOrDefault(a => a.Code == "1105");
+
+                    if (cashParent != null && bankParent != null && walletParent != null)
+                    {
+                        bool changed = false;
+
+                        // 1. Fix Cashier Cash branch accounts
+                        var cashierAccounts = accounts.Where(a => a.BranchId != null && a.NameAr.Contains("نقدية كاشير") && a.ParentId != cashParent.Id).ToList();
+                        foreach (var acc in cashierAccounts)
+                        {
+                            acc.ParentId = cashParent.Id;
+                            acc.Level = cashParent.Level + 1;
+                            
+                            var prefix = cashParent.Code;
+                            var existingSiblingCodes = accounts.Where(a => a.ParentId == cashParent.Id).Select(a => a.Code).ToList();
+                            int maxSuffix = 0;
+                            foreach (var code in existingSiblingCodes)
+                            {
+                                if (code.StartsWith(prefix) && code.Length > prefix.Length)
+                                {
+                                    var suffixStr = code.Substring(prefix.Length);
+                                    if (int.TryParse(suffixStr, out int parsed) && parsed > maxSuffix)
+                                        maxSuffix = parsed;
+                                }
+                            }
+                            acc.Code = $"{prefix}{(maxSuffix + 1):D2}";
+                            changed = true;
+                            Log.Information("Fixed Cashier account: {Name} to code {Code} under parent {Parent}", acc.NameAr, acc.Code, cashParent.NameAr);
+                        }
+
+                        // 2. Fix Wallet branch accounts
+                        var walletAccounts = accounts.Where(a => a.BranchId != null && (a.NameAr.Contains("فودافون كاش") || a.NameAr.Contains("إنستاباي") || a.NameAr.Contains("انستاباي")) && a.ParentId != walletParent.Id).ToList();
+                        foreach (var acc in walletAccounts)
+                        {
+                            acc.ParentId = walletParent.Id;
+                            acc.Level = walletParent.Level + 1;
+                            
+                            var prefix = walletParent.Code;
+                            var existingSiblingCodes = accounts.Where(a => a.ParentId == walletParent.Id).Select(a => a.Code).ToList();
+                            int maxSuffix = 0;
+                            foreach (var code in existingSiblingCodes)
+                            {
+                                if (code.StartsWith(prefix) && code.Length > prefix.Length)
+                                {
+                                    var suffixStr = code.Substring(prefix.Length);
+                                    if (int.TryParse(suffixStr, out int parsed) && parsed > maxSuffix)
+                                        maxSuffix = parsed;
+                                }
+                            }
+                            acc.Code = $"{prefix}{(maxSuffix + 1):D2}";
+                            changed = true;
+                            Log.Information("Fixed Wallet account: {Name} to code {Code} under parent {Parent}", acc.NameAr, acc.Code, walletParent.NameAr);
+                        }
+
+                        // 3. Fix Bank branch accounts
+                        var bankAccounts = accounts.Where(a => a.BranchId != null && a.NameAr.Contains("شبكات تحت التحصيل") && a.ParentId != bankParent.Id).ToList();
+                        foreach (var acc in bankAccounts)
+                        {
+                            acc.ParentId = bankParent.Id;
+                            acc.Level = bankParent.Level + 1;
+                            
+                            var prefix = bankParent.Code;
+                            var existingSiblingCodes = accounts.Where(a => a.ParentId == bankParent.Id).Select(a => a.Code).ToList();
+                            int maxSuffix = 0;
+                            foreach (var code in existingSiblingCodes)
+                            {
+                                if (code.StartsWith(prefix) && code.Length > prefix.Length)
+                                {
+                                    var suffixStr = code.Substring(prefix.Length);
+                                    if (int.TryParse(suffixStr, out int parsed) && parsed > maxSuffix)
+                                        maxSuffix = parsed;
+                                }
+                            }
+                            acc.Code = $"{prefix}{(maxSuffix + 1):D2}";
+                            changed = true;
+                            Log.Information("Fixed Bank account: {Name} to code {Code} under parent {Parent}", acc.NameAr, acc.Code, bankParent.NameAr);
+                        }
+
+                        if (changed)
+                        {
+                            if (cashParent.Id != currentAssetsAcc.Id) { cashParent.IsLeaf = false; cashParent.AllowPosting = false; }
+                            if (bankParent.Id != currentAssetsAcc.Id) { bankParent.IsLeaf = false; bankParent.AllowPosting = false; }
+                            if (walletParent.Id != currentAssetsAcc.Id) { walletParent.IsLeaf = false; walletParent.AllowPosting = false; }
+
+                            await context.SaveChangesAsync();
+                            Log.Information("Successfully updated existing branch accounts tree structure.");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Failed to fix existing branch accounts tree structure on startup.");
+            }
         }
     }
     catch (Exception ex)
