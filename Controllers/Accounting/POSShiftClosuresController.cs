@@ -97,7 +97,10 @@ namespace Sportive.API.Controllers
                     query = query.Where(c => c.StationId == stationId);
                 }
 
-                var closures = await query.OrderBy(c => c.CreatedAt).ToListAsync();
+                var closures = await query
+                    .Include(c => c.Branch)
+                    .OrderBy(c => c.CreatedAt)
+                    .ToListAsync();
                 return Ok(closures);
             }
             catch (Exception ex)
