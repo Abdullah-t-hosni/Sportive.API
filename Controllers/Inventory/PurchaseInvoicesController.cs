@@ -1012,18 +1012,95 @@ public class PurchaseInvoicesController : ControllerBase
 
         // 2. التحقق مما إذا كان قد تم بيع أي جزء من الفاتورة (Check if items were sold)
         var pUnits = await GetUnitsListAsync();
-        foreach (var item in inv.Items)
+        var forceMap = new Dictionary<int, bool>();
+        bool shouldAdjustStock = inv.Status == PurchaseInvoiceStatus.Received 
+            || inv.Status == PurchaseInvoiceStatus.Paid 
+            || inv.Status == PurchaseInvoiceStatus.PartPaid 
+            || inv.Status == PurchaseInvoiceStatus.Overdue
+            || inv.Status == PurchaseInvoiceStatus.PartiallyReturned;
+
+        if (shouldAdjustStock)
         {
-            if (item.ProductId.HasValue)
+            foreach (var item in inv.Items)
             {
-                var mult = GetMultiplier(pUnits, item.Unit);
-                var qtyInPieces = item.Quantity * mult;
-                
-                var currentStock = await _inventory.GetCurrentStockAsync(item.ProductId, item.ProductVariantId);
-                if (currentStock < qtyInPieces)
+                if (item.ProductId.HasValue)
                 {
-                    var productName = item.Product?.NameAr ?? item.Description;
-                    return BadRequest(new { message = _t.Get("Purchases.CannotDeleteInvoiceUsedInSales", productName, qtyInPieces, currentStock) });
+                    var mult = GetMultiplier(pUnits, item.Unit);
+                    var qtyInPieces = item.Quantity * mult;
+                    
+                    int currentStock;
+                    if (item.ProductVariantId.HasValue && inv.WarehouseId.HasValue)
+                    {
+                        currentStock = await _db.ProductWarehouseStocks
+                            .Where(pws => pws.ProductVariantId == item.ProductVariantId.Value && pws.WarehouseId == inv.WarehouseId.Value)
+                            .Select(pws => pws.Quantity)
+                            .FirstOrDefaultAsync();
+                    }
+                    else
+                    {
+                        currentStock = await _inventory.GetCurrentStockAsync(item.ProductId, item.ProductVariantId);
+                    }
+
+                    if (currentStock < qtyInPieces)
+                    {
+                        // Check if subsequent outgoing movements have occurred since the invoice was created/movement logged
+                        bool hasSubsequentOutgoing = false;
+                        var purchaseMovement = await _db.InventoryMovements
+                            .Where(m => m.Type == InventoryMovementType.Purchase 
+                                     && m.Reference == inv.InvoiceNumber 
+                                     && m.ProductId == item.ProductId 
+                                     && m.ProductVariantId == item.ProductVariantId)
+                            .FirstOrDefaultAsync();
+
+                        if (purchaseMovement != null)
+                        {
+                            var query = _db.InventoryMovements.Where(m =>
+                                m.ProductId == item.ProductId &&
+                                m.ProductVariantId == item.ProductVariantId &&
+                                m.CreatedAt > purchaseMovement.CreatedAt &&
+                                (m.Type == InventoryMovementType.Sale || 
+                                 m.Type == InventoryMovementType.TransferOut || 
+                                 m.Type == InventoryMovementType.ReturnOut));
+
+                            if (inv.WarehouseId.HasValue)
+                            {
+                                query = query.Where(m => m.WarehouseId == inv.WarehouseId.Value);
+                            }
+
+                            hasSubsequentOutgoing = await query.AnyAsync();
+                        }
+                        else
+                        {
+                            var query = _db.InventoryMovements.Where(m =>
+                                m.ProductId == item.ProductId &&
+                                m.ProductVariantId == item.ProductVariantId &&
+                                m.CreatedAt >= inv.CreatedAt &&
+                                (m.Type == InventoryMovementType.Sale || 
+                                 m.Type == InventoryMovementType.TransferOut || 
+                                 m.Type == InventoryMovementType.ReturnOut));
+
+                            if (inv.WarehouseId.HasValue)
+                            {
+                                query = query.Where(m => m.WarehouseId == inv.WarehouseId.Value);
+                            }
+
+                            hasSubsequentOutgoing = await query.AnyAsync();
+                        }
+
+                        if (hasSubsequentOutgoing)
+                        {
+                            var productName = item.Product?.NameAr ?? item.Description;
+                            return BadRequest(new { message = _t.Get("Purchases.CannotDeleteInvoiceUsedInSales", productName, qtyInPieces, currentStock) });
+                        }
+                        else
+                        {
+                            forceMap[item.Id] = true;
+                        }
+                    }
+                    else
+                    {
+                        forceMap[item.Id] = false;
+                    }
                 }
             }
         }
@@ -1032,12 +1109,27 @@ public class PurchaseInvoicesController : ControllerBase
         decimal standardPaidDelete = inv.Payments.Where(p => p.CreatedAt >= inv.CreatedAt.AddSeconds(-2)).Sum(p => p.Amount);
         inv.Supplier.TotalPaid -= standardPaidDelete;
 
-        foreach (var item in inv.Items)
+        if (shouldAdjustStock)
         {
-            if (item.ProductId.HasValue)
+            foreach (var item in inv.Items)
             {
-                var mult = GetMultiplier(pUnits, item.Unit);
-                await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, -(item.Quantity * mult), item.ProductId, item.ProductVariantId, inv.InvoiceNumber, "Purchase Invoice Deleted", User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, ignoreIdempotency: true, warehouseId: inv.WarehouseId);
+                if (item.ProductId.HasValue)
+                {
+                    var mult = GetMultiplier(pUnits, item.Unit);
+                    bool forceDelete = forceMap.GetValueOrDefault(item.Id, false);
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.Adjustment, 
+                        -(item.Quantity * mult), 
+                        item.ProductId, 
+                        item.ProductVariantId, 
+                        inv.InvoiceNumber, 
+                        "Purchase Invoice Deleted", 
+                        User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, 
+                        ignoreIdempotency: true, 
+                        force: forceDelete,
+                        warehouseId: inv.WarehouseId
+                    );
+                }
             }
         }
 
