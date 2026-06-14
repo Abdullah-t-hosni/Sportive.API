@@ -354,7 +354,7 @@ public class OrdersController : ControllerBase
             // Only force total amount if no vouchers/payments exist yet to avoid double counting
             var currentVouchersSum = await _db.JournalLines
                 .Where(l => l.OrderId == id && l.Credit > 0 && l.JournalEntry.Type != JournalEntryType.SalesReturn)
-                .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("1103"))
+                .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("1107"))
                 .SumAsync(l => l.Credit);
 
             if (currentVouchersSum < order.TotalAmount)
@@ -740,10 +740,10 @@ public class OrdersController : ControllerBase
 
             if (!paymentLines.Any())
             {
-                // Fallback: لو لم نجد السطور باستخدام الـ IDs الحقيقية، نبحث بكود "110" أو "1103" أو "1201"
+                // Fallback: لو لم نجد السطور باستخدام الـ IDs الحقيقية، نبحث بكود "110" أو "1107" أو "1105"
                 paymentLines = journalEntry.Lines
                     .Where(l => l.Debit > 0 && l.Account != null &&
-                                (l.Account.Code!.StartsWith("110") || l.Account.Code!.StartsWith("1103") || l.Account.Code!.StartsWith("1201")))
+                                (l.Account.Code!.StartsWith("110") || l.Account.Code!.StartsWith("1107") || l.Account.Code!.StartsWith("1105")))
                     .ToList();
             }
 

@@ -31,7 +31,7 @@ public class AccountingCoreService
     public const string INSTAPAY      = "110703";
     public const string VODAFONE_WEB  = "110702";
     public const string INSTAPAY_WEB  = "110704";
-    public const string RECEIVABLES   = "1103";
+    public const string RECEIVABLES   = "1107";
     public const string PAYABLES      = "2101";
     public const string INVENTORY     = "1106";
     public const string SALES_REVENUE = "4101";
@@ -240,11 +240,11 @@ public class AccountingCoreService
             accountIdCache.TryGetValue(accountId, out var actualAccount);
             var realCode = actualAccount?.Code ?? "";
 
-            bool isReceivables = realCode.StartsWith("1103") || realCode.StartsWith("1202");
+            bool isReceivables = realCode.StartsWith("1107");
             bool isPayables = realCode.StartsWith("2101") || realCode.StartsWith("2102");
 
             bool isEmployeeAccount = hrAccountIds.Contains(accountId) || 
-                                     realCode == "4109" || realCode.StartsWith("2201") || realCode.StartsWith("1201") ||
+                                     realCode == "4109" || realCode.StartsWith("2103") || realCode.StartsWith("1105") ||
                                      actualAccount?.NameAr?.Contains("موظف") == true || actualAccount?.NameEn?.ToLower().Contains("employee") == true ||
                                      actualAccount?.NameAr?.Contains("سلف") == true || actualAccount?.NameAr?.Contains("أجور") == true || actualAccount?.NameAr?.Contains("رواتب") == true;
 
@@ -540,7 +540,7 @@ public class AccountingCoreService
 
     public async Task ConsolidateSubAccountsToControlAsync()
     {
-        var custControl = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
+        var custControl = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1107");
         var suppControl = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "2101");
 
         if (custControl == null || suppControl == null) return;
@@ -557,8 +557,8 @@ public class AccountingCoreService
         // 2. Move Journal Lines from sub-accounts to control accounts
         var subAccountsData = await _db.Accounts
             .Where(a => a.Code != null && 
-                       (a.Code.StartsWith("1103") || a.Code.StartsWith("2101")) && 
-                       a.Code != "1103" && a.Code != "2101")
+                       (a.Code.StartsWith("1107") || a.Code.StartsWith("2101")) && 
+                       a.Code != "1107" && a.Code != "2101")
             .Select(a => new { a.Id, a.Code })
             .ToListAsync();
         
@@ -573,7 +573,7 @@ public class AccountingCoreService
             var code = subAccountsData.First(x => x.Id == l.AccountId).Code;
             if (code != null)
             {
-                if (code.StartsWith("1103")) l.AccountId = custControl.Id;
+                if (code.StartsWith("1107")) l.AccountId = custControl.Id;
                 else if (code.StartsWith("2101")) l.AccountId = suppControl.Id;
             }
         }
@@ -602,11 +602,11 @@ public class AccountingCoreService
             var employees = await _db.Employees.ToListAsync();
             foreach (var e in employees) e.AccountId = empControlId.Value;
             
-            // إضافة أكواد الموظفين للدمج (2201، 1201)
+            // إضافة أكواد الموظفين للدمج (2103، 1105)
             var empSubAccounts = await _db.Accounts
                 .Where(a => a.Code != null && 
-                           (a.Code.StartsWith("2201") || a.Code.StartsWith("1201")) &&
-                           a.Code != "2201" && a.Code != "1201")
+                           (a.Code.StartsWith("2103") || a.Code.StartsWith("1105")) &&
+                           a.Code != "2103" && a.Code != "1105")
                 .ToListAsync();
             
             var empSubIds = empSubAccounts.Select(x => x.Id).ToList();
@@ -617,8 +617,8 @@ public class AccountingCoreService
                 var code = empSubAccounts.First(x => x.Id == l.AccountId).Code;
                 if (code != null)
                 {
-                    if (code.StartsWith("2201")) l.AccountId = empControlId.Value;
-                    else if (code.StartsWith("1201") && mappings.TryGetValue(MappingKeys.EmployeeAdvances.ToLower(), out var advId) && advId.HasValue)
+                    if (code.StartsWith("2103")) l.AccountId = empControlId.Value;
+                    else if (code.StartsWith("1105") && mappings.TryGetValue(MappingKeys.EmployeeAdvances.ToLower(), out var advId) && advId.HasValue)
                         l.AccountId = advId.Value;
                 }
             }
@@ -669,7 +669,7 @@ public class AccountingCoreService
         // Group journal lines by OrderId and sum debit - credit in ONE query
         var orderLedgerBalances = await _db.JournalLines
             .Where(l => l.OrderId != null && l.JournalEntry.Type != JournalEntryType.SalesReturn)
-            .Where(l => l.Account.Code != null && (l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1201")))
+            .Where(l => l.Account.Code != null && (l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105")))
             .GroupBy(l => l.OrderId)
             .Select(g => new {
                 OrderId = g.Key!.Value,
@@ -848,7 +848,7 @@ public class AccountingCoreService
         // Group journal lines by CustomerId and sum debit - credit in ONE query
         var customerLedgerBalances = await _db.JournalLines
             .Where(l => l.CustomerId != null)
-            .Where(l => l.Account.Code != null && (l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1201")))
+            .Where(l => l.Account.Code != null && (l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105")))
             .GroupBy(l => l.CustomerId)
             .Select(g => new {
                 CustomerId = g.Key!.Value,

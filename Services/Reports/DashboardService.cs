@@ -928,7 +928,7 @@ public class DashboardService : IDashboardService
         if (customerMappedAccountId.HasValue)
             customerBalancesQuery = customerBalancesQuery.Where(l => l.AccountId == customerMappedAccountId.Value);
         else
-            customerBalancesQuery = customerBalancesQuery.Where(l => l.Account.Code.StartsWith("1103") || l.Account.Code.StartsWith("1104") || l.Account.Code.StartsWith("1201"));
+            customerBalancesQuery = customerBalancesQuery.Where(l => l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105"));
 
         var customerBalances = await customerBalancesQuery
             .GroupBy(l => l.CustomerId)

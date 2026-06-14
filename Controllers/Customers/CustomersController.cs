@@ -172,17 +172,17 @@ public class CustomersController : ControllerBase
 
             var allCustomers = await db.Customers.Include(c => c.MainAccount).ToListAsync();
             var allAccounts = await db.Accounts.ToListAsync();
-            var parentAccount = allAccounts.FirstOrDefault(a => a.Code == "1103");
+            var parentAccount = allAccounts.FirstOrDefault(a => a.Code == "1107");
             
             if (parentAccount == null)
             {
-                return BadRequest(new { message = "Main Receivables account (1103) not found in Chart of Accounts." });
+                return BadRequest(new { message = "Main Receivables account (1107) not found in Chart of Accounts." });
             }
 
             // Prepare for code generation if needed
             var existingCodes = new HashSet<string>(allAccounts.Where(a => a.Code != null).Select(a => a.Code!));
             long nextCodeNum = 1;
-            var customerCodes = existingCodes.Where(c => c.StartsWith("1103") && c.Length > 4).ToList();
+            var customerCodes = existingCodes.Where(c => c.StartsWith("1107") && c.Length > 4).ToList();
             if (customerCodes.Any())
             {
                 var maxCode = customerCodes.Max();
@@ -257,12 +257,12 @@ public class CustomersController : ControllerBase
                     // we MUST create a sub-account for them.
                     if (balance != 0)
                     {
-                        if (customer.MainAccount == null || customer.MainAccount.Code == "1103")
+                        if (customer.MainAccount == null || customer.MainAccount.Code == "1107")
                         {
                             // Create Sub-Account
                             string newCode;
                             while (true) {
-                                newCode = $"1103{nextCodeNum:D4}";
+                                newCode = $"1107{nextCodeNum:D4}";
                                 if (!existingCodes.Contains(newCode)) break;
                                 nextCodeNum++;
                             }

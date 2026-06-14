@@ -425,8 +425,8 @@ public class CustomerService : ICustomerService
             Tags = dto.Tags != null ? JsonSerializer.Serialize(dto.Tags) : "[]"
         };
 
-        // ── Point to main 1103 (Receivables) Control Account ──
-        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
+        // ── Point to main 1107 (Receivables) Control Account ──
+        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1107");
         if (parent != null)
         {
             customer.MainAccountId = parent.Id;
@@ -494,68 +494,24 @@ public class CustomerService : ICustomerService
             var emp = await _db.Employees.FindAsync(employeeId);
             if (emp == null) return;
 
-            // 1. Get the control account for employees (1104 - مدينو موظفون)
-            var employeeRoot = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1104") 
-                            ?? await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103"); // Fallback to Receivables
+            // 1. Get the control account for employees (1105 - سلف الموظفين)
+            var employeeRoot = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1105") 
+                            ?? await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1107"); // Fallback to Receivables
             
             if (employeeRoot == null) return;
 
-            // 2. Check if sub-account already exists OR if they are pointing to a parent (which they shouldn't)
-            var existingSub = await _db.Accounts.FirstOrDefaultAsync(a => a.ParentId == employeeRoot.Id && a.NameAr == emp.Name);
-            
-            // If they are pointing to a parent account, we need to move them to a child
-            bool isPointingToParent = emp.AccountId != null && (emp.AccountId == employeeRoot.Id || (_db.Accounts.Any(a => a.Id == emp.AccountId && !a.AllowPosting)));
-
-            if (existingSub != null)
+            if (emp.AccountId != employeeRoot.Id)
             {
-                emp.AccountId = existingSub.Id;
-            }
-            else if (emp.AccountId == null || isPointingToParent)
-            {
-                // 3. Generate next code
-                var lastCode = await _db.Accounts
-                    .Where(a => a.ParentId == employeeRoot.Id)
-                    .OrderByDescending(a => a.Code)
-                    .Select(a => a.Code)
-                    .FirstOrDefaultAsync();
-
-                string nextCode;
-                if (string.IsNullOrEmpty(lastCode))
-                {
-                    nextCode = employeeRoot.Code + "0001";
-                }
-                else if (long.TryParse(lastCode, out var val))
-                {
-                    nextCode = (val + 1).ToString();
-                }
-                else
-                {
-                    nextCode = employeeRoot.Code + "_" + Guid.NewGuid().ToString().Substring(0, 4);
-                }
-
-                var subAccount = new Account
-                {
-                    NameAr = emp.Name,
-                    NameEn = emp.Name,
-                    Code = nextCode,
-                    ParentId = employeeRoot.Id,
-                    Type = employeeRoot.Type,
-                    Nature = employeeRoot.Nature,
-                    AllowPosting = true,
-                    CreatedAt = TimeHelper.GetEgyptTime()
-                };
-                _db.Accounts.Add(subAccount);
+                emp.AccountId = employeeRoot.Id;
                 await _db.SaveChangesAsync();
-                emp.AccountId = subAccount.Id;
             }
-            await _db.SaveChangesAsync();
         }
         else
         {
             var customer = await _db.Customers.FindAsync(customerId);
             if (customer == null || customer.MainAccountId != null) return;
 
-            var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
+            var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1107");
             if (parent != null)
             {
                 customer.MainAccountId = parent.Id;
@@ -569,7 +525,7 @@ public class CustomerService : ICustomerService
         var customers = await _db.Customers.Where(c => c.MainAccountId == null).ToListAsync();
         if (!customers.Any()) return;
 
-        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
+        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1107");
         if (parent == null) return;
 
         foreach (var c in customers)
@@ -711,7 +667,7 @@ public class CustomerService : ICustomerService
             IsActive = true
         };
 
-        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1103");
+        var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1107");
         if (parent != null) newCustomer.MainAccountId = parent.Id;
 
         _db.Customers.Add(newCustomer);

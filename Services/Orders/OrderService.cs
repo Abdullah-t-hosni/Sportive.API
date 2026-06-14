@@ -177,7 +177,7 @@ public class OrderService : IOrderService
             .Where(l => l.OrderId == id && l.Credit > 0 && l.JournalEntry.Type != JournalEntryType.SalesReturn);
             
         var paidAmount = await paidAmountQuery
-            .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("1103"))
+            .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("1107"))
             .SumAsync(l => l.Credit);
 
         var itemDtos = o.Items.Select(i => new OrderItemDto(

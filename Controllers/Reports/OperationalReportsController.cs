@@ -392,7 +392,7 @@ public class OperationalReportsController : ControllerBase
 
         // ✅ FIX: Use Ledger (JournalLines) to get all movements accurately
         var ledgerQuery = _db.JournalLines
-            .Where(l => (l.Account.Code.StartsWith("1104") || l.Account.Code.StartsWith("1201")))
+            .Where(l => l.Account.Code.StartsWith("1107"))
             .Where(l => l.JournalEntry.EntryDate <= asOf && (l.JournalEntry.Status == JournalEntryStatus.Posted));
 
         if (branchId.HasValue)

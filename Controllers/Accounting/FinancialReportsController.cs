@@ -501,8 +501,8 @@ public class FinancialReportsController : ControllerBase
         // تحسين: تجميع العملاء والموردين تحت حسابات رقابة إذا لم يكن هناك فلترة محددة
         var grouped = ledgerRows
             .GroupBy(r => {
-                if (r.AccountCode.StartsWith("1103") && !customerId.HasValue)
-                    return new { Id = 0, Code = "1103", Name = _t.Get("Reports.TotalCustomers") };
+                if (r.AccountCode.StartsWith("1107") && !customerId.HasValue)
+                    return new { Id = 0, Code = "1107", Name = _t.Get("Reports.TotalCustomers") };
                 if (r.AccountCode.StartsWith("2101") && !supplierId.HasValue)
                     return new { Id = 0, Code = "2101", Name = _t.Get("Reports.TotalSuppliers") };
                 return new { Id = r.AccountId, Code = r.AccountCode, Name = r.AccountName };
@@ -640,7 +640,7 @@ public class FinancialReportsController : ControllerBase
         if (targetId == 0)
         {
             if (customerId.HasValue) 
-                targetId = await _db.Accounts.Where(a => a.Code.StartsWith("1103")).Select(a => a.Id).FirstOrDefaultAsync();
+                targetId = await _db.Accounts.Where(a => a.Code.StartsWith("1107")).Select(a => a.Id).FirstOrDefaultAsync();
             else if (supplierId.HasValue)
                 targetId = await _db.Accounts.Where(a => a.Code.StartsWith("2101")).Select(a => a.Id).FirstOrDefaultAsync();
             else if (employeeId.HasValue)
