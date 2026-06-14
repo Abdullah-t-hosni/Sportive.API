@@ -361,6 +361,17 @@ try
         "ProcessOutbox", 
         processor => processor.ProcessMessagesAsync(), 
         "*/5 * * * *"); // ✅ was every 1 min (60/hour) — now every 5 min (12/hour)
+
+    backgroundJobs.AddOrUpdate<IOrderService>(
+        "SyncOrderAccounting",
+        service => service.SyncAllOrderAccountingAsync(30),
+        "0 3 * * *"); // Every day at 3:00 AM
+
+    backgroundJobs.AddOrUpdate<IAccountingService>(
+        "SyncPurchaseAccounting",
+        service => service.SyncAllPurchaseAccountingAsync(30),
+        "15 3 * * *"); // Every day at 3:15 AM
+
     Log.Information("Hangfire recurring jobs registered successfully.");
 }
 catch (Exception ex)
