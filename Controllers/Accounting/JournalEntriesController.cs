@@ -152,6 +152,7 @@ public class JournalEntriesController : ControllerBase
                     e.Status,
                     e.Type,
                     e.CostCenter,
+                    BranchId = e.Lines.Select(l => l.BranchId).FirstOrDefault(),
                     LineCount = e.Lines.Count,
                     TotalAmount = e.Lines.Where(l => l.Debit > 0).Sum(l => (decimal?)l.Debit) ?? 0,
                     Lines = e.Lines.Select(l => new {
@@ -176,6 +177,7 @@ public class JournalEntriesController : ControllerBase
                 Status = e.Status.ToString(),
                 Type = e.Type.ToString(),
                 CostCenter = (int?)e.CostCenter,
+                BranchId = e.BranchId,
                 CostCenterLabel = e.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (e.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General")),
                 e.LineCount,
                 e.TotalAmount,
@@ -204,6 +206,7 @@ public class JournalEntriesController : ControllerBase
                     e.Status,
                     e.Type,
                     e.CostCenter,
+                    BranchId = e.Lines.Select(l => l.BranchId).FirstOrDefault(),
                     LineCount = e.Lines.Count,
                     TotalAmount = e.Lines.Where(l => l.Debit > 0).Sum(l => (decimal?)l.Debit) ?? 0
                 })
@@ -219,6 +222,7 @@ public class JournalEntriesController : ControllerBase
                 Status = e.Status.ToString(),
                 Type = e.Type.ToString(),
                 CostCenter = (int?)e.CostCenter,
+                BranchId = e.BranchId,
                 CostCenterLabel = e.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (e.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General")),
                 e.LineCount,
                 e.TotalAmount,

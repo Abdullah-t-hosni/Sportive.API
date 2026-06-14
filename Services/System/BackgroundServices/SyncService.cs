@@ -98,6 +98,14 @@ public class StartupSyncService : BackgroundService
             }
             if (changed) await db.SaveChangesAsync(stoppingToken);
 
+            // ── DEFAULT BRANCHES ──────────────────────────────
+            if (!await db.Branches.AnyAsync(b => b.Name == "الموقع الإلكتروني", stoppingToken))
+            {
+                await db.Branches.AddAsync(new Branch { Name = "الموقع الإلكتروني", Address = "الويب سايت الرئيسي", PhoneNumber = "-", IsActive = true }, stoppingToken);
+                await db.SaveChangesAsync(stoppingToken);
+                _logger.LogInformation("[StartupSync] Seeded Website Branch.");
+            }
+
             var adminEmail    = Environment.GetEnvironmentVariable("ADMIN_EMAIL") ?? "admin@sportive.com";
             var adminPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD") ?? "Admin@123456";
 

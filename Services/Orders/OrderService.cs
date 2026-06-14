@@ -388,14 +388,30 @@ public class OrderService : IOrderService
 
                 if (!branchIdToUse.HasValue)
                 {
-                    var defaultBranch = await _db.Branches.FirstOrDefaultAsync(b => b.Name == "الفرع الرئيسي" || b.IsActive);
-                    if (defaultBranch != null) branchIdToUse = defaultBranch.Id;
+                    if (actualSource == OrderSource.Website)
+                    {
+                        var webBranch = await _db.Branches.FirstOrDefaultAsync(b => b.Name == "الموقع الإلكتروني");
+                        if (webBranch != null) branchIdToUse = webBranch.Id;
+                    }
+
+                    if (!branchIdToUse.HasValue)
+                    {
+                        var defaultBranch = await _db.Branches.FirstOrDefaultAsync(b => b.Name == "الفرع الرئيسي" || b.IsActive);
+                        if (defaultBranch != null) branchIdToUse = defaultBranch.Id;
+                    }
                 }
 
                 if (!warehouseIdToUse.HasValue)
                 {
-                    var defaultWarehouse = await _db.Warehouses.FirstOrDefaultAsync(w => w.Name == "المخزن الرئيسي" || w.IsActive);
-                    if (defaultWarehouse != null) warehouseIdToUse = defaultWarehouse.Id;
+                    if (actualSource == OrderSource.Website && store?.WebsiteWarehouseId.HasValue == true)
+                    {
+                        warehouseIdToUse = store.WebsiteWarehouseId.Value;
+                    }
+                    else
+                    {
+                        var defaultWarehouse = await _db.Warehouses.FirstOrDefaultAsync(w => w.Name == "المخزن الرئيسي" || w.IsActive);
+                        if (defaultWarehouse != null) warehouseIdToUse = defaultWarehouse.Id;
+                    }
                 }
 
                 order = new Order
