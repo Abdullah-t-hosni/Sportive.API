@@ -13,6 +13,7 @@ using Hangfire;
 using Sportive.API.Extensions;
 using Sportive.API.Interfaces;
 using Sportive.API.Services;
+using Sportive.API.Models;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using OpenTelemetry.Metrics;
@@ -246,6 +247,8 @@ using (var scope = app.Services.CreateScope())
             {
                 Log.Warning(ex, "Failed to backfill BranchId and WarehouseId for historical records on startup.");
             }
+
+
 
             try
             {
