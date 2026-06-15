@@ -45,18 +45,56 @@ var connStr = Environment.GetEnvironmentVariable("DATABASE_URL")
 
 try
 {
-    var connBuilder = new MySqlConnector.MySqlConnectionStringBuilder(connStr)
+    var connBuilder = new MySqlConnector.MySqlConnectionStringBuilder(connStr);
+    
+    // Set baseline options
+    connBuilder.Pooling = true;
+    connBuilder.AllowUserVariables = true;
+    connBuilder.ConvertZeroDateTime = true;
+    connBuilder.ConnectionIdleTimeout = 30; // release idle connections after 30s
+    connBuilder.Keepalive = 60;
+    connBuilder.ConnectionTimeout = 30;
+    connBuilder.DefaultCommandTimeout = 120; // allow up to 120s command timeout to prevent transient DB timeouts
+
+    // Dynamically resolve Maximum Pool Size to avoid hardcoding limits (helpful for multi-user/multi-tenant production VPS)
+    if (!connStr.Contains("Max Pool Size", StringComparison.OrdinalIgnoreCase) && 
+        !connStr.Contains("MaximumPoolSize", StringComparison.OrdinalIgnoreCase))
     {
-        Pooling = true,
-        MinimumPoolSize = 1,   // ✅ was 3 — only open connections when actually needed
-        MaximumPoolSize = 10,  // ✅ hard cap: EF Core won't exceed 10 simultaneous DB connections
-        ConnectionIdleTimeout = 30,  // ✅ release idle connections after 30s
-        Keepalive = 60,
-        AllowUserVariables = true,
-        ConnectionTimeout = 30,
-        DefaultCommandTimeout = 120, // ✅ allow up to 120s command timeout to prevent transient DB timeouts
-        ConvertZeroDateTime = true  // ✅ convert '0000-00-00 00:00:00' to DateTime.MinValue
-    };
+        var envMax = Environment.GetEnvironmentVariable("DATABASE_MAX_POOL_SIZE");
+        if (uint.TryParse(envMax, out var maxPoolSize))
+        {
+            connBuilder.MaximumPoolSize = maxPoolSize;
+        }
+        else
+        {
+            var configMax = builder.Configuration.GetValue<uint?>("Database:MaximumPoolSize");
+            if (configMax.HasValue)
+            {
+                connBuilder.MaximumPoolSize = configMax.Value;
+            }
+            else
+            {
+                // Sensible default for high-concurrency production databases (MySqlConnector default is 100)
+                connBuilder.MaximumPoolSize = 100;
+            }
+        }
+    }
+
+    // Dynamically resolve Minimum Pool Size
+    if (!connStr.Contains("Min Pool Size", StringComparison.OrdinalIgnoreCase) && 
+        !connStr.Contains("MinimumPoolSize", StringComparison.OrdinalIgnoreCase))
+    {
+        var envMin = Environment.GetEnvironmentVariable("DATABASE_MIN_POOL_SIZE");
+        if (uint.TryParse(envMin, out var minPoolSize))
+        {
+            connBuilder.MinimumPoolSize = minPoolSize;
+        }
+        else
+        {
+            connBuilder.MinimumPoolSize = 1; // Only open connections when actually needed to save resources
+        }
+    }
+
     connStr = connBuilder.ConnectionString;
 }
 catch (Exception ex)

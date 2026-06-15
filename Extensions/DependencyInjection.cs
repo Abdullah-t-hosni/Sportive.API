@@ -36,7 +36,7 @@ public static class DependencyInjection
         if (!connStr.Contains("Allow User Variables=true", StringComparison.OrdinalIgnoreCase))
             connStr = connStr.TrimEnd(';') + ";Allow User Variables=true;";
 
-        services.AddDbContext<AppDbContext>(options =>
+        services.AddDbContextPool<AppDbContext>(options =>
             options.UseMySql(connStr, new MySqlServerVersion(new Version(8, 0, 0)),
                 mySqlOptions => mySqlOptions.EnableRetryOnFailure()));
 
