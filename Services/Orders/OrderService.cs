@@ -1462,7 +1462,7 @@ public class OrderService : IOrderService
 
     public async Task<OrderDetailDto> UpdateOrderStatusAsync(int orderId, UpdateOrderStatusDto dto, string updatedByUserId)
     {
-        var order = await _db.Orders.Include(o => o.StatusHistory).FirstOrDefaultAsync(o => o.Id == orderId);
+        var order = await _db.Orders.Include(o => o.StatusHistory).Include(o => o.Payments).FirstOrDefaultAsync(o => o.Id == orderId);
         if (order == null) throw new KeyNotFoundException("Order not found.");
 
         var oldStatus = order.Status;
@@ -1484,6 +1484,10 @@ public class OrderService : IOrderService
             {
                 order.PaymentStatus = PaymentStatus.Paid;
                 order.PaidAmount = order.TotalAmount;
+                if (!order.Payments.Any(p => p.Method == order.PaymentMethod))
+                {
+                    order.Payments.Add(new OrderPayment { Method = order.PaymentMethod, Amount = order.TotalAmount, CreatedAt = TimeHelper.GetEgyptTime() });
+                }
             }
         }
 
@@ -1494,6 +1498,10 @@ public class OrderService : IOrderService
             {
                 order.PaymentStatus = PaymentStatus.Paid;
                 order.PaidAmount = order.TotalAmount; // ✅ تحديث المبلغ المدفوع عند التسليم الفعلي (للكاش والوسائل الأخرى)
+                if (!order.Payments.Any(p => p.Method == order.PaymentMethod))
+                {
+                    order.Payments.Add(new OrderPayment { Method = order.PaymentMethod, Amount = order.TotalAmount, CreatedAt = TimeHelper.GetEgyptTime() });
+                }
             }
             
             // ✅ Evaluate customer category after delivery
