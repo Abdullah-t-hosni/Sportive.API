@@ -210,8 +210,26 @@ namespace Sportive.API.Controllers
                         mappings.TryGetValue(MappingKeys.Cash.ToLower(), out var mainCashId);
                         var effectiveDrawerId = (posCashId != 0 && posCashId != null) ? posCashId.Value : (mainCashId != 0 && mainCashId != null ? mainCashId.Value : 0);
 
+                        var previousClosureAccountId = journalEntry.Lines.FirstOrDefault(l => l.Debit > 0)?.AccountId ?? 0;
+
                         mappings.TryGetValue(MappingKeys.PosDailyClosure.ToLower(), out var closureAccountIdVal);
                         var closureAccountId = (closureAccountIdVal != 0 && closureAccountIdVal != null) ? closureAccountIdVal.Value : 0;
+
+                        if (closureAccountId == 0)
+                        {
+                            closureAccountId = previousClosureAccountId;
+                        }
+
+                        if (closureAccountId == 0)
+                        {
+                            var acc = await _db.Accounts.FirstOrDefaultAsync(a => a.NameAr.Contains("تقفيلات اليومية") || a.NameAr.Contains("تسويات نقدية") || a.NameEn.Contains("Daily Closure") || a.NameAr.Contains("الخزينة الرئيسية") || a.NameEn.Contains("Main Safe") || a.Code.StartsWith("110"));
+                            if (acc != null) closureAccountId = acc.Id;
+                        }
+
+                        if (closureAccountId == 0)
+                        {
+                            closureAccountId = effectiveDrawerId;
+                        }
 
                         int? overShortId = null;
                         if (mappings.TryGetValue("overshortaccountid", out var id1) && id1.HasValue) overShortId = id1.Value;
