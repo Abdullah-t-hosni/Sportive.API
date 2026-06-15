@@ -3711,11 +3711,15 @@ public class OperationalReportsController : ControllerBase
     [HttpGet("partners-comprehensive")]
     public async Task<IActionResult> PartnersComprehensiveReport(
         [FromQuery] DateTime? date = null,
+        [FromQuery] DateTime? fromDate = null,
         [FromQuery] int? branchId = null)
     {
         var targetDate = (date ?? TimeHelper.GetEgyptBusinessDayStart()).Date;
-        var dayStart = targetDate.AddHours(TimeHelper.GetBusinessDayEndHour());
-        var dayEnd = targetDate.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
+        // fromDate defaults to targetDate (single-day mode) if not supplied
+        var fromDateVal = fromDate.HasValue ? fromDate.Value.Date : targetDate;
+
+        var dayStart = fromDateVal.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var dayEnd   = targetDate.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         // Month Start & End
         var monthStart = new DateTime(targetDate.Year, targetDate.Month, 1).AddHours(TimeHelper.GetBusinessDayEndHour());
