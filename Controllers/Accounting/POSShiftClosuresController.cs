@@ -210,7 +210,7 @@ namespace Sportive.API.Controllers
                         mappings.TryGetValue(MappingKeys.Cash.ToLower(), out var mainCashId);
                         var effectiveDrawerId = (posCashId != 0 && posCashId != null) ? posCashId.Value : (mainCashId != 0 && mainCashId != null ? mainCashId.Value : 0);
 
-                        var previousClosureAccountId = journalEntry.Lines.FirstOrDefault(l => l.Debit > 0)?.AccountId ?? 0;
+                        var previousClosureAccountId = journalEntry.Lines?.FirstOrDefault(l => l.Debit > 0)?.AccountId ?? 0;
 
                         mappings.TryGetValue(MappingKeys.PosDailyClosure.ToLower(), out var closureAccountIdVal);
                         var closureAccountId = (closureAccountIdVal != 0 && closureAccountIdVal != null) ? closureAccountIdVal.Value : 0;
