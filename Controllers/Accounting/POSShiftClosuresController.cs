@@ -180,6 +180,18 @@ namespace Sportive.API.Controllers
                 closure.ActualCash = dto.ActualCash;
                 closure.ExpectedCash = dto.ExpectedCash;
                 closure.Variance = dto.Variance;
+                closure.GrossSales = dto.GrossSales;
+                closure.NetSales = dto.NetSales;
+                closure.CashSales = dto.CashSales;
+                closure.CardSales = dto.CardSales;
+                closure.VodafoneCashSales = dto.VodafoneCashSales;
+                closure.InstapaySales = dto.InstapaySales;
+                closure.WalletSales = dto.WalletSales;
+                closure.CreditSales = dto.CreditSales;
+                closure.Expenses = dto.Expenses;
+                closure.SafeDrops = dto.SafeDrops;
+                closure.Returns = dto.Returns;
+                closure.Discounts = dto.Discounts;
                 closure.UpdatedAt = TimeHelper.GetEgyptTime();
 
                 if (!string.IsNullOrEmpty(closure.JournalEntryReference))
@@ -217,7 +229,7 @@ namespace Sportive.API.Controllers
                         var roundedExpected = Math.Round(dto.ExpectedCash * 100) / 100;
                         var roundedActual = Math.Round(dto.ActualCash * 100) / 100;
                         var roundedVariance = Math.Round((roundedActual - roundedExpected) * 100) / 100;
-                        var hasVariance = Math.Abs(roundedVariance) >= 0.01;
+                        var hasVariance = Math.Abs(roundedVariance) >= 0.01m;
 
                         var lines = new List<JournalLine>();
 
