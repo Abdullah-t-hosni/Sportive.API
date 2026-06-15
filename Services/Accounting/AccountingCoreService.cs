@@ -699,19 +699,52 @@ public class AccountingCoreService
             })
             .ToDictionaryAsync(x => x.Id, x => x.PaidAmount);
 
-        var orders = await _db.Orders.Where(o => o.Status != OrderStatus.Cancelled).ToListAsync();
-        foreach (var o in orders)
+        // Optimize: Load only the necessary fields using AsNoTracking to determine mismatches
+        var ordersProj = await _db.Orders
+            .AsNoTracking()
+            .Where(o => o.Status != OrderStatus.Cancelled)
+            .Select(o => new { o.Id, o.TotalAmount, o.PaidAmount })
+            .ToListAsync();
+
+        var mismatchedOrderIds = new List<int>();
+        var correctPaidAmounts = new Dictionary<int, decimal>();
+
+        foreach (var o in ordersProj)
         {
-            // CustomerBalance orders: use actual payment sum (not ledger)
-            if (customerBalancePaidAmounts.TryGetValue(o.Id, out var correctPaid))
+            decimal correctPaid;
+            if (customerBalancePaidAmounts.TryGetValue(o.Id, out var custPaid))
             {
-                o.PaidAmount = correctPaid;
-                continue;
+                correctPaid = custPaid;
             }
-            var ledgerBalance = orderLedgerBalances.GetValueOrDefault(o.Id, 0);
-            o.PaidAmount = Math.Max(0, o.TotalAmount - ledgerBalance);
+            else
+            {
+                var ledgerBalance = orderLedgerBalances.GetValueOrDefault(o.Id, 0);
+                correctPaid = Math.Max(0, o.TotalAmount - ledgerBalance);
+            }
+
+            if (Math.Abs(o.PaidAmount - correctPaid) > 0.001m)
+            {
+                mismatchedOrderIds.Add(o.Id);
+                correctPaidAmounts[o.Id] = correctPaid;
+            }
         }
-        await _db.SaveChangesAsync();
+
+        if (mismatchedOrderIds.Any())
+        {
+            _logger.LogInformation($"[Sync] Found {mismatchedOrderIds.Count} mismatched orders to update.");
+            var ordersToUpdate = await _db.Orders
+                .Where(o => mismatchedOrderIds.Contains(o.Id))
+                .ToListAsync();
+
+            foreach (var o in ordersToUpdate)
+            {
+                if (correctPaidAmounts.TryGetValue(o.Id, out var cp))
+                {
+                    o.PaidAmount = cp;
+                }
+            }
+            await _db.SaveChangesAsync();
+        }
         _logger.LogInformation("[Sync] Completed order balances sync.");
 
         // 2. Sync Purchase Invoices
@@ -737,12 +770,27 @@ public class AccountingCoreService
             })
             .ToDictionaryAsync(x => x.Ref, x => x.Paid);
 
-        var pInvoices = await _db.PurchaseInvoices
-            .Include(i => i.Supplier)
+        var pInvoicesProj = await _db.PurchaseInvoices
+            .AsNoTracking()
             .Where(i => i.Status != PurchaseInvoiceStatus.Cancelled && i.Status != PurchaseInvoiceStatus.Draft)
+            .Select(i => new {
+                i.Id,
+                i.InvoiceNumber,
+                i.PaymentTerms,
+                i.PaidAmount,
+                i.TotalAmount,
+                i.Status,
+                i.DueDate,
+                i.SupplierId,
+                SupplierName = i.Supplier != null ? i.Supplier.Name : ""
+            })
             .ToListAsync();
 
-        foreach (var inv in pInvoices)
+        var mismatchedInvoiceIds = new List<int>();
+        var calculatedInvoiceData = new Dictionary<int, (decimal PaidAmount, PurchaseInvoiceStatus Status)>();
+        var today = TimeHelper.GetEgyptTime().Date;
+
+        foreach (var inv in pInvoicesProj)
         {
             var ledgerPaidAmount = invoiceLedgerPaid.GetValueOrDefault(inv.Id, 0);
             if (ledgerPaidAmount == 0 && inv.InvoiceNumber != null)
@@ -750,54 +798,105 @@ public class AccountingCoreService
                 ledgerPaidAmount = refLedgerPaid.GetValueOrDefault(inv.InvoiceNumber, 0);
             }
 
-            inv.PaidAmount = ledgerPaidAmount;
+            decimal newPaidAmount = ledgerPaidAmount;
+            PurchaseInvoiceStatus newStatus = inv.Status;
 
             // 💡 FIX: For Cash purchases, there's no liability in the 2101 account, so we set PaidAmount = TotalAmount to show 0 remaining in UI
             if (inv.PaymentTerms == PaymentTerms.Cash)
             {
-                inv.PaidAmount = inv.TotalAmount;
-                inv.Status = PurchaseInvoiceStatus.Paid;
+                newPaidAmount = inv.TotalAmount;
+                newStatus = PurchaseInvoiceStatus.Paid;
             }
-            else if (inv.PaidAmount >= inv.TotalAmount && inv.TotalAmount > 0)
+            else if (ledgerPaidAmount >= inv.TotalAmount && inv.TotalAmount > 0)
             {
-                inv.Status = PurchaseInvoiceStatus.Paid;
+                newStatus = PurchaseInvoiceStatus.Paid;
             }
-            else if (inv.PaidAmount > 0)
+            else if (ledgerPaidAmount > 0)
             {
-                inv.Status = PurchaseInvoiceStatus.PartPaid;
+                newStatus = PurchaseInvoiceStatus.PartPaid;
             }
             else if (inv.Status == PurchaseInvoiceStatus.Paid || inv.Status == PurchaseInvoiceStatus.PartPaid)
             {
                 // Reset to Received if PaidAmount is 0 but it was marked paid
-                inv.Status = PurchaseInvoiceStatus.Received;
+                newStatus = PurchaseInvoiceStatus.Received;
             }
 
             // 3. Auto-Overdue & Notifications
-            if (inv.Status != PurchaseInvoiceStatus.Paid && inv.DueDate.HasValue)
+            if (newStatus != PurchaseInvoiceStatus.Paid && inv.DueDate.HasValue)
             {
-                var today = TimeHelper.GetEgyptTime().Date;
                 var due = inv.DueDate.Value.Date;
-
-                if (due < today && inv.Status != PurchaseInvoiceStatus.Overdue)
+                if (due < today && newStatus != PurchaseInvoiceStatus.Overdue)
                 {
-                    inv.Status = PurchaseInvoiceStatus.Overdue;
-                    await _notifications.SendAsync(null, 
-                        "تأخير سداد فاتورة مورد", "Supplier Payment Overdue",
-                        $"الفاتورة رقم {inv.InvoiceNumber} للمورد {inv.Supplier?.Name} تجاوزت موعد الاستحقاق ({due:yyyy-MM-dd})",
-                        $"Invoice #{inv.InvoiceNumber} for {inv.Supplier?.Name} is overdue since {due:yyyy-MM-dd}",
-                        "Alert", null);
+                    newStatus = PurchaseInvoiceStatus.Overdue;
                 }
-                else if (due == today)
+            }
+
+            if (Math.Abs(inv.PaidAmount - newPaidAmount) > 0.001m || inv.Status != newStatus)
+            {
+                mismatchedInvoiceIds.Add(inv.Id);
+                calculatedInvoiceData[inv.Id] = (newPaidAmount, newStatus);
+            }
+            else if (newStatus != PurchaseInvoiceStatus.Paid && inv.DueDate.HasValue)
+            {
+                // Also check if we need to send notifications for invoices whose due date matches
+                var due = inv.DueDate.Value.Date;
+                if (due == today)
                 {
-                    await _notifications.SendAsync(null,
-                        "موعد استحقاق دفع", "Payment Due Today",
-                        $"اليوم هو موعد سداد الفاتورة رقم {inv.InvoiceNumber} للمورد {inv.Supplier?.Name}",
-                        $"Today is the due date for Invoice #{inv.InvoiceNumber} from {inv.Supplier?.Name}",
-                        "Alert", null);
+                    mismatchedInvoiceIds.Add(inv.Id);
+                    calculatedInvoiceData[inv.Id] = (newPaidAmount, newStatus);
                 }
             }
         }
-        await _db.SaveChangesAsync();
+
+        if (mismatchedInvoiceIds.Any())
+        {
+            _logger.LogInformation($"[Sync] Found {mismatchedInvoiceIds.Count} mismatched purchase invoices to update.");
+            var invoicesToUpdate = await _db.PurchaseInvoices
+                .Include(i => i.Supplier)
+                .Where(i => mismatchedInvoiceIds.Contains(i.Id))
+                .ToListAsync();
+
+            foreach (var inv in invoicesToUpdate)
+            {
+                if (calculatedInvoiceData.TryGetValue(inv.Id, out var val))
+                {
+                    var oldStatus = inv.Status;
+                    inv.PaidAmount = val.PaidAmount;
+                    inv.Status = val.Status;
+
+                    // Send overdue / due notification if not already sent today
+                    if (inv.Status != PurchaseInvoiceStatus.Paid && inv.DueDate.HasValue)
+                    {
+                        var due = inv.DueDate.Value.Date;
+                        bool alreadyNotifiedToday = await _db.Notifications.AnyAsync(n =>
+                            n.Type == "Alert" &&
+                            n.CreatedAt >= today &&
+                            n.MessageAr.Contains(inv.InvoiceNumber ?? ""));
+
+                        if (!alreadyNotifiedToday)
+                        {
+                            if (due < today && oldStatus != PurchaseInvoiceStatus.Overdue && inv.Status == PurchaseInvoiceStatus.Overdue)
+                            {
+                                await _notifications.SendAsync(null, 
+                                    "تأخير سداد فاتورة مورد", "Supplier Payment Overdue",
+                                    $"الفاتورة رقم {inv.InvoiceNumber} للمورد {inv.Supplier?.Name} تجاوزت موعد الاستحقاق ({due:yyyy-MM-dd})",
+                                    $"Invoice #{inv.InvoiceNumber} for {inv.Supplier?.Name} is overdue since {due:yyyy-MM-dd}",
+                                    "Alert", null);
+                            }
+                            else if (due == today)
+                            {
+                                await _notifications.SendAsync(null,
+                                    "موعد استحقاق دفع", "Payment Due Today",
+                                    $"اليوم هو موعد سداد الفاتورة رقم {inv.InvoiceNumber} للمورد {inv.Supplier?.Name}",
+                                    $"Today is the due date for Invoice #{inv.InvoiceNumber} from {inv.Supplier?.Name}",
+                                    "Alert", null);
+                            }
+                        }
+                    }
+                }
+            }
+            await _db.SaveChangesAsync();
+        }
         _logger.LogInformation("[Sync] Completed purchase invoice balances sync.");
 
         // 3. Sync Suppliers
@@ -822,16 +921,44 @@ public class AccountingCoreService
             })
             .ToDictionaryAsync(x => x.SupplierId, x => x.Debt);
 
-        var suppliers = await _db.Suppliers.ToListAsync();
-        foreach (var s in suppliers)
+        var suppliersProj = await _db.Suppliers
+            .AsNoTracking()
+            .Select(s => new { s.Id, s.TotalPurchases, s.TotalPaid })
+            .ToListAsync();
+
+        var mismatchedSupplierIds = new List<int>();
+        var calculatedSupplierData = new Dictionary<int, (decimal TotalPurchases, decimal TotalPaid)>();
+
+        foreach (var s in suppliersProj)
         {
             var volume = supplierInvoicesTotal.GetValueOrDefault(s.Id, 0);
             var debt = supplierLedgerBalances.GetValueOrDefault(s.Id, 0);
+            var expectedPaid = volume - debt;
 
-            s.TotalPurchases = volume;
-            s.TotalPaid      = volume - debt; 
+            if (Math.Abs(s.TotalPurchases - volume) > 0.001m || Math.Abs(s.TotalPaid - expectedPaid) > 0.001m)
+            {
+                mismatchedSupplierIds.Add(s.Id);
+                calculatedSupplierData[s.Id] = (volume, expectedPaid);
+            }
         }
-        await _db.SaveChangesAsync();
+
+        if (mismatchedSupplierIds.Any())
+        {
+            _logger.LogInformation($"[Sync] Found {mismatchedSupplierIds.Count} mismatched suppliers to update.");
+            var suppliersToUpdate = await _db.Suppliers
+                .Where(s => mismatchedSupplierIds.Contains(s.Id))
+                .ToListAsync();
+
+            foreach (var s in suppliersToUpdate)
+            {
+                if (calculatedSupplierData.TryGetValue(s.Id, out var val))
+                {
+                    s.TotalPurchases = val.TotalPurchases;
+                    s.TotalPaid = val.TotalPaid;
+                }
+            }
+            await _db.SaveChangesAsync();
+        }
         _logger.LogInformation("[Sync] Completed supplier balances sync.");
 
         // 4. Sync Customers
@@ -856,17 +983,45 @@ public class AccountingCoreService
             })
             .ToDictionaryAsync(x => x.CustomerId, x => x.Debt);
 
-        var customers = await _db.Customers.ToListAsync();
-        foreach (var c in customers)
+        var customersProj = await _db.Customers
+            .AsNoTracking()
+            .Select(c => new { c.Id, c.TotalSales, c.TotalPaid })
+            .ToListAsync();
+
+        var mismatchedCustomerIds = new List<int>();
+        var calculatedCustomerData = new Dictionary<int, (decimal TotalSales, decimal TotalPaid)>();
+
+        foreach (var c in customersProj)
         {
             var volume = customerOrdersTotal.GetValueOrDefault(c.Id, 0);
             var debt = customerLedgerBalances.GetValueOrDefault(c.Id, 0);
+            var expectedPaid = volume - debt;
 
-            c.TotalSales = volume;
-            c.TotalPaid  = volume - debt; 
+            if (Math.Abs(c.TotalSales - volume) > 0.001m || Math.Abs(c.TotalPaid - expectedPaid) > 0.001m)
+            {
+                mismatchedCustomerIds.Add(c.Id);
+                calculatedCustomerData[c.Id] = (volume, expectedPaid);
+            }
         }
 
-        await _db.SaveChangesAsync();
+        if (mismatchedCustomerIds.Any())
+        {
+            _logger.LogInformation($"[Sync] Found {mismatchedCustomerIds.Count} mismatched customers to update.");
+            var customersToUpdate = await _db.Customers
+                .Where(c => mismatchedCustomerIds.Contains(c.Id))
+                .ToListAsync();
+
+            foreach (var c in customersToUpdate)
+            {
+                if (calculatedCustomerData.TryGetValue(c.Id, out var val))
+                {
+                    c.TotalSales = val.TotalSales;
+                    c.TotalPaid = val.TotalPaid;
+                }
+            }
+            await _db.SaveChangesAsync();
+        }
+
         _logger.LogInformation("[Sync] Completed customer balances sync. All sync completed successfully.");
     }
 }

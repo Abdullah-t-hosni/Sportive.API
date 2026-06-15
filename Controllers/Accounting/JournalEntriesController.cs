@@ -279,7 +279,7 @@ public class JournalEntriesController : ControllerBase
             }
 
             var entry = await _accounting.PostManualEntryAsync(dto, User);
-            await PayrollSyncHelper.SyncPayrollRunsForJournalEntryAsync(_db, _core, entry);
+            Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id));
 
             // Log Audit
             var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
@@ -297,7 +297,7 @@ public class JournalEntriesController : ControllerBase
     {
         try {
             var entry = await _accounting.UpdateManualEntryAsync(id, dto, User);
-            await PayrollSyncHelper.SyncPayrollRunsForJournalEntryAsync(_db, _core, entry);
+            Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id));
 
             // Log Audit
             var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
@@ -427,7 +427,7 @@ public class JournalEntriesController : ControllerBase
 
         foreach (var run in runsToSync)
         {
-            await PayrollSyncHelper.SyncPayrollRunPaymentsAsync(_db, _core, run.Id);
+            Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollRunPaymentsAsync(run.Id));
         }
 
         return NoContent();

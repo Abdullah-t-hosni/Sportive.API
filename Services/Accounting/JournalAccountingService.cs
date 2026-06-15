@@ -41,7 +41,7 @@ public class JournalAccountingService
         entry.Status = JournalEntryStatus.Reversed;
         _db.JournalEntries.Add(reversal);
         await _db.SaveChangesAsync();
-        await PayrollSyncHelper.SyncPayrollRunsForJournalEntryAsync(_db, _core, entry);
+        Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id));
         Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
     }
 
