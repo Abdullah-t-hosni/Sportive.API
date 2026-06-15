@@ -580,8 +580,7 @@ public class OrdersController : ControllerBase
         // Recalculate and sync customer balances
         try
         {
-            var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-            await accounting.SyncEntityBalancesAsync();
+            Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
         }
         catch (Exception ex)
         {
@@ -823,10 +822,9 @@ public class OrdersController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        // ── 🔴 Fix 5: إعادة مزامنة أرصدة المديونيات وحسابات العملاء تلقائياً ──
         try
         {
-            await accounting.SyncEntityBalancesAsync();
+            Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
         }
         catch (Exception ex)
         {

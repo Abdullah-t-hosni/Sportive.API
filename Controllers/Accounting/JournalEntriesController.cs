@@ -423,7 +423,7 @@ public class JournalEntriesController : ControllerBase
         _db.JournalLines.RemoveRange(entry.Lines);
         _db.JournalEntries.Remove(entry);
         await _db.SaveChangesAsync();
-        await _accounting.SyncEntityBalancesAsync();
+        Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
 
         foreach (var run in runsToSync)
         {

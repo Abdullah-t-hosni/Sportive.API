@@ -94,7 +94,7 @@ public class POSReportController : ControllerBase
         // ── 3. Load ALL journal entries for the business day ─────────────────
         var journalQuery = _db.JournalEntries
             .AsNoTracking()
-            .Include(j => j.Lines)
+            .Include(j => j.Lines).ThenInclude(l => l.Account)
             .Where(j => j.EntryDate >= from
                      && j.EntryDate <= to
                      && j.Status == JournalEntryStatus.Posted);
@@ -229,7 +229,35 @@ public class POSReportController : ControllerBase
 
                 // Expenses: debit from POS cash
                 if (isExpense && aid == effectiveDrawerId && credit > 0)
-                    expenses += credit;
+                {
+                    var debitedLine = j.Lines.FirstOrDefault(line => line.Debit > 0);
+                    var isTransferToSafeOrBank = false;
+                    if (debitedLine != null && debitedLine.Account != null)
+                    {
+                        var destAccountId = debitedLine.AccountId;
+                        var destCode = debitedLine.Account.Code ?? "";
+                        isTransferToSafeOrBank = destAccountId == mainCashId ||
+                                                 destAccountId == posCashId ||
+                                                 destAccountId == posBankId ||
+                                                 destAccountId == posVodaId ||
+                                                 destAccountId == posInstaId ||
+                                                 destCode.StartsWith("1101") || // Cashier/Safes
+                                                 destCode.StartsWith("1102") || // Banks
+                                                 destCode.StartsWith("1103") || // POS drawers
+                                                 destCode.StartsWith("1105") || // Vodafone cash
+                                                 destCode.StartsWith("1107") || // Instapay
+                                                 destCode.StartsWith("111");
+                    }
+
+                    if (isTransferToSafeOrBank)
+                    {
+                        safeDrops += credit;
+                    }
+                    else
+                    {
+                        expenses += credit;
+                    }
+                }
 
                 // Safe drops: manual debit from POS cash → main safe (excluding shift closure entries)
                 if (isManual && aid == effectiveDrawerId && credit > 0)

@@ -176,7 +176,7 @@ public class PaymentAccountingService
         };
         await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, payment.PaymentNumber, _t.Get("Accounting.SupplierPaymentVoucherMainDesc", payment.PaymentNumber), payment.PaymentDate, lines, supplierId: payment.SupplierId, purchaseInvoiceId: payment.PurchaseInvoiceId, source: payment.CostCenter);
         
-        await _core.SyncEntityBalancesAsync();
+        Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
         
         // ⚡ Decoupled Event
         _dashboardEvents.NotifyTransactionOccurred(payment.PaymentDate);
