@@ -56,17 +56,14 @@ public class BranchesController : ControllerBase
         var currentAssetsAcc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "11");
         if (currentAssetsAcc != null)
         {
-            var cashParent = await _db.Accounts.FirstOrDefaultAsync(a => a.NameAr.Contains("النقدية والصناديق"))
-                ?? await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1101")
-                ?? currentAssetsAcc;
+            // Fetch mapped accounts to determine parents
+            var cashAccId = await _db.AccountSystemMappings.Where(m => m.Key == MappingKeys.PosCash.ToLower()).Select(m => m.AccountId).FirstOrDefaultAsync();
+            var bankAccId = await _db.AccountSystemMappings.Where(m => m.Key == MappingKeys.PosBank.ToLower()).Select(m => m.AccountId).FirstOrDefaultAsync();
+            var walletAccId = await _db.AccountSystemMappings.Where(m => m.Key == MappingKeys.PosVodafone.ToLower() || m.Key == MappingKeys.PosInstaPay.ToLower()).Select(m => m.AccountId).FirstOrDefaultAsync();
 
-            var bankParent = await _db.Accounts.FirstOrDefaultAsync(a => a.NameAr.Contains("النقدية في البنك") || a.NameAr.Contains("البنك"))
-                ?? await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1102")
-                ?? currentAssetsAcc;
-
-            var walletParent = await _db.Accounts.FirstOrDefaultAsync(a => a.NameAr.Contains("النقدية في المحافظ") || a.NameAr.Contains("المحافظ"))
-                ?? await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1105")
-                ?? currentAssetsAcc;
+            var cashParent = (cashAccId != null ? await _db.Accounts.Where(a => a.Id == cashAccId).Select(a => a.Parent).FirstOrDefaultAsync() : null) ?? currentAssetsAcc;
+            var bankParent = (bankAccId != null ? await _db.Accounts.Where(a => a.Id == bankAccId).Select(a => a.Parent).FirstOrDefaultAsync() : null) ?? currentAssetsAcc;
+            var walletParent = (walletAccId != null ? await _db.Accounts.Where(a => a.Id == walletAccId).Select(a => a.Parent).FirstOrDefaultAsync() : null) ?? currentAssetsAcc;
 
             async Task<string> GenerateNextChildCodeAsync(Account parent)
             {

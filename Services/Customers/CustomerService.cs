@@ -494,9 +494,9 @@ public class CustomerService : ICustomerService
             var emp = await _db.Employees.FindAsync(employeeId);
             if (emp == null) return;
 
-            // 1. Get the control account for employees (1105 - سلف الموظفين)
-            var employeeRoot = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1105") 
-                            ?? await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1107"); // Fallback to Receivables
+            // 1. Get the control account for employees (from mappings, fallback to 1105)
+            var empAdvAccId = await _db.AccountSystemMappings.Where(m => m.Key == MappingKeys.EmployeeAdvances.ToLower()).Select(m => m.AccountId).FirstOrDefaultAsync();
+            var employeeRoot = empAdvAccId != null ? await _db.Accounts.FindAsync(empAdvAccId) : await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1105");
             
             if (employeeRoot == null) return;
 
@@ -511,7 +511,9 @@ public class CustomerService : ICustomerService
             var customer = await _db.Customers.FindAsync(customerId);
             if (customer == null || customer.MainAccountId != null) return;
 
-            var parent = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1107");
+            var custAccId = await _db.AccountSystemMappings.Where(m => m.Key == MappingKeys.Customer.ToLower()).Select(m => m.AccountId).FirstOrDefaultAsync();
+            var parent = custAccId != null ? await _db.Accounts.FindAsync(custAccId) : await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1107");
+            
             if (parent != null)
             {
                 customer.MainAccountId = parent.Id;
