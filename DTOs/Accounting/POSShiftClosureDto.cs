@@ -37,4 +37,12 @@ namespace Sportive.API.DTOs
 
         public int? BranchId { get; set; }
     }
+
+    public class UpdatePOSShiftClosureDto
+    {
+        public decimal StartingBalance { get; set; }
+        public decimal ActualCash { get; set; }
+        public decimal ExpectedCash { get; set; }
+        public decimal Variance { get; set; }
+    }
 }
