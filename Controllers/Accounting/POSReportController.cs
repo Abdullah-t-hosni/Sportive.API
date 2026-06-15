@@ -236,6 +236,7 @@ public class POSReportController : ControllerBase
                     {
                         var destAccountId = debitedLine.AccountId;
                         var destCode = debitedLine.Account.Code ?? "";
+                        var destName = debitedLine.Account.NameAr ?? "";
                         isTransferToSafeOrBank = destAccountId == mainCashId ||
                                                  destAccountId == posCashId ||
                                                  destAccountId == posBankId ||
@@ -246,7 +247,10 @@ public class POSReportController : ControllerBase
                                                  destCode.StartsWith("1103") || // POS drawers
                                                  destCode.StartsWith("1105") || // Vodafone cash
                                                  destCode.StartsWith("1107") || // Instapay
-                                                 destCode.StartsWith("111");
+                                                 destCode.StartsWith("111") ||
+                                                 destCode.StartsWith("3105") || // Partner current
+                                                 destName.Contains("جاري") ||
+                                                 destName.Contains("شريك");
                     }
 
                     if (isTransferToSafeOrBank)
