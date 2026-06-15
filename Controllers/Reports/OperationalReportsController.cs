@@ -3717,6 +3717,10 @@ public class OperationalReportsController : ControllerBase
         var dayStart = targetDate.AddHours(TimeHelper.GetBusinessDayEndHour());
         var dayEnd = targetDate.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
+        // Month Start & End
+        var monthStart = new DateTime(targetDate.Year, targetDate.Month, 1).AddHours(TimeHelper.GetBusinessDayEndHour());
+        var endHour = TimeHelper.GetBusinessDayEndHour();
+
         // --- 1. Sales (Strict Accounting) ---
         var salesQuery = _db.Orders.AsNoTracking().Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned);
         if (branchId.HasValue) salesQuery = salesQuery.Where(o => o.BranchId == branchId.Value);
@@ -3726,6 +3730,10 @@ public class OperationalReportsController : ControllerBase
         
         var webDailySales = await salesQuery.Where(o => o.Source == OrderSource.Website && o.CreatedAt >= dayStart && o.CreatedAt <= dayEnd).SumAsync(o => o.TotalAmount);
         var webTotalSales = await salesQuery.Where(o => o.Source == OrderSource.Website && o.CreatedAt <= dayEnd).SumAsync(o => o.TotalAmount);
+
+        // MTD Gross Sales
+        var posMtdSales = await salesQuery.Where(o => o.Source == OrderSource.POS && o.CreatedAt >= monthStart && o.CreatedAt <= dayEnd).SumAsync(o => o.TotalAmount);
+        var webMtdSales = await salesQuery.Where(o => o.Source == OrderSource.Website && o.CreatedAt >= monthStart && o.CreatedAt <= dayEnd).SumAsync(o => o.TotalAmount);
 
         // Subtract Returns (from JournalEntries because OrderItems returned might be partial)
         var salesReturnsQuery = _db.JournalEntries.AsNoTracking().Where(j => j.Type == JournalEntryType.SalesReturn);
@@ -3742,10 +3750,18 @@ public class OperationalReportsController : ControllerBase
         var totalWebReturns = await salesReturnsQuery.Where(j => j.EntryDate <= dayEnd && j.Order != null && j.Order.Source == OrderSource.Website)
             .SelectMany(j => j.Lines).Where(l => l.Account.Type == AccountType.Asset).SumAsync(l => l.Credit);
 
+        // MTD Returns
+        var mtdPosReturns = await salesReturnsQuery.Where(j => j.EntryDate >= monthStart && j.EntryDate <= dayEnd && j.Order != null && j.Order.Source == OrderSource.POS)
+            .SelectMany(j => j.Lines).Where(l => l.Account.Type == AccountType.Asset).SumAsync(l => l.Credit);
+        var mtdWebReturns = await salesReturnsQuery.Where(j => j.EntryDate >= monthStart && j.EntryDate <= dayEnd && j.Order != null && j.Order.Source == OrderSource.Website)
+            .SelectMany(j => j.Lines).Where(l => l.Account.Type == AccountType.Asset).SumAsync(l => l.Credit);
+
         posDailySales -= dailyPosReturns;
         posTotalSales -= totalPosReturns;
         webDailySales -= dailyWebReturns;
         webTotalSales -= totalWebReturns;
+
+        var mtdNetSales = (posMtdSales - mtdPosReturns) + (webMtdSales - mtdWebReturns);
 
         // --- 2. Cash Flow (Collections & Payments from Cash Accounts) ---
         var cashAccTypes = new[] { "1101", "1102", "1105", "1107" };
@@ -3756,9 +3772,12 @@ public class OperationalReportsController : ControllerBase
 
         var dailyCollections = await jlQuery.Where(l => l.JournalEntry.Type != JournalEntryType.Manual && l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit);
         var totalCollections = await jlQuery.Where(l => l.JournalEntry.Type != JournalEntryType.Manual && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit);
-        
-        var dailyPayments = await jlQuery.Where(l => l.JournalEntry.Type != JournalEntryType.Manual && l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Credit);
-        var totalPayments = await jlQuery.Where(l => l.JournalEntry.Type != JournalEntryType.Manual && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Credit);
+        var mtdCollections = await jlQuery.Where(l => l.JournalEntry.Type != JournalEntryType.Manual && l.JournalEntry.EntryDate >= monthStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit);
+
+        // Redefining dailyExpenses and totalExpenses as cash outflows (credits to cash accounts)
+        var dailyExpenses = await jlQuery.Where(l => l.JournalEntry.Type != JournalEntryType.OpeningBalance && l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Credit);
+        var totalExpenses = await jlQuery.Where(l => l.JournalEntry.Type != JournalEntryType.OpeningBalance && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Credit);
+        var mtdCashOutflows = await jlQuery.Where(l => l.JournalEntry.Type != JournalEntryType.OpeningBalance && l.JournalEntry.EntryDate >= monthStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Credit);
 
         var dailyNetCashFlow = await jlQuery.Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
         var totalNetCashFlow = await jlQuery.Where(l => l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
@@ -3768,19 +3787,58 @@ public class OperationalReportsController : ControllerBase
         var expQuery = _db.JournalLines.AsNoTracking().Where(l => expenseAccounts.Contains(l.AccountId));
         if (branchId.HasValue) expQuery = expQuery.Where(l => l.BranchId == branchId.Value);
 
-        var dailyExpenses = await expQuery.Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
-        var totalExpenses = await expQuery.Where(l => l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
-
         var expensesBreakdownQuery = await expQuery.Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd)
             .GroupBy(l => l.Account.NameAr)
             .Select(g => new { Category = g.Key, Amount = g.Sum(l => l.Debit - l.Credit) })
             .ToListAsync();
         var expensesBreakdown = expensesBreakdownQuery.Select(x => new PartnersReportExpenseCategory(x.Category, x.Amount)).ToList();
 
-        // --- 4. Operational Balances ---
+        // --- 4. Detailed Cash Outflows Table ---
+        var userNames = await _db.Users.AsNoTracking()
+            .Select(u => new { u.Id, u.FullName })
+            .ToDictionaryAsync(u => u.Id, u => u.FullName);
+
+        var outflowsQuery = _db.JournalLines.AsNoTracking()
+            .Include(l => l.JournalEntry)
+            .Include(l => l.Account)
+            .Include(l => l.Branch)
+            .Where(l => cashAccounts.Contains(l.AccountId) 
+                        && l.Credit > 0 
+                        && l.JournalEntry.EntryDate >= dayStart 
+                        && l.JournalEntry.EntryDate <= dayEnd
+                        && l.JournalEntry.Type != JournalEntryType.OpeningBalance);
+        if (branchId.HasValue) outflowsQuery = outflowsQuery.Where(l => l.BranchId == branchId.Value);
+
+        var outflowsList = await outflowsQuery.ToListAsync();
+        var cashOutflows = outflowsList.Select(l => new PartnersReportCashOutflow(
+            l.JournalEntryId,
+            l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber,
+            l.JournalEntry.EntryDate,
+            l.JournalEntry.Description ?? "",
+            l.Account.NameAr,
+            l.Credit,
+            userNames.TryGetValue(l.JournalEntry.CreatedByUserId ?? "", out var name) ? name : (l.JournalEntry.CreatedByUserId ?? ""),
+            l.Branch?.Name ?? ""
+        )).ToList();
+
+        // --- 5. Grouped Operational Balances ---
         var balanceAccounts = await _db.Accounts.AsNoTracking()
-            .Where(a => a.IsLeaf && cashAccTypes.Any(c => a.Code.StartsWith(c)))
+            .Include(a => a.Branch)
+            .Where(a => a.IsLeaf && (
+                a.Code.StartsWith("1101") || 
+                a.Code.StartsWith("1102") || 
+                a.Code.StartsWith("1103") ||
+                a.Code.StartsWith("1105") || 
+                a.Code.StartsWith("1107") ||
+                a.NameAr.Contains("جاري الشريك") ||
+                a.NameAr.Contains("جاري الشركاء") ||
+                a.Code.StartsWith("3105") ||
+                a.Code.StartsWith("2105")
+            ))
             .ToListAsync();
+
+        // Exclude inventory account (1106) and any general inventory description
+        balanceAccounts = balanceAccounts.Where(a => a.Code != "1106" && !a.NameAr.Contains("مخزون")).ToList();
 
         var accInfos = new List<PartnersReportAccountInfo>();
         foreach (var acc in balanceAccounts)
@@ -3788,43 +3846,202 @@ public class OperationalReportsController : ControllerBase
             var lq = _db.JournalLines.AsNoTracking().Where(l => l.AccountId == acc.Id);
             if (branchId.HasValue) lq = lq.Where(l => l.BranchId == branchId.Value);
 
-            var dailyNet = await lq.Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
-            var cumulative = await lq.Where(l => l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
+            bool isCreditNature = acc.Nature == AccountNature.Credit || acc.Type == AccountType.Liability || acc.Type == AccountType.Equity || acc.NameAr.Contains("جاري") || acc.Code.StartsWith("3105") || acc.Code.StartsWith("2105");
 
-            cumulative += acc.OpeningBalance; // Cash accounts are always Debit nature
+            decimal dailyNet = 0;
+            decimal cumulative = 0;
 
-            accInfos.Add(new PartnersReportAccountInfo(acc.Id, acc.NameAr, dailyNet, cumulative));
+            if (isCreditNature)
+            {
+                dailyNet = await lq.Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Credit - l.Debit);
+                cumulative = await lq.Where(l => l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Credit - l.Debit);
+                cumulative += acc.OpeningBalance;
+            }
+            else
+            {
+                dailyNet = await lq.Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
+                cumulative = await lq.Where(l => l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => l.Debit - l.Credit);
+                cumulative += acc.OpeningBalance;
+            }
+
+            // Determine category
+            string category = "GeneralCash";
+            if (acc.NameAr.Contains("جاري") || acc.NameAr.Contains("شريك") || acc.Code.StartsWith("3105") || acc.Code.StartsWith("2105"))
+            {
+                category = "PartnerCurrent";
+            }
+            else if (acc.BranchId != null)
+            {
+                if (acc.Code.StartsWith("1102"))
+                {
+                    category = "BranchNetworks";
+                }
+                else
+                {
+                    category = "BranchCash";
+                }
+            }
+            else
+            {
+                if (acc.Code.StartsWith("1102"))
+                {
+                    category = "BankAndClosures";
+                }
+                else
+                {
+                    category = "GeneralCash";
+                }
+            }
+
+            accInfos.Add(new PartnersReportAccountInfo(
+                acc.Id, 
+                acc.NameAr, 
+                dailyNet, 
+                cumulative,
+                category,
+                acc.BranchId,
+                acc.Branch?.Name
+            ));
         }
 
-        // --- 5. Debts and Inventory (Legacy sums to match UI pages) ---
+        // --- 6. Debts and Inventory (Real-Time Cost Valuation) ---
         var totalCustomerDebt = await _db.Customers.AsNoTracking().SumAsync(c => (decimal?)(c.TotalSales - c.TotalPaid)) ?? 0m;
         var totalSupplierDebt = await _db.Suppliers.AsNoTracking().SumAsync(s => (decimal?)(s.OpeningBalance + s.TotalPurchases - s.TotalPaid)) ?? 0m;
 
-        var totalInventoryValue = await _db.Products.AsNoTracking().Where(p => p.Status == ProductStatus.Active).SumAsync(p => (decimal?)(p.TotalStock * p.CostPrice)) ?? 0m;
+        // Dynamic cost valuation using inventory movements up to dayEnd
+        var movementsQuery = _db.InventoryMovements.AsNoTracking().Where(m => m.CreatedAt <= dayEnd);
+        if (branchId.HasValue) movementsQuery = movementsQuery.Where(m => m.BranchId == branchId.Value);
 
-        // --- 6. Trends and Charts ---
-        var salesByPaymentQuery = await salesQuery.Where(o => o.CreatedAt >= dayStart && o.CreatedAt <= dayEnd)
-            .GroupBy(o => o.PaymentMethod)
-            .Select(g => new { Method = g.Key.ToString(), Amount = g.Sum(o => o.TotalAmount) })
+        var productStocks = await movementsQuery
+            .GroupBy(m => m.ProductId)
+            .Select(g => new { ProductId = g.Key, Stock = g.Sum(m => m.Quantity) })
             .ToListAsync();
-        var salesByPayment = salesByPaymentQuery.Select(x => new PartnersReportPaymentMethodSale(x.Method, x.Amount)).ToList();
 
+        var productsCost = await _db.Products.AsNoTracking()
+            .Select(p => new { p.Id, p.CostPrice })
+            .ToDictionaryAsync(p => p.Id, p => p.CostPrice);
+
+        decimal totalInventoryValue = 0;
+        foreach (var item in productStocks)
+        {
+            if (item.ProductId.HasValue && productsCost.TryGetValue(item.ProductId.Value, out var costPrice))
+            {
+                totalInventoryValue += item.Stock * costPrice.GetValueOrDefault();
+            }
+        }
+
+        // --- 7. Split Mixed Payment Methods ---
+        var dayOrders = await salesQuery
+            .Where(o => o.CreatedAt >= dayStart && o.CreatedAt <= dayEnd)
+            .Select(o => new { o.Id, o.PaymentMethod, o.TotalAmount })
+            .ToListAsync();
+
+        var paymentTotals = new Dictionary<PaymentMethod, decimal>();
+        var mixedOrderIds = dayOrders.Where(o => o.PaymentMethod == PaymentMethod.Mixed).Select(o => o.Id).ToList();
+
+        var mixedPayments = await _db.OrderPayments.AsNoTracking()
+            .Where(p => mixedOrderIds.Contains(p.OrderId))
+            .ToListAsync();
+
+        var paymentsByOrder = mixedPayments.GroupBy(p => p.OrderId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        foreach (var order in dayOrders)
+        {
+            if (order.PaymentMethod == PaymentMethod.Mixed)
+            {
+                if (paymentsByOrder.TryGetValue(order.Id, out var lines) && lines.Count > 0)
+                {
+                    foreach (var line in lines)
+                    {
+                        paymentTotals[line.Method] = paymentTotals.GetValueOrDefault(line.Method) + line.Amount;
+                    }
+                }
+                else
+                {
+                    paymentTotals[PaymentMethod.Cash] = paymentTotals.GetValueOrDefault(PaymentMethod.Cash) + order.TotalAmount;
+                }
+            }
+            else
+            {
+                paymentTotals[order.PaymentMethod] = paymentTotals.GetValueOrDefault(order.PaymentMethod) + order.TotalAmount;
+            }
+        }
+
+        var salesByPayment = paymentTotals.Select(x => new PartnersReportPaymentMethodSale(x.Key.ToString(), x.Value)).ToList();
+
+        // --- 8. Trends and Charts ---
         var sevenDaysAgo = targetDate.AddDays(-6).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
-        var endHour = TimeHelper.GetBusinessDayEndHour();
         var salesTrendQuery = await salesQuery.Where(o => o.CreatedAt >= sevenDaysAgo && o.CreatedAt <= dayEnd)
             .GroupBy(o => o.CreatedAt.AddHours(-endHour).Date)
             .Select(g => new { Date = g.Key, Amount = g.Sum(o => o.TotalAmount) })
             .ToListAsync();
         var salesTrend = salesTrendQuery.Select(x => new PartnersReportSalesTrend(x.Date, x.Amount)).ToList();
 
+        // Income trend day-by-day for the current month
+        var monthEnd = dayEnd;
+        var monthlySales = await salesQuery
+            .Where(o => o.CreatedAt >= monthStart && o.CreatedAt <= monthEnd)
+            .Select(o => new { o.CreatedAt, o.TotalAmount })
+            .ToListAsync();
+
+        var monthlyReturns = await salesReturnsQuery
+            .Where(j => j.EntryDate >= monthStart && j.EntryDate <= monthEnd)
+            .SelectMany(j => j.Lines)
+            .Where(l => l.Account.Type == AccountType.Asset)
+            .Select(l => new { l.JournalEntry.EntryDate, l.Credit })
+            .ToListAsync();
+
+        var monthlyOutflows = await jlQuery
+            .Where(l => l.JournalEntry.Type != JournalEntryType.OpeningBalance && l.JournalEntry.EntryDate >= monthStart && l.JournalEntry.EntryDate <= monthEnd)
+            .Select(l => new { l.JournalEntry.EntryDate, l.Credit })
+            .ToListAsync();
+
+        var dailyData = new Dictionary<DateTime, (decimal Revenue, decimal Expenses)>();
+
+        foreach (var sale in monthlySales)
+        {
+            var day = sale.CreatedAt.AddHours(-endHour).Date;
+            var val = dailyData.GetValueOrDefault(day);
+            dailyData[day] = (val.Revenue + sale.TotalAmount, val.Expenses);
+        }
+
+        foreach (var ret in monthlyReturns)
+        {
+            var day = ret.EntryDate.AddHours(-endHour).Date;
+            var val = dailyData.GetValueOrDefault(day);
+            dailyData[day] = (val.Revenue - ret.Credit, val.Expenses);
+        }
+
+        foreach (var outf in monthlyOutflows)
+        {
+            var day = outf.EntryDate.AddHours(-endHour).Date;
+            var val = dailyData.GetValueOrDefault(day);
+            dailyData[day] = (val.Revenue, val.Expenses + outf.Credit);
+        }
+
+        var incomeTrend = new List<PartnersReportIncomeTrendItem>();
+        for (var d = monthStart.AddHours(-endHour).Date; d <= targetDate; d = d.AddDays(1))
+        {
+            var val = dailyData.GetValueOrDefault(d);
+            incomeTrend.Add(new PartnersReportIncomeTrendItem(
+                d.ToString("yyyy-MM-dd"),
+                val.Revenue,
+                val.Expenses
+            ));
+        }
+
         var summary = new PartnersReportSummary(
             posDailySales, posTotalSales,
             webDailySales, webTotalSales,
-            dailyExpenses, totalExpenses, // Sent as pure expenses for P&L look, but dailyNetCashFlow is the true cash out
+            dailyExpenses, totalExpenses,
             dailyCollections, totalCollections,
             dailyNetCashFlow, totalNetCashFlow,
             totalCustomerDebt, totalSupplierDebt,
-            totalInventoryValue
+            totalInventoryValue,
+            mtdNetSales,
+            mtdCollections,
+            mtdCashOutflows
         );
 
         return Ok(new PartnersComprehensiveReportResponse(
@@ -3833,7 +4050,9 @@ public class OperationalReportsController : ControllerBase
             accInfos,
             expensesBreakdown,
             salesByPayment,
-            salesTrend
+            salesTrend,
+            cashOutflows,
+            incomeTrend
         ));
     }
 }
@@ -3873,10 +4092,38 @@ public record PartnersReportSummary(
     decimal DailyCollections, decimal TotalCollections,
     decimal DailyNetCashFlow, decimal TotalNetCashFlow,
     decimal TotalCustomerDebt, decimal TotalSupplierDebt,
-    decimal TotalInventoryValue
+    decimal TotalInventoryValue,
+    decimal MtdNetSales,
+    decimal MtdCollections,
+    decimal MtdCashOutflows
 );
 
-public record PartnersReportAccountInfo(int AccountId, string AccountName, decimal DailyChange, decimal CumulativeBalance);
+public record PartnersReportAccountInfo(
+    int AccountId, 
+    string AccountName, 
+    decimal DailyChange, 
+    decimal CumulativeBalance,
+    string Category,
+    int? BranchId = null,
+    string? BranchName = null
+);
+
+public record PartnersReportCashOutflow(
+    int JournalEntryId,
+    string Reference,
+    DateTime Date,
+    string Description,
+    string CashAccountName,
+    decimal Amount,
+    string CreatorName,
+    string BranchName
+);
+
+public record PartnersReportIncomeTrendItem(
+    string Label,
+    decimal Revenue,
+    decimal Expenses
+);
 
 public record PartnersComprehensiveReportResponse(
     DateTime Date, 
@@ -3884,7 +4131,9 @@ public record PartnersComprehensiveReportResponse(
     IEnumerable<PartnersReportAccountInfo> Accounts,
     IEnumerable<PartnersReportExpenseCategory> ExpenseBreakdown,
     IEnumerable<PartnersReportPaymentMethodSale> SalesByPaymentMethod,
-    IEnumerable<PartnersReportSalesTrend> SalesTrend
+    IEnumerable<PartnersReportSalesTrend> SalesTrend,
+    IEnumerable<PartnersReportCashOutflow> CashOutflows,
+    IEnumerable<PartnersReportIncomeTrendItem> IncomeTrend
 );
 
 
