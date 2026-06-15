@@ -119,5 +119,42 @@ namespace Sportive.API.Controllers
                 return StatusCode(500, new { message = "Failed to retrieve shift closures", error = ex.Message });
             }
         }
+
+        [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin,SuperAdmin,Manager")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            try
+            {
+                var closure = await _db.POSShiftClosures.FindAsync(id);
+                if (closure == null)
+                {
+                    return NotFound(new { message = "Shift closure not found" });
+                }
+
+                // Delete associated journal entry if reference is provided
+                if (!string.IsNullOrEmpty(closure.JournalEntryReference))
+                {
+                    var journalEntry = await _db.JournalEntries
+                        .Include(j => j.Lines)
+                        .FirstOrDefaultAsync(j => j.Reference == closure.JournalEntryReference);
+
+                    if (journalEntry != null)
+                    {
+                        _db.JournalLines.RemoveRange(journalEntry.Lines);
+                        _db.JournalEntries.Remove(journalEntry);
+                    }
+                }
+
+                _db.POSShiftClosures.Remove(closure);
+                await _db.SaveChangesAsync();
+
+                return Ok(new { message = "Shift closure deleted successfully and associated accounting entries reversed" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to delete shift closure", error = ex.Message });
+            }
+        }
     }
 }
