@@ -3905,8 +3905,28 @@ public class OperationalReportsController : ControllerBase
         }
 
         // --- 6. Debts and Inventory (Real-Time Cost Valuation) ---
-        var totalCustomerDebt = await _db.Customers.AsNoTracking().SumAsync(c => (decimal?)(c.TotalSales - c.TotalPaid)) ?? 0m;
-        var totalSupplierDebt = await _db.Suppliers.AsNoTracking().SumAsync(s => (decimal?)(s.OpeningBalance + s.TotalPurchases - s.TotalPaid)) ?? 0m;
+        // Use accounting ledger directly for accurate, authoritative balances
+        // Account 1107 = العملاء (Asset, Debit-natured): Debit - Credit > 0 means customers owe us (لنا)
+        var customerAccountIds = await _db.Accounts.AsNoTracking()
+            .Where(a => a.Code.StartsWith("1107") && a.IsLeaf)
+            .Select(a => a.Id)
+            .ToListAsync();
+        var customerLedgerNet = await _db.JournalLines.AsNoTracking()
+            .Where(l => customerAccountIds.Contains(l.AccountId))
+            .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0m;
+        // Positive = لنا عند العملاء (receivables), Negative = علينا للعملاء (credit balances)
+        var totalCustomerDebt = customerLedgerNet;
+
+        // Account 2101 = الموردون (Liability, Credit-natured): Credit - Debit > 0 means we owe suppliers (علينا)
+        var supplierAccountIds = await _db.Accounts.AsNoTracking()
+            .Where(a => a.Code.StartsWith("2101") && a.IsLeaf)
+            .Select(a => a.Id)
+            .ToListAsync();
+        var supplierLedgerNet = await _db.JournalLines.AsNoTracking()
+            .Where(l => supplierAccountIds.Contains(l.AccountId))
+            .SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0m;
+        // Positive = علينا للموردين (payables), Negative = لنا عند الموردين (debit/prepaid balances)
+        var totalSupplierDebt = supplierLedgerNet;
 
         // Dynamic cost valuation using inventory movements up to dayEnd
         var movementsQuery = _db.InventoryMovements.AsNoTracking().Where(m => m.CreatedAt <= dayEnd);
