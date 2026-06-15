@@ -3836,8 +3836,7 @@ public class OperationalReportsController : ControllerBase
                 a.Code.StartsWith("1107") ||
                 a.NameAr.Contains("جاري الشريك") ||
                 a.NameAr.Contains("جاري الشركاء") ||
-                a.Code.StartsWith("3105") ||
-                a.Code.StartsWith("2105")
+                a.Code.StartsWith("3105")
             ))
             .ToListAsync();
 
@@ -3870,7 +3869,7 @@ public class OperationalReportsController : ControllerBase
 
             // Determine category
             string category = "GeneralCash";
-            if (acc.NameAr.Contains("جاري") || acc.NameAr.Contains("شريك") || acc.Code.StartsWith("3105") || acc.Code.StartsWith("2105"))
+            if (acc.NameAr.Contains("جاري") || acc.NameAr.Contains("شريك") || acc.Code.StartsWith("3105"))
             {
                 category = "PartnerCurrent";
             }
