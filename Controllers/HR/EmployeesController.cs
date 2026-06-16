@@ -230,6 +230,17 @@ public class EmployeesController : ControllerBase
         };
 
         _db.Employees.Add(emp);
+
+        // Sync to linked AppUser if exists
+        if (!string.IsNullOrEmpty(emp.AppUserId))
+        {
+            var linkedUser = await _db.Users.FindAsync(emp.AppUserId);
+            if (linkedUser != null)
+            {
+                linkedUser.BranchId = dto.BranchId;
+            }
+        }
+
         await _db.SaveChangesAsync();
         return Ok(new { id = emp.Id, employeeNumber = emp.EmployeeNumber });
     }
@@ -255,6 +266,17 @@ public class EmployeesController : ControllerBase
 
         emp.AppUserId = string.IsNullOrEmpty(dto.AppUserId) ? null : dto.AppUserId;
         emp.UpdatedAt = TimeHelper.GetEgyptTime();
+
+        // Sync employee's BranchId to the newly linked user
+        if (!string.IsNullOrEmpty(emp.AppUserId))
+        {
+            var linkedUser = await _db.Users.FindAsync(emp.AppUserId);
+            if (linkedUser != null)
+            {
+                linkedUser.BranchId = emp.BranchId;
+            }
+        }
+
         await _db.SaveChangesAsync();
 
         return Ok(new { message = dto.AppUserId != null ? _t.Get("HR.AccountLinked") : _t.Get("HR.AccountUnlinked") });
@@ -294,6 +316,16 @@ public class EmployeesController : ControllerBase
         emp.WeeklyDaysOff    = dto.WeeklyDaysOff ?? "Friday";
         emp.BranchId         = dto.BranchId;
         emp.UpdatedAt         = TimeHelper.GetEgyptTime();
+
+        // Sync to linked AppUser if exists
+        if (!string.IsNullOrEmpty(emp.AppUserId))
+        {
+            var linkedUser = await _db.Users.FindAsync(emp.AppUserId);
+            if (linkedUser != null)
+            {
+                linkedUser.BranchId = dto.BranchId;
+            }
+        }
 
         await _db.SaveChangesAsync();
         return NoContent();

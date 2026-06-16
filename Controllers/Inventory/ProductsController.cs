@@ -74,7 +74,7 @@ public class ProductsController : ControllerBase
     public async Task<IActionResult> UpdateCost(int id, [FromBody] decimal? costPrice) =>
         await _products.UpdateCostPriceAsync(id, costPrice) ? Ok() : NotFound();
 
-    [RequirePermission(ModuleKeys.Inventory, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPatch("{id}/size-chart")]
     public async Task<IActionResult> UpdateSizeChart(int id, [FromBody] UpdateSizeChartDto dto) =>
         await _products.UpdateSizeChartAsync(id, dto.SizeChartJson, dto.SizeChartImageUrl) ? Ok() : NotFound();
