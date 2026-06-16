@@ -3769,7 +3769,7 @@ public class OperationalReportsController : ControllerBase
 
         // --- 2. Cash Flow (Collections & Payments from Cash Accounts) ---
         // Exclude receivables (1107), employee advances (1105), inventory differences (110106), and clearing/audit accounts
-        var cashAccTypes = new[] { "1101", "1102" };
+        var cashAccTypes = new[] { "1101", "1102", "1103" };
         var cashAccounts = await _db.Accounts.AsNoTracking()
             .Where(a => cashAccTypes.Any(c => a.Code.StartsWith(c)) 
                      && a.IsLeaf 
