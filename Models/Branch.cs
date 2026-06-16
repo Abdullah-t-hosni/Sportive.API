@@ -19,4 +19,7 @@ public class Branch : BaseEntity
 
     // Navigation
     public ICollection<Warehouse> Warehouses { get; set; } = new List<Warehouse>();
+
+    public int? LinkedWarehouseId { get; set; }
+    public Warehouse? LinkedWarehouse { get; set; }
 }

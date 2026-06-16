@@ -46,6 +46,7 @@ public class BranchesController : ControllerBase
             Address = dto.Address?.Trim(),
             PhoneNumber = dto.PhoneNumber?.Trim(),
             IsActive = dto.IsActive,
+            LinkedWarehouseId = dto.LinkedWarehouseId,
             CreatedAt = TimeHelper.GetEgyptTime()
         };
 
@@ -149,6 +150,7 @@ public class BranchesController : ControllerBase
         branch.Address = dto.Address?.Trim();
         branch.PhoneNumber = dto.PhoneNumber?.Trim();
         branch.IsActive = dto.IsActive;
+        branch.LinkedWarehouseId = dto.LinkedWarehouseId;
         branch.UpdatedAt = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
@@ -239,4 +241,5 @@ public class BranchDto
     public string? Address { get; set; }
     public string? PhoneNumber { get; set; }
     public bool IsActive { get; set; } = true;
+    public int? LinkedWarehouseId { get; set; }
 }

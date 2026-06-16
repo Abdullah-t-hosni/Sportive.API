@@ -625,10 +625,10 @@ public class OperationalReportsController : ControllerBase
         if (branchId.HasValue)
         {
             var branch = await _db.Branches.FirstOrDefaultAsync(b => b.Id == branchId.Value);
-            if (branch != null && (branch.Name.ToLower().Contains("website") || branch.Name.Contains("الموقع")))
+            if (branch != null && branch.LinkedWarehouseId.HasValue)
             {
-                var mainBranch = await _db.Branches.FirstOrDefaultAsync(b => b.Name.Contains("المسلة") || b.Name.Contains("Main") || b.Name.Contains("الرئيسي") || b.Id == 1);
-                if (mainBranch != null) branchId = mainBranch.Id;
+                var mainBranchId = await _db.Warehouses.Where(w => w.Id == branch.LinkedWarehouseId.Value).Select(w => w.BranchId).FirstOrDefaultAsync();
+                if (mainBranchId > 0) branchId = mainBranchId;
             }
         }
 
@@ -2581,15 +2581,16 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int?    brandId    = null,
         [FromQuery] string? color      = null,
         [FromQuery] string? size       = null,
-        [FromQuery] int?    branchId   = null)
+        [FromQuery] int?    branchId   = null,
+        [FromQuery] bool    excel      = false)
     {
         if (branchId.HasValue)
         {
             var branch = await _db.Branches.FirstOrDefaultAsync(b => b.Id == branchId.Value);
-            if (branch != null && (branch.Name.ToLower().Contains("website") || branch.Name.Contains("الموقع")))
+            if (branch != null && branch.LinkedWarehouseId.HasValue)
             {
-                var mainBranch = await _db.Branches.FirstOrDefaultAsync(b => b.Name.Contains("المسلة") || b.Name.Contains("Main") || b.Name.Contains("الرئيسي") || b.Id == 1);
-                if (mainBranch != null) branchId = mainBranch.Id;
+                var mainBranchId = await _db.Warehouses.Where(w => w.Id == branch.LinkedWarehouseId.Value).Select(w => w.BranchId).FirstOrDefaultAsync();
+                if (mainBranchId > 0) branchId = mainBranchId;
             }
         }
 
@@ -2654,12 +2655,42 @@ public class OperationalReportsController : ControllerBase
                     p.SKU, 
                     p.TotalStock, 
                     p.Price,
-                    DaysSinceLastSale = (int)(TimeHelper.GetEgyptTime() - effectiveDate).TotalDays,
+                    DaysSinceLastSale = p.LastSaleDate == null ? 999 : (int)(TimeHelper.GetEgyptTime() - effectiveDate).TotalDays,
                     Value = p.TotalStock * p.Price
                 };
             })
             .OrderByDescending(p => p.DaysSinceLastSale)
             .ToList();
+
+        if (excel)
+        {
+            var wb = new XLWorkbook();
+            var ws = wb.Worksheets.Add("Slow Moving Items");
+            ws.RightToLeft = true;
+
+            var headers = new[] { "الكود / SKU", "اسم الصنف / Product", "المخزون المتوفر / Stock", "مدة الركود (أيام) / Days Idle", "قيمة المخزون / Stock Value" };
+            for (int i = 0; i < headers.Length; i++)
+            {
+                ws.Cell(1, i + 1).Value = headers[i];
+                ws.Cell(1, i + 1).Style.Font.Bold = true;
+                ws.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.LightGray;
+            }
+
+            int r = 2;
+            foreach (var item in agingRows)
+            {
+                ws.Cell(r, 1).Value = item.SKU;
+                ws.Cell(r, 2).Value = item.NameAr;
+                ws.Cell(r, 3).Value = item.TotalStock;
+                ws.Cell(r, 4).Value = item.DaysSinceLastSale == 999 ? "لم يُباع أبداً" : item.DaysSinceLastSale.ToString();
+                ws.Cell(r, 5).Value = item.Value;
+                r++;
+            }
+
+            ws.Columns().AdjustToContents();
+            var fileName = $"slow_moving_items_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx";
+            return ExcelResult(wb, fileName);
+        }
 
         return Ok(new {
             days,
