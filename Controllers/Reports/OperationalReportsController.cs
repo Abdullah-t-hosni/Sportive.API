@@ -3843,8 +3843,6 @@ public class OperationalReportsController : ControllerBase
                 a.Code.StartsWith("1101") || 
                 a.Code.StartsWith("1102") || 
                 a.Code.StartsWith("1103") ||
-                a.Code.StartsWith("1105") || 
-                a.Code.StartsWith("1107") ||
                 a.NameAr.Contains("جاري الشريك") ||
                 a.NameAr.Contains("جاري الشركاء") ||
                 a.Code.StartsWith("3105") ||
@@ -3852,8 +3850,19 @@ public class OperationalReportsController : ControllerBase
             ))
             .ToListAsync();
 
-        // Exclude inventory account (1106) and any general inventory description
-        balanceAccounts = balanceAccounts.Where(a => a.Code != "1106" && !a.NameAr.Contains("مخزون")).ToList();
+        // Exclude inventory (1106), clearing/audit accounts, employee advances, receivables, and deficits/surpluses
+        balanceAccounts = balanceAccounts.Where(a => 
+            a.Code != "1106" && 
+            a.Code != "110104" && // Exclude العجز والزيادة
+            a.Code != "110106" && // Exclude فرق جرد المخزون
+            !a.Code.StartsWith("1105") && // Exclude سلف الموظفين
+            !a.Code.StartsWith("1107") && // Exclude العملاء
+            !a.NameAr.Contains("مخزون") &&
+            !a.NameAr.Contains("جرد") &&
+            !a.NameAr.Contains("عجز") &&
+            !a.NameAr.Contains("زيادة") &&
+            !a.NameAr.Contains("تقفيل")
+        ).ToList();
 
         var accInfos = new List<PartnersReportAccountInfo>();
         foreach (var acc in balanceAccounts)
