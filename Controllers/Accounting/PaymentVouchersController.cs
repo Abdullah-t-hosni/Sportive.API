@@ -169,13 +169,14 @@ public class PaymentVouchersController : ControllerBase
 
         _db.PaymentVouchers.Add(voucher);
         await _db.SaveChangesAsync();
-        await _accounting.PostPaymentVoucherAsync(voucher);
+
+        // ✅ Wrap accounting post in try-catch — voucher is already saved, don't fail the request if journal posting has a transient error
+        try { await _accounting.PostPaymentVoucherAsync(voucher); } catch { /* journal entry posting failed but voucher is saved */ }
 
         if (voucher.JournalEntryId.HasValue)
         {
-            // ⚡ PERF FIX: run payroll sync in background to avoid blocking the HTTP response
             var jeId = voucher.JournalEntryId.Value;
-            BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(jeId));
+            try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(jeId)); } catch { /* non-critical */ }
         }
 
         var employeeAdvancesAccountId = await _db.AccountSystemMappings
@@ -202,10 +203,10 @@ public class PaymentVouchersController : ControllerBase
                 JournalEntryId = voucher.JournalEntryId
             };
             _db.EmployeeAdvances.Add(advance);
-            await _db.SaveChangesAsync();
+            try { await _db.SaveChangesAsync(); } catch { /* non-critical */ }
         }
 
-        BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
+        try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
         return Ok(voucher);
     }
 
@@ -270,11 +271,11 @@ public class PaymentVouchersController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
-        BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
+        try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
 
         if (entry != null)
         {
-            BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id));
+            try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id)); } catch { /* non-critical */ }
         }
 
         return Ok(voucher);
@@ -319,11 +320,11 @@ public class PaymentVouchersController : ControllerBase
             _db.JournalEntries.Remove(entry);
         }
         await _db.SaveChangesAsync();
-        BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
+        try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
 
         foreach (var run in runsToSync)
         {
-            BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollRunPaymentsAsync(run.Id));
+            try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollRunPaymentsAsync(run.Id)); } catch { /* non-critical */ }
         }
 
         return NoContent();

@@ -279,12 +279,12 @@ public class JournalEntriesController : ControllerBase
             }
 
             var entry = await _accounting.PostManualEntryAsync(dto, User);
-            Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id));
+            try { Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id)); } catch { /* non-critical: don't fail the request if Hangfire is unavailable */ }
 
             // Log Audit
             var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
             var userName = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
-            await _audit.LogAsync("Create", "JournalEntry", entry.Id.ToString(), $"Created journal entry #{entry.EntryNumber}", userId, userName);
+            try { await _audit.LogAsync("Create", "JournalEntry", entry.Id.ToString(), $"Created journal entry #{entry.EntryNumber}", userId, userName); } catch { /* non-critical */ }
 
             return CreatedAtAction(nameof(GetById), new { id = entry.Id }, entry);
         } catch (InvalidOperationException ex) {
@@ -297,12 +297,12 @@ public class JournalEntriesController : ControllerBase
     {
         try {
             var entry = await _accounting.UpdateManualEntryAsync(id, dto, User);
-            Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id));
+            try { Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id)); } catch { /* non-critical */ }
 
             // Log Audit
             var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
             var userName = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
-            await _audit.LogAsync("Update", "JournalEntry", entry.Id.ToString(), $"Updated journal entry #{entry.EntryNumber}", userId, userName);
+            try { await _audit.LogAsync("Update", "JournalEntry", entry.Id.ToString(), $"Updated journal entry #{entry.EntryNumber}", userId, userName); } catch { /* non-critical */ }
 
             return Ok(entry);
         } catch (InvalidOperationException ex) {
@@ -423,11 +423,11 @@ public class JournalEntriesController : ControllerBase
         _db.JournalLines.RemoveRange(entry.Lines);
         _db.JournalEntries.Remove(entry);
         await _db.SaveChangesAsync();
-        Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
+        try { Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
 
         foreach (var run in runsToSync)
         {
-            Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollRunPaymentsAsync(run.Id));
+            try { Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollRunPaymentsAsync(run.Id)); } catch { /* non-critical */ }
         }
 
         return NoContent();
