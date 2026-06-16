@@ -622,6 +622,16 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int?    branchId    = null,
         [FromQuery] bool    excel       = false)
     {
+        if (branchId.HasValue)
+        {
+            var branch = await _db.Branches.FirstOrDefaultAsync(b => b.Id == branchId.Value);
+            if (branch != null && (branch.Name.ToLower().Contains("website") || branch.Name.Contains("الموقع")))
+            {
+                var mainBranch = await _db.Branches.FirstOrDefaultAsync(b => b.Name.Contains("المسلة") || b.Name.Contains("Main") || b.Name.Contains("الرئيسي") || b.Id == 1);
+                if (mainBranch != null) branchId = mainBranch.Id;
+            }
+        }
+
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var cacheKey = $"Inventory_{search}_{categoryId}_{brandId}_{color}_{size}_{lowStock}_{stockStatus}_{page}_{pageSize}_{source}_{toDate}_{branchId}";
@@ -2573,6 +2583,16 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] string? size       = null,
         [FromQuery] int?    branchId   = null)
     {
+        if (branchId.HasValue)
+        {
+            var branch = await _db.Branches.FirstOrDefaultAsync(b => b.Id == branchId.Value);
+            if (branch != null && (branch.Name.ToLower().Contains("website") || branch.Name.Contains("الموقع")))
+            {
+                var mainBranch = await _db.Branches.FirstOrDefaultAsync(b => b.Name.Contains("المسلة") || b.Name.Contains("Main") || b.Name.Contains("الرئيسي") || b.Id == 1);
+                if (mainBranch != null) branchId = mainBranch.Id;
+            }
+        }
+
         var cutoff = TimeHelper.GetEgyptTime().AddDays(-days);
 
         // 1. Get filtered product list first
