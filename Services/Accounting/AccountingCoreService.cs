@@ -790,6 +790,13 @@ public class AccountingCoreService
         var calculatedInvoiceData = new Dictionary<int, (decimal PaidAmount, PurchaseInvoiceStatus Status)>();
         var today = TimeHelper.GetEgyptTime().Date;
 
+        // Fetch all alerts sent today in a single call to prevent N+1 queries inside the loop
+        var todayAlerts = await _db.Notifications
+            .AsNoTracking()
+            .Where(n => n.Type == "Alert" && n.CreatedAt >= today)
+            .Select(n => n.MessageAr)
+            .ToListAsync();
+
         foreach (var inv in pInvoicesProj)
         {
             var ledgerPaidAmount = invoiceLedgerPaid.GetValueOrDefault(inv.Id, 0);
@@ -831,20 +838,26 @@ public class AccountingCoreService
                 }
             }
 
-            if (Math.Abs(inv.PaidAmount - newPaidAmount) > 0.001m || inv.Status != newStatus)
+            bool isMismatched = Math.Abs(inv.PaidAmount - newPaidAmount) > 0.001m || inv.Status != newStatus;
+
+            if (!isMismatched && newStatus != PurchaseInvoiceStatus.Paid && inv.DueDate.HasValue)
+            {
+                var due = inv.DueDate.Value.Date;
+                // Only mark as mismatched/needed if the invoice is due today and hasn't been notified yet
+                if (due == today)
+                {
+                    bool alreadyNotified = todayAlerts.Any(msg => msg != null && msg.Contains(inv.InvoiceNumber ?? ""));
+                    if (!alreadyNotified)
+                    {
+                        isMismatched = true;
+                    }
+                }
+            }
+
+            if (isMismatched)
             {
                 mismatchedInvoiceIds.Add(inv.Id);
                 calculatedInvoiceData[inv.Id] = (newPaidAmount, newStatus);
-            }
-            else if (newStatus != PurchaseInvoiceStatus.Paid && inv.DueDate.HasValue)
-            {
-                // Also check if we need to send notifications for invoices whose due date matches
-                var due = inv.DueDate.Value.Date;
-                if (due == today)
-                {
-                    mismatchedInvoiceIds.Add(inv.Id);
-                    calculatedInvoiceData[inv.Id] = (newPaidAmount, newStatus);
-                }
             }
         }
 
@@ -868,10 +881,7 @@ public class AccountingCoreService
                     if (inv.Status != PurchaseInvoiceStatus.Paid && inv.DueDate.HasValue)
                     {
                         var due = inv.DueDate.Value.Date;
-                        bool alreadyNotifiedToday = await _db.Notifications.AnyAsync(n =>
-                            n.Type == "Alert" &&
-                            n.CreatedAt >= today &&
-                            n.MessageAr.Contains(inv.InvoiceNumber ?? ""));
+                        bool alreadyNotifiedToday = todayAlerts.Any(msg => msg != null && msg.Contains(inv.InvoiceNumber ?? ""));
 
                         if (!alreadyNotifiedToday)
                         {
@@ -882,6 +892,7 @@ public class AccountingCoreService
                                     $"الفاتورة رقم {inv.InvoiceNumber} للمورد {inv.Supplier?.Name} تجاوزت موعد الاستحقاق ({due:yyyy-MM-dd})",
                                     $"Invoice #{inv.InvoiceNumber} for {inv.Supplier?.Name} is overdue since {due:yyyy-MM-dd}",
                                     "Alert", null);
+                                todayAlerts.Add($"Invoice #{inv.InvoiceNumber}");
                             }
                             else if (due == today)
                             {
@@ -890,6 +901,7 @@ public class AccountingCoreService
                                     $"اليوم هو موعد سداد الفاتورة رقم {inv.InvoiceNumber} للمورد {inv.Supplier?.Name}",
                                     $"Today is the due date for Invoice #{inv.InvoiceNumber} from {inv.Supplier?.Name}",
                                     "Alert", null);
+                                todayAlerts.Add($"Invoice #{inv.InvoiceNumber}");
                             }
                         }
                     }
