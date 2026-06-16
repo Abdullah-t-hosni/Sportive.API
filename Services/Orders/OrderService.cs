@@ -1096,6 +1096,50 @@ public class OrderService : IOrderService
                     order.CustomerId = dto.CustomerId.Value;
                 }
 
+                // 3.5 STOCK VALIDATION — بعد إرجاع الكميات القديمة، تحقق من توفر الكميات الجديدة
+                // نجمع الكميات المطلوبة لكل (productId, variantId) في الفاتورة المعدلة
+                var newItemRequirements = dto.Items
+                    .Where(i => i.ProductId > 0)
+                    .GroupBy(i => new { i.ProductId, VariantId = i.ProductVariantId ?? 0 })
+                    .Select(g => new { g.Key.ProductId, g.Key.VariantId, TotalQty = g.Sum(x => x.Quantity) })
+                    .ToList();
+
+                foreach (var req in newItemRequirements)
+                {
+                    if (req.VariantId > 0)
+                    {
+                        // نقرأ رصيد المقاس مباشرةً من قاعدة البيانات (بعد حفظ الإرجاع السابق)
+                        var variantStock = await _db.ProductVariants
+                            .Where(v => v.Id == req.VariantId)
+                            .Select(v => new { v.StockQuantity, v.Size, v.ColorAr, v.Color, Product = v.Product != null ? v.Product.NameAr : "" })
+                            .FirstOrDefaultAsync();
+
+                        if (variantStock != null && variantStock.StockQuantity + order.Items.Where(i => i.ProductVariantId == req.VariantId).Sum(i => i.Quantity) < req.TotalQty)
+                        {
+                            // الرصيد المتاح بعد الإرجاع
+                            var available = variantStock.StockQuantity + order.Items.Where(i => i.ProductVariantId == req.VariantId).Sum(i => i.Quantity);
+                            throw new InvalidOperationException(
+                                $"لا يمكن تعديل الفاتورة: الكمية المطلوبة ({req.TotalQty}) من '{variantStock.Product}' (مقاس {variantStock.Size} / {variantStock.ColorAr ?? variantStock.Color}) تتجاوز المخزون المتاح ({available})."
+                            );
+                        }
+                    }
+                    else
+                    {
+                        var productStock = await _db.Products
+                            .Where(p => p.Id == req.ProductId)
+                            .Select(p => new { p.TotalStock, p.NameAr })
+                            .FirstOrDefaultAsync();
+
+                        if (productStock != null && productStock.TotalStock + order.Items.Where(i => i.ProductId == req.ProductId && i.ProductVariantId == null).Sum(i => i.Quantity) < req.TotalQty)
+                        {
+                            var available = productStock.TotalStock + order.Items.Where(i => i.ProductId == req.ProductId && i.ProductVariantId == null).Sum(i => i.Quantity);
+                            throw new InvalidOperationException(
+                                $"لا يمكن تعديل الفاتورة: الكمية المطلوبة ({req.TotalQty}) من '{productStock.NameAr}' تتجاوز المخزون المتاح ({available})."
+                            );
+                        }
+                    }
+                }
+
                 // 4. ADD NEW ITEMS
                 order.SubTotal = 0;
                 order.TemporalDiscount = 0;
