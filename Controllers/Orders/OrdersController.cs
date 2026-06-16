@@ -448,7 +448,7 @@ public class OrdersController : ControllerBase
                     if (product != null)
                     {
                         product.TotalStock += item.Quantity;
-                        product.UpdatedAt = Sportive.API.Helpers.TimeHelper.GetEgyptTime();
+                        product.UpdatedAt = TimeHelper.GetEgyptTime();
                         
                         if (product.Status == ProductStatus.OutOfStock && product.TotalStock > 0)
                         {
@@ -462,7 +462,7 @@ public class OrdersController : ControllerBase
                         if (variant != null)
                         {
                             variant.StockQuantity += item.Quantity;
-                            variant.UpdatedAt = Sportive.API.Helpers.TimeHelper.GetEgyptTime();
+                            variant.UpdatedAt = TimeHelper.GetEgyptTime();
                         }
                     }
                 }
