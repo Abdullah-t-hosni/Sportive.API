@@ -3861,7 +3861,7 @@ public class OperationalReportsController : ControllerBase
             !a.NameAr.Contains("جرد") &&
             !a.NameAr.Contains("عجز") &&
             !a.NameAr.Contains("زيادة") &&
-            !a.NameAr.Contains("تقفيل")
+            (!a.NameAr.Contains("تقفيل") || a.Code == "110105")
         ).ToList();
 
         var accInfos = new List<PartnersReportAccountInfo>();
