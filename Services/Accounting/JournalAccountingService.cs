@@ -94,16 +94,32 @@ public class JournalAccountingService
             entry.CostCenter = user?.IsInRole("Cashier") == true ? OrderSource.POS : OrderSource.General;
         }
 
+        // ✅ PERF FIX: batch-load all accounts needed by this entry in ONE query (avoid N+1 round-trips)
+        var neededAccountIds = dto.Lines.Select(l => l.AccountId).Distinct().ToList();
+        var accountsMap = await _db.Accounts
+            .AsNoTracking()
+            .Where(a => neededAccountIds.Contains(a.Id))
+            .ToDictionaryAsync(a => a.Id);
+
+        // ✅ PERF FIX: batch-load order branch IDs in ONE query (avoid N+1 round-trips)
+        var neededOrderIds = dto.Lines.Where(l => l.OrderId.HasValue).Select(l => l.OrderId!.Value).Distinct().ToList();
+        var orderBranchMap = neededOrderIds.Any()
+            ? await _db.Orders.AsNoTracking()
+                .Where(o => neededOrderIds.Contains(o.Id))
+                .ToDictionaryAsync(o => o.Id, o => o.BranchId)
+            : new Dictionary<int, int?>();
+
+        bool isAdminUser = (user?.IsInRole("Admin") ?? false) || (user?.IsInRole("SuperAdmin") ?? false);
         foreach (var l in dto.Lines) {
-            var account = await _db.Accounts.FindAsync(l.AccountId);
-            if (account == null) throw new InvalidOperationException($"الحساب رقم {l.AccountId} غير موجود.");
-            if (!account.AllowPosting && !((user?.IsInRole("Admin") ?? false) || (user?.IsInRole("SuperAdmin") ?? false)))
+            if (!accountsMap.TryGetValue(l.AccountId, out var account))
+                throw new InvalidOperationException($"الحساب رقم {l.AccountId} غير موجود.");
+            if (!account.AllowPosting && !isAdminUser)
                 throw new InvalidOperationException($"الحساب '{account.NameAr}' لا يقبل الترحيل المباشر.");
 
             int? lineBranchId = l.BranchId ?? dto.BranchId ?? userBranchId;
-            if (l.OrderId.HasValue)
+            if (l.OrderId.HasValue && orderBranchMap.TryGetValue(l.OrderId.Value, out var orderBranch))
             {
-                lineBranchId = await _db.Orders.Where(o => o.Id == l.OrderId.Value).Select(o => o.BranchId).FirstOrDefaultAsync() ?? userBranchId;
+                lineBranchId = orderBranch ?? userBranchId;
             }
 
             entry.Lines.Add(new JournalLine { AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit, Description = l.Description, CustomerId = l.CustomerId, SupplierId = l.SupplierId, EmployeeId = l.EmployeeId, OrderId = l.OrderId, CostCenter = (OrderSource?)l.CostCenter ?? entry.CostCenter, BranchId = lineBranchId });
@@ -211,17 +227,34 @@ public class JournalAccountingService
 
         // تحديث الأسطر (مسح الحالية وإعادتها)
         _db.JournalLines.RemoveRange(entry.Lines);
+
+        // ✅ PERF FIX: batch-load all accounts needed by this entry in ONE query (avoid N+1 round-trips)
+        var neededAccountIds = dto.Lines.Select(l => l.AccountId).Distinct().ToList();
+        var accountsMap = await _db.Accounts
+            .AsNoTracking()
+            .Where(a => neededAccountIds.Contains(a.Id))
+            .ToDictionaryAsync(a => a.Id);
+
+        // ✅ PERF FIX: batch-load order branch IDs in ONE query (avoid N+1 round-trips)
+        var neededOrderIds = dto.Lines.Where(l => l.OrderId.HasValue).Select(l => l.OrderId!.Value).Distinct().ToList();
+        var orderBranchMap = neededOrderIds.Any()
+            ? await _db.Orders.AsNoTracking()
+                .Where(o => neededOrderIds.Contains(o.Id))
+                .ToDictionaryAsync(o => o.Id, o => o.BranchId)
+            : new Dictionary<int, int?>();
+
+        bool isAdminUser = (user?.IsInRole("Admin") ?? false) || (user?.IsInRole("SuperAdmin") ?? false);
         foreach (var l in dto.Lines)
         {
-            var account = await _db.Accounts.FindAsync(l.AccountId);
-            if (account == null) throw new InvalidOperationException($"الحساب رقم {l.AccountId} غير موجود.");
-            if (!account.AllowPosting && !((user?.IsInRole("Admin") ?? false) || (user?.IsInRole("SuperAdmin") ?? false)))
+            if (!accountsMap.TryGetValue(l.AccountId, out var account))
+                throw new InvalidOperationException($"الحساب رقم {l.AccountId} غير موجود.");
+            if (!account.AllowPosting && !isAdminUser)
                 throw new InvalidOperationException($"الحساب '{account.NameAr}' لا يقبل الترحيل المباشر.");
 
             int? lineBranchId = l.BranchId ?? dto.BranchId ?? userBranchId;
-            if (l.OrderId.HasValue)
+            if (l.OrderId.HasValue && orderBranchMap.TryGetValue(l.OrderId.Value, out var orderBranch))
             {
-                lineBranchId = await _db.Orders.Where(o => o.Id == l.OrderId.Value).Select(o => o.BranchId).FirstOrDefaultAsync() ?? userBranchId;
+                lineBranchId = orderBranch ?? userBranchId;
             }
 
             entry.Lines.Add(new JournalLine
