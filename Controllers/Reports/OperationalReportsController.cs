@@ -3768,8 +3768,19 @@ public class OperationalReportsController : ControllerBase
         var mtdNetSales = (posMtdSales - mtdPosReturns) + (webMtdSales - mtdWebReturns);
 
         // --- 2. Cash Flow (Collections & Payments from Cash Accounts) ---
-        var cashAccTypes = new[] { "1101", "1102", "1105", "1107" };
-        var cashAccounts = await _db.Accounts.AsNoTracking().Where(a => cashAccTypes.Any(c => a.Code.StartsWith(c)) && a.IsLeaf).Select(a => a.Id).ToListAsync();
+        // Exclude receivables (1107), employee advances (1105), inventory differences (110106), and clearing/audit accounts
+        var cashAccTypes = new[] { "1101", "1102" };
+        var cashAccounts = await _db.Accounts.AsNoTracking()
+            .Where(a => cashAccTypes.Any(c => a.Code.StartsWith(c)) 
+                     && a.IsLeaf 
+                     && a.Code != "110106" // Exclude فرق جرد المخزون
+                     && !a.NameAr.Contains("جرد") 
+                     && !a.NameAr.Contains("مخزون") 
+                     && !a.NameAr.Contains("عجز") 
+                     && !a.NameAr.Contains("زيادة") 
+                     && !a.NameAr.Contains("تقفيل"))
+            .Select(a => a.Id)
+            .ToListAsync();
 
         var jlQuery = _db.JournalLines.AsNoTracking().Where(l => cashAccounts.Contains(l.AccountId));
         if (branchId.HasValue) jlQuery = jlQuery.Where(l => l.BranchId == branchId.Value);
