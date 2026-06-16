@@ -1744,9 +1744,6 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int?      branchId   = null)
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
-        var cacheKey = $"ProdMovement_{productId}_{search}_{categoryId}_{brandId}_{fromDate}_{toDate}_{color}_{size}_{source}_{page}_{pageSize}";
-        if (!excel && _cache.TryGetValue(cacheKey, out var cachedData))
-            return Ok(cachedData);
         try
         {
             var from = fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1).Date;
@@ -1759,13 +1756,6 @@ public class OperationalReportsController : ControllerBase
                     .Where(x => (x.NameAr.Contains(search) || x.SKU.Contains(search)))
                     .FirstOrDefaultAsync();
                 if (p != null) productId = p.Id;
-            }
-
-            // Logic: If productId is 0 or null, we might either show choices OR show all movements.
-            // Let's change it so that if it's called with productId=0 or similar, it fetches all.
-            if (productId == null && !string.IsNullOrEmpty(search))
-            {
-                // handled above
             }
 
             // Fetch Movements from InventoryMovements table
@@ -1802,11 +1792,30 @@ public class OperationalReportsController : ControllerBase
                 movementsQuery = movementsQuery.Where(m => m.ProductVariant != null && m.ProductVariant.Size == size);
 
             var totalCount = await movementsQuery.CountAsync();
-            var dbMovements = await movementsQuery
+
+            // ✅ FIX: Load ALL movements for the product sorted chronologically ASC
+            // to compute the correct running product-level balance, then paginate.
+            var allMovementsForBalance = await movementsQuery
+                .OrderBy(m => m.CreatedAt)
+                .ThenBy(m => m.Id)
+                .ToListAsync();
+
+            // Compute cumulative product-level running balance per movement
+            var productBalanceMap = new Dictionary<int, int>(); // movementId -> productRunningBalance
+            var runningProductTotal = 0;
+            foreach (var m in allMovementsForBalance)
+            {
+                runningProductTotal += (int)m.Quantity;
+                productBalanceMap[m.Id] = runningProductTotal;
+            }
+
+            // Now paginate: take the page slice (ordered descending for display)
+            var dbMovements = allMovementsForBalance
                 .OrderByDescending(m => m.CreatedAt)
+                .ThenByDescending(m => m.Id)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .ToListAsync();
+                .ToList();
 
             var orderRefs = dbMovements.Where(m => m.Type == InventoryMovementType.Sale || m.Type == InventoryMovementType.ReturnIn).Select(m => m.Reference).Distinct().ToList();
             var purchaseRefs = dbMovements.Where(m => m.Type == InventoryMovementType.Purchase || m.Type == InventoryMovementType.ReturnOut).Select(m => m.Reference).Distinct().ToList();
@@ -1849,7 +1858,7 @@ public class OperationalReportsController : ControllerBase
                     (m.CreatedByUserId != null && personNamesMap.TryGetValue(m.CreatedByUserId, out var creator)) ? creator : _t.Get("Common.System"),
                     _t.Get("Common.Completed"),
                     m.Product?.SKU ?? "N/A",
-                    m.RemainingStock,
+                    productBalanceMap.TryGetValue(m.Id, out var bal) ? bal : m.RemainingStock,
                     sourceId,
                     m.ProductVariant?.Size ?? "أساسي",
                     m.ProductVariant?.ColorAr ?? m.ProductVariant?.Color ?? "-"
@@ -1909,7 +1918,7 @@ public class OperationalReportsController : ControllerBase
                 }
             };
 
-            if (!excel) _cache.Set(cacheKey, result, TimeSpan.FromMinutes(2));
+            if (!excel) { /* result already computed */ }
 
             return Ok(result);
         }

@@ -430,21 +430,42 @@ public class OrdersController : ControllerBase
         using var scope = _scopeFactory.CreateScope();
         var inventory = scope.ServiceProvider.GetRequiredService<IInventoryService>();
 
-        // Adjust stock back to warehouse
-        foreach (var item in order.Items)
+        // Remove original inventory movements instead of creating adjustments (so it looks like it never existed)
+        var relatedMovements = await _db.InventoryMovements
+            .Where(m => m.Reference == order.OrderNumber)
+            .ToListAsync();
+
+        if (relatedMovements.Any())
         {
-            if (item.ProductId > 0)
+            _db.InventoryMovements.RemoveRange(relatedMovements);
+            
+            // Adjust stock back to warehouse manually since we are not using LogMovementAsync
+            foreach (var item in order.Items)
             {
-                await inventory.LogMovementAsync(
-                    InventoryMovementType.Adjustment,
-                    item.Quantity, 
-                    item.ProductId,
-                    item.ProductVariantId,
-                    order.OrderNumber,
-                    "Order Deleted (Cascade Cleanup)",
-                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-                    ignoreIdempotency: true
-                );
+                if (item.ProductId > 0)
+                {
+                    var product = await _db.Products.FindAsync(item.ProductId);
+                    if (product != null)
+                    {
+                        product.TotalStock += item.Quantity;
+                        product.UpdatedAt = Sportive.API.Helpers.TimeHelper.GetEgyptTime();
+                        
+                        if (product.Status == ProductStatus.OutOfStock && product.TotalStock > 0)
+                        {
+                            product.Status = ProductStatus.Active;
+                        }
+                    }
+
+                    if (item.ProductVariantId > 0)
+                    {
+                        var variant = await _db.ProductVariants.FindAsync(item.ProductVariantId);
+                        if (variant != null)
+                        {
+                            variant.StockQuantity += item.Quantity;
+                            variant.UpdatedAt = Sportive.API.Helpers.TimeHelper.GetEgyptTime();
+                        }
+                    }
+                }
             }
         }
 
