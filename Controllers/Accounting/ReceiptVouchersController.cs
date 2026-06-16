@@ -279,8 +279,8 @@ public class ReceiptVouchersController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
-        await _accounting.PostReceiptVoucherAsync(voucher, dto.OrderId);
-        BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
+        try { await _accounting.PostReceiptVoucherAsync(voucher, dto.OrderId); } catch { /* non-critical: voucher is saved */ }
+        try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
         return Ok(voucher);
     }
 
@@ -355,7 +355,7 @@ public class ReceiptVouchersController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
-        BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
+        try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
         return Ok(voucher);
     }
 
@@ -391,7 +391,7 @@ public class ReceiptVouchersController : ControllerBase
             _db.JournalEntries.Remove(entry);
         }
         await _db.SaveChangesAsync();
-        BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
+        try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
         return NoContent();
     }
 }

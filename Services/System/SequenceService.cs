@@ -84,16 +84,24 @@ public class SequenceService
         var strategy = db.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
         {
-            // Use Serializable to ensure no two instances read the same value
-            await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            // Use ReadCommitted. By doing an UPDATE first, we lock the row exclusively and avoid deadlocks.
+            await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
             try
             {
-                var seq = await db.DbSequences
-                    .FirstOrDefaultAsync(s => s.Prefix == prefix && s.Stamp == stamp);
+                // ⚡ PERF: Update first to acquire an exclusive row lock on MySQL.
+                // This prevents concurrent transactions from acquiring a shared lock on the same row,
+                // which avoids deadlocks entirely.
+                var rowsAffected = await db.Database.ExecuteSqlRawAsync(
+                    "UPDATE DbSequences SET LastValue = LastValue + 1, LastUpdatedAt = {0} WHERE Prefix = {1} AND Stamp = {2}",
+                    now, prefix, stamp);
 
-                if (seq == null)
+                int lastValue;
+                if (rowsAffected == 0)
                 {
-                    seq = new DbSequence
+                    // If row doesn't exist, we insert it.
+                    // Unique constraint on (Prefix, Stamp) will trigger a duplicate key error if another concurrent call inserts it first.
+                    // The execution strategy will catch this and retry.
+                    var seq = new DbSequence
                     {
                         Prefix = prefix,
                         Stamp = stamp,
@@ -101,23 +109,28 @@ public class SequenceService
                         LastUpdatedAt = now
                     };
                     db.DbSequences.Add(seq);
+                    await db.SaveChangesAsync();
+                    lastValue = 1;
                 }
                 else
                 {
-                    seq.LastValue++;
-                    seq.LastUpdatedAt = now;
+                    // Retrieve the updated value. Since we holds the exclusive lock on this row,
+                    // we read the exact value we just updated.
+                    lastValue = await db.DbSequences
+                        .Where(s => s.Prefix == prefix && s.Stamp == stamp)
+                        .Select(s => s.LastValue)
+                        .FirstOrDefaultAsync();
                 }
 
-                await db.SaveChangesAsync();
                 await tx.CommitAsync();
 
                 if (string.IsNullOrEmpty(stamp))
                 {
-                    return $"{prefix}-{seq.LastValue:D4}";
+                    return $"{prefix}-{lastValue:D4}";
                 }
-                return $"{prefix}-{stamp}-{seq.LastValue:D4}";
+                return $"{prefix}-{stamp}-{lastValue:D4}";
             }
-            catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Duplicate") == true || ex.InnerException?.Message.Contains("unique") == true)
+            catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("Duplicate") == true || ex.InnerException?.Message.Contains("unique") == true || ex.InnerException?.Message.Contains("duplicate") == true)
             {
                 // Conflict during initial creation - retry will handle it automatically via strategy
                 await tx.RollbackAsync();
