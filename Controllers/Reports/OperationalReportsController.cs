@@ -4082,58 +4082,79 @@ public class OperationalReportsController : ControllerBase
             .ToListAsync();
         var salesTrend = salesTrendQuery.Select(x => new PartnersReportSalesTrend(x.Date, x.Amount)).ToList();
 
-        // Income trend day-by-day for the current month
-        var monthEnd = dayEnd;
-        var monthlySales = await salesQuery
-            .Where(o => o.CreatedAt >= monthStart && o.CreatedAt <= monthEnd)
-            .Select(o => new { o.CreatedAt, o.TotalAmount })
+        // Calculate income/expenses by month for the period (Income Statement General Ledger logic)
+        int monthDiff = (targetDate.Year - fromDateVal.Year) * 12 + targetDate.Month - fromDateVal.Month;
+        DateTime startPeriodCal;
+        int numMonths;
+        if (monthDiff <= 1) // same month or adjacent months, let's show last 12 months up to targetDate
+        {
+            startPeriodCal = new DateTime(targetDate.Year, targetDate.Month, 1).AddMonths(-11);
+            numMonths = 12;
+        }
+        else
+        {
+            startPeriodCal = new DateTime(fromDateVal.Year, fromDateVal.Month, 1);
+            numMonths = monthDiff + 1;
+        }
+
+        var startPeriod = startPeriodCal.AddHours(endHour);
+        var endPeriod = targetDate.AddDays(1).AddHours(endHour).AddTicks(-1);
+
+        // Query monthly revenue from general ledger (Income Statement logic)
+        var monthlyRevenueQuery = _db.JournalLines.AsNoTracking()
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+                     && l.JournalEntry.EntryDate >= startPeriod
+                     && l.JournalEntry.EntryDate <= endPeriod
+                     && (l.Account.Type == AccountType.Revenue || l.Account.Code.StartsWith("4")));
+        if (branchId.HasValue)
+        {
+            monthlyRevenueQuery = monthlyRevenueQuery.Where(l => l.BranchId == branchId.Value);
+        }
+        var monthlyRevenue = await monthlyRevenueQuery
+            .GroupBy(l => new { 
+                Year = l.JournalEntry.EntryDate.AddHours(-endHour).Year, 
+                Month = l.JournalEntry.EntryDate.AddHours(-endHour).Month 
+            })
+            .Select(g => new {
+                g.Key.Year,
+                g.Key.Month,
+                Revenue = g.Sum(l => l.Credit - l.Debit)
+            })
             .ToListAsync();
 
-        var monthlyReturns = await salesReturnsQuery
-            .Where(j => j.EntryDate >= monthStart && j.EntryDate <= monthEnd)
-            .SelectMany(j => j.Lines)
-            .Where(l => l.Account.Type == AccountType.Asset)
-            .Select(l => new { l.JournalEntry.EntryDate, l.Credit })
+        // Query monthly expenses from general ledger (Income Statement logic)
+        var monthlyExpensesQuery = _db.JournalLines.AsNoTracking()
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+                     && l.JournalEntry.EntryDate >= startPeriod
+                     && l.JournalEntry.EntryDate <= endPeriod
+                     && (l.Account.Type == AccountType.Expense || l.Account.Code.StartsWith("5"))
+                     && !l.Account.Code.StartsWith("4"));
+        if (branchId.HasValue)
+        {
+            monthlyExpensesQuery = monthlyExpensesQuery.Where(l => l.BranchId == branchId.Value);
+        }
+        var monthlyExpenses = await monthlyExpensesQuery
+            .GroupBy(l => new { 
+                Year = l.JournalEntry.EntryDate.AddHours(-endHour).Year, 
+                Month = l.JournalEntry.EntryDate.AddHours(-endHour).Month 
+            })
+            .Select(g => new {
+                g.Key.Year,
+                g.Key.Month,
+                Expenses = g.Sum(l => l.Debit - l.Credit)
+            })
             .ToListAsync();
 
-        var monthlyOutflows = await jlQuery
-            .Where(l => l.JournalEntry.Type != JournalEntryType.OpeningBalance && l.JournalEntry.EntryDate >= monthStart && l.JournalEntry.EntryDate <= monthEnd)
-            .Select(l => new { l.JournalEntry.EntryDate, l.Credit })
-            .ToListAsync();
-
-        var dailyData = new Dictionary<DateTime, (decimal Revenue, decimal Expenses)>();
-
-        foreach (var sale in monthlySales)
-        {
-            var day = sale.CreatedAt.AddHours(-endHour).Date;
-            var val = dailyData.GetValueOrDefault(day);
-            dailyData[day] = (val.Revenue + sale.TotalAmount, val.Expenses);
-        }
-
-        foreach (var ret in monthlyReturns)
-        {
-            var day = ret.EntryDate.AddHours(-endHour).Date;
-            var val = dailyData.GetValueOrDefault(day);
-            dailyData[day] = (val.Revenue - ret.Credit, val.Expenses);
-        }
-
-        foreach (var outf in monthlyOutflows)
-        {
-            var day = outf.EntryDate.AddHours(-endHour).Date;
-            var val = dailyData.GetValueOrDefault(day);
-            dailyData[day] = (val.Revenue, val.Expenses + outf.Credit);
-        }
-
-        var incomeTrend = new List<PartnersReportIncomeTrendItem>();
-        for (var d = monthStart.AddHours(-endHour).Date; d <= targetDate; d = d.AddDays(1))
-        {
-            var val = dailyData.GetValueOrDefault(d);
-            incomeTrend.Add(new PartnersReportIncomeTrendItem(
-                d.ToString("yyyy-MM-dd"),
-                val.Revenue,
-                val.Expenses
-            ));
-        }
+        var incomeTrend = Enumerable.Range(0, numMonths).Select(i => {
+            var date = startPeriodCal.AddMonths(i);
+            var revData = monthlyRevenue.FirstOrDefault(r => r.Year == date.Year && r.Month == date.Month);
+            var expData = monthlyExpenses.FirstOrDefault(e => e.Year == date.Year && e.Month == date.Month);
+            return new PartnersReportIncomeTrendItem(
+                date.ToString("MM/yyyy"),
+                revData?.Revenue ?? 0,
+                expData?.Expenses ?? 0
+            );
+        }).ToList();
 
         var summary = new PartnersReportSummary(
             posDailySales, posTotalSales,
