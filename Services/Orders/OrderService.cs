@@ -1825,24 +1825,33 @@ public class OrderService : IOrderService
             await using var tx = await _db.Database.BeginTransactionAsync();
             try
             {
+                var customerLabel = !string.IsNullOrEmpty(dto.CustomerName)
+                    ? dto.CustomerName
+                    : (dto.CustomerId.HasValue ? $"Customer#{dto.CustomerId}" : "Walk-in");
+
                 foreach (var item in dto.Items)
                 {
-                    // 1. Inventory Update
-                    await _inventory.LogMovementAsync(
-                        InventoryMovementType.ReturnIn,
-                        item.Quantity, item.ProductId, item.ProductVariantId,
-                        returnNumber, $"Direct Return: {dto.Reason}", updatedByUserId,
-                        0, // unitCost fallback
-                        OrderSource.POS,
-                        autoSave: false
-                    );
-
-                    // 2. Fetch product cost for COGS reduction
+                    // 1. Fetch product cost for COGS + use UnitPrice from dto
                     var product = await _db.Products.FindAsync(item.ProductId);
+                    var unitCostValue = item.UnitPrice > 0 ? item.UnitPrice : (product?.CostPrice ?? 0);
+
                     if (product != null)
                     {
                         totalCost += (product.CostPrice ?? 0) * item.Quantity;
                     }
+
+                    // 2. Inventory Update — force:true allows return even if stock is 0
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.ReturnIn,
+                        item.Quantity, item.ProductId, item.ProductVariantId,
+                        returnNumber,
+                        $"Direct Return | {dto.Reason ?? "مرتجع مبيعات خارجي"} | Customer: {customerLabel}",
+                        updatedByUserId,
+                        unitCostValue,
+                        OrderSource.POS,
+                        autoSave: false,
+                        force: true
+                    );
                 }
 
                 await _db.SaveChangesAsync();
