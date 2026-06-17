@@ -4062,6 +4062,21 @@ public class OperationalReportsController : ControllerBase
         // Positive = علينا للموردين (payables), Negative = لنا عند الموردين (debit/prepaid balances)
         var totalSupplierDebt = supplierLedgerNet;
 
+        // Account 210201 = الزكاة المستحقة (Liability, Credit-natured): رصيد الزكاة الحالي
+        var zakatAccount = await _db.Accounts.AsNoTracking()
+            .Where(a => a.Code == "210201")
+            .FirstOrDefaultAsync();
+        decimal zakatAccountBalance = 0;
+        string zakatAccountName = "الزكاة المستحقة";
+        if (zakatAccount != null)
+        {
+            zakatAccountName = zakatAccount.NameAr;
+            zakatAccountBalance = await _db.JournalLines.AsNoTracking()
+                .Where(l => l.AccountId == zakatAccount.Id)
+                .SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0m;
+            zakatAccountBalance += zakatAccount.OpeningBalance;
+        }
+
         // Dynamic cost valuation using inventory movements up to dayEnd
         var movementsQuery = _db.InventoryMovements.AsNoTracking().Where(m => m.CreatedAt <= dayEnd);
         if (branchId.HasValue) movementsQuery = movementsQuery.Where(m => m.BranchId == branchId.Value);
@@ -4469,7 +4484,10 @@ public class OperationalReportsController : ControllerBase
             incomeTrend,
             // 🆕 Detailed ledger movements
             detailedExpenses,
-            detailedAccountMovements
+            detailedAccountMovements,
+            // 🆕 Zakat account balance (210201)
+            zakatAccountBalance,
+            zakatAccountName
         });
     }
 
