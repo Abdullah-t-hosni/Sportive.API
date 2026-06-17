@@ -4390,6 +4390,9 @@ public class OperationalReportsController : ControllerBase
             .ToListAsync();
 
         var detailedExpenses = detailedExpenseLines.Select(l => new {
+            journalEntryId = l.JournalEntryId,
+            orderId      = l.JournalEntry.OrderId,
+            purchaseInvoiceId = l.JournalEntry.PurchaseInvoiceId,
             reference   = l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber,
             date        = l.JournalEntry.EntryDate,
             accountCode = l.Account.Code,
@@ -4423,6 +4426,9 @@ public class OperationalReportsController : ControllerBase
             .ToListAsync();
 
         var detailedAccountMovements = detailedAccountMovLines.Select(l => new {
+            journalEntryId = l.JournalEntryId,
+            orderId      = l.JournalEntry.OrderId,
+            purchaseInvoiceId = l.JournalEntry.PurchaseInvoiceId,
             reference   = l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber,
             date        = l.JournalEntry.EntryDate,
             accountCode = l.Account.Code,
