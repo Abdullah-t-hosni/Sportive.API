@@ -4156,6 +4156,106 @@ public class OperationalReportsController : ControllerBase
             );
         }).ToList();
 
+        // --- 9. Split Expenses: Daily Expenses vs Accounts Outflows ---
+        var salesReturnAccId = await _db.AccountSystemMappings
+            .Where(m => m.Key == "salesReturnAccountID")
+            .Select(m => (int?)m.AccountId)
+            .FirstOrDefaultAsync();
+
+        var salesDiscountAccId = await _db.AccountSystemMappings
+            .Where(m => m.Key == "salesDiscountAccountID")
+            .Select(m => (int?)m.AccountId)
+            .FirstOrDefaultAsync();
+
+        var discountReturnAccId = await _db.Accounts
+            .Where(a => a.Code == "410101")
+            .Select(a => (int?)a.Id)
+            .FirstOrDefaultAsync();
+
+        var expenseLinesQuery = _db.JournalLines.AsNoTracking()
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+                     && (l.Account.Type == AccountType.Expense 
+                         || l.Account.Code.StartsWith("5")
+                         || (salesReturnAccId.HasValue && l.AccountId == salesReturnAccId.Value)
+                         || (salesDiscountAccId.HasValue && l.AccountId == salesDiscountAccId.Value)
+                         || (discountReturnAccId.HasValue && l.AccountId == discountReturnAccId.Value)));
+
+        if (branchId.HasValue)
+        {
+            expenseLinesQuery = expenseLinesQuery.Where(l => l.BranchId == branchId.Value);
+        }
+
+        var dailyIncomeExpenses = await expenseLinesQuery
+            .Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd)
+            .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0m;
+
+        var mtdIncomeExpenses = await expenseLinesQuery
+            .Where(l => l.JournalEntry.EntryDate >= monthStart && l.JournalEntry.EntryDate <= dayEnd)
+            .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0m;
+
+        // Cash Outflows from Cash Accounts
+        var cashOutflowLines = await _db.JournalLines.AsNoTracking()
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+                     && cashAccounts.Contains(l.AccountId)
+                     && l.Credit > 0
+                     && l.JournalEntry.EntryDate >= dayStart 
+                     && l.JournalEntry.EntryDate <= dayEnd)
+            .Select(l => new { l.JournalEntryId, l.Credit })
+            .ToListAsync();
+
+        var entryIds = cashOutflowLines.Select(l => l.JournalEntryId).Distinct().ToList();
+        var expenseEntryIds = await _db.JournalLines.AsNoTracking()
+            .Where(l => entryIds.Contains(l.JournalEntryId)
+                     && l.Debit > 0
+                     && (l.Account.Type == AccountType.Expense 
+                         || l.Account.Code.StartsWith("5")
+                         || (salesReturnAccId.HasValue && l.AccountId == salesReturnAccId.Value)
+                         || (salesDiscountAccId.HasValue && l.AccountId == salesDiscountAccId.Value)
+                         || (discountReturnAccId.HasValue && l.AccountId == discountReturnAccId.Value)))
+            .Select(l => l.JournalEntryId)
+            .Distinct()
+            .ToListAsync();
+
+        decimal dailyAccountOutflows = 0;
+        foreach (var line in cashOutflowLines)
+        {
+            if (!expenseEntryIds.Contains(line.JournalEntryId))
+            {
+                dailyAccountOutflows += line.Credit;
+            }
+        }
+
+        var mtdCashOutflowLines = await _db.JournalLines.AsNoTracking()
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+                     && cashAccounts.Contains(l.AccountId)
+                     && l.Credit > 0
+                     && l.JournalEntry.EntryDate >= monthStart 
+                     && l.JournalEntry.EntryDate <= dayEnd)
+            .Select(l => new { l.JournalEntryId, l.Credit })
+            .ToListAsync();
+
+        var mtdEntryIds = mtdCashOutflowLines.Select(l => l.JournalEntryId).Distinct().ToList();
+        var mtdExpenseEntryIds = await _db.JournalLines.AsNoTracking()
+            .Where(l => mtdEntryIds.Contains(l.JournalEntryId)
+                     && l.Debit > 0
+                     && (l.Account.Type == AccountType.Expense 
+                         || l.Account.Code.StartsWith("5")
+                         || (salesReturnAccId.HasValue && l.AccountId == salesReturnAccId.Value)
+                         || (salesDiscountAccId.HasValue && l.AccountId == salesDiscountAccId.Value)
+                         || (discountReturnAccId.HasValue && l.AccountId == discountReturnAccId.Value)))
+            .Select(l => l.JournalEntryId)
+            .Distinct()
+            .ToListAsync();
+
+        decimal mtdAccountOutflows = 0;
+        foreach (var line in mtdCashOutflowLines)
+        {
+            if (!mtdExpenseEntryIds.Contains(line.JournalEntryId))
+            {
+                mtdAccountOutflows += line.Credit;
+            }
+        }
+
         var summary = new PartnersReportSummary(
             posDailySales, posTotalSales,
             webDailySales, webTotalSales,
@@ -4166,7 +4266,11 @@ public class OperationalReportsController : ControllerBase
             totalInventoryValue,
             mtdNetSales,
             mtdCollections,
-            mtdCashOutflows
+            mtdCashOutflows,
+            dailyIncomeExpenses,
+            mtdIncomeExpenses,
+            dailyAccountOutflows,
+            mtdAccountOutflows
         );
 
         return Ok(new PartnersComprehensiveReportResponse(
@@ -4220,7 +4324,11 @@ public record PartnersReportSummary(
     decimal TotalInventoryValue,
     decimal MtdNetSales,
     decimal MtdCollections,
-    decimal MtdCashOutflows
+    decimal MtdCashOutflows,
+    decimal DailyIncomeExpenses,
+    decimal MtdIncomeExpenses,
+    decimal DailyAccountOutflows,
+    decimal MtdAccountOutflows
 );
 
 public record PartnersReportAccountInfo(
