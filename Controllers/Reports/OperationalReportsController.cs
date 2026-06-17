@@ -4057,9 +4057,19 @@ public class OperationalReportsController : ControllerBase
             {
                 if (paymentsByOrder.TryGetValue(order.Id, out var lines) && lines.Count > 0)
                 {
-                    foreach (var line in lines)
+                    var nonMixedLines = lines.Where(l => l.Method != PaymentMethod.Mixed).ToList();
+                    if (nonMixedLines.Count > 0)
                     {
-                        paymentTotals[line.Method] = paymentTotals.GetValueOrDefault(line.Method) + line.Amount;
+                        foreach (var line in nonMixedLines)
+                        {
+                            paymentTotals[line.Method] = paymentTotals.GetValueOrDefault(line.Method) + line.Amount;
+                        }
+                    }
+                    else
+                    {
+                        var mixedSum = lines.Sum(l => l.Amount);
+                        var amountToUse = mixedSum > 0 ? mixedSum : order.TotalAmount;
+                        paymentTotals[PaymentMethod.Cash] = paymentTotals.GetValueOrDefault(PaymentMethod.Cash) + amountToUse;
                     }
                 }
                 else
