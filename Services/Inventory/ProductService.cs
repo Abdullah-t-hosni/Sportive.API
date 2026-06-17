@@ -815,17 +815,33 @@ public class ProductService : IProductService
 
     public async Task<List<ProductSummaryDto>> GetRelatedProductsAsync(int productId, int count = 4, int? warehouseId = null)
     {
-        var product = await _db.Products.FindAsync(productId);
+        var product = await _db.Products.Include(p => p.Category).FirstOrDefaultAsync(p => p.Id == productId);
         if (product == null) return new List<ProductSummaryDto>();
 
         var now = TimeHelper.GetEgyptTime();
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
-        var query = _db.Products
-            .Include(p => p.Category)
-            .Include(p => p.Brand)
-            .Include(p => p.Images)
-            .Include(p => p.Unit)
-            .Where(p => p.CategoryId == product.CategoryId && p.Id != productId && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock));
+        
+        IQueryable<Product> query;
+        if (product.Category?.Type == CategoryType.Shoes)
+        {
+            // "Complete the Look" (أكمل المظهر): suggest matching apparel and accessories (especially socks!)
+            query = _db.Products
+                .Include(p => p.Category)
+                .Include(p => p.Brand)
+                .Include(p => p.Images)
+                .Include(p => p.Unit)
+                .Where(p => p.Id != productId && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock))
+                .Where(p => p.Category != null && p.Category.Type != CategoryType.Shoes && p.Category.Type != CategoryType.Equipment);
+        }
+        else
+        {
+            query = _db.Products
+                .Include(p => p.Category)
+                .Include(p => p.Brand)
+                .Include(p => p.Images)
+                .Include(p => p.Unit)
+                .Where(p => p.CategoryId == product.CategoryId && p.Id != productId && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock));
+        }
 
         if (store != null && store.HideOutOfStock)
         {
@@ -841,7 +857,7 @@ public class ProductService : IProductService
             }
         }
 
-        return await query
+        var rawList = await query
             .Select(p => new {
                 p,
                 d = _db.ProductDiscounts
@@ -849,12 +865,31 @@ public class ProductService : IProductService
                         (d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == DiscountApplyTo.Store) &&
                         (d.ProductId == p.Id || 
                          (p.CategoryId != null && (d.CategoryId == p.CategoryId || d.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && d.CategoryId == p.Category!.Parent!.ParentId))) || 
-                         (p.BrandId != null && d.BrandId == p.BrandId) ||
+                         (d.BrandId != null && d.BrandId == p.BrandId) ||
                          (d.ProductId == null && d.CategoryId == null && d.BrandId == null)))
                     .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
                     .FirstOrDefault()
             })
-            .OrderBy(_ => Guid.NewGuid())
+            .Take(50) // Limit to avoid large database retrieval
+            .ToListAsync();
+
+        if (product.Category?.Type == CategoryType.Shoes)
+        {
+            rawList = rawList
+                .OrderByDescending(x => x.p.NameAr.Contains("جوارب") || x.p.NameAr.Contains("شراب") || 
+                                        x.p.NameEn.Contains("Socks") || x.p.NameEn.Contains("socks") ||
+                                        (x.p.DescriptionAr != null && (x.p.DescriptionAr.Contains("جوارب") || x.p.DescriptionAr.Contains("شراب"))) ||
+                                        (x.p.DescriptionEn != null && (x.p.DescriptionEn.Contains("Socks") || x.p.DescriptionEn.Contains("socks"))))
+                .ThenByDescending(x => x.p.IsFeatured)
+                .ThenBy(_ => Guid.NewGuid())
+                .ToList();
+        }
+        else
+        {
+            rawList = rawList.OrderBy(_ => Guid.NewGuid()).ToList();
+        }
+
+        return rawList
             .Take(count)
             .Select(x => new ProductSummaryDto(
                 x.p.Id, x.p.NameAr, x.p.NameEn, x.p.Slug, x.p.Price, 
@@ -894,7 +929,7 @@ public class ProductService : IProductService
                 x.p.CreatedAt,
                 x.d != null ? x.d.Label : null
             ))
-            .ToListAsync();
+            .ToList();
     }
 
     private async Task<ProductDiscount?> GetProductDiscountAsync(Product p)
@@ -928,6 +963,7 @@ public class ProductService : IProductService
             p.BrandId,
             p.Status.ToString(), p.IsFeatured,
             p.CategoryId, p.Category?.NameAr ?? _t.Get("Products.CategoryMissing"), p.Category?.NameEn ?? _t.Get("Products.CategoryMissing"),
+            p.Category?.Type.ToString(),
             p.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList() ?? new List<ProductVariantDto>(),
             p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr)).ToList() ?? new List<ProductImageDto>(),
             p.AverageRating,

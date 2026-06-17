@@ -127,6 +127,7 @@ public record ProductDetailDto(
     [property: JsonPropertyName("categoryId")] int? CategoryId,
     [property: JsonPropertyName("categoryNameAr")] string? CategoryNameAr,
     [property: JsonPropertyName("categoryNameEn")] string? CategoryNameEn,
+    [property: JsonPropertyName("categoryType")] string? CategoryType,
     [property: JsonPropertyName("variants")] List<ProductVariantDto> Variants,
     [property: JsonPropertyName("images")] List<ProductImageDto> Images,
     [property: JsonPropertyName("averageRating")] double AverageRating,
