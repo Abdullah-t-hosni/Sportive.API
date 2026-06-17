@@ -4172,13 +4172,20 @@ public class OperationalReportsController : ControllerBase
             .Select(a => (int?)a.Id)
             .FirstOrDefaultAsync();
 
+        var cogsAccId = await _db.AccountSystemMappings
+            .Where(m => m.Key == "costOfGoodsSoldAccountID")
+            .Select(m => (int?)m.AccountId)
+            .FirstOrDefaultAsync();
+
         var expenseLinesQuery = _db.JournalLines.AsNoTracking()
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && (l.Account.Type == AccountType.Expense 
                          || l.Account.Code.StartsWith("5")
                          || (salesReturnAccId.HasValue && l.AccountId == salesReturnAccId.Value)
                          || (salesDiscountAccId.HasValue && l.AccountId == salesDiscountAccId.Value)
-                         || (discountReturnAccId.HasValue && l.AccountId == discountReturnAccId.Value)));
+                         || (discountReturnAccId.HasValue && l.AccountId == discountReturnAccId.Value))
+                     && !l.Account.Code.StartsWith("5101")
+                     && !(cogsAccId.HasValue && l.AccountId == cogsAccId.Value));
 
         if (branchId.HasValue)
         {
