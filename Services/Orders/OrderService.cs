@@ -1632,7 +1632,7 @@ public class OrderService : IOrderService
                 await _inventory.LogMovementAsync(
                     dto.Status == OrderStatus.Returned ? InventoryMovementType.ReturnIn : InventoryMovementType.Adjustment,
                     item.Quantity, item.ProductId, item.ProductVariantId, 
-                    dto.Status == OrderStatus.Returned ? order.OrderNumber + "-RTN" : order.OrderNumber, 
+                    order.OrderNumber, 
                     $"Order {dto.Status}", updatedByUserId,
                     0, // unitCost fallback
                     order.Source,
@@ -1760,7 +1760,7 @@ public class OrderService : IOrderService
                     await _inventory.LogMovementAsync(
                         InventoryMovementType.ReturnIn,
                         req.Quantity, line.ProductId, line.ProductVariantId,
-                        reference, $"Partial Return: {req.Quantity} units", updatedByUserId,
+                        order.OrderNumber, $"Partial Return: {req.Quantity} units", updatedByUserId,
                         0, // unitCost fallback
                         order.Source,
                         autoSave: false,
