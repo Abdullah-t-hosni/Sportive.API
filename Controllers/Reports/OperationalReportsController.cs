@@ -4364,6 +4364,76 @@ public class OperationalReportsController : ControllerBase
         var dailyIncomeExpenses = dailyIncomeExpensesBase;
         var mtdIncomeExpenses = mtdIncomeExpensesBase;
 
+        // ── NEW: Detailed Expense Lines (مصروفات اليوم التفصيلية) ──────────────
+        // Any JournalLine on Expense accounts + sales return account for the selected date range
+        var detailedExpenseQuery = _db.JournalLines.AsNoTracking()
+            .Include(l => l.JournalEntry)
+            .Include(l => l.Account)
+            .Where(l =>
+                l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd
+                && l.JournalEntry.Status == JournalEntryStatus.Posted
+                && l.Debit > 0
+                && (l.Account.Type == AccountType.Expense
+                    || l.Account.Code.StartsWith("5")
+                    || (salesReturnAccId.HasValue  && l.AccountId == salesReturnAccId.Value)
+                    || (salesDiscountAccId.HasValue && l.AccountId == salesDiscountAccId.Value)
+                    || (discountReturnAccId.HasValue && l.AccountId == discountReturnAccId.Value))
+                && !(cogsAccId.HasValue && l.AccountId == cogsAccId.Value)
+                && !l.Account.Code.StartsWith("5101")
+                && (string.IsNullOrEmpty(l.JournalEntry.Reference) || !l.JournalEntry.Reference.StartsWith("SHIFT-CLOSE")));
+
+        if (branchId.HasValue)
+            detailedExpenseQuery = detailedExpenseQuery.Where(l => l.BranchId == branchId.Value);
+
+        var detailedExpenseLines = await detailedExpenseQuery
+            .OrderByDescending(l => l.JournalEntry.EntryDate)
+            .ToListAsync();
+
+        var detailedExpenses = detailedExpenseLines.Select(l => new {
+            reference   = l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber,
+            date        = l.JournalEntry.EntryDate,
+            accountCode = l.Account.Code,
+            accountName = l.Account.NameAr,
+            entryType   = l.JournalEntry.Type.ToString(),
+            debit       = l.Debit,
+            credit      = l.Credit,
+            description = l.Description ?? l.JournalEntry.Description ?? l.Account.NameAr
+        }).ToList();
+
+        // ── NEW: Account Movements (مصروفات الحسابات اليومية) ─────────────────
+        // Any JournalLine on ALL accounts EXCEPT expense accounts and sales return account
+        var detailedAccountMovQuery = _db.JournalLines.AsNoTracking()
+            .Include(l => l.JournalEntry)
+            .Include(l => l.Account)
+            .Where(l =>
+                l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd
+                && l.JournalEntry.Status == JournalEntryStatus.Posted
+                && l.Account.Type != AccountType.Expense
+                && !l.Account.Code.StartsWith("5")
+                && !(salesReturnAccId.HasValue  && l.AccountId == salesReturnAccId.Value)
+                && !(salesDiscountAccId.HasValue && l.AccountId == salesDiscountAccId.Value)
+                && !(discountReturnAccId.HasValue && l.AccountId == discountReturnAccId.Value)
+                && (string.IsNullOrEmpty(l.JournalEntry.Reference) || !l.JournalEntry.Reference.StartsWith("SHIFT-CLOSE")));
+
+        if (branchId.HasValue)
+            detailedAccountMovQuery = detailedAccountMovQuery.Where(l => l.BranchId == branchId.Value);
+
+        var detailedAccountMovLines = await detailedAccountMovQuery
+            .OrderByDescending(l => l.JournalEntry.EntryDate)
+            .ToListAsync();
+
+        var detailedAccountMovements = detailedAccountMovLines.Select(l => new {
+            reference   = l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber,
+            date        = l.JournalEntry.EntryDate,
+            accountCode = l.Account.Code,
+            accountName = l.Account.NameAr,
+            accountType = l.Account.Type.ToString(),
+            entryType   = l.JournalEntry.Type.ToString(),
+            debit       = l.Debit,
+            credit      = l.Credit,
+            description = l.Description ?? l.JournalEntry.Description ?? l.Account.NameAr
+        }).ToList();
+
         var summary = new PartnersReportSummary(
             posDailySales, posTotalSales,
             webDailySales, webTotalSales,
@@ -4381,17 +4451,21 @@ public class OperationalReportsController : ControllerBase
             mtdAccountOutflows
         );
 
-        return Ok(new PartnersComprehensiveReportResponse(
-            targetDate, 
-            summary, 
-            accInfos,
+        return Ok(new {
+            date          = targetDate,
+            summary,
+            accounts      = accInfos,
             expensesBreakdown,
-            salesByPayment,
+            salesByPaymentMethod = salesByPayment,
             salesTrend,
             cashOutflows,
-            incomeTrend
-        ));
+            incomeTrend,
+            // 🆕 Detailed ledger movements
+            detailedExpenses,
+            detailedAccountMovements
+        });
     }
+
 }
 
 //  Report DTOs 
