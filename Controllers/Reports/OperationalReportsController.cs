@@ -1046,6 +1046,7 @@ public class OperationalReportsController : ControllerBase
                         i.Color,
                         i.Quantity,
                         i.UnitPrice,
+                        CostPrice = i.Product != null ? (i.Product.CostPrice ?? 0) : 0,
                         i.DiscountAmount,
                         i.TotalPrice
                     }).ToList(),
@@ -1094,7 +1095,7 @@ public class OperationalReportsController : ControllerBase
                     i.Color ?? "",
                     i.Quantity,
                     i.UnitPrice,
-                    0, 
+                    i.CostPrice, 
                     i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1),
                     i.TotalPrice
                 )).ToList(),
