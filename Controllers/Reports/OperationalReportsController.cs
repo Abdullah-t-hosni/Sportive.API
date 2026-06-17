@@ -4321,9 +4321,9 @@ public class OperationalReportsController : ControllerBase
             }
         }
 
-        // Final results: Add supplier payments directly to operational expenses/Income Statement card
-        var dailyIncomeExpenses = dailyIncomeExpensesBase + dailySupplierPayments;
-        var mtdIncomeExpenses = mtdIncomeExpensesBase + mtdSupplierPayments;
+        // Final results: Supplier payments are excluded completely from both cards as requested
+        var dailyIncomeExpenses = dailyIncomeExpensesBase;
+        var mtdIncomeExpenses = mtdIncomeExpensesBase;
 
         var summary = new PartnersReportSummary(
             posDailySales, posTotalSales,
