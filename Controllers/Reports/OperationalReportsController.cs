@@ -3881,7 +3881,8 @@ public class OperationalReportsController : ControllerBase
                         && l.Credit > 0 
                         && l.JournalEntry.EntryDate >= dayStart 
                         && l.JournalEntry.EntryDate <= dayEnd
-                        && l.JournalEntry.Type != JournalEntryType.OpeningBalance);
+                        && l.JournalEntry.Type != JournalEntryType.OpeningBalance
+                        && (string.IsNullOrEmpty(l.JournalEntry.Reference) || !l.JournalEntry.Reference.StartsWith("SHIFT-CLOSE")));
         if (branchId.HasValue) outflowsQuery = outflowsQuery.Where(l => l.BranchId == branchId.Value);
 
         var outflowsList = await outflowsQuery.ToListAsync();
@@ -4185,7 +4186,8 @@ public class OperationalReportsController : ControllerBase
                          || (salesDiscountAccId.HasValue && l.AccountId == salesDiscountAccId.Value)
                          || (discountReturnAccId.HasValue && l.AccountId == discountReturnAccId.Value))
                      && !l.Account.Code.StartsWith("5101")
-                     && !(cogsAccId.HasValue && l.AccountId == cogsAccId.Value));
+                     && !(cogsAccId.HasValue && l.AccountId == cogsAccId.Value)
+                     && (string.IsNullOrEmpty(l.JournalEntry.Reference) || !l.JournalEntry.Reference.StartsWith("SHIFT-CLOSE")));
 
         if (branchId.HasValue)
         {
@@ -4207,14 +4209,16 @@ public class OperationalReportsController : ControllerBase
                      && cashAccounts.Contains(l.AccountId)
                      && l.Credit > 0
                      && l.JournalEntry.EntryDate >= dayStart 
-                     && l.JournalEntry.EntryDate <= dayEnd);
+                     && l.JournalEntry.EntryDate <= dayEnd
+                     && (string.IsNullOrEmpty(l.JournalEntry.Reference) || !l.JournalEntry.Reference.StartsWith("SHIFT-CLOSE")));
 
         var mtdCashOutflowQuery = _db.JournalLines.AsNoTracking()
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && cashAccounts.Contains(l.AccountId)
                      && l.Credit > 0
                      && l.JournalEntry.EntryDate >= monthStart 
-                     && l.JournalEntry.EntryDate <= dayEnd);
+                     && l.JournalEntry.EntryDate <= dayEnd
+                     && (string.IsNullOrEmpty(l.JournalEntry.Reference) || !l.JournalEntry.Reference.StartsWith("SHIFT-CLOSE")));
 
         if (branchId.HasValue)
         {
