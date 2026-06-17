@@ -4068,8 +4068,10 @@ public class OperationalReportsController : ControllerBase
             .FirstOrDefaultAsync();
         decimal zakatAccountBalance = 0;
         string zakatAccountName = "الزكاة المستحقة";
+        int? zakatAccountId = null;
         if (zakatAccount != null)
         {
+            zakatAccountId = zakatAccount.Id;
             zakatAccountName = zakatAccount.NameAr;
             zakatAccountBalance = await _db.JournalLines.AsNoTracking()
                 .Where(l => l.AccountId == zakatAccount.Id)
@@ -4487,7 +4489,8 @@ public class OperationalReportsController : ControllerBase
             detailedAccountMovements,
             // 🆕 Zakat account balance (210201)
             zakatAccountBalance,
-            zakatAccountName
+            zakatAccountName,
+            zakatAccountId
         });
     }
 
