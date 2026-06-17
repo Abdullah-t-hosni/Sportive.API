@@ -140,6 +140,9 @@ public class StoreInfo
     [JsonPropertyName("reviewsRequirePurchase")]
     public bool ReviewsRequirePurchase { get; set; } = true;
 
+    [JsonPropertyName("enableUrgencyTags")]
+    public bool EnableUrgencyTags { get; set; } = true;
+
     [MaxLength(500)]
     [JsonPropertyName("allowedPaymentMethods")]
     public string AllowedPaymentMethods { get; set; } = "Cash,Vodafone,InstaPay";

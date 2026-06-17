@@ -359,6 +359,32 @@ public class SchemaFixController : ControllerBase
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
+    [HttpGet("run-v15")]
+    public async Task<IActionResult> RunV15()
+    {
+        _logger.LogWarning("SchemaFix run-v15 (EnableUrgencyTags Settings) triggered.");
+        try
+        {
+            var skipped = new List<string>();
+            var cmds = new[] {
+                "ALTER TABLE StoreSettings ADD COLUMN EnableUrgencyTags TINYINT(1) DEFAULT 1 NOT NULL;"
+            };
+
+            foreach (var c in cmds)
+            {
+                try { await _db.Database.ExecuteSqlRawAsync(c); }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("SchemaFix run-v15 skipped cmd: {Error}", ex.Message);
+                    skipped.Add(ex.Message);
+                }
+            }
+
+            return Ok(new { message = "Urgency tags settings column added to StoreSettings.", skipped });
+        }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
     [HttpGet("clean-audit-movements")]
     public async Task<IActionResult> CleanAuditMovements()
     {

@@ -133,6 +133,7 @@ public class SettingsController : ControllerBase
             info.EnableCoupons           = dto.EnableCoupons;
             info.EnableReviews           = dto.EnableReviews;
             info.ReviewsRequirePurchase  = dto.ReviewsRequirePurchase;
+            info.EnableUrgencyTags       = dto.EnableUrgencyTags;
             info.AllowedPaymentMethods   = dto.AllowedPaymentMethods;
             info.ReceiptHeaderText       = dto.ReceiptHeaderText;
             info.ReceiptFooterText       = dto.ReceiptFooterText;
