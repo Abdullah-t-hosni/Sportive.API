@@ -709,7 +709,47 @@ public class ProductService : IProductService
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         
         IQueryable<Product> query;
-        if (product.Category?.Type == CategoryType.Shoes)
+        
+        var isShoesCategory = false;
+        var shoeCategoryIds = new List<int>();
+        var equipCategoryIds = new List<int>();
+        
+        var allCategories = await _db.Categories.AsNoTracking().Select(c => new { c.Id, c.ParentId, c.Type, c.NameAr, c.NameEn }).ToListAsync();
+        
+        foreach (var cat in allCategories)
+        {
+            var currentId = cat.Id;
+            var visited = new HashSet<int>();
+            while (true)
+            {
+                var c = allCategories.FirstOrDefault(x => x.Id == currentId);
+                if (c == null || visited.Contains(currentId)) break;
+                visited.Add(currentId);
+                
+                if (c.Type == CategoryType.Shoes || c.NameEn.ToLower().Contains("shoes") || c.NameAr.Contains("أحذية") || c.NameAr.Contains("حذاء"))
+                {
+                    shoeCategoryIds.Add(cat.Id);
+                    break;
+                }
+                if (c.Type == CategoryType.Equipment || c.NameEn.ToLower().Contains("equipment") || c.NameAr.Contains("أدوات"))
+                {
+                    equipCategoryIds.Add(cat.Id);
+                    break;
+                }
+                
+                if (c.ParentId.HasValue)
+                    currentId = c.ParentId.Value;
+                else
+                    break;
+            }
+        }
+        
+        if (product.CategoryId.HasValue && shoeCategoryIds.Contains(product.CategoryId.Value))
+        {
+            isShoesCategory = true;
+        }
+
+        if (isShoesCategory)
         {
             // "Complete the Look" (أكمل المظهر): suggest matching apparel and accessories (especially socks!)
             query = _db.Products
@@ -719,7 +759,7 @@ public class ProductService : IProductService
                 .Include(p => p.Variants)
                 .Include(p => p.Unit)
                 .Where(p => p.Id != productId && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock))
-                .Where(p => p.Category != null && p.Category.Type != CategoryType.Shoes && p.Category.Type != CategoryType.Equipment);
+                .Where(p => p.CategoryId == null || (!shoeCategoryIds.Contains(p.CategoryId.Value) && !equipCategoryIds.Contains(p.CategoryId.Value)));
         }
         else
         {
@@ -750,7 +790,7 @@ public class ProductService : IProductService
             .Take(50) // Limit to avoid large database retrieval
             .ToListAsync();
 
-        if (product.Category?.Type == CategoryType.Shoes)
+        if (isShoesCategory)
         {
             rawProducts = rawProducts
                 .OrderByDescending(p => p.NameAr.Contains("جوارب") || p.NameAr.Contains("شراب") || 
