@@ -182,73 +182,13 @@ public class ProductService : IProductService
 
         var total = await query.CountAsync();
 
-        var now = TimeHelper.GetEgyptTime();
         var page = Math.Max(1, filter.Page);
-        var items = await query
-            .Select(p => new {
-                p,
-                d = _db.ProductDiscounts
-                    .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now &&
-                        (d.ApplyTo == DiscountApplyTo.All || 
-                         (filter.Source.HasValue ? d.ApplyTo == filter.Source.Value : d.ApplyTo == DiscountApplyTo.Store)) &&
-                        (d.ProductId == p.Id || 
-                         (p.CategoryId != null && (d.CategoryId == p.CategoryId || d.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && d.CategoryId == p.Category!.Parent!.ParentId))) || 
-                         (p.BrandId != null && d.BrandId == p.BrandId) ||
-                         (d.ProductId == null && d.CategoryId == null && d.BrandId == null)))
-                    .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
-                    .FirstOrDefault()
-            })
+        var rawProducts = await query
             .Skip((page - 1) * filter.PageSize)
             .Take(filter.PageSize)
-            .Select(x => new ProductSummaryDto(
-                x.p.Id,
-                x.p.NameAr,
-                x.p.NameEn,
-                x.p.Slug,
-                x.p.Price,
-                x.d != null 
-                    ? (x.d.DiscountType == DiscountType.Percentage ? Math.Round(x.p.Price - (x.p.Price * x.d.DiscountValue / 100), 2) : Math.Round(x.p.Price - x.d.DiscountValue, 2)) 
-                    : ((x.p.DiscountPrice > 0) ? x.p.DiscountPrice.Value : x.p.Price),
-                x.p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
-                x.p.Category != null ? x.p.Category.NameAr : _t.Get("Products.CategoryMissing"),
-                x.p.Category != null ? x.p.Category.NameEn : _t.Get("Products.CategoryMissing"),
-                x.p.Brand != null ? x.p.Brand.NameAr : null,
-                x.p.Brand != null ? x.p.Brand.NameEn : null,
-                x.p.BrandId,
-                x.p.Status.ToString(),
-                x.p.AverageRating,
-                x.p.ReviewCount,
-                filter.WarehouseId.HasValue 
-                    ? (_db.ProductWarehouseStocks.Where(w => w.ProductVariant.ProductId == x.p.Id && w.WarehouseId == filter.WarehouseId.Value).Sum(w => (int?)w.Quantity) ?? 0) 
-                    : x.p.TotalStock,
-                x.p.ReorderLevel,
-                x.p.SKU,
-                x.p.Variants != null && x.p.Variants.Any(),
-                x.p.Variants!.Select(v => new ProductVariantDto(
-                    v.Id, 
-                    v.Size, 
-                    v.Color, 
-                    v.ColorAr, 
-                    filter.WarehouseId.HasValue 
-                        ? (_db.ProductWarehouseStocks.Where(w => w.ProductVariantId == v.Id && w.WarehouseId == filter.WarehouseId.Value).Select(w => w.Quantity).FirstOrDefault()) 
-                        : v.StockQuantity, 
-                    v.ReorderLevel, 
-                    v.PriceAdjustment ?? 0, 
-                    v.ImageUrl, 
-                    v.ImagePublicId
-                )).ToList(),
-                x.p.HasTax,
-                x.p.IsTaxInclusive,
-                x.p.VatRate,
-                x.p.CostPrice,
-                x.p.UnitId,
-                x.p.Unit != null ? x.p.Unit.NameAr : null,
-                x.p.Unit != null ? x.p.Unit.NameEn : null,
-                x.p.Unit != null ? x.p.Unit.Symbol : null,
-                x.p.CreatedAt,
-                x.d != null ? x.d.Label : null
-            ))
             .ToListAsync();
+
+        var items = await MapToSummaryListAsync(rawProducts, filter.Source, filter.WarehouseId);
 
         return new PaginatedResult<ProductSummaryDto>(
             items, total, page, filter.PageSize,
@@ -730,12 +670,12 @@ public class ProductService : IProductService
     }
     public async Task<List<ProductSummaryDto>> GetFeaturedProductsAsync(int count = 8, int? warehouseId = null)
     {
-        var now = TimeHelper.GetEgyptTime();
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         var query = _db.Products
             .Include(p => p.Category)
             .Include(p => p.Brand)
             .Include(p => p.Images)
+            .Include(p => p.Variants)
             .Include(p => p.Unit)
             .Where(p => p.IsFeatured && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock));
 
@@ -753,64 +693,12 @@ public class ProductService : IProductService
             }
         }
 
-        return await query
-            .Select(p => new {
-                p,
-                d = _db.ProductDiscounts
-                    .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now &&
-                        (d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == DiscountApplyTo.Store) &&
-                        (d.ProductId == p.Id || 
-                         (p.CategoryId != null && (d.CategoryId == p.CategoryId || d.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && d.CategoryId == p.Category!.Parent!.ParentId))) || 
-                         (d.BrandId != null && d.BrandId == p.BrandId) ||
-                         (d.ProductId == null && d.CategoryId == null && d.BrandId == null)))
-                    .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
-                    .FirstOrDefault()
-            })
-            .OrderByDescending(x => x.p.CreatedAt).ThenBy(x => x.p.Id)
+        var rawProducts = await query
+            .OrderByDescending(p => p.CreatedAt).ThenBy(p => p.Id)
             .Take(count)
-            .Select(x => new ProductSummaryDto(
-                x.p.Id,
-                x.p.NameAr,
-                x.p.NameEn,
-                x.p.Slug,
-                x.p.Price,
-                x.d != null 
-                    ? (x.d.DiscountType == DiscountType.Percentage ? Math.Round(x.p.Price - (x.p.Price * x.d.DiscountValue / 100), 2) : Math.Round(x.p.Price - x.d.DiscountValue, 2)) 
-                    : ((x.p.DiscountPrice > 0) ? x.p.DiscountPrice.Value : x.p.Price),
-                x.p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
-                x.p.Category != null ? x.p.Category.NameAr : _t.Get("Products.CategoryMissing"), 
-                x.p.Category != null ? x.p.Category.NameEn : _t.Get("Products.CategoryMissing"), 
-                x.p.Brand != null ? x.p.Brand.NameAr : null, 
-                x.p.Brand != null ? x.p.Brand.NameEn : null,
-                x.p.BrandId,
-                x.p.Status.ToString(),
-                x.p.AverageRating,
-                x.p.ReviewCount,
-                warehouseId.HasValue 
-                    ? (_db.ProductWarehouseStocks.Where(w => w.ProductVariant.ProductId == x.p.Id && w.WarehouseId == warehouseId.Value).Sum(w => (int?)w.Quantity) ?? 0) 
-                    : x.p.TotalStock,
-                x.p.ReorderLevel,
-                x.p.SKU,
-                x.p.Variants != null && x.p.Variants.Any(),
-                x.p.Variants!.Select(v => new ProductVariantDto(
-                    v.Id, v.Size, v.Color, v.ColorAr, 
-                    warehouseId.HasValue 
-                        ? (_db.ProductWarehouseStocks.Where(w => w.ProductVariantId == v.Id && w.WarehouseId == warehouseId.Value).Select(w => w.Quantity).FirstOrDefault()) 
-                        : v.StockQuantity, 
-                    v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId
-                )).ToList(),
-                x.p.HasTax,
-                x.p.IsTaxInclusive,
-                x.p.VatRate,
-                x.p.CostPrice,
-                x.p.UnitId,
-                x.p.Unit != null ? x.p.Unit.NameAr : null,
-                x.p.Unit != null ? x.p.Unit.NameEn : null,
-                x.p.Unit != null ? x.p.Unit.Symbol : null,
-                x.p.CreatedAt,
-                x.d != null ? x.d.Label : null
-            ))
             .ToListAsync();
+
+        return await MapToSummaryListAsync(rawProducts, DiscountApplyTo.Store, warehouseId);
     }
 
     public async Task<List<ProductSummaryDto>> GetRelatedProductsAsync(int productId, int count = 4, int? warehouseId = null)
@@ -818,7 +706,6 @@ public class ProductService : IProductService
         var product = await _db.Products.Include(p => p.Category).FirstOrDefaultAsync(p => p.Id == productId);
         if (product == null) return new List<ProductSummaryDto>();
 
-        var now = TimeHelper.GetEgyptTime();
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         
         IQueryable<Product> query;
@@ -829,6 +716,7 @@ public class ProductService : IProductService
                 .Include(p => p.Category)
                 .Include(p => p.Brand)
                 .Include(p => p.Images)
+                .Include(p => p.Variants)
                 .Include(p => p.Unit)
                 .Where(p => p.Id != productId && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock))
                 .Where(p => p.Category != null && p.Category.Type != CategoryType.Shoes && p.Category.Type != CategoryType.Equipment);
@@ -839,6 +727,7 @@ public class ProductService : IProductService
                 .Include(p => p.Category)
                 .Include(p => p.Brand)
                 .Include(p => p.Images)
+                .Include(p => p.Variants)
                 .Include(p => p.Unit)
                 .Where(p => p.CategoryId == product.CategoryId && p.Id != productId && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock));
         }
@@ -857,79 +746,28 @@ public class ProductService : IProductService
             }
         }
 
-        var rawList = await query
-            .Select(p => new {
-                p,
-                d = _db.ProductDiscounts
-                    .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now &&
-                        (d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == DiscountApplyTo.Store) &&
-                        (d.ProductId == p.Id || 
-                         (p.CategoryId != null && (d.CategoryId == p.CategoryId || d.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && d.CategoryId == p.Category!.Parent!.ParentId))) || 
-                         (d.BrandId != null && d.BrandId == p.BrandId) ||
-                         (d.ProductId == null && d.CategoryId == null && d.BrandId == null)))
-                    .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
-                    .FirstOrDefault()
-            })
+        var rawProducts = await query
             .Take(50) // Limit to avoid large database retrieval
             .ToListAsync();
 
         if (product.Category?.Type == CategoryType.Shoes)
         {
-            rawList = rawList
-                .OrderByDescending(x => x.p.NameAr.Contains("جوارب") || x.p.NameAr.Contains("شراب") || 
-                                        x.p.NameEn.Contains("Socks") || x.p.NameEn.Contains("socks") ||
-                                        (x.p.DescriptionAr != null && (x.p.DescriptionAr.Contains("جوارب") || x.p.DescriptionAr.Contains("شراب"))) ||
-                                        (x.p.DescriptionEn != null && (x.p.DescriptionEn.Contains("Socks") || x.p.DescriptionEn.Contains("socks"))))
-                .ThenByDescending(x => x.p.IsFeatured)
+            rawProducts = rawProducts
+                .OrderByDescending(p => p.NameAr.Contains("جوارب") || p.NameAr.Contains("شراب") || 
+                                        p.NameEn.Contains("Socks") || p.NameEn.Contains("socks") ||
+                                        (p.DescriptionAr != null && (p.DescriptionAr.Contains("جوارب") || p.DescriptionAr.Contains("شراب"))) ||
+                                        (p.DescriptionEn != null && (p.DescriptionEn.Contains("Socks") || p.DescriptionEn.Contains("socks"))))
+                .ThenByDescending(p => p.IsFeatured)
                 .ThenBy(_ => Guid.NewGuid())
                 .ToList();
         }
         else
         {
-            rawList = rawList.OrderBy(_ => Guid.NewGuid()).ToList();
+            rawProducts = rawProducts.OrderBy(_ => Guid.NewGuid()).ToList();
         }
 
-        return rawList
-            .Take(count)
-            .Select(x => new ProductSummaryDto(
-                x.p.Id, x.p.NameAr, x.p.NameEn, x.p.Slug, x.p.Price, 
-                x.d != null 
-                    ? (x.d.DiscountType == DiscountType.Percentage ? Math.Round(x.p.Price - (x.p.Price * x.d.DiscountValue / 100), 2) : Math.Round(x.p.Price - x.d.DiscountValue, 2)) 
-                    : ((x.p.DiscountPrice > 0) ? x.p.DiscountPrice.Value : x.p.Price),
-                x.p.Images.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
-                x.p.Category != null ? x.p.Category.NameAr : _t.Get("Products.CategoryMissing"), 
-                x.p.Category != null ? x.p.Category.NameEn : _t.Get("Products.CategoryMissing"), 
-                x.p.Brand != null ? x.p.Brand.NameAr : null, 
-                x.p.Brand != null ? x.p.Brand.NameEn : null,
-                x.p.BrandId,
-                x.p.Status.ToString(),
-                x.p.AverageRating,
-                x.p.ReviewCount,
-                warehouseId.HasValue 
-                    ? (_db.ProductWarehouseStocks.Where(w => w.ProductVariant.ProductId == x.p.Id && w.WarehouseId == warehouseId.Value).Sum(w => (int?)w.Quantity) ?? 0) 
-                    : x.p.TotalStock,
-                x.p.ReorderLevel,
-                x.p.SKU,
-                x.p.Variants != null && x.p.Variants.Any(),
-                x.p.Variants!.Select(v => new ProductVariantDto(
-                    v.Id, v.Size, v.Color, v.ColorAr, 
-                    warehouseId.HasValue 
-                        ? (_db.ProductWarehouseStocks.Where(w => w.ProductVariantId == v.Id && w.WarehouseId == warehouseId.Value).Select(w => w.Quantity).FirstOrDefault()) 
-                        : v.StockQuantity, 
-                    v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId
-                )).ToList(),
-                x.p.HasTax,
-                x.p.IsTaxInclusive,
-                x.p.VatRate,
-                x.p.CostPrice,
-                x.p.UnitId,
-                x.p.Unit != null ? x.p.Unit.NameAr : null,
-                x.p.Unit != null ? x.p.Unit.NameEn : null,
-                x.p.Unit != null ? x.p.Unit.Symbol : null,
-                x.p.CreatedAt,
-                x.d != null ? x.d.Label : null
-            ))
-            .ToList();
+        var mapProducts = rawProducts.Take(count).ToList();
+        return await MapToSummaryListAsync(mapProducts, DiscountApplyTo.Store, warehouseId);
     }
 
     private async Task<ProductDiscount?> GetProductDiscountAsync(Product p)
@@ -983,6 +821,152 @@ public class ProductService : IProductService
             p.SizeChartImageUrl,
             p.SizeChartJson
         );
+    }
+
+    private async Task<List<ProductSummaryDto>> MapToSummaryListAsync(List<Product> products, DiscountApplyTo? source = null, int? warehouseId = null)
+    {
+        if (products == null || !products.Any()) return new List<ProductSummaryDto>();
+
+        var productIds = products.Select(x => x.Id).ToList();
+        var categoryIds = products.Where(x => x.CategoryId.HasValue).Select(x => x.CategoryId!.Value).ToList();
+        var brandIds = products.Where(x => x.BrandId.HasValue).Select(x => x.BrandId!.Value).ToList();
+
+        // Load CategoryTree cache to resolve ancestors
+        var allCategories = await _cache.GetAsync<List<(int Id, int? ParentId)>>("CategoryTree");
+        if (allCategories == null)
+        {
+            var raw = await _db.Categories.AsNoTracking().Select(c => new { c.Id, c.ParentId }).ToListAsync();
+            allCategories = raw.Select(c => (c.Id, c.ParentId)).ToList();
+            await _cache.SetAsync("CategoryTree", allCategories, TimeSpan.FromMinutes(10));
+        }
+
+        var ancestorCategoryIds = new List<int>();
+        foreach (var catId in categoryIds)
+        {
+            var current = allCategories.FirstOrDefault(c => c.Id == catId);
+            while (current.ParentId.HasValue)
+            {
+                ancestorCategoryIds.Add(current.ParentId.Value);
+                current = allCategories.FirstOrDefault(c => c.Id == current.ParentId.Value);
+            }
+        }
+
+        var now = TimeHelper.GetEgyptTime();
+        var discounts = await _db.ProductDiscounts
+            .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now)
+            .Where(d => d.ApplyTo == DiscountApplyTo.All || 
+                     (source.HasValue ? d.ApplyTo == source.Value : d.ApplyTo == DiscountApplyTo.Store))
+            .Where(d => 
+                (d.ProductId == null && d.CategoryId == null && d.BrandId == null) ||
+                (d.ProductId != null && productIds.Contains(d.ProductId.Value)) ||
+                (d.CategoryId != null && (categoryIds.Contains(d.CategoryId.Value) || ancestorCategoryIds.Contains(d.CategoryId.Value))) ||
+                (d.BrandId != null && brandIds.Contains(d.BrandId.Value))
+            )
+            .ToListAsync();
+
+        var resultList = new List<ProductSummaryDto>();
+        
+        // Fetch warehouse stocks in a single batch to avoid N+1 queries if warehouseId is passed
+        Dictionary<int, int> variantStocks = new Dictionary<int, int>();
+        Dictionary<int, int> productStocks = new Dictionary<int, int>();
+        if (warehouseId.HasValue)
+        {
+            var stocks = await _db.ProductWarehouseStocks
+                .Where(w => productIds.Contains(w.ProductVariant.ProductId) && w.WarehouseId == warehouseId.Value)
+                .Select(w => new { w.ProductVariantId, w.ProductVariant.ProductId, w.Quantity })
+                .ToListAsync();
+
+            variantStocks = stocks.ToDictionary(s => s.ProductVariantId, s => s.Quantity);
+            productStocks = stocks.GroupBy(s => s.ProductId).ToDictionary(g => g.Key, g => g.Sum(s => s.Quantity));
+        }
+
+        foreach (var p in products)
+        {
+            // Resolve parent hierarchy for this product
+            var pCategoryAncestors = new List<int>();
+            if (p.CategoryId.HasValue)
+            {
+                var current = allCategories.FirstOrDefault(c => c.Id == p.CategoryId.Value);
+                while (current.ParentId.HasValue)
+                {
+                    pCategoryAncestors.Add(current.ParentId.Value);
+                    current = allCategories.FirstOrDefault(c => c.Id == current.ParentId.Value);
+                }
+            }
+
+            var pDiscount = discounts
+                .Where(d => 
+                    (d.ProductId == p.Id) ||
+                    (p.CategoryId.HasValue && d.CategoryId.HasValue && (d.CategoryId.Value == p.CategoryId.Value || pCategoryAncestors.Contains(d.CategoryId.Value))) ||
+                    (p.BrandId.HasValue && d.BrandId.HasValue && d.BrandId.Value == p.BrandId.Value) ||
+                    (d.ProductId == null && d.CategoryId == null && d.BrandId == null)
+                )
+                .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
+                .FirstOrDefault();
+
+            decimal finalPrice = p.Price;
+            if (pDiscount != null)
+            {
+                finalPrice = pDiscount.DiscountType == DiscountType.Percentage 
+                    ? Math.Round(p.Price - (p.Price * pDiscount.DiscountValue / 100), 2)
+                    : Math.Round(p.Price - pDiscount.DiscountValue, 2);
+            }
+            else if (p.DiscountPrice > 0)
+            {
+                finalPrice = p.DiscountPrice.Value;
+            }
+
+            int totalStock = warehouseId.HasValue 
+                ? (productStocks.TryGetValue(p.Id, out var qty) ? qty : 0) 
+                : p.TotalStock;
+
+            resultList.Add(new ProductSummaryDto(
+                p.Id,
+                p.NameAr,
+                p.NameEn,
+                p.Slug,
+                p.Price,
+                finalPrice,
+                p.Images?.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
+                p.Category != null ? p.Category.NameAr : _t.Get("Products.CategoryMissing"),
+                p.Category != null ? p.Category.NameEn : _t.Get("Products.CategoryMissing"),
+                p.Brand != null ? p.Brand.NameAr : null,
+                p.Brand != null ? p.Brand.NameEn : null,
+                p.BrandId,
+                p.Status.ToString(),
+                p.AverageRating,
+                p.ReviewCount,
+                totalStock,
+                p.ReorderLevel,
+                p.SKU,
+                p.Variants != null && p.Variants.Any(),
+                p.Variants?.Select(v => new ProductVariantDto(
+                    v.Id, 
+                    v.Size, 
+                    v.Color, 
+                    v.ColorAr, 
+                    warehouseId.HasValue 
+                        ? (variantStocks.TryGetValue(v.Id, out var qty) ? qty : 0) 
+                        : v.StockQuantity, 
+                    v.ReorderLevel, 
+                    v.PriceAdjustment ?? 0, 
+                    v.ImageUrl, 
+                    v.ImagePublicId
+                )).ToList() ?? new List<ProductVariantDto>(),
+                p.HasTax,
+                p.IsTaxInclusive,
+                p.VatRate,
+                p.CostPrice,
+                p.UnitId,
+                p.Unit != null ? p.Unit.NameAr : null,
+                p.Unit != null ? p.Unit.NameEn : null,
+                p.Unit != null ? p.Unit.Symbol : null,
+                p.CreatedAt,
+                pDiscount != null ? pDiscount.Label : null
+            ));
+        }
+
+        return resultList;
     }
 
     private string GenerateSlug(string name)
