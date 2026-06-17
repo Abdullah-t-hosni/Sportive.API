@@ -105,7 +105,8 @@ public record ProductSummaryDto(
     [property: JsonPropertyName("unitNameEn")] string? UnitNameEn = null,
     [property: JsonPropertyName("unitSymbol")] string? UnitSymbol = null,
     [property: JsonPropertyName("createdAt")] DateTime CreatedAt = default,
-    [property: JsonPropertyName("activeDiscountLabel")] string? ActiveDiscountLabel = null
+    [property: JsonPropertyName("activeDiscountLabel")] string? ActiveDiscountLabel = null,
+    [property: JsonPropertyName("linkedProductId")] int? LinkedProductId = null
 );
 
 public record ProductDetailDto(
@@ -145,7 +146,9 @@ public record ProductDetailDto(
     [property: JsonPropertyName("reviews")] List<ReviewListItemDto>? Reviews = null,
     [property: JsonPropertyName("activeDiscountLabel")] string? ActiveDiscountLabel = null,
     [property: JsonPropertyName("sizeChartImageUrl")] string? SizeChartImageUrl = null,
-    [property: JsonPropertyName("sizeChartJson")] string? SizeChartJson = null
+    [property: JsonPropertyName("sizeChartJson")] string? SizeChartJson = null,
+    [property: JsonPropertyName("linkedProductId")] int? LinkedProductId = null,
+    [property: JsonPropertyName("linkedProduct")] ProductSummaryDto? LinkedProduct = null
 );
 
 public record ProductVariantDto(
@@ -183,7 +186,8 @@ public record CreateProductDto(
     [property: JsonPropertyName("vatRate")] decimal? VatRate = null,
     [property: JsonPropertyName("sizeGroupId")] int? SizeGroupId = null,
     [property: JsonPropertyName("sizeChartImageUrl")] string? SizeChartImageUrl = null,
-    [property: JsonPropertyName("sizeChartJson")] string? SizeChartJson = null
+    [property: JsonPropertyName("sizeChartJson")] string? SizeChartJson = null,
+    [property: JsonPropertyName("linkedProductId")] int? LinkedProductId = null
 );
 
 public record UpdateProductDto(
@@ -206,7 +210,8 @@ public record UpdateProductDto(
     [property: JsonPropertyName("vatRate")] decimal? VatRate = null,
     [property: JsonPropertyName("sizeGroupId")] int? SizeGroupId = null,
     [property: JsonPropertyName("sizeChartImageUrl")] string? SizeChartImageUrl = null,
-    [property: JsonPropertyName("sizeChartJson")] string? SizeChartJson = null
+    [property: JsonPropertyName("sizeChartJson")] string? SizeChartJson = null,
+    [property: JsonPropertyName("linkedProductId")] int? LinkedProductId = null
 );
 
 public record UpdateSizeChartDto(

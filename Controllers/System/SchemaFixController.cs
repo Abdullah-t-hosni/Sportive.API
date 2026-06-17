@@ -385,6 +385,33 @@ public class SchemaFixController : ControllerBase
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
+    [HttpGet("run-v16")]
+    public async Task<IActionResult> RunV16()
+    {
+        _logger.LogWarning("SchemaFix run-v16 (LinkedProduct column) triggered.");
+        try
+        {
+            var skipped = new List<string>();
+            var cmds = new[] {
+                "ALTER TABLE Products ADD COLUMN LinkedProductId INT NULL;",
+                "ALTER TABLE Products ADD CONSTRAINT FK_Products_Products_LinkedProductId FOREIGN KEY (LinkedProductId) REFERENCES Products(Id) ON DELETE SET NULL;"
+            };
+
+            foreach (var c in cmds)
+            {
+                try { await _db.Database.ExecuteSqlRawAsync(c); }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("SchemaFix run-v16 skipped cmd: {Error}", ex.Message);
+                    skipped.Add(ex.Message);
+                }
+            }
+
+            return Ok(new { message = "Linked product column and constraint added to Products table.", skipped });
+        }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
     [HttpGet("clean-audit-movements")]
     public async Task<IActionResult> CleanAuditMovements()
     {

@@ -205,6 +205,11 @@ public class ProductService : IProductService
             .Include(x => x.Variants)
             .Include(x => x.Unit)
             .Include(x => x.Reviews).ThenInclude(r => r.Customer)
+            .Include(x => x.LinkedProduct).ThenInclude(lp => lp!.Category)
+            .Include(x => x.LinkedProduct).ThenInclude(lp => lp!.Brand)
+            .Include(x => x.LinkedProduct).ThenInclude(lp => lp!.Images)
+            .Include(x => x.LinkedProduct).ThenInclude(lp => lp!.Variants)
+            .Include(x => x.LinkedProduct).ThenInclude(lp => lp!.Unit)
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (p == null) return null;
@@ -233,7 +238,14 @@ public class ProductService : IProductService
             .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
             .FirstOrDefaultAsync();
 
-        return MapToDetail(p, d);
+        ProductSummaryDto? linkedSummary = null;
+        if (p.LinkedProduct != null)
+        {
+            var linkedList = await MapToSummaryListAsync(new List<Product> { p.LinkedProduct }, source, warehouseId);
+            linkedSummary = linkedList.FirstOrDefault();
+        }
+
+        return MapToDetail(p, d, linkedSummary);
     }
 
     public async Task<ProductDetailDto?> GetProductBySlugAsync(string slug, DiscountApplyTo? source = null, int? warehouseId = null)
@@ -245,6 +257,11 @@ public class ProductService : IProductService
             .Include(x => x.Variants)
             .Include(x => x.Unit)
             .Include(x => x.Reviews).ThenInclude(r => r.Customer)
+            .Include(x => x.LinkedProduct).ThenInclude(lp => lp!.Category)
+            .Include(x => x.LinkedProduct).ThenInclude(lp => lp!.Brand)
+            .Include(x => x.LinkedProduct).ThenInclude(lp => lp!.Images)
+            .Include(x => x.LinkedProduct).ThenInclude(lp => lp!.Variants)
+            .Include(x => x.LinkedProduct).ThenInclude(lp => lp!.Unit)
             .FirstOrDefaultAsync(x => x.Slug == slug);
 
         if (p == null) return null;
@@ -273,7 +290,14 @@ public class ProductService : IProductService
             .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
             .FirstOrDefaultAsync();
 
-        return MapToDetail(p, d);
+        ProductSummaryDto? linkedSummary = null;
+        if (p.LinkedProduct != null)
+        {
+            var linkedList = await MapToSummaryListAsync(new List<Product> { p.LinkedProduct }, source, warehouseId);
+            linkedSummary = linkedList.FirstOrDefault();
+        }
+
+        return MapToDetail(p, d, linkedSummary);
     }
 
     public async Task<ProductDetailDto> CreateProductAsync(CreateProductDto dto)
@@ -307,7 +331,8 @@ public class ProductService : IProductService
             SizeChartImageUrl = dto.SizeChartImageUrl,
             SizeChartJson = dto.SizeChartJson,
             Status = ProductStatus.Active,
-            Slug = GenerateSlug(dto.NameEn ?? dto.NameAr) + "-" + Guid.NewGuid().ToString().Substring(0, 4)
+            Slug = GenerateSlug(dto.NameEn ?? dto.NameAr) + "-" + Guid.NewGuid().ToString().Substring(0, 4),
+            LinkedProductId = dto.LinkedProductId
         };
 
         if (dto.Variants != null && dto.Variants.Any())
@@ -412,6 +437,7 @@ public class ProductService : IProductService
         product.SizeGroupId = dto.SizeGroupId;
         product.SizeChartImageUrl = dto.SizeChartImageUrl;
         product.SizeChartJson = dto.SizeChartJson;
+        product.LinkedProductId = dto.LinkedProductId;
         product.UpdatedAt = TimeHelper.GetEgyptTime();
 
         // إعادة حساب إجمالي المخزون وتحديث الحالة للتأكد من الدقة
@@ -820,7 +846,7 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync();
     }
 
-    private ProductDetailDto MapToDetail(Product p, ProductDiscount? d = null)
+    private ProductDetailDto MapToDetail(Product p, ProductDiscount? d = null, ProductSummaryDto? linkedProduct = null)
     {
         decimal finalDiscountPrice = (p.DiscountPrice > 0) ? p.DiscountPrice.Value : p.Price;
         string? activeLabel = null;
@@ -859,7 +885,9 @@ public class ProductService : IProductService
             p.Reviews?.Where(r => r.IsApproved).OrderByDescending(r => r.CreatedAt).Select(r => new ReviewListItemDto(r.Id, r.Customer?.FullName ?? _t.Get("Products.AnonymousReviewer"), r.Rating, r.Comment, r.CreatedAt)).ToList(),
             activeLabel,
             p.SizeChartImageUrl,
-            p.SizeChartJson
+            p.SizeChartJson,
+            p.LinkedProductId,
+            linkedProduct
         );
     }
 
@@ -1002,7 +1030,8 @@ public class ProductService : IProductService
                 p.Unit != null ? p.Unit.NameEn : null,
                 p.Unit != null ? p.Unit.Symbol : null,
                 p.CreatedAt,
-                pDiscount != null ? pDiscount.Label : null
+                pDiscount != null ? pDiscount.Label : null,
+                p.LinkedProductId
             ));
         }
 

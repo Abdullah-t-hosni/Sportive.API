@@ -51,6 +51,10 @@ public class Product : BaseEntity
     public ICollection<Review> Reviews { get; set; } = new List<Review>();
     public string? SizeChartImageUrl { get; set; }
     public string? SizeChartJson { get; set; }
+
+    // Linked Product for manual upsell/cross-sell in cart
+    public int? LinkedProductId { get; set; }
+    public Product? LinkedProduct { get; set; }
 }
 
 public class ProductVariant : BaseEntity
