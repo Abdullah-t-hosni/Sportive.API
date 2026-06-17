@@ -4185,76 +4185,134 @@ public class OperationalReportsController : ControllerBase
             expenseLinesQuery = expenseLinesQuery.Where(l => l.BranchId == branchId.Value);
         }
 
-        var dailyIncomeExpenses = await expenseLinesQuery
+        // Base operational expenses (income statement expenses, returns, discounts)
+        var dailyIncomeExpensesBase = await expenseLinesQuery
             .Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd)
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0m;
 
-        var mtdIncomeExpenses = await expenseLinesQuery
+        var mtdIncomeExpensesBase = await expenseLinesQuery
             .Where(l => l.JournalEntry.EntryDate >= monthStart && l.JournalEntry.EntryDate <= dayEnd)
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0m;
 
-        // Cash Outflows from Cash Accounts
-        var cashOutflowLines = await _db.JournalLines.AsNoTracking()
+        // Query cash outflow lines (credits to cash/bank accounts) filtered by branch if selected
+        var dailyCashOutflowQuery = _db.JournalLines.AsNoTracking()
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && cashAccounts.Contains(l.AccountId)
                      && l.Credit > 0
                      && l.JournalEntry.EntryDate >= dayStart 
-                     && l.JournalEntry.EntryDate <= dayEnd)
-            .Select(l => new { l.JournalEntryId, l.Credit })
-            .ToListAsync();
+                     && l.JournalEntry.EntryDate <= dayEnd);
 
-        var entryIds = cashOutflowLines.Select(l => l.JournalEntryId).Distinct().ToList();
-        var expenseEntryIds = await _db.JournalLines.AsNoTracking()
-            .Where(l => entryIds.Contains(l.JournalEntryId)
-                     && l.Debit > 0
-                     && (l.Account.Type == AccountType.Expense 
-                         || l.Account.Code.StartsWith("5")
-                         || (salesReturnAccId.HasValue && l.AccountId == salesReturnAccId.Value)
-                         || (salesDiscountAccId.HasValue && l.AccountId == salesDiscountAccId.Value)
-                         || (discountReturnAccId.HasValue && l.AccountId == discountReturnAccId.Value)))
-            .Select(l => l.JournalEntryId)
-            .Distinct()
-            .ToListAsync();
-
-        decimal dailyAccountOutflows = 0;
-        foreach (var line in cashOutflowLines)
-        {
-            if (!expenseEntryIds.Contains(line.JournalEntryId))
-            {
-                dailyAccountOutflows += line.Credit;
-            }
-        }
-
-        var mtdCashOutflowLines = await _db.JournalLines.AsNoTracking()
+        var mtdCashOutflowQuery = _db.JournalLines.AsNoTracking()
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && cashAccounts.Contains(l.AccountId)
                      && l.Credit > 0
                      && l.JournalEntry.EntryDate >= monthStart 
-                     && l.JournalEntry.EntryDate <= dayEnd)
-            .Select(l => new { l.JournalEntryId, l.Credit })
-            .ToListAsync();
+                     && l.JournalEntry.EntryDate <= dayEnd);
 
-        var mtdEntryIds = mtdCashOutflowLines.Select(l => l.JournalEntryId).Distinct().ToList();
-        var mtdExpenseEntryIds = await _db.JournalLines.AsNoTracking()
-            .Where(l => mtdEntryIds.Contains(l.JournalEntryId)
-                     && l.Debit > 0
-                     && (l.Account.Type == AccountType.Expense 
-                         || l.Account.Code.StartsWith("5")
-                         || (salesReturnAccId.HasValue && l.AccountId == salesReturnAccId.Value)
-                         || (salesDiscountAccId.HasValue && l.AccountId == salesDiscountAccId.Value)
-                         || (discountReturnAccId.HasValue && l.AccountId == discountReturnAccId.Value)))
-            .Select(l => l.JournalEntryId)
-            .Distinct()
-            .ToListAsync();
-
-        decimal mtdAccountOutflows = 0;
-        foreach (var line in mtdCashOutflowLines)
+        if (branchId.HasValue)
         {
-            if (!mtdExpenseEntryIds.Contains(line.JournalEntryId))
+            dailyCashOutflowQuery = dailyCashOutflowQuery.Where(l => l.BranchId == branchId.Value);
+            mtdCashOutflowQuery = mtdCashOutflowQuery.Where(l => l.BranchId == branchId.Value);
+        }
+
+        var dailyCashOutflowLines = await dailyCashOutflowQuery
+            .Include(l => l.JournalEntry)
+            .Include(l => l.Account)
+            .ToListAsync();
+
+        var mtdCashOutflowLines = await mtdCashOutflowQuery
+            .Include(l => l.JournalEntry)
+            .Include(l => l.Account)
+            .ToListAsync();
+
+        // Daily categorization
+        var dailyOutflowEntryIds = dailyCashOutflowLines.Select(l => l.JournalEntryId).Distinct().ToList();
+        var dailyDebitedLines = await _db.JournalLines.AsNoTracking()
+            .Include(l => l.Account)
+            .Where(l => dailyOutflowEntryIds.Contains(l.JournalEntryId) && l.Debit > 0)
+            .ToListAsync();
+
+        decimal dailySupplierPayments = 0;
+        decimal dailyAccountOutflows = 0;
+
+        foreach (var outflowLine in dailyCashOutflowLines)
+        {
+            var entryDebits = dailyDebitedLines.Where(l => l.JournalEntryId == outflowLine.JournalEntryId).ToList();
+
+            // 1. Skip internal transfers (debits to another cash/bank/closure account starting with 1101, 1102, 1103)
+            bool isInternalTransfer = entryDebits.Any(d => d.Account.Code.StartsWith("1101") 
+                                                        || d.Account.Code.StartsWith("1102") 
+                                                        || d.Account.Code.StartsWith("1103"));
+            if (isInternalTransfer)
             {
-                mtdAccountOutflows += line.Credit;
+                continue;
+            }
+
+            // 2. Supplier Payment (debits a supplier account starting with 2101)
+            bool isSupplierPayment = entryDebits.Any(d => d.Account.Code.StartsWith("2101"));
+            if (isSupplierPayment)
+            {
+                dailySupplierPayments += outflowLine.Credit;
+            }
+            else
+            {
+                // 3. Other Balance Sheet Outflows (exclude if already accounted for in general operational expenses base)
+                bool isExpense = entryDebits.Any(d => d.Account.Type == AccountType.Expense 
+                                                   || d.Account.Code.StartsWith("5")
+                                                   || (salesReturnAccId.HasValue && d.AccountId == salesReturnAccId.Value)
+                                                   || (salesDiscountAccId.HasValue && d.AccountId == salesDiscountAccId.Value)
+                                                   || (discountReturnAccId.HasValue && d.AccountId == discountReturnAccId.Value));
+                if (!isExpense)
+                {
+                    dailyAccountOutflows += outflowLine.Credit;
+                }
             }
         }
+
+        // MTD categorization
+        var mtdOutflowEntryIds = mtdCashOutflowLines.Select(l => l.JournalEntryId).Distinct().ToList();
+        var mtdDebitedLines = await _db.JournalLines.AsNoTracking()
+            .Include(l => l.Account)
+            .Where(l => mtdOutflowEntryIds.Contains(l.JournalEntryId) && l.Debit > 0)
+            .ToListAsync();
+
+        decimal mtdSupplierPayments = 0;
+        decimal mtdAccountOutflows = 0;
+
+        foreach (var outflowLine in mtdCashOutflowLines)
+        {
+            var entryDebits = mtdDebitedLines.Where(l => l.JournalEntryId == outflowLine.JournalEntryId).ToList();
+
+            bool isInternalTransfer = entryDebits.Any(d => d.Account.Code.StartsWith("1101") 
+                                                        || d.Account.Code.StartsWith("1102") 
+                                                        || d.Account.Code.StartsWith("1103"));
+            if (isInternalTransfer)
+            {
+                continue;
+            }
+
+            bool isSupplierPayment = entryDebits.Any(d => d.Account.Code.StartsWith("2101"));
+            if (isSupplierPayment)
+            {
+                mtdSupplierPayments += outflowLine.Credit;
+            }
+            else
+            {
+                bool isExpense = entryDebits.Any(d => d.Account.Type == AccountType.Expense 
+                                                   || d.Account.Code.StartsWith("5")
+                                                   || (salesReturnAccId.HasValue && d.AccountId == salesReturnAccId.Value)
+                                                   || (salesDiscountAccId.HasValue && d.AccountId == salesDiscountAccId.Value)
+                                                   || (discountReturnAccId.HasValue && d.AccountId == discountReturnAccId.Value));
+                if (!isExpense)
+                {
+                    mtdAccountOutflows += outflowLine.Credit;
+                }
+            }
+        }
+
+        // Final results: Add supplier payments directly to operational expenses/Income Statement card
+        var dailyIncomeExpenses = dailyIncomeExpensesBase + dailySupplierPayments;
+        var mtdIncomeExpenses = mtdIncomeExpensesBase + mtdSupplierPayments;
 
         var summary = new PartnersReportSummary(
             posDailySales, posTotalSales,
