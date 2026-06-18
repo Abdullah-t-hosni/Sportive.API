@@ -4425,7 +4425,7 @@ public class OperationalReportsController : ControllerBase
             entryType   = l.JournalEntry.Type.ToString(),
             debit       = l.Debit,
             credit      = l.Credit,
-            description = l.Description ?? l.JournalEntry.Description
+            description = !string.IsNullOrWhiteSpace(l.JournalEntry.Description) ? l.JournalEntry.Description : l.Description
         }).ToList();
 
         // ── NEW: Account Movements (مصروفات الحسابات اليومية) ─────────────────
@@ -4462,7 +4462,7 @@ public class OperationalReportsController : ControllerBase
             entryType   = l.JournalEntry.Type.ToString(),
             debit       = l.Debit,
             credit      = l.Credit,
-            description = l.Description ?? l.JournalEntry.Description ?? l.Account.NameAr
+            description = !string.IsNullOrWhiteSpace(l.JournalEntry.Description) ? l.JournalEntry.Description : (!string.IsNullOrWhiteSpace(l.Description) ? l.Description : l.Account.NameAr)
         }).ToList();
 
         var summary = new PartnersReportSummary(
