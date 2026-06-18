@@ -233,40 +233,62 @@ public class PayrollController : ControllerBase
         {
             var empAttendances = attendances.Where(a => a.EmployeeId == emp.Id).ToList();
 
-            // Calculate Absence (explicitly logged IsAbsent, or missing records on workdays)
-            var weekendDays = (emp.WeeklyDaysOff ?? "Friday")
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(d => d.Trim().ToLower())
-                .ToList();
+            decimal overtimeHours;
+            decimal absenceDays;
+            decimal delayMinutes;
 
-            var today = TimeHelper.GetEgyptTime().Date;
-            var daysInPeriod = DateTime.DaysInMonth(year, month);
-            var missingDays = 0;
-
-            for (int day = 1; day <= daysInPeriod; day++)
+            if (emp.AttendanceMode == AttendanceMode.MonthlyTotal)
             {
-                var date = new DateTime(year, month, day);
-                if (date > today) continue; // Don't count future days as absent
+                // ═══ وضع الإجمالي الشهري ══════════════════════════════════════════════
+                // المستهدف = (أيام العمل الشهرية - أيام الإجازة) × ساعات العمل اليومية
+                var workDays     = emp.DaysPerMonth > 0 ? emp.DaysPerMonth : 26;
+                var vacDays      = emp.MonthlyVacationDays >= 0 ? emp.MonthlyVacationDays : 0;
+                var effWorkDays  = Math.Max(workDays - vacDays, 1); // لا يقل عن 1
+                var dailyHours   = emp.WorkHoursPerDay > 0 ? emp.WorkHoursPerDay : 9m;
+                var monthlyTarget = (decimal)effWorkDays * dailyHours;
 
-                var dayNameAr = date.ToString("dddd", new System.Globalization.CultureInfo("ar-EG")).ToLower();
-                var dayNameEn = date.ToString("dddd", new System.Globalization.CultureInfo("en-US")).ToLower();
+                var actualHours  = empAttendances.Where(a => !a.IsAbsent).Sum(a => a.WorkHours);
+                var diff         = actualHours - monthlyTarget;
 
-                var isWeekend = weekendDays.Contains(dayNameEn) || weekendDays.Contains(dayNameAr);
-                if (isWeekend) continue; // Weekend is not absent
+                overtimeHours = diff > 0 ? diff : 0;
 
-                if (!empAttendances.Any(a => a.Date == date))
+                // الساعات الناقصة → تحويل لأيام غياب بالتناسب
+                var shortHours   = diff < 0 ? Math.Abs(diff) : 0;
+                absenceDays      = dailyHours > 0 ? shortHours / dailyHours : 0;
+                delayMinutes     = 0; // لا تأخير في هذا الوضع
+            }
+            else
+            {
+                // ═══ وضع Fixed / Flexible: حساب يومي كالمعتاد ══════════════════════
+
+                // حساب الغياب (صريح أو أيام ناقصة)
+                var weekendDays = (emp.WeeklyDaysOff ?? "Friday")
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(d => d.Trim().ToLower())
+                    .ToList();
+
+                var today = TimeHelper.GetEgyptTime().Date;
+                var daysInPeriod = DateTime.DaysInMonth(year, month);
+                var missingDays = 0;
+
+                for (int day = 1; day <= daysInPeriod; day++)
                 {
-                    missingDays++;
+                    var date = new DateTime(year, month, day);
+                    if (date > today) continue;
+
+                    var dayNameAr = date.ToString("dddd", new System.Globalization.CultureInfo("ar-EG")).ToLower();
+                    var dayNameEn = date.ToString("dddd", new System.Globalization.CultureInfo("en-US")).ToLower();
+                    var isWeekend = weekendDays.Contains(dayNameEn) || weekendDays.Contains(dayNameAr);
+                    if (isWeekend) continue;
+
+                    if (!empAttendances.Any(a => a.Date == date)) missingDays++;
                 }
+
+                absenceDays   = empAttendances.Count(a => a.IsAbsent) + missingDays;
+                overtimeHours = empAttendances.Sum(a => a.OvertimeHours);
+                delayMinutes  = empAttendances.Sum(a => a.DelayMinutes);
             }
 
-            var absenceDays = empAttendances.Count(a => a.IsAbsent) + missingDays;
-
-            // Calculate Overtime
-            var overtimeHours = empAttendances.Sum(a => a.OvertimeHours);
-
-            // Calculate Delay
-            var delayMinutes = empAttendances.Sum(a => a.DelayMinutes);
 
             // Financial Calculations
             var baseSalary = emp.BaseSalary;
@@ -437,7 +459,7 @@ public class PayrollController : ControllerBase
                 emp.FixedAllowance,
                 totalDeduction,
                 proposedAdvanceDeduct,
-                absenceDays,
+                (int)Math.Ceiling(absenceDays),
                 absenceDeduction,
                 overtimeHours,
                 overtimeAmount,

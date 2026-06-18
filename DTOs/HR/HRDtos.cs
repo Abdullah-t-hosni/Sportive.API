@@ -59,6 +59,7 @@ public record CreateEmployeeDto(
     AttendanceMode AttendanceMode    = AttendanceMode.Fixed,
     string        ShiftStartTime     = "09:00",
     string        WeeklyDaysOff      = "Friday",
+    int           MonthlyVacationDays = 0,
     int?          BranchId           = null
 );
 
@@ -88,6 +89,7 @@ public record UpdateEmployeeDto(
     AttendanceMode AttendanceMode    = AttendanceMode.Fixed,
     string        ShiftStartTime     = "09:00",
     string        WeeklyDaysOff      = "Friday",
+    int           MonthlyVacationDays = 0,
     int?          BranchId           = null
 );
 
@@ -123,6 +125,7 @@ public record EmployeeDto(
     AttendanceMode AttendanceMode  = AttendanceMode.Fixed,
     string         ShiftStartTime  = "09:00",
     string         WeeklyDaysOff   = "Friday",
+    int            MonthlyVacationDays = 0,
     int?           BranchId        = null
 );
 

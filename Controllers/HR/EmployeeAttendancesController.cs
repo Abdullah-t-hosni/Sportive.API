@@ -283,30 +283,30 @@ public class EmployeeAttendancesController : ControllerBase
                     if (!isAbsent && checkIn.HasValue && checkOut.HasValue)
                     {
                         workHours = (decimal)(checkOut.Value - checkIn.Value).TotalHours;
-                        
-                        // Overtime
-                        var stdHours = emp.WorkHoursPerDay;
-                        if (workHours > stdHours)
-                        {
-                            overtime = workHours - stdHours;
-                        }
 
-                        // Delay (only in Fixed Shift mode)
-                        if (emp.AttendanceMode == AttendanceMode.Fixed && !string.IsNullOrEmpty(emp.ShiftStartTime))
+                        if (emp.AttendanceMode != AttendanceMode.MonthlyTotal)
                         {
-                            if (TimeSpan.TryParse(emp.ShiftStartTime, out var shiftStart))
+                            // ─── وضع Fixed / Flexible: حساب إضافي وتأخير يومياً ─────────────
+                            var stdHours = emp.WorkHoursPerDay;
+                            if (workHours > stdHours)
                             {
-                                var stdCheckIn = attendanceDate.Add(shiftStart);
-                                if (checkIn.Value > stdCheckIn)
+                                overtime = workHours - stdHours;
+                            }
+
+                            if (emp.AttendanceMode == AttendanceMode.Fixed && !string.IsNullOrEmpty(emp.ShiftStartTime))
+                            {
+                                if (TimeSpan.TryParse(emp.ShiftStartTime, out var shiftStart))
                                 {
-                                    var diff = (checkIn.Value - stdCheckIn).TotalMinutes;
-                                    if (diff > 0)
+                                    var stdCheckIn = attendanceDate.Add(shiftStart);
+                                    if (checkIn.Value > stdCheckIn)
                                     {
-                                        delayMinutes = (decimal)diff;
+                                        var diff = (checkIn.Value - stdCheckIn).TotalMinutes;
+                                        if (diff > 0) delayMinutes = (decimal)diff;
                                     }
                                 }
                             }
                         }
+                        // وضع MonthlyTotal: لا يوجد إضافي أو تأخير يومي — يُحسب في نهاية الشهر فقط
                     }
 
                     var notes = row.Cell(notesCol).Value.ToString().Trim();
@@ -320,16 +320,11 @@ public class EmployeeAttendancesController : ControllerBase
                     var dayNameAr = attendanceDate.ToString("dddd", new System.Globalization.CultureInfo("ar-EG")).ToLower();
                     var dayNameEn = attendanceDate.ToString("dddd", new System.Globalization.CultureInfo("en-US")).ToLower();
 
-                    // If it is a weekend, we don't mark as absent or count delay
                     var isWeekend = weekendDays.Contains(dayNameEn) || weekendDays.Contains(dayNameAr);
                     if (isWeekend)
                     {
                         delayMinutes = 0;
-                        if (isAbsent)
-                        {
-                            // Skip weekend days off completely from absent penalties
-                            continue; 
-                        }
+                        if (isAbsent) continue; // تجاهل أيام الإجازة الأسبوعية
                     }
 
                     // Save or Update
@@ -357,16 +352,30 @@ public class EmployeeAttendancesController : ControllerBase
                     }
                     else
                     {
-                        attendance.CheckIn = checkIn;
-                        attendance.CheckOut = checkOut;
-                        attendance.WorkHours = workHours;
-                        attendance.OvertimeHours = overtime;
-                        attendance.DelayMinutes = delayMinutes;
+                        if (emp.AttendanceMode == AttendanceMode.MonthlyTotal)
+                        {
+                            // وضع الإجمالي الشهري: نجمع الساعات (وردية مقسّمة — دخولين في نفس اليوم)
+                            attendance.WorkHours += workHours;
+                            if (checkIn.HasValue && (!attendance.CheckIn.HasValue || checkIn < attendance.CheckIn))
+                                attendance.CheckIn = checkIn; // أول دخول في اليوم
+                            if (checkOut.HasValue && (!attendance.CheckOut.HasValue || checkOut > attendance.CheckOut))
+                                attendance.CheckOut = checkOut; // آخر خروج في اليوم
+                        }
+                        else
+                        {
+                            // وضع ثابت/مرن: نستبدل
+                            attendance.CheckIn = checkIn;
+                            attendance.CheckOut = checkOut;
+                            attendance.WorkHours = workHours;
+                            attendance.OvertimeHours = overtime;
+                            attendance.DelayMinutes = delayMinutes;
+                        }
                         attendance.IsAbsent = isAbsent;
                         attendance.Notes = string.IsNullOrEmpty(notes) ? attendance.Notes : notes;
                         attendance.UpdatedAt = TimeHelper.GetEgyptTime();
                         logsUpdated++;
                     }
+
                 }
             }
         }

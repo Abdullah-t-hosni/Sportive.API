@@ -80,6 +80,7 @@ public class EmployeesController : ControllerBase
                 e.CostCenter,
                 e.WorkHoursPerDay, e.OvertimeMultiplier, e.DaysPerMonth,
                 e.AttendanceMode, e.ShiftStartTime, e.WeeklyDaysOff,
+                e.MonthlyVacationDays,
                 e.BranchId
             )).ToListAsync();
 
@@ -154,6 +155,7 @@ public class EmployeesController : ControllerBase
             e.CostCenter,
             e.WorkHoursPerDay, e.OvertimeMultiplier, e.DaysPerMonth,
             e.AttendanceMode, e.ShiftStartTime, e.WeeklyDaysOff,
+            e.MonthlyVacationDays,
             e.BranchId));
     }
 
@@ -224,6 +226,7 @@ public class EmployeesController : ControllerBase
             AttendanceMode   = dto.AttendanceMode,
             ShiftStartTime   = dto.ShiftStartTime ?? "09:00",
             WeeklyDaysOff    = dto.WeeklyDaysOff ?? "Friday",
+            MonthlyVacationDays = dto.MonthlyVacationDays,
             BranchId         = dto.BranchId,
             CreatedAt        = TimeHelper.GetEgyptTime(),
             CreatedByUserId  = UserId
@@ -314,6 +317,7 @@ public class EmployeesController : ControllerBase
         emp.AttendanceMode   = dto.AttendanceMode;
         emp.ShiftStartTime   = dto.ShiftStartTime ?? "09:00";
         emp.WeeklyDaysOff    = dto.WeeklyDaysOff ?? "Friday";
+        emp.MonthlyVacationDays = dto.MonthlyVacationDays;
         emp.BranchId         = dto.BranchId;
         emp.UpdatedAt         = TimeHelper.GetEgyptTime();
 

@@ -60,8 +60,9 @@ public enum CommissionBasis
 
 public enum AttendanceMode
 {
-    Fixed    = 1, // ثابت
-    Flexible = 2  // مرن
+    Fixed        = 1, // ثابت — بميعاد حضور يومي
+    Flexible     = 2, // مرن — ساعات عمل يومية فقط
+    MonthlyTotal = 3  // إجمالي شهري — مجموع ساعات الشهر (للوردية المقسّمة)
 }
 
 public class Department : BaseEntity
@@ -119,6 +120,11 @@ public class Employee : BaseEntity
     public AttendanceMode AttendanceMode   { get; set; } = AttendanceMode.Fixed;
     public string         ShiftStartTime   { get; set; } = "09:00";
     public string         WeeklyDaysOff    { get; set; } = "Friday"; // Comma-separated list of days (e.g. "Friday,Saturday")
+
+    // ─── إعدادات نظام الحضور الشهري المجمّع (MonthlyTotal) ───────────
+    // عدد أيام الإجازة/العطلات المقررة في الشهر (تُخصم من DaysPerMonth)
+    // المستهدف الشهري = (DaysPerMonth - MonthlyVacationDays) × WorkHoursPerDay
+    public int MonthlyVacationDays { get; set; } = 0;
 
     public string? BankAccount     { get; set; }  // رقم الحساب البنكي
     public string? Notes           { get; set; }
