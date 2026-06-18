@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
+using Sportive.API.Services;
+using System.Security.Claims;
 
 namespace Sportive.API.Controllers;
 
@@ -12,7 +14,12 @@ namespace Sportive.API.Controllers;
 public class ProductsController : ControllerBase
 {
     private readonly IProductService _products;
-    public ProductsController(IProductService products) => _products = products;
+    private readonly IAuditService _audit;
+    public ProductsController(IProductService products, IAuditService audit)
+    {
+        _products = products;
+        _audit = audit;
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] ProductFilterDto filter) =>
@@ -50,6 +57,7 @@ public class ProductsController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateProductDto dto)
     {
         var product = await _products.CreateProductAsync(dto);
+        try { await _audit.LogAsync("CreateProduct", "Product", product.Id.ToString(), $"Created product: {product.NameEn}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return CreatedAtAction(nameof(GetById), new { id = product.Id }, product);
     }
 
@@ -57,7 +65,11 @@ public class ProductsController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateProductDto dto)
     {
-        try { return Ok(await _products.UpdateProductAsync(id, dto)); }
+        try { 
+            var result = await _products.UpdateProductAsync(id, dto);
+            try { await _audit.LogAsync("UpdateProduct", "Product", id.ToString(), $"Updated product", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+            return Ok(result); 
+        }
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
@@ -65,43 +77,75 @@ public class ProductsController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
-        try { await _products.DeleteProductAsync(id); return NoContent(); }
+        try { 
+            await _products.DeleteProductAsync(id); 
+            try { await _audit.LogAsync("DeleteProduct", "Product", id.ToString(), $"Deleted product", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+            return NoContent(); 
+        }
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
     [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPatch("{id}/cost")]
-    public async Task<IActionResult> UpdateCost(int id, [FromBody] decimal? costPrice) =>
-        await _products.UpdateCostPriceAsync(id, costPrice) ? Ok() : NotFound();
+    public async Task<IActionResult> UpdateCost(int id, [FromBody] decimal? costPrice)
+    {
+        var success = await _products.UpdateCostPriceAsync(id, costPrice);
+        if (success) { try { await _audit.LogAsync("UpdateProductCost", "Product", id.ToString(), $"Updated cost price to {costPrice}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } return Ok(); }
+        return NotFound();
+    }
 
     [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPatch("{id}/size-chart")]
-    public async Task<IActionResult> UpdateSizeChart(int id, [FromBody] UpdateSizeChartDto dto) =>
-        await _products.UpdateSizeChartAsync(id, dto.SizeChartJson, dto.SizeChartImageUrl) ? Ok() : NotFound();
+    public async Task<IActionResult> UpdateSizeChart(int id, [FromBody] UpdateSizeChartDto dto)
+    {
+        var success = await _products.UpdateSizeChartAsync(id, dto.SizeChartJson, dto.SizeChartImageUrl);
+        if (success) { try { await _audit.LogAsync("UpdateSizeChart", "Product", id.ToString(), $"Updated size chart", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } return Ok(); }
+        return NotFound();
+    }
 
     [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPatch("variants/{variantId}/stock")]
-    public async Task<IActionResult> UpdateStock(int variantId, [FromBody] int quantity) =>
-        await _products.UpdateStockAsync(variantId, quantity) ? Ok() : NotFound();
+    public async Task<IActionResult> UpdateStock(int variantId, [FromBody] int quantity)
+    {
+        var success = await _products.UpdateStockAsync(variantId, quantity);
+        if (success) { try { await _audit.LogAsync("UpdateVariantStock", "ProductVariant", variantId.ToString(), $"Updated stock by {quantity}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } return Ok(); }
+        return NotFound();
+    }
 
     [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPatch("{id}/stock")]
-    public async Task<IActionResult> UpdateProductStock(int id, [FromBody] int quantity) =>
-        await _products.UpdateProductStockAsync(id, quantity) ? Ok() : NotFound();
+    public async Task<IActionResult> UpdateProductStock(int id, [FromBody] int quantity)
+    {
+        var success = await _products.UpdateProductStockAsync(id, quantity);
+        if (success) { try { await _audit.LogAsync("UpdateProductStock", "Product", id.ToString(), $"Updated base stock by {quantity}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } return Ok(); }
+        return NotFound();
+    }
 
     [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPost("{productId}/variants")]
-    public async Task<IActionResult> AddVariant(int productId, [FromBody] CreateVariantDto dto) =>
-        Ok(await _products.AddVariantAsync(productId, dto));
+    public async Task<IActionResult> AddVariant(int productId, [FromBody] CreateVariantDto dto)
+    {
+        var variant = await _products.AddVariantAsync(productId, dto);
+        try { await _audit.LogAsync("AddVariant", "ProductVariant", variant.Id.ToString(), $"Added variant to product {productId}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        return Ok(variant);
+    }
 
     [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPatch("variants/{variantId}")]
-    public async Task<IActionResult> UpdateVariant(int variantId, [FromBody] CreateVariantDto dto) =>
-        Ok(await _products.UpdateVariantAsync(variantId, dto));
+    public async Task<IActionResult> UpdateVariant(int variantId, [FromBody] CreateVariantDto dto)
+    {
+        var variant = await _products.UpdateVariantAsync(variantId, dto);
+        try { await _audit.LogAsync("UpdateVariant", "ProductVariant", variantId.ToString(), $"Updated variant", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        return Ok(variant);
+    }
 
     [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpDelete("variants/{variantId}")]
-    public async Task<IActionResult> DeleteVariant(int variantId) =>
-        await _products.DeleteVariantAsync(variantId) ? NoContent() : NotFound();
+    public async Task<IActionResult> DeleteVariant(int variantId)
+    {
+        var success = await _products.DeleteVariantAsync(variantId);
+        if (success) { try { await _audit.LogAsync("DeleteVariant", "ProductVariant", variantId.ToString(), $"Deleted variant", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } return NoContent(); }
+        return NotFound();
+    }
 }
 

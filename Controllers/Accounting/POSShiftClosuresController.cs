@@ -20,10 +20,12 @@ namespace Sportive.API.Controllers
     public class POSShiftClosuresController : ControllerBase
     {
         private readonly AppDbContext _db;
+        private readonly Sportive.API.Interfaces.IAuditService _audit;
 
-        public POSShiftClosuresController(AppDbContext db)
+        public POSShiftClosuresController(AppDbContext db, Sportive.API.Interfaces.IAuditService audit)
         {
             _db = db;
+            _audit = audit;
         }
 
         [HttpPost]
@@ -70,6 +72,7 @@ namespace Sportive.API.Controllers
 
                 _db.POSShiftClosures.Add(closure);
                 await _db.SaveChangesAsync();
+                try { await _audit.LogAsync("CreatePOSClosure", "POSShiftClosure", closure.Id.ToString(), $"Created POS shift closure", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { }
 
                 return Ok(closure);
             }
@@ -150,6 +153,7 @@ namespace Sportive.API.Controllers
 
                 _db.POSShiftClosures.Remove(closure);
                 await _db.SaveChangesAsync();
+                try { await _audit.LogAsync("DeletePOSClosure", "POSShiftClosure", id.ToString(), $"Deleted POS shift closure", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { }
 
                 return Ok(new { message = "Shift closure deleted successfully and associated accounting entries reversed" });
             }
@@ -323,6 +327,7 @@ namespace Sportive.API.Controllers
                 }
 
                 await _db.SaveChangesAsync();
+                try { await _audit.LogAsync("UpdatePOSClosure", "POSShiftClosure", closure.Id.ToString(), $"Updated POS shift closure", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { }
                 return Ok(closure);
             }
             catch (Exception ex)

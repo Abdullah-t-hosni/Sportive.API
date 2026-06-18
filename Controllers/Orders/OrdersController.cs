@@ -120,6 +120,9 @@ public class OrdersController : ControllerBase
         }
 
         var order = await _orderService.CreateOrderAsync(finalCustomerId, dto);
+        
+        try { await _audit.LogAsync("CreateOrder", "Order", order.Id.ToString(), $"Created new order #{order.OrderNumber} (Online)", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
     }
 
@@ -189,6 +192,8 @@ public class OrdersController : ControllerBase
         var order = await _orderService.CreateOrderAsync(posDto.CustomerId, dto);
         if (order == null) return StatusCode(500, _translator.Get("Orders.CreationFailed"));
         
+        try { await _audit.LogAsync("CreatePosOrder", "Order", order.Id.ToString(), $"Created POS order #{order.OrderNumber} (Total: {order.TotalAmount})", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
     }
 
@@ -223,6 +228,7 @@ public class OrdersController : ControllerBase
         order.AdminNotes = dto.Note;
         order.UpdatedAt  = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("UpdateAdminNote", "Order", id.ToString(), $"Updated admin note for order #{order.OrderNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(new { note = order.AdminNotes });
     }
@@ -407,6 +413,7 @@ public class OrdersController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("UpdatePaymentStatus", "Order", id.ToString(), $"Updated payment status for order #{order.OrderNumber} to {dto.PaymentStatus}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return Ok(new { paymentStatus = order.PaymentStatus.ToString() });
     }
 
@@ -618,6 +625,9 @@ public class OrdersController : ControllerBase
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
         var order = await _orderService.ProcessPartialReturnAsync(id, dto, userId);
+        
+        try { await _audit.LogAsync("PartialReturn", "Order", id.ToString(), $"Processed partial return for order #{order.OrderNumber}", userId, User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return Ok(order);
     }
 
@@ -627,6 +637,9 @@ public class OrdersController : ControllerBase
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
         var order = await _orderService.ConvertToCostAsync(id, dto.RefundMethod, userId);
+        
+        try { await _audit.LogAsync("ConvertToCost", "Order", id.ToString(), $"Converted order #{order.OrderNumber} to cost price", userId, User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return Ok(order);
     }
 
@@ -638,6 +651,9 @@ public class OrdersController : ControllerBase
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
         var returnNumber = await _orderService.ProcessDirectReturnAsync(dto, userId);
+        
+        try { await _audit.LogAsync("DirectReturn", "Order", null, $"Processed direct return #{returnNumber}", userId, User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return Ok(new { message = _translator.Get("Orders.DirectReturnSuccess"), returnNumber });
     }
 
@@ -878,6 +894,7 @@ public class OrdersController : ControllerBase
         order.IsArchived = true;
         order.ArchivedAt = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("ArchiveOrder", "Order", id.ToString(), $"Archived order #{order.OrderNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return Ok(new { message = _translator.Get("Orders.Archived") });
     }
 
@@ -890,6 +907,7 @@ public class OrdersController : ControllerBase
         order.IsArchived = false;
         order.ArchivedAt = null;
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("UnarchiveOrder", "Order", id.ToString(), $"Unarchived order #{order.OrderNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return Ok(new { message = _translator.Get("Orders.Unarchived") });
     }
 
@@ -912,6 +930,7 @@ public class OrdersController : ControllerBase
             o.ArchivedAt = shouldArchive ? now : null;
         }
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("ArchiveBatchOrder", "Order", "", $"Batch archived/unarchived {orders.Count} orders. Status: {shouldArchive}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return Ok(new { processed = orders.Count, archived = shouldArchive });
     }
 

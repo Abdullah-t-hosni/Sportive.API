@@ -19,7 +19,8 @@ public class EmployeeCommissionsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ITranslator _t;
-    public EmployeeCommissionsController(AppDbContext db, ITranslator t) { _db = db; _t = t; }
+    private readonly IAuditService _audit;
+    public EmployeeCommissionsController(AppDbContext db, ITranslator t, IAuditService audit) { _db = db; _t = t; _audit = audit; }
 
     [HttpGet("{employeeId}")]
     public async Task<ActionResult<CommissionSettingDto>> GetCommissionSetting(int employeeId)
@@ -74,6 +75,7 @@ public class EmployeeCommissionsController : ControllerBase
         }).ToList();
 
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("UpdateCommissionSetting", "EmployeeCommissionSetting", employeeId.ToString(), $"Updated commission setting for employee ID {employeeId}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return NoContent();
     }
 

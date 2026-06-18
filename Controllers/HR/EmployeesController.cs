@@ -22,9 +22,10 @@ public class EmployeesController : ControllerBase
     private readonly SequenceService       _seq;
     private readonly AccountingCoreService _core;
     private readonly ITranslator _t;
+    private readonly IAuditService _audit;
 
-    public EmployeesController(AppDbContext db, SequenceService seq, AccountingCoreService core, ITranslator t)
-        => (_db, _seq, _core, _t) = (db, seq, core, t);
+    public EmployeesController(AppDbContext db, SequenceService seq, AccountingCoreService core, ITranslator t, IAuditService audit)
+        => (_db, _seq, _core, _t, _audit) = (db, seq, core, t, audit);
 
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
@@ -245,6 +246,9 @@ public class EmployeesController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+        
+        try { await _audit.LogAsync("CreateEmployee", "Employee", emp.Id.ToString(), $"Created employee {emp.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return Ok(new { id = emp.Id, employeeNumber = emp.EmployeeNumber });
     }
 
@@ -281,6 +285,8 @@ public class EmployeesController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+        
+        try { await _audit.LogAsync("LinkUserToEmployee", "Employee", id.ToString(), $"Linked app user to employee", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(new { message = dto.AppUserId != null ? _t.Get("HR.AccountLinked") : _t.Get("HR.AccountUnlinked") });
     }
@@ -332,6 +338,9 @@ public class EmployeesController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+        
+        try { await _audit.LogAsync("UpdateEmployee", "Employee", id.ToString(), $"Updated employee {emp.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return NoContent();
     }
 
@@ -349,6 +358,10 @@ public class EmployeesController : ControllerBase
 
         _db.Employees.Remove(emp);
         await _db.SaveChangesAsync();
+        
+        var empName = emp.Name;
+        try { await _audit.LogAsync("DeleteEmployee", "Employee", id.ToString(), $"Deleted employee {empName}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return NoContent();
     }
 

@@ -23,9 +23,10 @@ public class EmployeeAdvancesController : ControllerBase
     private readonly IAccountingService _accounting;
     private readonly AccountingCoreService _core;
     private readonly ITranslator _t;
+    private readonly IAuditService _audit;
 
-    public EmployeeAdvancesController(AppDbContext db, SequenceService seq, IAccountingService accounting, AccountingCoreService core, ITranslator t)
-        => (_db, _seq, _accounting, _core, _t) = (db, seq, accounting, core, t);
+    public EmployeeAdvancesController(AppDbContext db, SequenceService seq, IAccountingService accounting, AccountingCoreService core, ITranslator t, IAuditService audit)
+        => (_db, _seq, _accounting, _core, _t, _audit) = (db, seq, accounting, core, t, audit);
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
     [HttpGet]
@@ -161,6 +162,8 @@ public class EmployeeAdvancesController : ControllerBase
                 {
                     await _db.SaveChangesAsync();
                 }
+                
+                try { await _audit.LogAsync("CreateEmployeeAdvance", "EmployeeAdvance", advance.Id.ToString(), $"Created advance {advance.AdvanceNumber} for employee {emp.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
                 return Ok(new { id = advance.Id, advanceNumber = advance.AdvanceNumber, journalEntryId = advance.JournalEntryId });
             }
@@ -212,8 +215,10 @@ public class EmployeeAdvancesController : ControllerBase
              _db.PaymentVouchers.Remove(voucher);
          }
 
+        var advanceNumber = adv.AdvanceNumber;
         _db.EmployeeAdvances.Remove(adv);
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("DeleteEmployeeAdvance", "EmployeeAdvance", id.ToString(), $"Deleted advance {advanceNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return NoContent();
     }
 
@@ -250,6 +255,7 @@ public class EmployeeAdvancesController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("UpdateEmployeeAdvance", "EmployeeAdvance", id.ToString(), $"Updated advance {adv.AdvanceNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return NoContent();
     }
 }

@@ -17,7 +17,8 @@ public class ImportController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ITranslator _t;
-    public ImportController(AppDbContext db, ITranslator t) { _db = db; _t = t; }
+    private readonly IAuditService _audit;
+    public ImportController(AppDbContext db, ITranslator t, IAuditService audit) { _db = db; _t = t; _audit = audit; }
 
     private string GenerateSlug(string? name, string sku)
     {
@@ -573,6 +574,7 @@ public class ImportController : ControllerBase
                 if (p.Variants.Any()) p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
 
             await _db.SaveChangesAsync();
+            try { await _audit.LogAsync("ImportProducts", "Product", "", $"Imported {result.Added} products, updated {result.Updated}, added {result.VariantsAdded} variants", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { }
 
             string? errorReportBase64 = null;
             if (result.Errors.Any())
@@ -748,6 +750,7 @@ public class ImportController : ControllerBase
             }
 
             await _db.SaveChangesAsync();
+            try { await _audit.LogAsync("ImportInventory", "ProductVariant", "", $"Imported inventory, updated {updated} variants", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { }
         }
         catch (Exception ex)
         {

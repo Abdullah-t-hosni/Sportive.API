@@ -22,10 +22,12 @@ public class SuppliersController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ITranslator _t;
-    public SuppliersController(AppDbContext db, ITranslator t)
+    private readonly IAuditService _audit;
+    public SuppliersController(AppDbContext db, ITranslator t, IAuditService audit)
     {
         _db = db;
         _t = t;
+        _audit = audit;
     }
 
     [HttpGet]
@@ -142,6 +144,8 @@ public class SuppliersController : ControllerBase
 
         _db.Suppliers.Add(supplier);
         await _db.SaveChangesAsync();
+        
+        try { await _audit.LogAsync("CreateSupplier", "Supplier", supplier.Id.ToString(), $"Created supplier: {supplier.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return CreatedAtAction(nameof(GetById), new { id = supplier.Id }, new SupplierDto(
             supplier.Id, supplier.Name, supplier.Phone, supplier.CompanyName,
@@ -172,6 +176,9 @@ public class SuppliersController : ControllerBase
         supplier.UpdatedAt   = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
+        
+        try { await _audit.LogAsync("UpdateSupplier", "Supplier", id.ToString(), $"Updated supplier info", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return Ok(new SupplierDto(
             supplier.Id, supplier.Name, supplier.Phone, supplier.CompanyName,
             supplier.TaxNumber, supplier.Email, supplier.Address, supplier.IsActive,
@@ -193,6 +200,9 @@ public class SuppliersController : ControllerBase
 
         _db.Suppliers.Remove(supplier);
         await _db.SaveChangesAsync();
+        
+        try { await _audit.LogAsync("DeleteSupplier", "Supplier", id.ToString(), $"Deleted supplier", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return NoContent();
     }
 

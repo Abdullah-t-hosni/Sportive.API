@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Sportive.API.Data;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
+using Sportive.API.Services;
 using System.Security.Claims;
 using Sportive.API.Extensions;
 
@@ -17,12 +18,14 @@ public class InventoryAdjustmentsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IInventoryService _inventory;
     private readonly ITranslator _t;
+    private readonly IAuditService _audit;
 
-    public InventoryAdjustmentsController(AppDbContext db, IInventoryService inventory, ITranslator t)
+    public InventoryAdjustmentsController(AppDbContext db, IInventoryService inventory, ITranslator t, IAuditService audit)
     {
         _db = db;
         _inventory = inventory;
         _t = t;
+        _audit = audit;
     }
 
     /// <summary>
@@ -48,6 +51,9 @@ public class InventoryAdjustmentsController : ControllerBase
         );
 
         await _db.SaveChangesAsync();
+        
+        try { await _audit.LogAsync("InventoryAdjustment", "Inventory", dto.ProductId?.ToString() ?? dto.ProductVariantId?.ToString() ?? "0", $"Manual inventory adjustment of {dto.Quantity}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return Ok(new { message = _t.Get("Inventory.AdjustmentSuccess") });
     }
 }

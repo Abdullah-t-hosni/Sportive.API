@@ -29,10 +29,12 @@ public class PurchaseInvoicesController : ControllerBase
     private readonly SequenceService _seq;
     private readonly IPdfService _pdf;
     private readonly ITranslator _t;
+    private readonly IAuditService _auditLog;
 
-    public PurchaseInvoicesController(AppDbContext db, IServiceScopeFactory scopeFactory, IProductService productService, IInventoryService inventory, ILogger<PurchaseInvoicesController> logger, SequenceService seq, IPdfService pdf, ITranslator t)
+    public PurchaseInvoicesController(AppDbContext db, IServiceScopeFactory scopeFactory, IProductService productService, IInventoryService inventory, ILogger<PurchaseInvoicesController> logger, SequenceService seq, IPdfService pdf, ITranslator t, IAuditService auditLog)
     {
         _t = t;
+        _auditLog = auditLog;
         _db             = db;
         _scopeFactory   = scopeFactory;
         _productService = productService;
@@ -481,6 +483,8 @@ public class PurchaseInvoicesController : ControllerBase
                     });
                 }
 
+                try { await _auditLog.LogAsync("CreatePurchaseInvoice", "PurchaseInvoice", invoice.Id.ToString(), $"Created purchase invoice {invoice.InvoiceNumber} for {supplier.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
                 return CreatedAtAction(nameof(GetById), new { id = invoice.Id }, new { id = invoice.Id, invoiceNumber = invoice.InvoiceNumber, warnings });
             }
             catch (Exception ex)
@@ -843,6 +847,8 @@ public class PurchaseInvoicesController : ControllerBase
                     });
                 }
 
+                try { await _auditLog.LogAsync("UpdatePurchaseInvoice", "PurchaseInvoice", inv.Id.ToString(), $"Updated purchase invoice {inv.InvoiceNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
                 return Ok(new { id = inv.Id, invoiceNumber = inv.InvoiceNumber, warnings });
             }
             catch (Exception ex)
@@ -978,6 +984,9 @@ public class PurchaseInvoicesController : ControllerBase
         inv.Status = dto.Status;
         inv.UpdatedAt = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
+        
+        try { await _auditLog.LogAsync("UpdatePurchaseInvoiceStatus", "PurchaseInvoice", id.ToString(), $"Changed purchase invoice {inv.InvoiceNumber} status to {dto.Status}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return Ok(new { id = inv.Id, status = inv.Status.ToString() });
     }
 
@@ -1181,8 +1190,12 @@ public class PurchaseInvoicesController : ControllerBase
         var invoiceEntries = await _db.JournalEntries.Where(e => (e.Type == JournalEntryType.PurchaseInvoice || e.Type == JournalEntryType.OpeningBalance) && e.Reference == inv.InvoiceNumber).ToListAsync();
         if (invoiceEntries.Any()) _db.JournalEntries.RemoveRange(invoiceEntries);
 
+        var invoiceNumber = inv.InvoiceNumber;
         _db.PurchaseInvoices.Remove(inv);
         await _db.SaveChangesAsync();
+        
+        try { await _auditLog.LogAsync("DeletePurchaseInvoice", "PurchaseInvoice", id.ToString(), $"Deleted purchase invoice {invoiceNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return NoContent();
     }
 

@@ -23,8 +23,9 @@ public class SupplierPaymentsController : ControllerBase
     private readonly ILogger<SupplierPaymentsController> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ITranslator _t;
+    private readonly IAuditService _audit;
 
-    public SupplierPaymentsController(AppDbContext db, IAccountingService accounting, SequenceService seq, ILogger<SupplierPaymentsController> logger, IServiceScopeFactory scopeFactory, ITranslator t)
+    public SupplierPaymentsController(AppDbContext db, IAccountingService accounting, SequenceService seq, ILogger<SupplierPaymentsController> logger, IServiceScopeFactory scopeFactory, ITranslator t, IAuditService audit)
     {
         _db = db;
         _accounting = accounting;
@@ -32,6 +33,7 @@ public class SupplierPaymentsController : ControllerBase
         _logger = logger;
         _scopeFactory = scopeFactory;
         _t = t;
+        _audit = audit;
     }
 
     [HttpGet]
@@ -169,6 +171,8 @@ public class SupplierPaymentsController : ControllerBase
 
         // ðŸ’¡ Ensure accounting sync gets the correct ID
         _ = PostSupplierPaymentWithRetryAsync(payment.Id, pNo);
+        
+        try { await _audit.LogAsync("CreateSupplierPayment", "SupplierPayment", payment.Id.ToString(), $"Created supplier payment {payment.PaymentNumber} for {payment.Amount}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return CreatedAtAction(nameof(GetById), new { id = payment.Id }, new SupplierPaymentSummaryDto(
             payment.Id, payment.PaymentNumber, supplier.Name,
@@ -285,6 +289,8 @@ public class SupplierPaymentsController : ControllerBase
 
         // 9. Post updated Journal Entry
         _ = PostSupplierPaymentWithRetryAsync(payment.Id, payment.PaymentNumber);
+        
+        try { await _audit.LogAsync("UpdateSupplierPayment", "SupplierPayment", id.ToString(), $"Updated supplier payment {payment.PaymentNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(new SupplierPaymentSummaryDto(
             payment.Id, payment.PaymentNumber, newSupplier.Name,
@@ -335,6 +341,10 @@ public class SupplierPaymentsController : ControllerBase
         _db.SupplierPayments.Remove(p);
 
         await _db.SaveChangesAsync();
+        
+        var pNo = p.PaymentNumber;
+        try { await _audit.LogAsync("DeleteSupplierPayment", "SupplierPayment", id.ToString(), $"Deleted supplier payment {pNo}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return NoContent();
     }
 

@@ -20,13 +20,15 @@ public class InstallmentsController : ControllerBase
     private readonly ITranslator _t;
     private readonly IAccountingService _accounting;
     private readonly SequenceService _seq;
+    private readonly IAuditService _audit;
 
-    public InstallmentsController(AppDbContext db, ITranslator t, IAccountingService accounting, SequenceService seq)
+    public InstallmentsController(AppDbContext db, ITranslator t, IAccountingService accounting, SequenceService seq, IAuditService audit)
     {
         _db = db;
         _t = t;
         _accounting = accounting;
         _seq = seq;
+        _audit = audit;
     }
 
     [HttpGet]
@@ -117,6 +119,7 @@ public class InstallmentsController : ControllerBase
 
         _db.CustomerInstallments.Add(installment);
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("CreateInstallment", "CustomerInstallment", installment.Id.ToString(), $"Created installment of {dto.TotalAmount} for customer {dto.CustomerId}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return CreatedAtAction(nameof(GetById), new { id = installment.Id }, installment);
     }
 
@@ -192,6 +195,8 @@ public class InstallmentsController : ControllerBase
         await _db.SaveChangesAsync();
         await _accounting.PostReceiptVoucherAsync(voucher, installment.OrderId);
         Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
+        
+        try { await _audit.LogAsync("RegisterInstallmentPayment", "CustomerInstallment", id.ToString(), $"Registered payment of {dto.Amount} for installment {id}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(new {
             installment.Id, installment.PaidAmount, installment.RemainingAmount, installment.Status
@@ -211,6 +216,7 @@ public class InstallmentsController : ControllerBase
         installment.UpdatedAt   = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("UpdateInstallment", "CustomerInstallment", id.ToString(), $"Updated installment {id}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return Ok(installment);
     }
 
@@ -227,6 +233,7 @@ public class InstallmentsController : ControllerBase
         _db.InstallmentPayments.RemoveRange(installment.Payments);
         _db.CustomerInstallments.Remove(installment);
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("DeleteInstallment", "CustomerInstallment", id.ToString(), $"Deleted installment {id}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return NoContent();
     }
 
@@ -322,6 +329,7 @@ public class InstallmentsController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("SyncInstallmentsLedger", "CustomerInstallment", "", $"Synced ledger. Updated {updatedCount}, Created {createdCount}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return Ok(new { message = $"تمت المزامنة بنجاح. تسوية أقساط: {updatedCount} | إنشاء أقساط جديدة: {createdCount}" });
     }
 
@@ -340,6 +348,7 @@ public class InstallmentsController : ControllerBase
         var now = TimeHelper.GetEgyptTime();
         foreach (var i in overdue) { i.Status = InstallmentStatus.Overdue; i.UpdatedAt = now; }
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("SyncOverdueInstallments", "CustomerInstallment", "", $"Marked {overdue.Count} installments as overdue", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return Ok(new { updated = overdue.Count });
     }
 }

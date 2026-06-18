@@ -26,14 +26,16 @@ public class AssetPurchasesController : ControllerBase
     private readonly ITranslator _t;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AssetPurchasesController> _logger;
+    private readonly IAuditService _audit;
 
-    public AssetPurchasesController(AppDbContext db, SequenceService seq, ITranslator t, IServiceScopeFactory scopeFactory, ILogger<AssetPurchasesController> logger)
+    public AssetPurchasesController(AppDbContext db, SequenceService seq, ITranslator t, IServiceScopeFactory scopeFactory, ILogger<AssetPurchasesController> logger, IAuditService audit)
     {
         _db = db;
         _seq = seq;
         _t = t;
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _audit = audit;
     }
 
     [HttpGet]
@@ -306,6 +308,7 @@ public class AssetPurchasesController : ControllerBase
                 await _db.SaveChangesAsync();
 
                 await transaction.CommitAsync();
+                try { await _audit.LogAsync("CreateAssetPurchase", "PurchaseInvoice", invoice.Id.ToString(), $"Created asset purchase #{invoice.InvoiceNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
                 _ = PostJournalWithRetryAsync(invoice.Id, invoice.InvoiceNumber);
 

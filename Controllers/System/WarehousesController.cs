@@ -5,6 +5,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Utils;
 using Sportive.API.Extensions;
+using Sportive.API.Interfaces;
+using Sportive.API.Services;
+using System.Security.Claims;
 
 namespace Sportive.API.Controllers;
 
@@ -13,10 +16,12 @@ namespace Sportive.API.Controllers;
 public class WarehousesController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly IAuditService _audit;
 
-    public WarehousesController(AppDbContext db)
+    public WarehousesController(AppDbContext db, IAuditService audit)
     {
         _db = db;
+        _audit = audit;
     }
 
     [HttpGet]
@@ -72,6 +77,8 @@ public class WarehousesController : ControllerBase
 
         _db.Warehouses.Add(warehouse);
         await _db.SaveChangesAsync();
+        
+        try { await _audit.LogAsync("CreateWarehouse", "Warehouse", warehouse.Id.ToString(), $"Created warehouse: {warehouse.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return CreatedAtAction(nameof(GetById), new { id = warehouse.Id }, warehouse);
     }
@@ -97,6 +104,9 @@ public class WarehousesController : ControllerBase
         warehouse.UpdatedAt = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
+        
+        try { await _audit.LogAsync("UpdateWarehouse", "Warehouse", id.ToString(), $"Updated warehouse: {warehouse.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return Ok(warehouse);
     }
 
@@ -121,6 +131,8 @@ public class WarehousesController : ControllerBase
 
         _db.Warehouses.Remove(warehouse);
         await _db.SaveChangesAsync();
+        
+        try { await _audit.LogAsync("DeleteWarehouse", "Warehouse", id.ToString(), $"Deleted warehouse: {warehouse.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return NoContent();
     }

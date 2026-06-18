@@ -1,9 +1,10 @@
-﻿using Sportive.API.Models;
+using Sportive.API.Models;
 using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
+using Sportive.API.Services;
 
 namespace Sportive.API.Controllers;
 
@@ -12,7 +13,12 @@ namespace Sportive.API.Controllers;
 public class CategoriesController : ControllerBase
 {
     private readonly ICategoryService _categories;
-    public CategoriesController(ICategoryService categories) => _categories = categories;
+    private readonly IAuditService _audit;
+    public CategoriesController(ICategoryService categories, IAuditService audit)
+    {
+        _categories = categories;
+        _audit = audit;
+    }
 
     /// <summary>Flat list of all categories (includes parent info and direct children)</summary>
     [HttpGet]
@@ -38,6 +44,7 @@ public class CategoriesController : ControllerBase
         try
         {
             var cat = await _categories.CreateAsync(dto);
+            try { await _audit.LogAsync("CreateCategory", "Category", cat.Id.ToString(), $"Created category {cat.NameAr}", System.Security.Claims.ClaimTypes.NameIdentifier, System.Security.Claims.ClaimTypes.Name); } catch { }
             return CreatedAtAction(nameof(GetById), new { id = cat.Id }, cat);
         }
         catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
@@ -47,7 +54,12 @@ public class CategoriesController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] CreateCategoryDto dto)
     {
-        try { return Ok(await _categories.UpdateAsync(id, dto)); }
+        try 
+        { 
+            var cat = await _categories.UpdateAsync(id, dto);
+            try { await _audit.LogAsync("UpdateCategory", "Category", id.ToString(), $"Updated category", System.Security.Claims.ClaimTypes.NameIdentifier, System.Security.Claims.ClaimTypes.Name); } catch { }
+            return Ok(cat); 
+        }
         catch (KeyNotFoundException) { return NotFound(); }
         catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
     }
@@ -56,7 +68,12 @@ public class CategoriesController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
-        try { await _categories.DeleteAsync(id); return NoContent(); }
+        try 
+        { 
+            await _categories.DeleteAsync(id); 
+            try { await _audit.LogAsync("DeleteCategory", "Category", id.ToString(), $"Deleted category", System.Security.Claims.ClaimTypes.NameIdentifier, System.Security.Claims.ClaimTypes.Name); } catch { }
+            return NoContent(); 
+        }
         catch (KeyNotFoundException) { return NotFound(); }
     }
 }

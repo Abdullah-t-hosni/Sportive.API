@@ -29,7 +29,9 @@ public class PurchaseReturnsController : ControllerBase
     private readonly IPdfService _pdf;
     private readonly ITranslator _t;
 
-    public PurchaseReturnsController(AppDbContext db, IServiceScopeFactory scopeFactory, IProductService productService, IInventoryService inventory, ILogger<PurchaseReturnsController> logger, SequenceService seq, IPdfService pdf, ITranslator t)
+    private readonly IAuditService _audit;
+
+    public PurchaseReturnsController(AppDbContext db, IServiceScopeFactory scopeFactory, IProductService productService, IInventoryService inventory, ILogger<PurchaseReturnsController> logger, SequenceService seq, IPdfService pdf, ITranslator t, IAuditService audit)
     {
         _t = t;
         _db             = db;
@@ -39,6 +41,7 @@ public class PurchaseReturnsController : ControllerBase
         _logger         = logger;
         _seq            = seq;
         _pdf            = pdf;
+        _audit          = audit;
     }
 
     private async Task<List<ProductUnit>> GetUnitsListAsync() => await _db.ProductUnits.AsNoTracking().ToListAsync();
@@ -401,6 +404,7 @@ public class PurchaseReturnsController : ControllerBase
                 _db.PurchaseReturns.Add(pReturn);
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
+                try { await _audit.LogAsync("CreateStandalonePurchaseReturn", "PurchaseReturn", pReturn.Id.ToString(), $"Created standalone purchase return #{pReturn.ReturnNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
                 var returnId = pReturn.Id;
                 var returnNum = pReturn.ReturnNumber;
@@ -564,6 +568,7 @@ public class PurchaseReturnsController : ControllerBase
 
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
+                try { await _audit.LogAsync("UpdateStandalonePurchaseReturn", "PurchaseReturn", pReturn.Id.ToString(), $"Updated standalone purchase return #{pReturn.ReturnNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
                 // Trigger Accounting Sync
                 var returnId = pReturn.Id;
@@ -685,10 +690,10 @@ public class PurchaseReturnsController : ControllerBase
                 var journalEntry = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Reference == pReturn.ReturnNumber && e.Type == JournalEntryType.PurchaseReturn);
                 if (journalEntry != null) _db.JournalEntries.Remove(journalEntry);
 
-                // 5. Finalize Deletion
                 _db.PurchaseReturns.Remove(pReturn);
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
+                try { await _audit.LogAsync("DeletePurchaseReturn", "PurchaseReturn", id.ToString(), $"Deleted purchase return #{pReturn.ReturnNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
                 return NoContent();
             }
@@ -848,6 +853,7 @@ public class PurchaseReturnsController : ControllerBase
                 _db.PurchaseReturns.Add(pReturn);
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
+                try { await _audit.LogAsync("CreatePurchaseReturn", "PurchaseReturn", pReturn.Id.ToString(), $"Created purchase return #{pReturn.ReturnNumber} for invoice #{inv.InvoiceNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
                 _logger.LogInformation("Purchase return {ReturnNo} committed successfully.", returnNo);
 

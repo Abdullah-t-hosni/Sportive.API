@@ -22,9 +22,10 @@ public class PayrollController : ControllerBase
     private readonly SequenceService _seq;
     private readonly AccountingCoreService _core;
     private readonly ITranslator _t;
+    private readonly IAuditService _audit;
 
-    public PayrollController(AppDbContext db, SequenceService seq, AccountingCoreService core, ITranslator t)
-        => (_db, _seq, _core, _t) = (db, seq, core, t);
+    public PayrollController(AppDbContext db, SequenceService seq, AccountingCoreService core, ITranslator t, IAuditService audit)
+        => (_db, _seq, _core, _t, _audit) = (db, seq, core, t, audit);
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
     [HttpGet]
@@ -786,6 +787,7 @@ public class PayrollController : ControllerBase
 
             _db.PayrollRuns.Add(run);
             await _db.SaveChangesAsync();
+            try { await _audit.LogAsync("CreatePayrollRun", "PayrollRun", run.Id.ToString(), $"Created payroll run {run.PayrollNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
             return Ok(new { id = run.Id, payrollNumber = run.PayrollNumber });
         }
         catch (Exception ex)
@@ -1104,6 +1106,7 @@ public class PayrollController : ControllerBase
             run.TotalNetPayable       = totalBasic + totalTrans + totalComm + totalBonus + totalFixedAll + totalOvertime + totalCommission - totalDed - totalAbsence - totalAdv;
 
             await _db.SaveChangesAsync();
+            try { await _audit.LogAsync("UpdatePayrollRun", "PayrollRun", run.Id.ToString(), $"Updated payroll run {run.PayrollNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
             return Ok(new { id = run.Id, payrollNumber = run.PayrollNumber });
         }
         catch (Exception ex)
@@ -1298,6 +1301,7 @@ public class PayrollController : ControllerBase
 
         await _db.SaveChangesAsync();
         if (je != null) { run.JournalEntryId = je.Id; await _db.SaveChangesAsync(); }
+        try { await _audit.LogAsync("PostPayrollRun", "PayrollRun", run.Id.ToString(), $"Posted payroll run {run.PayrollNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(new { id = run.Id, payrollNumber = run.PayrollNumber, journalEntryId = je?.Id });
     }
@@ -1385,6 +1389,7 @@ public class PayrollController : ControllerBase
         run.PaymentJournalEntryId = payJe.Id;
         run.UpdatedAt = now;
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("PayPayrollRun", "PayrollRun", run.Id.ToString(), $"Paid payroll run {run.PayrollNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(new { id = run.Id, status = (int)run.Status, paymentJournalEntryId = payJe.Id });
     }
@@ -1506,6 +1511,7 @@ public class PayrollController : ControllerBase
 
         run.UpdatedAt = now;
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("PayPartialPayrollRun", "PayrollRun", run.Id.ToString(), $"Partially paid payroll run {run.PayrollNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(new
         {
@@ -1583,8 +1589,10 @@ public class PayrollController : ControllerBase
             foreach (var d in deductions) d.PayrollRunId = null;
         }
 
+        var payrollNumber = run.PayrollNumber;
         _db.PayrollRuns.Remove(run);
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("DeletePayrollRun", "PayrollRun", id.ToString(), $"Deleted payroll run {payrollNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return NoContent();
     }
 

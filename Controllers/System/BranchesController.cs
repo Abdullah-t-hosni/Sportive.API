@@ -4,6 +4,8 @@ using Sportive.API.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Utils;
+using Sportive.API.Services;
+using System.Security.Claims;
 
 namespace Sportive.API.Controllers;
 
@@ -12,10 +14,12 @@ namespace Sportive.API.Controllers;
 public class BranchesController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly IAuditService _audit;
 
-    public BranchesController(AppDbContext db)
+    public BranchesController(AppDbContext db, IAuditService audit)
     {
         _db = db;
+        _audit = audit;
     }
 
     [HttpGet]
@@ -132,6 +136,8 @@ public class BranchesController : ControllerBase
             _db.Accounts.AddRange(accountsToAdd);
             await _db.SaveChangesAsync();
         }
+        
+        try { await _audit.LogAsync("CreateBranch", "Branch", branch.Id.ToString(), $"Created branch {branch.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return CreatedAtAction(nameof(GetById), new { id = branch.Id }, branch);
     }
@@ -154,6 +160,9 @@ public class BranchesController : ControllerBase
         branch.UpdatedAt = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
+        
+        try { await _audit.LogAsync("UpdateBranch", "Branch", id.ToString(), $"Updated branch {branch.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        
         return Ok(branch);
     }
 
@@ -230,6 +239,9 @@ public class BranchesController : ControllerBase
 
         _db.Branches.Remove(branch);
         await _db.SaveChangesAsync();
+        
+        var bName = branch.Name;
+        try { await _audit.LogAsync("DeleteBranch", "Branch", id.ToString(), $"Deleted branch {bName}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return NoContent();
     }

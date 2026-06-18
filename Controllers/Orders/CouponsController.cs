@@ -15,11 +15,13 @@ public class CouponsController : ControllerBase
 {
     private readonly ICouponService _coupons;
     private readonly ITranslator _t;
+    private readonly IAuditService _audit;
 
-    public CouponsController(ICouponService coupons, ITranslator t)
+    public CouponsController(ICouponService coupons, ITranslator t, IAuditService audit)
     {
         _coupons = coupons;
         _t = t;
+        _audit = audit;
     }
 
     /// <summary>التحقق من كوبون خصم (public)</summary>
@@ -42,7 +44,11 @@ public class CouponsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateCouponDto dto)
     {
-        try { return Ok(await _coupons.CreateAsync(dto)); }
+        try { 
+            var result = await _coupons.CreateAsync(dto); 
+            try { await _audit.LogAsync("CreateCoupon", "Coupon", "", $"Created coupon {dto.Code}", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { }
+            return Ok(result); 
+        }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
@@ -53,6 +59,7 @@ public class CouponsController : ControllerBase
         try
         {
             var result = await _coupons.UpdateAsync(id, dto);
+            if (result != null) { try { await _audit.LogAsync("UpdateCoupon", "Coupon", id.ToString(), $"Updated coupon {dto.Code}", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { } }
             return result == null ? NotFound() : Ok(result);
         }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
@@ -60,17 +67,29 @@ public class CouponsController : ControllerBase
 
     /// <summary>Ã˜ÂªÃ™ÂÃ˜Â¹Ã™Å Ã™â€ž/Ã˜Â¥Ã™Å Ã™â€šÃ˜Â§Ã™Â Ã™Æ’Ã™Ë†Ã˜Â¨Ã™Ë†Ã™â€  (Admin)</summary>
     [HttpPatch("{id}/toggle")]
-    public async Task<IActionResult> Toggle(int id) =>
-        await _coupons.ToggleAsync(id) ? Ok() : NotFound();
+    public async Task<IActionResult> Toggle(int id)
+    {
+        var result = await _coupons.ToggleAsync(id);
+        if (result) { try { await _audit.LogAsync("ToggleCoupon", "Coupon", id.ToString(), $"Toggled coupon", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { } }
+        return result ? Ok() : NotFound();
+    }
 
     /// <summary>Ã˜ÂªÃ˜Â¹Ã˜Â·Ã™Å Ã™â€ž Ã™Æ’Ã™Ë†Ã˜Â¨Ã™Ë†Ã™â€  (Admin)</summary>
     [HttpPatch("{id}/deactivate")]
-    public async Task<IActionResult> Deactivate(int id) =>
-        await _coupons.DeactivateAsync(id) ? Ok() : NotFound();
+    public async Task<IActionResult> Deactivate(int id)
+    {
+        var result = await _coupons.DeactivateAsync(id);
+        if (result) { try { await _audit.LogAsync("DeactivateCoupon", "Coupon", id.ToString(), $"Deactivated coupon", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { } }
+        return result ? Ok() : NotFound();
+    }
 
     /// <summary>Ã˜Â­Ã˜Â°Ã™Â Ã™Æ’Ã™Ë†Ã˜Â¨Ã™Ë†Ã™â€  (Admin)</summary>
     [HttpDelete("{id}")]
-    public async Task<IActionResult> Delete(int id) =>
-        await _coupons.DeleteAsync(id) ? Ok() : NotFound();
+    public async Task<IActionResult> Delete(int id)
+    {
+        var result = await _coupons.DeleteAsync(id);
+        if (result) { try { await _audit.LogAsync("DeleteCoupon", "Coupon", id.ToString(), $"Deleted coupon", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { } }
+        return result ? Ok() : NotFound();
+    }
 }
 

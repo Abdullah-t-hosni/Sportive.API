@@ -23,9 +23,10 @@ public class EmployeeDeductionsController : ControllerBase
     private readonly IAccountingService _accounting;
     private readonly AccountingCoreService _core;
     private readonly ITranslator _t;
+    private readonly IAuditService _audit;
 
-    public EmployeeDeductionsController(AppDbContext db, SequenceService seq, IAccountingService accounting, AccountingCoreService core, ITranslator t)
-        => (_db, _seq, _accounting, _core, _t) = (db, seq, accounting, core, t);
+    public EmployeeDeductionsController(AppDbContext db, SequenceService seq, IAccountingService accounting, AccountingCoreService core, ITranslator t, IAuditService audit)
+        => (_db, _seq, _accounting, _core, _t, _audit) = (db, seq, accounting, core, t, audit);
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
     [HttpGet]
@@ -122,6 +123,8 @@ public class EmployeeDeductionsController : ControllerBase
         {
             await _db.SaveChangesAsync();
         }
+        
+        try { await _audit.LogAsync("CreateEmployeeDeduction", "EmployeeDeduction", ded.Id.ToString(), $"Created deduction {ded.DeductionNumber} for employee {emp.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(new { id = ded.Id, deductionNumber = ded.DeductionNumber, journalEntryId = ded.JournalEntryId });
     }
@@ -134,8 +137,10 @@ public class EmployeeDeductionsController : ControllerBase
         if (ded.PayrollRunId.HasValue)
             return BadRequest(new { message = _t.Get("HR.DeductionCannotDelete") });
 
+        var deductionNumber = ded.DeductionNumber;
         _db.EmployeeDeductions.Remove(ded);
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("DeleteEmployeeDeduction", "EmployeeDeduction", id.ToString(), $"Deleted deduction {deductionNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return NoContent();
     }
 
@@ -158,6 +163,7 @@ public class EmployeeDeductionsController : ControllerBase
         ded.UpdatedAt = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("UpdateEmployeeDeduction", "EmployeeDeduction", id.ToString(), $"Updated deduction {ded.DeductionNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return NoContent();
     }
 }

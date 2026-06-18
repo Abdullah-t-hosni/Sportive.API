@@ -19,7 +19,8 @@ public class DepartmentsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ITranslator _t;
-    public DepartmentsController(AppDbContext db, ITranslator t) { _db = db; _t = t; }
+    private readonly IAuditService _audit;
+    public DepartmentsController(AppDbContext db, ITranslator t, IAuditService audit) { _db = db; _t = t; _audit = audit; }
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<DepartmentDto>>> GetDepartments()
@@ -59,6 +60,7 @@ public class DepartmentsController : ControllerBase
         };
         _db.Departments.Add(dept);
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("CreateDepartment", "Department", dept.Id.ToString(), $"Created department {dept.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         
         return Ok(new DepartmentDto(
             dept.Id, 
@@ -91,6 +93,7 @@ public class DepartmentsController : ControllerBase
         dept.ManagerEmployeeId = dto.ManagerEmployeeId;
 
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("UpdateDepartment", "Department", id.ToString(), $"Updated department {dept.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return NoContent();
     }
 
@@ -109,6 +112,7 @@ public class DepartmentsController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("BulkUpdateEmployeesFromDepartment", "Department", id.ToString(), $"Applied department settings to {dept.Employees.Count} employees", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return Ok(new { message = $"Settings applied to {dept.Employees.Count} employees." });
     }
 
@@ -123,8 +127,10 @@ public class DepartmentsController : ControllerBase
         var hasSubDepts = await _db.Departments.AnyAsync(d => d.ParentDepartmentId == id);
         if (hasSubDepts) return BadRequest(new { message = "لا يمكن حذف قسم يحتوي على أقسام فرعية." });
 
+        var deptName = dept.Name;
         _db.Departments.Remove(dept);
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("DeleteDepartment", "Department", id.ToString(), $"Deleted department {deptName}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return NoContent();
     }
 }

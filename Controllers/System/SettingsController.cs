@@ -6,6 +6,7 @@ using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Utils;
+using System.Security.Claims;
 
 namespace Sportive.API.Controllers;
 
@@ -16,12 +17,14 @@ public class SettingsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly ILogger<SettingsController> _logger;
     private readonly TimeService _timeService;
+    private readonly IAuditService _audit;
 
-    public SettingsController(AppDbContext db, ILogger<SettingsController> logger, TimeService timeService)
+    public SettingsController(AppDbContext db, ILogger<SettingsController> logger, TimeService timeService, IAuditService audit)
     {
         _db = db;
         _logger = logger;
         _timeService = timeService;
+        _audit = audit;
     }
 
     
@@ -282,6 +285,8 @@ public class SettingsController : ControllerBase
 
             // cache 
             _timeService.InvalidateCache();
+            
+            try { await _audit.LogAsync("UpdateSettings", "StoreInfo", "1", $"Updated store settings", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
             return Ok(info);
         }

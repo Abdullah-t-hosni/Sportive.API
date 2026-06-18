@@ -23,9 +23,10 @@ public class EmployeeBonusesController : ControllerBase
     private readonly IAccountingService _accounting;
     private readonly AccountingCoreService _core;
     private readonly ITranslator _t;
+    private readonly IAuditService _audit;
 
-    public EmployeeBonusesController(AppDbContext db, SequenceService seq, IAccountingService accounting, AccountingCoreService core, ITranslator t)
-        => (_db, _seq, _accounting, _core, _t) = (db, seq, accounting, core, t);
+    public EmployeeBonusesController(AppDbContext db, SequenceService seq, IAccountingService accounting, AccountingCoreService core, ITranslator t, IAuditService audit)
+        => (_db, _seq, _accounting, _core, _t, _audit) = (db, seq, accounting, core, t, audit);
     private string UserId => User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
 
     [HttpGet]
@@ -135,6 +136,8 @@ public class EmployeeBonusesController : ControllerBase
                 {
                     await _db.SaveChangesAsync();
                 }
+                
+                try { await _audit.LogAsync("CreateEmployeeBonus", "EmployeeBonus", bonus.Id.ToString(), $"Created bonus {bonus.BonusNumber} for employee {emp.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
                 return Ok(new { id = bonus.Id, bonusNumber = bonus.BonusNumber, journalEntryId = bonus.JournalEntryId });
             }
@@ -182,8 +185,10 @@ public class EmployeeBonusesController : ControllerBase
              _db.PaymentVouchers.Remove(voucher);
         }
 
+        var bonusNumber = bon.BonusNumber;
         _db.EmployeeBonuses.Remove(bon);
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("DeleteEmployeeBonus", "EmployeeBonus", id.ToString(), $"Deleted bonus {bonusNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return NoContent();
     }
 
@@ -218,6 +223,7 @@ public class EmployeeBonusesController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("UpdateEmployeeBonus", "EmployeeBonus", id.ToString(), $"Updated bonus {bon.BonusNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return NoContent();
     }
 }

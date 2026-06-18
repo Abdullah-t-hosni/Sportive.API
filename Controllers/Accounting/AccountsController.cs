@@ -20,11 +20,13 @@ public class AccountsController : ControllerBase
     private readonly IAccountingService _accounting;
     private readonly AccountingCoreService _core;
     private readonly ITranslator _t;
-    public AccountsController(AppDbContext db, IAccountingService accounting, AccountingCoreService core, ITranslator t) {
+    private readonly IAuditService _audit;
+    public AccountsController(AppDbContext db, IAccountingService accounting, AccountingCoreService core, ITranslator t, IAuditService audit) {
         _db = db;
         _accounting = accounting;
         _core = core;
         _t = t;
+        _audit = audit;
     }
 
     [HttpGet]
@@ -92,6 +94,7 @@ public class AccountsController : ControllerBase
 
         _db.Accounts.Add(account);
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("CreateAccount", "Account", account.Id.ToString(), $"Created account {account.NameAr}", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { }
         return CreatedAtAction(nameof(GetById), new { id = account.Id }, account);
     }
 
@@ -146,6 +149,7 @@ public class AccountsController : ControllerBase
         account.OpeningBalance    = dto.OpeningBalance;
 
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("UpdateAccount", "Account", account.Id.ToString(), $"Updated account {account.NameAr}", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { }
         return Ok(account);
     }
 
@@ -160,6 +164,7 @@ public class AccountsController : ControllerBase
 
         _db.Accounts.Remove(account);
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("DeleteAccount", "Account", id.ToString(), $"Deleted account {account.NameAr}", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { }
         return NoContent();
     }
 
@@ -281,6 +286,7 @@ public class AccountsController : ControllerBase
 
             await _db.SaveChangesAsync();
             await _accounting.SyncEntityBalancesAsync();
+            try { await _audit.LogAsync("ImportOpeningBalances", "Account", "", $"Imported opening balances", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { }
         }
         catch (Exception ex)
         {
@@ -377,6 +383,7 @@ public class AccountsController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("UpdateAccountMappings", "AccountMapping", "", $"Updated accounting mappings", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { }
         return Ok(new { success = true });
     }
 
@@ -428,6 +435,7 @@ public class AccountsController : ControllerBase
 
             UpdateLevels(null, 1);
             await _db.SaveChangesAsync();
+            try { await _audit.LogAsync("FixAccountTree", "Account", "", $"Fixed accounting tree", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { }
 
             return Ok(new { success = true, message = _t.Get("Accounting.FixTreeSuccess"), count = allAccounts.Count });
         }
@@ -446,6 +454,7 @@ public class AccountsController : ControllerBase
         try
         {
             await _accounting.SyncEntityBalancesAsync();
+            try { await _audit.LogAsync("SyncAccountBalances", "Account", "", $"Synced accounting balances", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { }
             return Ok(new { success = true, message = _t.Get("Accounting.SyncBalancesSuccess") });
         }
         catch (Exception ex)
@@ -528,6 +537,7 @@ public class AccountsController : ControllerBase
         }
         
         await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("InitializePaymentFlags", "Account", "", $"Initialized payment flags", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { }
         return Ok(results);
     }
 
@@ -583,6 +593,7 @@ public class AccountsController : ControllerBase
         );
 
         var entry = await _accounting.PostManualEntryAsync(dto, User);
+        try { await _audit.LogAsync("PostOpeningBalances", "Account", "", $"Posted opening balances to journal entry {entry.EntryNumber}", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { }
         return Ok(new { success = true, entryId = entry.Id, entryNumber = entry.EntryNumber });
     }
 }

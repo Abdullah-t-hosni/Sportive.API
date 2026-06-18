@@ -22,12 +22,14 @@ public class ReceiptVouchersController : ControllerBase
     private readonly AppDbContext _db;
     private readonly SequenceService _seq;
     private readonly IPdfService _pdf;
-    public ReceiptVouchersController(IAccountingService accounting, AppDbContext db, SequenceService seq, IPdfService pdf, ITranslator t) {
+    private readonly IAuditService _audit;
+    public ReceiptVouchersController(IAccountingService accounting, AppDbContext db, SequenceService seq, IPdfService pdf, ITranslator t, IAuditService audit) {
         _accounting = accounting;
         _db = db;
         _seq = seq;
         _pdf = pdf;
         _t = t;
+        _audit = audit;
     }
 
     [HttpGet("{id}/pdf")]
@@ -281,6 +283,9 @@ public class ReceiptVouchersController : ControllerBase
         await _db.SaveChangesAsync();
         try { await _accounting.PostReceiptVoucherAsync(voucher, dto.OrderId); } catch { /* non-critical: voucher is saved */ }
         try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
+        
+        try { await _audit.LogAsync("CreateReceiptVoucher", "ReceiptVoucher", voucher.Id.ToString(), $"Created receipt voucher {voucher.VoucherNumber} for {voucher.Amount}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return Ok(voucher);
     }
 
@@ -356,6 +361,9 @@ public class ReceiptVouchersController : ControllerBase
 
         await _db.SaveChangesAsync();
         try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
+        
+        try { await _audit.LogAsync("UpdateReceiptVoucher", "ReceiptVoucher", id.ToString(), $"Updated receipt voucher {voucher.VoucherNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return Ok(voucher);
     }
 
@@ -392,6 +400,10 @@ public class ReceiptVouchersController : ControllerBase
         }
         await _db.SaveChangesAsync();
         try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
+        
+        var vNo = voucher.VoucherNumber;
+        try { await _audit.LogAsync("DeleteReceiptVoucher", "ReceiptVoucher", id.ToString(), $"Deleted receipt voucher {vNo}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return NoContent();
     }
 }

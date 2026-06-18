@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.Interfaces;
+using Sportive.API.Services;
 
 namespace Sportive.API.Controllers;
 
@@ -18,13 +19,15 @@ public class UsersController : ControllerBase
     private readonly RoleManager<IdentityRole> _roleManager;
     private readonly AppDbContext _db;
     private readonly ITranslator _t;
+    private readonly IAuditService _audit;
 
-    public UsersController(UserManager<AppUser> userManager, RoleManager<IdentityRole> roleManager, AppDbContext db, ITranslator t)
+    public UsersController(UserManager<AppUser> userManager, RoleManager<IdentityRole> roleManager, AppDbContext db, ITranslator t, IAuditService audit)
     {
         _userManager = userManager;
         _roleManager = roleManager;
         _db = db;
         _t = t;
+        _audit = audit;
     }
 
     [HttpGet("login-history")]
@@ -120,6 +123,8 @@ public class UsersController : ControllerBase
             employee.BranchId = dto.BranchId;
             await _db.SaveChangesAsync();
         }
+        
+        try { await _audit.LogAsync("UpdateUser", "User", user.Id, $"Updated user {user.FullName}", User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value); } catch { }
 
         return Ok(new { message = _t.Get("Users.UpdateSuccess") });
     }
@@ -145,6 +150,8 @@ public class UsersController : ControllerBase
 
         if (!result.Succeeded) 
             return BadRequest(new { message = _t.Get("Auth.PasswordChangeFailed"), errors = result.Errors.Select(e => e.Description) });
+            
+        try { await _audit.LogAsync("ResetPassword", "User", user.Id, $"Reset password for user {user.FullName}", User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value); } catch { }
 
         return Ok(new { message = _t.Get("Users.PasswordChangeSuccess") });
     }
@@ -173,6 +180,8 @@ public class UsersController : ControllerBase
 
         var result = await _userManager.AddToRolesAsync(user, dto.Roles);
         if (!result.Succeeded) return BadRequest(result.Errors);
+        
+        try { await _audit.LogAsync("UpdateRoles", "User", user.Id, $"Updated roles for user {user.FullName}", User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value); } catch { }
 
         return Ok(new { message = _t.Get("Users.PermissionsUpdateSuccess") });
     }
@@ -218,6 +227,8 @@ public class UsersController : ControllerBase
             var result = await _userManager.UpdateAsync(user);
             if (!result.Succeeded) return BadRequest(result.Errors);
         }
+        
+        try { await _audit.LogAsync("DeleteUser", "User", user.Id, $"Deleted/Deactivated user {user.FullName}", User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value); } catch { }
 
         return Ok(new { message = _t.Get("Users.DeleteSuccess") });
     }

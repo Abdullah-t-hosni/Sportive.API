@@ -9,6 +9,7 @@ using Sportive.API.Utils;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using ClosedXML.Excel;
+using Sportive.API.Services;
 
 namespace Sportive.API.Controllers;
 
@@ -19,7 +20,8 @@ public class CustomersController : ControllerBase
 {
     private readonly ICustomerService _customers;
     private readonly ITranslator _t;
-    public CustomersController(ICustomerService customers, ITranslator t) => (_customers, _t) = (customers, t);
+    private readonly IAuditService _audit;
+    public CustomersController(ICustomerService customers, ITranslator t, IAuditService audit) => (_customers, _t, _audit) = (customers, t, audit);
 
     [RequirePermission(ModuleKeys.Customers + "," + ModuleKeys.Pos + "," + ModuleKeys.Orders)]
     [HttpGet]
@@ -56,7 +58,11 @@ public class CustomersController : ControllerBase
         // 🛡️ Security Check: Owner or Admin?
         if (!IsOwnerOrAdmin(id)) return Forbid();
 
-        try { return Ok(await _customers.UpdateCustomerAsync(id, dto)); }
+        try { 
+            var result = await _customers.UpdateCustomerAsync(id, dto);
+            try { await _audit.LogAsync("UpdateCustomer", "Customer", id.ToString(), $"Updated customer info", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+            return Ok(result); 
+        }
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
@@ -68,6 +74,7 @@ public class CustomersController : ControllerBase
         try 
         {
             var customer = await _customers.CreateCustomerAsync(dto);
+            try { await _audit.LogAsync("CreateCustomer", "Customer", customer.Id.ToString(), $"Created new customer: {customer.FullName}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
             return CreatedAtAction(nameof(GetById), new { id = customer.Id }, customer);
         }
         catch (Exception ex)
@@ -94,6 +101,7 @@ public class CustomersController : ControllerBase
     public async Task<IActionResult> Toggle(int id)
     {
         var result = await _customers.ToggleCustomerAsync(id);
+        if (result) { try { await _audit.LogAsync("ToggleCustomer", "Customer", id.ToString(), $"Toggled customer status", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } }
         return result ? Ok() : NotFound();
     }
 
@@ -105,6 +113,7 @@ public class CustomersController : ControllerBase
         try
         {
             var result = await _customers.DeleteCustomerAsync(id);
+            if (result) { try { await _audit.LogAsync("DeleteCustomer", "Customer", id.ToString(), $"Deleted customer", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } }
             return result ? Ok(new { message = "Customer deleted successfully" }) : NotFound();
         }
         catch (InvalidOperationException ex)

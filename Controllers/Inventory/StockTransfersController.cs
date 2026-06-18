@@ -2,6 +2,7 @@ using Sportive.API.Attributes;
 using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.Interfaces;
+using Sportive.API.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Utils;
@@ -16,11 +17,13 @@ public class StockTransfersController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IInventoryService _inventory;
+    private readonly IAuditService _audit;
 
-    public StockTransfersController(AppDbContext db, IInventoryService inventory)
+    public StockTransfersController(AppDbContext db, IInventoryService inventory, IAuditService audit)
     {
         _db = db;
         _inventory = inventory;
+        _audit = audit;
     }
 
     [RequirePermission(ModuleKeys.Inventory)]
@@ -119,6 +122,8 @@ public class StockTransfersController : ControllerBase
 
         _db.StockTransfers.Add(transfer);
         await _db.SaveChangesAsync();
+        
+        try { await _audit.LogAsync("CreateStockTransfer", "StockTransfer", transfer.Id.ToString(), $"Created stock transfer {transfer.TransferNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return CreatedAtAction(nameof(GetById), new { id = transfer.Id }, transfer);
     }
@@ -176,6 +181,9 @@ public class StockTransfersController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+        
+        try { await _audit.LogAsync("UpdateStockTransfer", "StockTransfer", id.ToString(), $"Updated stock transfer {transfer.TransferNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return Ok(transfer);
     }
 
@@ -191,6 +199,8 @@ public class StockTransfersController : ControllerBase
 
         _db.StockTransfers.Remove(transfer);
         await _db.SaveChangesAsync();
+        
+        try { await _audit.LogAsync("DeleteStockTransfer", "StockTransfer", id.ToString(), $"Deleted stock transfer", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return NoContent();
     }
@@ -235,6 +245,8 @@ public class StockTransfersController : ControllerBase
 
             await _db.SaveChangesAsync();
             await dbTransaction.CommitAsync();
+            
+            try { await _audit.LogAsync("ShipStockTransfer", "StockTransfer", id.ToString(), $"Shipped stock transfer {transfer.TransferNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         }
         catch (Exception ex)
         {
@@ -285,6 +297,8 @@ public class StockTransfersController : ControllerBase
 
             await _db.SaveChangesAsync();
             await dbTransaction.CommitAsync();
+            
+            try { await _audit.LogAsync("ReceiveStockTransfer", "StockTransfer", id.ToString(), $"Received stock transfer {transfer.TransferNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         }
         catch (Exception ex)
         {
@@ -336,6 +350,8 @@ public class StockTransfersController : ControllerBase
 
             await _db.SaveChangesAsync();
             await dbTransaction.CommitAsync();
+            
+            try { await _audit.LogAsync("CancelStockTransfer", "StockTransfer", id.ToString(), $"Cancelled stock transfer {transfer.TransferNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         }
         catch (Exception ex)
         {

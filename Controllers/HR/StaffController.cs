@@ -139,6 +139,8 @@ public class StaffController : ControllerBase
             await EnsureEmployeeLinkAsync(user, dto.Role);
         }
 
+        try { await _audit.LogAsync("CreateUser", "User", user.Id, $"Created new user {user.FullName} with role {dto.Role}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return Ok(new {
             id       = user.Id,
             fullName = user.FullName,
@@ -287,6 +289,8 @@ public class StaffController : ControllerBase
 
         user.IsActive = !user.IsActive;
         await _users.UpdateAsync(user);
+        
+        try { await _audit.LogAsync("ToggleUserActive", "User", id, $"Toggled user active status to {user.IsActive}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(new { isActive = user.IsActive });
     }
@@ -301,6 +305,8 @@ public class StaffController : ControllerBase
 
         var token  = await _users.GeneratePasswordResetTokenAsync(user);
         var result = await _users.ResetPasswordAsync(user, token, dto.NewPassword);
+        
+        if (result.Succeeded) { try { await _audit.LogAsync("ResetPassword", "User", id, $"Reset password manually", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } }
 
         return result.Succeeded
             ? Ok(new { message = _t.Get("Users.PasswordChangeSuccess") })
@@ -340,6 +346,9 @@ public class StaffController : ControllerBase
         await _db.SaveChangesAsync();
 
         var result = await _users.DeleteAsync(user);
+        
+        if (result.Succeeded) { try { await _audit.LogAsync("DeleteUser", "User", id, $"Deleted user", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } }
+
         return result.Succeeded
             ? Ok(new { message = _t.Get("Staff.DeleteSuccess") })
             : BadRequest(new { errors = result.Errors.Select(e => e.Description) });

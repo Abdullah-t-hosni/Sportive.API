@@ -24,8 +24,9 @@ public class InventoryAuditsController : ControllerBase
     private readonly ILogger<InventoryAuditsController> _logger;
     private readonly ITranslator _t;
     private readonly IAccountingService _accountingService;
+    private readonly IAuditService _auditLog;
 
-    public InventoryAuditsController(AppDbContext db, IInventoryService inventory, AccountingCoreService accounting, ILogger<InventoryAuditsController> logger, ITranslator t, IAccountingService accountingService)
+    public InventoryAuditsController(AppDbContext db, IInventoryService inventory, AccountingCoreService accounting, ILogger<InventoryAuditsController> logger, ITranslator t, IAccountingService accountingService, IAuditService auditLog)
     {
         _db = db;
         _inventory = inventory;
@@ -33,6 +34,7 @@ public class InventoryAuditsController : ControllerBase
         _logger = logger;
         _t = t;
         _accountingService = accountingService;
+        _auditLog = auditLog;
     }
 
     private async Task<bool> CheckPerms(string perm, bool edit = false)
@@ -215,6 +217,8 @@ public class InventoryAuditsController : ControllerBase
 
         _db.InventoryAudits.Add(audit);
         await _db.SaveChangesAsync();
+        
+        try { await _auditLog.LogAsync("CreateInventoryAudit", "InventoryAudit", audit.Id.ToString(), $"Started new inventory count: {audit.Title}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return CreatedAtAction(nameof(GetById), new { id = audit.Id }, audit);
     }
@@ -340,6 +344,8 @@ public class InventoryAuditsController : ControllerBase
                 
                 audit.UpdatedAt = TimeHelper.GetEgyptTime();
                 await _db.SaveChangesAsync();
+                
+                try { await _auditLog.LogAsync("UpdateInventoryAudit", "InventoryAudit", id.ToString(), $"Updated inventory count details/items", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
                 await transaction.CommitAsync();
                 result = Ok(new { message = _t.Get("InventoryAudits.ChangesSaved") });
@@ -466,6 +472,9 @@ public class InventoryAuditsController : ControllerBase
                 audit.JournalEntryId = jeId;
 
                 await _db.SaveChangesAsync();
+                
+                try { await _auditLog.LogAsync("PostInventoryAudit", "InventoryAudit", id.ToString(), $"Approved inventory count. Stock variance adjusted.", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
                 await transaction.CommitAsync();
 
                 result = Ok(new { message = _t.Get("InventoryAudits.AuditApprovedSuccess") });
@@ -581,6 +590,8 @@ public class InventoryAuditsController : ControllerBase
 
                 _db.InventoryAudits.Remove(audit);
                 await _db.SaveChangesAsync();
+                
+                try { await _auditLog.LogAsync("DeleteInventoryAudit", "InventoryAudit", id.ToString(), $"Deleted inventory count", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
                 await transaction.CommitAsync();
                 result = NoContent();

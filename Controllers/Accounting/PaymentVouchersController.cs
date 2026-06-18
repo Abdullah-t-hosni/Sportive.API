@@ -23,13 +23,15 @@ public class PaymentVouchersController : ControllerBase
     private readonly SequenceService _seq;
     private readonly IPdfService _pdf;
     private readonly AccountingCoreService _core;
-    public PaymentVouchersController(IAccountingService accounting, AppDbContext db, SequenceService seq, IPdfService pdf, ITranslator t, AccountingCoreService core) {
+    private readonly IAuditService _audit;
+    public PaymentVouchersController(IAccountingService accounting, AppDbContext db, SequenceService seq, IPdfService pdf, ITranslator t, AccountingCoreService core, IAuditService audit) {
         _accounting = accounting;
         _db = db;
         _seq = seq;
         _pdf = pdf;
         _t = t;
         _core = core;
+        _audit = audit;
     }
 
     [HttpGet("{id}/pdf")]
@@ -207,6 +209,9 @@ public class PaymentVouchersController : ControllerBase
         }
 
         try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
+        
+        try { await _audit.LogAsync("CreatePaymentVoucher", "PaymentVoucher", voucher.Id.ToString(), $"Created payment voucher {voucher.VoucherNumber} for {voucher.Amount}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
         return Ok(voucher);
     }
 
@@ -277,6 +282,8 @@ public class PaymentVouchersController : ControllerBase
         {
             try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id)); } catch { /* non-critical */ }
         }
+        
+        try { await _audit.LogAsync("UpdatePaymentVoucher", "PaymentVoucher", id.ToString(), $"Updated payment voucher {voucher.VoucherNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(voucher);
     }
@@ -326,6 +333,9 @@ public class PaymentVouchersController : ControllerBase
         {
             try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollRunPaymentsAsync(run.Id)); } catch { /* non-critical */ }
         }
+        
+        var vNo = voucher.VoucherNumber;
+        try { await _audit.LogAsync("DeletePaymentVoucher", "PaymentVoucher", id.ToString(), $"Deleted payment voucher {vNo}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return NoContent();
     }
