@@ -155,6 +155,8 @@ builder.Services.AddHealthChecks();
 // ── SWAGGER ───────────────────────────────────────────
 builder.Services.AddSwaggerAndApiExplorer();
 
+builder.Services.AddHttpContextAccessor();
+
 // ── CONTROLLERS ───────────────────────────────────────
 builder.Services.AddControllers()
     .AddJsonOptions(x =>

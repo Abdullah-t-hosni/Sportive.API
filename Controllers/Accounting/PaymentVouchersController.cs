@@ -211,7 +211,7 @@ public class PaymentVouchersController : ControllerBase
 
         try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
         
-        try { await _audit.LogAsync("CreatePaymentVoucher", "PaymentVoucher", voucher.Id.ToString(), $"Created payment voucher {voucher.VoucherNumber} for {voucher.Amount}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        try { await _audit.LogChangeAsync<PaymentVoucher>("CreatePaymentVoucher", "PaymentVoucher", voucher.Id.ToString(), null, voucher, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(voucher);
     }
@@ -221,6 +221,8 @@ public class PaymentVouchersController : ControllerBase
     {
         var voucher = await _db.PaymentVouchers.Include(v => v.CashAccount).FirstOrDefaultAsync(v => v.Id == id);
         if (voucher == null) return NotFound();
+
+        var oldVoucher = await _db.PaymentVouchers.AsNoTracking().FirstOrDefaultAsync(v => v.Id == id);
 
         var entry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == voucher.VoucherNumber);
         if (entry != null && entry.Status == JournalEntryStatus.Posted && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin")))
@@ -284,7 +286,7 @@ public class PaymentVouchersController : ControllerBase
             try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id)); } catch { /* non-critical */ }
         }
         
-        try { await _audit.LogAsync("UpdatePaymentVoucher", "PaymentVoucher", id.ToString(), $"Updated payment voucher {voucher.VoucherNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        try { await _audit.LogChangeAsync<PaymentVoucher>("UpdatePaymentVoucher", "PaymentVoucher", id.ToString(), oldVoucher, voucher, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(voucher);
     }
@@ -336,7 +338,7 @@ public class PaymentVouchersController : ControllerBase
         }
         
         var vNo = voucher.VoucherNumber;
-        try { await _audit.LogAsync("DeletePaymentVoucher", "PaymentVoucher", id.ToString(), $"Deleted payment voucher {vNo}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        try { await _audit.LogChangeAsync<PaymentVoucher>("DeletePaymentVoucher", "PaymentVoucher", id.ToString(), voucher, null, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return NoContent();
     }

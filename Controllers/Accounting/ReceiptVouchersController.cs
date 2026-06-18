@@ -285,7 +285,7 @@ public class ReceiptVouchersController : ControllerBase
         try { await _accounting.PostReceiptVoucherAsync(voucher, dto.OrderId); } catch { /* non-critical: voucher is saved */ }
         try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
         
-        try { await _audit.LogAsync("CreateReceiptVoucher", "ReceiptVoucher", voucher.Id.ToString(), $"Created receipt voucher {voucher.VoucherNumber} for {voucher.Amount}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        try { await _audit.LogChangeAsync<ReceiptVoucher>("CreateReceiptVoucher", "ReceiptVoucher", voucher.Id.ToString(), null, voucher, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(voucher);
     }
@@ -295,6 +295,8 @@ public class ReceiptVouchersController : ControllerBase
     {
         var voucher = await _db.ReceiptVouchers.Include(v => v.FromAccount).FirstOrDefaultAsync(v => v.Id == id);
         if (voucher == null) return NotFound();
+
+        var oldVoucher = await _db.ReceiptVouchers.AsNoTracking().FirstOrDefaultAsync(v => v.Id == id);
 
         var entry = await _db.JournalEntries.Include(e => e.Lines)
             .FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber);
@@ -363,7 +365,7 @@ public class ReceiptVouchersController : ControllerBase
         await _db.SaveChangesAsync();
         try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
         
-        try { await _audit.LogAsync("UpdateReceiptVoucher", "ReceiptVoucher", id.ToString(), $"Updated receipt voucher {voucher.VoucherNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        try { await _audit.LogChangeAsync<ReceiptVoucher>("UpdateReceiptVoucher", "ReceiptVoucher", id.ToString(), oldVoucher, voucher, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(voucher);
     }
@@ -403,7 +405,7 @@ public class ReceiptVouchersController : ControllerBase
         try { BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
         
         var vNo = voucher.VoucherNumber;
-        try { await _audit.LogAsync("DeleteReceiptVoucher", "ReceiptVoucher", id.ToString(), $"Deleted receipt voucher {vNo}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        try { await _audit.LogChangeAsync<ReceiptVoucher>("DeleteReceiptVoucher", "ReceiptVoucher", id.ToString(), voucher, null, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return NoContent();
     }
