@@ -43,3 +43,12 @@ Thumbs.db
 # Backup files
 /tmp/
 *.bak
+
+# AI Agent Artifacts & Scratch files (prevent leaking architecture)
+plan.md
+flow.md
+implementation_plan.md
+task.md
+walkthrough.md
+scratch/
+.system_generated/
