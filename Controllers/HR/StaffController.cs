@@ -241,7 +241,20 @@ public class StaffController : ControllerBase
         employee.Email = user.Email;
         employee.Phone = user.PhoneNumber;
         employee.JobTitle = role; // المسمى الوظيفي يتبع الدور
-        employee.BranchId = user.BranchId;
+
+        // ✅ مصدر الحقيقة هو الـ Employee لا الـ User
+        // لو الـ Employee عنده BranchId محدد → نمرره للـ User (مش العكس)
+        // لو الـ Employee جديد وليس عنده BranchId → نأخذه من الـ User مرة واحدة فقط
+        if (!employee.BranchId.HasValue && user.BranchId.HasValue)
+        {
+            // موظف جديد بدون فرع محدد → اخذ من الـ User
+            employee.BranchId = user.BranchId;
+        }
+        else
+        {
+            // موظف موجود → الفرع بياخده من الـ Employee (يكون null أو له قيمة)
+            user.BranchId = employee.BranchId;
+        }
 
         await _db.SaveChangesAsync();
         await _customerService.EnsureCustomerAccountAsync(0, isEmployee: true, employeeId: employee.Id);
