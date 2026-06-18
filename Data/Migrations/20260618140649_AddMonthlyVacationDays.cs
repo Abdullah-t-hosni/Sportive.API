@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -10,18 +10,8 @@ namespace Sportive.API.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<bool>(
-                name: "EnableUrgencyTags",
-                table: "StoreSettings",
-                type: "tinyint(1)",
-                nullable: false,
-                defaultValue: false);
+            // EnableUrgencyTags and LinkedProductId already exist in DB
 
-            migrationBuilder.AddColumn<int>(
-                name: "LinkedProductId",
-                table: "Products",
-                type: "int",
-                nullable: true);
 
             migrationBuilder.AddColumn<int>(
                 name: "MonthlyVacationDays",
@@ -30,18 +20,8 @@ namespace Sportive.API.Data.Migrations
                 nullable: false,
                 defaultValue: 0);
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Products_LinkedProductId",
-                table: "Products",
-                column: "LinkedProductId");
+            // Indexes and FKs for LinkedProductId already exist
 
-            migrationBuilder.AddForeignKey(
-                name: "FK_Products_Products_LinkedProductId",
-                table: "Products",
-                column: "LinkedProductId",
-                principalTable: "Products",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
         }
 
         /// <inheritdoc />
