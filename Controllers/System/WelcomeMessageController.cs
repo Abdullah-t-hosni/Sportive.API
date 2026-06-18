@@ -154,6 +154,10 @@ public class WelcomeMessageController : ControllerBase
 
         var now = TimeHelper.GetEgyptTime();
 
+        var allowedTypes = new List<WelcomeMessageTargetType> { WelcomeMessageTargetType.All };
+        if (isStaff) allowedTypes.Add(WelcomeMessageTargetType.Staff);
+        if (isCustomer) allowedTypes.Add(WelcomeMessageTargetType.Customers);
+
         // Find active messages that target this user, their department, or everyone
         // and that they haven't seen yet.
         var message = await _db.WelcomeMessages
@@ -161,11 +165,9 @@ public class WelcomeMessageController : ControllerBase
             .Where(m => m.StartDate == null || m.StartDate <= now)
             .Where(m => m.EndDate == null || m.EndDate >= now)
             .Where(m => 
-                m.TargetType == WelcomeMessageTargetType.All ||
+                allowedTypes.Contains(m.TargetType) ||
                 (m.TargetType == WelcomeMessageTargetType.User && m.TargetUserId == userId) ||
-                (m.TargetType == WelcomeMessageTargetType.Department && m.TargetDepartmentId == departmentId) ||
-                (m.TargetType == WelcomeMessageTargetType.Staff && isStaff) ||
-                (m.TargetType == WelcomeMessageTargetType.Customers && isCustomer)
+                (m.TargetType == WelcomeMessageTargetType.Department && m.TargetDepartmentId == departmentId)
             )
             .Where(m => !_db.WelcomeMessageSeens.Any(s => s.WelcomeMessageId == m.Id && s.UserId == userId))
             .OrderByDescending(m => m.CreatedAt)
