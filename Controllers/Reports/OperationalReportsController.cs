@@ -4407,6 +4407,12 @@ public class OperationalReportsController : ControllerBase
             .OrderByDescending(l => l.JournalEntry.EntryDate)
             .ToListAsync();
 
+        // Load parent account names for better display
+        var expenseParentIds = detailedExpenseLines.Where(l => l.Account.ParentId.HasValue).Select(l => l.Account.ParentId!.Value).Distinct().ToList();
+        var expenseParentNames = await _db.Accounts.AsNoTracking()
+            .Where(a => expenseParentIds.Contains(a.Id))
+            .ToDictionaryAsync(a => a.Id, a => a.NameAr);
+
         var detailedExpenses = detailedExpenseLines.Select(l => new {
             journalEntryId = l.JournalEntryId,
             orderId      = l.JournalEntry.OrderId,
@@ -4415,10 +4421,11 @@ public class OperationalReportsController : ControllerBase
             date        = l.JournalEntry.EntryDate,
             accountCode = l.Account.Code,
             accountName = l.Account.NameAr,
+            parentAccountName = l.Account.ParentId.HasValue && expenseParentNames.TryGetValue(l.Account.ParentId.Value, out var pn) ? pn : (string?)null,
             entryType   = l.JournalEntry.Type.ToString(),
             debit       = l.Debit,
             credit      = l.Credit,
-            description = l.Description ?? l.JournalEntry.Description ?? l.Account.NameAr
+            description = l.Description ?? l.JournalEntry.Description
         }).ToList();
 
         // ── NEW: Account Movements (مصروفات الحسابات اليومية) ─────────────────
