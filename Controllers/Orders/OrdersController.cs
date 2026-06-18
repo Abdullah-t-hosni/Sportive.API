@@ -844,7 +844,14 @@ public class OrdersController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
+        try
+        {
+            Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[RedistributePayments] Failed to enqueue balance sync for order {OrderId} — operation still succeeded.", id);
+        }
 
         await _audit.LogAsync("RedistributePayments", "Order", id.ToString(),
             $"Order {order.OrderNumber} payments redistributed by cashier", 
