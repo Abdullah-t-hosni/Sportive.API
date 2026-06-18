@@ -236,7 +236,9 @@ public class AccountingCoreService
         {
             if (debit == 0 && credit == 0) continue;
             var (accountId, exactMatch, errorNote) = resolvedAccounts[code];
-            var finalDesc = exactMatch ? desc : $"{desc} {_t.Get("Accounting.WarningPrefix", errorNote ?? "")}";
+            if (!exactMatch && errorNote != null)
+                _logger.LogWarning("[Accounting] Journal line using fallback/inactive account. Code={Code}, Note={Note}", code, errorNote);
+            var finalDesc = desc;
             accountIdCache.TryGetValue(accountId, out var actualAccount);
             var realCode = actualAccount?.Code ?? "";
 
