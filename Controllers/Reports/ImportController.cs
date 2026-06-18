@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Sportive.API.Interfaces;
 using Sportive.API.Attributes;
 using Sportive.API.Utils;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using ClosedXML.Excel;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using Sportive.API.Services;
 
 namespace Sportive.API.Controllers;
 

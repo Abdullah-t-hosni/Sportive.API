@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -20,9 +21,9 @@ namespace Sportive.API.Controllers
     public class POSShiftClosuresController : ControllerBase
     {
         private readonly AppDbContext _db;
-        private readonly Sportive.API.Interfaces.IAuditService _audit;
+        private readonly Sportive.API.Services.IAuditService _audit;
 
-        public POSShiftClosuresController(AppDbContext db, Sportive.API.Interfaces.IAuditService audit)
+        public POSShiftClosuresController(AppDbContext db, Sportive.API.Services.IAuditService audit)
         {
             _db = db;
             _audit = audit;

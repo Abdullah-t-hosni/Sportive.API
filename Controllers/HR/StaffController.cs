@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Sportive.API.Attributes;
 using Sportive.API.Utils;
 using Microsoft.AspNetCore.Authorization;

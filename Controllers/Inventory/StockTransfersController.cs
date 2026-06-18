@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Sportive.API.Attributes;
 using Sportive.API.Data;
 using Sportive.API.Models;
