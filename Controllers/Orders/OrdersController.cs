@@ -716,26 +716,35 @@ public class OrdersController : ControllerBase
         else if (dto.Payments.Count > 1)
             order.PaymentMethod = PaymentMethod.Mixed;
 
-        // ── 🔴 Fix 2: جلب IDs الحسابات الحقيقية من الـ mappings بدل hard-code "1103" ──
+        // ── ⚡ PERF: جلب الـ mappings مرة واحدة فقط ──
+        var mapDict = await accountingCore.GetSafeSystemMappingsAsync();
+
+        // ── جلب IDs الحسابات الحقيقية من الـ mappings (مرة واحدة بدل N queries) ──
         var mappedAccountIds = new HashSet<int>();
+        var methodToAccountId = new Dictionary<PaymentMethod, int>();
         foreach (var pm in new[] { PaymentMethod.Cash, PaymentMethod.Bank, PaymentMethod.CreditCard, PaymentMethod.Vodafone, PaymentMethod.InstaPay })
         {
             try
             {
-                var code = await accounting.GetMappedCashAccount(pm, order.Source);
-                if (code.StartsWith("ID:", StringComparison.OrdinalIgnoreCase) && int.TryParse(code.Substring(3), out var accId))
-                    mappedAccountIds.Add(accId);
+                var code = await accountingCore.GetMappedCashAccountAsync(pm, order.Source, mapDict);
+                int? accId = null;
+                if (code.StartsWith("ID:", StringComparison.OrdinalIgnoreCase) && int.TryParse(code.Substring(3), out var parsedId))
+                    accId = parsedId;
                 else
                 {
-                    var acc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == code);
-                    if (acc != null) mappedAccountIds.Add(acc.Id);
+                    var acc = await _db.Accounts.Where(a => a.Code == code).Select(a => (int?)a.Id).FirstOrDefaultAsync();
+                    accId = acc;
+                }
+                if (accId.HasValue)
+                {
+                    mappedAccountIds.Add(accId.Value);
+                    methodToAccountId[pm] = accId.Value;
                 }
             }
             catch { /* method not mapped — skip */ }
         }
 
         // ── جلب حساب العملاء للطلب ──
-        var mapDict = await accountingCore.GetSafeSystemMappingsAsync();
         int receivablesAccountId;
         if (order.Customer?.MainAccountId != null)
         {
@@ -746,14 +755,14 @@ public class OrdersController : ControllerBase
             receivablesAccountId = await accountingCore.GetRequiredMappedAccountAsync(MappingKeys.Customer, mapDict);
         }
 
-        // ── 🔴 Fix 3: بحث عن قيد المبيعات الخاص بالطلب تحديداً ──
+        // ── بحث عن قيد المبيعات الخاص بالطلب تحديداً ──
         var journalEntry = await _db.JournalEntries
             .Include(e => e.Lines).ThenInclude(l => l.Account)
             .FirstOrDefaultAsync(e => (e.OrderId == id || e.Reference == order.OrderNumber) && e.Type == JournalEntryType.SalesInvoice);
 
         if (journalEntry != null)
         {
-            // ── 🔴 Fix 4: حذف سطور الدفع السابقة وسطور المديونية لتعديلها بشكل متوازن ──
+            // حذف سطور الدفع السابقة وسطور المديونية لتعديلها بشكل متوازن
             var paymentLines = journalEntry.Lines
                 .Where(l => l.Debit > 0 && (mappedAccountIds.Contains(l.AccountId) || l.AccountId == receivablesAccountId))
                 .ToList();
@@ -770,7 +779,7 @@ public class OrdersController : ControllerBase
             foreach (var line in paymentLines)
                 _db.JournalLines.Remove(line);
 
-            // إضافة سطور الدفع الجديدة
+            // إضافة سطور الدفع الجديدة (بدون DB queries إضافية — كل شئ من الـ cache)
             foreach (var p in dto.Payments)
             {
                 if (p.Method == PaymentMethod.Credit)
@@ -778,7 +787,6 @@ public class OrdersController : ControllerBase
 
                 if (p.Method == PaymentMethod.CustomerBalance)
                 {
-                    // الدفع من رصيد العميل المتاح (يُخصم مباشرة من حساب المدينين)
                     journalEntry.Lines.Add(new JournalLine
                     {
                         AccountId   = receivablesAccountId,
@@ -793,20 +801,13 @@ public class OrdersController : ControllerBase
                 }
                 else
                 {
-                    string accountCode;
-                    try { accountCode = await accounting.GetMappedCashAccount(p.Method, order.Source); }
-                    catch { return BadRequest($"الحساب المرتبط بطريقة الدفع {p.Method} غير موجود في الإعدادات"); }
-
-                    var account = accountCode.StartsWith("ID:", StringComparison.OrdinalIgnoreCase) && int.TryParse(accountCode.Substring(3), out var directId)
-                        ? await _db.Accounts.FindAsync(directId)
-                        : await _db.Accounts.FirstOrDefaultAsync(a => a.Code == accountCode);
-
-                    if (account == null)
-                        return BadRequest($"الحساب المرتبط بطريقة الدفع {p.Method} غير موجود");
+                    // ⚡ استخدام الـ cache بدل DB query جديدة
+                    if (!methodToAccountId.TryGetValue(p.Method, out var accountId))
+                        return BadRequest($"الحساب المرتبط بطريقة الدفع {p.Method} غير موجود في الإعدادات");
 
                     journalEntry.Lines.Add(new JournalLine
                     {
-                        AccountId   = account.Id,
+                        AccountId   = accountId,
                         Debit       = p.Amount,
                         Credit      = 0,
                         Description = $"تعديل طريقة دفع - {p.Method}",
@@ -843,14 +844,7 @@ public class OrdersController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        try
-        {
-            Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error syncing entity balances after redistributing payments for order {OrderId}", id);
-        }
+        Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
 
         await _audit.LogAsync("RedistributePayments", "Order", id.ToString(),
             $"Order {order.OrderNumber} payments redistributed by cashier", 
