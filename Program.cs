@@ -53,7 +53,7 @@ try
     connBuilder.ConvertZeroDateTime = true;
     connBuilder.ConnectionIdleTimeout = 30; // release idle connections after 30s
     connBuilder.Keepalive = 60;
-    connBuilder.ConnectionTimeout = 30;
+    connBuilder.ConnectionTimeout = 60; // increased from 30 to allow DB to recover under heavy load
     connBuilder.DefaultCommandTimeout = 120; // allow up to 120s command timeout to prevent transient DB timeouts
 
     // Dynamically resolve Maximum Pool Size to avoid hardcoding limits (helpful for multi-user/multi-tenant production VPS)
@@ -74,8 +74,8 @@ try
             }
             else
             {
-                // Sensible default for high-concurrency production databases (MySqlConnector default is 100)
-                connBuilder.MaximumPoolSize = 100;
+                // Increased default for Hangfire background processing and concurrency
+                connBuilder.MaximumPoolSize = 250;
             }
         }
     }
@@ -211,30 +211,6 @@ using (var scope = app.Services.CreateScope())
             {
                 Log.Warning(ex, "Failed to sync UpdatedAt for returned orders on startup.");
             }
-
-            try
-            {
-                Log.Information("Applying LinkedProduct schema fix (run-v16 equivalent) on startup...");
-                // Use a check or try-catch. Under MySQL, if column already exists, ALTER TABLE throws an error.
-                // We run the column addition first, then the constraint addition.
-                try {
-                    await context.Database.ExecuteSqlRawAsync("ALTER TABLE Products ADD COLUMN LinkedProductId INT NULL;");
-                } catch (Exception colEx) {
-                    Log.Information("LinkedProductId column already exists or skipped: {Message}", colEx.Message);
-                }
-                
-                try {
-                    await context.Database.ExecuteSqlRawAsync("ALTER TABLE Products ADD CONSTRAINT FK_Products_Products_LinkedProductId FOREIGN KEY (LinkedProductId) REFERENCES Products(Id) ON DELETE SET NULL;");
-                } catch (Exception fkEx) {
-                    Log.Information("LinkedProductId foreign key constraint already exists or skipped: {Message}", fkEx.Message);
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "Failed to apply LinkedProduct schema fix on startup.");
-            }
-
-
 
 
 

@@ -6,6 +6,7 @@ using Sportive.API.Utils;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
 using Sportive.API.Models;
 
@@ -26,14 +27,16 @@ public class AuditService : IAuditService
 {
     private readonly AppDbContext _db;
     private readonly INotificationService _notificationService;
+    private readonly ILogger<AuditService> _logger;
     private readonly string _auditSecret;
     private static readonly JsonSerializerOptions _jsonOpts =
         new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-    public AuditService(AppDbContext db, INotificationService notificationService, IConfiguration config)
+    public AuditService(AppDbContext db, INotificationService notificationService, IConfiguration config, ILogger<AuditService> logger)
     {
         _db = db;
         _notificationService = notificationService;
+        _logger = logger;
         var secret = config["Security:AuditSecret"];
         if (string.IsNullOrEmpty(secret) || secret == "${AUDIT_SECRET}")
         {
@@ -54,22 +57,29 @@ public class AuditService : IAuditService
         var previousHash = lastRecord?.Hash ?? "GENESIS";
         var hash = ComputeAuditHash(action, userId, createdAt, previousHash);
 
-        _db.AuditLogs.Add(new AuditLog
+        try
         {
-            Action       = action,
-            EntityType   = entityType,
-            EntityId     = entityId,
-            Notes        = notes,
-            UserId       = userId,
-            UserName     = userName,
-            IpAddress    = ip,
-            CreatedAt    = createdAt,
-            PreviousHash = previousHash,
-            Hash         = hash
-        });
-        await _db.SaveChangesAsync();
+            _db.AuditLogs.Add(new AuditLog
+            {
+                Action       = action,
+                EntityType   = entityType,
+                EntityId     = entityId,
+                Notes        = notes,
+                UserId       = userId,
+                UserName     = userName,
+                IpAddress    = ip,
+                CreatedAt    = createdAt,
+                PreviousHash = previousHash,
+                Hash         = hash
+            });
+            await _db.SaveChangesAsync();
 
-        await CheckAndTriggerAlertAsync(action, entityType, entityId, userName);
+            await CheckAndTriggerAlertAsync(action, entityType, entityId, userName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to write audit log for action: {Action} on entity: {EntityType}", action, entityType);
+        }
     }
 
     public async Task LogChangeAsync<T>(
@@ -85,23 +95,30 @@ public class AuditService : IAuditService
         var previousHash = lastRecord?.Hash ?? "GENESIS";
         var hash = ComputeAuditHash(action, userId, createdAt, previousHash);
 
-        _db.AuditLogs.Add(new AuditLog
+        try
         {
-            Action       = action,
-            EntityType   = entityType,
-            EntityId     = entityId,
-            OldValues    = oldValue  != null ? JsonSerializer.Serialize(oldValue,  _jsonOpts) : null,
-            NewValues    = newValue  != null ? JsonSerializer.Serialize(newValue,  _jsonOpts) : null,
-            UserId       = userId,
-            UserName     = userName,
-            IpAddress    = ip,
-            CreatedAt    = createdAt,
-            PreviousHash = previousHash,
-            Hash         = hash
-        });
-        await _db.SaveChangesAsync();
+            _db.AuditLogs.Add(new AuditLog
+            {
+                Action       = action,
+                EntityType   = entityType,
+                EntityId     = entityId,
+                OldValues    = oldValue  != null ? JsonSerializer.Serialize(oldValue,  _jsonOpts) : null,
+                NewValues    = newValue  != null ? JsonSerializer.Serialize(newValue,  _jsonOpts) : null,
+                UserId       = userId,
+                UserName     = userName,
+                IpAddress    = ip,
+                CreatedAt    = createdAt,
+                PreviousHash = previousHash,
+                Hash         = hash
+            });
+            await _db.SaveChangesAsync();
 
-        await CheckAndTriggerAlertAsync(action, entityType, entityId, userName);
+            await CheckAndTriggerAlertAsync(action, entityType, entityId, userName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to write audit change log for action: {Action} on entity: {EntityType}", action, entityType);
+        }
     }
 
     private async Task CheckAndTriggerAlertAsync(string action, string entityType, string? entityId, string? userName)

@@ -14,6 +14,7 @@ namespace Sportive.API.Data;
 public class AppDbContext : IdentityDbContext<AppUser>
 {
     private readonly IHttpContextAccessor? _httpContextAccessor;
+    public bool BypassAuditLogging { get; set; } = false;
 
     public AppDbContext(DbContextOptions<AppDbContext> options, IHttpContextAccessor? httpContextAccessor = null) : base(options) 
     { 
@@ -764,6 +765,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
+        if (BypassAuditLogging) return await base.SaveChangesAsync(cancellationToken);
+
         var auditEntries = OnBeforeSaveChanges();
         var result = await base.SaveChangesAsync(cancellationToken);
         await OnAfterSaveChanges(auditEntries);
@@ -772,6 +775,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
     public override int SaveChanges()
     {
+        if (BypassAuditLogging) return base.SaveChanges();
+
         var auditEntries = OnBeforeSaveChanges();
         var result = base.SaveChanges();
         OnAfterSaveChanges(auditEntries).GetAwaiter().GetResult();
