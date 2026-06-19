@@ -156,7 +156,8 @@ public record OrderSummaryDto(
     string? SalesPersonId,
     decimal? DiscountAmount = 0,
     decimal? TemporalDiscount = 0,
-    DateTime? UpdatedAt = null
+    DateTime? UpdatedAt = null,
+    string? TaxAuthorityQrCode = null
 );
 
 
@@ -189,7 +190,8 @@ public record OrderDetailDto(
     string? AttachmentUrl = null,
     string? AttachmentPublicId = null,
     string? CouponCode = null,
-    string? ShareHash = null
+    string? ShareHash = null,
+    string? TaxAuthorityQrCode = null
 );
 
 public record OrderDetailPaymentDto(

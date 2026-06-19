@@ -105,6 +105,12 @@ public class Order : BaseEntity
     public bool IsArchived { get; set; } = false;
     public DateTime? ArchivedAt { get; set; }
 
+    // Tax Authority Tracking (E-Invoicing)
+    public bool IsSubmittedToTaxAuthority { get; set; } = false;
+    public string? TaxAuthorityReference { get; set; } // UUID or ZATCA Hash
+    public string? TaxAuthorityQrCode { get; set; } // URL or Base64 TLV
+    public string? TaxAuthorityStatus { get; set; } // Valid, Invalid, Rejected
+
     // Navigation
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
     public ICollection<OrderStatusHistory> StatusHistory { get; set; } = new List<OrderStatusHistory>();

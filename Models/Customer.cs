@@ -11,6 +11,10 @@ public class AppUser : IdentityUser
     public DateTime CreatedAt { get; set; } = TimeHelper.GetEgyptTime();
     public bool IsActive { get; set; } = true;
     public decimal FixedDiscount { get; set; } = 0;
+    
+    // User specific discount limits for POS
+    public decimal? MaxDiscountPercentage { get; set; }
+    public decimal? MaxDiscountAmount { get; set; }
 
     // Refresh Token — مخزن في DB لدعم التجديد والإلغاء
     public string?   RefreshTokenHash   { get; set; }

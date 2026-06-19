@@ -203,6 +203,16 @@ public class SettingsController : ControllerBase
             info.WhatsAppPaymentReminderTemplate = dto.WhatsAppPaymentReminderTemplate;
             info.WhatsAppPosOrderTemplate = dto.WhatsAppPosOrderTemplate;
             info.WhatsAppPayrollTemplate = dto.WhatsAppPayrollTemplate;
+
+            // E-Invoicing
+            info.TaxAuthorityType = dto.TaxAuthorityType;
+            info.EtaTaxNumber = dto.EtaTaxNumber;
+            info.EtaClientId = dto.EtaClientId;
+            info.EtaClientSecret = dto.EtaClientSecret;
+            info.EtaEnvironment = dto.EtaEnvironment;
+            info.ZatcaEnvironment = dto.ZatcaEnvironment;
+            info.ZatcaTaxNumber = dto.ZatcaTaxNumber;
+            info.ZatcaCertificate = dto.ZatcaCertificate;
             info.WhatsAppInstallmentFriendlyTemplate = dto.WhatsAppInstallmentFriendlyTemplate;
             info.WhatsAppInstallmentNoticeTemplate   = dto.WhatsAppInstallmentNoticeTemplate;
             info.WhatsAppInstallmentWarningTemplate  = dto.WhatsAppInstallmentWarningTemplate;

@@ -124,7 +124,7 @@ public class StockTransfersController : ControllerBase
         _db.StockTransfers.Add(transfer);
         await _db.SaveChangesAsync();
         
-        try { await _audit.LogAsync("CreateStockTransfer", "StockTransfer", transfer.Id.ToString(), $"Created stock transfer {transfer.TransferNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        try { await _audit.LogChangeAsync<StockTransfer>("CreateStockTransfer", "StockTransfer", transfer.Id.ToString(), null, transfer, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return CreatedAtAction(nameof(GetById), new { id = transfer.Id }, transfer);
     }
@@ -133,6 +133,7 @@ public class StockTransfersController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] CreateStockTransferDto dto)
     {
+        var oldTransfer = await _db.StockTransfers.AsNoTracking().Include(t => t.Items).FirstOrDefaultAsync(t => t.Id == id);
         var transfer = await _db.StockTransfers
             .Include(t => t.Items)
             .FirstOrDefaultAsync(t => t.Id == id);
@@ -183,7 +184,7 @@ public class StockTransfersController : ControllerBase
 
         await _db.SaveChangesAsync();
         
-        try { await _audit.LogAsync("UpdateStockTransfer", "StockTransfer", id.ToString(), $"Updated stock transfer {transfer.TransferNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        try { await _audit.LogChangeAsync<StockTransfer>("UpdateStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(transfer);
     }
@@ -201,7 +202,7 @@ public class StockTransfersController : ControllerBase
         _db.StockTransfers.Remove(transfer);
         await _db.SaveChangesAsync();
         
-        try { await _audit.LogAsync("DeleteStockTransfer", "StockTransfer", id.ToString(), $"Deleted stock transfer", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        try { await _audit.LogChangeAsync<StockTransfer>("DeleteStockTransfer", "StockTransfer", id.ToString(), transfer, null, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return NoContent();
     }
@@ -210,6 +211,7 @@ public class StockTransfersController : ControllerBase
     [HttpPost("{id}/ship")]
     public async Task<IActionResult> Ship(int id)
     {
+        var oldTransfer = await _db.StockTransfers.AsNoTracking().Include(t => t.Items).FirstOrDefaultAsync(t => t.Id == id);
         var transfer = await _db.StockTransfers
             .Include(t => t.Items)
             .FirstOrDefaultAsync(t => t.Id == id);
@@ -247,7 +249,7 @@ public class StockTransfersController : ControllerBase
             await _db.SaveChangesAsync();
             await dbTransaction.CommitAsync();
             
-            try { await _audit.LogAsync("ShipStockTransfer", "StockTransfer", id.ToString(), $"Shipped stock transfer {transfer.TransferNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+            try { await _audit.LogChangeAsync<StockTransfer>("ShipStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         }
         catch (Exception ex)
         {
@@ -262,6 +264,7 @@ public class StockTransfersController : ControllerBase
     [HttpPost("{id}/receive")]
     public async Task<IActionResult> Receive(int id)
     {
+        var oldTransfer = await _db.StockTransfers.AsNoTracking().Include(t => t.Items).FirstOrDefaultAsync(t => t.Id == id);
         var transfer = await _db.StockTransfers
             .Include(t => t.Items)
             .FirstOrDefaultAsync(t => t.Id == id);
@@ -299,7 +302,7 @@ public class StockTransfersController : ControllerBase
             await _db.SaveChangesAsync();
             await dbTransaction.CommitAsync();
             
-            try { await _audit.LogAsync("ReceiveStockTransfer", "StockTransfer", id.ToString(), $"Received stock transfer {transfer.TransferNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+            try { await _audit.LogChangeAsync<StockTransfer>("ReceiveStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         }
         catch (Exception ex)
         {
@@ -314,6 +317,7 @@ public class StockTransfersController : ControllerBase
     [HttpPost("{id}/cancel")]
     public async Task<IActionResult> Cancel(int id)
     {
+        var oldTransfer = await _db.StockTransfers.AsNoTracking().Include(t => t.Items).FirstOrDefaultAsync(t => t.Id == id);
         var transfer = await _db.StockTransfers
             .Include(t => t.Items)
             .FirstOrDefaultAsync(t => t.Id == id);
@@ -352,7 +356,7 @@ public class StockTransfersController : ControllerBase
             await _db.SaveChangesAsync();
             await dbTransaction.CommitAsync();
             
-            try { await _audit.LogAsync("CancelStockTransfer", "StockTransfer", id.ToString(), $"Cancelled stock transfer {transfer.TransferNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+            try { await _audit.LogChangeAsync<StockTransfer>("CancelStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         }
         catch (Exception ex)
         {

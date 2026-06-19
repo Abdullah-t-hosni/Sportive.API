@@ -53,7 +53,7 @@ public class InventoryAdjustmentsController : ControllerBase
 
         await _db.SaveChangesAsync();
         
-        try { await _audit.LogAsync("InventoryAdjustment", "Inventory", dto.ProductId?.ToString() ?? dto.ProductVariantId?.ToString() ?? "0", $"Manual inventory adjustment of {dto.Quantity}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        try { await _audit.LogChangeAsync<QuickAdjustmentDto>("InventoryAdjustment", "Inventory", dto.ProductId?.ToString() ?? dto.ProductVariantId?.ToString() ?? "0", null, dto, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(new { message = _t.Get("Inventory.AdjustmentSuccess") });
     }

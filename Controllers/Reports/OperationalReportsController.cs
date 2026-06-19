@@ -1341,6 +1341,9 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int?      brandId    = null,
         [FromQuery] string?   color      = null,
         [FromQuery] string?   size       = null,
+        [FromQuery] string?   search     = null,
+        [FromQuery] string?   returnType = null,
+        [FromQuery] string?   reason     = null,
         [FromQuery] OrderSource? source     = null,
         [FromQuery] int       page       = 1,
         [FromQuery] int       pageSize   = 50,
@@ -1382,6 +1385,44 @@ public class OperationalReportsController : ControllerBase
 
         if (!string.IsNullOrEmpty(size))
             returnsQ = returnsQ.Where(j => j.Order != null && j.Order.Items.Any(it => it.Size == size || (it.Size == null && it.Product != null && it.Product.Variants.Any(v => v.Size == size))));
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            var searchLower = search.ToLower();
+            returnsQ = returnsQ.Where(j => 
+                (j.Reference != null && j.Reference.ToLower().Contains(searchLower)) ||
+                (j.Order != null && j.Order.Customer != null && j.Order.Customer.FullName.ToLower().Contains(searchLower)) ||
+                (j.Order != null && j.Order.Customer != null && j.Order.Customer.Phone.Contains(searchLower))
+            );
+        }
+
+        if (!string.IsNullOrEmpty(returnType) && returnType != "all")
+        {
+            if (returnType == "direct")
+                returnsQ = returnsQ.Where(j => j.OrderId == null || (j.Description != null && j.Description.Contains("بدون فاتورة")));
+            else if (returnType == "invoice")
+                returnsQ = returnsQ.Where(j => j.OrderId != null && (j.Description == null || !j.Description.Contains("بدون فاتورة")));
+        }
+
+        if (!string.IsNullOrEmpty(reason) && reason != "all")
+        {
+            if (reason == "سبب آخر")
+            {
+                returnsQ = returnsQ.Where(j => 
+                    !(j.Order != null && j.Order.StatusHistory.Any(h => (h.Status == OrderStatus.Returned || h.Status == OrderStatus.PartiallyReturned) && 
+                        (h.Note.Contains("منتج تالف") || h.Note.Contains("صنف خاطئ") || h.Note.Contains("مقاس غير مناسب") || h.Note.Contains("جودة غير مرضية") || h.Note.Contains("تغيير رأي"))))
+                    && !(j.OrderId == null && j.Description != null && 
+                        (j.Description.Contains("منتج تالف") || j.Description.Contains("صنف خاطئ") || j.Description.Contains("مقاس غير مناسب") || j.Description.Contains("جودة غير مرضية") || j.Description.Contains("تغيير رأي")))
+                );
+            }
+            else
+            {
+                returnsQ = returnsQ.Where(j => 
+                    (j.Order != null && j.Order.StatusHistory.Any(h => (h.Status == OrderStatus.Returned || h.Status == OrderStatus.PartiallyReturned) && h.Note.Contains(reason))) ||
+                    (j.OrderId == null && j.Description != null && j.Description.Contains(reason))
+                );
+            }
+        }
 
         pageSize = Math.Clamp(pageSize, 1, 100);
         var totalCount = await returnsQ.CountAsync();
@@ -1527,8 +1568,9 @@ public class OperationalReportsController : ControllerBase
             ).SumAsync();
         }
 
+        var allReturnRefsForSummary = await returnsQ.Select(j => j.Reference ?? j.EntryNumber).ToListAsync();
         var totalReturnedItems = await _db.InventoryMovements
-            .Where(m => m.CreatedAt >= from && m.CreatedAt <= to && m.Type == InventoryMovementType.ReturnIn)
+            .Where(m => m.Reference != null && allReturnRefsForSummary.Contains(m.Reference) && m.Type == InventoryMovementType.ReturnIn)
             .SumAsync(m => (int?)m.Quantity) ?? 0;
 
         var summary = new {

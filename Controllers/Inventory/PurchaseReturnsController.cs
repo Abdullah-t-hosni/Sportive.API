@@ -405,7 +405,7 @@ public class PurchaseReturnsController : ControllerBase
                 _db.PurchaseReturns.Add(pReturn);
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
-                try { await _audit.LogAsync("CreateStandalonePurchaseReturn", "PurchaseReturn", pReturn.Id.ToString(), $"Created standalone purchase return #{pReturn.ReturnNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+                try { await _audit.LogChangeAsync<PurchaseReturn>("CreateStandalonePurchaseReturn", "PurchaseReturn", pReturn.Id.ToString(), null, pReturn, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
                 var returnId = pReturn.Id;
                 var returnNum = pReturn.ReturnNumber;
@@ -435,6 +435,7 @@ public class PurchaseReturnsController : ControllerBase
         if (dto == null || dto.Items == null || !dto.Items.Any())
             return BadRequest(new { message = _t.Get("Purchases.MinOneReturnItemRequired") });
 
+        var oldReturn = await _db.PurchaseReturns.AsNoTracking().Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id);
         var pReturn = await _db.PurchaseReturns
             .Include(r => r.Items)
             .Include(r => r.Supplier)
@@ -569,7 +570,7 @@ public class PurchaseReturnsController : ControllerBase
 
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
-                try { await _audit.LogAsync("UpdateStandalonePurchaseReturn", "PurchaseReturn", pReturn.Id.ToString(), $"Updated standalone purchase return #{pReturn.ReturnNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+                try { await _audit.LogChangeAsync<PurchaseReturn>("UpdateStandalonePurchaseReturn", "PurchaseReturn", pReturn.Id.ToString(), oldReturn, pReturn, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
                 // Trigger Accounting Sync
                 var returnId = pReturn.Id;
@@ -694,7 +695,7 @@ public class PurchaseReturnsController : ControllerBase
                 _db.PurchaseReturns.Remove(pReturn);
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
-                try { await _audit.LogAsync("DeletePurchaseReturn", "PurchaseReturn", id.ToString(), $"Deleted purchase return #{pReturn.ReturnNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+                try { await _audit.LogChangeAsync<PurchaseReturn>("DeletePurchaseReturn", "PurchaseReturn", id.ToString(), pReturn, null, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
                 return NoContent();
             }
@@ -854,7 +855,7 @@ public class PurchaseReturnsController : ControllerBase
                 _db.PurchaseReturns.Add(pReturn);
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
-                try { await _audit.LogAsync("CreatePurchaseReturn", "PurchaseReturn", pReturn.Id.ToString(), $"Created purchase return #{pReturn.ReturnNumber} for invoice #{inv.InvoiceNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+                try { await _audit.LogChangeAsync<PurchaseReturn>("CreatePurchaseReturn", "PurchaseReturn", pReturn.Id.ToString(), null, pReturn, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
                 _logger.LogInformation("Purchase return {ReturnNo} committed successfully.", returnNo);
 

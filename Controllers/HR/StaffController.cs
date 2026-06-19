@@ -83,7 +83,9 @@ public class StaffController : ControllerBase
                 employeeId     = link?.Id,
                 employeeNumber = link?.EmployeeNumber,
                 branchId       = user.BranchId,
-                warehouseId    = user.WarehouseId
+                warehouseId    = user.WarehouseId,
+                maxDiscountPercentage = user.MaxDiscountPercentage,
+                maxDiscountAmount     = user.MaxDiscountAmount
             });
         }
 
@@ -398,9 +400,28 @@ public class StaffController : ControllerBase
         await _db.SaveChangesAsync();
         await _cache.RemoveAsync($"UserPermissions_{id}");
         
-        await _audit.LogAsync("UpdatePermissions", "UserModulePermission", id, "Permissions updated manually", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name));
-
         return Ok(new { message = _t.Get("Users.PermissionsUpdateSuccess") });
+    }
+
+    // PUT /api/staff/{id}/discount-limits
+    // تحديث حدود الخصم المسموحة للموظف
+    [HttpPut("{id}/discount-limits")]
+    [RequirePermission(ModuleKeys.Staff, requireEdit: true)]
+    public async Task<IActionResult> UpdateDiscountLimits(string id, [FromBody] UpdateDiscountLimitsDto dto)
+    {
+        var user = await _users.FindByIdAsync(id);
+        if (user == null) return NotFound();
+
+        user.MaxDiscountPercentage = dto.MaxDiscountPercentage;
+        user.MaxDiscountAmount = dto.MaxDiscountAmount;
+
+        var result = await _users.UpdateAsync(user);
+        
+        if (result.Succeeded) { try { await _audit.LogAsync("UpdateDiscountLimits", "User", id, $"Updated discount limits: {dto.MaxDiscountPercentage}%, {dto.MaxDiscountAmount}EGP", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } }
+
+        return result.Succeeded
+            ? Ok(new { message = _t.Get("Staff.UpdateSuccess") })
+            : BadRequest(new { errors = result.Errors.Select(e => e.Description) });
     }
 
     // ==================================================================================================
@@ -439,6 +460,8 @@ public class StaffController : ControllerBase
             primaryRole = GetPrimaryRole(roles),
             employee,
             permissions = perms,
+            maxDiscountPercentage = user.MaxDiscountPercentage,
+            maxDiscountAmount     = user.MaxDiscountAmount
         });
     }
 
@@ -510,4 +533,5 @@ public record CreateStaffDto(
 public record ChangeRoleDto(string Role);
 public record StaffResetPasswordDto(string NewPassword);
 public record UserModulePermissionDto(string ModuleKey, bool CanView, bool CanEdit);
+public record UpdateDiscountLimitsDto(decimal? MaxDiscountPercentage, decimal? MaxDiscountAmount);
 

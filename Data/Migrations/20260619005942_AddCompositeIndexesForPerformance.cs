@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -10,14 +10,14 @@ namespace Sportive.API.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "IX_Orders_BranchId",
-                table: "Orders");
+            // migrationBuilder.DropIndex(
+            //     name: "IX_Orders_BranchId",
+            //     table: "Orders");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Orders_BranchId_CreatedAt",
-                table: "Orders",
-                columns: new[] { "BranchId", "CreatedAt" });
+            // migrationBuilder.CreateIndex(
+            //     name: "IX_Orders_BranchId_CreatedAt",
+            //     table: "Orders",
+            //     columns: new[] { "BranchId", "CreatedAt" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_Orders_CustomerId",
@@ -28,18 +28,18 @@ namespace Sportive.API.Data.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "IX_Orders_BranchId_CreatedAt",
-                table: "Orders");
+            // migrationBuilder.DropIndex(
+            //     name: "IX_Orders_BranchId_CreatedAt",
+            //     table: "Orders");
 
             migrationBuilder.DropIndex(
                 name: "IX_Orders_CustomerId",
                 table: "Orders");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Orders_BranchId",
-                table: "Orders",
-                column: "BranchId");
+            // migrationBuilder.CreateIndex(
+            //     name: "IX_Orders_BranchId",
+            //     table: "Orders",
+            //     column: "BranchId");
         }
     }
 }

@@ -484,7 +484,9 @@ public class PurchaseInvoicesController : ControllerBase
                     });
                 }
 
-                try { await _auditLog.LogAsync("CreatePurchaseInvoice", "PurchaseInvoice", invoice.Id.ToString(), $"Created purchase invoice {invoice.InvoiceNumber} for {supplier.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                var userName = User.FindFirstValue(ClaimTypes.Name);
+                try { await _auditLog.LogChangeAsync<PurchaseInvoice>("CreatePurchaseInvoice", "PurchaseInvoice", invoice.Id.ToString(), null, invoice, userId, userName); } catch { }
 
                 return CreatedAtAction(nameof(GetById), new { id = invoice.Id }, new { id = invoice.Id, invoiceNumber = invoice.InvoiceNumber, warnings });
             }
@@ -508,6 +510,7 @@ public class PurchaseInvoicesController : ControllerBase
             using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
             try 
             {
+                var oldInvoice = await _db.PurchaseInvoices.AsNoTracking().Include(i => i.Items).Include(i => i.Supplier).FirstOrDefaultAsync(i => i.Id == id);
                 var inv = await _db.PurchaseInvoices
                     .Include(i => i.Items)
                     .Include(i => i.Supplier)
@@ -848,7 +851,9 @@ public class PurchaseInvoicesController : ControllerBase
                     });
                 }
 
-                try { await _auditLog.LogAsync("UpdatePurchaseInvoice", "PurchaseInvoice", inv.Id.ToString(), $"Updated purchase invoice {inv.InvoiceNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                var userName = User.FindFirstValue(ClaimTypes.Name);
+                try { await _auditLog.LogChangeAsync<PurchaseInvoice>("UpdatePurchaseInvoice", "PurchaseInvoice", inv.Id.ToString(), oldInvoice, inv, userId, userName); } catch { }
 
                 return Ok(new { id = inv.Id, invoiceNumber = inv.InvoiceNumber, warnings });
             }
@@ -875,6 +880,8 @@ public class PurchaseInvoicesController : ControllerBase
 
         var oldStatus = inv.Status;
         if (oldStatus == dto.Status) return Ok(new { id = inv.Id, status = inv.Status.ToString() });
+        
+        var oldInvoice = await _db.PurchaseInvoices.AsNoTracking().FirstOrDefaultAsync(i => i.Id == id);
 
         // ——— 1. Handle Stock Reversal (If moving FROM received TO inactive) ———
         bool wasInStock = (oldStatus == PurchaseInvoiceStatus.Received || oldStatus == PurchaseInvoiceStatus.Paid || oldStatus == PurchaseInvoiceStatus.PartPaid);
@@ -986,7 +993,9 @@ public class PurchaseInvoicesController : ControllerBase
         inv.UpdatedAt = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
         
-        try { await _auditLog.LogAsync("UpdatePurchaseInvoiceStatus", "PurchaseInvoice", id.ToString(), $"Changed purchase invoice {inv.InvoiceNumber} status to {dto.Status}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var userName = User.FindFirstValue(ClaimTypes.Name);
+        try { await _auditLog.LogChangeAsync<PurchaseInvoice>("UpdatePurchaseInvoiceStatus", "PurchaseInvoice", id.ToString(), oldInvoice, inv, userId, userName); } catch { }
 
         return Ok(new { id = inv.Id, status = inv.Status.ToString() });
     }
@@ -1195,7 +1204,9 @@ public class PurchaseInvoicesController : ControllerBase
         _db.PurchaseInvoices.Remove(inv);
         await _db.SaveChangesAsync();
         
-        try { await _auditLog.LogAsync("DeletePurchaseInvoice", "PurchaseInvoice", id.ToString(), $"Deleted purchase invoice {invoiceNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var userName = User.FindFirstValue(ClaimTypes.Name);
+        try { await _auditLog.LogChangeAsync<PurchaseInvoice>("DeletePurchaseInvoice", "PurchaseInvoice", id.ToString(), inv, null, userId, userName); } catch { }
 
         return NoContent();
     }

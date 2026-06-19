@@ -284,7 +284,7 @@ public class JournalEntriesController : ControllerBase
             // Log Audit
             var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
             var userName = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
-            try { await _audit.LogAsync("Create", "JournalEntry", entry.Id.ToString(), $"Created journal entry #{entry.EntryNumber}", userId, userName); } catch { /* non-critical */ }
+            try { await _audit.LogChangeAsync<JournalEntry>("CreateJournalEntry", "JournalEntry", entry.Id.ToString(), null, entry, userId, userName); } catch { /* non-critical */ }
 
             return CreatedAtAction(nameof(GetById), new { id = entry.Id }, entry);
         } catch (InvalidOperationException ex) {
@@ -296,13 +296,14 @@ public class JournalEntriesController : ControllerBase
     public async Task<IActionResult> Update(int id, [FromBody] UpdateJournalEntryDto dto)
     {
         try {
+            var oldEntry = await _db.JournalEntries.AsNoTracking().Include(e => e.Lines).FirstOrDefaultAsync(e => e.Id == id);
             var entry = await _accounting.UpdateManualEntryAsync(id, dto, User);
             try { Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id)); } catch { /* non-critical */ }
 
             // Log Audit
             var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
             var userName = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
-            try { await _audit.LogAsync("Update", "JournalEntry", entry.Id.ToString(), $"Updated journal entry #{entry.EntryNumber}", userId, userName); } catch { /* non-critical */ }
+            try { await _audit.LogChangeAsync<JournalEntry>("UpdateJournalEntry", "JournalEntry", entry.Id.ToString(), oldEntry, entry, userId, userName); } catch { /* non-critical */ }
 
             return Ok(entry);
         } catch (InvalidOperationException ex) {
@@ -378,12 +379,19 @@ public class JournalEntriesController : ControllerBase
 
         if (entry.Status == JournalEntryStatus.Posted && !isAdmin)
         {
-            await _accounting.ReverseEntryAsync(id, reason);
+            var oldEntry = await _db.JournalEntries.AsNoTracking().Include(e => e.Lines).FirstOrDefaultAsync(e => e.Id == id);
+        
+            try {
+                await _accounting.ReverseEntryAsync(id, reason);
+                var reversedEntry = await _db.JournalEntries.AsNoTracking().Include(e => e.Lines).FirstOrDefaultAsync(e => e.Id == id);
 
-            // Log Audit Reversal
-            await _audit.LogAsync("Reverse", "JournalEntry", id.ToString(), $"Reversed journal entry #{entry.EntryNumber}: {reason}", userId, userName);
+                // Log Audit Reversal
+                await _audit.LogChangeAsync<JournalEntry>("ReverseJournalEntry", "JournalEntry", id.ToString(), oldEntry, reversedEntry, userId, userName);
 
-            return Ok(new { message = _t.Get("Accounting.ReverseSuccessMessage") });
+                return Ok(new { message = _t.Get("Accounting.ReverseSuccessMessage") });
+            } catch (Exception ex) {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         if (isAdmin)
@@ -418,7 +426,7 @@ public class JournalEntriesController : ControllerBase
         var runsToSync = payrollRuns.Where(r => textToSearch.Contains(r.PayrollNumber.ToLower())).ToList();
 
         // Log Audit Deletion
-        await _audit.LogAsync("Delete", "JournalEntry", id.ToString(), $"Deleted journal entry #{entry.EntryNumber}: {reason}", userId, userName);
+        await _audit.LogChangeAsync<JournalEntry>("DeleteJournalEntry", "JournalEntry", id.ToString(), entry, null, userId, userName);
 
         _db.JournalLines.RemoveRange(entry.Lines);
         _db.JournalEntries.Remove(entry);

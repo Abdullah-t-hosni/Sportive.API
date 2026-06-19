@@ -27,6 +27,7 @@ public class OrderService : IOrderService
     private readonly IBackgroundJobClient _backgroundJobs;
     private readonly IDashboardEventService _dashboardEvents;
     private readonly EncryptionHelper _encryptionHelper;
+    private readonly ITaxIntegrationService _taxIntegrationService;
 
     public OrderService(
         AppDbContext db,
@@ -42,7 +43,8 @@ public class OrderService : IOrderService
         ITranslator t,
         IBackgroundJobClient backgroundJobs,
         IDashboardEventService dashboardEvents,
-        EncryptionHelper encryptionHelper)
+        EncryptionHelper encryptionHelper,
+        ITaxIntegrationService taxIntegrationService)
     {
         _db = db;
         _notificationService = notificationService;
@@ -58,6 +60,7 @@ public class OrderService : IOrderService
         _backgroundJobs = backgroundJobs;
         _dashboardEvents = dashboardEvents;
         _encryptionHelper = encryptionHelper;
+        _taxIntegrationService = taxIntegrationService;
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
@@ -129,7 +132,8 @@ public class OrderService : IOrderService
                 o.SalesPersonId,
                 o.DiscountAmount,
                 o.TemporalDiscount,
-                o.UpdatedAt
+                o.UpdatedAt,
+                o.TaxAuthorityQrCode
             ))
             .ToListAsync();
 
@@ -267,7 +271,8 @@ public class OrderService : IOrderService
             o.AttachmentUrl, 
             o.AttachmentPublicId,
             o.CouponCode,
-            GenerateOrderHash(o.OrderNumber)
+            GenerateOrderHash(o.OrderNumber),
+            o.TaxAuthorityQrCode
         );
     }
 
@@ -976,6 +981,9 @@ public class OrderService : IOrderService
 
                 // ⚡ Outbox Trigger: Save event in the same transaction
                 _dashboardEvents.NotifyTransactionOccurred(order.CreatedAt);
+
+                // 🇸🇦 Process ZATCA/ETA Taxes locally before save
+                await _taxIntegrationService.ProcessOrderTaxesAsync(order);
 
                 await _db.SaveChangesAsync();
 

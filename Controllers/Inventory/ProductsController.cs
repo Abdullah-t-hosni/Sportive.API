@@ -7,6 +7,8 @@ using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using Sportive.API.Services;
 using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
+using Sportive.API.Data;
 
 namespace Sportive.API.Controllers;
 
@@ -16,10 +18,12 @@ public class ProductsController : ControllerBase
 {
     private readonly IProductService _products;
     private readonly IAuditService _audit;
-    public ProductsController(IProductService products, IAuditService audit)
+    private readonly AppDbContext _db;
+    public ProductsController(IProductService products, IAuditService audit, AppDbContext db)
     {
         _products = products;
         _audit = audit;
+        _db = db;
     }
 
     [HttpGet]
@@ -58,7 +62,8 @@ public class ProductsController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateProductDto dto)
     {
         var product = await _products.CreateProductAsync(dto);
-        try { await _audit.LogAsync("CreateProduct", "Product", product.Id.ToString(), $"Created product: {product.NameEn}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        var newProduct = await _db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == product.Id);
+        try { await _audit.LogChangeAsync<Product>("CreateProduct", "Product", product.Id.ToString(), null, newProduct, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return CreatedAtAction(nameof(GetById), new { id = product.Id }, product);
     }
 
@@ -67,8 +72,10 @@ public class ProductsController : ControllerBase
     public async Task<IActionResult> Update(int id, [FromBody] UpdateProductDto dto)
     {
         try { 
+            var oldProduct = await _db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
             var result = await _products.UpdateProductAsync(id, dto);
-            try { await _audit.LogAsync("UpdateProduct", "Product", id.ToString(), $"Updated product", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+            var newProduct = await _db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
+            try { await _audit.LogChangeAsync<Product>("UpdateProduct", "Product", id.ToString(), oldProduct, newProduct, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
             return Ok(result); 
         }
         catch (KeyNotFoundException) { return NotFound(); }
@@ -79,8 +86,9 @@ public class ProductsController : ControllerBase
     public async Task<IActionResult> Delete(int id)
     {
         try { 
+            var oldProduct = await _db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
             await _products.DeleteProductAsync(id); 
-            try { await _audit.LogAsync("DeleteProduct", "Product", id.ToString(), $"Deleted product", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+            try { await _audit.LogChangeAsync<Product>("DeleteProduct", "Product", id.ToString(), oldProduct, null, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
             return NoContent(); 
         }
         catch (KeyNotFoundException) { return NotFound(); }
@@ -90,8 +98,13 @@ public class ProductsController : ControllerBase
     [HttpPatch("{id}/cost")]
     public async Task<IActionResult> UpdateCost(int id, [FromBody] decimal? costPrice)
     {
+        var oldProduct = await _db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
         var success = await _products.UpdateCostPriceAsync(id, costPrice);
-        if (success) { try { await _audit.LogAsync("UpdateProductCost", "Product", id.ToString(), $"Updated cost price to {costPrice}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } return Ok(); }
+        if (success) { 
+            var newProduct = await _db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
+            try { await _audit.LogChangeAsync<Product>("UpdateProductCost", "Product", id.ToString(), oldProduct, newProduct, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } 
+            return Ok(); 
+        }
         return NotFound();
     }
 
@@ -99,8 +112,13 @@ public class ProductsController : ControllerBase
     [HttpPatch("{id}/size-chart")]
     public async Task<IActionResult> UpdateSizeChart(int id, [FromBody] UpdateSizeChartDto dto)
     {
+        var oldProduct = await _db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
         var success = await _products.UpdateSizeChartAsync(id, dto.SizeChartJson, dto.SizeChartImageUrl);
-        if (success) { try { await _audit.LogAsync("UpdateSizeChart", "Product", id.ToString(), $"Updated size chart", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } return Ok(); }
+        if (success) { 
+            var newProduct = await _db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
+            try { await _audit.LogChangeAsync<Product>("UpdateSizeChart", "Product", id.ToString(), oldProduct, newProduct, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } 
+            return Ok(); 
+        }
         return NotFound();
     }
 
@@ -108,8 +126,13 @@ public class ProductsController : ControllerBase
     [HttpPatch("variants/{variantId}/stock")]
     public async Task<IActionResult> UpdateStock(int variantId, [FromBody] int quantity)
     {
+        var oldVariant = await _db.ProductVariants.AsNoTracking().FirstOrDefaultAsync(v => v.Id == variantId);
         var success = await _products.UpdateStockAsync(variantId, quantity);
-        if (success) { try { await _audit.LogAsync("UpdateVariantStock", "ProductVariant", variantId.ToString(), $"Updated stock by {quantity}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } return Ok(); }
+        if (success) { 
+            var newVariant = await _db.ProductVariants.AsNoTracking().FirstOrDefaultAsync(v => v.Id == variantId);
+            try { await _audit.LogChangeAsync<ProductVariant>("UpdateVariantStock", "ProductVariant", variantId.ToString(), oldVariant, newVariant, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } 
+            return Ok(); 
+        }
         return NotFound();
     }
 
@@ -117,8 +140,13 @@ public class ProductsController : ControllerBase
     [HttpPatch("{id}/stock")]
     public async Task<IActionResult> UpdateProductStock(int id, [FromBody] int quantity)
     {
+        var oldProduct = await _db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
         var success = await _products.UpdateProductStockAsync(id, quantity);
-        if (success) { try { await _audit.LogAsync("UpdateProductStock", "Product", id.ToString(), $"Updated base stock by {quantity}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } return Ok(); }
+        if (success) { 
+            var newProduct = await _db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
+            try { await _audit.LogChangeAsync<Product>("UpdateProductStock", "Product", id.ToString(), oldProduct, newProduct, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } 
+            return Ok(); 
+        }
         return NotFound();
     }
 
@@ -127,7 +155,8 @@ public class ProductsController : ControllerBase
     public async Task<IActionResult> AddVariant(int productId, [FromBody] CreateVariantDto dto)
     {
         var variant = await _products.AddVariantAsync(productId, dto);
-        try { await _audit.LogAsync("AddVariant", "ProductVariant", variant.Id.ToString(), $"Added variant to product {productId}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        var newVariant = await _db.ProductVariants.AsNoTracking().FirstOrDefaultAsync(v => v.Id == variant.Id);
+        try { await _audit.LogChangeAsync<ProductVariant>("AddVariant", "ProductVariant", variant.Id.ToString(), null, newVariant, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return Ok(variant);
     }
 
@@ -135,8 +164,10 @@ public class ProductsController : ControllerBase
     [HttpPatch("variants/{variantId}")]
     public async Task<IActionResult> UpdateVariant(int variantId, [FromBody] CreateVariantDto dto)
     {
+        var oldVariant = await _db.ProductVariants.AsNoTracking().FirstOrDefaultAsync(v => v.Id == variantId);
         var variant = await _products.UpdateVariantAsync(variantId, dto);
-        try { await _audit.LogAsync("UpdateVariant", "ProductVariant", variantId.ToString(), $"Updated variant", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        var newVariant = await _db.ProductVariants.AsNoTracking().FirstOrDefaultAsync(v => v.Id == variantId);
+        try { await _audit.LogChangeAsync<ProductVariant>("UpdateVariant", "ProductVariant", variantId.ToString(), oldVariant, newVariant, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         return Ok(variant);
     }
 
@@ -144,8 +175,12 @@ public class ProductsController : ControllerBase
     [HttpDelete("variants/{variantId}")]
     public async Task<IActionResult> DeleteVariant(int variantId)
     {
+        var oldVariant = await _db.ProductVariants.AsNoTracking().FirstOrDefaultAsync(v => v.Id == variantId);
         var success = await _products.DeleteVariantAsync(variantId);
-        if (success) { try { await _audit.LogAsync("DeleteVariant", "ProductVariant", variantId.ToString(), $"Deleted variant", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } return NoContent(); }
+        if (success) { 
+            try { await _audit.LogChangeAsync<ProductVariant>("DeleteVariant", "ProductVariant", variantId.ToString(), oldVariant, null, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { } 
+            return NoContent(); 
+        }
         return NotFound();
     }
 }

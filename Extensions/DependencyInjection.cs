@@ -312,6 +312,8 @@ public static class DependencyInjection
         services.AddScoped<ICategoryService, CategoryService>();
         services.AddScoped<IOrderService, OrderService>();
         services.AddScoped<ICartService, CartService>();
+        services.AddScoped<ITaxIntegrationService, TaxIntegrationService>();
+        services.AddScoped<Sportive.API.Services.ETA.IEtaIntegrationService, Sportive.API.Services.ETA.EtaIntegrationService>();
         services.AddScoped<ICustomerService, CustomerService>();
         services.AddScoped<ICustomerCategoryService, CustomerCategoryService>();
         services.AddScoped<IDashboardService, DashboardService>();

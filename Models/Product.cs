@@ -31,6 +31,10 @@ public class Product : BaseEntity
     public int? CategoryId { get; set; }
     public Category? Category { get; set; }
 
+    // E-Invoicing Tax Codes
+    public string? EgyptianProductCode { get; set; }
+    public string? SaudiProductCode { get; set; }
+
     // Size Group
     public int? SizeGroupId { get; set; }
     public SizeGroup? SizeGroup { get; set; }

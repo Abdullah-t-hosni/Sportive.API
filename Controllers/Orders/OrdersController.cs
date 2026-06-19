@@ -135,6 +135,31 @@ public class OrdersController : ControllerBase
         if (posDto == null || posDto.Items == null || !posDto.Items.Any())
             return BadRequest(_translator.Get("Orders.MinOneItem"));
 
+        // ✅ Discount Limit Validation
+        var cashierIdForValidation = posDto.PosEmployeeId ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!string.IsNullOrEmpty(cashierIdForValidation) && posDto.DiscountAmount > 0)
+        {
+            var cashierUser = await _db.Users.FindAsync(cashierIdForValidation);
+            if (cashierUser != null)
+            {
+                var roleIds = await _db.UserRoles.Where(ur => ur.UserId == cashierIdForValidation).Select(ur => ur.RoleId).ToListAsync();
+                var isSuper = await _db.Roles.AnyAsync(r => roleIds.Contains(r.Id) && (r.Name == AppRoles.SuperAdmin || r.Name == AppRoles.Admin || r.Name == AppRoles.Manager));
+                if (!isSuper)
+                {
+                    decimal maxPercentage = cashierUser.MaxDiscountPercentage ?? 100;
+                    decimal maxAmount = cashierUser.MaxDiscountAmount ?? 999999;
+                    
+                    var discountPercentage = posDto.Subtotal > 0 ? (posDto.DiscountAmount / posDto.Subtotal) * 100 : 0;
+                    
+                    if (posDto.DiscountAmount > maxAmount)
+                        return BadRequest($"عفواً، لا يمكنك منح خصم إضافي يتجاوز {maxAmount} {(_db.StoreInfo.FirstOrDefault()?.CurrencySymbol ?? "EGP")}.");
+                        
+                    if (discountPercentage > maxPercentage)
+                        return BadRequest($"عفواً، لا يمكنك منح خصم إضافي يتجاوز النسبة المسموحة {maxPercentage}%.");
+                }
+            }
+        }
+
         // ✅ Strong Idempotency: التحقق من وجود الطلب بمفتاح الأوفلاين الفريد لمنع تكرار المزامنة نهائياً
         if (!string.IsNullOrEmpty(posDto.OfflineRef))
         {
@@ -617,6 +642,21 @@ public class OrdersController : ControllerBase
         }
 
         return NoContent();
+    }
+
+    [HttpPost("{id}/upload-eta")]
+    public async Task<ActionResult> UploadToEta(int id, [FromServices] Sportive.API.Services.ETA.IEtaIntegrationService etaIntegrationService)
+    {
+        try
+        {
+            var result = await etaIntegrationService.UploadOrderToEtaAsync(id);
+            return Ok(new { message = "Successfully uploaded to ETA", receiptId = result });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error uploading order {OrderId} to ETA", id);
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     [HttpPost("{id}/partial-return")]

@@ -4,6 +4,13 @@ using System.Text.Json.Serialization;
 
 namespace Sportive.API.Models;
 
+public enum TaxAuthorityType
+{
+    None = 0,
+    EgyptETA = 1,
+    SaudiZATCA = 2
+}
+
 [Table("StoreSettings")]
 public class StoreInfo
 {
@@ -530,4 +537,43 @@ public class StoreInfo
     // --- 16. Sales Target ---
     [JsonPropertyName("dailyTarget")]
     public decimal DailyTarget { get; set; } = 15000;
+
+    // --- 17. E-Invoicing (Tax Authority) ---
+    [JsonPropertyName("taxAuthorityType")]
+    public TaxAuthorityType TaxAuthorityType { get; set; } = TaxAuthorityType.None;
+
+    [MaxLength(50)]
+    [JsonPropertyName("etaTaxNumber")]
+    public string? EtaTaxNumber { get; set; }
+
+    [MaxLength(200)]
+    [JsonPropertyName("etaClientId")]
+    public string? EtaClientId { get; set; }
+
+    [MaxLength(200)]
+    [JsonPropertyName("etaClientSecret")]
+    public string? EtaClientSecret { get; set; }
+
+    [MaxLength(50)]
+    [JsonPropertyName("etaEnvironment")]
+    public string? EtaEnvironment { get; set; } // "PreProduction" or "Production"
+
+    [MaxLength(50)]
+    [JsonPropertyName("etaSignatureType")]
+    public string? EtaSignatureType { get; set; } // "LocalUsbToken", "CloudHSM"
+
+    [MaxLength(100)]
+    [JsonPropertyName("etaPosSerial")]
+    public string? EtaPosSerial { get; set; } // For E-Receipts
+
+    [MaxLength(50)]
+    [JsonPropertyName("zatcaEnvironment")]
+    public string? ZatcaEnvironment { get; set; } // "Developer", "Simulation", "Production"
+
+    [MaxLength(50)]
+    [JsonPropertyName("zatcaTaxNumber")]
+    public string? ZatcaTaxNumber { get; set; }
+
+    [JsonPropertyName("zatcaCertificate")]
+    public string? ZatcaCertificate { get; set; } // Base64 encoded cert for ZATCA Phase 2
 }
