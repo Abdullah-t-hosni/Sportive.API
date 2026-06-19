@@ -204,6 +204,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => x.Slug);
             // ⚡ Performance: status+stock filter used in dashboards
             e.HasIndex(x => new { x.Status, x.TotalStock });
+            // ⚡ Performance: category and brand filters
+            e.HasIndex(x => x.CategoryId);
+            e.HasIndex(x => x.BrandId);
             e.HasOne(x => x.Category).WithMany(c => c.Products)
              .HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(x => x.Brand).WithMany(b => b.Products)
@@ -261,6 +264,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.DeliveryFee).HasPrecision(18, 2);
             e.Property(x => x.PaidAmount).HasPrecision(18, 2);
             e.HasIndex(x => x.OrderNumber).IsUnique();
+            e.HasIndex(x => x.CustomerId);
+            // ⚡ Performance: Accelerate reports filtering by branch and date
+            e.HasIndex(x => new { x.BranchId, x.CreatedAt });
             e.HasOne(x => x.Customer).WithMany(c => c.Orders)
              .HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.DeliveryAddress).WithMany()

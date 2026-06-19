@@ -16,17 +16,24 @@ public class BranchesController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IAuditService _audit;
+    private readonly ICacheService _cache;
+    private const string CacheKeyAll = "Branches_All";
 
-    public BranchesController(AppDbContext db, IAuditService audit)
+    public BranchesController(AppDbContext db, IAuditService audit, ICacheService cache)
     {
         _db = db;
         _audit = audit;
+        _cache = cache;
     }
 
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var branches = await _db.Branches.OrderBy(b => b.Name).ToListAsync();
+        var cached = await _cache.GetAsync<List<Branch>>(CacheKeyAll);
+        if (cached != null) return Ok(cached);
+
+        var branches = await _db.Branches.AsNoTracking().OrderBy(b => b.Name).ToListAsync();
+        await _cache.SetAsync(CacheKeyAll, branches, TimeSpan.FromHours(1));
         return Ok(branches);
     }
 
@@ -138,6 +145,8 @@ public class BranchesController : ControllerBase
             await _db.SaveChangesAsync();
         }
         
+        await _cache.RemoveAsync(CacheKeyAll);
+
         try { await _audit.LogAsync("CreateBranch", "Branch", branch.Id.ToString(), $"Created branch {branch.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return CreatedAtAction(nameof(GetById), new { id = branch.Id }, branch);
@@ -161,6 +170,7 @@ public class BranchesController : ControllerBase
         branch.UpdatedAt = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
+        await _cache.RemoveAsync(CacheKeyAll);
         
         try { await _audit.LogAsync("UpdateBranch", "Branch", id.ToString(), $"Updated branch {branch.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
         
@@ -240,6 +250,7 @@ public class BranchesController : ControllerBase
 
         _db.Branches.Remove(branch);
         await _db.SaveChangesAsync();
+        await _cache.RemoveAsync(CacheKeyAll);
         
         var bName = branch.Name;
         try { await _audit.LogAsync("DeleteBranch", "Branch", id.ToString(), $"Deleted branch {bName}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }

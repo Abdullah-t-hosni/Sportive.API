@@ -415,6 +415,11 @@ try
         service => service.SyncAllPurchaseAccountingAsync(30),
         "15 3 * * *"); // Every day at 3:15 AM
 
+    backgroundJobs.AddOrUpdate<IAuditService>(
+        "CleanupOldAuditLogs",
+        service => service.CleanupOldLogsAsync(3),
+        "30 3 * * *"); // Every day at 3:30 AM
+
     Log.Information("Hangfire recurring jobs registered successfully.");
 }
 catch (Exception ex)

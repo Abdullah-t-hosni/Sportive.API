@@ -10,17 +10,30 @@ namespace Sportive.API.Services;
 public class BrandService : IBrandService
 {
     private readonly AppDbContext _db;
-    public BrandService(AppDbContext db) => _db = db;
+    private readonly ICacheService _cache;
+    private const string CacheKeyAll = "Brands_All";
+
+    public BrandService(AppDbContext db, ICacheService cache)
+    {
+        _db = db;
+        _cache = cache;
+    }
 
     public async Task<List<BrandDto>> GetAllAsync()
     {
+        var cached = await _cache.GetAsync<List<BrandDto>>(CacheKeyAll);
+        if (cached != null) return cached;
+
         var brands = await _db.Set<Brand>()
+            .AsNoTracking()
             .Include(b => b.Products)
             .Include(b => b.Parent)
             .OrderBy(b => b.NameAr)
             .ToListAsync();
 
-        return brands.Select(MapToDto).ToList();
+        var result = brands.Select(MapToDto).ToList();
+        await _cache.SetAsync(CacheKeyAll, result, TimeSpan.FromHours(1));
+        return result;
     }
 
     public async Task<BrandDto?> GetByIdAsync(int id)
@@ -47,6 +60,7 @@ public class BrandService : IBrandService
         };
         _db.Set<Brand>().Add(brand);
         await _db.SaveChangesAsync();
+        await _cache.RemoveAsync(CacheKeyAll);
         return MapToDto(brand);
     }
 
@@ -65,6 +79,7 @@ public class BrandService : IBrandService
         brand.UpdatedAt = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
+        await _cache.RemoveAsync(CacheKeyAll);
         return MapToDto(brand);
     }
 
@@ -85,6 +100,7 @@ public class BrandService : IBrandService
 
         _db.Set<Brand>().Remove(brand);
         await _db.SaveChangesAsync();
+        await _cache.RemoveAsync(CacheKeyAll);
     }
 
     private static BrandDto MapToDto(Brand b) => new BrandDto(

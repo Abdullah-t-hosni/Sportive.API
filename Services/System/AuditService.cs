@@ -21,6 +21,9 @@ public interface IAuditService
     /// <summary>Log a change with old/new values. AuditLogs are APPEND-ONLY — never update or delete.</summary>
     Task LogChangeAsync<T>(string action, string entityType, string? entityId,
         T? oldValue, T? newValue, string? userId = null, string? userName = null, string? ip = null);
+
+    /// <summary>Cleans up old audit logs permanently to save space</summary>
+    Task CleanupOldLogsAsync(int monthsToKeep);
 }
 
 public class AuditService : IAuditService
@@ -157,6 +160,27 @@ public class AuditService : IAuditService
                 msgEn: alertMsgEn,
                 type: "Alert"
             );
+        }
+    }
+
+    public async Task CleanupOldLogsAsync(int monthsToKeep)
+    {
+        try
+        {
+            var cutoffDate = DateTime.UtcNow.AddMonths(-monthsToKeep);
+            // Delete directly in database without tracking to save memory
+            int deleted = await _db.AuditLogs
+                .Where(x => x.CreatedAt < cutoffDate)
+                .ExecuteDeleteAsync();
+                
+            if (deleted > 0)
+            {
+                _logger.LogInformation($"Cleaned up {deleted} audit logs older than {monthsToKeep} months.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to cleanup old audit logs.");
         }
     }
 
