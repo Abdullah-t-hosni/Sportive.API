@@ -379,7 +379,9 @@ public class AuthController : ControllerBase
             branchId,
             branchName,
             warehouseId,
-            warehouseName
+            warehouseName,
+            maxDiscountPercentage = user?.MaxDiscountPercentage,
+            maxDiscountAmount = user?.MaxDiscountAmount
         });
     }
 
