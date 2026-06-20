@@ -33,7 +33,9 @@ public record AuthResponseDto(
     int? BranchId = null,
     string? BranchName = null,
     int? WarehouseId = null,
-    string? WarehouseName = null
+    string? WarehouseName = null,
+    decimal? MaxDiscountPercentage = null,
+    decimal? MaxDiscountAmount = null
 );
 
 public record ModulePermissionDto(string ModuleKey, bool CanView, bool CanEdit);

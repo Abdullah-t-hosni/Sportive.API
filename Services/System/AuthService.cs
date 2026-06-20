@@ -342,7 +342,9 @@ public class AuthService : IAuthService
             branchId,
             branchName,
             warehouseId,
-            warehouseName
+            warehouseName,
+            user.MaxDiscountPercentage,
+            user.MaxDiscountAmount
         );
     }
 
