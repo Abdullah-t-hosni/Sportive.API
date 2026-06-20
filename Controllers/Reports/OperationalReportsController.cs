@@ -1677,7 +1677,8 @@ public class OperationalReportsController : ControllerBase
                         ProductNameAr = it.Product != null ? it.Product.NameAr : "",
                         Size = it.ProductVariant != null ? it.ProductVariant.Size : "",
                         ColorAr = it.ProductVariant != null ? (it.ProductVariant.ColorAr ?? it.ProductVariant.Color) : "",
-                        it.Quantity, it.UnitCost, it.TotalCost
+                        it.Quantity, it.UnitCost, it.TotalCost,
+                        it.ProductId, it.ProductVariantId
                     }).ToList()
             })
             .OrderByDescending(r => r.ReturnDate);
@@ -4567,7 +4568,8 @@ public record InventoryRow(int Id, string NameAr, string NameEn, string SKU, str
 public record VariantInventoryRow(int Id, string Size, string Color, string ColorAr, int StockQuantity, decimal Price, decimal Value);
 public record SalesRow(int Id, string OrderNumber, DateTime Date, string CustomerName, string Phone, string Source, string Status, string PaymentMethod, decimal SubTotal, decimal DiscountAmount, decimal TotalAmount, int ItemCount, List<ReportItemDto>? Items = null, string? PaymentDetails = null);
 public record PurchaseRow(int Id, string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal ReturnedAmount, decimal PaidAmount, decimal RemainingAmount, List<ReportItemDto>? Items = null);
-public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason, List<ReportItemDto>? Items = null, int? OrderId = null, string CreatorName = "", string ReturnerName = "", string RefundMethod = "", string OrderStatus = "");public record ReportItemDto(string SKU, string ProductName, string Size, string Color, decimal Quantity, decimal UnitPrice = 0, decimal UnitCost = 0, decimal Discount = 0, decimal LineTotal = 0, int ProductId = 0, int? ProductVariantId = null);
+public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason, List<ReportItemDto>? Items = null, int? OrderId = null, string CreatorName = "", string ReturnerName = "", string RefundMethod = "", string OrderStatus = "");
+public record ReportItemDto(string SKU, string ProductName, string Size, string Color, decimal Quantity, decimal UnitPrice = 0, decimal UnitCost = 0, decimal Discount = 0, decimal LineTotal = 0, int? ProductId = null, int? ProductVariantId = null);
 public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal GrossSales, decimal TotalReturns, decimal TotalDiscount, decimal NetSales, int Cancellations);
 public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "", int Balance = 0, int? SourceId = null, string Size = "", string Color = "");
 
