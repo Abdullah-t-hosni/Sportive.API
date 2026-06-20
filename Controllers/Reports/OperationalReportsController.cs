@@ -1024,7 +1024,7 @@ public class OperationalReportsController : ControllerBase
                 o.OrderNumber,
                 o.CreatedAt,
                 CustomerName = o.Customer != null ? o.Customer.FullName : null,
-                CustomerPhone = o.Customer != null ? o.Customer.Phone : null,
+                CustomerPhone = o.Customer != null ? o.Customer.PhoneEncrypted : null,
                 o.Source,
                 o.Status,
                 o.PaymentMethod,
@@ -1081,7 +1081,7 @@ public class OperationalReportsController : ControllerBase
             return new SalesRow(
                 o.Id, o.OrderNumber, o.CreatedAt,
                 o.CustomerName ?? "Walk-in",
-                o.CustomerPhone ?? "",
+                (Sportive.API.Models.Customer.EncryptionHelper != null && o.CustomerPhone != null ? Sportive.API.Models.Customer.EncryptionHelper.Decrypt(o.CustomerPhone) : o.CustomerPhone) ?? "",
                 o.Source.ToString(),
                 o.Status.ToString(),
                 o.PaymentMethod.ToString(),
@@ -1389,10 +1389,12 @@ public class OperationalReportsController : ControllerBase
         if (!string.IsNullOrEmpty(search))
         {
             var searchLower = search.ToLower();
+            var searchHash = Sportive.API.Models.Customer.EncryptionHelper?.ComputeSearchHash(search) ?? "";
+
             returnsQ = returnsQ.Where(j => 
                 (j.Reference != null && j.Reference.ToLower().Contains(searchLower)) ||
                 (j.Order != null && j.Order.Customer != null && j.Order.Customer.FullName.ToLower().Contains(searchLower)) ||
-                (j.Order != null && j.Order.Customer != null && j.Order.Customer.Phone.Contains(searchLower))
+                (j.Order != null && j.Order.Customer != null && j.Order.Customer.PhoneHash == searchHash)
             );
         }
 
@@ -1432,7 +1434,7 @@ public class OperationalReportsController : ControllerBase
                 j.Reference, j.EntryNumber, j.EntryDate,
                 OrderId = j.Order != null ? (int?)j.Order.Id : null,
                 CustomerName = j.Order != null && j.Order.Customer != null ? j.Order.Customer.FullName : "Walk-in",
-                CustomerPhone = j.Order != null && j.Order.Customer != null ? j.Order.Customer.Phone : "",
+                CustomerPhone = j.Order != null && j.Order.Customer != null ? j.Order.Customer.PhoneEncrypted : "",
                 OriginalAmount = j.Lines.Where(l => l.Debit > 0 && (!inventoryAccId.HasValue || l.AccountId != inventoryAccId.Value)).Sum(l => (decimal?)l.Debit) ?? 0,
                 Description = j.Order != null ? j.Order.StatusHistory
                     .Where(h => h.Status == OrderStatus.PartiallyReturned || h.Status == OrderStatus.Returned)
@@ -1547,7 +1549,7 @@ public class OperationalReportsController : ControllerBase
             return new ReturnRow(
                 j.Reference ?? j.EntryNumber, j.EntryDate,
                 j.CustomerName,
-                j.CustomerPhone ?? "",
+                (Sportive.API.Models.Customer.EncryptionHelper != null && !string.IsNullOrEmpty(j.CustomerPhone) ? Sportive.API.Models.Customer.EncryptionHelper.Decrypt(j.CustomerPhone) : j.CustomerPhone) ?? "",
                 (catIds.Any() || brIds.Any() || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size)) ? itemsAmount : j.OriginalAmount,
                 j.Description ?? "",
                 itemsList,
