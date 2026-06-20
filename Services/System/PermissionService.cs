@@ -54,11 +54,52 @@ public class PermissionService : IPermissionService
     {
         return await _cache.GetOrCreateAsync(
             CacheKey(userId),
-            async () => await _db.UserModulePermissions
-                .AsNoTracking()
-                .Where(p => p.UserAccountID == userId)
-                .Select(p => new PermEntry(p.ModuleKey, p.CanView, p.CanEdit))
-                .ToListAsync(),
+            async () =>
+            {
+                var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+                if (user == null) return new List<PermEntry>();
+
+                if (!string.IsNullOrEmpty(user.PermissionsJson))
+                {
+                    var strings = System.Text.Json.JsonSerializer.Deserialize<List<string>>(user.PermissionsJson) ?? new List<string>();
+                    var map = new Dictionary<string, PermEntry>(StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var s in strings)
+                    {
+                        if (string.IsNullOrWhiteSpace(s)) continue;
+                        
+                        var parts = s.Split('.');
+                        var moduleKey = parts[0];
+                        
+                        if (!map.TryGetValue(moduleKey, out var entry))
+                        {
+                            entry = new PermEntry(moduleKey, false, false);
+                            map[moduleKey] = entry;
+                        }
+
+                        if (parts.Length == 1)
+                        {
+                            entry = entry with { CanView = true };
+                        }
+                        else if (parts.Length > 1 && parts[1].Equals("edit", StringComparison.OrdinalIgnoreCase))
+                        {
+                            entry = entry with { CanEdit = true };
+                        }
+                        
+                        map[moduleKey] = entry;
+                    }
+                    return map.Values.ToList();
+                }
+                else
+                {
+                    // Fallback to old table for backward compatibility if PermissionsJson is not set
+                    return await _db.UserModulePermissions
+                        .AsNoTracking()
+                        .Where(p => p.UserAccountID == userId)
+                        .Select(p => new PermEntry(p.ModuleKey, p.CanView, p.CanEdit))
+                        .ToListAsync();
+                }
+            },
             TimeSpan.FromMinutes(15));
     }
 
