@@ -1048,7 +1048,9 @@ public class OperationalReportsController : ControllerBase
                         i.UnitPrice,
                         CostPrice = i.Product != null ? (i.Product.CostPrice ?? 0) : 0,
                         i.DiscountAmount,
-                        i.TotalPrice
+                        i.TotalPrice,
+                        i.ProductId,
+                        i.ProductVariantId
                     }).ToList(),
                 PostedSales = o.JournalEntries
                     .Where(j => j.Status == JournalEntryStatus.Posted)
@@ -1266,7 +1268,8 @@ public class OperationalReportsController : ControllerBase
                             ProductNameAr = it.Product != null ? it.Product.NameAr : it.Description,
                             Size = it.ProductVariant != null ? it.ProductVariant.Size : "",
                             ColorAr = it.ProductVariant != null ? (it.ProductVariant.ColorAr ?? it.ProductVariant.Color) : "",
-                            it.Quantity, it.UnitCost, it.TotalCost
+                            it.Quantity, it.UnitCost, it.TotalCost,
+                            it.ProductId, it.ProductVariantId
                         }).ToList(),
                     LedgerPostedAmount = i.JournalEntries
                         .Where(j => j.Status == JournalEntryStatus.Posted)
@@ -1462,7 +1465,8 @@ public class OperationalReportsController : ControllerBase
                     .Select(i => new {
                         ProductSKU = i.Product != null ? i.Product.SKU : "",
                         ProductNameAr = i.Product != null ? i.Product.NameAr : i.ProductNameAr,
-                        i.Size, i.Color, i.ReturnedQuantity, i.UnitPrice, i.Quantity, i.DiscountAmount
+                        i.Size, i.Color, i.ReturnedQuantity, i.UnitPrice, i.Quantity, i.DiscountAmount,
+                        i.ProductId, i.ProductVariantId
                     }).ToList() : null
             })
             .OrderByDescending(j => j.EntryDate);
