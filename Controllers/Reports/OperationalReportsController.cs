@@ -1100,8 +1100,8 @@ public class OperationalReportsController : ControllerBase
                     i.CostPrice, 
                     i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1),
                     i.TotalPrice,
-                    i.ProductId,
-                    i.ProductVariantId
+                    i.ProductId ?? 0,
+                    i.ProductVariantId ?? 0
                 )).ToList(),
                 paySummary
             );
@@ -1296,7 +1296,7 @@ public class OperationalReportsController : ControllerBase
                     i.Items.Select(it => new ReportItemDto(
                         it.ProductSKU, it.ProductNameAr, it.Size ?? "", it.ColorAr ?? "",
                         it.Quantity, 0, it.UnitCost, 0, it.TotalCost,
-                        it.ProductId, it.ProductVariantId
+                        it.ProductId ?? 0, it.ProductVariantId ?? 0
                     )).ToList()
                 );
             }).ToList();
@@ -1533,8 +1533,8 @@ public class OperationalReportsController : ControllerBase
                         0,
                         0,
                         Math.Abs(m.Quantity) * unitPrice,
-                        m.ProductId,
-                        m.ProductVariantId
+                        m.ProductId ?? 0,
+                        m.ProductVariantId ?? 0
                     );
                 }).ToList();
             }
@@ -1550,8 +1550,8 @@ public class OperationalReportsController : ControllerBase
                     0,
                     i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1),
                     (i.UnitPrice - (i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1))) * i.ReturnedQuantity,
-                    i.ProductId,
-                    i.ProductVariantId
+                    i.ProductId ?? 0,
+                    i.ProductVariantId ?? 0
                 )).ToList();
             }
 
@@ -1693,7 +1693,7 @@ public class OperationalReportsController : ControllerBase
             var itemsList = r.Items.Select(it => new ReportItemDto(
                 it.ProductSKU, it.ProductNameAr, it.Size ?? "", it.ColorAr ?? "",
                 it.Quantity, 0, it.UnitCost, 0, it.TotalCost,
-                it.ProductId, it.ProductVariantId
+                it.ProductId ?? 0, it.ProductVariantId ?? 0
             )).ToList();
 
             var itemsAmount = itemsList.Sum(it => it.LineTotal);
