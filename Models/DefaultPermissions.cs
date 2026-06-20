@@ -5,7 +5,7 @@ public static class DefaultPermissions
     public static IReadOnlyList<string> ForRole(string role)
     {
         var list = new List<string>();
-        var oldFormat = role switch
+        IEnumerable<(string, bool, bool)> oldFormat = role switch
         {
             AppRoles.Admin => ModuleKeys.All.Select(m => (m, true, true)).ToList(),
 
