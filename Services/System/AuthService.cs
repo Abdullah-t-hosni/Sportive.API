@@ -206,10 +206,10 @@ public class AuthService : IAuthService
                 .ToListAsync()
             : null;
 
-        // Fetch permissions override
-        var permissions = await _db.UserModulePermissions.Where(p => p.UserAccountID == user.Id)
-            .Select(p => new ModulePermissionDto(p.ModuleKey, p.CanView, p.CanEdit))
-            .ToListAsync();
+        // Fetch granular permissions
+        var permissions = string.IsNullOrEmpty(user.PermissionsJson) 
+            ? new List<string>() 
+            : System.Text.Json.JsonSerializer.Deserialize<List<string>>(user.PermissionsJson);
 
         // ── Generate User Session ──
         var refreshToken = currentRawRefreshToken ?? GenerateSecureRefreshToken();

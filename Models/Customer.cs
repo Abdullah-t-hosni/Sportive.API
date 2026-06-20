@@ -24,6 +24,7 @@ public class AppUser : IdentityUser
     public string PinnedSidebarItems { get; set; } = "[]";
     public string FavoriteReports { get; set; } = "[\"trial\", \"sales\"]";
     public string UiPreferences { get; set; } = "{}";
+    public string PermissionsJson { get; set; } = "[]";
 
     public int? BranchId { get; set; }
     public Branch? Branch { get; set; }

@@ -26,7 +26,7 @@ public record AuthResponseDto(
     int? CustomerId = null,
     string? Phone = null,
     List<AddressDto>? Addresses = null,
-    List<ModulePermissionDto>? ModulePermissions = null,
+    List<string>? Permissions = null,
     string? PinnedSidebarItems = "[]",
     string? FavoriteReports = "[]",
     string? UiPreferences = "{}",

@@ -18,43 +18,13 @@ public class StaffPermissionService
     public async Task SeedDefaultPermissionsAsync(string userId, string role)
     {
         var defaults = DefaultPermissions.ForRole(role);
-        var existing = await _db.UserModulePermissions
-            .Where(p => p.UserAccountID == userId)
-            .ToListAsync();
         
-        var existingMap = existing.ToDictionary(p => p.ModuleKey);
-        var now = TimeHelper.GetEgyptTime();
-
-        foreach (var def in defaults)
+        var user = await _db.Users.FindAsync(userId);
+        if (user != null)
         {
-            if (existingMap.TryGetValue(def.ModuleKey, out var p))
-            {
-                // Only update if changed to avoid unnecessary DB writes and audit noise
-                if (p.CanView != def.CanView || p.CanEdit != def.CanEdit)
-                {
-                    p.CanView = def.CanView;
-                    p.CanEdit = def.CanEdit;
-                }
-                existingMap.Remove(def.ModuleKey);
-            }
-            else
-            {
-                _db.UserModulePermissions.Add(new UserModulePermission
-                {
-                    UserAccountID = userId,
-                    ModuleKey     = def.ModuleKey,
-                    CanView       = def.CanView,
-                    CanEdit       = def.CanEdit,
-                    CreatedAt     = now,
-                });
-            }
+            user.PermissionsJson = System.Text.Json.JsonSerializer.Serialize(defaults);
+            await _db.SaveChangesAsync();
         }
-
-        // Remove permissions that are no longer part of the default set for this role
-        if (existingMap.Any())
-            _db.UserModulePermissions.RemoveRange(existingMap.Values);
-
-        await _db.SaveChangesAsync();
     }
 
     /// <summary>
@@ -69,9 +39,7 @@ public class StaffPermissionService
 
         foreach (var user in users)
         {
-            var hasPerms = await _db.UserModulePermissions
-                .AnyAsync(p => p.UserAccountID == user.Id);
-            if (hasPerms) continue;
+            if (!string.IsNullOrEmpty(user.PermissionsJson)) continue;
 
             var roles = await userManager.GetRolesAsync(user);
             var primaryRole = GetPrimaryRole(roles);

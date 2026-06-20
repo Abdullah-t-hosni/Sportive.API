@@ -365,42 +365,29 @@ public class StaffController : ControllerBase
         var user = await _users.FindByIdAsync(id);
         if (user == null) return NotFound();
 
-        var perms = await _db.UserModulePermissions
-            .Where(p => p.UserAccountID == id)
-            .Select(p => new { p.ModuleKey, p.CanView, p.CanEdit })
-            .ToListAsync();
+        var permissions = string.IsNullOrEmpty(user.PermissionsJson) 
+            ? new List<string>() 
+            : System.Text.Json.JsonSerializer.Deserialize<List<string>>(user.PermissionsJson);
 
-        return Ok(perms);
+        return Ok(permissions);
     }
 
     // PUT /api/staff/{id}/permissions
-    // تحديث صلاحيات المستخدم (الحق فى الرؤية أو التحكم)
+    // تحديث صلاحيات المستخدم الدقيقة
     [HttpPut("{id}/permissions")]
-    public async Task<IActionResult> UpdatePermissions(string id, [FromBody] List<UserModulePermissionDto> dto)
+    public async Task<IActionResult> UpdatePermissions(string id, [FromBody] List<string> permissions)
     {
         var user = await _users.FindByIdAsync(id);
         if (user == null) return NotFound();
 
-        // حذف القديم
-        var existing = await _db.UserModulePermissions.Where(p => p.UserAccountID == id).ToListAsync();
-        _db.UserModulePermissions.RemoveRange(existing);
+        user.PermissionsJson = System.Text.Json.JsonSerializer.Serialize(permissions);
+        var result = await _users.UpdateAsync(user);
 
-        // إضافة الجديد
-        foreach (var p in dto)
-        {
-            _db.UserModulePermissions.Add(new UserModulePermission
-            {
-                UserAccountID = id,
-                ModuleKey     = p.ModuleKey,
-                CanView       = p.CanView,
-                CanEdit       = p.CanEdit
-            });
-        }
-
-        await _db.SaveChangesAsync();
         await _cache.RemoveAsync($"UserPermissions_{id}");
         
-        return Ok(new { message = _t.Get("Users.PermissionsUpdateSuccess") });
+        return result.Succeeded
+            ? Ok(new { message = _t.Get("Users.PermissionsUpdateSuccess") })
+            : BadRequest(new { errors = result.Errors.Select(e => e.Description) });
     }
 
     // PUT /api/staff/{id}/discount-limits
@@ -444,10 +431,9 @@ public class StaffController : ControllerBase
             })
             .FirstOrDefaultAsync();
 
-        var perms = await _db.UserModulePermissions
-            .Where(p => p.UserAccountID == id)
-            .Select(p => new { p.ModuleKey, p.CanView, p.CanEdit })
-            .ToListAsync();
+        var permissions = string.IsNullOrEmpty(user.PermissionsJson) 
+            ? new List<string>() 
+            : System.Text.Json.JsonSerializer.Deserialize<List<string>>(user.PermissionsJson);
 
         return Ok(new {
             id          = user.Id,
@@ -459,7 +445,7 @@ public class StaffController : ControllerBase
             roles       = roles.Where(r => r != AppRoles.Customer).ToList(),
             primaryRole = GetPrimaryRole(roles),
             employee,
-            permissions = perms,
+            permissions = permissions,
             maxDiscountPercentage = user.MaxDiscountPercentage,
             maxDiscountAmount     = user.MaxDiscountAmount
         });

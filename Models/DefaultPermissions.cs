@@ -2,8 +2,10 @@ namespace Sportive.API.Models;
 
 public static class DefaultPermissions
 {
-    public static IReadOnlyList<(string ModuleKey, bool CanView, bool CanEdit)> ForRole(string role)
-        => role switch
+    public static IReadOnlyList<string> ForRole(string role)
+    {
+        var list = new List<string>();
+        var oldFormat = role switch
         {
             AppRoles.Admin => ModuleKeys.All.Select(m => (m, true, true)).ToList(),
 
@@ -56,4 +58,10 @@ public static class DefaultPermissions
 
             _ => Array.Empty<(string, bool, bool)>()
         };
+        foreach (var item in oldFormat) {
+            if (item.Item2) list.Add(item.Item1);
+            if (item.Item3) list.Add(item.Item1 + ".edit");
+        }
+        return list;
+    }
 }
