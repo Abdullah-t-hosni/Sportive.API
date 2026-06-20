@@ -1097,7 +1097,9 @@ public class OperationalReportsController : ControllerBase
                     i.UnitPrice,
                     i.CostPrice, 
                     i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1),
-                    i.TotalPrice
+                    i.TotalPrice,
+                    i.ProductId,
+                    i.ProductVariantId
                 )).ToList(),
                 paySummary
             );
@@ -1290,7 +1292,8 @@ public class OperationalReportsController : ControllerBase
                     i.PaidAmount, i.TotalAmount - i.PaidAmount - i.ReturnedAmount,
                     i.Items.Select(it => new ReportItemDto(
                         it.ProductSKU, it.ProductNameAr, it.Size ?? "", it.ColorAr ?? "",
-                        it.Quantity, 0, it.UnitCost, 0, it.TotalCost
+                        it.Quantity, 0, it.UnitCost, 0, it.TotalCost,
+                        it.ProductId, it.ProductVariantId
                     )).ToList()
                 );
             }).ToList();
@@ -1525,7 +1528,9 @@ public class OperationalReportsController : ControllerBase
                         unitPrice,
                         0,
                         0,
-                        Math.Abs(m.Quantity) * unitPrice
+                        Math.Abs(m.Quantity) * unitPrice,
+                        m.ProductId,
+                        m.ProductVariantId
                     );
                 }).ToList();
             }
@@ -1540,7 +1545,9 @@ public class OperationalReportsController : ControllerBase
                     i.UnitPrice,
                     0,
                     i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1),
-                    (i.UnitPrice - (i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1))) * i.ReturnedQuantity
+                    (i.UnitPrice - (i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1))) * i.ReturnedQuantity,
+                    i.ProductId,
+                    i.ProductVariantId
                 )).ToList();
             }
 
@@ -1680,7 +1687,8 @@ public class OperationalReportsController : ControllerBase
         var rows = returns.Select(r => {
             var itemsList = r.Items.Select(it => new ReportItemDto(
                 it.ProductSKU, it.ProductNameAr, it.Size ?? "", it.ColorAr ?? "",
-                it.Quantity, 0, it.UnitCost, 0, it.TotalCost
+                it.Quantity, 0, it.UnitCost, 0, it.TotalCost,
+                it.ProductId, it.ProductVariantId
             )).ToList();
 
             var itemsAmount = itemsList.Sum(it => it.LineTotal);
@@ -4555,8 +4563,7 @@ public record InventoryRow(int Id, string NameAr, string NameEn, string SKU, str
 public record VariantInventoryRow(int Id, string Size, string Color, string ColorAr, int StockQuantity, decimal Price, decimal Value);
 public record SalesRow(int Id, string OrderNumber, DateTime Date, string CustomerName, string Phone, string Source, string Status, string PaymentMethod, decimal SubTotal, decimal DiscountAmount, decimal TotalAmount, int ItemCount, List<ReportItemDto>? Items = null, string? PaymentDetails = null);
 public record PurchaseRow(int Id, string InvoiceNumber, string SupplierInvoiceNumber, string SupplierName, DateTime InvoiceDate, string PaymentTerms, string Status, decimal SubTotal, decimal TaxAmount, decimal TotalAmount, decimal ReturnedAmount, decimal PaidAmount, decimal RemainingAmount, List<ReportItemDto>? Items = null);
-public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason, List<ReportItemDto>? Items = null, int? OrderId = null, string CreatorName = "", string ReturnerName = "", string RefundMethod = "", string OrderStatus = "");
-public record ReportItemDto(string SKU, string ProductName, string Size, string Color, decimal Quantity, decimal UnitPrice = 0, decimal UnitCost = 0, decimal Discount = 0, decimal LineTotal = 0);
+public record ReturnRow(string Reference, DateTime Date, string Name, string Phone, decimal Amount, string Reason, List<ReportItemDto>? Items = null, int? OrderId = null, string CreatorName = "", string ReturnerName = "", string RefundMethod = "", string OrderStatus = "");public record ReportItemDto(string SKU, string ProductName, string Size, string Color, decimal Quantity, decimal UnitPrice = 0, decimal UnitCost = 0, decimal Discount = 0, decimal LineTotal = 0, int ProductId = 0, int? ProductVariantId = null);
 public record UserActivityRow(string UserId, string UserName, int OrderCount, decimal GrossSales, decimal TotalReturns, decimal TotalDiscount, decimal NetSales, int Cancellations);
 public record ProductMovementLine(DateTime Date, string Type, string Reference, string EntityName, string Details, int In, int Out, decimal Amount, string ProductName = "", string Source = "", string Status = "", string SKU = "", int Balance = 0, int? SourceId = null, string Size = "", string Color = "");
 
