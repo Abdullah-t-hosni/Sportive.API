@@ -53,6 +53,28 @@ public class AuditEntry
         };
     }
 
+    public AuditLog ToDraftAuditLog()
+    {
+        var rawTime = Sportive.API.Utils.TimeHelper.GetEgyptTime();
+        var createdAt = new DateTime(rawTime.Year, rawTime.Month, rawTime.Day, rawTime.Hour, rawTime.Minute, rawTime.Second, DateTimeKind.Unspecified);
+
+        var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+        return new AuditLog
+        {
+            Action = Action,
+            EntityType = EntityType,
+            EntityId = EntityId,
+            OldValues = OldValues.Count == 0 ? null : JsonSerializer.Serialize(OldValues, jsonOpts),
+            NewValues = NewValues.Count == 0 ? null : JsonSerializer.Serialize(NewValues, jsonOpts),
+            UserId = UserId,
+            UserName = UserName,
+            IpAddress = IpAddress,
+            CreatedAt = createdAt,
+            Notes = $"Auto-logged {Action} for {EntityType}"
+        };
+    }
+
     private string GetAuditSecret()
     {
         var secret = Environment.GetEnvironmentVariable("AUDIT_SECRET");

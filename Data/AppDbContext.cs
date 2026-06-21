@@ -4,6 +4,7 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Models;
+using Sportive.API.Services;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -14,11 +15,16 @@ namespace Sportive.API.Data;
 public class AppDbContext : IdentityDbContext<AppUser>
 {
     private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly IServiceScopeFactory? _scopeFactory;
     public bool BypassAuditLogging { get; set; } = false;
 
-    public AppDbContext(DbContextOptions<AppDbContext> options, IHttpContextAccessor? httpContextAccessor = null) : base(options) 
+    public AppDbContext(
+        DbContextOptions<AppDbContext> options, 
+        IHttpContextAccessor? httpContextAccessor = null,
+        IServiceScopeFactory? scopeFactory = null) : base(options) 
     { 
         _httpContextAccessor = httpContextAccessor;
+        _scopeFactory = scopeFactory;
     }
 
     public DbSet<Category> Categories            => Set<Category>();
@@ -775,7 +781,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         var auditEntries = OnBeforeSaveChanges();
         var result = await base.SaveChangesAsync(cancellationToken);
-        await OnAfterSaveChanges(auditEntries);
+        OnAfterSaveChanges(auditEntries);
         return result;
     }
 
@@ -785,7 +791,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         var auditEntries = OnBeforeSaveChanges();
         var result = base.SaveChanges();
-        OnAfterSaveChanges(auditEntries).GetAwaiter().GetResult();
+        OnAfterSaveChanges(auditEntries);
         return result;
     }
 
@@ -860,14 +866,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
         return auditEntries.Where(a => a.HasTemporaryProperties || a.OldValues.Count > 0 || a.NewValues.Count > 0 || a.Entry.State == EntityState.Deleted || a.Entry.State == EntityState.Added).ToList();
     }
 
-    private async Task OnAfterSaveChanges(List<AuditEntry> auditEntries)
+    private void OnAfterSaveChanges(List<AuditEntry> auditEntries)
     {
         if (auditEntries == null || auditEntries.Count == 0)
             return;
 
-        var lastRecord = await AuditLogs.OrderByDescending(x => x.Id).FirstOrDefaultAsync();
-        var previousHash = lastRecord?.Hash ?? "GENESIS";
-
+        var logs = new List<AuditLog>();
         foreach (var auditEntry in auditEntries)
         {
             // Get the final value of the temporary properties
@@ -883,11 +887,13 @@ public class AppDbContext : IdentityDbContext<AppUser>
                 }
             }
 
-            var auditLog = auditEntry.ToAuditLog(previousHash);
-            AuditLogs.Add(auditLog);
-            previousHash = auditLog.Hash;
+            var auditLog = auditEntry.ToDraftAuditLog();
+            logs.Add(auditLog);
         }
 
-        await base.SaveChangesAsync();
+        if (_scopeFactory != null)
+        {
+            AuditQueueProcessor.EnqueueAuditLogs(logs, _scopeFactory);
+        }
     }
 }
