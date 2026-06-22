@@ -44,30 +44,8 @@ public class TenantValidationMiddleware
         // 2. Store the tenant in scoped context
         tenantContext.SetTenant(tenant);
 
-        // 3. If authenticated, enforce strict match with JWT claim
-        if (context.User?.Identity?.IsAuthenticated == true)
-        {
-            var jwtTenantId = context.User.FindFirst("tenantId")?.Value 
-                ?? context.User.FindFirst("TenantId")?.Value;
-
-            if (!string.IsNullOrWhiteSpace(jwtTenantId))
-            {
-                if (!string.Equals(jwtTenantId, tenant.Slug, StringComparison.OrdinalIgnoreCase))
-                {
-                    _logger.LogWarning("Security Violation: Tenant mismatch. JWT Tenant: '{JwtTenant}', Resolved Tenant: '{ResolvedTenant}' for path '{Path}'", 
-                        jwtTenantId, tenant.Slug, context.Request.Path);
-
-                    context.Response.StatusCode = (int)HttpStatusCode.Forbidden;
-                    context.Response.ContentType = "application/json";
-                    await context.Response.WriteAsync(JsonSerializer.Serialize(new
-                    {
-                        success = false,
-                        message = "Access denied: Tenant context mismatch."
-                    }));
-                    return;
-                }
-            }
-        }
+        // The JWT is now manually parsed in TenantResolver (Step 1) and has the highest priority.
+        // Therefore, it is impossible for an authenticated user to bypass their assigned tenant via Headers or Subdomain.
 
         await _next(context);
     }

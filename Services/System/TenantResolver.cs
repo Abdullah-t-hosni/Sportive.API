@@ -33,14 +33,20 @@ public class TenantResolver : ITenantResolver
         if (httpContext == null) return null;
 
         // 1. Resolve from JWT claims (highest priority and trusted)
-        if (httpContext.User?.Identity?.IsAuthenticated == true)
+        var authHeader = httpContext.Request.Headers["Authorization"].ToString();
+        if (!string.IsNullOrWhiteSpace(authHeader) && authHeader.StartsWith("Bearer ", System.StringComparison.OrdinalIgnoreCase))
         {
-            var tenantClaim = httpContext.User.FindFirst("tenantId")?.Value 
-                ?? httpContext.User.FindFirst("TenantId")?.Value;
-            if (!string.IsNullOrWhiteSpace(tenantClaim))
+            var token = authHeader.Substring("Bearer ".Length).Trim();
+            var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+            if (handler.CanReadToken(token))
             {
-                var tenant = await _tenantRegistry.GetTenantBySlugAsync(tenantClaim);
-                if (tenant != null) return tenant;
+                var jwt = handler.ReadJwtToken(token);
+                var tenantClaim = jwt.Claims.FirstOrDefault(c => c.Type == "tenantId" || c.Type == "TenantId")?.Value;
+                if (!string.IsNullOrWhiteSpace(tenantClaim))
+                {
+                    var tenant = await _tenantRegistry.GetTenantBySlugAsync(tenantClaim);
+                    if (tenant != null) return tenant;
+                }
             }
         }
 
