@@ -319,6 +319,7 @@ app.MapGet("/", () => Results.Ok("Sportive API is running"));
 app.MapHub<NotificationHub>("/notifications-hub");
 
 // ── RECURRING JOBS ────────────────────────────────────
+/* TEMPORARY SUSPENSION: Disabled to unblock production deployment
 try
 {
     Log.Information("Registering Hangfire recurring jobs...");
@@ -354,6 +355,7 @@ catch (Exception ex)
 {
     Log.Error(ex, "Failed to register or update Hangfire recurring jobs. The application will continue starting up.");
 }
+*/
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Run($"http://0.0.0.0:{port}");
