@@ -303,8 +303,8 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 app.UseRateLimiter();
-app.UseAuthentication();
 app.UseMiddleware<Sportive.API.Middleware.TenantValidationMiddleware>();
+app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<Sportive.API.Middleware.SessionLastSeenMiddleware>();
 
