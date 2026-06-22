@@ -319,43 +319,42 @@ app.MapGet("/", () => Results.Ok("Sportive API is running"));
 app.MapHub<NotificationHub>("/notifications-hub");
 
 // ── RECURRING JOBS ────────────────────────────────────
-/* TEMPORARY SUSPENSION: Disabled to unblock production deployment
-try
-{
-    Log.Information("Registering Hangfire recurring jobs...");
-    var backgroundJobs = app.Services.GetRequiredService<IRecurringJobManager>();
-    backgroundJobs.AddOrUpdate<IStatisticsService>(
-        "UpdateTodayStats", 
-        service => service.UpdateDailyStatsAsync(TimeHelper.GetEgyptTime()), 
-        "*/15 * * * *");
-        
-    backgroundJobs.AddOrUpdate<IOutboxProcessor>(
-        "ProcessOutbox", 
-        processor => processor.ProcessMessagesAsync(), 
-        "*/5 * * * *"); // ✅ was every 1 min (60/hour) — now every 5 min (12/hour)
-
-    backgroundJobs.AddOrUpdate<IOrderService>(
-        "SyncOrderAccounting",
-        service => service.SyncAllOrderAccountingAsync(30),
-        "0 3 * * *"); // Every day at 3:00 AM
-
-    backgroundJobs.AddOrUpdate<IAccountingService>(
-        "SyncPurchaseAccounting",
-        service => service.SyncAllPurchaseAccountingAsync(30),
-        "15 3 * * *"); // Every day at 3:15 AM
-
-    backgroundJobs.AddOrUpdate<IAuditService>(
-        "CleanupOldAuditLogs",
-        service => service.CleanupOldLogsAsync(3),
-        "30 3 * * *"); // Every day at 3:30 AM
-
-    Log.Information("Hangfire recurring jobs registered successfully.");
-}
-catch (Exception ex)
-{
-    Log.Error(ex, "Failed to register or update Hangfire recurring jobs. The application will continue starting up.");
-}
-*/
+// TEMPORARY SUSPENSION: Disabled to unblock production deployment
+// try
+// {
+//     Log.Information("Registering Hangfire recurring jobs...");
+//     var backgroundJobs = app.Services.GetRequiredService<IRecurringJobManager>();
+//     backgroundJobs.AddOrUpdate<IStatisticsService>(
+//         "UpdateTodayStats", 
+//         service => service.UpdateDailyStatsAsync(TimeHelper.GetEgyptTime()), 
+//         "*/15 * * * *");
+//         
+//     backgroundJobs.AddOrUpdate<IOutboxProcessor>(
+//         "ProcessOutbox", 
+//         processor => processor.ProcessMessagesAsync(), 
+//         "*/5 * * * *"); // ✅ was every 1 min (60/hour) — now every 5 min (12/hour)
+// 
+//     backgroundJobs.AddOrUpdate<IOrderService>(
+//         "SyncOrderAccounting",
+//         service => service.SyncAllOrderAccountingAsync(30),
+//         "0 3 * * *"); // Every day at 3:00 AM
+// 
+//     backgroundJobs.AddOrUpdate<IAccountingService>(
+//         "SyncPurchaseAccounting",
+//         service => service.SyncAllPurchaseAccountingAsync(30),
+//         "15 3 * * *"); // Every day at 3:15 AM
+// 
+//     backgroundJobs.AddOrUpdate<IAuditService>(
+//         "CleanupOldAuditLogs",
+//         service => service.CleanupOldLogsAsync(3),
+//         "30 3 * * *"); // Every day at 3:30 AM
+// 
+//     Log.Information("Hangfire recurring jobs registered successfully.");
+// }
+// catch (Exception ex)
+// {
+//     Log.Error(ex, "Failed to register or update Hangfire recurring jobs. The application will continue starting up.");
+// }
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Run($"http://0.0.0.0:{port}");
