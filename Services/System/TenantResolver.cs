@@ -15,11 +15,16 @@ public class TenantResolver : ITenantResolver
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ITenantRegistry _tenantRegistry;
+    private readonly Microsoft.Extensions.Logging.ILogger<TenantResolver> _logger;
 
-    public TenantResolver(IHttpContextAccessor httpContextAccessor, ITenantRegistry tenantRegistry)
+    public TenantResolver(
+        IHttpContextAccessor httpContextAccessor, 
+        ITenantRegistry tenantRegistry,
+        Microsoft.Extensions.Logging.ILogger<TenantResolver> logger)
     {
         _httpContextAccessor = httpContextAccessor;
         _tenantRegistry = tenantRegistry;
+        _logger = logger;
     }
 
     public async Task<Tenant?> ResolveTenantAsync()
@@ -52,6 +57,8 @@ public class TenantResolver : ITenantResolver
 
         // 3. Resolve from Custom Domain
         var host = httpContext.Request.Host.Host;
+        _logger.LogInformation("Resolving tenant for host: {Host}", host);
+
         if (!string.IsNullOrWhiteSpace(host) && !host.Contains("localhost"))
         {
             var tenantByDomain = await _tenantRegistry.GetTenantByCustomDomainAsync(host);
@@ -72,8 +79,9 @@ public class TenantResolver : ITenantResolver
             return await _tenantRegistry.GetTenantBySlugAsync("sportive");
         }
 
-        // 6. No default fallback (forces explicit header/JWT/subdomain context)
-        return null;
+        // TEMPORARY PRODUCTION FALLBACK
+        _logger.LogWarning("TEMPORARY FALLBACK: Unrecognized host '{Host}'. Defaulting to 'sportive' tenant.", host);
+        return await _tenantRegistry.GetTenantBySlugAsync("sportive");
     }
 
     private string? GetSubdomainFromHost(string host)

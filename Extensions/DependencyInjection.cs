@@ -355,7 +355,8 @@ public static class DependencyInjection
         services.AddScoped<IDataMaintenanceService, DataMaintenanceService>();
         services.AddScoped<IBackfillService, BackfillService>();
         services.AddHostedService<BackupHostedService>();
-        services.AddHostedService<StartupSyncService>();
+        // TEMPORARY SUSPENSION: Disabled to unblock production deployment
+        // services.AddHostedService<StartupSyncService>();
         services.AddScoped<IWishlistService, WishlistService>();
         services.AddScoped<IReviewService, ReviewService>();
         services.AddScoped<IAiAssistantService, AiAssistantService>();
