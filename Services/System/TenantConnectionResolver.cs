@@ -31,7 +31,14 @@ public class TenantConnectionResolver : ITenantConnectionResolver
                 return _baseConnectionString;
             }
 
-            throw new InvalidOperationException("Cannot resolve tenant connection string: No tenant context set.");
+            if (tenant == null)
+            {
+                throw new InvalidOperationException("Cannot resolve tenant connection string: No tenant context set (tenant is null).");
+            }
+            else
+            {
+                throw new InvalidOperationException($"Cannot resolve tenant connection string: DatabaseName is empty for tenant '{tenant.Slug}'.");
+            }
         }
 
         var builder = new MySqlConnectionStringBuilder(_baseConnectionString)

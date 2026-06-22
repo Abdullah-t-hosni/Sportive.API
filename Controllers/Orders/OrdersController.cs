@@ -460,8 +460,7 @@ public class OrdersController : ControllerBase
             return BadRequest("لا يمكن حذف فاتورة تحتوي على مرتجع جزئي أو كلي. يرجى إلغاء المرتجع أولاً.");
         }
 
-        using var scope = _scopeFactory.CreateScope();
-        var inventory = scope.ServiceProvider.GetRequiredService<IInventoryService>();
+        var inventory = HttpContext.RequestServices.GetRequiredService<IInventoryService>();
 
         // Remove original inventory movements instead of creating adjustments (so it looks like it never existed)
         var relatedMovements = await _db.InventoryMovements
@@ -730,9 +729,8 @@ public class OrdersController : ControllerBase
         if (Math.Abs(newTotal - order.TotalAmount) > 0.1m)
             return BadRequest(_translator.Get("Orders.TotalAmountMismatch") ?? "إجمالي المبالغ يجب أن يساوي إجمالي الفاتورة");
 
-        using var scope = _scopeFactory.CreateScope();
-        var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-        var accountingCore = scope.ServiceProvider.GetRequiredService<AccountingCoreService>();
+        var accounting = HttpContext.RequestServices.GetRequiredService<IAccountingService>();
+        var accountingCore = HttpContext.RequestServices.GetRequiredService<AccountingCoreService>();
 
         // ── تحديث OrderPayments ──
         _db.OrderPayments.RemoveRange(order.Payments);

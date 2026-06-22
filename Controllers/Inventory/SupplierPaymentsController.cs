@@ -351,32 +351,40 @@ public class SupplierPaymentsController : ControllerBase
 
     private async Task PostSupplierPaymentWithRetryAsync(int paymentId, string paymentNumber)
     {
-        const int maxAttempts = 3;
-        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        var tenantContextCurrent = HttpContext.RequestServices.GetRequiredService<Sportive.API.Interfaces.ITenantContext>();
+        var tenant = tenantContextCurrent.CurrentTenant;
+        
+        _ = Task.Run(async () =>
         {
-            try
+            const int maxAttempts = 3;
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                using var scope = _scopeFactory.CreateScope();
-                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var payment = await db.SupplierPayments.FirstAsync(p => p.Id == paymentId);
-                await accounting.PostSupplierPaymentAsync(payment);
-                return;
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    if (tenant != null) scope.ServiceProvider.GetRequiredService<Sportive.API.Interfaces.ITenantContext>().SetTenant(tenant);
+                    
+                    var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    var payment = await db.SupplierPayments.FirstAsync(p => p.Id == paymentId);
+                    await accounting.PostSupplierPaymentAsync(payment);
+                    return;
+                }
+                catch (Exception ex) when (attempt < maxAttempts)
+                {
+                    _logger.LogWarning(ex,
+                        "[Accounting] Supplier payment journal attempt {Attempt}/{Max} failed for {Number}. Retrying...",
+                        attempt, maxAttempts, paymentNumber);
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex,
+                        "[Accounting] Supplier payment journal permanently failed for {Number} after {Max} attempts.",
+                        paymentNumber, maxAttempts);
+                }
             }
-            catch (Exception ex) when (attempt < maxAttempts)
-            {
-                _logger.LogWarning(ex,
-                    "[Accounting] Supplier payment journal attempt {Attempt}/{Max} failed for {Number}. Retrying...",
-                    attempt, maxAttempts, paymentNumber);
-                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "[Accounting] Supplier payment journal permanently failed for {Number} after {Max} attempts.",
-                    paymentNumber, maxAttempts);
-            }
-        }
+        });
     }
 }
 
