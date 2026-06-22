@@ -29,12 +29,25 @@ public class StartupSyncService : BackgroundService
 
         try
         {
-            using var scope = _services.CreateScope();
+            using var masterScope = _services.CreateScope();
+            var masterDb = masterScope.ServiceProvider.GetRequiredService<Sportive.API.Data.MasterDbContext>();
+            var tenants = await masterDb.Tenants.Where(t => t.Status == Sportive.API.Models.TenantStatus.Active).ToListAsync(stoppingToken);
 
-            _logger.LogInformation("[StartupSync] Periodic accounting and stock synchronization started...");
+            _logger.LogInformation("[StartupSync] Periodic accounting and stock synchronization started for {Count} tenants...", tenants.Count);
 
-            // ── DATABASE MIGRATION & SEEDING ──────────────────
-            var db          = scope.ServiceProvider.GetRequiredService<Sportive.API.Data.AppDbContext>();
+            foreach (var tenant in tenants)
+            {
+                if (stoppingToken.IsCancellationRequested) break;
+
+                try
+                {
+                    _logger.LogInformation("[StartupSync] Processing tenant: {TenantName} ({TenantSlug})", tenant.Name, tenant.Slug);
+                    using var scope = _services.CreateScope();
+                    var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
+                    tenantContext.SetTenant(tenant);
+
+                    // ── DATABASE MIGRATION & SEEDING ──────────────────
+                    var db          = scope.ServiceProvider.GetRequiredService<Sportive.API.Data.AppDbContext>();
             var roleManager = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Identity.RoleManager<Microsoft.AspNetCore.Identity.IdentityRole>>();
             var userManager = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<Sportive.API.Models.AppUser>>();
 
@@ -148,7 +161,15 @@ public class StartupSyncService : BackgroundService
                 await statsService.BackfillStatsAsync(TimeHelper.GetEgyptTime().Date.AddDays(-90), TimeHelper.GetEgyptTime().Date);
             }
 
-            _logger.LogInformation("[StartupSync] All synchronizations completed successfully.");
+            _logger.LogInformation("[StartupSync] Completed synchronization for tenant: {TenantName}", tenant.Name);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "[StartupSync] Error processing tenant {TenantSlug}", tenant.Slug);
+                }
+            }
+
+            _logger.LogInformation("[StartupSync] All synchronizations completed successfully for all tenants.");
         }
         catch (OperationCanceledException)
         {
