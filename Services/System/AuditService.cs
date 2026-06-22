@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using Sportive.API.Interfaces;
 
 namespace Sportive.API.Services;
 
@@ -30,13 +31,15 @@ public class AuditService : IAuditService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AuditService> _logger;
+    private readonly ITenantContext _tenantContext;
     private static readonly JsonSerializerOptions _jsonOpts =
         new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-    public AuditService(IServiceScopeFactory scopeFactory, ILogger<AuditService> logger)
+    public AuditService(IServiceScopeFactory scopeFactory, ILogger<AuditService> logger, ITenantContext tenantContext)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _tenantContext = tenantContext;
     }
 
     public async Task LogAsync(
@@ -58,7 +61,11 @@ public class AuditService : IAuditService
             CreatedAt    = createdAt
         };
 
-        AuditQueueProcessor.EnqueueAuditLogs(new List<AuditLog> { log }, _scopeFactory);
+        var tenant = _tenantContext.CurrentTenant;
+        if (tenant != null)
+        {
+            AuditQueueProcessor.EnqueueAuditLogs(new List<AuditLog> { log }, _scopeFactory, tenant);
+        }
         await Task.CompletedTask;
     }
 
@@ -83,7 +90,11 @@ public class AuditService : IAuditService
             CreatedAt    = createdAt
         };
 
-        AuditQueueProcessor.EnqueueAuditLogs(new List<AuditLog> { log }, _scopeFactory);
+        var tenant = _tenantContext.CurrentTenant;
+        if (tenant != null)
+        {
+            AuditQueueProcessor.EnqueueAuditLogs(new List<AuditLog> { log }, _scopeFactory, tenant);
+        }
         await Task.CompletedTask;
     }
 

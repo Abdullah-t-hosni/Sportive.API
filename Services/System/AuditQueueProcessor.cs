@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using Sportive.API.Interfaces;
 
 namespace Sportive.API.Services
 {
@@ -15,7 +16,7 @@ namespace Sportive.API.Services
     {
         private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
 
-        public static void EnqueueAuditLogs(List<AuditLog> logs, IServiceScopeFactory scopeFactory)
+        public static void EnqueueAuditLogs(List<AuditLog> logs, IServiceScopeFactory scopeFactory, Tenant tenant)
         {
             if (logs == null || logs.Count == 0) return;
 
@@ -26,6 +27,9 @@ namespace Sportive.API.Services
                 try
                 {
                     using var scope = scopeFactory.CreateScope();
+                    var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
+                    tenantContext.SetTenant(tenant);
+
                     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                     db.BypassAuditLogging = true; // Disable recursive logging
 

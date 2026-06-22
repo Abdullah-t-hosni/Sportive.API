@@ -31,14 +31,32 @@ namespace Sportive.API.Extensions;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddDatabaseAndIdentityServices(this IServiceCollection services, string connStr)
+    public static IServiceCollection AddDatabaseAndIdentityServices(this IServiceCollection services, string connStr, string masterConnStr)
     {
         if (!connStr.Contains("Allow User Variables=true", StringComparison.OrdinalIgnoreCase))
             connStr = connStr.TrimEnd(';') + ";Allow User Variables=true;";
 
-        services.AddDbContextPool<AppDbContext>(options =>
-            options.UseMySql(connStr, new MySqlServerVersion(new Version(8, 0, 0)),
+        if (!masterConnStr.Contains("Allow User Variables=true", StringComparison.OrdinalIgnoreCase))
+            masterConnStr = masterConnStr.TrimEnd(';') + ";Allow User Variables=true;";
+
+        services.AddDbContextPool<MasterDbContext>(options =>
+            options.UseMySql(masterConnStr, new MySqlServerVersion(new Version(8, 0, 0)),
                 mySqlOptions => mySqlOptions.EnableRetryOnFailure()));
+
+        services.AddDbContextFactory<AppDbContext>((serviceProvider, options) =>
+        {
+            var resolver = serviceProvider.GetRequiredService<ITenantConnectionResolver>();
+            var tenantConnStr = resolver.GetConnectionString();
+
+            options.UseMySql(tenantConnStr, new MySqlServerVersion(new Version(8, 0, 0)),
+                mySqlOptions => mySqlOptions.EnableRetryOnFailure());
+        }, ServiceLifetime.Scoped);
+
+        services.AddScoped<AppDbContext>(serviceProvider =>
+        {
+            var factory = serviceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
+            return factory.CreateDbContext();
+        });
 
         services.AddIdentity<AppUser, IdentityRole>(options =>
         {
@@ -344,6 +362,10 @@ public static class DependencyInjection
         services.AddScoped<IPermissionService, PermissionService>();
         services.AddHttpContextAccessor();
         services.AddScoped<ITenantProvider, TenantProvider>();
+        services.AddScoped<ITenantRegistry, TenantRegistry>();
+        services.AddScoped<ITenantContext, TenantContext>();
+        services.AddScoped<ITenantResolver, TenantResolver>();
+        services.AddScoped<ITenantConnectionResolver, TenantConnectionResolver>();
         services.AddScoped<IStatisticsService, StatisticsService>();
         services.AddScoped<IDashboardEventService, DashboardEventService>();
         services.AddScoped<IOutboxProcessor, OutboxProcessor>();

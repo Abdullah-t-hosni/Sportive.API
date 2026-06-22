@@ -23,6 +23,7 @@ public class AuthService : IAuthService
     private readonly ITranslator _t;
     private readonly Microsoft.AspNetCore.Http.IHttpContextAccessor _httpContextAccessor;
     private readonly EncryptionHelper _encryptionHelper;
+    private readonly ITenantContext _tenantContext;
 
     public AuthService(
         UserManager<AppUser> userManager, 
@@ -32,7 +33,8 @@ public class AuthService : IAuthService
         ICustomerService customerService,
         ITranslator t,
         Microsoft.AspNetCore.Http.IHttpContextAccessor httpContextAccessor,
-        EncryptionHelper encryptionHelper)
+        EncryptionHelper encryptionHelper,
+        ITenantContext tenantContext)
     {
         _userManager = userManager;
         _roleManager = roleManager;
@@ -42,6 +44,7 @@ public class AuthService : IAuthService
         _t = t;
         _httpContextAccessor = httpContextAccessor;
         _encryptionHelper = encryptionHelper;
+        _tenantContext = tenantContext;
     }
 
     public async Task<AuthResponseDto> RegisterAsync(RegisterDto dto, bool isCustomer = true)
@@ -146,11 +149,13 @@ public class AuthService : IAuthService
     private async Task<AuthResponseDto> LoginInternalAsync(AppUser user, UserSession? existingSession = null, string? currentRawRefreshToken = null)
     {
         var roles = await _userManager.GetRolesAsync(user);
+        var tenantSlug = _tenantContext.CurrentTenant?.Slug ?? "sportive";
         var claims = new List<Claim>
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id),
             new Claim(ClaimTypes.Email, user.Email ?? ""),
-            new Claim(ClaimTypes.Name, user.FullName)
+            new Claim(ClaimTypes.Name, user.FullName),
+            new Claim("tenantId", tenantSlug)
         };
         foreach (var r in roles) claims.Add(new Claim(ClaimTypes.Role, r));
 

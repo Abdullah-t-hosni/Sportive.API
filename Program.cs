@@ -43,6 +43,10 @@ var connStr = Environment.GetEnvironmentVariable("DATABASE_URL")
     ?? builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string is missing.");
 
+var masterConnStr = Environment.GetEnvironmentVariable("MASTER_DATABASE_URL")
+    ?? builder.Configuration.GetConnectionString("MasterConnection")
+    ?? throw new InvalidOperationException("Master connection string is missing.");
+
 try
 {
     var connBuilder = new MySqlConnector.MySqlConnectionStringBuilder(connStr);
@@ -102,7 +106,26 @@ catch (Exception ex)
     Log.Warning(ex, "Failed to parse connection string with MySqlConnectionStringBuilder. Using raw connection string.");
 }
 
-builder.Services.AddDatabaseAndIdentityServices(connStr);
+try
+{
+    var masterBuilder = new MySqlConnector.MySqlConnectionStringBuilder(masterConnStr);
+    masterBuilder.Pooling = true;
+    masterBuilder.AllowUserVariables = true;
+    masterBuilder.ConvertZeroDateTime = true;
+    masterBuilder.ConnectionIdleTimeout = 30;
+    masterBuilder.Keepalive = 60;
+    masterBuilder.ConnectionTimeout = 30;
+    masterBuilder.DefaultCommandTimeout = 60;
+    masterBuilder.MaximumPoolSize = 50; // master database doesn't need as large of a pool
+    masterBuilder.MinimumPoolSize = 1;
+    masterConnStr = masterBuilder.ConnectionString;
+}
+catch (Exception ex)
+{
+    Log.Warning(ex, "Failed to parse master connection string with MySqlConnectionStringBuilder. Using raw connection string.");
+}
+
+builder.Services.AddDatabaseAndIdentityServices(connStr, masterConnStr);
 
 // ── JWT & AUTHORIZATION ───────────────────────────────
 builder.Services.AddJwtAuthentication(builder.Configuration);
@@ -182,152 +205,56 @@ Sportive.API.Models.Customer.EncryptionHelper = app.Services.GetRequiredService<
 // ── AUTOMATIC MIGRATIONS (Production Sync) ────────────
 using (var scope = app.Services.CreateScope())
 {
-    var services = scope.ServiceProvider;
-    try
-    {
-        var context = services.GetRequiredService<AppDbContext>();
-        if (context.Database.IsRelational())
+        var services = scope.ServiceProvider;
+        
+        var entryAssemblyName = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name;
+        bool isEfTool = entryAssemblyName != null && (entryAssemblyName.Equals("ef", StringComparison.OrdinalIgnoreCase) || entryAssemblyName.Equals("dotnet-ef", StringComparison.OrdinalIgnoreCase));
+        
+        if (!isEfTool)
         {
-            Log.Information("Applying pending migrations...");
-            context.Database.Migrate();
-            Log.Information("Database is up to date.");
-
             try
             {
-                Log.Information("Syncing UpdatedAt for existing returned orders...");
-                var rowsAffected = await context.Database.ExecuteSqlRawAsync(@"
-                    UPDATE Orders
-                    SET UpdatedAt = (
-                        SELECT MAX(CreatedAt)
-                        FROM OrderStatusHistories
-                        WHERE OrderId = Orders.Id
-                          AND (Status = 'Returned' OR Status = 'PartiallyReturned')
-                    )
-                    WHERE (Status = 'Returned' OR Status = 'PartiallyReturned') AND UpdatedAt IS NULL;
-                ");
-                Log.Information("Synced UpdatedAt for {Count} returned orders.", rowsAffected);
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "Failed to sync UpdatedAt for returned orders on startup.");
-            }
-
-
-
-            try
-            {
-                Log.Information("Fixing existing branch accounts tree structure...");
-                var accounts = await context.Accounts.ToListAsync();
-                
-                var currentAssetsAcc = accounts.FirstOrDefault(a => a.Code == "11");
-                if (currentAssetsAcc != null)
+                // 1. Initialize Master Registry Database
+                try
                 {
-                    var cashParent = accounts.FirstOrDefault(a => a.NameAr.Contains("النقدية والصناديق"))
-                        ?? accounts.FirstOrDefault(a => a.Code == "1101");
-                    var bankParent = accounts.FirstOrDefault(a => a.NameAr.Contains("النقدية في البنك") || a.NameAr.Contains("البنك"))
-                        ?? accounts.FirstOrDefault(a => a.Code == "1102");
-                    var walletParent = accounts.FirstOrDefault(a => a.NameAr.Contains("النقدية في المحافظ") || a.NameAr.Contains("المحافظ"))
-                        ?? accounts.FirstOrDefault(a => a.Code == "1105");
+                    var masterContext = services.GetRequiredService<MasterDbContext>();
+                    Log.Information("Applying migrations for Master database schema...");
+                    masterContext.Database.Migrate();
 
-                    if (cashParent != null && bankParent != null && walletParent != null)
+                    if (!masterContext.Tenants.Any(t => t.Slug == "sportive"))
                     {
-                        bool changed = false;
-
-                        // 1. Fix Cashier Cash branch accounts
-                        var cashierAccounts = accounts.Where(a => a.BranchId != null && a.NameAr.Contains("نقدية كاشير") && a.ParentId != cashParent.Id).ToList();
-                        foreach (var acc in cashierAccounts)
+                        var baselineBuilder = new MySqlConnector.MySqlConnectionStringBuilder(connStr);
+                        
+                        masterContext.Tenants.Add(new Tenant
                         {
-                            acc.ParentId = cashParent.Id;
-                            acc.Level = cashParent.Level + 1;
-                            
-                            var prefix = cashParent.Code;
-                            var existingSiblingCodes = accounts.Where(a => a.ParentId == cashParent.Id).Select(a => a.Code).ToList();
-                            int maxSuffix = 0;
-                            foreach (var code in existingSiblingCodes)
-                            {
-                                if (code.StartsWith(prefix) && code.Length > prefix.Length)
-                                {
-                                    var suffixStr = code.Substring(prefix.Length);
-                                    if (int.TryParse(suffixStr, out int parsed) && parsed > maxSuffix)
-                                        maxSuffix = parsed;
-                                }
-                            }
-                            acc.Code = $"{prefix}{(maxSuffix + 1):D2}";
-                            changed = true;
-                            Log.Information("Fixed Cashier account: {Name} to code {Code} under parent {Parent}", acc.NameAr, acc.Code, cashParent.NameAr);
-                        }
-
-                        // 2. Fix Wallet branch accounts
-                        var walletAccounts = accounts.Where(a => a.BranchId != null && (a.NameAr.Contains("فودافون كاش") || a.NameAr.Contains("إنستاباي") || a.NameAr.Contains("انستاباي")) && a.ParentId != walletParent.Id).ToList();
-                        foreach (var acc in walletAccounts)
-                        {
-                            acc.ParentId = walletParent.Id;
-                            acc.Level = walletParent.Level + 1;
-                            
-                            var prefix = walletParent.Code;
-                            var existingSiblingCodes = accounts.Where(a => a.ParentId == walletParent.Id).Select(a => a.Code).ToList();
-                            int maxSuffix = 0;
-                            foreach (var code in existingSiblingCodes)
-                            {
-                                if (code.StartsWith(prefix) && code.Length > prefix.Length)
-                                {
-                                    var suffixStr = code.Substring(prefix.Length);
-                                    if (int.TryParse(suffixStr, out int parsed) && parsed > maxSuffix)
-                                        maxSuffix = parsed;
-                                }
-                            }
-                            acc.Code = $"{prefix}{(maxSuffix + 1):D2}";
-                            changed = true;
-                            Log.Information("Fixed Wallet account: {Name} to code {Code} under parent {Parent}", acc.NameAr, acc.Code, walletParent.NameAr);
-                        }
-
-                        // 3. Fix Bank branch accounts
-                        var bankAccounts = accounts.Where(a => a.BranchId != null && a.NameAr.Contains("شبكات تحت التحصيل") && a.ParentId != bankParent.Id).ToList();
-                        foreach (var acc in bankAccounts)
-                        {
-                            acc.ParentId = bankParent.Id;
-                            acc.Level = bankParent.Level + 1;
-                            
-                            var prefix = bankParent.Code;
-                            var existingSiblingCodes = accounts.Where(a => a.ParentId == bankParent.Id).Select(a => a.Code).ToList();
-                            int maxSuffix = 0;
-                            foreach (var code in existingSiblingCodes)
-                            {
-                                if (code.StartsWith(prefix) && code.Length > prefix.Length)
-                                {
-                                    var suffixStr = code.Substring(prefix.Length);
-                                    if (int.TryParse(suffixStr, out int parsed) && parsed > maxSuffix)
-                                        maxSuffix = parsed;
-                                }
-                            }
-                            acc.Code = $"{prefix}{(maxSuffix + 1):D2}";
-                            changed = true;
-                            Log.Information("Fixed Bank account: {Name} to code {Code} under parent {Parent}", acc.NameAr, acc.Code, bankParent.NameAr);
-                        }
-
-                        if (changed)
-                        {
-                            if (cashParent.Id != currentAssetsAcc.Id) { cashParent.IsLeaf = false; cashParent.AllowPosting = false; }
-                            if (bankParent.Id != currentAssetsAcc.Id) { bankParent.IsLeaf = false; bankParent.AllowPosting = false; }
-                            if (walletParent.Id != currentAssetsAcc.Id) { walletParent.IsLeaf = false; walletParent.AllowPosting = false; }
-
-                            await context.SaveChangesAsync();
-                            Log.Information("Successfully updated existing branch accounts tree structure.");
-                        }
+                            TenantGuid = Guid.NewGuid(),
+                            Slug = "sportive",
+                            Name = "Sportive",
+                            Subdomain = "sportive",
+                            DatabaseName = "u282618987_sportiveApi",
+                            DatabaseUser = baselineBuilder.UserID,
+                            DatabasePassword = baselineBuilder.Password,
+                            Status = TenantStatus.Active,
+                            CreatedAt = TimeHelper.GetEgyptTime()
+                        });
+                        masterContext.SaveChanges();
+                        Log.Information("Seeded initial 'sportive' tenant in Master registry.");
                     }
                 }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Failed to initialize or seed Master database. Ensure 'u282618987_raakiza_master' database exists on server with proper user privileges.");
+                }
+
+                // 2. We no longer run automatic migrations for all active tenants sequentially at startup.
+                // Migrations should be handled via a dedicated administrative endpoint on-demand to avoid scaling bottlenecks.
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "Failed to fix existing branch accounts tree structure on startup.");
+                Log.Error(ex, "An error occurred while migrating the database.");
             }
         }
     }
-    catch (Exception ex)
-    {
-        Log.Error(ex, "An error occurred while migrating the database.");
-    }
-}
 
 app.UseResponseCompression();
 
@@ -377,6 +304,7 @@ app.UseStaticFiles(new StaticFileOptions
 
 app.UseRateLimiter();
 app.UseAuthentication();
+app.UseMiddleware<Sportive.API.Middleware.TenantValidationMiddleware>();
 app.UseAuthorization();
 app.UseMiddleware<Sportive.API.Middleware.SessionLastSeenMiddleware>();
 

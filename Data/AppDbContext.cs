@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Models;
 using Sportive.API.Services;
+using Sportive.API.Interfaces;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -16,15 +17,18 @@ public class AppDbContext : IdentityDbContext<AppUser>
 {
     private readonly IHttpContextAccessor? _httpContextAccessor;
     private readonly IServiceScopeFactory? _scopeFactory;
+    private readonly ITenantContext? _tenantContext;
     public bool BypassAuditLogging { get; set; } = false;
 
     public AppDbContext(
         DbContextOptions<AppDbContext> options, 
         IHttpContextAccessor? httpContextAccessor = null,
-        IServiceScopeFactory? scopeFactory = null) : base(options) 
+        IServiceScopeFactory? scopeFactory = null,
+        ITenantContext? tenantContext = null) : base(options) 
     { 
         _httpContextAccessor = httpContextAccessor;
         _scopeFactory = scopeFactory;
+        _tenantContext = tenantContext;
     }
 
     public DbSet<Category> Categories            => Set<Category>();
@@ -891,9 +895,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
             logs.Add(auditLog);
         }
 
-        if (_scopeFactory != null)
+        if (_scopeFactory != null && _tenantContext?.CurrentTenant != null)
         {
-            AuditQueueProcessor.EnqueueAuditLogs(logs, _scopeFactory);
+            AuditQueueProcessor.EnqueueAuditLogs(logs, _scopeFactory, _tenantContext.CurrentTenant);
         }
     }
 }
