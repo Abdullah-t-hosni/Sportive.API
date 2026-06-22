@@ -50,8 +50,15 @@ public class TenantResolver : ITenantResolver
             }
         }
 
-        // 3. Resolve from Subdomain
+        // 3. Resolve from Custom Domain
         var host = httpContext.Request.Host.Host;
+        if (!string.IsNullOrWhiteSpace(host) && !host.Contains("localhost"))
+        {
+            var tenantByDomain = await _tenantRegistry.GetTenantByCustomDomainAsync(host);
+            if (tenantByDomain != null) return tenantByDomain;
+        }
+
+        // 4. Resolve from Subdomain
         var subdomain = GetSubdomainFromHost(host);
         if (!string.IsNullOrWhiteSpace(subdomain) && subdomain != "www" && subdomain != "api" && !subdomain.Contains("localhost"))
         {
@@ -59,7 +66,13 @@ public class TenantResolver : ITenantResolver
             if (tenant != null) return tenant;
         }
 
-        // 4. No default fallback (forces explicit header/JWT/subdomain context)
+        // 5. Hardcoded fallback for existing frontend legacy domains
+        if (host.Contains("sportive-sportwear.com"))
+        {
+            return await _tenantRegistry.GetTenantBySlugAsync("sportive");
+        }
+
+        // 6. No default fallback (forces explicit header/JWT/subdomain context)
         return null;
     }
 

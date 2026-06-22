@@ -7,4 +7,5 @@ public interface ITenantRegistry
 {
     Task<Tenant?> GetTenantBySlugAsync(string slug);
     Task<Tenant?> GetTenantBySubdomainAsync(string subdomain);
+    Task<Tenant?> GetTenantByCustomDomainAsync(string customDomain);
 }

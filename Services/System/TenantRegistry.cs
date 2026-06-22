@@ -68,4 +68,28 @@ public class TenantRegistry : ITenantRegistry
 
         return tenant;
     }
+
+    public async Task<Tenant?> GetTenantByCustomDomainAsync(string customDomain)
+    {
+        if (string.IsNullOrWhiteSpace(customDomain)) return null;
+
+        var cacheKey = $"tenant_customdomain_{customDomain.ToLowerInvariant()}";
+
+        if (_cache.TryGetValue(cacheKey, out Tenant? cachedTenant))
+        {
+            return cachedTenant;
+        }
+
+        var tenant = await _dbContext.Tenants
+            .FirstOrDefaultAsync(t => t.CustomDomain == customDomain);
+
+        var cacheOptions = new MemoryCacheEntryOptions
+        {
+            SlidingExpiration = tenant != null ? CacheDuration : NegCacheDuration
+        };
+
+        _cache.Set(cacheKey, tenant, cacheOptions);
+
+        return tenant;
+    }
 }
