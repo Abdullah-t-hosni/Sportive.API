@@ -43,19 +43,21 @@ public static class DependencyInjection
             options.UseMySql(masterConnStr, new MySqlServerVersion(new Version(8, 0, 0)),
                 mySqlOptions => mySqlOptions.EnableRetryOnFailure()));
 
-        services.AddDbContextFactory<AppDbContext>((serviceProvider, options) =>
+        services.AddScoped<AppDbContext>(serviceProvider =>
         {
             var resolver = serviceProvider.GetRequiredService<ITenantConnectionResolver>();
             var tenantConnStr = resolver.GetConnectionString();
 
-            options.UseMySql(tenantConnStr, new MySqlServerVersion(new Version(8, 0, 0)),
+            var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
+            optionsBuilder.UseMySql(tenantConnStr, new MySqlServerVersion(new Version(8, 0, 0)),
                 mySqlOptions => mySqlOptions.EnableRetryOnFailure());
-        }, ServiceLifetime.Scoped);
 
-        services.AddScoped<AppDbContext>(serviceProvider =>
-        {
-            var factory = serviceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
-            return factory.CreateDbContext();
+            return new AppDbContext(
+                optionsBuilder.Options,
+                serviceProvider.GetService<IHttpContextAccessor>(),
+                serviceProvider.GetService<IServiceScopeFactory>(),
+                serviceProvider.GetService<ITenantContext>()
+            );
         });
 
         services.AddIdentity<AppUser, IdentityRole>(options =>
