@@ -49,6 +49,7 @@ public class TenantConnectionResolver : ITenantConnectionResolver
         };
 
         builder.AllowUserVariables = true;
+        builder.ConvertZeroDateTime = true;
 
         return builder.ConnectionString;
     }

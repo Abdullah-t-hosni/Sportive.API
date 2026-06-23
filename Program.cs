@@ -224,6 +224,7 @@ using (var scope = app.Services.CreateScope())
                     if (!masterContext.Tenants.Any(t => t.Slug == "sportive"))
                     {
                         var baselineBuilder = new MySqlConnector.MySqlConnectionStringBuilder(connStr);
+                        baselineBuilder.ConvertZeroDateTime = true;
                         
                         masterContext.Tenants.Add(new Tenant
                         {
