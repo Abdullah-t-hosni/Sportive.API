@@ -18,6 +18,8 @@ public interface ITenantService
     Task<TenantListDto?> GetTenantByIdAsync(Guid id);
     Task<TenantUsageDto?> GetTenantUsageAsync(Guid id);
     Task<SuperAdminDashboardStatsDto> GetDashboardStatsAsync();
+    Task<(bool Success, string Message)> LockTenantAsync(Guid id);
+    Task<(bool Success, string Message)> UnlockTenantAsync(Guid id);
 }
 
 public class TenantService : ITenantService
@@ -318,5 +320,35 @@ public class TenantService : ITenantService
             ExpiredTenants = expired,
             LockedTenants = locked
         };
+    }
+
+    public async Task<(bool Success, string Message)> LockTenantAsync(Guid id)
+    {
+        var tenant = await _masterContext.Tenants.FirstOrDefaultAsync(x => x.TenantGuid == id);
+        if (tenant == null)
+            return (false, "Tenant not found.");
+
+        if (tenant.IsLocked)
+            return (false, "Tenant is already locked.");
+
+        tenant.IsLocked = true;
+        await _masterContext.SaveChangesAsync();
+        _logger.LogInformation("Tenant {Slug} has been locked.", tenant.Slug);
+        return (true, $"Tenant '{tenant.Name}' has been locked successfully.");
+    }
+
+    public async Task<(bool Success, string Message)> UnlockTenantAsync(Guid id)
+    {
+        var tenant = await _masterContext.Tenants.FirstOrDefaultAsync(x => x.TenantGuid == id);
+        if (tenant == null)
+            return (false, "Tenant not found.");
+
+        if (!tenant.IsLocked)
+            return (false, "Tenant is not locked.");
+
+        tenant.IsLocked = false;
+        await _masterContext.SaveChangesAsync();
+        _logger.LogInformation("Tenant {Slug} has been unlocked.", tenant.Slug);
+        return (true, $"Tenant '{tenant.Name}' has been unlocked successfully.");
     }
 }

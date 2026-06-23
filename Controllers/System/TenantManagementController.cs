@@ -13,7 +13,7 @@ using Sportive.API.Utils;
 
 namespace Sportive.API.Controllers;
 
-[Route("api/system/tenant-management")]
+[Route("api/system/tenants")]
 [ApiController]
 [Authorize(Roles = "SuperAdmin")]
 public class TenantManagementController : ControllerBase
@@ -38,6 +38,71 @@ public class TenantManagementController : ControllerBase
         _logger = logger;
     }
 
+    // GET /api/system/tenants
+    [HttpGet]
+    public async Task<IActionResult> GetAllTenants(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null)
+    {
+        var result = await _tenantService.GetAllTenantsAsync(page, pageSize, search);
+        return Ok(new { success = true, data = result });
+    }
+
+    // GET /api/system/tenants/{id}
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> GetTenantById(Guid id)
+    {
+        var result = await _tenantService.GetTenantByIdAsync(id);
+        if (result == null) return NotFound(new { success = false, message = "Tenant not found." });
+        return Ok(new { success = true, data = result });
+    }
+
+    // GET /api/system/tenants/{id}/usage
+    [HttpGet("{id:guid}/usage")]
+    public async Task<IActionResult> GetTenantUsage(Guid id)
+    {
+        var result = await _tenantService.GetTenantUsageAsync(id);
+        if (result == null) return NotFound(new { success = false, message = "Tenant not found." });
+        return Ok(new { success = true, data = result });
+    }
+
+    // POST /api/system/tenants/onboard
+    [HttpPost("onboard")]
+    public async Task<IActionResult> OnboardTenant([FromBody] OnboardTenantRequest request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var result = await _tenantService.OnboardNewTenantAsync(request);
+        
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    // PUT /api/system/tenants/{id}/lock
+    [HttpPut("{id:guid}/lock")]
+    public async Task<IActionResult> LockTenant(Guid id)
+    {
+        var (success, message) = await _tenantService.LockTenantAsync(id);
+        if (!success)
+            return BadRequest(new { success = false, message });
+        return Ok(new { success = true, message });
+    }
+
+    // PUT /api/system/tenants/{id}/unlock
+    [HttpPut("{id:guid}/unlock")]
+    public async Task<IActionResult> UnlockTenant(Guid id)
+    {
+        var (success, message) = await _tenantService.UnlockTenantAsync(id);
+        if (!success)
+            return BadRequest(new { success = false, message });
+        return Ok(new { success = true, message });
+    }
+
+    // POST /api/system/tenants/migrate-tenant?slug=...
     [HttpPost("migrate-tenant")]
     public async Task<IActionResult> MigrateTenant([FromQuery] string slug)
     {
@@ -75,42 +140,7 @@ public class TenantManagementController : ControllerBase
         }
     }
 
-    [HttpPost("onboard")]
-    public async Task<IActionResult> OnboardTenant([FromBody] OnboardTenantRequest request)
-    {
-        if (!ModelState.IsValid)
-            return BadRequest(ModelState);
-
-        var result = await _tenantService.OnboardNewTenantAsync(request);
-        
-        if (!result.Success)
-            return BadRequest(result);
-
-        return Ok(result);
-    }
-    [HttpGet]
-    public async Task<IActionResult> GetAllTenants([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null)
-    {
-        var result = await _tenantService.GetAllTenantsAsync(page, pageSize, search);
-        return Ok(new { success = true, data = result });
-    }
-
-    [HttpGet("{id:guid}")]
-    public async Task<IActionResult> GetTenantById(Guid id)
-    {
-        var result = await _tenantService.GetTenantByIdAsync(id);
-        if (result == null) return NotFound(new { success = false, message = "Tenant not found." });
-        return Ok(new { success = true, data = result });
-    }
-
-    [HttpGet("{id:guid}/usage")]
-    public async Task<IActionResult> GetTenantUsage(Guid id)
-    {
-        var result = await _tenantService.GetTenantUsageAsync(id);
-        if (result == null) return NotFound(new { success = false, message = "Tenant not found." });
-        return Ok(new { success = true, data = result });
-    }
-
+    // GET /api/system/analytics/dashboard-stats
     [HttpGet("/api/system/analytics/dashboard-stats")]
     public async Task<IActionResult> GetDashboardStats()
     {
