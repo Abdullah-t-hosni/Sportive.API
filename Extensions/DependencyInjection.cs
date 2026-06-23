@@ -199,7 +199,11 @@ public static class DependencyInjection
                     "https://www.sportive-sportwear.com",
                     "https://sportive-sportwear.com",
                     "https://admin.sportive-sportwear.com",
-                    "https://sportive-frontend-production.up.railway.app"
+                    "https://sportive-frontend-production.up.railway.app",
+                    "https://admin.raakiza.com",
+                    "https://www.admin.raakiza.com",
+                    "https://raakiza.com",
+                    "https://www.raakiza.com"
                 };
 
                 var extra = configuration["AllowedOrigins"];
