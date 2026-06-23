@@ -54,4 +54,9 @@ public class Tenant
     public DateTime? UpdatedAt { get; set; }
 
     public bool IsLocked { get; set; }
+    
+    public DateTime? LockedAt { get; set; }
+    
+    [MaxLength(500)]
+    public string? LockedReason { get; set; }
 }

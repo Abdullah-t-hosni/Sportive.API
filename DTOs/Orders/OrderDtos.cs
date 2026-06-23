@@ -52,15 +52,15 @@ public record CreateOrderDto(
     decimal? TemporalDiscount = null,
     decimal? SubTotal = null,
     List<OrderPaymentDto>? Payments = null,
-    [property: System.Text.Json.Serialization.JsonPropertyName("paidAmount")]
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("paidAmount")]
     decimal? PaidAmount = null,
-    [property: System.Text.Json.Serialization.JsonPropertyName("attachmentUrl")]
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("attachmentUrl")]
     string? AttachmentUrl = null,
-    [property: System.Text.Json.Serialization.JsonPropertyName("attachmentPublicId")]
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("attachmentPublicId")]
     string? AttachmentPublicId = null,
-    [property: System.Text.Json.Serialization.JsonPropertyName("branchId")]
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("branchId")]
     int? BranchId = null,
-    [property: System.Text.Json.Serialization.JsonPropertyName("warehouseId")]
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("warehouseId")]
     int? WarehouseId = null
 );
 
@@ -103,21 +103,21 @@ public record CreatePOSOrderDto(
     decimal? DiscountAmount = null,
     decimal? TemporalDiscount = null,
     decimal? Subtotal = null,
-    [property: System.Text.Json.Serialization.JsonPropertyName("payments")]
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("payments")]
     List<OrderPaymentDto>? Payments = null,
-    [property: System.Text.Json.Serialization.JsonPropertyName("paidAmount")]
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("paidAmount")]
     decimal? PaidAmount = null,
-    [property: System.Text.Json.Serialization.JsonPropertyName("couponCode")]
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("couponCode")]
     string? CouponCode = null,
-    [property: System.Text.Json.Serialization.JsonPropertyName("attachmentUrl")]
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("attachmentUrl")]
     string? AttachmentUrl = null,
-    [property: System.Text.Json.Serialization.JsonPropertyName("attachmentPublicId")]
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("attachmentPublicId")]
     string? AttachmentPublicId = null,
-    [property: System.Text.Json.Serialization.JsonPropertyName("offlineRef")]
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("offlineRef")]
     string? OfflineRef = null,
-    [property: System.Text.Json.Serialization.JsonPropertyName("branchId")]
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("branchId")]
     int? BranchId = null,
-    [property: System.Text.Json.Serialization.JsonPropertyName("warehouseId")]
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("warehouseId")]
     int? WarehouseId = null
 );
 

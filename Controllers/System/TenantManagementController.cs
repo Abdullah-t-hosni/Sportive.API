@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
+using Sportive.API.DTOs.System;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using Sportive.API.Services;
@@ -13,9 +14,10 @@ using Sportive.API.Utils;
 
 namespace Sportive.API.Controllers;
 
-[Route("api/system/tenants")]
+[Route("api/system/tenant-management")]
 [ApiController]
 [Authorize(Roles = "SuperAdmin")]
+[Obsolete("This controller is deprecated. Use PlansController, SubscriptionsController, AnalyticsController, and TenantsController instead.")]
 public class TenantManagementController : ControllerBase
 {
     private readonly ITenantService _tenantService;
@@ -45,7 +47,13 @@ public class TenantManagementController : ControllerBase
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null)
     {
-        var result = await _tenantService.GetAllTenantsAsync(page, pageSize, search);
+        var query = new TenantQueryDto
+        {
+            Page = page,
+            PageSize = pageSize,
+            Search = search
+        };
+        var result = await _tenantService.GetAllTenantsAsync(query);
         return Ok(new { success = true, data = result });
     }
 
@@ -86,7 +94,7 @@ public class TenantManagementController : ControllerBase
     [HttpPut("{id:guid}/lock")]
     public async Task<IActionResult> LockTenant(Guid id)
     {
-        var (success, message) = await _tenantService.LockTenantAsync(id);
+        var (success, message) = await _tenantService.LockTenantAsync(id, "Locked via deprecated API");
         if (!success)
             return BadRequest(new { success = false, message });
         return Ok(new { success = true, message });
@@ -142,9 +150,8 @@ public class TenantManagementController : ControllerBase
 
     // GET /api/system/analytics/dashboard-stats
     [HttpGet("/api/system/analytics/dashboard-stats")]
-    public async Task<IActionResult> GetDashboardStats()
+    public IActionResult GetDashboardStats()
     {
-        var result = await _tenantService.GetDashboardStatsAsync();
-        return Ok(new { success = true, data = result });
+        return RedirectPreserveMethod("/api/system/analytics/dashboard-stats");
     }
 }

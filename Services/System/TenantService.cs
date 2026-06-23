@@ -3,24 +3,15 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
+using Sportive.API.DTOs.System;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using Sportive.API.Utils;
 
 namespace Sportive.API.Services;
-
-public interface ITenantService
-{
-    Task<TenantOnboardingResult> OnboardNewTenantAsync(OnboardTenantRequest request);
-    Task<object> GetAllTenantsAsync(int page = 1, int pageSize = 20, string? search = null);
-    Task<TenantListDto?> GetTenantByIdAsync(Guid id);
-    Task<TenantUsageDto?> GetTenantUsageAsync(Guid id);
-    Task<SuperAdminDashboardStatsDto> GetDashboardStatsAsync();
-    Task<(bool Success, string Message)> LockTenantAsync(Guid id);
-    Task<(bool Success, string Message)> UnlockTenantAsync(Guid id);
-}
 
 public class TenantService : ITenantService
 {
@@ -29,6 +20,7 @@ public class TenantService : ITenantService
     private readonly ITenantContext _tenantContext;
     private readonly UserManager<AppUser> _userManager;
     private readonly RoleManager<IdentityRole> _roleManager;
+    private readonly IMemoryCache _cache;
     private readonly ILogger<TenantService> _logger;
 
     public TenantService(
@@ -37,6 +29,7 @@ public class TenantService : ITenantService
         ITenantContext tenantContext,
         UserManager<AppUser> userManager,
         RoleManager<IdentityRole> roleManager,
+        IMemoryCache cache,
         ILogger<TenantService> logger)
     {
         _masterContext = masterContext;
@@ -44,6 +37,7 @@ public class TenantService : ITenantService
         _tenantContext = tenantContext;
         _userManager = userManager;
         _roleManager = roleManager;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -164,22 +158,42 @@ public class TenantService : ITenantService
         }
     }
 
-    public async Task<object> GetAllTenantsAsync(int page = 1, int pageSize = 20, string? search = null)
+    public async Task<PagedResponseDto<TenantListDto>> GetAllTenantsAsync(TenantQueryDto query)
     {
-        var query = _masterContext.Tenants.AsQueryable();
+        var dbQuery = _masterContext.Tenants.AsQueryable();
 
-        if (!string.IsNullOrWhiteSpace(search))
+        // Status Filter
+        if (!string.IsNullOrWhiteSpace(query.Status))
         {
-            var s = search.ToLower();
-            query = query.Where(x => x.Name.ToLower().Contains(s) || x.Slug.ToLower().Contains(s) || x.Subdomain.ToLower().Contains(s));
+            if (Enum.TryParse<TenantStatus>(query.Status, true, out var statusEnum))
+            {
+                dbQuery = dbQuery.Where(t => t.Status == statusEnum);
+            }
         }
 
-        var total = await query.CountAsync();
-        
-        var tenants = await query
-            .OrderByDescending(x => x.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+        // Search Filter
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var s = query.Search.ToLower();
+            dbQuery = dbQuery.Where(t => t.Name.ToLower().Contains(s) || 
+                                         t.Slug.ToLower().Contains(s) || 
+                                         t.Subdomain.ToLower().Contains(s));
+        }
+
+        var total = await dbQuery.CountAsync();
+
+        // Sort By
+        dbQuery = query.SortBy?.ToLower() switch
+        {
+            "name" => query.SortDirection?.ToLower() == "asc" ? dbQuery.OrderBy(t => t.Name) : dbQuery.OrderByDescending(t => t.Name),
+            "status" => query.SortDirection?.ToLower() == "asc" ? dbQuery.OrderBy(t => t.Status) : dbQuery.OrderByDescending(t => t.Status),
+            "oldest" => dbQuery.OrderBy(t => t.CreatedAt),
+            _ => dbQuery.OrderByDescending(t => t.CreatedAt) // newest by default
+        };
+
+        var pagedTenants = await dbQuery
+            .Skip((query.Page - 1) * query.PageSize)
+            .Take(query.PageSize)
             .Select(t => new
             {
                 t.TenantGuid,
@@ -194,15 +208,28 @@ public class TenantService : ITenantService
                     .OrderByDescending(s => s.StartsAt)
                     .Select(s => new
                     {
-                        PlanName = _masterContext.Plans.Where(p => p.Id == s.PlanId).Select(p => p.Name).FirstOrDefault(),
-                        s.ExpiresAt,
+                        PlanId = s.PlanId,
+                        PlanName = s.Plan != null ? s.Plan.Name : null,
                         s.IsTrial
                     })
                     .FirstOrDefault()
             })
             .ToListAsync();
 
-        var result = tenants.Select(t => new TenantListDto
+        // In-memory filter for PlanId and IsTrial since they are on the Subscription navigation property
+        var resultList = pagedTenants.AsEnumerable();
+
+        if (query.PlanId.HasValue)
+        {
+            resultList = resultList.Where(t => t.Subscription?.PlanId == query.PlanId.Value);
+        }
+
+        if (query.IsTrial.HasValue)
+        {
+            resultList = resultList.Where(t => (t.Subscription?.IsTrial ?? false) == query.IsTrial.Value);
+        }
+
+        var result = resultList.Select(t => new TenantListDto
         {
             TenantGuid = t.TenantGuid,
             Name = t.Name,
@@ -211,66 +238,98 @@ public class TenantService : ITenantService
             Status = t.Status,
             CreatedAt = t.CreatedAt,
             IsLocked = t.IsLocked,
-            CurrentPlanName = t.Subscription?.PlanName,
-            SubscriptionExpiresAt = t.Subscription?.ExpiresAt,
+            PlanName = t.Subscription?.PlanName,
             IsTrial = t.Subscription?.IsTrial ?? false
         }).ToList();
 
-        return new { total, page, pageSize, data = result };
+        return new PagedResponseDto<TenantListDto>
+        {
+            TotalCount = total,
+            Page = query.Page,
+            PageSize = query.PageSize,
+            Items = result
+        };
     }
 
-    public async Task<TenantListDto?> GetTenantByIdAsync(Guid id)
+    public async Task<TenantDetailsDto?> GetTenantByIdAsync(Guid tenantGuid)
     {
-        var t = await _masterContext.Tenants.FirstOrDefaultAsync(x => x.TenantGuid == id);
+        var t = await _masterContext.Tenants.FirstOrDefaultAsync(x => x.TenantGuid == tenantGuid);
         if (t == null) return null;
 
         var sub = await _masterContext.TenantSubscriptions
-            .Where(s => s.TenantGuid == id && s.IsActive)
+            .Where(s => s.TenantGuid == tenantGuid && s.IsActive)
             .OrderByDescending(s => s.StartsAt)
             .Select(s => new
             {
-                PlanName = _masterContext.Plans.Where(p => p.Id == s.PlanId).Select(p => p.Name).FirstOrDefault(),
+                PlanName = s.Plan != null ? s.Plan.Name : null,
                 s.ExpiresAt,
                 s.IsTrial
             })
             .FirstOrDefaultAsync();
 
-        return new TenantListDto
+        return new TenantDetailsDto
         {
             TenantGuid = t.TenantGuid,
             Name = t.Name,
             Slug = t.Slug,
             Subdomain = t.Subdomain,
+            CustomDomain = t.CustomDomain,
+            DatabaseName = t.DatabaseName,
             Status = t.Status,
-            CreatedAt = t.CreatedAt,
             IsLocked = t.IsLocked,
-            CurrentPlanName = sub?.PlanName,
+            LockedAt = t.LockedAt,
+            LockedReason = t.LockedReason,
+            CreatedAt = t.CreatedAt,
+            UpdatedAt = t.UpdatedAt,
+            PlanName = sub?.PlanName,
             SubscriptionExpiresAt = sub?.ExpiresAt,
             IsTrial = sub?.IsTrial ?? false
         };
     }
 
+    public async Task<(bool Success, string Message)> UpdateTenantAsync(Guid tenantGuid, UpdateTenantDto request)
+    {
+        var tenant = await _masterContext.Tenants.FirstOrDefaultAsync(x => x.TenantGuid == tenantGuid);
+        if (tenant == null)
+            return (false, "Tenant not found.");
+
+        if (request.Name != null) tenant.Name = request.Name;
+        if (request.Subdomain != null) tenant.Subdomain = request.Subdomain;
+        if (request.CustomDomain != null) tenant.CustomDomain = request.CustomDomain;
+        if (request.Status.HasValue) tenant.Status = request.Status.Value;
+
+        tenant.UpdatedAt = TimeHelper.GetEgyptTime();
+
+        await _masterContext.SaveChangesAsync();
+        InvalidateAnalyticsCache();
+
+        return (true, "Tenant updated successfully.");
+    }
+
     public async Task<TenantUsageDto?> GetTenantUsageAsync(Guid id)
     {
+        var cacheKey = $"tenant_usage_{id}";
+        if (_cache.TryGetValue(cacheKey, out TenantUsageDto? cachedUsage))
+        {
+            return cachedUsage!;
+        }
+
         var tenant = await _masterContext.Tenants.FirstOrDefaultAsync(x => x.TenantGuid == id);
         if (tenant == null) return null;
 
         var usage = new TenantUsageDto();
 
         var activeSub = await _masterContext.TenantSubscriptions
+            .Include(s => s.Plan)
             .Where(s => s.TenantGuid == id && s.IsActive)
             .OrderByDescending(s => s.StartsAt)
             .FirstOrDefaultAsync();
 
-        if (activeSub != null)
+        if (activeSub?.Plan != null)
         {
-            var plan = await _masterContext.Plans.FirstOrDefaultAsync(p => p.Id == activeSub.PlanId);
-            if (plan != null)
-            {
-                usage.PlanLimitUsers = plan.MaxUsers;
-                usage.PlanLimitBranches = plan.MaxBranches;
-                usage.PlanLimitStorageBytes = plan.MaxStorageGB * 1024L * 1024L * 1024L;
-            }
+            usage.PlanLimitUsers = activeSub.Plan.MaxUsers;
+            usage.PlanLimitBranches = activeSub.Plan.MaxBranches;
+            usage.PlanLimitStorageBytes = activeSub.Plan.MaxStorageGB * 1024L * 1024L * 1024L;
         }
 
         var tenantUsage = await _masterContext.TenantUsages.FirstOrDefaultAsync(u => u.TenantGuid == id);
@@ -284,10 +343,8 @@ public class TenantService : ITenantService
             _tenantContext.SetTenant(tenant);
             using var appContext = await _dbContextFactory.CreateDbContextAsync();
             
-            // Check if db can connect
             if (await appContext.Database.CanConnectAsync())
             {
-                // Usage from app DB
                 usage.UsersCount = await appContext.Users.CountAsync();
                 usage.BranchesCount = await appContext.Branches.CountAsync();
             }
@@ -297,32 +354,12 @@ public class TenantService : ITenantService
             _logger.LogWarning(ex, "Could not fetch AppDbContext usage for tenant {TenantGuid}", id);
         }
 
+        _cache.Set(cacheKey, usage, TimeSpan.FromMinutes(5));
+
         return usage;
     }
 
-    public async Task<SuperAdminDashboardStatsDto> GetDashboardStatsAsync()
-    {
-        var tenants = await _masterContext.Tenants.ToListAsync();
-        var subs = await _masterContext.TenantSubscriptions.Where(s => s.IsActive).ToListAsync();
-
-        var total = tenants.Count;
-        var active = tenants.Count(t => t.Status == TenantStatus.Active && !t.IsLocked);
-        var locked = tenants.Count(t => t.IsLocked);
-        
-        var trial = subs.Count(s => s.IsTrial);
-        var expired = subs.Count(s => s.ExpiresAt < TimeHelper.GetEgyptTime());
-
-        return new SuperAdminDashboardStatsDto
-        {
-            TotalTenants = total,
-            ActiveTenants = active,
-            TrialTenants = trial,
-            ExpiredTenants = expired,
-            LockedTenants = locked
-        };
-    }
-
-    public async Task<(bool Success, string Message)> LockTenantAsync(Guid id)
+    public async Task<(bool Success, string Message)> LockTenantAsync(Guid id, string? reason)
     {
         var tenant = await _masterContext.Tenants.FirstOrDefaultAsync(x => x.TenantGuid == id);
         if (tenant == null)
@@ -332,8 +369,14 @@ public class TenantService : ITenantService
             return (false, "Tenant is already locked.");
 
         tenant.IsLocked = true;
+        tenant.LockedAt = TimeHelper.GetEgyptTime();
+        tenant.LockedReason = reason;
+
         await _masterContext.SaveChangesAsync();
-        _logger.LogInformation("Tenant {Slug} has been locked.", tenant.Slug);
+        
+        _logger.LogInformation("Tenant {Slug} has been locked. Reason: {Reason}", tenant.Slug, reason);
+        InvalidateAnalyticsCache();
+        
         return (true, $"Tenant '{tenant.Name}' has been locked successfully.");
     }
 
@@ -347,8 +390,19 @@ public class TenantService : ITenantService
             return (false, "Tenant is not locked.");
 
         tenant.IsLocked = false;
+        tenant.LockedAt = null;
+        tenant.LockedReason = null;
+
         await _masterContext.SaveChangesAsync();
+        
         _logger.LogInformation("Tenant {Slug} has been unlocked.", tenant.Slug);
+        InvalidateAnalyticsCache();
+        
         return (true, $"Tenant '{tenant.Name}' has been unlocked successfully.");
+    }
+
+    private void InvalidateAnalyticsCache()
+    {
+        _cache.Remove("analytics_dashboard");
     }
 }

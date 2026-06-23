@@ -25,6 +25,11 @@ public class MasterDbContext : DbContext
             entity.HasIndex(t => t.DatabaseName).IsUnique();
         });
 
+        modelBuilder.Entity<Plan>(entity =>
+        {
+            entity.HasIndex(p => p.Name).IsUnique();
+        });
+
         // Relationships
         modelBuilder.Entity<TenantSubscription>()
             .HasOne(ts => ts.Tenant)
