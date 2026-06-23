@@ -59,4 +59,10 @@ public class Tenant
     
     [MaxLength(500)]
     public string? LockedReason { get; set; }
+
+    [NotMapped]
+    public DateTime? ActiveSubscriptionExpiresAt { get; set; }
+
+    [NotMapped]
+    public int ActiveSubscriptionGraceDays { get; set; }
 }

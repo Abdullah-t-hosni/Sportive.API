@@ -581,4 +581,8 @@ public class StoreInfo
     [NotMapped]
     [JsonPropertyName("subscriptionExpiresAt")]
     public DateTime? SubscriptionExpiresAt { get; set; }
+
+    [NotMapped]
+    [JsonPropertyName("subscriptionGraceDays")]
+    public int SubscriptionGraceDays { get; set; }
 }

@@ -89,6 +89,7 @@ public class SettingsController : ControllerBase
                 if (activeSubscription != null)
                 {
                     info.SubscriptionExpiresAt = activeSubscription.ExpiresAt;
+                    info.SubscriptionGraceDays = activeSubscription.GracePeriodDays;
                 }
             }
 

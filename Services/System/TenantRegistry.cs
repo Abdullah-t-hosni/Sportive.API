@@ -35,6 +35,20 @@ public class TenantRegistry : ITenantRegistry
         var tenant = await _dbContext.Tenants
             .FirstOrDefaultAsync(t => t.Slug == slug);
 
+        if (tenant != null)
+        {
+            var sub = await _dbContext.TenantSubscriptions
+                .Where(s => s.TenantGuid == tenant.TenantGuid && s.IsActive)
+                .OrderByDescending(s => s.ExpiresAt)
+                .FirstOrDefaultAsync();
+                
+            if (sub != null)
+            {
+                tenant.ActiveSubscriptionExpiresAt = sub.ExpiresAt;
+                tenant.ActiveSubscriptionGraceDays = sub.GracePeriodDays;
+            }
+        }
+
         var cacheOptions = new MemoryCacheEntryOptions
         {
             SlidingExpiration = tenant != null ? CacheDuration : NegCacheDuration
@@ -59,6 +73,20 @@ public class TenantRegistry : ITenantRegistry
         var tenant = await _dbContext.Tenants
             .FirstOrDefaultAsync(t => t.Subdomain == subdomain);
 
+        if (tenant != null)
+        {
+            var sub = await _dbContext.TenantSubscriptions
+                .Where(s => s.TenantGuid == tenant.TenantGuid && s.IsActive)
+                .OrderByDescending(s => s.ExpiresAt)
+                .FirstOrDefaultAsync();
+                
+            if (sub != null)
+            {
+                tenant.ActiveSubscriptionExpiresAt = sub.ExpiresAt;
+                tenant.ActiveSubscriptionGraceDays = sub.GracePeriodDays;
+            }
+        }
+
         var cacheOptions = new MemoryCacheEntryOptions
         {
             SlidingExpiration = tenant != null ? CacheDuration : NegCacheDuration
@@ -82,6 +110,20 @@ public class TenantRegistry : ITenantRegistry
 
         var tenant = await _dbContext.Tenants
             .FirstOrDefaultAsync(t => t.CustomDomain == customDomain);
+
+        if (tenant != null)
+        {
+            var sub = await _dbContext.TenantSubscriptions
+                .Where(s => s.TenantGuid == tenant.TenantGuid && s.IsActive)
+                .OrderByDescending(s => s.ExpiresAt)
+                .FirstOrDefaultAsync();
+                
+            if (sub != null)
+            {
+                tenant.ActiveSubscriptionExpiresAt = sub.ExpiresAt;
+                tenant.ActiveSubscriptionGraceDays = sub.GracePeriodDays;
+            }
+        }
 
         var cacheOptions = new MemoryCacheEntryOptions
         {

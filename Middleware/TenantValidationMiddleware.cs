@@ -44,6 +44,27 @@ public class TenantValidationMiddleware
         // 2. Store the tenant in scoped context
         tenantContext.SetTenant(tenant);
 
+        // 3. Subscription Expiry & Grace Period Check
+        var path = context.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
+        var isExemptedPath = path.StartsWith("/api/auth") || path.StartsWith("/api/settings");
+
+        if (!isExemptedPath && tenant.ActiveSubscriptionExpiresAt.HasValue)
+        {
+            var expiryWithGrace = tenant.ActiveSubscriptionExpiresAt.Value.AddDays(tenant.ActiveSubscriptionGraceDays);
+            if (Sportive.API.Utils.TimeHelper.GetEgyptTime() > expiryWithGrace)
+            {
+                context.Response.StatusCode = 402; // Payment Required
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(JsonSerializer.Serialize(new
+                {
+                    success = false,
+                    errorCode = "SUBSCRIPTION_EXPIRED",
+                    message = "Tenant subscription has expired and grace period ended."
+                }));
+                return;
+            }
+        }
+
         // The JWT is now manually parsed in TenantResolver (Step 1) and has the highest priority.
         // Therefore, it is impossible for an authenticated user to bypass their assigned tenant via Headers or Subdomain.
 
