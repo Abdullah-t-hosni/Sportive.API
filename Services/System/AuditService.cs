@@ -33,7 +33,10 @@ public class AuditService : IAuditService
     private readonly ILogger<AuditService> _logger;
     private readonly ITenantContext _tenantContext;
     private static readonly JsonSerializerOptions _jsonOpts =
-        new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        new() { 
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles
+        };
 
     public AuditService(IServiceScopeFactory scopeFactory, ILogger<AuditService> logger, ITenantContext tenantContext)
     {
