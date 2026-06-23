@@ -241,6 +241,22 @@ using (var scope = app.Services.CreateScope())
                         masterContext.SaveChanges();
                         Log.Information("Seeded initial 'sportive' tenant in Master registry.");
                     }
+
+                    var sportive = masterContext.Tenants.FirstOrDefault(t => t.Slug == "sportive");
+                    if (sportive != null && !masterContext.TenantSubscriptions.Any(ts => ts.TenantGuid == sportive.TenantGuid))
+                    {
+                        masterContext.TenantSubscriptions.Add(new TenantSubscription
+                        {
+                            TenantGuid = sportive.TenantGuid,
+                            PlanId = 4, // Enterprise
+                            StartsAt = TimeHelper.GetEgyptTime(),
+                            ExpiresAt = TimeHelper.GetEgyptTime().AddYears(10),
+                            IsActive = true,
+                            AutoRenew = true
+                        });
+                        masterContext.SaveChanges();
+                        Log.Information("Seeded Enterprise subscription for 'sportive' tenant.");
+                    }
                 }
                 catch (Exception ex)
                 {
