@@ -53,15 +53,19 @@ public class TenantValidationMiddleware
             var expiryWithGrace = tenant.ActiveSubscriptionExpiresAt.Value.AddDays(tenant.ActiveSubscriptionGraceDays);
             if (Sportive.API.Utils.TimeHelper.GetEgyptTime() > expiryWithGrace)
             {
-                context.Response.StatusCode = 402; // Payment Required
-                context.Response.ContentType = "application/json";
-                await context.Response.WriteAsync(JsonSerializer.Serialize(new
+                var method = context.Request.Method;
+                if (HttpMethods.IsPost(method) || HttpMethods.IsPut(method) || HttpMethods.IsPatch(method) || HttpMethods.IsDelete(method))
                 {
-                    success = false,
-                    errorCode = "SUBSCRIPTION_EXPIRED",
-                    message = "Tenant subscription has expired and grace period ended."
-                }));
-                return;
+                    context.Response.StatusCode = 402; // Payment Required
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsync(JsonSerializer.Serialize(new
+                    {
+                        success = false,
+                        errorCode = "SUBSCRIPTION_EXPIRED",
+                        message = "Tenant subscription has expired and grace period ended."
+                    }));
+                    return;
+                }
             }
         }
 
