@@ -576,4 +576,9 @@ public class StoreInfo
 
     [JsonPropertyName("zatcaCertificate")]
     public string? ZatcaCertificate { get; set; } // Base64 encoded cert for ZATCA Phase 2
+
+    // --- Subscription Info (Not Mapped to Tenant DB) ---
+    [NotMapped]
+    [JsonPropertyName("subscriptionExpiresAt")]
+    public DateTime? SubscriptionExpiresAt { get; set; }
 }

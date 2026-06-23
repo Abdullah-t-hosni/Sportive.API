@@ -7,7 +7,7 @@ using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Utils;
-using System.Security.Claims;
+using Sportive.API.Interfaces;
 
 namespace Sportive.API.Controllers;
 
@@ -19,13 +19,17 @@ public class SettingsController : ControllerBase
     private readonly ILogger<SettingsController> _logger;
     private readonly TimeService _timeService;
     private readonly IAuditService _audit;
+    private readonly MasterDbContext _masterDb;
+    private readonly ITenantContext _tenantContext;
 
-    public SettingsController(AppDbContext db, ILogger<SettingsController> logger, TimeService timeService, IAuditService audit)
+    public SettingsController(AppDbContext db, ILogger<SettingsController> logger, TimeService timeService, IAuditService audit, MasterDbContext masterDb, ITenantContext tenantContext)
     {
         _db = db;
         _logger = logger;
         _timeService = timeService;
         _audit = audit;
+        _masterDb = masterDb;
+        _tenantContext = tenantContext;
     }
 
     
@@ -72,6 +76,20 @@ public class SettingsController : ControllerBase
             if (string.IsNullOrWhiteSpace(info.WhatsAppPayrollTemplate))
             {
                 info.WhatsAppPayrollTemplate = "السلام عليكم ورحمة الله وبركاته،\n\nيسعدنا مشاركة تفاصيل راتب شهر {periodMonth} لعام {periodYear} معكم.\n\n👤 الموظف: {employeeName}\n💵 صافي الراتب المستحق: {netPayable}\n\nللاطلاع على تفاصيل الراتب كاملة وتحميل قسيمة الراتب كـ PDF، يرجى الضغط على الرابط التالي:\n{payslipUrl}\n\nشكرًا لجهودكم المميزة،\nإدارة الموارد البشرية - {storeName}";
+            }
+
+            // Fetch active subscription expiration
+            if (_tenantContext.CurrentTenant != null)
+            {
+                var activeSubscription = await _masterDb.TenantSubscriptions
+                    .Where(ts => ts.TenantGuid == _tenantContext.CurrentTenant.TenantGuid && ts.IsActive)
+                    .OrderByDescending(ts => ts.ExpiresAt)
+                    .FirstOrDefaultAsync();
+
+                if (activeSubscription != null)
+                {
+                    info.SubscriptionExpiresAt = activeSubscription.ExpiresAt;
+                }
             }
 
             return Ok(info);
