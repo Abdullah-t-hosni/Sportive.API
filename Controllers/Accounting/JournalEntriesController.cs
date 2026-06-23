@@ -286,7 +286,7 @@ public class JournalEntriesController : ControllerBase
             var userName = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
             try { await _audit.LogChangeAsync<JournalEntry>("CreateJournalEntry", "JournalEntry", entry.Id.ToString(), null, entry, userId, userName); } catch { /* non-critical */ }
 
-            return CreatedAtAction(nameof(GetById), new { id = entry.Id }, entry);
+            return CreatedAtAction(nameof(GetById), new { id = entry.Id }, new { id = entry.Id, message = "تم إنشاء القيد بنجاح." });
         } catch (InvalidOperationException ex) {
             return BadRequest(new { message = ex.Message });
         }
@@ -305,7 +305,7 @@ public class JournalEntriesController : ControllerBase
             var userName = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
             try { await _audit.LogChangeAsync<JournalEntry>("UpdateJournalEntry", "JournalEntry", entry.Id.ToString(), oldEntry, entry, userId, userName); } catch { /* non-critical */ }
 
-            return Ok(entry);
+            return Ok(new { id = entry.Id, message = "تم تحديث القيد بنجاح." });
         } catch (InvalidOperationException ex) {
             return BadRequest(new { message = ex.Message });
         } catch (KeyNotFoundException) {

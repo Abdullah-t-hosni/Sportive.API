@@ -287,7 +287,7 @@ public class ReceiptVouchersController : ControllerBase
         
         try { await _audit.LogChangeAsync<ReceiptVoucher>("CreateReceiptVoucher", "ReceiptVoucher", voucher.Id.ToString(), null, voucher, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
-        return Ok(voucher);
+        return Ok(new { id = voucher.Id, message = "تم حفظ السند بنجاح." });
     }
 
     [HttpPut("{id}")]
@@ -367,7 +367,7 @@ public class ReceiptVouchersController : ControllerBase
         
         try { await _audit.LogChangeAsync<ReceiptVoucher>("UpdateReceiptVoucher", "ReceiptVoucher", id.ToString(), oldVoucher, voucher, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
-        return Ok(voucher);
+        return Ok(new { id = voucher.Id, message = "تم تحديث السند بنجاح." });
     }
 
     [HttpDelete("{id}")]

@@ -213,7 +213,7 @@ public class PaymentVouchersController : ControllerBase
         
         try { await _audit.LogChangeAsync<PaymentVoucher>("CreatePaymentVoucher", "PaymentVoucher", voucher.Id.ToString(), null, voucher, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
-        return Ok(voucher);
+        return Ok(new { id = voucher.Id, message = "تم حفظ السند بنجاح." });
     }
 
     [HttpPut("{id}")]
@@ -288,7 +288,7 @@ public class PaymentVouchersController : ControllerBase
         
         try { await _audit.LogChangeAsync<PaymentVoucher>("UpdatePaymentVoucher", "PaymentVoucher", id.ToString(), oldVoucher, voucher, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
-        return Ok(voucher);
+        return Ok(new { id = voucher.Id, message = "تم تحديث السند بنجاح." });
     }
 
     [HttpDelete("{id}")]
