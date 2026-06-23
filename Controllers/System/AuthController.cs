@@ -143,6 +143,34 @@ public class AuthController : ControllerBase
         }
     }
 
+    [HttpGet("seed-admin")]
+    public async Task<IActionResult> SeedAdmin([FromServices] RoleManager<IdentityRole> roleManager)
+    {
+        var role = "SuperAdmin";
+        if (!await roleManager.RoleExistsAsync(role))
+        {
+            await roleManager.CreateAsync(new IdentityRole(role));
+        }
+
+        var user = await _userManager.FindByEmailAsync("admin@raakiza.com");
+        if (user == null)
+        {
+            user = new AppUser
+            {
+                UserName = "staff_admin@raakiza.com",
+                Email = "admin@raakiza.com",
+                FullName = "Super Admin",
+                PhoneNumber = "01000000000",
+                IsActive = true,
+                CreatedAt = TimeHelper.GetEgyptTime()
+            };
+            await _userManager.CreateAsync(user, "Admin@123456");
+            await _userManager.AddToRoleAsync(user, role);
+            return Ok(new { message = "تم إنشاء حساب السوبر أدمن (admin@raakiza.com) بنجاح!" });
+        }
+        return Ok(new { message = "الحساب موجود مسبقاً!" });
+    }
+
     /// <summary>تجديد الـ access token — الفرونت يبعت refreshToken يجيب access token جديد</summary>
     [HttpPost("refresh")]
     public async Task<IActionResult> Refresh([FromBody] RefreshTokenRequestDto dto)
