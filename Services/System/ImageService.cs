@@ -19,6 +19,7 @@ public class CloudinaryImageService : IImageService
     private readonly ILogger<CloudinaryImageService> _logger;
     private readonly Cloudinary _cloudinary;
     private readonly IWebHostEnvironment _env;
+    private readonly Sportive.API.Interfaces.ITenantContext _tenantContext;
 
     private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".gif", ".pdf", ".docx", ".xlsx", ".txt" };
     private const long MaxFileSizeBytes = 10 * 1024 * 1024; // 10MB for attachments
@@ -26,10 +27,12 @@ public class CloudinaryImageService : IImageService
     public CloudinaryImageService(
         ILogger<CloudinaryImageService> logger,
         IConfiguration config,
-        IWebHostEnvironment env)
+        IWebHostEnvironment env,
+        Sportive.API.Interfaces.ITenantContext tenantContext)
     {
         _logger = logger;
         _env = env;
+        _tenantContext = tenantContext;
 
         var acc = new Account(
             config["Cloudinary:CloudName"],
@@ -40,19 +43,21 @@ public class CloudinaryImageService : IImageService
     }
 
     public async Task<ImageUploadDto> UploadProductImageAsync(IFormFile file, int productId)
-        => await UploadToCloudinaryAsync(file, $"sportive/products/{productId}");
+        => await UploadToCloudinaryAsync(file, $"{GetTenantSlug()}/products/{productId}");
 
     public async Task<ImageUploadDto> UploadCategoryImageAsync(IFormFile file, int categoryId)
-        => await UploadToCloudinaryAsync(file, $"sportive/categories/{categoryId}");
+        => await UploadToCloudinaryAsync(file, $"{GetTenantSlug()}/categories/{categoryId}");
 
     public async Task<ImageUploadDto> UploadAttachmentAsync(IFormFile file, string subFolder)
-        => await UploadToCloudinaryAsync(file, $"sportive/attachments/{subFolder}");
+        => await UploadToCloudinaryAsync(file, $"{GetTenantSlug()}/attachments/{subFolder}");
+
+    private string GetTenantSlug() => _tenantContext.CurrentTenant?.Slug?.ToLowerInvariant() ?? "sportive";
 
     public async Task<bool> DeleteImageAsync(string publicId)
     {
         if (string.IsNullOrEmpty(publicId)) return true;
 
-        if (publicId.StartsWith("sportive/"))
+        if (publicId.Contains("/"))
         {
             var deleteParams = new DeletionParams(publicId) { ResourceType = ResourceType.Image };
             var result = await _cloudinary.DestroyAsync(deleteParams);

@@ -409,10 +409,11 @@ public static class DependencyInjection
             hangfireConnStr = connStr; // fallback to original if parsing fails
         }
 
-        services.AddHangfire(config => config
+        services.AddHangfire((provider, config) => config
             .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
             .UseSimpleAssemblyNameTypeSerializer()
             .UseRecommendedSerializerSettings()
+            .UseFilter(new Sportive.API.Filters.TenantJobFilter(provider))
             .UseStorage(new MySqlStorage(hangfireConnStr, new MySqlStorageOptions
             {
                 TransactionIsolationLevel = (IsolationLevel)System.Data.IsolationLevel.ReadCommitted,
