@@ -369,6 +369,7 @@ public static class DependencyInjection
         services.AddScoped<ITenantContext, TenantContext>();
         services.AddScoped<ITenantResolver, TenantResolver>();
         services.AddScoped<ITenantConnectionResolver, TenantConnectionResolver>();
+        services.AddScoped<ITenantService, TenantService>();
         services.AddScoped<IStatisticsService, StatisticsService>();
         services.AddScoped<IDashboardEventService, DashboardEventService>();
         services.AddScoped<IOutboxProcessor, OutboxProcessor>();

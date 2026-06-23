@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
+using Sportive.API.Services;
 using Sportive.API.Utils;
 
 namespace Sportive.API.Controllers;
@@ -17,24 +18,24 @@ namespace Sportive.API.Controllers;
 [Authorize(Roles = "SuperAdmin")]
 public class TenantManagementController : ControllerBase
 {
+    private readonly ITenantService _tenantService;
     private readonly ITenantRegistry _tenantRegistry;
     private readonly ITenantContext _tenantContext;
     private readonly IDbContextFactory<AppDbContext> _dbContextFactory;
     private readonly ILogger<TenantManagementController> _logger;
-    private readonly MasterDbContext _masterContext;
 
     public TenantManagementController(
+        ITenantService tenantService,
         ITenantRegistry tenantRegistry, 
         ITenantContext tenantContext, 
         IDbContextFactory<AppDbContext> dbContextFactory,
-        ILogger<TenantManagementController> logger,
-        MasterDbContext masterContext)
+        ILogger<TenantManagementController> logger)
     {
+        _tenantService = tenantService;
         _tenantRegistry = tenantRegistry;
         _tenantContext = tenantContext;
         _dbContextFactory = dbContextFactory;
         _logger = logger;
-        _masterContext = masterContext;
     }
 
     [HttpPost("migrate-tenant")]
@@ -43,7 +44,6 @@ public class TenantManagementController : ControllerBase
         if (string.IsNullOrWhiteSpace(slug))
             return BadRequest(new { success = false, message = "Slug is required." });
 
-        // 1. Fetch tenant from master registry
         var tenant = await _tenantRegistry.GetTenantBySlugAsync(slug);
         if (tenant == null)
             return NotFound(new { success = false, message = $"Tenant with slug '{slug}' not found." });
@@ -51,14 +51,11 @@ public class TenantManagementController : ControllerBase
         if (tenant.Status != TenantStatus.Active)
             return BadRequest(new { success = false, message = "Cannot migrate a non-active tenant." });
 
-        // 2. Set the current request's tenant context so the DB Factory builds the correct connection string
         _tenantContext.SetTenant(tenant);
 
         try
         {
             _logger.LogInformation("Running migration for tenant {Tenant}", slug);
-
-            // 3. Create context and run migrations
             using var context = await _dbContextFactory.CreateDbContextAsync();
             if (context.Database.IsRelational())
             {
@@ -79,60 +76,16 @@ public class TenantManagementController : ControllerBase
     }
 
     [HttpPost("onboard")]
-    public async Task<IActionResult> OnboardTenant([FromBody] TenantDto dto)
+    public async Task<IActionResult> OnboardTenant([FromBody] OnboardTenantRequest request)
     {
-        if (string.IsNullOrWhiteSpace(dto.DatabasePassword))
-            return BadRequest(new { success = false, message = "Database password is required." });
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
 
-        if (await _masterContext.Tenants.AnyAsync(t => t.Slug == dto.Slug))
-            return BadRequest(new { success = false, message = "Tenant slug already exists." });
-
-        if (await _masterContext.Tenants.AnyAsync(t => t.Subdomain == dto.Subdomain))
-            return BadRequest(new { success = false, message = "Tenant subdomain already exists." });
-
-        if (await _masterContext.Tenants.AnyAsync(t => t.DatabaseName == dto.DatabaseName))
-            return BadRequest(new { success = false, message = "Database name already exists." });
-
-        if (await _masterContext.Tenants.AnyAsync(t => t.DatabaseUser == dto.DatabaseUser))
-            return BadRequest(new { success = false, message = "Database user already exists." });
-
-        var newTenant = new Tenant
-        {
-            TenantGuid = Guid.NewGuid(),
-            Slug = dto.Slug,
-            Name = dto.Name,
-            Subdomain = dto.Subdomain,
-            DatabaseName = dto.DatabaseName,
-            DatabaseUser = dto.DatabaseUser,
-            DatabasePassword = dto.DatabasePassword,
-            Status = TenantStatus.Active,
-            CreatedAt = TimeHelper.GetEgyptTime()
-        };
-
-        _masterContext.Tenants.Add(newTenant);
-        await _masterContext.SaveChangesAsync();
-
-        return Ok(new { success = true, message = $"Tenant '{dto.Slug}' onboarded successfully. You can now run migrations for it." });
-    }
-
-    public class TenantDto
-    {
-        [Required]
-        public string Slug { get; set; } = string.Empty;
+        var result = await _tenantService.OnboardNewTenantAsync(request);
         
-        [Required]
-        public string Name { get; set; } = string.Empty;
-        
-        [Required]
-        public string Subdomain { get; set; } = string.Empty;
-        
-        [Required]
-        public string DatabaseName { get; set; } = string.Empty;
-        
-        [Required]
-        public string DatabaseUser { get; set; } = string.Empty;
-        
-        [Required]
-        public string DatabasePassword { get; set; } = string.Empty;
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
     }
 }

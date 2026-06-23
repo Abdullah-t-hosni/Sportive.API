@@ -12,7 +12,7 @@ public class ColorGroup : BaseEntity
 public class ColorValue : BaseEntity
 {
     public int ColorGroupId { get; set; }
-    [System.Text.Json.Serialization.JsonIgnore] public ColorGroup? ColorGroup { get; set; }
+    [global::System.Text.Json.Serialization.JsonIgnore] public ColorGroup? ColorGroup { get; set; }
     public string Value { get; set; } = string.Empty; // e.g. "Red", "Blue"
     public int SortOrder { get; set; } = 0;
 }
