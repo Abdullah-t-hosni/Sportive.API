@@ -827,7 +827,7 @@ public class OrdersController : ControllerBase
                 // Fallback: لو لم نجد السطور باستخدام الـ IDs الحقيقية، نبحث بكود "110" أو "1107" أو "1105"
                 paymentLines = journalEntry.Lines
                     .Where(l => l.Debit > 0 && l.Account != null &&
-                                (l.Account.Code!.StartsWith("110") || l.Account.Code!.StartsWith("1107") || l.Account.Code!.StartsWith("1105")))
+                                (l.Account.Code?.StartsWith("110") == true || l.Account.Code?.StartsWith("1107") == true || l.Account.Code?.StartsWith("1105") == true))
                     .ToList();
             }
 

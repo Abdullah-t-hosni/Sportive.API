@@ -57,7 +57,8 @@ public class ExceptionMiddleware
         {
             Success    = false,
             StatusCode = (int)statusCode,
-            Message    = _env.IsDevelopment() ? (ex.InnerException?.Message ?? ex.Message) : message,
+            Message    = ex.InnerException?.Message ?? ex.Message,
+            StackTrace = ex.StackTrace,
             Errors     = _env.IsDevelopment() ? new { stack = ex.StackTrace } : null,
             TraceId    = context.TraceIdentifier
         };
