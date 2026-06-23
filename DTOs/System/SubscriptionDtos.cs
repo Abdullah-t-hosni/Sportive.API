@@ -7,8 +7,10 @@ public class SubscriptionDto
 {
     public int Id { get; set; }
     public Guid TenantGuid { get; set; }
+    public string TenantName { get; set; } = string.Empty;
     public int PlanId { get; set; }
     public string PlanName { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
     public DateTime StartsAt { get; set; }
     public DateTime ExpiresAt { get; set; }
     public bool IsActive { get; set; }

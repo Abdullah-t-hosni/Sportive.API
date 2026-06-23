@@ -32,13 +32,16 @@ public class SubscriptionService : ISubscriptionService
     {
         var subscriptions = await _context.TenantSubscriptions
             .Include(ts => ts.Plan)
+            .Include(ts => ts.Tenant)
             .OrderByDescending(ts => ts.CreatedAt)
             .Select(ts => new SubscriptionDto
             {
                 Id = ts.Id,
                 TenantGuid = ts.TenantGuid,
+                TenantName = ts.Tenant != null ? ts.Tenant.Name : "Unknown",
                 PlanId = ts.PlanId,
                 PlanName = ts.Plan != null ? ts.Plan.Name : "Unknown",
+                Amount = ts.Plan != null ? ts.Plan.MonthlyPrice : 0,
                 StartsAt = ts.StartsAt,
                 ExpiresAt = ts.ExpiresAt,
                 IsActive = ts.IsActive,
@@ -58,6 +61,7 @@ public class SubscriptionService : ISubscriptionService
     {
         var ts = await _context.TenantSubscriptions
             .Include(x => x.Plan)
+            .Include(x => x.Tenant)
             .FirstOrDefaultAsync(x => x.Id == id);
             
         if (ts == null) return null;
@@ -66,8 +70,10 @@ public class SubscriptionService : ISubscriptionService
         {
             Id = ts.Id,
             TenantGuid = ts.TenantGuid,
+            TenantName = ts.Tenant != null ? ts.Tenant.Name : "Unknown",
             PlanId = ts.PlanId,
             PlanName = ts.Plan != null ? ts.Plan.Name : "Unknown",
+            Amount = ts.Plan != null ? ts.Plan.MonthlyPrice : 0,
             StartsAt = ts.StartsAt,
             ExpiresAt = ts.ExpiresAt,
             IsActive = ts.IsActive,
