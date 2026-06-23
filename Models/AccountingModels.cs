@@ -29,6 +29,7 @@ public class Account : BaseEntity
     public AccountType   Type   { get; set; }
     public AccountNature Nature { get; set; }                  // طبيعة الحساب
     public int?     ParentId    { get; set; }                  // الحساب الأب
+    [System.Text.Json.Serialization.JsonIgnore]
     public Account? Parent      { get; set; }
     public int      Level       { get; set; } = 1;             // مستوى الحساب (1-6)
     public bool     IsLeaf      { get; set; } = true;          // يمكن الترحيل إليه
@@ -40,6 +41,7 @@ public class Account : BaseEntity
     public int?     BranchId       { get; set; }               // مرتبط بفرع معين
     public Branch?  Branch         { get; set; }
     public ICollection<Account>      Children { get; set; } = new List<Account>();
+    [System.Text.Json.Serialization.JsonIgnore]
     public ICollection<JournalLine>  Lines    { get; set; } = new List<JournalLine>();
 }
 
@@ -103,8 +105,10 @@ public class JournalEntry : BaseEntity
 public class JournalLine : BaseEntity
 {
     public int           JournalEntryId { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
     public JournalEntry  JournalEntry   { get; set; } = null!;
     public int           AccountId      { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
     public Account       Account        { get; set; } = null!;
     public decimal       Debit          { get; set; } = 0;   // مدين
     public decimal       Credit         { get; set; } = 0;   // دائن

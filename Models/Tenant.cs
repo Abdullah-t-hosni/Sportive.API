@@ -52,4 +52,6 @@ public class Tenant
     public DateTime CreatedAt { get; set; } = TimeHelper.GetEgyptTime();
 
     public DateTime? UpdatedAt { get; set; }
+
+    public bool IsLocked { get; set; }
 }
