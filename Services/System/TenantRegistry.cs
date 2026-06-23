@@ -12,7 +12,7 @@ public class TenantRegistry : ITenantRegistry
 {
     private readonly MasterDbContext _dbContext;
     private readonly IMemoryCache _cache;
-    private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan NegCacheDuration = TimeSpan.FromMinutes(5); // Cache negative results to prevent DB spamming
 
     public TenantRegistry(MasterDbContext dbContext, IMemoryCache cache)
@@ -51,7 +51,7 @@ public class TenantRegistry : ITenantRegistry
 
         var cacheOptions = new MemoryCacheEntryOptions
         {
-            SlidingExpiration = tenant != null ? CacheDuration : NegCacheDuration
+            AbsoluteExpirationRelativeToNow = tenant != null ? CacheDuration : NegCacheDuration
         };
 
         _cache.Set(cacheKey, tenant, cacheOptions);
@@ -89,7 +89,7 @@ public class TenantRegistry : ITenantRegistry
 
         var cacheOptions = new MemoryCacheEntryOptions
         {
-            SlidingExpiration = tenant != null ? CacheDuration : NegCacheDuration
+            AbsoluteExpirationRelativeToNow = tenant != null ? CacheDuration : NegCacheDuration
         };
 
         _cache.Set(cacheKey, tenant, cacheOptions);
@@ -127,7 +127,7 @@ public class TenantRegistry : ITenantRegistry
 
         var cacheOptions = new MemoryCacheEntryOptions
         {
-            SlidingExpiration = tenant != null ? CacheDuration : NegCacheDuration
+            AbsoluteExpirationRelativeToNow = tenant != null ? CacheDuration : NegCacheDuration
         };
 
         _cache.Set(cacheKey, tenant, cacheOptions);
