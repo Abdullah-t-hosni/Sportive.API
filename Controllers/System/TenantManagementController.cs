@@ -88,4 +88,33 @@ public class TenantManagementController : ControllerBase
 
         return Ok(result);
     }
+    [HttpGet]
+    public async Task<IActionResult> GetAllTenants([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null)
+    {
+        var result = await _tenantService.GetAllTenantsAsync(page, pageSize, search);
+        return Ok(new { success = true, data = result });
+    }
+
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> GetTenantById(Guid id)
+    {
+        var result = await _tenantService.GetTenantByIdAsync(id);
+        if (result == null) return NotFound(new { success = false, message = "Tenant not found." });
+        return Ok(new { success = true, data = result });
+    }
+
+    [HttpGet("{id:guid}/usage")]
+    public async Task<IActionResult> GetTenantUsage(Guid id)
+    {
+        var result = await _tenantService.GetTenantUsageAsync(id);
+        if (result == null) return NotFound(new { success = false, message = "Tenant not found." });
+        return Ok(new { success = true, data = result });
+    }
+
+    [HttpGet("/api/system/analytics/dashboard-stats")]
+    public async Task<IActionResult> GetDashboardStats()
+    {
+        var result = await _tenantService.GetDashboardStatsAsync();
+        return Ok(new { success = true, data = result });
+    }
 }
