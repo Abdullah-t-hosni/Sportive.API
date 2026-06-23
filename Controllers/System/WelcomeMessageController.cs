@@ -21,12 +21,14 @@ public class WelcomeMessageController : ControllerBase
     private readonly AppDbContext _db;
     private readonly UserManager<AppUser> _userManager;
     private readonly IHubContext<NotificationHub> _hubContext;
+    private readonly Sportive.API.Interfaces.ITenantContext _tenantContext;
 
-    public WelcomeMessageController(AppDbContext db, UserManager<AppUser> userManager, IHubContext<NotificationHub> hubContext)
+    public WelcomeMessageController(AppDbContext db, UserManager<AppUser> userManager, IHubContext<NotificationHub> hubContext, Sportive.API.Interfaces.ITenantContext tenantContext)
     {
         _db = db;
         _userManager = userManager;
         _hubContext = hubContext;
+        _tenantContext = tenantContext;
     }
 
     // ── Admin Endpoints ─────────────────────────────────────
@@ -106,7 +108,8 @@ public class WelcomeMessageController : ControllerBase
         // Broadcast ONLY if requested
         if (dto.ShowImmediately)
         {
-            await _hubContext.Clients.All.SendAsync("ReceiveNotification", new {
+            var prefix = _tenantContext.CurrentTenant?.Slug?.ToLowerInvariant() ?? "global";
+            await _hubContext.Clients.Group($"{prefix}_All").SendAsync("ReceiveNotification", new {
                 type = "WelcomeMessage",
                 id = message.Id,
                 message = message.Message,

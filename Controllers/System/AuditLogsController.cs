@@ -15,11 +15,13 @@ public class AuditLogsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IWebHostEnvironment _env;
+    private readonly Sportive.API.Interfaces.ITenantContext _tenantContext;
 
-    public AuditLogsController(AppDbContext db, IWebHostEnvironment env)
+    public AuditLogsController(AppDbContext db, IWebHostEnvironment env, Sportive.API.Interfaces.ITenantContext tenantContext)
     {
         _db = db;
         _env = env;
+        _tenantContext = tenantContext;
     }
 
     [HttpGet]
@@ -96,7 +98,8 @@ public class AuditLogsController : ControllerBase
             return Ok(new { message = "No logs to archive.", count = 0 });
         }
 
-        var backupDir = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "backups", "audit_logs");
+        var prefix = _tenantContext.CurrentTenant?.Slug?.ToLowerInvariant() ?? "global";
+        var backupDir = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), prefix, "backups", "audit_logs");
         if (!Directory.Exists(backupDir))
         {
             Directory.CreateDirectory(backupDir);

@@ -18,13 +18,15 @@ public class DashboardService : IDashboardService
     private readonly IHubContext<NotificationHub> _hub;
     private readonly UserManager<AppUser> _userManager;
     private readonly ICacheService _cache;
+    private readonly Sportive.API.Interfaces.ITenantContext _tenantContext;
 
-    public DashboardService(AppDbContext db, IHubContext<NotificationHub> hub, UserManager<AppUser> userManager, ICacheService cache)
+    public DashboardService(AppDbContext db, IHubContext<NotificationHub> hub, UserManager<AppUser> userManager, ICacheService cache, Sportive.API.Interfaces.ITenantContext tenantContext)
     {
         _db = db;
         _hub = hub;
         _userManager = userManager;
         _cache = cache;
+        _tenantContext = tenantContext;
     }
 
     public async Task<DashboardStatsDto> GetStatsAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null)
@@ -723,7 +725,8 @@ public class DashboardService : IDashboardService
 
     public async Task TriggerLiveUpdateAsync()
     {
-        await _hub.Clients.Group("Admin").SendAsync("DashboardUpdated", new { date = TimeHelper.GetEgyptTime() });
+        var prefix = _tenantContext.CurrentTenant?.Slug?.ToLowerInvariant() ?? "global";
+        await _hub.Clients.Group($"{prefix}_Admin").SendAsync("DashboardUpdated", new { date = TimeHelper.GetEgyptTime() });
     }
 
     private async Task<object> GetKpiInternalAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null)

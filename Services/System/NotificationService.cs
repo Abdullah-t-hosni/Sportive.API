@@ -23,12 +23,16 @@ public class NotificationService : INotificationService
 {
     private readonly AppDbContext _db;
     private readonly IHubContext<NotificationHub> _hubContext;
+    private readonly Sportive.API.Interfaces.ITenantContext _tenantContext;
 
-    public NotificationService(AppDbContext db, IHubContext<NotificationHub> hubContext)
+    public NotificationService(AppDbContext db, IHubContext<NotificationHub> hubContext, Sportive.API.Interfaces.ITenantContext tenantContext)
     {
         _db = db;
         _hubContext = hubContext;
+        _tenantContext = tenantContext;
     }
+
+    private string GetPrefix() => _tenantContext.CurrentTenant?.Slug?.ToLowerInvariant() ?? "global";
 
     public async Task SendAsync(
         string? userId, string titleAr, string titleEn, string msgAr, string msgEn, 
@@ -61,19 +65,21 @@ public class NotificationService : INotificationService
             notification.CreatedAt
         };
 
+        var prefix = GetPrefix();
+
         // 1. Send to the specific user if exists
         if (!string.IsNullOrEmpty(finalUserId))
         {
-            await _hubContext.Clients.Group(finalUserId).SendAsync("ReceiveNotification", payload);
+            await _hubContext.Clients.Group($"{prefix}_{finalUserId}").SendAsync("ReceiveNotification", payload);
             
             var unreadCount = await GetUnreadCountAsync(finalUserId);
-            await _hubContext.Clients.Group(finalUserId).SendAsync("ReceiveUnreadCount", unreadCount);
+            await _hubContext.Clients.Group($"{prefix}_{finalUserId}").SendAsync("ReceiveUnreadCount", unreadCount);
         }
 
         // 2. IMPORTANT: If it's an order or a general alert, inform all Admins/Staff
         if (type == "Order" || type == "Alert" || string.IsNullOrEmpty(userId))
         {
-            await _hubContext.Clients.Group("Admin").SendAsync("ReceiveNotification", payload);
+            await _hubContext.Clients.Group($"{prefix}_Admin").SendAsync("ReceiveNotification", payload);
         }
     }
 
@@ -98,7 +104,8 @@ public class NotificationService : INotificationService
             await _db.SaveChangesAsync(); 
 
             var unreadCount = await GetUnreadCountAsync(userId);
-            await _hubContext.Clients.Group(userId).SendAsync("ReceiveUnreadCount", unreadCount);
+            var prefix = GetPrefix();
+            await _hubContext.Clients.Group($"{prefix}_{userId}").SendAsync("ReceiveUnreadCount", unreadCount);
         }
     }
 
@@ -116,7 +123,8 @@ public class NotificationService : INotificationService
                 n.UpdatedAt = TimeHelper.GetEgyptTime();
             }
             await _db.SaveChangesAsync();
-            await _hubContext.Clients.Group(userId).SendAsync("ReceiveUnreadCount", 0);
+            var prefix = GetPrefix();
+            await _hubContext.Clients.Group($"{prefix}_{userId}").SendAsync("ReceiveUnreadCount", 0);
         }
     }
 
@@ -134,7 +142,8 @@ public class NotificationService : INotificationService
             if (wasUnread)
             {
                 var unreadCount = await GetUnreadCountAsync(userId);
-                await _hubContext.Clients.Group(userId).SendAsync("ReceiveUnreadCount", unreadCount);
+                var prefix = GetPrefix();
+                await _hubContext.Clients.Group($"{prefix}_{userId}").SendAsync("ReceiveUnreadCount", unreadCount);
             }
         }
     }
@@ -144,7 +153,8 @@ public class NotificationService : INotificationService
         var all = await _db.Notifications.Where(n => n.UserId == userId).ToListAsync();
         _db.Notifications.RemoveRange(all);
         await _db.SaveChangesAsync();
-        await _hubContext.Clients.Group(userId).SendAsync("ReceiveUnreadCount", 0);
+        var prefix = GetPrefix();
+        await _hubContext.Clients.Group($"{prefix}_{userId}").SendAsync("ReceiveUnreadCount", 0);
     }
 
     public async Task<int> GetUnreadCountAsync(string userId)
@@ -154,7 +164,8 @@ public class NotificationService : INotificationService
 
     public async Task BroadcastStockUpdateAsync(int productId, int variantId, int newStock)
     {
-        await _hubContext.Clients.Group("Admin")
+        var prefix = GetPrefix();
+        await _hubContext.Clients.Group($"{prefix}_Admin")
             .SendAsync("StockUpdate", new { productId, variantId, newStock });
     }
 }

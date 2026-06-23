@@ -39,16 +39,27 @@ public class BackupService : IBackupService
     private readonly IConfiguration         _config;
     private readonly AppDbContext           _db;
     private readonly ILogger<BackupService> _log;
+    private readonly Sportive.API.Interfaces.ITenantContext _tenantContext;
 
     // مجلد حفظ النسخ محلياً
-    private string BackupDir => _config["Backup:LocalPath"] ?? "/tmp/sportive-backups";
+    private string BackupDir 
+    {
+        get
+        {
+            var baseDir = _config["Backup:LocalPath"] ?? "/tmp/sportive-backups";
+            var prefix = _tenantContext.CurrentTenant?.Slug?.ToLowerInvariant() ?? "global";
+            var path = Path.Combine(baseDir, prefix);
+            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+            return path;
+        }
+    }
 
-    public BackupService(IConfiguration config, AppDbContext db, ILogger<BackupService> log)
+    public BackupService(IConfiguration config, AppDbContext db, ILogger<BackupService> log, Sportive.API.Interfaces.ITenantContext tenantContext)
     {
         _config = config;
         _db     = db;
         _log    = log;
-        Directory.CreateDirectory(BackupDir);
+        _tenantContext = tenantContext;
     }
 
     // ══════════════════════════════════════════════════

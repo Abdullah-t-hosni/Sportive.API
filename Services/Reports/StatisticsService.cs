@@ -21,13 +21,15 @@ namespace Sportive.API.Services
         private readonly ILogger<StatisticsService> _logger;
         private readonly IHubContext<NotificationHub> _hub;
         private readonly ICacheService _cache;
+        private readonly Sportive.API.Interfaces.ITenantContext _tenantContext;
 
-        public StatisticsService(AppDbContext db, ILogger<StatisticsService> logger, IHubContext<NotificationHub> hub, ICacheService cache)
+        public StatisticsService(AppDbContext db, ILogger<StatisticsService> logger, IHubContext<NotificationHub> hub, ICacheService cache, Sportive.API.Interfaces.ITenantContext tenantContext)
         {
             _db = db;
             _logger = logger;
             _hub = hub;
             _cache = cache;
+            _tenantContext = tenantContext;
         }
 
         public async Task UpdateDailyStatsAsync(DateTime date)
@@ -79,7 +81,8 @@ namespace Sportive.API.Services
             
             // ⚡ Real-Time: Broadcast to Dashboard and clear cache
             await _cache.RemoveByPrefixAsync("KPI_DASHBOARD");
-            await _hub.Clients.Group("Admin").SendAsync("DashboardUpdated", new { date = start });
+            var prefix = _tenantContext.CurrentTenant?.Slug?.ToLowerInvariant() ?? "global";
+            await _hub.Clients.Group($"{prefix}_Admin").SendAsync("DashboardUpdated", new { date = start });
 
             _logger.LogInformation("Updated source-specific daily stats for {Date} and notified clients.", start.ToShortDateString());
         }

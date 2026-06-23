@@ -15,14 +15,16 @@ public class InventoryService : IInventoryService
     private readonly ITranslator _t;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IHubContext<NotificationHub> _hubContext;
+    private readonly Sportive.API.Interfaces.ITenantContext _tenantContext;
 
-    public InventoryService(AppDbContext db, INotificationService notifications, ITranslator t, IServiceScopeFactory scopeFactory, IHubContext<NotificationHub> hubContext)
+    public InventoryService(AppDbContext db, INotificationService notifications, ITranslator t, IServiceScopeFactory scopeFactory, IHubContext<NotificationHub> hubContext, Sportive.API.Interfaces.ITenantContext tenantContext)
     {
         _db = db;
         _notifications = notifications;
         _t = t;
         _scopeFactory = scopeFactory;
         _hubContext = hubContext;
+        _tenantContext = tenantContext;
     }
 
     public async Task LogMovementAsync(
@@ -247,7 +249,8 @@ public class InventoryService : IInventoryService
         // 🚀 BROADCAST STOCK UPDATE: Notify all clients to update their UI
         if (broadcast && productId.HasValue)
         {
-            await _hubContext.Clients.All.SendAsync("StockUpdated", new {
+            var prefix = _tenantContext.CurrentTenant?.Slug?.ToLowerInvariant() ?? "global";
+            await _hubContext.Clients.Group($"{prefix}_All").SendAsync("StockUpdated", new {
                 productId = productId.Value,
                 variantId = variantId ?? 0,
                 newStock = newStock
