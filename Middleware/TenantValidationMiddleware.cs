@@ -46,7 +46,7 @@ public class TenantValidationMiddleware
 
         // 3. Subscription Expiry & Grace Period Check
         var path = context.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
-        var isExemptedPath = path.StartsWith("/api/auth") || path.StartsWith("/api/settings");
+        var isExemptedPath = path.StartsWith("/api/auth") || path.StartsWith("/api/settings") || path.StartsWith("/api/system");
 
         if (!isExemptedPath && tenant.ActiveSubscriptionExpiresAt.HasValue)
         {
