@@ -210,6 +210,7 @@ public class TenantService : ITenantService
                     {
                         PlanId = s.PlanId,
                         PlanName = s.Plan != null ? s.Plan.Name : null,
+                        ExpiresAt = (DateTime?)s.ExpiresAt,
                         s.IsTrial
                     })
                     .FirstOrDefault()
@@ -239,6 +240,7 @@ public class TenantService : ITenantService
             CreatedAt = t.CreatedAt,
             IsLocked = t.IsLocked,
             PlanName = t.Subscription?.PlanName,
+            SubscriptionExpiresAt = t.Subscription?.ExpiresAt,
             IsTrial = t.Subscription?.IsTrial ?? false
         }).ToList();
 

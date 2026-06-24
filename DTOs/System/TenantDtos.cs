@@ -37,6 +37,7 @@ public class TenantListDto
     public bool IsLocked { get; set; }
     public DateTime CreatedAt { get; set; }
     public string? PlanName { get; set; }
+    public DateTime? SubscriptionExpiresAt { get; set; }
     public bool IsTrial { get; set; }
 }
 
