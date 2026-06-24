@@ -213,6 +213,7 @@ public class AccountsController : ControllerBase
     }
 
     [HttpPost("import-opening-balances")]
+    [Consumes("multipart/form-data")]
     public async Task<IActionResult> ImportOpeningBalances(IFormFile file)
     {
         if (file == null || file.Length == 0) return BadRequest(new { message = _t.Get("Accounting.NoFileUploaded") });

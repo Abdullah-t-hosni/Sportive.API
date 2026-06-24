@@ -1,4 +1,4 @@
-using Sportive.API.Attributes;
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -26,10 +26,10 @@ public class ImagesController : ControllerBase
     [HttpPost("products/{productId}")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> UploadProductImage(
-        [FromRoute] int productId, [FromForm] IFormFile file, [FromQuery] bool isMain = false, [FromQuery] string? colorAr = null)
+        [FromRoute] int productId, IFormFile file, [FromQuery] bool isMain = false, [FromQuery] string? colorAr = null)
     {
         var product = await _db.Products.FindAsync(productId);
-        if (product == null) return NotFound(new { message = "Ø§Ù„Ù…Ù†ØªØ¬ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
+        if (product == null) return NotFound(new { message = "Ã˜Â§Ã™â€žÃ™â€¦Ã™â€ Ã˜ÂªÃ˜Â¬ Ã˜ÂºÃ™Å Ã˜Â± Ã™â€¦Ã™Ë†Ã˜Â¬Ã™Ë†Ã˜Â¯" });
 
         var result = await _images.UploadProductImageAsync(file, productId);
         if (!result.Success) return BadRequest(new { message = result.Error });
@@ -59,10 +59,10 @@ public class ImagesController : ControllerBase
     [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPost("products/variants/{variantId}")]
     [RequestSizeLimit(10 * 1024 * 1024)]
-    public async Task<IActionResult> UploadVariantImage([FromRoute] int variantId, [FromForm] IFormFile file)
+    public async Task<IActionResult> UploadVariantImage([FromRoute] int variantId, IFormFile file)
     {
         var variant = await _db.ProductVariants.FindAsync(variantId);
-        if (variant == null) return NotFound(new { message = "Ø§Ù„Ù…ÙˆØ¯ÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
+        if (variant == null) return NotFound(new { message = "Ã˜Â§Ã™â€žÃ™â€¦Ã™Ë†Ã˜Â¯Ã™Å Ã™â€ž Ã˜ÂºÃ™Å Ã˜Â± Ã™â€¦Ã™Ë†Ã˜Â¬Ã™Ë†Ã˜Â¯" });
 
         var result = await _images.UploadAttachmentAsync(file, $"variants/{variantId}");
         if (!result.Success) return BadRequest(new { message = result.Error });
@@ -77,10 +77,10 @@ public class ImagesController : ControllerBase
     [RequirePermission(ModuleKeys.Categories, requireEdit: true)]
     [HttpPost("categories/{categoryId}")]
     [RequestSizeLimit(10 * 1024 * 1024)]
-    public async Task<IActionResult> UploadCategoryImage([FromRoute] int categoryId, [FromForm] IFormFile file)
+    public async Task<IActionResult> UploadCategoryImage([FromRoute] int categoryId, IFormFile file)
     {
         var category = await _db.Categories.FindAsync(categoryId);
-        if (category == null) return NotFound(new { message = "Ø§Ù„Ù‚Ø³Ù… ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
+        if (category == null) return NotFound(new { message = "Ã˜Â§Ã™â€žÃ™â€šÃ˜Â³Ã™â€¦ Ã˜ÂºÃ™Å Ã˜Â± Ã™â€¦Ã™Ë†Ã˜Â¬Ã™Ë†Ã˜Â¯" });
 
         var result = await _images.UploadCategoryImageAsync(file, categoryId);
         if (!result.Success) return BadRequest(new { message = result.Error });
@@ -95,7 +95,7 @@ public class ImagesController : ControllerBase
     [RequirePermission(ModuleKeys.Settings, requireEdit: true)]
     [HttpPost("attachments/{type}/{id}")]
     [RequestSizeLimit(10 * 1024 * 1024)] // 10MB
-    public async Task<IActionResult> UploadAttachment([FromRoute] string type, [FromRoute] int id, [FromForm] IFormFile file)
+    public async Task<IActionResult> UploadAttachment([FromRoute] string type, [FromRoute] int id, IFormFile file)
     {
         var result = await _images.UploadAttachmentAsync(file, $"{type}/{id}");
         if (!result.Success) return BadRequest(new { message = result.Error });
@@ -205,19 +205,19 @@ public class ImagesController : ControllerBase
         return NoContent();
     }
 
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // Multi-Attachment Endpoints (EntityAttachments table)
-    // ══════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     private static readonly HashSet<string> AllowedEntityTypes = new(StringComparer.OrdinalIgnoreCase)
         { "order", "purchase", "journalentry", "assetpurchase" };
 
-    /// <summary>رفع مرفق جديد لـ entity (يضاف للقائمة ولا يستبدل)</summary>
+    /// <summary>Ø±ÙØ¹ Ù…Ø±ÙÙ‚ Ø¬Ø¯ÙŠØ¯ Ù„Ù€ entity (ÙŠØ¶Ø§Ù Ù„Ù„Ù‚Ø§Ø¦Ù…Ø© ÙˆÙ„Ø§ ÙŠØ³ØªØ¨Ø¯Ù„)</summary>
     [Authorize]
     [HttpPost("entity-attachments/{type}/{id}")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> UploadEntityAttachment(
-        [FromRoute] string type, [FromRoute] int id, [FromForm] IFormFile file)
+        [FromRoute] string type, [FromRoute] int id, IFormFile file)
     {
         if (!AllowedEntityTypes.Contains(type))
             return BadRequest(new { message = $"Entity type '{type}' is not supported" });
@@ -252,7 +252,7 @@ public class ImagesController : ControllerBase
         });
     }
 
-    /// <summary>جلب كل المرفقات لـ entity معين</summary>
+    /// <summary>Ø¬Ù„Ø¨ ÙƒÙ„ Ø§Ù„Ù…Ø±ÙÙ‚Ø§Øª Ù„Ù€ entity Ù…Ø¹ÙŠÙ†</summary>
     [Authorize]
     [HttpGet("entity-attachments/{type}/{id}")]
     public async Task<IActionResult> GetEntityAttachments(
@@ -279,7 +279,7 @@ public class ImagesController : ControllerBase
         return Ok(attachments);
     }
 
-    /// <summary>حذف مرفق واحد بالـ ID</summary>
+    /// <summary>Ø­Ø°Ù Ù…Ø±ÙÙ‚ ÙˆØ§Ø­Ø¯ Ø¨Ø§Ù„Ù€ ID</summary>
     [Authorize]
     [HttpDelete("entity-attachments/{attachmentId:int}")]
     public async Task<IActionResult> DeleteEntityAttachment([FromRoute] int attachmentId)
@@ -295,3 +295,4 @@ public class ImagesController : ControllerBase
         return NoContent();
     }
 }
+

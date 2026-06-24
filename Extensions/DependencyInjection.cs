@@ -206,6 +206,8 @@ public static class DependencyInjection
                     "https://sportive-frontend-production.up.railway.app",
                     "https://admin.raakiza.com",
                     "https://www.admin.raakiza.com",
+                    "https://app.raakiza.com",
+                    "https://www.app.raakiza.com",
                     "https://raakiza.com",
                     "https://www.raakiza.com"
                 };
@@ -455,7 +457,10 @@ public static class DependencyInjection
         {
             c.SwaggerDoc("v1", new OpenApiInfo { Title = "Sportive API", Version = "v1" });
             c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
-            c.CustomSchemaIds(type => type.Name);
+            c.CustomSchemaIds(type => (type.FullName ?? type.Name).Replace("+", "_").Replace("Sportive.API.Controllers.", "").Replace("Sportive.API.DTOs.", "").Replace("Sportive.API.Models.", "").Replace(".", "_"));
+
+            // Handle IFormFile parameters for file upload endpoints
+            c.MapType<IFormFile>(() => new OpenApiSchema { Type = "string", Format = "binary" });
 
             c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
             {

@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Sportive.API.Interfaces;
 using Sportive.API.Attributes;
 using Sportive.API.Utils;
@@ -31,7 +31,7 @@ public class ImportController : ControllerBase
         return string.IsNullOrWhiteSpace(slug) ? sku : $"{slug}-{sku}".ToLower();
     }
 
-    // ── TEMPLATE DOWNLOAD ──────────────────────────────────
+    // â”€â”€ TEMPLATE DOWNLOAD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // GET /api/import/template
     [HttpGet("template")]
     public async Task<IActionResult> GetTemplate()
@@ -45,7 +45,7 @@ public class ImportController : ControllerBase
             var brands       = await _db.Brands.AsNoTracking().Where(b => b.NameAr != null).Select(b => b.NameAr!).ToListAsync();
             var units        = await _db.ProductUnits.AsNoTracking().Where(u => u.NameAr != null).Select(u => u.NameAr!).ToListAsync();
             
-            // Fetch existing sizes and colors to provide as options — Limited for performance
+            // Fetch existing sizes and colors to provide as options â€” Limited for performance
             var existingSizes  = await _db.ProductVariants.AsNoTracking().Where(v => v.Size != null).Select(v => v.Size!).Distinct().Take(100).ToListAsync();
             var catNames = allCats.Select(c => c.NameAr).Where(n => n != null).ToHashSet();
             var existingColors = await _db.ProductVariants.AsNoTracking()
@@ -61,7 +61,7 @@ public class ImportController : ControllerBase
                 .ToList();
 
             var standardColors = new List<string> { 
-                "أبيض", "أسود", "أحمر", "أزرق", "أخضر", "أصفر", "رمادي", "كحلي", "بني", "بيج", "برتقالي", "بنفسجي", "سماوي", "ذهبي", "فضي" 
+                "Ø£Ø¨ÙŠØ¶", "Ø£Ø³ÙˆØ¯", "Ø£Ø­Ù…Ø±", "Ø£Ø²Ø±Ù‚", "Ø£Ø®Ø¶Ø±", "Ø£ØµÙØ±", "Ø±Ù…Ø§Ø¯ÙŠ", "ÙƒØ­Ù„ÙŠ", "Ø¨Ù†ÙŠ", "Ø¨ÙŠØ¬", "Ø¨Ø±ØªÙ‚Ø§Ù„ÙŠ", "Ø¨Ù†ÙØ³Ø¬ÙŠ", "Ø³Ù…Ø§ÙˆÙŠ", "Ø°Ù‡Ø¨ÙŠ", "ÙØ¶ÙŠ" 
             };
             existingColors = existingColors.Concat(standardColors).Distinct().ToList();
 
@@ -79,15 +79,15 @@ public class ImportController : ControllerBase
                 for (int i = 0; i < items.Count; i++) wsL.Cell(i + 1, col).Value = items[i];
             }
 
-            if (!brands.Any()) brands.Add("عام");
-            if (!units.Any()) units.Add("قطعة");
+            if (!brands.Any()) brands.Add("Ø¹Ø§Ù…");
+            if (!units.Any()) units.Add("Ù‚Ø·Ø¹Ø©");
             if (!existingSizes.Any()) existingSizes = new List<string> { "S", "M", "L", "XL", "XXL", "3XL", "Free Size" };
-            if (!existingColors.Any()) existingColors = new List<string> { "أبيض", "أسود", "أحمر", "أزرق", "أخضر", "رمادي", "كحلي", "بني" };
+            if (!existingColors.Any()) existingColors = new List<string> { "Ø£Ø¨ÙŠØ¶", "Ø£Ø³ÙˆØ¯", "Ø£Ø­Ù…Ø±", "Ø£Ø²Ø±Ù‚", "Ø£Ø®Ø¶Ø±", "Ø±Ù…Ø§Ø¯ÙŠ", "ÙƒØ­Ù„ÙŠ", "Ø¨Ù†ÙŠ" };
 
             FillCol(2, brands);     
             FillCol(3, units);      
-            FillCol(4, new List<string> { "نعم", "لا" });
-            FillCol(5, new List<string> { "نشط", "مسودة", "مخفي" });
+            FillCol(4, new List<string> { "Ù†Ø¹Ù…", "Ù„Ø§" });
+            FillCol(5, new List<string> { "Ù†Ø´Ø·", "Ù…Ø³ÙˆØ¯Ø©", "Ù…Ø®ÙÙŠ" });
             FillCol(6, existingSizes);
             FillCol(7, existingColors);
 
@@ -164,7 +164,7 @@ public class ImportController : ControllerBase
                 .ToList();
 
             wsL.Cell(1, 14).Value = "__DUMMY__";
-            wsL.Cell(1, 15).Value = "(اختر التصنيف أولاً)";
+            wsL.Cell(1, 15).Value = "(Ø§Ø®ØªØ± Ø§Ù„ØªØµÙ†ÙŠÙ Ø£ÙˆÙ„Ø§Ù‹)";
             for (int i = 0; i < catSizeMapping.Count; i++)
             {
                 wsL.Cell(i + 2, 14).Value = catSizeMapping[i].CatName;
@@ -221,14 +221,14 @@ public class ImportController : ControllerBase
             }
 
             ws1.Cell(2,1).Value = "TS-001";
-            ws1.Cell(2,2).Value = "تيشرت رياضي";
-            ws1.Cell(2,3).Value = units.FirstOrDefault() ?? "قطعة";
+            ws1.Cell(2,2).Value = "ØªÙŠØ´Ø±Øª Ø±ÙŠØ§Ø¶ÙŠ";
+            ws1.Cell(2,3).Value = units.FirstOrDefault() ?? "Ù‚Ø·Ø¹Ø©";
             ws1.Cell(2,5).Value = mainCats.FirstOrDefault()?.NameAr;
             ws1.Cell(2,8).Value = 200; 
             ws1.Cell(2,9).Value = 299;
-            ws1.Cell(2,11).Value = "نعم";
-            ws1.Cell(2,19).Value = "نشط";
-            ws1.Cell(2,20).Value = "لا";
+            ws1.Cell(2,11).Value = "Ù†Ø¹Ù…";
+            ws1.Cell(2,19).Value = "Ù†Ø´Ø·";
+            ws1.Cell(2,20).Value = "Ù„Ø§";
             ws1.Row(2).Style.Font.FontColor = XLColor.Gray;
 
             var stream = new MemoryStream();
@@ -243,7 +243,7 @@ public class ImportController : ControllerBase
         }
     }
 
-    // ── IMPORT PRODUCTS ─────────────────────────────────────
+    // â”€â”€ IMPORT PRODUCTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // POST /api/import/products
     [HttpPost("products")]
     [RequestSizeLimit(10 * 1024 * 1024)] // 10MB
@@ -291,29 +291,29 @@ public class ImportController : ControllerBase
                 return -1;
             }
 
-            // Mapping columns — aliases include both the exact template header values (from ar.json) and legacy/manual variations
-            int colSku      = GetCol("كود الصنف", "كود كود الصنف", "الكود SKU", "الباركود", "sku", "Code", "كود الصنف", "الكود");
-            int colNameAr   = GetCol("الاسم عربي", "الاسم (عربي)", "اسم المنتج", "الاسم", "Name Ar");
-            int colUnit     = GetCol("الوحدة", "وحدة القياس", "Unit");
-            int colNameEn   = GetCol("الاسم انجليزي", "الاسم (إنجليزي)", "الاسم English", "Name En");
-            int colMainCat  = GetCol("القسم الرئيسي", "التصنيف الأساسي", "الفئة", "التصنيف", "Main Category", "Category");
-            int colSubCat   = GetCol("القسم الفرعي", "التصنيف الفرعي", "الفئة الفرعية", "Sub Category");
-            int colSubSub   = GetCol("القسم الفرعي 2", "التصنيف الفرعي 2", "التصنيف فرع فرعي", "الفئة الفرعية 2", "Sub Sub Category");
-            int colCost     = GetCol("سعر التكلفة", "التكلفة", "Cost");
-            int colPrice    = GetCol("السعر", "سعر البيع", "Price");
-            int colDisc     = GetCol("سعر الخصم", "الخصم", "Discount");
-            int colHasTax   = GetCol("خاضع للضريبة", "خاضع للضريبة؟", "taxable", "الضريبة", "Is Taxable"); 
-            int colBrand    = GetCol("العلامة التجارية", "الماركة", "Brand", "الماركه");
-            int colSize     = GetCol("المقاس", "Size", "القياس", "المقاسات", "size");
-            int colColorEn  = GetCol("اللون (إنجليزي)", "اللون (English)", "اللون English", "Color En", "Color");
-            int colColorAr  = GetCol("اللون (عربي)", "اللون عربي", "Color Ar", "اللون", "الوان");
-            int colStock    = GetCol("الرصيد", "المخزون", "Stock", "الكمية");
-            int colAdj      = GetCol("فرق سعر المقاس", "فارق السعر للمقاس", "Price Adjustment");
-            int colReorder  = GetCol("حد إعادة الطلب", "حد الطلب", "Reorder Level");
-            int colStatus   = GetCol("الحالة", "Status");
-            int colFeat     = GetCol("مميز (نعم/لا)", "Featured");
-            int colDescAr   = GetCol("الوصف (عربي)", "الوصف عربي", "Description Ar");
-            int colDescEn   = GetCol("الوصف (إنجليزي)", "الوصف انجليزي", "Description En");
+            // Mapping columns â€” aliases include both the exact template header values (from ar.json) and legacy/manual variations
+            int colSku      = GetCol("ÙƒÙˆØ¯ Ø§Ù„ØµÙ†Ù", "ÙƒÙˆØ¯ ÙƒÙˆØ¯ Ø§Ù„ØµÙ†Ù", "Ø§Ù„ÙƒÙˆØ¯ SKU", "Ø§Ù„Ø¨Ø§Ø±ÙƒÙˆØ¯", "sku", "Code", "ÙƒÙˆØ¯ Ø§Ù„ØµÙ†Ù", "Ø§Ù„ÙƒÙˆØ¯");
+            int colNameAr   = GetCol("Ø§Ù„Ø§Ø³Ù… Ø¹Ø±Ø¨ÙŠ", "Ø§Ù„Ø§Ø³Ù… (Ø¹Ø±Ø¨ÙŠ)", "Ø§Ø³Ù… Ø§Ù„Ù…Ù†ØªØ¬", "Ø§Ù„Ø§Ø³Ù…", "Name Ar");
+            int colUnit     = GetCol("Ø§Ù„ÙˆØ­Ø¯Ø©", "ÙˆØ­Ø¯Ø© Ø§Ù„Ù‚ÙŠØ§Ø³", "Unit");
+            int colNameEn   = GetCol("Ø§Ù„Ø§Ø³Ù… Ø§Ù†Ø¬Ù„ÙŠØ²ÙŠ", "Ø§Ù„Ø§Ø³Ù… (Ø¥Ù†Ø¬Ù„ÙŠØ²ÙŠ)", "Ø§Ù„Ø§Ø³Ù… English", "Name En");
+            int colMainCat  = GetCol("Ø§Ù„Ù‚Ø³Ù… Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠ", "Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„Ø£Ø³Ø§Ø³ÙŠ", "Ø§Ù„ÙØ¦Ø©", "Ø§Ù„ØªØµÙ†ÙŠÙ", "Main Category", "Category");
+            int colSubCat   = GetCol("Ø§Ù„Ù‚Ø³Ù… Ø§Ù„ÙØ±Ø¹ÙŠ", "Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„ÙØ±Ø¹ÙŠ", "Ø§Ù„ÙØ¦Ø© Ø§Ù„ÙØ±Ø¹ÙŠØ©", "Sub Category");
+            int colSubSub   = GetCol("Ø§Ù„Ù‚Ø³Ù… Ø§Ù„ÙØ±Ø¹ÙŠ 2", "Ø§Ù„ØªØµÙ†ÙŠÙ Ø§Ù„ÙØ±Ø¹ÙŠ 2", "Ø§Ù„ØªØµÙ†ÙŠÙ ÙØ±Ø¹ ÙØ±Ø¹ÙŠ", "Ø§Ù„ÙØ¦Ø© Ø§Ù„ÙØ±Ø¹ÙŠØ© 2", "Sub Sub Category");
+            int colCost     = GetCol("Ø³Ø¹Ø± Ø§Ù„ØªÙƒÙ„ÙØ©", "Ø§Ù„ØªÙƒÙ„ÙØ©", "Cost");
+            int colPrice    = GetCol("Ø§Ù„Ø³Ø¹Ø±", "Ø³Ø¹Ø± Ø§Ù„Ø¨ÙŠØ¹", "Price");
+            int colDisc     = GetCol("Ø³Ø¹Ø± Ø§Ù„Ø®ØµÙ…", "Ø§Ù„Ø®ØµÙ…", "Discount");
+            int colHasTax   = GetCol("Ø®Ø§Ø¶Ø¹ Ù„Ù„Ø¶Ø±ÙŠØ¨Ø©", "Ø®Ø§Ø¶Ø¹ Ù„Ù„Ø¶Ø±ÙŠØ¨Ø©ØŸ", "taxable", "Ø§Ù„Ø¶Ø±ÙŠØ¨Ø©", "Is Taxable"); 
+            int colBrand    = GetCol("Ø§Ù„Ø¹Ù„Ø§Ù…Ø© Ø§Ù„ØªØ¬Ø§Ø±ÙŠØ©", "Ø§Ù„Ù…Ø§Ø±ÙƒØ©", "Brand", "Ø§Ù„Ù…Ø§Ø±ÙƒÙ‡");
+            int colSize     = GetCol("Ø§Ù„Ù…Ù‚Ø§Ø³", "Size", "Ø§Ù„Ù‚ÙŠØ§Ø³", "Ø§Ù„Ù…Ù‚Ø§Ø³Ø§Øª", "size");
+            int colColorEn  = GetCol("Ø§Ù„Ù„ÙˆÙ† (Ø¥Ù†Ø¬Ù„ÙŠØ²ÙŠ)", "Ø§Ù„Ù„ÙˆÙ† (English)", "Ø§Ù„Ù„ÙˆÙ† English", "Color En", "Color");
+            int colColorAr  = GetCol("Ø§Ù„Ù„ÙˆÙ† (Ø¹Ø±Ø¨ÙŠ)", "Ø§Ù„Ù„ÙˆÙ† Ø¹Ø±Ø¨ÙŠ", "Color Ar", "Ø§Ù„Ù„ÙˆÙ†", "Ø§Ù„ÙˆØ§Ù†");
+            int colStock    = GetCol("Ø§Ù„Ø±ØµÙŠØ¯", "Ø§Ù„Ù…Ø®Ø²ÙˆÙ†", "Stock", "Ø§Ù„ÙƒÙ…ÙŠØ©");
+            int colAdj      = GetCol("ÙØ±Ù‚ Ø³Ø¹Ø± Ø§Ù„Ù…Ù‚Ø§Ø³", "ÙØ§Ø±Ù‚ Ø§Ù„Ø³Ø¹Ø± Ù„Ù„Ù…Ù‚Ø§Ø³", "Price Adjustment");
+            int colReorder  = GetCol("Ø­Ø¯ Ø¥Ø¹Ø§Ø¯Ø© Ø§Ù„Ø·Ù„Ø¨", "Ø­Ø¯ Ø§Ù„Ø·Ù„Ø¨", "Reorder Level");
+            int colStatus   = GetCol("Ø§Ù„Ø­Ø§Ù„Ø©", "Status");
+            int colFeat     = GetCol("Ù…Ù…ÙŠØ² (Ù†Ø¹Ù…/Ù„Ø§)", "Featured");
+            int colDescAr   = GetCol("Ø§Ù„ÙˆØµÙ (Ø¹Ø±Ø¨ÙŠ)", "Ø§Ù„ÙˆØµÙ Ø¹Ø±Ø¨ÙŠ", "Description Ar");
+            int colDescEn   = GetCol("Ø§Ù„ÙˆØµÙ (Ø¥Ù†Ø¬Ù„ÙŠØ²ÙŠ)", "Ø§Ù„ÙˆØµÙ Ø§Ù†Ø¬Ù„ÙŠØ²ÙŠ", "Description En");
 
             if (colSku == -1 || colNameAr == -1 || colPrice == -1 || colUnit == -1 || colMainCat == -1)
                 return BadRequest(new { message = _t.Get("Import.MissingColumns") });
@@ -355,7 +355,7 @@ public class ImportController : ControllerBase
 
             void LogRowError(int r, string message)
             {
-                result.Errors.Add($"صف {r}: {message}");
+                result.Errors.Add($"ØµÙ {r}: {message}");
                 // Copy the entire row from the original sheet to the error sheet
                 var lCol = ws.LastColumnUsed()?.ColumnNumber() ?? 20;
                 for (int c = 1; c <= lCol; c++)
@@ -439,10 +439,10 @@ public class ImportController : ControllerBase
                                 if (!string.IsNullOrEmpty(unitStr))
                                     product.UnitId = units.FirstOrDefault(u => string.Equals((u.NameAr ?? "").Trim(), unitStr.Trim(), StringComparison.OrdinalIgnoreCase))?.Id ?? product.UnitId;
 
-                                product.HasTax = !GetVal(colHasTax).Contains("لا");
+                                product.HasTax = !GetVal(colHasTax).Contains("Ù„Ø§");
                                 product.ReorderLevel = int.TryParse(GetVal(colReorder), out var rl) ? rl : product.ReorderLevel;
-                                product.Status = GetVal(colStatus) switch { "مسودة" => ProductStatus.Draft, "مخفي" => ProductStatus.Hidden, _ => ProductStatus.Active };
-                                product.IsFeatured = GetVal(colFeat).Contains("نعم");
+                                product.Status = GetVal(colStatus) switch { "Ù…Ø³ÙˆØ¯Ø©" => ProductStatus.Draft, "Ù…Ø®ÙÙŠ" => ProductStatus.Hidden, _ => ProductStatus.Active };
+                                product.IsFeatured = GetVal(colFeat).Contains("Ù†Ø¹Ù…");
                                 product.DescriptionAr = GetVal(colDescAr).NullIfEmpty() ?? product.DescriptionAr;
                                 product.DescriptionEn = GetVal(colDescEn).NullIfEmpty() ?? product.DescriptionEn;
                                 
@@ -516,12 +516,12 @@ public class ImportController : ControllerBase
                             DiscountPrice = decimal.TryParse(GetVal(colDisc), out var dp) ? dp : null,
                             CostPrice = decimal.TryParse(GetVal(colCost), out var cs) ? cs : null,
                             CategoryId = catId.Value, BrandId = bId, UnitId = uId,
-                            HasTax = !GetVal(colHasTax).Contains("لا"),
+                            HasTax = !GetVal(colHasTax).Contains("Ù„Ø§"),
                             ReorderLevel = int.TryParse(GetVal(colReorder), out var rl) ? rl : 0,
                             DescriptionAr = GetVal(colDescAr).NullIfEmpty(),
                             DescriptionEn = GetVal(colDescEn).NullIfEmpty(),
-                            IsFeatured    = GetVal(colFeat).Contains("نعم"),
-                            Status = GetVal(colStatus) switch { "مسودة" => ProductStatus.Draft, "مخفي" => ProductStatus.Hidden, _ => ProductStatus.Active },
+                            IsFeatured    = GetVal(colFeat).Contains("Ù†Ø¹Ù…"),
+                            Status = GetVal(colStatus) switch { "Ù…Ø³ÙˆØ¯Ø©" => ProductStatus.Draft, "Ù…Ø®ÙÙŠ" => ProductStatus.Hidden, _ => ProductStatus.Active },
                             CreatedAt = TimeHelper.GetEgyptTime()
                         };
                         productsDict[sku] = product;
@@ -605,7 +605,7 @@ public class ImportController : ControllerBase
 
 
 
-    // ── INVENTORY TEMPLATE ──────────────────────────────────
+    // â”€â”€ INVENTORY TEMPLATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // GET /api/import/inventory-template
     [HttpGet("inventory-template")]
     public async Task<IActionResult> GetInventoryTemplate()
@@ -673,7 +673,7 @@ public class ImportController : ControllerBase
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "inventory_import_template.xlsx");
     }
 
-    // ── IMPORT INVENTORY (STOCK UPDATE ONLY) ────────────────
+    // â”€â”€ IMPORT INVENTORY (STOCK UPDATE ONLY) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // POST /api/import/inventory
     [HttpPost("inventory")]
     [RequestSizeLimit(10 * 1024 * 1024)]
@@ -768,7 +768,7 @@ public class ImportController : ControllerBase
         });
     }
 
-    // ── ACCOUNTS TEMPLATE ───────────────────────────────────
+    // â”€â”€ ACCOUNTS TEMPLATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     [HttpGet("accounts-template")]
     public IActionResult GetAccountsTemplate()
     {
@@ -787,7 +787,7 @@ public class ImportController : ControllerBase
         }
 
         ws.Cell(2,1).Value = "110101";
-        ws.Cell(2,2).Value = "خزينة المكتب";
+        ws.Cell(2,2).Value = "Ø®Ø²ÙŠÙ†Ø© Ø§Ù„Ù…ÙƒØªØ¨";
         ws.Cell(2,3).Value = "Office Cash";
         ws.Cell(2,4).Value = "Asset";
         ws.Cell(2,5).Value = "Debit";
@@ -800,3 +800,4 @@ public class ImportController : ControllerBase
         return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "accounts_import_template.xlsx");
     }
 }
+

@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
@@ -182,15 +182,15 @@ public class EmployeeAttendancesController : ControllerBase
                 for (int col = 1; col <= worksheet.ColumnsUsed().Count(); col++)
                 {
                     var cellVal = firstRow.Cell(col).Value.ToString().Trim().ToLower();
-                    if (cellVal.Contains("رقم") || cellVal.Contains("كود") || cellVal.Contains("employee") || cellVal.Contains("id") || cellVal.Contains("code") || cellVal.Contains("ac-no"))
+                    if (cellVal.Contains("Ø±Ù‚Ù…") || cellVal.Contains("ÙƒÙˆØ¯") || cellVal.Contains("employee") || cellVal.Contains("id") || cellVal.Contains("code") || cellVal.Contains("ac-no"))
                         empNumCol = col;
-                    else if (cellVal.Contains("تاريخ") || cellVal.Contains("يوم") || cellVal.Contains("date"))
+                    else if (cellVal.Contains("ØªØ§Ø±ÙŠØ®") || cellVal.Contains("ÙŠÙˆÙ…") || cellVal.Contains("date"))
                         dateCol = col;
-                    else if (cellVal.Contains("حضور") || cellVal.Contains("دخول") || cellVal.Contains("in") || cellVal.Contains("checkin"))
+                    else if (cellVal.Contains("Ø­Ø¶ÙˆØ±") || cellVal.Contains("Ø¯Ø®ÙˆÙ„") || cellVal.Contains("in") || cellVal.Contains("checkin"))
                         checkInCol = col;
-                    else if (cellVal.Contains("انصراف") || cellVal.Contains("خروج") || cellVal.Contains("out") || cellVal.Contains("checkout"))
+                    else if (cellVal.Contains("Ø§Ù†ØµØ±Ø§Ù") || cellVal.Contains("Ø®Ø±ÙˆØ¬") || cellVal.Contains("out") || cellVal.Contains("checkout"))
                         checkOutCol = col;
-                    else if (cellVal.Contains("ملاحظات") || cellVal.Contains("notes") || cellVal.Contains("بيان"))
+                    else if (cellVal.Contains("Ù…Ù„Ø§Ø­Ø¸Ø§Øª") || cellVal.Contains("notes") || cellVal.Contains("Ø¨ÙŠØ§Ù†"))
                         notesCol = col;
                 }
 
@@ -205,7 +205,7 @@ public class EmployeeAttendancesController : ControllerBase
                     // Match Employee
                     if (!employees.TryGetValue(rawEmpNum, out var emp))
                     {
-                        warnings.Add($"السطر {r}: لم يتم العثور على موظف برقم ({rawEmpNum})");
+                        warnings.Add($"Ø§Ù„Ø³Ø·Ø± {r}: Ù„Ù… ÙŠØªÙ… Ø§Ù„Ø¹Ø«ÙˆØ± Ø¹Ù„Ù‰ Ù…ÙˆØ¸Ù Ø¨Ø±Ù‚Ù… ({rawEmpNum})");
                         continue;
                     }
 
@@ -221,7 +221,7 @@ public class EmployeeAttendancesController : ControllerBase
                     {
                         if (!DateTime.TryParse(rawDateVal.ToString(), out attendanceDate))
                         {
-                            warnings.Add($"السطر {r}: تنسيق تاريخ غير صالح ({rawDateVal}) للموظف ({emp.Name})");
+                            warnings.Add($"Ø§Ù„Ø³Ø·Ø± {r}: ØªÙ†Ø³ÙŠÙ‚ ØªØ§Ø±ÙŠØ® ØºÙŠØ± ØµØ§Ù„Ø­ ({rawDateVal}) Ù„Ù„Ù…ÙˆØ¸Ù ({emp.Name})");
                             continue;
                         }
                         attendanceDate = attendanceDate.Date;
@@ -252,7 +252,7 @@ public class EmployeeAttendancesController : ControllerBase
                         }
                         else
                         {
-                            warnings.Add($"السطر {r}: تنسيق وقت الحضور غير صالح ({rawIn}) للموظف ({emp.Name})");
+                            warnings.Add($"Ø§Ù„Ø³Ø·Ø± {r}: ØªÙ†Ø³ÙŠÙ‚ ÙˆÙ‚Øª Ø§Ù„Ø­Ø¶ÙˆØ± ØºÙŠØ± ØµØ§Ù„Ø­ ({rawIn}) Ù„Ù„Ù…ÙˆØ¸Ù ({emp.Name})");
                             continue;
                         }
                     }
@@ -286,7 +286,7 @@ public class EmployeeAttendancesController : ControllerBase
 
                         if (emp.AttendanceMode != AttendanceMode.MonthlyTotal)
                         {
-                            // ─── وضع Fixed / Flexible: حساب إضافي وتأخير يومياً ─────────────
+                            // â”€â”€â”€ ÙˆØ¶Ø¹ Fixed / Flexible: Ø­Ø³Ø§Ø¨ Ø¥Ø¶Ø§ÙÙŠ ÙˆØªØ£Ø®ÙŠØ± ÙŠÙˆÙ…ÙŠØ§Ù‹ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                             var stdHours = emp.WorkHoursPerDay;
                             if (workHours > stdHours)
                             {
@@ -306,7 +306,7 @@ public class EmployeeAttendancesController : ControllerBase
                                 }
                             }
                         }
-                        // وضع MonthlyTotal: لا يوجد إضافي أو تأخير يومي — يُحسب في نهاية الشهر فقط
+                        // ÙˆØ¶Ø¹ MonthlyTotal: Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø¥Ø¶Ø§ÙÙŠ Ø£Ùˆ ØªØ£Ø®ÙŠØ± ÙŠÙˆÙ…ÙŠ â€” ÙŠÙØ­Ø³Ø¨ ÙÙŠ Ù†Ù‡Ø§ÙŠØ© Ø§Ù„Ø´Ù‡Ø± ÙÙ‚Ø·
                     }
 
                     var notes = row.Cell(notesCol).Value.ToString().Trim();
@@ -324,7 +324,7 @@ public class EmployeeAttendancesController : ControllerBase
                     if (isWeekend)
                     {
                         delayMinutes = 0;
-                        if (isAbsent) continue; // تجاهل أيام الإجازة الأسبوعية
+                        if (isAbsent) continue; // ØªØ¬Ø§Ù‡Ù„ Ø£ÙŠØ§Ù… Ø§Ù„Ø¥Ø¬Ø§Ø²Ø© Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹ÙŠØ©
                     }
 
                     // Save or Update
@@ -354,16 +354,16 @@ public class EmployeeAttendancesController : ControllerBase
                     {
                         if (emp.AttendanceMode == AttendanceMode.MonthlyTotal)
                         {
-                            // وضع الإجمالي الشهري: نجمع الساعات (وردية مقسّمة — دخولين في نفس اليوم)
+                            // ÙˆØ¶Ø¹ Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø´Ù‡Ø±ÙŠ: Ù†Ø¬Ù…Ø¹ Ø§Ù„Ø³Ø§Ø¹Ø§Øª (ÙˆØ±Ø¯ÙŠØ© Ù…Ù‚Ø³Ù‘Ù…Ø© â€” Ø¯Ø®ÙˆÙ„ÙŠÙ† ÙÙŠ Ù†ÙØ³ Ø§Ù„ÙŠÙˆÙ…)
                             attendance.WorkHours += workHours;
                             if (checkIn.HasValue && (!attendance.CheckIn.HasValue || checkIn < attendance.CheckIn))
-                                attendance.CheckIn = checkIn; // أول دخول في اليوم
+                                attendance.CheckIn = checkIn; // Ø£ÙˆÙ„ Ø¯Ø®ÙˆÙ„ ÙÙŠ Ø§Ù„ÙŠÙˆÙ…
                             if (checkOut.HasValue && (!attendance.CheckOut.HasValue || checkOut > attendance.CheckOut))
-                                attendance.CheckOut = checkOut; // آخر خروج في اليوم
+                                attendance.CheckOut = checkOut; // Ø¢Ø®Ø± Ø®Ø±ÙˆØ¬ ÙÙŠ Ø§Ù„ÙŠÙˆÙ…
                         }
                         else
                         {
-                            // وضع ثابت/مرن: نستبدل
+                            // ÙˆØ¶Ø¹ Ø«Ø§Ø¨Øª/Ù…Ø±Ù†: Ù†Ø³ØªØ¨Ø¯Ù„
                             attendance.CheckIn = checkIn;
                             attendance.CheckOut = checkOut;
                             attendance.WorkHours = workHours;
@@ -385,7 +385,7 @@ public class EmployeeAttendancesController : ControllerBase
         return Ok(new
         {
             success = true,
-            message = $"تم رفع الحضور بنجاح. المضاف: {logsAdded}، المحدّث: {logsUpdated}",
+            message = $"ØªÙ… Ø±ÙØ¹ Ø§Ù„Ø­Ø¶ÙˆØ± Ø¨Ù†Ø¬Ø§Ø­. Ø§Ù„Ù…Ø¶Ø§Ù: {logsAdded}ØŒ Ø§Ù„Ù…Ø­Ø¯Ù‘Ø«: {logsUpdated}",
             addedCount = logsAdded,
             updatedCount = logsUpdated,
             warnings = warnings
@@ -478,3 +478,4 @@ public class EmployeeAttendancesController : ControllerBase
         return Ok(new { success = true, count = count, message = $"Successfully synced {count} punches." });
     }
 }
+

@@ -27,6 +27,7 @@ public class OperationalReportsController : ControllerBase
         _cache = cache;
         _t = t;
     }
+    [HttpPost("reset-supplier-balances")]
     public async Task<IActionResult> ResetSupplierBalances()
     {
         try 

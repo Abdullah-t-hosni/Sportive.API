@@ -1,4 +1,4 @@
-using Sportive.API.Attributes;
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -125,7 +125,7 @@ public class InventoryOpeningBalanceController : ControllerBase
     {
         await _core.CheckDateLockAsync(dto.Date, User);
 
-        // 🚨 PREVENT DUPLICATES: التأكد من عدم وجود رصيد افتتاحي سابق للمخزون في هذه الفترة
+        // Ã°Å¸Å¡Â¨ PREVENT DUPLICATES: Ã˜Â§Ã™â€žÃ˜ÂªÃ˜Â£Ã™Æ’Ã˜Â¯ Ã™â€¦Ã™â€  Ã˜Â¹Ã˜Â¯Ã™â€¦ Ã™Ë†Ã˜Â¬Ã™Ë†Ã˜Â¯ Ã˜Â±Ã˜ÂµÃ™Å Ã˜Â¯ Ã˜Â§Ã™ÂÃ˜ÂªÃ˜ÂªÃ˜Â§Ã˜Â­Ã™Å  Ã˜Â³Ã˜Â§Ã˜Â¨Ã™â€š Ã™â€žÃ™â€žÃ™â€¦Ã˜Â®Ã˜Â²Ã™Ë†Ã™â€  Ã™ÂÃ™Å  Ã™â€¡Ã˜Â°Ã™â€¡ Ã˜Â§Ã™â€žÃ™ÂÃ˜ÂªÃ˜Â±Ã˜Â©
         if (await _db.InventoryOpeningBalances.AnyAsync(x => x.Date.Year == dto.Date.Year))
             return BadRequest(new { message = _t.Get("Inventory.OpeningBalanceExists") });
 
@@ -378,13 +378,13 @@ public class InventoryOpeningBalanceController : ControllerBase
 
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-        // 🚨 PRO-ACCOUNTING: لا يجوز حذف قيد مرحل، يجب عكسه
+        // Ã°Å¸Å¡Â¨ PRO-ACCOUNTING: Ã™â€žÃ˜Â§ Ã™Å Ã˜Â¬Ã™Ë†Ã˜Â² Ã˜Â­Ã˜Â°Ã™Â Ã™â€šÃ™Å Ã˜Â¯ Ã™â€¦Ã˜Â±Ã˜Â­Ã™â€žÃ˜Å’ Ã™Å Ã˜Â¬Ã˜Â¨ Ã˜Â¹Ã™Æ’Ã˜Â³Ã™â€¡
         var journal = await _db.JournalEntries.FirstOrDefaultAsync(j => j.Reference == ob.Reference);
         if (journal != null)
         {
             if (User.IsInRole("SuperAdmin") || User.IsInRole("Admin")) 
             {
-                _db.JournalEntries.Remove(journal); // الأدمن يحق له الحذف النهائي
+                _db.JournalEntries.Remove(journal); // Ã˜Â§Ã™â€žÃ˜Â£Ã˜Â¯Ã™â€¦Ã™â€  Ã™Å Ã˜Â­Ã™â€š Ã™â€žÃ™â€¡ Ã˜Â§Ã™â€žÃ˜Â­Ã˜Â°Ã™Â Ã˜Â§Ã™â€žÃ™â€ Ã™â€¡Ã˜Â§Ã˜Â¦Ã™Å 
             }
             else 
             {
@@ -475,7 +475,7 @@ public class InventoryOpeningBalanceController : ControllerBase
         wsL.Hide();
 
         void FillCol(int col, List<string> items, string name) {
-            if (!items.Any()) items.Add("—");
+            if (!items.Any()) items.Add("Ã¢â‚¬â€");
             for (int i = 0; i < items.Count; i++) wsL.Cell(i + 1, col).Value = items[i];
             var range = wsL.Range(1, col, items.Count, col);
             wb.DefinedNames.Add(name, range);
@@ -507,19 +507,19 @@ public class InventoryOpeningBalanceController : ControllerBase
         }
 
         // Instructions
-        ws.Cell(1, 8).Value = "تعليمات الهامش:";
+        ws.Cell(1, 8).Value = "Ã˜ÂªÃ˜Â¹Ã™â€žÃ™Å Ã™â€¦Ã˜Â§Ã˜Âª Ã˜Â§Ã™â€žÃ™â€¡Ã˜Â§Ã™â€¦Ã˜Â´:";
         ws.Cell(1, 8).Style.Font.Bold = true;
-        ws.Cell(2, 8).Value = "1. استخدم شيت 'Products Reference' للبحث عن أكواد المنتجات الصحيحة.";
-        ws.Cell(3, 8).Value = "2. الكمية والتكلفة يجب أن تكون أرقاماً صحيحة.";
-        ws.Cell(4, 8).Value = "3. المقاس واللون اختياريان ولكن يفضل اختيارهما من القائمة المنسدلة.";
+        ws.Cell(2, 8).Value = "1. Ã˜Â§Ã˜Â³Ã˜ÂªÃ˜Â®Ã˜Â¯Ã™â€¦ Ã˜Â´Ã™Å Ã˜Âª 'Products Reference' Ã™â€žÃ™â€žÃ˜Â¨Ã˜Â­Ã˜Â« Ã˜Â¹Ã™â€  Ã˜Â£Ã™Æ’Ã™Ë†Ã˜Â§Ã˜Â¯ Ã˜Â§Ã™â€žÃ™â€¦Ã™â€ Ã˜ÂªÃ˜Â¬Ã˜Â§Ã˜Âª Ã˜Â§Ã™â€žÃ˜ÂµÃ˜Â­Ã™Å Ã˜Â­Ã˜Â©.";
+        ws.Cell(3, 8).Value = "2. Ã˜Â§Ã™â€žÃ™Æ’Ã™â€¦Ã™Å Ã˜Â© Ã™Ë†Ã˜Â§Ã™â€žÃ˜ÂªÃ™Æ’Ã™â€žÃ™ÂÃ˜Â© Ã™Å Ã˜Â¬Ã˜Â¨ Ã˜Â£Ã™â€  Ã˜ÂªÃ™Æ’Ã™Ë†Ã™â€  Ã˜Â£Ã˜Â±Ã™â€šÃ˜Â§Ã™â€¦Ã˜Â§Ã™â€¹ Ã˜ÂµÃ˜Â­Ã™Å Ã˜Â­Ã˜Â©.";
+        ws.Cell(4, 8).Value = "3. Ã˜Â§Ã™â€žÃ™â€¦Ã™â€šÃ˜Â§Ã˜Â³ Ã™Ë†Ã˜Â§Ã™â€žÃ™â€žÃ™Ë†Ã™â€  Ã˜Â§Ã˜Â®Ã˜ÂªÃ™Å Ã˜Â§Ã˜Â±Ã™Å Ã˜Â§Ã™â€  Ã™Ë†Ã™â€žÃ™Æ’Ã™â€  Ã™Å Ã™ÂÃ˜Â¶Ã™â€ž Ã˜Â§Ã˜Â®Ã˜ÂªÃ™Å Ã˜Â§Ã˜Â±Ã™â€¡Ã™â€¦Ã˜Â§ Ã™â€¦Ã™â€  Ã˜Â§Ã™â€žÃ™â€šÃ˜Â§Ã˜Â¦Ã™â€¦Ã˜Â© Ã˜Â§Ã™â€žÃ™â€¦Ã™â€ Ã˜Â³Ã˜Â¯Ã™â€žÃ˜Â©.";
 
         // Sample Data
         ws.Cell(2, 1).Value = products.FirstOrDefault()?.SKU ?? "SKU-XYZ";
         ws.Cell(2, 2).Value = 1;
         ws.Cell(2, 3).Value = 100.00;
-        ws.Cell(2, 4).Value = existingSizes.FirstOrDefault() ?? "—";
-        ws.Cell(2, 5).Value = existingColors.FirstOrDefault() ?? "—";
-        ws.Cell(2, 6).Value = products.FirstOrDefault()?.NameAr ?? "اسم المنتج التوضيحي";
+        ws.Cell(2, 4).Value = existingSizes.FirstOrDefault() ?? "Ã¢â‚¬â€";
+        ws.Cell(2, 5).Value = existingColors.FirstOrDefault() ?? "Ã¢â‚¬â€";
+        ws.Cell(2, 6).Value = products.FirstOrDefault()?.NameAr ?? "Ã˜Â§Ã˜Â³Ã™â€¦ Ã˜Â§Ã™â€žÃ™â€¦Ã™â€ Ã˜ÂªÃ˜Â¬ Ã˜Â§Ã™â€žÃ˜ÂªÃ™Ë†Ã˜Â¶Ã™Å Ã˜Â­Ã™Å ";
         ws.Row(2).Style.Font.FontColor = XLColor.Gray;
 
         ws.Columns().AdjustToContents();
@@ -532,8 +532,10 @@ public class InventoryOpeningBalanceController : ControllerBase
         return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "InventoryOpeningBalance_Template.xlsx");
     }
 
+
     [HttpPost("import")]
-    public async Task<IActionResult> Import([FromForm] IFormFile file)
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> Import(IFormFile file)
     {
         if (file == null || file.Length == 0) return BadRequest(new { message = _t.Get("Accounting.NoFileUploaded") });
 
@@ -545,7 +547,7 @@ public class InventoryOpeningBalanceController : ControllerBase
             using var stream = file.OpenReadStream();
             using var wb = new XLWorkbook(stream);
             // Try to find the input sheet by common keywords if the first sheet is not the one
-            var ws = wb.Worksheets.FirstOrDefault(s => s.Name.Contains("الأرصدة") || s.Name.Contains("Opening")) ?? wb.Worksheets.First();
+            var ws = wb.Worksheets.FirstOrDefault(s => s.Name.Contains("Ã˜Â§Ã™â€žÃ˜Â£Ã˜Â±Ã˜ÂµÃ˜Â¯Ã˜Â©") || s.Name.Contains("Opening")) ?? wb.Worksheets.First();
             var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
 
             var products = await _db.Products.Include(p => p.Variants).Include(p => p.Images).ToListAsync();
@@ -558,13 +560,13 @@ public class InventoryOpeningBalanceController : ControllerBase
                 if (string.IsNullOrEmpty(s)) return "";
                 var clean = new string(s.Where(c => char.IsLetterOrDigit(c)).ToArray()).ToLower();
                 return clean
-                    .Replace("أ", "ا").Replace("إ", "ا").Replace("آ", "ا")
-                    .Replace("ة", "ه")
-                    .Replace("ى", "ي");
+                    .Replace("Ã˜Â£", "Ã˜Â§").Replace("Ã˜Â¥", "Ã˜Â§").Replace("Ã˜Â¢", "Ã˜Â§")
+                    .Replace("Ã˜Â©", "Ã™â€¡")
+                    .Replace("Ã™â€°", "Ã™Å ");
             }
 
-            // --- 💡 AUTO-DETECT HEADER ROW (Search first 10 rows) ---
-            var keywords = new[] { "sku", "الكود", "الكمية", "qty", "التكلفة", "cost" };
+            // --- Ã°Å¸â€™Â¡ AUTO-DETECT HEADER ROW (Search first 10 rows) ---
+            var keywords = new[] { "sku", "Ã˜Â§Ã™â€žÃ™Æ’Ã™Ë†Ã˜Â¯", "Ã˜Â§Ã™â€žÃ™Æ’Ã™â€¦Ã™Å Ã˜Â©", "qty", "Ã˜Â§Ã™â€žÃ˜ÂªÃ™Æ’Ã™â€žÃ™ÂÃ˜Â©", "cost" };
             for (int r = 1; r <= 10; r++)
             {
                 var row = ws.Row(r);
@@ -586,7 +588,7 @@ public class InventoryOpeningBalanceController : ControllerBase
             }
 
             if (headerRow == null) 
-                return BadRequest(new { message = _t.Get("Inventory.ImportErrorCols") + " (لم يتم العثور على سطر العناوين)" });
+                return BadRequest(new { message = _t.Get("Inventory.ImportErrorCols") + " (Ã™â€žÃ™â€¦ Ã™Å Ã˜ÂªÃ™â€¦ Ã˜Â§Ã™â€žÃ˜Â¹Ã˜Â«Ã™Ë†Ã˜Â± Ã˜Â¹Ã™â€žÃ™â€° Ã˜Â³Ã˜Â·Ã˜Â± Ã˜Â§Ã™â€žÃ˜Â¹Ã™â€ Ã˜Â§Ã™Ë†Ã™Å Ã™â€ )" });
 
             var lastCol = ws.LastColumnUsed()?.ColumnNumber() ?? 10;
             for (int c = 1; c <= lastCol; c++)
@@ -610,21 +612,21 @@ public class InventoryOpeningBalanceController : ControllerBase
                 return -1;
             }
 
-            int colSku   = GetCol("الكود", "SKU", "Code");
-            int colQty   = GetCol("الكمية", "Quantity", "Qty");
-            int colCost  = GetCol("التكلفة", "Cost", "Price", "سعر التكلفة");
-            int colSize  = GetCol("المقاس", "Size");
-            int colColor = GetCol("اللون", "Color");
+            int colSku   = GetCol("Ã˜Â§Ã™â€žÃ™Æ’Ã™Ë†Ã˜Â¯", "SKU", "Code");
+            int colQty   = GetCol("Ã˜Â§Ã™â€žÃ™Æ’Ã™â€¦Ã™Å Ã˜Â©", "Quantity", "Qty");
+            int colCost  = GetCol("Ã˜Â§Ã™â€žÃ˜ÂªÃ™Æ’Ã™â€žÃ™ÂÃ˜Â©", "Cost", "Price", "Ã˜Â³Ã˜Â¹Ã˜Â± Ã˜Â§Ã™â€žÃ˜ÂªÃ™Æ’Ã™â€žÃ™ÂÃ˜Â©");
+            int colSize  = GetCol("Ã˜Â§Ã™â€žÃ™â€¦Ã™â€šÃ˜Â§Ã˜Â³", "Size");
+            int colColor = GetCol("Ã˜Â§Ã™â€žÃ™â€žÃ™Ë†Ã™â€ ", "Color");
 
             if (colSku == -1 || colQty == -1 || colCost == -1)
             {
                 var missing = new List<string>();
-                if (colSku == -1) missing.Add("الكود (SKU)");
-                if (colQty == -1) missing.Add("الكمية (Qty)");
-                if (colCost == -1) missing.Add("التكلفة (Cost)");
+                if (colSku == -1) missing.Add("Ã˜Â§Ã™â€žÃ™Æ’Ã™Ë†Ã˜Â¯ (SKU)");
+                if (colQty == -1) missing.Add("Ã˜Â§Ã™â€žÃ™Æ’Ã™â€¦Ã™Å Ã˜Â© (Qty)");
+                if (colCost == -1) missing.Add("Ã˜Â§Ã™â€žÃ˜ÂªÃ™Æ’Ã™â€žÃ™ÂÃ˜Â© (Cost)");
                 
                 return BadRequest(new { 
-                    message = $"{_t.Get("Inventory.ImportErrorCols")} المفقود: {string.Join(", ", missing)}",
+                    message = $"{_t.Get("Inventory.ImportErrorCols")} Ã˜Â§Ã™â€žÃ™â€¦Ã™ÂÃ™â€šÃ™Ë†Ã˜Â¯: {string.Join(", ", missing)}",
                     detectedHeaders = debugHeaders,
                     headerRowFound = headerRow.RowNumber()
                 });
@@ -769,5 +771,7 @@ public class InventoryOpeningBalanceController : ControllerBase
         await _accounting.PostManualEntryAsync(dto, User);
     }
 }
+
+
 
 

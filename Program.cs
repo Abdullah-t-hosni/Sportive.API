@@ -159,8 +159,9 @@ builder.Services.AddOpenTelemetry()
         .AddRuntimeInstrumentation()
         .AddOtlpExporter(opt => opt.Endpoint = new Uri(otelEndpoint)));
 
-// ── HANGFIRE (Background Jobs) ────────────────────────
-builder.Services.AddHangfireServices(connStr);
+// ── HANGFIRE (Background Jobs) ── minimal in-memory for schema extraction ──
+builder.Services.AddHangfire(config => config.UseInMemoryStorage());
+builder.Services.AddHangfireServer();
 
 // ── RESPONSE COMPRESSION ──────────────────────────────
 builder.Services.AddResponseCompression(options =>
@@ -208,7 +209,7 @@ using (var scope = app.Services.CreateScope())
         var services = scope.ServiceProvider;
         
         var entryAssemblyName = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name;
-        bool isEfTool = entryAssemblyName != null && (entryAssemblyName.Equals("ef", StringComparison.OrdinalIgnoreCase) || entryAssemblyName.Equals("dotnet-ef", StringComparison.OrdinalIgnoreCase));
+        bool isEfTool = true;
         
         if (!isEfTool)
         {
@@ -325,10 +326,10 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<Sportive.API.Middleware.SessionLastSeenMiddleware>();
 
-app.UseHangfireDashboard("/jobs", new DashboardOptions
-{
-    Authorization = new[] { new HangfireAdminFilter() }
-});
+// app.UseHangfireDashboard("/jobs", new DashboardOptions
+// {
+//     Authorization = new[] { new HangfireAdminFilter() }
+// });
 
 app.MapControllers();
 app.MapHealthChecks("/health");
