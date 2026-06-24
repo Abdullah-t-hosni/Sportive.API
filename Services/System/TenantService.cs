@@ -298,10 +298,31 @@ public class TenantService : ITenantService
         if (request.CustomDomain != null) tenant.CustomDomain = request.CustomDomain;
         if (request.Status.HasValue) tenant.Status = request.Status.Value;
 
+        if (request.SubscriptionExpiresAt.HasValue)
+        {
+            var activeSub = await _masterContext.TenantSubscriptions
+                .Where(s => s.TenantGuid == tenantGuid && s.IsActive)
+                .OrderByDescending(s => s.StartsAt)
+                .FirstOrDefaultAsync();
+
+            if (activeSub != null)
+            {
+                activeSub.ExpiresAt = request.SubscriptionExpiresAt.Value;
+                activeSub.UpdatedAt = TimeHelper.GetEgyptTime();
+            }
+        }
+
         tenant.UpdatedAt = TimeHelper.GetEgyptTime();
 
         await _masterContext.SaveChangesAsync();
         InvalidateAnalyticsCache();
+
+        _cache.Remove($"tenant_slug_{tenant.Slug.ToLowerInvariant()}");
+        _cache.Remove($"tenant_subdomain_{tenant.Subdomain.ToLowerInvariant()}");
+        if (!string.IsNullOrEmpty(tenant.CustomDomain))
+        {
+            _cache.Remove($"tenant_customdomain_{tenant.CustomDomain.ToLowerInvariant()}");
+        }
 
         return (true, "Tenant updated successfully.");
     }

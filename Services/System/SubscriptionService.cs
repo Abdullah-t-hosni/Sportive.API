@@ -119,7 +119,7 @@ public class SubscriptionService : ISubscriptionService
 
     public async Task<(bool Success, string Message, SubscriptionDto? Data)> UpdateSubscriptionAsync(int id, UpdateSubscriptionDto request)
     {
-        var subscription = await _context.TenantSubscriptions.FindAsync(id);
+        var subscription = await _context.TenantSubscriptions.Include(x => x.Tenant).FirstOrDefaultAsync(x => x.Id == id);
         if (subscription == null)
             return (false, "Subscription not found.", null);
 
@@ -140,6 +140,16 @@ public class SubscriptionService : ISubscriptionService
         await _context.SaveChangesAsync();
 
         InvalidateAnalyticsCache();
+        
+        if (subscription.Tenant != null)
+        {
+            _cache.Remove($"tenant_slug_{subscription.Tenant.Slug.ToLowerInvariant()}");
+            _cache.Remove($"tenant_subdomain_{subscription.Tenant.Subdomain.ToLowerInvariant()}");
+            if (!string.IsNullOrEmpty(subscription.Tenant.CustomDomain))
+            {
+                _cache.Remove($"tenant_customdomain_{subscription.Tenant.CustomDomain.ToLowerInvariant()}");
+            }
+        }
 
         var dto = await GetSubscriptionByIdAsync(subscription.Id);
         return (true, "Subscription updated successfully.", dto);

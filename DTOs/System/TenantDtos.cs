@@ -66,6 +66,7 @@ public class UpdateTenantDto
     public string? Subdomain { get; set; }
     public string? CustomDomain { get; set; }
     public TenantStatus? Status { get; set; }
+    public DateTime? SubscriptionExpiresAt { get; set; }
 }
 
 public class TenantUsageDto
