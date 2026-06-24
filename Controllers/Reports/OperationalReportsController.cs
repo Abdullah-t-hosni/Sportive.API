@@ -61,7 +61,12 @@ public class OperationalReportsController : ControllerBase
 
         var products = await _db.Products
             .OrderBy(p => p.NameAr)
-            .Select(p => new { p.Id, p.NameAr, p.SKU })
+            .Select(p => new { 
+                p.Id, 
+                p.NameAr, 
+                p.SKU,
+                Variants = p.Variants.Select(v => new { v.Color, v.ColorAr, v.Size }).ToList()
+            })
             .ToListAsync();
 
         return Ok(new { colors, sizes, products });
