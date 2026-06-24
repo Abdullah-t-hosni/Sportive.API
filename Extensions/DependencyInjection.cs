@@ -60,6 +60,8 @@ public static class DependencyInjection
             );
         });
 
+        services.AddScoped<IDbContextFactory<AppDbContext>, ScopedAppDbContextFactory>();
+
         services.AddIdentity<AppUser, IdentityRole>(options =>
         {
             options.Password.RequireDigit = false;
