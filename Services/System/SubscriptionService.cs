@@ -130,7 +130,16 @@ public class SubscriptionService : ISubscriptionService
             subscription.PlanId = request.PlanId.Value;
         }
 
-        if (request.ExpiresAt.HasValue) subscription.ExpiresAt = request.ExpiresAt.Value;
+        if (request.ExpiresAt.HasValue) 
+        {
+            var dt = request.ExpiresAt.Value;
+            if (dt.Kind == DateTimeKind.Utc)
+            {
+                dt = dt.ToStoreTime();
+            }
+            subscription.ExpiresAt = DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
+        }
+        
         if (request.IsActive.HasValue) subscription.IsActive = request.IsActive.Value;
         if (request.AutoRenew.HasValue) subscription.AutoRenew = request.AutoRenew.Value;
         if (request.GracePeriodDays.HasValue) subscription.GracePeriodDays = request.GracePeriodDays.Value;

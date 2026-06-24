@@ -307,7 +307,12 @@ public class TenantService : ITenantService
 
             if (activeSub != null)
             {
-                activeSub.ExpiresAt = request.SubscriptionExpiresAt.Value;
+                var dt = request.SubscriptionExpiresAt.Value;
+                if (dt.Kind == DateTimeKind.Utc)
+                {
+                    dt = dt.ToStoreTime();
+                }
+                activeSub.ExpiresAt = DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
                 activeSub.UpdatedAt = TimeHelper.GetEgyptTime();
             }
         }
