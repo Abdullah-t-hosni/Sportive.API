@@ -79,29 +79,37 @@ namespace Sportive.API.Controllers.HR
 
             // Auto-generate items for inventory tasks
             var respType = await _context.ResponsibilityTypes.FindAsync(employeeTask.ResponsibilityTypeId);
-            if (respType != null && (respType.Name.Contains("جرد") || respType.Name.Contains("Inventory")))
+            if (employeeTask.TaskType == InteractiveTaskType.InventoryCount || 
+                (respType != null && (respType.Name.Contains("جرد") || respType.Name.Contains("Inventory"))))
             {
                 int quantity = (int)(employeeTask.TargetQuantity > 0 ? employeeTask.TargetQuantity : 5);
                 var randomProducts = await _context.Products
-                    .Where(p => p.Status == ProductStatus.Active)
+                    .Include(p => p.Variants)
+                    .ThenInclude(v => v.Color)
+                    .Include(p => p.Variants)
+                    .ThenInclude(v => v.Size)
+                    .Where(p => p.Status == ProductStatus.Active && p.Variants.Any())
                     .OrderBy(x => Guid.NewGuid())
                     .Take(quantity)
-                    .Select(p => new { p.Id, p.NameAr })
                     .ToListAsync();
 
                 employeeTask.Items = new List<EmployeeTaskItem>();
                 foreach (var p in randomProducts)
                 {
-                    employeeTask.Items.Add(new EmployeeTaskItem
+                    foreach (var v in p.Variants)
                     {
-                        ProductId = p.Id,
-                        ItemName = p.NameAr,
-                        ExpectedQuantity = 0,
-                        ActualQuantity = 0,
-                        IsCompleted = false
-                    });
+                        employeeTask.Items.Add(new EmployeeTaskItem
+                        {
+                            ProductId = p.Id,
+                            ProductVariantId = v.Id,
+                            ItemName = $"{p.NameAr} - {v.Color?.NameAr} - {v.Size?.Name}",
+                            ExpectedQuantity = v.StockQuantity, // Assuming we want them to count
+                            ActualQuantity = 0,
+                            IsCompleted = false
+                        });
+                    }
                 }
-                employeeTask.TargetQuantity = randomProducts.Count;
+                employeeTask.TargetQuantity = employeeTask.Items.Count;
             }
             
             _context.EmployeeTasks.Add(employeeTask);
@@ -227,6 +235,93 @@ namespace Sportive.API.Controllers.HR
             await _context.SaveChangesAsync();
 
             return NoContent();
+        }
+
+        // POST: api/EmployeeTasks/seed-sample
+        [HttpPost("seed-sample")]
+        public async Task<IActionResult> SeedSampleTasks([FromQuery] int employeeId)
+        {
+            var employee = await _context.Employees.FindAsync(employeeId);
+            if (employee == null) return BadRequest("Employee not found.");
+
+            var responsibilityTypes = await _context.ResponsibilityTypes.ToListAsync();
+
+            var tasksToCreate = new List<EmployeeTask>();
+            var random = new Random();
+
+            var taskDefinitions = new List<(InteractiveTaskType Type, string Title, string Desc)>
+            {
+                (InteractiveTaskType.General, "مراجعة تقارير المبيعات", "مراجعة تقارير مبيعات الأسبوع الماضي وتقديم ملخص."),
+                (InteractiveTaskType.InventoryCount, "جرد عشوائي للملابس الرياضية", "قم بجرد عشوائي لـ 5 أصناف من قسم الملابس."),
+                (InteractiveTaskType.PosShiftClosure, "مراجعة إغلاق الكاشير", "تأكد من مطابقة مبالغ الكاشير للوردية المسائية."),
+                (InteractiveTaskType.OrderFulfillment, "تجهيز طلبات الأونلاين (VIP)", "تجهيز وتغليف 3 طلبات أونلاين للعملاء المميزين."),
+                (InteractiveTaskType.ReceivePurchaseOrder, "استلام بضاعة المورد (Nike)", "استلام ومراجعة بضاعة المورد وإدخالها للمخزن."),
+                (InteractiveTaskType.RestockingShelves, "تعبئة رفوف الأحذية", "إعادة ترتيب وتعبئة رفوف الأحذية الرياضية في الصالة الرئيسية."),
+                (InteractiveTaskType.BranchTransferPacking, "تجهيز نقل لفرع جدة", "تجهيز كراتين النقل المطلوبة لفرع جدة."),
+                (InteractiveTaskType.CustomerFollowUp, "متابعة عملاء الجملة", "الاتصال بـ 5 عملاء جملة لعرض الكتالوج الجديد."),
+                (InteractiveTaskType.StoreOpeningChecklist, "نظافة وتجهيز الفرع للافتتاح", "التأكد من نظافة الواجهة وترتيب المنتجات قبل فتح الفرع."),
+                (InteractiveTaskType.VisualMerchandising, "تنسيق المانيكان الشتوي", "تغيير ملابس المانيكان في الواجهة للعرض الشتوي الجديد.")
+            };
+
+            foreach (var def in taskDefinitions)
+            {
+                var respType = responsibilityTypes.FirstOrDefault(r => r.Name.Contains(def.Title.Split(' ')[0])) 
+                               ?? responsibilityTypes.FirstOrDefault();
+
+                var task = new EmployeeTask
+                {
+                    EmployeeId = employeeId,
+                    Title = def.Title,
+                    Description = def.Desc,
+                    TaskType = def.Type,
+                    TaskDate = DateTime.Now,
+                    DueDate = DateTime.Now.AddDays(random.Next(1, 4)),
+                    Status = EmployeeTaskStatus.Pending,
+                    TargetQuantity = def.Type == InteractiveTaskType.InventoryCount ? 5 : 1,
+                    ResponsibilityTypeId = respType?.Id ?? 1,
+                    CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                };
+
+                tasksToCreate.Add(task);
+            }
+
+            _context.EmployeeTasks.AddRange(tasksToCreate);
+            await _context.SaveChangesAsync();
+
+            // Auto-generate items for the Inventory Count task
+            foreach (var task in tasksToCreate.Where(t => t.TaskType == InteractiveTaskType.InventoryCount))
+            {
+                var randomProducts = await _context.Products
+                    .Include(p => p.Variants)
+                    .ThenInclude(v => v.Color)
+                    .Include(p => p.Variants)
+                    .ThenInclude(v => v.Size)
+                    .Where(p => p.Status == ProductStatus.Active && p.Variants.Any())
+                    .OrderBy(x => Guid.NewGuid())
+                    .Take(5)
+                    .ToListAsync();
+
+                task.Items = new List<EmployeeTaskItem>();
+                foreach (var p in randomProducts)
+                {
+                    foreach (var v in p.Variants)
+                    {
+                        task.Items.Add(new EmployeeTaskItem
+                        {
+                            EmployeeTaskId = task.Id,
+                            ProductId = p.Id,
+                            ProductVariantId = v.Id,
+                            ItemName = $"{p.NameAr} - {v.Color?.NameAr} - {v.Size?.Name}",
+                            ExpectedQuantity = v.StockQuantity,
+                            ActualQuantity = 0,
+                            IsCompleted = false
+                        });
+                    }
+                }
+            }
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "تم إنشاء 10 مهام تفاعلية بنجاح!", tasks = tasksToCreate });
         }
     }
 
