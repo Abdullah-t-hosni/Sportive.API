@@ -160,11 +160,10 @@ namespace Sportive.API.Controllers.HR
                     var bonus = new EmployeeBonus
                     {
                         EmployeeId = task.EmployeeId,
-                        Date = DateTime.Now,
+                        BonusDate = DateTime.Now,
                         Amount = task.ActualBonusAmount,
                         Reason = $"مكافأة عن إنجاز المهمة: {task.Title}",
-                        Notes = task.ManagerNotes,
-                        IsPaid = false
+                        Notes = task.ManagerNotes
                     };
                     _context.EmployeeBonuses.Add(bonus);
                     await _context.SaveChangesAsync(); // Save to get ID
@@ -176,11 +175,10 @@ namespace Sportive.API.Controllers.HR
                     var deduction = new EmployeeDeduction
                     {
                         EmployeeId = task.EmployeeId,
-                        Date = DateTime.Now,
+                        DeductionDate = DateTime.Now,
                         Amount = task.ActualDeductionAmount,
                         Reason = $"خصم لقصور في المهمة: {task.Title} (نسبة الإنجاز {percentage:P0})",
-                        Notes = task.ManagerNotes,
-                        IsPaid = false
+                        Notes = task.ManagerNotes
                     };
                     _context.EmployeeDeductions.Add(deduction);
                     await _context.SaveChangesAsync(); // Save to get ID
