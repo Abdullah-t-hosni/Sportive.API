@@ -85,9 +85,6 @@ namespace Sportive.API.Controllers.HR
                 int quantity = (int)(employeeTask.TargetQuantity > 0 ? employeeTask.TargetQuantity : 5);
                 var randomProducts = await _context.Products
                     .Include(p => p.Variants)
-                    .ThenInclude(v => v.Color)
-                    .Include(p => p.Variants)
-                    .ThenInclude(v => v.Size)
                     .Where(p => p.Status == ProductStatus.Active && p.Variants.Any())
                     .OrderBy(x => Guid.NewGuid())
                     .Take(quantity)
@@ -102,7 +99,7 @@ namespace Sportive.API.Controllers.HR
                         {
                             ProductId = p.Id,
                             ProductVariantId = v.Id,
-                            ItemName = $"{p.NameAr} - {v.Color?.NameAr} - {v.Size?.Name}",
+                            ItemName = $"{p.NameAr} - {v.ColorAr} - {v.Size}",
                             ExpectedQuantity = v.StockQuantity, // Assuming we want them to count
                             ActualQuantity = 0,
                             IsCompleted = false
@@ -293,9 +290,6 @@ namespace Sportive.API.Controllers.HR
             {
                 var randomProducts = await _context.Products
                     .Include(p => p.Variants)
-                    .ThenInclude(v => v.Color)
-                    .Include(p => p.Variants)
-                    .ThenInclude(v => v.Size)
                     .Where(p => p.Status == ProductStatus.Active && p.Variants.Any())
                     .OrderBy(x => Guid.NewGuid())
                     .Take(5)
@@ -311,7 +305,7 @@ namespace Sportive.API.Controllers.HR
                             EmployeeTaskId = task.Id,
                             ProductId = p.Id,
                             ProductVariantId = v.Id,
-                            ItemName = $"{p.NameAr} - {v.Color?.NameAr} - {v.Size?.Name}",
+                            ItemName = $"{p.NameAr} - {v.ColorAr} - {v.Size}",
                             ExpectedQuantity = v.StockQuantity,
                             ActualQuantity = 0,
                             IsCompleted = false
