@@ -413,7 +413,8 @@ public class EmployeesController : ControllerBase
                          if (type == JournalEntryType.SalesInvoice || type == JournalEntryType.PurchaseInvoice) return 10;
                          if (type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseReturn) return 20;
                          if (type == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
-                         if (type == JournalEntryType.ReceiptVoucher || type == JournalEntryType.PaymentVoucher) return 40;
+                         if (type == JournalEntryType.Payroll) return 40;
+                         if (type == JournalEntryType.ReceiptVoucher || type == JournalEntryType.PaymentVoucher) return 60;
                          return 50;
                      })
                      .ThenBy(l => l.JournalEntry.EntryDate)
@@ -517,7 +518,8 @@ public class EmployeesController : ControllerBase
                          if (type == JournalEntryType.SalesInvoice || type == JournalEntryType.PurchaseInvoice) return 10;
                          if (type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseReturn) return 20;
                          if (type == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
-                         if (type == JournalEntryType.ReceiptVoucher || type == JournalEntryType.PaymentVoucher) return 40;
+                         if (type == JournalEntryType.Payroll) return 40;
+                         if (type == JournalEntryType.ReceiptVoucher || type == JournalEntryType.PaymentVoucher) return 60;
                          return 50;
                      })
                      .ThenBy(l => l.JournalEntry.EntryDate)
