@@ -77,8 +77,32 @@ namespace Sportive.API.Controllers.HR
             employeeTask.CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             employeeTask.Status = EmployeeTaskStatus.Pending;
 
-            // Here we can auto-generate Items based on the ResponsibilityType and CriteriaJson
-            // For example, if it's an INVENTORY task and criteria has a CategoryId...
+            // Auto-generate items for inventory tasks
+            var respType = await _context.ResponsibilityTypes.FindAsync(employeeTask.ResponsibilityTypeId);
+            if (respType != null && (respType.Name.Contains("جرد") || respType.Name.Contains("Inventory")))
+            {
+                int quantity = (int)(employeeTask.TargetQuantity > 0 ? employeeTask.TargetQuantity : 5);
+                var randomProducts = await _context.Products
+                    .Where(p => p.Status == ProductStatus.Active)
+                    .OrderBy(x => Guid.NewGuid())
+                    .Take(quantity)
+                    .Select(p => new { p.Id, p.NameAr })
+                    .ToListAsync();
+
+                employeeTask.Items = new List<EmployeeTaskItem>();
+                foreach (var p in randomProducts)
+                {
+                    employeeTask.Items.Add(new EmployeeTaskItem
+                    {
+                        ProductId = p.Id,
+                        ItemName = p.NameAr,
+                        ExpectedQuantity = 0,
+                        ActualQuantity = 0,
+                        IsCompleted = false
+                    });
+                }
+                employeeTask.TargetQuantity = randomProducts.Count;
+            }
             
             _context.EmployeeTasks.Add(employeeTask);
             await _context.SaveChangesAsync();
