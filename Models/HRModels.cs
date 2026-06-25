@@ -463,10 +463,10 @@ public enum EmployeeTaskStatus
 public class EmployeeTask : BaseEntity
 {
     public int EmployeeId { get; set; }
-    public virtual Employee Employee { get; set; } = null!;
+    public virtual Employee? Employee { get; set; }
 
     public int ResponsibilityTypeId { get; set; }
-    public virtual ResponsibilityType ResponsibilityType { get; set; } = null!;
+    public virtual ResponsibilityType? ResponsibilityType { get; set; }
 
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
