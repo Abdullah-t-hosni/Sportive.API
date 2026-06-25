@@ -59,6 +59,10 @@ public class BranchesController : ControllerBase
             PhoneNumber = dto.PhoneNumber?.Trim(),
             IsActive = dto.IsActive,
             LinkedWarehouseId = dto.LinkedWarehouseId,
+            Latitude = dto.Latitude,
+            Longitude = dto.Longitude,
+            AllowedPunchRadiusMeters = dto.AllowedPunchRadiusMeters > 0 ? dto.AllowedPunchRadiusMeters : 50,
+            AllowedIpAddress = dto.AllowedIpAddress?.Trim(),
             CreatedAt = TimeHelper.GetEgyptTime()
         };
 
@@ -167,6 +171,10 @@ public class BranchesController : ControllerBase
         branch.PhoneNumber = dto.PhoneNumber?.Trim();
         branch.IsActive = dto.IsActive;
         branch.LinkedWarehouseId = dto.LinkedWarehouseId;
+        branch.Latitude = dto.Latitude;
+        branch.Longitude = dto.Longitude;
+        branch.AllowedPunchRadiusMeters = dto.AllowedPunchRadiusMeters > 0 ? dto.AllowedPunchRadiusMeters : 50;
+        branch.AllowedIpAddress = dto.AllowedIpAddress?.Trim();
         branch.UpdatedAt = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
@@ -266,4 +274,10 @@ public class BranchDto
     public string? PhoneNumber { get; set; }
     public bool IsActive { get; set; } = true;
     public int? LinkedWarehouseId { get; set; }
+    
+    // Punch constraints
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
+    public int AllowedPunchRadiusMeters { get; set; } = 50;
+    public string? AllowedIpAddress { get; set; }
 }

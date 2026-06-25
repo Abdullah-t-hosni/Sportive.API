@@ -17,6 +17,14 @@ public class Branch : BaseEntity
 
     public bool IsActive { get; set; } = true;
 
+    // ── Punch Constraints ──
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
+    public int AllowedPunchRadiusMeters { get; set; } = 50;
+    
+    [MaxLength(100)]
+    public string? AllowedIpAddress { get; set; }
+
     // Navigation
     public ICollection<Warehouse> Warehouses { get; set; } = new List<Warehouse>();
 

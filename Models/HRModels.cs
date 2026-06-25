@@ -141,6 +141,9 @@ public class Employee : BaseEntity
     public int?    AccountId { get; set; }
     public Account? Account  { get; set; }
 
+    // ── Punch Constraints ──
+    public bool AllowRemotePunch { get; set; } = false; // إذا كان true، يسمح بالبصمة من أي مكان وأي IP
+
     // ربط الفرع
     public int? BranchId { get; set; }
     public Branch? Branch { get; set; }
@@ -428,6 +431,9 @@ public class EmployeeAttendance : BaseEntity
     public DateTime Date { get; set; } // يوم العمل
     public DateTime? CheckIn { get; set; } // وقت الدخول الفعلي
     public DateTime? CheckOut { get; set; } // وقت الانصراف الفعلي
+    
+    // ── Multiple Punches Support ──
+    public string PunchesJson { get; set; } = "[]"; // يخزن قائمة بصمات الموظف لهذا اليوم [{ Time, Type }]
     
     public decimal WorkHours { get; set; } = 0; // ساعات العمل المحتسبة
     public decimal OvertimeHours { get; set; } = 0; // العمل الإضافي المحتسب

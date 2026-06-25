@@ -47,34 +47,37 @@ namespace Sportive.API.Services.HR
                 return;
             }
 
-            var date = timestamp.Date;
+            // Business Date logic: Punches before 2:00 AM belong to the previous day
+            var date = timestamp.Hour < 2 ? timestamp.Date.AddDays(-1) : timestamp.Date;
 
-            // We look for a recent attendance record that is either:
-            // 1. Matches this exact date.
-            // 2. Or is an open check-in (no check-out) that started within 16 hours (overnight shifts).
             var attendance = await _db.EmployeeAttendances
-                .Where(a => a.EmployeeId == emp.Id)
-                .OrderByDescending(a => a.Date)
+                .Where(a => a.EmployeeId == emp.Id && a.Date == date)
                 .FirstOrDefaultAsync();
 
-            if (attendance != null && 
-                (attendance.Date == date || 
-                 (attendance.CheckIn.HasValue && !attendance.CheckOut.HasValue && (timestamp - attendance.CheckIn.Value).TotalHours < 16)))
+            var punches = new System.Collections.Generic.List<PunchLog>();
+            if (attendance != null && !string.IsNullOrEmpty(attendance.PunchesJson))
             {
-                // Update existing record
-                if (!attendance.CheckIn.HasValue || timestamp < attendance.CheckIn.Value)
-                {
-                    attendance.CheckIn = timestamp;
-                }
-                else if (!attendance.CheckOut.HasValue || timestamp > attendance.CheckOut.Value)
-                {
-                    attendance.CheckOut = timestamp;
-                }
+                punches = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.List<PunchLog>>(attendance.PunchesJson) ?? new System.Collections.Generic.List<PunchLog>();
+            }
 
+            var lastPunch = punches.OrderBy(p => p.Time).LastOrDefault();
+            var newPunch = new PunchLog 
+            { 
+                Time = timestamp, 
+                Source = serialNumber ?? "Web",
+                Type = (lastPunch == null || lastPunch.Type == "Out") ? "In" : "Out"
+            };
+            
+            punches.Add(newPunch);
+            punches = punches.OrderBy(p => p.Time).ToList();
+
+            if (attendance != null)
+            {
+                attendance.PunchesJson = System.Text.Json.JsonSerializer.Serialize(punches);
                 RecalculateAttendanceMetrics(attendance, emp);
                 attendance.UpdatedAt = TimeHelper.GetEgyptTime();
-                _logger.LogInformation("Updated attendance record ID {Id} for Employee {Emp} on {Date} (In: {In}, Out: {Out})", 
-                    attendance.Id, emp.Name, attendance.Date.ToShortDateString(), attendance.CheckIn, attendance.CheckOut);
+                _logger.LogInformation("Updated attendance record ID {Id} for Employee {Emp} on {Date} (Punches: {Count})", 
+                    attendance.Id, emp.Name, attendance.Date.ToShortDateString(), punches.Count);
             }
             else
             {
@@ -83,16 +86,16 @@ namespace Sportive.API.Services.HR
                 {
                     EmployeeId = emp.Id,
                     Date = date,
-                    CheckIn = timestamp,
+                    PunchesJson = System.Text.Json.JsonSerializer.Serialize(punches),
                     IsAbsent = false,
-                    Notes = $"بصمة تلقائية من جهاز: {serialNumber ?? "غير معروف"}",
+                    Notes = $"تم التسجيل بواسطة النظام التلقائي",
                     CreatedAt = TimeHelper.GetEgyptTime()
                 };
 
                 RecalculateAttendanceMetrics(newAttendance, emp);
                 _db.EmployeeAttendances.Add(newAttendance);
-                _logger.LogInformation("Created new attendance record for Employee {Emp} on {Date} (In: {In})", 
-                    emp.Name, date.ToShortDateString(), timestamp);
+                _logger.LogInformation("Created new attendance record for Employee {Emp} on {Date}", 
+                    emp.Name, date.ToShortDateString());
             }
 
             await _db.SaveChangesAsync();
@@ -108,9 +111,36 @@ namespace Sportive.API.Services.HR
                 return;
             }
 
-            if (attendance.CheckIn.HasValue && attendance.CheckOut.HasValue)
+            var punches = new System.Collections.Generic.List<PunchLog>();
+            if (!string.IsNullOrEmpty(attendance.PunchesJson))
             {
-                attendance.WorkHours = (decimal)(attendance.CheckOut.Value - attendance.CheckIn.Value).TotalHours;
+                punches = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.List<PunchLog>>(attendance.PunchesJson) ?? new System.Collections.Generic.List<PunchLog>();
+                punches = punches.OrderBy(p => p.Time).ToList();
+            }
+
+            if (punches.Any())
+            {
+                attendance.CheckIn = punches.First().Time;
+                var lastPunch = punches.Last();
+                attendance.CheckOut = lastPunch.Type == "Out" ? lastPunch.Time : (DateTime?)null;
+
+                decimal totalHours = 0;
+                DateTime? currentIn = null;
+                
+                foreach (var p in punches)
+                {
+                    if (p.Type == "In")
+                    {
+                        currentIn = p.Time;
+                    }
+                    else if (p.Type == "Out" && currentIn.HasValue)
+                    {
+                        totalHours += (decimal)(p.Time - currentIn.Value).TotalHours;
+                        currentIn = null;
+                    }
+                }
+                
+                attendance.WorkHours = totalHours;
                 
                 // Overtime
                 var stdHours = emp.WorkHoursPerDay;
@@ -125,6 +155,8 @@ namespace Sportive.API.Services.HR
             }
             else
             {
+                attendance.CheckIn = null;
+                attendance.CheckOut = null;
                 attendance.WorkHours = 0;
                 attendance.OvertimeHours = 0;
             }
@@ -168,5 +200,12 @@ namespace Sportive.API.Services.HR
                 }
             }
         }
+    }
+
+    public class PunchLog
+    {
+        public DateTime Time { get; set; }
+        public string Type { get; set; } = "In";
+        public string Source { get; set; } = "";
     }
 }
