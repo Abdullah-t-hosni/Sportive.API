@@ -9,12 +9,17 @@ The Point of Sale (POS) system provides a fast, touch-friendly interface for han
 3. **Receipt Generation**: Printing localized receipts with optional SKU and time visibility.
 4. **Order Tracking**: Monitoring order status (Pending, Shipped, Delivered, Returned).
 
-## Backend Components
+## Backend Components (`Controllers/Orders`, `Services/Orders`)
 - **Controllers**:
-    - `OrdersController`: Main endpoint for order creation and management.
-    - `TrackController`: Handles order status updates and history.
+    - `OrdersController`: Main endpoint for order creation, returns, and management.
     - `CartController`: Persists customer carts across sessions.
-- **Services**: Logic for applying coupons, calculating taxes, and updating inventory levels upon sale.
+    - `PosHeldCartsController`: Park/resume in-progress POS carts.
+    - `CouponsController`: Coupon validation and redemption.
+    - `InstallmentsController`: Installment-plan payments.
+    - `ShippingZonesController`: Delivery fees by zone.
+    - `PaymentController`: Paymob online payment flow.
+    - (`TrackController`, for public order-status tracking, lives in `Controllers/System`.)
+- **Services**: `OrderService` orchestrates the atomic checkout (pricing/discounts, VAT extraction, stock deduction, accounting posting) in one DB transaction; `CartService`, `CouponService` support it.
 
 ## Frontend UI
 - **POS Interface**: Optimized for speed with keyboard shortcuts and barcode scanner support.

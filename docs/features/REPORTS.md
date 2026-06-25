@@ -10,11 +10,13 @@ The reporting engine provides deep insights into business performance through va
 4. **Financial Reports**: Profit & Loss, Balance Sheet, General Ledger.
 5. **Operational Reports**: Cashier performance, return rates, and coupon usage.
 
-## Backend Implementation
+## Backend Implementation (`Controllers/Reports`, `Services/Reports`)
 - **Controllers**:
-    - `OperationalReportsController`: Handles the majority of business-level reports.
-    - `FinancialReportsController`: Focuses on accounting-specific data.
-    - `ExportController`: Provides Excel/PDF export functionality.
+    - `OperationalReportsController`: The majority of business-level reports.
+    - `DashboardKpiController`: Aggregated KPIs for the dashboard.
+    - `ExportController`: Excel/PDF export.
+    - `ImportController`: Excel import of catalog/report data.
+    - (`FinancialReportsController` is part of the Accounting module.)
 - **Efficiency**: Uses optimized SQL queries and DTOs to handle large datasets.
 
 ## Frontend UI
@@ -23,5 +25,5 @@ The reporting engine provides deep insights into business performance through va
 - **Data Visualization**: (Future/Planned) Charts and graphs for key KPIs.
 
 ## Exporting
-- **Excel**: Using `EPPlus` to generate multi-sheet workbooks.
-- **PDF**: Standardized templates for professional document sharing.
+- **Excel**: Using `ClosedXML` to generate multi-sheet workbooks.
+- **PDF**: Using `QuestPDF` with standardized templates for professional document sharing.

@@ -16,6 +16,7 @@ Each major module of the system is documented in detail below:
 - [**Customer & CRM**](./features/CUSTOMER_CRM.md)
 - [**HR & Staff Management**](./features/HR_STAFF.md)
 - [**Reports & Analytics**](./features/REPORTS.md)
+- [**System & Platform**](./features/SYSTEM_PLATFORM.md)
 
 ---
 

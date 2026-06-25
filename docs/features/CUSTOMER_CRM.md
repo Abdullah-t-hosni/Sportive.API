@@ -9,13 +9,14 @@ Manages the relationship between the business and its customers, including profi
 - **Wishlists & Reviews**: Allowing customers to save items for later and provide feedback.
 - **Coupons & Discounts**: Managing marketing campaigns and promotional codes.
 
-## Backend Implementation
+## Backend Implementation (`Controllers/Customers`, `Services/Customers`)
 - **Controllers**:
     - `CustomersController`: CRUD for customer data.
-    - `CustomerCategoryController`: Management of customer groups.
-    - `CouponsController`: Logic for validating and applying discounts.
+    - `CustomerCategoryController`: Management of customer groups / tiers.
     - `WishlistController` & `ReviewsController`: Customer engagement features.
-- **Integration**: Customers are linked to orders and carts to provide a personalized experience.
+    - (Coupons live in the Orders module's `CouponsController`.)
+- **Privacy**: Customer PII is stored **encrypted**; lookups (phone/email) are done via search hashes.
+- **Integration**: Customers are linked to orders and carts; `CustomerService` auto-creates a profile on register/login and re-tiers customers based on purchase totals.
 
 ## Frontend UI
 - **Customer Directory**: Searchable list of all registered customers.

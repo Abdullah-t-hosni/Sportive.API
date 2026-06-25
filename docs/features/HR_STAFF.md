@@ -9,12 +9,13 @@ Manages the organizational structure, employees, and their access rights within 
 - **User Authentication**: Secure login using JWT.
 - **Performance Tracking**: Monitoring cashier sales and operational efficiency.
 
-## Backend Components
-- **Controllers**:
-    - `StaffController`: CRUD for staff members.
-    - `UsersController`: Management of app user accounts (linking users to staff/customers).
-    - `AuthController`: Login, registration, and token management.
-    - `CashierPerformanceController`: Analytics on staff productivity.
+## Backend Components (`Controllers/HR`, `Services/HR`)
+- **People**: `EmployeesController`, `StaffController`, `DepartmentsController`, `ResponsibilityTypesController`.
+- **Attendance**: `EmployeeAttendancesController`, `IclockController` (ZK biometric clock devices), `SelfServiceController` (self punch-in/out).
+- **Payroll & pay items**: `PayrollController`, `EmployeeBonusesController`, `EmployeeDeductionsController`, `EmployeeAdvancesController`.
+- **Commissions**: `EmployeeCommissionsController`, `CommissionGroupsController`, `CommissionSchemesController`, `CashierPerformanceController`.
+- **Tasks**: `EmployeeTasksController`, `TaskBlueprintsController`, backed by the hosted `TaskGenerationService` that creates daily tasks from blueprints.
+- (Auth, user accounts, and role assignment live in `Controllers/System`: `AuthController`, `UsersController`.)
 
 ## Permissions System
 The system uses a custom `[RequirePermission]` attribute on controller actions. 
