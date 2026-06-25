@@ -138,6 +138,7 @@ builder.Services.AddCacheAndValidationServices(builder.Configuration);
 
 // ── APPLICATION SERVICES ──────────────────────────────
 builder.Services.AddApplicationServices();
+builder.Services.AddHostedService<TaskGenerationService>();
 
 // ── OPENTELEMETRY ─────────────────────────────────────
 var otelEndpoint = builder.Configuration["OpenTelemetry:Endpoint"] ?? "http://localhost:4317";

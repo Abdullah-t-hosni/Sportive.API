@@ -450,6 +450,37 @@ public class ResponsibilityType : BaseEntity
     public bool IsActive { get; set; } = true;
 }
 
+public class TaskBlueprint : BaseEntity
+{
+    public string Name { get; set; } = string.Empty;
+    public int EmployeeId { get; set; }
+    public virtual Employee? Employee { get; set; }
+
+    public int ResponsibilityTypeId { get; set; }
+    public virtual ResponsibilityType? ResponsibilityType { get; set; }
+
+    public DateTime StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+    
+    // e.g. "1,2,3,4,5" meaning Sunday to Thursday
+    public string ActiveDaysOfWeek { get; set; } = "0,1,2,3,4,5,6"; 
+
+    public string TaskBehavior { get; set; } = "RandomInventory"; // RandomInventory, FixedChecklist, etc.
+    
+    public decimal TargetQuantity { get; set; } = 5;
+
+    public decimal RewardAmount { get; set; } = 0;
+    public decimal PenaltyAmount { get; set; } = 0;
+
+    // Filters for random selection (e.g., {"Status": "Active", "CategoryId": 5})
+    public string? CriteriaJson { get; set; }
+
+    public bool IsActive { get; set; } = true;
+    public string? CreatedByUserId { get; set; }
+    
+    public virtual ICollection<EmployeeTask> GeneratedTasks { get; set; } = new List<EmployeeTask>();
+}
+
 public enum EmployeeTaskStatus
 {
     Pending = 1,      // قيد الانتظار
@@ -467,6 +498,9 @@ public class EmployeeTask : BaseEntity
 
     public int ResponsibilityTypeId { get; set; }
     public virtual ResponsibilityType? ResponsibilityType { get; set; }
+
+    public int? TaskBlueprintId { get; set; }
+    public virtual TaskBlueprint? TaskBlueprint { get; set; }
 
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }

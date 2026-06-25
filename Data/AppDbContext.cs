@@ -112,6 +112,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<ResponsibilityType> ResponsibilityTypes  { get; set; }
     public DbSet<EmployeeTask> EmployeeTasks              { get; set; }
     public DbSet<EmployeeTaskItem> EmployeeTaskItems      { get; set; }
+    public DbSet<TaskBlueprint> TaskBlueprints            { get; set; }
 
     public DbSet<EmployeeCommissionSetting> EmployeeCommissionSettings { get; set; }
     public DbSet<CommissionTier>     CommissionTiers     { get; set; }
