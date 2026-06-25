@@ -105,8 +105,14 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<EmployeeAdvance>    EmployeeAdvances    { get; set; }
     public DbSet<EmployeeBonus>      EmployeeBonuses     { get; set; }
     public DbSet<EmployeeDeduction>  EmployeeDeductions  { get; set; }
-    public DbSet<EmployeeAttendance> EmployeeAttendances { get; set; }
+    public DbSet<EmployeeAttendance> EmployeeAttendances  { get; set; }
     public DbSet<ZkDevice>           ZkDevices           { get; set; }
+    
+    // Employee Tasks and Responsibilities
+    public DbSet<ResponsibilityType> ResponsibilityTypes  { get; set; }
+    public DbSet<EmployeeTask> EmployeeTasks              { get; set; }
+    public DbSet<EmployeeTaskItem> EmployeeTaskItems      { get; set; }
+
     public DbSet<EmployeeCommissionSetting> EmployeeCommissionSettings { get; set; }
     public DbSet<CommissionTier>     CommissionTiers     { get; set; }
     public DbSet<CommissionScheme>     CommissionSchemes     { get; set; }

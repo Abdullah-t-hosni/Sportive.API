@@ -437,3 +437,89 @@ public class EmployeeAttendance : BaseEntity
     public string? Notes { get; set; }
     public string? CreatedByUserId { get; set; }
 }
+
+// ══════════════════════════════════════════════════════
+// تبويبة المهام والمسؤوليات — Employee Tasks & Responsibilities
+// ══════════════════════════════════════════════════════
+
+public class ResponsibilityType : BaseEntity
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string Code { get; set; } = string.Empty; // e.g., INVENTORY, CLEANING, SALES
+    public bool IsActive { get; set; } = true;
+}
+
+public enum EmployeeTaskStatus
+{
+    Pending = 1,      // قيد الانتظار
+    InProgress = 2,   // جاري العمل
+    Submitted = 3,    // تم التقديم (بانتظار الاعتماد)
+    Approved = 4,     // معتمدة (تم التقييم)
+    Rejected = 5,     // مرفوضة
+    Rework = 6        // إعادة عمل
+}
+
+public class EmployeeTask : BaseEntity
+{
+    public int EmployeeId { get; set; }
+    public virtual Employee Employee { get; set; } = null!;
+
+    public int ResponsibilityTypeId { get; set; }
+    public virtual ResponsibilityType ResponsibilityType { get; set; } = null!;
+
+    public string Title { get; set; } = string.Empty;
+    public string? Description { get; set; }
+
+    public DateTime TaskDate { get; set; }
+    public DateTime? DueDate { get; set; }
+    
+    public EmployeeTaskStatus Status { get; set; } = EmployeeTaskStatus.Pending;
+
+    // Targets and Evaluation
+    public decimal TargetQuantity { get; set; } = 1;
+    public decimal CompletedQuantity { get; set; } = 0;
+
+    // Potential Bonus / Deduction
+    public decimal MaxBonusAmount { get; set; } = 0;
+    public decimal MaxDeductionAmount { get; set; } = 0;
+
+    // Actual Calculated amounts after evaluation
+    public decimal ActualBonusAmount { get; set; } = 0;
+    public decimal ActualDeductionAmount { get; set; } = 0;
+
+    // Filters or configurations in JSON (e.g., {"CategoryId": 5, "Status": "Active"})
+    public string? CriteriaJson { get; set; }
+
+    public string? ManagerNotes { get; set; }
+    public string? EmployeeNotes { get; set; }
+
+    public string? CreatedByUserId { get; set; }
+
+    // Navigation properties for linked financial impact
+    public int? EmployeeBonusId { get; set; }
+    public virtual EmployeeBonus? EmployeeBonus { get; set; }
+
+    public int? EmployeeDeductionId { get; set; }
+    public virtual EmployeeDeduction? EmployeeDeduction { get; set; }
+
+    public virtual ICollection<EmployeeTaskItem> Items { get; set; } = new List<EmployeeTaskItem>();
+}
+
+public class EmployeeTaskItem : BaseEntity
+{
+    public int EmployeeTaskId { get; set; }
+    public virtual EmployeeTask EmployeeTask { get; set; } = null!;
+
+    public int? ProductId { get; set; }
+    // Avoid strong foreign key to avoid circular/cascade issues if not needed, or add it if context allows:
+    // public virtual Product? Product { get; set; }
+
+    public string? ItemName { get; set; } // If not linked to a specific product (e.g. Checklist item)
+
+    public decimal ExpectedQuantity { get; set; } = 0;
+    public decimal ActualQuantity { get; set; } = 0;
+
+    public bool IsCompleted { get; set; } = false;
+    public string? Notes { get; set; }
+}
