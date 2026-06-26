@@ -5,7 +5,7 @@ using Sportive.API.Interfaces;
 
 namespace Sportive.API.Controllers;
 
-[Route("api/system/analytics")]
+[Route("api/system/dashboard-data")]
 [ApiController]
 [Authorize(Roles = "SuperAdmin")]
 public class AnalyticsController : ControllerBase
