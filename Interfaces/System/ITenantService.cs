@@ -8,6 +8,8 @@ namespace Sportive.API.Interfaces;
 public interface ITenantService
 {
     Task<TenantOnboardingResult> OnboardNewTenantAsync(OnboardTenantRequest request);
+    Task<SelfRegisterResult> SelfRegisterAsync(SelfRegisterRequest request);
+    Task<bool> IsSlugAvailableAsync(string slug);
     Task<PagedResponseDto<TenantListDto>> GetAllTenantsAsync(TenantQueryDto query);
     Task<TenantDetailsDto?> GetTenantByIdAsync(Guid tenantGuid);
     Task<TenantUsageDto?> GetTenantUsageAsync(Guid id);
@@ -15,3 +17,4 @@ public interface ITenantService
     Task<(bool Success, string Message)> LockTenantAsync(Guid id, string? reason);
     Task<(bool Success, string Message)> UnlockTenantAsync(Guid id);
 }
+

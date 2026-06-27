@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +23,7 @@ public class TenantService : ITenantService
     private readonly RoleManager<IdentityRole> _roleManager;
     private readonly IMemoryCache _cache;
     private readonly ILogger<TenantService> _logger;
+    private readonly IEmailService _emailService;
 
     public TenantService(
         MasterDbContext masterContext,
@@ -30,7 +32,8 @@ public class TenantService : ITenantService
         UserManager<AppUser> userManager,
         RoleManager<IdentityRole> roleManager,
         IMemoryCache cache,
-        ILogger<TenantService> logger)
+        ILogger<TenantService> logger,
+        IEmailService emailService)
     {
         _masterContext = masterContext;
         _dbContextFactory = dbContextFactory;
@@ -39,7 +42,9 @@ public class TenantService : ITenantService
         _roleManager = roleManager;
         _cache = cache;
         _logger = logger;
+        _emailService = emailService;
     }
+
 
     public async Task<TenantOnboardingResult> OnboardNewTenantAsync(OnboardTenantRequest request)
     {
@@ -427,6 +432,142 @@ public class TenantService : ITenantService
         InvalidateAnalyticsCache();
         
         return (true, $"Tenant '{tenant.Name}' has been unlocked successfully.");
+    }
+
+    public async Task<bool> IsSlugAvailableAsync(string slug)
+    {
+        var normalized = slug.ToLowerInvariant().Trim();
+        return !await _masterContext.Tenants.AnyAsync(t => t.Slug == normalized || t.Subdomain == normalized);
+    }
+
+    public async Task<SelfRegisterResult> SelfRegisterAsync(SelfRegisterRequest request)
+    {
+        var slug = request.Slug.ToLowerInvariant().Trim();
+
+        // 1. تحقق من الـ slug
+        if (await _masterContext.Tenants.AnyAsync(t => t.Slug == slug || t.Subdomain == slug))
+            return new SelfRegisterResult { Success = false, Message = "هذا النطاق الفرعي محجوز مسبقاً. الرجاء اختيار اسم آخر." };
+
+        // 2. بناء بيانات قاعدة البيانات تلقائياً من slug
+        var dbName = $"raakiza_{slug.Replace("-", "_")}";
+        var dbUser = Environment.GetEnvironmentVariable("DEFAULT_TENANT_DB_USER")
+                     ?? "u282618987_raakiza_user";
+        var dbPass = Environment.GetEnvironmentVariable("DEFAULT_TENANT_DB_PASSWORD")
+                     ?? throw new InvalidOperationException("DEFAULT_TENANT_DB_PASSWORD environment variable is not set.");
+
+        // 3. بناء OnboardTenantRequest الكاملة
+        var onboardRequest = new OnboardTenantRequest
+        {
+            Name         = request.CompanyName,
+            Slug         = slug,
+            Subdomain    = slug,
+            DatabaseName = dbName,
+            DatabaseUser = dbUser,
+            DatabasePassword = dbPass
+        };
+
+        // 4. تنفيذ الـ onboarding الأساسي
+        var result = await OnboardNewTenantAsync(onboardRequest);
+
+        if (!result.Success)
+            return new SelfRegisterResult { Success = false, Message = result.Message };
+
+        // 5. تحديث البريد الإلكتروني للمدير بالـ email الحقيقي للعميل
+        // الـ adminEmail الأصلي: admin@{slug}.local
+        // سنحتفظ بهذا ونضيف email حقيقي للعميل كـ contact
+        var adminEmail = result.AdminEmail ?? $"admin@{slug}.local";
+        var tempPassword = result.TemporaryPassword ?? string.Empty;
+        var subdomain = $"{slug}.raakiza.com";
+
+        // 6. إرسال إيميل الترحيب للعميل
+        try
+        {
+            await _emailService.SendEmailAsync(
+                request.Email,
+                $"مرحباً بك في ركيزة — حسابك جاهز! 🎉",
+                BuildWelcomeEmailBody(request.ContactName, request.CompanyName, subdomain, adminEmail, tempPassword)
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send welcome email to {Email} for tenant {Slug}", request.Email, slug);
+            // لا نفشل العملية بسبب فشل الإيميل
+        }
+
+        _logger.LogInformation("Self-registration completed for tenant {Slug} by {Email}", slug, request.Email);
+
+        return new SelfRegisterResult
+        {
+            Success = true,
+            Message = "تم إنشاء حسابك بنجاح! تحقق من بريدك الإلكتروني للحصول على بيانات الدخول.",
+            Subdomain = subdomain,
+            AdminEmail = adminEmail
+        };
+    }
+
+    private static string BuildWelcomeEmailBody(string contactName, string companyName, string subdomain, string adminEmail, string tempPassword)
+    {
+        return $@"
+<div dir='rtl' style='font-family: -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff;'>
+  
+  <!-- Header -->
+  <div style='background: linear-gradient(135deg, #1D1D1F 0%, #3a3a3c 100%); padding: 40px 32px; text-align: center; border-radius: 16px 16px 0 0;'>
+    <h1 style='color: #ffffff; margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.5px;'>ركيزة</h1>
+    <p style='color: rgba(255,255,255,0.7); margin: 8px 0 0 0; font-size: 14px;'>منصة إدارة الأعمال المتكاملة</p>
+  </div>
+
+  <!-- Body -->
+  <div style='padding: 40px 32px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 16px 16px;'>
+    
+    <h2 style='color: #1D1D1F; font-size: 22px; font-weight: 700; margin: 0 0 16px 0;'>مرحباً {contactName}! 🎉</h2>
+    <p style='color: #6b7280; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;'>
+      يسعدنا الإعلان عن إطلاق حساب شركة <strong style='color: #1D1D1F;'>{companyName}</strong> على منصة ركيزة بنجاح.
+      حسابك جاهز تماماً ويمكنك البدء فوراً!
+    </p>
+
+    <!-- Access Box -->
+    <div style='background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; margin: 0 0 32px 0;'>
+      <h3 style='color: #1D1D1F; font-size: 14px; font-weight: 700; margin: 0 0 16px 0; text-transform: uppercase; letter-spacing: 0.5px;'>بيانات الدخول</h3>
+      
+      <div style='margin-bottom: 12px;'>
+        <span style='color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase;'>رابط نظامك</span>
+        <div style='margin-top: 4px;'>
+          <a href='https://{subdomain}' style='color: #0066CC; font-size: 16px; font-weight: 600; text-decoration: none;'>https://{subdomain}</a>
+        </div>
+      </div>
+      
+      <div style='margin-bottom: 12px;'>
+        <span style='color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase;'>اسم المستخدم (الإيميل)</span>
+        <div style='margin-top: 4px; font-family: monospace; font-size: 15px; color: #1D1D1F; font-weight: 600;'>{adminEmail}</div>
+      </div>
+      
+      <div>
+        <span style='color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase;'>كلمة المرور المؤقتة</span>
+        <div style='margin-top: 4px; background: #1D1D1F; color: #ffffff; font-family: monospace; font-size: 18px; font-weight: 700; padding: 12px 16px; border-radius: 8px; letter-spacing: 1px;'>{tempPassword}</div>
+      </div>
+    </div>
+
+    <!-- CTA Button -->
+    <div style='text-align: center; margin: 0 0 32px 0;'>
+      <a href='https://{subdomain}' style='display: inline-block; background: #1D1D1F; color: #ffffff; padding: 16px 36px; border-radius: 12px; font-size: 16px; font-weight: 700; text-decoration: none; letter-spacing: -0.3px;'>
+        ابدأ الاستخدام الآن ←
+      </a>
+    </div>
+
+    <!-- Warning -->
+    <div style='background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 16px; margin: 0 0 24px 0;'>
+      <p style='color: #92400e; font-size: 13px; margin: 0; line-height: 1.5;'>
+        ⚠️ <strong>مهم:</strong> يُرجى تغيير كلمة المرور المؤقتة فور تسجيل الدخول للمرة الأولى لضمان أمان حسابك.
+      </p>
+    </div>
+
+    <p style='color: #9ca3af; font-size: 13px; line-height: 1.6; margin: 0;'>
+      إذا واجهتَ أي مشكلة، تواصل معنا على support@raakiza.com وسيسعد فريقنا بمساعدتك في أقرب وقت.
+    </p>
+  </div>
+
+  <p style='text-align: center; color: #d1d5db; font-size: 11px; margin-top: 20px;'>© 2026 ركيزة — جميع الحقوق محفوظة</p>
+</div>";
     }
 
     private void InvalidateAnalyticsCache()
