@@ -40,8 +40,8 @@ public class JobsController : ControllerBase
         var result = failed.Select(f => new
         {
             Id = f.Key,
-            f.Value.Job?.Type?.Name,
-            f.Value.Job?.Method?.Name,
+            ClassName = f.Value.Job?.Type?.Name,
+            MethodName = f.Value.Job?.Method?.Name,
             f.Value.ExceptionType,
             f.Value.ExceptionMessage,
             f.Value.FailedAt

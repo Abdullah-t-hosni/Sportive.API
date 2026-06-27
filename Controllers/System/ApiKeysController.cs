@@ -16,9 +16,9 @@ public class ApiKeysController : ControllerBase
         // Mock data until DB schema implements PlatformApiKeys
         var keys = new[]
         {
-            new { Id = 1, Name = "Mobile App Production", KeyPrefix = "pk_live_8f92...", CreatedAt = DateTime.UtcNow.AddDays(-30), LastUsedAt = DateTime.UtcNow.AddMinutes(-5), Status = "Active" },
-            new { Id = 2, Name = "Mobile App Staging", KeyPrefix = "pk_test_4b71...", CreatedAt = DateTime.UtcNow.AddDays(-60), LastUsedAt = DateTime.UtcNow.AddDays(-1), Status = "Active" },
-            new { Id = 3, Name = "Third-Party ERP Sync", KeyPrefix = "pk_live_1c99...", CreatedAt = DateTime.UtcNow.AddDays(-120), LastUsedAt = null, Status = "Revoked" }
+            new { Id = 1, Name = "Mobile App Production", KeyPrefix = "pk_live_8f92...", CreatedAt = DateTime.UtcNow.AddDays(-30), LastUsedAt = (DateTime?)DateTime.UtcNow.AddMinutes(-5), Status = "Active" },
+            new { Id = 2, Name = "Mobile App Staging", KeyPrefix = "pk_test_4b71...", CreatedAt = DateTime.UtcNow.AddDays(-60), LastUsedAt = (DateTime?)DateTime.UtcNow.AddDays(-1), Status = "Active" },
+            new { Id = 3, Name = "Third-Party ERP Sync", KeyPrefix = "pk_live_1c99...", CreatedAt = DateTime.UtcNow.AddDays(-120), LastUsedAt = (DateTime?)null, Status = "Revoked" }
         };
 
         return Ok(keys);
