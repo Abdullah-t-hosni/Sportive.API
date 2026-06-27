@@ -73,90 +73,94 @@ public class TenantService : ITenantService
             IsLocked = false
         };
 
-        using var transaction = await _masterContext.Database.BeginTransactionAsync();
-        try
+        var strategy = _masterContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
-            // Set context so AppDbContext uses the new database connection string
-            _tenantContext.SetTenant(newTenant);
+            using var transaction = await _masterContext.Database.BeginTransactionAsync();
+            try
+            {
+                // Set context so AppDbContext uses the new database connection string
+                _tenantContext.SetTenant(newTenant);
 
-            // 1. Check connection
-            using var appContext = await _dbContextFactory.CreateDbContextAsync();
-            // 1. Context created successfully
+                // 1. Check connection
+                using var appContext = await _dbContextFactory.CreateDbContextAsync();
+                // 1. Context created successfully
 
-            // 2. Create Tenant
-            _masterContext.Tenants.Add(newTenant);
+                // 2. Create Tenant
+                _masterContext.Tenants.Add(newTenant);
 
-            // 3. Create Trial Subscription
-            var trialPlan = await _masterContext.Plans.FirstOrDefaultAsync(x => x.Name == "Trial");
-            if (trialPlan == null)
+                // 3. Create Trial Subscription
+                var trialPlan = await _masterContext.Plans.FirstOrDefaultAsync(x => x.Name == "Trial");
+                if (trialPlan == null)
+                {
+                    await transaction.RollbackAsync();
+                    return new TenantOnboardingResult { Success = false, Message = "System Error: Trial plan not found." };
+                }
+
+                _masterContext.TenantSubscriptions.Add(new TenantSubscription
+                {
+                    TenantGuid = tenantGuid,
+                    PlanId = trialPlan.Id,
+                    StartsAt = TimeHelper.GetEgyptTime(),
+                    ExpiresAt = TimeHelper.GetEgyptTime().AddDays(14),
+                    IsActive = true,
+                    IsTrial = true,
+                    AutoRenew = false
+                });
+
+                await _masterContext.SaveChangesAsync();
+
+                // 4. Migrate App Database
+                _logger.LogInformation("Running onboarding migration for tenant {TenantSlug}", newTenant.Slug);
+                await appContext.Database.MigrateAsync();
+
+                // 5. Seed SuperAdmin User
+                var adminUser = new AppUser
+                {
+                    UserName = adminEmail,
+                    Email = adminEmail,
+                    FullName = "System Administrator",
+                    EmailConfirmed = true,
+                    CreatedAt = TimeHelper.GetEgyptTime()
+                };
+
+                var userManager = _serviceProvider.GetRequiredService<UserManager<AppUser>>();
+                var roleManager = _serviceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+
+                var userResult = await userManager.CreateAsync(adminUser, tempPassword);
+                if (!userResult.Succeeded)
+                {
+                    await transaction.RollbackAsync();
+                    return new TenantOnboardingResult { Success = false, Message = $"Failed to create admin user: {string.Join(", ", userResult.Errors.Select(e => e.Description))}" };
+                }
+
+                // Ensure SuperAdmin role exists in the new tenant database
+                if (!await roleManager.RoleExistsAsync(AppRoles.SuperAdmin))
+                {
+                    await roleManager.CreateAsync(new IdentityRole(AppRoles.SuperAdmin));
+                }
+
+                await userManager.AddToRoleAsync(adminUser, AppRoles.SuperAdmin);
+
+                // 6. Commit
+                await transaction.CommitAsync();
+
+                return new TenantOnboardingResult
+                {
+                    Success = true,
+                    Message = "Tenant onboarded successfully.",
+                    TenantGuid = tenantGuid,
+                    AdminEmail = adminEmail,
+                    TemporaryPassword = tempPassword
+                };
+            }
+            catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return new TenantOnboardingResult { Success = false, Message = "System Error: Trial plan not found." };
+                _logger.LogError(ex, "Failed to onboard new tenant {Slug}", request.Slug);
+                return new TenantOnboardingResult { Success = false, Message = $"Internal error during onboarding: {ex.Message}" };
             }
-
-            _masterContext.TenantSubscriptions.Add(new TenantSubscription
-            {
-                TenantGuid = tenantGuid,
-                PlanId = trialPlan.Id,
-                StartsAt = TimeHelper.GetEgyptTime(),
-                ExpiresAt = TimeHelper.GetEgyptTime().AddDays(14),
-                IsActive = true,
-                IsTrial = true,
-                AutoRenew = false
-            });
-
-            await _masterContext.SaveChangesAsync();
-
-            // 4. Migrate App Database
-            _logger.LogInformation("Running onboarding migration for tenant {TenantSlug}", newTenant.Slug);
-            await appContext.Database.MigrateAsync();
-
-            // 5. Seed SuperAdmin User
-            var adminUser = new AppUser
-            {
-                UserName = adminEmail,
-                Email = adminEmail,
-                FullName = "System Administrator",
-                EmailConfirmed = true,
-                CreatedAt = TimeHelper.GetEgyptTime()
-            };
-
-            var userManager = _serviceProvider.GetRequiredService<UserManager<AppUser>>();
-            var roleManager = _serviceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-
-            var userResult = await userManager.CreateAsync(adminUser, tempPassword);
-            if (!userResult.Succeeded)
-            {
-                await transaction.RollbackAsync();
-                return new TenantOnboardingResult { Success = false, Message = $"Failed to create admin user: {string.Join(", ", userResult.Errors.Select(e => e.Description))}" };
-            }
-
-            // Ensure SuperAdmin role exists in the new tenant database
-            if (!await roleManager.RoleExistsAsync(AppRoles.SuperAdmin))
-            {
-                await roleManager.CreateAsync(new IdentityRole(AppRoles.SuperAdmin));
-            }
-
-            await userManager.AddToRoleAsync(adminUser, AppRoles.SuperAdmin);
-
-            // 6. Commit
-            await transaction.CommitAsync();
-
-            return new TenantOnboardingResult
-            {
-                Success = true,
-                Message = "Tenant onboarded successfully.",
-                TenantGuid = tenantGuid,
-                AdminEmail = adminEmail,
-                TemporaryPassword = tempPassword
-            };
-        }
-        catch (Exception ex)
-        {
-            await transaction.RollbackAsync();
-            _logger.LogError(ex, "Failed to onboard new tenant {Slug}", request.Slug);
-            return new TenantOnboardingResult { Success = false, Message = $"Internal error during onboarding: {ex.Message}" };
-        }
+        });
     }
 
     public async Task<PagedResponseDto<TenantListDto>> GetAllTenantsAsync(TenantQueryDto query)
