@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -10,20 +10,12 @@ namespace Sportive.API.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<int>(
-                name: "Type",
-                table: "Categories",
-                type: "int",
-                nullable: false,
-                defaultValue: 0);
+            // Column 'Type' is already created in InitialCreate.cs
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropColumn(
-                name: "Type",
-                table: "Categories");
         }
     }
 }
