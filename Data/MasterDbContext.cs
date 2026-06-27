@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Models;
+using Sportive.API.Models.System;
 
 namespace Sportive.API.Data;
 
@@ -13,6 +14,8 @@ public class MasterDbContext : DbContext
     public DbSet<Plan> Plans => Set<Plan>();
     public DbSet<TenantSubscription> TenantSubscriptions => Set<TenantSubscription>();
     public DbSet<TenantUsage> TenantUsages => Set<TenantUsage>();
+    public DbSet<SupportTicket> SupportTickets => Set<SupportTicket>();
+    public DbSet<PlatformInvoice> PlatformInvoices => Set<PlatformInvoice>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -47,6 +50,18 @@ public class MasterDbContext : DbContext
             .HasOne(tu => tu.Tenant)
             .WithMany()
             .HasForeignKey(tu => tu.TenantGuid)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<SupportTicket>()
+            .HasOne(st => st.Tenant)
+            .WithMany()
+            .HasForeignKey(st => st.TenantGuid)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PlatformInvoice>()
+            .HasOne(pi => pi.Tenant)
+            .WithMany()
+            .HasForeignKey(pi => pi.TenantGuid)
             .OnDelete(DeleteBehavior.Cascade);
 
         // Seed Data
