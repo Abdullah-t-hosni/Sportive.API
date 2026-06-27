@@ -27,10 +27,24 @@ public class TenantValidationMiddleware
         var tenantResolver = context.RequestServices.GetRequiredService<ITenantResolver>();
         var tenantContext = context.RequestServices.GetRequiredService<ITenantContext>();
 
+        var path = context.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
+        var isPublicEndpoint = path.StartsWith("/api/public") || 
+                               path.StartsWith("/api/system") || 
+                               path.StartsWith("/health") || 
+                               path.StartsWith("/swagger") || 
+                               path.StartsWith("/uploads");
+
         // 1. Resolve tenant context for the request
         var tenant = await tenantResolver.ResolveTenantAsync();
+        
         if (tenant == null)
         {
+            if (isPublicEndpoint)
+            {
+                await _next(context);
+                return;
+            }
+
             context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
             context.Response.ContentType = "application/json";
             await context.Response.WriteAsync(JsonSerializer.Serialize(new
@@ -45,7 +59,7 @@ public class TenantValidationMiddleware
         tenantContext.SetTenant(tenant);
 
         // 3. Subscription Expiry & Grace Period Check
-        var path = context.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
+        path = context.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
         var isExemptedPath = path.StartsWith("/api/auth") || path.StartsWith("/api/settings") || path.StartsWith("/api/system");
 
         if (!isExemptedPath && tenant.ActiveSubscriptionExpiresAt.HasValue)

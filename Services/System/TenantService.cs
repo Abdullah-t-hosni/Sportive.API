@@ -19,8 +19,7 @@ public class TenantService : ITenantService
     private readonly MasterDbContext _masterContext;
     private readonly IDbContextFactory<AppDbContext> _dbContextFactory;
     private readonly ITenantContext _tenantContext;
-    private readonly UserManager<AppUser> _userManager;
-    private readonly RoleManager<IdentityRole> _roleManager;
+    private readonly IServiceProvider _serviceProvider;
     private readonly IMemoryCache _cache;
     private readonly ILogger<TenantService> _logger;
     private readonly IEmailService _emailService;
@@ -29,8 +28,7 @@ public class TenantService : ITenantService
         MasterDbContext masterContext,
         IDbContextFactory<AppDbContext> dbContextFactory,
         ITenantContext tenantContext,
-        UserManager<AppUser> userManager,
-        RoleManager<IdentityRole> roleManager,
+        IServiceProvider serviceProvider,
         IMemoryCache cache,
         ILogger<TenantService> logger,
         IEmailService emailService)
@@ -38,8 +36,7 @@ public class TenantService : ITenantService
         _masterContext = masterContext;
         _dbContextFactory = dbContextFactory;
         _tenantContext = tenantContext;
-        _userManager = userManager;
-        _roleManager = roleManager;
+        _serviceProvider = serviceProvider;
         _cache = cache;
         _logger = logger;
         _emailService = emailService;
@@ -128,7 +125,10 @@ public class TenantService : ITenantService
                 CreatedAt = TimeHelper.GetEgyptTime()
             };
 
-            var userResult = await _userManager.CreateAsync(adminUser, tempPassword);
+            var userManager = _serviceProvider.GetRequiredService<UserManager<AppUser>>();
+            var roleManager = _serviceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+
+            var userResult = await userManager.CreateAsync(adminUser, tempPassword);
             if (!userResult.Succeeded)
             {
                 await transaction.RollbackAsync();
@@ -136,12 +136,12 @@ public class TenantService : ITenantService
             }
 
             // Ensure SuperAdmin role exists in the new tenant database
-            if (!await _roleManager.RoleExistsAsync(AppRoles.SuperAdmin))
+            if (!await roleManager.RoleExistsAsync(AppRoles.SuperAdmin))
             {
-                await _roleManager.CreateAsync(new IdentityRole(AppRoles.SuperAdmin));
+                await roleManager.CreateAsync(new IdentityRole(AppRoles.SuperAdmin));
             }
 
-            await _userManager.AddToRoleAsync(adminUser, AppRoles.SuperAdmin);
+            await userManager.AddToRoleAsync(adminUser, AppRoles.SuperAdmin);
 
             // 6. Commit
             await transaction.CommitAsync();
@@ -449,11 +449,9 @@ public class TenantService : ITenantService
             return new SelfRegisterResult { Success = false, Message = "هذا النطاق الفرعي محجوز مسبقاً. الرجاء اختيار اسم آخر." };
 
         // 2. بناء بيانات قاعدة البيانات تلقائياً من slug
-        var dbName = $"raakiza_{slug.Replace("-", "_")}";
-        var dbUser = Environment.GetEnvironmentVariable("DEFAULT_TENANT_DB_USER")
-                     ?? "u282618987_raakiza_user";
-        var dbPass = Environment.GetEnvironmentVariable("DEFAULT_TENANT_DB_PASSWORD")
-                     ?? throw new InvalidOperationException("DEFAULT_TENANT_DB_PASSWORD environment variable is not set.");
+        var dbName = $"raakiza_{slug}";
+        var dbUser = Environment.GetEnvironmentVariable("DEFAULT_TENANT_DB_USER") ?? "root";
+        var dbPass = Environment.GetEnvironmentVariable("DEFAULT_TENANT_DB_PASSWORD") ?? "de23dd306edf0ed4";
 
         // 3. بناء OnboardTenantRequest الكاملة
         var onboardRequest = new OnboardTenantRequest
