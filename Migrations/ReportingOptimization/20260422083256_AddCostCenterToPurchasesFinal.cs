@@ -17,18 +17,24 @@ namespace Sportive.API.Migrations.ReportingOptimization
                 nullable: true)
                 .Annotation("MySql:CharSet", "utf8mb4");
 
-            migrationBuilder.AddColumn<string>(
+            migrationBuilder.AlterColumn<string>(
                 name: "CostCenter",
                 table: "PurchaseReturns",
                 type: "longtext",
-                nullable: true)
+                nullable: true,
+                oldClrType: typeof(int),
+                oldType: "int",
+                oldNullable: true)
                 .Annotation("MySql:CharSet", "utf8mb4");
 
-            migrationBuilder.AddColumn<string>(
+            migrationBuilder.AlterColumn<string>(
                 name: "CostCenter",
                 table: "PurchaseInvoices",
                 type: "longtext",
-                nullable: true)
+                nullable: true,
+                oldClrType: typeof(int),
+                oldType: "int",
+                oldNullable: true)
                 .Annotation("MySql:CharSet", "utf8mb4");
         }
 
@@ -39,13 +45,25 @@ namespace Sportive.API.Migrations.ReportingOptimization
                 name: "CostCenter",
                 table: "SupplierPayments");
 
-            migrationBuilder.DropColumn(
+            migrationBuilder.AlterColumn<int>(
                 name: "CostCenter",
-                table: "PurchaseReturns");
+                table: "PurchaseReturns",
+                type: "int",
+                nullable: true,
+                oldClrType: typeof(string),
+                oldType: "longtext",
+                oldNullable: true)
+                .OldAnnotation("MySql:CharSet", "utf8mb4");
 
-            migrationBuilder.DropColumn(
+            migrationBuilder.AlterColumn<int>(
                 name: "CostCenter",
-                table: "PurchaseInvoices");
+                table: "PurchaseInvoices",
+                type: "int",
+                nullable: true,
+                oldClrType: typeof(string),
+                oldType: "longtext",
+                oldNullable: true)
+                .OldAnnotation("MySql:CharSet", "utf8mb4");
         }
     }
 }
