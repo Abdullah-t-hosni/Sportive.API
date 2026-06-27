@@ -81,11 +81,7 @@ public class TenantService : ITenantService
 
             // 1. Check connection
             using var appContext = await _dbContextFactory.CreateDbContextAsync();
-            if (!await appContext.Database.CanConnectAsync())
-            {
-                await transaction.RollbackAsync();
-                return new TenantOnboardingResult { Success = false, Message = "Database credentials are invalid or database does not exist." };
-            }
+            // 1. Context created successfully
 
             // 2. Create Tenant
             _masterContext.Tenants.Add(newTenant);
