@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -10,69 +10,42 @@ namespace Sportive.API.Migrations.ReportingOptimization
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AlterColumn<string>(
+            migrationBuilder.AddColumn<string>(
                 name: "CostCenter",
                 table: "SupplierPayments",
                 type: "longtext",
-                nullable: true,
-                oldClrType: typeof(int),
-                oldType: "int",
-                oldNullable: true)
+                nullable: true)
                 .Annotation("MySql:CharSet", "utf8mb4");
 
-            migrationBuilder.AlterColumn<string>(
+            migrationBuilder.AddColumn<string>(
                 name: "CostCenter",
                 table: "PurchaseReturns",
                 type: "longtext",
-                nullable: true,
-                oldClrType: typeof(int),
-                oldType: "int",
-                oldNullable: true)
+                nullable: true)
                 .Annotation("MySql:CharSet", "utf8mb4");
 
-            migrationBuilder.AlterColumn<string>(
+            migrationBuilder.AddColumn<string>(
                 name: "CostCenter",
                 table: "PurchaseInvoices",
                 type: "longtext",
-                nullable: true,
-                oldClrType: typeof(int),
-                oldType: "int",
-                oldNullable: true)
+                nullable: true)
                 .Annotation("MySql:CharSet", "utf8mb4");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AlterColumn<int>(
+            migrationBuilder.DropColumn(
                 name: "CostCenter",
-                table: "SupplierPayments",
-                type: "int",
-                nullable: true,
-                oldClrType: typeof(string),
-                oldType: "longtext",
-                oldNullable: true)
-                .OldAnnotation("MySql:CharSet", "utf8mb4");
+                table: "SupplierPayments");
 
-            migrationBuilder.AlterColumn<int>(
+            migrationBuilder.DropColumn(
                 name: "CostCenter",
-                table: "PurchaseReturns",
-                type: "int",
-                nullable: true,
-                oldClrType: typeof(string),
-                oldType: "longtext",
-                oldNullable: true)
-                .OldAnnotation("MySql:CharSet", "utf8mb4");
+                table: "PurchaseReturns");
 
-            migrationBuilder.AlterColumn<int>(
+            migrationBuilder.DropColumn(
                 name: "CostCenter",
-                table: "PurchaseInvoices",
-                type: "int",
-                nullable: true,
-                oldClrType: typeof(string),
-                oldType: "longtext",
-                oldNullable: true)
-                .OldAnnotation("MySql:CharSet", "utf8mb4");
+                table: "PurchaseInvoices");
         }
     }
 }
