@@ -61,6 +61,36 @@ public class AnalyticsService : IAnalyticsService
             .Where(s => !s.IsTrial && s.Plan != null)
             .Sum(s => s.Plan!.MonthlyPrice);
 
+        // Generate 7-day revenue trend (cumulative MRR)
+        var revenueData = new List<RevenueChartItemDto>();
+        for (int i = 6; i >= 0; i--)
+        {
+            var date = now.Date.AddDays(-i);
+            var mrrOnDate = subs
+                .Where(s => !s.IsTrial && s.Plan != null && s.StartsAt.Date <= date && s.ExpiresAt.Date >= date)
+                .Sum(s => s.Plan!.MonthlyPrice);
+            revenueData.Add(new RevenueChartItemDto { Name = date.ToString("ddd"), Value = mrrOnDate });
+        }
+
+        // Expiring Trials (next 7 days)
+        var expiringTrials = subs
+            .Where(s => s.IsActive && s.IsTrial && s.ExpiresAt > now && s.ExpiresAt <= now.AddDays(7))
+            .OrderBy(s => s.ExpiresAt)
+            .Select(s => new ExpiringTrialDto
+            {
+                TenantGuid = s.TenantGuid.ToString(),
+                Name = tenants.FirstOrDefault(t => t.TenantGuid == s.TenantGuid)?.Name ?? "Unknown",
+                DaysLeft = (s.ExpiresAt - now).Days
+            })
+            .Take(5)
+            .ToList();
+
+        // Mock Recent Alerts (since we don't have an Alerts system yet)
+        var alerts = new List<SystemAlertDto>
+        {
+            new SystemAlertDto { Id = 1, Text = "System running optimally", Type = "success", Time = "Just now" }
+        };
+
         var stats = new SuperAdminDashboardStatsDto
         {
             TotalTenants = total,
@@ -70,7 +100,10 @@ public class AnalyticsService : IAnalyticsService
             ExpiredTenants = expiredTenantsCount,
             ActiveSubscriptions = activeSubs.Count,
             ExpiredSubscriptions = expiredSubs,
-            EstimatedMonthlyRevenue = estimatedRevenue
+            EstimatedMonthlyRevenue = estimatedRevenue,
+            RevenueChartData = revenueData,
+            ExpiringTrials = expiringTrials,
+            RecentAlerts = alerts
         };
 
         _cache.Set(CacheKeyAnalyticsDashboard, stats, TimeSpan.FromMinutes(5));
