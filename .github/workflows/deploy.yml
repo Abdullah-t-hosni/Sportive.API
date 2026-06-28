@@ -1,23 +1,64 @@
-name: CD — Deploy to Railway
+name: CD — Deploy to VPS
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:     # يسمح بـ manual trigger من الـ Actions tab
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: abdullah-t-hosni/sportive-api
+
 jobs:
-  # ── Job 2: Deploy (tests removed) ────────────────
-  deploy:
-    name: Deploy to Railway
+  build-and-deploy:
+    name: Build and Deploy to VPS
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Deploy to Railway
-        run: railway up --service Sportive.API --detach
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            # 1. Login to GHCR on VPS so it can pull the image
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # 2. Pull the latest image
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            
+            # 3. Stop and remove the old container if it exists
+            docker stop sportive-api || true
+            docker rm sportive-api || true
+            
+            # 4. Write ENV variables to file
+            echo "${{ secrets.VPS_ENV_FILE }}" > /root/sportive-api.env
+            
+            # 5. Run the new container
+            docker run -d \
+              --name sportive-api \
+              --restart unless-stopped \
+              -p 8080:8080 \
+              --env-file /root/sportive-api.env \
+              ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
