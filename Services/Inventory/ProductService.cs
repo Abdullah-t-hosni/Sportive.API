@@ -660,7 +660,7 @@ public class ProductService : IProductService
         v.Size = dto.Size;
         v.Color = dto.Color;
         v.ColorAr = dto.ColorAr;
-        v.StockQuantity = dto.StockQuantity ?? 0;
+        // Do NOT overwrite StockQuantity here. Inventory is managed via InventoryService/Adjustments.
         v.ReorderLevel = dto.ReorderLevel ?? 0;
         v.PriceAdjustment = dto.PriceAdjustment;
         v.UpdatedAt = TimeHelper.GetEgyptTime();
