@@ -30,6 +30,7 @@ public class TenantValidationMiddleware
         var path = context.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
         var isPublicEndpoint = path.StartsWith("/api/public") || 
                                path.StartsWith("/api/system") || 
+                               path.StartsWith("/api/auth") || 
                                path.StartsWith("/health") || 
                                path.StartsWith("/swagger") || 
                                path.StartsWith("/uploads");
