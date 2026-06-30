@@ -18,6 +18,9 @@ using Microsoft.Extensions.Caching.Memory;
 using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers;
+using Microsoft.AspNetCore.SignalR;
+using Sportive.API.Hubs;
+using Sportive.API.Interfaces;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -32,8 +35,10 @@ public class OrdersController : ControllerBase
     private readonly IAuditService _audit;
     private readonly ITranslator _translator;
     private readonly IMemoryCache _cache;
+    private readonly IHubContext<NotificationHub> _hubContext;
+    private readonly ITenantContext _tenantContext;
 
-    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<OrdersController> logger, IAuditService audit, ITranslator translator, IMemoryCache cache)
+    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<OrdersController> logger, IAuditService audit, ITranslator translator, IMemoryCache cache, IHubContext<NotificationHub> hubContext, ITenantContext tenantContext)
     {
         _orderService = orderService;
         _pdfService   = pdfService;
@@ -43,6 +48,8 @@ public class OrdersController : ControllerBase
         _audit        = audit;
         _translator   = translator;
         _cache        = cache;
+        _hubContext   = hubContext;
+        _tenantContext = tenantContext;
     }
 
     [HttpGet]
@@ -123,6 +130,17 @@ public class OrdersController : ControllerBase
         var order = await _orderService.CreateOrderAsync(finalCustomerId, dto);
         
         try { await _audit.LogAsync("CreateOrder", "Order", order.Id.ToString(), $"Created new order #{order.OrderNumber} (Online)", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
+        // Trigger Auto-Print Notification to Admins
+        try
+        {
+            var prefix = _tenantContext.CurrentTenant?.Slug?.ToLowerInvariant() ?? "global";
+            await _hubContext.Clients.Group($"{prefix}_Admin").SendAsync("ReceiveNewOrderToPrint", order.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send SignalR print notification for order {OrderId}", order.Id);
+        }
 
         return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
     }
