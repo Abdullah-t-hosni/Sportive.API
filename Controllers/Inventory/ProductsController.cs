@@ -184,7 +184,7 @@ public class ProductsController : ControllerBase
         return NotFound();
     }
 
-    [HttpPost("fix-warehouse-stock-discrepancy/{productId}")]
+    [HttpGet("fix-warehouse-stock-discrepancy/{productId}")]
     [AllowAnonymous]
     public async Task<IActionResult> FixStockDiscrepancy(int productId)
     {
