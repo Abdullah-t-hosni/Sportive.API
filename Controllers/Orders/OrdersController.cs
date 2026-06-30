@@ -503,7 +503,6 @@ public class OrdersController : ControllerBase
                     {
                         var ws = await _db.ProductWarehouseStocks
                             .FirstOrDefaultAsync(w => w.WarehouseId == order.WarehouseId.Value && 
-                                                      w.ProductId == item.ProductId && 
                                                       w.ProductVariantId == item.ProductVariantId);
                         if (ws != null)
                         {
@@ -515,8 +514,7 @@ public class OrdersController : ControllerBase
                             _db.ProductWarehouseStocks.Add(new ProductWarehouseStock
                             {
                                 WarehouseId = order.WarehouseId.Value,
-                                ProductId = item.ProductId,
-                                ProductVariantId = item.ProductVariantId,
+                                ProductVariantId = item.ProductVariantId ?? 0,
                                 Quantity = item.Quantity,
                                 CreatedAt = TimeHelper.GetEgyptTime()
                             });

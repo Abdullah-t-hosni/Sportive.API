@@ -198,7 +198,7 @@ public class ProductsController : ControllerBase
         foreach (var variant in product.Variants)
         {
             var warehouseStocks = await _db.ProductWarehouseStocks
-                .Where(w => w.ProductId == productId && w.ProductVariantId == variant.Id)
+                .Where(w => w.ProductVariantId == variant.Id)
                 .ToListAsync();
             
             var totalWarehouseStock = warehouseStocks.Sum(w => w.Quantity);
@@ -216,7 +216,6 @@ public class ProductsController : ControllerBase
                     _db.ProductWarehouseStocks.Add(new ProductWarehouseStock
                     {
                         WarehouseId = defaultWarehouse.Id,
-                        ProductId = productId,
                         ProductVariantId = variant.Id,
                         Quantity = diff, // assign the missing amount here
                         CreatedAt = Sportive.API.Utils.TimeHelper.GetEgyptTime()
