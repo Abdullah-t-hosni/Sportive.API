@@ -185,7 +185,7 @@ public class ProductsController : ControllerBase
     }
 
     [HttpGet("fix-warehouse-stock-discrepancy/{identifier}")]
-    [AllowAnonymous]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> FixStockDiscrepancy(string identifier)
     {
         identifier = identifier.Trim();
