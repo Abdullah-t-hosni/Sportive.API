@@ -497,6 +497,31 @@ public class OrdersController : ControllerBase
                             variant.UpdatedAt = TimeHelper.GetEgyptTime();
                         }
                     }
+
+                    // ✅ FIX: Restore WarehouseStock as well so POS and Store can see the returned stock!
+                    if (order.WarehouseId.HasValue)
+                    {
+                        var ws = await _db.ProductWarehouseStocks
+                            .FirstOrDefaultAsync(w => w.WarehouseId == order.WarehouseId.Value && 
+                                                      w.ProductId == item.ProductId && 
+                                                      w.ProductVariantId == item.ProductVariantId);
+                        if (ws != null)
+                        {
+                            ws.Quantity += item.Quantity;
+                            ws.UpdatedAt = TimeHelper.GetEgyptTime();
+                        }
+                        else
+                        {
+                            _db.ProductWarehouseStocks.Add(new ProductWarehouseStock
+                            {
+                                WarehouseId = order.WarehouseId.Value,
+                                ProductId = item.ProductId,
+                                ProductVariantId = item.ProductVariantId,
+                                Quantity = item.Quantity,
+                                CreatedAt = TimeHelper.GetEgyptTime()
+                            });
+                        }
+                    }
                 }
             }
         }

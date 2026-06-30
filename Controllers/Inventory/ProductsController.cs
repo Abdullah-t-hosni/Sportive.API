@@ -183,5 +183,51 @@ public class ProductsController : ControllerBase
         }
         return NotFound();
     }
+
+    [HttpPost("fix-warehouse-stock-discrepancy/{productId}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> FixStockDiscrepancy(int productId)
+    {
+        var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == productId);
+        if (product == null) return NotFound("Product not found.");
+
+        var defaultWarehouse = await _db.Warehouses.FirstOrDefaultAsync(w => w.IsActive);
+        if (defaultWarehouse == null) return BadRequest("No active warehouse found.");
+
+        int fixedVariants = 0;
+        foreach (var variant in product.Variants)
+        {
+            var warehouseStocks = await _db.ProductWarehouseStocks
+                .Where(w => w.ProductId == productId && w.ProductVariantId == variant.Id)
+                .ToListAsync();
+            
+            var totalWarehouseStock = warehouseStocks.Sum(w => w.Quantity);
+            var diff = variant.StockQuantity - totalWarehouseStock;
+
+            if (diff != 0)
+            {
+                var ws = warehouseStocks.FirstOrDefault(w => w.WarehouseId == defaultWarehouse.Id);
+                if (ws != null)
+                {
+                    ws.Quantity += diff;
+                }
+                else
+                {
+                    _db.ProductWarehouseStocks.Add(new ProductWarehouseStock
+                    {
+                        WarehouseId = defaultWarehouse.Id,
+                        ProductId = productId,
+                        ProductVariantId = variant.Id,
+                        Quantity = diff, // assign the missing amount here
+                        CreatedAt = Sportive.API.Utils.TimeHelper.GetEgyptTime()
+                    });
+                }
+                fixedVariants++;
+            }
+        }
+        
+        await _db.SaveChangesAsync();
+        return Ok(new { message = $"Discrepancy fixed successfully. {fixedVariants} variants updated.", defaultWarehouseId = defaultWarehouse.Id });
+    }
 }
 
