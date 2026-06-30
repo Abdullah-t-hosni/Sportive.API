@@ -184,11 +184,13 @@ public class ProductsController : ControllerBase
         return NotFound();
     }
 
-    [HttpGet("fix-warehouse-stock-discrepancy/{productId}")]
+    [HttpGet("fix-warehouse-stock-discrepancy/{identifier}")]
     [AllowAnonymous]
-    public async Task<IActionResult> FixStockDiscrepancy(int productId)
+    public async Task<IActionResult> FixStockDiscrepancy(string identifier)
     {
-        var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == productId);
+        identifier = identifier.Trim();
+        var product = await _db.Products.Include(p => p.Variants)
+            .FirstOrDefaultAsync(p => p.Id.ToString() == identifier || p.SKU.Contains(identifier) || p.Variants.Any(v => v.Id.ToString() == identifier));
         if (product == null) return NotFound("Product not found.");
 
         var defaultWarehouse = await _db.Warehouses.FirstOrDefaultAsync(w => w.IsActive);
