@@ -21,7 +21,7 @@ public class MappingSeederController : ControllerBase
     }
 
     [HttpPost("seed-chart-of-accounts")]
-    [AllowAnonymous] // Allow onboarding script to call it safely
+    [Authorize(Policy = "AdminOnly")] // Secured to prevent unauthorized access
     public async Task<IActionResult> SeedChartOfAccounts()
     {
         // 1. Safety check: Only seed if database has NO accounts to prevent overriding existing clients
@@ -194,7 +194,7 @@ public class MappingSeederController : ControllerBase
     }
 
     [HttpPost("auto-link")]
-    [AllowAnonymous]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> AutoLink()
     {
         try
