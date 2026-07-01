@@ -4493,17 +4493,15 @@ public class OperationalReportsController : ControllerBase
 
         // ── NEW: Account Movements (مصروفات الحسابات اليومية) ─────────────────
         // Any JournalLine on ALL accounts EXCEPT expense accounts and sales return account
+        var allowedAccountIds = balanceAccounts.Select(a => a.Id).ToList();
+
         var detailedAccountMovQuery = _db.JournalLines.AsNoTracking()
             .Include(l => l.JournalEntry)
             .Include(l => l.Account)
             .Where(l =>
                 l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd
                 && l.JournalEntry.Status == JournalEntryStatus.Posted
-                && l.Account.Type != AccountType.Expense
-                && !l.Account.Code.StartsWith("5")
-                && !(salesReturnAccId.HasValue  && l.AccountId == salesReturnAccId.Value)
-                && !(salesDiscountAccId.HasValue && l.AccountId == salesDiscountAccId.Value)
-                && !(discountReturnAccId.HasValue && l.AccountId == discountReturnAccId.Value)
+                && (allowedAccountIds.Contains(l.AccountId) || l.Account.NameAr.Contains("أرباح") || l.Account.NameAr.Contains("ارباح"))
                 && (string.IsNullOrEmpty(l.JournalEntry.Reference) || !l.JournalEntry.Reference.StartsWith("SHIFT-CLOSE")));
 
         if (branchId.HasValue)
