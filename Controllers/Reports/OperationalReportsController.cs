@@ -4501,7 +4501,7 @@ public class OperationalReportsController : ControllerBase
             .Where(l =>
                 l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd
                 && l.JournalEntry.Status == JournalEntryStatus.Posted
-                && (allowedAccountIds.Contains(l.AccountId) || l.Account.NameAr.Contains("أرباح") || l.Account.NameAr.Contains("ارباح"))
+                && (allowedAccountIds.Contains(l.AccountId) || l.Account.NameAr.Contains("أرباح") || l.Account.NameAr.Contains("ارباح") || l.Account.NameAr.Contains("مبقاة"))
                 && (string.IsNullOrEmpty(l.JournalEntry.Reference) || !l.JournalEntry.Reference.StartsWith("SHIFT-CLOSE")));
 
         if (branchId.HasValue)
