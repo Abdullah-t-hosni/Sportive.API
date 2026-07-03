@@ -97,10 +97,8 @@ public class SettingsController : ControllerBase
         }
         catch (Exception ex)
         {
-            // If database table is missing or connection fails, we return a default object
-            // to prevent front-end crash (500 error), allowing the admin to see the UI.
-            _logger.LogError(ex, "Settings GET failed, returning default object");
-            return Ok(new StoreInfo { StoreConfigId = 1 });
+            _logger.LogError(ex, "Settings GET failed");
+            return StatusCode(500, new { message = "فشل تحميل الإعدادات", error = ex.Message });
         }
     }
 
