@@ -330,6 +330,8 @@ public class AuthController : ControllerBase
         var user = await _userManager.FindByIdAsync(userId);
         var permissionsJson = user?.PermissionsJson;
         
+        var overrides = new List<UserModulePermission>();
+
         // 2. Override with new JSON permissions system if available
         if (!string.IsNullOrEmpty(permissionsJson))
         {
@@ -346,7 +348,7 @@ public class AuthController : ControllerBase
         else
         {
             // Fallback for old system (UserModulePermissions table)
-            var overrides = await _db.UserModulePermissions.Where(p => p.UserAccountID == userId).ToListAsync();
+            overrides = await _db.UserModulePermissions.Where(p => p.UserAccountID == userId).ToListAsync();
             foreach (var over in overrides)
             {
                 if (over.CanView)
@@ -366,8 +368,6 @@ public class AuthController : ControllerBase
             .Where(c => c.AppUserId == userId)
             .Select(c => new { c.Id, c.Phone })
             .FirstOrDefaultAsync();
-
-        var user = await _userManager.FindByIdAsync(userId);
 
         // 3. Branch & Warehouse — resolved from user record first, fallback to employee link
         int? branchId = user?.BranchId;
