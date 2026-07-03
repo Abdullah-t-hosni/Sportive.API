@@ -133,14 +133,13 @@ public class SettingsController : ControllerBase
             info.BrandColorL             = dto.BrandColorL;
             info.AnnouncementEnabled     = dto.AnnouncementEnabled;
             info.AnnouncementText        = dto.AnnouncementText;
-            info.AnnouncementLink        = dto.AnnouncementLink;
             info.AnnouncementBgColor     = dto.AnnouncementBgColor;
             info.AnnouncementTextColor   = dto.AnnouncementTextColor;
-            info.EnablePromoPopup        = dto.EnablePromoPopup;
+            info.PromoPopupEnabled       = dto.PromoPopupEnabled;
             info.PromoPopupTitle         = dto.PromoPopupTitle;
-            info.PromoPopupMessage       = dto.PromoPopupMessage;
+            info.PromoPopupText          = dto.PromoPopupText;
             info.PromoPopupImageUrl      = dto.PromoPopupImageUrl;
-            info.PromoPopupCode          = dto.PromoPopupCode;
+            info.PromoPopupCoupon        = dto.PromoPopupCoupon;
             info.HeroTitle               = dto.HeroTitle;
             info.HeroSubtitle            = dto.HeroSubtitle;
             info.HeroImageUrl            = dto.HeroImageUrl;
