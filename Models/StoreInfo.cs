@@ -81,6 +81,35 @@ public class StoreInfo
     [JsonPropertyName("announcementText")]
     public string? AnnouncementText { get; set; }
 
+    [JsonPropertyName("announcementBgColor")]
+    public string? AnnouncementBgColor { get; set; }
+
+    [JsonPropertyName("announcementTextColor")]
+    public string? AnnouncementTextColor { get; set; }
+
+    [JsonPropertyName("announcementFontSize")]
+    public string? AnnouncementFontSize { get; set; }
+
+    // --- Promo Popup ---
+    [JsonPropertyName("promoPopupEnabled")]
+    public bool PromoPopupEnabled { get; set; } = false;
+
+    [MaxLength(200)]
+    [JsonPropertyName("promoPopupTitle")]
+    public string? PromoPopupTitle { get; set; }
+
+    [MaxLength(1000)]
+    [JsonPropertyName("promoPopupText")]
+    public string? PromoPopupText { get; set; }
+
+    [MaxLength(50)]
+    [JsonPropertyName("promoPopupCoupon")]
+    public string? PromoPopupCoupon { get; set; }
+
+    [MaxLength(500)]
+    [JsonPropertyName("promoPopupImageUrl")]
+    public string? PromoPopupImageUrl { get; set; }
+
     [MaxLength(200)]
     [JsonPropertyName("heroTitle")]
     public string? HeroTitle { get; set; }
