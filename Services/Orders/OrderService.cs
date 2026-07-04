@@ -1074,12 +1074,12 @@ public class OrderService : IOrderService
                 // 1. CALCULATE DIFFS FOR INVENTORY
                 var oldItemSummary = order.Items
                     .Where(i => i.ProductId > 0)
-                    .GroupBy(i => new { i.ProductId, VariantId = i.ProductVariantId ?? 0 })
+                    .GroupBy(i => new { ProductId = (int)i.ProductId!, VariantId = i.ProductVariantId ?? 0 })
                     .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
 
                 var newItemSummary = dto.Items
                     .Where(i => i.ProductId > 0)
-                    .GroupBy(i => new { i.ProductId, VariantId = i.ProductVariantId ?? 0 })
+                    .GroupBy(i => new { ProductId = (int)i.ProductId, VariantId = i.ProductVariantId ?? 0 })
                     .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
 
                 var allKeys = oldItemSummary.Keys.Union(newItemSummary.Keys).Distinct().ToList();
