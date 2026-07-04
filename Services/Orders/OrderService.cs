@@ -1170,6 +1170,11 @@ public class OrderService : IOrderService
                     
                     if (existingItem != null)
                     {
+                        if (itemDto.Quantity < existingItem.ReturnedQuantity)
+                        {
+                            throw new InvalidOperationException($"لا يمكن تقليل كمية '{product.NameAr}' لأقل من الكمية المرتجعة ({existingItem.ReturnedQuantity}).");
+                        }
+                        
                         // Update existing item
                         existingItem.Quantity = itemDto.Quantity;
                         existingItem.UnitPrice = itemDto.UnitPrice;
@@ -1235,6 +1240,10 @@ public class OrderService : IOrderService
                 // Remove the ones that weren't matched
                 foreach (var itemToRemove in existingItemsPool)
                 {
+                    if (itemToRemove.ReturnedQuantity > 0)
+                    {
+                        throw new InvalidOperationException($"لا يمكن حذف '{itemToRemove.ProductNameAr}' لأنه يحتوي على كمية مرتجعة ({itemToRemove.ReturnedQuantity}).");
+                    }
                     order.Items.Remove(itemToRemove);
                     _db.OrderItems.Remove(itemToRemove);
                 }
