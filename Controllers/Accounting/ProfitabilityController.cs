@@ -130,8 +130,8 @@ public class ProfitabilityController : ControllerBase
                     // الإيراد = سعر السطر - نصيبه من خصم الفاتورة (ولا يشمل الشحن)
                     totalNetRevenue += (lineSubtotal * qtyFactor) - (lineOrderDiscountShare * qtyFactor);
                     
-                    // إجمالي الخصومات الموزعة
-                    totalItemDiscount += (lineOrderDiscountShare * qtyFactor);
+                    // إجمالي الخصومات الموزعة (خصم الصنف + خصم الفاتورة النسبي)
+                    totalItemDiscount += i.DiscountAmount + (lineOrderDiscountShare * qtyFactor);
                 }
 
                 // التكلفة الصافية (تكلفة المنتج فقط)
@@ -165,7 +165,7 @@ public class ProfitabilityController : ControllerBase
                     ? Math.Round((grossProfit!.Value / totalNetRevenue) * 100, 1)
                     : (decimal?)null;
 
-                var totalSales = g.Sum(i => i.TotalPrice);
+                var totalSales = g.Sum(i => i.TotalPrice + i.DiscountAmount);
                 var totalReturnsValue = g.Sum(i => i.ReturnedQuantity * i.UnitPrice);
                 var totalDiscounts = totalItemDiscount;
 
