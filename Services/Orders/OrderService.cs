@@ -1071,92 +1071,86 @@ public class OrderService : IOrderService
                 var now = TimeHelper.GetEgyptTime();
                 var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
 
-                // 1. REVERSE OLD INVENTORY
-                foreach (var item in order.Items)
+                // 1. CALCULATE DIFFS FOR INVENTORY
+                var oldItemSummary = order.Items
+                    .Where(i => i.ProductId > 0)
+                    .GroupBy(i => new { i.ProductId, VariantId = i.ProductVariantId ?? 0 })
+                    .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
+
+                var newItemSummary = dto.Items
+                    .Where(i => i.ProductId > 0)
+                    .GroupBy(i => new { i.ProductId, VariantId = i.ProductVariantId ?? 0 })
+                    .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
+
+                var allKeys = oldItemSummary.Keys.Union(newItemSummary.Keys).Distinct().ToList();
+
+                // 2. STOCK VALIDATION (For positive diffs only)
+                foreach (var key in allKeys)
                 {
-                    if (item.ProductId > 0)
+                    int diff = newItemSummary.GetValueOrDefault(key) - oldItemSummary.GetValueOrDefault(key);
+                    if (diff > 0)
                     {
-                        await _inventory.LogMovementAsync(
-                            InventoryMovementType.Adjustment,
-                            item.Quantity,
-                            item.ProductId,
-                            item.ProductVariantId,
-                            order.OrderNumber,
-                            "Order Edited (Old Items Reverted)",
-                            updatedByUserId,
-                            0,
-                            order.Source,
-                            autoSave: false,
-                            ignoreIdempotency: true
-                        );
+                        if (key.VariantId > 0)
+                        {
+                            var variantStock = await _db.ProductVariants
+                                .Where(v => v.Id == key.VariantId)
+                                .Select(v => new { v.StockQuantity, v.Size, v.ColorAr, v.Color, Product = v.Product != null ? v.Product.NameAr : "" })
+                                .FirstOrDefaultAsync();
+
+                            if (variantStock != null && variantStock.StockQuantity < diff)
+                            {
+                                throw new InvalidOperationException($"لا يمكن تعديل الفاتورة: الكمية المطلوبة الإضافية ({diff}) من '{variantStock.Product}' (مقاس {variantStock.Size} / {variantStock.ColorAr ?? variantStock.Color}) تتجاوز المخزون المتاح ({variantStock.StockQuantity}).");
+                            }
+                        }
+                        else
+                        {
+                            var productStock = await _db.Products
+                                .Where(p => p.Id == key.ProductId)
+                                .Select(p => new { p.TotalStock, p.NameAr })
+                                .FirstOrDefaultAsync();
+
+                            if (productStock != null && productStock.TotalStock < diff)
+                            {
+                                throw new InvalidOperationException($"لا يمكن تعديل الفاتورة: الكمية المطلوبة الإضافية ({diff}) من '{productStock.NameAr}' تتجاوز المخزون المتاح ({productStock.TotalStock}).");
+                            }
+                        }
                     }
                 }
 
-                // 2. CLEAR OLD ITEMS & PAYMENTS
-                _db.OrderItems.RemoveRange(order.Items);
+                // 3. LOG INVENTORY MOVEMENTS (Diffs only)
+                foreach (var key in allKeys)
+                {
+                    int diff = newItemSummary.GetValueOrDefault(key) - oldItemSummary.GetValueOrDefault(key);
+                    if (diff > 0)
+                    {
+                        await _inventory.LogMovementAsync(InventoryMovementType.Sale, -diff, key.ProductId, key.VariantId == 0 ? (int?)null : key.VariantId, order.OrderNumber, "Order Edited (Item Added or Increased)", updatedByUserId, 0, order.Source, false, true);
+                    }
+                    else if (diff < 0)
+                    {
+                        await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, -diff, key.ProductId, key.VariantId == 0 ? (int?)null : key.VariantId, order.OrderNumber, "Order Edited (Item Removed or Decreased)", updatedByUserId, 0, order.Source, false, true);
+                    }
+                }
+
+                // 3.5. CLEAR OLD PAYMENTS (Will be recreated below)
                 _db.OrderPayments.RemoveRange(order.Payments);
-                order.Items.Clear();
                 order.Payments.Clear();
 
-                // 3. UPDATE CUSTOMER IF CHANGED
+                // 4. UPDATE CUSTOMER IF CHANGED
                 if (dto.CustomerId.HasValue && dto.CustomerId != order.CustomerId)
                 {
                     order.CustomerId = dto.CustomerId.Value;
                 }
 
-                // 3.5 STOCK VALIDATION — بعد إرجاع الكميات القديمة، تحقق من توفر الكميات الجديدة
-                // نجمع الكميات المطلوبة لكل (productId, variantId) في الفاتورة المعدلة
-                var newItemRequirements = dto.Items
-                    .Where(i => i.ProductId > 0)
-                    .GroupBy(i => new { i.ProductId, VariantId = i.ProductVariantId ?? 0 })
-                    .Select(g => new { g.Key.ProductId, g.Key.VariantId, TotalQty = g.Sum(x => x.Quantity) })
-                    .ToList();
+                // 5. UPDATE ORDER ITEMS 
+                var productIds = dto.Items.Select(i => i.ProductId).Distinct().ToList();
+                var productsDict = await _db.Products.Include(p => p.Variants).Where(p => productIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
+                bool isCostSale = dto.AdminNotes != null && dto.AdminNotes.Contains("[CostSale]");
 
-                foreach (var req in newItemRequirements)
-                {
-                    if (req.VariantId > 0)
-                    {
-                        // نقرأ رصيد المقاس مباشرةً من قاعدة البيانات (بعد حفظ الإرجاع السابق)
-                        var variantStock = await _db.ProductVariants
-                            .Where(v => v.Id == req.VariantId)
-                            .Select(v => new { v.StockQuantity, v.Size, v.ColorAr, v.Color, Product = v.Product != null ? v.Product.NameAr : "" })
-                            .FirstOrDefaultAsync();
-
-                        if (variantStock != null && variantStock.StockQuantity + order.Items.Where(i => i.ProductVariantId == req.VariantId).Sum(i => i.Quantity) < req.TotalQty)
-                        {
-                            // الرصيد المتاح بعد الإرجاع
-                            var available = variantStock.StockQuantity + order.Items.Where(i => i.ProductVariantId == req.VariantId).Sum(i => i.Quantity);
-                            throw new InvalidOperationException(
-                                $"لا يمكن تعديل الفاتورة: الكمية المطلوبة ({req.TotalQty}) من '{variantStock.Product}' (مقاس {variantStock.Size} / {variantStock.ColorAr ?? variantStock.Color}) تتجاوز المخزون المتاح ({available})."
-                            );
-                        }
-                    }
-                    else
-                    {
-                        var productStock = await _db.Products
-                            .Where(p => p.Id == req.ProductId)
-                            .Select(p => new { p.TotalStock, p.NameAr })
-                            .FirstOrDefaultAsync();
-
-                        if (productStock != null && productStock.TotalStock + order.Items.Where(i => i.ProductId == req.ProductId && i.ProductVariantId == null).Sum(i => i.Quantity) < req.TotalQty)
-                        {
-                            var available = productStock.TotalStock + order.Items.Where(i => i.ProductId == req.ProductId && i.ProductVariantId == null).Sum(i => i.Quantity);
-                            throw new InvalidOperationException(
-                                $"لا يمكن تعديل الفاتورة: الكمية المطلوبة ({req.TotalQty}) من '{productStock.NameAr}' تتجاوز المخزون المتاح ({available})."
-                            );
-                        }
-                    }
-                }
-
-                // 4. ADD NEW ITEMS
                 order.SubTotal = 0;
                 order.TemporalDiscount = 0;
                 order.TotalVatAmount = 0;
 
-                var productIds = dto.Items.Select(i => i.ProductId).Distinct().ToList();
-                var productsDict = await _db.Products.Include(p => p.Variants).Where(p => productIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
-
-                bool isCostSale = dto.AdminNotes != null && dto.AdminNotes.Contains("[CostSale]");
+                var existingItemsPool = order.Items.ToList(); 
 
                 foreach (var itemDto in dto.Items)
                 {
@@ -1166,51 +1160,83 @@ public class OrderService : IOrderService
                         ? product.Variants.FirstOrDefault(v => v.Id == itemDto.ProductVariantId)
                         : null;
 
-                    var orderItem = new OrderItem
-                    {
-                        ProductId = itemDto.ProductId,
-                        ProductVariantId = itemDto.ProductVariantId,
-                        ProductNameAr = product.NameAr,
-                        ProductNameEn = product.NameEn,
-                        SKU = product.SKU,
-                        Size = variant?.Size,
-                        Color = variant?.Color,
-                        Quantity = itemDto.Quantity,
-                        UnitPrice = itemDto.UnitPrice,
-                        OriginalUnitPrice = isCostSale ? itemDto.UnitPrice : (product.Price + (variant?.PriceAdjustment ?? 0)),
-                        DiscountAmount = isCostSale ? 0 : ((product.Price + (variant?.PriceAdjustment ?? 0)) - itemDto.UnitPrice) * itemDto.Quantity,
-                        TotalPrice = itemDto.TotalPrice > 0 ? itemDto.TotalPrice : (itemDto.UnitPrice * itemDto.Quantity),
-                        HasTax = itemDto.HasTax ?? product.HasTax,
-                        VatRateApplied = itemDto.VatRate ?? product.VatRate ?? (store?.VatRatePercent ?? 14),
-                        CreatedAt = now
-                    };
+                    decimal originalUnitPrice = isCostSale ? itemDto.UnitPrice : (product.Price + (variant?.PriceAdjustment ?? 0));
+                    decimal discountAmount = isCostSale ? 0 : (originalUnitPrice - itemDto.UnitPrice) * itemDto.Quantity;
+                    decimal totalPrice = itemDto.TotalPrice > 0 ? itemDto.TotalPrice : (itemDto.UnitPrice * itemDto.Quantity);
+                    bool hasTax = itemDto.HasTax ?? product.HasTax;
+                    decimal vatRateApplied = itemDto.VatRate ?? product.VatRate ?? (store?.VatRatePercent ?? 14);
 
-                    if (orderItem.HasTax)
+                    var existingItem = existingItemsPool.FirstOrDefault(i => i.ProductId == itemDto.ProductId && i.ProductVariantId == itemDto.ProductVariantId);
+                    
+                    if (existingItem != null)
                     {
-                        var rate = (orderItem.VatRateApplied ?? 14) / 100m;
-                        decimal net = Math.Round(orderItem.TotalPrice / (1 + rate), 2);
-                        orderItem.ItemVatAmount = orderItem.TotalPrice - net;
-                        order.TotalVatAmount += orderItem.ItemVatAmount;
+                        // Update existing item
+                        existingItem.Quantity = itemDto.Quantity;
+                        existingItem.UnitPrice = itemDto.UnitPrice;
+                        existingItem.OriginalUnitPrice = originalUnitPrice;
+                        existingItem.DiscountAmount = discountAmount;
+                        existingItem.TotalPrice = totalPrice;
+                        existingItem.HasTax = hasTax;
+                        existingItem.VatRateApplied = vatRateApplied;
+                        existingItem.ProductNameAr = product.NameAr;
+                        existingItem.ProductNameEn = product.NameEn;
+                        existingItem.SKU = product.SKU;
+                        existingItem.Size = variant?.Size;
+                        existingItem.Color = variant?.Color;
+
+                        if (existingItem.HasTax)
+                        {
+                            var rate = (existingItem.VatRateApplied ?? 14) / 100m;
+                            decimal net = Math.Round(existingItem.TotalPrice / (1 + rate), 2);
+                            existingItem.ItemVatAmount = existingItem.TotalPrice - net;
+                            order.TotalVatAmount += existingItem.ItemVatAmount;
+                        }
+
+                        order.SubTotal += (existingItem.OriginalUnitPrice * existingItem.Quantity);
+                        order.TemporalDiscount += existingItem.DiscountAmount;
+                        
+                        existingItemsPool.Remove(existingItem);
                     }
+                    else
+                    {
+                        var orderItem = new OrderItem
+                        {
+                            ProductId = itemDto.ProductId,
+                            ProductVariantId = itemDto.ProductVariantId,
+                            ProductNameAr = product.NameAr,
+                            ProductNameEn = product.NameEn,
+                            SKU = product.SKU,
+                            Size = variant?.Size,
+                            Color = variant?.Color,
+                            Quantity = itemDto.Quantity,
+                            UnitPrice = itemDto.UnitPrice,
+                            OriginalUnitPrice = originalUnitPrice,
+                            DiscountAmount = discountAmount,
+                            TotalPrice = totalPrice,
+                            HasTax = hasTax,
+                            VatRateApplied = vatRateApplied,
+                            CreatedAt = now
+                        };
 
-                    order.Items.Add(orderItem);
-                    order.SubTotal += (orderItem.OriginalUnitPrice * orderItem.Quantity);
-                    order.TemporalDiscount += orderItem.DiscountAmount;
+                        if (orderItem.HasTax)
+                        {
+                            var rate = (orderItem.VatRateApplied ?? 14) / 100m;
+                            decimal net = Math.Round(orderItem.TotalPrice / (1 + rate), 2);
+                            orderItem.ItemVatAmount = orderItem.TotalPrice - net;
+                            order.TotalVatAmount += orderItem.ItemVatAmount;
+                        }
 
-                    // LOG NEW MOVEMENTS
-                    await _inventory.LogMovementAsync(
-                        InventoryMovementType.Sale,
-                        -itemDto.Quantity,
-                        itemDto.ProductId,
-                        itemDto.ProductVariantId,
-                        order.OrderNumber,
-                        "Order Edited (New Items Added)",
-                        updatedByUserId,
-                        0,
-                        order.Source,
-                        autoSave: false,
-                        ignoreIdempotency: true
-                    );
+                        order.Items.Add(orderItem);
+                        order.SubTotal += (orderItem.OriginalUnitPrice * orderItem.Quantity);
+                        order.TemporalDiscount += orderItem.DiscountAmount;
+                    }
+                }
+
+                // Remove the ones that weren't matched
+                foreach (var itemToRemove in existingItemsPool)
+                {
+                    order.Items.Remove(itemToRemove);
+                    _db.OrderItems.Remove(itemToRemove);
                 }
 
                 // 5. UPDATE TOTALS
