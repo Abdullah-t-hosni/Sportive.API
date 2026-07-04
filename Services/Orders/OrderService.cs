@@ -1510,6 +1510,40 @@ public class OrderService : IOrderService
         {
             _logger.LogError(ex, "Failed to send admin notification for order {OrderNo}", order.OrderNumber);
         }
+
+        // 3. Automated WhatsApp via Wapilot
+        try
+        {
+            var storeSettings = await db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+            if (storeSettings != null && storeSettings.AutoSendWhatsAppInvoices 
+                && !string.IsNullOrEmpty(storeSettings.WapilotApiKey) 
+                && order.Customer != null && !string.IsNullOrEmpty(order.Customer.Phone))
+            {
+                string? instanceIdToUse = order.Source == OrderSource.POS 
+                    ? storeSettings.WapilotPosInstanceId 
+                    : storeSettings.WapilotWebInstanceId;
+
+                if (!string.IsNullOrEmpty(instanceIdToUse))
+                {
+                    var waMeService = scope.ServiceProvider.GetRequiredService<IWaMeService>();
+                    var waApiService = scope.ServiceProvider.GetRequiredService<IWhatsAppApiService>();
+
+                    var waMeResult = waMeService.OrderConfirmation(order);
+                    if (!string.IsNullOrEmpty(waMeResult.FullMessage))
+                    {
+                        await waApiService.SendWapilotMessageAsync(
+                            order.Customer.Phone, 
+                            waMeResult.FullMessage, 
+                            storeSettings.WapilotApiKey, 
+                            instanceIdToUse);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to auto-send WhatsApp for order {OrderNo}", order.OrderNumber);
+        }
     }
 
     public async Task<OrderDetailDto> UpdateOrderStatusAsync(int orderId, UpdateOrderStatusDto dto, string updatedByUserId)

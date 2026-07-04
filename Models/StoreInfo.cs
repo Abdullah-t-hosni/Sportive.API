@@ -606,6 +606,22 @@ public class StoreInfo
     [JsonPropertyName("zatcaCertificate")]
     public string? ZatcaCertificate { get; set; } // Base64 encoded cert for ZATCA Phase 2
 
+    // --- 18. Wapilot WhatsApp API ---
+    [MaxLength(200)]
+    [JsonPropertyName("wapilotApiKey")]
+    public string? WapilotApiKey { get; set; }
+
+    [MaxLength(100)]
+    [JsonPropertyName("wapilotPosInstanceId")]
+    public string? WapilotPosInstanceId { get; set; }
+
+    [MaxLength(100)]
+    [JsonPropertyName("wapilotWebInstanceId")]
+    public string? WapilotWebInstanceId { get; set; }
+
+    [JsonPropertyName("autoSendWhatsAppInvoices")]
+    public bool AutoSendWhatsAppInvoices { get; set; } = false;
+
     // --- Subscription Info (Not Mapped to Tenant DB) ---
     [NotMapped]
     [JsonPropertyName("subscriptionExpiresAt")]

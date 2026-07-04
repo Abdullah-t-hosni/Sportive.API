@@ -97,4 +97,45 @@ public class WhatsAppApiService : IWhatsAppApiService
         if (digits.StartsWith("20") && digits.Length == 12) return digits;
         return digits;
     }
+
+    public async Task<bool> SendWapilotMessageAsync(string phoneNumber, string messageText, string apiKey, string instanceId)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(instanceId))
+            {
+                _logger.LogWarning("Wapilot API is not configured completely. Missing API Key or Instance ID.");
+                return false;
+            }
+
+            var url = $"https://api.wapilot.net/api/v2/{instanceId}/send-message";
+            var formattedPhone = NormalizePhone(phoneNumber);
+
+            var payload = new
+            {
+                chat_id = formattedPhone,
+                text = messageText
+            };
+
+            var request = new HttpRequestMessage(HttpMethod.Post, url);
+            request.Headers.Add("token", apiKey);
+            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.SendAsync(request);
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorResponse = await response.Content.ReadAsStringAsync();
+                _logger.LogError("Wapilot API Error: {Error}", errorResponse);
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send message via Wapilot");
+            return false;
+        }
+    }
 }

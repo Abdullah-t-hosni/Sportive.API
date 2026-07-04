@@ -228,6 +228,12 @@ public class SettingsController : ControllerBase
             info.WhatsAppPosOrderTemplate = dto.WhatsAppPosOrderTemplate;
             info.WhatsAppPayrollTemplate = dto.WhatsAppPayrollTemplate;
 
+            // Wapilot WhatsApp API
+            info.WapilotApiKey           = dto.WapilotApiKey;
+            info.WapilotPosInstanceId    = dto.WapilotPosInstanceId;
+            info.WapilotWebInstanceId    = dto.WapilotWebInstanceId;
+            info.AutoSendWhatsAppInvoices = dto.AutoSendWhatsAppInvoices;
+
             // E-Invoicing
             info.TaxAuthorityType = dto.TaxAuthorityType;
             info.EtaTaxNumber = dto.EtaTaxNumber;
