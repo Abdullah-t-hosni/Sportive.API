@@ -530,7 +530,7 @@ public class OrdersController : ControllerBase
 
             var netWarehouseQty = relatedMovements
                 .Where(m => m.ProductVariantId.HasValue && m.WarehouseId.HasValue)
-                .GroupBy(m => new { m.ProductVariantId!.Value, m.WarehouseId!.Value })
+                .GroupBy(m => new { ProductVariantId = m.ProductVariantId!.Value, WarehouseId = m.WarehouseId!.Value })
                 .ToDictionary(g => g.Key, g => g.Sum(m => (int)m.Quantity));
 
             // Restore Product TotalStock
