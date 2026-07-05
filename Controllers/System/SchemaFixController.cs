@@ -414,6 +414,7 @@ public class SchemaFixController : ControllerBase
     }
 
     [HttpGet("run-v17")]
+    [AllowAnonymous] // Allow running from browser temporarily
     public async Task<IActionResult> RunV17()
     {
         _logger.LogWarning("SchemaFix run-v17 (Stock Discrepancy Fix) triggered.");
@@ -439,23 +440,31 @@ public class SchemaFixController : ControllerBase
             }
             await _db.SaveChangesAsync();
 
-            // 2. Recalculate Product TotalStock from Variants
+            // 2. Recalculate Product TotalStock from Variants (or from Movements if no variants)
             var products = await _db.Products.Include(p => p.Variants).ToListAsync();
             foreach (var p in products)
             {
+                int correctTotal = 0;
                 if (p.Variants.Any())
                 {
-                    var sumVariants = p.Variants.Sum(v => v.StockQuantity);
-                    if (p.TotalStock != sumVariants)
-                    {
-                        p.TotalStock = sumVariants;
-                        p.UpdatedAt = TimeHelper.GetEgyptTime();
-                        productsFixed++;
-                        
-                        // Fix status if needed
-                        if (p.Status == ProductStatus.Active && p.TotalStock <= 0) p.Status = ProductStatus.OutOfStock;
-                        else if (p.Status == ProductStatus.OutOfStock && p.TotalStock > 0) p.Status = ProductStatus.Active;
-                    }
+                    correctTotal = p.Variants.Sum(v => v.StockQuantity);
+                }
+                else
+                {
+                    correctTotal = await _db.InventoryMovements
+                        .Where(m => m.ProductId == p.Id && m.ProductVariantId == null)
+                        .SumAsync(m => (int?)m.Quantity) ?? 0;
+                }
+
+                if (p.TotalStock != correctTotal)
+                {
+                    p.TotalStock = correctTotal;
+                    p.UpdatedAt = TimeHelper.GetEgyptTime();
+                    productsFixed++;
+                    
+                    // Fix status if needed
+                    if (p.Status == ProductStatus.Active && p.TotalStock <= 0) p.Status = ProductStatus.OutOfStock;
+                    else if (p.Status == ProductStatus.OutOfStock && p.TotalStock > 0) p.Status = ProductStatus.Active;
                 }
             }
             await _db.SaveChangesAsync();
