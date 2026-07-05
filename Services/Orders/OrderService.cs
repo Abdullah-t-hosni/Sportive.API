@@ -1142,8 +1142,35 @@ public class OrderService : IOrderService
                 }
 
                 // 5. UPDATE ORDER ITEMS 
-                var productIds = dto.Items.Select(i => i.ProductId).Distinct().ToList();
+                var productIds = dto.Items.Select(i => i.ProductId).Union(order.Items.Select(i => i.ProductId ?? 0)).Where(id => id > 0).Distinct().ToList();
                 var productsDict = await _db.Products.Include(p => p.Variants).Where(p => productIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
+                
+                var diffLines = new List<string>();
+                foreach (var key in allKeys)
+                {
+                    int oldQty = oldItemSummary.GetValueOrDefault(key);
+                    int newQty = newItemSummary.GetValueOrDefault(key);
+                    if (oldQty != newQty)
+                    {
+                        string prodName = "منتج";
+                        if (productsDict.TryGetValue(key.ProductId, out var p))
+                        {
+                            prodName = p.NameAr;
+                            if (key.VariantId > 0)
+                            {
+                                var variant = p.Variants.FirstOrDefault(v => v.Id == key.VariantId);
+                                if (variant != null) prodName += $" ({variant.Size} / {variant.ColorAr ?? variant.Color})";
+                            }
+                        }
+                        
+                        if (oldQty == 0) diffLines.Add($"إضافة [{prodName}] (كمية: {newQty})");
+                        else if (newQty == 0) diffLines.Add($"حذف [{prodName}]");
+                        else diffLines.Add($"[{prodName}] من {oldQty} إلى {newQty}");
+                    }
+                }
+                string editNote = diffLines.Any() 
+                    ? "تعديلات: " + string.Join(" ، ", diffLines)
+                    : "تم تعديل بيانات الفاتورة (بدون تعديل كميات)";
                 bool isCostSale = dto.AdminNotes != null && dto.AdminNotes.Contains("[CostSale]");
 
                 order.SubTotal = 0;
@@ -1302,7 +1329,7 @@ public class OrderService : IOrderService
                 order.StatusHistory.Add(new OrderStatusHistory 
                 { 
                     Status = order.Status, 
-                    Note = "Order Edited by Admin", 
+                    Note = editNote, 
                     ChangedByUserId = updatedByUserId, 
                     CreatedAt = now 
                 });
