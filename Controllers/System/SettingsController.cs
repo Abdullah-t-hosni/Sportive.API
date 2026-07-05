@@ -133,6 +133,7 @@ public class SettingsController : ControllerBase
             info.AnnouncementText        = dto.AnnouncementText;
             info.AnnouncementBgColor     = dto.AnnouncementBgColor;
             info.AnnouncementTextColor   = dto.AnnouncementTextColor;
+            info.AnnouncementFontSize    = dto.AnnouncementFontSize;
             info.PromoPopupEnabled       = dto.PromoPopupEnabled;
             info.PromoPopupTitle         = dto.PromoPopupTitle;
             info.PromoPopupText          = dto.PromoPopupText;
