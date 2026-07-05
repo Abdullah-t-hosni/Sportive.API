@@ -141,6 +141,8 @@ public class SettingsController : ControllerBase
             info.HeroTitle               = dto.HeroTitle;
             info.HeroSubtitle            = dto.HeroSubtitle;
             info.HeroImageUrl            = dto.HeroImageUrl;
+            info.HomeCarouselImagesTop   = dto.HomeCarouselImagesTop;
+            info.HomeCarouselImagesBottom = dto.HomeCarouselImagesBottom;
             info.ShowHeroSection         = dto.ShowHeroSection;
             info.UseGlassmorphism        = dto.UseGlassmorphism;
             info.EnablePageTransitions   = dto.EnablePageTransitions;

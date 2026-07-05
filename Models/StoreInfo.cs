@@ -122,6 +122,14 @@ public class StoreInfo
     [JsonPropertyName("heroImageUrl")]
     public string? HeroImageUrl { get; set; }
 
+    [MaxLength(3000)]
+    [JsonPropertyName("homeCarouselImagesTop")]
+    public string? HomeCarouselImagesTop { get; set; } // JSON array of string URLs
+
+    [MaxLength(3000)]
+    [JsonPropertyName("homeCarouselImagesBottom")]
+    public string? HomeCarouselImagesBottom { get; set; } // JSON array of string URLs
+
     // --- 3. Contact Information ---
     [MaxLength(20)]
     [JsonPropertyName("phone")]
