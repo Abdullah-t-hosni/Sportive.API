@@ -108,7 +108,7 @@ public class WhatsAppApiService : IWhatsAppApiService
                 return false;
             }
 
-            var url = $"https://api.wapilot.net/api/v2/instances/{instanceId}/send-message";
+            var url = $"https://api.wapilot.net/api/v2/{instanceId}/send-message";
             var formattedPhone = NormalizePhone(phoneNumber);
 
             var payload = new
