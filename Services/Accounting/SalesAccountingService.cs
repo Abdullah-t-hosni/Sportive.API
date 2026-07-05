@@ -35,7 +35,7 @@ public class SalesAccountingService
     // ══════════════════════════════════════════════════════
     // فاتورة مبيعات — Invoice
     // ══════════════════════════════════════════════════════
-    public async Task PostSalesOrderAsync(Order order)
+    public async Task PostSalesOrderAsync(Order order, DateTime? overrideDate = null)
     {
         if (order.Customer == null && order.CustomerId > 0)
         {
@@ -285,17 +285,18 @@ public class SalesAccountingService
             lines.Add((inventoryAcct, 0,         totalCost, _t.Get("Accounting.InventoryOutDesc", order.OrderNumber)));
         }
 
+        var entryDate = overrideDate ?? TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt);
         var entry = await _core.PostEntryAsync(
             type:        JournalEntryType.SalesInvoice,
             reference:   order.OrderNumber,
             description: _t.Get("Accounting.SalesEntryMainDesc", order.OrderNumber, order.Customer?.FullName ?? ""),
-            date:        TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt),
+            date:        entryDate,
             lines:       lines,
             orderId:     order.Id,
             customerId:  order.CustomerId,
             source:      order.Source,
             employeeId:  employeeId,
-            createdAt:   order.CreatedAt
+            createdAt:   entryDate
         );
     }
 

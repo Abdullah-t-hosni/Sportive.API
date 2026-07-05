@@ -356,4 +356,41 @@ public class POSReportController : ControllerBase
             }
         });
     }
+    [HttpGet("debug-day4")]
+    public async Task<IActionResult> DebugDay4()
+    {
+        var date = new DateTime(2026, 7, 4);
+        var from = date.Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to = date.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
+
+        var orders = await _db.Orders.Include(o => o.Items).Include(o => o.Payments).Where(o => o.CreatedAt >= from && o.CreatedAt <= to && o.Source == OrderSource.POS).ToListAsync();
+        var journalEntries = await _db.JournalEntries.Include(j => j.Lines).Where(j => j.EntryDate >= from && j.EntryDate <= to).ToListAsync();
+
+        var missingInvoices = orders.Where(o => o.Status != OrderStatus.Cancelled && !journalEntries.Any(j => j.Type == JournalEntryType.SalesInvoice && j.OrderId == o.Id)).Select(o => o.OrderNumber).ToList();
+        var duplicateInvoices = journalEntries.Where(j => j.Type == JournalEntryType.SalesInvoice).GroupBy(j => j.OrderId).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+        
+        var sumSales = journalEntries.Where(j => j.Type == JournalEntryType.SalesInvoice).Sum(j => j.Lines.Where(l => l.Credit > 0).Sum(l => l.Credit));
+        var sumReceipts = journalEntries.Where(j => j.Type == JournalEntryType.ReceiptVoucher).Sum(j => j.Lines.Where(l => l.Debit > 0).Sum(l => l.Debit));
+        
+        var expectedCash = orders.Sum(o => o.PaidAmount);
+
+        var returnedOrders = orders.Where(o => o.Status == OrderStatus.Returned).ToList();
+        var missingReturns = returnedOrders.Where(o => !journalEntries.Any(j => j.Type == JournalEntryType.SalesReturn && j.OrderId == o.Id)).Select(o => o.OrderNumber).ToList();
+
+        var oldEntriesWithNewOrders = journalEntries
+            .Where(j => j.Type == JournalEntryType.SalesInvoice && j.OrderId.HasValue)
+            .Select(j => new { j.OrderId, InvoiceAmount = j.Lines.Where(l => l.Credit > 0).Sum(l => l.Credit) })
+            .ToList();
+
+        return Ok(new {
+            TotalOrders = orders.Count,
+            TotalEntries = journalEntries.Count,
+            MissingInvoices = missingInvoices,
+            DuplicateInvoices = duplicateInvoices,
+            SumSales = sumSales,
+            SumReceipts = sumReceipts,
+            ExpectedCashFromOrders = expectedCash,
+            MissingReturns = missingReturns
+        });
+    }
 }

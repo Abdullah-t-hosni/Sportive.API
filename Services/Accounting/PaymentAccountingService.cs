@@ -29,7 +29,7 @@ public class PaymentAccountingService
         _dashboardEvents = dashboardEvents;
     }
 
-    public async Task PostOrderPaymentAsync(Order order)
+    public async Task PostOrderPaymentAsync(Order order, DateTime? overrideDate = null)
     {
         var reference = order.OrderNumber + "-PMT";
         if (await _core.EntryExistsAsync(JournalEntryType.ReceiptVoucher, reference)) return;
@@ -98,7 +98,8 @@ public class PaymentAccountingService
 
         if (!lines.Any()) return;
         
-        await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, reference, _t.Get("Accounting.AutoReceiptVoucherMainDesc", order.OrderNumber), TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt), lines, orderId: order.Id, customerId: order.CustomerId, source: order.Source, createdAt: order.CreatedAt);
+        var entryDate = overrideDate ?? TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt);
+        await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, reference, _t.Get("Accounting.AutoReceiptVoucherMainDesc", order.OrderNumber), entryDate, lines, orderId: order.Id, customerId: order.CustomerId, source: order.Source, createdAt: entryDate);
     }
 
     public async Task PostOrderRefundAsync(Order order)

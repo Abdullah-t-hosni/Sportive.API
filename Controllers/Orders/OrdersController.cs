@@ -250,6 +250,37 @@ public class OrdersController : ControllerBase
         return Ok(order);
     }
 
+    [HttpPatch("{id}/cancel")]
+    public async Task<ActionResult<OrderDetailDto>> CancelOrderCustomer(int id)
+    {
+        var order = await _orderService.GetOrderByIdAsync(id);
+        if (order == null) return NotFound();
+
+        // Must be the owner of the order
+        var customerIdStr = User.FindFirst("CustomerId")?.Value;
+        if (string.IsNullOrEmpty(customerIdStr) || order.Customer.Id.ToString() != customerIdStr)
+            return Forbid();
+
+        // Cannot cancel if out for delivery, delivered, returned, or already cancelled
+        if (order.Status == OrderStatus.OutForDelivery || order.Status == OrderStatus.Delivered || 
+            order.Status == OrderStatus.Returned || order.Status == OrderStatus.PartiallyReturned || 
+            order.Status == OrderStatus.Cancelled)
+        {
+            return BadRequest(_translator.Get("Orders.CannotCancelShipped") ?? "عذراً، لا يمكن إلغاء الطلب في هذه المرحلة.");
+        }
+
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "customer_" + customerIdStr;
+        
+        var dto = new UpdateOrderStatusDto 
+        { 
+            Status = OrderStatus.Cancelled, 
+            Note = "تم إلغاء الطلب من قبل العميل عبر الموقع" 
+        };
+        
+        var updatedOrder = await _orderService.UpdateOrderStatusAsync(id, dto, userId);
+        return Ok(updatedOrder);
+    }
+
     [HttpPut("{id}")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<OrderDetailDto>> UpdateOrder(int id, [FromBody] UpdateOrderDto dto)

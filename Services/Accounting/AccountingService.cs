@@ -12,13 +12,13 @@ namespace Sportive.API.Services;
 
 public interface IAccountingService
 {
-    Task PostSalesOrderAsync(Order order);
+    Task PostSalesOrderAsync(Order order, DateTime? overrideDate = null);
     Task PostSalesOrderByIdAsync(int orderId);
     Task PostSalesReturnAsync(Order order, int? refundAccountId = null);
     Task PostPurchaseInvoiceAsync(PurchaseInvoice invoice);
     Task PostPurchaseReturnAsync(PurchaseInvoice invoice, decimal returnedSubTotal = 0, decimal returnedTaxAmount = 0, decimal returnedDiscountAmount = 0);
     Task PostPurchaseReturnAsync(PurchaseReturn pReturn);
-    Task PostOrderPaymentAsync(Order order);
+    Task PostOrderPaymentAsync(Order order, DateTime? overrideDate = null);
     Task PostOrderPaymentByIdAsync(int orderId);
     Task PostOrderRefundAsync(Order order);
     Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? overrideReference = null, DateTime? overrideDate = null);
@@ -72,7 +72,7 @@ public class AccountingService : IAccountingService
         _journal = journal;
     }
 
-    public Task PostSalesOrderAsync(Order order) => _sales.PostSalesOrderAsync(order);
+    public Task PostSalesOrderAsync(Order order, DateTime? overrideDate = null) => _sales.PostSalesOrderAsync(order, overrideDate);
     public Task PostSalesReturnAsync(Order order, int? refundAccountId = null) => _sales.PostSalesReturnAsync(order, refundAccountId);
     public Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? overrideReference = null, DateTime? overrideDate = null) 
         => _sales.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId, refundToStoreCredit, overrideReference, overrideDate);
@@ -87,7 +87,7 @@ public class AccountingService : IAccountingService
     public Task PostPurchaseReturnAsync(PurchaseInvoice invoice, decimal returnedSubTotal = 0, decimal returnedTaxAmount = 0, decimal returnedDiscountAmount = 0) => _purchase.PostPurchaseReturnAsync(invoice, returnedSubTotal, returnedTaxAmount, returnedDiscountAmount);
     public Task PostPurchaseReturnAsync(PurchaseReturn pReturn) => _purchase.PostPurchaseReturnAsync(pReturn);
 
-    public Task PostOrderPaymentAsync(Order order) => _payment.PostOrderPaymentAsync(order);
+    public Task PostOrderPaymentAsync(Order order, DateTime? overrideDate = null) => _payment.PostOrderPaymentAsync(order, overrideDate);
 
     public async Task PostSalesOrderByIdAsync(int orderId)
     {
