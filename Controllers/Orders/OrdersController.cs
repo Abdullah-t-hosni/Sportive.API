@@ -570,7 +570,7 @@ public class OrdersController : ControllerBase
                 if (kvp.Value == 0) continue;
 
                 var warehouseStock = await _db.ProductWarehouseStocks
-                    .FirstOrDefaultAsync(w => w.ProductVariantId == kvp.Key.Value && w.WarehouseId == kvp.Key.WarehouseId);
+                    .FirstOrDefaultAsync(w => w.ProductVariantId == kvp.Key.ProductVariantId && w.WarehouseId == kvp.Key.WarehouseId);
                 
                 if (warehouseStock != null)
                 {
