@@ -113,7 +113,7 @@ public class WhatsAppApiService : IWhatsAppApiService
 
             var payload = new
             {
-                chat_id = formattedPhone,
+                chat_id = formattedPhone + "@c.us",
                 text = messageText
             };
 
