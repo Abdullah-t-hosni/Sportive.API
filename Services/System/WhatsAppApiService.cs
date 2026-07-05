@@ -93,7 +93,7 @@ public class WhatsAppApiService : IWhatsAppApiService
     private static string NormalizePhone(string phone)
     {
         var digits = new string(phone.Where(char.IsDigit).ToArray());
-        if (digits.StartsWith("01") && digits.Length == 11) return "20" + digits;
+        if (digits.StartsWith("01") && digits.Length == 11) return "20" + digits.Substring(1);
         if (digits.StartsWith("20") && digits.Length == 12) return digits;
         return digits;
     }
