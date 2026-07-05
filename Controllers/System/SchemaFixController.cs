@@ -414,9 +414,13 @@ public class SchemaFixController : ControllerBase
     }
 
     [HttpGet("run-v17")]
-    [AllowAnonymous] // Allow running from browser temporarily
-    public async Task<IActionResult> RunV17()
+    [AllowAnonymous]
+    public async Task<IActionResult> RunV17([FromQuery] string? secret = null)
     {
+        // 🔒 Temporary secret key protection instead of requiring login
+        if (secret != "sportive-fix-stock-2026")
+            return Unauthorized(new { message = "Invalid or missing secret key." });
+
         _logger.LogWarning("SchemaFix run-v17 (Stock Discrepancy Fix) triggered.");
         try
         {
