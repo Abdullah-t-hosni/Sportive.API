@@ -516,55 +516,66 @@ public class OrdersController : ControllerBase
         {
             _db.InventoryMovements.RemoveRange(relatedMovements);
             
-            // Adjust stock back to warehouse manually since we are not using LogMovementAsync
-            foreach (var item in order.Items)
+            // 🐛 FIX: Accurately revert the net effect of the deleted movements to prevent double-restoration
+            // For example: if order was Cancelled, movements = -1 and +1 (net 0). We should restore 0.
+            var netVariantQty = relatedMovements
+                .Where(m => m.ProductVariantId.HasValue)
+                .GroupBy(m => m.ProductVariantId!.Value)
+                .ToDictionary(g => g.Key, g => g.Sum(m => (int)m.Quantity));
+                
+            var netProductQty = relatedMovements
+                .Where(m => m.ProductId.HasValue)
+                .GroupBy(m => m.ProductId!.Value)
+                .ToDictionary(g => g.Key, g => g.Sum(m => (int)m.Quantity));
+
+            var netWarehouseQty = relatedMovements
+                .Where(m => m.ProductVariantId.HasValue && m.WarehouseId.HasValue)
+                .GroupBy(m => new { m.ProductVariantId!.Value, m.WarehouseId!.Value })
+                .ToDictionary(g => g.Key, g => g.Sum(m => (int)m.Quantity));
+
+            // Restore Product TotalStock
+            foreach (var kvp in netProductQty)
             {
-                if (item.ProductId > 0)
+                if (kvp.Value == 0) continue; // No net change
+
+                var product = await _db.Products.FindAsync(kvp.Key);
+                if (product != null)
                 {
-                    var product = await _db.Products.FindAsync(item.ProductId);
-                    if (product != null)
+                    product.TotalStock -= kvp.Value; // Since movement was negative for a sale, we subtract the negative to add it back
+                    product.UpdatedAt = TimeHelper.GetEgyptTime();
+                    
+                    if (product.Status == ProductStatus.OutOfStock && product.TotalStock > 0)
                     {
-                        product.TotalStock += item.Quantity;
-                        product.UpdatedAt = TimeHelper.GetEgyptTime();
-                        
-                        if (product.Status == ProductStatus.OutOfStock && product.TotalStock > 0)
-                        {
-                            product.Status = ProductStatus.Active;
-                        }
+                        product.Status = ProductStatus.Active;
                     }
+                }
+            }
 
-                    if (item.ProductVariantId > 0)
-                    {
-                        var variant = await _db.ProductVariants.FindAsync(item.ProductVariantId);
-                        if (variant != null)
-                        {
-                            variant.StockQuantity += item.Quantity;
-                            variant.UpdatedAt = TimeHelper.GetEgyptTime();
-                        }
-                    }
+            // Restore Variant Stock
+            foreach (var kvp in netVariantQty)
+            {
+                if (kvp.Value == 0) continue;
 
-                    // ✅ FIX: Restore WarehouseStock as well so POS and Store can see the returned stock!
-                    if (order.WarehouseId.HasValue)
-                    {
-                        var ws = await _db.ProductWarehouseStocks
-                            .FirstOrDefaultAsync(w => w.WarehouseId == order.WarehouseId.Value && 
-                                                      w.ProductVariantId == item.ProductVariantId);
-                        if (ws != null)
-                        {
-                            ws.Quantity += item.Quantity;
-                            ws.UpdatedAt = TimeHelper.GetEgyptTime();
-                        }
-                        else
-                        {
-                            _db.ProductWarehouseStocks.Add(new ProductWarehouseStock
-                            {
-                                WarehouseId = order.WarehouseId.Value,
-                                ProductVariantId = item.ProductVariantId ?? 0,
-                                Quantity = item.Quantity,
-                                CreatedAt = TimeHelper.GetEgyptTime()
-                            });
-                        }
-                    }
+                var variant = await _db.ProductVariants.FindAsync(kvp.Key);
+                if (variant != null)
+                {
+                    variant.StockQuantity -= kvp.Value;
+                    variant.UpdatedAt = TimeHelper.GetEgyptTime();
+                }
+            }
+
+            // Restore Warehouse Stock
+            foreach (var kvp in netWarehouseQty)
+            {
+                if (kvp.Value == 0) continue;
+
+                var warehouseStock = await _db.ProductWarehouseStocks
+                    .FirstOrDefaultAsync(w => w.ProductVariantId == kvp.Key.Value && w.WarehouseId == kvp.Key.WarehouseId);
+                
+                if (warehouseStock != null)
+                {
+                    warehouseStock.Quantity -= kvp.Value;
+                    warehouseStock.UpdatedAt = TimeHelper.GetEgyptTime();
                 }
             }
         }

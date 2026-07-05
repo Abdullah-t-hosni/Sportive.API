@@ -412,6 +412,81 @@ public class SchemaFixController : ControllerBase
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
+    [HttpGet("run-v17")]
+    public async Task<IActionResult> RunV17()
+    {
+        _logger.LogWarning("SchemaFix run-v17 (Stock Discrepancy Fix) triggered.");
+        try
+        {
+            int variantsFixed = 0;
+            int productsFixed = 0;
+            
+            // 1. Recalculate Variant Stock from Movements
+            var variants = await _db.ProductVariants.ToListAsync();
+            foreach (var v in variants)
+            {
+                var sumMovements = await _db.InventoryMovements
+                    .Where(m => m.ProductVariantId == v.Id)
+                    .SumAsync(m => (int?)m.Quantity) ?? 0;
+
+                if (v.StockQuantity != sumMovements)
+                {
+                    v.StockQuantity = sumMovements;
+                    v.UpdatedAt = TimeHelper.GetEgyptTime();
+                    variantsFixed++;
+                }
+            }
+            await _db.SaveChangesAsync();
+
+            // 2. Recalculate Product TotalStock from Variants
+            var products = await _db.Products.Include(p => p.Variants).ToListAsync();
+            foreach (var p in products)
+            {
+                if (p.Variants.Any())
+                {
+                    var sumVariants = p.Variants.Sum(v => v.StockQuantity);
+                    if (p.TotalStock != sumVariants)
+                    {
+                        p.TotalStock = sumVariants;
+                        p.UpdatedAt = TimeHelper.GetEgyptTime();
+                        productsFixed++;
+                        
+                        // Fix status if needed
+                        if (p.Status == ProductStatus.Active && p.TotalStock <= 0) p.Status = ProductStatus.OutOfStock;
+                        else if (p.Status == ProductStatus.OutOfStock && p.TotalStock > 0) p.Status = ProductStatus.Active;
+                    }
+                }
+            }
+            await _db.SaveChangesAsync();
+
+            // 3. Recalculate Warehouse Stock from Movements
+            var warehouseStocks = await _db.ProductWarehouseStocks.ToListAsync();
+            foreach (var ws in warehouseStocks)
+            {
+                var sumMovements = await _db.InventoryMovements
+                    .Where(m => m.ProductVariantId == ws.ProductVariantId && m.WarehouseId == ws.WarehouseId)
+                    .SumAsync(m => (int?)m.Quantity) ?? 0;
+                    
+                if (ws.Quantity != sumMovements)
+                {
+                    ws.Quantity = sumMovements;
+                    ws.UpdatedAt = TimeHelper.GetEgyptTime();
+                }
+            }
+            await _db.SaveChangesAsync();
+
+            return Ok(new { 
+                message = "Stock discrepancies fixed successfully based on actual movements.", 
+                variantsFixedCount = variantsFixed,
+                productsFixedCount = productsFixed
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
     [HttpGet("clean-audit-movements")]
     public async Task<IActionResult> CleanAuditMovements()
     {
