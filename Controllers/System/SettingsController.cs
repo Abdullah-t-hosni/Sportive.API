@@ -143,6 +143,7 @@ public class SettingsController : ControllerBase
             info.HeroImageUrl            = dto.HeroImageUrl;
             info.HomeCarouselImagesTop   = dto.HomeCarouselImagesTop;
             info.HomeCarouselImagesBottom = dto.HomeCarouselImagesBottom;
+            info.HomeFeaturedCategories  = dto.HomeFeaturedCategories;
             info.ShowHeroSection         = dto.ShowHeroSection;
             info.UseGlassmorphism        = dto.UseGlassmorphism;
             info.EnablePageTransitions   = dto.EnablePageTransitions;

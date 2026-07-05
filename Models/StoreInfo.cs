@@ -130,6 +130,10 @@ public class StoreInfo
     [JsonPropertyName("homeCarouselImagesBottom")]
     public string? HomeCarouselImagesBottom { get; set; } // JSON array of string URLs
 
+    [MaxLength(1000)]
+    [JsonPropertyName("homeFeaturedCategories")]
+    public string? HomeFeaturedCategories { get; set; } // JSON array of integers (category IDs)
+
     // --- 3. Contact Information ---
     [MaxLength(20)]
     [JsonPropertyName("phone")]
