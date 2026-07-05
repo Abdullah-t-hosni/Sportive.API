@@ -262,20 +262,16 @@ public class OrdersController : ControllerBase
             return Forbid();
 
         // Cannot cancel if out for delivery, delivered, returned, or already cancelled
-        if (order.Status == OrderStatus.OutForDelivery || order.Status == OrderStatus.Delivered || 
-            order.Status == OrderStatus.Returned || order.Status == OrderStatus.PartiallyReturned || 
-            order.Status == OrderStatus.Cancelled)
+        if (order.Status == OrderStatus.OutForDelivery.ToString() || order.Status == OrderStatus.Delivered.ToString() || 
+            order.Status == OrderStatus.Returned.ToString() || order.Status == OrderStatus.PartiallyReturned.ToString() || 
+            order.Status == OrderStatus.Cancelled.ToString())
         {
             return BadRequest(_translator.Get("Orders.CannotCancelShipped") ?? "عذراً، لا يمكن إلغاء الطلب في هذه المرحلة.");
         }
 
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "customer_" + customerIdStr;
         
-        var dto = new UpdateOrderStatusDto 
-        { 
-            Status = OrderStatus.Cancelled, 
-            Note = "تم إلغاء الطلب من قبل العميل عبر الموقع" 
-        };
+        var dto = new UpdateOrderStatusDto(OrderStatus.Cancelled, "تم إلغاء الطلب من قبل العميل عبر الموقع");
         
         var updatedOrder = await _orderService.UpdateOrderStatusAsync(id, dto, userId);
         return Ok(updatedOrder);
