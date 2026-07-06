@@ -38,7 +38,7 @@ namespace Sportive.API.Services
 
             try
             {
-                var fullPath = Path.Combine(Directory.GetCurrentDirectory(), _credentialsPath);
+                var fullPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, _credentialsPath);
                 if (!File.Exists(fullPath))
                 {
                     _logger.LogWarning("GA4 Credentials file not found at {path}", fullPath);
