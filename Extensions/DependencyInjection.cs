@@ -383,6 +383,7 @@ public static class DependencyInjection
         services.AddScoped<IPlanService, PlanService>();
         services.AddScoped<ISubscriptionService, SubscriptionService>();
         services.AddScoped<IAnalyticsService, AnalyticsService>();
+        services.AddScoped<IGoogleAnalyticsService, GoogleAnalyticsService>();
         services.AddScoped<IStatisticsService, StatisticsService>();
         services.AddScoped<IDashboardEventService, DashboardEventService>();
         services.AddScoped<IOutboxProcessor, OutboxProcessor>();

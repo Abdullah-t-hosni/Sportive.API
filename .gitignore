@@ -53,3 +53,6 @@ walkthrough.md
 scratch/
 .system_generated/
 publish_temp/
+
+# Google Analytics Secret Key
+ga4_key.json

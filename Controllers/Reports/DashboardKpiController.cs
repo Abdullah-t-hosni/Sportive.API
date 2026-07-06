@@ -7,6 +7,7 @@ using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.Interfaces;
 using Sportive.API.Extensions;
+using Sportive.API.Services;
 
 namespace Sportive.API.Controllers;
 
@@ -137,6 +138,12 @@ public class DashboardKpiController : ControllerBase
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
         int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
         return Ok(await _dashboard.GetKpiAsync(source, fromDate, toDate, branchId));
+    }
+
+    [HttpGet("store-visitors")]
+    public async Task<IActionResult> GetStoreVisitors([FromServices] IGoogleAnalyticsService ga4Service)
+    {
+        return Ok(await ga4Service.GetStoreVisitorsStatsAsync());
     }
 
     private static decimal GrowthPct(decimal current, decimal previous) =>
