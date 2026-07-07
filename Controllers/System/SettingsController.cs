@@ -145,6 +145,11 @@ public class SettingsController : ControllerBase
             info.HomeCarouselImagesTop   = dto.HomeCarouselImagesTop;
             info.HomeCarouselImagesBottom = dto.HomeCarouselImagesBottom;
             info.HomeFeaturedCategories  = dto.HomeFeaturedCategories;
+            info.HomeCategoryMenImage    = dto.HomeCategoryMenImage;
+            info.HomeCategoryWomenImage  = dto.HomeCategoryWomenImage;
+            info.HomeCategoryKidsImage   = dto.HomeCategoryKidsImage;
+            info.HomeCategoryEquipmentImage = dto.HomeCategoryEquipmentImage;
+            info.HomeCategorySpecialSizesImage = dto.HomeCategorySpecialSizesImage;
             info.ShowHeroSection         = dto.ShowHeroSection;
             info.UseGlassmorphism        = dto.UseGlassmorphism;
             info.EnablePageTransitions   = dto.EnablePageTransitions;
