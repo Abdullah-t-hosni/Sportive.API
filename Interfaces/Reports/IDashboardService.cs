@@ -6,7 +6,7 @@ namespace Sportive.API.Interfaces;
 public interface IDashboardService
 {
     Task<DashboardStatsDto> GetStatsAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null);
-    Task<List<SalesChartDto>> GetSalesChartAsync(string period, DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null);
+    Task<List<SalesChartDto>> GetSalesChartAsync(string period, DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null, OrderSource? source = null);
     Task<List<TopProductDto>> GetTopProductsAsync(int count = 10, int? branchId = null);
     Task<List<OrderStatusStatsDto>> GetOrderStatusStatsAsync(int? branchId = null);
     Task<List<OrderSummaryDto>> GetRecentOrdersAsync(int count = 10, int? branchId = null);

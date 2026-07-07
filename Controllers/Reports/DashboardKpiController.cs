@@ -38,11 +38,11 @@ public class DashboardKpiController : ControllerBase
     }
 
     [HttpGet("sales-chart")]
-    public async Task<IActionResult> GetSalesChart([FromQuery] string period = "monthly", [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null, [FromQuery] int? filterBranchId = null)
+    public async Task<IActionResult> GetSalesChart([FromQuery] string period = "monthly", [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null, [FromQuery] int? filterBranchId = null, [FromQuery] OrderSource? source = null)
     {
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
         int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
-        return Ok(await _dashboard.GetSalesChartAsync(period, fromDate, toDate, branchId));
+        return Ok(await _dashboard.GetSalesChartAsync(period, fromDate, toDate, branchId, source));
     }
 
     [HttpGet("top-products")]

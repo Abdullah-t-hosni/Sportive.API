@@ -1052,8 +1052,16 @@ public class DashboardService : IDashboardService
     private static decimal GrowthPct(decimal current, decimal previous) =>
         previous == 0 ? (current > 0 ? 100 : 0) : Math.Round((current - previous) / previous * 100, 1);
 
-    public async Task<List<SalesChartDto>> GetSalesChartAsync(string period, DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null)
+    public async Task<List<SalesChartDto>> GetSalesChartAsync(string period, DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null, OrderSource? source = null)
     {
+        var q = _db.Orders.Where(o => o.Status != OrderStatus.Cancelled);
+        
+        if (branchId.HasValue)
+            q = q.Where(o => o.BranchId == branchId.Value);
+
+        if (source.HasValue)
+            q = q.Where(o => o.Source == source.Value);
+
         var now = TimeHelper.GetEgyptTime();
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
         var todayStart = (now.Hour < TimeHelper.GetBusinessDayEndHour()) ? now.Date.AddDays(-1).AddHours(TimeHelper.GetBusinessDayEndHour()) : now.Date.AddHours(TimeHelper.GetBusinessDayEndHour());
@@ -1065,8 +1073,9 @@ public class DashboardService : IDashboardService
         IEnumerable<dynamic> stats;
         try
         {
+            var targetSource = source ?? OrderSource.General;
             var dailyStatsQuery = _db.DailyStats.AsNoTracking()
-                .Where(s => s.Date >= start && s.Date < end && s.Source == OrderSource.General);
+                .Where(s => s.Date >= start && s.Date < end && s.Source == targetSource);
             
             stats = await dailyStatsQuery
                 .OrderBy(s => s.Date)
