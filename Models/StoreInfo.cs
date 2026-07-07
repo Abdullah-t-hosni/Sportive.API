@@ -134,23 +134,18 @@ public class StoreInfo
     [JsonPropertyName("homeFeaturedCategories")]
     public string? HomeFeaturedCategories { get; set; } // JSON array of integers (category IDs)
 
-    [MaxLength(1000)]
     [JsonPropertyName("homeCategoryMenImage")]
     public string? HomeCategoryMenImage { get; set; }
 
-    [MaxLength(1000)]
     [JsonPropertyName("homeCategoryWomenImage")]
     public string? HomeCategoryWomenImage { get; set; }
 
-    [MaxLength(1000)]
     [JsonPropertyName("homeCategoryKidsImage")]
     public string? HomeCategoryKidsImage { get; set; }
 
-    [MaxLength(1000)]
     [JsonPropertyName("homeCategoryEquipmentImage")]
     public string? HomeCategoryEquipmentImage { get; set; }
 
-    [MaxLength(1000)]
     [JsonPropertyName("homeCategorySpecialSizesImage")]
     public string? HomeCategorySpecialSizesImage { get; set; }
 

@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -13,40 +13,35 @@ namespace Sportive.API.Migrations.ReportingOptimization
             migrationBuilder.AddColumn<string>(
                 name: "HomeCategoryEquipmentImage",
                 table: "StoreSettings",
-                type: "varchar(1000)",
-                maxLength: 1000,
+                type: "longtext",
                 nullable: true)
                 .Annotation("MySql:CharSet", "utf8mb4");
 
             migrationBuilder.AddColumn<string>(
                 name: "HomeCategoryKidsImage",
                 table: "StoreSettings",
-                type: "varchar(1000)",
-                maxLength: 1000,
+                type: "longtext",
                 nullable: true)
                 .Annotation("MySql:CharSet", "utf8mb4");
 
             migrationBuilder.AddColumn<string>(
                 name: "HomeCategoryMenImage",
                 table: "StoreSettings",
-                type: "varchar(1000)",
-                maxLength: 1000,
+                type: "longtext",
                 nullable: true)
                 .Annotation("MySql:CharSet", "utf8mb4");
 
             migrationBuilder.AddColumn<string>(
                 name: "HomeCategorySpecialSizesImage",
                 table: "StoreSettings",
-                type: "varchar(1000)",
-                maxLength: 1000,
+                type: "longtext",
                 nullable: true)
                 .Annotation("MySql:CharSet", "utf8mb4");
 
             migrationBuilder.AddColumn<string>(
                 name: "HomeCategoryWomenImage",
                 table: "StoreSettings",
-                type: "varchar(1000)",
-                maxLength: 1000,
+                type: "longtext",
                 nullable: true)
                 .Annotation("MySql:CharSet", "utf8mb4");
         }
