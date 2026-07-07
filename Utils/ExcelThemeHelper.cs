@@ -73,7 +73,9 @@ namespace Sportive.API.Utils
                         
                         // Heuristic: If the row was historically colored or has bold text in multiple cells, it's probably the table header
                         bool isHeader = row.Cell(1).Style.Fill.BackgroundColor.HasValue && 
-                                        row.Cell(1).Style.Fill.BackgroundColor.Color.ToHex() == "FF1A237E" || 
+                                        row.Cell(1).Style.Fill.BackgroundColor.Color.R == 26 && 
+                                        row.Cell(1).Style.Fill.BackgroundColor.Color.G == 35 && 
+                                        row.Cell(1).Style.Fill.BackgroundColor.Color.B == 126 || 
                                         (row.Cell(1).Style.Font.Bold && row.Cell(2).Style.Font.Bold);
 
                         if (isHeader && !foundTableHeader)
