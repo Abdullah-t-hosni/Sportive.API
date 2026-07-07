@@ -131,7 +131,7 @@ namespace Sportive.API.Services
                     Dimensions = { new Dimension { Name = "pageTitle" }, new Dimension { Name = "pagePath" } },
                     Metrics = { new Metric { Name = "screenPageViews" } },
                     OrderBys = { new OrderBy { Metric = new OrderBy.Types.MetricOrderBy { MetricName = "screenPageViews" }, Desc = true } },
-                    Limit = 30
+                    Limit = 100
                 };
                 var pagesResponse = await client.RunReportAsync(pagesRequest);
                 
@@ -154,7 +154,7 @@ namespace Sportive.API.Services
                         topPages.Add(new { path = path, title = title, views = views, trend = "+5%" });
                     }
                     
-                    if (path.Contains("/products/", StringComparison.OrdinalIgnoreCase) && topProducts.Count < 5)
+                    if (path.Contains("/product", StringComparison.OrdinalIgnoreCase) && topProducts.Count < 5)
                     {
                         topProducts.Add(new { name = title, views = views });
                     }
