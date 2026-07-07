@@ -70,11 +70,11 @@ public class DashboardKpiController : ControllerBase
     }
 
     [HttpGet("analytics-summary")]
-    public async Task<IActionResult> GetAnalyticsSummary([FromQuery] int? filterBranchId = null)
+    public async Task<IActionResult> GetAnalyticsSummary([FromQuery] int? filterBranchId = null, [FromQuery] OrderSource? source = null)
     {
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
         int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
-        return Ok(await _dashboard.GetAnalyticsSummaryAsync(branchId));
+        return Ok(await _dashboard.GetAnalyticsSummaryAsync(branchId, source));
     }
 
     [HttpGet("export-sales")]
@@ -87,11 +87,11 @@ public class DashboardKpiController : ControllerBase
     }
 
     [HttpGet("advanced-stats")]
-    public async Task<IActionResult> GetAdvancedStats([FromQuery] int? filterBranchId = null)
+    public async Task<IActionResult> GetAdvancedStats([FromQuery] int? filterBranchId = null, [FromQuery] OrderSource? source = null)
     {
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
         int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
-        return Ok(await _dashboard.GetAdvancedStatsAsync(branchId));
+        return Ok(await _dashboard.GetAdvancedStatsAsync(branchId, source));
     }
 
     [HttpGet("staff-stats")]
