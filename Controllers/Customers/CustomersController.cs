@@ -380,6 +380,7 @@ public class CustomersController : ControllerBase
         ws.RightToLeft = true;
 
         using var stream = new System.IO.MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(stream);
         stream.Position = 0;
         return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "customers_import_template.xlsx");

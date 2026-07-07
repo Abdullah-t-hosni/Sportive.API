@@ -528,6 +528,7 @@ public class InventoryOpeningBalanceController : ControllerBase
         ws.Column(8).Width = 50;
 
         using var stream = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(stream);
         return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "InventoryOpeningBalance_Template.xlsx");
     }

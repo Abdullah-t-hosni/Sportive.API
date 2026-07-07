@@ -293,6 +293,7 @@ public class CashierPerformanceController : ControllerBase
         ws.Columns().AdjustToContents();
 
         var s = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(s); s.Position = 0;
         return new FileStreamResult(s,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

@@ -122,6 +122,7 @@ public class ExportController : ControllerBase
         ws.RightToLeft = true;
 
         var stream = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(stream);
         stream.Position = 0;
 
@@ -191,6 +192,7 @@ public class ExportController : ControllerBase
         ws2.RightToLeft = true;
 
         var stream = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(stream);
         stream.Position = 0;
 
@@ -274,6 +276,7 @@ public class ExportController : ControllerBase
         ws.RightToLeft = true;
 
         var stream = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(stream); stream.Position = 0;
 
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -361,6 +364,7 @@ public class ExportController : ControllerBase
         ws.RightToLeft = true;
 
         var stream = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(stream); stream.Position = 0;
 
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -433,6 +437,7 @@ public class ExportController : ControllerBase
         ws.RightToLeft = true;
 
         var stream = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(stream); stream.Position = 0;
 
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -491,6 +496,7 @@ public class ExportController : ControllerBase
         ws.RightToLeft = true;
 
         var stream = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(stream); stream.Position = 0;
 
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -551,6 +557,7 @@ public class ExportController : ControllerBase
         ws.RightToLeft = true;
 
         var stream = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(stream); stream.Position = 0;
 
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -636,6 +643,7 @@ public class ExportController : ControllerBase
         ws.RightToLeft = true;
 
         var stream = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(stream);
         stream.Position = 0;
 
@@ -675,6 +683,7 @@ public class ExportController : ControllerBase
         ws.RightToLeft = true;
 
         var stream = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(stream);
         stream.Position = 0;
 

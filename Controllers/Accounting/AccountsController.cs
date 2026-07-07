@@ -208,6 +208,7 @@ public class AccountsController : ControllerBase
         ws.Column(3).Width = 20;
 
         using var stream = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(stream);
         return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "OpeningBalances_Template.xlsx");
     }

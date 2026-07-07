@@ -232,6 +232,7 @@ public class ImportController : ControllerBase
             ws1.Row(2).Style.Font.FontColor = XLColor.Gray;
 
             var stream = new MemoryStream();
+            Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
             wb.SaveAs(stream); 
             stream.Position = 0;
 
@@ -667,6 +668,7 @@ public class ImportController : ControllerBase
         }
 
         var stream = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(stream);
         stream.Position = 0;
 
@@ -796,6 +798,7 @@ public class ImportController : ControllerBase
 
         ws.Columns().AdjustToContents();
         var stream = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(stream);
         return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "accounts_import_template.xlsx");
     }

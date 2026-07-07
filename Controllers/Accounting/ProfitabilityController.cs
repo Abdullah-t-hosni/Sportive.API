@@ -428,6 +428,7 @@ public class ProfitabilityController : ControllerBase
     private static FileStreamResult ExcelFile(XLWorkbook wb, string name)
     {
         var s = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(s); s.Position = 0;
         return new FileStreamResult(s,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

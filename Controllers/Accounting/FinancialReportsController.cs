@@ -1327,6 +1327,7 @@ public class FinancialReportsController : ControllerBase
     private static FileStreamResult ExcelResult(XLWorkbook wb, string filename)
     {
         var stream = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(stream); stream.Position = 0;
         return new FileStreamResult(stream,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
