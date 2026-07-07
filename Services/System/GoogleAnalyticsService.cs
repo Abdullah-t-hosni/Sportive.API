@@ -10,7 +10,7 @@ namespace Sportive.API.Services
 {
     public interface IGoogleAnalyticsService
     {
-        Task<object> GetStoreVisitorsStatsAsync();
+        Task<object> GetStoreVisitorsStatsAsync(DateTime? startDate = null, DateTime? endDate = null);
     }
 
     public class GoogleAnalyticsService : IGoogleAnalyticsService
@@ -28,9 +28,12 @@ namespace Sportive.API.Services
             _cache = cache;
         }
 
-        public async Task<object> GetStoreVisitorsStatsAsync()
+        public async Task<object> GetStoreVisitorsStatsAsync(DateTime? startDate = null, DateTime? endDate = null)
         {
-            const string cacheKey = "GA4_StoreVisitorsStats";
+            var start = startDate?.ToString("yyyy-MM-dd") ?? "7daysAgo";
+            var end = endDate?.ToString("yyyy-MM-dd") ?? "today";
+            string cacheKey = $"GA4_StoreVisitorsStats_{start}_{end}";
+            
             if (_cache.TryGetValue(cacheKey, out object cachedResult))
             {
                 return cachedResult;
@@ -78,7 +81,7 @@ namespace Sportive.API.Services
                 var geoRequest = new RunReportRequest
                 {
                     Property = $"properties/{_propertyId}",
-                    DateRanges = { new DateRange { StartDate = "30daysAgo", EndDate = "today" } },
+                    DateRanges = { new DateRange { StartDate = start, EndDate = end } },
                     Dimensions = { new Dimension { Name = "country" }, new Dimension { Name = "city" } },
                     Metrics = { new Metric { Name = "activeUsers" } },
                     OrderBys = { new OrderBy { Metric = new OrderBy.Types.MetricOrderBy { MetricName = "activeUsers" }, Desc = true } },
@@ -88,6 +91,7 @@ namespace Sportive.API.Services
 
                 var countriesList = new List<object>();
                 var citiesList = new List<object>();
+                var countryMap = new Dictionary<string, long>();
                 long totalGeoUsers = 0;
 
                 foreach (var row in geoResponse.Rows)
@@ -101,20 +105,29 @@ namespace Sportive.API.Services
                         citiesList.Add(new { name = city, users = users });
                     }
                     
+                    if (countryMap.ContainsKey(country))
+                        countryMap[country] += users;
+                    else
+                        countryMap[country] = users;
+
                     totalGeoUsers += users;
                 }
 
                 if (totalGeoUsers > 0)
                 {
-                    countriesList.Add(new { name = "مصر", percent = "95%" });
-                    countriesList.Add(new { name = "أخرى", percent = "5%" });
+                    foreach (var kvp in countryMap)
+                    {
+                        var percent = Math.Round((double)kvp.Value / totalGeoUsers * 100, 1);
+                        var countryName = kvp.Key == "Egypt" ? "مصر" : kvp.Key;
+                        countriesList.Add(new { name = countryName, percent = $"{percent}%" });
+                    }
                 }
 
                 // 3. Page Views (Last 7 Days)
                 var pagesRequest = new RunReportRequest
                 {
                     Property = $"properties/{_propertyId}",
-                    DateRanges = { new DateRange { StartDate = "7daysAgo", EndDate = "today" } },
+                    DateRanges = { new DateRange { StartDate = start, EndDate = end } },
                     Dimensions = { new Dimension { Name = "pageTitle" }, new Dimension { Name = "pagePath" } },
                     Metrics = { new Metric { Name = "screenPageViews" } },
                     OrderBys = { new OrderBy { Metric = new OrderBy.Types.MetricOrderBy { MetricName = "screenPageViews" }, Desc = true } },
@@ -141,22 +154,88 @@ namespace Sportive.API.Services
                         topPages.Add(new { path = path, title = title, views = views, trend = "+5%" });
                     }
                     
-                    if (path.Contains("/product/", StringComparison.OrdinalIgnoreCase) && topProducts.Count < 5)
+                    if (path.Contains("/products/", StringComparison.OrdinalIgnoreCase) && topProducts.Count < 5)
                     {
                         topProducts.Add(new { name = title, views = views });
                     }
+                }
+                // 4. Session Metrics (Last 7 Days)
+                var sessionRequest = new RunReportRequest
+                {
+                    Property = $"properties/{_propertyId}",
+                    DateRanges = { new DateRange { StartDate = start, EndDate = end } },
+                    Metrics = { new Metric { Name = "averageSessionDuration" }, new Metric { Name = "bounceRate" } }
+                };
+                
+                string avgDurationStr = "00:00";
+                string bounceRateStr = "0%";
+                
+                try 
+                {
+                    var sessionResponse = await client.RunReportAsync(sessionRequest);
+                    if (sessionResponse.Rows.Count > 0)
+                    {
+                        var avgDurationSec = double.Parse(sessionResponse.Rows[0].MetricValues[0].Value);
+                        var bounceRateVal = double.Parse(sessionResponse.Rows[0].MetricValues[1].Value);
+                        
+                        var timeSpan = TimeSpan.FromSeconds(avgDurationSec);
+                        avgDurationStr = $"{(int)timeSpan.TotalMinutes:D2}:{timeSpan.Seconds:D2}";
+                        bounceRateStr = $"{(bounceRateVal * 100):F1}%";
+                    }
+                } 
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to fetch session metrics, using fallback");
+                }
+
+                // 5. Devices Data
+                var devicesRequest = new RunReportRequest
+                {
+                    Property = $"properties/{_propertyId}",
+                    DateRanges = { new DateRange { StartDate = start, EndDate = end } },
+                    Dimensions = { new Dimension { Name = "deviceCategory" } },
+                    Metrics = { new Metric { Name = "activeUsers" } }
+                };
+                
+                string mobilePercent = "0%";
+                string desktopPercent = "0%";
+                try 
+                {
+                    var devicesResponse = await client.RunReportAsync(devicesRequest);
+                    long totalDevices = 0;
+                    long mobileUsers = 0;
+                    long desktopUsers = 0;
+                    
+                    foreach(var row in devicesResponse.Rows)
+                    {
+                        long.TryParse(row.MetricValues[0].Value, out long u);
+                        totalDevices += u;
+                        var cat = row.DimensionValues[0].Value.ToLower();
+                        if (cat == "mobile" || cat == "tablet") mobileUsers += u;
+                        else desktopUsers += u;
+                    }
+                    
+                    if (totalDevices > 0)
+                    {
+                        mobilePercent = $"{Math.Round((double)mobileUsers / totalDevices * 100)}%";
+                        desktopPercent = $"{Math.Round((double)desktopUsers / totalDevices * 100)}%";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to fetch device metrics");
                 }
 
                 var result = new
                 {
                     activeUsers = activeUsers,
-                    devices = new { mobile = "85%", desktop = "15%" }, 
+                    devices = new { mobile = mobilePercent, desktop = desktopPercent }, 
                     countries = countriesList.Count > 0 ? countriesList.ToArray() : new object[] { new { name = "مصر", percent = "100%" } },
                     cities = citiesList,
                     topPages = topPages,
                     topProducts = topProducts,
-                    sessionDuration = "03:42", 
-                    bounceRate = "42.5%" 
+                    sessionDuration = avgDurationStr, 
+                    bounceRate = bounceRateStr 
                 };
 
                 _cache.Set(cacheKey, result, TimeSpan.FromMinutes(2)); // Cache for 2 minutes
