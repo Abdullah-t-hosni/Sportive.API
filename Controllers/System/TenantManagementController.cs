@@ -154,4 +154,50 @@ public class TenantManagementController : ControllerBase
     {
         return RedirectPreserveMethod("/api/system/analytics/dashboard-stats");
     }
+
+    [AllowAnonymous]
+    [HttpGet("force-fix-columns")]
+    public async Task<IActionResult> ForceFixColumns()
+    {
+        try 
+        {
+            using var context = await _dbContextFactory.CreateDbContextAsync();
+            var results = new System.Collections.Generic.List<string>();
+            var columns = new[] { "HomeCategoryEquipmentImage", "HomeCategoryKidsImage", "HomeCategoryMenImage", "HomeCategorySpecialSizesImage", "HomeCategoryWomenImage" };
+            
+            foreach(var col in columns)
+            {
+                try {
+                    await context.Database.ExecuteSqlRawAsync($"ALTER TABLE `StoreSettings` ADD COLUMN `{col}` longtext NULL");
+                    results.Add($"{col}: ADDED");
+                } 
+                catch (Exception ex) {
+                    if (ex.Message.Contains("Duplicate column")) {
+                        try {
+                            await context.Database.ExecuteSqlRawAsync($"ALTER TABLE `StoreSettings` MODIFY COLUMN `{col}` longtext NULL");
+                            results.Add($"{col}: MODIFIED");
+                        } catch (Exception ex2) {
+                            results.Add($"{col}: MODIFY FAILED - {ex2.Message}");
+                        }
+                    } else {
+                        results.Add($"{col}: ADD FAILED - {ex.Message}");
+                    }
+                }
+            }
+            
+            try {
+                // Ensure migration history is marked so EF Core doesn't try to run it again
+                await context.Database.ExecuteSqlRawAsync("INSERT IGNORE INTO `__EFMigrationsHistory` (`MigrationId`, `ProductVersion`) VALUES ('20260707104037_AddHomeCategoryImages', '8.0.2')");
+                results.Add("History: MARKED");
+            } catch (Exception ex) {
+                results.Add($"History: FAILED - {ex.Message}");
+            }
+
+            return Ok(new { success = true, results });
+        }
+        catch (Exception ex) 
+        {
+            return Ok(new { success = false, message = ex.ToString() });
+        }
+    }
 }
