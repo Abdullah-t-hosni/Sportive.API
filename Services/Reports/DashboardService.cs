@@ -1128,10 +1128,11 @@ public class DashboardService : IDashboardService
         }
     }
 
-    public async Task<List<TopProductDto>> GetTopProductsAsync(int count = 10, int? branchId = null)
+    public async Task<List<TopProductDto>> GetTopProductsAsync(int count = 10, int? branchId = null, OrderSource? source = null)
     {
         var topProductsQuery2 = _db.OrderItems.AsNoTracking().Where(i => i.Order!.Status != OrderStatus.Cancelled);
         if (branchId.HasValue) topProductsQuery2 = topProductsQuery2.Where(i => i.Order!.BranchId == branchId.Value);
+        if (source.HasValue) topProductsQuery2 = topProductsQuery2.Where(i => i.Order!.Source == source.Value);
 
         var top = await topProductsQuery2
             .GroupBy(i => new { i.ProductId, i.ProductNameAr, i.ProductNameEn })
@@ -1147,16 +1148,17 @@ public class DashboardService : IDashboardService
         return top.Select(t => new TopProductDto(t.ProductId, t.ProductNameAr, t.ProductNameEn, t.ProductId.HasValue ? imgs.GetValueOrDefault(t.ProductId.Value) : null, t.Sold, t.Revenue)).ToList();
     }
 
-    public async Task<List<OrderStatusStatsDto>> GetOrderStatusStatsAsync(int? branchId = null)
+    public async Task<List<OrderStatusStatsDto>> GetOrderStatusStatsAsync(int? branchId = null, OrderSource? source = null)
     {
         var query = _db.Orders.AsNoTracking().AsQueryable();
         if (branchId.HasValue) query = query.Where(o => o.BranchId == branchId.Value);
+        if (source.HasValue) query = query.Where(o => o.Source == source.Value);
         var stats = await query.GroupBy(o => o.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync();
         var total = stats.Sum(s => s.Count);
         return stats.Select(s => new OrderStatusStatsDto(s.Status.ToString(), s.Count, total > 0 ? Math.Round((decimal)s.Count / total * 100, 1) : 0)).ToList();
     }
 
-    public async Task<List<OrderSummaryDto>> GetRecentOrdersAsync(int count = 10, int? branchId = null)
+    public async Task<List<OrderSummaryDto>> GetRecentOrdersAsync(int count = 10, int? branchId = null, OrderSource? source = null)
     {
         var recentOrdersQuery = _db.Orders.AsNoTracking()
             .Include(o => o.Customer)
@@ -1165,6 +1167,7 @@ public class DashboardService : IDashboardService
             .AsQueryable();
 
         if (branchId.HasValue) recentOrdersQuery = recentOrdersQuery.Where(o => o.BranchId == branchId.Value);
+        if (source.HasValue) recentOrdersQuery = recentOrdersQuery.Where(o => o.Source == source.Value);
 
         var orders = await recentOrdersQuery
             .OrderByDescending(o => o.CreatedAt)
