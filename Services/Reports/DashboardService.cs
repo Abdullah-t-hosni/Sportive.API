@@ -367,8 +367,11 @@ public class DashboardService : IDashboardService
             .Select(o => new { o.CreatedAt, o.TotalAmount, o.Source }) // ✅ Added Source
             .ToListAsync();
 
-        var newCustomers = await _db.Customers
-            .Where(c => c.CreatedAt >= startDate)
+        var newCustomersQuery = _db.Customers
+            .Where(c => c.CreatedAt >= startDate);
+        if (source.HasValue) newCustomersQuery = newCustomersQuery.Where(c => c.Orders.Any(o => o.Source == source.Value));
+        
+        var newCustomers = await newCustomersQuery
             .Select(c => c.CreatedAt)
             .ToListAsync();
 
@@ -391,6 +394,7 @@ public class DashboardService : IDashboardService
             .Where(o => o.Status != OrderStatus.Cancelled);
 
         if (branchId.HasValue) retentionQuery = retentionQuery.Where(o => o.BranchId == branchId.Value);
+        if (source.HasValue) retentionQuery = retentionQuery.Where(o => o.Source == source.Value);
 
         var orderCountsByCustomer = await retentionQuery
             .GroupBy(o => o.CustomerId)
@@ -556,6 +560,7 @@ public class DashboardService : IDashboardService
                 TotalSpent = vipQuery.Where(o => o.CustomerId == c.Id).Sum(o => (decimal?)o.TotalAmount) ?? 0,
                 OrderCount = vipQuery.Count(o => o.CustomerId == c.Id)
             })
+            .Where(x => x.OrderCount > 0)
             .OrderByDescending(x => x.TotalSpent)
             .Take(10)
             .ToListAsync();
@@ -618,6 +623,7 @@ public class DashboardService : IDashboardService
         // 5. Payment Methods
         var paymentsQuery = _db.Orders.AsQueryable();
         if (branchId.HasValue) paymentsQuery = paymentsQuery.Where(o => o.BranchId == branchId.Value);
+        if (source.HasValue) paymentsQuery = paymentsQuery.Where(o => o.Source == source.Value);
 
         var paymentMethodsRaw = await paymentsQuery
             .Select(o => new { o.PaymentMethod, o.TotalAmount })
