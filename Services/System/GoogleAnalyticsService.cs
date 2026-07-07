@@ -154,7 +154,7 @@ namespace Sportive.API.Services
                         topPages.Add(new { path = path, title = title, views = views, trend = "+5%" });
                     }
                     
-                    if (path.Contains("/product", StringComparison.OrdinalIgnoreCase) && topProducts.Count < 5)
+                    if (!isAdminPage && path.Contains("/product", StringComparison.OrdinalIgnoreCase) && topProducts.Count < 5)
                     {
                         topProducts.Add(new { name = title, views = views });
                     }
