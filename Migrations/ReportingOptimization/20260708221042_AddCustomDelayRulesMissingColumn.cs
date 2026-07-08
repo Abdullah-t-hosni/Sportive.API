@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Sportive.API.Migrations.ReportingOptimization
 {
     /// <inheritdoc />
-    public partial class AddCustomDelayRulesToStoreSettings : Migration
+    public partial class AddCustomDelayRulesMissingColumn : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
