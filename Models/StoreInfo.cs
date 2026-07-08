@@ -595,6 +595,9 @@ public class StoreInfo
     [JsonPropertyName("delayHalfDayLimitMinutes")]
     public int DelayHalfDayLimitMinutes { get; set; } = 60;
 
+    [JsonPropertyName("customDelayRules")]
+    public string? CustomDelayRules { get; set; }
+
     // --- 15. Linktree Customizations ---
     [JsonPropertyName("linktreeConfig")]
     public string? LinktreeConfig { get; set; }
