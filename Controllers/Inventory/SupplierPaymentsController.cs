@@ -386,5 +386,41 @@ public class SupplierPaymentsController : ControllerBase
             }
         });
     }
+
+    [HttpPatch("{id}/link-invoice")]
+    [RequirePermission(ModuleKeys.SupplierVouchers, requireEdit: true)]
+    public async Task<IActionResult> LinkInvoice(int id, [FromBody] LinkInvoiceDto dto)
+    {
+        var payment = await _db.SupplierPayments
+            .Include(p => p.Supplier)
+            .Include(p => p.Invoice)
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        if (payment == null) return NotFound();
+        if (payment.PurchaseInvoiceId.HasValue) return BadRequest(new { message = "هذا السند مرتبط بالفعل بفاتورة." });
+
+        var invoice = await _db.PurchaseInvoices.FirstOrDefaultAsync(i => i.Id == dto.PurchaseInvoiceId && i.SupplierId == payment.SupplierId);
+        if (invoice == null) return BadRequest(new { message = "الفاتورة غير موجودة أو لا تخص هذا المورد." });
+
+        var remaining = invoice.TotalAmount - invoice.PaidAmount - invoice.ReturnedAmount;
+        if (payment.Amount > remaining + 0.1m)
+        {
+            return BadRequest(new { message = _t.Get("SupplierPayments.AmountExceedsDebt", payment.Amount.ToString(), remaining.ToString()) });
+        }
+
+        invoice.PaidAmount += payment.Amount;
+        var netTotal = invoice.TotalAmount - invoice.ReturnedAmount;
+        invoice.Status = invoice.PaidAmount >= netTotal - 0.1m ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.PartPaid;
+
+        payment.PurchaseInvoiceId = dto.PurchaseInvoiceId;
+        payment.Invoice = invoice;
+
+        await _db.SaveChangesAsync();
+        try { await _audit.LogAsync("LinkSupplierPayment", "SupplierPayment", id.ToString(), $"Linked payment {payment.PaymentNumber} to invoice {invoice.InvoiceNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
+        return Ok(new { message = "تم الربط بنجاح" });
+    }
 }
+
+public record LinkInvoiceDto(int PurchaseInvoiceId);
 

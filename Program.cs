@@ -335,6 +335,7 @@ app.UseMiddleware<Sportive.API.Middleware.SessionLastSeenMiddleware>();
 app.MapControllers();
 app.MapHealthChecks("/health");
 app.MapGet("/", () => Results.Ok("Sportive API is running"));
+app.MapSitemapEndpoints();
 app.MapHub<NotificationHub>("/notifications-hub");
 
 // ── RECURRING JOBS ────────────────────────────────────
