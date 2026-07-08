@@ -403,19 +403,79 @@ public class SupplierPaymentsController : ControllerBase
         if (invoice == null) return BadRequest(new { message = "الفاتورة غير موجودة أو لا تخص هذا المورد." });
 
         var remaining = invoice.TotalAmount - invoice.PaidAmount - invoice.ReturnedAmount;
-        if (payment.Amount > remaining + 0.1m)
+        if (remaining <= 0) return BadRequest(new { message = "هذه الفاتورة مسددة بالكامل." });
+
+        var newlySplitAdvancePayments = new List<SupplierPayment>();
+
+        if (payment.Amount > remaining)
         {
-            return BadRequest(new { message = _t.Get("SupplierPayments.AmountExceedsDebt", payment.Amount.ToString(), remaining.ToString()) });
+            // Split the payment
+            decimal remainder = payment.Amount - remaining;
+
+            // Delete original journal entry for the payment to replace it with split ones
+            var oldJE = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Reference == payment.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher);
+            if (oldJE != null) _db.JournalEntries.Remove(oldJE);
+
+            // The current payment takes the remaining amount of the invoice and gets linked
+            payment.Amount = remaining;
+            payment.PurchaseInvoiceId = invoice.Id;
+            payment.Invoice = invoice;
+
+            // Create new payment for the rest (keeps the advance nature)
+            var newPNo = await _seq.NextAsync("SP");
+            var splitPayment = new SupplierPayment
+            {
+                PaymentNumber = newPNo,
+                SupplierId = payment.SupplierId,
+                Amount = remainder,
+                PaymentDate = payment.PaymentDate,
+                PaymentMethod = payment.PaymentMethod,
+                CashAccountId = payment.CashAccountId,
+                AccountName = payment.AccountName,
+                Notes = payment.Notes + " (رصيد متبقي بعد الربط)",
+                CreatedAt = payment.CreatedAt,
+                CostCenter = payment.CostCenter,
+                AttachmentUrl = payment.AttachmentUrl,
+                AttachmentPublicId = payment.AttachmentPublicId,
+                CreatedByUserId = payment.CreatedByUserId
+            };
+            _db.SupplierPayments.Add(splitPayment);
+            newlySplitAdvancePayments.Add(splitPayment);
+
+            invoice.PaidAmount += remaining;
+        }
+        else
+        {
+            invoice.PaidAmount += payment.Amount;
+            payment.PurchaseInvoiceId = invoice.Id;
+            payment.Invoice = invoice;
         }
 
-        invoice.PaidAmount += payment.Amount;
         var netTotal = invoice.TotalAmount - invoice.ReturnedAmount;
-        invoice.Status = invoice.PaidAmount >= netTotal - 0.1m ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.PartPaid;
-
-        payment.PurchaseInvoiceId = dto.PurchaseInvoiceId;
-        payment.Invoice = invoice;
+        invoice.Status = invoice.PaidAmount >= netTotal - 0.01m ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.PartPaid;
 
         await _db.SaveChangesAsync();
+
+        // Sync journal entries for the modified payment
+        _ = PostSupplierPaymentWithRetryAsync(payment.Id, payment.PaymentNumber);
+        
+        // Sync journal entries for the newly split payments
+        if (newlySplitAdvancePayments.Any())
+        {
+            var newlySplitIds = newlySplitAdvancePayments.Select(p => p.Id).ToList();
+            _ = Task.Run(async () => {
+                try {
+                    using var scope = _scopeFactory.CreateScope();
+                    var acc = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                    var innerDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    var payments = await innerDb.SupplierPayments.Where(p => newlySplitIds.Contains(p.Id)).ToListAsync();
+                    foreach (var sp in payments) { await acc.PostSupplierPaymentAsync(sp); }
+                } catch (Exception ex) {
+                    _logger.LogError(ex, "Failed to post journal for newly split linked payments.");
+                }
+            });
+        }
+
         try { await _audit.LogAsync("LinkSupplierPayment", "SupplierPayment", id.ToString(), $"Linked payment {payment.PaymentNumber} to invoice {invoice.InvoiceNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return Ok(new { message = "تم الربط بنجاح" });
