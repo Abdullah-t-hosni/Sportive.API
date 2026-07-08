@@ -926,7 +926,10 @@ public class AccountingCoreService
 
         // Group journal lines by SupplierId and sum credit - debit in ONE query
         var supplierLedgerBalances = await _db.JournalLines
-            .Where(l => l.SupplierId != null && l.Supplier!.MainAccountId == l.AccountId)
+            .Where(l => l.SupplierId != null && (
+                l.AccountId == l.Supplier!.MainAccountId ||
+                (l.Supplier!.MainAccountId == null && l.Account.Code != null && l.Account.Code.StartsWith("2101"))
+            ))
             .GroupBy(l => l.SupplierId)
             .Select(g => new {
                 SupplierId = g.Key!.Value,
@@ -987,7 +990,10 @@ public class AccountingCoreService
 
         // Group journal lines by CustomerId and sum debit - credit in ONE query
         var customerLedgerBalances = await _db.JournalLines
-            .Where(l => l.CustomerId != null && l.Customer!.MainAccountId == l.AccountId)
+            .Where(l => l.CustomerId != null && (
+                l.AccountId == l.Customer!.MainAccountId ||
+                (l.Customer!.MainAccountId == null && l.Account.Code != null && l.Account.Code.StartsWith("1104"))
+            ))
             .GroupBy(l => l.CustomerId)
             .Select(g => new {
                 CustomerId = g.Key!.Value,

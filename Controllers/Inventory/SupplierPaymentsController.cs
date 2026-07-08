@@ -88,7 +88,10 @@ public class SupplierPaymentsController : ControllerBase
             var allP = await pQueryDto.ToListAsync();
 
             var jQuery = _db.JournalLines
-                .Where(l => l.SupplierId == supplierId.Value && l.Debit > 0 && l.Supplier != null && l.AccountId == l.Supplier.MainAccountId && l.JournalEntry.Type == JournalEntryType.Manual)
+                .Where(l => l.SupplierId == supplierId.Value && l.Debit > 0 && l.JournalEntry.Type == JournalEntryType.Manual && (
+                    l.AccountId == l.Supplier!.MainAccountId ||
+                    (l.Supplier!.MainAccountId == null && l.Account.Code != null && l.Account.Code.StartsWith("2101"))
+                ))
                 .Select(l => new SupplierPaymentSummaryDto(
                     -l.Id, 
                     l.JournalEntry.EntryNumber, 
