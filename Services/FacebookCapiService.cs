@@ -11,6 +11,7 @@ namespace Sportive.API.Services;
 public interface IFacebookCapiService
 {
     Task SendPurchaseEventAsync(Order order, string clientIp, string userAgent, string? fbp, string? fbc);
+    Task SendEventAsync(string eventName, string eventId, string clientIp, string userAgent, string? fbp, string? fbc, object? customData = null, object? userData = null);
 }
 
 public class FacebookCapiService : IFacebookCapiService
@@ -70,7 +71,8 @@ public class FacebookCapiService : IFacebookCapiService
                         }
                     }
                 },
-                access_token = settings.FacebookCapiToken
+                access_token = settings.FacebookCapiToken,
+                test_event_code = settings.FacebookTestEventCode
             };
 
             var json = JsonSerializer.Serialize(eventData, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
@@ -80,12 +82,68 @@ public class FacebookCapiService : IFacebookCapiService
             if (!response.IsSuccessStatusCode)
             {
                 var error = await response.Content.ReadAsStringAsync();
-                _logger.LogWarning($"Facebook CAPI Error: {error}");
+                _logger.LogWarning($"Facebook CAPI Error (Purchase): {error}");
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send Facebook CAPI Purchase event");
+        }
+    }
+
+    public async Task SendEventAsync(string eventName, string eventId, string clientIp, string userAgent, string? fbp, string? fbc, object? customData = null, object? userData = null)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var settings = await db.StoreInfo.FirstOrDefaultAsync(x => x.StoreConfigId == 1);
+            if (settings == null || string.IsNullOrEmpty(settings.FacebookPixelId) || string.IsNullOrEmpty(settings.FacebookCapiToken))
+            {
+                return; // CAPI not configured
+            }
+
+            var url = $"https://graph.facebook.com/v20.0/{settings.FacebookPixelId}/events";
+            var unixTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+            var eventData = new
+            {
+                data = new[]
+                {
+                    new
+                    {
+                        event_name = eventName,
+                        event_time = unixTime,
+                        action_source = "website",
+                        event_id = eventId,
+                        user_data = userData ?? new
+                        {
+                            client_ip_address = clientIp,
+                            client_user_agent = userAgent,
+                            fbp = fbp,
+                            fbc = fbc
+                        },
+                        custom_data = customData
+                    }
+                },
+                access_token = settings.FacebookCapiToken,
+                test_event_code = settings.FacebookTestEventCode
+            };
+
+            var json = JsonSerializer.Serialize(eventData, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.PostAsync(url, content);
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                _logger.LogWarning($"Facebook CAPI Error ({eventName}): {error}");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send Facebook CAPI generic event {EventName}", eventName);
         }
     }
 

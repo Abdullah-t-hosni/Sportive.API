@@ -490,6 +490,9 @@ public class StoreInfo
     [JsonPropertyName("facebookCapiToken")]
     public string? FacebookCapiToken { get; set; }
 
+    [JsonPropertyName("facebookTestEventCode")]
+    public string? FacebookTestEventCode { get; set; }
+
     [JsonPropertyName("siteMetaDescriptionAr")]
     public string? SiteMetaDescriptionAr { get; set; }
 

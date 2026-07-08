@@ -262,6 +262,7 @@ public class SettingsController : ControllerBase
             info.GoogleAnalyticsId        = dto.GoogleAnalyticsId;
             info.FacebookPixelId          = dto.FacebookPixelId;
             info.FacebookCapiToken        = dto.FacebookCapiToken;
+            info.FacebookTestEventCode    = dto.FacebookTestEventCode;
             info.SiteMetaDescriptionAr    = dto.SiteMetaDescriptionAr;
             info.SiteMetaDescriptionEn    = dto.SiteMetaDescriptionEn;
             info.SiteKeywords             = dto.SiteKeywords;
