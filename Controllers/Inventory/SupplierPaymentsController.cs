@@ -70,6 +70,55 @@ public class SupplierPaymentsController : ControllerBase
             );
         }
 
+        if (supplierId.HasValue)
+        {
+            var pQueryDto = q.Select(p => new SupplierPaymentSummaryDto(
+                p.Id, p.PaymentNumber, p.Supplier.Name, 
+                p.Invoice != null ? p.Invoice.InvoiceNumber : null,
+                p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes,
+                p.AttachmentUrl, p.AttachmentPublicId,
+                p.CostCenter,
+                p.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (p.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
+                p.SupplierId,
+                p.PurchaseInvoiceId,
+                p.CashAccountId,
+                p.ReferenceNumber
+            ));
+
+            var allP = await pQueryDto.ToListAsync();
+
+            var jQuery = _db.JournalLines
+                .Where(l => l.SupplierId == supplierId.Value && l.Debit > 0 && l.Supplier != null && l.AccountId == l.Supplier.MainAccountId && l.JournalEntry.Type == JournalEntryType.Manual)
+                .Select(l => new SupplierPaymentSummaryDto(
+                    -l.Id, 
+                    l.JournalEntry.EntryNumber, 
+                    l.Supplier!.Name, 
+                    l.PurchaseInvoice != null ? l.PurchaseInvoice.InvoiceNumber : null,
+                    l.JournalEntry.EntryDate, 
+                    l.Debit, 
+                    "Manual", 
+                    l.Account.NameAr, 
+                    l.Description ?? l.JournalEntry.Description,
+                    l.JournalEntry.AttachmentUrl, 
+                    l.JournalEntry.AttachmentPublicId,
+                    l.JournalEntry.CostCenter,
+                    l.JournalEntry.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (l.JournalEntry.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
+                    l.SupplierId,
+                    l.PurchaseInvoiceId,
+                    null,
+                    l.JournalEntry.Reference
+                ));
+
+            var allJ = await jQuery.ToListAsync();
+
+            var combined = allP.Concat(allJ).OrderByDescending(x => x.PaymentDate).ToList();
+            var totalItems = combined.Count;
+            var itemsList = combined.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+            return Ok(new PaginatedResult<SupplierPaymentSummaryDto>(itemsList, totalItems, page, pageSize,
+                (int)Math.Ceiling((double)totalItems / pageSize)));
+        }
+
         var total = await q.CountAsync();
         var items = await q.OrderByDescending(p => p.PaymentDate)
             .Skip((page - 1) * pageSize).Take(pageSize)
@@ -391,6 +440,29 @@ public class SupplierPaymentsController : ControllerBase
     [RequirePermission(ModuleKeys.SupplierVouchers, requireEdit: true)]
     public async Task<IActionResult> LinkInvoice(int id, [FromBody] LinkInvoiceDto dto)
     {
+        if (id < 0)
+        {
+            var lineId = -id;
+            var line = await _db.JournalLines.Include(l => l.JournalEntry).FirstOrDefaultAsync(l => l.Id == lineId);
+            if (line == null) return NotFound();
+            if (line.PurchaseInvoiceId.HasValue) return BadRequest(new { message = "هذا القيد مرتبط بالفعل بفاتورة." });
+
+            var inv = await _db.PurchaseInvoices.FirstOrDefaultAsync(i => i.Id == dto.PurchaseInvoiceId && i.SupplierId == line.SupplierId);
+            if (inv == null) return BadRequest(new { message = "الفاتورة غير موجودة أو لا تخص هذا المورد." });
+
+            var rem = inv.TotalAmount - inv.PaidAmount - inv.ReturnedAmount;
+            if (rem <= 0) return BadRequest(new { message = "هذه الفاتورة مسددة بالكامل." });
+
+            if (line.Debit > rem) return BadRequest(new { message = "قيمة القيد اليدوي أكبر من المتبقي للفاتورة. لا يمكن تجزئة القيد آلياً." });
+
+            line.PurchaseInvoiceId = inv.Id;
+            inv.PaidAmount += line.Debit;
+            
+            await _db.SaveChangesAsync();
+            await _accounting.SyncEntityBalancesAsync();
+            return Ok(new { message = "تم ربط القيد اليدوي بالفاتورة بنجاح." });
+        }
+
         var payment = await _db.SupplierPayments
             .Include(p => p.Supplier)
             .Include(p => p.Invoice)
