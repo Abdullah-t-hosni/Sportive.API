@@ -292,6 +292,17 @@ public class SettingsController : ControllerBase
             info.BarcodeVariantFontSize  = dto.BarcodeVariantFontSize;
             info.BarcodeCodeFontSize     = dto.BarcodeCodeFontSize;
 
+            info.EnableGraduatedDelayPolicy = dto.EnableGraduatedDelayPolicy;
+            info.DelayGraceMinutes = dto.DelayGraceMinutes;
+            info.DelayQuarterDayLimitMinutes = dto.DelayQuarterDayLimitMinutes;
+            info.DelayHalfDayLimitMinutes = dto.DelayHalfDayLimitMinutes;
+            info.CustomDelayRules = dto.CustomDelayRules;
+            
+            info.LinktreeConfig = dto.LinktreeConfig;
+            info.DailyTarget = dto.DailyTarget;
+            info.TaxAuthorityType = dto.TaxAuthorityType;
+            info.EtaTaxNumber = dto.EtaTaxNumber;
+
             info.ReceiptPaperSize         = dto.ReceiptPaperSize ?? "Receipt";
             info.EnablePOS                = dto.EnablePOS;
             info.EnableECommerce          = dto.EnableECommerce;
