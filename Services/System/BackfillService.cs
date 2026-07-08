@@ -81,4 +81,62 @@ public class BackfillService : IBackfillService
 
         return (missingInvoices.Count, successCount, errors.Count, errors);
     }
+
+    public async Task<(int Total, int Success, int Failed, List<string> Errors)> FixManualJournalEntriesEntityLinksAsync()
+    {
+        int successCount = 0;
+        var errors = new List<string>();
+
+        try
+        {
+            var lines = await _db.JournalLines
+                .Include(l => l.Account)
+                .Where(l => l.SupplierId == null && l.CustomerId == null && l.EmployeeId == null)
+                .ToListAsync();
+
+            var supplierMap = await _db.Suppliers.Where(s => s.MainAccountId != null).ToDictionaryAsync(s => s.MainAccountId!.Value, s => s.Id);
+            var customerMap = await _db.Customers.Where(c => c.MainAccountId != null).ToDictionaryAsync(c => c.MainAccountId!.Value, c => c.Id);
+            var employeeMap = await _db.Employees.Where(e => e.AccountId != null).ToDictionaryAsync(e => e.AccountId!.Value, e => e.Id);
+
+            foreach (var line in lines)
+            {
+                bool updated = false;
+
+                if (supplierMap.TryGetValue(line.AccountId, out var sId))
+                {
+                    line.SupplierId = sId;
+                    updated = true;
+                }
+                else if (customerMap.TryGetValue(line.AccountId, out var cId))
+                {
+                    line.CustomerId = cId;
+                    updated = true;
+                }
+                else if (employeeMap.TryGetValue(line.AccountId, out var eId))
+                {
+                    line.EmployeeId = eId;
+                    updated = true;
+                }
+
+                if (updated)
+                {
+                    successCount++;
+                }
+            }
+
+            if (successCount > 0)
+            {
+                await _db.SaveChangesAsync();
+                // trigger balance sync to apply updates
+                Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync());
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fixing journal entity links");
+            errors.Add(ex.Message);
+        }
+
+        return (successCount, successCount, errors.Count, errors);
+    }
 }

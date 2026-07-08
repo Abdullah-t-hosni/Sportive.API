@@ -1,4 +1,4 @@
-﻿using Sportive.API.Models;
+using Sportive.API.Models;
 using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -40,6 +40,21 @@ public class BackfillController : ControllerBase
     public async Task<IActionResult> PostMissingPurchases()
     {
         var result = await _backfillService.PostMissingPurchasesAsync();
+        return Ok(new { 
+            total = result.Total,
+            success = result.Success,
+            failed = result.Failed,
+            errors = result.Errors
+        });
+    }
+
+    /// <summary>
+    /// يقوم بتصحيح القيود اليدوية السابقة وربطها بالموردين أو العملاء
+    /// </summary>
+    [HttpPost("fix-manual-journals")]
+    public async Task<IActionResult> FixManualJournals()
+    {
+        var result = await _backfillService.FixManualJournalEntriesEntityLinksAsync();
         return Ok(new { 
             total = result.Total,
             success = result.Success,
