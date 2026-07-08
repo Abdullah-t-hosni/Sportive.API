@@ -101,6 +101,11 @@ public class JournalAccountingService
             .Where(a => neededAccountIds.Contains(a.Id))
             .ToDictionaryAsync(a => a.Id);
 
+        // Auto-resolve entity IDs from accounts if not explicitly provided
+        var supplierAccountsMap = await _db.Suppliers.AsNoTracking().Where(s => s.MainAccountId != null && neededAccountIds.Contains(s.MainAccountId.Value)).Select(s => new { s.Id, AccountId = s.MainAccountId.Value }).ToDictionaryAsync(x => x.AccountId, x => x.Id);
+        var customerAccountsMap = await _db.Customers.AsNoTracking().Where(c => c.MainAccountId != null && neededAccountIds.Contains(c.MainAccountId.Value)).Select(c => new { c.Id, AccountId = c.MainAccountId.Value }).ToDictionaryAsync(x => x.AccountId, x => x.Id);
+        var employeeAccountsMap = await _db.Employees.AsNoTracking().Where(e => e.AccountId != null && neededAccountIds.Contains(e.AccountId.Value)).Select(e => new { e.Id, AccountId = e.AccountId.Value }).ToDictionaryAsync(x => x.AccountId, x => x.Id);
+
         // ✅ PERF FIX: batch-load order branch IDs in ONE query (avoid N+1 round-trips)
         var neededOrderIds = dto.Lines.Where(l => l.OrderId.HasValue).Select(l => l.OrderId!.Value).Distinct().ToList();
         var orderBranchMap = neededOrderIds.Any()
@@ -122,7 +127,11 @@ public class JournalAccountingService
                 lineBranchId = orderBranch ?? userBranchId;
             }
 
-            entry.Lines.Add(new JournalLine { AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit, Description = l.Description, CustomerId = l.CustomerId, SupplierId = l.SupplierId, EmployeeId = l.EmployeeId, OrderId = l.OrderId, CostCenter = (OrderSource?)l.CostCenter ?? entry.CostCenter, BranchId = lineBranchId });
+            int? resolvedSupplierId = l.SupplierId ?? (supplierAccountsMap.TryGetValue(l.AccountId, out var sId) ? sId : null);
+            int? resolvedCustomerId = l.CustomerId ?? (customerAccountsMap.TryGetValue(l.AccountId, out var cId) ? cId : null);
+            int? resolvedEmployeeId = l.EmployeeId ?? (employeeAccountsMap.TryGetValue(l.AccountId, out var eId) ? eId : null);
+
+            entry.Lines.Add(new JournalLine { AccountId = l.AccountId, Debit = l.Debit, Credit = l.Credit, Description = l.Description, CustomerId = resolvedCustomerId, SupplierId = resolvedSupplierId, EmployeeId = resolvedEmployeeId, OrderId = l.OrderId, CostCenter = (OrderSource?)l.CostCenter ?? entry.CostCenter, BranchId = lineBranchId });
         }
 
         // التحقق من التوازن قبل الحفظ
@@ -235,6 +244,11 @@ public class JournalAccountingService
             .Where(a => neededAccountIds.Contains(a.Id))
             .ToDictionaryAsync(a => a.Id);
 
+        // Auto-resolve entity IDs from accounts if not explicitly provided
+        var supplierAccountsMap = await _db.Suppliers.AsNoTracking().Where(s => s.MainAccountId != null && neededAccountIds.Contains(s.MainAccountId.Value)).Select(s => new { s.Id, AccountId = s.MainAccountId.Value }).ToDictionaryAsync(x => x.AccountId, x => x.Id);
+        var customerAccountsMap = await _db.Customers.AsNoTracking().Where(c => c.MainAccountId != null && neededAccountIds.Contains(c.MainAccountId.Value)).Select(c => new { c.Id, AccountId = c.MainAccountId.Value }).ToDictionaryAsync(x => x.AccountId, x => x.Id);
+        var employeeAccountsMap = await _db.Employees.AsNoTracking().Where(e => e.AccountId != null && neededAccountIds.Contains(e.AccountId.Value)).Select(e => new { e.Id, AccountId = e.AccountId.Value }).ToDictionaryAsync(x => x.AccountId, x => x.Id);
+
         // ✅ PERF FIX: batch-load order branch IDs in ONE query (avoid N+1 round-trips)
         var neededOrderIds = dto.Lines.Where(l => l.OrderId.HasValue).Select(l => l.OrderId!.Value).Distinct().ToList();
         var orderBranchMap = neededOrderIds.Any()
@@ -257,15 +271,19 @@ public class JournalAccountingService
                 lineBranchId = orderBranch ?? userBranchId;
             }
 
+            int? resolvedSupplierId = l.SupplierId ?? (supplierAccountsMap.TryGetValue(l.AccountId, out var sId) ? sId : null);
+            int? resolvedCustomerId = l.CustomerId ?? (customerAccountsMap.TryGetValue(l.AccountId, out var cId) ? cId : null);
+            int? resolvedEmployeeId = l.EmployeeId ?? (employeeAccountsMap.TryGetValue(l.AccountId, out var eId) ? eId : null);
+
             entry.Lines.Add(new JournalLine
             {
                 AccountId = l.AccountId,
                 Debit = l.Debit,
                 Credit = l.Credit,
                 Description = l.Description,
-                CustomerId = l.CustomerId,
-                SupplierId = l.SupplierId,
-                EmployeeId = l.EmployeeId,
+                CustomerId = resolvedCustomerId,
+                SupplierId = resolvedSupplierId,
+                EmployeeId = resolvedEmployeeId,
                 OrderId = l.OrderId,
                 CostCenter = (OrderSource?)l.CostCenter ?? entry.CostCenter,
                 CreatedAt = TimeHelper.GetEgyptTime(),

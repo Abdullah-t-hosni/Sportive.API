@@ -287,7 +287,7 @@ if (app.Environment.IsDevelopment())
         c.DocumentTitle = "Sportive API";
     });
 }
-
+app.UseResponseCompression();
 app.UseCors("AllowReactApp");
 app.UseSerilogRequestLogging();
 
