@@ -167,6 +167,7 @@ public class SettingsController : ControllerBase
 
             info.MinOrderAmount          = dto.MinOrderAmount;
             info.AllowGuestCheckout      = dto.AllowGuestCheckout;
+            info.EnableBranchPickup      = dto.EnableBranchPickup;
             info.EnableCoupons           = dto.EnableCoupons;
             info.EnableReviews           = dto.EnableReviews;
             info.ReviewsRequirePurchase  = dto.ReviewsRequirePurchase;

@@ -189,10 +189,13 @@ public class StoreInfo
 
     // --- 4. Sales & Orders ---
     [JsonPropertyName("minOrderAmount")]
-    public decimal MinOrderAmount { get; set; } = 0;
+    public decimal? MinOrderAmount { get; set; }
 
     [JsonPropertyName("allowGuestCheckout")]
     public bool AllowGuestCheckout { get; set; } = true;
+
+    [JsonPropertyName("enableBranchPickup")]
+    public bool EnableBranchPickup { get; set; } = true;
 
     [JsonPropertyName("enableCoupons")]
     public bool EnableCoupons { get; set; } = true;
