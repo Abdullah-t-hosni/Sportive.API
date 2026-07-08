@@ -59,6 +59,11 @@ public class FacebookCapiService : IFacebookCapiService
                             client_user_agent = userAgent,
                             em = HashData(order.Customer?.Email),
                             ph = HashData(order.Customer?.Phone),
+                            fn = HashData(GetFirstName(order.Customer?.FullName)),
+                            ln = HashData(GetLastName(order.Customer?.FullName)),
+                            ct = HashData(order.DeliveryAddress?.City),
+                            country = HashData("eg"), // Default to Egypt, or extract from address if needed
+                            external_id = HashData(order.CustomerId.ToString()),
                             fbp = fbp,
                             fbc = fbc
                         },
@@ -72,7 +77,7 @@ public class FacebookCapiService : IFacebookCapiService
                     }
                 },
                 access_token = settings.FacebookCapiToken,
-                test_event_code = settings.FacebookTestEventCode
+                test_event_code = string.IsNullOrWhiteSpace(settings.FacebookTestEventCode) ? null : settings.FacebookTestEventCode
             };
 
             var json = JsonSerializer.Serialize(eventData, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
@@ -128,7 +133,7 @@ public class FacebookCapiService : IFacebookCapiService
                     }
                 },
                 access_token = settings.FacebookCapiToken,
-                test_event_code = settings.FacebookTestEventCode
+                test_event_code = string.IsNullOrWhiteSpace(settings.FacebookTestEventCode) ? null : settings.FacebookTestEventCode
             };
 
             var json = JsonSerializer.Serialize(eventData, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
@@ -154,5 +159,19 @@ public class FacebookCapiService : IFacebookCapiService
         using var sha256 = SHA256.Create();
         var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(input));
         return BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant();
+    }
+
+    private string? GetFirstName(string? fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName)) return null;
+        var parts = fullName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 0 ? parts[0] : null;
+    }
+
+    private string? GetLastName(string? fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName)) return null;
+        var parts = fullName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 1 ? parts[parts.Length - 1] : null;
     }
 }

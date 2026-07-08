@@ -21,8 +21,8 @@ public class TrackingController : ControllerBase
     {
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
         var ua = Request.Headers["User-Agent"].ToString();
-        var fbp = Request.Cookies["_fbp"];
-        var fbc = Request.Cookies["_fbc"];
+        var fbp = dto.Fbp ?? Request.Cookies["_fbp"];
+        var fbc = dto.Fbc ?? Request.Cookies["_fbc"];
 
         // Fire and forget
         _ = _capiService.SendEventAsync(dto.EventName, dto.EventId, ip, ua, fbp, fbc, dto.CustomData);
@@ -36,4 +36,6 @@ public class FacebookTrackingEventDto
     public string EventName { get; set; } = string.Empty;
     public string EventId { get; set; } = string.Empty;
     public object? CustomData { get; set; }
+    public string? Fbp { get; set; }
+    public string? Fbc { get; set; }
 }
