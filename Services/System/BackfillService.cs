@@ -94,9 +94,14 @@ public class BackfillService : IBackfillService
                 .Where(l => l.SupplierId == null && l.CustomerId == null && l.EmployeeId == null)
                 .ToListAsync();
 
-            var supplierMap = await _db.Suppliers.Where(s => s.MainAccountId != null).ToDictionaryAsync(s => s.MainAccountId!.Value, s => s.Id);
-            var customerMap = await _db.Customers.Where(c => c.MainAccountId != null).ToDictionaryAsync(c => c.MainAccountId!.Value, c => c.Id);
-            var employeeMap = await _db.Employees.Where(e => e.AccountId != null).ToDictionaryAsync(e => e.AccountId!.Value, e => e.Id);
+            var suppliers = await _db.Suppliers.Where(s => s.MainAccountId != null).ToListAsync();
+            var supplierMap = suppliers.GroupBy(s => s.MainAccountId!.Value).ToDictionary(g => g.Key, g => g.First().Id);
+
+            var customers = await _db.Customers.Where(c => c.MainAccountId != null).ToListAsync();
+            var customerMap = customers.GroupBy(c => c.MainAccountId!.Value).ToDictionary(g => g.Key, g => g.First().Id);
+
+            var employees = await _db.Employees.Where(e => e.AccountId != null).ToListAsync();
+            var employeeMap = employees.GroupBy(e => e.AccountId!.Value).ToDictionary(g => g.Key, g => g.First().Id);
 
             foreach (var line in lines)
             {
