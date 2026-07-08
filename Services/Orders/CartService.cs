@@ -19,10 +19,13 @@ public class CartService : ICartService
         var productIds = items.Select(i => i.ProductId).Distinct().ToList();
         var now = Utils.TimeHelper.GetEgyptTime();
         var discounts = await _db.ProductDiscounts
-            .Where(d => productIds.Contains(d.ProductId) && d.IsActive && d.ValidFrom <= now && d.ValidTo >= now)
+            .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now)
+            .Where(d => d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == DiscountApplyTo.Store)
             .ToListAsync();
 
-        return BuildSummary(items, store, discounts);
+        var allCategories = await _db.Categories.AsNoTracking().ToDictionaryAsync(c => c.Id, c => c.ParentId);
+
+        return BuildSummary(items, store, discounts, allCategories);
     }
 
     public async Task<CartSummaryDto> AddToCartAsync(int customerId, AddToCartDto dto)
@@ -111,14 +114,33 @@ public class CartService : ICartService
             .Where(c => c.CustomerId == customerId)
             .ToListAsync();
 
-    private static CartSummaryDto BuildSummary(List<CartItem> items, StoreInfo? store, List<ProductDiscount> discounts)
+    private static CartSummaryDto BuildSummary(List<CartItem> items, StoreInfo? store, List<ProductDiscount> discounts, Dictionary<int, int?> allCategories)
     {
         var deliveryFee = store?.FixedDeliveryFee ?? 50m;
 
         var dtos = items.Select(c =>
         {
             var basePrice = c.Product?.Price ?? 0;
+            
             var disc = discounts.FirstOrDefault(d => d.ProductId == c.ProductId);
+            if (disc == null)
+            {
+                int? currentCatId = c.Product?.CategoryId;
+                while (currentCatId.HasValue && disc == null)
+                {
+                    int lookupId = currentCatId.Value;
+                    disc = discounts.FirstOrDefault(d => d.CategoryId == lookupId);
+                    if (disc == null)
+                    {
+                        currentCatId = allCategories.GetValueOrDefault(lookupId);
+                    }
+                }
+            }
+            if (disc == null) disc = discounts.FirstOrDefault(d => d.BrandId == c.Product?.BrandId);
+            
+            // 🌐 Fallback: Store-wide discount
+            if (disc == null) disc = discounts.FirstOrDefault(d => d.ProductId == null && d.CategoryId == null && d.BrandId == null);
+
             
             decimal price;
             if (disc != null && c.Quantity >= disc.MinQty)

@@ -514,6 +514,9 @@ public class OrderService : IOrderService
                                 }
                             }
                             if (disc == null) disc = activeDiscounts.FirstOrDefault(d => d.BrandId == product.BrandId);
+                            
+                            // 🌐 Fallback: Store-wide discount
+                            if (disc == null) disc = activeDiscounts.FirstOrDefault(d => d.ProductId == null && d.CategoryId == null && d.BrandId == null);
 
                             if (disc != null && item.Quantity >= disc.MinQty)
                             {
@@ -619,6 +622,9 @@ public class OrderService : IOrderService
                                 }
                             }
                             if (disc == null) disc = activeDiscounts.FirstOrDefault(d => d.BrandId == ci.Product.BrandId);
+                            
+                            // 🌐 Fallback: Store-wide discount
+                            if (disc == null) disc = activeDiscounts.FirstOrDefault(d => d.ProductId == null && d.CategoryId == null && d.BrandId == null);
 
                             decimal unitPrice;
                             if (disc != null && ci.Quantity >= disc.MinQty)
