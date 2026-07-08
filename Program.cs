@@ -137,7 +137,7 @@ builder.Services.AddRateLimitingAndCors(builder.Configuration);
 builder.Services.AddCacheAndValidationServices(builder.Configuration);
 
 // ── APPLICATION SERVICES ──────────────────────────────
-builder.Services.AddScoped<IFacebookCapiService, FacebookCapiService>();
+builder.Services.AddHttpClient<IFacebookCapiService, FacebookCapiService>();
 builder.Services.AddApplicationServices();
 builder.Services.AddHostedService<TaskGenerationService>();
 
