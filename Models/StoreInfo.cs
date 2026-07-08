@@ -487,6 +487,9 @@ public class StoreInfo
     [JsonPropertyName("facebookPixelId")]
     public string? FacebookPixelId { get; set; }
 
+    [JsonPropertyName("facebookCapiToken")]
+    public string? FacebookCapiToken { get; set; }
+
     [JsonPropertyName("siteMetaDescriptionAr")]
     public string? SiteMetaDescriptionAr { get; set; }
 

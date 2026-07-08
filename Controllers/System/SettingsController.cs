@@ -261,6 +261,7 @@ public class SettingsController : ControllerBase
             info.ReceiptExtraCopies       = dto.ReceiptExtraCopies;
             info.GoogleAnalyticsId        = dto.GoogleAnalyticsId;
             info.FacebookPixelId          = dto.FacebookPixelId;
+            info.FacebookCapiToken        = dto.FacebookCapiToken;
             info.SiteMetaDescriptionAr    = dto.SiteMetaDescriptionAr;
             info.SiteMetaDescriptionEn    = dto.SiteMetaDescriptionEn;
             info.SiteKeywords             = dto.SiteKeywords;

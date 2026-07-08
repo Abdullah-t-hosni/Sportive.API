@@ -142,6 +142,20 @@ public class OrdersController : ControllerBase
             _logger.LogWarning(ex, "Failed to send SignalR print notification for order {OrderId}", order.Id);
         }
 
+        try {
+            var capi = HttpContext.RequestServices.GetService<IFacebookCapiService>();
+            if (capi != null) {
+                var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
+                var ua = Request.Headers["User-Agent"].ToString();
+                var fbp = Request.Cookies["_fbp"];
+                var fbc = Request.Cookies["_fbc"];
+                var fullOrder = await _db.Orders.Include(o => o.Customer).Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == order.Id);
+                if (fullOrder != null) {
+                    _ = capi.SendPurchaseEventAsync(fullOrder, ip, ua, fbp, fbc);
+                }
+            }
+        } catch (Exception ex) { _logger.LogWarning(ex, "CAPI invoke failed"); }
+
         return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
     }
 
