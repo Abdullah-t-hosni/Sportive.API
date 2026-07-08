@@ -280,6 +280,7 @@ public class JournalEntriesController : ControllerBase
 
             var entry = await _accounting.PostManualEntryAsync(dto, User);
             try { Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id)); } catch { /* non-critical: don't fail the request if Hangfire is unavailable */ }
+            try { Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
 
             // Log Audit
             var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
@@ -299,6 +300,7 @@ public class JournalEntriesController : ControllerBase
             var oldEntry = await _db.JournalEntries.AsNoTracking().Include(e => e.Lines).FirstOrDefaultAsync(e => e.Id == id);
             var entry = await _accounting.UpdateManualEntryAsync(id, dto, User);
             try { Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id)); } catch { /* non-critical */ }
+            try { Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }
 
             // Log Audit
             var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
