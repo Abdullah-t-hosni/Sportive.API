@@ -61,7 +61,11 @@ public record CreateOrderDto(
     [property: global::System.Text.Json.Serialization.JsonPropertyName("branchId")]
     int? BranchId = null,
     [property: global::System.Text.Json.Serialization.JsonPropertyName("warehouseId")]
-    int? WarehouseId = null
+    int? WarehouseId = null,
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("fbp")]
+    string? Fbp = null,
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("fbc")]
+    string? Fbc = null
 );
 
 public record UpdateOrderDto(
