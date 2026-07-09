@@ -21,11 +21,12 @@ public class TrackingController : ControllerBase
     {
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
         var ua = Request.Headers["User-Agent"].ToString();
+        var referer = Request.Headers["Referer"].ToString();
         var fbp = dto.Fbp ?? Request.Cookies["_fbp"];
         var fbc = dto.Fbc ?? Request.Cookies["_fbc"];
 
         // Fire and forget
-        _ = _capiService.SendEventAsync(dto.EventName, dto.EventId, ip, ua, fbp, fbc, dto.CustomData);
+        _ = _capiService.SendEventAsync(dto.EventName, dto.EventId, ip, ua, fbp, fbc, dto.CustomData, null, referer);
 
         return Ok(new { success = true });
     }

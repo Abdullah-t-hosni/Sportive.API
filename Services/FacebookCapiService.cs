@@ -10,8 +10,8 @@ namespace Sportive.API.Services;
 
 public interface IFacebookCapiService
 {
-    Task SendPurchaseEventAsync(Order order, string clientIp, string userAgent, string? fbp, string? fbc);
-    Task SendEventAsync(string eventName, string eventId, string clientIp, string userAgent, string? fbp, string? fbc, object? customData = null, object? userData = null);
+    Task SendPurchaseEventAsync(Order order, string clientIp, string userAgent, string? fbp, string? fbc, string? eventSourceUrl = null);
+    Task SendEventAsync(string eventName, string eventId, string clientIp, string userAgent, string? fbp, string? fbc, object? customData = null, object? userData = null, string? eventSourceUrl = null);
 }
 
 public class FacebookCapiService : IFacebookCapiService
@@ -27,7 +27,7 @@ public class FacebookCapiService : IFacebookCapiService
         _logger = logger;
     }
 
-    public async Task SendPurchaseEventAsync(Order order, string clientIp, string userAgent, string? fbp, string? fbc)
+    public async Task SendPurchaseEventAsync(Order order, string clientIp, string userAgent, string? fbp, string? fbc, string? eventSourceUrl = null)
     {
         try
         {
@@ -52,6 +52,7 @@ public class FacebookCapiService : IFacebookCapiService
                         event_name = "Purchase",
                         event_time = unixTime,
                         action_source = "website",
+                        event_source_url = eventSourceUrl,
                         event_id = order.OrderNumber,
                         user_data = new
                         {
@@ -72,7 +73,8 @@ public class FacebookCapiService : IFacebookCapiService
                             currency = "EGP",
                             value = order.TotalAmount,
                             content_ids = order.Items?.Select(i => i.ProductId.ToString()).ToArray() ?? Array.Empty<string>(),
-                            content_type = "product"
+                            content_type = "product",
+                            num_items = order.Items?.Count ?? 0
                         }
                     }
                 },
@@ -96,7 +98,7 @@ public class FacebookCapiService : IFacebookCapiService
         }
     }
 
-    public async Task SendEventAsync(string eventName, string eventId, string clientIp, string userAgent, string? fbp, string? fbc, object? customData = null, object? userData = null)
+    public async Task SendEventAsync(string eventName, string eventId, string clientIp, string userAgent, string? fbp, string? fbc, object? customData = null, object? userData = null, string? eventSourceUrl = null)
     {
         try
         {
@@ -121,6 +123,7 @@ public class FacebookCapiService : IFacebookCapiService
                         event_name = eventName,
                         event_time = unixTime,
                         action_source = "website",
+                        event_source_url = eventSourceUrl,
                         event_id = eventId,
                         user_data = userData ?? new
                         {

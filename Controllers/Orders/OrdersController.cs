@@ -147,11 +147,12 @@ public class OrdersController : ControllerBase
             if (capi != null) {
                 var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
                 var ua = Request.Headers["User-Agent"].ToString();
+                var referer = Request.Headers["Referer"].ToString();
                 var fbp = dto.Fbp ?? Request.Cookies["_fbp"];
                 var fbc = dto.Fbc ?? Request.Cookies["_fbc"];
                 var fullOrder = await _db.Orders.Include(o => o.Customer).Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == order.Id);
                 if (fullOrder != null) {
-                    _ = capi.SendPurchaseEventAsync(fullOrder, ip, ua, fbp, fbc);
+                    _ = capi.SendPurchaseEventAsync(fullOrder, ip, ua, fbp, fbc, referer);
                 }
             }
         } catch (Exception ex) { _logger.LogWarning(ex, "CAPI invoke failed"); }
