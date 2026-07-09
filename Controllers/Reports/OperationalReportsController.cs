@@ -1157,6 +1157,8 @@ public class OperationalReportsController : ControllerBase
                 .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= from && e.EntryDate <= to && e.Status == JournalEntryStatus.Posted);
             if (source.HasValue)
                 discountReturnsQ = discountReturnsQ.Where(e => e.CostCenter == source.Value);
+            if (branchId.HasValue)
+                discountReturnsQ = discountReturnsQ.Where(j => (j.Order != null && j.Order.BranchId == branchId.Value) || j.Lines.Any(l => l.BranchId == branchId.Value));
             periodDiscountReturned = await discountReturnsQ
                 .SelectMany(e => e.Lines)
                 .Where(l => l.Credit > 0 && l.AccountId == salesDiscountAccId)
@@ -3606,13 +3608,18 @@ public class OperationalReportsController : ControllerBase
 
         if (salesReturnAccId.HasValue)
         {
-            var returnEntries = await _db.JournalEntries.AsNoTracking()
+            var returnEntriesQ = _db.JournalEntries.AsNoTracking()
                 .Include(j => j.Lines)
                     .ThenInclude(l => l.Account)
                 .Where(j => j.Type == JournalEntryType.SalesReturn 
                          && j.EntryDate >= from && j.EntryDate <= to
-                         && j.Status == JournalEntryStatus.Posted)
-                .ToListAsync();
+                         && j.Status == JournalEntryStatus.Posted);
+
+            if (branchId.HasValue)
+            {
+                returnEntriesQ = returnEntriesQ.Where(j => (j.Order != null && j.Order.BranchId == branchId.Value) || j.Lines.Any(l => l.BranchId == branchId.Value));
+            }
+            var returnEntries = await returnEntriesQ.ToListAsync();
 
             var customerIds = returnEntries.SelectMany(e => e.Lines)
                 .Where(l => l.CustomerId.HasValue)
