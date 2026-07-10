@@ -25,6 +25,7 @@ public static class ModuleKeys
     public const string Barcode = "barcode";
     public const string ColorGroups = "color-groups";
     public const string SizeGroups = "size-groups";
+    public const string SizeGuides = "size-guides";
 
     // Promotions
     public const string PromotionsGroup = "promotions-group";
@@ -96,7 +97,7 @@ public static class ModuleKeys
     public static readonly string[] All = {
         Dashboard, Pos, PosSellAtCost, Cashier,
         OrdersMain, Orders, ReturnsFull, ReturnsPartial, Customers, CustomerReceipts, Reviews,
-        ProductsGroup, Products, Categories, Brands, Units, Barcode, ColorGroups, SizeGroups,
+        ProductsGroup, Products, Categories, Brands, Units, Barcode, ColorGroups, SizeGroups, SizeGuides,
         PromotionsGroup, Promotions, Coupons, Discounts,
         InventoryGroup, Inventory, InventoryOpening, Import, InventoryCount,
         PurchasesGroup, PurchasesMain, Suppliers, Purchases, PurchaseReturns, SupplierVouchers,
