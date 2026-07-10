@@ -21,7 +21,7 @@ public class CloudinaryImageService : IImageService
     private readonly IWebHostEnvironment _env;
     private readonly Sportive.API.Interfaces.ITenantContext _tenantContext;
 
-    private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".gif", ".pdf", ".docx", ".xlsx", ".txt" };
+    private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".gif", ".pdf", ".docx", ".xlsx", ".txt", ".heic", ".heif", ".jfif", ".avif", ".svg" };
     private const long MaxFileSizeBytes = 10 * 1024 * 1024; // 10MB for attachments
 
     public CloudinaryImageService(
@@ -92,7 +92,7 @@ public class CloudinaryImageService : IImageService
             return new ImageUploadDto(false, null, null, "حجم الملف يتجاوز 10 ميجابايت");
 
         // 🛡️ MIME type guard: extension alone can be spoofed (e.g. malware.jpg)
-        var imageExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".gif" };
+        var imageExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif", ".jfif", ".avif", ".svg" };
         var isImage = imageExtensions.Contains(ext);
         if (isImage && !file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
             return new ImageUploadDto(false, null, null, "نوع MIME غير مطابق للامتداد");
