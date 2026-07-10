@@ -56,31 +56,45 @@ public class NotificationService : INotificationService
         var notificationsToSave = new List<Notification>();
         var adminUserIds = new List<string>();
 
-        // 1. If it's an order or a general alert, we must notify all Admins/Staff
-        if (type == "Order" || type == "Alert" || string.IsNullOrEmpty(userId))
+        // 1. Determine if this notification should go to staff/admins
+        if (type == "Order" || type == "OnlineOrder" || type == "POSOrder" || type == "Alert" || type == "Stock" || type == "System" || string.IsNullOrEmpty(userId))
         {
-            var adminRole = await _db.Roles.FirstOrDefaultAsync(r => r.Name == "Admin");
-            if (adminRole != null)
+            var users = await _db.Users
+                .Include(u => u.UserRoles)
+                .ThenInclude(ur => ur.Role)
+                .ToListAsync();
+
+            foreach (var u in users)
             {
-                var roleUsers = await _db.UserRoles
-                    .Where(ur => ur.RoleId == adminRole.Id)
-                    .Select(ur => ur.UserId)
-                    .ToListAsync();
-                adminUserIds.AddRange(roleUsers);
+                bool shouldNotify = false;
+                var roles = u.UserRoles.Select(ur => ur.Role?.Name).ToList();
+
+                if (!string.IsNullOrEmpty(u.NotificationPreferences))
+                {
+                    try
+                    {
+                        var prefs = JsonSerializer.Deserialize<List<string>>(u.NotificationPreferences);
+                        if (prefs != null && prefs.Contains(type))
+                        {
+                            shouldNotify = true;
+                        }
+                    }
+                    catch { } // Ignore malformed JSON
+                }
+                else
+                {
+                    // Fallback: If no preferences are set, enable for Admin and SuperAdmin
+                    if (roles.Contains("Admin") || roles.Contains("SuperAdmin") || roles.Contains("Super Admin"))
+                    {
+                        shouldNotify = true;
+                    }
+                }
+
+                if (shouldNotify)
+                {
+                    adminUserIds.Add(u.Id);
+                }
             }
-
-            // Also add users who have Orders or Store Management permissions
-            var authorizedUsers = await _db.Users
-                .Where(u => u.PermissionsJson != null && (u.PermissionsJson.Contains("Orders") || u.PermissionsJson.Contains("Settings") || u.PermissionsJson.Contains("Staff")))
-                .Select(u => u.Id)
-                .ToListAsync();
-            adminUserIds.AddRange(authorizedUsers);
-
-            var oldPermsUsers = await _db.UserModulePermissions
-                .Where(p => (p.ModuleKey == "Orders" || p.ModuleKey == "Settings" || p.ModuleKey == "Staff") && p.CanView)
-                .Select(p => p.UserAccountID)
-                .ToListAsync();
-            adminUserIds.AddRange(oldPermsUsers);
 
             adminUserIds = adminUserIds.Distinct().ToList();
         }

@@ -25,6 +25,7 @@ public class AppUser : IdentityUser
     public string FavoriteReports { get; set; } = "[\"trial\", \"sales\"]";
     public string UiPreferences { get; set; } = "{}";
     public string PermissionsJson { get; set; } = "[]";
+    public string? NotificationPreferences { get; set; }
 
     public int? BranchId { get; set; }
     public Branch? Branch { get; set; }

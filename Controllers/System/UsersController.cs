@@ -79,7 +79,8 @@ public class UsersController : ControllerBase
                               createdAt   = g.First().u.CreatedAt,
                               roles       = g.Where(x => x.Role != null).Select(x => x.Role).ToList(),
                               branchId    = g.First().u.BranchId,
-                              warehouseId = g.First().u.WarehouseId
+                              warehouseId = g.First().u.WarehouseId,
+                              notificationPreferences = g.First().u.NotificationPreferences
                           });
 
         if (!string.IsNullOrEmpty(search))
@@ -98,7 +99,7 @@ public class UsersController : ControllerBase
     }
 
     // ── Update User Basic Info ───────────────────────────────
-    public record UpdateUserDto(string FullName, string Email, string? Phone, bool? IsActive, int? BranchId = null, int? WarehouseId = null);
+    public record UpdateUserDto(string FullName, string Email, string? Phone, bool? IsActive, int? BranchId = null, int? WarehouseId = null, string? NotificationPreferences = null);
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateUser(string id, [FromBody] UpdateUserDto dto)
     {
@@ -112,6 +113,7 @@ public class UsersController : ControllerBase
         if (dto.IsActive.HasValue) user.IsActive = dto.IsActive.Value;
         user.BranchId    = dto.BranchId;
         user.WarehouseId = dto.WarehouseId;
+        if (dto.NotificationPreferences != null) user.NotificationPreferences = dto.NotificationPreferences;
 
         var result = await _userManager.UpdateAsync(user);
         if (!result.Succeeded) return BadRequest(result.Errors);

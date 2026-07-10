@@ -1485,7 +1485,7 @@ public class OrderService : IOrderService
             $"طلب جديد: {order.OrderNumber}", "New Order",
             $"تم استلام طلب جديد رقم {order.OrderNumber} بقيمة {order.TotalAmount:N2} ج.م",
             $"New order received #{order.OrderNumber} with amount {order.TotalAmount:N2} EGP",
-            "Order", order.Id);
+            order.Source == OrderSource.POS ? "POSOrder" : "OnlineOrder", order.Id);
 
         // 2. Admin Email Alert
         try 
