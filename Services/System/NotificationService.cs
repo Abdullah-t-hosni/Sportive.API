@@ -52,61 +52,99 @@ public class NotificationService : INotificationService
         string type = "General", int? orderId = null)
     {
         var finalUserId = userId ?? string.Empty;
-        var notification = new Notification {
-            UserId = finalUserId,
-            TitleAr = titleAr,
-            TitleEn = titleEn,
-            MessageAr = msgAr,
-            MessageEn = msgEn,
-            Type = type,
-            OrderId = orderId
-        };
-
-        _db.Notifications.Add(notification);
-        await _db.SaveChangesAsync();
-
-        // Push to SignalR
-        var payload = new {
-            notification.Id,
-            notification.TitleAr,
-            notification.TitleEn,
-            notification.MessageAr,
-            notification.MessageEn,
-            notification.Type,
-            notification.IsRead,
-            notification.OrderId,
-            notification.CreatedAt
-        };
-
         var prefix = GetPrefix();
+        var notificationsToSave = new List<Notification>();
+        var adminUserIds = new List<string>();
+
+        // 1. If it's an order or a general alert, we must notify all Admins/Staff
+        if (type == "Order" || type == "Alert" || string.IsNullOrEmpty(userId))
+        {
+            var adminRole = await _db.Roles.FirstOrDefaultAsync(r => r.Name == "Admin");
+            if (adminRole != null)
+            {
+                adminUserIds = await _db.UserRoles
+                    .Where(ur => ur.RoleId == adminRole.Id)
+                    .Select(ur => ur.UserId)
+                    .ToListAsync();
+            }
+        }
+
+        // Add the specific user notification if applicable
+        if (!string.IsNullOrEmpty(finalUserId))
+        {
+            notificationsToSave.Add(new Notification {
+                UserId = finalUserId,
+                TitleAr = titleAr,
+                TitleEn = titleEn,
+                MessageAr = msgAr,
+                MessageEn = msgEn,
+                Type = type,
+                OrderId = orderId
+            });
+        }
+
+        // Add notifications for all admins
+        foreach (var adminId in adminUserIds)
+        {
+            if (adminId != finalUserId)
+            {
+                notificationsToSave.Add(new Notification {
+                    UserId = adminId,
+                    TitleAr = titleAr,
+                    TitleEn = titleEn,
+                    MessageAr = msgAr,
+                    MessageEn = msgEn,
+                    Type = type,
+                    OrderId = orderId
+                });
+            }
+        }
+
+        if (notificationsToSave.Any())
+        {
+            _db.Notifications.AddRange(notificationsToSave);
+            await _db.SaveChangesAsync();
+        }
+
+        // The first notification is used as a template for broadcasting to groups where specific ID doesn't matter as much
+        var primaryNotif = notificationsToSave.FirstOrDefault();
+        if (primaryNotif == null) return;
+
+        var payload = new {
+            primaryNotif.Id,
+            primaryNotif.TitleAr,
+            primaryNotif.TitleEn,
+            primaryNotif.MessageAr,
+            primaryNotif.MessageEn,
+            primaryNotif.Type,
+            primaryNotif.IsRead,
+            primaryNotif.OrderId,
+            primaryNotif.CreatedAt
+        };
 
         // 1. Send to the specific user if exists
         if (!string.IsNullOrEmpty(finalUserId))
         {
-            await _hubContext.Clients.Group($"{prefix}_{finalUserId}").SendAsync("ReceiveNotification", payload);
+            var userNotif = notificationsToSave.FirstOrDefault(n => n.UserId == finalUserId) ?? primaryNotif;
+            var userPayload = new {
+                userNotif.Id, userNotif.TitleAr, userNotif.TitleEn, userNotif.MessageAr, 
+                userNotif.MessageEn, userNotif.Type, userNotif.IsRead, userNotif.OrderId, userNotif.CreatedAt
+            };
             
+            await _hubContext.Clients.Group($"{prefix}_{finalUserId}").SendAsync("ReceiveNotification", userPayload);
             var unreadCount = await GetUnreadCountAsync(finalUserId);
             await _hubContext.Clients.Group($"{prefix}_{finalUserId}").SendAsync("ReceiveUnreadCount", unreadCount);
-
-            // Send Web Push
             _ = Task.Run(() => SendWebPushAsync(finalUserId, titleAr, titleEn, msgAr, msgEn, type, orderId));
         }
 
-        // 2. IMPORTANT: If it's an order or a general alert, inform all Admins/Staff
+        // 2. Send to Admins
         if (type == "Order" || type == "Alert" || string.IsNullOrEmpty(userId))
         {
             await _hubContext.Clients.Group($"{prefix}_Admin").SendAsync("ReceiveNotification", payload);
             
-            // Get all admin users
-            var adminRole = await _db.Roles.FirstOrDefaultAsync(r => r.Name == "Admin");
-            if (adminRole != null)
+            foreach (var adminId in adminUserIds)
             {
-                var adminUserIds = await _db.UserRoles
-                    .Where(ur => ur.RoleId == adminRole.Id)
-                    .Select(ur => ur.UserId)
-                    .ToListAsync();
-                    
-                foreach (var adminId in adminUserIds)
+                if (adminId != finalUserId)
                 {
                     _ = Task.Run(() => SendWebPushAsync(adminId, titleAr, titleEn, msgAr, msgEn, type, orderId));
                 }
