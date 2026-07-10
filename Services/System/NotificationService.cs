@@ -30,19 +30,22 @@ public class NotificationService : INotificationService
     private readonly Sportive.API.Interfaces.ITenantContext _tenantContext;
     private readonly IConfiguration _config;
     private readonly ILogger<NotificationService> _logger;
+    private readonly Microsoft.Extensions.DependencyInjection.IServiceScopeFactory _scopeFactory;
 
     public NotificationService(
         AppDbContext db, 
         IHubContext<NotificationHub> hubContext, 
         Sportive.API.Interfaces.ITenantContext tenantContext,
         IConfiguration config,
-        ILogger<NotificationService> logger)
+        ILogger<NotificationService> logger,
+        Microsoft.Extensions.DependencyInjection.IServiceScopeFactory scopeFactory)
     {
         _db = db;
         _hubContext = hubContext;
         _tenantContext = tenantContext;
         _config = config;
         _logger = logger;
+        _scopeFactory = scopeFactory;
     }
 
     private string GetPrefix() => _tenantContext.CurrentTenant?.Slug?.ToLowerInvariant() ?? "global";
@@ -162,11 +165,8 @@ public class NotificationService : INotificationService
     {
         try
         {
-            using var scope = _db.Database.GetDbConnection().CreateCommand();
-            // Need a fresh DbContext for background task since _db might be disposed
-            var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-            optionsBuilder.UseMySql(_config.GetConnectionString("DefaultConnection"), ServerVersion.AutoDetect(_config.GetConnectionString("DefaultConnection")));
-            using var db = new AppDbContext(optionsBuilder.Options);
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
             var subscriptions = await db.PushSubscriptions
                 .Where(s => s.UserId == userId)
