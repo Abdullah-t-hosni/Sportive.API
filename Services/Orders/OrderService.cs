@@ -1480,6 +1480,13 @@ public class OrderService : IOrderService
                 "Order", order.Id);
         }
 
+        // 1.5 Admin App Notification
+        await notificationService.SendAsync(null,
+            $"طلب جديد: {order.OrderNumber}", "New Order",
+            $"تم استلام طلب جديد رقم {order.OrderNumber} بقيمة {order.TotalAmount:N2} ج.م",
+            $"New order received #{order.OrderNumber} with amount {order.TotalAmount:N2} EGP",
+            "Order", order.Id);
+
         // 2. Admin Email Alert
         try 
         {

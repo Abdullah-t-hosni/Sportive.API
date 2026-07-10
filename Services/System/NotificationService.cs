@@ -62,11 +62,27 @@ public class NotificationService : INotificationService
             var adminRole = await _db.Roles.FirstOrDefaultAsync(r => r.Name == "Admin");
             if (adminRole != null)
             {
-                adminUserIds = await _db.UserRoles
+                var roleUsers = await _db.UserRoles
                     .Where(ur => ur.RoleId == adminRole.Id)
                     .Select(ur => ur.UserId)
                     .ToListAsync();
+                adminUserIds.AddRange(roleUsers);
             }
+
+            // Also add users who have Orders or Store Management permissions
+            var authorizedUsers = await _db.Users
+                .Where(u => u.PermissionsJson != null && (u.PermissionsJson.Contains("Orders") || u.PermissionsJson.Contains("Settings") || u.PermissionsJson.Contains("Staff")))
+                .Select(u => u.Id)
+                .ToListAsync();
+            adminUserIds.AddRange(authorizedUsers);
+
+            var oldPermsUsers = await _db.UserModulePermissions
+                .Where(p => (p.ModuleKey == "Orders" || p.ModuleKey == "Settings" || p.ModuleKey == "Staff") && p.CanView)
+                .Select(p => p.UserAccountID)
+                .ToListAsync();
+            adminUserIds.AddRange(oldPermsUsers);
+
+            adminUserIds = adminUserIds.Distinct().ToList();
         }
 
         // Add the specific user notification if applicable
@@ -106,49 +122,19 @@ public class NotificationService : INotificationService
             await _db.SaveChangesAsync();
         }
 
-        // The first notification is used as a template for broadcasting to groups where specific ID doesn't matter as much
-        var primaryNotif = notificationsToSave.FirstOrDefault();
-        if (primaryNotif == null) return;
-
-        var payload = new {
-            primaryNotif.Id,
-            primaryNotif.TitleAr,
-            primaryNotif.TitleEn,
-            primaryNotif.MessageAr,
-            primaryNotif.MessageEn,
-            primaryNotif.Type,
-            primaryNotif.IsRead,
-            primaryNotif.OrderId,
-            primaryNotif.CreatedAt
-        };
-
-        // 1. Send to the specific user if exists
-        if (!string.IsNullOrEmpty(finalUserId))
+        // Broadcast each saved notification to its respective owner in real-time
+        foreach (var notif in notificationsToSave)
         {
-            var userNotif = notificationsToSave.FirstOrDefault(n => n.UserId == finalUserId) ?? primaryNotif;
             var userPayload = new {
-                userNotif.Id, userNotif.TitleAr, userNotif.TitleEn, userNotif.MessageAr, 
-                userNotif.MessageEn, userNotif.Type, userNotif.IsRead, userNotif.OrderId, userNotif.CreatedAt
+                notif.Id, notif.TitleAr, notif.TitleEn, notif.MessageAr, 
+                notif.MessageEn, notif.Type, notif.IsRead, notif.OrderId, notif.CreatedAt
             };
             
-            await _hubContext.Clients.Group($"{prefix}_{finalUserId}").SendAsync("ReceiveNotification", userPayload);
-            var unreadCount = await GetUnreadCountAsync(finalUserId);
-            await _hubContext.Clients.Group($"{prefix}_{finalUserId}").SendAsync("ReceiveUnreadCount", unreadCount);
-            _ = Task.Run(() => SendWebPushAsync(finalUserId, titleAr, titleEn, msgAr, msgEn, type, orderId));
-        }
-
-        // 2. Send to Admins
-        if (type == "Order" || type == "Alert" || string.IsNullOrEmpty(userId))
-        {
-            await _hubContext.Clients.Group($"{prefix}_Admin").SendAsync("ReceiveNotification", payload);
+            await _hubContext.Clients.Group($"{prefix}_{notif.UserId}").SendAsync("ReceiveNotification", userPayload);
+            var unreadCount = await GetUnreadCountAsync(notif.UserId);
+            await _hubContext.Clients.Group($"{prefix}_{notif.UserId}").SendAsync("ReceiveUnreadCount", unreadCount);
             
-            foreach (var adminId in adminUserIds)
-            {
-                if (adminId != finalUserId)
-                {
-                    _ = Task.Run(() => SendWebPushAsync(adminId, titleAr, titleEn, msgAr, msgEn, type, orderId));
-                }
-            }
+            _ = Task.Run(() => SendWebPushAsync(notif.UserId, titleAr, titleEn, msgAr, msgEn, type, orderId));
         }
     }
 
