@@ -475,7 +475,7 @@ public class AuthController : ControllerBase
                               u.FullName,
                               u.Email,
                               u.PhoneNumber,
-                              u.NotificationPreferences,
+                              NotificationPreferences = "[\"POSOrder\"]", // HARDCODED FOR DIAGNOSTICS
                               u.BranchId,
                               u.WarehouseId,
                               u.MaxDiscountPercentage,
