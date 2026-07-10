@@ -99,7 +99,16 @@ public class UsersController : ControllerBase
     }
 
     // ── Update User Basic Info ───────────────────────────────
-    public record UpdateUserDto(string FullName, string Email, string? Phone, bool? IsActive, int? BranchId = null, int? WarehouseId = null, string? NotificationPreferences = null);
+    public class UpdateUserDto
+    {
+        public string FullName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string? Phone { get; set; }
+        public bool? IsActive { get; set; }
+        public int? BranchId { get; set; }
+        public int? WarehouseId { get; set; }
+        public string? NotificationPreferences { get; set; }
+    }
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateUser(string id, [FromBody] UpdateUserDto dto)
     {
