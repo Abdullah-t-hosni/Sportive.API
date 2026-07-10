@@ -475,8 +475,14 @@ public class AuthController : ControllerBase
                               u.FullName,
                               u.Email,
                               u.PhoneNumber,
+                              u.NotificationPreferences,
+                              u.BranchId,
+                              u.WarehouseId,
+                              u.MaxDiscountPercentage,
+                              u.MaxDiscountAmount,
                               Role = r.Name,
-                              EmployeeNumber = e != null ? e.EmployeeNumber : null
+                              EmployeeNumber = e != null ? e.EmployeeNumber : null,
+                              EmployeeId = e != null ? e.Id : (int?)null
                           }).ToListAsync();
 
         return Ok(users);
