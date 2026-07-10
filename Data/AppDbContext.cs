@@ -48,6 +48,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<Coupon> Coupons                 => Set<Coupon>();
     public DbSet<WishlistItem> WishlistItems     => Set<WishlistItem>();
     public DbSet<Notification> Notifications     => Set<Notification>();
+    public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     public DbSet<BackupRecord> BackupRecords     => Set<BackupRecord>();
     public DbSet<UserModulePermission> UserModulePermissions => Set<UserModulePermission>();
     public DbSet<StoreInfo> StoreInfo           => Set<StoreInfo>();

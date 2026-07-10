@@ -113,4 +113,55 @@ public class NotificationsController : ControllerBase
         await _db.SaveChangesAsync();
         return Ok(new { deleted = notifications.Count });
     }
+
+    public class PushSubscriptionDto
+    {
+        public string Endpoint { get; set; } = string.Empty;
+        public string P256dh { get; set; } = string.Empty;
+        public string Auth { get; set; } = string.Empty;
+    }
+
+    /// <summary>POST /api/notifications/subscribe — تسجيل جهاز جديد لاستقبال الإشعارات</summary>
+    [HttpPost("subscribe")]
+    public async Task<IActionResult> Subscribe([FromBody] PushSubscriptionDto dto)
+    {
+        var userId = GetUserId();
+        
+        // Check if subscription already exists
+        var existing = await _db.Set<PushSubscription>()
+            .FirstOrDefaultAsync(s => s.Endpoint == dto.Endpoint && s.UserId == userId);
+
+        if (existing == null)
+        {
+            var sub = new PushSubscription
+            {
+                UserId = userId,
+                Endpoint = dto.Endpoint,
+                P256dh = dto.P256dh,
+                Auth = dto.Auth
+            };
+            _db.Set<PushSubscription>().Add(sub);
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new { success = true });
+    }
+
+    /// <summary>POST /api/notifications/unsubscribe — إلغاء التسجيل</summary>
+    [HttpPost("unsubscribe")]
+    public async Task<IActionResult> Unsubscribe([FromBody] PushSubscriptionDto dto)
+    {
+        var userId = GetUserId();
+        
+        var existing = await _db.Set<PushSubscription>()
+            .FirstOrDefaultAsync(s => s.Endpoint == dto.Endpoint && s.UserId == userId);
+
+        if (existing != null)
+        {
+            _db.Set<PushSubscription>().Remove(existing);
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new { success = true });
+    }
 }
