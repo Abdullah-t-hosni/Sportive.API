@@ -108,7 +108,7 @@ public class ProductsController : ControllerBase
         return NotFound();
     }
 
-    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
+    [RequirePermission($"{ModuleKeys.Products},{ModuleKeys.SizeGuides}", requireEdit: true)]
     [HttpPatch("{id}/size-chart")]
     public async Task<IActionResult> UpdateSizeChart(int id, [FromBody] UpdateSizeChartDto dto)
     {
