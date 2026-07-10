@@ -84,9 +84,15 @@ public class CloudinaryImageService : IImageService
         if (file == null || file.Length == 0)
             return new ImageUploadDto(false, null, null, "لم يتم إرسال أي ملف");
 
-        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var ext = Path.GetExtension(file.FileName)?.ToLowerInvariant() ?? "";
+        if (string.IsNullOrEmpty(ext)) {
+            if (file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)) {
+                ext = ".jpg"; // fallback for images with no extension
+            }
+        }
+        
         if (!AllowedExtensions.Contains(ext))
-            return new ImageUploadDto(false, null, null, "نوع الملف غير مدعوم");
+            return new ImageUploadDto(false, null, null, $"نوع الملف غير مدعوم ({ext})");
 
         if (file.Length > MaxFileSizeBytes)
             return new ImageUploadDto(false, null, null, "حجم الملف يتجاوز 10 ميجابايت");
