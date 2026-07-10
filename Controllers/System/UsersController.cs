@@ -107,8 +107,9 @@ public class UsersController : ControllerBase
         public bool? IsActive { get; set; }
         public int? BranchId { get; set; }
         public int? WarehouseId { get; set; }
-        public string? NotificationPreferences { get; set; }
+        public List<string>? NotificationPreferences { get; set; }
     }
+    
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateUser(string id, [FromBody] UpdateUserDto dto)
     {
@@ -117,12 +118,15 @@ public class UsersController : ControllerBase
 
         user.FullName    = dto.FullName;
         user.Email       = dto.Email;
-        user.UserName    = dto.Email; // Keep UserName and Email same for simplicity
-        user.PhoneNumber = dto.Phone;
+        user.UserName    = dto.Email;
+        if (dto.Phone != null) user.PhoneNumber = dto.Phone;
         if (dto.IsActive.HasValue) user.IsActive = dto.IsActive.Value;
         user.BranchId    = dto.BranchId;
         user.WarehouseId = dto.WarehouseId;
-        if (dto.NotificationPreferences != null) user.NotificationPreferences = dto.NotificationPreferences;
+        if (dto.NotificationPreferences != null) 
+        {
+            user.NotificationPreferences = System.Text.Json.JsonSerializer.Serialize(dto.NotificationPreferences);
+        }
 
         var result = await _userManager.UpdateAsync(user);
         if (!result.Succeeded) return BadRequest(result.Errors);
