@@ -59,15 +59,21 @@ public class NotificationService : INotificationService
         // 1. Determine if this notification should go to staff/admins
         if (type == "Order" || type == "OnlineOrder" || type == "POSOrder" || type == "Alert" || type == "Stock" || type == "System" || string.IsNullOrEmpty(userId))
         {
-            var users = await _db.Users
-                .Include(u => u.UserRoles)
-                .ThenInclude(ur => ur.Role)
-                .ToListAsync();
+            var users = await _db.Users.ToListAsync();
+
+            var userRolesData = await (from ur in _db.UserRoles
+                                       join r in _db.Roles on ur.RoleId equals r.Id
+                                       select new { ur.UserId, RoleName = r.Name })
+                                       .ToListAsync();
+
+            var rolesByUserId = userRolesData
+                                .GroupBy(x => x.UserId)
+                                .ToDictionary(g => g.Key, g => g.Select(x => x.RoleName).ToList());
 
             foreach (var u in users)
             {
                 bool shouldNotify = false;
-                var roles = u.UserRoles.Select(ur => ur.Role?.Name).ToList();
+                var roles = rolesByUserId.ContainsKey(u.Id) ? rolesByUserId[u.Id] : new List<string?>();
 
                 if (!string.IsNullOrEmpty(u.NotificationPreferences))
                 {
