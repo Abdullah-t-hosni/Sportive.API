@@ -85,7 +85,8 @@ public class StaffController : ControllerBase
                 branchId       = user.BranchId,
                 warehouseId    = user.WarehouseId,
                 maxDiscountPercentage = user.MaxDiscountPercentage,
-                maxDiscountAmount     = user.MaxDiscountAmount
+                maxDiscountAmount     = user.MaxDiscountAmount,
+                notificationPreferences = user.NotificationPreferences
             });
         }
 
