@@ -951,38 +951,18 @@ public class AccountingCoreService
             supplierLedgerBalances[s.Id] = bal;
         }
 
-        // ✅ FIX: Calculate TotalPaid directly from ledger Debit entries on supplier accounts.
-        // This ensures manual journal entries (e.g. debit supplier to pay external party)
-        // are reflected in the supplier balance, not just invoice-linked payments.
-        var supplierLedgerPaidList = await _db.JournalLines
-            .Where(l => l.Debit > 0 && (l.SupplierId != null || (l.Account != null && l.Account.Code != null && l.Account.Code.StartsWith("2101"))))
-            .GroupBy(l => new { l.SupplierId, l.AccountId })
-            .Select(g => new {
-                SupplierId = g.Key.SupplierId,
-                AccountId = g.Key.AccountId,
-                TotalDebit = g.Sum(l => (decimal?)l.Debit) ?? 0
-            })
-            .ToListAsync();
-
-        var supplierLedgerPaid = new Dictionary<int, decimal>();
-        foreach (var s in suppliersProj)
-        {
-            decimal paid = supplierLedgerPaidList.Where(x => x.SupplierId == s.Id).Sum(x => x.TotalDebit);
-            if (s.MainAccountId.HasValue)
-            {
-                paid += supplierLedgerPaidList.Where(x => x.SupplierId == null && x.AccountId == s.MainAccountId.Value).Sum(x => x.TotalDebit);
-            }
-            supplierLedgerPaid[s.Id] = paid;
-        }
-
         var mismatchedSupplierIds = new List<int>();
         var calculatedSupplierData = new Dictionary<int, (decimal TotalPurchases, decimal TotalPaid)>();
 
         foreach (var s in suppliersProj)
         {
             var volume = supplierInvoicesTotal.GetValueOrDefault(s.Id, 0);
-            // Use direct ledger debit sum as TotalPaid — captures all payments including manual journal entries
-            var expectedPaid = supplierLedgerPaid.GetValueOrDefault(s.Id, 0);
+            // LedgerDebt = Credit - Debit on supplier account (remaining balance we owe them)
+            // TotalPaid = TotalPurchases - LedgerDebt (what has been settled)
+            // ✅ This captures manual journal debits correctly because they reduce LedgerDebt,
+            // which increases TotalPaid, which reduces Balance.
+            var ledgerDebt = supplierLedgerBalances.GetValueOrDefault(s.Id, 0);
+            var expectedPaid = volume - ledgerDebt;
 
             if (Math.Abs(s.TotalPurchases - volume) > 0.001m || Math.Abs(s.TotalPaid - expectedPaid) > 0.001m)
             {
