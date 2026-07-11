@@ -685,4 +685,70 @@ public class EmployeesController : ControllerBase
             details = new { admCount = admCounter, otherCount = otherCounter } 
         });
     }
+
+    // ══════════════════════════════════════════════════════
+    // SHIFT OVERRIDES
+    // ══════════════════════════════════════════════════════
+    [HttpGet("{id}/shift-overrides")]
+    [RequirePermission(ModuleKeys.Hr)]
+    public async Task<IActionResult> GetShiftOverrides(int id)
+    {
+        var overrides = await _db.EmployeeShiftOverrides
+            .Where(x => x.EmployeeId == id)
+            .OrderByDescending(x => x.OverrideDate)
+            .Select(x => new EmployeeShiftOverrideDto(x.Id, x.EmployeeId, x.OverrideDate, x.DayOfWeek, x.ShiftStartTime, x.WorkHoursPerDay, x.IsDayOff, x.Notes))
+            .ToListAsync();
+        return Ok(overrides);
+    }
+
+    [HttpPost("{id}/shift-overrides")]
+    [RequirePermission(ModuleKeys.Hr)]
+    public async Task<IActionResult> AddShiftOverride(int id, [FromBody] CreateEmployeeShiftOverrideDto dto)
+    {
+        var emp = await _db.Employees.FindAsync(id);
+        if (emp == null) return NotFound("Employee not found");
+
+        if (dto.OverrideDate == null && dto.DayOfWeek == null)
+            return BadRequest("Either OverrideDate or DayOfWeek must be provided");
+
+        EmployeeShiftOverride? existing = null;
+        if (dto.OverrideDate.HasValue)
+            existing = await _db.EmployeeShiftOverrides.FirstOrDefaultAsync(x => x.EmployeeId == id && x.OverrideDate != null && x.OverrideDate.Value.Date == dto.OverrideDate.Value.Date);
+        else if (dto.DayOfWeek.HasValue)
+            existing = await _db.EmployeeShiftOverrides.FirstOrDefaultAsync(x => x.EmployeeId == id && x.DayOfWeek == dto.DayOfWeek);
+
+        if (existing != null)
+        {
+            existing.ShiftStartTime = dto.ShiftStartTime;
+            existing.WorkHoursPerDay = dto.WorkHoursPerDay;
+            existing.IsDayOff = dto.IsDayOff;
+            existing.Notes = dto.Notes;
+        }
+        else
+        {
+            _db.EmployeeShiftOverrides.Add(new EmployeeShiftOverride
+            {
+                EmployeeId = id,
+                OverrideDate = dto.OverrideDate?.Date,
+                DayOfWeek = dto.DayOfWeek,
+                ShiftStartTime = dto.ShiftStartTime,
+                WorkHoursPerDay = dto.WorkHoursPerDay,
+                IsDayOff = dto.IsDayOff,
+                Notes = dto.Notes
+            });
+        }
+        await _db.SaveChangesAsync();
+        return Ok(new { message = "Shift override saved successfully" });
+    }
+
+    [HttpDelete("shift-overrides/{overrideId}")]
+    [RequirePermission(ModuleKeys.Hr)]
+    public async Task<IActionResult> DeleteShiftOverride(int overrideId)
+    {
+        var item = await _db.EmployeeShiftOverrides.FindAsync(overrideId);
+        if (item == null) return NotFound();
+        _db.EmployeeShiftOverrides.Remove(item);
+        await _db.SaveChangesAsync();
+        return Ok(new { message = "Shift override removed successfully" });
+    }
 }

@@ -157,6 +157,7 @@ public class Employee : BaseEntity
     public ICollection<EmployeeAttendance> Attendances   { get; set; } = new List<EmployeeAttendance>();
 
     public EmployeeCommissionSetting? CommissionSetting { get; set; }
+    public ICollection<EmployeeShiftOverride> ShiftOverrides { get; set; } = new List<EmployeeShiftOverride>();
 
     public int? CommissionGroupId { get; set; }
     public virtual CommissionGroup? CommissionGroup { get; set; }
@@ -439,6 +440,7 @@ public class EmployeeAttendance : BaseEntity
     public decimal OvertimeHours { get; set; } = 0; // العمل الإضافي المحتسب
     public decimal DelayMinutes { get; set; } = 0; // التأخير بالدقائق
     public bool IsAbsent { get; set; } = false; // غياب
+    public bool IsShiftOverridden { get; set; } = false; // هل تم حساب اليوم بناءً على وردية استثنائية؟
     
     public string? Notes { get; set; }
     public string? CreatedByUserId { get; set; }
@@ -592,4 +594,18 @@ public class EmployeeTaskItem : BaseEntity
     public bool IsCompleted { get; set; } = false;
     public string? Notes { get; set; }
     public string? MediaUrl { get; set; } // E.g., photo proof for cleaning/merchandising
+}
+
+public class EmployeeShiftOverride : BaseEntity
+{
+    public int EmployeeId { get; set; }
+    public virtual Employee Employee { get; set; } = null!;
+
+    public DateTime? OverrideDate { get; set; } // Specific date for this override
+    public DayOfWeek? DayOfWeek { get; set; } // Recurring day of the week override
+    
+    public string? ShiftStartTime { get; set; } // e.g., "14:00"
+    public decimal? WorkHoursPerDay { get; set; } // e.g., 8
+    public bool IsDayOff { get; set; } = false; // Check if this override forces a day off
+    public string? Notes { get; set; }
 }

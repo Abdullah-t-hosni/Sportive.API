@@ -414,6 +414,7 @@ public record EmployeeAttendanceDto(
     decimal OvertimeHours,
     decimal DelayMinutes,
     bool IsAbsent,
+    bool IsShiftOverridden,
     string? Notes,
     string? CreatedByUserId,
     DateTime CreatedAt
@@ -451,5 +452,25 @@ public record SyncPunchDto(
     string EmployeeNumber,
     DateTime Timestamp,
     string? SerialNumber = null
+);
+
+public record EmployeeShiftOverrideDto(
+    int Id,
+    int EmployeeId,
+    DateTime? OverrideDate,
+    DayOfWeek? DayOfWeek,
+    string? ShiftStartTime,
+    decimal? WorkHoursPerDay,
+    bool IsDayOff,
+    string? Notes
+);
+
+public record CreateEmployeeShiftOverrideDto(
+    DateTime? OverrideDate,
+    DayOfWeek? DayOfWeek,
+    string? ShiftStartTime,
+    decimal? WorkHoursPerDay,
+    bool IsDayOff,
+    string? Notes
 );
 

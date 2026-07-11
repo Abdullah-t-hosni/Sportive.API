@@ -107,6 +107,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<EmployeeBonus>      EmployeeBonuses     { get; set; }
     public DbSet<EmployeeDeduction>  EmployeeDeductions  { get; set; }
     public DbSet<EmployeeAttendance> EmployeeAttendances  { get; set; }
+    public DbSet<EmployeeShiftOverride> EmployeeShiftOverrides { get; set; }
     public DbSet<ZkDevice>           ZkDevices           { get; set; }
     
     // Employee Tasks and Responsibilities

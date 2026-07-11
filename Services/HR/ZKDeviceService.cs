@@ -74,7 +74,7 @@ namespace Sportive.API.Services.HR
             if (attendance != null)
             {
                 attendance.PunchesJson = System.Text.Json.JsonSerializer.Serialize(punches);
-                RecalculateAttendanceMetrics(attendance, emp);
+                await RecalculateAttendanceMetrics(attendance, emp);
                 attendance.UpdatedAt = TimeHelper.GetEgyptTime();
                 _logger.LogInformation("Updated attendance record ID {Id} for Employee {Emp} on {Date} (Punches: {Count})", 
                     attendance.Id, emp.Name, attendance.Date.ToShortDateString(), punches.Count);
@@ -92,7 +92,7 @@ namespace Sportive.API.Services.HR
                     CreatedAt = TimeHelper.GetEgyptTime()
                 };
 
-                RecalculateAttendanceMetrics(newAttendance, emp);
+                await RecalculateAttendanceMetrics(newAttendance, emp);
                 _db.EmployeeAttendances.Add(newAttendance);
                 _logger.LogInformation("Created new attendance record for Employee {Emp} on {Date}", 
                     emp.Name, date.ToShortDateString());
@@ -101,7 +101,7 @@ namespace Sportive.API.Services.HR
             await _db.SaveChangesAsync();
         }
 
-        private void RecalculateAttendanceMetrics(EmployeeAttendance attendance, Employee emp)
+        private async Task RecalculateAttendanceMetrics(EmployeeAttendance attendance, Employee emp)
         {
             if (attendance.IsAbsent)
             {
@@ -141,9 +141,21 @@ namespace Sportive.API.Services.HR
                 }
                 
                 attendance.WorkHours = totalHours;
-                
+
+                // Shift Override Logic
+                var over = await _db.EmployeeShiftOverrides
+                    .Where(x => x.EmployeeId == emp.Id && 
+                        ((x.OverrideDate != null && x.OverrideDate.Value.Date == attendance.Date.Date) || 
+                         (x.OverrideDate == null && x.DayOfWeek == attendance.Date.DayOfWeek)))
+                    .OrderByDescending(x => x.OverrideDate != null ? 1 : 0) // Prioritize specific date
+                    .FirstOrDefaultAsync();
+
+                attendance.IsShiftOverridden = over != null;
+
+                var stdHours = over?.WorkHoursPerDay ?? emp.WorkHoursPerDay;
+                var shiftStartStr = over?.ShiftStartTime ?? emp.ShiftStartTime;
+
                 // Overtime
-                var stdHours = emp.WorkHoursPerDay;
                 if (attendance.WorkHours > stdHours)
                 {
                     attendance.OvertimeHours = attendance.WorkHours - stdHours;
@@ -159,28 +171,52 @@ namespace Sportive.API.Services.HR
                 attendance.CheckOut = null;
                 attendance.WorkHours = 0;
                 attendance.OvertimeHours = 0;
+                
+                // Keep the shift override check for absent cases too (to calculate delay accurately if they come later)
+                var overAbsent = await _db.EmployeeShiftOverrides
+                    .Where(x => x.EmployeeId == emp.Id && 
+                        ((x.OverrideDate != null && x.OverrideDate.Value.Date == attendance.Date.Date) || 
+                         (x.OverrideDate == null && x.DayOfWeek == attendance.Date.DayOfWeek)))
+                    .OrderByDescending(x => x.OverrideDate != null ? 1 : 0)
+                    .FirstOrDefaultAsync();
+                attendance.IsShiftOverridden = overAbsent != null;
             }
 
-            // Delay minutes calculation (only in Fixed Shift mode, comparing CheckIn to shift start)
+            // Delay minutes calculation
             if (attendance.CheckIn.HasValue)
             {
-                // Verify if it is weekend day - weekends should have 0 delay
-                var weekendDays = (emp.WeeklyDaysOff ?? "Friday")
-                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                    .Select(d => d.Trim().ToLower())
-                    .ToList();
-                
-                var dayNameAr = attendance.Date.ToString("dddd", new System.Globalization.CultureInfo("ar-EG")).ToLower();
-                var dayNameEn = attendance.Date.ToString("dddd", new System.Globalization.CultureInfo("en-US")).ToLower();
-                var isWeekend = weekendDays.Contains(dayNameEn) || weekendDays.Contains(dayNameAr);
+                var over = await _db.EmployeeShiftOverrides
+                    .Where(x => x.EmployeeId == emp.Id && 
+                        ((x.OverrideDate != null && x.OverrideDate.Value.Date == attendance.Date.Date) || 
+                         (x.OverrideDate == null && x.DayOfWeek == attendance.Date.DayOfWeek)))
+                    .OrderByDescending(x => x.OverrideDate != null ? 1 : 0)
+                    .FirstOrDefaultAsync();
+
+                var shiftStartStr = over?.ShiftStartTime ?? emp.ShiftStartTime;
+                bool isWeekend = false;
+
+                if (over != null)
+                {
+                    isWeekend = over.IsDayOff;
+                }
+                else
+                {
+                    var weekendDays = (emp.WeeklyDaysOff ?? "Friday")
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Select(d => d.Trim().ToLower())
+                        .ToList();
+                    var dayNameAr = attendance.Date.ToString("dddd", new System.Globalization.CultureInfo("ar-EG")).ToLower();
+                    var dayNameEn = attendance.Date.ToString("dddd", new System.Globalization.CultureInfo("en-US")).ToLower();
+                    isWeekend = weekendDays.Contains(dayNameEn) || weekendDays.Contains(dayNameAr);
+                }
 
                 if (isWeekend)
                 {
                     attendance.DelayMinutes = 0;
                 }
-                else if (emp.AttendanceMode == AttendanceMode.Fixed && !string.IsNullOrEmpty(emp.ShiftStartTime))
+                else if (emp.AttendanceMode == AttendanceMode.Fixed && !string.IsNullOrEmpty(shiftStartStr))
                 {
-                    if (TimeSpan.TryParse(emp.ShiftStartTime, out var shiftStart))
+                    if (TimeSpan.TryParse(shiftStartStr, out var shiftStart))
                     {
                         var stdCheckIn = attendance.Date.Add(shiftStart);
                         if (attendance.CheckIn.Value > stdCheckIn)

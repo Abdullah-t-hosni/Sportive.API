@@ -76,6 +76,7 @@ public class EmployeeAttendancesController : ControllerBase
                 a.OvertimeHours,
                 a.DelayMinutes,
                 a.IsAbsent,
+                a.IsShiftOverridden,
                 a.Notes,
                 a.CreatedByUserId,
                 a.CreatedAt
