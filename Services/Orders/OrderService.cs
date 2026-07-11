@@ -2224,7 +2224,7 @@ public class OrderService : IOrderService
                 if (order == null) return;
 
                 var salesEntry = await db.JournalEntries.FirstOrDefaultAsync(e => 
-                    e.Type == JournalEntryType.SalesOrder && 
+                    e.Type == JournalEntryType.SalesInvoice && 
                     e.Status != JournalEntryStatus.Reversed &&
                     e.Reference == order.OrderNumber);
 
