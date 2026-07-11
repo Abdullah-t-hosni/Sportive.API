@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
-using Sportive.API.Interfaces;
+using Sportive.API.Services;
 using Sportive.API.Models;
 using System.Threading.Tasks;
 
