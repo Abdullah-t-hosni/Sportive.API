@@ -6,18 +6,17 @@ using Sportive.API.Data;
 using Sportive.API.Models;
 
 var builder = WebApplication.CreateBuilder(args);
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+var connectionString = "Server=srv1787.hstgr.io;Port=3306;Database=u282618987_sportiveApi;User=u282618987_sportive;Password=Abdo010152144;Max Pool Size=15;";
 var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
 optionsBuilder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
 
 using var db = new AppDbContext(optionsBuilder.Options);
-var entries = db.JournalEntries.Include(e => e.Lines).Where(e => e.EntryNumber == "JE-WEB-2607-0077" || e.EntryNumber == "JE-2607-0081").ToList();
+var entries = db.JournalEntries
+    .Include(e => e.Lines)
+    .Where(e => e.Reference == "SPT-2607-0075" || e.Reference == "JE-WEB-2607-0077")
+    .ToList();
 
 foreach (var e in entries)
 {
-    Console.WriteLine($"Entry: {e.EntryNumber} (Id: {e.Id})");
-    foreach (var l in e.Lines)
-    {
-        Console.WriteLine($"  - AccountId: {l.AccountId}, Debit: {l.Debit}, Credit: {l.Credit}, Desc: {l.Description}");
-    }
+    Console.WriteLine($"Entry: {e.EntryNumber} (Id: {e.Id}) - Status: {e.Status}");
 }
