@@ -14,7 +14,13 @@ namespace Sportive.API.Controllers;
 public class NotificationsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public NotificationsController(AppDbContext db) => _db = db;
+    private readonly Microsoft.Extensions.Configuration.IConfiguration _config;
+    
+    public NotificationsController(AppDbContext db, Microsoft.Extensions.Configuration.IConfiguration config)
+    {
+        _db = db;
+        _config = config;
+    }
 
     private string GetUserId() => User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
 
@@ -163,5 +169,51 @@ public class NotificationsController : ControllerBase
         }
 
         return Ok(new { success = true });
+    }
+    /// <summary>GET /api/notifications/test-push — أداة تشخيص الإشعارات</summary>
+    [HttpGet("test-push")]
+    public async Task<IActionResult> TestPush()
+    {
+        var userId = GetUserId();
+        var subscriptions = await _db.Set<PushSubscription>().Where(s => s.UserId == userId).ToListAsync();
+        if (!subscriptions.Any()) return BadRequest(new { error = "No push subscriptions found for this user. Did you click the bell icon?" });
+
+        var subject = _config["Vapid:Subject"];
+        var publicKey = _config["Vapid:PublicKey"];
+        var privateKey = _config["Vapid:PrivateKey"];
+        if (string.IsNullOrEmpty(subject) || string.IsNullOrEmpty(publicKey) || string.IsNullOrEmpty(privateKey))
+            return BadRequest(new { error = "VAPID keys are missing from configuration." });
+
+        var vapidDetails = new WebPush.VapidDetails(subject, publicKey, privateKey);
+        var webPushClient = new WebPush.WebPushClient();
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            titleAr = "إشعار تجريبي",
+            titleEn = "Test Notification",
+            msgAr = "هذا إشعار للتأكد من وصول الخدمة لجهازك.",
+            msgEn = "This is a test notification to verify delivery.",
+            type = "System",
+            orderId = (int?)null
+        });
+
+        var results = new List<object>();
+        foreach (var sub in subscriptions)
+        {
+            try
+            {
+                var pushSubscription = new WebPush.PushSubscription(sub.Endpoint, sub.P256dh, sub.Auth);
+                await webPushClient.SendNotificationAsync(pushSubscription, payload, vapidDetails);
+                results.Add(new { endpoint = sub.Endpoint, success = true });
+            }
+            catch (WebPush.WebPushException ex)
+            {
+                results.Add(new { endpoint = sub.Endpoint, success = false, error = ex.Message, statusCode = ex.StatusCode });
+            }
+            catch (Exception ex)
+            {
+                results.Add(new { endpoint = sub.Endpoint, success = false, error = ex.Message });
+            }
+        }
+        return Ok(new { success = true, subCount = subscriptions.Count, results });
     }
 }
