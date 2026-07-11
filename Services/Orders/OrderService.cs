@@ -1348,7 +1348,14 @@ public class OrderService : IOrderService
 
                 if (oldEntries.Any())
                 {
-                    var isSameBusinessDay = TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt) == TimeHelper.GetEgyptBusinessDayDate(now);
+                    bool isAdminOrSuperAdmin = false;
+                    if (!string.IsNullOrEmpty(updatedByUserId))
+                    {
+                        var adminRoleIds = await _db.Roles.Where(r => r.Name == AppRoles.Admin || r.Name == AppRoles.SuperAdmin).Select(r => r.Id).ToListAsync();
+                        isAdminOrSuperAdmin = await _db.UserRoles.AnyAsync(ur => ur.UserId == updatedByUserId && adminRoleIds.Contains(ur.RoleId));
+                    }
+
+                    var isSameBusinessDay = isAdminOrSuperAdmin || TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt) == TimeHelper.GetEgyptBusinessDayDate(now);
 
                     if (isSameBusinessDay)
                     {
@@ -1722,7 +1729,15 @@ public class OrderService : IOrderService
             if (returnEntries.Any())
             {
                 var now = TimeHelper.GetEgyptTime();
-                var isSameBusinessDay = returnEntries.All(e => TimeHelper.GetEgyptBusinessDayDate(e.CreatedAt) == TimeHelper.GetEgyptBusinessDayDate(now));
+                
+                bool isAdminOrSuperAdmin = false;
+                if (!string.IsNullOrEmpty(updatedByUserId))
+                {
+                    var adminRoleIds = await _db.Roles.Where(r => r.Name == AppRoles.Admin || r.Name == AppRoles.SuperAdmin).Select(r => r.Id).ToListAsync();
+                    isAdminOrSuperAdmin = await _db.UserRoles.AnyAsync(ur => ur.UserId == updatedByUserId && adminRoleIds.Contains(ur.RoleId));
+                }
+
+                var isSameBusinessDay = isAdminOrSuperAdmin || returnEntries.All(e => TimeHelper.GetEgyptBusinessDayDate(e.CreatedAt) == TimeHelper.GetEgyptBusinessDayDate(now));
 
                 if (isSameBusinessDay)
                 {
