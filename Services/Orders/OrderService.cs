@@ -2210,6 +2210,43 @@ public class OrderService : IOrderService
         }
     }
 
+    private async Task ReverseOrderSalesEntryWithRetryAsync(int orderId)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var order = await db.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
+                if (order == null) return;
+
+                var salesEntry = await db.JournalEntries.FirstOrDefaultAsync(e => 
+                    e.Type == JournalEntryType.SalesOrder && 
+                    e.Status != JournalEntryStatus.Reversed &&
+                    e.Reference == order.OrderNumber);
+
+                if (salesEntry != null)
+                {
+                    await accounting.ReverseEntryAsync(salesEntry.Id, $"إلغاء الطلب رقم {order.OrderNumber}");
+                }
+                
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogWarning(ex, "[Accounting] ReverseOrderSalesEntry attempt {Attempt}/{Max} failed for order {OrderId}. Retrying...", attempt, maxAttempts, orderId);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Accounting] ReverseOrderSalesEntry permanently failed for order {OrderId} after {Max} attempts.", orderId, maxAttempts);
+            }
+        }
+    }
+
     private async Task PostPartialReturnWithRetryAsync(int orderId, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? reference = null)
     {
         const int maxAttempts = 3;
