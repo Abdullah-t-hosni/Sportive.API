@@ -924,23 +924,56 @@ public class AccountingCoreService
             })
             .ToDictionaryAsync(x => x.SupplierId, x => x.Total);
 
-        // Group journal lines by SupplierId and sum credit - debit in ONE query
-        var supplierLedgerBalances = await _db.JournalLines
-            .Where(l => l.SupplierId != null && (
-                l.AccountId == l.Supplier!.MainAccountId ||
-                (l.Account.Code != null && l.Account.Code.StartsWith("2101"))
-            ))
-            .GroupBy(l => l.SupplierId)
+        // Group journal lines by SupplierId or AccountId and sum credit - debit in ONE query
+        var supplierLedgerBalancesList = await _db.JournalLines
+            .Where(l => l.SupplierId != null || (l.Account != null && l.Account.Code != null && l.Account.Code.StartsWith("2101")))
+            .GroupBy(l => new { l.SupplierId, l.AccountId })
             .Select(g => new {
-                SupplierId = g.Key!.Value,
+                SupplierId = g.Key.SupplierId,
+                AccountId = g.Key.AccountId,
                 Debt = g.Sum(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0
             })
-            .ToDictionaryAsync(x => x.SupplierId, x => x.Debt);
+            .ToListAsync();
 
         var suppliersProj = await _db.Suppliers
             .AsNoTracking()
-            .Select(s => new { s.Id, s.TotalPurchases, s.TotalPaid })
+            .Select(s => new { s.Id, s.MainAccountId, s.TotalPurchases, s.TotalPaid })
             .ToListAsync();
+
+        var supplierLedgerBalances = new Dictionary<int, decimal>();
+        foreach (var s in suppliersProj)
+        {
+            decimal bal = supplierLedgerBalancesList.Where(x => x.SupplierId == s.Id).Sum(x => x.Debt);
+            if (s.MainAccountId.HasValue)
+            {
+                bal += supplierLedgerBalancesList.Where(x => x.SupplierId == null && x.AccountId == s.MainAccountId.Value).Sum(x => x.Debt);
+            }
+            supplierLedgerBalances[s.Id] = bal;
+        }
+
+        // ✅ FIX: Calculate TotalPaid directly from ledger Debit entries on supplier accounts.
+        // This ensures manual journal entries (e.g. debit supplier to pay external party)
+        // are reflected in the supplier balance, not just invoice-linked payments.
+        var supplierLedgerPaidList = await _db.JournalLines
+            .Where(l => l.Debit > 0 && (l.SupplierId != null || (l.Account != null && l.Account.Code != null && l.Account.Code.StartsWith("2101"))))
+            .GroupBy(l => new { l.SupplierId, l.AccountId })
+            .Select(g => new {
+                SupplierId = g.Key.SupplierId,
+                AccountId = g.Key.AccountId,
+                TotalDebit = g.Sum(l => (decimal?)l.Debit) ?? 0
+            })
+            .ToListAsync();
+
+        var supplierLedgerPaid = new Dictionary<int, decimal>();
+        foreach (var s in suppliersProj)
+        {
+            decimal paid = supplierLedgerPaidList.Where(x => x.SupplierId == s.Id).Sum(x => x.TotalDebit);
+            if (s.MainAccountId.HasValue)
+            {
+                paid += supplierLedgerPaidList.Where(x => x.SupplierId == null && x.AccountId == s.MainAccountId.Value).Sum(x => x.TotalDebit);
+            }
+            supplierLedgerPaid[s.Id] = paid;
+        }
 
         var mismatchedSupplierIds = new List<int>();
         var calculatedSupplierData = new Dictionary<int, (decimal TotalPurchases, decimal TotalPaid)>();
@@ -948,8 +981,8 @@ public class AccountingCoreService
         foreach (var s in suppliersProj)
         {
             var volume = supplierInvoicesTotal.GetValueOrDefault(s.Id, 0);
-            var debt = supplierLedgerBalances.GetValueOrDefault(s.Id, 0);
-            var expectedPaid = volume - debt;
+            // Use direct ledger debit sum as TotalPaid — captures all payments including manual journal entries
+            var expectedPaid = supplierLedgerPaid.GetValueOrDefault(s.Id, 0);
 
             if (Math.Abs(s.TotalPurchases - volume) > 0.001m || Math.Abs(s.TotalPaid - expectedPaid) > 0.001m)
             {
@@ -988,23 +1021,32 @@ public class AccountingCoreService
             })
             .ToDictionaryAsync(x => x.CustomerId, x => x.Total);
 
-        // Group journal lines by CustomerId and sum debit - credit in ONE query
-        var customerLedgerBalances = await _db.JournalLines
-            .Where(l => l.CustomerId != null && (
-                l.AccountId == l.Customer!.MainAccountId ||
-                (l.Account.Code != null && l.Account.Code.StartsWith("1104"))
-            ))
-            .GroupBy(l => l.CustomerId)
+        // Group journal lines by CustomerId or AccountId and sum debit - credit in ONE query
+        var customerLedgerBalancesList = await _db.JournalLines
+            .Where(l => l.CustomerId != null || (l.Account != null && l.Account.Code != null && l.Account.Code.StartsWith("1104")))
+            .GroupBy(l => new { l.CustomerId, l.AccountId })
             .Select(g => new {
-                CustomerId = g.Key!.Value,
+                CustomerId = g.Key.CustomerId,
+                AccountId = g.Key.AccountId,
                 Debt = g.Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
             })
-            .ToDictionaryAsync(x => x.CustomerId, x => x.Debt);
+            .ToListAsync();
 
         var customersProj = await _db.Customers
             .AsNoTracking()
-            .Select(c => new { c.Id, c.TotalSales, c.TotalPaid })
+            .Select(c => new { c.Id, c.MainAccountId, c.TotalSales, c.TotalPaid })
             .ToListAsync();
+
+        var customerLedgerBalances = new Dictionary<int, decimal>();
+        foreach (var c in customersProj)
+        {
+            decimal bal = customerLedgerBalancesList.Where(x => x.CustomerId == c.Id).Sum(x => x.Debt);
+            if (c.MainAccountId.HasValue)
+            {
+                bal += customerLedgerBalancesList.Where(x => x.CustomerId == null && x.AccountId == c.MainAccountId.Value).Sum(x => x.Debt);
+            }
+            customerLedgerBalances[c.Id] = bal;
+        }
 
         var mismatchedCustomerIds = new List<int>();
         var calculatedCustomerData = new Dictionary<int, (decimal TotalSales, decimal TotalPaid)>();
