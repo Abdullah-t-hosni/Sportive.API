@@ -174,9 +174,14 @@ public class NotificationService : INotificationService
 
             if (!subscriptions.Any()) return;
 
-            var subject = _config["Vapid:Subject"];
-            var publicKey = _config["Vapid:PublicKey"];
-            var privateKey = _config["Vapid:PrivateKey"];
+            var subject = Environment.GetEnvironmentVariable("VAPID_SUBJECT") ?? _config["Vapid:Subject"];
+            var publicKey = Environment.GetEnvironmentVariable("VAPID_PUBLIC_KEY") ?? _config["Vapid:PublicKey"];
+            var privateKey = Environment.GetEnvironmentVariable("VAPID_PRIVATE_KEY") ?? _config["Vapid:PrivateKey"];
+
+            // If it's a literal placeholder from appsettings.json, treat it as empty so it fails cleanly or falls back
+            if (subject == "${VAPID_SUBJECT}") subject = null;
+            if (publicKey == "${VAPID_PUBLIC_KEY}") publicKey = null;
+            if (privateKey == "${VAPID_PRIVATE_KEY}") privateKey = null;
 
             if (string.IsNullOrEmpty(subject) || string.IsNullOrEmpty(publicKey) || string.IsNullOrEmpty(privateKey))
                 return;
