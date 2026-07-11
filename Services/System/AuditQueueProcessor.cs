@@ -114,13 +114,17 @@ namespace Sportive.API.Services
             {
                 try
                 {
+                    int? parsedId = null;
+                    if (int.TryParse(entityId, out var id)) parsedId = id;
+
                     await notificationService.SendAsync(
                         userId: null,
                         titleAr: alertTitleAr,
                         titleEn: alertTitleEn,
                         msgAr: alertMsgAr,
                         msgEn: alertMsgEn,
-                        type: "Alert"
+                        type: "Alert",
+                        orderId: parsedId
                     );
                 }
                 catch (Exception ex)

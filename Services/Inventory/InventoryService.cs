@@ -287,7 +287,7 @@ public class InventoryService : IInventoryService
                         if (reorder > 0 && v.StockQuantity <= reorder && v.StockQuantity >= 0)
                             await notifications.SendAsync(null, t.Get("Inventory.LowStockAlertTitle"), "Low Stock Alert", 
                                 t.Get("Inventory.LowStockAlertDesc", v.Product.NameAr, v.StockQuantity, reorder),
-                                $"Product \"{v.Product.NameEn}\" reached {v.StockQuantity} units", "Alert");
+                                $"Product \"{v.Product.NameEn}\" reached {v.StockQuantity} units", "Alert", v.ProductId);
                     }
                 }
                 else if (productId.HasValue)
@@ -296,7 +296,7 @@ public class InventoryService : IInventoryService
                     if (p != null && p.ReorderLevel > 0 && p.TotalStock <= p.ReorderLevel && p.TotalStock >= 0)
                         await notifications.SendAsync(null, t.Get("Inventory.LowStockAlertTitle"), "Low Stock Alert",
                             t.Get("Inventory.LowStockAlertDesc", p.NameAr, p.TotalStock, p.ReorderLevel),
-                            $"Product \"{p.NameEn}\" reached {p.TotalStock} units", "Alert");
+                            $"Product \"{p.NameEn}\" reached {p.TotalStock} units", "Alert", p.Id);
                 }
             } catch { /* Suppress background errors */ }
         });
