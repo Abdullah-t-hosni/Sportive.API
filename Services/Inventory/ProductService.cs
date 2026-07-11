@@ -887,7 +887,8 @@ public class ProductService : IProductService
             p.SizeChartImageUrl,
             p.SizeChartJson,
             p.LinkedProductId,
-            linkedProduct
+            linkedProduct,
+            RawDiscountPrice: p.DiscountPrice
         );
     }
 

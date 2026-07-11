@@ -152,7 +152,8 @@ public record ProductDetailDto(
     [property: JsonPropertyName("linkedProductId")] int? LinkedProductId = null,
     [property: JsonPropertyName("linkedProduct")] ProductSummaryDto? LinkedProduct = null,
     [property: JsonPropertyName("egyptianProductCode")] string? EgyptianProductCode = null,
-    [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null
+    [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null,
+    [property: JsonPropertyName("rawDiscountPrice")] decimal? RawDiscountPrice = null
 );
 
 public record ProductVariantDto(
