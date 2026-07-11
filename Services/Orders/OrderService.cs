@@ -1828,9 +1828,13 @@ public class OrderService : IOrderService
 
         await _db.SaveChangesAsync();
 
-        if (dto.Status == OrderStatus.Returned || dto.Status == OrderStatus.Cancelled)
+        if (dto.Status == OrderStatus.Returned)
         {
             _ = PostSalesReturnWithRetryAsync(orderId, dto.RefundAccountId);
+        }
+        else if (dto.Status == OrderStatus.Cancelled)
+        {
+            _ = ReverseOrderSalesEntryWithRetryAsync(orderId);
         }
 
         return (await GetOrderByIdAsync(orderId))!;
