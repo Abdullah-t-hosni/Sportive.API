@@ -928,7 +928,7 @@ public class AccountingCoreService
         var supplierLedgerBalances = await _db.JournalLines
             .Where(l => l.SupplierId != null && (
                 l.AccountId == l.Supplier!.MainAccountId ||
-                (l.Supplier!.MainAccountId == null && l.Account.Code != null && l.Account.Code.StartsWith("2101"))
+                (l.Account.Code != null && l.Account.Code.StartsWith("2101"))
             ))
             .GroupBy(l => l.SupplierId)
             .Select(g => new {
@@ -992,7 +992,7 @@ public class AccountingCoreService
         var customerLedgerBalances = await _db.JournalLines
             .Where(l => l.CustomerId != null && (
                 l.AccountId == l.Customer!.MainAccountId ||
-                (l.Customer!.MainAccountId == null && l.Account.Code != null && l.Account.Code.StartsWith("1104"))
+                (l.Account.Code != null && l.Account.Code.StartsWith("1104"))
             ))
             .GroupBy(l => l.CustomerId)
             .Select(g => new {
