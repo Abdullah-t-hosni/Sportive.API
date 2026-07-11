@@ -52,6 +52,50 @@ namespace Sportive.API.Services
                     // 3. Compute hash and add each record
                     foreach (var log in logs)
                     {
+                        // --- INJECT PRODUCT NAME FOR READABILITY ---
+                        if (log.EntityType == "CartItem" || log.EntityType == "OrderItem")
+                        {
+                            try
+                            {
+                                async Task<string?> GetProductName(string? json)
+                                {
+                                    if (string.IsNullOrEmpty(json)) return null;
+                                    var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(json, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                                    if (dict != null && dict.TryGetValue("productId", out var pidObj) && pidObj != null)
+                                    {
+                                        if (int.TryParse(pidObj.ToString(), out int productId))
+                                        {
+                                            var product = await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == productId);
+                                            return product?.NameAr;
+                                        }
+                                    }
+                                    return null;
+                                }
+
+                                var newProductName = await GetProductName(log.NewValues);
+                                if (!string.IsNullOrEmpty(newProductName))
+                                {
+                                    var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(log.NewValues, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                                    if (dict != null) {
+                                        dict["productName"] = newProductName;
+                                        log.NewValues = System.Text.Json.JsonSerializer.Serialize(dict);
+                                    }
+                                }
+
+                                var oldProductName = await GetProductName(log.OldValues);
+                                if (!string.IsNullOrEmpty(oldProductName))
+                                {
+                                    var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(log.OldValues, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                                    if (dict != null) {
+                                        dict["productName"] = oldProductName;
+                                        log.OldValues = System.Text.Json.JsonSerializer.Serialize(dict);
+                                    }
+                                }
+                            }
+                            catch { /* Ignore parsing errors */ }
+                        }
+                        // -------------------------------------------
+
                         log.PreviousHash = previousHash;
                         var payload = $"{log.Action}{log.UserId ?? ""}{log.CreatedAt:yyyy-MM-dd HH:mm:ss}{previousHash}";
                         using var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes(secret));
