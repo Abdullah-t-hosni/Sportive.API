@@ -31,9 +31,9 @@ public class ProductsController : ControllerBase
         Ok(await _products.GetProductsAsync(filter));
 
     [HttpGet("{id}")]
-    public async Task<IActionResult> GetById(int id, [FromQuery] DiscountApplyTo? source = null, [FromQuery] int? warehouseId = null)
+    public async Task<IActionResult> GetById(int id, [FromQuery] DiscountApplyTo? source = null, [FromQuery] int? warehouseId = null, [FromQuery] bool rawPricing = false)
     {
-        var product = await _products.GetProductByIdAsync(id, source, warehouseId);
+        var product = await _products.GetProductByIdAsync(id, source, warehouseId, rawPricing);
         return product == null ? NotFound() : Ok(product);
     }
 

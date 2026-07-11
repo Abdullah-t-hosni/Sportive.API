@@ -196,7 +196,7 @@ public class ProductService : IProductService
         );
     }
 
-    public async Task<ProductDetailDto?> GetProductByIdAsync(int id, DiscountApplyTo? source = null, int? warehouseId = null)
+    public async Task<ProductDetailDto?> GetProductByIdAsync(int id, DiscountApplyTo? source = null, int? warehouseId = null, bool rawPricing = false)
     {
         var p = await _db.Products
             .Include(x => x.Category)
@@ -227,16 +227,20 @@ public class ProductService : IProductService
             p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
         }
 
-        var now = TimeHelper.GetEgyptTime();
-        var d = await _db.ProductDiscounts
-            .Where(x => (x.ProductId == id || 
-                         (p.CategoryId != null && (x.CategoryId == p.CategoryId || x.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && x.CategoryId == p.Category!.Parent!.ParentId))) || 
-                         (p.BrandId != null && x.BrandId == p.BrandId) ||
-                         (x.ProductId == null && x.CategoryId == null && x.BrandId == null)) 
-                    && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
-            .Where(x => x.ApplyTo == DiscountApplyTo.All || (source.HasValue ? x.ApplyTo == source.Value : x.ApplyTo == DiscountApplyTo.Store))
-            .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
-            .FirstOrDefaultAsync();
+        ProductDiscount? d = null;
+        if (!rawPricing)
+        {
+            var now = TimeHelper.GetEgyptTime();
+            d = await _db.ProductDiscounts
+                .Where(x => (x.ProductId == id || 
+                             (p.CategoryId != null && (x.CategoryId == p.CategoryId || x.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && x.CategoryId == p.Category!.Parent!.ParentId))) || 
+                             (p.BrandId != null && x.BrandId == p.BrandId) ||
+                             (x.ProductId == null && x.CategoryId == null && x.BrandId == null)) 
+                        && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
+                .Where(x => x.ApplyTo == DiscountApplyTo.All || (source.HasValue ? x.ApplyTo == source.Value : x.ApplyTo == DiscountApplyTo.Store))
+                .OrderByDescending(x => x.ProductId != null ? 4 : (x.CategoryId != null ? 3 : (x.BrandId != null ? 2 : 1)))
+                .FirstOrDefaultAsync();
+        }
 
         ProductSummaryDto? linkedSummary = null;
         if (p.LinkedProduct != null)
@@ -248,7 +252,7 @@ public class ProductService : IProductService
         return MapToDetail(p, d, linkedSummary);
     }
 
-    public async Task<ProductDetailDto?> GetProductBySlugAsync(string slug, DiscountApplyTo? source = null, int? warehouseId = null)
+    public async Task<ProductDetailDto?> GetProductBySlugAsync(string slug, DiscountApplyTo? source = null, int? warehouseId = null, bool rawPricing = false)
     {
         var p = await _db.Products
             .Include(x => x.Category)
@@ -279,16 +283,20 @@ public class ProductService : IProductService
             p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
         }
 
-        var now = TimeHelper.GetEgyptTime();
-        var d = await _db.ProductDiscounts
-            .Where(x => (x.ProductId == p.Id || 
-                         (p.CategoryId != null && (x.CategoryId == p.CategoryId || x.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && x.CategoryId == p.Category!.Parent!.ParentId))) || 
-                         (p.BrandId != null && x.BrandId == p.BrandId) ||
-                         (x.ProductId == null && x.CategoryId == null && x.BrandId == null)) 
-                    && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
-            .Where(x => x.ApplyTo == DiscountApplyTo.All || (source.HasValue ? x.ApplyTo == source.Value : x.ApplyTo == DiscountApplyTo.Store))
-            .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
-            .FirstOrDefaultAsync();
+        ProductDiscount? d = null;
+        if (!rawPricing)
+        {
+            var now = TimeHelper.GetEgyptTime();
+            d = await _db.ProductDiscounts
+                .Where(x => (x.ProductId == p.Id || 
+                             (p.CategoryId != null && (x.CategoryId == p.CategoryId || x.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && x.CategoryId == p.Category!.Parent!.ParentId))) || 
+                             (p.BrandId != null && x.BrandId == p.BrandId) ||
+                             (x.ProductId == null && x.CategoryId == null && x.BrandId == null)) 
+                        && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
+                .Where(x => x.ApplyTo == DiscountApplyTo.All || (source.HasValue ? x.ApplyTo == source.Value : x.ApplyTo == DiscountApplyTo.Store))
+                .OrderByDescending(x => x.ProductId != null ? 4 : (x.CategoryId != null ? 3 : (x.BrandId != null ? 2 : 1)))
+                .FirstOrDefaultAsync();
+        }
 
         ProductSummaryDto? linkedSummary = null;
         if (p.LinkedProduct != null)
