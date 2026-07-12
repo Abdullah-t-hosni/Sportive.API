@@ -383,13 +383,6 @@ public class PayrollController : ControllerBase
                             {
                                 totalDeductedDays += 1.00m; // يوم كامل
                             }
-                            else if (quarterLimit == 0 && halfLimit == 0)
-                            {
-                                // Fallback if limits are misconfigured as 0
-                                if (att.DelayMinutes <= 30) totalDeductedDays += 0.25m;
-                                else if (att.DelayMinutes <= 60) totalDeductedDays += 0.50m;
-                                else totalDeductedDays += 1.00m;
-                            }
                         }
                     }
                 }
