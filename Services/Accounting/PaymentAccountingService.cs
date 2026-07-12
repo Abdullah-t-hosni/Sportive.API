@@ -98,8 +98,11 @@ public class PaymentAccountingService
 
         if (!lines.Any()) return;
         
-        var entryDate = overrideDate ?? TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt);
-        await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, reference, _t.Get("Accounting.AutoReceiptVoucherMainDesc", order.OrderNumber), entryDate, lines, orderId: order.Id, customerId: order.CustomerId, source: order.Source, createdAt: entryDate);
+        var paymentDate = payments.Any() ? payments.Max(p => p.CreatedAt) : TimeHelper.GetEgyptTime();
+        var entryDate = overrideDate ?? TimeHelper.GetEgyptBusinessDayDate(paymentDate);
+        var createdDate = overrideDate ?? paymentDate;
+
+        await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, reference, _t.Get("Accounting.AutoReceiptVoucherMainDesc", order.OrderNumber), entryDate, lines, orderId: order.Id, customerId: order.CustomerId, source: order.Source, createdAt: createdDate);
     }
 
     public async Task PostOrderRefundAsync(Order order)
