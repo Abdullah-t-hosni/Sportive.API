@@ -279,7 +279,7 @@ public class PayrollController : ControllerBase
                     if (!isWeekend) 
                     {
                         totalWorkingDaysInMonth++;
-                        if (date <= globalToday) passedWorkingDays++;
+                        if (date < globalToday) passedWorkingDays++; // تجاهل اليوم الحالي
                     }
                 }
 
@@ -336,7 +336,7 @@ public class PayrollController : ControllerBase
                     for (int day = 1; day <= daysInPeriod; day++)
                     {
                         var date = new DateTime(year, month, day);
-                        if (date > today) continue;
+                        if (date >= today) continue; // تجاهل اليوم الحالي (قد لا يكون سجل بعد)
 
                         var dayNameAr = date.ToString("dddd", new System.Globalization.CultureInfo("ar-EG")).ToLower();
                         var dayNameEn = date.ToString("dddd", new System.Globalization.CultureInfo("en-US")).ToLower();
