@@ -1780,11 +1780,12 @@ public class OrderService : IOrderService
             }
         }
 
-        // Post accounting if paid (Website orders)
+        // Determine if we need to post accounting if paid (Website orders)
+        bool shouldPostPayment = false;
         if ((dto.Status == OrderStatus.Delivered || dto.Status == OrderStatus.Confirmed) &&
             order.Source == OrderSource.Website && order.PaymentStatus == PaymentStatus.Paid)
         {
-            _ = PostOrderPaymentWithRetryAsync(orderId);
+            shouldPostPayment = true;
         }
 
         // Inventory movement + Coupon restore when moving INTO Returned/Cancelled
@@ -1842,6 +1843,11 @@ public class OrderService : IOrderService
         }
 
         await _db.SaveChangesAsync();
+
+        if (shouldPostPayment)
+        {
+            _ = PostOrderPaymentWithRetryAsync(orderId);
+        }
 
         if (dto.Status == OrderStatus.Returned)
         {
