@@ -328,7 +328,7 @@ public class PayrollController : ControllerBase
                     var isWeekend = weekendDays.Contains(dayNameEn) || weekendDays.Contains(dayNameAr);
                     if (isWeekend) continue;
 
-                    if (!empAttendances.Any(a => a.Date == date)) missingDays++;
+                    if (!empAttendances.Any(a => a.Date.Date == date)) missingDays++;
                 }
 
                 absenceDays   = empAttendances.Count(a => a.IsAbsent) + missingDays + missingCheckoutDays;
