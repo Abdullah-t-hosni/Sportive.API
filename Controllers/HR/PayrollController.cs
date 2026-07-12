@@ -522,7 +522,7 @@ public class PayrollController : ControllerBase
                 emp.FixedAllowance,
                 totalDeduction,
                 proposedAdvanceDeduct,
-                (int)Math.Ceiling(absenceDays),
+                (int)Math.Round(absenceDays, MidpointRounding.AwayFromZero),
                 absenceDeduction,
                 overtimeHours,
                 overtimeAmount,
