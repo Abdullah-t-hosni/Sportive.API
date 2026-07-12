@@ -239,13 +239,58 @@ public class PayrollController : ControllerBase
             decimal absenceDays;
             decimal delayMinutes;
 
+            var globalToday = TimeHelper.GetEgyptTime().Date;
+            int missingCheckoutDays = 0;
+            foreach (var a in empAttendances)
+            {
+                bool isVerified = !string.IsNullOrEmpty(a.Notes) && (a.Notes.Contains("[Verified]") || a.Notes.Contains("[معتمد]"));
+                bool isMissingCheckout = !a.IsAbsent && a.CheckIn != null && a.CheckOut == null;
+                bool isToday = a.Date.Date == globalToday;
+                
+                if (isMissingCheckout && !isVerified && !isToday)
+                {
+                    missingCheckoutDays++;
+                }
+            }
+
             if (emp.AttendanceMode == AttendanceMode.MonthlyTotal)
             {
                 // ═══ وضع الإجمالي الشهري ══════════════════════════════════════════════
                 // المستهدف = (أيام العمل الشهرية - أيام الإجازة) × ساعات العمل اليومية
                 var workDays     = emp.DaysPerMonth > 0 ? emp.DaysPerMonth : 26;
                 var vacDays      = emp.MonthlyVacationDays >= 0 ? emp.MonthlyVacationDays : 0;
-                var effWorkDays  = Math.Max(workDays - vacDays, 1); // لا يقل عن 1
+                
+                var weekendDays = (emp.WeeklyDaysOff ?? "Friday")
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(d => d.Trim().ToLower())
+                    .ToList();
+
+                var daysInPeriod = DateTime.DaysInMonth(year, month);
+                var passedWorkingDays = 0;
+                var totalWorkingDaysInMonth = 0;
+
+                for (int day = 1; day <= daysInPeriod; day++)
+                {
+                    var date = new DateTime(year, month, day);
+                    var dayNameAr = date.ToString("dddd", new System.Globalization.CultureInfo("ar-EG")).ToLower();
+                    var dayNameEn = date.ToString("dddd", new System.Globalization.CultureInfo("en-US")).ToLower();
+                    var isWeekend = weekendDays.Contains(dayNameEn) || weekendDays.Contains(dayNameAr);
+                    
+                    if (!isWeekend) 
+                    {
+                        totalWorkingDaysInMonth++;
+                        if (date <= globalToday) passedWorkingDays++;
+                    }
+                }
+
+                var effWorkDays = (decimal)workDays;
+                if (year == globalToday.Year && month == globalToday.Month && totalWorkingDaysInMonth > 0)
+                {
+                    var targetRatio = (decimal)passedWorkingDays / totalWorkingDaysInMonth;
+                    effWorkDays = workDays * targetRatio;
+                }
+                
+                effWorkDays  = Math.Max(effWorkDays - vacDays, 1m); // لا يقل عن 1
                 var dailyHours   = emp.WorkHoursPerDay > 0 ? emp.WorkHoursPerDay : 9m;
                 var monthlyTarget = (decimal)effWorkDays * dailyHours;
 
@@ -256,7 +301,7 @@ public class PayrollController : ControllerBase
 
                 // الساعات الناقصة → تحويل لأيام غياب بالتناسب
                 var shortHours   = diff < 0 ? Math.Abs(diff) : 0;
-                absenceDays      = dailyHours > 0 ? shortHours / dailyHours : 0;
+                absenceDays      = (dailyHours > 0 ? shortHours / dailyHours : 0) + missingCheckoutDays;
                 delayMinutes     = 0; // لا تأخير في هذا الوضع
             }
             else
@@ -286,7 +331,7 @@ public class PayrollController : ControllerBase
                     if (!empAttendances.Any(a => a.Date == date)) missingDays++;
                 }
 
-                absenceDays   = empAttendances.Count(a => a.IsAbsent) + missingDays;
+                absenceDays   = empAttendances.Count(a => a.IsAbsent) + missingDays + missingCheckoutDays;
                 overtimeHours = empAttendances.Sum(a => a.OvertimeHours);
                 delayMinutes  = empAttendances.Sum(a => a.DelayMinutes);
             }
