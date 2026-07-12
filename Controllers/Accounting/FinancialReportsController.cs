@@ -41,12 +41,12 @@ public class FinancialReportsController : ControllerBase
 
         // 1. Get transaction movements for the period (Server-side GroupBy)
         var query = _db.JournalLines
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to);
 
         var openingQuery = _db.JournalLines
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
                      && l.JournalEntry.EntryDate < from);
 
         if (source.HasValue)
@@ -378,7 +378,7 @@ public class FinancialReportsController : ControllerBase
             .Include(l => l.Customer)
             .Include(l => l.Supplier)
             .Include(l => l.Employee)
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to);
 
@@ -443,7 +443,7 @@ public class FinancialReportsController : ControllerBase
             var openQ = _db.JournalLines
                 .Include(l => l.JournalEntry)
                 .Where(l => l.AccountId == aId
-                         && l.JournalEntry.Status == JournalEntryStatus.Posted
+                         && l.JournalEntry.Status != JournalEntryStatus.Draft
                          && l.JournalEntry.EntryDate < from);
 
             if (!canViewAll)
@@ -683,7 +683,7 @@ public class FinancialReportsController : ControllerBase
 
  
         var openQ = _db.JournalLines.Include(l => l.JournalEntry)
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate < from);
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft && l.JournalEntry.EntryDate < from);
   
         if (source.HasValue) openQ = openQ.Where(l => l.CostCenter == source.Value);
 
@@ -736,7 +736,7 @@ public class FinancialReportsController : ControllerBase
         }
 
         var q = _db.JournalLines.Include(l => l.JournalEntry).Include(l => l.Customer).Include(l => l.Supplier).Include(l => l.Employee).Include(l => l.Branch)
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to);
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to);
 
         if (!canViewAll)
         {
@@ -833,7 +833,7 @@ public class FinancialReportsController : ControllerBase
         var cashLinesQuery = _db.JournalLines
             .Include(l => l.JournalEntry)
             .Include(l => l.Account)
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to
                      && cashIds.Contains(l.AccountId));
@@ -888,7 +888,7 @@ public class FinancialReportsController : ControllerBase
         var entriesInPeriod = await _db.JournalLines
             .Include(l => l.Account)
             .Include(l => l.JournalEntry)
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to)
             .GroupBy(l => l.JournalEntryId)
@@ -952,7 +952,7 @@ public class FinancialReportsController : ControllerBase
         {
             var ol = await _db.JournalLines
                 .Where(l => l.AccountId == ca.Id
-                         && l.JournalEntry.Status == JournalEntryStatus.Posted
+                         && l.JournalEntry.Status != JournalEntryStatus.Draft
                          && l.JournalEntry.EntryDate < from)
                 .SumAsync(l => l.Debit - l.Credit);
             
@@ -965,7 +965,7 @@ public class FinancialReportsController : ControllerBase
         {
             var totalMv = await _db.JournalLines
                 .Where(l => l.AccountId == ca.Id
-                         && l.JournalEntry.Status == JournalEntryStatus.Posted
+                         && l.JournalEntry.Status != JournalEntryStatus.Draft
                          && l.JournalEntry.EntryDate <= to)
                 .SumAsync(l => l.Debit - l.Credit);
             actualClosingBalance += totalMv + ca.OpeningBalance;
@@ -1353,7 +1353,7 @@ public class FinancialReportsController : ControllerBase
             .Include(l => l.JournalEntry)
             .Include(l => l.Account)
             .Where(l => l.EmployeeId == employeeId
-                     && l.JournalEntry.Status == JournalEntryStatus.Posted
+                     && l.JournalEntry.Status != JournalEntryStatus.Draft
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to)
             .ToListAsync();
@@ -1377,7 +1377,7 @@ public class FinancialReportsController : ControllerBase
         var openLines = await _db.JournalLines
             .Include(l => l.JournalEntry)
             .Where(l => l.EmployeeId == employeeId
-                     && l.JournalEntry.Status == JournalEntryStatus.Posted
+                     && l.JournalEntry.Status != JournalEntryStatus.Draft
                      && l.JournalEntry.EntryDate < from)
             .ToListAsync();
         var openBal = openLines.Sum(l => l.Debit) - openLines.Sum(l => l.Credit);
@@ -1601,7 +1601,7 @@ public class FinancialReportsController : ControllerBase
                 .Include(l => l.JournalEntry)
                 .AsNoTracking()
                 .Where(l => l.AccountId == salesReturnAccountId.Value
-                         && l.JournalEntry.Status == JournalEntryStatus.Posted
+                         && l.JournalEntry.Status != JournalEntryStatus.Draft
                          && l.JournalEntry.EntryDate >= from
                          && l.JournalEntry.EntryDate <= to)
                 .ToListAsync();
@@ -1669,7 +1669,7 @@ public class FinancialReportsController : ControllerBase
                 .Include(l => l.JournalEntry)
                 .AsNoTracking()
                 .Where(l => l.AccountId == vatOutputId.Value
-                         && l.JournalEntry.Status == JournalEntryStatus.Posted
+                         && l.JournalEntry.Status != JournalEntryStatus.Draft
                          && l.JournalEntry.EntryDate >= from
                          && l.JournalEntry.EntryDate <= to
                          && l.JournalEntry.Type == JournalEntryType.SalesReturn)
@@ -1816,7 +1816,7 @@ public class FinancialReportsController : ControllerBase
                 .Include(l => l.JournalEntry)
                 .AsNoTracking()
                 .Where(l => l.AccountId == vatInputId.Value
-                         && l.JournalEntry.Status == JournalEntryStatus.Posted
+                         && l.JournalEntry.Status != JournalEntryStatus.Draft
                          && l.JournalEntry.EntryDate >= from
                          && l.JournalEntry.EntryDate <= to
                          && l.OrderId == null && l.JournalEntry.OrderId == null

@@ -115,7 +115,7 @@ public class CustomerService : ICustomerService
             OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
             // Calculate Net Balance in SQL - ONLY for this Customer ID
             JournalNet = _db.JournalLines
-                .Where(l => l.CustomerId == c.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
+                .Where(l => l.CustomerId == c.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
                 .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
         }).Select(x => new {
             x.Id, x.FullName, x.Email, x.Phone, x.AppUserId,
@@ -243,7 +243,7 @@ public class CustomerService : ICustomerService
         if (rawResult == null) return null;
 
         var balance = rawResult.OpeningBalance + await _db.JournalLines
-            .Where(l => l.CustomerId == rawResult.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.CustomerId == rawResult.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
         return new CustomerDetailDto(
@@ -302,7 +302,7 @@ public class CustomerService : ICustomerService
         if (rawResult == null) return null;
 
         var balance = rawResult.OpeningBalance + await _db.JournalLines
-            .Where(l => l.CustomerId == rawResult.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.CustomerId == rawResult.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
         return new CustomerDetailDto(
@@ -360,7 +360,7 @@ public class CustomerService : ICustomerService
         if (rawResult == null) return null;
 
         var balance = rawResult.OpeningBalance + await _db.JournalLines
-            .Where(l => l.CustomerId == rawResult.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.CustomerId == rawResult.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
         return new CustomerDetailDto(

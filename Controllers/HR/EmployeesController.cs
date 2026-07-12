@@ -394,7 +394,7 @@ public class EmployeesController : ControllerBase
         personalAccountIds = personalAccountIds.Distinct().ToList();
 
         var preEntries = await _db.JournalLines
-            .Where(l => l.EmployeeId == id && personalAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate < egyptFrom && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.EmployeeId == id && personalAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate < egyptFrom && l.JournalEntry.Status != JournalEntryStatus.Draft)
             .Select(l => new { l.Debit, l.Credit })
             .ToListAsync();
         
@@ -402,7 +402,7 @@ public class EmployeesController : ControllerBase
 
         var lines = await _db.JournalLines
             .Include(l => l.JournalEntry)
-            .Where(l => l.EmployeeId == id && personalAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate >= egyptFrom && l.JournalEntry.EntryDate <= egyptTo && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.EmployeeId == id && personalAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate >= egyptFrom && l.JournalEntry.EntryDate <= egyptTo && l.JournalEntry.Status != JournalEntryStatus.Draft)
             .ToListAsync();
 
         lines = lines.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
@@ -498,7 +498,7 @@ public class EmployeesController : ControllerBase
         var acc = await _db.Accounts.FindAsync(accrualAccId);
 
         var preEntries = await _db.JournalLines
-            .Where(l => l.EmployeeId != null && hrAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.EmployeeId != null && hrAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate < from && l.JournalEntry.Status != JournalEntryStatus.Draft)
             .Select(l => new { l.Debit, l.Credit })
             .ToListAsync();
         
@@ -507,7 +507,7 @@ public class EmployeesController : ControllerBase
         var lines = await _db.JournalLines
             .Include(l => l.JournalEntry)
             .Include(l => l.Employee)
-            .Where(l => l.EmployeeId != null && hrAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.EmployeeId != null && hrAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status != JournalEntryStatus.Draft)
             .ToListAsync();
 
         lines = lines.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))

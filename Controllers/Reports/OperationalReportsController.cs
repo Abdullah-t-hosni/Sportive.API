@@ -127,7 +127,7 @@ public class OperationalReportsController : ControllerBase
         // ✅ REFACTORED TO LEDGER-BASED (Source of Truth)
         // 1. Calculate Prior Balance
         var priorQuery = _db.JournalLines
-            .Where(l => l.CustomerId == customerId && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted);
+            .Where(l => l.CustomerId == customerId && l.JournalEntry.EntryDate < from && l.JournalEntry.Status != JournalEntryStatus.Draft);
         
         if (branchId.HasValue)
         {
@@ -139,7 +139,7 @@ public class OperationalReportsController : ControllerBase
         // 2. ديون العملاء (عمر الدين)
         var entriesQuery = _db.JournalLines
             .Include(l => l.JournalEntry)
-            .Where(l => l.CustomerId == customerId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted);
+            .Where(l => l.CustomerId == customerId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status != JournalEntryStatus.Draft);
 
         if (branchId.HasValue)
         {
@@ -268,7 +268,7 @@ public class OperationalReportsController : ControllerBase
 
         // ✅ REFACTORED TO LEDGER-BASED
         var priorQuery = _db.JournalLines
-            .Where(l => l.SupplierId == supplierId && l.JournalEntry.EntryDate < from && l.JournalEntry.Status == JournalEntryStatus.Posted);
+            .Where(l => l.SupplierId == supplierId && l.JournalEntry.EntryDate < from && l.JournalEntry.Status != JournalEntryStatus.Draft);
 
         if (branchId.HasValue)
         {
@@ -279,7 +279,7 @@ public class OperationalReportsController : ControllerBase
 
         var entriesQuery = _db.JournalLines
             .Include(l => l.JournalEntry)
-            .Where(l => l.SupplierId == supplierId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted);
+            .Where(l => l.SupplierId == supplierId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status != JournalEntryStatus.Draft);
 
         if (branchId.HasValue)
         {
@@ -399,7 +399,7 @@ public class OperationalReportsController : ControllerBase
         // ✅ FIX: Use Ledger (JournalLines) to get all movements accurately
         var ledgerQuery = _db.JournalLines
             .Where(l => l.Account.Code.StartsWith("1107"))
-            .Where(l => l.JournalEntry.EntryDate <= asOf && (l.JournalEntry.Status == JournalEntryStatus.Posted));
+            .Where(l => l.JournalEntry.EntryDate <= asOf && (l.JournalEntry.Status != JournalEntryStatus.Draft));
 
         if (branchId.HasValue)
         {
@@ -521,7 +521,7 @@ public class OperationalReportsController : ControllerBase
             var ledgerQuery = _db.JournalLines
                 .AsNoTracking()
                 .Where(l => l.SupplierId != null && l.Account.Code.StartsWith("2101"))
-                .Where(l => l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status == JournalEntryStatus.Posted);
+                .Where(l => l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status != JournalEntryStatus.Draft);
 
             if (branchId.HasValue)
             {
@@ -780,7 +780,7 @@ public class OperationalReportsController : ControllerBase
             decimal ledgerInventoryValue = 0;
             if (inventoryAccId != null) {
                 var ledgerQ = _db.JournalLines
-                    .Where(l => l.AccountId == inventoryAccId && l.JournalEntry.Status == JournalEntryStatus.Posted);
+                    .Where(l => l.AccountId == inventoryAccId && l.JournalEntry.Status != JournalEntryStatus.Draft);
                 
                 if (toDate.HasValue)
                 {
@@ -924,7 +924,7 @@ public class OperationalReportsController : ControllerBase
         decimal dbLedgerInventoryValue = 0;
         if (dbInventoryAccId != null) {
             var ledgerQ = _db.JournalLines
-                .Where(l => l.AccountId == dbInventoryAccId && l.JournalEntry.Status == JournalEntryStatus.Posted);
+                .Where(l => l.AccountId == dbInventoryAccId && l.JournalEntry.Status != JournalEntryStatus.Draft);
             
             if (source.HasValue) ledgerQ = ledgerQ.Where(l => l.CostCenter == source.Value);
 
@@ -1073,7 +1073,7 @@ public class OperationalReportsController : ControllerBase
 
         var salesReturnAccId = maps.GetValueOrDefault(MappingKeys.SalesReturn);
         var returnsQ = _db.JournalLines
-            .Where(l => l.AccountId == salesReturnAccId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status == JournalEntryStatus.Posted);
+            .Where(l => l.AccountId == salesReturnAccId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status != JournalEntryStatus.Draft);
         
         if (source.HasValue)
         {
@@ -4250,7 +4250,7 @@ public class OperationalReportsController : ControllerBase
 
         // Query monthly revenue from general ledger (Income Statement logic)
         var monthlyRevenueQuery = _db.JournalLines.AsNoTracking()
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
                      && l.JournalEntry.EntryDate >= startPeriod
                      && l.JournalEntry.EntryDate <= endPeriod
                      && (l.Account.Type == AccountType.Revenue || l.Account.Code.StartsWith("4")));
@@ -4272,7 +4272,7 @@ public class OperationalReportsController : ControllerBase
 
         // Query monthly expenses from general ledger (Income Statement logic)
         var monthlyExpensesQuery = _db.JournalLines.AsNoTracking()
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
                      && l.JournalEntry.EntryDate >= startPeriod
                      && l.JournalEntry.EntryDate <= endPeriod
                      && (l.Account.Type == AccountType.Expense || l.Account.Code.StartsWith("5"))
@@ -4307,7 +4307,7 @@ public class OperationalReportsController : ControllerBase
         // --- 9. Split Expenses: Daily Expenses vs Accounts Outflows ---
 
         var expenseLinesQuery = _db.JournalLines.AsNoTracking()
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
                      && (l.Account.Type == AccountType.Expense 
                          || l.Account.Code.StartsWith("5")
                          || (salesReturnAccId.HasValue && l.AccountId == salesReturnAccId.Value)
@@ -4333,7 +4333,7 @@ public class OperationalReportsController : ControllerBase
 
         // Query cash outflow lines (credits to cash/bank accounts) filtered by branch if selected
         var dailyCashOutflowQuery = _db.JournalLines.AsNoTracking()
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
                      && cashAccounts.Contains(l.AccountId)
                      && l.Credit > 0
                      && l.JournalEntry.EntryDate >= dayStart 
@@ -4341,7 +4341,7 @@ public class OperationalReportsController : ControllerBase
                      && (string.IsNullOrEmpty(l.JournalEntry.Reference) || !l.JournalEntry.Reference.StartsWith("SHIFT-CLOSE")));
 
         var mtdCashOutflowQuery = _db.JournalLines.AsNoTracking()
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
                      && cashAccounts.Contains(l.AccountId)
                      && l.Credit > 0
                      && l.JournalEntry.EntryDate >= monthStart 
@@ -4460,7 +4460,7 @@ public class OperationalReportsController : ControllerBase
             .Include(l => l.Account)
             .Where(l =>
                 l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd
-                && l.JournalEntry.Status == JournalEntryStatus.Posted
+                && l.JournalEntry.Status != JournalEntryStatus.Draft
                 && l.Debit > 0
                 && (l.Account.Type == AccountType.Expense
                     || l.Account.Code.StartsWith("5")
@@ -4508,7 +4508,7 @@ public class OperationalReportsController : ControllerBase
             .Include(l => l.Account)
             .Where(l =>
                 l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd
-                && l.JournalEntry.Status == JournalEntryStatus.Posted
+                && l.JournalEntry.Status != JournalEntryStatus.Draft
                 && (allowedAccountIds.Contains(l.AccountId) || l.Account.NameAr.Contains("أرباح") || l.Account.NameAr.Contains("ارباح") || l.Account.NameAr.Contains("مبقاة"))
                 && (string.IsNullOrEmpty(l.JournalEntry.Reference) || !l.JournalEntry.Reference.StartsWith("SHIFT-CLOSE")));
 

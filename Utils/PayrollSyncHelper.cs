@@ -119,7 +119,7 @@ namespace Sportive.API.Utils
                 .Include(l => l.JournalEntry)
                 .Where(l => l.AccountId == accrualAccId 
                             && l.Debit > 0 
-                            && l.JournalEntry.Status == JournalEntryStatus.Posted
+                            && l.JournalEntry.Status != JournalEntryStatus.Draft
                             && l.JournalEntryId != run.JournalEntryId)
                 .ToListAsync();
 

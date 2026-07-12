@@ -280,7 +280,7 @@ public class DashboardService : IDashboardService
 
         // --- Expenses Calculation (From Posted General Ledger Expense Accounts) ---
         var expenseQuery = _db.JournalLines.AsNoTracking()
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
                      && (l.Account.Type == AccountType.Expense || l.Account.Code.StartsWith("5")));
 
         if (source.HasValue)
@@ -879,7 +879,7 @@ public class DashboardService : IDashboardService
 
         // Query monthly revenue from general ledger (Income Statement logic)
         var monthlyRevenueQuery = _db.JournalLines.AsNoTracking()
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
                      && l.JournalEntry.EntryDate >= startPeriod
                      && (l.Account.Type == AccountType.Revenue || l.Account.Code.StartsWith("4")));
         if (source.HasValue)
@@ -900,7 +900,7 @@ public class DashboardService : IDashboardService
 
         // Query monthly expenses from general ledger (Income Statement logic)
         var monthlyExpensesQuery = _db.JournalLines.AsNoTracking()
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
                      && l.JournalEntry.EntryDate >= startPeriod
                      && (l.Account.Type == AccountType.Expense || l.Account.Code.StartsWith("5"))
                      && !l.Account.Code.StartsWith("4"));
@@ -947,7 +947,7 @@ public class DashboardService : IDashboardService
 
         // Calculate customer balances from ledger — use mapped account or fallback to common AR codes
         var customerBalancesQuery = _db.JournalLines.AsNoTracking()
-            .Where(l => l.CustomerId != null && l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status == JournalEntryStatus.Posted);
+            .Where(l => l.CustomerId != null && l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status != JournalEntryStatus.Draft);
 
         if (customerMappedAccountId.HasValue)
             customerBalancesQuery = customerBalancesQuery.Where(l => l.AccountId == customerMappedAccountId.Value);
@@ -984,7 +984,7 @@ public class DashboardService : IDashboardService
 
         // Calculate supplier balances from ledger — use mapped account or fallback to common AP codes
         var supplierBalancesQuery = _db.JournalLines.AsNoTracking()
-            .Where(l => l.SupplierId != null && l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status == JournalEntryStatus.Posted);
+            .Where(l => l.SupplierId != null && l.JournalEntry.EntryDate <= asOf && l.JournalEntry.Status != JournalEntryStatus.Draft);
 
         if (supplierMappedAccountId.HasValue)
             supplierBalancesQuery = supplierBalancesQuery.Where(l => l.AccountId == supplierMappedAccountId.Value);
