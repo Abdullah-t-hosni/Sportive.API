@@ -369,17 +369,27 @@ public class PayrollController : ControllerBase
                 {
                     if (att.DelayMinutes > 0 && !att.IsAbsent)
                     {
-                        if (att.DelayMinutes > graceMins && att.DelayMinutes <= quarterLimit)
+                        if (att.DelayMinutes > graceMins)
                         {
-                            totalDeductedDays += 0.25m; // ربع يوم
-                        }
-                        else if (att.DelayMinutes > quarterLimit && att.DelayMinutes <= halfLimit)
-                        {
-                            totalDeductedDays += 0.50m; // نصف يوم
-                        }
-                        else if (att.DelayMinutes > halfLimit)
-                        {
-                            totalDeductedDays += 1.00m; // يوم كامل
+                            if (quarterLimit > 0 && att.DelayMinutes <= quarterLimit)
+                            {
+                                totalDeductedDays += 0.25m; // ربع يوم
+                            }
+                            else if (halfLimit > 0 && att.DelayMinutes <= halfLimit)
+                            {
+                                totalDeductedDays += 0.50m; // نصف يوم
+                            }
+                            else if (halfLimit > 0 && att.DelayMinutes > halfLimit)
+                            {
+                                totalDeductedDays += 1.00m; // يوم كامل
+                            }
+                            else if (quarterLimit == 0 && halfLimit == 0)
+                            {
+                                // Fallback if limits are misconfigured as 0
+                                if (att.DelayMinutes <= 30) totalDeductedDays += 0.25m;
+                                else if (att.DelayMinutes <= 60) totalDeductedDays += 0.50m;
+                                else totalDeductedDays += 1.00m;
+                            }
                         }
                     }
                 }
