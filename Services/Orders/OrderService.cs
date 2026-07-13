@@ -2446,8 +2446,7 @@ public class OrderService : IOrderService
                 if (order == null) throw new KeyNotFoundException("Order not found.");
                 if (order.Status == OrderStatus.Cancelled || order.Status == OrderStatus.Returned)
                     throw new InvalidOperationException("لا يمكن استعادة سعر فواتير ملغاة أو مرتجعة بالكامل.");
-                if (order.PaymentMethod != PaymentMethod.CostPrice)
-                    throw new InvalidOperationException("الفاتورة ليست بسعر التكلفة حالياً.");
+
 
                 // Preload products of items
                 var productIds = order.Items.Select(i => i.ProductId).Where(id => id.HasValue).Select(id => id!.Value).ToList();
