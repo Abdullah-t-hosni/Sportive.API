@@ -777,6 +777,18 @@ public class OrdersController : ControllerBase
         return Ok(order);
     }
 
+    [HttpPost("{id}/revert-from-cost")]
+    [RequirePermission(ModuleKeys.PosSellAtCost, requireEdit: true)]
+    public async Task<ActionResult<OrderDetailDto>> RevertFromCost(int id)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
+        var order = await _orderService.RevertFromCostAsync(id, userId);
+        
+        try { await _audit.LogAsync("RevertFromCost", "Order", id.ToString(), $"Reverted order #{order.OrderNumber} back to normal price", userId, User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
+        return Ok(order);
+    }
+
 
     [HttpPost("direct-return")]
     [RequirePermission(ModuleKeys.Orders)]

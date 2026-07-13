@@ -2430,6 +2430,114 @@ public class OrderService : IOrderService
         return result;
     }
 
+    public async Task<OrderDetailDto> RevertFromCostAsync(int orderId, string updatedByUserId)
+    {
+        var strategy = _db.Database.CreateExecutionStrategy();
+        var result = await strategy.ExecuteAsync(async () =>
+        {
+            using var tx = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                var order = await _db.Orders
+                    .Include(o => o.Items)
+                    .Include(o => o.Payments)
+                    .FirstOrDefaultAsync(o => o.Id == orderId);
+
+                if (order == null) throw new KeyNotFoundException("Order not found.");
+                if (order.Status == OrderStatus.Cancelled || order.Status == OrderStatus.Returned)
+                    throw new InvalidOperationException("لا يمكن استعادة سعر فواتير ملغاة أو مرتجعة بالكامل.");
+                if (order.PaymentMethod != PaymentMethod.CostPrice)
+                    throw new InvalidOperationException("الفاتورة ليست بسعر التكلفة حالياً.");
+
+                // Preload products of items
+                var productIds = order.Items.Select(i => i.ProductId).Where(id => id.HasValue).Select(id => id!.Value).ToList();
+                var products = await _db.Products
+                    .Include(p => p.Variants)
+                    .Where(p => productIds.Contains(p.Id))
+                    .ToDictionaryAsync(p => p.Id);
+
+                decimal originalTotalAmount = order.TotalAmount;
+                decimal originalVatAmount = order.TotalVatAmount;
+
+                decimal newSubTotal = 0;
+                foreach (var item in order.Items)
+                {
+                    if (item.ProductId.HasValue && products.TryGetValue(item.ProductId.Value, out var product))
+                    {
+                        var variant = item.ProductVariantId.HasValue 
+                            ? product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId) 
+                            : null;
+                        
+                        decimal normalPrice = product.Price + (variant?.PriceAdjustment ?? 0);
+                        item.UnitPrice = normalPrice;
+                        item.OriginalUnitPrice = normalPrice;
+                    }
+                    
+                    item.TotalPrice = item.UnitPrice * item.Quantity;
+                    if (item.HasTax)
+                    {
+                        var rate = (item.VatRateApplied ?? 0) / 100m;
+                        decimal net = Math.Round(item.TotalPrice / (1 + rate), 2);
+                        item.ItemVatAmount = item.TotalPrice - net;
+                    }
+                    else
+                    {
+                        item.ItemVatAmount = 0;
+                    }
+                    newSubTotal += item.TotalPrice;
+                }
+
+                decimal newTotalAmount = newSubTotal;
+                decimal difference = newTotalAmount - originalTotalAmount;
+
+                if (difference <= 0)
+                {
+                    throw new InvalidOperationException("السعر الأساسي مساوي أو أقل من سعر التكلفة الحالي.");
+                }
+
+                // Reset discount fields
+                order.DiscountAmount = 0;
+                order.TemporalDiscount = 0;
+                order.CouponCode = null;
+
+                order.SubTotal = newSubTotal;
+                order.TotalVatAmount = order.Items.Sum(i => i.ItemVatAmount);
+                order.TotalAmount = newTotalAmount;
+                order.PaymentMethod = PaymentMethod.Cash; // Revert to Cash so it's not CostPrice anymore
+
+                // Remove [CostSale] from notes if it exists
+                if (!string.IsNullOrEmpty(order.AdminNotes) && order.AdminNotes.Contains("[CostSale]"))
+                {
+                    order.AdminNotes = order.AdminNotes.Replace("[CostSale]", "").Trim();
+                }
+
+                order.StatusHistory.Add(new OrderStatusHistory
+                {
+                    Status = order.Status,
+                    Note = $"[استعادة السعر الأساسي] تم إرجاع الفاتورة لأسعار الكتالوج الأساسية (بزيادة {difference:N2} جنيه في الإجمالي)",
+                    ChangedByUserId = updatedByUserId,
+                    CreatedAt = TimeHelper.GetEgyptTime()
+                });
+
+                order.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                await _db.SaveChangesAsync();
+                await tx.CommitAsync();
+                return (await GetOrderByIdAsync(orderId))!;
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        });
+
+        // Post Accounting entry in background
+        _ = PostCostPriceAccountingUpdateAsync(orderId);
+
+        return result;
+    }
+
     private async Task PostCostPriceAccountingUpdateAsync(int orderId)
     {
         const int maxAttempts = 3;

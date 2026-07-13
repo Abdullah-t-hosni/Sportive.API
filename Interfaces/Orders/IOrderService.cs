@@ -15,6 +15,7 @@ public interface IOrderService
     Task<string> ProcessDirectReturnAsync(DirectReturnDto dto, string updatedByUserId);
     Task<OrderDetailDto> UpdateOrderAsync(int orderId, UpdateOrderDto dto, string updatedByUserId);
     Task<OrderDetailDto> ConvertToCostAsync(int orderId, string refundMethod, string updatedByUserId);
+    Task<OrderDetailDto> RevertFromCostAsync(int orderId, string updatedByUserId);
     Task SyncAllOrderAccountingAsync(int? daysLimit = null);
     Task UpdateSalesReturnAsync(string reference, UpdateSalesReturnDto dto, string updatedByUserId);
 }
