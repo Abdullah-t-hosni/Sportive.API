@@ -2421,12 +2421,12 @@ public class OrderService : IOrderService
         });
 
         // Post Accounting entry in background
-        _ = PostCostPriceAdjustmentWithRetryAsync(orderId, originalTotalAmount, originalVatAmount, refundMethod);
+        _ = PostCostPriceAccountingUpdateAsync(orderId);
 
         return result;
     }
 
-    private async Task PostCostPriceAdjustmentWithRetryAsync(int orderId, decimal originalTotalAmount, decimal originalVatAmount, string refundMethod)
+    private async Task PostCostPriceAccountingUpdateAsync(int orderId)
     {
         const int maxAttempts = 3;
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
@@ -2435,22 +2435,18 @@ public class OrderService : IOrderService
             {
                 using var scope = _scopeFactory.CreateScope();
                 var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var order = await db.Orders
-                    .Include(o => o.Customer)
-                    .Include(o => o.Payments)
-                    .FirstAsync(o => o.Id == orderId);
-                await accounting.PostCostPriceAdjustmentAsync(order, originalTotalAmount, originalVatAmount, refundMethod);
+                await accounting.PostSalesOrderByIdAsync(orderId);
+                await accounting.PostOrderPaymentByIdAsync(orderId);
                 return;
             }
             catch (Exception ex) when (attempt < maxAttempts)
             {
-                _logger.LogWarning(ex, "[Accounting] PostCostPriceAdjustment attempt {Attempt}/{Max} failed for order {OrderId}. Retrying...", attempt, maxAttempts, orderId);
+                _logger.LogWarning(ex, "[Accounting] PostCostPriceAccountingUpdate attempt {Attempt}/{Max} failed for order {OrderId}. Retrying...", attempt, maxAttempts, orderId);
                 await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[Accounting] PostCostPriceAdjustment permanently failed for order {OrderId} after {Max} attempts.", orderId, maxAttempts);
+                _logger.LogError(ex, "[Accounting] PostCostPriceAccountingUpdate permanently failed for order {OrderId} after {Max} attempts.", orderId, maxAttempts);
             }
         }
     }
