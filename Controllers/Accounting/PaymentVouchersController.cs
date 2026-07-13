@@ -149,14 +149,27 @@ public class PaymentVouchersController : ControllerBase
         var vDate = dto.VoucherDate.ToStoreTime();
         if (vDate.TimeOfDay == TimeSpan.Zero) vDate = vDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
 
+        int? resolvedBranchId = User.GetBranchId();
+        bool canChangeBranch = await User.HasViewAllBranchesAsync(HttpContext);
+        if (canChangeBranch)
+        {
+            resolvedBranchId = dto.BranchId;
+        }
+
+        var resolvedCostCenter = dto.CostCenter;
+        if (!canChangeBranch && resolvedBranchId.HasValue)
+        {
+            resolvedCostCenter = (int?)OrderSource.POS;
+        }
+
         var voucher = new PaymentVoucher {
             VoucherNumber = vNo, VoucherDate = vDate, Amount = dto.Amount, CashAccountId = dto.CashAccountId,
             ToAccountId = dto.ToAccountId, SupplierId = dto.SupplierId, PaymentMethod = dto.PaymentMethod,
             Reference = dto.Reference, Description = dto.Description, AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
-            CostCenter = (OrderSource?)dto.CostCenter,
+            CostCenter = (OrderSource?)resolvedCostCenter,
             EmployeeId = dto.EmployeeId,
-            BranchId = dto.BranchId,
+            BranchId = resolvedBranchId,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value, CreatedAt = TimeHelper.GetEgyptTime(), PurchaseInvoiceId = dto.PurchaseInvoiceId
         };
 
@@ -232,11 +245,24 @@ public class PaymentVouchersController : ControllerBase
         var vDate = dto.VoucherDate.ToStoreTime();
         if (vDate.TimeOfDay == TimeSpan.Zero) vDate = vDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
 
+        int? resolvedBranchId = User.GetBranchId();
+        bool canChangeBranch = await User.HasViewAllBranchesAsync(HttpContext);
+        if (canChangeBranch)
+        {
+            resolvedBranchId = dto.BranchId;
+        }
+
+        var resolvedCostCenter = dto.CostCenter;
+        if (!canChangeBranch && resolvedBranchId.HasValue)
+        {
+            resolvedCostCenter = (int?)OrderSource.POS;
+        }
+
         voucher.VoucherDate = vDate; voucher.Amount = dto.Amount; voucher.CashAccountId = dto.CashAccountId;
         voucher.ToAccountId = dto.ToAccountId; voucher.SupplierId = dto.SupplierId; voucher.EmployeeId = dto.EmployeeId; voucher.Description = dto.Description;
         voucher.PurchaseInvoiceId = dto.PurchaseInvoiceId;
-        voucher.CostCenter = (OrderSource?)dto.CostCenter;
-        voucher.BranchId = dto.BranchId;
+        voucher.CostCenter = (OrderSource?)resolvedCostCenter;
+        voucher.BranchId = resolvedBranchId;
         voucher.UpdatedAt = TimeHelper.GetEgyptTime();
 
         if (voucher.PurchaseInvoiceId.HasValue)
