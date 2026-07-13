@@ -1177,7 +1177,9 @@ public class OrderService : IOrderService
                 string editNote = diffLines.Any() 
                     ? "تعديلات: " + string.Join(" ، ", diffLines)
                     : "تم تعديل بيانات الفاتورة (بدون تعديل كميات)";
-                bool isCostSale = dto.AdminNotes != null && dto.AdminNotes.Contains("[CostSale]");
+                bool isCostSale = (dto.AdminNotes != null && dto.AdminNotes.Contains("[CostSale]")) || 
+                                  order.PaymentMethod == PaymentMethod.CostPrice || 
+                                  dto.PaymentMethod == PaymentMethod.CostPrice;
 
                 order.SubTotal = 0;
                 order.TemporalDiscount = 0;
@@ -1284,6 +1286,7 @@ public class OrderService : IOrderService
                 // 5. UPDATE TOTALS
                 order.DiscountAmount = dto.DiscountAmount;
                 order.AdminNotes = dto.AdminNotes;
+                order.SalesPersonId = dto.SalesPersonId ?? order.SalesPersonId;
                 order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount);
 
                 // 6. UPDATE PAYMENTS
