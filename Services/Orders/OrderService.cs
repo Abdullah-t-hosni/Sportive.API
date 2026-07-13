@@ -2338,6 +2338,7 @@ public class OrderService : IOrderService
                     {
                         decimal costPrice = product.CostPrice ?? item.UnitPrice;
                         item.UnitPrice = costPrice;
+                        item.OriginalUnitPrice = costPrice;
                     }
                     
                     item.TotalPrice = item.UnitPrice * item.Quantity;
