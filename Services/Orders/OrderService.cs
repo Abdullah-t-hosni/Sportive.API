@@ -1286,7 +1286,7 @@ public class OrderService : IOrderService
                 // 5. UPDATE TOTALS
                 order.DiscountAmount = dto.DiscountAmount;
                 order.AdminNotes = dto.AdminNotes;
-                order.SalesPersonId = dto.SalesPersonId ?? order.SalesPersonId;
+                order.SalesPersonId = dto.SalesPersonId == "" ? null : (dto.SalesPersonId ?? order.SalesPersonId);
                 order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount);
 
                 // 6. UPDATE PAYMENTS
