@@ -31,6 +31,11 @@ public class TenantConnectionResolver : ITenantConnectionResolver
                 return _baseConnectionString;
             }
 
+            if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development")
+            {
+                return _baseConnectionString;
+            }
+
             if (tenant == null)
             {
                 throw new InvalidOperationException("Cannot resolve tenant connection string: No tenant context set (tenant is null).");

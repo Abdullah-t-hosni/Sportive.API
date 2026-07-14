@@ -72,4 +72,72 @@ public class DiagnosticsController : ControllerBase
             Message = "Deleted successfully. Please run recalculate-stock from UI to update product Stock."
         });
     }
+
+    [HttpGet("po-diagnostics")]
+    public async Task<IActionResult> GetPoDiagnostics()
+    {
+        var invoice = await _db.PurchaseInvoices
+            .Include(i => i.Supplier)
+            .FirstOrDefaultAsync(i => i.InvoiceNumber == "PO-2607-0004");
+
+        if (invoice == null)
+        {
+            return NotFound(new { message = "Purchase Invoice PO-2607-0004 not found" });
+        }
+
+        var payments = await _db.SupplierPayments
+            .Where(p => p.SupplierId == invoice.SupplierId || p.PurchaseInvoiceId == invoice.Id)
+            .ToListAsync();
+
+        var entryRefs = payments.Select(p => p.PaymentNumber).Concat(new[] { invoice.InvoiceNumber }).ToList();
+        
+        var entries = await _db.JournalEntries
+            .Include(e => e.Lines)
+            .ThenInclude(l => l.Account)
+            .Where(e => entryRefs.Contains(e.Reference) || e.PurchaseInvoiceId == invoice.Id)
+            .ToListAsync();
+
+        return Ok(new
+        {
+            Invoice = new
+            {
+                invoice.Id,
+                invoice.InvoiceNumber,
+                SupplierName = invoice.Supplier?.Name,
+                invoice.SupplierId,
+                invoice.TotalAmount,
+                invoice.PaidAmount,
+                invoice.RemainingAmount,
+                Status = invoice.Status.ToString(),
+                Terms = invoice.PaymentTerms.ToString()
+            },
+            Payments = payments.Select(p => new
+            {
+                p.Id,
+                p.PaymentNumber,
+                p.PaymentDate,
+                p.Amount,
+                p.PurchaseInvoiceId,
+                PaymentMethod = p.PaymentMethod.ToString(),
+                p.Notes
+            }),
+            Entries = entries.Select(e => new
+            {
+                e.EntryNumber,
+                Type = e.Type.ToString(),
+                e.Reference,
+                e.EntryDate,
+                e.Description,
+                Lines = e.Lines.Select(l => new
+                {
+                    l.AccountId,
+                    AccountCode = l.Account?.Code,
+                    AccountName = l.Account?.NameAr,
+                    l.Debit,
+                    l.Credit,
+                    l.Description
+                })
+            })
+        });
+    }
 }

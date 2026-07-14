@@ -83,6 +83,7 @@ public record CreatePurchaseInvoiceDto(
     int? CashAccountId = null,
     OrderSource? CostCenter = null,
     decimal DeductAdvanceAmount = 0,
+    List<int>? AdvancePaymentIds = null,
     int? WarehouseId = null
 );
 
@@ -120,6 +121,7 @@ public record UpdatePurchaseInvoiceDto(
     int? VatAccountId = null,
     List<InvoicePaymentDto>? Payments = null,
     decimal DeductAdvanceAmount = 0,
+    List<int>? AdvancePaymentIds = null,
     int? WarehouseId = null
 );
 

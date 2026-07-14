@@ -385,57 +385,68 @@ public class PurchaseInvoicesController : ControllerBase
                 var newlySplitAdvancePayments = new List<SupplierPayment>();
                 var advanceJournalEntriesToRemove = new List<JournalEntry>();
 
-                if (dto.DeductAdvanceAmount > 0)
+                // Use explicit payment IDs if provided (new behavior), fall back to amount-based (legacy)
+                var idsToDeduct = dto.AdvancePaymentIds != null && dto.AdvancePaymentIds.Count > 0
+                    ? dto.AdvancePaymentIds
+                    : null;
+
+                if (idsToDeduct != null || dto.DeductAdvanceAmount > 0)
                 {
-                    decimal remainingToDeduct = dto.DeductAdvanceAmount;
-                    var advancePayments = await _db.SupplierPayments
-                        .Where(p => p.SupplierId == supplier.Id && p.PurchaseInvoiceId == null && p.Amount > 0)
-                        .OrderBy(p => p.PaymentDate)
-                        .ToListAsync();
+                    IQueryable<SupplierPayment> advanceQuery = _db.SupplierPayments
+                        .Where(p => p.SupplierId == supplier.Id && p.PurchaseInvoiceId == null && p.Amount > 0);
+
+                    if (idsToDeduct != null)
+                        advanceQuery = advanceQuery.Where(p => idsToDeduct.Contains(p.Id));
+
+                    var advancePayments = await advanceQuery.OrderBy(p => p.PaymentDate).ToListAsync();
+
+                    decimal remainingToDeduct = idsToDeduct != null
+                        ? advancePayments.Sum(p => p.Amount)   // use full amount of selected payments
+                        : dto.DeductAdvanceAmount;
 
                     foreach (var ap in advancePayments)
                     {
                         if (remainingToDeduct <= 0) break;
 
-                        // Identify the old journal entry to delete it and repost it linked to the invoice
-                        var oldJE = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Reference == ap.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher);
+                        // Remove old standalone journal entry for this payment (will be re-posted as part of invoice)
+                        var oldJE = await _db.JournalEntries
+                            .Include(e => e.Lines)
+                            .FirstOrDefaultAsync(e => e.Reference == ap.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher);
                         if (oldJE != null) advanceJournalEntriesToRemove.Add(oldJE);
 
                         if (ap.Amount <= remainingToDeduct)
                         {
-                            // Fully consumed
-                            ap.PurchaseInvoiceId = invoice.Id; // Will be set after invoice save, but we link it to the object
-                            invoice.Payments.Add(ap); 
+                            // Fully consumed — link it to the new invoice
+                            ap.PurchaseInvoiceId = invoice.Id;
+                            invoice.Payments.Add(ap);
                             advanceDeducted += ap.Amount;
                             remainingToDeduct -= ap.Amount;
                         }
                         else
                         {
-                            // Partially consumed: split it
+                            // Partially consumed: split into consumed + remainder
                             decimal remainder = ap.Amount - remainingToDeduct;
-                            
-                            // Consumed part becomes linked
+
                             ap.Amount = remainingToDeduct;
                             invoice.Payments.Add(ap);
-                            
                             advanceDeducted += remainingToDeduct;
                             remainingToDeduct = 0;
 
-                            // Remainder becomes a new unlinked advance payment
+                            // Create a new unlinked payment for the remainder
                             var pNoSplit = await _seq.NextAsync("SP");
                             var splitPayment = new SupplierPayment
                             {
-                                PaymentNumber = pNoSplit,
-                                SupplierId = ap.SupplierId,
-                                Amount = remainder,
-                                PaymentDate = ap.PaymentDate,
-                                PaymentMethod = ap.PaymentMethod,
-                                CashAccountId = ap.CashAccountId,
-                                AccountName = ap.AccountName,
-                                Notes = ap.Notes + " (Split remainder)",
-                                CreatedAt = ap.CreatedAt, // retain original creation time
-                                CostCenter = ap.CostCenter,
-                                AttachmentUrl = ap.AttachmentUrl,
+                                PaymentNumber   = pNoSplit,
+                                SupplierId      = ap.SupplierId,
+                                Amount          = remainder,
+                                PaymentDate     = ap.PaymentDate,
+                                PaymentMethod   = ap.PaymentMethod,
+                                CashAccountId   = ap.CashAccountId,
+                                AccountName     = ap.AccountName,
+                                Notes           = (ap.Notes ?? "") + " (Split remainder)",
+                                CreatedAt       = ap.CreatedAt,
+                                CostCenter      = ap.CostCenter,
+                                AttachmentUrl   = ap.AttachmentUrl,
                                 AttachmentPublicId = ap.AttachmentPublicId,
                                 CreatedByUserId = ap.CreatedByUserId
                             };
@@ -721,20 +732,32 @@ public class PurchaseInvoicesController : ControllerBase
                     inv.Supplier.TotalPaid += totalNewPaid;
 
                     // ─── Process Advance Deduction ───
-                    if (dto.DeductAdvanceAmount > 0)
+                    var idsToDeductUpd = dto.AdvancePaymentIds != null && dto.AdvancePaymentIds.Count > 0
+                        ? dto.AdvancePaymentIds
+                        : null;
+
+                    if (idsToDeductUpd != null || dto.DeductAdvanceAmount > 0)
                     {
-                        decimal remainingToDeduct = dto.DeductAdvanceAmount;
-                        var advancePayments = await _db.SupplierPayments
-                            .Where(p => p.SupplierId == inv.SupplierId && p.PurchaseInvoiceId == null && p.Amount > 0)
-                            .OrderBy(p => p.PaymentDate)
-                            .ToListAsync();
+                        IQueryable<SupplierPayment> advanceQuery = _db.SupplierPayments
+                            .Where(p => p.SupplierId == inv.SupplierId && p.PurchaseInvoiceId == null && p.Amount > 0);
+
+                        if (idsToDeductUpd != null)
+                            advanceQuery = advanceQuery.Where(p => idsToDeductUpd.Contains(p.Id));
+
+                        var advancePayments = await advanceQuery.OrderBy(p => p.PaymentDate).ToListAsync();
+
+                        decimal remainingToDeduct = idsToDeductUpd != null
+                            ? advancePayments.Sum(p => p.Amount)
+                            : dto.DeductAdvanceAmount;
 
                         decimal advanceDeducted = 0;
                         foreach (var ap in advancePayments)
                         {
                             if (remainingToDeduct <= 0) break;
 
-                            var oldJE = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Reference == ap.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher);
+                            var oldJE = await _db.JournalEntries
+                                .Include(e => e.Lines)
+                                .FirstOrDefaultAsync(e => e.Reference == ap.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher);
                             if (oldJE != null) _db.JournalEntries.Remove(oldJE);
 
                             if (ap.Amount <= remainingToDeduct)
@@ -754,16 +777,16 @@ public class PurchaseInvoicesController : ControllerBase
                                 var pNoSplit = await _seq.NextAsync("SP");
                                 _db.SupplierPayments.Add(new SupplierPayment
                                 {
-                                    PaymentNumber = pNoSplit,
-                                    SupplierId = ap.SupplierId,
-                                    Amount = remainder,
-                                    PaymentDate = ap.PaymentDate,
-                                    PaymentMethod = ap.PaymentMethod,
-                                    CashAccountId = ap.CashAccountId,
-                                    AccountName = ap.AccountName,
-                                    Notes = ap.Notes + " (Split remainder)",
-                                    CreatedAt = ap.CreatedAt,
-                                    CostCenter = ap.CostCenter,
+                                    PaymentNumber  = pNoSplit,
+                                    SupplierId     = ap.SupplierId,
+                                    Amount         = remainder,
+                                    PaymentDate    = ap.PaymentDate,
+                                    PaymentMethod  = ap.PaymentMethod,
+                                    CashAccountId  = ap.CashAccountId,
+                                    AccountName    = ap.AccountName,
+                                    Notes          = (ap.Notes ?? "") + " (Split remainder)",
+                                    CreatedAt      = ap.CreatedAt,
+                                    CostCenter     = ap.CostCenter,
                                 });
                             }
                         }
