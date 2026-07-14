@@ -26,7 +26,7 @@ public class TrackingController : ControllerBase
         var fbc = dto.Fbc ?? Request.Cookies["_fbc"];
 
         // Fire and forget
-        _ = _capiService.SendEventAsync(dto.EventName, dto.EventId, ip, ua, fbp, fbc, dto.CustomData, null, referer);
+        _ = _capiService.SendEventAsync(dto.EventName, dto.EventId, ip, ua, fbp, fbc, dto.CustomData, dto, referer);
 
         return Ok(new { success = true });
     }
@@ -64,4 +64,8 @@ public class FacebookTrackingEventDto
     public object? CustomData { get; set; }
     public string? Fbp { get; set; }
     public string? Fbc { get; set; }
+    public string? Email { get; set; }
+    public string? Phone { get; set; }
+    public string? FullName { get; set; }
+    public string? ExternalId { get; set; }
 }

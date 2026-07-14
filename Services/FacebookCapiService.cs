@@ -114,6 +114,38 @@ public class FacebookCapiService : IFacebookCapiService
             var url = $"https://graph.facebook.com/v20.0/{settings.FacebookPixelId}/events";
             var unixTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
+            object finalUserData;
+            if (userData != null)
+            {
+                var email = GetReflectedProperty(userData, "email");
+                var phone = GetReflectedProperty(userData, "phone");
+                var fullName = GetReflectedProperty(userData, "fullName");
+                var externalId = GetReflectedProperty(userData, "externalId");
+
+                finalUserData = new
+                {
+                    client_ip_address = clientIp,
+                    client_user_agent = userAgent,
+                    fbp = fbp,
+                    fbc = fbc,
+                    em = HashData(email),
+                    ph = HashData(phone),
+                    fn = HashData(GetFirstName(fullName)),
+                    ln = HashData(GetLastName(fullName)),
+                    external_id = string.IsNullOrEmpty(externalId) ? null : HashData(externalId)
+                };
+            }
+            else
+            {
+                finalUserData = new
+                {
+                    client_ip_address = clientIp,
+                    client_user_agent = userAgent,
+                    fbp = fbp,
+                    fbc = fbc
+                };
+            }
+
             var eventData = new
             {
                 data = new[]
@@ -125,13 +157,7 @@ public class FacebookCapiService : IFacebookCapiService
                         action_source = "website",
                         event_source_url = eventSourceUrl,
                         event_id = eventId,
-                        user_data = userData ?? new
-                        {
-                            client_ip_address = clientIp,
-                            client_user_agent = userAgent,
-                            fbp = fbp,
-                            fbc = fbc
-                        },
+                        user_data = finalUserData,
                         custom_data = customData
                     }
                 },
@@ -176,5 +202,27 @@ public class FacebookCapiService : IFacebookCapiService
         if (string.IsNullOrWhiteSpace(fullName)) return null;
         var parts = fullName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         return parts.Length > 1 ? parts[parts.Length - 1] : null;
+    }
+
+    private string? GetReflectedProperty(object obj, string propName)
+    {
+        try
+        {
+            var prop = obj.GetType().GetProperty(propName, System.Reflection.BindingFlags.IgnoreCase | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+            if (prop == null)
+            {
+                // Fallback for case-insensitive dictionary lookups if passed as dictionary/json
+                if (obj is System.Text.Json.JsonElement je && je.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    if (je.TryGetProperty(propName, out var val))
+                    {
+                        return val.GetString();
+                    }
+                }
+                return null;
+            }
+            return prop.GetValue(obj)?.ToString();
+        }
+        catch { return null; }
     }
 }
