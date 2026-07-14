@@ -33,18 +33,34 @@ public class PaymentAccountingService
     {
         var reference = order.OrderNumber + "-PMT";
         if (await _core.EntryExistsAsync(JournalEntryType.ReceiptVoucher, reference)) return;
-        
-        // ✅ Prevent double-accounting for POS orders where payments are already merged into the SalesInvoice
-        var invoiceEntry = await _db.JournalEntries
-            .Include(e => e.Lines)
-                .ThenInclude(l => l.Account)
-            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.SalesInvoice && e.Reference == order.OrderNumber);
-            
-        if (invoiceEntry != null && invoiceEntry.Lines.Any(l => l.Debit > 0 && l.Account != null && 
-            (l.Account.Code.StartsWith("1101") || l.Account.Code.StartsWith("1102") || l.Account.Code.StartsWith("1105"))))
+
+        // ✅ SMART SKIP: Only Website digital payment orders need a separate ReceiptVoucher.
+        // For ALL other orders (POS cash, POS InstaPay, POS Vodafone, Website Cash/COD, Credit/آجل),
+        // the payment is already embedded directly in the SalesInvoice — no separate PMT entry needed.
+        //
+        // This mirrors exactly the isWebsiteDigitalPayment logic in SalesAccountingService:
+        // Website + (Vodafone | InstaPay | CreditCard | Bank) → SalesInvoice records full receivable debt,
+        // then THIS method creates the ReceiptVoucher to settle it.
+        // All other cases → SalesInvoice already debited the cash account directly → SKIP here.
+        bool needsReceiptVoucher = order.Source == OrderSource.Website &&
+            (order.PaymentMethod == PaymentMethod.Vodafone ||
+             order.PaymentMethod == PaymentMethod.InstaPay  ||
+             order.PaymentMethod == PaymentMethod.CreditCard ||
+             order.PaymentMethod == PaymentMethod.Bank);
+
+        if (!needsReceiptVoucher)
         {
-            _logger.LogInformation("[Accounting] Skipping separate PaymentVoucher for order {OrderNum}; already merged in SalesInvoice.", order.OrderNumber);
-            return;
+            // Also check for Credit (آجل) orders that have been settled via a payment
+            // i.e. original PaymentMethod was Credit but now PaidAmount > 0 and order has payments
+            bool isCreditOrderWithPayments = order.PaymentMethod == PaymentMethod.Credit &&
+                order.Payments != null && order.Payments.Any(p => p.Amount > 0 && p.Method != PaymentMethod.Credit);
+
+            if (!isCreditOrderWithPayments)
+            {
+                _logger.LogInformation("[Accounting] Skipping separate ReceiptVoucher for order {OrderNum}; payment already in SalesInvoice (Source={Source}, Method={Method}).",
+                    order.OrderNumber, order.Source, order.PaymentMethod);
+                return;
+            }
         }
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
