@@ -61,6 +61,17 @@ public class TenantResolver : ITenantResolver
             }
         }
 
+        // 2b. Resolve from query string tenant parameter (useful for background crawlers / feeds)
+        if (httpContext.Request.Query.TryGetValue("tenant", out var queryValues))
+        {
+            var queryTenantId = queryValues.ToString();
+            if (!string.IsNullOrWhiteSpace(queryTenantId))
+            {
+                var tenant = await _tenantRegistry.GetTenantBySlugAsync(queryTenantId);
+                if (tenant != null) return tenant;
+            }
+        }
+
         // 3. Resolve from Custom Domain
         var host = httpContext.Request.Host.Host;
         _logger.LogInformation("Resolving tenant for host: {Host}", host);
