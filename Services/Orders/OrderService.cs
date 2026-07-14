@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
 using Sportive.API.DTOs;
@@ -1180,7 +1180,6 @@ public class OrderService : IOrderService
                 bool isCostSale = (dto.AdminNotes != null && dto.AdminNotes.Contains("[CostSale]")) || 
                                   order.PaymentMethod == PaymentMethod.CostPrice || 
                                   dto.PaymentMethod == PaymentMethod.CostPrice;
-
                 order.SubTotal = 0;
                 order.TemporalDiscount = 0;
                 order.TotalVatAmount = 0;
@@ -1195,7 +1194,10 @@ public class OrderService : IOrderService
                         ? product.Variants.FirstOrDefault(v => v.Id == itemDto.ProductVariantId)
                         : null;
 
-                    decimal originalUnitPrice = isCostSale ? itemDto.UnitPrice : (product.Price + (variant?.PriceAdjustment ?? 0));
+                    var existingItemForPrice = order.Items.FirstOrDefault(i => i.ProductId == itemDto.ProductId && i.ProductVariantId == itemDto.ProductVariantId);
+                    decimal catalogPrice = product.Price + (variant?.PriceAdjustment ?? 0);
+                    decimal originalUnitPrice = isCostSale ? itemDto.UnitPrice 
+                        : (existingItemForPrice != null ? existingItemForPrice.OriginalUnitPrice : catalogPrice);
                     decimal discountAmount = isCostSale ? 0 : (originalUnitPrice - itemDto.UnitPrice) * itemDto.Quantity;
                     decimal totalPrice = itemDto.TotalPrice > 0 ? itemDto.TotalPrice : (itemDto.UnitPrice * itemDto.Quantity);
                     bool hasTax = itemDto.HasTax ?? product.HasTax;
@@ -1287,6 +1289,8 @@ public class OrderService : IOrderService
                 order.DiscountAmount = dto.DiscountAmount;
                 order.AdminNotes = dto.AdminNotes;
                 order.SalesPersonId = dto.SalesPersonId == "" ? null : (dto.SalesPersonId ?? order.SalesPersonId);
+                if (dto.DeliveryFee.HasValue)
+                    order.DeliveryFee = dto.DeliveryFee.Value;
                 order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount);
 
                 // 6. UPDATE PAYMENTS

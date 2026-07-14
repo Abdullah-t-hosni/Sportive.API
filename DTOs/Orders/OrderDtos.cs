@@ -77,7 +77,8 @@ public record UpdateOrderDto(
     List<OrderPaymentDto>? Payments = null,
     decimal? PaidAmount = null,
     DateTime? CreatedAt = null,
-    string? SalesPersonId = null
+    string? SalesPersonId = null,
+    decimal? DeliveryFee = null
 );
 
 public record OrderPaymentDto(PaymentMethod Method, decimal Amount);
