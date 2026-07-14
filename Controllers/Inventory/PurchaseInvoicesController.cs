@@ -148,6 +148,9 @@ public class PurchaseInvoicesController : ControllerBase
 
         if (inv == null) return NotFound();
 
+        var normalPayments = inv.Payments.Where(p => p.CreatedAt >= inv.CreatedAt.AddSeconds(-2)).ToList();
+        var advancePaymentIds = inv.Payments.Where(p => p.CreatedAt < inv.CreatedAt.AddSeconds(-2)).Select(p => p.Id).ToList();
+
         return Ok(new PurchaseInvoiceDetailDto(
             inv.Id, inv.InvoiceNumber, inv.SupplierInvoiceNumber,
             new SupplierBasicDto(inv.Supplier!.Id, inv.Supplier.Name, inv.Supplier.Phone, inv.Supplier.CompanyName),
@@ -162,7 +165,7 @@ public class PurchaseInvoicesController : ControllerBase
                 it.Unit, GetMultiplier(pUnits, it.Unit), it.Quantity, it.ReturnedQuantity, it.UnitCost, it.TaxRate, it.IsTaxInclusive, it.TotalCost,
                 it.Product?.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList()
             )).ToList(),
-            inv.Payments.Select(p => new SupplierPaymentSummaryDto(
+            normalPayments.Select(p => new SupplierPaymentSummaryDto(
                 p.Id, p.PaymentNumber, inv.Supplier.Name, inv.InvoiceNumber,
                 p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes,
                 p.AttachmentUrl, p.AttachmentPublicId
@@ -172,6 +175,7 @@ public class PurchaseInvoicesController : ControllerBase
             inv.CashAccountId,
             inv.SupplierId,
             inv.CostCenter == OrderSource.Website ? "الموقع" : (inv.CostCenter == OrderSource.POS ? "المحل" : "عام"),
+            advancePaymentIds,
             inv.WarehouseId,
             inv.Warehouse?.Name
         ));

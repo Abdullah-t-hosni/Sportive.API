@@ -173,6 +173,7 @@ public record PurchaseInvoiceDetailDto(
     int?     CashAccountId = null,
     int?     SupplierId = null,
     string?  CostCenterLabel = null,
+    List<int>? AdvancePaymentIds = null,
     int?     WarehouseId = null,
     string?  WarehouseName = null
 );
