@@ -276,8 +276,8 @@ public class POSReportController : ControllerBase
                 if (isReturn && aid == effectiveDrawerId && credit > 0)
                     cashReturns += credit;
 
-                // Debt collections: receipt voucher cash received
-                if (isReceipt && aid == effectiveDrawerId && debit > 0)
+                // Debt collections: receipt voucher cash received or Manual transfers IN
+                if ((isReceipt || isManual) && aid == effectiveDrawerId && debit > 0)
                     cashReceipts += debit;
             }
         }
