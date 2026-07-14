@@ -107,14 +107,36 @@ public class PublicController : ControllerBase
         var request = HttpContext.Request;
         var host = request.Host.Value ?? "sportive.eg";
         
-        // Frontend domain determination (strip api. if present, otherwise default to host)
-        var frontendDomain = host;
-        if (!string.IsNullOrEmpty(host) && host.StartsWith("api.", StringComparison.OrdinalIgnoreCase))
+        // Resolve frontend domain dynamically using ITenantContext if available
+        var tenantContext = HttpContext.RequestServices.GetService<ITenantContext>();
+        var currentTenant = tenantContext?.CurrentTenant;
+        
+        var frontendDomain = "sportive-sportwear.com"; // Hardcoded default production domain
+        if (currentTenant != null && !string.IsNullOrEmpty(currentTenant.CustomDomain))
         {
-            frontendDomain = host.Substring(4);
+            frontendDomain = currentTenant.CustomDomain;
+        }
+        else
+        {
+            if (!string.IsNullOrEmpty(host))
+            {
+                if (host.StartsWith("api.", StringComparison.OrdinalIgnoreCase))
+                {
+                    frontendDomain = host.Substring(4);
+                }
+                else if (host.Contains("localhost") || host.Contains("127.0.0.1"))
+                {
+                    frontendDomain = host;
+                }
+            }
         }
         
         var scheme = request.Scheme;
+        if (!host.Contains("localhost") && !host.Contains("127.0.0.1"))
+        {
+            scheme = "https"; // Force secure protocol for production domains
+        }
+        
         var frontendBaseUrl = $"{scheme}://{frontendDomain}";
         var apiBaseUrl = $"{scheme}://{host}";
 
