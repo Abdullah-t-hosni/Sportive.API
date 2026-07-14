@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
 using Sportive.API.DTOs;
@@ -1690,17 +1690,40 @@ public class OrderService : IOrderService
         if (dto.Status == OrderStatus.Delivered)
         {
             order.ActualDeliveryDate = TimeHelper.GetEgyptTime();
-            if (order.PaymentMethod != PaymentMethod.Credit)
+
+            // For Website digital payments (Vodafone/InstaPay/CreditCard/Bank),
+            // payment was already settled at Confirmed stage - nothing to add here.
+            // For Cash orders: mark as paid now (cash collected on delivery).
+            bool isWebsiteDigitalDelivery = order.Source == OrderSource.Website &&
+                (order.PaymentMethod == PaymentMethod.Vodafone ||
+                 order.PaymentMethod == PaymentMethod.InstaPay ||
+                 order.PaymentMethod == PaymentMethod.CreditCard ||
+                 order.PaymentMethod == PaymentMethod.Bank);
+
+            if (!isWebsiteDigitalDelivery && order.PaymentMethod != PaymentMethod.Credit)
             {
                 order.PaymentStatus = PaymentStatus.Paid;
-                order.PaidAmount = order.TotalAmount; // ✅ تحديث المبلغ المدفوع عند التسليم الفعلي (للكاش والوسائل الأخرى)
+                order.PaidAmount = order.TotalAmount;
                 if (!order.Payments.Any(p => p.Method == order.PaymentMethod))
                 {
                     order.Payments.Add(new OrderPayment { Method = order.PaymentMethod, Amount = order.TotalAmount, CreatedAt = TimeHelper.GetEgyptTime() });
                 }
             }
             
-            // ✅ Evaluate customer category after delivery
+            // âœ… Evaluate customer category after delivery
+
+
+
+
+
+
+
+
+
+
+
+
+
             await _customerService.EvaluateCustomerCategoryAsync(order.CustomerId);
 
             // Notification on Delivery
@@ -1790,12 +1813,23 @@ public class OrderService : IOrderService
             }
         }
 
-        // Determine if we need to post accounting if paid (Website orders)
+        // Determine if we need to post payment accounting (Website orders only)
+        // Rules:
+        // - Website + Vodafone/InstaPay/CreditCard/Bank + Confirmed → post PMT (digital payment confirmed)
+        // - Website + Cash + Delivered → post PMT (cash collected on delivery)
+        // - Website + Vodafone/InstaPay/CreditCard/Bank + Delivered → SKIP (already posted at Confirmed)
         bool shouldPostPayment = false;
-        if ((dto.Status == OrderStatus.Delivered || dto.Status == OrderStatus.Confirmed) &&
-            order.Source == OrderSource.Website && order.PaymentStatus == PaymentStatus.Paid)
+        if (order.Source == OrderSource.Website && order.PaymentStatus == PaymentStatus.Paid)
         {
-            shouldPostPayment = true;
+            bool isWebsiteDigitalPaymentForPmt = order.PaymentMethod == PaymentMethod.Vodafone ||
+                                                  order.PaymentMethod == PaymentMethod.InstaPay ||
+                                                  order.PaymentMethod == PaymentMethod.CreditCard ||
+                                                  order.PaymentMethod == PaymentMethod.Bank;
+
+            if (isWebsiteDigitalPaymentForPmt && dto.Status == OrderStatus.Confirmed)
+                shouldPostPayment = true;  // Digital payment confirmed → create PMT
+            else if (!isWebsiteDigitalPaymentForPmt && dto.Status == OrderStatus.Delivered)
+                shouldPostPayment = true;  // Cash on delivery → create PMT
         }
 
         // Inventory movement + Coupon restore when moving INTO Returned/Cancelled

@@ -196,9 +196,22 @@ public class SalesAccountingService
             await _db.Entry(order).Collection(o => o.Payments).LoadAsync();
         }
 
+        // 🔑 WEBSITE DIGITAL PAYMENTS: Vodafone/InstaPay/CreditCard Website orders are always
+        // settled via a SEPARATE ReceiptVoucher (PMT entry) when the order is Confirmed.
+        // The SalesInvoice must ALWAYS record the full amount as Debit Customer (receivable debt),
+        // regardless of PaidAmount or Payments collection. Embedding cash debits here would cause
+        // a double-debit on the cash account when combined with the PMT entry.
+        bool isWebsiteDigitalPayment = order.Source == OrderSource.Website &&
+            (order.PaymentMethod == PaymentMethod.Vodafone ||
+             order.PaymentMethod == PaymentMethod.InstaPay ||
+             order.PaymentMethod == PaymentMethod.CreditCard ||
+             order.PaymentMethod == PaymentMethod.Bank);
+
         decimal handledPaidAmt = 0;
-        var payments = order.Payments?.Where(p => p.Amount > 0 && p.Method != PaymentMethod.Credit).ToList()
-                    ?? new List<OrderPayment>();
+        var payments = isWebsiteDigitalPayment
+            ? new List<OrderPayment>()  // Always treat as unpaid in SalesInvoice; PMT handles settlement
+            : (order.Payments?.Where(p => p.Amount > 0 && p.Method != PaymentMethod.Credit).ToList()
+               ?? new List<OrderPayment>());
 
         if (payments.Any())
         {
@@ -221,7 +234,7 @@ public class SalesAccountingService
                 }
             }
         }
-        else
+        else if (!isWebsiteDigitalPayment)
         {
             // Legacy Note Parsing Fallback (Only for older orders)
             var splits = _core.ParseMixedPayments(order.AdminNotes);
@@ -251,13 +264,18 @@ public class SalesAccountingService
         }
 
         // ⚠️ STRICT VALIDATION: No silent adjustments or magic fixes.
-        if (Math.Abs(handledPaidAmt - order.PaidAmount) > 0.01m)
+        // For website digital payments, handledPaidAmt is intentionally 0 (settled via separate PMT entry).
+        decimal expectedHandled = isWebsiteDigitalPayment ? 0 : order.PaidAmount;
+        if (Math.Abs(handledPaidAmt - expectedHandled) > 0.01m)
         {
             throw new InvalidOperationException(_t.Get("Accounting.PaymentMismatchError", order.PaidAmount, handledPaidAmt));
         }
 
         // Remaining debt → Receivables
-        var remainingDebt = Math.Round(order.TotalAmount - handledPaidAmt, 2);
+        // For website digital payments: full amount is always receivable (settled via PMT entry separately)
+        var remainingDebt = isWebsiteDigitalPayment
+            ? Math.Round(order.TotalAmount, 2)
+            : Math.Round(order.TotalAmount - handledPaidAmt, 2);
 
         if (Math.Abs(remainingDebt) > 0.01m)
             lines.Add((receivablesAcct, remainingDebt, 0, _t.Get("Accounting.DebtRecognitionDesc", order.OrderNumber)));
