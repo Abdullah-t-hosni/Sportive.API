@@ -151,7 +151,7 @@ public class PublicController : ControllerBase
             }
 
             var itemElement = new XElement("item",
-                new XElement(g + "id", p.SKU ?? p.Id.ToString()),
+                new XElement(g + "id", p.Id.ToString()),
                 new XElement("title", p.NameAr),
                 new XElement("description", description),
                 new XElement("link", itemUrl),

@@ -19,7 +19,7 @@ public class TrackingController : ControllerBase
     [HttpPost("facebook")]
     public IActionResult PostFacebookEvent([FromBody] FacebookTrackingEventDto dto)
     {
-        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
+        var ip = GetClientIpAddress();
         var ua = Request.Headers["User-Agent"].ToString();
         var referer = Request.Headers["Referer"].ToString();
         var fbp = dto.Fbp ?? Request.Cookies["_fbp"];
@@ -29,6 +29,31 @@ public class TrackingController : ControllerBase
         _ = _capiService.SendEventAsync(dto.EventName, dto.EventId, ip, ua, fbp, fbc, dto.CustomData, null, referer);
 
         return Ok(new { success = true });
+    }
+
+    private string GetClientIpAddress()
+    {
+        // 1. Cloudflare connecting IP
+        if (Request.Headers.TryGetValue("CF-Connecting-IP", out var cfIp))
+        {
+            return cfIp.ToString();
+        }
+
+        // 2. X-Forwarded-For (load balancer proxies)
+        if (Request.Headers.TryGetValue("X-Forwarded-For", out var forwardedIps))
+        {
+            var ipList = forwardedIps.ToString();
+            if (!string.IsNullOrWhiteSpace(ipList))
+            {
+                var firstIp = ipList.Split(',').FirstOrDefault()?.Trim();
+                if (!string.IsNullOrWhiteSpace(firstIp))
+                {
+                    return firstIp;
+                }
+            }
+        }
+
+        return HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
     }
 }
 
