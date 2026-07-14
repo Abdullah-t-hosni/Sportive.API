@@ -21,7 +21,7 @@ public class TrackingController : ControllerBase
     {
         var ip = GetClientIpAddress();
         var ua = Request.Headers["User-Agent"].ToString();
-        var referer = Request.Headers["Referer"].ToString();
+        var referer = dto.EventSourceUrl ?? Request.Headers["Referer"].ToString();
         var fbp = dto.Fbp ?? Request.Cookies["_fbp"];
         var fbc = dto.Fbc ?? Request.Cookies["_fbc"];
 
@@ -68,4 +68,5 @@ public class FacebookTrackingEventDto
     public string? Phone { get; set; }
     public string? FullName { get; set; }
     public string? ExternalId { get; set; }
+    public string? EventSourceUrl { get; set; }
 }
