@@ -324,42 +324,23 @@ public class AuthController : ControllerBase
         var roles    = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
         var fullName    = User.FindFirst(ClaimTypes.Name)?.Value ?? "";
         
-        // 1. Get static role-based baseline
-        var permissions = GetDefaultRolePermissions(roles);
-
         var user = await _userManager.FindByIdAsync(userId);
         var permissionsJson = user?.PermissionsJson;
         
-        var overrides = new List<UserModulePermission>();
+        var permissions = string.IsNullOrEmpty(permissionsJson) 
+            ? new List<string>() 
+            : System.Text.Json.JsonSerializer.Deserialize<List<string>>(permissionsJson) ?? new List<string>();
 
-        // 2. Override with new JSON permissions system if available
-        if (!string.IsNullOrEmpty(permissionsJson))
+        // Fallback for old system (UserModulePermissions table) if PermissionsJson is totally empty
+        if (permissions.Count == 0 && string.IsNullOrEmpty(permissionsJson))
         {
-            var jsonPerms = System.Text.Json.JsonSerializer.Deserialize<List<string>>(permissionsJson);
-            if (jsonPerms != null)
-            {
-                // Add any JSON permissions that aren't already in the baseline
-                foreach (var p in jsonPerms)
-                {
-                    if (!permissions.Contains(p)) permissions.Add(p);
-                }
-            }
-        }
-        else
-        {
-            // Fallback for old system (UserModulePermissions table)
-            overrides = await _db.UserModulePermissions.Where(p => p.UserAccountID == userId).ToListAsync();
+            var overrides = await _db.UserModulePermissions.Where(p => p.UserAccountID == userId).ToListAsync();
             foreach (var over in overrides)
             {
                 if (over.CanView)
                 {
                     if (!permissions.Contains(over.ModuleKey)) permissions.Add(over.ModuleKey);
                     if (over.CanEdit && !permissions.Contains($"{over.ModuleKey}.edit")) permissions.Add($"{over.ModuleKey}.edit");
-                }
-                else
-                {
-                    permissions.Remove(over.ModuleKey);
-                    permissions.Remove($"{over.ModuleKey}.edit");
                 }
             }
         }
