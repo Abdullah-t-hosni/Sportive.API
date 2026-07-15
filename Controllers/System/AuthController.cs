@@ -331,10 +331,12 @@ public class AuthController : ControllerBase
             ? new List<string>() 
             : System.Text.Json.JsonSerializer.Deserialize<List<string>>(permissionsJson) ?? new List<string>();
 
+        var overrides = new List<UserModulePermission>();
+
         // Fallback for old system (UserModulePermissions table) if PermissionsJson is totally empty
         if (permissions.Count == 0 && string.IsNullOrEmpty(permissionsJson))
         {
-            var overrides = await _db.UserModulePermissions.Where(p => p.UserAccountID == userId).ToListAsync();
+            overrides = await _db.UserModulePermissions.Where(p => p.UserAccountID == userId).ToListAsync();
             foreach (var over in overrides)
             {
                 if (over.CanView)
