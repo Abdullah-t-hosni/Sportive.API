@@ -275,8 +275,8 @@ public class InventoryIntelligenceController : ControllerBase
         }
         else
         {
-            var rng = new Random(today.DayOfYear + today.Month * 100 + today.Year);
-            picked = allVariants.OrderBy(_ => rng.Next()).Take(count);
+            long seed = today.DayOfYear + today.Month * 100 + today.Year;
+            picked = allVariants.OrderBy(v => (v.VariantId * 314159L + seed) % 1000000007).Take(count);
         }
         
         var pickedList = picked.ToList();
