@@ -468,6 +468,18 @@ public class PurchaseInvoicesController : ControllerBase
 
                 _db.PurchaseInvoices.Add(invoice);
                 await _db.SaveChangesAsync();
+
+                if (dto.DeductAdvanceAmount > 0)
+                {
+                    // Explicitly update advance payments with the newly generated invoice ID
+                    foreach (var ap in invoice.Payments.Where(p => p.CreatedAt < invoice.CreatedAt.AddSeconds(-2)))
+                    {
+                        ap.PurchaseInvoiceId = invoice.Id;
+                        _db.Entry(ap).State = EntityState.Modified;
+                    }
+                    await _db.SaveChangesAsync();
+                }
+
                 await transaction.CommitAsync();
 
                 _ = PostJournalWithRetryAsync(invoice.Id, invoice.InvoiceNumber, isReturn: false);
