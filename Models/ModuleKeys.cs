@@ -81,7 +81,7 @@ public static class ModuleKeys
 
     // System
     public const string System = "system";
-    public const string AuditLogs = "audit-logs";
+    public const string AuditLogs = "audit-logs,audit-all,audit-store,audit-cart,audit-pos,audit-returns,audit-products,audit-contacts,audit-users,audit-accounting";
     public const string ReportsMain = "reports-main";
     public const string Staff = "staff";
     public const string Settings = "settings";
