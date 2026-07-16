@@ -81,6 +81,7 @@ public static class ModuleKeys
 
     // System
     public const string System = "system";
+    public const string AuditLogs = "audit-logs";
     public const string ReportsMain = "reports-main";
     public const string Staff = "staff";
     public const string Settings = "settings";

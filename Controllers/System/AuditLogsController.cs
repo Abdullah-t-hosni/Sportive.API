@@ -5,12 +5,13 @@ using Sportive.API.Data;
 using Sportive.API.Models;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
+using Sportive.API.Attributes;
 
 namespace Sportive.API.Controllers;
 
 [Route("api/system/audit-logs")]
 [ApiController]
-[Authorize(Roles = "SuperAdmin,Admin")]
+[RequirePermission(ModuleKeys.AuditLogs)]
 public class AuditLogsController : ControllerBase
 {
     private readonly AppDbContext _db;
