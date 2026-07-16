@@ -495,6 +495,8 @@ public class PurchaseInvoicesController : ControllerBase
                     await _db.SaveChangesAsync();
                 }
 
+                await RecalculateSupplierTotalsAsync(supplier.Id);
+
                 await transaction.CommitAsync();
 
                 _ = PostJournalWithRetryAsync(invoice.Id, invoice.InvoiceNumber, isReturn: false);
@@ -876,6 +878,9 @@ public class PurchaseInvoicesController : ControllerBase
                 }
 
                 await _db.SaveChangesAsync();
+                
+                await RecalculateSupplierTotalsAsync(inv.SupplierId);
+
                 await transaction.CommitAsync();
 
                 _ = PostJournalWithRetryAsync(id, inv.InvoiceNumber, isReturn: false);
@@ -1322,6 +1327,30 @@ public class PurchaseInvoicesController : ControllerBase
                     "[Accounting] Journal posting permanently failed for invoice {Number} after {Max} attempts.",
                     invoiceNumber, maxAttempts);
             }
+        }
+    }
+
+    private async Task RecalculateSupplierTotalsAsync(int supplierId)
+    {
+        var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == supplierId);
+        if (supplier != null)
+        {
+            var invoicesSum = await _db.PurchaseInvoices
+                .Where(i => i.SupplierId == supplierId && i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
+                .SumAsync(i => i.TotalAmount);
+
+            var returnsSum = await _db.PurchaseReturns
+                .Where(r => r.SupplierId == supplierId)
+                .SumAsync(r => r.TotalAmount);
+
+            var paymentsSum = await _db.SupplierPayments
+                .Where(p => p.SupplierId == supplierId)
+                .SumAsync(p => p.Amount);
+
+            supplier.TotalPurchases = Math.Round(invoicesSum - returnsSum, 2);
+            supplier.TotalPaid = Math.Round(paymentsSum, 2);
+
+            await _db.SaveChangesAsync();
         }
     }
 }
