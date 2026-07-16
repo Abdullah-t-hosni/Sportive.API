@@ -363,21 +363,25 @@ public class PurchaseInvoicesController : ControllerBase
                 else if (dto.PaymentTerms == PaymentTerms.Cash)
                 {
                     // Backward compatibility / Simple Cash mode
-                    totalPaid = invoice.TotalAmount;
-                    var pNo = await _seq.NextAsync("SP");
-                    invoice.Payments.Add(new SupplierPayment
+                    decimal cashToPay = Math.Max(0, invoice.TotalAmount - dto.DeductAdvanceAmount);
+                    if (cashToPay > 0)
                     {
-                        PaymentNumber = pNo,
-                        SupplierId    = supplier.Id,
-                        Amount        = invoice.TotalAmount,
-                        PaymentDate   = invoice.InvoiceDate,
-                        PaymentMethod = PaymentMethod_Purchase.Cash,
-                        AccountName   = "الخزينة (آلي)",
-                        CashAccountId = dto.CashAccountId > 0 ? dto.CashAccountId : null,
-                        Notes         = $"سداد تلقائي لفاتورة {invNo}",
-                        CreatedAt     = TimeHelper.GetEgyptTime(),
-                        CostCenter    = invoice.CostCenter
-                    });
+                        totalPaid = cashToPay;
+                        var pNo = await _seq.NextAsync("SP");
+                        invoice.Payments.Add(new SupplierPayment
+                        {
+                            PaymentNumber = pNo,
+                            SupplierId    = supplier.Id,
+                            Amount        = cashToPay,
+                            PaymentDate   = invoice.InvoiceDate,
+                            PaymentMethod = PaymentMethod_Purchase.Cash,
+                            AccountName   = "الخزينة (آلي)",
+                            CashAccountId = dto.CashAccountId > 0 ? dto.CashAccountId : null,
+                            Notes         = $"سداد تلقائي لفاتورة {invNo}",
+                            CreatedAt     = TimeHelper.GetEgyptTime(),
+                            CostCenter    = invoice.CostCenter
+                        });
+                    }
                 }
 
                 // ─── Advance Payment Deduction ───
@@ -636,148 +640,149 @@ public class PurchaseInvoicesController : ControllerBase
                 {
                     inv.TotalAmount = Math.Round(subtotal + globalTax + totalLineTax - inv.DiscountAmount, 2);
                 }
-                inv.Supplier.TotalPurchases += inv.TotalAmount;
-
+                
                 // ─── Reset/Clear Existing Payments (to avoid double-payment & duplicates on edit) ───
-                var newlyUnlinkedPayments = new List<SupplierPayment>();
-                var oldPayments = inv.Payments.ToList();
-                foreach (var op in oldPayments)
-                {
-                    // Remove journal entries associated with the payment
-                    var pEntries = await _db.JournalEntries
-                        .Where(e => e.Reference == op.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher)
-                        .ToListAsync();
-                    if (pEntries.Any()) _db.JournalEntries.RemoveRange(pEntries);
+                 var newlyUnlinkedPayments = new List<SupplierPayment>();
+                 var oldPayments = inv.Payments.ToList();
+                 foreach (var op in oldPayments)
+                 {
+                     // Remove journal entries associated with the payment
+                     var pEntries = await _db.JournalEntries
+                         .Where(e => e.Reference == op.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher)
+                         .ToListAsync();
+                     if (pEntries.Any()) _db.JournalEntries.RemoveRange(pEntries);
 
-                    // Revert supplier total paid
-                    inv.Supplier.TotalPaid -= op.Amount;
+                     if (op.CreatedAt < inv.CreatedAt.AddSeconds(-2))
+                     {
+                         // Unlink advance payment
+                         op.PurchaseInvoiceId = null;
+                         newlyUnlinkedPayments.Add(op);
+                     }
+                     else
+                     {
+                         // Revert supplier total paid only for invoice-specific payments
+                         inv.Supplier.TotalPaid -= op.Amount;
+                         // Delete invoice-specific payment
+                         _db.SupplierPayments.Remove(op);
+                     }
+                     inv.Payments.Remove(op);
+                 }
+                 inv.PaidAmount = 0;
 
-                    if (op.CreatedAt < inv.CreatedAt.AddSeconds(-2))
-                    {
-                        // Unlink advance payment
-                        op.PurchaseInvoiceId = null;
-                        newlyUnlinkedPayments.Add(op);
-                    }
-                    else
-                    {
-                        // Delete invoice-specific payment
-                        _db.SupplierPayments.Remove(op);
-                    }
-                    inv.Payments.Remove(op);
-                }
-                inv.PaidAmount = 0;
+                 // --- Sync Payment ---
+                 decimal totalNewPaid = 0;
+                 if (inv.PaymentTerms == PaymentTerms.Cash)
+                 {
+                     decimal cashToPay = Math.Max(0, inv.TotalAmount - dto.DeductAdvanceAmount);
+                     totalNewPaid = cashToPay;
 
-                // --- Sync Payment for Cash Invoices ---
-                if (inv.PaymentTerms == PaymentTerms.Cash)
-                {
-                    inv.PaidAmount = inv.TotalAmount;
-                    inv.Supplier.TotalPaid += inv.TotalAmount;
+                     if (cashToPay > 0)
+                     {
+                         var pNo = await _seq.NextAsync("SP");
+                         var newPm = new SupplierPayment
+                         {
+                             PaymentNumber = pNo,
+                             SupplierId = inv.SupplierId,
+                             Amount = cashToPay,
+                             PaymentDate = inv.InvoiceDate,
+                             PaymentMethod = PaymentMethod_Purchase.Cash,
+                             AccountName = "الخزينة (آلي)",
+                             Notes = $"سداد تلقائي لفاتورة {inv.InvoiceNumber}",
+                             CreatedAt = TimeHelper.GetEgyptTime(),
+                             CostCenter = inv.CostCenter,
+                             CashAccountId = inv.CashAccountId > 0 ? inv.CashAccountId : null
+                         };
+                         inv.Payments.Add(newPm);
+                     }
+                 }
+                 else 
+                 {
+                     // ─── Process new Payments (Credit mode) ───
+                     if (dto.Payments != null && dto.Payments.Any())
+                     {
+                         foreach (var pmDto in dto.Payments)
+                         {
+                             if (pmDto.Amount <= 0) continue;
+                             var pNo = await _seq.NextAsync("SP");
+                             var newPm = new SupplierPayment
+                             {
+                                 PaymentNumber = pNo,
+                                 SupplierId = inv.SupplierId,
+                                 PurchaseInvoiceId = inv.Id,
+                                 Amount = pmDto.Amount,
+                                 PaymentDate = inv.InvoiceDate,
+                                 PaymentMethod = pmDto.Method,
+                                 CashAccountId = pmDto.CashAccountId > 0 ? pmDto.CashAccountId : null,
+                                 Notes = pmDto.Notes ?? $"دفعة لفاتورة {inv.InvoiceNumber}",
+                                 CreatedAt = TimeHelper.GetEgyptTime(),
+                                 CostCenter = inv.CostCenter
+                             };
+                             inv.Payments.Add(newPm);
+                             totalNewPaid += pmDto.Amount;
+                         }
+                     }
+                 }
 
-                    var pNo = await _seq.NextAsync("SP");
-                    var newPm = new SupplierPayment
-                    {
-                        PaymentNumber = pNo,
-                        SupplierId = inv.SupplierId,
-                        Amount = inv.TotalAmount,
-                        PaymentDate = inv.InvoiceDate,
-                        PaymentMethod = PaymentMethod_Purchase.Cash,
-                        AccountName = "الخزينة (آلي)",
-                        Notes = $"سداد تلقائي لفاتورة {inv.InvoiceNumber}",
-                        CreatedAt = TimeHelper.GetEgyptTime(),
-                        CostCenter = inv.CostCenter,
-                        CashAccountId = inv.CashAccountId > 0 ? inv.CashAccountId : null
-                    };
-                    inv.Payments.Add(newPm);
-                    inv.Status = PurchaseInvoiceStatus.Paid;
-                }
-                else 
-                {
-                    // ─── Process new Payments (Credit mode) ───
-                    decimal totalNewPaid = 0;
-                    if (dto.Payments != null && dto.Payments.Any())
-                    {
-                        foreach (var pmDto in dto.Payments)
-                        {
-                            if (pmDto.Amount <= 0) continue;
-                            var pNo = await _seq.NextAsync("SP");
-                            var newPm = new SupplierPayment
-                            {
-                                PaymentNumber = pNo,
-                                SupplierId = inv.SupplierId,
-                                PurchaseInvoiceId = inv.Id,
-                                Amount = pmDto.Amount,
-                                PaymentDate = inv.InvoiceDate,
-                                PaymentMethod = pmDto.Method,
-                                CashAccountId = pmDto.CashAccountId > 0 ? pmDto.CashAccountId : null,
-                                Notes = pmDto.Notes ?? $"دفعة لفاتورة {inv.InvoiceNumber}",
-                                CreatedAt = TimeHelper.GetEgyptTime(),
-                                CostCenter = inv.CostCenter
-                            };
-                            inv.Payments.Add(newPm);
-                            totalNewPaid += pmDto.Amount;
-                        }
-                    }
-                    inv.PaidAmount = totalNewPaid;
-                    inv.Supplier.TotalPaid += totalNewPaid;
+                 inv.PaidAmount = totalNewPaid;
+                 inv.Supplier.TotalPaid += totalNewPaid;
 
-                    // ─── Process Advance Deduction ───
-                    if (dto.DeductAdvanceAmount > 0)
-                    {
-                        decimal remainingToDeduct = dto.DeductAdvanceAmount;
-                        var advancePayments = await _db.SupplierPayments
-                            .Where(p => p.SupplierId == inv.SupplierId && p.PurchaseInvoiceId == null && p.Amount > 0)
-                            .OrderBy(p => p.PaymentDate)
-                            .ToListAsync();
+                 // ─── Process Advance Deduction (Both Cash and Credit) ───
+                 decimal advanceDeducted = 0;
+                 if (dto.DeductAdvanceAmount > 0)
+                 {
+                     decimal remainingToDeduct = dto.DeductAdvanceAmount;
+                     var advancePayments = await _db.SupplierPayments
+                         .Where(p => p.SupplierId == inv.SupplierId && p.PurchaseInvoiceId == null && p.Amount > 0)
+                         .OrderBy(p => p.PaymentDate)
+                         .ToListAsync();
 
-                        decimal advanceDeducted = 0;
-                        foreach (var ap in advancePayments)
-                        {
-                            if (remainingToDeduct <= 0) break;
+                     foreach (var ap in advancePayments)
+                     {
+                         if (remainingToDeduct <= 0) break;
 
-                            var oldJE = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Reference == ap.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher);
-                            if (oldJE != null) _db.JournalEntries.Remove(oldJE);
+                         var oldJE = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Reference == ap.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher);
+                         if (oldJE != null) _db.JournalEntries.Remove(oldJE);
 
-                            if (ap.Amount <= remainingToDeduct)
-                            {
-                                ap.PurchaseInvoiceId = inv.Id;
-                                advanceDeducted += ap.Amount;
-                                remainingToDeduct -= ap.Amount;
-                            }
-                            else
-                            {
-                                decimal remainder = ap.Amount - remainingToDeduct;
-                                ap.Amount = remainingToDeduct;
-                                ap.PurchaseInvoiceId = inv.Id;
-                                advanceDeducted += remainingToDeduct;
-                                remainingToDeduct = 0;
+                         if (ap.Amount <= remainingToDeduct)
+                         {
+                             ap.PurchaseInvoiceId = inv.Id;
+                             advanceDeducted += ap.Amount;
+                             remainingToDeduct -= ap.Amount;
+                         }
+                         else
+                         {
+                             decimal remainder = ap.Amount - remainingToDeduct;
+                             ap.Amount = remainingToDeduct;
+                             ap.PurchaseInvoiceId = inv.Id;
+                             advanceDeducted += remainingToDeduct;
+                             remainingToDeduct = 0;
 
-                                var pNoSplit = await _seq.NextAsync("SP");
-                                _db.SupplierPayments.Add(new SupplierPayment
-                                {
-                                    PaymentNumber = pNoSplit,
-                                    SupplierId = ap.SupplierId,
-                                    Amount = remainder,
-                                    PaymentDate = ap.PaymentDate,
-                                    PaymentMethod = ap.PaymentMethod,
-                                    CashAccountId = ap.CashAccountId,
-                                    AccountName = ap.AccountName,
-                                    Notes = ap.Notes + " (Split remainder)",
-                                    CreatedAt = ap.CreatedAt,
-                                    CostCenter = ap.CostCenter,
-                                });
-                            }
-                        }
-                        inv.PaidAmount += advanceDeducted;
-                    }
+                             var pNoSplit = await _seq.NextAsync("SP");
+                             _db.SupplierPayments.Add(new SupplierPayment
+                             {
+                                 PaymentNumber = pNoSplit,
+                                 SupplierId = ap.SupplierId,
+                                 Amount = remainder,
+                                 PaymentDate = ap.PaymentDate,
+                                 PaymentMethod = ap.PaymentMethod,
+                                 CashAccountId = ap.CashAccountId,
+                                 AccountName = ap.AccountName,
+                                 Notes = ap.Notes + " (Split remainder)",
+                                 CreatedAt = ap.CreatedAt,
+                                 CostCenter = ap.CostCenter,
+                             });
+                         }
+                     }
+                     inv.PaidAmount += advanceDeducted;
+                 }
 
-                    // If it's credit but was partially paid before, check if it's now fully paid or partially
-                    if (inv.PaidAmount >= inv.TotalAmount - 0.001M)
-                        inv.Status = PurchaseInvoiceStatus.Paid;
-                    else if (inv.PaidAmount > 0)
-                        inv.Status = PurchaseInvoiceStatus.PartPaid;
-                    else
-                        inv.Status = PurchaseInvoiceStatus.Received;
-                }
+                 // If it's credit but was partially paid before, check if it's now fully paid or partially
+                 if (inv.PaidAmount >= inv.TotalAmount - 0.001M)
+                     inv.Status = PurchaseInvoiceStatus.Paid;
+                 else if (inv.PaidAmount > 0)
+                     inv.Status = PurchaseInvoiceStatus.PartPaid;
+                 else
+                     inv.Status = PurchaseInvoiceStatus.Received;
 
                 // ——— Auto-update and Alert on Price Changes ———
                 var warnings = new List<string>();
