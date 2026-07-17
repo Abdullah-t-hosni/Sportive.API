@@ -130,7 +130,26 @@ public class OrdersController : ControllerBase
 
         var order = await _orderService.CreateOrderAsync(finalCustomerId, dto);
         
-        try { await _audit.LogAsync("CreateOrder", "Order", order.Id.ToString(), $"Created new order #{order.OrderNumber} (Online)", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        try 
+        { 
+            string auditUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+            string auditUserName = User.FindFirstValue(ClaimTypes.Name) ?? "";
+            if (string.IsNullOrEmpty(auditUserId))
+            {
+                if (order.Customer != null)
+                {
+                    auditUserName = $"{order.Customer.FullName} ({order.Customer.Phone})";
+                    auditUserId = $"Guest-{order.Customer.Id}";
+                }
+                else
+                {
+                    auditUserName = "Guest Customer";
+                    auditUserId = "Guest";
+                }
+            }
+            await _audit.LogAsync("CreateOrder", "Order", order.Id.ToString(), $"Created new order #{order.OrderNumber} (Online)", auditUserId, auditUserName); 
+        } 
+        catch { }
 
         // Trigger Auto-Print Notification to Admins
         try

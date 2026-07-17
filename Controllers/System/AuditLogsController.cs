@@ -39,7 +39,22 @@ public class AuditLogsController : ControllerBase
         var query = _db.AuditLogs.AsNoTracking().AsQueryable();
 
         if (!string.IsNullOrEmpty(action))
-            query = query.Where(x => x.Action.Contains(action));
+        {
+            if (action == "CreateOrder")
+            {
+                query = query.Where(x => x.Action == "CreateOrder" || 
+                    (x.Notes != null && (x.Notes.Contains("SPT-") || x.Notes.Contains("spt-"))));
+            }
+            else if (action == "CreatePosOrder")
+            {
+                query = query.Where(x => x.Action == "CreatePosOrder" || 
+                    (x.Notes != null && (x.Notes.Contains("POS-") || x.Notes.Contains("pos-"))));
+            }
+            else
+            {
+                query = query.Where(x => x.Action.Contains(action));
+            }
+        }
 
         if (!string.IsNullOrEmpty(entityType))
             query = query.Where(x => x.EntityType.Contains(entityType));
