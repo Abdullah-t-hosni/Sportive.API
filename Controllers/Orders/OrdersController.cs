@@ -180,6 +180,50 @@ public class OrdersController : ControllerBase
         return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
     }
 
+    [HttpPost("recalculate-guest-shipping")]
+    [RequirePermission(ModuleKeys.Orders)]
+    public async Task<IActionResult> RecalculateGuestShipping()
+    {
+        var orders = await _db.Orders
+            .Include(o => o.DeliveryAddress)
+            .Where(o => o.Source == OrderSource.Website 
+                     && o.FulfillmentType == FulfillmentType.Delivery 
+                     && o.DeliveryAddressId != null
+                     && o.DeliveryFee == 0)
+            .ToListAsync();
+
+        var zones = await _db.ShippingZones.Where(z => z.IsActive).ToListAsync();
+        var store = await _db.StoreInfo.FirstOrDefaultAsync();
+
+        int updatedCount = 0;
+        foreach (var order in orders)
+        {
+            if (order.DeliveryAddress != null && !string.IsNullOrEmpty(order.DeliveryAddress.City))
+            {
+                var city = order.DeliveryAddress.City.Trim().ToLower();
+                var matched = zones.FirstOrDefault(z => z.Governorates.ToLower().Split(',').Any(g => g.Trim() == city));
+                
+                decimal fee = matched?.Fee ?? store?.FixedDeliveryFee ?? 50;
+                decimal? threshold = matched?.FreeThreshold ?? store?.FreeDeliveryAt ?? 2000;
+                
+                decimal correctFee = (threshold.HasValue && order.SubTotal >= threshold.Value) ? 0 : fee;
+                if (correctFee > 0)
+                {
+                    order.DeliveryFee = correctFee;
+                    order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount);
+                    updatedCount++;
+                }
+            }
+        }
+
+        if (updatedCount > 0)
+        {
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new { message = $"Successfully updated {updatedCount} orders.", updatedCount });
+    }
+
     [HttpPost("pos")]
     [RequirePermission(ModuleKeys.Orders)]
     [AllowPosAccess]
