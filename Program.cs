@@ -13,6 +13,7 @@ using Hangfire;
 using Sportive.API.Extensions;
 using Sportive.API.Interfaces;
 using Sportive.API.Services;
+using Sportive.API.Filters;
 using Sportive.API.Models;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -162,7 +163,9 @@ builder.Services.AddOpenTelemetry()
         .AddOtlpExporter(opt => opt.Endpoint = new Uri(otelEndpoint)));
 
 // ── HANGFIRE (Background Jobs) ── minimal in-memory for schema extraction ──
-builder.Services.AddHangfire(config => config.UseInMemoryStorage());
+builder.Services.AddHangfire((provider, config) => config
+    .UseInMemoryStorage()
+    .UseFilter(new TenantJobFilter(provider)));
 builder.Services.AddHangfireServer();
 
 // ── RESPONSE COMPRESSION ──────────────────────────────
