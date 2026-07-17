@@ -65,7 +65,9 @@ public record CreateOrderDto(
     [property: global::System.Text.Json.Serialization.JsonPropertyName("fbp")]
     string? Fbp = null,
     [property: global::System.Text.Json.Serialization.JsonPropertyName("fbc")]
-    string? Fbc = null
+    string? Fbc = null,
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("guestAddress")]
+    CreateAddressDto? GuestAddress = null
 );
 
 public record UpdateOrderDto(

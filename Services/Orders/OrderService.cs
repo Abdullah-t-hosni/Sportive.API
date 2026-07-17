@@ -367,6 +367,14 @@ public class OrderService : IOrderService
 
                 if (!customerId.HasValue) throw new ArgumentException(_t.Get("Auth.IdentifierRequired"));
 
+                // If guest address is provided, save it to the customer account and get Address ID
+                int? finalDeliveryAddressId = dto.DeliveryAddressId;
+                if (dto.GuestAddress != null && customerId.HasValue)
+                {
+                    var addedAddr = await _customerService.AddAddressAsync(customerId.Value, dto.GuestAddress);
+                    finalDeliveryAddressId = addedAddr.Id;
+                }
+
                 if (dto.Source == OrderSource.POS && string.IsNullOrEmpty(dto.SalesPersonId))
                 {
                     throw new ArgumentException(_t.Get("Orders.SellerRequired"));
@@ -427,9 +435,9 @@ public class OrderService : IOrderService
                     FulfillmentType = dto.FulfillmentType,
                     PaymentMethod = dto.PaymentMethod,
                     PaymentStatus = (actualSource == OrderSource.POS && (dto.PaymentMethod != PaymentMethod.Credit && dto.PaymentMethod != (PaymentMethod)7)) ? PaymentStatus.Paid : PaymentStatus.Pending,
-                    DeliveryAddressId = (dto.DeliveryAddressId.HasValue && dto.DeliveryAddressId.Value > 0) 
-                                        ? (await _db.Addresses.AnyAsync(a => a.Id == dto.DeliveryAddressId.Value && a.CustomerId == customerId.Value) ? dto.DeliveryAddressId : null) 
-                                        : null,
+                    DeliveryAddressId = (finalDeliveryAddressId.HasValue && finalDeliveryAddressId.Value > 0) 
+                                         ? (await _db.Addresses.AnyAsync(a => a.Id == finalDeliveryAddressId.Value && a.CustomerId == customerId.Value) ? finalDeliveryAddressId : null) 
+                                         : null,
                     PickupScheduledAt = dto.PickupScheduledAt,
                     CustomerNotes = dto.CustomerNotes,
                     CouponCode = dto.CouponCode,
