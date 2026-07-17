@@ -109,7 +109,7 @@ public class SecurityEventsEngine : ISecurityEventsEngine
 
     private async Task EvaluateAndFireAlertsAsync(string? userId, string ipAddress, int ipScore, int userScore, string correlationId)
     {
-        var adminEmail = _config["Email:AdminEmail"] ?? _config["Store:Email"] ?? "admin@sportive.com";
+        var adminEmail = _config["Email:AdminEmail"] ?? _config["Store:Email"] ?? "contact@sportive-sportwear.com";
 
         // Throttled alert cache keys
         var ipCacheKey = $"SecAlert_IP_{ipAddress}";

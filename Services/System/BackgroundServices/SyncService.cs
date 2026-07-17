@@ -119,7 +119,7 @@ public class StartupSyncService : BackgroundService
                 _logger.LogInformation("[StartupSync] Seeded Website Branch.");
             }
 
-            var adminEmail    = Environment.GetEnvironmentVariable("ADMIN_EMAIL") ?? "admin@sportive.com";
+            var adminEmail    = Environment.GetEnvironmentVariable("ADMIN_EMAIL") ?? "contact@sportive-sportwear.com";
             var adminPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD") ?? "Admin@123456";
 
             var admin = await userManager.FindByEmailAsync(adminEmail);
