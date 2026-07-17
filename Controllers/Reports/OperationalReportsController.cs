@@ -1624,6 +1624,59 @@ public class OperationalReportsController : ControllerBase
         });
     }
 
+    // GET /api/operationalreports/abandoned-carts
+    [HttpGet("abandoned-carts")]
+    [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard)]
+    public async Task<IActionResult> GetAbandonedCarts()
+    {
+        var cartItems = await _db.CartItems.AsNoTracking()
+            .Include(c => c.Customer)
+            .Include(c => c.Product)
+            .Include(c => c.ProductVariant)
+            .ToListAsync();
+
+        var result = cartItems
+            .GroupBy(c => c.CustomerId)
+            .Select(g => {
+                var firstItem = g.First();
+                var customer = firstItem.Customer;
+                var lastUpdated = g.Max(x => x.UpdatedAt ?? x.CreatedAt);
+                
+                var items = g.Select(x => new {
+                    ProductName = x.Product != null ? x.Product.NameAr : (x.Product?.NameEn ?? ""),
+                    ProductSKU = x.Product != null ? x.Product.SKU : "",
+                    Size = x.ProductVariant != null ? x.ProductVariant.Size : "",
+                    Color = x.ProductVariant != null ? (x.ProductVariant.ColorAr ?? x.ProductVariant.Color) : "",
+                    Quantity = x.Quantity,
+                    UnitPrice = x.Product != null ? x.Product.Price : 0
+                }).ToList();
+
+                var customerPhone = customer?.Phone ?? "";
+                if (Sportive.API.Models.Customer.EncryptionHelper != null && customer != null && !string.IsNullOrEmpty(customer.PhoneEncrypted))
+                {
+                    try
+                    {
+                        customerPhone = Sportive.API.Models.Customer.EncryptionHelper.Decrypt(customer.PhoneEncrypted);
+                    }
+                    catch { }
+                }
+
+                return new {
+                    CustomerId = g.Key,
+                    CustomerName = customer?.FullName ?? "Walk-in",
+                    CustomerPhone = customerPhone,
+                    LastUpdated = lastUpdated,
+                    ItemsCount = g.Sum(x => x.Quantity),
+                    TotalAmount = g.Sum(x => (decimal)x.Quantity * (x.Product?.Price ?? 0)),
+                    Items = items
+                };
+            })
+            .OrderByDescending(x => x.LastUpdated)
+            .ToList();
+
+        return Ok(result);
+    }
+
     // ══════════════════════════════════════════════════════
     // 8. مرتجعات المشتريات
     // GET /api/operationalreports/purchase-returns

@@ -1162,6 +1162,63 @@ public class OrdersController : ControllerBase
 
         return HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
     }
+
+    [HttpPost("draft-cart")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SaveDraftCart([FromBody] GuestDraftCartDto dto)
+    {
+        if (dto == null || string.IsNullOrWhiteSpace(dto.Phone) || string.IsNullOrWhiteSpace(dto.Name))
+        {
+            return BadRequest("Name and phone are required.");
+        }
+
+        var phone = dto.Phone.Trim();
+        var name = dto.Name.Trim();
+
+        // 1. Get or create Customer
+        var phoneHash = Sportive.API.Models.Customer.EncryptionHelper?.ComputeSearchHash(phone) ?? phone;
+        var generatedEmail = $"{phone}@sportive.com";
+        var emailHash = Sportive.API.Models.Customer.EncryptionHelper?.ComputeSearchHash(generatedEmail) ?? generatedEmail;
+
+        var customer = await _db.Customers.FirstOrDefaultAsync(c => c.PhoneHash == phoneHash || c.EmailHash == emailHash);
+        if (customer == null)
+        {
+            customer = new Customer
+            {
+                FullName = name,
+                Phone = phone,
+                Email = generatedEmail,
+                CreatedAt = TimeHelper.GetEgyptTime(),
+                IsActive = true
+            };
+            _db.Customers.Add(customer);
+            await _db.SaveChangesAsync();
+        }
+
+        // 2. Clear existing cart items
+        var oldItems = await _db.CartItems.Where(c => c.CustomerId == customer.Id).ToListAsync();
+        _db.CartItems.RemoveRange(oldItems);
+
+        // 3. Add new cart items
+        if (dto.Items != null && dto.Items.Any())
+        {
+            foreach (var item in dto.Items)
+            {
+                if (item.Quantity <= 0) continue;
+                _db.CartItems.Add(new CartItem
+                {
+                    CustomerId = customer.Id,
+                    ProductId = item.ProductId,
+                    ProductVariantId = item.ProductVariantId > 0 ? item.ProductVariantId : null,
+                    Quantity = item.Quantity,
+                    CreatedAt = TimeHelper.GetEgyptTime()
+                });
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
 }
 
 public record ArchiveBatchDto(int[] Ids, bool? Archive = true);
@@ -1183,4 +1240,7 @@ public class ConvertToCostDto
 {
     public string RefundMethod { get; set; } = "credit"; // "cash" | "credit"
 }
+
+public record GuestDraftCartDto(string Name, string Phone, List<GuestCartItemDto> Items);
+public record GuestCartItemDto(int ProductId, int? ProductVariantId, int Quantity);
 
