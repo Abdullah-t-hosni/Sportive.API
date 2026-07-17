@@ -711,9 +711,9 @@ public class OrderService : IOrderService
                     decimal fee = store?.FixedDeliveryFee ?? 50;
                     decimal? threshold = store?.FreeDeliveryAt ?? 2000;
 
-                    if (dto.DeliveryAddressId.HasValue)
+                    if (order.DeliveryAddressId.HasValue)
                     {
-                        var addr = await _db.Addresses.AsNoTracking().FirstOrDefaultAsync(a => a.Id == dto.DeliveryAddressId.Value);
+                        var addr = await _db.Addresses.AsNoTracking().FirstOrDefaultAsync(a => a.Id == order.DeliveryAddressId.Value);
                         if (addr != null && !string.IsNullOrEmpty(addr.City))
                         {
                             var city = addr.City.Trim().ToLower();
