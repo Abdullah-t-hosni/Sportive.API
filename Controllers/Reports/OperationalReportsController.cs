@@ -1447,6 +1447,7 @@ public class OperationalReportsController : ControllerBase
             .Select(j => new {
                 j.Reference, j.EntryNumber, j.EntryDate,
                 OrderId = j.Order != null ? (int?)j.Order.Id : null,
+                OrderNumber = j.Order != null ? j.Order.OrderNumber : null,
                 CustomerName = j.Order != null && j.Order.Customer != null ? j.Order.Customer.FullName : "Walk-in",
                 CustomerPhone = j.Order != null && j.Order.Customer != null ? j.Order.Customer.PhoneEncrypted : "",
                 OriginalAmount = j.Lines.Where(l => l.Debit > 0 && (!inventoryAccId.HasValue || l.AccountId != inventoryAccId.Value)).Sum(l => (decimal?)l.Debit) ?? 0,
@@ -1483,7 +1484,10 @@ public class OperationalReportsController : ControllerBase
             ? await returnsQuery.ToListAsync()
             : await returnsQuery.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
 
-        var allReturnRefs = returns.Select(r => r.Reference ?? r.EntryNumber).ToList();
+        var returnOrderNumbers = returns.Where(r => r.OrderNumber != null).Select(r => r.OrderNumber!).ToList();
+        var directReturnRefs = returns.Where(r => r.OrderNumber == null).Select(r => r.Reference ?? r.EntryNumber).ToList();
+        var allReturnRefs = returnOrderNumbers.Concat(directReturnRefs).Distinct().ToList();
+
         var movements = await _db.InventoryMovements
             .Include(m => m.Product)
             .Include(m => m.ProductVariant)
@@ -1514,8 +1518,9 @@ public class OperationalReportsController : ControllerBase
         var rows = returns.Select(j => {
             List<ReportItemDto>? itemsList = null;
             var refKey = j.Reference ?? j.EntryNumber;
+            var lookupKey = j.OrderNumber ?? refKey;
 
-            if (movementsMap.TryGetValue(refKey, out var movs) && movs.Any())
+            if (movementsMap.TryGetValue(lookupKey, out var movs) && movs.Any())
             {
                 itemsList = movs.Select(m => {
                     decimal unitPrice = m.UnitCost;
@@ -1589,10 +1594,13 @@ public class OperationalReportsController : ControllerBase
             ).SumAsync();
         }
 
-        var allReturnRefsForSummary = await returnsQ.Select(j => j.Reference ?? j.EntryNumber).ToListAsync();
+        var returnOrderNumbersSummary = await returnsQ.Where(j => j.Order != null).Select(j => j.Order.OrderNumber).ToListAsync();
+        var directReturnRefsSummary = await returnsQ.Where(j => j.Order == null).Select(j => j.Reference ?? j.EntryNumber).ToListAsync();
+        var allRefsToMatch = returnOrderNumbersSummary.Concat(directReturnRefsSummary).Distinct().ToList();
+
         var totalReturnedItems = await _db.InventoryMovements
-            .Where(m => m.Reference != null && allReturnRefsForSummary.Contains(m.Reference) && m.Type == InventoryMovementType.ReturnIn)
-            .SumAsync(m => (int?)m.Quantity) ?? 0;
+            .Where(m => m.Reference != null && allRefsToMatch.Contains(m.Reference) && m.Type == InventoryMovementType.ReturnIn)
+            .SumAsync(m => (int?)Math.Abs(m.Quantity)) ?? 0;
 
         var summary = new {
             count        = totalCount,
