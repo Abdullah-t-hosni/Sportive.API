@@ -14,9 +14,9 @@ public class RegisterValidator : AbstractValidator<RegisterDto>
             .MaximumLength(100).WithMessage(translator.Get("Auth.FullNameMaxLength"));
 
         RuleFor(x => x.Email)
-            .NotEmpty().WithMessage(translator.Get("Auth.EmailRequired"))
             .EmailAddress().WithMessage(translator.Get("Auth.EmailInvalid"))
-            .MaximumLength(100).WithMessage(translator.Get("Auth.EmailMaxLength"));
+            .MaximumLength(100).WithMessage(translator.Get("Auth.EmailMaxLength"))
+            .When(x => !string.IsNullOrEmpty(x.Email));
 
         RuleFor(x => x.Password)
             .NotEmpty().WithMessage(translator.Get("Auth.PasswordRequired"));

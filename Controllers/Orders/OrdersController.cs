@@ -113,6 +113,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPost]
+    [AllowAnonymous]
     public async Task<ActionResult<OrderDetailDto>> CreateOrder([FromBody] CreateOrderDto dto, [FromQuery] int? customerId = null)
     {
         var claimCustomerIdStr = User.FindFirst("CustomerId")?.Value;

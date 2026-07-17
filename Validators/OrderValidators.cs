@@ -17,12 +17,12 @@ public class CreateOrderValidator : AbstractValidator<CreateOrderDto>
 
         RuleFor(x => x.DeliveryAddressId)
             .NotNull()
-            .When(x => x.FulfillmentType == FulfillmentType.Delivery && x.Source == OrderSource.Website && x.GuestAddress == null)
+            .When(x => x.FulfillmentType == FulfillmentType.Delivery && (x.Source == OrderSource.Website || (int)x.Source == 0) && x.GuestAddress == null)
             .WithMessage(translator.Get("Orders.DeliveryAddressRequired"));
 
         RuleFor(x => x.Items)
             .NotNull().NotEmpty()
-            .When(x => x.Source == OrderSource.Website)
+            .When(x => x.Source == OrderSource.Website || (int)x.Source == 0)
             .WithMessage(translator.Get("Orders.ItemsRequired"));
 
         RuleForEach(x => x.Items).SetValidator(new CreateOrderItemValidator(translator))
