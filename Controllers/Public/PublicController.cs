@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Xml.Linq;
 using System.Text;
 using System.Linq;
+using Microsoft.Extensions.Configuration;
 
 namespace Sportive.API.Controllers.Public;
 
@@ -19,12 +20,14 @@ public class PublicController : ControllerBase
     private readonly IPlanService _planService;
     private readonly ITenantService _tenantService;
     private readonly AppDbContext _db;
+    private readonly IConfiguration _config;
 
-    public PublicController(IPlanService planService, ITenantService tenantService, AppDbContext db)
+    public PublicController(IPlanService planService, ITenantService tenantService, AppDbContext db, IConfiguration config)
     {
         _planService = planService;
         _tenantService = tenantService;
         _db = db;
+        _config = config;
     }
 
     /// <summary>جلب الباقات المتاحة للعرض في صفحة الأسعار</summary>
@@ -112,15 +115,31 @@ public class PublicController : ControllerBase
         var currentTenant = tenantContext?.CurrentTenant;
         
         var frontendDomain = "sportive-sportwear.com"; // Hardcoded default production domain
+        var storeUrlConfig = _config["Store:Url"];
+        if (!string.IsNullOrEmpty(storeUrlConfig))
+        {
+            try
+            {
+                var uri = new System.Uri(storeUrlConfig);
+                frontendDomain = uri.Host;
+            }
+            catch {}
+        }
+
         if (currentTenant != null && !string.IsNullOrEmpty(currentTenant.CustomDomain))
         {
-            frontendDomain = currentTenant.CustomDomain;
+            // If the custom domain is the API host itself or contains api/railway.app, do not use it as the frontend website URL
+            if (!currentTenant.CustomDomain.Contains("api", System.StringComparison.OrdinalIgnoreCase) && 
+                !currentTenant.CustomDomain.Contains("railway.app", System.StringComparison.OrdinalIgnoreCase))
+            {
+                frontendDomain = currentTenant.CustomDomain;
+            }
         }
         else
         {
             if (!string.IsNullOrEmpty(host))
             {
-                if (host.StartsWith("api.", StringComparison.OrdinalIgnoreCase))
+                if (host.StartsWith("api.", System.StringComparison.OrdinalIgnoreCase))
                 {
                     frontendDomain = host.Substring(4);
                 }
