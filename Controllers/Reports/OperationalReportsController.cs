@@ -1629,10 +1629,12 @@ public class OperationalReportsController : ControllerBase
     [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard)]
     public async Task<IActionResult> GetAbandonedCarts()
     {
+        var cutoffDate = Utils.TimeHelper.GetEgyptTime().AddDays(-30);
         var cartItems = await _db.CartItems.AsNoTracking()
             .Include(c => c.Customer)
-            .Include(c => c.Product)
+            .Include(c => c.Product).ThenInclude(p => p.Images)
             .Include(c => c.ProductVariant)
+            .Where(c => c.Customer != null && c.Product != null && (c.UpdatedAt ?? c.CreatedAt) >= cutoffDate)
             .ToListAsync();
 
         var result = cartItems
@@ -1642,13 +1644,21 @@ public class OperationalReportsController : ControllerBase
                 var customer = firstItem.Customer;
                 var lastUpdated = g.Max(x => x.UpdatedAt ?? x.CreatedAt);
                 
-                var items = g.Select(x => new {
-                    ProductName = x.Product != null ? x.Product.NameAr : (x.Product?.NameEn ?? ""),
-                    ProductSKU = x.Product != null ? x.Product.SKU : "",
-                    Size = x.ProductVariant != null ? x.ProductVariant.Size : "",
-                    Color = x.ProductVariant != null ? (x.ProductVariant.ColorAr ?? x.ProductVariant.Color) : "",
-                    Quantity = x.Quantity,
-                    UnitPrice = x.Product != null ? x.Product.Price : 0
+                var items = g.Select(x => {
+                    var unitPrice = (x.Product?.Price ?? 0) + (x.ProductVariant?.PriceAdjustment ?? 0);
+                    var imgUrl = x.ProductVariant != null && !string.IsNullOrEmpty(x.ProductVariant.ImageUrl) 
+                        ? x.ProductVariant.ImageUrl 
+                        : (x.Product != null ? (x.Product.Images.FirstOrDefault(im => im.IsMain)?.ImageUrl ?? x.Product.Images.FirstOrDefault()?.ImageUrl ?? "") : "");
+
+                    return new {
+                        ProductName = x.Product != null ? x.Product.NameAr : (x.Product?.NameEn ?? ""),
+                        ProductSKU = x.Product != null ? x.Product.SKU : "",
+                        Size = x.ProductVariant != null ? x.ProductVariant.Size : "",
+                        Color = x.ProductVariant != null ? (x.ProductVariant.ColorAr ?? x.ProductVariant.Color) : "",
+                        Quantity = x.Quantity,
+                        UnitPrice = unitPrice,
+                        ImageUrl = imgUrl
+                    };
                 }).ToList();
 
                 var customerPhone = customer?.Phone ?? "";
@@ -1667,7 +1677,7 @@ public class OperationalReportsController : ControllerBase
                     CustomerPhone = customerPhone,
                     LastUpdated = lastUpdated,
                     ItemsCount = g.Sum(x => x.Quantity),
-                    TotalAmount = g.Sum(x => (decimal)x.Quantity * (x.Product?.Price ?? 0)),
+                    TotalAmount = g.Sum(x => (decimal)x.Quantity * ((x.Product?.Price ?? 0) + (x.ProductVariant?.PriceAdjustment ?? 0))),
                     Items = items
                 };
             })
