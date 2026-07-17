@@ -128,11 +128,15 @@ public class PublicController : ControllerBase
 
         if (currentTenant != null && !string.IsNullOrEmpty(currentTenant.CustomDomain))
         {
+            var cleanedDomain = currentTenant.CustomDomain.Trim().ToLowerInvariant();
+            if (cleanedDomain.StartsWith("http://")) cleanedDomain = cleanedDomain.Substring(7);
+            if (cleanedDomain.StartsWith("https://")) cleanedDomain = cleanedDomain.Substring(8);
+            cleanedDomain = cleanedDomain.TrimEnd('/');
+
             // If the custom domain is the API host itself or contains api/railway.app, do not use it as the frontend website URL
-            if (!currentTenant.CustomDomain.Contains("api", System.StringComparison.OrdinalIgnoreCase) && 
-                !currentTenant.CustomDomain.Contains("railway.app", System.StringComparison.OrdinalIgnoreCase))
+            if (!cleanedDomain.Contains("api") && !cleanedDomain.Contains("railway.app"))
             {
-                frontendDomain = currentTenant.CustomDomain;
+                frontendDomain = cleanedDomain;
             }
         }
         else
@@ -178,7 +182,8 @@ public class PublicController : ControllerBase
                 imageUrl = $"{apiBaseUrl}{imageUrl}";
             }
 
-            var itemUrl = $"{frontendBaseUrl}/products/{p.Slug}";
+            var identifier = !string.IsNullOrEmpty(p.Slug) ? p.Slug : p.Id.ToString();
+            var itemUrl = $"{frontendBaseUrl}/products/{identifier}";
 
             // availability status mapping
             var availability = p.TotalStock > 0 ? "in stock" : "out of stock";
@@ -227,7 +232,12 @@ public class PublicController : ControllerBase
             )
         );
 
+        // Prepend XML declaration for compliance
+        var xmlContent = doc.Declaration != null 
+            ? doc.Declaration + System.Environment.NewLine + doc.ToString() 
+            : doc.ToString();
+
         // Return as application/xml
-        return Content(doc.ToString(), "application/xml", Encoding.UTF8);
+        return Content(xmlContent, "application/xml", Encoding.UTF8);
     }
 }
