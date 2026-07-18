@@ -1624,12 +1624,13 @@ public class OperationalReportsController : ControllerBase
         });
     }
 
-    // GET /api/operationalreports/abandoned-carts
     [HttpGet("abandoned-carts")]
     [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard)]
     public async Task<IActionResult> GetAbandonedCarts()
     {
         var cutoffDate = Utils.TimeHelper.GetEgyptTime().AddDays(-30);
+        
+        // 1. Get active cart items
         var cartItems = await _db.CartItems.AsNoTracking()
             .Include(c => c.Customer)
             .Include(c => c.Product).ThenInclude(p => p.Images)
@@ -1637,54 +1638,101 @@ public class OperationalReportsController : ControllerBase
             .Where(c => c.Customer != null && c.Product != null && (c.UpdatedAt ?? c.CreatedAt) >= cutoffDate)
             .ToListAsync();
 
-        var result = cartItems
-            .GroupBy(c => c.CustomerId)
-            .Select(g => {
-                var firstItem = g.First();
-                var customer = firstItem.Customer;
-                var lastUpdated = g.Max(x => x.UpdatedAt ?? x.CreatedAt);
-                
-                var items = g.Select(x => {
-                    var unitPrice = (x.Product?.Price ?? 0) + (x.ProductVariant?.PriceAdjustment ?? 0);
-                    var imgUrl = x.ProductVariant != null && !string.IsNullOrEmpty(x.ProductVariant.ImageUrl) 
-                        ? x.ProductVariant.ImageUrl 
-                        : (x.Product != null ? (x.Product.Images.FirstOrDefault(im => im.IsMain)?.ImageUrl ?? x.Product.Images.FirstOrDefault()?.ImageUrl ?? "") : "");
+        // 2. Get customer tracking fields
+        var customerIdsWithCarts = cartItems.Select(c => c.CustomerId).Distinct().ToList();
+        var trackedCustomers = await _db.Customers.AsNoTracking()
+            .Where(c => customerIdsWithCarts.Contains(c.Id) || (c.AbandonedCartReminderSentAt >= cutoffDate && c.IsActive))
+            .ToListAsync();
 
-                    return new {
-                        ProductName = x.Product != null ? x.Product.NameAr : (x.Product?.NameEn ?? ""),
-                        ProductSKU = x.Product != null ? x.Product.SKU : "",
-                        Size = x.ProductVariant != null ? x.ProductVariant.Size : "",
-                        Color = x.ProductVariant != null ? (x.ProductVariant.ColorAr ?? x.ProductVariant.Color) : "",
-                        Quantity = x.Quantity,
-                        UnitPrice = unitPrice,
-                        ImageUrl = imgUrl
-                    };
-                }).ToList();
+        var trackedCustomersDict = trackedCustomers.ToDictionary(c => c.Id);
 
-                var customerPhone = customer?.Phone ?? "";
-                if (Sportive.API.Models.Customer.EncryptionHelper != null && customer != null && !string.IsNullOrEmpty(customer.PhoneEncrypted))
-                {
-                    try
-                    {
-                        customerPhone = Sportive.API.Models.Customer.EncryptionHelper.Decrypt(customer.PhoneEncrypted);
-                    }
-                    catch { }
-                }
+        var resultList = new List<object>();
+
+        // Process active carts
+        var groupedCartItems = cartItems.GroupBy(c => c.CustomerId);
+        foreach (var g in groupedCartItems)
+        {
+            var firstItem = g.First();
+            var customer = firstItem.Customer;
+            var lastUpdated = g.Max(x => x.UpdatedAt ?? x.CreatedAt);
+            
+            var items = g.Select(x => {
+                var unitPrice = (x.Product?.Price ?? 0) + (x.ProductVariant?.PriceAdjustment ?? 0);
+                var imgUrl = x.ProductVariant != null && !string.IsNullOrEmpty(x.ProductVariant.ImageUrl) 
+                    ? x.ProductVariant.ImageUrl 
+                    : (x.Product != null ? (x.Product.Images.FirstOrDefault(im => im.IsMain)?.ImageUrl ?? x.Product.Images.FirstOrDefault()?.ImageUrl ?? "") : "");
 
                 return new {
-                    CustomerId = g.Key,
-                    CustomerName = customer?.FullName ?? "Walk-in",
-                    CustomerPhone = customerPhone,
-                    LastUpdated = lastUpdated,
-                    ItemsCount = g.Sum(x => x.Quantity),
-                    TotalAmount = g.Sum(x => (decimal)x.Quantity * ((x.Product?.Price ?? 0) + (x.ProductVariant?.PriceAdjustment ?? 0))),
-                    Items = items
+                    ProductName = x.Product != null ? x.Product.NameAr : (x.Product?.NameEn ?? ""),
+                    ProductSKU = x.Product != null ? x.Product.SKU : "",
+                    Size = x.ProductVariant != null ? x.ProductVariant.Size : "",
+                    Color = x.ProductVariant != null ? (x.ProductVariant.ColorAr ?? x.ProductVariant.Color) : "",
+                    Quantity = x.Quantity,
+                    UnitPrice = unitPrice,
+                    ImageUrl = imgUrl
                 };
-            })
-            .OrderByDescending(x => x.LastUpdated)
+            }).ToList();
+
+            var customerPhone = customer?.Phone ?? "";
+            if (Sportive.API.Models.Customer.EncryptionHelper != null && customer != null && !string.IsNullOrEmpty(customer.PhoneEncrypted))
+            {
+                try { customerPhone = Sportive.API.Models.Customer.EncryptionHelper.Decrypt(customer.PhoneEncrypted); } catch { }
+            }
+
+            trackedCustomersDict.TryGetValue(g.Key, out var dbCustomer);
+
+            resultList.Add(new {
+                CustomerId = g.Key,
+                CustomerName = customer?.FullName ?? "Walk-in",
+                CustomerPhone = customerPhone,
+                LastUpdated = lastUpdated,
+                ItemsCount = g.Sum(x => x.Quantity),
+                TotalAmount = g.Sum(x => (decimal)x.Quantity * ((x.Product?.Price ?? 0) + (x.ProductVariant?.PriceAdjustment ?? 0))),
+                Items = items,
+                ReminderSentAt = dbCustomer?.AbandonedCartReminderSentAt,
+                CouponCode = dbCustomer?.AbandonedCartCouponCode,
+                IsRecovered = dbCustomer?.IsAbandonedCartRecovered ?? false,
+                RecoveredAt = dbCustomer?.AbandonedCartRecoveredAt,
+                RecoveredOrderNumber = dbCustomer?.AbandonedCartRecoveredOrderNumber
+            });
+        }
+
+        // Process purely recovered carts (no active cart items)
+        var activeCartCustomerIds = new HashSet<int>(customerIdsWithCarts);
+        foreach (var c in trackedCustomers)
+        {
+            if (!activeCartCustomerIds.Contains(c.Id) && c.IsAbandonedCartRecovered)
+            {
+                var customerPhone = c.Phone ?? "";
+                if (Sportive.API.Models.Customer.EncryptionHelper != null && !string.IsNullOrEmpty(c.PhoneEncrypted))
+                {
+                    try { customerPhone = Sportive.API.Models.Customer.EncryptionHelper.Decrypt(c.PhoneEncrypted); } catch { }
+                }
+
+                resultList.Add(new {
+                    CustomerId = c.Id,
+                    CustomerName = c.FullName,
+                    CustomerPhone = customerPhone,
+                    LastUpdated = c.AbandonedCartRecoveredAt ?? c.AbandonedCartReminderSentAt ?? c.UpdatedAt ?? c.CreatedAt,
+                    ItemsCount = 0,
+                    TotalAmount = c.AbandonedCartValue ?? 0,
+                    Items = new List<object>(),
+                    ReminderSentAt = c.AbandonedCartReminderSentAt,
+                    CouponCode = c.AbandonedCartCouponCode,
+                    IsRecovered = true,
+                    RecoveredAt = c.AbandonedCartRecoveredAt,
+                    RecoveredOrderNumber = c.AbandonedCartRecoveredOrderNumber
+                });
+            }
+        }
+
+        // Sort by LastUpdated descending
+        var finalResult = resultList
+            .Select(x => (dynamic)x)
+            .OrderByDescending(x => (DateTime)x.LastUpdated)
             .ToList();
 
-        return Ok(result);
+        return Ok(finalResult);
     }
 
     // ══════════════════════════════════════════════════════

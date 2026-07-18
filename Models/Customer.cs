@@ -97,6 +97,14 @@ public class Customer : BaseEntity
     public decimal TotalPaid  { get; set; } = 0;
     public decimal Balance    => TotalSales - TotalPaid;
 
+    // Abandoned Cart Tracking
+    public DateTime? AbandonedCartReminderSentAt { get; set; }
+    public string? AbandonedCartCouponCode { get; set; }
+    public decimal? AbandonedCartValue { get; set; }
+    public bool IsAbandonedCartRecovered { get; set; } = false;
+    public DateTime? AbandonedCartRecoveredAt { get; set; }
+    public string? AbandonedCartRecoveredOrderNumber { get; set; }
+
     // Navigation
     public ICollection<Order> Orders { get; set; } = new List<Order>();
     public ICollection<Address> Addresses { get; set; } = new List<Address>();

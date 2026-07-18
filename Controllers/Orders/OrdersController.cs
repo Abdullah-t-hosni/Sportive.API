@@ -1264,6 +1264,98 @@ public class OrdersController : ControllerBase
         await _db.SaveChangesAsync();
         return Ok(new { success = true });
     }
+
+    public class GenerateCartCouponDto
+    {
+        public string DiscountType { get; set; } = "Percentage"; // "Percentage" or "FixedAmount"
+        public decimal DiscountValue { get; set; } = 10;
+        public int ValidityHours { get; set; } = 48;
+    }
+
+    public class LogReminderDto
+    {
+        public string? CouponCode { get; set; }
+    }
+
+    [HttpPost("abandoned-carts/{customerId}/generate-coupon")]
+    [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard)]
+    public async Task<IActionResult> GenerateAbandonedCartCoupon(int customerId, [FromBody] GenerateCartCouponDto dto)
+    {
+        var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId);
+        if (customer == null) return NotFound("Customer not found");
+
+        // Generate a unique coupon code
+        var randomSuffix = Guid.NewGuid().ToString("N").Substring(0, 5).ToUpper();
+        var prefix = dto.DiscountType == "Percentage" ? $"GIFT{(int)dto.DiscountValue}" : "GIFT";
+        var couponCode = $"{prefix}-{randomSuffix}";
+
+        // Save Coupon
+        var coupon = new Coupon
+        {
+            Code = couponCode,
+            DescriptionAr = $"خصم سلة متروكة للعميل {customer.FullName}",
+            DescriptionEn = $"Abandoned cart discount for {customer.FullName}",
+            DiscountType = dto.DiscountType == "FixedAmount" ? DiscountType.FixedAmount : DiscountType.Percentage,
+            DiscountValue = dto.DiscountValue,
+            MaxUsageCount = 1,
+            CurrentUsageCount = 0,
+            ExpiresAt = TimeHelper.GetEgyptTime().AddHours(dto.ValidityHours),
+            IsActive = true
+        };
+
+        _db.Coupons.Add(coupon);
+
+        // Update Customer Abandoned Cart state
+        customer.AbandonedCartCouponCode = couponCode;
+        customer.IsAbandonedCartRecovered = false;
+        
+        // Calculate current cart value
+        var cartItems = await _db.CartItems.AsNoTracking()
+            .Include(c => c.Product)
+            .Include(c => c.ProductVariant)
+            .Where(c => c.CustomerId == customerId && c.Product != null)
+            .ToListAsync();
+        
+        decimal cartValue = cartItems.Sum(c => (decimal)c.Quantity * ((c.Product?.Price ?? 0) + (c.ProductVariant?.PriceAdjustment ?? 0)));
+        customer.AbandonedCartValue = cartValue;
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new {
+            couponCode = coupon.Code,
+            discountValue = coupon.DiscountValue,
+            discountType = coupon.DiscountType.ToString(),
+            expiresAt = coupon.ExpiresAt
+        });
+    }
+
+    [HttpPost("abandoned-carts/{customerId}/log-reminder")]
+    [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard)]
+    public async Task<IActionResult> LogAbandonedCartReminder(int customerId, [FromBody] LogReminderDto dto)
+    {
+        var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId);
+        if (customer == null) return NotFound("Customer not found");
+
+        customer.AbandonedCartReminderSentAt = TimeHelper.GetEgyptTime();
+        if (!string.IsNullOrEmpty(dto.CouponCode))
+        {
+            customer.AbandonedCartCouponCode = dto.CouponCode;
+        }
+
+        // Calculate current cart value
+        var cartItems = await _db.CartItems.AsNoTracking()
+            .Include(c => c.Product)
+            .Include(c => c.ProductVariant)
+            .Where(c => c.CustomerId == customerId && c.Product != null)
+            .ToListAsync();
+        
+        decimal cartValue = cartItems.Sum(c => (decimal)c.Quantity * ((c.Product?.Price ?? 0) + (c.ProductVariant?.PriceAdjustment ?? 0)));
+        customer.AbandonedCartValue = cartValue;
+        customer.IsAbandonedCartRecovered = false;
+
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
 }
 
 public record ArchiveBatchDto(int[] Ids, bool? Archive = true);

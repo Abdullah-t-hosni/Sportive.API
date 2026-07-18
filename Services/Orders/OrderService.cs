@@ -960,6 +960,15 @@ public class OrderService : IOrderService
                     ChangedByUserId = dto.SalesPersonId
                 });
 
+                // 🏷️ MARK ABANDONED CART AS RECOVERED
+                var dbCustomer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == order.CustomerId);
+                if (dbCustomer != null && dbCustomer.AbandonedCartReminderSentAt.HasValue && !dbCustomer.IsAbandonedCartRecovered)
+                {
+                    dbCustomer.IsAbandonedCartRecovered = true;
+                    dbCustomer.AbandonedCartRecoveredAt = TimeHelper.GetEgyptTime();
+                    dbCustomer.AbandonedCartRecoveredOrderNumber = order.OrderNumber;
+                }
+
                 if (isCreditOrder)
                 {
                     decimal creditAmount = order.TotalAmount - order.PaidAmount;
