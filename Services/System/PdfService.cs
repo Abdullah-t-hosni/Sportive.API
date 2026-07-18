@@ -267,15 +267,15 @@ public class PdfService : IPdfService
                                         });
 
                                         // Delivery Address Block
-                                        if (!string.IsNullOrEmpty(order.DeliveryAddress))
+                                        if (order.DeliveryAddress != null)
                                         {
-                                            infoCol.Item().PaddingTop(2).Border(1.5f).BorderColor(Colors.Black).Padding(4)
-                                                .Text($"عنوان التوصيل: {order.DeliveryAddress}").FontSize(9.5f).Bold();
-                                        }
-                                        else if (order.Customer != null && !string.IsNullOrEmpty(order.Customer.Address))
-                                        {
-                                            infoCol.Item().PaddingTop(2).Border(1.5f).BorderColor(Colors.Black).Padding(4)
-                                                .Text($"عنوان العميل: {order.Customer.Address}").FontSize(9.5f).Bold();
+                                            var addr = order.DeliveryAddress;
+                                            var fullAddr = string.Join(", ", new[] { addr.Street, addr.District, addr.City, addr.BuildingNo }.Where(x => !string.IsNullOrWhiteSpace(x)));
+                                            if (!string.IsNullOrWhiteSpace(fullAddr))
+                                            {
+                                                infoCol.Item().PaddingTop(2).Border(1.5f).BorderColor(Colors.Black).Padding(4)
+                                                    .Text($"عنوان التوصيل: {fullAddr}").FontSize(9.5f).Bold();
+                                            }
                                         }
                                     }
 
