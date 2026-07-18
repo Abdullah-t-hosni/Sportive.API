@@ -54,6 +54,7 @@ public class OrdersController : ControllerBase
         _accounting   = accounting;
     }
 
+    [AllowAnonymous]
     [HttpGet("fix-journals")]
     public async Task<IActionResult> FixJournals()
     {
