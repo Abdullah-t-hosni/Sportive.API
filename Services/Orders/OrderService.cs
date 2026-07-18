@@ -730,7 +730,7 @@ public class OrderService : IOrderService
                         }
                     }
 
-                    order.DeliveryFee = (threshold.HasValue && order.SubTotal >= threshold.Value) ? 0 : fee;
+                    order.DeliveryFee = (threshold.HasValue && threshold.Value > 0 && order.SubTotal >= threshold.Value) ? 0 : fee;
                 }
 
                 // 🎁 NEW: Special Bundle/Quantity Offers Logic

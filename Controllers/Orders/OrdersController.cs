@@ -184,12 +184,13 @@ public class OrdersController : ControllerBase
     [RequirePermission(ModuleKeys.Orders)]
     public async Task<IActionResult> RecalculateGuestShipping()
     {
+        var cutoffDate = Utils.TimeHelper.GetEgyptTime().AddDays(-2);
         var orders = await _db.Orders
             .Include(o => o.DeliveryAddress)
             .Where(o => o.Source == OrderSource.Website 
                      && o.FulfillmentType == FulfillmentType.Delivery 
                      && o.DeliveryAddressId != null
-                     && o.DeliveryFee == 0)
+                     && o.CreatedAt >= cutoffDate)
             .ToListAsync();
 
         var zones = await _db.ShippingZones.Where(z => z.IsActive).ToListAsync();
@@ -206,8 +207,8 @@ public class OrdersController : ControllerBase
                 decimal fee = matched?.Fee ?? store?.FixedDeliveryFee ?? 50;
                 decimal? threshold = matched?.FreeThreshold ?? store?.FreeDeliveryAt ?? 2000;
                 
-                decimal correctFee = (threshold.HasValue && order.SubTotal >= threshold.Value) ? 0 : fee;
-                if (correctFee > 0)
+                decimal correctFee = (threshold.HasValue && threshold.Value > 0 && order.SubTotal >= threshold.Value) ? 0 : fee;
+                if (correctFee != order.DeliveryFee)
                 {
                     order.DeliveryFee = correctFee;
                     order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount);
