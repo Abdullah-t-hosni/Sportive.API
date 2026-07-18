@@ -37,9 +37,9 @@ public class OrdersController : ControllerBase
     private readonly IMemoryCache _cache;
     private readonly IHubContext<NotificationHub> _hubContext;
     private readonly ITenantContext _tenantContext;
-    private readonly Sportive.API.Interfaces.IAccountingService _accounting;
+    private readonly Sportive.API.Services.Accounting.IAccountingService _accounting;
 
-    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<OrdersController> logger, IAuditService audit, ITranslator translator, IMemoryCache cache, IHubContext<NotificationHub> hubContext, ITenantContext tenantContext, Sportive.API.Interfaces.IAccountingService accounting)
+    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<OrdersController> logger, IAuditService audit, ITranslator translator, IMemoryCache cache, IHubContext<NotificationHub> hubContext, ITenantContext tenantContext, Sportive.API.Services.Accounting.IAccountingService accounting)
     {
         _orderService = orderService;
         _pdfService   = pdfService;
