@@ -58,10 +58,15 @@ public class OrdersController : ControllerBase
     [HttpGet("fix-journals")]
     public async Task<IActionResult> FixJournals()
     {
-        var orders = await _db.Orders.Where(o => new[] { "SPT-2607-0092", "SPT-2607-0093", "SPT-2607-0094", "SPT-2607-0095", "SPT-2607-0096", "SPT-2607-0097" }.Contains(o.OrderNumber)).ToListAsync();
+        var orders = await _db.Orders
+            .Include(o => o.Items)
+            .Include(o => o.Payments)
+            .Where(o => new[] { "SPT-2607-0092", "SPT-2607-0093", "SPT-2607-0094", "SPT-2607-0095", "SPT-2607-0096", "SPT-2607-0097" }.Contains(o.OrderNumber))
+            .ToListAsync();
+            
         foreach (var o in orders)
         {
-            await _accounting.PostSalesInvoiceAsync(o.Id);
+            await _accounting.PostSalesOrderAsync(o);
         }
         return Ok("Fixed successfully!");
     }
