@@ -304,7 +304,7 @@ public class SalesAccountingService
                 .Where(p => productIds.Contains(p.Id))
                 .ToDictionaryAsync(p => p.Id, p => p.CostPrice);
 
-            totalCost = order.Items.Sum(i => (productsCost.ContainsKey(i.ProductId) ? productsCost[i.ProductId] : 0m) * i.Quantity);
+            totalCost = order.Items.Sum(i => ((i.ProductId.HasValue && productsCost.ContainsKey(i.ProductId.Value)) ? productsCost[i.ProductId.Value] : 0m) * i.Quantity);
         }
 
         if (totalCost > 0)
