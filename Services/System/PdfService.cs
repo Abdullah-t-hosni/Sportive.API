@@ -251,8 +251,8 @@ public class PdfService : IPdfService
                                     // Order Number and Date
                                     infoCol.Item().Row(row =>
                                     {
-                                        row.RelativeItem().Text(_t.Get("Pdf.Number", order.OrderNumber ?? "")).Bold().FontSize(8.5f);
-                                        row.RelativeItem().AlignLeft().Text(order.CreatedAt.ToString("yyyy/MM/dd HH:mm")).FontSize(8);
+                                        row.RelativeItem().Text(_t.Get("Pdf.Number", order.OrderNumber ?? "")).Bold().FontSize(10f);
+                                        row.RelativeItem().AlignLeft().Text(order.CreatedAt.ToString("yyyy/MM/dd HH:mm")).FontSize(9.5f).Bold();
                                     });
 
                                     // Customer Details
@@ -261,17 +261,29 @@ public class PdfService : IPdfService
                                         var custName = order.Customer?.FullName ?? _t.Get("Pdf.CashCustomer");
                                         infoCol.Item().Row(row =>
                                         {
-                                            row.RelativeItem().Text(_t.Get("Pdf.Customer", custName)).Bold().FontSize(8.5f);
+                                            row.RelativeItem().Text(_t.Get("Pdf.Customer", custName)).Bold().FontSize(10f);
                                             if (!string.IsNullOrEmpty(order.Customer?.Phone))
-                                                row.RelativeItem().AlignLeft().Text(order.Customer.Phone).FontSize(8).Bold();
+                                                row.RelativeItem().AlignLeft().Text(order.Customer.Phone).FontSize(9.5f).Bold();
                                         });
+
+                                        // Delivery Address Block
+                                        if (!string.IsNullOrEmpty(order.DeliveryAddress))
+                                        {
+                                            infoCol.Item().PaddingTop(2).Border(1.5f).BorderColor(Colors.Black).Padding(4)
+                                                .Text($"عنوان التوصيل: {order.DeliveryAddress}").FontSize(9.5f).Bold();
+                                        }
+                                        else if (order.Customer != null && !string.IsNullOrEmpty(order.Customer.Address))
+                                        {
+                                            infoCol.Item().PaddingTop(2).Border(1.5f).BorderColor(Colors.Black).Padding(4)
+                                                .Text($"عنوان العميل: {order.Customer.Address}").FontSize(9.5f).Bold();
+                                        }
                                     }
 
                                     // Cashier & Status
                                     infoCol.Item().Row(row =>
                                     {
                                         if (settings?.ReceiptShowCashier != false && !string.IsNullOrEmpty(order.SalesPersonName))
-                                            row.RelativeItem().Text(_t.Get("Pdf.Seller", order.SalesPersonName ?? "")).FontSize(7.5f).Bold();
+                                            row.RelativeItem().Text(_t.Get("Pdf.Seller", order.SalesPersonName ?? "")).FontSize(9.5f).Bold();
                                         else
                                             row.RelativeItem().Text("");
 
@@ -281,14 +293,14 @@ public class PdfService : IPdfService
                                         {
                                             translatedStatus = order.Status ?? "";
                                         }
-                                        row.RelativeItem().AlignLeft().Text(_t.Get("Pdf.Status", translatedStatus)).FontSize(7.5f).Bold();
+                                        row.RelativeItem().AlignLeft().Text(_t.Get("Pdf.Status", translatedStatus)).FontSize(9.5f).Bold();
                                     });
 
                                     // Note
                                     if (settings?.ReceiptShowNote != false && !string.IsNullOrEmpty(order.CustomerNotes))
                                     {
-                                        infoCol.Item().PaddingTop(2).Border(0.5f).BorderColor(Colors.Black).Padding(3)
-                                            .Text(_t.Get("Pdf.Note", order.CustomerNotes ?? "")).FontSize(7.5f).Bold();
+                                        infoCol.Item().PaddingTop(2).Border(1f).BorderColor(Colors.Black).Padding(3)
+                                            .Text(_t.Get("Pdf.Note", order.CustomerNotes ?? "")).FontSize(9.5f).Bold();
                                     }
                                 });
                             }
