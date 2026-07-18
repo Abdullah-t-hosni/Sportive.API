@@ -203,7 +203,7 @@ public class PdfService : IPdfService
                                     // 2. Slogan
                                     if (settings != null && !string.IsNullOrEmpty(settings.StoreSlogan))
                                     {
-                                        hCol.Item().AlignCenter().Text(settings.StoreSlogan).FontSize(8).FontColor(Colors.Grey.Medium);
+                                        hCol.Item().AlignCenter().Text(settings.StoreSlogan).FontSize(11f).Bold().FontColor(Colors.Black);
                                     }
 
                                     // 3. Title Badge
@@ -212,22 +212,22 @@ public class PdfService : IPdfService
                                         : (_t.Get("Pdf.SalesInvoiceOnline") ?? "فاتورة مبيعات - متجر إلكتروني");
                                     
                                     hCol.Item().PaddingTop(2).AlignCenter().Background(Colors.Black).PaddingHorizontal(8).PaddingVertical(1.5f)
-                                        .Text(title).FontSize(8).Bold().FontColor(Colors.White);
+                                        .Text(title).FontSize(10f).Bold().FontColor(Colors.White);
 
                                     // 4. Header text
                                     if (settings != null && !string.IsNullOrEmpty(settings.ReceiptHeaderText))
                                     {
-                                        hCol.Item().PaddingTop(2).AlignCenter().Text(settings.ReceiptHeaderText).FontSize(8).Bold();
+                                        hCol.Item().PaddingTop(2).AlignCenter().Text(settings.ReceiptHeaderText).FontSize(10f).Bold();
                                     }
 
                                     // 5. Address / Phone
                                     if (settings?.ReceiptShowAddress == true && !string.IsNullOrEmpty(settings.StorePhysicalAddr))
                                     {
-                                        hCol.Item().PaddingTop(1).AlignCenter().Text(settings.StorePhysicalAddr).FontSize(7.5f).Bold();
+                                        hCol.Item().PaddingTop(1).AlignCenter().Text(settings.StorePhysicalAddr).FontSize(10f).Bold();
                                     }
                                     if (settings?.ReceiptShowPhone == true && !string.IsNullOrEmpty(settings.StorePhoneNo))
                                     {
-                                        hCol.Item().PaddingTop(0.5f).AlignCenter().Text(settings.StorePhoneNo).FontSize(8).Bold();
+                                        hCol.Item().PaddingTop(0.5f).AlignCenter().Text(settings.StorePhoneNo).FontSize(11f).Bold();
                                     }
 
                                     // 6. Tax No / CR
@@ -235,7 +235,7 @@ public class PdfService : IPdfService
                                     {
                                         hCol.Item().PaddingTop(1).AlignCenter().Text(x =>
                                         {
-                                            x.DefaultTextStyle(style => style.FontSize(7.5f).Bold());
+                                            x.DefaultTextStyle(style => style.FontSize(10f).Bold());
                                             if (!string.IsNullOrEmpty(settings.TaxNumber))
                                                 x.Span($"{_t.Get("Pdf.TaxNumber")}: {settings.TaxNumber}   ");
                                             if (!string.IsNullOrEmpty(settings.CommercialRegister))
@@ -246,13 +246,13 @@ public class PdfService : IPdfService
                             }
                             else if (trimmedSection == "order_info")
                             {
-                                col.Item().PaddingVertical(2).BorderTop(1).BorderBottom(1).BorderColor(Colors.Black).Column(infoCol =>
+                                col.Item().PaddingVertical(2).BorderTop(1.5f).BorderBottom(1.5f).BorderColor(Colors.Black).Column(infoCol =>
                                 {
                                     // Order Number and Date
                                     infoCol.Item().Row(row =>
                                     {
-                                        row.RelativeItem().Text(_t.Get("Pdf.Number", order.OrderNumber ?? "")).Bold().FontSize(10f);
-                                        row.RelativeItem().AlignLeft().Text(order.CreatedAt.ToString("yyyy/MM/dd HH:mm")).FontSize(9.5f).Bold();
+                                        row.RelativeItem().Text(_t.Get("Pdf.Number", order.OrderNumber ?? "")).Bold().FontSize(11f);
+                                        row.RelativeItem().AlignLeft().Text(order.CreatedAt.ToString("yyyy/MM/dd HH:mm")).FontSize(11f).Bold();
                                     });
 
                                     // Customer Details
@@ -261,9 +261,9 @@ public class PdfService : IPdfService
                                         var custName = order.Customer?.FullName ?? _t.Get("Pdf.CashCustomer");
                                         infoCol.Item().Row(row =>
                                         {
-                                            row.RelativeItem().Text(_t.Get("Pdf.Customer", custName)).Bold().FontSize(10f);
+                                            row.RelativeItem().Text(_t.Get("Pdf.Customer", custName)).Bold().FontSize(11f);
                                             if (!string.IsNullOrEmpty(order.Customer?.Phone))
-                                                row.RelativeItem().AlignLeft().Text(order.Customer.Phone).FontSize(9.5f).Bold();
+                                                row.RelativeItem().AlignLeft().Text(order.Customer.Phone).FontSize(11f).Bold();
                                         });
 
                                         // Delivery Address Block
@@ -273,8 +273,8 @@ public class PdfService : IPdfService
                                             var fullAddr = string.Join(", ", new[] { addr.Street, addr.District, addr.City, addr.BuildingNo }.Where(x => !string.IsNullOrWhiteSpace(x)));
                                             if (!string.IsNullOrWhiteSpace(fullAddr))
                                             {
-                                                infoCol.Item().PaddingTop(2).Border(1.5f).BorderColor(Colors.Black).Padding(4)
-                                                    .Text($"عنوان التوصيل: {fullAddr}").FontSize(9.5f).Bold();
+                                                infoCol.Item().PaddingTop(2).Border(2f).BorderColor(Colors.Black).Padding(4)
+                                                    .Text($"عنوان التوصيل: {fullAddr}").FontSize(11f).Bold();
                                             }
                                         }
                                     }
@@ -283,7 +283,7 @@ public class PdfService : IPdfService
                                     infoCol.Item().Row(row =>
                                     {
                                         if (settings?.ReceiptShowCashier != false && !string.IsNullOrEmpty(order.SalesPersonName))
-                                            row.RelativeItem().Text(_t.Get("Pdf.Seller", order.SalesPersonName ?? "")).FontSize(9.5f).Bold();
+                                            row.RelativeItem().Text(_t.Get("Pdf.Seller", order.SalesPersonName ?? "")).FontSize(10.5f).Bold();
                                         else
                                             row.RelativeItem().Text("");
 
@@ -293,14 +293,14 @@ public class PdfService : IPdfService
                                         {
                                             translatedStatus = order.Status ?? "";
                                         }
-                                        row.RelativeItem().AlignLeft().Text(_t.Get("Pdf.Status", translatedStatus)).FontSize(9.5f).Bold();
+                                        row.RelativeItem().AlignLeft().Text(_t.Get("Pdf.Status", translatedStatus)).FontSize(10.5f).Bold();
                                     });
 
                                     // Note
                                     if (settings?.ReceiptShowNote != false && !string.IsNullOrEmpty(order.CustomerNotes))
                                     {
-                                        infoCol.Item().PaddingTop(2).Border(1f).BorderColor(Colors.Black).Padding(3)
-                                            .Text(_t.Get("Pdf.Note", order.CustomerNotes ?? "")).FontSize(9.5f).Bold();
+                                        infoCol.Item().PaddingTop(2).Border(1.5f).BorderColor(Colors.Black).Padding(3)
+                                            .Text(_t.Get("Pdf.Note", order.CustomerNotes ?? "")).FontSize(10.5f).Bold();
                                     }
                                 });
                             }
@@ -314,7 +314,7 @@ public class PdfService : IPdfService
                                         {
                                             // Item Name
                                             var name = item.ProductNameAr;
-                                            itemCol.Item().Text(name).Bold().FontSize(10f);
+                                            itemCol.Item().Text(name).Bold().FontSize(11.5f);
 
                                             // Qty x Price and Line Total
                                             itemCol.Item().Row(row =>
@@ -322,8 +322,8 @@ public class PdfService : IPdfService
                                                 var qtyPriceText = settings?.ReceiptShowUnitPrice != false
                                                     ? $"{item.Quantity} × {item.UnitPrice:N2}"
                                                     : $"{item.Quantity}";
-                                                row.RelativeItem().Text(qtyPriceText).FontSize(9.5f).Bold().FontColor(Colors.Black);
-                                                row.RelativeItem().AlignLeft().Text($"{item.TotalPrice:N2}").Bold().FontSize(10f);
+                                                row.RelativeItem().Text(qtyPriceText).FontSize(11f).Bold().FontColor(Colors.Black);
+                                                row.RelativeItem().AlignLeft().Text($"{item.TotalPrice:N2}").Bold().FontSize(11.5f);
                                             });
 
                                             // SKU, Size, Color text line instead of tiny boxed badges
@@ -337,23 +337,23 @@ public class PdfService : IPdfService
 
                                             if (badgeParts.Any())
                                             {
-                                                itemCol.Item().PaddingTop(1).Text(string.Join("   |   ", badgeParts)).FontSize(9f).Bold().FontColor(Colors.Black);
+                                                itemCol.Item().PaddingTop(1).Text(string.Join("   |   ", badgeParts)).FontSize(10.5f).Bold().FontColor(Colors.Black);
                                             }
                                         });
 
-                                        itemsCol.Item().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2);
+                                        itemsCol.Item().BorderBottom(1f).BorderColor(Colors.Black);
                                     }
                                 });
                             }
                             else if (trimmedSection == "totals_area")
                             {
-                                col.Item().BorderTop(1).BorderColor(Colors.Black).PaddingTop(2).Column(totCol =>
+                                col.Item().BorderTop(1.5f).BorderColor(Colors.Black).PaddingTop(2).Column(totCol =>
                                 {
                                     // Subtotal
                                     totCol.Item().Row(row =>
                                     {
-                                        row.RelativeItem().Text(_t.Get("Pdf.SubTotal")).FontSize(9.5f).Bold();
-                                        row.RelativeItem().AlignLeft().Text($"{order.SubTotal:N2}").FontSize(9.5f).Bold();
+                                        row.RelativeItem().Text(_t.Get("Pdf.SubTotal")).FontSize(11f).Bold();
+                                        row.RelativeItem().AlignLeft().Text($"{order.SubTotal:N2}").FontSize(11f).Bold();
                                     });
 
                                     // Discount
@@ -362,8 +362,8 @@ public class PdfService : IPdfService
                                     {
                                         totCol.Item().Row(row =>
                                         {
-                                            row.RelativeItem().Text(_t.Get("Pdf.TotalDiscount")).FontSize(9.5f).Bold().FontColor(Colors.Red.Medium);
-                                            row.RelativeItem().AlignLeft().Text($"-{totalSavings:N2}").FontSize(9.5f).Bold().FontColor(Colors.Red.Medium);
+                                            row.RelativeItem().Text(_t.Get("Pdf.TotalDiscount")).FontSize(11f).Bold().FontColor(Colors.Black);
+                                            row.RelativeItem().AlignLeft().Text($"-{totalSavings:N2}").FontSize(11f).Bold().FontColor(Colors.Black);
                                         });
                                     }
 
@@ -372,8 +372,8 @@ public class PdfService : IPdfService
                                     {
                                         totCol.Item().Row(row =>
                                         {
-                                            row.RelativeItem().Text(_t.Get("Pdf.DeliveryFee")).FontSize(9.5f).Bold();
-                                            row.RelativeItem().AlignLeft().Text($"{order.DeliveryFee:N2}").FontSize(9.5f).Bold();
+                                            row.RelativeItem().Text(_t.Get("Pdf.DeliveryFee")).FontSize(11f).Bold();
+                                            row.RelativeItem().AlignLeft().Text($"{order.DeliveryFee:N2}").FontSize(11f).Bold();
                                         });
                                     }
 
@@ -385,8 +385,8 @@ public class PdfService : IPdfService
                                         var vatRate = commonVatItem?.VatRateApplied ?? settings?.VatRatePercent ?? 0;
                                         totCol.Item().Row(row =>
                                         {
-                                            row.RelativeItem().Text(_t.Get("Pdf.Vat", vatRate)).FontSize(9.5f).Bold();
-                                            row.RelativeItem().AlignLeft().Text($"{totalVat:N2}").FontSize(9.5f).Bold();
+                                            row.RelativeItem().Text(_t.Get("Pdf.Vat", vatRate)).FontSize(11f).Bold();
+                                            row.RelativeItem().AlignLeft().Text($"{totalVat:N2}").FontSize(11f).Bold();
                                         });
                                     }
 
@@ -401,12 +401,12 @@ public class PdfService : IPdfService
                                     totCol.Item().Row(row =>
                                     {
                                         if (settings?.ReceiptShowItemCount != false)
-                                            row.RelativeItem().Text(_t.Get("Pdf.ItemsCount", order.Items.Count)).FontSize(9.5f).Bold();
+                                            row.RelativeItem().Text(_t.Get("Pdf.ItemsCount", order.Items.Count)).FontSize(11f).Bold();
                                         
                                         if (settings?.ReceiptShowTotalPieceCount != false)
                                         {
                                             var totalQty = order.Items.Sum(i => i.Quantity);
-                                            row.RelativeItem().AlignLeft().Text(_t.Get("Pdf.TotalQty", totalQty)).FontSize(9.5f).Bold();
+                                            row.RelativeItem().AlignLeft().Text(_t.Get("Pdf.TotalQty", totalQty)).FontSize(11f).Bold();
                                         }
                                     });
 
@@ -415,8 +415,8 @@ public class PdfService : IPdfService
                                     {
                                         totCol.Item().PaddingTop(1).Row(row =>
                                         {
-                                            row.RelativeItem().Text(_t.Get("Pdf.PreviousBalance")).FontSize(9.5f).Bold();
-                                            row.RelativeItem().AlignLeft().Text($"{order.PreviousBalance:N2} {settings?.CurrencySymbol ?? "ج.م"}").FontSize(9.5f).Bold();
+                                            row.RelativeItem().Text(_t.Get("Pdf.PreviousBalance")).FontSize(11f).Bold();
+                                            row.RelativeItem().AlignLeft().Text($"{order.PreviousBalance:N2} {settings?.CurrencySymbol ?? "ج.م"}").FontSize(11f).Bold();
                                         });
                                     }
                                 });
@@ -425,18 +425,18 @@ public class PdfService : IPdfService
                             {
                                 if (!string.IsNullOrEmpty(order.TotalAmountInWords))
                                 {
-                                    col.Item().PaddingVertical(2).AlignCenter().Text($"« {order.TotalAmountInWords} »").FontSize(9.5f).Bold();
+                                    col.Item().PaddingVertical(2).AlignCenter().Text($"« {order.TotalAmountInWords} »").FontSize(11f).Bold();
                                 }
                             }
                             else if (trimmedSection == "payment_info")
                             {
-                                col.Item().BorderTop(1).BorderColor(Colors.Black).PaddingTop(2).Column(payCol =>
+                                col.Item().BorderTop(1.5f).BorderColor(Colors.Black).PaddingTop(2).Column(payCol =>
                                 {
                                     // Paid
                                     payCol.Item().Row(row =>
                                     {
-                                        row.RelativeItem().Text(_t.Get("Pdf.AmountPaid")).FontSize(9.5f).Bold();
-                                        row.RelativeItem().AlignLeft().Text($"{order.PaidAmount:N2}").FontSize(9.5f).Bold();
+                                        row.RelativeItem().Text(_t.Get("Pdf.AmountPaid")).FontSize(11f).Bold();
+                                        row.RelativeItem().AlignLeft().Text($"{order.PaidAmount:N2}").FontSize(11f).Bold();
                                     });
 
                                     // Remaining
@@ -445,15 +445,15 @@ public class PdfService : IPdfService
                                     {
                                         payCol.Item().Row(row =>
                                         {
-                                            row.RelativeItem().Text(_t.Get("Pdf.Remaining")).FontSize(9.5f).Bold();
-                                            row.RelativeItem().AlignLeft().Text($"{remaining:N2}").FontSize(9.5f).Bold();
+                                            row.RelativeItem().Text(_t.Get("Pdf.Remaining")).FontSize(11f).Bold();
+                                            row.RelativeItem().AlignLeft().Text($"{remaining:N2}").FontSize(11f).Bold();
                                         });
                                     }
 
                                     // Method
                                     payCol.Item().Row(row =>
                                     {
-                                        row.RelativeItem().Text(_t.Get("Pdf.PaymentMethod")).FontSize(9.5f).Bold();
+                                        row.RelativeItem().Text(_t.Get("Pdf.PaymentMethod")).FontSize(11f).Bold();
                                         
                                         var methodKey = $"Pdf.Method.{order.PaymentMethod}";
                                         var translatedMethod = _t.Get(methodKey);
@@ -462,8 +462,8 @@ public class PdfService : IPdfService
                                             translatedMethod = order.PaymentMethod;
                                         }
 
-                                        row.AutoItem().Border(1f).BorderColor(Colors.Black).PaddingHorizontal(4).PaddingVertical(1f)
-                                            .Text(translatedMethod).FontSize(9.5f).Bold();
+                                        row.AutoItem().Border(1.5f).BorderColor(Colors.Black).PaddingHorizontal(4).PaddingVertical(1f)
+                                            .Text(translatedMethod).FontSize(11f).Bold();
                                     });
 
                                     // Current Balance
@@ -482,34 +482,34 @@ public class PdfService : IPdfService
 
                                         payCol.Item().Row(row =>
                                         {
-                                            row.RelativeItem().Text(_t.Get("Pdf.CurrentBalance")).FontSize(9.5f).Bold();
-                                            row.RelativeItem().AlignLeft().Text($"{customerBalance:N2}").FontSize(9.5f).Bold();
+                                            row.RelativeItem().Text(_t.Get("Pdf.CurrentBalance")).FontSize(11f).Bold();
+                                            row.RelativeItem().AlignLeft().Text($"{customerBalance:N2}").FontSize(11f).Bold();
                                         });
                                     }
                                 });
                             }
                             else if (trimmedSection == "footer_text")
                             {
-                                col.Item().BorderTop(1).BorderColor(Colors.Black).PaddingTop(2).Column(fCol =>
+                                col.Item().BorderTop(1.5f).BorderColor(Colors.Black).PaddingTop(2).Column(fCol =>
                                 {
                                     if (!string.IsNullOrEmpty(settings?.ReceiptFooterText))
                                     {
-                                        fCol.Item().AlignCenter().Text(settings.ReceiptFooterText).FontSize(9.5f).Bold();
+                                        fCol.Item().AlignCenter().Text(settings.ReceiptFooterText).FontSize(11f).Bold();
                                     }
                                     if (!string.IsNullOrEmpty(settings?.ReceiptComplaintsPhone))
                                     {
                                         fCol.Item().PaddingTop(2).AlignCenter().Background(Colors.Black).PaddingHorizontal(6).PaddingVertical(1)
-                                            .Text(_t.Get("Pdf.Complaints", settings?.ReceiptComplaintsPhone ?? "")).FontSize(9.5f).Bold().FontColor(Colors.White);
+                                            .Text(_t.Get("Pdf.Complaints", settings?.ReceiptComplaintsPhone ?? "")).FontSize(11f).Bold().FontColor(Colors.White);
                                     }
-                                    fCol.Item().PaddingTop(2).AlignCenter().Text(settings?.ReceiptSoftwareProvider ?? "By Sportive Team").FontSize(8.5f).Bold().FontColor(Colors.Grey.Darken1);
+                                    fCol.Item().PaddingTop(2).AlignCenter().Text(settings?.ReceiptSoftwareProvider ?? "By Sportive Team").FontSize(10f).Bold().FontColor(Colors.Black);
                                 });
                             }
                             else if (trimmedSection == "terms_conditions")
                             {
                                 if (!string.IsNullOrEmpty(settings?.ReceiptTermsAndConditions))
                                 {
-                                    col.Item().PaddingTop(4).Border(0.5f).BorderColor(Colors.Black).Padding(3)
-                                        .Text(settings.ReceiptTermsAndConditions).FontSize(6.5f).FontColor(Colors.Grey.Darken4).LineHeight(1.3f);
+                                    col.Item().PaddingTop(4).Border(1.5f).BorderColor(Colors.Black).Padding(4)
+                                        .Text(settings.ReceiptTermsAndConditions).FontSize(10.5f).Bold().FontColor(Colors.Black).LineHeight(1.5f);
                                 }
                             }
                             else if (trimmedSection == "barcode")
@@ -542,7 +542,7 @@ public class PdfService : IPdfService
                                             });
                                             return barContainer;
                                         });
-                                        barCol.Item().AlignCenter().Text(barcodeText).FontSize(7.5f).Bold();
+                                        barCol.Item().AlignCenter().Text(barcodeText).FontSize(10f).Bold();
                                     });
                                 }
                             }
