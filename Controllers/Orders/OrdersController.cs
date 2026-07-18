@@ -37,8 +37,9 @@ public class OrdersController : ControllerBase
     private readonly IMemoryCache _cache;
     private readonly IHubContext<NotificationHub> _hubContext;
     private readonly ITenantContext _tenantContext;
+    private readonly Sportive.API.Interfaces.IAccountingService _accounting;
 
-    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<OrdersController> logger, IAuditService audit, ITranslator translator, IMemoryCache cache, IHubContext<NotificationHub> hubContext, ITenantContext tenantContext)
+    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<OrdersController> logger, IAuditService audit, ITranslator translator, IMemoryCache cache, IHubContext<NotificationHub> hubContext, ITenantContext tenantContext, Sportive.API.Interfaces.IAccountingService accounting)
     {
         _orderService = orderService;
         _pdfService   = pdfService;
@@ -50,6 +51,18 @@ public class OrdersController : ControllerBase
         _cache        = cache;
         _hubContext   = hubContext;
         _tenantContext = tenantContext;
+        _accounting   = accounting;
+    }
+
+    [HttpGet("fix-journals")]
+    public async Task<IActionResult> FixJournals()
+    {
+        var orders = await _db.Orders.Where(o => new[] { "SPT-2607-0092", "SPT-2607-0093", "SPT-2607-0094", "SPT-2607-0095", "SPT-2607-0096", "SPT-2607-0097" }.Contains(o.OrderNumber)).ToListAsync();
+        foreach (var o in orders)
+        {
+            await _accounting.PostSalesInvoiceAsync(o.Id);
+        }
+        return Ok("Fixed successfully!");
     }
 
     [HttpGet]
