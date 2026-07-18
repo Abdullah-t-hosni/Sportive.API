@@ -296,7 +296,17 @@ public class SalesAccountingService
         }
 
         // ── 3. COGS / Inventory ───────────────────────────────
-        var totalCost = order.Items?.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity) ?? 0;
+        decimal totalCost = 0;
+        if (order.Items != null && order.Items.Any())
+        {
+            var productIds = order.Items.Select(i => i.ProductId).Distinct().ToList();
+            var productsCost = await _db.Products.AsNoTracking()
+                .Where(p => productIds.Contains(p.Id))
+                .ToDictionaryAsync(p => p.Id, p => p.CostPrice);
+
+            totalCost = order.Items.Sum(i => (productsCost.GetValueOrDefault(i.ProductId, 0)) * i.Quantity);
+        }
+
         if (totalCost > 0)
         {
             lines.Add((cogsAcct,      totalCost, 0,         _t.Get("Accounting.CogsDesc", order.OrderNumber)));

@@ -71,6 +71,7 @@ public class OrderService : IOrderService
         pageSize = Math.Clamp(pageSize, 1, 2000);
         var query = _db.Orders
             .Include(o => o.Customer)
+            .Include(o => o.DeliveryAddress)
             .AsNoTracking();
 
         if (status.HasValue) query = query.Where(o => o.Status == status.Value);
@@ -133,7 +134,8 @@ public class OrderService : IOrderService
                 o.DiscountAmount,
                 o.TemporalDiscount,
                 o.UpdatedAt,
-                o.TaxAuthorityQrCode
+                o.TaxAuthorityQrCode,
+                o.DeliveryAddress != null ? o.DeliveryAddress.City : null
             ))
             .ToListAsync();
 

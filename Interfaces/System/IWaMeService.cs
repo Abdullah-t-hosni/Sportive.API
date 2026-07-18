@@ -17,5 +17,6 @@ public interface IWaMeService
     WaMeResult ReturnConfirmation(Order order);
     WaMeResult OrderReady(Order order);
     WaMeResult PaymentReminder(Order order);
+    WaMeResult ProductReview(Order order);
     WaMeResult CustomMessage(string phone, string message);
 }

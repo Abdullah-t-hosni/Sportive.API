@@ -45,6 +45,7 @@ public class WaMeController : ControllerBase
                 @return      = _wa.ReturnConfirmation(order),
                 ready        = _wa.OrderReady(order),
                 reminder     = _wa.PaymentReminder(order),
+                review       = _wa.ProductReview(order)
             }
         });
     }
@@ -95,7 +96,8 @@ public class WaMeController : ControllerBase
     private async Task<Order?> LoadOrder(int id) =>
         await _db.Orders
             .Include(o => o.Customer)
-            .Include(o => o.Items)
+            .Include(o => o.Items).ThenInclude(i => i.Product)
+            .Include(o => o.Items).ThenInclude(i => i.ProductVariant)
             .FirstOrDefaultAsync(o => o.Id == id);
 }
 

@@ -165,7 +165,8 @@ public record OrderSummaryDto(
     decimal? DiscountAmount = 0,
     decimal? TemporalDiscount = 0,
     DateTime? UpdatedAt = null,
-    string? TaxAuthorityQrCode = null
+    string? TaxAuthorityQrCode = null,
+    string? Governorate = null
 );
 
 

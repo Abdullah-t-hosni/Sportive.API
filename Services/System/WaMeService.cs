@@ -211,9 +211,36 @@ public class WaMeService : IWaMeService
 
     public WaMeResult CustomMessage(string phone, string message) => CreateLink(phone, message);
 
-    private string CustomerFirstName(Order o)
+    public WaMeResult ProductReview(Order order)
     {
-        var name = o.Customer?.FullName?.Split(' ').FirstOrDefault();
+        var storeUrl = _config["Store:StoreUrl"] ?? "https://sportive-sportwear.com";
+        var itemsList = "";
+        if (order.Items != null && order.Items.Any())
+        {
+            foreach (var item in order.Items)
+            {
+                var productName = item.ProductVariant?.Product?.NameAr ?? item.Product?.NameAr ?? item.ProductNameAr ?? "";
+                var productSlug = item.ProductVariant?.Product?.Slug ?? item.Product?.Slug ?? "";
+                if (!string.IsNullOrEmpty(productName))
+                {
+                    var link = string.IsNullOrEmpty(productSlug) ? storeUrl : $"{storeUrl}/product/{productSlug}";
+                    itemsList += $"🛍️ *{productName}*\n🔗 {link}\n\n";
+                }
+            }
+        }
+        else
+        {
+            itemsList = "المنتجات الخاصة بك\n";
+        }
+
+        string message = $"أهلاً {CustomerFirstName(order)} 👋\n\nنتمنى تكون منتجاتنا عجبتك! رأيك يهمنا جداً عشان نقدر نقدم لك الأفضل دايماً.\nتقدر تقيم المنتجات اللي استلمتها من خلال الروابط دي:\n\n{itemsList}شكراً لثقتك في Sportive! 🙏";
+
+        return CreateLink(order.Customer?.Phone ?? "", message);
+    }
+
+    private string CustomerFirstName(Order order)
+    {
+        var name = order.Customer?.FullName?.Split(' ').FirstOrDefault();
         return !string.IsNullOrEmpty(name) ? name : _t.Get("WhatsApp.DefaultCustomer");
     }
 
