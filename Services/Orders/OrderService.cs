@@ -1694,12 +1694,13 @@ public class OrderService : IOrderService
             CreatedAt = TimeHelper.GetEgyptTime()
         });
 
-        // 💡 AUTO-FLOW: For Website orders, Digital Payments (Vodafone, InstaPay, Visa) are paid upon Confirmation. Cash is paid ONLY upon Delivery.
-        if (order.Source == OrderSource.Website && dto.Status == OrderStatus.Confirmed)
+        // 💡 AUTO-FLOW: For Non-POS orders, Digital Payments (Vodafone, InstaPay, Visa, Bank) are paid upon Confirmation. Cash is paid ONLY upon Delivery.
+        if (order.Source != OrderSource.POS && dto.Status == OrderStatus.Confirmed)
         {
             if (order.PaymentMethod == PaymentMethod.Vodafone || 
                 order.PaymentMethod == PaymentMethod.InstaPay || 
-                order.PaymentMethod == PaymentMethod.CreditCard)
+                order.PaymentMethod == PaymentMethod.CreditCard ||
+                order.PaymentMethod == PaymentMethod.Bank)
             {
                 order.PaymentStatus = PaymentStatus.Paid;
                 order.PaidAmount = order.TotalAmount;
@@ -1714,16 +1715,16 @@ public class OrderService : IOrderService
         {
             order.ActualDeliveryDate = TimeHelper.GetEgyptTime();
 
-            // For Website digital payments (Vodafone/InstaPay/CreditCard/Bank),
+            // For Website/Admin digital payments (Vodafone/InstaPay/CreditCard/Bank),
             // payment was already settled at Confirmed stage - nothing to add here.
             // For Cash orders: mark as paid now (cash collected on delivery).
-            bool isWebsiteDigitalDelivery = order.Source == OrderSource.Website &&
+            bool isDigitalDelivery = order.Source != OrderSource.POS &&
                 (order.PaymentMethod == PaymentMethod.Vodafone ||
                  order.PaymentMethod == PaymentMethod.InstaPay ||
                  order.PaymentMethod == PaymentMethod.CreditCard ||
                  order.PaymentMethod == PaymentMethod.Bank);
 
-            if (!isWebsiteDigitalDelivery && order.PaymentMethod != PaymentMethod.Credit)
+            if (!isDigitalDelivery && order.PaymentMethod != PaymentMethod.Credit)
             {
                 order.PaymentStatus = PaymentStatus.Paid;
                 order.PaidAmount = order.TotalAmount;
@@ -1842,16 +1843,16 @@ public class OrderService : IOrderService
         // - Website + Cash + Delivered → post PMT (cash collected on delivery)
         // - Website + Vodafone/InstaPay/CreditCard/Bank + Delivered → SKIP (already posted at Confirmed)
         bool shouldPostPayment = false;
-        if (order.Source == OrderSource.Website && order.PaymentStatus == PaymentStatus.Paid)
+        if (order.Source != OrderSource.POS && order.PaymentStatus == PaymentStatus.Paid)
         {
-            bool isWebsiteDigitalPaymentForPmt = order.PaymentMethod == PaymentMethod.Vodafone ||
-                                                  order.PaymentMethod == PaymentMethod.InstaPay ||
-                                                  order.PaymentMethod == PaymentMethod.CreditCard ||
-                                                  order.PaymentMethod == PaymentMethod.Bank;
+            bool isDigitalPayment = order.PaymentMethod == PaymentMethod.Vodafone ||
+                                    order.PaymentMethod == PaymentMethod.InstaPay ||
+                                    order.PaymentMethod == PaymentMethod.CreditCard ||
+                                    order.PaymentMethod == PaymentMethod.Bank;
 
-            if (isWebsiteDigitalPaymentForPmt && dto.Status == OrderStatus.Confirmed)
+            if (isDigitalPayment && dto.Status == OrderStatus.Confirmed)
                 shouldPostPayment = true;  // Digital payment confirmed → create PMT
-            else if (!isWebsiteDigitalPaymentForPmt && dto.Status == OrderStatus.Delivered)
+            else if (!isDigitalPayment && dto.Status == OrderStatus.Delivered)
                 shouldPostPayment = true;  // Cash on delivery → create PMT
         }
 

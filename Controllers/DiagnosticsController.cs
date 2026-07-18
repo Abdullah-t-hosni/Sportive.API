@@ -120,24 +120,30 @@ public class DiagnosticsController : ControllerBase
                 p.PurchaseInvoiceId,
                 PaymentMethod = p.PaymentMethod.ToString(),
                 p.Notes
-            }),
-            Entries = entries.Select(e => new
-            {
-                e.EntryNumber,
-                Type = e.Type.ToString(),
-                e.Reference,
-                e.EntryDate,
-                e.Description,
-                Lines = e.Lines.Select(l => new
-                {
-                    l.AccountId,
-                    AccountCode = l.Account?.Code,
-                    AccountName = l.Account?.NameAr,
-                    l.Debit,
-                    l.Credit,
-                    l.Description
-                })
             })
         });
+    }
+
+    [HttpGet("sync-order-receipts")]
+    public async Task<IActionResult> SyncOrderReceipts([FromQuery] string orderNumbers, [FromServices] Sportive.API.Services.IAccountingService accounting)
+    {
+        var numbers = orderNumbers.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(n => n.Trim()).ToList();
+        var orders = await _db.Orders
+            .Include(o => o.Customer)
+            .Include(o => o.Payments)
+            .Where(o => numbers.Contains(o.OrderNumber))
+            .ToListAsync();
+        
+        int count = 0;
+        foreach (var order in orders)
+        {
+            if (order.PaymentStatus == PaymentStatus.Paid)
+            {
+                await accounting.PostOrderPaymentAsync(order);
+                count++;
+            }
+        }
+
+        return Ok(new { synced = count, orders = orders.Select(o => o.OrderNumber) });
     }
 }

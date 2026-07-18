@@ -34,19 +34,12 @@ public class PaymentAccountingService
         var reference = order.OrderNumber + "-PMT";
         if (await _core.EntryExistsAsync(JournalEntryType.ReceiptVoucher, reference)) return;
 
-        // ✅ SMART SKIP: Only Website digital payment orders need a separate ReceiptVoucher.
-        // For ALL other orders (POS cash, POS InstaPay, POS Vodafone, Website Cash/COD, Credit/آجل),
-        // the payment is already embedded directly in the SalesInvoice — no separate PMT entry needed.
-        //
-        // This mirrors exactly the isWebsiteDigitalPayment logic in SalesAccountingService:
-        // Website + (Vodafone | InstaPay | CreditCard | Bank) → SalesInvoice records full receivable debt,
-        // then THIS method creates the ReceiptVoucher to settle it.
-        // All other cases → SalesInvoice already debited the cash account directly → SKIP here.
-        bool needsReceiptVoucher = order.Source == OrderSource.Website &&
-            (order.PaymentMethod == PaymentMethod.Vodafone ||
-             order.PaymentMethod == PaymentMethod.InstaPay  ||
-             order.PaymentMethod == PaymentMethod.CreditCard ||
-             order.PaymentMethod == PaymentMethod.Bank);
+        // ✅ SMART SKIP: POS orders and Credit orders embed payments directly in the SalesInvoice.
+        // For Website/Admin orders, payments often happen after the SalesInvoice is generated:
+        // - Digital payments happen at Confirmed.
+        // - Cash/COD happens at Delivered.
+        // In both cases, the SalesInvoice was generated unpaid, so we DO need a separate ReceiptVoucher!
+        bool needsReceiptVoucher = order.Source != OrderSource.POS;
 
         if (!needsReceiptVoucher)
         {
