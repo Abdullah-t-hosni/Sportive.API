@@ -331,18 +331,30 @@ public class PdfService : IPdfService
                                 col.Item().BorderTop(1).BorderColor(Colors.Black).PaddingTop(2).Column(totCol =>
                                 {
                                     // Subtotal
+                                    totCol.Item().Row(row =>
+                                    {
+                                        row.RelativeItem().Text(_t.Get("Pdf.SubTotal")).FontSize(8).Bold();
+                                        row.RelativeItem().AlignLeft().Text($"{order.SubTotal:N2}").FontSize(8).Bold();
+                                    });
+
+                                    // Discount
                                     var totalSavings = order.DiscountAmount + order.TemporalDiscount;
                                     if (totalSavings > 0 && settings?.ReceiptShowDiscount != false)
                                     {
                                         totCol.Item().Row(row =>
                                         {
-                                            row.RelativeItem().Text(_t.Get("Pdf.SubTotal")).FontSize(8).Bold();
-                                            row.RelativeItem().AlignLeft().Text($"{(order.TotalAmount + totalSavings):N2}").FontSize(8).Bold();
-                                        });
-                                        totCol.Item().Row(row =>
-                                        {
                                             row.RelativeItem().Text(_t.Get("Pdf.TotalDiscount")).FontSize(8).Bold().FontColor(Colors.Red.Medium);
                                             row.RelativeItem().AlignLeft().Text($"-{totalSavings:N2}").FontSize(8).Bold().FontColor(Colors.Red.Medium);
+                                        });
+                                    }
+
+                                    // Delivery Fee
+                                    if (order.DeliveryFee > 0)
+                                    {
+                                        totCol.Item().Row(row =>
+                                        {
+                                            row.RelativeItem().Text(_t.Get("Pdf.DeliveryFee")).FontSize(8).Bold();
+                                            row.RelativeItem().AlignLeft().Text($"{order.DeliveryFee:N2}").FontSize(8).Bold();
                                         });
                                     }
 

@@ -360,6 +360,7 @@
   "Pdf.Total": "Total",
   "Pdf.SubTotal": "Subtotal",
   "Pdf.Discount": "Discount",
+  "Pdf.DeliveryFee": "Shipping Fees",
   "Pdf.NetTotal": "Net Total",
   "Pdf.PaymentDetails": "Payment Details:",
   "Pdf.ThankYou": "Thank you for shopping with us!",
