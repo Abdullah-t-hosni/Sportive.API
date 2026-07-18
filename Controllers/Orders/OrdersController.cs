@@ -37,9 +37,8 @@ public class OrdersController : ControllerBase
     private readonly IMemoryCache _cache;
     private readonly IHubContext<NotificationHub> _hubContext;
     private readonly ITenantContext _tenantContext;
-    private readonly Sportive.API.Services.IAccountingService _accounting;
 
-    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<OrdersController> logger, IAuditService audit, ITranslator translator, IMemoryCache cache, IHubContext<NotificationHub> hubContext, ITenantContext tenantContext, Sportive.API.Services.IAccountingService accounting)
+    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<OrdersController> logger, IAuditService audit, ITranslator translator, IMemoryCache cache, IHubContext<NotificationHub> hubContext, ITenantContext tenantContext)
     {
         _orderService = orderService;
         _pdfService   = pdfService;
@@ -51,34 +50,6 @@ public class OrdersController : ControllerBase
         _cache        = cache;
         _hubContext   = hubContext;
         _tenantContext = tenantContext;
-        _accounting   = accounting;
-    }
-
-    [AllowAnonymous]
-    [HttpGet("fix-journals")]
-    public async Task<IActionResult> FixJournals()
-    {
-        var orders = await _db.Orders
-            .Include(o => o.Items).ThenInclude(i => i.Product)
-            .Include(o => o.Payments)
-            .Where(o => new[] { "SPT-2607-0092", "SPT-2607-0093", "SPT-2607-0094", "SPT-2607-0095", "SPT-2607-0096", "SPT-2607-0097" }.Contains(o.OrderNumber))
-            .ToListAsync();
-            
-        foreach (var o in orders)
-        {
-            if (o.OrderNumber == "SPT-2607-0097")
-            {
-                o.SubTotal = 825;
-                o.TemporalDiscount = 165;
-                o.DiscountAmount = 0;
-                o.DeliveryFee = 95;
-                o.TotalAmount = 755;
-            }
-            
-            await _db.SaveChangesAsync();
-            await _accounting.PostSalesOrderAsync(o);
-        }
-        return Ok("Fixed successfully!");
     }
 
     [HttpGet]
