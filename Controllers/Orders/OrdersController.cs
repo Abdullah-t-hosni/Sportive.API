@@ -59,13 +59,23 @@ public class OrdersController : ControllerBase
     public async Task<IActionResult> FixJournals()
     {
         var orders = await _db.Orders
-            .Include(o => o.Items)
+            .Include(o => o.Items).ThenInclude(i => i.Product)
             .Include(o => o.Payments)
             .Where(o => new[] { "SPT-2607-0092", "SPT-2607-0093", "SPT-2607-0094", "SPT-2607-0095", "SPT-2607-0096", "SPT-2607-0097" }.Contains(o.OrderNumber))
             .ToListAsync();
             
         foreach (var o in orders)
         {
+            if (o.OrderNumber == "SPT-2607-0097")
+            {
+                o.SubTotal = 825;
+                o.TemporalDiscount = 165;
+                o.DiscountAmount = 0;
+                o.DeliveryFee = 95;
+                o.TotalAmount = 755;
+            }
+            
+            await _db.SaveChangesAsync();
             await _accounting.PostSalesOrderAsync(o);
         }
         return Ok("Fixed successfully!");
