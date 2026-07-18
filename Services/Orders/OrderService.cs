@@ -135,7 +135,8 @@ public class OrderService : IOrderService
                 o.TemporalDiscount,
                 o.UpdatedAt,
                 o.TaxAuthorityQrCode,
-                o.DeliveryAddress != null ? o.DeliveryAddress.City : null
+                o.DeliveryAddress != null ? o.DeliveryAddress.City : null,
+                o.JournalEntries.Where(j => j.Type == JournalEntryType.SalesInvoice && j.Status != JournalEntryStatus.Reversed).Select(j => (int?)j.Id).FirstOrDefault()
             ))
             .ToListAsync();
 
@@ -152,6 +153,7 @@ public class OrderService : IOrderService
                     .ThenInclude(p => p.Images)
             .Include(o => o.StatusHistory)
             .Include(o => o.Payments) // ✅ Added
+            .Include(o => o.JournalEntries)
             .FirstOrDefaultAsync(o => o.Id == id);
 
         if (o == null) return null;
@@ -274,7 +276,8 @@ public class OrderService : IOrderService
             o.AttachmentPublicId,
             o.CouponCode,
             GenerateOrderHash(o.OrderNumber),
-            o.TaxAuthorityQrCode
+            o.TaxAuthorityQrCode,
+            o.JournalEntries.Where(j => j.Type == JournalEntryType.SalesInvoice && j.Status != JournalEntryStatus.Reversed).Select(j => (int?)j.Id).FirstOrDefault()
         );
     }
 

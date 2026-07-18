@@ -166,7 +166,8 @@ public record OrderSummaryDto(
     decimal? TemporalDiscount = 0,
     DateTime? UpdatedAt = null,
     string? TaxAuthorityQrCode = null,
-    string? Governorate = null
+    string? Governorate = null,
+    int? JournalEntryId = null
 );
 
 
@@ -200,7 +201,8 @@ public record OrderDetailDto(
     string? AttachmentPublicId = null,
     string? CouponCode = null,
     string? ShareHash = null,
-    string? TaxAuthorityQrCode = null
+    string? TaxAuthorityQrCode = null,
+    int? JournalEntryId = null
 );
 
 public record OrderDetailPaymentDto(
