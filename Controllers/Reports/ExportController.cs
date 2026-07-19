@@ -22,6 +22,8 @@ public class ExportController : ControllerBase
     // GET /api/export/orders?source=0&fromDate=2025-01-01&toDate=2025-12-31
     [HttpGet("orders")]
     public async Task<IActionResult> ExportOrders(
+        [FromQuery] string? search     = null,
+        [FromQuery] string? ids        = null,
         [FromQuery] OrderSource? source    = null,
         [FromQuery] DateTime?   fromDate   = null,
         [FromQuery] DateTime?   toDate     = null,
@@ -37,6 +39,24 @@ public class ExportController : ControllerBase
         if (status.HasValue)   query = query.Where(o => o.Status   == status.Value);
         if (fromDate.HasValue) query = query.Where(o => o.CreatedAt >= fromDate.Value.Date);
         if (toDate.HasValue)   query = query.Where(o => o.CreatedAt <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+
+        if (!string.IsNullOrEmpty(ids))
+        {
+            var idList = ids.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(i => int.TryParse(i, out var v) ? v : 0)
+                            .Where(v => v > 0)
+                            .ToList();
+            if (idList.Any())
+                query = query.Where(o => idList.Contains(o.Id));
+        }
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            var s = search.ToLower();
+            query = query.Where(o => o.OrderNumber.ToLower().Contains(s) || 
+                                    (o.Customer != null && o.Customer.FullName.ToLower().Contains(s)) || 
+                                    (o.Customer != null && o.Customer.Phone.Contains(s)));
+        }
 
         var orders = await query.OrderByDescending(o => o.CreatedAt).ToListAsync();
 
