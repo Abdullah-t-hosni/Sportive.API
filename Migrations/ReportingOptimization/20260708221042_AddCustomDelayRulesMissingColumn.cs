@@ -10,20 +10,13 @@ namespace Sportive.API.Migrations.ReportingOptimization
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "CustomDelayRules",
-                table: "StoreInfo",
-                type: "longtext",
-                nullable: true)
-                .Annotation("MySql:CharSet", "utf8mb4");
+            // Column already exists in database (manually created or applied)
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropColumn(
-                name: "CustomDelayRules",
-                table: "StoreInfo");
+            // No-op
         }
     }
 }
