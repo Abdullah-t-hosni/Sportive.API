@@ -16,6 +16,10 @@ public interface IReviewService
     Task<bool> UpdateProductRatingAsync(int productId);
     Task<bool> ReplyToReviewAsync(int reviewId, string reply, string adminName);
     Task<List<ReviewDto>> GetAllApprovedReviewsAsync();
+    // Guest review token support
+    Task<string> GenerateReviewTokenAsync(int orderId, int productId, int customerId);
+    Task<(bool valid, int customerId, int productId)> ValidateReviewTokenAsync(string token);
+    Task<Review> AddReviewByTokenAsync(string token, int rating, string? comment);
 }
 
 public record ReviewDto(
@@ -235,5 +239,86 @@ public class ReviewService : IReviewService
         }
 
         return await _db.SaveChangesAsync() > 0;
+    }
+
+    // ─── Guest Review Token Methods ───────────────────────────────────────────
+
+    public async Task<string> GenerateReviewTokenAsync(int orderId, int productId, int customerId)
+    {
+        // Clean up any old unused tokens for the same order+product
+        var existing = await _db.ReviewTokens
+            .Where(t => t.OrderId == orderId && t.ProductId == productId && !t.IsUsed)
+            .ToListAsync();
+        _db.ReviewTokens.RemoveRange(existing);
+
+        var token = Guid.NewGuid().ToString("N"); // 32-char hex string
+        _db.ReviewTokens.Add(new ReviewToken
+        {
+            Token = token,
+            OrderId = orderId,
+            ProductId = productId,
+            CustomerId = customerId,
+            ExpiresAt = Utils.TimeHelper.GetEgyptTime().AddHours(48)
+        });
+        await _db.SaveChangesAsync();
+        return token;
+    }
+
+    public async Task<(bool valid, int customerId, int productId)> ValidateReviewTokenAsync(string token)
+    {
+        var rt = await _db.ReviewTokens
+            .FirstOrDefaultAsync(t => t.Token == token && !t.IsUsed && t.ExpiresAt > Utils.TimeHelper.GetEgyptTime());
+        if (rt == null) return (false, 0, 0);
+        return (true, rt.CustomerId, rt.ProductId);
+    }
+
+    public async Task<Review> AddReviewByTokenAsync(string token, int rating, string? comment)
+    {
+        var rt = await _db.ReviewTokens
+            .FirstOrDefaultAsync(t => t.Token == token && !t.IsUsed && t.ExpiresAt > Utils.TimeHelper.GetEgyptTime());
+        if (rt == null)
+            throw new InvalidOperationException("رابط التقييم غير صالح أو منتهي الصلاحية.");
+
+        // Mark token as used
+        rt.IsUsed = true;
+        rt.UsedAt = Utils.TimeHelper.GetEgyptTime();
+
+        // Add or update the review
+        var review = await _db.Reviews.FirstOrDefaultAsync(r => r.CustomerId == rt.CustomerId && r.ProductId == rt.ProductId);
+        if (review != null)
+        {
+            review.Rating = rating;
+            review.Comment = comment;
+            review.IsApproved = false;
+            review.UpdatedAt = Utils.TimeHelper.GetEgyptTime();
+        }
+        else
+        {
+            review = new Review
+            {
+                CustomerId = rt.CustomerId,
+                ProductId = rt.ProductId,
+                Rating = rating,
+                Comment = comment,
+                IsApproved = false
+            };
+            _db.Reviews.Add(review);
+        }
+
+        await _db.SaveChangesAsync();
+
+        // Notify admin
+        var p = await _db.Products.FindAsync(rt.ProductId);
+        var c = await _db.Customers.FindAsync(rt.CustomerId);
+        await _notifications.SendAsync(
+            null,
+            _t.Get("Reviews.NewReviewPendingTitle"),
+            "New Review Pending (Guest)",
+            _t.Get("Reviews.NewReviewPendingDesc", c?.FullName ?? "", p?.NameAr ?? ""),
+            $"Guest {c?.FullName} reviewed {p?.NameEn}",
+            "Review"
+        );
+
+        return review;
     }
 }

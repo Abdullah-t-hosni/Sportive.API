@@ -6,7 +6,8 @@ using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Services;
-using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
+using Sportive.API.Data;
 
 namespace Sportive.API.Controllers;
 
@@ -16,11 +17,13 @@ public class ReviewsController : ControllerBase
 {
     private readonly IReviewService _reviews;
     private readonly ICustomerService _customers;
+    private readonly AppDbContext _db;
 
-    public ReviewsController(IReviewService reviews, ICustomerService customers)
+    public ReviewsController(IReviewService reviews, ICustomerService customers, AppDbContext db)
     {
         _reviews = reviews;
         _customers = customers;
+        _db = db;
     }
 
     [HttpGet("product/{productId}")]
@@ -57,6 +60,62 @@ public class ReviewsController : ControllerBase
         }
     }
 
+    // ─── Guest Review Token Endpoints ────────────────────────────────────────
+
+    /// <summary>
+    /// Admin calls this to generate a one-time review link for a guest customer.
+    /// </summary>
+    [RequirePermission(ModuleKeys.Reviews, requireEdit: true)]
+    [HttpPost("generate-token")]
+    public async Task<IActionResult> GenerateReviewToken([FromBody] GenerateReviewTokenDto dto)
+    {
+        // Verify the order exists and belongs to the customer
+        var order = await _db.Orders
+            .Include(o => o.Items)
+            .FirstOrDefaultAsync(o => o.Id == dto.OrderId && o.Status == OrderStatus.Delivered);
+        if (order == null)
+            return BadRequest(new { message = "الطلب غير موجود أو لم يتم توصيله بعد." });
+
+        var hasProduct = order.Items.Any(i => i.ProductId == dto.ProductId);
+        if (!hasProduct)
+            return BadRequest(new { message = "المنتج غير موجود في هذا الطلب." });
+
+        var token = await _reviews.GenerateReviewTokenAsync(dto.OrderId, dto.ProductId, order.CustomerId);
+        return Ok(new { token });
+    }
+
+    /// <summary>
+    /// Guest customer submits a review using a one-time token (no login required).
+    /// </summary>
+    [HttpPost("by-token")]
+    public async Task<IActionResult> AddReviewByToken([FromBody] AddReviewByTokenDto dto)
+    {
+        try
+        {
+            var review = await _reviews.AddReviewByTokenAsync(dto.Token, dto.Rating, dto.Comment);
+            return Ok(new { message = "شكراً! تم إرسال تقييمك وسيظهر بعد المراجعة." });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Validates a token and returns product info (for the guest review page).
+    /// </summary>
+    [HttpGet("validate-token/{token}")]
+    public async Task<IActionResult> ValidateToken(string token)
+    {
+        var (valid, customerId, productId) = await _reviews.ValidateReviewTokenAsync(token);
+        if (!valid) return Ok(new { valid = false });
+
+        var product = await _db.Products.FindAsync(productId);
+        return Ok(new { valid = true, productId, productName = product?.NameAr ?? product?.NameEn });
+    }
+
+    // ─── Admin Endpoints ──────────────────────────────────────────────────────
+
     [RequirePermission(ModuleKeys.Reviews, requireEdit: true)]
     [HttpGet("pending")]
     public async Task<IActionResult> GetPending() => Ok(await _reviews.GetPendingReviewsAsync());
@@ -85,4 +144,6 @@ public class ReviewsController : ControllerBase
 }
 
 public record ReplyDto(string Reply);
+public record GenerateReviewTokenDto(int OrderId, int ProductId);
+public record AddReviewByTokenDto(string Token, int Rating, string? Comment);
 

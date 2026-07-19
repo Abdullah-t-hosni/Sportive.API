@@ -37,6 +37,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<ProductVariant> ProductVariants => Set<ProductVariant>();
     public DbSet<ProductImage> ProductImages     => Set<ProductImage>();
     public DbSet<Review> Reviews                 => Set<Review>();
+    public DbSet<ReviewToken> ReviewTokens       => Set<ReviewToken>();
     public DbSet<Customer> Customers             => Set<Customer>();
     public DbSet<CustomerCategory> CustomerCategories => Set<CustomerCategory>();
     public DbSet<Address> Addresses              => Set<Address>();
