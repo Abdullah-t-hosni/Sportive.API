@@ -30,6 +30,7 @@ public class ExportController : ControllerBase
         var query = _db.Orders
             .Include(o => o.Customer)
             .Include(o => o.Items)
+            .Include(o => o.DeliveryAddress)
             .AsQueryable();
 
         if (source.HasValue)   query = query.Where(o => o.Source   == source.Value);
@@ -44,7 +45,7 @@ public class ExportController : ControllerBase
 
         // Header
         var headers = new[] {
-            "رقم الفاتورة","رقم المرجع","العميل","التليفون","المصدر",
+            "رقم الفاتورة","رقم المرجع","العميل","التليفون","المحافظة","المدينة/المنطقة","العنوان بالكامل","ملاحظات","المصدر",
             "الحالة","طريقة الدفع","حالة الدفع","كود الصنف","الاسم","المقاس","اللون","الكمية", 
             "المجموع","الخصم","التوصيل","الإجمالي","التاريخ"
         };
@@ -68,15 +69,21 @@ public class ExportController : ControllerBase
                 ws.Cell(row, 2).Value  = ""; 
                 ws.Cell(row, 3).Value  = o.Customer?.FullName ?? "";
                 ws.Cell(row, 4).Value  = o.Customer?.Phone ?? "";
-                ws.Cell(row, 5).Value  = o.Source == OrderSource.POS ? "كاشير" : "موقع";
-                ws.Cell(row, 6).Value  = o.Status.ToString();
-                ws.Cell(row, 7).Value  = o.PaymentMethod.ToString();
-                ws.Cell(row, 8).Value  = o.PaymentStatus.ToString();
-                ws.Cell(row, 14).Value = o.SubTotal;
-                ws.Cell(row, 15).Value = o.DiscountAmount + o.TemporalDiscount;
-                ws.Cell(row, 16).Value = o.DeliveryFee;
-                ws.Cell(row, 17).Value = o.TotalAmount;
-                ws.Cell(row, 18).Value = o.CreatedAt.ToString("yyyy-MM-dd HH:mm");
+                
+                ws.Cell(row, 5).Value  = o.DeliveryAddress?.City ?? "";
+                ws.Cell(row, 6).Value  = o.DeliveryAddress?.District ?? "";
+                ws.Cell(row, 7).Value  = $"{o.DeliveryAddress?.Street} {o.DeliveryAddress?.BuildingNo} {o.DeliveryAddress?.Floor} {o.DeliveryAddress?.ApartmentNo}".Trim();
+                ws.Cell(row, 8).Value  = o.CustomerNotes ?? "";
+
+                ws.Cell(row, 9).Value  = o.Source == OrderSource.POS ? "كاشير" : "موقع";
+                ws.Cell(row, 10).Value  = o.Status.ToString();
+                ws.Cell(row, 11).Value  = o.PaymentMethod.ToString();
+                ws.Cell(row, 12).Value  = o.PaymentStatus.ToString();
+                ws.Cell(row, 18).Value = o.SubTotal;
+                ws.Cell(row, 19).Value = o.DiscountAmount + o.TemporalDiscount;
+                ws.Cell(row, 20).Value = o.DeliveryFee;
+                ws.Cell(row, 21).Value = o.TotalAmount;
+                ws.Cell(row, 22).Value = o.CreatedAt.ToString("yyyy-MM-dd HH:mm");
                 row++;
                 continue;
             }
@@ -86,24 +93,30 @@ public class ExportController : ControllerBase
                 ws.Cell(row, 1).Value  = o.OrderNumber;
                 ws.Cell(row, 3).Value  = o.Customer?.FullName ?? "";
                 ws.Cell(row, 4).Value  = o.Customer?.Phone ?? "";
-                ws.Cell(row, 5).Value  = o.Source == OrderSource.POS ? "كاشير" : "موقع";
-                ws.Cell(row, 6).Value  = o.Status.ToString();
-                ws.Cell(row, 7).Value  = o.PaymentMethod.ToString();
-                ws.Cell(row, 8).Value  = o.PaymentStatus.ToString();
+
+                ws.Cell(row, 5).Value  = o.DeliveryAddress?.City ?? "";
+                ws.Cell(row, 6).Value  = o.DeliveryAddress?.District ?? "";
+                ws.Cell(row, 7).Value  = $"{o.DeliveryAddress?.Street} {o.DeliveryAddress?.BuildingNo} {o.DeliveryAddress?.Floor} {o.DeliveryAddress?.ApartmentNo}".Trim();
+                ws.Cell(row, 8).Value  = o.CustomerNotes ?? "";
+
+                ws.Cell(row, 9).Value  = o.Source == OrderSource.POS ? "كاشير" : "موقع";
+                ws.Cell(row, 10).Value  = o.Status.ToString();
+                ws.Cell(row, 11).Value  = o.PaymentMethod.ToString();
+                ws.Cell(row, 12).Value  = o.PaymentStatus.ToString();
                 
-                ws.Cell(row, 9).Value  = it.Product?.SKU ?? "";
-                ws.Cell(row, 10).Value = it.Product?.NameAr ?? it.ProductNameAr;
-                ws.Cell(row, 11).Value = it.Size ?? "";
-                ws.Cell(row, 12).Value = it.Color ?? "";
-                ws.Cell(row, 13).Value = it.Quantity;
+                ws.Cell(row, 13).Value  = it.Product?.SKU ?? "";
+                ws.Cell(row, 14).Value = it.Product?.NameAr ?? it.ProductNameAr;
+                ws.Cell(row, 15).Value = it.Size ?? "";
+                ws.Cell(row, 16).Value = it.Color ?? "";
+                ws.Cell(row, 17).Value = it.Quantity;
 
-                ws.Cell(row, 14).Value = o.SubTotal;
-                ws.Cell(row, 15).Value = o.DiscountAmount + o.TemporalDiscount;
-                ws.Cell(row, 16).Value = o.DeliveryFee;
-                ws.Cell(row, 17).Value = o.TotalAmount;
-                ws.Cell(row, 18).Value = o.CreatedAt.ToString("yyyy-MM-dd HH:mm");
+                ws.Cell(row, 18).Value = o.SubTotal;
+                ws.Cell(row, 19).Value = o.DiscountAmount + o.TemporalDiscount;
+                ws.Cell(row, 20).Value = o.DeliveryFee;
+                ws.Cell(row, 21).Value = o.TotalAmount;
+                ws.Cell(row, 22).Value = o.CreatedAt.ToString("yyyy-MM-dd HH:mm");
 
-                for (int c = 14; c <= 17; c++) ws.Cell(row, c).Style.NumberFormat.Format = "#,##0.00";
+                for (int c = 18; c <= 21; c++) ws.Cell(row, c).Style.NumberFormat.Format = "#,##0.00";
                 row++;
             }
 
@@ -112,11 +125,11 @@ public class ExportController : ControllerBase
         }
 
         // Summary row
-        ws.Cell(row + 1, 10).Value = "الإجمالي:";
-        ws.Cell(row + 1, 10).Style.Font.Bold = true;
-        ws.Cell(row + 1, 11).FormulaA1 = $"=SUM(K2:K{row})";
-        ws.Cell(row + 1, 11).Style.Font.Bold = true;
-        ws.Cell(row + 1, 11).Style.NumberFormat.Format = "#,##0.00";
+        ws.Cell(row + 1, 16).Value = "الإجمالي:";
+        ws.Cell(row + 1, 16).Style.Font.Bold = true;
+        ws.Cell(row + 1, 17).FormulaA1 = $"=SUM(Q2:Q{row})";
+        ws.Cell(row + 1, 17).Style.Font.Bold = true;
+        ws.Cell(row + 1, 17).Style.NumberFormat.Format = "#,##0.00";
 
         ws.Columns().AdjustToContents();
         ws.RightToLeft = true;
