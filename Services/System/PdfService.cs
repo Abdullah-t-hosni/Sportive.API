@@ -159,7 +159,8 @@ public class PdfService : IPdfService
                 container.Page(page =>
                 {
                     int paperWidth = settings?.ReceiptWidth ?? 80;
-                    page.Size(paperWidth, 297, Unit.Millimetre);
+                    // Use very tall page so content never overflows to a second page
+                    page.Size(paperWidth, 9999, Unit.Millimetre);
                     page.Margin(4, Unit.Millimetre);
                     page.PageColor(Colors.White);
                     
@@ -551,20 +552,43 @@ public class PdfService : IPdfService
                 });
             });
 
-            // Convert to Images and rebuild as a flat PDF document
+            // Convert to Images and rebuild as a SINGLE flat PDF page
             var images = doc.GenerateImages();
+            int finalPaperWidth = settings?.ReceiptWidth ?? 80;
+
+            // Calculate total actual height: each image is a PNG with known pixel dimensions
+            float totalHeightMm = 0;
+            var imageList = images.ToList();
+            foreach (var imgBytes in imageList)
+            {
+                // QuestPDF generates PNG images — read dimensions from PNG header
+                // PNG: bytes 16-19 = width, 20-23 = height (big-endian)
+                int imgWidthPx  = (imgBytes[16] << 24) | (imgBytes[17] << 16) | (imgBytes[18] << 8) | imgBytes[19];
+                int imgHeightPx = (imgBytes[20] << 24) | (imgBytes[21] << 16) | (imgBytes[22] << 8) | imgBytes[23];
+                if (imgWidthPx > 0)
+                {
+                    float aspectRatio = (float)imgHeightPx / imgWidthPx;
+                    totalHeightMm += finalPaperWidth * aspectRatio;
+                }
+            }
+
+            // Add small bottom padding
+            totalHeightMm += 6f;
+
             var finalDoc = Document.Create(finalContainer =>
             {
-                foreach (var img in images)
+                finalContainer.Page(page =>
                 {
-                    finalContainer.Page(page =>
+                    page.Size(finalPaperWidth, totalHeightMm, Unit.Millimetre);
+                    page.Margin(0);
+                    page.Content().Column(col =>
                     {
-                        int paperWidth = settings?.ReceiptWidth ?? 80;
-                        page.Size(paperWidth, 297, Unit.Millimetre);
-                        page.Margin(0);
-                        page.Content().Image(img);
+                        foreach (var img in imageList)
+                        {
+                            col.Item().Image(img);
+                        }
                     });
-                }
+                });
             });
 
             return finalDoc.GeneratePdf();
