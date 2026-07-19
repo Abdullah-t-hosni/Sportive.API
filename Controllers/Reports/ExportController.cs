@@ -233,9 +233,11 @@ public class ExportController : ControllerBase
             ws.Cell(row, 4).Value  = o.CustomerNotes ?? "";
             ws.Cell(row, 5).Value  = o.TotalAmount;
             
-            var paymentStr = o.PaymentMethod == PaymentMethod.CashOnDelivery ? "الدفع عند الاستلام" :
+            var paymentStr = o.PaymentMethod == PaymentMethod.Cash ? "الدفع عند الاستلام" :
                              o.PaymentMethod == PaymentMethod.CreditCard ? "بطاقة ائتمان" :
-                             o.PaymentMethod == PaymentMethod.BankTransfer ? "تحويل بنكي" :
+                             o.PaymentMethod == PaymentMethod.Bank ? "تحويل بنكي / فيزا" :
+                             o.PaymentMethod == PaymentMethod.InstaPay ? "انستا باي" :
+                             o.PaymentMethod == PaymentMethod.Vodafone ? "فودافون كاش" :
                              o.PaymentMethod.ToString();
             ws.Cell(row, 6).Value  = paymentStr;
             
