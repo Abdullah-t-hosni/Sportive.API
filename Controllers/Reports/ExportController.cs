@@ -163,6 +163,98 @@ public class ExportController : ControllerBase
             $"orders_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
+    [HttpGet("orders/shipping")]
+    public async Task<IActionResult> ExportShippingOrders(
+        [FromQuery] string? search     = null,
+        [FromQuery] string? ids        = null,
+        [FromQuery] OrderSource? source    = null,
+        [FromQuery] DateTime?   fromDate   = null,
+        [FromQuery] DateTime?   toDate     = null,
+        [FromQuery] OrderStatus? status    = null)
+    {
+        var query = _db.Orders
+            .Include(o => o.Customer)
+            .Include(o => o.DeliveryAddress)
+            .AsQueryable();
+
+        if (source.HasValue)   query = query.Where(o => o.Source   == source.Value);
+        if (status.HasValue)   query = query.Where(o => o.Status   == status.Value);
+        if (fromDate.HasValue) query = query.Where(o => o.CreatedAt >= fromDate.Value.Date);
+        if (toDate.HasValue)   query = query.Where(o => o.CreatedAt <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+
+        if (!string.IsNullOrEmpty(ids))
+        {
+            var idList = ids.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(i => int.TryParse(i, out var v) ? v : 0)
+                            .Where(v => v > 0)
+                            .ToList();
+            if (idList.Any())
+                query = query.Where(o => idList.Contains(o.Id));
+        }
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            var s = search.ToLower();
+            query = query.Where(o => o.OrderNumber.ToLower().Contains(s) || 
+                                    (o.Customer != null && o.Customer.FullName.ToLower().Contains(s)) || 
+                                    (o.Customer != null && o.Customer.Phone.Contains(s)));
+        }
+
+        var orders = await query.OrderByDescending(o => o.CreatedAt).ToListAsync();
+
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("بوليصة الشحن");
+
+        var headers = new[] {
+            "الاسم", "رقم التليفون", "العنوان بالكامل", "الملاحظات", "مبلغ الفاتورة", "طريقة الدفع"
+        };
+        for (int c = 0; c < headers.Length; c++)
+        {
+            var cell = ws.Cell(1, c + 1);
+            cell.Value = headers[c];
+            cell.Style.Font.Bold = true;
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1a1a2e");
+            cell.Style.Font.FontColor       = XLColor.White;
+            cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        }
+
+        int row = 2;
+        foreach (var o in orders)
+        {
+            var addressText = "";
+            if (o.DeliveryAddress != null)
+            {
+                addressText = $"{o.DeliveryAddress.City} - {o.DeliveryAddress.District} - {o.DeliveryAddress.Street} {o.DeliveryAddress.BuildingNo} {o.DeliveryAddress.Floor} {o.DeliveryAddress.ApartmentNo}".Trim();
+            }
+
+            ws.Cell(row, 1).Value  = o.Customer?.FullName ?? "";
+            ws.Cell(row, 2).Value  = o.Customer?.Phone ?? "";
+            ws.Cell(row, 3).Value  = addressText;
+            ws.Cell(row, 4).Value  = o.CustomerNotes ?? "";
+            ws.Cell(row, 5).Value  = o.TotalAmount;
+            
+            var paymentStr = o.PaymentMethod == PaymentMethod.CashOnDelivery ? "الدفع عند الاستلام" :
+                             o.PaymentMethod == PaymentMethod.CreditCard ? "بطاقة ائتمان" :
+                             o.PaymentMethod == PaymentMethod.BankTransfer ? "تحويل بنكي" :
+                             o.PaymentMethod.ToString();
+            ws.Cell(row, 6).Value  = paymentStr;
+            
+            ws.Cell(row, 5).Style.NumberFormat.Format = "#,##0.00";
+            row++;
+        }
+
+        ws.Columns().AdjustToContents();
+        ws.RightToLeft = true;
+
+        var stream = new MemoryStream();
+        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
+        wb.SaveAs(stream);
+        stream.Position = 0;
+
+        return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"shipping_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
+    }
+
     // PRODUCTS
     // GET /api/export/products
     [HttpGet("products")]
