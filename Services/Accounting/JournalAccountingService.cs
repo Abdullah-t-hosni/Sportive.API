@@ -389,7 +389,11 @@ public class JournalAccountingService
             }
             else
             {
-                order.PaymentMethod = PaymentMethod.Credit;
+                // ✅ SMART PRESERVE: Only change to Credit if cashier (POS) or if it was already Credit
+                if (order.Source == OrderSource.POS || order.PaymentMethod == PaymentMethod.Credit)
+                {
+                    order.PaymentMethod = PaymentMethod.Credit;
+                }
             }
 
             // تحديث حالة الدفع
