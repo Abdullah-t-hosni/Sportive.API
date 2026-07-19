@@ -154,13 +154,20 @@ public class PdfService : IPdfService
 
         return await Task.Run(() =>
         {
+            int paperWidth = settings?.ReceiptWidth ?? 80;
+            
+            // Estimate height dynamically based on items count
+            int itemCount = order.Items?.Count ?? 0;
+            // Base height: header, totals, payment details, footer ~200mm. Per item: ~15mm.
+            int estimatedHeight = Math.Max(180, 200 + (itemCount * 15));
+            // Cap at 1500mm to prevent Skia bitmap allocation crash (> 32,767 pixels)
+            int paperHeight = Math.Min(1500, estimatedHeight);
+
             var doc = Document.Create(container =>
             {
                 container.Page(page =>
                 {
-                    int paperWidth = settings?.ReceiptWidth ?? 80;
-                    // Use very tall page so content never overflows to a second page
-                    page.Size(paperWidth, 9999, Unit.Millimetre);
+                    page.Size(paperWidth, paperHeight, Unit.Millimetre);
                     page.Margin(4, Unit.Millimetre);
                     page.PageColor(Colors.White);
                     
