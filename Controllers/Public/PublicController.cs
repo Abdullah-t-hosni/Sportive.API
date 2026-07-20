@@ -92,19 +92,69 @@ public class PublicController : ControllerBase
 
     /// <summary>
     /// توليد ملف منتجات متوافق مع Facebook Catalog Feed (RSS 2.0 XML)
-    /// GET /api/public/facebook-feed
+    /// GET /api/public/facebook-feed?section=men&categoryId=12
     /// </summary>
     [HttpGet("facebook-feed")]
-    public async Task<IActionResult> GetFacebookFeed()
+    public async Task<IActionResult> GetFacebookFeed(
+        [FromQuery] string? section = null,
+        [FromQuery] CategoryType? type = null,
+        [FromQuery] int? categoryId = null)
     {
         // 1. Fetch active products along with images and brand/category details
-        var products = await _db.Products
+        var query = _db.Products
             .AsNoTracking()
             .Include(p => p.Brand)
             .Include(p => p.Category)
             .Include(p => p.Images)
-            .Where(p => p.Status == ProductStatus.Active)
-            .ToListAsync();
+            .Where(p => p.Status == ProductStatus.Active);
+
+        string feedTitle = "Sportive Product Feed";
+
+        // Section filter (men, women, kids, shoes, equipment, special)
+        if (!string.IsNullOrWhiteSpace(section))
+        {
+            var secLower = section.Trim().ToLowerInvariant();
+            CategoryType? targetType = secLower switch
+            {
+                "men" => CategoryType.Men,
+                "women" => CategoryType.Women,
+                "kids" => CategoryType.Kids,
+                "equipment" => CategoryType.Equipment,
+                "shoes" => CategoryType.Shoes,
+                "special" => CategoryType.SpecialSizes,
+                _ => null
+            };
+
+            if (targetType.HasValue)
+            {
+                query = query.Where(p => p.Category != null && p.Category.Type == targetType.Value);
+                feedTitle = $"Sportive Product Feed - {secLower.ToUpper()}";
+            }
+        }
+        else if (type.HasValue)
+        {
+            query = query.Where(p => p.Category != null && p.Category.Type == type.Value);
+            feedTitle = $"Sportive Product Feed - {type.Value}";
+        }
+
+        // Subcategory filter by CategoryId (direct CategoryId or child categories)
+        if (categoryId.HasValue && categoryId.Value > 0)
+        {
+            var childIds = await _db.Categories
+                .Where(c => c.ParentId == categoryId.Value)
+                .Select(c => c.Id)
+                .ToListAsync();
+
+            query = query.Where(p => p.CategoryId == categoryId.Value || (p.CategoryId.HasValue && childIds.Contains(p.CategoryId.Value)));
+            
+            var catObj = await _db.Categories.FirstOrDefaultAsync(c => c.Id == categoryId.Value);
+            if (catObj != null)
+            {
+                feedTitle = $"Sportive Product Feed - {catObj.NameAr}";
+            }
+        }
+
+        var products = await query.ToListAsync();
 
         // 2. Prepare domain URLs
         var request = HttpContext.Request;
@@ -167,9 +217,9 @@ public class PublicController : ControllerBase
         XNamespace g = "http://base.google.com/ns/1.0";
         
         var channel = new XElement("channel",
-            new XElement("title", "Sportive Product Feed"),
+            new XElement("title", feedTitle),
             new XElement("link", frontendBaseUrl),
-            new XElement("description", "Automatic daily product catalog update feed for Sportive E-commerce.")
+            new XElement("description", $"Automatic product catalog feed for {feedTitle}")
         );
 
         foreach (var p in products)
