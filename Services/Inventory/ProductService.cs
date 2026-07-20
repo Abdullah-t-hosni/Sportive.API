@@ -160,8 +160,15 @@ public class ProductService : IProductService
 
         if (filter.OnlyPublic == true)
         {
-            // Only show sellable products on the store front
-            query = query.Where(p => p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock);
+            // Only show sellable Active products on the store front (and OutOfStock if not hidden in settings)
+            if (store != null && store.HideOutOfStock)
+            {
+                query = query.Where(p => p.Status == ProductStatus.Active);
+            }
+            else
+            {
+                query = query.Where(p => p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock);
+            }
         }
 
         if (filter.SupplierId.HasValue)
