@@ -33,6 +33,40 @@ public class SettingsController : ControllerBase
     }
 
     
+    private static bool _bostaColumnsChecked = false;
+
+    private async Task EnsureBostaColumnsExistAsync()
+    {
+        if (_bostaColumnsChecked) return;
+        _bostaColumnsChecked = true;
+
+        string[] sqlStatements = new[]
+        {
+            "ALTER TABLE `StoreSettings` ADD `EnableBostaIntegration` tinyint(1) NOT NULL DEFAULT 0;",
+            "ALTER TABLE `StoreSettings` ADD `BostaApiKey` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `BostaBusinessId` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `BostaPickupCity` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `BostaAutoCreateShipment` tinyint(1) NOT NULL DEFAULT 0;",
+            "ALTER TABLE `StoreSettings` ADD `BostaUseSandbox` tinyint(1) NOT NULL DEFAULT 0;",
+            "ALTER TABLE `Orders` ADD `BostaDeliveryId` longtext NULL;",
+            "ALTER TABLE `Orders` ADD `BostaTrackingNumber` longtext NULL;",
+            "ALTER TABLE `Orders` ADD `BostaShipmentStatus` longtext NULL;",
+            "ALTER TABLE `Orders` ADD `BostaAwbUrl` longtext NULL;"
+        };
+
+        foreach (var sql in sqlStatements)
+        {
+            try
+            {
+                await _db.Database.ExecuteSqlRawAsync(sql);
+            }
+            catch
+            {
+                // Column already exists or error ignored
+            }
+        }
+    }
+
     // GET /api/settings
     [HttpGet]
     [AllowAnonymous]
@@ -40,6 +74,7 @@ public class SettingsController : ControllerBase
     {
         try
         {
+            await EnsureBostaColumnsExistAsync();
             var info = await _db.StoreInfo.FirstOrDefaultAsync(x => x.StoreConfigId == 1);
             if (info == null)
             {
@@ -111,6 +146,7 @@ public class SettingsController : ControllerBase
     {
         try 
         {
+            await EnsureBostaColumnsExistAsync();
             var info = await _db.StoreInfo.FirstOrDefaultAsync(x => x.StoreConfigId == 1);
             if (info == null)
             {
