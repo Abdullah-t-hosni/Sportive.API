@@ -266,23 +266,40 @@ public class PdfService : IPdfService
                                     // Customer Details
                                     if (settings?.ReceiptShowCustomerDetails == true)
                                     {
-                                        var custName = order.Customer?.FullName ?? _t.Get("Pdf.CashCustomer");
+                                        var custName = order.Customer?.FullName;
+                                        if (string.IsNullOrWhiteSpace(custName) && order.Customer?.AppUser != null)
+                                        {
+                                            custName = order.Customer.AppUser.FullName;
+                                        }
+                                        if (string.IsNullOrWhiteSpace(custName))
+                                        {
+                                            custName = order.Source == "3" || order.Source == "Website" ? "عميل متجر أونلاين" : (_t.Get("Pdf.CashCustomer") ?? "عميل نقدي");
+                                        }
+
                                         infoCol.Item().Row(row =>
                                         {
-                                            row.RelativeItem().Text(_t.Get("Pdf.Customer", custName)).Bold().FontSize(11f);
-                                            if (!string.IsNullOrEmpty(order.Customer?.Phone))
-                                                row.RelativeItem().AlignLeft().Text(order.Customer.Phone).FontSize(11f).Bold();
+                                            row.RelativeItem(3).Text(_t.Get("Pdf.Customer", custName)).Bold().FontSize(11f);
+                                            var phone = order.CustomerPhone ?? order.Customer?.Phone;
+                                            if (!string.IsNullOrEmpty(phone))
+                                                row.RelativeItem(2).AlignLeft().Text(phone).FontSize(11f).Bold();
                                         });
 
                                         // Delivery Address Block
                                         if (order.DeliveryAddress != null)
                                         {
                                             var addr = order.DeliveryAddress;
-                                            var fullAddr = string.Join(", ", new[] { addr.Street, addr.District, addr.City, addr.BuildingNo }.Where(x => !string.IsNullOrWhiteSpace(x)));
+                                            var parts = new List<string>();
+                                            if (!string.IsNullOrWhiteSpace(addr.Street)) parts.Add(addr.Street);
+                                            if (!string.IsNullOrWhiteSpace(addr.District)) parts.Add(addr.District);
+                                            if (!string.IsNullOrWhiteSpace(addr.City)) parts.Add(addr.City);
+                                            if (!string.IsNullOrWhiteSpace(addr.BuildingNo)) parts.Add($"عمارة {addr.BuildingNo}");
+                                            if (!string.IsNullOrWhiteSpace(addr.Floor)) parts.Add($"دور {addr.Floor}");
+                                            if (!string.IsNullOrWhiteSpace(addr.ApartmentNo)) parts.Add($"شقة {addr.ApartmentNo}");
+                                            var fullAddr = string.Join(" - ", parts);
                                             if (!string.IsNullOrWhiteSpace(fullAddr))
                                             {
-                                                infoCol.Item().PaddingTop(2).Border(2f).BorderColor(Colors.Black).Padding(4)
-                                                    .Text($"عنوان التوصيل: {fullAddr}").FontSize(11f).Bold();
+                                                infoCol.Item().PaddingTop(2).Border(1.5f).BorderColor(Colors.Black).Padding(3)
+                                                    .Text($"عنوان التوصيل: {fullAddr}").FontSize(10f).Bold();
                                             }
                                         }
                                     }
