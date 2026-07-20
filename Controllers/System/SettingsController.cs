@@ -244,6 +244,14 @@ public class SettingsController : ControllerBase
             info.WapilotWebInstanceId    = dto.WapilotWebInstanceId;
             info.AutoSendWhatsAppInvoices = dto.AutoSendWhatsAppInvoices;
 
+            // Bosta Courier Integration
+            info.EnableBostaIntegration  = dto.EnableBostaIntegration;
+            info.BostaApiKey             = dto.BostaApiKey;
+            info.BostaBusinessId         = dto.BostaBusinessId;
+            info.BostaPickupCity         = dto.BostaPickupCity;
+            info.BostaAutoCreateShipment = dto.BostaAutoCreateShipment;
+            info.BostaUseSandbox         = dto.BostaUseSandbox;
+
             // E-Invoicing
             info.TaxAuthorityType = dto.TaxAuthorityType;
             info.EtaTaxNumber = dto.EtaTaxNumber;
