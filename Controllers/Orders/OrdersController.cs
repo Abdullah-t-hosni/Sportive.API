@@ -1356,6 +1356,31 @@ public class OrdersController : ControllerBase
         await _db.SaveChangesAsync();
         return Ok(new { success = true });
     }
+
+    [HttpPatch("{id}/bosta-shipment")]
+    [RequirePermission(ModuleKeys.Orders)]
+    public async Task<IActionResult> UpdateBostaShipment(int id, [FromBody] UpdateBostaShipmentDto dto)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id);
+        if (order == null) return NotFound();
+
+        order.BostaDeliveryId = dto.BostaDeliveryId ?? order.BostaDeliveryId;
+        order.BostaTrackingNumber = dto.BostaTrackingNumber ?? order.BostaTrackingNumber;
+        order.BostaShipmentStatus = dto.BostaShipmentStatus ?? order.BostaShipmentStatus;
+        order.BostaAwbUrl = dto.BostaAwbUrl ?? order.BostaAwbUrl;
+
+        await _db.SaveChangesAsync();
+
+        try
+        {
+            string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+            string userName = User.FindFirstValue(ClaimTypes.Name) ?? "";
+            await _audit.LogAsync("UpdateBostaShipment", "Order", id.ToString(), $"Updated Bosta Shipment Tracking #{dto.BostaTrackingNumber}", userId, userName);
+        }
+        catch { }
+
+        return Ok(new { message = "Bosta shipment tracking info updated successfully", orderId = id, trackingNumber = order.BostaTrackingNumber });
+    }
 }
 
 public record ArchiveBatchDto(int[] Ids, bool? Archive = true);

@@ -111,6 +111,12 @@ public class Order : BaseEntity
     public string? TaxAuthorityQrCode { get; set; } // URL or Base64 TLV
     public string? TaxAuthorityStatus { get; set; } // Valid, Invalid, Rejected
 
+    // Bosta Courier Tracking
+    public string? BostaDeliveryId { get; set; }
+    public string? BostaTrackingNumber { get; set; }
+    public string? BostaShipmentStatus { get; set; }
+    public string? BostaAwbUrl { get; set; }
+
     // Navigation
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
     public ICollection<OrderStatusHistory> StatusHistory { get; set; } = new List<OrderStatusHistory>();

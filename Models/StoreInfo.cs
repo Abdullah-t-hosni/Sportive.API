@@ -661,6 +661,28 @@ public class StoreInfo
     [JsonPropertyName("autoSendWhatsAppInvoices")]
     public bool AutoSendWhatsAppInvoices { get; set; } = false;
 
+    // --- 19. Bosta Courier Integration ---
+    [JsonPropertyName("enableBostaIntegration")]
+    public bool EnableBostaIntegration { get; set; } = false;
+
+    [MaxLength(200)]
+    [JsonPropertyName("bostaApiKey")]
+    public string? BostaApiKey { get; set; }
+
+    [MaxLength(100)]
+    [JsonPropertyName("bostaBusinessId")]
+    public string? BostaBusinessId { get; set; }
+
+    [MaxLength(100)]
+    [JsonPropertyName("bostaPickupCity")]
+    public string? BostaPickupCity { get; set; } = "Cairo";
+
+    [JsonPropertyName("bostaAutoCreateShipment")]
+    public bool BostaAutoCreateShipment { get; set; } = false;
+
+    [JsonPropertyName("bostaUseSandbox")]
+    public bool BostaUseSandbox { get; set; } = false;
+
     // --- Subscription Info (Not Mapped to Tenant DB) ---
     [NotMapped]
     [JsonPropertyName("subscriptionExpiresAt")]

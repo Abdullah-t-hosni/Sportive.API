@@ -277,7 +277,11 @@ public class OrderService : IOrderService
             o.CouponCode,
             GenerateOrderHash(o.OrderNumber),
             o.TaxAuthorityQrCode,
-            o.JournalEntries.Where(j => j.Type == JournalEntryType.SalesInvoice && j.Status != JournalEntryStatus.Reversed).Select(j => (int?)j.Id).FirstOrDefault()
+            o.JournalEntries.Where(j => j.Type == JournalEntryType.SalesInvoice && j.Status != JournalEntryStatus.Reversed).Select(j => (int?)j.Id).FirstOrDefault(),
+            o.BostaDeliveryId,
+            o.BostaTrackingNumber,
+            o.BostaShipmentStatus,
+            o.BostaAwbUrl
         );
     }
 

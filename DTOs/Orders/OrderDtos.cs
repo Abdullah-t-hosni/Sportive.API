@@ -202,7 +202,18 @@ public record OrderDetailDto(
     string? CouponCode = null,
     string? ShareHash = null,
     string? TaxAuthorityQrCode = null,
-    int? JournalEntryId = null
+    int? JournalEntryId = null,
+    string? BostaDeliveryId = null,
+    string? BostaTrackingNumber = null,
+    string? BostaShipmentStatus = null,
+    string? BostaAwbUrl = null
+);
+
+public record UpdateBostaShipmentDto(
+    string? BostaDeliveryId = null,
+    string? BostaTrackingNumber = null,
+    string? BostaShipmentStatus = null,
+    string? BostaAwbUrl = null
 );
 
 public record OrderDetailPaymentDto(
