@@ -110,7 +110,7 @@ public class InventoryService : IInventoryService
                         {
                             ProductVariantId = variantId.Value,
                             WarehouseId = warehouseIdToUse.Value,
-                            Quantity = 0,
+                            Quantity = variant.StockQuantity,
                             CreatedAt = TimeHelper.GetEgyptTime()
                         };
                         _db.ProductWarehouseStocks.Add(warehouseStock);

@@ -220,11 +220,18 @@ public class ProductService : IProductService
                 .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == warehouseId.Value)
                 .ToDictionaryAsync(w => w.ProductVariantId, w => w.Quantity);
 
-            foreach (var v in p.Variants)
+            if (warehouseStocks.Count > 0)
             {
-                v.StockQuantity = warehouseStocks.TryGetValue(v.Id, out var qty) ? qty : 0;
+                foreach (var v in p.Variants)
+                {
+                    v.StockQuantity = warehouseStocks.TryGetValue(v.Id, out var qty) ? qty : 0;
+                }
+                p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
             }
-            p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
+            else
+            {
+                p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
+            }
         }
 
         ProductDiscount? d = null;
@@ -276,11 +283,18 @@ public class ProductService : IProductService
                 .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == warehouseId.Value)
                 .ToDictionaryAsync(w => w.ProductVariantId, w => w.Quantity);
 
-            foreach (var v in p.Variants)
+            if (warehouseStocks.Count > 0)
             {
-                v.StockQuantity = warehouseStocks.TryGetValue(v.Id, out var qty) ? qty : 0;
+                foreach (var v in p.Variants)
+                {
+                    v.StockQuantity = warehouseStocks.TryGetValue(v.Id, out var qty) ? qty : 0;
+                }
+                p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
             }
-            p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
+            else
+            {
+                p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
+            }
         }
 
         ProductDiscount? d = null;
@@ -993,9 +1007,9 @@ public class ProductService : IProductService
                 finalPrice = p.DiscountPrice.Value;
             }
 
-            int totalStock = warehouseId.HasValue 
-                ? (productStocks.TryGetValue(p.Id, out var qty) ? qty : 0) 
-                : p.TotalStock;
+            int totalStock = (warehouseId.HasValue && productStocks.ContainsKey(p.Id)) 
+                ? productStocks[p.Id] 
+                : (p.Variants != null && p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock);
 
             resultList.Add(new ProductSummaryDto(
                 p.Id,
