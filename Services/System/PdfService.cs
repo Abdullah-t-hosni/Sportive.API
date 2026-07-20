@@ -266,23 +266,18 @@ public class PdfService : IPdfService
                                     // Customer Details
                                     if (settings?.ReceiptShowCustomerDetails == true)
                                     {
-                                        var custName = order.Customer?.FullName;
-                                        if (string.IsNullOrWhiteSpace(custName) && order.Customer?.AppUser != null)
-                                        {
-                                            custName = order.Customer.AppUser.FullName;
-                                        }
-                                        if (string.IsNullOrWhiteSpace(custName))
-                                        {
-                                            custName = order.Source == "3" || order.Source == "Website" ? "عميل متجر أونلاين" : (_t.Get("Pdf.CashCustomer") ?? "عميل نقدي");
-                                        }
+                                        var custName = !string.IsNullOrWhiteSpace(order.Customer?.FullName) 
+                                             ? order.Customer.FullName 
+                                             : (order.Source == "3" || order.Source == "Website" ? "عميل متجر أونلاين" : (_t.Get("Pdf.CashCustomer") ?? "عميل نقدي"));
 
-                                        infoCol.Item().Row(row =>
-                                        {
-                                            row.RelativeItem(3).Text(_t.Get("Pdf.Customer", custName)).Bold().FontSize(11f);
-                                            var phone = order.CustomerPhone ?? order.Customer?.Phone;
-                                            if (!string.IsNullOrEmpty(phone))
-                                                row.RelativeItem(2).AlignLeft().Text(phone).FontSize(11f).Bold();
-                                        });
+                                         var phone = order.Customer?.Phone;
+
+                                         infoCol.Item().Row(row =>
+                                         {
+                                             row.RelativeItem(3).Text(_t.Get("Pdf.Customer", custName)).Bold().FontSize(11f);
+                                             if (!string.IsNullOrWhiteSpace(phone))
+                                                 row.RelativeItem(2).AlignLeft().Text(phone).FontSize(11f).Bold();
+                                         });
 
                                         // Delivery Address Block
                                         if (order.DeliveryAddress != null)
