@@ -171,7 +171,10 @@ public class PublicController : ControllerBase
             try
             {
                 var uri = new System.Uri(storeUrlConfig);
-                frontendDomain = uri.Host;
+                if (!uri.Host.Contains("railway.app") && !uri.Host.Contains("sportiveapi"))
+                {
+                    frontendDomain = uri.Host;
+                }
             }
             catch {}
         }
@@ -183,25 +186,14 @@ public class PublicController : ControllerBase
             if (cleanedDomain.StartsWith("https://")) cleanedDomain = cleanedDomain.Substring(8);
             cleanedDomain = cleanedDomain.TrimEnd('/');
 
-            // If the custom domain is the API host itself or contains api/railway.app, do not use it as the frontend website URL
             if (!cleanedDomain.Contains("api") && !cleanedDomain.Contains("railway.app"))
             {
                 frontendDomain = cleanedDomain;
             }
         }
-        else
+        else if (host.Contains("localhost") || host.Contains("127.0.0.1"))
         {
-            if (!string.IsNullOrEmpty(host))
-            {
-                if (host.StartsWith("api.", System.StringComparison.OrdinalIgnoreCase))
-                {
-                    frontendDomain = host.Substring(4);
-                }
-                else if (host.Contains("localhost") || host.Contains("127.0.0.1"))
-                {
-                    frontendDomain = host;
-                }
-            }
+            frontendDomain = host;
         }
         
         var scheme = request.Scheme;

@@ -157,6 +157,14 @@ namespace Sportive.API.Extensions
                 return Results.Content(sb.ToString(), "application/xml", Encoding.UTF8);
             });
 
+            // Product redirect fallback for legacy Facebook Catalog Feed ads pointing to Railway backend
+            endpoints.MapGet("/products/{*slug}", (string slug, HttpContext context) =>
+            {
+                var queryString = context.Request.QueryString.Value ?? "";
+                var targetUrl = $"https://sportive-sportwear.com/products/{slug}{queryString}";
+                return Results.Redirect(targetUrl, permanent: true);
+            });
+
             return endpoints;
         }
     }
