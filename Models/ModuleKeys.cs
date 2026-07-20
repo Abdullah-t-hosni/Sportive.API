@@ -87,6 +87,7 @@ public static class ModuleKeys
     public const string Settings = "settings";
     public const string WelcomeMessages = "welcome-messages";
     public const string LinksManager = "links-manager";
+    public const string DataFeeds = "data-feeds";
     public const string Maintenance = "maintenance";
     public const string Diagnostics = "diagnostics";
     public const string Backup = "backup";
@@ -105,6 +106,6 @@ public static class ModuleKeys
         AccountingGroup, AccountingMain, Chart, Mapping, Journal, Receipts, Payments, Installments,
         AssetsGroup, AssetsMain, Assets, AssetCategories, AssetDepBatch, AssetDisposals, AssetPurchases,
         Hr, HrEmployees, HrEmpList, HrVouchers, HrPayroll, HrAdvances, HrCommissions, HrCommissionsDist, HrDepartments, HrAttendance,
-        System, ReportsMain, Staff, Settings, WelcomeMessages, LinksManager, Maintenance, Diagnostics, Backup, Ai, Performance, Profitability, ViewAllBranches
+        System, ReportsMain, Staff, Settings, WelcomeMessages, LinksManager, DataFeeds, Maintenance, Diagnostics, Backup, Ai, Performance, Profitability, ViewAllBranches
     };
 }

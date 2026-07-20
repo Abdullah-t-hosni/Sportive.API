@@ -174,11 +174,15 @@ public class ExportController : ControllerBase
     {
         var query = _db.Orders
             .Include(o => o.Customer)
+                .ThenInclude(c => c.AppUser)
             .Include(o => o.DeliveryAddress)
             .AsQueryable();
 
+        // Default to Processing (جاري التجهيز) if status is not explicitly passed
+        var exportStatus = status ?? OrderStatus.Processing;
+        query = query.Where(o => o.Status == exportStatus);
+
         if (source.HasValue)   query = query.Where(o => o.Source   == source.Value);
-        if (status.HasValue)   query = query.Where(o => o.Status   == status.Value);
         if (fromDate.HasValue) query = query.Where(o => o.CreatedAt >= fromDate.Value.Date);
         if (toDate.HasValue)   query = query.Where(o => o.CreatedAt <= toDate.Value.Date.AddDays(1).AddTicks(-1));
 
@@ -206,7 +210,7 @@ public class ExportController : ControllerBase
         var ws = wb.Worksheets.Add("بوليصة الشحن");
 
         var headers = new[] {
-            "الاسم", "رقم التليفون", "العنوان بالكامل", "الملاحظات", "مبلغ الفاتورة", "طريقة الدفع"
+            "رقم الطلب", "اسم العميل", "رقم التليفون", "العنوان بالكامل", "الملاحظات", "مبلغ الفاتورة", "طريقة الدفع", "حالة الطلب"
         };
         for (int c = 0; c < headers.Length; c++)
         {
@@ -224,14 +228,43 @@ public class ExportController : ControllerBase
             var addressText = "";
             if (o.DeliveryAddress != null)
             {
-                addressText = $"{o.DeliveryAddress.City} - {o.DeliveryAddress.District} - {o.DeliveryAddress.Street} {o.DeliveryAddress.BuildingNo} {o.DeliveryAddress.Floor} {o.DeliveryAddress.ApartmentNo}".Trim();
+                var parts = new List<string>();
+                if (!string.IsNullOrWhiteSpace(o.DeliveryAddress.City)) parts.Add(o.DeliveryAddress.City);
+                if (!string.IsNullOrWhiteSpace(o.DeliveryAddress.District)) parts.Add(o.DeliveryAddress.District);
+                if (!string.IsNullOrWhiteSpace(o.DeliveryAddress.Street)) parts.Add(o.DeliveryAddress.Street);
+                if (!string.IsNullOrWhiteSpace(o.DeliveryAddress.BuildingNo)) parts.Add($"عمارة {o.DeliveryAddress.BuildingNo}");
+                if (!string.IsNullOrWhiteSpace(o.DeliveryAddress.Floor)) parts.Add($"دور {o.DeliveryAddress.Floor}");
+                if (!string.IsNullOrWhiteSpace(o.DeliveryAddress.ApartmentNo)) parts.Add($"شقة {o.DeliveryAddress.ApartmentNo}");
+                if (!string.IsNullOrWhiteSpace(o.DeliveryAddress.AdditionalInfo)) parts.Add(o.DeliveryAddress.AdditionalInfo);
+                addressText = string.Join(" - ", parts);
             }
 
-            ws.Cell(row, 1).Value  = o.Customer?.FullName ?? "";
-            ws.Cell(row, 2).Value  = o.Customer?.Phone ?? "";
-            ws.Cell(row, 3).Value  = addressText;
-            ws.Cell(row, 4).Value  = o.CustomerNotes ?? "";
-            ws.Cell(row, 5).Value  = o.TotalAmount;
+            var custName = o.Customer?.FullName;
+            if (string.IsNullOrWhiteSpace(custName) && o.Customer?.AppUser != null)
+            {
+                custName = o.Customer.AppUser.FullName;
+            }
+            if (string.IsNullOrWhiteSpace(custName) && !string.IsNullOrWhiteSpace(o.DeliveryAddress?.TitleAr))
+            {
+                custName = o.DeliveryAddress.TitleAr;
+            }
+            if (string.IsNullOrWhiteSpace(custName))
+            {
+                custName = o.Source == OrderSource.Website ? "عميل متجر أونلاين" : "عميل متجر";
+            }
+
+            var phone = o.Customer?.Phone;
+            if (string.IsNullOrWhiteSpace(phone))
+            {
+                phone = o.Customer?.PhoneEncrypted ?? "";
+            }
+
+            ws.Cell(row, 1).Value  = o.OrderNumber;
+            ws.Cell(row, 2).Value  = custName;
+            ws.Cell(row, 3).Value  = phone;
+            ws.Cell(row, 4).Value  = addressText;
+            ws.Cell(row, 5).Value  = o.CustomerNotes ?? "";
+            ws.Cell(row, 6).Value  = o.TotalAmount;
             
             var paymentStr = o.PaymentMethod == PaymentMethod.Cash ? "الدفع عند الاستلام" :
                              o.PaymentMethod == PaymentMethod.CreditCard ? "بطاقة ائتمان" :
@@ -239,9 +272,10 @@ public class ExportController : ControllerBase
                              o.PaymentMethod == PaymentMethod.InstaPay ? "انستا باي" :
                              o.PaymentMethod == PaymentMethod.Vodafone ? "فودافون كاش" :
                              o.PaymentMethod.ToString();
-            ws.Cell(row, 6).Value  = paymentStr;
+            ws.Cell(row, 7).Value  = paymentStr;
+            ws.Cell(row, 8).Value  = "جاري التجهيز (قيد التحضير)";
             
-            ws.Cell(row, 5).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 6).Style.NumberFormat.Format = "#,##0.00";
             row++;
         }
 
