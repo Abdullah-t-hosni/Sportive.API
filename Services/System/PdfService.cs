@@ -155,6 +155,8 @@ public class PdfService : IPdfService
         return await Task.Run(() =>
         {
             int paperWidth = settings?.ReceiptWidth ?? 80;
+            if (paperWidth == 80) paperWidth = 72;
+            else if (paperWidth == 58) paperWidth = 48;
             
             // Estimate height dynamically based on items count
             int itemCount = order.Items?.Count ?? 0;
@@ -294,8 +296,8 @@ public class PdfService : IPdfService
                                             var fullAddr = string.Join(" - ", parts);
                                             if (!string.IsNullOrWhiteSpace(fullAddr))
                                             {
-                                                infoCol.Item().PaddingTop(2).Border(1f).BorderColor(Colors.Grey.Darken2).PaddingHorizontal(5).PaddingVertical(3)
-                                                    .Text($"عنوان التوصيل: {fullAddr}").FontSize(9.5f).Bold().LineHeight(1.2f);
+                                                infoCol.Item().PaddingTop(2).Border(0.6f).BorderColor(Colors.Black).PaddingHorizontal(5).PaddingVertical(3)
+                                                    .Text($"عنوان التوصيل: {fullAddr}").FontSize(9.5f).Bold().LineHeight(1.2f).FontColor(Colors.Black);
                                             }
                                         }
                                     }
@@ -320,8 +322,8 @@ public class PdfService : IPdfService
                                     // Note
                                     if (settings?.ReceiptShowNote != false && !string.IsNullOrEmpty(order.CustomerNotes))
                                     {
-                                        infoCol.Item().PaddingTop(2).Border(1f).BorderColor(Colors.Grey.Darken2).PaddingHorizontal(5).PaddingVertical(3)
-                                            .Text(_t.Get("Pdf.Note", order.CustomerNotes ?? "")).FontSize(10f).Bold();
+                                        infoCol.Item().PaddingTop(2).Border(0.6f).BorderColor(Colors.Black).PaddingHorizontal(5).PaddingVertical(3)
+                                            .Text(_t.Get("Pdf.Note", order.CustomerNotes ?? "")).FontSize(10f).Bold().FontColor(Colors.Black);
                                     }
                                 });
                             }
@@ -358,11 +360,11 @@ public class PdfService : IPdfService
 
                                             if (badgeParts.Any())
                                             {
-                                                itemCol.Item().PaddingTop(1).Text(string.Join("   |   ", badgeParts)).FontSize(9.5f).Bold().FontColor(Colors.Grey.Darken3);
+                                                itemCol.Item().PaddingTop(1).Text(string.Join("   |   ", badgeParts)).FontSize(9.5f).Bold().FontColor(Colors.Black);
                                             }
                                         });
 
-                                        itemsCol.Item().BorderBottom(0.8f).BorderColor(Colors.Grey.Darken2);
+                                        itemsCol.Item().BorderBottom(0.6f).BorderColor(Colors.Black);
                                     }
                                 });
                             }
@@ -575,6 +577,8 @@ public class PdfService : IPdfService
             // Convert to Images and rebuild as a SINGLE flat PDF page
             var images = doc.GenerateImages();
             int finalPaperWidth = settings?.ReceiptWidth ?? 80;
+            if (finalPaperWidth == 80) finalPaperWidth = 72;
+            else if (finalPaperWidth == 58) finalPaperWidth = 48;
 
             // Calculate total actual height: each image is a PNG with known pixel dimensions
             float totalHeightMm = 0;
