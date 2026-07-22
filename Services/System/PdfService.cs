@@ -46,38 +46,57 @@ public class PdfService : IPdfService
                 Directory.CreateDirectory(fontDir);
             }
             
-            string fontPath = Path.Combine(fontDir, "Cairo-Regular.ttf");
+            string regPath = Path.Combine(fontDir, "Cairo-Regular.ttf");
+            string boldPath = Path.Combine(fontDir, "Cairo-Bold.ttf");
             
-            // Overwrite or download Cairo-Bold for maximum printing thickness
-            bool needDownload = !File.Exists(fontPath);
-            if (!needDownload)
+            using (var client = new HttpClient())
             {
-                // Verify file size is not regular, or just force download Cairo-Bold once
-                var info = new FileInfo(fontPath);
-                if (info.Length < 100000) // Regular is ~80KB, Bold is larger
+                client.Timeout = TimeSpan.FromSeconds(15);
+                
+                // 1. Download Regular if it doesn't exist or if size is too large (indicating it was previously overwritten by the bold font)
+                bool needReg = !File.Exists(regPath);
+                if (!needReg)
                 {
-                    try { File.Delete(fontPath); } catch {}
-                    needDownload = true;
+                    var info = new FileInfo(regPath);
+                    if (info.Length > 100000) // Regular is ~80KB, Bold is ~120KB
+                    {
+                        try { File.Delete(regPath); } catch {}
+                        needReg = true;
+                    }
                 }
-            }
-
-            if (needDownload)
-            {
-                // Download Cairo-Bold.ttf but save it as Cairo-Regular.ttf so QuestPDF maps it naturally
-                using (var client = new HttpClient())
+                if (needReg)
                 {
-                    client.Timeout = TimeSpan.FromSeconds(15);
+                    var bytes = client.GetByteArrayAsync("https://github.com/google/fonts/raw/main/ofl/cairo/Cairo-Regular.ttf").GetAwaiter().GetResult();
+                    File.WriteAllBytes(regPath, bytes);
+                }
+
+                // 2. Download Bold if it doesn't exist
+                if (!File.Exists(boldPath))
+                {
                     var bytes = client.GetByteArrayAsync("https://github.com/google/fonts/raw/main/ofl/cairo/Cairo-Bold.ttf").GetAwaiter().GetResult();
-                    File.WriteAllBytes(fontPath, bytes);
+                    File.WriteAllBytes(boldPath, bytes);
                 }
             }
 
-            if (File.Exists(fontPath))
+            bool regRegistered = false;
+            if (File.Exists(regPath))
             {
-                using (var stream = File.OpenRead(fontPath))
+                using (var stream = File.OpenRead(regPath))
                 {
                     QuestPDF.Drawing.FontManager.RegisterFont(stream);
                 }
+                regRegistered = true;
+            }
+            if (File.Exists(boldPath))
+            {
+                using (var stream = File.OpenRead(boldPath))
+                {
+                    QuestPDF.Drawing.FontManager.RegisterFont(stream);
+                }
+            }
+
+            if (regRegistered)
+            {
                 _activeFont = "Cairo";
             }
             else
@@ -297,7 +316,12 @@ public class PdfService : IPdfService
                                             if (!string.IsNullOrWhiteSpace(fullAddr))
                                             {
                                                 infoCol.Item().PaddingTop(2).Border(0.6f).BorderColor(Colors.Black).PaddingHorizontal(5).PaddingVertical(3)
-                                                    .Text($"عنوان التوصيل: {fullAddr}").FontSize(9.5f).Bold().LineHeight(1.2f).FontColor(Colors.Black);
+                                                    .Text(x =>
+                                                    {
+                                                        x.DefaultTextStyle(style => style.FontSize(9.5f).LineHeight(1.2f).FontColor(Colors.Black));
+                                                        x.Span("عنوان التوصيل: ").Bold();
+                                                        x.Span(fullAddr);
+                                                    });
                                             }
                                         }
                                     }
@@ -323,7 +347,12 @@ public class PdfService : IPdfService
                                     if (settings?.ReceiptShowNote != false && !string.IsNullOrEmpty(order.CustomerNotes))
                                     {
                                         infoCol.Item().PaddingTop(2).Border(0.6f).BorderColor(Colors.Black).PaddingHorizontal(5).PaddingVertical(3)
-                                            .Text(_t.Get("Pdf.Note", order.CustomerNotes ?? "")).FontSize(10f).Bold().FontColor(Colors.Black);
+                                            .Text(x =>
+                                            {
+                                                x.DefaultTextStyle(style => style.FontSize(10f).FontColor(Colors.Black));
+                                                x.Span(_t.Get("Pdf.Note", "").Replace(" {0}", "").Replace("{0}", "")).Bold();
+                                                x.Span(order.CustomerNotes ?? "");
+                                            });
                                     }
                                 });
                             }
@@ -345,7 +374,7 @@ public class PdfService : IPdfService
                                                 var qtyPriceText = settings?.ReceiptShowUnitPrice != false
                                                     ? $"{item.Quantity} × {item.UnitPrice:N2} {settings?.CurrencySymbol ?? "ج.م"}"
                                                     : $"{item.Quantity}";
-                                                row.RelativeItem(3).Text(qtyPriceText).FontSize(10.5f).Bold().FontColor(Colors.Black);
+                                                row.RelativeItem(3).Text(qtyPriceText).FontSize(10.5f).FontColor(Colors.Black);
                                                 row.RelativeItem(2).AlignLeft().Text($"{item.TotalPrice:N2} {settings?.CurrencySymbol ?? "ج.م"}").Bold().FontSize(11f);
                                             });
 
@@ -360,7 +389,7 @@ public class PdfService : IPdfService
 
                                             if (badgeParts.Any())
                                             {
-                                                itemCol.Item().PaddingTop(1).Text(string.Join("   |   ", badgeParts)).FontSize(9.5f).Bold().FontColor(Colors.Black);
+                                                itemCol.Item().PaddingTop(1).Text(string.Join("   |   ", badgeParts)).FontSize(9.5f).FontColor(Colors.Black);
                                             }
                                         });
 
