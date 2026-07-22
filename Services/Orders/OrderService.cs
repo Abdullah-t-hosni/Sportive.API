@@ -193,7 +193,7 @@ public class OrderService : IOrderService
             i.Product?.Slug,
             i.Size, i.Color, i.Quantity, i.UnitPrice, i.TotalPrice,
             i.OriginalUnitPrice, i.DiscountAmount,
-            i.HasTax, i.VatRateApplied, i.ItemVatAmount, i.ReturnedQuantity
+            i.HasTax, i.VatRateApplied, i.ItemVatAmount, i.ReturnedQuantity, i.ReviewRequested
         )).ToList();
 
         // 💡 FETCH HISTORY WITH NAMES
@@ -2856,6 +2856,16 @@ public class OrderService : IOrderService
             }
             catch { await tx.RollbackAsync(); throw; }
         });
+    }
+
+    public async Task<bool> MarkReviewRequestedAsync(int orderId, int itemId)
+    {
+        var item = await _db.OrderItems.FirstOrDefaultAsync(i => i.OrderId == orderId && i.Id == itemId);
+        if (item == null) return false;
+
+        item.ReviewRequested = true;
+        await _db.SaveChangesAsync();
+        return true;
     }
 }
 

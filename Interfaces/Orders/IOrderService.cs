@@ -18,4 +18,5 @@ public interface IOrderService
     Task<OrderDetailDto> RevertFromCostAsync(int orderId, string updatedByUserId);
     Task SyncAllOrderAccountingAsync(int? daysLimit = null);
     Task UpdateSalesReturnAsync(string reference, UpdateSalesReturnDto dto, string updatedByUserId);
+    Task<bool> MarkReviewRequestedAsync(int orderId, int itemId);
 }

@@ -152,6 +152,8 @@ public class OrderItem : BaseEntity
     public bool HasTax { get; set; } = true;
     public decimal? VatRateApplied { get; set; }
     public decimal ItemVatAmount { get; set; } = 0;
+    
+    public bool ReviewRequested { get; set; } = false;
 }
 
 public class OrderStatusHistory : BaseEntity

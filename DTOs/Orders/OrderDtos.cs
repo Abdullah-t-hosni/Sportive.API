@@ -243,7 +243,8 @@ public record OrderItemDto(
     bool HasTax = true,
     decimal? VatRateApplied = null,
     decimal ItemVatAmount = 0,
-    int ReturnedQuantity = 0
+    int ReturnedQuantity = 0,
+    bool ReviewRequested = false
 );
 
 public record OrderStatusHistoryDto(

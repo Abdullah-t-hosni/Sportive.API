@@ -85,6 +85,15 @@ public class OrdersController : ControllerBase
         return Ok(order);
     }
 
+    [RequirePermission(ModuleKeys.Orders, requireEdit: true)]
+    [HttpPost("{orderId}/items/{itemId}/mark-review-requested")]
+    public async Task<IActionResult> MarkReviewRequested(int orderId, int itemId)
+    {
+        var result = await _orderService.MarkReviewRequestedAsync(orderId, itemId);
+        if (!result) return NotFound();
+        return Ok();
+    }
+
     [HttpGet("my")]
     public async Task<ActionResult<PaginatedResult<OrderSummaryDto>>> GetMyOrders([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
