@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Services;
-using System.Security.Claims;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace Sportive.API.Controllers;
 
@@ -104,8 +104,63 @@ public class ReviewsController : ControllerBase
             return BadRequest(new { message = ex.Message });
         }
     }
+
+    [HttpPost("generate-token")]
+    public IActionResult GenerateToken([FromBody] GenerateReviewTokenDto dto, [FromServices] IDataProtectionProvider dpProvider)
+    {
+        var protector = dpProvider.CreateProtector("ReviewTokens");
+        var token = protector.Protect($"{dto.OrderId}:{dto.ProductId}");
+        return Ok(new { token });
+    }
+
+    [HttpGet("validate-token/{token}")]
+    public IActionResult ValidateToken(string token, [FromServices] IDataProtectionProvider dpProvider)
+    {
+        try
+        {
+            var protector = dpProvider.CreateProtector("ReviewTokens");
+            var decrypted = protector.Unprotect(token);
+            var parts = decrypted.Split(':');
+            if (parts.Length == 2 && int.TryParse(parts[0], out var orderId) && int.TryParse(parts[1], out var productId))
+            {
+                return Ok(new { valid = true, productId = productId, productName = "Product" });
+            }
+        }
+        catch {}
+        return BadRequest(new { valid = false });
+    }
+
+    [HttpPost("by-token")]
+    public async Task<IActionResult> AddByToken([FromBody] AddReviewByTokenDto dto, [FromServices] IDataProtectionProvider dpProvider, [FromServices] Sportive.API.Data.AppDbContext db)
+    {
+        try
+        {
+            var protector = dpProvider.CreateProtector("ReviewTokens");
+            var decrypted = protector.Unprotect(dto.Token);
+            var parts = decrypted.Split(':');
+            if (parts.Length == 2 && int.TryParse(parts[0], out var orderId) && int.TryParse(parts[1], out var productId))
+            {
+                var order = await db.Orders.FindAsync(orderId);
+                if (order == null) return NotFound(new { message = "Order not found" });
+                
+                if (order.CustomerId > 0)
+                {
+                    await _reviews.AddReviewAsync(order.CustomerId, productId, dto.Rating, dto.Comment);
+                }
+                else
+                {
+                    await _reviews.AddAdminReviewAsync("Online Guest", null, productId, dto.Rating, dto.Comment);
+                }
+                return Ok(new { message = "Review submitted for moderation" });
+            }
+        }
+        catch {}
+        return BadRequest(new { message = "Invalid token" });
+    }
 }
 
 public record ReplyDto(string Reply);
 public record AdminAddReviewDto(string CustomerName, string? CustomerPhone, int ProductId, int Rating, string? Comment);
+public record GenerateReviewTokenDto(int OrderId, int ProductId);
+public record AddReviewByTokenDto(string Token, int Rating, string? Comment);
 
