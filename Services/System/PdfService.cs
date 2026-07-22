@@ -66,7 +66,7 @@ public class PdfService : IPdfService
                 }
                 if (needReg)
                 {
-                    var bytes = client.GetByteArrayAsync("https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Regular.ttf").GetAwaiter().GetResult();
+                    var bytes = client.GetByteArrayAsync("https://cdn.jsdelivr.net/fontsource/fonts/cairo@latest/arabic-400-normal.ttf").GetAwaiter().GetResult();
                     File.WriteAllBytes(regPath, bytes);
                 }
 
@@ -83,7 +83,7 @@ public class PdfService : IPdfService
                 }
                 if (needBold)
                 {
-                    var bytes = client.GetByteArrayAsync("https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Bold.ttf").GetAwaiter().GetResult();
+                    var bytes = client.GetByteArrayAsync("https://cdn.jsdelivr.net/fontsource/fonts/cairo@latest/arabic-700-normal.ttf").GetAwaiter().GetResult();
                     File.WriteAllBytes(boldPath, bytes);
                 }
             }
