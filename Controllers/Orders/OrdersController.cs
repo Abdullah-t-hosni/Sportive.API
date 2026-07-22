@@ -154,8 +154,11 @@ public class OrdersController : ControllerBase
         // Trigger Auto-Print Notification to Admins
         try
         {
-            var prefix = _tenantContext.CurrentTenant?.Slug?.ToLowerInvariant() ?? "global";
-            await _hubContext.Clients.Group($"{prefix}_Admin").SendAsync("ReceiveNewOrderToPrint", order.Id);
+            if (order.Source != OrderSource.POS)
+            {
+                var prefix = _tenantContext.CurrentTenant?.Slug?.ToLowerInvariant() ?? "global";
+                await _hubContext.Clients.Group($"{prefix}_Admin").SendAsync("ReceiveNewOrderToPrint", order.Id);
+            }
         }
         catch (Exception ex)
         {

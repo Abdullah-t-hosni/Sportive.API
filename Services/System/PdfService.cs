@@ -186,19 +186,12 @@ public class PdfService : IPdfService
             int paperWidth = settings?.ReceiptWidth ?? 80;
             if (paperWidth == 80) paperWidth = 72;
             else if (paperWidth == 58) paperWidth = 48;
-            
-            // Estimate height dynamically based on items count
-            int itemCount = order.Items?.Count ?? 0;
-            // Base height: header, totals, payment details, footer ~200mm. Per item: ~15mm.
-            int estimatedHeight = Math.Max(180, 200 + (itemCount * 15));
-            // Cap at 1500mm to prevent Skia bitmap allocation crash (> 32,767 pixels)
-            int paperHeight = Math.Min(1500, estimatedHeight);
 
             var doc = Document.Create(container =>
             {
                 container.Page(page =>
                 {
-                    page.Size(paperWidth, paperHeight, Unit.Millimetre);
+                    page.ContinuousSize(paperWidth, Unit.Millimetre);
                     page.MarginHorizontal(0.5f, Unit.Millimetre);
                     page.MarginVertical(2, Unit.Millimetre);
                     page.PageColor(Colors.White);
@@ -612,52 +605,13 @@ public class PdfService : IPdfService
                                 }
                             }
                         }
+                        // Add generous bottom padding (18mm) so physical printer cutter NEVER cuts off footer text
+                        col.Item().Height(18, Unit.Millimetre);
                     });
                 });
             });
 
-            // Convert to Images and rebuild as a SINGLE flat PDF page
-            var images = doc.GenerateImages();
-            int finalPaperWidth = settings?.ReceiptWidth ?? 80;
-            if (finalPaperWidth == 80) finalPaperWidth = 72;
-            else if (finalPaperWidth == 58) finalPaperWidth = 48;
-
-            // Calculate total actual height: each image is a PNG with known pixel dimensions
-            float totalHeightMm = 0;
-            var imageList = images.ToList();
-            foreach (var imgBytes in imageList)
-            {
-                // QuestPDF generates PNG images — read dimensions from PNG header
-                // PNG: bytes 16-19 = width, 20-23 = height (big-endian)
-                int imgWidthPx  = (imgBytes[16] << 24) | (imgBytes[17] << 16) | (imgBytes[18] << 8) | imgBytes[19];
-                int imgHeightPx = (imgBytes[20] << 24) | (imgBytes[21] << 16) | (imgBytes[22] << 8) | imgBytes[23];
-                if (imgWidthPx > 0)
-                {
-                    float aspectRatio = (float)imgHeightPx / imgWidthPx;
-                    totalHeightMm += finalPaperWidth * aspectRatio;
-                }
-            }
-
-            // Add generous bottom padding (18mm) so physical printer cutter NEVER cuts off footer text or URLs!
-            totalHeightMm += 18f;
-
-            var finalDoc = Document.Create(finalContainer =>
-            {
-                finalContainer.Page(page =>
-                {
-                    page.Size(finalPaperWidth, totalHeightMm, Unit.Millimetre);
-                    page.Margin(0);
-                    page.Content().Column(col =>
-                    {
-                        foreach (var img in imageList)
-                        {
-                            col.Item().Image(img);
-                        }
-                    });
-                });
-            });
-
-            return finalDoc.GeneratePdf();
+            return doc.GeneratePdf();
         });
     }
 
