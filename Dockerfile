@@ -11,8 +11,8 @@ FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app
 COPY --from=build /app/out .
 
-# Install mysql-client for mysqldump support
-RUN apt-get update && apt-get install -y default-mysql-client && rm -rf /var/lib/apt/lists/*
+# Install mysql-client and font rendering libraries for SkiaSharp support
+RUN apt-get update && apt-get install -y default-mysql-client libfontconfig1 libfreetype6 libharfbuzz0b && rm -rf /var/lib/apt/lists/*
 
 ENV ASPNETCORE_URLS=http://0.0.0.0:8080
 EXPOSE 8080
