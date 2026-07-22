@@ -53,12 +53,12 @@ public class PdfService : IPdfService
             {
                 client.Timeout = TimeSpan.FromSeconds(15);
                 
-                // 1. Download Regular if it doesn't exist or if size is too large (indicating it was previously overwritten by the bold font)
+                // 1. Download Regular if it doesn't exist or if it's the wrong size (indicating it's the variable font ~600KB or corrupted)
                 bool needReg = !File.Exists(regPath);
                 if (!needReg)
                 {
                     var info = new FileInfo(regPath);
-                    if (info.Length > 100000) // Regular is ~80KB, Bold is ~120KB
+                    if (info.Length > 150000 || info.Length < 30000) // Static Cairo-Regular is ~75KB
                     {
                         try { File.Delete(regPath); } catch {}
                         needReg = true;
@@ -66,14 +66,24 @@ public class PdfService : IPdfService
                 }
                 if (needReg)
                 {
-                    var bytes = client.GetByteArrayAsync("https://github.com/google/fonts/raw/main/ofl/cairo/Cairo-Regular.ttf").GetAwaiter().GetResult();
+                    var bytes = client.GetByteArrayAsync("https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Regular.ttf").GetAwaiter().GetResult();
                     File.WriteAllBytes(regPath, bytes);
                 }
 
-                // 2. Download Bold if it doesn't exist
-                if (!File.Exists(boldPath))
+                // 2. Download Bold if it doesn't exist or if it's the wrong size
+                bool needBold = !File.Exists(boldPath);
+                if (!needBold)
                 {
-                    var bytes = client.GetByteArrayAsync("https://github.com/google/fonts/raw/main/ofl/cairo/Cairo-Bold.ttf").GetAwaiter().GetResult();
+                    var info = new FileInfo(boldPath);
+                    if (info.Length > 150000 || info.Length < 30000) // Static Cairo-Bold is ~115KB
+                    {
+                        try { File.Delete(boldPath); } catch {}
+                        needBold = true;
+                    }
+                }
+                if (needBold)
+                {
+                    var bytes = client.GetByteArrayAsync("https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Bold.ttf").GetAwaiter().GetResult();
                     File.WriteAllBytes(boldPath, bytes);
                 }
             }
@@ -410,24 +420,30 @@ public class PdfService : IPdfService
 
                                     // Discount
                                     var totalSavings = order.DiscountAmount + order.TemporalDiscount;
-                                    if (totalSavings > 0 && settings?.ReceiptShowDiscount != false)
+                                    totCol.Item().Row(row =>
                                     {
-                                        totCol.Item().Row(row =>
-                                        {
-                                            row.RelativeItem().Text(_t.Get("Pdf.TotalDiscount")).FontSize(10.5f).Bold();
-                                            row.RelativeItem().AlignLeft().Text($"خصم {totalSavings:N2} {settings?.CurrencySymbol ?? "ج.م"}").FontSize(10.5f).Bold().FontColor(Colors.Black);
-                                        });
-                                    }
+                                        var discountLabel = _t.Get("Pdf.TotalDiscount");
+                                        var discountDetails = new List<string>();
+                                        if (!string.IsNullOrEmpty(order.CouponCode))
+                                            discountDetails.Add($"كوبون: {order.CouponCode}");
+                                        if (order.TemporalDiscount > 0)
+                                            discountDetails.Add("عروض");
+                                        if (order.DiscountAmount > 0 && string.IsNullOrEmpty(order.CouponCode))
+                                            discountDetails.Add("خصم إضافي");
+
+                                        if (discountDetails.Any())
+                                            discountLabel += $" ({string.Join(" + ", discountDetails)})";
+
+                                        row.RelativeItem().Text(discountLabel).FontSize(10.5f).Bold();
+                                        row.RelativeItem().AlignLeft().Text($"خصم {totalSavings:N2} {settings?.CurrencySymbol ?? "ج.م"}").FontSize(10.5f).Bold().FontColor(Colors.Black);
+                                    });
 
                                     // Delivery Fee
-                                    if (order.DeliveryFee > 0)
+                                    totCol.Item().Row(row =>
                                     {
-                                        totCol.Item().Row(row =>
-                                        {
-                                            row.RelativeItem().Text(_t.Get("Pdf.DeliveryFee")).FontSize(10.5f).Bold();
-                                            row.RelativeItem().AlignLeft().Text($"{order.DeliveryFee:N2} {settings?.CurrencySymbol ?? "ج.م"}").FontSize(10.5f).Bold();
-                                        });
-                                    }
+                                        row.RelativeItem().Text(_t.Get("Pdf.DeliveryFee")).FontSize(10.5f).Bold();
+                                        row.RelativeItem().AlignLeft().Text($"{order.DeliveryFee:N2} {settings?.CurrencySymbol ?? "ج.م"}").FontSize(10.5f).Bold();
+                                    });
 
                                     // VAT
                                     var totalVat = order.Items.Sum(i => i.ItemVatAmount);
@@ -493,14 +509,11 @@ public class PdfService : IPdfService
 
                                     // Remaining
                                     var remaining = order.TotalAmount - order.PaidAmount;
-                                    if (remaining > 0)
+                                    payCol.Item().Row(row =>
                                     {
-                                        payCol.Item().Row(row =>
-                                        {
-                                            row.RelativeItem().Text(_t.Get("Pdf.Remaining")).FontSize(10.5f).Bold();
-                                            row.RelativeItem().AlignLeft().Text($"{remaining:N2} {settings?.CurrencySymbol ?? "ج.م"}").FontSize(10.5f).Bold();
-                                        });
-                                    }
+                                        row.RelativeItem().Text(_t.Get("Pdf.Remaining")).FontSize(10.5f).Bold();
+                                        row.RelativeItem().AlignLeft().Text($"{remaining:N2} {settings?.CurrencySymbol ?? "ج.م"}").FontSize(10.5f).Bold();
+                                    });
 
                                     // Method
                                     payCol.Item().Row(row =>

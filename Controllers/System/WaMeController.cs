@@ -38,6 +38,7 @@ public class WaMeController : ControllerBase
             phone        = order.Customer?.Phone,
             customerName = order.Customer?.FullName,
             orderNumber  = order.OrderNumber,
+            shareHash    = GenerateOrderHash(order.OrderNumber),
             links = new
             {
                 confirmation = _wa.OrderConfirmation(order),
@@ -48,6 +49,13 @@ public class WaMeController : ControllerBase
                 review       = _wa.ProductReview(order)
             }
         });
+    }
+
+    private static string GenerateOrderHash(string orderNumber)
+    {
+        using var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes("SportiveSecretInvoiceSaltKey2026"));
+        var hashBytes = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes($"invoice-{orderNumber}"));
+        return Convert.ToHexString(hashBytes).ToLower().Substring(0, 10);
     }
 
     // GET /api/wame/order/{id}/confirmation
