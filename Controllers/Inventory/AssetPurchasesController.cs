@@ -451,6 +451,16 @@ public class AssetPurchasesController : ControllerBase
 
                 decimal subtotal = 0;
                 decimal totalLineTax = 0;
+
+                // Update existing assets in-place instead of recreating them
+                // This preserves asset numbers and avoids duplicate entries in the fixed asset register
+                var existingAssets = await _db.FixedAssets
+                    .Where(a => a.PurchaseInvoiceId == id)
+                    .OrderBy(a => a.Id)
+                    .ToListAsync();
+                
+                int assetIndex = 0;
+
                 foreach (var item in dto.Items)
                 {
                     if (!item.FixedAssetCategoryId.HasValue)
@@ -486,30 +496,27 @@ public class AssetPurchasesController : ControllerBase
                     };
                     invoice.Items.Add(invItem);
 
-                    // Update existing assets in-place instead of recreating them
-                    // This preserves asset numbers and avoids duplicate entries in the fixed asset register
-                    var existingAssets = await _db.FixedAssets
-                        .Where(a => a.PurchaseInvoiceId == id)
-                        .ToListAsync();
-
                     for (int i = 0; i < (int)item.Quantity; i++)
                     {
-                        if (i < existingAssets.Count)
+                        FixedAsset asset;
+                        if (assetIndex < existingAssets.Count)
                         {
                             // Update existing asset in-place
-                            var existing = existingAssets[i];
-                            existing.Name = item.AssetName ?? item.Description;
-                            existing.CategoryId = item.FixedAssetCategoryId.Value;
-                            existing.PurchaseDate = dto.InvoiceDate;
-                            existing.PurchaseCost = item.Quantity > 0 ? Math.Round(lineBase / item.Quantity, 2) : item.UnitCost;
-                            existing.CostCenter = invoice.CostCenter;
-                            existing.BranchId = invoice.BranchId;
+                            asset = existingAssets[assetIndex];
+                            asset.Name = item.AssetName ?? item.Description;
+                            asset.CategoryId = item.FixedAssetCategoryId.Value;
+                            asset.PurchaseDate = dto.InvoiceDate;
+                            asset.PurchaseCost = item.Quantity > 0 ? Math.Round(lineBase / item.Quantity, 2) : item.UnitCost;
+                            asset.CostCenter = invoice.CostCenter;
+                            asset.BranchId = invoice.BranchId;
+                            
+                            assetIndex++;
                         }
                         else
                         {
                             // Only create new assets if quantity was increased
                             var assetNo = await _seq.NextAsync("FA");
-                            var asset = new FixedAsset
+                            asset = new FixedAsset
                             {
                                 AssetNumber = assetNo,
                                 Name = item.AssetName ?? item.Description,
@@ -528,18 +535,20 @@ public class AssetPurchasesController : ControllerBase
                             };
                             _db.FixedAssets.Add(asset);
                         }
-                    }
 
-                    // Remove extra assets if quantity was decreased
-                    if ((int)item.Quantity < existingAssets.Count)
-                    {
-                        var toRemove = existingAssets.Skip((int)item.Quantity).ToList();
-                        _db.FixedAssets.RemoveRange(toRemove);
+                        // Set the CreatedAsset reference for the first item so foreign keys map correctly
+                        if (i == 0) invItem.CreatedAsset = asset;
                     }
-
 
                     subtotal += lineBase;
                     totalLineTax += lineTax;
+                }
+
+                // Remove extra assets if overall quantity was decreased
+                if (assetIndex < existingAssets.Count)
+                {
+                    var toRemove = existingAssets.Skip(assetIndex).ToList();
+                    _db.FixedAssets.RemoveRange(toRemove);
                 }
 
                 invoice.SubTotal = Math.Round(subtotal, 2);
