@@ -628,9 +628,6 @@ public class AssetPurchasesController : ControllerBase
                 await _db.SaveChangesAsync(); // Commit items deletion
 
                 _db.FixedAssets.RemoveRange(associatedAssets);
-                
-                var paymentNumbers = invoice.Payments.Select(p => p.PaymentNumber).ToList();
-                _db.SupplierPayments.RemoveRange(invoice.Payments);
 
                 _db.PurchaseInvoices.Remove(invoice);
 
