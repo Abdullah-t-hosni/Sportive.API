@@ -232,7 +232,7 @@ public class AssetPurchasesController : ControllerBase
                             PurchaseDate = dto.InvoiceDate,
                             PurchaseCost = item.UnitCost,
                             Status = AssetStatus.Active,
-                            PurchaseInvoiceId = 0, // Set to temp 0, will update after save
+                            PurchaseInvoiceId = null, // Set to temp null, will update after save
                             CreatedAt = TimeHelper.GetEgyptTime(),
                             Supplier = supplier.Name,
                             CostCenter = invoice.CostCenter,
@@ -302,7 +302,7 @@ public class AssetPurchasesController : ControllerBase
                 var createdAssets = _db.ChangeTracker.Entries<FixedAsset>()
                     .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified)
                     .Select(e => e.Entity)
-                    .Where(a => a.PurchaseInvoiceId == 0)
+                    .Where(a => a.PurchaseInvoiceId == null)
                     .ToList();
                 
                 foreach(var a in createdAssets) a.PurchaseInvoiceId = invoice.Id;
