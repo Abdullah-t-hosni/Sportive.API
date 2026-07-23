@@ -167,7 +167,8 @@ public record OrderSummaryDto(
     DateTime? UpdatedAt = null,
     string? TaxAuthorityQrCode = null,
     string? Governorate = null,
-    int? JournalEntryId = null
+    int? JournalEntryId = null,
+    bool HasReviewRequested = false
 );
 
 

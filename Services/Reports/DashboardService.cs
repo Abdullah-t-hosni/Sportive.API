@@ -1217,7 +1217,11 @@ public class DashboardService : IDashboardService
             o.SalesPersonId,
             o.DiscountAmount,
             o.TemporalDiscount,
-            o.UpdatedAt))
+            o.UpdatedAt,
+            null, // TaxAuthorityQrCode
+            null, // Governorate
+            null, // JournalEntryId
+            o.Items.Any(i => i.ReviewRequested)))
             .ToList();
     }
 }

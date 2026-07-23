@@ -136,7 +136,8 @@ public class OrderService : IOrderService
                 o.UpdatedAt,
                 o.TaxAuthorityQrCode,
                 o.DeliveryAddress != null ? o.DeliveryAddress.City : null,
-                o.JournalEntries.Where(j => j.Type == JournalEntryType.SalesInvoice && j.Status != JournalEntryStatus.Reversed).Select(j => (int?)j.Id).FirstOrDefault()
+                o.JournalEntries.Where(j => j.Type == JournalEntryType.SalesInvoice && j.Status != JournalEntryStatus.Reversed).Select(j => (int?)j.Id).FirstOrDefault(),
+                o.Items.Any(i => i.ReviewRequested)
             ))
             .ToListAsync();
 
