@@ -45,8 +45,10 @@ public class PurchaseAccountingService
         var typeKey = invoice.PaymentTerms == PaymentTerms.Cash ? "Accounting.PurchaseCash" : "Accounting.PurchaseCredit";
         var typeStr = _t.Get(typeKey);
         
+        var trueCost = invoice.TotalAmount + invoice.DiscountAmount - invoice.TaxAmount;
+
         var invAcct = invoice.InventoryAccountId != null ? $"ID:{invoice.InventoryAccountId}" : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Inventory, mapDict)}";
-        lines.Add((invAcct, invoice.SubTotal, 0, _t.Get("Accounting.PurchaseInvoiceDesc", typeStr, invoice.InvoiceNumber)));
+        lines.Add((invAcct, trueCost, 0, _t.Get("Accounting.PurchaseInvoiceDesc", typeStr, invoice.InvoiceNumber)));
 
         if (invoice.TaxAmount > 0)
         {
@@ -182,12 +184,25 @@ public class PurchaseAccountingService
             .Where(i => i.PurchaseInvoiceId == invoice.Id)
             .ToListAsync();
 
+        var trueTotalCost = invoice.TotalAmount + invoice.DiscountAmount - invoice.TaxAmount;
+        var rawItemsTotal = items.Sum(i => i.TotalCost);
+
         foreach (var item in items)
         {
             var assetAcctId = item.FixedAssetCategory?.AssetAccountId 
                             ?? await _core.GetRequiredMappedAccountAsync(MK.FixedAssetRegistry, mapDict);
             
-            lines.Add(($"ID:{assetAcctId}", item.TotalCost, 0, _t.Get("Accounting.AssetPurchaseLineDesc", item.AssetName ?? item.Description, invoice.InvoiceNumber)));
+            var allocatedCost = rawItemsTotal > 0 ? Math.Round((item.TotalCost / rawItemsTotal) * trueTotalCost, 2) : 0;
+            lines.Add(($"ID:{assetAcctId}", allocatedCost, 0, _t.Get("Accounting.AssetPurchaseLineDesc", item.AssetName ?? item.Description, invoice.InvoiceNumber)));
+        }
+        
+        // Adjust for rounding differences to ensure perfectly balanced JE
+        var allocatedSum = lines.Sum(l => l.debit);
+        if (allocatedSum != trueTotalCost && lines.Count > 0)
+        {
+            var diff = trueTotalCost - allocatedSum;
+            var firstLine = lines[0];
+            lines[0] = (firstLine.code, firstLine.debit + diff, firstLine.credit, firstLine.desc);
         }
 
         // 2. VAT (Debit)

@@ -635,6 +635,18 @@ public class FixedAssetsController : ControllerBase
 
         var bookValue   = asset.PurchaseCost - asset.AccumulatedDepreciation;
         var accumAtDis  = asset.AccumulatedDepreciation;
+        var gainLoss    = dto.SaleProceeds - bookValue;
+
+        var (assetAccId, accumAccId, _) = ResolveAccounts(asset, asset.Category);
+        if (assetAccId.HasValue && accumAccId.HasValue)
+        {
+            if (gainLoss > 0 && !dto.GainAccountId.HasValue)
+                return BadRequest(_t.Get("Assets.GainAccountRequired", "حساب أرباح الاستبعاد مطلوب."));
+            if (gainLoss < 0 && !dto.LossAccountId.HasValue)
+                return BadRequest(_t.Get("Assets.LossAccountRequired", "حساب خسائر الاستبعاد مطلوب."));
+            if (dto.SaleProceeds > 0 && !dto.ProceedsAccountId.HasValue)
+                return BadRequest(_t.Get("Assets.ProceedsAccountRequired", "حساب المتحصلات مطلوب."));
+        }
 
         var disNo = await _seq.NextAsync("DIS");
 
@@ -664,12 +676,10 @@ public class FixedAssetsController : ControllerBase
 
         _db.AssetDisposals.Add(disposal);
 
-        var (assetAccId, accumAccId, _) = ResolveAccounts(asset, asset.Category);
         JournalEntry? je = null;
 
         if (assetAccId.HasValue && accumAccId.HasValue)
         {
-            var gainLoss   = dto.SaleProceeds - bookValue;
             var gainAccId  = dto.GainAccountId;
             var lossAccId  = dto.LossAccountId;
 

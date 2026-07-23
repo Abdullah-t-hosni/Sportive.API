@@ -230,7 +230,7 @@ public class AssetPurchasesController : ControllerBase
                             Name = item.AssetName ?? item.Description,
                             CategoryId = item.FixedAssetCategoryId.Value,
                             PurchaseDate = dto.InvoiceDate,
-                            PurchaseCost = item.UnitCost,
+                            PurchaseCost = item.Quantity > 0 ? Math.Round(lineBase / item.Quantity, 2) : item.UnitCost,
                             Status = AssetStatus.Active,
                             PurchaseInvoiceId = null, // Set to temp null, will update after save
                             CreatedAt = TimeHelper.GetEgyptTime(),
@@ -269,7 +269,7 @@ public class AssetPurchasesController : ControllerBase
                 invoice.TaxAmount = Math.Round(totalLineTax + globalTax, 2);
                 
                 if (dto.IsTaxInclusive)
-                    invoice.TotalAmount = Math.Round(subtotal - dto.DiscountAmount, 2);
+                    invoice.TotalAmount = Math.Round(subtotal + totalLineTax - dto.DiscountAmount, 2);
                 else
                     invoice.TotalAmount = Math.Round(subtotal + globalTax + totalLineTax - dto.DiscountAmount, 2);
 

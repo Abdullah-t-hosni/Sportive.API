@@ -331,7 +331,7 @@ public class PurchaseInvoicesController : ControllerBase
                 
                 if (dto.IsTaxInclusive)
                 {
-                    invoice.TotalAmount = Math.Round(subtotal - dto.DiscountAmount, 2);
+                    invoice.TotalAmount = Math.Round(subtotal + totalLineTax - dto.DiscountAmount, 2);
                 }
                 else
                 {
