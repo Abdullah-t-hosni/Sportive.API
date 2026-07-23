@@ -414,9 +414,17 @@ public class AssetPurchasesController : ControllerBase
                         supplier.TotalPaid -= invoice.PaidAmount;
                 }
 
-                // Delete old items, assets and payments
-                _db.FixedAssets.RemoveRange(associatedAssets);
+                // Delete old items and payments first
                 _db.PurchaseInvoiceItems.RemoveRange(invoice.Items);
+                
+                if (invoice.Payments.Any())
+                {
+                    _db.SupplierPayments.RemoveRange(invoice.Payments);
+                }
+                await _db.SaveChangesAsync(); // Clear items to prevent FK constraint on FixedAssets
+
+                // Then remove assets
+                _db.FixedAssets.RemoveRange(associatedAssets);
                 
                 if (invoice.Payments.Any())
                 {
@@ -612,9 +620,14 @@ public class AssetPurchasesController : ControllerBase
                 if (invoice.PaymentTerms == PaymentTerms.Cash)
                     supplier.TotalPaid -= invoice.PaidAmount;
 
-                // Delete related records
-                _db.FixedAssets.RemoveRange(associatedAssets);
+                // Delete related records: Items first to prevent FK constraint
                 _db.PurchaseInvoiceItems.RemoveRange(invoice.Items);
+                
+                var paymentNumbers = invoice.Payments.Select(p => p.PaymentNumber).ToList();
+                _db.SupplierPayments.RemoveRange(invoice.Payments);
+                await _db.SaveChangesAsync(); // Commit items deletion
+
+                _db.FixedAssets.RemoveRange(associatedAssets);
                 
                 var paymentNumbers = invoice.Payments.Select(p => p.PaymentNumber).ToList();
                 _db.SupplierPayments.RemoveRange(invoice.Payments);
