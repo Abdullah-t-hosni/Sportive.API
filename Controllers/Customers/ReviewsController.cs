@@ -96,7 +96,8 @@ public class ReviewsController : ControllerBase
 
         try
         {
-            var review = await _reviews.AddAdminReviewAsync(dto.CustomerName, dto.CustomerPhone, dto.ProductId, dto.Rating, dto.Comment);
+            var adminName = User.Identity?.Name ?? "Admin";
+            var review = await _reviews.AddAdminReviewAsync(dto.CustomerName, dto.CustomerPhone, dto.ProductId, dto.Rating, dto.Comment, adminName);
             return Ok(new { message = "Review added successfully", id = review.Id });
         }
         catch (System.Exception ex)
@@ -149,7 +150,7 @@ public class ReviewsController : ControllerBase
                 }
                 else
                 {
-                    await _reviews.AddAdminReviewAsync("Online Guest", null, productId, dto.Rating, dto.Comment);
+                    await _reviews.AddAdminReviewAsync("Online Guest", null, productId, dto.Rating, dto.Comment, "System (Token)");
                 }
                 return Ok(new { message = "Review submitted for moderation" });
             }

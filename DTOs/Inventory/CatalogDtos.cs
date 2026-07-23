@@ -244,7 +244,9 @@ public record ReviewListItemDto(
     [property: JsonPropertyName("customerName")] string CustomerName,
     [property: JsonPropertyName("rating")] int Rating,
     [property: JsonPropertyName("comment")] string? Comment,
-    [property: JsonPropertyName("createdAt")] DateTime CreatedAt
+    [property: JsonPropertyName("createdAt")] DateTime CreatedAt,
+    [property: JsonPropertyName("isManual")] bool IsManual = false,
+    [property: JsonPropertyName("addedBy")] string? AddedBy = null
 );
 
 public record AddReviewDto(int ProductId, int Rating, string? Comment);

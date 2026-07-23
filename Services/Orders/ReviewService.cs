@@ -16,7 +16,7 @@ public interface IReviewService
     Task<bool> UpdateProductRatingAsync(int productId);
     Task<bool> ReplyToReviewAsync(int reviewId, string reply, string adminName);
     Task<List<ReviewDto>> GetAllApprovedReviewsAsync();
-    Task<Review> AddAdminReviewAsync(string customerName, string? customerPhone, int productId, int rating, string? comment);
+    Task<Review> AddAdminReviewAsync(string customerName, string? customerPhone, int productId, int rating, string? comment, string addedBy);
 }
 
 public record ReviewDto(
@@ -29,7 +29,9 @@ public record ReviewDto(
     string? ProductName = null,
     string? AdminReply = null,
     DateTime? RepliedAt = null,
-    string? RepliedBy = null
+    string? RepliedBy = null,
+    bool IsManual = false,
+    string? AddedBy = null
 );
 
 public class ReviewService : IReviewService
@@ -56,12 +58,14 @@ public class ReviewService : IReviewService
                 r.Customer.FullName, 
                 r.Rating, 
                 r.Comment, 
-                r.CreatedAt, 
+                r.CreatedAt,                  
                 r.IsApproved, 
                 null, 
                 r.AdminReply, 
                 r.RepliedAt, 
-                r.RepliedBy
+                r.RepliedBy,
+                r.IsManual,
+                r.AddedBy
             ))
             .ToListAsync();
     }
@@ -136,7 +140,9 @@ public class ReviewService : IReviewService
                 r.Product.NameAr,
                 r.AdminReply,
                 r.RepliedAt,
-                r.RepliedBy
+                r.RepliedBy,
+                r.IsManual,
+                r.AddedBy
             ))
             .ToListAsync();
     }
@@ -210,7 +216,9 @@ public class ReviewService : IReviewService
                 r.Product.NameAr,
                 r.AdminReply,
                 r.RepliedAt,
-                r.RepliedBy
+                r.RepliedBy,
+                r.IsManual,
+                r.AddedBy
             ))
             .ToListAsync();
     }
@@ -238,7 +246,7 @@ public class ReviewService : IReviewService
         return await _db.SaveChangesAsync() > 0;
     }
 
-    public async Task<Review> AddAdminReviewAsync(string customerName, string? customerPhone, int productId, int rating, string? comment)
+    public async Task<Review> AddAdminReviewAsync(string customerName, string? customerPhone, int productId, int rating, string? comment, string addedBy)
     {
         var customer = await _db.Customers.FirstOrDefaultAsync(c => c.FullName == customerName);
         if (customer == null)
@@ -260,7 +268,9 @@ public class ReviewService : IReviewService
             ProductId = productId,
             Rating = rating,
             Comment = comment,
-            IsApproved = true // Admin added reviews are approved by default
+            IsApproved = true, // Admin added reviews are approved by default
+            IsManual = true,
+            AddedBy = addedBy
         };
         _db.Reviews.Add(review);
         await _db.SaveChangesAsync();

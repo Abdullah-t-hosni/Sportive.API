@@ -99,6 +99,9 @@ public class Review : BaseEntity
     public string? AdminReply { get; set; }
     public DateTime? RepliedAt { get; set; }
     public string? RepliedBy { get; set; }
+
+    public bool IsManual { get; set; } = false;
+    public string? AddedBy { get; set; }
 }
 
 public class ProductUnit : BaseEntity
