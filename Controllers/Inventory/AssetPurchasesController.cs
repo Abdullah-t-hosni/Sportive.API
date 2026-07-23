@@ -414,26 +414,20 @@ public class AssetPurchasesController : ControllerBase
                         supplier.TotalPaid -= invoice.PaidAmount;
                 }
 
-                // Delete old items and payments first
+                // Delete old invoice items and old payments first (they will be re-added below)
                 _db.PurchaseInvoiceItems.RemoveRange(invoice.Items);
                 
                 if (invoice.Payments.Any())
                 {
                     _db.SupplierPayments.RemoveRange(invoice.Payments);
                 }
-                await _db.SaveChangesAsync(); // Clear items to prevent FK constraint on FixedAssets
+                await _db.SaveChangesAsync(); // Clear items to prevent FK constraint issues
 
-                // Then remove assets
-                _db.FixedAssets.RemoveRange(associatedAssets);
-                
-                if (invoice.Payments.Any())
-                {
-                    _db.SupplierPayments.RemoveRange(invoice.Payments);
-                }
+                // NOTE: We do NOT delete FixedAssets here. They are updated in-place below
+                // to preserve asset numbers and history.
 
                 invoice.Items.Clear();
                 invoice.Payments.Clear();
-                await _db.SaveChangesAsync(); // save intermediate state to avoid conflicts if needed
 
                 // Apply new values
                 invoice.SupplierInvoiceNumber = dto.SupplierInvoiceNumber;
@@ -492,23 +486,57 @@ public class AssetPurchasesController : ControllerBase
                     };
                     invoice.Items.Add(invItem);
 
-                    for (int i = 0; i < item.Quantity; i++)
+                    // Update existing assets in-place instead of recreating them
+                    // This preserves asset numbers and avoids duplicate entries in the fixed asset register
+                    var existingAssets = await _db.FixedAssets
+                        .Where(a => a.PurchaseInvoiceId == id)
+                        .ToListAsync();
+
+                    for (int i = 0; i < (int)item.Quantity; i++)
                     {
-                        var assetNo = await _seq.NextAsync("FA");
-                        var asset = new FixedAsset
+                        if (i < existingAssets.Count)
                         {
-                            AssetNumber = assetNo,
-                            Name = item.AssetName ?? item.Description,
-                            CategoryId = item.FixedAssetCategoryId.Value,
-                            PurchaseDate = dto.InvoiceDate,
-                            PurchaseCost = item.Quantity > 0 ? Math.Round(lineBase / item.Quantity, 2) : item.UnitCost,
-                            Status = AssetStatus.Active,
-                            PurchaseInvoiceId = invoice.Id,
-                            CreatedAt = TimeHelper.GetEgyptTime(),
-                            BranchId = invoice.BranchId
-                        };
-                        _db.FixedAssets.Add(asset);
+                            // Update existing asset in-place
+                            var existing = existingAssets[i];
+                            existing.Name = item.AssetName ?? item.Description;
+                            existing.CategoryId = item.FixedAssetCategoryId.Value;
+                            existing.PurchaseDate = dto.InvoiceDate;
+                            existing.PurchaseCost = item.Quantity > 0 ? Math.Round(lineBase / item.Quantity, 2) : item.UnitCost;
+                            existing.CostCenter = invoice.CostCenter;
+                            existing.BranchId = invoice.BranchId;
+                        }
+                        else
+                        {
+                            // Only create new assets if quantity was increased
+                            var assetNo = await _seq.NextAsync("FA");
+                            var asset = new FixedAsset
+                            {
+                                AssetNumber = assetNo,
+                                Name = item.AssetName ?? item.Description,
+                                CategoryId = item.FixedAssetCategoryId.Value,
+                                PurchaseDate = dto.InvoiceDate,
+                                PurchaseCost = item.Quantity > 0 ? Math.Round(lineBase / item.Quantity, 2) : item.UnitCost,
+                                Status = AssetStatus.Active,
+                                PurchaseInvoiceId = invoice.Id,
+                                CreatedAt = TimeHelper.GetEgyptTime(),
+                                CostCenter = invoice.CostCenter,
+                                UsefulLifeYears = 5,
+                                DepreciationMethod = DepreciationMethod.StraightLine,
+                                SalvageValue = 0,
+                                DepreciationStartDate = dto.InvoiceDate,
+                                BranchId = invoice.BranchId
+                            };
+                            _db.FixedAssets.Add(asset);
+                        }
                     }
+
+                    // Remove extra assets if quantity was decreased
+                    if ((int)item.Quantity < existingAssets.Count)
+                    {
+                        var toRemove = existingAssets.Skip((int)item.Quantity).ToList();
+                        _db.FixedAssets.RemoveRange(toRemove);
+                    }
+
 
                     subtotal += lineBase;
                     totalLineTax += lineTax;
