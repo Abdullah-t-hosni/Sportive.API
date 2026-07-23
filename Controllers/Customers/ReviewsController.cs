@@ -61,7 +61,7 @@ public class ReviewsController : ControllerBase
     [HttpGet("pending")]
     public async Task<IActionResult> GetPending() => Ok(await _reviews.GetPendingReviewsAsync());
 
-    [RequirePermission(ModuleKeys.Reviews, requireEdit: true)]
+    [AllowAnonymous]
     [HttpGet("approved")]
     public async Task<IActionResult> GetApproved() => Ok(await _reviews.GetAllApprovedReviewsAsync());
 
