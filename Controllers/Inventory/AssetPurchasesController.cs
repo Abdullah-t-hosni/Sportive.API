@@ -28,8 +28,9 @@ public class AssetPurchasesController : ControllerBase
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AssetPurchasesController> _logger;
     private readonly IAuditService _audit;
+    private readonly AccountingCoreService _core;
 
-    public AssetPurchasesController(AppDbContext db, SequenceService seq, ITranslator t, IServiceScopeFactory scopeFactory, ILogger<AssetPurchasesController> logger, IAuditService audit)
+    public AssetPurchasesController(AppDbContext db, SequenceService seq, ITranslator t, IServiceScopeFactory scopeFactory, ILogger<AssetPurchasesController> logger, IAuditService audit, AccountingCoreService core)
     {
         _db = db;
         _seq = seq;
@@ -37,6 +38,7 @@ public class AssetPurchasesController : ControllerBase
         _scopeFactory = scopeFactory;
         _logger = logger;
         _audit = audit;
+        _core = core;
     }
 
     [HttpGet]
@@ -340,6 +342,13 @@ public class AssetPurchasesController : ControllerBase
                     .FirstAsync(i => i.Id == invoiceId);
 
                 await acc.PostPurchaseInvoiceAsync(inv);
+
+                if (inv.PaymentTerms == PaymentTerms.Cash && inv.Payments.Any())
+                {
+                    var payment = inv.Payments.First();
+                    await acc.PostSupplierPaymentAsync(payment);
+                }
+
                 return;
             }
             catch (Exception) when (attempt < maxAttempts)
@@ -348,5 +357,303 @@ public class AssetPurchasesController : ControllerBase
                 await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
             }
         }
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdatePurchaseInvoiceDto dto)
+    {
+        if (!dto.Items.Any())
+            return BadRequest(new { message = _t.Get("Purchases.MinOneItemRequired") });
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
+        {
+            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
+            try
+            {
+                var invoice = await _db.PurchaseInvoices
+                    .Include(i => i.Supplier)
+                    .Include(i => i.Items)
+                    .Include(i => i.Payments)
+                    .FirstOrDefaultAsync(i => i.Id == id && i.IsAssetPurchase);
+
+                if (invoice == null)
+                    return NotFound(new { message = "Invoice not found" });
+                    
+                await _core.CheckDateLockAsync(invoice.InvoiceDate, User);
+                if (dto.InvoiceDate.Date != invoice.InvoiceDate.Date)
+                    await _core.CheckDateLockAsync(dto.InvoiceDate, User);
+
+                // Validation: Check if any associated asset is depreciated or disposed
+                var associatedAssets = await _db.FixedAssets
+                    .Where(a => a.PurchaseInvoiceId == id)
+                    .ToListAsync();
+                    
+                if (associatedAssets.Any(a => a.AccumulatedDepreciation > 0 || a.Status == AssetStatus.Disposed))
+                {
+                    return BadRequest(new { message = _t.Get("Assets.CannotEditDepreciatedInvoice", "لا يمكن تعديل الفاتورة لأنه تم إهلاك أو استبعاد أحد الأصول المرتبطة بها.") });
+                }
+
+                var supplier = invoice.Supplier;
+                if (dto.SupplierId.HasValue && dto.SupplierId.Value != invoice.SupplierId)
+                {
+                    // Revert old supplier balances
+                    supplier.TotalPurchases -= invoice.TotalAmount;
+                    if (invoice.PaymentTerms == PaymentTerms.Cash)
+                        supplier.TotalPaid -= invoice.PaidAmount;
+                        
+                    supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == dto.SupplierId.Value);
+                    if (supplier == null)
+                        return BadRequest(new { message = _t.Get("Purchases.SupplierNotFound") });
+                    invoice.SupplierId = supplier.Id;
+                }
+                else
+                {
+                    supplier.TotalPurchases -= invoice.TotalAmount;
+                    if (invoice.PaymentTerms == PaymentTerms.Cash)
+                        supplier.TotalPaid -= invoice.PaidAmount;
+                }
+
+                // Delete old items, assets and payments
+                _db.FixedAssets.RemoveRange(associatedAssets);
+                _db.PurchaseInvoiceItems.RemoveRange(invoice.Items);
+                
+                if (invoice.Payments.Any())
+                {
+                    _db.SupplierPayments.RemoveRange(invoice.Payments);
+                }
+
+                invoice.Items.Clear();
+                invoice.Payments.Clear();
+                await _db.SaveChangesAsync(); // save intermediate state to avoid conflicts if needed
+
+                // Apply new values
+                invoice.SupplierInvoiceNumber = dto.SupplierInvoiceNumber;
+                invoice.PaymentTerms = dto.PaymentTerms;
+                invoice.InvoiceDate = dto.InvoiceDate;
+                invoice.DueDate = dto.PaymentTerms == PaymentTerms.Cash ? null : dto.DueDate;
+                invoice.TaxPercent = dto.TaxPercent;
+                invoice.DiscountAmount = dto.DiscountAmount;
+                invoice.Notes = dto.Notes;
+                invoice.Status = dto.PaymentTerms == PaymentTerms.Cash ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.Received;
+                invoice.AttachmentUrl = dto.AttachmentUrl ?? invoice.AttachmentUrl;
+                invoice.AttachmentPublicId = dto.AttachmentPublicId ?? invoice.AttachmentPublicId;
+                invoice.UpdatedAt = TimeHelper.GetEgyptTime();
+                invoice.VendorAccountId = dto.VendorAccountId > 0 ? dto.VendorAccountId : null;
+                invoice.InventoryAccountId = dto.InventoryAccountId > 0 ? dto.InventoryAccountId : null;
+                invoice.VatAccountId = dto.VatAccountId > 0 ? dto.VatAccountId : null;
+                invoice.CashAccountId = dto.CashAccountId > 0 ? dto.CashAccountId : null;
+                invoice.CostCenter = dto.CostCenter;
+                invoice.IsTaxInclusive = dto.IsTaxInclusive;
+                invoice.WarehouseId = dto.WarehouseId > 0 ? dto.WarehouseId : null;
+
+                decimal subtotal = 0;
+                decimal totalLineTax = 0;
+                foreach (var item in dto.Items)
+                {
+                    if (!item.FixedAssetCategoryId.HasValue)
+                        return BadRequest(new { message = _t.Get("Assets.CategoryRequired", "يجب تحديد فئة الأصل لكل عنصر.") });
+
+                    var lineBase = item.Quantity * item.UnitCost;
+                    var lineTax = 0M;
+                    if (item.TaxRate > 0)
+                    {
+                        if (item.IsTaxInclusive)
+                        {
+                            var basePrice = lineBase / (1 + (item.TaxRate / 100));
+                            lineTax = lineBase - basePrice;
+                            lineBase = basePrice;
+                        }
+                        else
+                        {
+                            lineTax = lineBase * (item.TaxRate / 100);
+                        }
+                    }
+
+                    var invItem = new PurchaseInvoiceItem
+                    {
+                        Description = item.Description,
+                        FixedAssetCategoryId = item.FixedAssetCategoryId,
+                        AssetName = item.AssetName ?? item.Description,
+                        Quantity = item.Quantity,
+                        UnitCost = item.UnitCost,
+                        TaxRate = item.TaxRate,
+                        IsTaxInclusive = item.IsTaxInclusive,
+                        TotalCost = Math.Round(item.Quantity * item.UnitCost, 2),
+                        CreatedAt = TimeHelper.GetEgyptTime()
+                    };
+                    invoice.Items.Add(invItem);
+
+                    for (int i = 0; i < item.Quantity; i++)
+                    {
+                        var assetNo = await _seq.NextAsync("FA");
+                        var asset = new FixedAsset
+                        {
+                            AssetNumber = assetNo,
+                            Name = item.AssetName ?? item.Description,
+                            CategoryId = item.FixedAssetCategoryId.Value,
+                            PurchaseDate = dto.InvoiceDate,
+                            PurchaseCost = item.Quantity > 0 ? Math.Round(lineBase / item.Quantity, 2) : item.UnitCost,
+                            Status = AssetStatus.Active,
+                            PurchaseInvoiceId = invoice.Id,
+                            CreatedAt = TimeHelper.GetEgyptTime(),
+                            BranchId = invoice.BranchId
+                        };
+                        _db.FixedAssets.Add(asset);
+                    }
+
+                    subtotal += lineBase;
+                    totalLineTax += lineTax;
+                }
+
+                invoice.SubTotal = Math.Round(subtotal, 2);
+
+                decimal globalTax = 0;
+                if (dto.TaxPercent > 0)
+                {
+                    var baseForGlobal = subtotal - dto.DiscountAmount;
+                    if (dto.IsTaxInclusive)
+                    {
+                        var divisor = 1 + (dto.TaxPercent / 100);
+                        var net = divisor > 0 ? baseForGlobal / divisor : baseForGlobal;
+                        globalTax = baseForGlobal - net;
+                    }
+                    else
+                    {
+                        globalTax = baseForGlobal * (dto.TaxPercent / 100);
+                    }
+                }
+
+                invoice.TaxAmount = Math.Round(totalLineTax + globalTax, 2);
+
+                if (dto.IsTaxInclusive)
+                    invoice.TotalAmount = Math.Round(subtotal + totalLineTax - dto.DiscountAmount, 2);
+                else
+                    invoice.TotalAmount = Math.Round(subtotal + globalTax + totalLineTax - dto.DiscountAmount, 2);
+
+                supplier.TotalPurchases += invoice.TotalAmount;
+
+                if (dto.PaymentTerms == PaymentTerms.Cash)
+                {
+                    invoice.PaidAmount = invoice.TotalAmount;
+                    supplier.TotalPaid += invoice.TotalAmount;
+
+                    var pNo = await _seq.NextAsync("SP");
+                    invoice.Payments.Add(new SupplierPayment
+                    {
+                        PaymentNumber = pNo,
+                        SupplierId    = supplier.Id,
+                        Amount        = invoice.TotalAmount,
+                        PaymentDate   = invoice.InvoiceDate,
+                        PaymentMethod = PaymentMethod_Purchase.Cash,
+                        AccountName   = "الخزينة (آلي)",
+                        Notes         = $"سداد تلقائي لفاتورة أصول {invoice.InvoiceNumber}",
+                        CreatedAt     = TimeHelper.GetEgyptTime(),
+                        CostCenter    = invoice.CostCenter,
+                        PurchaseInvoiceId = invoice.Id
+                    });
+                }
+                else 
+                {
+                    invoice.PaidAmount = 0;
+                }
+
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                try { await _audit.LogAsync("UpdateAssetPurchase", "PurchaseInvoice", invoice.Id.ToString(), $"Updated asset purchase #{invoice.InvoiceNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
+                _ = PostJournalWithRetryAsync(invoice.Id, invoice.InvoiceNumber);
+
+                return Ok(new { id = invoice.Id, invoiceNumber = invoice.InvoiceNumber });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Asset purchase invoice update failed.");
+                return StatusCode(500, new { message = "Error updating asset purchase", error = ex.Message });
+            }
+        });
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
+        {
+            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
+            try
+            {
+                var invoice = await _db.PurchaseInvoices
+                    .Include(i => i.Supplier)
+                    .Include(i => i.Items)
+                    .Include(i => i.Payments)
+                    .FirstOrDefaultAsync(i => i.Id == id && i.IsAssetPurchase);
+
+                if (invoice == null)
+                    return NotFound(new { message = "Invoice not found" });
+
+                await _core.CheckDateLockAsync(invoice.InvoiceDate, User);
+
+                // Validation: Check if any associated asset is depreciated or disposed
+                var associatedAssets = await _db.FixedAssets
+                    .Where(a => a.PurchaseInvoiceId == id)
+                    .ToListAsync();
+
+                if (associatedAssets.Any(a => a.AccumulatedDepreciation > 0 || a.Status == AssetStatus.Disposed))
+                {
+                    return BadRequest(new { message = _t.Get("Assets.CannotDeleteDepreciatedInvoice", "لا يمكن حذف الفاتورة لأنه تم إهلاك أو استبعاد أحد الأصول المرتبطة بها.") });
+                }
+
+                // Revert balances
+                var supplier = invoice.Supplier;
+                supplier.TotalPurchases -= invoice.TotalAmount;
+                if (invoice.PaymentTerms == PaymentTerms.Cash)
+                    supplier.TotalPaid -= invoice.PaidAmount;
+
+                // Delete related records
+                _db.FixedAssets.RemoveRange(associatedAssets);
+                _db.PurchaseInvoiceItems.RemoveRange(invoice.Items);
+                
+                var paymentNumbers = invoice.Payments.Select(p => p.PaymentNumber).ToList();
+                _db.SupplierPayments.RemoveRange(invoice.Payments);
+
+                _db.PurchaseInvoices.Remove(invoice);
+
+                // Delete Journal Entries manually (Invoice and Payments)
+                var invoiceJe = await _db.JournalEntries.Include(e => e.Lines)
+                    .FirstOrDefaultAsync(e => e.Reference == invoice.InvoiceNumber && e.Type == JournalEntryType.PurchaseInvoice);
+                if (invoiceJe != null)
+                {
+                    _db.JournalLines.RemoveRange(invoiceJe.Lines);
+                    _db.JournalEntries.Remove(invoiceJe);
+                }
+
+                foreach (var pNum in paymentNumbers)
+                {
+                    var paymentJe = await _db.JournalEntries.Include(e => e.Lines)
+                        .FirstOrDefaultAsync(e => e.Reference == pNum && e.Type == JournalEntryType.PaymentVoucher);
+                    if (paymentJe != null)
+                    {
+                        _db.JournalLines.RemoveRange(paymentJe.Lines);
+                        _db.JournalEntries.Remove(paymentJe);
+                    }
+                }
+
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                try { await _audit.LogAsync("DeleteAssetPurchase", "PurchaseInvoice", id.ToString(), $"Deleted asset purchase #{invoice.InvoiceNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
+                return Ok(new { message = "Deleted successfully" });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Asset purchase invoice deletion failed.");
+                return StatusCode(500, new { message = "Error deleting asset purchase", error = ex.Message });
+            }
+        });
     }
 }
