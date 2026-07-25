@@ -1,6 +1,6 @@
 namespace Sportive.API.Models;
 
-public class ProductSecondaryCategory : BaseEntity
+public class ProductSecondaryCategory
 {
     public int ProductId { get; set; }
     public Product Product { get; set; } = null!;

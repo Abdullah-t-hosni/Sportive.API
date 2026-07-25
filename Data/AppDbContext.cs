@@ -255,6 +255,16 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<ProductImage>(e => {
             e.HasOne(x => x.Product).WithMany(p => p.Images)
              .HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Category).WithMany()
+             .HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<ProductSecondaryCategory>(e => {
+            e.HasKey(x => new { x.ProductId, x.CategoryId });
+            e.HasOne(x => x.Product).WithMany(p => p.SecondaryCategories)
+             .HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Category).WithMany()
+             .HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<Review>(e => {
