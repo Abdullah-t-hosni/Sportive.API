@@ -108,7 +108,9 @@ public record ProductSummaryDto(
     [property: JsonPropertyName("activeDiscountLabel")] string? ActiveDiscountLabel = null,
     [property: JsonPropertyName("linkedProductId")] int? LinkedProductId = null,
     [property: JsonPropertyName("egyptianProductCode")] string? EgyptianProductCode = null,
-    [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null
+    [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null,
+    [property: JsonPropertyName("images")] List<ProductImageDto>? Images = null,
+    [property: JsonPropertyName("secondaryCategoryIds")] List<int>? SecondaryCategoryIds = null
 );
 
 public record ProductDetailDto(

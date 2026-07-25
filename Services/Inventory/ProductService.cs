@@ -1084,7 +1084,11 @@ public class ProductService : IProductService
                 p.Unit != null ? p.Unit.Symbol : null,
                 p.CreatedAt,
                 pDiscount != null ? pDiscount.Label : null,
-                p.LinkedProductId
+                p.LinkedProductId,
+                p.EgyptianProductCode,
+                p.SaudiProductCode,
+                p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr, i.CategoryId)).ToList() ?? new List<ProductImageDto>(),
+                p.SecondaryCategories?.Select(sc => sc.CategoryId).ToList() ?? new List<int>()
             ));
         }
 
