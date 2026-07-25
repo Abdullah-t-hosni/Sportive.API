@@ -98,25 +98,34 @@ public class ReturnExchangeRequestsController : ControllerBase
 
         foreach (var itemDto in dto.Items)
         {
-            var orderItem = order.Items.FirstOrDefault(i => i.Id == itemDto.OrderItemId);
-            if (orderItem != null && itemDto.Quantity > 0)
+            var orderItem = order.Items.FirstOrDefault(i => i.Id == itemDto.OrderItemId || i.ProductId == itemDto.OrderItemId)
+                         ?? order.Items.FirstOrDefault();
+
+            if (orderItem != null)
             {
-                int maxAvailable = orderItem.Quantity - orderItem.ReturnedQuantity;
-                int validQty = Math.Min(itemDto.Quantity, Math.Max(1, maxAvailable));
+                int maxAvailable = Math.Max(1, orderItem.Quantity - orderItem.ReturnedQuantity);
+                int validQty = itemDto.Quantity > 0 ? Math.Min(itemDto.Quantity, maxAvailable) : 1;
 
                 request.Items.Add(new ReturnExchangeRequestItem
                 {
                     OrderItemId = orderItem.Id,
                     Quantity = validQty,
-                    ReplacementNote = itemDto.ReplacementNote,
+                    ReplacementNote = !string.IsNullOrWhiteSpace(itemDto.ReplacementNote) ? itemDto.ReplacementNote : dto.CustomerNotes,
                     CreatedAt = TimeHelper.GetEgyptTime()
                 });
             }
         }
 
-        if (!request.Items.Any())
+        if (!request.Items.Any() && order.Items.Any())
         {
-            return BadRequest("الأصناف المختارة غير صالحة أو تم ارجاعها بالكامل مسبقاً.");
+            var firstItem = order.Items.First();
+            request.Items.Add(new ReturnExchangeRequestItem
+            {
+                OrderItemId = firstItem.Id,
+                Quantity = 1,
+                ReplacementNote = dto.CustomerNotes ?? "طلب استبدال صنف",
+                CreatedAt = TimeHelper.GetEgyptTime()
+            });
         }
 
         _db.ReturnExchangeRequests.Add(request);
@@ -426,8 +435,8 @@ public class ReturnExchangeRequestsController : ControllerBase
             OrderId = r.OrderId,
             OrderNumber = r.Order != null ? r.Order.OrderNumber : "",
             CustomerId = r.CustomerId,
-            CustomerName = r.Customer != null ? r.Customer.FullName : "",
-            CustomerPhone = r.Customer != null ? (r.Customer.Phone ?? "") : "",
+            CustomerName = r.Customer != null && !string.IsNullOrEmpty(r.Customer.FullName) ? r.Customer.FullName : (r.Order != null ? r.Order.CustomerName : "عميل"),
+            CustomerPhone = r.Customer != null && !string.IsNullOrEmpty(r.Customer.Phone) ? r.Customer.Phone : (r.Order != null ? (r.Order.CustomerPhone ?? "") : ""),
             Type = r.Type.ToString(),
             Status = r.Status.ToString(),
             Reason = r.Reason,
