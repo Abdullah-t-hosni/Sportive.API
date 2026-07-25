@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -26,10 +26,10 @@ public class ImagesController : ControllerBase
     [HttpPost("products/{productId}")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> UploadProductImage(
-        [FromRoute] int productId, IFormFile file, [FromQuery] bool isMain = false, [FromQuery] string? colorAr = null)
+        [FromRoute] int productId, IFormFile file, [FromQuery] bool isMain = false, [FromQuery] string? colorAr = null, [FromQuery] int? categoryId = null)
     {
         var product = await _db.Products.FindAsync(productId);
-        if (product == null) return NotFound(new { message = "Ã˜Â§Ã™â€žÃ™â€¦Ã™â€ Ã˜ÂªÃ˜Â¬ Ã˜ÂºÃ™Å Ã˜Â± Ã™â€¦Ã™Ë†Ã˜Â¬Ã™Ë†Ã˜Â¯" });
+        if (product == null) return NotFound(new { message = "المنتج غير موجود" });
 
         var result = await _images.UploadProductImageAsync(file, productId);
         if (!result.Success) return BadRequest(new { message = result.Error });
@@ -47,13 +47,14 @@ public class ImagesController : ControllerBase
             ImagePublicId = result.PublicId, // Save this!
             IsMain    = isMain,
             ColorAr   = colorAr,
+            CategoryId = categoryId,
             SortOrder = _db.ProductImages.Count(i => i.ProductId == productId)
         };
 
         _db.ProductImages.Add(productImage);
         await _db.SaveChangesAsync();
 
-        return Ok(new { id = productImage.Id, url = result.Url, publicId = result.PublicId, isMain });
+        return Ok(new { id = productImage.Id, url = result.Url, publicId = result.PublicId, isMain, categoryId });
     }
 
     [RequirePermission(ModuleKeys.Products, requireEdit: true)]
@@ -154,12 +155,13 @@ public class ImagesController : ControllerBase
 
     [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPatch("products/images/{imageId}/metadata")]
-    public async Task<IActionResult> UpdateImageMetadata(int imageId, [FromQuery] string? colorAr, [FromQuery] bool? isMain)
+    public async Task<IActionResult> UpdateImageMetadata(int imageId, [FromQuery] string? colorAr, [FromQuery] bool? isMain, [FromQuery] int? categoryId = null)
     {
         var image = await _db.ProductImages.FindAsync(imageId);
         if (image == null) return NotFound();
 
         if (colorAr != null) image.ColorAr = colorAr == "null" ? null : colorAr;
+        if (categoryId.HasValue) image.CategoryId = categoryId.Value == -1 ? null : categoryId.Value;
         if (isMain.HasValue)
         {
             if (isMain.Value)
@@ -171,7 +173,7 @@ public class ImagesController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
-        return Ok(new { id = image.Id, colorAr = image.ColorAr, isMain = image.IsMain });
+        return Ok(new { id = image.Id, colorAr = image.ColorAr, categoryId = image.CategoryId, isMain = image.IsMain });
     }
 
     [RequirePermission(ModuleKeys.Products, requireEdit: true)]

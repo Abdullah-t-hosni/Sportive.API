@@ -36,6 +36,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<Product> Products               => Set<Product>();
     public DbSet<ProductVariant> ProductVariants => Set<ProductVariant>();
     public DbSet<ProductImage> ProductImages     => Set<ProductImage>();
+    public DbSet<ProductSecondaryCategory> ProductSecondaryCategories => Set<ProductSecondaryCategory>();
     public DbSet<Review> Reviews                 => Set<Review>();
     public DbSet<ReviewToken> ReviewTokens       => Set<ReviewToken>();
     public DbSet<Customer> Customers             => Set<Customer>();

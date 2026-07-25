@@ -153,7 +153,9 @@ public record ProductDetailDto(
     [property: JsonPropertyName("linkedProduct")] ProductSummaryDto? LinkedProduct = null,
     [property: JsonPropertyName("egyptianProductCode")] string? EgyptianProductCode = null,
     [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null,
-    [property: JsonPropertyName("rawDiscountPrice")] decimal? RawDiscountPrice = null
+    [property: JsonPropertyName("rawDiscountPrice")] decimal? RawDiscountPrice = null,
+    [property: JsonPropertyName("secondaryCategoryIds")] List<int>? SecondaryCategoryIds = null,
+    [property: JsonPropertyName("secondaryCategories")] List<CategoryDto>? SecondaryCategories = null
 );
 
 public record ProductVariantDto(
@@ -168,7 +170,7 @@ public record ProductVariantDto(
     string? ImagePublicId = null
 );
 
-public record ProductImageDto(int Id, string ImageUrl, string? ImagePublicId = null, bool IsMain = false, int SortOrder = 0, string? ColorAr = null);
+public record ProductImageDto(int Id, string ImageUrl, string? ImagePublicId = null, bool IsMain = false, int SortOrder = 0, string? ColorAr = null, int? CategoryId = null);
 
 public record CreateProductDto(
     [property: JsonPropertyName("nameAr")] string NameAr,
@@ -194,7 +196,8 @@ public record CreateProductDto(
     [property: JsonPropertyName("sizeChartJson")] string? SizeChartJson = null,
     [property: JsonPropertyName("linkedProductId")] int? LinkedProductId = null,
     [property: JsonPropertyName("egyptianProductCode")] string? EgyptianProductCode = null,
-    [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null
+    [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null,
+    [property: JsonPropertyName("secondaryCategoryIds")] List<int>? SecondaryCategoryIds = null
 );
 
 public record UpdateProductDto(
@@ -220,7 +223,8 @@ public record UpdateProductDto(
     [property: JsonPropertyName("sizeChartJson")] string? SizeChartJson = null,
     [property: JsonPropertyName("linkedProductId")] int? LinkedProductId = null,
     [property: JsonPropertyName("egyptianProductCode")] string? EgyptianProductCode = null,
-    [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null
+    [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null,
+    [property: JsonPropertyName("secondaryCategoryIds")] List<int>? SecondaryCategoryIds = null
 );
 
 public record UpdateSizeChartDto(

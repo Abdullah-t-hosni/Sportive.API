@@ -50,6 +50,7 @@ public class Product : BaseEntity
     // Navigation
     public ICollection<ProductVariant> Variants { get; set; } = new List<ProductVariant>();
     public ICollection<ProductImage> Images { get; set; } = new List<ProductImage>();
+    public ICollection<ProductSecondaryCategory> SecondaryCategories { get; set; } = new List<ProductSecondaryCategory>();
     public ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();
     public ICollection<CartItem> CartItems { get; set; } = new List<CartItem>();
     public ICollection<Review> Reviews { get; set; } = new List<Review>();
@@ -83,6 +84,8 @@ public class ProductImage : BaseEntity
     public string? ImagePublicId { get; set; }
     public bool IsMain { get; set; } = false;
     public string? ColorAr { get; set; } // The color associated with this image
+    public int? CategoryId { get; set; } // The specific category this image is associated with
+    public Category? Category { get; set; }
     public int SortOrder { get; set; } = 0;
 }
 

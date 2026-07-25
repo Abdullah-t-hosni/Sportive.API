@@ -73,13 +73,13 @@ public class ProductService : IProductService
             }
             
             var distinctIds = allCategoryIds.Distinct().ToList();
-            query = query.Where(p => p.CategoryId.HasValue && distinctIds.Contains(p.CategoryId.Value));
+            query = query.Where(p => (p.CategoryId.HasValue && distinctIds.Contains(p.CategoryId.Value)) || _db.ProductSecondaryCategories.Any(sc => sc.ProductId == p.Id && distinctIds.Contains(sc.CategoryId)));
         }
 
         if (filter.CategoryId.HasValue)
         {
             var categoryIds = await GetCategoryDescendants(filter.CategoryId.Value);
-            query = query.Where(p => categoryIds.Contains(p.CategoryId ?? 0));
+            query = query.Where(p => (p.CategoryId.HasValue && categoryIds.Contains(p.CategoryId.Value)) || _db.ProductSecondaryCategories.Any(sc => sc.ProductId == p.Id && categoryIds.Contains(sc.CategoryId)));
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Search))
@@ -207,6 +207,7 @@ public class ProductService : IProductService
     {
         var p = await _db.Products
             .Include(x => x.Category)
+            .Include(x => x.SecondaryCategories).ThenInclude(sc => sc.Category)
             .Include(x => x.Brand)
             .Include(x => x.Images.OrderBy(i => i.SortOrder))
             .Include(x => x.Variants)
@@ -270,6 +271,7 @@ public class ProductService : IProductService
     {
         var p = await _db.Products
             .Include(x => x.Category)
+            .Include(x => x.SecondaryCategories).ThenInclude(sc => sc.Category)
             .Include(x => x.Brand)
             .Include(x => x.Images.OrderBy(i => i.SortOrder))
             .Include(x => x.Variants)
@@ -363,6 +365,14 @@ public class ProductService : IProductService
             Slug = GenerateSlug(dto.NameEn ?? dto.NameAr) + "-" + Guid.NewGuid().ToString().Substring(0, 4),
             LinkedProductId = dto.LinkedProductId
         };
+
+        if (dto.SecondaryCategoryIds != null && dto.SecondaryCategoryIds.Any())
+        {
+            foreach (var catId in dto.SecondaryCategoryIds.Distinct())
+            {
+                product.SecondaryCategories.Add(new ProductSecondaryCategory { CategoryId = catId });
+            }
+        }
 
         if (dto.Variants != null && dto.Variants.Any())
         {
@@ -468,6 +478,17 @@ public class ProductService : IProductService
         product.SizeChartJson = dto.SizeChartJson;
         product.LinkedProductId = dto.LinkedProductId;
         product.UpdatedAt = TimeHelper.GetEgyptTime();
+
+        // تحديث الأقسام الإضافية للمنتج
+        var existingSec = await _db.ProductSecondaryCategories.Where(sc => sc.ProductId == id).ToListAsync();
+        _db.ProductSecondaryCategories.RemoveRange(existingSec);
+        if (dto.SecondaryCategoryIds != null && dto.SecondaryCategoryIds.Any())
+        {
+            foreach (var catId in dto.SecondaryCategoryIds.Distinct())
+            {
+                _db.ProductSecondaryCategories.Add(new ProductSecondaryCategory { ProductId = id, CategoryId = catId });
+            }
+        }
 
         // إعادة حساب إجمالي المخزون وتحديث الحالة للتأكد من الدقة
         await UpdateTotalStockAsync(id);
@@ -898,7 +919,7 @@ public class ProductService : IProductService
             p.CategoryId, p.Category?.NameAr ?? _t.Get("Products.CategoryMissing"), p.Category?.NameEn ?? _t.Get("Products.CategoryMissing"),
             p.Category?.Type.ToString(),
             p.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList() ?? new List<ProductVariantDto>(),
-            p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr)).ToList() ?? new List<ProductImageDto>(),
+            p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr, i.CategoryId)).ToList() ?? new List<ProductImageDto>(),
             p.AverageRating,
             p.ReviewCount,
             p.TotalStock,
@@ -917,7 +938,9 @@ public class ProductService : IProductService
             p.SizeChartJson,
             p.LinkedProductId,
             linkedProduct,
-            RawDiscountPrice: p.DiscountPrice
+            RawDiscountPrice: p.DiscountPrice,
+            SecondaryCategoryIds: p.SecondaryCategories?.Select(sc => sc.CategoryId).ToList() ?? new List<int>(),
+            SecondaryCategories: p.SecondaryCategories?.Where(sc => sc.Category != null).Select(sc => new CategoryDto(sc.Category.Id, sc.Category.NameAr, sc.Category.NameEn, sc.Category.DescriptionAr, sc.Category.DescriptionEn, sc.Category.ImageUrl, sc.Category.IsActive, sc.Category.Type, 0, sc.Category.CreatedAt)).ToList() ?? new List<CategoryDto>()
         );
     }
 
