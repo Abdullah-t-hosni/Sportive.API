@@ -342,7 +342,7 @@ public class ReturnExchangeRequestsController : ControllerBase
                     var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == orderItem.ProductId.Value);
                     if (product != null)
                     {
-                        product.StockQuantity += reqItem.Quantity;
+                        product.TotalStock += reqItem.Quantity;
                     }
                 }
             }
@@ -360,26 +360,28 @@ public class ReturnExchangeRequestsController : ControllerBase
             {
                 var entry = new JournalEntry
                 {
-                    Date = TimeHelper.GetEgyptTime(),
+                    EntryNumber = $"JE-RTN-{req.Id}-{TimeHelper.GetEgyptTime():yyyyMMddHHmmss}",
+                    EntryDate = TimeHelper.GetEgyptTime(),
+                    Type = JournalEntryType.SalesReturn,
+                    Status = JournalEntryStatus.Posted,
+                    Reference = req.Order.OrderNumber,
                     Description = $"مرتجع فاتورة #{req.Order.OrderNumber} - طلب استرجاع ذاتي #{req.Id}",
-                    ReferenceNumber = req.Order.OrderNumber,
-                    IsPosted = true,
+                    OrderId = req.OrderId,
                     CreatedAt = TimeHelper.GetEgyptTime()
                 };
 
-                // Debit Sales Returns (or Accounts Receivable/Customer)
+                // Credit Refund Treasury / Bank account
                 entry.Lines.Add(new JournalLine
                 {
                     AccountId = account.Id,
                     Credit = totalRefundValue,
                     Debit = 0,
-                    Notes = $"خصم مرتجع فاتورة #{req.Order.OrderNumber}"
+                    Description = $"خصم مرتجع فاتورة #{req.Order.OrderNumber}",
+                    CustomerId = req.CustomerId,
+                    OrderId = req.OrderId
                 });
 
                 _db.JournalEntries.Add(entry);
-
-                // Deduct balance from account
-                account.CurrentBalance -= totalRefundValue;
             }
         }
 
