@@ -42,6 +42,7 @@ public class WelcomeMessageController : ControllerBase
             .Select(x => new {
                 x.Id,
                 x.Message,
+                x.ImageUrl,
                 x.TargetType,
                 x.TargetUserId,
                 TargetUser = x.TargetUser != null ? new { x.TargetUser.FullName } : null,
@@ -76,6 +77,7 @@ public class WelcomeMessageController : ControllerBase
 
     public record CreateWelcomeMessageDto(
         string Message,
+        string? ImageUrl,
         WelcomeMessageTargetType TargetType,
         string? TargetUserId,
         int? TargetDepartmentId,
@@ -93,6 +95,7 @@ public class WelcomeMessageController : ControllerBase
         var message = new WelcomeMessage
         {
             Message = dto.Message,
+            ImageUrl = dto.ImageUrl,
             TargetType = dto.TargetType,
             TargetUserId = dto.TargetUserId,
             TargetDepartmentId = dto.TargetDepartmentId,
@@ -113,6 +116,7 @@ public class WelcomeMessageController : ControllerBase
                 type = "WelcomeMessage",
                 id = message.Id,
                 message = message.Message,
+                imageUrl = message.ImageUrl,
                 targetType = message.TargetType.ToString(),
                 targetUserId = message.TargetUserId,
                 targetDepartmentId = message.TargetDepartmentId
@@ -180,7 +184,8 @@ public class WelcomeMessageController : ControllerBase
 
         return Ok(new {
             id = message.Id,
-            message = message.Message
+            message = message.Message,
+            imageUrl = message.ImageUrl
         });
     }
 

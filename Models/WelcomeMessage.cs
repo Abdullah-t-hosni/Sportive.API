@@ -15,6 +15,7 @@ public enum WelcomeMessageTargetType
 public class WelcomeMessage : BaseEntity
 {
     public string Message { get; set; } = string.Empty;
+    public string? ImageUrl { get; set; }
     public WelcomeMessageTargetType TargetType { get; set; }
     
     public string? TargetUserId { get; set; }
