@@ -375,7 +375,5 @@ app.MapHub<NotificationHub>("/notifications-hub");
 //         service => service.CleanupOldLogsAsync(3),
 //         "30 3 * * *"); // Every day at 3:30 AM
 // 
-//     Log.Information("Hangfire recurring jobs registered successfully.");
-// }
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Run($"http://0.0.0.0:{port}");

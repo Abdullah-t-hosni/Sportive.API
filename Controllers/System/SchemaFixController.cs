@@ -39,6 +39,40 @@ public class SchemaFixController : ControllerBase
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
+    [HttpGet("run-multi-category-schema")]
+    public async Task<IActionResult> RunMultiCategorySchema()
+    {
+        _logger.LogWarning("SchemaFix run-multi-category-schema triggered.");
+        try
+        {
+            await _db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS `ProductSecondaryCategories` (
+                    `ProductId` int NOT NULL,
+                    `CategoryId` int NOT NULL,
+                    PRIMARY KEY (`ProductId`, `CategoryId`),
+                    KEY `IX_ProductSecondaryCategories_CategoryId` (`CategoryId`),
+                    CONSTRAINT `FK_ProductSecondaryCategories_Categories_CategoryId` FOREIGN KEY (`CategoryId`) REFERENCES `Categories` (`Id`) ON DELETE CASCADE,
+                    CONSTRAINT `FK_ProductSecondaryCategories_Products_ProductId` FOREIGN KEY (`ProductId`) REFERENCES `Products` (`Id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            ");
+
+            try
+            {
+                await _db.Database.ExecuteSqlRawAsync("ALTER TABLE `ProductImages` ADD COLUMN `CategoryId` int NULL;");
+            }
+            catch { }
+
+            try
+            {
+                await _db.Database.ExecuteSqlRawAsync("ALTER TABLE `ProductImages` ADD CONSTRAINT `FK_ProductImages_Categories_CategoryId` FOREIGN KEY (`CategoryId`) REFERENCES `Categories` (`Id`) ON DELETE SET NULL;");
+            }
+            catch { }
+
+            return Ok(new { message = "Multi-Category schema applied successfully." });
+        }
+        catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+    }
+
     [HttpGet("run-v5")]
     public async Task<IActionResult> RunV5()
     {
