@@ -79,7 +79,8 @@ public class EmployeeAttendancesController : ControllerBase
                 a.IsShiftOverridden,
                 a.Notes,
                 a.CreatedByUserId,
-                a.CreatedAt
+                a.CreatedAt,
+                a.PunchesJson
             )).ToListAsync();
 
         return Ok(new PaginatedResult<EmployeeAttendanceDto>(items, total, page, pageSize,

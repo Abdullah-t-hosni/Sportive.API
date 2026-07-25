@@ -417,7 +417,8 @@ public record EmployeeAttendanceDto(
     bool IsShiftOverridden,
     string? Notes,
     string? CreatedByUserId,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    string? PunchesJson = "[]"
 );
 
 public record CreateAttendanceDto(
