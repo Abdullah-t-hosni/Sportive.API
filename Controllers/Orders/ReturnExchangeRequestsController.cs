@@ -40,15 +40,15 @@ public class ReturnExchangeRequestsController : ControllerBase
     [HttpPost("{orderId}/return-exchange-request")]
     public async Task<IActionResult> SubmitRequest(int orderId, [FromBody] CreateReturnExchangeRequestDto dto)
     {
-        var customer = await GetCurrentCustomerAsync();
-        if (customer == null) return BadRequest("لم يتم العثور على حساب العميل المسجل.");
-
-        // 2. Find Order & Validate Ownership
+        // 1. Find Order
         var order = await _db.Orders
             .Include(o => o.Items)
-            .FirstOrDefaultAsync(o => o.Id == orderId && o.CustomerId == customer.Id);
+            .FirstOrDefaultAsync(o => o.Id == orderId);
 
-        if (order == null) return NotFound("الطلب غير موجود أو لا يخص حسابك.");
+        if (order == null) return NotFound("الطلب غير موجود.");
+
+        var customer = await GetCurrentCustomerAsync() ?? await _db.Customers.FirstOrDefaultAsync(c => c.Id == order.CustomerId);
+        int customerId = customer?.Id ?? order.CustomerId;
 
         // Parse Request Type
         bool isExchange = string.Equals(dto.Type, "Exchange", StringComparison.OrdinalIgnoreCase);
@@ -88,7 +88,7 @@ public class ReturnExchangeRequestsController : ControllerBase
         var request = new ReturnExchangeRequest
         {
             OrderId = order.Id,
-            CustomerId = customer.Id,
+            CustomerId = customerId,
             Type = reqType,
             Status = ReturnExchangeStatus.Pending,
             Reason = dto.Reason ?? "غير محدد",
