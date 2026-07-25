@@ -37,7 +37,7 @@ public class ProductService : IProductService
             .AsQueryable();
         
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
-        if (store != null && store.HideOutOfStock && !filter.Status.HasValue && string.IsNullOrWhiteSpace(filter.Search))
+        if (store != null && store.HideOutOfStock && filter.OnlyPublic == true && !filter.Status.HasValue && string.IsNullOrWhiteSpace(filter.Search))
         {
             if (filter.WarehouseId.HasValue)
             {
