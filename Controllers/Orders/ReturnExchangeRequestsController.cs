@@ -38,12 +38,14 @@ public class ReturnExchangeRequestsController : ControllerBase
     /// تقديم طلب استبدال أو استرجاع ذاتي بواسطة العميل
     /// </summary>
     [HttpPost("{orderId}/return-exchange-request")]
-    public async Task<IActionResult> SubmitRequest(int orderId, [FromBody] CreateReturnExchangeRequestDto dto)
+    public async Task<IActionResult> SubmitRequest(string orderId, [FromBody] CreateReturnExchangeRequestDto dto)
     {
-        // 1. Find Order
+        int.TryParse(orderId, out var idInt);
+
+        // 1. Find Order (support both numeric ID and OrderNumber string)
         var order = await _db.Orders
             .Include(o => o.Items)
-            .FirstOrDefaultAsync(o => o.Id == orderId);
+            .FirstOrDefaultAsync(o => o.Id == idInt || o.OrderNumber == orderId);
 
         if (order == null) return NotFound("الطلب غير موجود.");
 
@@ -148,14 +150,20 @@ public class ReturnExchangeRequestsController : ControllerBase
     public async Task<IActionResult> GetMyRequests()
     {
         var customer = await GetCurrentCustomerAsync();
-        if (customer == null) return Ok(new List<object>());
+        int customerId = customer?.Id ?? 0;
+
+        var customerIdClaim = User.FindFirst("CustomerId")?.Value;
+        if (int.TryParse(customerIdClaim, out var cClaimId) && cClaimId > 0)
+        {
+            if (customerId == 0) customerId = cClaimId;
+        }
 
         var requests = await _db.ReturnExchangeRequests
             .AsNoTracking()
             .Include(r => r.Order)
             .Include(r => r.Items)
                 .ThenInclude(i => i.OrderItem)
-            .Where(r => r.CustomerId == customer.Id)
+            .Where(r => r.CustomerId == customerId || (r.Order != null && r.Order.CustomerId == customerId))
             .OrderByDescending(r => r.CreatedAt)
             .ToListAsync();
 
@@ -226,9 +234,9 @@ public class ReturnExchangeRequestsController : ControllerBase
         {
             var s = filter.Search.Trim().ToLower();
             query = query.Where(r =>
-                r.Order.OrderNumber.ToLower().Contains(s) ||
-                r.Customer.FullName.ToLower().Contains(s) ||
-                (r.Customer.Phone != null && r.Customer.Phone.Contains(s)) ||
+                (r.Order != null && r.Order.OrderNumber.ToLower().Contains(s)) ||
+                (r.Customer != null && r.Customer.FullName.ToLower().Contains(s)) ||
+                (r.Customer != null && r.Customer.Phone != null && r.Customer.Phone.Contains(s)) ||
                 r.Id.ToString() == s);
         }
 
