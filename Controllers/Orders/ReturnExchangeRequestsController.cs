@@ -209,6 +209,7 @@ public class ReturnExchangeRequestsController : ControllerBase
         var query = _db.ReturnExchangeRequests
             .AsNoTracking()
             .Include(r => r.Order)
+                .ThenInclude(o => o.Customer)
             .Include(r => r.Customer)
             .Include(r => r.Items)
                 .ThenInclude(i => i.OrderItem)
@@ -442,9 +443,17 @@ public class ReturnExchangeRequestsController : ControllerBase
             Id = r.Id,
             OrderId = r.OrderId,
             OrderNumber = r.Order != null ? r.Order.OrderNumber : "",
-            CustomerId = r.CustomerId,
-            CustomerName = r.Customer != null ? r.Customer.FullName : (r.Order?.Customer?.FullName ?? "عميل"),
-            CustomerPhone = r.Customer != null ? (r.Customer.Phone ?? "") : (r.Order?.Customer?.Phone ?? ""),
+            CustomerId = r.CustomerId ?? r.Order?.CustomerId ?? 0,
+            CustomerName = r.Customer != null && !string.IsNullOrWhiteSpace(r.Customer.FullName) 
+                ? r.Customer.FullName 
+                : (r.Order?.Customer != null && !string.IsNullOrWhiteSpace(r.Order.Customer.FullName) 
+                    ? r.Order.Customer.FullName 
+                    : "عميل"),
+            CustomerPhone = r.Customer != null && !string.IsNullOrWhiteSpace(r.Customer.Phone) 
+                ? r.Customer.Phone 
+                : (r.Order?.Customer != null && !string.IsNullOrWhiteSpace(r.Order.Customer.Phone) 
+                    ? r.Order.Customer.Phone 
+                    : ""),
             Type = r.Type.ToString(),
             Status = r.Status.ToString(),
             Reason = r.Reason,
