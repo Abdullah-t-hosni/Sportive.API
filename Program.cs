@@ -377,10 +377,5 @@ app.MapHub<NotificationHub>("/notifications-hub");
 // 
 //     Log.Information("Hangfire recurring jobs registered successfully.");
 // }
-// catch (Exception ex)
-// {
-//     Log.Error(ex, "Failed to register or update Hangfire recurring jobs. The application will continue starting up.");
-// }
-
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Run($"http://0.0.0.0:{port}");

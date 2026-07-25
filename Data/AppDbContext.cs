@@ -44,6 +44,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<Order> Orders                   => Set<Order>();
     public DbSet<OrderItem> OrderItems           => Set<OrderItem>();
     public DbSet<OrderStatusHistory> OrderStatusHistories => Set<OrderStatusHistory>();
+    public DbSet<ReturnExchangeRequest> ReturnExchangeRequests => Set<ReturnExchangeRequest>();
+    public DbSet<ReturnExchangeRequestItem> ReturnExchangeRequestItems => Set<ReturnExchangeRequestItem>();
     public DbSet<CartItem> CartItems             => Set<CartItem>();
     public DbSet<OrderPayment> OrderPayments     => Set<OrderPayment>();
     public DbSet<Coupon> Coupons                 => Set<Coupon>();
