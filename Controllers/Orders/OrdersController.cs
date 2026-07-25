@@ -166,7 +166,7 @@ public class OrdersController : ControllerBase
             if (order.Source != "POS" && order.Source != "1")
             {
                 var prefix = _tenantContext.CurrentTenant?.Slug?.ToLowerInvariant() ?? "global";
-                await _hubContext.Clients.Group($"{prefix}_Admin").SendAsync("ReceiveNewOrderToPrint", order.Id);
+                await _hubContext.Clients.Group($"{prefix}_All").SendAsync("ReceiveNewOrderToPrint", order.Id);
             }
         }
         catch (Exception ex)

@@ -25,8 +25,8 @@ public class NotificationHub : Hub
         if (!string.IsNullOrEmpty(userId))
             await Groups.AddToGroupAsync(Context.ConnectionId, $"{prefix}_{userId}");
 
-        // Admin group
-        if (Context.User?.IsInRole("Admin") == true || Context.User?.IsInRole("SuperAdmin") == true)
+        // Admin / Staff print group
+        if (Context.User?.IsInRole("Admin") == true || Context.User?.IsInRole("SuperAdmin") == true || Context.User?.IsInRole("Manager") == true || Context.User?.IsInRole("Cashier") == true)
             await Groups.AddToGroupAsync(Context.ConnectionId, $"{prefix}_Admin");
 
         await base.OnConnectedAsync();
