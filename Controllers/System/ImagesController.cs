@@ -166,7 +166,8 @@ public class ImagesController : ControllerBase
         {
             if (isMain.Value)
             {
-                var existing = _db.ProductImages.Where(i => i.ProductId == image.ProductId && i.IsMain);
+                var catId = image.CategoryId;
+                var existing = _db.ProductImages.Where(i => i.ProductId == image.ProductId && i.CategoryId == catId && i.IsMain);
                 foreach (var img in existing) img.IsMain = false;
             }
             image.IsMain = isMain.Value;
