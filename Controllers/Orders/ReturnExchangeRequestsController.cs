@@ -503,11 +503,7 @@ public class ReturnExchangeRequestsController : ControllerBase
         int targetWarehouseId = req.Order?.WarehouseId ?? 0;
         if (targetWarehouseId == 0)
         {
-            targetWarehouseId = await _db.Warehouses.Where(w => w.IsMain).Select(w => w.Id).FirstOrDefaultAsync();
-            if (targetWarehouseId == 0)
-            {
-                targetWarehouseId = await _db.Warehouses.Select(w => w.Id).FirstOrDefaultAsync();
-            }
+            targetWarehouseId = await _db.Warehouses.Where(w => w.IsActive).Select(w => w.Id).FirstOrDefaultAsync();
         }
 
         // Process item exchange updates on order items
