@@ -580,6 +580,52 @@ public class OrdersController : ControllerBase
         return Ok(new { paymentStatus = order.PaymentStatus.ToString() });
     }
 
+    /// <summary>
+    /// استعلام الفواتير غير المطبوعة (لصالح برنامج الطباعة التلقائي Sportive Print Agent عند عودته أونلاين)
+    /// </summary>
+    [HttpGet("unprinted")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetUnprintedOrders()
+    {
+        var unprintedOrders = await _db.Orders
+            .AsNoTracking()
+            .Include(o => o.Customer)
+            .Include(o => o.Items)
+            .Where(o => !o.IsPrinted && o.Status != OrderStatus.Cancelled && o.Source != OrderSource.POS)
+            .OrderBy(o => o.CreatedAt)
+            .Take(50)
+            .Select(o => new {
+                id = o.Id,
+                orderNumber = o.OrderNumber,
+                createdAt = o.CreatedAt,
+                customerName = o.Customer != null ? o.Customer.FullName : "",
+                customerPhone = o.Customer != null ? o.Customer.Phone : "",
+                totalAmount = o.TotalAmount,
+                status = o.Status.ToString(),
+                itemCount = o.Items.Count
+            })
+            .ToListAsync();
+
+        return Ok(unprintedOrders);
+    }
+
+    /// <summary>
+    /// تأكيد طباعة الفاتورة بواسطة برنامج الطباعة Sportive Print Agent
+    /// </summary>
+    [HttpPost("{id}/mark-printed")]
+    [AllowAnonymous]
+    public async Task<IActionResult> MarkOrderAsPrinted(int id)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id);
+        if (order == null) return NotFound("الفاتورة غير موجودة.");
+
+        order.IsPrinted = true;
+        order.PrintedAt = TimeHelper.GetEgyptTime();
+        await _db.SaveChangesAsync();
+
+        return Ok(new { message = "تم تعليم الفاتورة كمطبوعة بنجاح.", orderId = id, isPrinted = true });
+    }
+
     [HttpDelete("{id}")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> Delete(int id)

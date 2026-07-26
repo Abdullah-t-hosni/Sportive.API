@@ -105,6 +105,10 @@ public class Order : BaseEntity
     public bool IsArchived { get; set; } = false;
     public DateTime? ArchivedAt { get; set; }
 
+    // Print Agent Tracking
+    public bool IsPrinted { get; set; } = false;
+    public DateTime? PrintedAt { get; set; }
+
     // Tax Authority Tracking (E-Invoicing)
     public bool IsSubmittedToTaxAuthority { get; set; } = false;
     public string? TaxAuthorityReference { get; set; } // UUID or ZATCA Hash
