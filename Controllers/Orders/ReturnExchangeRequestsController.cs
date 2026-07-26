@@ -158,13 +158,14 @@ public class ReturnExchangeRequestsController : ControllerBase
                         var product = await _db.Products.FindAsync(orderItem.ProductId);
                         if (product != null)
                         {
-                            product.StockQuantity += qtyToRemove;
+                            product.TotalStock += qtyToRemove;
                             product.UpdatedAt = TimeHelper.GetEgyptTime();
                         }
                     }
 
                     orderItem.Quantity -= qtyToRemove;
-                    deletedItemsNotes.Add($"{orderItem.ProductNameAr ?? orderItem.ProductName} (كمية: {qtyToRemove})");
+                    string itemTitle = !string.IsNullOrWhiteSpace(orderItem.ProductNameAr) ? orderItem.ProductNameAr : orderItem.ProductNameEn;
+                    deletedItemsNotes.Add($"{itemTitle} (كمية: {qtyToRemove})");
 
                     if (orderItem.Quantity <= 0)
                     {
@@ -177,13 +178,7 @@ public class ReturnExchangeRequestsController : ControllerBase
             var remainingItems = order.Items.Where(i => _db.Entry(i).State != EntityState.Deleted && i.Quantity > 0).ToList();
             decimal subTotal = remainingItems.Sum(i => i.UnitPrice * i.Quantity);
             order.SubTotal = subTotal;
-
-            if (order.HasTax && order.VatRate > 0)
-            {
-                order.TaxAmount = Math.Round(subTotal * (order.VatRate / 100m), 2);
-            }
-
-            order.TotalAmount = Math.Max(0, subTotal + order.ShippingFee - order.DiscountAmount + order.TaxAmount);
+            order.TotalAmount = Math.Max(0, subTotal + order.DeliveryFee - order.DiscountAmount + order.TotalVatAmount);
             order.UpdatedAt = TimeHelper.GetEgyptTime();
 
             if (!remainingItems.Any())
