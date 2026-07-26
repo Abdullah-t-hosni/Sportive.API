@@ -716,10 +716,11 @@ public class ReturnExchangeRequestsController : ControllerBase
             decimal itemDiscounts = req.Order.Items.Sum(i => i.DiscountAmount);
             decimal totalVat = req.Order.Items.Sum(i => i.ItemVatAmount);
 
+            // 🎯 Fix: Assign product offer discounts to TemporalDiscount, preserving original Coupon DiscountAmount
             req.Order.SubTotal = subTotal;
-            req.Order.DiscountAmount = itemDiscounts;
+            req.Order.TemporalDiscount = itemDiscounts; // خصم عروض المنتجات الفعلي
             req.Order.TotalVatAmount = totalVat;
-            req.Order.TotalAmount = Math.Max(0, subTotal - itemDiscounts + req.Order.DeliveryFee + totalVat);
+            req.Order.TotalAmount = Math.Max(0, subTotal - req.Order.DiscountAmount - req.Order.TemporalDiscount + req.Order.DeliveryFee + totalVat);
             req.Order.AdminNotes = (req.Order.AdminNotes ?? "") + $" | [تم تنفيذ الاستبدال وحفظ الصنف الجديد #{req.Id}]";
             req.Order.UpdatedAt = TimeHelper.GetEgyptTime();
         }
