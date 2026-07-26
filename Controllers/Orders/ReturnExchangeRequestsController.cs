@@ -661,11 +661,40 @@ public class ReturnExchangeRequestsController : ControllerBase
                         orderItem.Size = requestedSize;
                     }
 
+                    var now = TimeHelper.GetEgyptTime();
+                    var activeDiscount = await _db.ProductDiscounts
+                        .AsNoTracking()
+                        .Where(x => (x.ProductId == searchedProduct.Id || 
+                                     (searchedProduct.CategoryId != null && x.CategoryId == searchedProduct.CategoryId) || 
+                                     (searchedProduct.BrandId != null && x.BrandId == searchedProduct.BrandId) ||
+                                     (x.ProductId == null && x.CategoryId == null && x.BrandId == null)) 
+                                && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
+                        .Where(x => x.ApplyTo == DiscountApplyTo.All || x.ApplyTo == DiscountApplyTo.Store)
+                        .OrderByDescending(x => x.ProductId != null ? 4 : (x.CategoryId != null ? 3 : (x.BrandId != null ? 2 : 1)))
+                        .FirstOrDefaultAsync();
+
+                    decimal basePrice = searchedProduct.Price;
+                    decimal effectiveDiscountPrice = (searchedProduct.DiscountPrice.HasValue && searchedProduct.DiscountPrice.Value > 0 && searchedProduct.DiscountPrice.Value < basePrice)
+                                                      ? searchedProduct.DiscountPrice.Value 
+                                                      : basePrice;
+
+                    if (activeDiscount != null)
+                    {
+                        if (activeDiscount.DiscountType == DiscountType.Percentage && activeDiscount.DiscountValue > 0)
+                        {
+                            decimal calculatedDisc = basePrice * (1 - activeDiscount.DiscountValue / 100m);
+                            if (calculatedDisc < effectiveDiscountPrice) effectiveDiscountPrice = calculatedDisc;
+                        }
+                        else if (activeDiscount.DiscountType == DiscountType.FixedAmount && activeDiscount.DiscountValue > 0)
+                        {
+                            decimal calculatedDisc = Math.Max(0, basePrice - activeDiscount.DiscountValue);
+                            if (calculatedDisc < effectiveDiscountPrice) effectiveDiscountPrice = calculatedDisc;
+                        }
+                    }
+
                     decimal variantAdj = matchedVariant?.PriceAdjustment ?? 0;
-                    decimal origUnit = searchedProduct.Price + variantAdj;
-                    decimal finalUnit = (searchedProduct.DiscountPrice.HasValue && searchedProduct.DiscountPrice.Value > 0 
-                                        ? searchedProduct.DiscountPrice.Value 
-                                        : searchedProduct.Price) + variantAdj;
+                    decimal origUnit = basePrice + variantAdj;
+                    decimal finalUnit = effectiveDiscountPrice + variantAdj;
 
                     orderItem.OriginalUnitPrice = origUnit;
                     orderItem.UnitPrice = finalUnit;
@@ -699,6 +728,19 @@ public class ReturnExchangeRequestsController : ControllerBase
         req.AdminNotes = $"[تمت الموافقة على الاستبدال وتحديث الصنف بالفاتورة والمخزن بتاريخ {TimeHelper.GetEgyptTime():yyyy-MM-dd HH:mm}]";
 
         await _db.SaveChangesAsync();
+
+        // 🏦 🔄 SYNC & RE-POST SALES JOURNAL ENTRY IN ACCOUNTING SYSTEM
+        if (req.Order != null && _accounting != null)
+        {
+            try
+            {
+                await _accounting.PostSalesOrderAsync(req.Order);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to sync sales journal entry for order #{OrderNumber}", req.Order.OrderNumber);
+            }
+        }
 
         try
         {
