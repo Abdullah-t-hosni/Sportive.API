@@ -614,16 +614,28 @@ public class ReturnExchangeRequestsController : ControllerBase
                                     oldVar.StockQuantity += reqItem.Quantity;
                                     oldVar.UpdatedAt = TimeHelper.GetEgyptTime();
 
-                                    // 🏬 Sync ProductWarehouseStock for POS Cashier
-                                    if (targetWarehouseId > 0)
+                                    // 🏬 Sync ProductWarehouseStock for POS Cashier across all warehouses
+                                    var oldWhStocks = await _db.ProductWarehouseStocks
+                                        .Where(w => w.ProductVariantId == oldVar.Id)
+                                        .ToListAsync();
+                                    
+                                    if (oldWhStocks.Any())
                                     {
-                                        var oldWhStock = await _db.ProductWarehouseStocks
-                                            .FirstOrDefaultAsync(w => w.ProductVariantId == oldVar.Id && w.WarehouseId == targetWarehouseId);
-                                        if (oldWhStock != null)
+                                        foreach (var whs in oldWhStocks)
                                         {
-                                            oldWhStock.Quantity += reqItem.Quantity;
-                                            oldWhStock.UpdatedAt = TimeHelper.GetEgyptTime();
+                                            whs.Quantity = oldVar.StockQuantity;
+                                            whs.UpdatedAt = TimeHelper.GetEgyptTime();
                                         }
+                                    }
+                                    else if (targetWarehouseId > 0)
+                                    {
+                                        _db.ProductWarehouseStocks.Add(new ProductWarehouseStock
+                                        {
+                                            ProductVariantId = oldVar.Id,
+                                            WarehouseId = targetWarehouseId,
+                                            Quantity = oldVar.StockQuantity,
+                                            CreatedAt = TimeHelper.GetEgyptTime()
+                                        });
                                     }
                                 }
                             }
@@ -631,25 +643,39 @@ public class ReturnExchangeRequestsController : ControllerBase
                             matchedVariant.StockQuantity = Math.Max(0, matchedVariant.StockQuantity - reqItem.Quantity);
                             matchedVariant.UpdatedAt = TimeHelper.GetEgyptTime();
 
-                            // 🏬 Sync ProductWarehouseStock for POS Cashier
-                            if (targetWarehouseId > 0)
+                            // 🏬 Sync ProductWarehouseStock for POS Cashier across all warehouses
+                            var newWhStocks = await _db.ProductWarehouseStocks
+                                .Where(w => w.ProductVariantId == matchedVariant.Id)
+                                .ToListAsync();
+
+                            if (newWhStocks.Any())
                             {
-                                var newWhStock = await _db.ProductWarehouseStocks
-                                    .FirstOrDefaultAsync(w => w.ProductVariantId == matchedVariant.Id && w.WarehouseId == targetWarehouseId);
-                                if (newWhStock != null)
+                                foreach (var whs in newWhStocks)
                                 {
-                                    newWhStock.Quantity = Math.Max(0, newWhStock.Quantity - reqItem.Quantity);
-                                    newWhStock.UpdatedAt = TimeHelper.GetEgyptTime();
+                                    whs.Quantity = matchedVariant.StockQuantity;
+                                    whs.UpdatedAt = TimeHelper.GetEgyptTime();
                                 }
-                                else
+                            }
+                            else if (targetWarehouseId > 0)
+                            {
+                                _db.ProductWarehouseStocks.Add(new ProductWarehouseStock
                                 {
-                                    _db.ProductWarehouseStocks.Add(new ProductWarehouseStock
-                                    {
-                                        ProductVariantId = matchedVariant.Id,
-                                        WarehouseId = targetWarehouseId,
-                                        Quantity = Math.Max(0, matchedVariant.StockQuantity),
-                                        CreatedAt = TimeHelper.GetEgyptTime()
-                                    });
+                                    ProductVariantId = matchedVariant.Id,
+                                    WarehouseId = targetWarehouseId,
+                                    Quantity = matchedVariant.StockQuantity,
+                                    CreatedAt = TimeHelper.GetEgyptTime()
+                                });
+                            }
+
+                            // 🏬 Ensure ALL variants for this product are fully synced with ProductWarehouseStock
+                            var allVariants = await _db.ProductVariants.Where(v => v.ProductId == productId).ToListAsync();
+                            foreach (var v in allVariants)
+                            {
+                                var whsList = await _db.ProductWarehouseStocks.Where(w => w.ProductVariantId == v.Id).ToListAsync();
+                                foreach (var whs in whsList)
+                                {
+                                    whs.Quantity = v.StockQuantity;
+                                    whs.UpdatedAt = TimeHelper.GetEgyptTime();
                                 }
                             }
 
