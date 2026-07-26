@@ -108,20 +108,21 @@ public class ReturnExchangeRequestsController : ControllerBase
     private async Task<IActionResult> ProcessItemDeletionOrRequestAsync(Order order, int customerId, CreateReturnExchangeRequestDto dto)
     {
         bool isDelete = string.Equals(dto.Type, "Delete", StringComparison.OrdinalIgnoreCase);
+        bool isAdd = string.Equals(dto.Type, "Add", StringComparison.OrdinalIgnoreCase) || string.Equals(dto.Type, "AddProduct", StringComparison.OrdinalIgnoreCase);
         bool isExchange = string.Equals(dto.Type, "Exchange", StringComparison.OrdinalIgnoreCase);
 
         // 1. Validation Rules
         if (order.Status == OrderStatus.Cancelled || order.Status == OrderStatus.Returned)
         {
-            return BadRequest("لا يمكن تقديم طلبات استبدال أو استرجاع على طلب ملغى أو مرجع بالكامل.");
+            return BadRequest("لا يمكن تقديم طلبات استبدال أو استرجاع أو إضافة على طلب ملغى أو مرجع بالكامل.");
         }
 
-        if (isDelete)
+        if (isDelete || isAdd)
         {
-            var disallowedDeleteStatuses = new[] { OrderStatus.OutForDelivery, OrderStatus.Delivered, OrderStatus.Cancelled, OrderStatus.Returned };
-            if (disallowedDeleteStatuses.Contains(order.Status))
+            var disallowedStatuses = new[] { OrderStatus.OutForDelivery, OrderStatus.Delivered, OrderStatus.Cancelled, OrderStatus.Returned };
+            if (disallowedStatuses.Contains(order.Status))
             {
-                return BadRequest("لا يمكن حذف أصناف مباشرة من الفاتورة بعد شحن الطلب أو تسليمه.");
+                return BadRequest("لا يمكن حذف أو إضافة أصناف مباشرة للفاتورة بعد شحن الطلب أو تسليمه.");
             }
         }
         else if (isExchange || string.Equals(dto.Type, "Return", StringComparison.OrdinalIgnoreCase))
@@ -142,7 +143,212 @@ public class ReturnExchangeRequestsController : ControllerBase
             return BadRequest("يرجى اختيار صنف واحد على الأقل.");
         }
 
-        // 2. DIRECT DELETION LOGIC (بدون موافقة آدمن - فورياً لطلب العميل)
+        // 2. DIRECT ADD PRODUCT LOGIC (إضافة صنف جديد للفاتورة فوراً مثل الحذف + إشعار وتحديث قيد ومخزن)
+        if (isAdd)
+        {
+            var addedItemsNotes = new List<string>();
+
+            foreach (var itemDto in dto.Items)
+            {
+                Product? product = null;
+                ProductVariant? variant = null;
+
+                if (itemDto.ProductVariantId.HasValue && itemDto.ProductVariantId.Value > 0)
+                {
+                    variant = await _db.ProductVariants
+                        .Include(v => v.Product)
+                        .FirstOrDefaultAsync(v => v.Id == itemDto.ProductVariantId.Value);
+                    if (variant != null) product = variant.Product;
+                }
+
+                if (product == null && itemDto.ProductId.HasValue && itemDto.ProductId.Value > 0)
+                {
+                    product = await _db.Products
+                        .Include(p => p.Variants)
+                        .FirstOrDefaultAsync(p => p.Id == itemDto.ProductId.Value);
+                }
+
+                if (product == null && itemDto.OrderItemId > 0)
+                {
+                    product = await _db.Products
+                        .Include(p => p.Variants)
+                        .FirstOrDefaultAsync(p => p.Id == itemDto.OrderItemId);
+                }
+
+                // Fallback: search product by name in ReplacementNote if product still null
+                if (product == null && !string.IsNullOrWhiteSpace(itemDto.ReplacementNote))
+                {
+                    var note = itemDto.ReplacementNote;
+                    var cleanTitle = note.Replace("بديل:", "").Replace("إضافة:", "").Split('(')[0].Trim();
+                    if (!string.IsNullOrWhiteSpace(cleanTitle))
+                    {
+                        product = await _db.Products
+                            .Include(p => p.Variants)
+                            .FirstOrDefaultAsync(p => p.NameAr.Contains(cleanTitle) || p.NameEn.Contains(cleanTitle));
+                    }
+                }
+
+                if (product == null) continue;
+
+                int qtyToAdd = Math.Max(1, itemDto.Quantity);
+                string size = itemDto.Size ?? "";
+                string color = itemDto.Color ?? "";
+
+                // Parse size & color from ReplacementNote if passed as string formatted e.g. "بديل: اسم (لون: أحمر | مقاس: L)"
+                if (string.IsNullOrEmpty(size) || string.IsNullOrEmpty(color))
+                {
+                    if (!string.IsNullOrWhiteSpace(itemDto.ReplacementNote))
+                    {
+                        var note = itemDto.ReplacementNote;
+                        if (string.IsNullOrEmpty(color) && note.Contains("لون:"))
+                        {
+                            var afterColor = note.Substring(note.IndexOf("لون:") + 4);
+                            color = afterColor.Split(new[] { '|', ')' }, StringSplitOptions.RemoveEmptyEntries)[0].Trim();
+                        }
+                        if (string.IsNullOrEmpty(size) && note.Contains("مقاس:"))
+                        {
+                            var afterSize = note.Substring(note.IndexOf("مقاس:") + 5);
+                            size = afterSize.Split(new[] { '|', ')' }, StringSplitOptions.RemoveEmptyEntries)[0].Trim();
+                        }
+                    }
+                }
+
+                if (variant == null && product.Variants != null && product.Variants.Any())
+                {
+                    variant = product.Variants.FirstOrDefault(v => 
+                        (string.IsNullOrEmpty(size) || v.Size == size) &&
+                        (string.IsNullOrEmpty(color) || v.ColorAr == color || v.Color == color));
+
+                    if (variant == null)
+                    {
+                        variant = product.Variants.FirstOrDefault();
+                    }
+                }
+
+                // Deduct inventory
+                if (variant != null)
+                {
+                    variant.StockQuantity = Math.Max(0, variant.StockQuantity - qtyToAdd);
+                    variant.UpdatedAt = TimeHelper.GetEgyptTime();
+                }
+                else
+                {
+                    product.TotalStock = Math.Max(0, product.TotalStock - qtyToAdd);
+                    product.UpdatedAt = TimeHelper.GetEgyptTime();
+                }
+
+                // Deduct POS warehouse stock if present
+                var warehouseStock = await _db.ProductWarehouseStocks
+                    .FirstOrDefaultAsync(ws => (variant != null && ws.ProductVariantId == variant.Id) || (variant == null && ws.ProductId == product.Id));
+                if (warehouseStock != null)
+                {
+                    warehouseStock.Quantity = Math.Max(0, warehouseStock.Quantity - qtyToAdd);
+                    warehouseStock.UpdatedAt = TimeHelper.GetEgyptTime();
+                }
+
+                decimal unitPrice = product.DiscountPrice > 0 ? product.DiscountPrice : product.Price;
+                decimal originalPrice = product.Price;
+                decimal discountAmount = originalPrice > unitPrice ? (originalPrice - unitPrice) : 0m;
+
+                var existingItem = order.Items.FirstOrDefault(i => 
+                    i.ProductId == product.Id && 
+                    ((variant != null && i.ProductVariantId == variant.Id) || (variant == null && i.Size == size && i.Color == color)));
+
+                if (existingItem != null)
+                {
+                    existingItem.Quantity += qtyToAdd;
+                    existingItem.TotalAmount = existingItem.Quantity * unitPrice;
+                }
+                else
+                {
+                    var newItem = new OrderItem
+                    {
+                        OrderId = order.Id,
+                        ProductId = product.Id,
+                        ProductVariantId = variant?.Id,
+                        ProductNameAr = product.NameAr,
+                        ProductNameEn = product.NameEn,
+                        ProductImage = product.MainImageUrl ?? product.ImageUrl,
+                        SKU = !string.IsNullOrWhiteSpace(variant?.SKU) ? variant.SKU : product.SKU,
+                        Size = !string.IsNullOrWhiteSpace(size) ? size : (variant?.Size ?? ""),
+                        Color = !string.IsNullOrWhiteSpace(color) ? color : (variant?.ColorAr ?? variant?.Color ?? ""),
+                        VariantName = variant?.Name,
+                        Quantity = qtyToAdd,
+                        UnitPrice = unitPrice,
+                        OriginalUnitPrice = originalPrice,
+                        DiscountAmount = discountAmount,
+                        TotalAmount = qtyToAdd * unitPrice,
+                        CreatedAt = TimeHelper.GetEgyptTime()
+                    };
+                    order.Items.Add(newItem);
+                }
+
+                string itemTitle = !string.IsNullOrWhiteSpace(product.NameAr) ? product.NameAr : product.NameEn;
+                addedItemsNotes.Add($"{itemTitle} - {color} {size} (كمية: {qtyToAdd})");
+            }
+
+            if (!addedItemsNotes.Any())
+            {
+                return BadRequest("تعذر تحديد المنتج المراد إضافته.");
+            }
+
+            // Recalculate order totals
+            decimal subTotal = order.Items.Sum(i => i.UnitPrice * i.Quantity);
+            decimal totalVat = order.Items.Sum(i => i.ItemVatAmount);
+
+            order.SubTotal = subTotal;
+            order.TotalVatAmount = totalVat;
+            order.TemporalDiscount = order.Items.Sum(i => i.DiscountAmount * i.Quantity);
+            order.TotalAmount = Math.Max(0, subTotal + order.DeliveryFee - order.DiscountAmount + totalVat);
+            order.UpdatedAt = TimeHelper.GetEgyptTime();
+            order.AdminNotes = (order.AdminNotes ?? "") + $" | [إضافة منتجات بواسطة العميل: {string.Join(", ", addedItemsNotes)} بتاريخ {TimeHelper.GetEgyptTime():yyyy-MM-dd HH:mm}]";
+
+            await _db.SaveChangesAsync();
+
+            // 🔄 SMART UPDATE ACCOUNTING JOURNAL ENTRY IN-PLACE
+            try
+            {
+                await _accounting.PostSalesOrderAsync(order);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to update accounting journal entry for order product addition {OrderNo}", order.OrderNumber);
+            }
+
+            // 🔔 Send Admin Notification & Broadcast SignalR live events
+            try
+            {
+                if (_notificationService != null)
+                {
+                    await _notificationService.SendAsync(
+                        null,
+                        "إضافة صنف جديد للفاتورة ➕",
+                        "Item Added to Order Invoice",
+                        $"قام العميل بإضافة أصناف جديدة للفاتورة رقم #{order.OrderNumber}: {string.Join(", ", addedItemsNotes)} (الإجمالي الجديد: {order.TotalAmount:N2} ج.م)",
+                        $"Customer added items to order #{order.OrderNumber}: {string.Join(", ", addedItemsNotes)}",
+                        "Order",
+                        order.Id
+                    );
+                }
+            }
+            catch { }
+
+            try
+            {
+                await _hubContext.Clients.All.SendAsync("DashboardUpdate", new { type = "OrderUpdated", id = order.Id });
+                await _hubContext.Clients.All.SendAsync("DashboardUpdated", new { type = "OrderUpdated", id = order.Id });
+            }
+            catch { }
+
+            return Ok(new { 
+                message = "تمت إضافة الصنف للفاتورة وتحديث الإجمالي والمخزن والقيد المحاسبي فوراً 🌟", 
+                isAddedDirectly = true,
+                newTotal = order.TotalAmount,
+                orderStatus = order.Status.ToString()
+            });
+        }
+
+        // 3. DIRECT DELETION LOGIC (بدون موافقة آدمن - فورياً لطلب العميل)
         if (isDelete)
         {
             var deletedItemsNotes = new List<string>();

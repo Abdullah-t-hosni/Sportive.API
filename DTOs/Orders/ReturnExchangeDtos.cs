@@ -16,6 +16,10 @@ public class ReturnExchangeItemInputDto
     public int OrderItemId { get; set; }
     public int Quantity { get; set; } = 1;
     public string? ReplacementNote { get; set; }
+    public int? ProductId { get; set; }
+    public int? ProductVariantId { get; set; }
+    public string? Size { get; set; }
+    public string? Color { get; set; }
 }
 
 public class ConfirmWarehouseReceiptDto
