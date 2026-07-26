@@ -456,14 +456,43 @@ public class SupplierPaymentsController : ControllerBase
             var rem = inv.TotalAmount - inv.PaidAmount - inv.ReturnedAmount;
             if (rem <= 0) return BadRequest(new { message = "هذه الفاتورة مسددة بالكامل." });
 
-            if (line.Debit > rem) return BadRequest(new { message = "قيمة القيد اليدوي أكبر من المتبقي للفاتورة. لا يمكن تجزئة القيد آلياً." });
+            if (line.Debit > rem)
+            {
+                var remainder = line.Debit - rem;
 
-            line.PurchaseInvoiceId = inv.Id;
-            inv.PaidAmount += line.Debit;
+                // Create new JournalLine for the remainder balance
+                var splitLine = new JournalLine
+                {
+                    JournalEntryId = line.JournalEntryId,
+                    AccountId = line.AccountId,
+                    AccountCode = line.AccountCode,
+                    AccountName = line.AccountName,
+                    Debit = remainder,
+                    Credit = 0,
+                    SupplierId = line.SupplierId,
+                    CustomerId = line.CustomerId,
+                    PurchaseInvoiceId = null,
+                    Description = (line.Description ?? "") + " (رصيد متبقي بعد الربط)"
+                };
+                _db.JournalLines.Add(splitLine);
+
+                // Current line gets tied to the invoice with exact remaining amount
+                line.Debit = rem;
+                line.PurchaseInvoiceId = inv.Id;
+                inv.PaidAmount += rem;
+            }
+            else
+            {
+                line.PurchaseInvoiceId = inv.Id;
+                inv.PaidAmount += line.Debit;
+            }
+
+            var netTotalLines = inv.TotalAmount - inv.ReturnedAmount;
+            inv.Status = inv.PaidAmount >= netTotalLines - 0.01m ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.PartPaid;
             
             await _db.SaveChangesAsync();
             await _accounting.SyncEntityBalancesAsync();
-            return Ok(new { message = "تم ربط القيد اليدوي بالفاتورة بنجاح." });
+            return Ok(new { message = "تم ربط القيد اليدوي بالفاتورة وتجزئته بنجاح." });
         }
 
         var payment = await _db.SupplierPayments
