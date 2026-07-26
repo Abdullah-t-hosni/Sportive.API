@@ -508,96 +508,141 @@ public class ReturnExchangeRequestsController : ControllerBase
             {
                 string note = reqItem.ReplacementNote.Trim();
 
-                // Extract requested replacement color/size from ReplacementNote
-                string? newColor = null;
-                string? newSize = null;
+                // Clean search string for potential Product Name
+                string cleanSearch = note.Replace("بديل:", "")
+                                         .Replace("استبدال بمنتج:", "")
+                                         .Replace("استبدال بـ", "")
+                                         .Replace("استبدال منتج:", "")
+                                         .Trim();
 
-                if (note.Contains("بلون:"))
-                {
-                    var parts = note.Split("بلون:");
-                    if (parts.Length > 1) newColor = parts[1].Trim();
-                }
-                else if (note.Contains("لون:"))
-                {
-                    var parts = note.Split("لون:");
-                    if (parts.Length > 1) newColor = parts[1].Trim();
-                }
+                // 1. Check if cleanSearch matches a DIFFERENT Product in store catalog
+                var searchedProduct = await _db.Products
+                    .FirstOrDefaultAsync(p => p.NameAr == cleanSearch || p.NameEn == cleanSearch ||
+                                              (cleanSearch.Length > 3 && p.NameAr.Contains(cleanSearch)) ||
+                                              (p.NameAr.Length > 3 && cleanSearch.Contains(p.NameAr)));
 
-                if (note.Contains("بمقاس:"))
+                if (searchedProduct != null && searchedProduct.Id != orderItem.ProductId)
                 {
-                    var parts = note.Split("بمقاس:");
-                    if (parts.Length > 1) newSize = parts[1].Trim();
-                }
-                else if (note.Contains("مقاس:"))
-                {
-                    var parts = note.Split("مقاس:");
-                    if (parts.Length > 1) newSize = parts[1].Trim();
-                }
-
-                if (string.IsNullOrEmpty(newColor) && string.IsNullOrEmpty(newSize))
-                {
-                    newColor = note.Replace("استبدال بـ", "").Replace("استبدال", "").Replace("طلب", "").Trim();
-                }
-
-                // Inventory & Variant Swap
-                if (orderItem.ProductId.HasValue)
-                {
-                    int productId = orderItem.ProductId.Value;
-                    var variants = await _db.ProductVariants
-                        .Where(v => v.ProductId == productId)
-                        .ToListAsync();
-
-                    var matchedVariant = variants.FirstOrDefault(v => 
-                        (!string.IsNullOrEmpty(newColor) && ((v.ColorAr != null && v.ColorAr.Equals(newColor, StringComparison.OrdinalIgnoreCase)) || (v.Color != null && v.Color.Equals(newColor, StringComparison.OrdinalIgnoreCase)))) ||
-                        (!string.IsNullOrEmpty(newSize) && v.Size != null && v.Size.Equals(newSize, StringComparison.OrdinalIgnoreCase))
-                    );
-
-                    if (matchedVariant != null)
+                    // 🔄 FULL PRODUCT SWAP (استبدال بمنتج آخر بالكامل)
+                    if (orderItem.ProductId.HasValue)
                     {
-                        // Return old variant stock
-                        if (orderItem.ProductVariantId.HasValue)
+                        var oldProd = await _db.Products.FindAsync(orderItem.ProductId.Value);
+                        if (oldProd != null)
                         {
-                            var oldVar = await _db.ProductVariants.FindAsync(orderItem.ProductVariantId.Value);
-                            if (oldVar != null)
-                            {
-                                oldVar.StockQuantity += reqItem.Quantity;
-                                oldVar.UpdatedAt = TimeHelper.GetEgyptTime();
-                            }
+                            oldProd.TotalStock += reqItem.Quantity;
+                            oldProd.UpdatedAt = TimeHelper.GetEgyptTime();
                         }
+                    }
 
-                        // Deduct new variant stock
-                        matchedVariant.StockQuantity = Math.Max(0, matchedVariant.StockQuantity - reqItem.Quantity);
-                        matchedVariant.UpdatedAt = TimeHelper.GetEgyptTime();
+                    searchedProduct.TotalStock = Math.Max(0, searchedProduct.TotalStock - reqItem.Quantity);
+                    searchedProduct.UpdatedAt = TimeHelper.GetEgyptTime();
 
-                        orderItem.ProductVariantId = matchedVariant.Id;
-                        if (!string.IsNullOrEmpty(matchedVariant.ColorAr)) orderItem.Color = matchedVariant.ColorAr;
-                        else if (!string.IsNullOrEmpty(matchedVariant.Color)) orderItem.Color = matchedVariant.Color;
-                        
-                        if (!string.IsNullOrEmpty(matchedVariant.Size)) orderItem.Size = matchedVariant.Size;
+                    orderItem.ProductId = searchedProduct.Id;
+                    orderItem.ProductNameAr = searchedProduct.NameAr;
+                    orderItem.ProductNameEn = !string.IsNullOrEmpty(searchedProduct.NameEn) ? searchedProduct.NameEn : searchedProduct.NameAr;
+                    orderItem.UnitPrice = searchedProduct.DiscountPrice.HasValue && searchedProduct.DiscountPrice.Value > 0 
+                                          ? searchedProduct.DiscountPrice.Value 
+                                          : searchedProduct.Price;
+                    orderItem.OriginalUnitPrice = searchedProduct.Price;
+                    orderItem.TotalPrice = orderItem.UnitPrice * reqItem.Quantity;
+                    orderItem.Color = null;
+                    orderItem.Size = null;
+                    orderItem.ProductVariantId = null;
+                }
+                else
+                {
+                    // 🎨 COLOR / SIZE SWAP ON SAME PRODUCT (استبدال لون أو مقاس لنفس المنتج)
+                    string? newColor = null;
+                    string? newSize = null;
+
+                    if (note.Contains("بلون:"))
+                    {
+                        var parts = note.Split("بلون:");
+                        if (parts.Length > 1) newColor = parts[1].Trim();
+                    }
+                    else if (note.Contains("لون:"))
+                    {
+                        var parts = note.Split("لون:");
+                        if (parts.Length > 1) newColor = parts[1].Trim();
+                    }
+
+                    if (note.Contains("بمقاس:"))
+                    {
+                        var parts = note.Split("بمقاس:");
+                        if (parts.Length > 1) newSize = parts[1].Trim();
+                    }
+                    else if (note.Contains("مقاس:"))
+                    {
+                        var parts = note.Split("مقاس:");
+                        if (parts.Length > 1) newSize = parts[1].Trim();
+                    }
+
+                    if (string.IsNullOrEmpty(newColor) && string.IsNullOrEmpty(newSize) && !cleanSearch.Equals(orderItem.ProductNameAr, StringComparison.OrdinalIgnoreCase))
+                    {
+                        newColor = cleanSearch;
+                    }
+
+                    if (orderItem.ProductId.HasValue)
+                    {
+                        int productId = orderItem.ProductId.Value;
+                        var variants = await _db.ProductVariants
+                            .Where(v => v.ProductId == productId)
+                            .ToListAsync();
+
+                        var matchedVariant = variants.FirstOrDefault(v => 
+                            (!string.IsNullOrEmpty(newColor) && ((v.ColorAr != null && v.ColorAr.Equals(newColor, StringComparison.OrdinalIgnoreCase)) || (v.Color != null && v.Color.Equals(newColor, StringComparison.OrdinalIgnoreCase)))) ||
+                            (!string.IsNullOrEmpty(newSize) && v.Size != null && v.Size.Equals(newSize, StringComparison.OrdinalIgnoreCase))
+                        );
+
+                        if (matchedVariant != null)
+                        {
+                            if (orderItem.ProductVariantId.HasValue)
+                            {
+                                var oldVar = await _db.ProductVariants.FindAsync(orderItem.ProductVariantId.Value);
+                                if (oldVar != null)
+                                {
+                                    oldVar.StockQuantity += reqItem.Quantity;
+                                    oldVar.UpdatedAt = TimeHelper.GetEgyptTime();
+                                }
+                            }
+
+                            matchedVariant.StockQuantity = Math.Max(0, matchedVariant.StockQuantity - reqItem.Quantity);
+                            matchedVariant.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                            orderItem.ProductVariantId = matchedVariant.Id;
+                            if (!string.IsNullOrEmpty(matchedVariant.ColorAr)) orderItem.Color = matchedVariant.ColorAr;
+                            else if (!string.IsNullOrEmpty(matchedVariant.Color)) orderItem.Color = matchedVariant.Color;
+                            if (!string.IsNullOrEmpty(matchedVariant.Size)) orderItem.Size = matchedVariant.Size;
+                        }
+                        else
+                        {
+                            if (!string.IsNullOrEmpty(newColor)) orderItem.Color = newColor;
+                            if (!string.IsNullOrEmpty(newSize)) orderItem.Size = newSize;
+                        }
                     }
                     else
                     {
-                        // Update Color/Size directly on order item snapshot so invoice shows new color
                         if (!string.IsNullOrEmpty(newColor)) orderItem.Color = newColor;
                         if (!string.IsNullOrEmpty(newSize)) orderItem.Size = newSize;
                     }
                 }
-                else
-                {
-                    if (!string.IsNullOrEmpty(newColor)) orderItem.Color = newColor;
-                    if (!string.IsNullOrEmpty(newSize)) orderItem.Size = newSize;
-                }
             }
+        }
+
+        // 🔄 Recalculate order financial totals accurately
+        if (req.Order != null)
+        {
+            decimal subTotal = req.Order.Items.Sum(i => i.UnitPrice * i.Quantity);
+            decimal totalVat = req.Order.Items.Sum(i => i.ItemVatAmount);
+            req.Order.SubTotal = subTotal;
+            req.Order.TotalVatAmount = totalVat;
+            req.Order.TotalAmount = Math.Max(0, subTotal + req.Order.DeliveryFee - req.Order.DiscountAmount + totalVat);
+            req.Order.AdminNotes = (req.Order.AdminNotes ?? "") + $" | [تم تنفيذ الاستبدال وحفظ الصنف الجديد #{req.Id}]";
+            req.Order.UpdatedAt = TimeHelper.GetEgyptTime();
         }
 
         req.Status = ReturnExchangeStatus.Completed;
         req.AdminNotes = $"[تمت الموافقة على الاستبدال وتحديث الصنف بالفاتورة والمخزن بتاريخ {TimeHelper.GetEgyptTime():yyyy-MM-dd HH:mm}]";
-
-        if (req.Order != null)
-        {
-            req.Order.AdminNotes = (req.Order.AdminNotes ?? "") + $" | [تم تنفيذ الاستبدال وحفظ الصنف الجديد #{req.Id}]";
-            req.Order.UpdatedAt = TimeHelper.GetEgyptTime();
-        }
 
         await _db.SaveChangesAsync();
 
