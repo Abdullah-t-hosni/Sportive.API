@@ -13,6 +13,8 @@ using Sportive.API.Hubs;
 using Sportive.API.Models;
 using Sportive.API.Utils;
 
+using Sportive.API.Services;
+
 namespace Sportive.API.Controllers;
 
 [ApiController]
@@ -23,15 +25,18 @@ public class ReturnExchangeRequestsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IHubContext<NotificationHub> _hubContext;
     private readonly ILogger<ReturnExchangeRequestsController> _logger;
+    private readonly IAccountingService _accounting;
 
     public ReturnExchangeRequestsController(
         AppDbContext db,
         IHubContext<NotificationHub> hubContext,
-        ILogger<ReturnExchangeRequestsController> logger)
+        ILogger<ReturnExchangeRequestsController> logger,
+        IAccountingService accounting)
     {
         _db = db;
         _hubContext = hubContext;
         _logger = logger;
+        _accounting = accounting;
     }
 
     /// <summary>
@@ -192,6 +197,29 @@ public class ReturnExchangeRequestsController : ControllerBase
             }
 
             await _db.SaveChangesAsync();
+
+            // 🔄 SMART UPDATE ACCOUNTING JOURNAL ENTRY IN-PLACE (يحافظ على رقم القيد و ID القيد الحالي)
+            try
+            {
+                if (remainingItems.Any())
+                {
+                    await _accounting.PostSalesOrderAsync(order);
+                }
+                else
+                {
+                    // إذا أصبحت الفاتورة ملغية (0 أصناف)، يتم عكس القيد بدلاً من حذفه
+                    var existingEntry = await _db.JournalEntries
+                        .FirstOrDefaultAsync(e => (e.Type == JournalEntryType.SalesInvoice || e.Type == JournalEntryType.Sales) && e.Reference == order.OrderNumber);
+                    if (existingEntry != null && existingEntry.Status != JournalEntryStatus.Reversed)
+                    {
+                        await _accounting.ReverseEntryAsync(existingEntry.Id, $"إلغاء الفاتورة رقم {order.OrderNumber} بحذف جميع الأصناف");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to update accounting journal entry for order deletion {OrderNo}", order.OrderNumber);
+            }
 
             try
             {
