@@ -394,8 +394,11 @@ public class ReturnExchangeRequestsController : ControllerBase
             var s = filter.Search.Trim().ToLower();
             query = query.Where(r =>
                 (r.Order != null && r.Order.OrderNumber.ToLower().Contains(s)) ||
-                (r.Customer != null && r.Customer.FullName.ToLower().Contains(s)) ||
+                (r.Customer != null && r.Customer.FullName != null && r.Customer.FullName.ToLower().Contains(s)) ||
                 (r.Customer != null && r.Customer.Phone != null && r.Customer.Phone.Contains(s)) ||
+                (r.Reason != null && r.Reason.ToLower().Contains(s)) ||
+                (r.CustomerNotes != null && r.CustomerNotes.ToLower().Contains(s)) ||
+                r.OrderId.ToString() == s ||
                 r.Id.ToString() == s);
         }
 
