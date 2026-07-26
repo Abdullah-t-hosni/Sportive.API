@@ -500,6 +500,16 @@ public class ReturnExchangeRequestsController : ControllerBase
         if (req.Type != ReturnExchangeType.Exchange) return BadRequest("هذا الطلب ليس طلب استبدال.");
         if (req.Status == ReturnExchangeStatus.Rejected) return BadRequest("هذا الطلب مرفوض مسبقاً.");
 
+        int targetWarehouseId = req.Order?.WarehouseId ?? 0;
+        if (targetWarehouseId == 0)
+        {
+            targetWarehouseId = await _db.Warehouses.Where(w => w.IsMain).Select(w => w.Id).FirstOrDefaultAsync();
+            if (targetWarehouseId == 0)
+            {
+                targetWarehouseId = await _db.Warehouses.Select(w => w.Id).FirstOrDefaultAsync();
+            }
+        }
+
         // Process item exchange updates on order items
         foreach (var reqItem in req.Items)
         {
@@ -603,11 +613,45 @@ public class ReturnExchangeRequestsController : ControllerBase
                                 {
                                     oldVar.StockQuantity += reqItem.Quantity;
                                     oldVar.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                                    // 🏬 Sync ProductWarehouseStock for POS Cashier
+                                    if (targetWarehouseId > 0)
+                                    {
+                                        var oldWhStock = await _db.ProductWarehouseStocks
+                                            .FirstOrDefaultAsync(w => w.ProductVariantId == oldVar.Id && w.WarehouseId == targetWarehouseId);
+                                        if (oldWhStock != null)
+                                        {
+                                            oldWhStock.Quantity += reqItem.Quantity;
+                                            oldWhStock.UpdatedAt = TimeHelper.GetEgyptTime();
+                                        }
+                                    }
                                 }
                             }
 
                             matchedVariant.StockQuantity = Math.Max(0, matchedVariant.StockQuantity - reqItem.Quantity);
                             matchedVariant.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                            // 🏬 Sync ProductWarehouseStock for POS Cashier
+                            if (targetWarehouseId > 0)
+                            {
+                                var newWhStock = await _db.ProductWarehouseStocks
+                                    .FirstOrDefaultAsync(w => w.ProductVariantId == matchedVariant.Id && w.WarehouseId == targetWarehouseId);
+                                if (newWhStock != null)
+                                {
+                                    newWhStock.Quantity = Math.Max(0, newWhStock.Quantity - reqItem.Quantity);
+                                    newWhStock.UpdatedAt = TimeHelper.GetEgyptTime();
+                                }
+                                else
+                                {
+                                    _db.ProductWarehouseStocks.Add(new ProductWarehouseStock
+                                    {
+                                        ProductVariantId = matchedVariant.Id,
+                                        WarehouseId = targetWarehouseId,
+                                        Quantity = Math.Max(0, matchedVariant.StockQuantity),
+                                        CreatedAt = TimeHelper.GetEgyptTime()
+                                    });
+                                }
+                            }
 
                             orderItem.ProductVariantId = matchedVariant.Id;
                             if (!string.IsNullOrEmpty(matchedVariant.ColorAr)) orderItem.Color = matchedVariant.ColorAr;
