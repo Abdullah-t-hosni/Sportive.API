@@ -128,7 +128,7 @@ public class ReturnExchangeRequestsController : ControllerBase
         {
             if (order.Status == OrderStatus.Delivered)
             {
-                var baseDate = order.UpdatedAt > order.CreatedAt ? order.UpdatedAt : order.CreatedAt;
+                var baseDate = (order.UpdatedAt.HasValue && order.UpdatedAt.Value > order.CreatedAt) ? order.UpdatedAt.Value : order.CreatedAt;
                 var diffDays = (TimeHelper.GetEgyptTime() - baseDate).TotalDays;
                 if (diffDays > 14)
                 {
