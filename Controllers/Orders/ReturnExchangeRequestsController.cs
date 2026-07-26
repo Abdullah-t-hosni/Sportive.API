@@ -476,16 +476,117 @@ public class ReturnExchangeRequestsController : ControllerBase
 
         if (req == null) return NotFound("الطلب غير موجود.");
         if (req.Type != ReturnExchangeType.Exchange) return BadRequest("هذا الطلب ليس طلب استبدال.");
-        if (req.Status != ReturnExchangeStatus.Pending) return BadRequest("الطلب تم البت فيه مسبقاً.");
+        if (req.Status == ReturnExchangeStatus.Rejected) return BadRequest("هذا الطلب مرفوض مسبقاً.");
+
+        // Process item exchange updates on order items
+        foreach (var reqItem in req.Items)
+        {
+            var orderItem = reqItem.OrderItem;
+            if (orderItem != null && !string.IsNullOrWhiteSpace(reqItem.ReplacementNote))
+            {
+                string note = reqItem.ReplacementNote.Trim();
+
+                // Extract requested replacement color/size from ReplacementNote
+                string? newColor = null;
+                string? newSize = null;
+
+                if (note.Contains("بلون:"))
+                {
+                    var parts = note.Split("بلون:");
+                    if (parts.Length > 1) newColor = parts[1].Trim();
+                }
+                else if (note.Contains("لون:"))
+                {
+                    var parts = note.Split("لون:");
+                    if (parts.Length > 1) newColor = parts[1].Trim();
+                }
+
+                if (note.Contains("بمقاس:"))
+                {
+                    var parts = note.Split("بمقاس:");
+                    if (parts.Length > 1) newSize = parts[1].Trim();
+                }
+                else if (note.Contains("مقاس:"))
+                {
+                    var parts = note.Split("مقاس:");
+                    if (parts.Length > 1) newSize = parts[1].Trim();
+                }
+
+                if (string.IsNullOrEmpty(newColor) && string.IsNullOrEmpty(newSize))
+                {
+                    newColor = note.Replace("استبدال بـ", "").Replace("استبدال", "").Replace("طلب", "").Trim();
+                }
+
+                // Inventory & Variant Swap
+                if (orderItem.ProductId.HasValue)
+                {
+                    int productId = orderItem.ProductId.Value;
+                    var variants = await _db.ProductVariants
+                        .Where(v => v.ProductId == productId)
+                        .ToListAsync();
+
+                    var matchedVariant = variants.FirstOrDefault(v => 
+                        (!string.IsNullOrEmpty(newColor) && ((v.ColorAr != null && v.ColorAr.Equals(newColor, StringComparison.OrdinalIgnoreCase)) || (v.Color != null && v.Color.Equals(newColor, StringComparison.OrdinalIgnoreCase)))) ||
+                        (!string.IsNullOrEmpty(newSize) && v.Size != null && v.Size.Equals(newSize, StringComparison.OrdinalIgnoreCase))
+                    );
+
+                    if (matchedVariant != null)
+                    {
+                        // Return old variant stock
+                        if (orderItem.ProductVariantId.HasValue)
+                        {
+                            var oldVar = await _db.ProductVariants.FindAsync(orderItem.ProductVariantId.Value);
+                            if (oldVar != null)
+                            {
+                                oldVar.StockQuantity += reqItem.Quantity;
+                                oldVar.UpdatedAt = TimeHelper.GetEgyptTime();
+                            }
+                        }
+
+                        // Deduct new variant stock
+                        matchedVariant.StockQuantity = Math.Max(0, matchedVariant.StockQuantity - reqItem.Quantity);
+                        matchedVariant.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                        orderItem.ProductVariantId = matchedVariant.Id;
+                        if (!string.IsNullOrEmpty(matchedVariant.ColorAr)) orderItem.Color = matchedVariant.ColorAr;
+                        else if (!string.IsNullOrEmpty(matchedVariant.Color)) orderItem.Color = matchedVariant.Color;
+                        
+                        if (!string.IsNullOrEmpty(matchedVariant.Size)) orderItem.Size = matchedVariant.Size;
+                    }
+                    else
+                    {
+                        // Update Color/Size directly on order item snapshot so invoice shows new color
+                        if (!string.IsNullOrEmpty(newColor)) orderItem.Color = newColor;
+                        if (!string.IsNullOrEmpty(newSize)) orderItem.Size = newSize;
+                    }
+                }
+                else
+                {
+                    if (!string.IsNullOrEmpty(newColor)) orderItem.Color = newColor;
+                    if (!string.IsNullOrEmpty(newSize)) orderItem.Size = newSize;
+                }
+            }
+        }
 
         req.Status = ReturnExchangeStatus.Completed;
-        req.AdminNotes = $"[تمت الموافقة على الاستبدال بتاريخ {TimeHelper.GetEgyptTime():yyyy-MM-dd HH:mm}]";
+        req.AdminNotes = $"[تمت الموافقة على الاستبدال وتحديث الصنف بالفاتورة والمخزن بتاريخ {TimeHelper.GetEgyptTime():yyyy-MM-dd HH:mm}]";
 
-        // Update Order note
-        req.Order.AdminNotes = (req.Order.AdminNotes ?? "") + $" | [طلب استبدال محقق #{req.Id}]";
+        if (req.Order != null)
+        {
+            req.Order.AdminNotes = (req.Order.AdminNotes ?? "") + $" | [تم تنفيذ الاستبدال وحفظ الصنف الجديد #{req.Id}]";
+            req.Order.UpdatedAt = TimeHelper.GetEgyptTime();
+        }
 
         await _db.SaveChangesAsync();
-        return Ok(new { message = "تمت الموافقة على الاستبدال وتحديث الطلب بنجاح." });
+
+        try
+        {
+            await _hubContext.Clients.All.SendAsync("DashboardUpdate", new { type = "OrderUpdated", id = req.OrderId });
+            await _hubContext.Clients.All.SendAsync("DashboardUpdated", new { type = "OrderUpdated", id = req.OrderId });
+        }
+        catch { }
+
+        return Ok(new { message = "تمت الموافقة على الاستبدال وتحديث صنف الفاتورة والمخزن بنجاح 🌟" });
     }
 
     /// <summary>
@@ -634,8 +735,10 @@ public class ReturnExchangeRequestsController : ControllerBase
         var itemSummaries = r.Items.Select(i =>
         {
             var pName = i.OrderItem != null ? i.OrderItem.ProductNameAr : "منتج";
-            var sizeStr = i.OrderItem != null && !string.IsNullOrEmpty(i.OrderItem.Size) ? $" ({i.OrderItem.Size})" : "";
-            return $"{pName}{sizeStr} × {i.Quantity}";
+            var colorStr = i.OrderItem != null && !string.IsNullOrEmpty(i.OrderItem.Color) ? $" (اللون الحالي: {i.OrderItem.Color})" : "";
+            var sizeStr = i.OrderItem != null && !string.IsNullOrEmpty(i.OrderItem.Size) ? $" (المقاس الحالي: {i.OrderItem.Size})" : "";
+            var noteStr = !string.IsNullOrWhiteSpace(i.ReplacementNote) ? $" ➔ [البديل المطلوب: {i.ReplacementNote}]" : "";
+            return $"{pName}{colorStr}{sizeStr} × {i.Quantity}{noteStr}";
         });
 
         return new ReturnExchangeRequestResponseDto
