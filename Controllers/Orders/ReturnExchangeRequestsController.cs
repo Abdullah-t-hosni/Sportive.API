@@ -107,27 +107,29 @@ public class ReturnExchangeRequestsController : ControllerBase
         bool isDelete = string.Equals(dto.Type, "Delete", StringComparison.OrdinalIgnoreCase);
         bool isExchange = string.Equals(dto.Type, "Exchange", StringComparison.OrdinalIgnoreCase);
 
-        // 1. Validation for Delete / Exchange
-        if (isDelete || isExchange)
+        // 1. Validation Rules
+        if (order.Status == OrderStatus.Cancelled || order.Status == OrderStatus.Returned)
         {
-            var disallowedStatuses = new[] { OrderStatus.OutForDelivery, OrderStatus.Delivered, OrderStatus.Cancelled, OrderStatus.Returned };
-            if (disallowedStatuses.Contains(order.Status))
+            return BadRequest("لا يمكن تقديم طلبات استبدال أو استرجاع على طلب ملغى أو مرجع بالكامل.");
+        }
+
+        if (isDelete)
+        {
+            var disallowedDeleteStatuses = new[] { OrderStatus.OutForDelivery, OrderStatus.Delivered, OrderStatus.Cancelled, OrderStatus.Returned };
+            if (disallowedDeleteStatuses.Contains(order.Status))
             {
-                string actionName = isDelete ? "حذف أصناف" : "تقديم طلب استبدال";
-                return BadRequest($"لا يمكن {actionName} بعد شحن الطلب أو تسليمه أو إلغائه.");
+                return BadRequest("لا يمكن حذف أصناف مباشرة من الفاتورة بعد شحن الطلب أو تسليمه.");
             }
         }
-        else
+        else if (isExchange || string.Equals(dto.Type, "Return", StringComparison.OrdinalIgnoreCase))
         {
-            // Return Rule (post delivery <= 14 days)
-            if (order.Status != OrderStatus.Delivered)
+            if (order.Status == OrderStatus.Delivered)
             {
-                return BadRequest("طلب الاسترجاع متاح فقط بعد استلام وتوصيل الفاتورة.");
-            }
-            var diffDays = (TimeHelper.GetEgyptTime() - order.CreatedAt).TotalDays;
-            if (diffDays > 14)
-            {
-                return BadRequest("تجاوزت الفترة المسموحة لطلب الاسترجاع (14 يوماً من تاريخ الطلب).");
+                var diffDays = (TimeHelper.GetEgyptTime() - order.CreatedAt).TotalDays;
+                if (diffDays > 14)
+                {
+                    return BadRequest("تجاوزت الفترة المسموحة لطلب الاستبدال أو الاسترجاع (14 يوماً من تاريخ الطلب).");
+                }
             }
         }
 
