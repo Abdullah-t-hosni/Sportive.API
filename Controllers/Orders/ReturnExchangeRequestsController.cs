@@ -37,12 +37,14 @@ public class ReturnExchangeRequestsController : ControllerBase
     /// <summary>
     /// تقديم طلب استبدال أو استرجاع ذاتي بواسطة العميل
     /// </summary>
+    /// <summary>
+    /// تقديم طلب استبدال أو استرجاع أو حذف صنف بواسطة العميل (مسجل)
+    /// </summary>
     [HttpPost("{orderId}/return-exchange-request")]
     public async Task<IActionResult> SubmitRequest(string orderId, [FromBody] CreateReturnExchangeRequestDto dto)
     {
         int.TryParse(orderId, out var idInt);
 
-        // 1. Find Order (support both numeric ID and OrderNumber string)
         var order = await _db.Orders
             .Include(o => o.Items)
             .FirstOrDefaultAsync(o => o.Id == idInt || o.OrderNumber == orderId);
@@ -52,28 +54,71 @@ public class ReturnExchangeRequestsController : ControllerBase
         var customer = await GetCurrentCustomerAsync() ?? await _db.Customers.FirstOrDefaultAsync(c => c.Id == order.CustomerId);
         int customerId = customer?.Id ?? order.CustomerId;
 
-        // Parse Request Type
-        bool isExchange = string.Equals(dto.Type, "Exchange", StringComparison.OrdinalIgnoreCase);
-        var reqType = isExchange ? ReturnExchangeType.Exchange : ReturnExchangeType.Return;
+        return await ProcessItemDeletionOrRequestAsync(order, customerId, dto);
+    }
 
-        // 3. Business Rule Validation
-        if (isExchange)
+    /// <summary>
+    /// تقديم طلب استبدال أو حذف صنف عبر رابط الفاتورة العامة (زائر)
+    /// </summary>
+    [HttpPost("public-return-exchange-request")]
+    [AllowAnonymous]
+    public async Task<IActionResult> PublicSubmitRequest([FromQuery] string orderNumber, [FromBody] CreateReturnExchangeRequestDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(orderNumber)) return BadRequest("رقم الطلب مطلوب.");
+
+        var order = await _db.Orders
+            .Include(o => o.Items)
+            .FirstOrDefaultAsync(o => o.OrderNumber == orderNumber || o.Id.ToString() == orderNumber);
+
+        if (order == null) return NotFound("الطلب غير موجود.");
+
+        return await ProcessItemDeletionOrRequestAsync(order, order.CustomerId, dto);
+    }
+
+    /// <summary>
+    /// الاستعلام العام عن طلبات التعديل/الاستبدال النشطة بالفاتورة
+    /// </summary>
+    [HttpGet("public-status/{orderNumber}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetPublicOrderStatus(string orderNumber)
+    {
+        var order = await _db.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.OrderNumber == orderNumber || o.Id.ToString() == orderNumber);
+        if (order == null) return NotFound();
+
+        var requests = await _db.ReturnExchangeRequests
+            .AsNoTracking()
+            .Include(r => r.Items)
+                .ThenInclude(i => i.OrderItem)
+            .Where(r => r.OrderId == order.Id)
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync();
+
+        var response = requests.Select(MapToResponseDto).ToList();
+        return Ok(response);
+    }
+
+    private async Task<IActionResult> ProcessItemDeletionOrRequestAsync(Order order, int customerId, CreateReturnExchangeRequestDto dto)
+    {
+        bool isDelete = string.Equals(dto.Type, "Delete", StringComparison.OrdinalIgnoreCase);
+        bool isExchange = string.Equals(dto.Type, "Exchange", StringComparison.OrdinalIgnoreCase);
+
+        // 1. Validation for Delete / Exchange
+        if (isDelete || isExchange)
         {
-            // Exchange Rule: Allowed ONLY before OutForDelivery or Delivered
-            var disallowedExchangeStatuses = new[] { OrderStatus.OutForDelivery, OrderStatus.Delivered, OrderStatus.Cancelled, OrderStatus.Returned };
-            if (disallowedExchangeStatuses.Contains(order.Status))
+            var disallowedStatuses = new[] { OrderStatus.OutForDelivery, OrderStatus.Delivered, OrderStatus.Cancelled, OrderStatus.Returned };
+            if (disallowedStatuses.Contains(order.Status))
             {
-                return BadRequest("لا يمكن تقديم طلب استبدال بعد شحن الطلب أو تسليمه.");
+                string actionName = isDelete ? "حذف أصناف" : "تقديم طلب استبدال";
+                return BadRequest($"لا يمكن {actionName} بعد شحن الطلب أو تسليمه أو إلغائه.");
             }
         }
         else
         {
-            // Return Rule: Allowed ONLY AFTER Delivered AND <= 14 Days
+            // Return Rule (post delivery <= 14 days)
             if (order.Status != OrderStatus.Delivered)
             {
                 return BadRequest("طلب الاسترجاع متاح فقط بعد استلام وتوصيل الفاتورة.");
             }
-
             var diffDays = (TimeHelper.GetEgyptTime() - order.CreatedAt).TotalDays;
             if (diffDays > 14)
             {
@@ -83,26 +128,106 @@ public class ReturnExchangeRequestsController : ControllerBase
 
         if (dto.Items == null || !dto.Items.Any())
         {
-            return BadRequest("يرجى اختيار صنف واحد على الأقل للاستبدال/الاسترجاع.");
+            return BadRequest("يرجى اختيار صنف واحد على الأقل.");
         }
 
-        // 4. Build Request & Request Items
+        // 2. DIRECT DELETION LOGIC (بدون موافقة آدمن - فورياً لطلب العميل)
+        if (isDelete)
+        {
+            var deletedItemsNotes = new List<string>();
+
+            foreach (var itemDto in dto.Items)
+            {
+                var orderItem = order.Items.FirstOrDefault(i => i.Id == itemDto.OrderItemId || i.ProductId == itemDto.OrderItemId);
+                if (orderItem != null)
+                {
+                    int qtyToRemove = itemDto.Quantity > 0 ? Math.Min(itemDto.Quantity, orderItem.Quantity) : orderItem.Quantity;
+
+                    // Restock inventory directly
+                    if (orderItem.ProductVariantId.HasValue)
+                    {
+                        var variant = await _db.ProductVariants.FindAsync(orderItem.ProductVariantId.Value);
+                        if (variant != null)
+                        {
+                            variant.StockQuantity += qtyToRemove;
+                            variant.UpdatedAt = TimeHelper.GetEgyptTime();
+                        }
+                    }
+                    else
+                    {
+                        var product = await _db.Products.FindAsync(orderItem.ProductId);
+                        if (product != null)
+                        {
+                            product.StockQuantity += qtyToRemove;
+                            product.UpdatedAt = TimeHelper.GetEgyptTime();
+                        }
+                    }
+
+                    orderItem.Quantity -= qtyToRemove;
+                    deletedItemsNotes.Add($"{orderItem.ProductNameAr ?? orderItem.ProductName} (كمية: {qtyToRemove})");
+
+                    if (orderItem.Quantity <= 0)
+                    {
+                        _db.OrderItems.Remove(orderItem);
+                    }
+                }
+            }
+
+            // Recalculate financial totals
+            var remainingItems = order.Items.Where(i => _db.Entry(i).State != EntityState.Deleted && i.Quantity > 0).ToList();
+            decimal subTotal = remainingItems.Sum(i => i.UnitPrice * i.Quantity);
+            order.SubTotal = subTotal;
+
+            if (order.HasTax && order.VatRate > 0)
+            {
+                order.TaxAmount = Math.Round(subTotal * (order.VatRate / 100m), 2);
+            }
+
+            order.TotalAmount = Math.Max(0, subTotal + order.ShippingFee - order.DiscountAmount + order.TaxAmount);
+            order.UpdatedAt = TimeHelper.GetEgyptTime();
+
+            if (!remainingItems.Any())
+            {
+                order.Status = OrderStatus.Cancelled;
+                order.AdminNotes = (order.AdminNotes ?? "") + $" | [إلغاء الطلب بحذف جميع الأصناف بواسطة العميل بتاريخ {TimeHelper.GetEgyptTime():yyyy-MM-dd HH:mm}]";
+            }
+            else
+            {
+                order.AdminNotes = (order.AdminNotes ?? "") + $" | [حذف أصناف بواسطة العميل: {string.Join(", ", deletedItemsNotes)} بتاريخ {TimeHelper.GetEgyptTime():yyyy-MM-dd HH:mm}]";
+            }
+
+            await _db.SaveChangesAsync();
+
+            try
+            {
+                await _hubContext.Clients.All.SendAsync("DashboardUpdate", new { type = "OrderUpdated", id = order.Id });
+            }
+            catch { }
+
+            return Ok(new { 
+                message = remainingItems.Any() ? "تم حذف الصنف من الفاتورة وتحديث الإجمالي والمخزن فوراً 🌟" : "تم حذف جميع الأصناف وإلغاء الفاتورة بنجاح.", 
+                isDeletedDirectly = true,
+                newTotal = order.TotalAmount,
+                orderStatus = order.Status.ToString()
+            });
+        }
+
+        // 3. EXCHANGE / RETURN REQUEST (يحتاج مراجعة الإدارة)
+        var reqType = isExchange ? ReturnExchangeType.Exchange : ReturnExchangeType.Return;
         var request = new ReturnExchangeRequest
         {
             OrderId = order.Id,
             CustomerId = customerId,
             Type = reqType,
             Status = ReturnExchangeStatus.Pending,
-            Reason = dto.Reason ?? "غير محدد",
+            Reason = dto.Reason ?? "طلب تعديل / استبدال صنف",
             CustomerNotes = dto.CustomerNotes,
             CreatedAt = TimeHelper.GetEgyptTime()
         };
 
         foreach (var itemDto in dto.Items)
         {
-            var orderItem = order.Items.FirstOrDefault(i => i.Id == itemDto.OrderItemId || i.ProductId == itemDto.OrderItemId)
-                         ?? order.Items.FirstOrDefault();
-
+            var orderItem = order.Items.FirstOrDefault(i => i.Id == itemDto.OrderItemId || i.ProductId == itemDto.OrderItemId);
             if (orderItem != null)
             {
                 int maxAvailable = Math.Max(1, orderItem.Quantity - orderItem.ReturnedQuantity);
@@ -118,29 +243,20 @@ public class ReturnExchangeRequestsController : ControllerBase
             }
         }
 
-        if (!request.Items.Any() && order.Items.Any())
-        {
-            var firstItem = order.Items.First();
-            request.Items.Add(new ReturnExchangeRequestItem
-            {
-                OrderItemId = firstItem.Id,
-                Quantity = 1,
-                ReplacementNote = dto.CustomerNotes ?? "طلب استبدال صنف",
-                CreatedAt = TimeHelper.GetEgyptTime()
-            });
-        }
-
         _db.ReturnExchangeRequests.Add(request);
         await _db.SaveChangesAsync();
 
-        // SignalR Notification to Admin Dashboard
         try
         {
             await _hubContext.Clients.All.SendAsync("DashboardUpdate", new { type = "ReturnExchangeRequest", id = request.Id });
         }
         catch { }
 
-        return Ok(new { message = "تم تقديم الطلب بنجاح وسيتم مراجعته من الإدارة.", requestId = request.Id });
+        return Ok(new { 
+            message = "تم تقديم طلب الاستبدال بنجاح وسيتم مراجعته والتواصل معكم من الإدارة. ⏳", 
+            requestId = request.Id,
+            isDeletedDirectly = false 
+        });
     }
 
     /// <summary>
