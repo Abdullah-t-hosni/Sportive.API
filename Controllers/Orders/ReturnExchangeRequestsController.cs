@@ -332,7 +332,9 @@ public class ReturnExchangeRequestsController : ControllerBase
             if (_notificationService != null)
             {
                 string typeLabel = reqType == ReturnExchangeType.Exchange ? "استبدال" : "استرجاع";
-                string custName = !string.IsNullOrWhiteSpace(order.CustomerName) ? order.CustomerName : "عميل المتجر";
+                var custObj = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId);
+                string custName = custObj != null && !string.IsNullOrWhiteSpace(custObj.FullName) ? custObj.FullName : "عميل المتجر";
+                
                 await _notificationService.SendAsync(
                     null,
                     $"طلب {typeLabel} جديد 🔄",
