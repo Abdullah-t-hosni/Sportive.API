@@ -26,17 +26,20 @@ public class ReturnExchangeRequestsController : ControllerBase
     private readonly IHubContext<NotificationHub> _hubContext;
     private readonly ILogger<ReturnExchangeRequestsController> _logger;
     private readonly IAccountingService _accounting;
+    private readonly INotificationService _notificationService;
 
     public ReturnExchangeRequestsController(
         AppDbContext db,
         IHubContext<NotificationHub> hubContext,
         ILogger<ReturnExchangeRequestsController> logger,
-        IAccountingService accounting)
+        IAccountingService accounting,
+        INotificationService notificationService)
     {
         _db = db;
         _hubContext = hubContext;
         _logger = logger;
         _accounting = accounting;
+        _notificationService = notificationService;
     }
 
     /// <summary>
@@ -181,11 +184,26 @@ public class ReturnExchangeRequestsController : ControllerBase
                 }
             }
 
-            // Recalculate financial totals
+            // Recalculate financial totals accurately
             var remainingItems = order.Items.Where(i => _db.Entry(i).State != EntityState.Deleted && i.Quantity > 0).ToList();
+            decimal oldSubtotal = order.SubTotal > 0 ? order.SubTotal : (remainingItems.Sum(i => i.UnitPrice * i.Quantity) + deletedItemsNotes.Count * 100);
             decimal subTotal = remainingItems.Sum(i => i.UnitPrice * i.Quantity);
+            decimal totalVat = remainingItems.Sum(i => i.ItemVatAmount);
+
+            // Proportional discount adjustment
+            if (oldSubtotal > 0 && order.DiscountAmount > 0)
+            {
+                decimal ratio = Math.Min(1m, subTotal / oldSubtotal);
+                order.DiscountAmount = Math.Round(order.DiscountAmount * ratio, 2);
+            }
+            else if (subTotal < order.DiscountAmount)
+            {
+                order.DiscountAmount = subTotal;
+            }
+
             order.SubTotal = subTotal;
-            order.TotalAmount = Math.Max(0, subTotal + order.DeliveryFee - order.DiscountAmount + order.TotalVatAmount);
+            order.TotalVatAmount = totalVat;
+            order.TotalAmount = Math.Max(0, subTotal + order.DeliveryFee - order.DiscountAmount + totalVat);
             order.UpdatedAt = TimeHelper.GetEgyptTime();
 
             if (!remainingItems.Any())
@@ -200,7 +218,7 @@ public class ReturnExchangeRequestsController : ControllerBase
 
             await _db.SaveChangesAsync();
 
-            // 🔄 SMART UPDATE ACCOUNTING JOURNAL ENTRY IN-PLACE (يحافظ على رقم القيد و ID القيد الحالي)
+            // 🔄 SMART UPDATE ACCOUNTING JOURNAL ENTRY IN-PLACE (تحديث القيد تلقائياً بدون تكرار)
             try
             {
                 if (remainingItems.Any())
@@ -209,7 +227,6 @@ public class ReturnExchangeRequestsController : ControllerBase
                 }
                 else
                 {
-                    // إذا أصبحت الفاتورة ملغية (0 أصناف)، يتم عكس القيد بدلاً من حذفه
                     var existingEntry = await _db.JournalEntries
                         .FirstOrDefaultAsync(e => (e.Type == JournalEntryType.SalesInvoice || e.Type == JournalEntryType.Sales) && e.Reference == order.OrderNumber);
                     if (existingEntry != null && existingEntry.Status != JournalEntryStatus.Reversed)
@@ -223,14 +240,33 @@ public class ReturnExchangeRequestsController : ControllerBase
                 _logger.LogError(ex, "Failed to update accounting journal entry for order deletion {OrderNo}", order.OrderNumber);
             }
 
+            // 🔔 Send Admin Notification & Broadcast SignalR live events
+            try
+            {
+                if (_notificationService != null)
+                {
+                    await _notificationService.SendAsync(
+                        null,
+                        "حذف صنف من فاتورة ⚠️",
+                        "Item Deleted from Order",
+                        $"قام العميل بحذف أصناف من الفاتورة رقم #{order.OrderNumber}: {string.Join(", ", deletedItemsNotes)}",
+                        $"Customer deleted items from order #{order.OrderNumber}: {string.Join(", ", deletedItemsNotes)}",
+                        "Order",
+                        order.Id
+                    );
+                }
+            }
+            catch { }
+
             try
             {
                 await _hubContext.Clients.All.SendAsync("DashboardUpdate", new { type = "OrderUpdated", id = order.Id });
+                await _hubContext.Clients.All.SendAsync("DashboardUpdated", new { type = "OrderUpdated", id = order.Id });
             }
             catch { }
 
             return Ok(new { 
-                message = remainingItems.Any() ? "تم حذف الصنف من الفاتورة وتحديث الإجمالي والمخزن فوراً 🌟" : "تم حذف جميع الأصناف وإلغاء الفاتورة بنجاح.", 
+                message = remainingItems.Any() ? "تم حذف الصنف من الفاتورة وتحديث الإجمالي والمخزن والقيد المحاسبي فوراً 🌟" : "تم حذف جميع الأصناف وإلغاء الفاتورة بنجاح.", 
                 isDeletedDirectly = true,
                 newTotal = order.TotalAmount,
                 orderStatus = order.Status.ToString()
