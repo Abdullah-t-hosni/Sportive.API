@@ -152,6 +152,8 @@ public class OrderService : IOrderService
             .Include(o => o.Items)
                 .ThenInclude(i => i.Product!)
                     .ThenInclude(p => p.Images)
+            .Include(o => o.Items)
+                .ThenInclude(i => i.ProductVariant!)
             .Include(o => o.StatusHistory)
             .Include(o => o.Payments) // ✅ Added
             .Include(o => o.JournalEntries)
@@ -189,13 +191,24 @@ public class OrderService : IOrderService
             .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("1107"))
             .SumAsync(l => l.Credit);
 
-        var itemDtos = o.Items.Select(i => new OrderItemDto(
-            i.Id, i.ProductId, i.ProductVariantId, i.ProductNameAr, i.ProductNameEn, i.SKU, i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
-            i.Product?.Slug,
-            i.Size, i.Color, i.Quantity, i.UnitPrice, i.TotalPrice,
-            i.OriginalUnitPrice, i.DiscountAmount,
-            i.HasTax, i.VatRateApplied, i.ItemVatAmount, i.ReturnedQuantity, i.ReviewRequested
-        )).ToList();
+        var itemDtos = o.Items.Select(i => {
+            string? itemSize = !string.IsNullOrWhiteSpace(i.Size) ? i.Size : i.ProductVariant?.Size;
+            string? itemColor = !string.IsNullOrWhiteSpace(i.Color) 
+                ? i.Color 
+                : (!string.IsNullOrWhiteSpace(i.ProductVariant?.ColorAr) 
+                    ? i.ProductVariant.ColorAr 
+                    : (!string.IsNullOrWhiteSpace(i.ProductVariant?.Color) 
+                        ? i.ProductVariant.Color 
+                        : i.Product?.Images?.FirstOrDefault(img => !string.IsNullOrEmpty(img.ColorAr))?.ColorAr));
+
+            return new OrderItemDto(
+                i.Id, i.ProductId, i.ProductVariantId, i.ProductNameAr, i.ProductNameEn, i.SKU, i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
+                i.Product?.Slug,
+                itemSize, itemColor, i.Quantity, i.UnitPrice, i.TotalPrice,
+                i.OriginalUnitPrice, i.DiscountAmount,
+                i.HasTax, i.VatRateApplied, i.ItemVatAmount, i.ReturnedQuantity, i.ReviewRequested
+            );
+        }).ToList();
 
         // 💡 FETCH HISTORY WITH NAMES
         var historyDtos = new List<OrderStatusHistoryDto>();
@@ -555,8 +568,8 @@ public class OrderService : IOrderService
                             ProductNameAr = product.NameAr,
                             ProductNameEn = product.NameEn,
                             SKU = product.SKU,
-                            Size = item.Size ?? variant?.Size,
-                            Color = item.Color ?? variant?.Color,
+                            Size = !string.IsNullOrWhiteSpace(item.Size) ? item.Size : variant?.Size,
+                            Color = !string.IsNullOrWhiteSpace(item.Color) ? item.Color : (!string.IsNullOrWhiteSpace(variant?.ColorAr) ? variant.ColorAr : variant?.Color),
                             Quantity = item.Quantity,
                             UnitPrice = unitPrice,
                             OriginalUnitPrice = isCostSale ? unitPrice : originalUnitPrice,
