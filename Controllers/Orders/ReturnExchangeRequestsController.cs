@@ -649,8 +649,7 @@ public class ReturnExchangeRequestsController : ControllerBase
                         orderItem.ProductVariantId = matchedVariant.Id;
                         orderItem.Color = !string.IsNullOrEmpty(matchedVariant.ColorAr) ? matchedVariant.ColorAr : matchedVariant.Color ?? requestedColor;
                         orderItem.Size = matchedVariant.Size ?? requestedSize;
-                        orderItem.UnitPrice = matchedVariant.Price > 0 ? matchedVariant.Price
-                                              : (searchedProduct.DiscountPrice.HasValue && searchedProduct.DiscountPrice.Value > 0 ? searchedProduct.DiscountPrice.Value : searchedProduct.Price);
+                        orderItem.UnitPrice = (searchedProduct.DiscountPrice.HasValue && searchedProduct.DiscountPrice.Value > 0 ? searchedProduct.DiscountPrice.Value : searchedProduct.Price) + (matchedVariant.PriceAdjustment ?? 0);
                     }
                     else
                     {
