@@ -513,184 +513,158 @@ public class ReturnExchangeRequestsController : ControllerBase
             if (orderItem != null && !string.IsNullOrWhiteSpace(reqItem.ReplacementNote))
             {
                 string note = reqItem.ReplacementNote.Trim();
+                string productNamePart = note;
+                string? requestedColor = null;
+                string? requestedSize = null;
 
-                // Clean search string for potential Product Name
-                string cleanSearch = note.Replace("بديل:", "")
-                                         .Replace("استبدال بمنتج:", "")
-                                         .Replace("استبدال بـ", "")
-                                         .Replace("استبدال منتج:", "")
-                                         .Trim();
-
-                // 1. Check if cleanSearch matches a DIFFERENT Product in store catalog
-                var searchedProduct = await _db.Products
-                    .FirstOrDefaultAsync(p => p.NameAr == cleanSearch || p.NameEn == cleanSearch ||
-                                              (cleanSearch.Length > 3 && p.NameAr.Contains(cleanSearch)) ||
-                                              (p.NameAr.Length > 3 && cleanSearch.Contains(p.NameAr)));
-
-                if (searchedProduct != null && searchedProduct.Id != orderItem.ProductId)
+                if (productNamePart.StartsWith("بديل:"))
                 {
-                    // 🔄 FULL PRODUCT SWAP (استبدال بمنتج آخر بالكامل)
-                    if (orderItem.ProductId.HasValue)
+                    productNamePart = productNamePart.Substring("بديل:".Length).Trim();
+                }
+                else if (productNamePart.StartsWith("استبدال بمنتج:"))
+                {
+                    productNamePart = productNamePart.Substring("استبدال بمنتج:".Length).Trim();
+                }
+                else if (productNamePart.StartsWith("استبدال بـ"))
+                {
+                    productNamePart = productNamePart.Substring("استبدال بـ".Length).Trim();
+                }
+                else if (productNamePart.StartsWith("استبدال منتج:"))
+                {
+                    productNamePart = productNamePart.Substring("استبدال منتج:".Length).Trim();
+                }
+
+                // Extract parenthetical details if present e.g. " (لون: فوشيا فاتح | مقاس: 2XL)"
+                int parenIdx = productNamePart.IndexOf('(');
+                if (parenIdx >= 0)
+                {
+                    string detailsPart = productNamePart.Substring(parenIdx + 1).Replace(")", "").Trim();
+                    productNamePart = productNamePart.Substring(0, parenIdx).Trim();
+
+                    var details = detailsPart.Split('|');
+                    foreach (var d in details)
                     {
-                        var oldProd = await _db.Products.FindAsync(orderItem.ProductId.Value);
-                        if (oldProd != null)
+                        var trimmed = d.Trim();
+                        if (trimmed.StartsWith("لون:"))
+                            requestedColor = trimmed.Substring("لون:".Length).Trim();
+                        else if (trimmed.StartsWith("بلون:"))
+                            requestedColor = trimmed.Substring("بلون:".Length).Trim();
+                        else if (trimmed.StartsWith("مقاس:"))
+                            requestedSize = trimmed.Substring("مقاس:".Length).Trim();
+                        else if (trimmed.StartsWith("بمقاس:"))
+                            requestedSize = trimmed.Substring("بمقاس:".Length).Trim();
+                    }
+                }
+                // Restock old purchased item / variant
+                if (orderItem.ProductVariantId.HasValue)
+                {
+                    var oldVar = await _db.ProductVariants.FindAsync(orderItem.ProductVariantId.Value);
+                    if (oldVar != null)
+                    {
+                        oldVar.StockQuantity += reqItem.Quantity;
+                        oldVar.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                        var oldWhStocks = await _db.ProductWarehouseStocks
+                            .Where(w => w.ProductVariantId == oldVar.Id)
+                            .ToListAsync();
+                        if (oldWhStocks.Any())
                         {
-                            oldProd.TotalStock += reqItem.Quantity;
-                            oldProd.UpdatedAt = TimeHelper.GetEgyptTime();
+                            foreach (var whs in oldWhStocks)
+                            {
+                                whs.Quantity = oldVar.StockQuantity;
+                                whs.UpdatedAt = TimeHelper.GetEgyptTime();
+                            }
                         }
                     }
+                }
+                else if (orderItem.ProductId.HasValue)
+                {
+                    var oldProd = await _db.Products.FindAsync(orderItem.ProductId.Value);
+                    if (oldProd != null)
+                    {
+                        oldProd.TotalStock += reqItem.Quantity;
+                        oldProd.UpdatedAt = TimeHelper.GetEgyptTime();
+                    }
+                }
 
-                    searchedProduct.TotalStock = Math.Max(0, searchedProduct.TotalStock - reqItem.Quantity);
-                    searchedProduct.UpdatedAt = TimeHelper.GetEgyptTime();
+                // 1. Search for matching target product in catalog
+                var searchedProduct = await _db.Products
+                    .Include(p => p.Variants)
+                    .FirstOrDefaultAsync(p => p.NameAr == productNamePart || p.NameEn == productNamePart ||
+                                              (productNamePart.Length > 3 && p.NameAr.Contains(productNamePart)) ||
+                                              (p.NameAr.Length > 3 && productNamePart.Contains(p.NameAr)));
 
+                if (searchedProduct == null && orderItem.ProductId.HasValue)
+                {
+                    searchedProduct = await _db.Products
+                        .Include(p => p.Variants)
+                        .FirstOrDefaultAsync(p => p.Id == orderItem.ProductId.Value);
+                }
+
+                if (searchedProduct != null)
+                {
                     orderItem.ProductId = searchedProduct.Id;
                     orderItem.ProductNameAr = searchedProduct.NameAr;
                     orderItem.ProductNameEn = !string.IsNullOrEmpty(searchedProduct.NameEn) ? searchedProduct.NameEn : searchedProduct.NameAr;
-                    orderItem.UnitPrice = searchedProduct.DiscountPrice.HasValue && searchedProduct.DiscountPrice.Value > 0 
-                                          ? searchedProduct.DiscountPrice.Value 
-                                          : searchedProduct.Price;
-                    orderItem.OriginalUnitPrice = searchedProduct.Price;
-                    orderItem.TotalPrice = orderItem.UnitPrice * reqItem.Quantity;
-                    orderItem.Color = null;
-                    orderItem.Size = null;
-                    orderItem.ProductVariantId = null;
-                }
-                else
-                {
-                    // 🎨 COLOR / SIZE SWAP ON SAME PRODUCT (استبدال لون أو مقاس لنفس المنتج)
-                    string? newColor = null;
-                    string? newSize = null;
 
-                    if (note.Contains("بلون:"))
+                    ProductVariant? matchedVariant = null;
+                    if (searchedProduct.Variants != null && searchedProduct.Variants.Any())
                     {
-                        var parts = note.Split("بلون:");
-                        if (parts.Length > 1) newColor = parts[1].Trim();
-                    }
-                    else if (note.Contains("لون:"))
-                    {
-                        var parts = note.Split("لون:");
-                        if (parts.Length > 1) newColor = parts[1].Trim();
+                        matchedVariant = searchedProduct.Variants.FirstOrDefault(v => 
+                            (!string.IsNullOrEmpty(requestedColor) && ((v.ColorAr != null && v.ColorAr.Equals(requestedColor, StringComparison.OrdinalIgnoreCase)) || (v.Color != null && v.Color.Equals(requestedColor, StringComparison.OrdinalIgnoreCase)))) &&
+                            (!string.IsNullOrEmpty(requestedSize) && v.Size != null && v.Size.Equals(requestedSize, StringComparison.OrdinalIgnoreCase))
+                        ) ?? searchedProduct.Variants.FirstOrDefault(v => 
+                            (!string.IsNullOrEmpty(requestedColor) && ((v.ColorAr != null && v.ColorAr.Equals(requestedColor, StringComparison.OrdinalIgnoreCase)) || (v.Color != null && v.Color.Equals(requestedColor, StringComparison.OrdinalIgnoreCase)))) ||
+                            (!string.IsNullOrEmpty(requestedSize) && v.Size != null && v.Size.Equals(requestedSize, StringComparison.OrdinalIgnoreCase))
+                        ) ?? searchedProduct.Variants.FirstOrDefault();
                     }
 
-                    if (note.Contains("بمقاس:"))
+                    if (matchedVariant != null)
                     {
-                        var parts = note.Split("بمقاس:");
-                        if (parts.Length > 1) newSize = parts[1].Trim();
-                    }
-                    else if (note.Contains("مقاس:"))
-                    {
-                        var parts = note.Split("مقاس:");
-                        if (parts.Length > 1) newSize = parts[1].Trim();
-                    }
+                        matchedVariant.StockQuantity = Math.Max(0, matchedVariant.StockQuantity - reqItem.Quantity);
+                        matchedVariant.UpdatedAt = TimeHelper.GetEgyptTime();
 
-                    if (string.IsNullOrEmpty(newColor) && string.IsNullOrEmpty(newSize) && !cleanSearch.Equals(orderItem.ProductNameAr, StringComparison.OrdinalIgnoreCase))
-                    {
-                        newColor = cleanSearch;
-                    }
-
-                    if (orderItem.ProductId.HasValue)
-                    {
-                        int productId = orderItem.ProductId.Value;
-                        var variants = await _db.ProductVariants
-                            .Where(v => v.ProductId == productId)
+                        var newWhStocks = await _db.ProductWarehouseStocks
+                            .Where(w => w.ProductVariantId == matchedVariant.Id)
                             .ToListAsync();
-
-                        var matchedVariant = variants.FirstOrDefault(v => 
-                            (!string.IsNullOrEmpty(newColor) && ((v.ColorAr != null && v.ColorAr.Equals(newColor, StringComparison.OrdinalIgnoreCase)) || (v.Color != null && v.Color.Equals(newColor, StringComparison.OrdinalIgnoreCase)))) ||
-                            (!string.IsNullOrEmpty(newSize) && v.Size != null && v.Size.Equals(newSize, StringComparison.OrdinalIgnoreCase))
-                        );
-
-                        if (matchedVariant != null)
+                        if (newWhStocks.Any())
                         {
-                            if (orderItem.ProductVariantId.HasValue)
+                            foreach (var whs in newWhStocks)
                             {
-                                var oldVar = await _db.ProductVariants.FindAsync(orderItem.ProductVariantId.Value);
-                                if (oldVar != null)
-                                {
-                                    oldVar.StockQuantity += reqItem.Quantity;
-                                    oldVar.UpdatedAt = TimeHelper.GetEgyptTime();
-
-                                    // 🏬 Sync ProductWarehouseStock for POS Cashier across all warehouses
-                                    var oldWhStocks = await _db.ProductWarehouseStocks
-                                        .Where(w => w.ProductVariantId == oldVar.Id)
-                                        .ToListAsync();
-                                    
-                                    if (oldWhStocks.Any())
-                                    {
-                                        foreach (var whs in oldWhStocks)
-                                        {
-                                            whs.Quantity = oldVar.StockQuantity;
-                                            whs.UpdatedAt = TimeHelper.GetEgyptTime();
-                                        }
-                                    }
-                                    else if (targetWarehouseId > 0)
-                                    {
-                                        _db.ProductWarehouseStocks.Add(new ProductWarehouseStock
-                                        {
-                                            ProductVariantId = oldVar.Id,
-                                            WarehouseId = targetWarehouseId,
-                                            Quantity = oldVar.StockQuantity,
-                                            CreatedAt = TimeHelper.GetEgyptTime()
-                                        });
-                                    }
-                                }
+                                whs.Quantity = matchedVariant.StockQuantity;
+                                whs.UpdatedAt = TimeHelper.GetEgyptTime();
                             }
-
-                            matchedVariant.StockQuantity = Math.Max(0, matchedVariant.StockQuantity - reqItem.Quantity);
-                            matchedVariant.UpdatedAt = TimeHelper.GetEgyptTime();
-
-                            // 🏬 Sync ProductWarehouseStock for POS Cashier across all warehouses
-                            var newWhStocks = await _db.ProductWarehouseStocks
-                                .Where(w => w.ProductVariantId == matchedVariant.Id)
-                                .ToListAsync();
-
-                            if (newWhStocks.Any())
-                            {
-                                foreach (var whs in newWhStocks)
-                                {
-                                    whs.Quantity = matchedVariant.StockQuantity;
-                                    whs.UpdatedAt = TimeHelper.GetEgyptTime();
-                                }
-                            }
-                            else if (targetWarehouseId > 0)
-                            {
-                                _db.ProductWarehouseStocks.Add(new ProductWarehouseStock
-                                {
-                                    ProductVariantId = matchedVariant.Id,
-                                    WarehouseId = targetWarehouseId,
-                                    Quantity = matchedVariant.StockQuantity,
-                                    CreatedAt = TimeHelper.GetEgyptTime()
-                                });
-                            }
-
-                            // 🏬 Ensure ALL variants for this product are fully synced with ProductWarehouseStock
-                            var allVariants = await _db.ProductVariants.Where(v => v.ProductId == productId).ToListAsync();
-                            foreach (var v in allVariants)
-                            {
-                                var whsList = await _db.ProductWarehouseStocks.Where(w => w.ProductVariantId == v.Id).ToListAsync();
-                                foreach (var whs in whsList)
-                                {
-                                    whs.Quantity = v.StockQuantity;
-                                    whs.UpdatedAt = TimeHelper.GetEgyptTime();
-                                }
-                            }
-
-                            orderItem.ProductVariantId = matchedVariant.Id;
-                            if (!string.IsNullOrEmpty(matchedVariant.ColorAr)) orderItem.Color = matchedVariant.ColorAr;
-                            else if (!string.IsNullOrEmpty(matchedVariant.Color)) orderItem.Color = matchedVariant.Color;
-                            if (!string.IsNullOrEmpty(matchedVariant.Size)) orderItem.Size = matchedVariant.Size;
                         }
-                        else
+                        else if (targetWarehouseId > 0)
                         {
-                            if (!string.IsNullOrEmpty(newColor)) orderItem.Color = newColor;
-                            if (!string.IsNullOrEmpty(newSize)) orderItem.Size = newSize;
+                            _db.ProductWarehouseStocks.Add(new ProductWarehouseStock
+                            {
+                                ProductVariantId = matchedVariant.Id,
+                                WarehouseId = targetWarehouseId,
+                                Quantity = matchedVariant.StockQuantity,
+                                CreatedAt = TimeHelper.GetEgyptTime()
+                            });
                         }
+
+                        orderItem.ProductVariantId = matchedVariant.Id;
+                        orderItem.Color = !string.IsNullOrEmpty(matchedVariant.ColorAr) ? matchedVariant.ColorAr : matchedVariant.Color ?? requestedColor;
+                        orderItem.Size = matchedVariant.Size ?? requestedSize;
+                        orderItem.UnitPrice = matchedVariant.Price > 0 ? matchedVariant.Price
+                                              : (searchedProduct.DiscountPrice.HasValue && searchedProduct.DiscountPrice.Value > 0 ? searchedProduct.DiscountPrice.Value : searchedProduct.Price);
                     }
                     else
                     {
-                        if (!string.IsNullOrEmpty(newColor)) orderItem.Color = newColor;
-                        if (!string.IsNullOrEmpty(newSize)) orderItem.Size = newSize;
+                        searchedProduct.TotalStock = Math.Max(0, searchedProduct.TotalStock - reqItem.Quantity);
+                        searchedProduct.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                        orderItem.ProductVariantId = null;
+                        orderItem.Color = requestedColor;
+                        orderItem.Size = requestedSize;
+                        orderItem.UnitPrice = searchedProduct.DiscountPrice.HasValue && searchedProduct.DiscountPrice.Value > 0 ? searchedProduct.DiscountPrice.Value : searchedProduct.Price;
                     }
+
+                    orderItem.OriginalUnitPrice = searchedProduct.Price;
+                    orderItem.TotalPrice = orderItem.UnitPrice * reqItem.Quantity;
                 }
             }
         }
