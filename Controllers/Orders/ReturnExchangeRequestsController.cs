@@ -128,10 +128,11 @@ public class ReturnExchangeRequestsController : ControllerBase
         {
             if (order.Status == OrderStatus.Delivered)
             {
-                var diffDays = (TimeHelper.GetEgyptTime() - order.CreatedAt).TotalDays;
+                var baseDate = order.UpdatedAt > order.CreatedAt ? order.UpdatedAt : order.CreatedAt;
+                var diffDays = (TimeHelper.GetEgyptTime() - baseDate).TotalDays;
                 if (diffDays > 14)
                 {
-                    return BadRequest("تجاوزت الفترة المسموحة لطلب الاستبدال أو الاسترجاع (14 يوماً من تاريخ الطلب).");
+                    return BadRequest("تجاوزت الفترة المسموحة لطلب الاستبدال أو الاسترجاع (14 يوماً من تاريخ الاستلام).");
                 }
             }
         }
