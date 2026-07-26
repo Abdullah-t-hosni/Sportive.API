@@ -587,11 +587,13 @@ public class OrdersController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> GetUnprintedOrders()
     {
+        var pendingStatuses = new[] { OrderStatus.Pending, OrderStatus.Confirmed, OrderStatus.Processing, OrderStatus.ReadyForPickup };
+
         var unprintedOrders = await _db.Orders
             .AsNoTracking()
             .Include(o => o.Customer)
             .Include(o => o.Items)
-            .Where(o => !o.IsPrinted && o.Status != OrderStatus.Cancelled && o.Source != OrderSource.POS)
+            .Where(o => !o.IsPrinted && pendingStatuses.Contains(o.Status) && o.Source != OrderSource.POS)
             .OrderBy(o => o.CreatedAt)
             .Take(50)
             .Select(o => new {
