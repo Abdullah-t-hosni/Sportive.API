@@ -465,12 +465,13 @@ public class SupplierPaymentsController : ControllerBase
                 {
                     JournalEntryId = line.JournalEntryId,
                     AccountId = line.AccountId,
-                    AccountCode = line.AccountCode,
-                    AccountName = line.AccountName,
                     Debit = remainder,
                     Credit = 0,
                     SupplierId = line.SupplierId,
                     CustomerId = line.CustomerId,
+                    EmployeeId = line.EmployeeId,
+                    CostCenter = line.CostCenter,
+                    BranchId = line.BranchId,
                     PurchaseInvoiceId = null,
                     Description = (line.Description ?? "") + " (رصيد متبقي بعد الربط)"
                 };
