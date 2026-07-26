@@ -326,6 +326,26 @@ public class ReturnExchangeRequestsController : ControllerBase
         _db.ReturnExchangeRequests.Add(request);
         await _db.SaveChangesAsync();
 
+        // 🔔 Send Admin Notification & SignalR updates
+        try
+        {
+            if (_notificationService != null)
+            {
+                string typeLabel = reqType == ReturnExchangeType.Exchange ? "استبدال" : "استرجاع";
+                string custName = !string.IsNullOrWhiteSpace(order.CustomerName) ? order.CustomerName : "عميل المتجر";
+                await _notificationService.SendAsync(
+                    null,
+                    $"طلب {typeLabel} جديد 🔄",
+                    $"New {reqType} Request",
+                    $"قام العميل ({custName}) بتقديم طلب {typeLabel} جديد للفاتورة رقم #{order.OrderNumber}",
+                    $"Customer ({custName}) submitted a {reqType} request for order #{order.OrderNumber}",
+                    "ReturnExchangeRequest",
+                    request.Id
+                );
+            }
+        }
+        catch { }
+
         try
         {
             await _hubContext.Clients.All.SendAsync("DashboardUpdate", new { type = "ReturnExchangeRequest", id = request.Id });
@@ -578,6 +598,23 @@ public class ReturnExchangeRequestsController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+
+        try
+        {
+            if (_notificationService != null)
+            {
+                await _notificationService.SendAsync(
+                    req.CustomerId?.ToString(),
+                    "تمت الموافقة على طلب الاستبدال 🎉",
+                    "Exchange Request Approved",
+                    $"تمت الموافقة على طلب الاستبدال للفاتورة #{req.Order?.OrderNumber} وتحديث الفاتورة بنجاح.",
+                    $"Your exchange request for order #{req.Order?.OrderNumber} has been approved.",
+                    "Order",
+                    req.OrderId
+                );
+            }
+        }
+        catch { }
 
         try
         {
