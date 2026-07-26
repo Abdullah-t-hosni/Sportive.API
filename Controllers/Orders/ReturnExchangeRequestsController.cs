@@ -606,6 +606,7 @@ public class ReturnExchangeRequestsController : ControllerBase
                     orderItem.ProductId = searchedProduct.Id;
                     orderItem.ProductNameAr = searchedProduct.NameAr;
                     orderItem.ProductNameEn = !string.IsNullOrEmpty(searchedProduct.NameEn) ? searchedProduct.NameEn : searchedProduct.NameAr;
+                    orderItem.SKU = searchedProduct.SKU;
 
                     ProductVariant? matchedVariant = null;
                     if (searchedProduct.Variants != null && searchedProduct.Variants.Any())
@@ -649,7 +650,6 @@ public class ReturnExchangeRequestsController : ControllerBase
                         orderItem.ProductVariantId = matchedVariant.Id;
                         orderItem.Color = !string.IsNullOrEmpty(matchedVariant.ColorAr) ? matchedVariant.ColorAr : matchedVariant.Color ?? requestedColor;
                         orderItem.Size = matchedVariant.Size ?? requestedSize;
-                        orderItem.UnitPrice = (searchedProduct.DiscountPrice.HasValue && searchedProduct.DiscountPrice.Value > 0 ? searchedProduct.DiscountPrice.Value : searchedProduct.Price) + (matchedVariant.PriceAdjustment ?? 0);
                     }
                     else
                     {
@@ -659,23 +659,38 @@ public class ReturnExchangeRequestsController : ControllerBase
                         orderItem.ProductVariantId = null;
                         orderItem.Color = requestedColor;
                         orderItem.Size = requestedSize;
-                        orderItem.UnitPrice = searchedProduct.DiscountPrice.HasValue && searchedProduct.DiscountPrice.Value > 0 ? searchedProduct.DiscountPrice.Value : searchedProduct.Price;
                     }
 
-                    orderItem.OriginalUnitPrice = searchedProduct.Price;
-                    orderItem.TotalPrice = orderItem.UnitPrice * reqItem.Quantity;
+                    decimal variantAdj = matchedVariant?.PriceAdjustment ?? 0;
+                    decimal origUnit = searchedProduct.Price + variantAdj;
+                    decimal finalUnit = (searchedProduct.DiscountPrice.HasValue && searchedProduct.DiscountPrice.Value > 0 
+                                        ? searchedProduct.DiscountPrice.Value 
+                                        : searchedProduct.Price) + variantAdj;
+
+                    orderItem.OriginalUnitPrice = origUnit;
+                    orderItem.UnitPrice = finalUnit;
+                    orderItem.DiscountAmount = Math.Max(0, (origUnit - finalUnit) * reqItem.Quantity);
+                    orderItem.TotalPrice = finalUnit * reqItem.Quantity;
+
+                    if (orderItem.HasTax && orderItem.VatRateApplied.HasValue && orderItem.VatRateApplied.Value > 0)
+                    {
+                        orderItem.ItemVatAmount = (orderItem.TotalPrice * orderItem.VatRateApplied.Value) / 100m;
+                    }
                 }
             }
         }
 
-        // 🔄 Recalculate order financial totals accurately
+        // 🔄 Recalculate order financial totals accurately including discounts and VAT
         if (req.Order != null)
         {
-            decimal subTotal = req.Order.Items.Sum(i => i.UnitPrice * i.Quantity);
+            decimal subTotal = req.Order.Items.Sum(i => (i.OriginalUnitPrice > 0 ? i.OriginalUnitPrice : i.UnitPrice) * i.Quantity);
+            decimal itemDiscounts = req.Order.Items.Sum(i => i.DiscountAmount);
             decimal totalVat = req.Order.Items.Sum(i => i.ItemVatAmount);
+
             req.Order.SubTotal = subTotal;
+            req.Order.DiscountAmount = itemDiscounts;
             req.Order.TotalVatAmount = totalVat;
-            req.Order.TotalAmount = Math.Max(0, subTotal + req.Order.DeliveryFee - req.Order.DiscountAmount + totalVat);
+            req.Order.TotalAmount = Math.Max(0, subTotal - itemDiscounts + req.Order.DeliveryFee + totalVat);
             req.Order.AdminNotes = (req.Order.AdminNotes ?? "") + $" | [تم تنفيذ الاستبدال وحفظ الصنف الجديد #{req.Id}]";
             req.Order.UpdatedAt = TimeHelper.GetEgyptTime();
         }

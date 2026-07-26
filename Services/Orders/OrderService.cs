@@ -201,8 +201,10 @@ public class OrderService : IOrderService
                         ? i.ProductVariant.Color 
                         : i.Product?.Images?.FirstOrDefault(img => !string.IsNullOrEmpty(img.ColorAr))?.ColorAr));
 
+            string? itemSku = !string.IsNullOrWhiteSpace(i.SKU) ? i.SKU : (i.Product?.SKU ?? "");
+
             return new OrderItemDto(
-                i.Id, i.ProductId, i.ProductVariantId, i.ProductNameAr, i.ProductNameEn, i.SKU, i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
+                i.Id, i.ProductId, i.ProductVariantId, i.ProductNameAr, i.ProductNameEn, itemSku, i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
                 i.Product?.Slug,
                 itemSize, itemColor, i.Quantity, i.UnitPrice, i.TotalPrice,
                 i.OriginalUnitPrice, i.DiscountAmount,
