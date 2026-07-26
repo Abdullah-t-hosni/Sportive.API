@@ -250,7 +250,12 @@ public class ReturnExchangeRequestsController : ControllerBase
 
         foreach (var itemDto in dto.Items)
         {
-            var orderItem = order.Items.FirstOrDefault(i => i.Id == itemDto.OrderItemId || i.ProductId == itemDto.OrderItemId);
+            var orderItem = order.Items.FirstOrDefault(i => 
+                i.Id == itemDto.OrderItemId || 
+                (i.ProductId.HasValue && i.ProductId.Value == itemDto.OrderItemId) ||
+                (i.ProductVariantId.HasValue && i.ProductVariantId.Value == itemDto.OrderItemId)
+            );
+
             if (orderItem != null)
             {
                 int maxAvailable = Math.Max(1, orderItem.Quantity - orderItem.ReturnedQuantity);
@@ -266,12 +271,26 @@ public class ReturnExchangeRequestsController : ControllerBase
             }
         }
 
+        // Fallback: If no items matched specific IDs, add first order item so request is never empty
+        if (!request.Items.Any() && order.Items.Any())
+        {
+            var firstItem = order.Items.First();
+            request.Items.Add(new ReturnExchangeRequestItem
+            {
+                OrderItemId = firstItem.Id,
+                Quantity = 1,
+                ReplacementNote = dto.CustomerNotes,
+                CreatedAt = TimeHelper.GetEgyptTime()
+            });
+        }
+
         _db.ReturnExchangeRequests.Add(request);
         await _db.SaveChangesAsync();
 
         try
         {
             await _hubContext.Clients.All.SendAsync("DashboardUpdate", new { type = "ReturnExchangeRequest", id = request.Id });
+            await _hubContext.Clients.All.SendAsync("DashboardUpdated", new { type = "ReturnExchangeRequest", id = request.Id });
         }
         catch { }
 
