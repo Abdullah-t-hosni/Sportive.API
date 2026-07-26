@@ -239,14 +239,15 @@ public class ReturnExchangeRequestsController : ControllerBase
 
                 // Deduct POS warehouse stock if present
                 var warehouseStock = await _db.ProductWarehouseStocks
-                    .FirstOrDefaultAsync(ws => (variant != null && ws.ProductVariantId == variant.Id) || (variant == null && ws.ProductId == product.Id));
+                    .Include(ws => ws.ProductVariant)
+                    .FirstOrDefaultAsync(ws => (variant != null && ws.ProductVariantId == variant.Id) || (variant == null && ws.ProductVariant != null && ws.ProductVariant.ProductId == product.Id));
                 if (warehouseStock != null)
                 {
                     warehouseStock.Quantity = Math.Max(0, warehouseStock.Quantity - qtyToAdd);
                     warehouseStock.UpdatedAt = TimeHelper.GetEgyptTime();
                 }
 
-                decimal unitPrice = product.DiscountPrice > 0 ? product.DiscountPrice : product.Price;
+                decimal unitPrice = (product.DiscountPrice.HasValue && product.DiscountPrice.Value > 0) ? product.DiscountPrice.Value : product.Price;
                 decimal originalPrice = product.Price;
                 decimal discountAmount = originalPrice > unitPrice ? (originalPrice - unitPrice) : 0m;
 
@@ -257,7 +258,7 @@ public class ReturnExchangeRequestsController : ControllerBase
                 if (existingItem != null)
                 {
                     existingItem.Quantity += qtyToAdd;
-                    existingItem.TotalAmount = existingItem.Quantity * unitPrice;
+                    existingItem.TotalPrice = existingItem.Quantity * unitPrice;
                 }
                 else
                 {
@@ -268,16 +269,14 @@ public class ReturnExchangeRequestsController : ControllerBase
                         ProductVariantId = variant?.Id,
                         ProductNameAr = product.NameAr,
                         ProductNameEn = product.NameEn,
-                        ProductImage = product.MainImageUrl ?? product.ImageUrl,
-                        SKU = !string.IsNullOrWhiteSpace(variant?.SKU) ? variant.SKU : product.SKU,
+                        SKU = !string.IsNullOrWhiteSpace(product.SKU) ? product.SKU : "",
                         Size = !string.IsNullOrWhiteSpace(size) ? size : (variant?.Size ?? ""),
                         Color = !string.IsNullOrWhiteSpace(color) ? color : (variant?.ColorAr ?? variant?.Color ?? ""),
-                        VariantName = variant?.Name,
                         Quantity = qtyToAdd,
                         UnitPrice = unitPrice,
                         OriginalUnitPrice = originalPrice,
                         DiscountAmount = discountAmount,
-                        TotalAmount = qtyToAdd * unitPrice,
+                        TotalPrice = qtyToAdd * unitPrice,
                         CreatedAt = TimeHelper.GetEgyptTime()
                     };
                     order.Items.Add(newItem);
