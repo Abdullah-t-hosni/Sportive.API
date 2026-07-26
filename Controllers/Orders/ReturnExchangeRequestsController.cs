@@ -658,10 +658,11 @@ public class ReturnExchangeRequestsController : ControllerBase
         if (!string.IsNullOrEmpty(filter.Search))
         {
             var s = filter.Search.Trim().ToLower();
+            var searchHash = Customer.EncryptionHelper?.ComputeSearchHash(filter.Search.Trim()) ?? "";
             query = query.Where(r =>
                 (r.Order != null && r.Order.OrderNumber.ToLower().Contains(s)) ||
                 (r.Customer != null && r.Customer.FullName != null && r.Customer.FullName.ToLower().Contains(s)) ||
-                (r.Customer != null && r.Customer.Phone != null && r.Customer.Phone.Contains(s)) ||
+                (!string.IsNullOrEmpty(searchHash) && r.Customer != null && r.Customer.PhoneHash == searchHash) ||
                 (r.Reason != null && r.Reason.ToLower().Contains(s)) ||
                 (r.CustomerNotes != null && r.CustomerNotes.ToLower().Contains(s)) ||
                 r.OrderId.ToString() == s ||
