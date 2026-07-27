@@ -683,6 +683,29 @@ public class StoreInfo
     [JsonPropertyName("bostaUseSandbox")]
     public bool BostaUseSandbox { get; set; } = false;
 
+    // --- 16. WhatsApp Baileys Multi-Device Gateway Settings ---
+    [MaxLength(500)]
+    [JsonPropertyName("whatsAppStoreGatewayUrl")]
+    public string? WhatsAppStoreGatewayUrl { get; set; } = "https://sportive-frontend-production.up.railway.app";
+
+    [MaxLength(500)]
+    [JsonPropertyName("whatsAppPosGatewayUrl")]
+    public string? WhatsAppPosGatewayUrl { get; set; } = "https://sportive-frontend-production-65ac.up.railway.app";
+
+    [JsonPropertyName("isWhatsAppStoreConnected")]
+    public bool IsWhatsAppStoreConnected { get; set; } = false;
+
+    [JsonPropertyName("isWhatsAppPosConnected")]
+    public bool IsWhatsAppPosConnected { get; set; } = false;
+
+    [MaxLength(50)]
+    [JsonPropertyName("whatsAppStorePhoneNumber")]
+    public string? WhatsAppStorePhoneNumber { get; set; }
+
+    [MaxLength(50)]
+    [JsonPropertyName("whatsAppPosPhoneNumber")]
+    public string? WhatsAppPosPhoneNumber { get; set; }
+
     // --- Subscription Info (Not Mapped to Tenant DB) ---
     [NotMapped]
     [JsonPropertyName("subscriptionExpiresAt")]
