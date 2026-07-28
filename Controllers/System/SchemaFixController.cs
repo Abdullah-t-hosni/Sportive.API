@@ -574,6 +574,169 @@ public class SchemaFixController : ControllerBase
         });
     }
 
+    [HttpGet("fix-uncancelled-stock")]
+    [AllowAnonymous]
+    public async Task<IActionResult> FixUncancelledOrdersStock([FromQuery] string? secret = null, [FromQuery] string? orderNumber = null)
+    {
+        if (secret != "sportive-fix-stock-2026")
+            return Unauthorized(new { message = "Invalid or missing secret key." });
+
+        var query = _db.Orders
+            .Include(o => o.Items)
+            .Include(o => o.Customer)
+            .AsQueryable();
+
+        if (!string.IsNullOrEmpty(orderNumber))
+        {
+            var trimmed = orderNumber.Trim();
+            query = query.Where(o => o.OrderNumber == trimmed || o.Id.ToString() == trimmed);
+        }
+
+        var ordersToFix = await query.ToListAsync();
+        var allHistories = await _db.OrderStatusHistories.AsNoTracking().ToListAsync();
+        var allMovements = await _db.InventoryMovements.Where(m => m.Reference != null).ToListAsync();
+
+        var historiesByOrder = allHistories.GroupBy(h => h.OrderId).ToDictionary(g => g.Key, g => g.OrderBy(h => h.CreatedAt).ToList());
+        var movementsByRef = allMovements.GroupBy(m => m.Reference!.Trim()).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        int totalOrdersFixed = 0;
+        int totalMovementsLogged = 0;
+        var fixedOrderDetails = new List<object>();
+
+        foreach (var order in ordersToFix)
+        {
+            bool isUncancelledActiveOrder = false;
+
+            if (historiesByOrder.TryGetValue(order.Id, out var histories))
+            {
+                bool hadCancelled = false;
+                foreach (var h in histories)
+                {
+                    if (h.Status == OrderStatus.Cancelled) hadCancelled = true;
+                    else if (hadCancelled && h.Status != OrderStatus.Cancelled)
+                    {
+                        isUncancelledActiveOrder = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!isUncancelledActiveOrder && order.Status != OrderStatus.Cancelled && order.Status != OrderStatus.Returned)
+            {
+                List<InventoryMovement>? orderMovements = null;
+                if (movementsByRef.TryGetValue(order.OrderNumber, out var movs1)) orderMovements = movs1;
+                else if (movementsByRef.TryGetValue(order.Id.ToString(), out var movs2)) orderMovements = movs2;
+
+                if (orderMovements != null && orderMovements.Any())
+                {
+                    var cancelMovements = orderMovements.Where(m => 
+                        (m.Type == InventoryMovementType.Adjustment || m.Type == InventoryMovementType.ReturnIn) &&
+                        (m.Notes != null && (m.Notes.Contains("Cancelled") || m.Notes.Contains("إلغاء") || m.Notes.Contains("Order Cancelled")))
+                    ).ToList();
+
+                    var fixMovements = orderMovements.Where(m => 
+                        m.Notes != null && m.Notes.Contains("Fix: Re-deduct stock for uncancelled order")
+                    ).ToList();
+
+                    if (cancelMovements.Any() && !fixMovements.Any())
+                    {
+                        isUncancelledActiveOrder = true;
+                    }
+                }
+            }
+
+            // Force target order if specified directly by parameter
+            if (!string.IsNullOrEmpty(orderNumber))
+            {
+                var trimmed = orderNumber.Trim();
+                if (order.OrderNumber == trimmed || order.Id.ToString() == trimmed)
+                {
+                    isUncancelledActiveOrder = true;
+                }
+            }
+
+            if (isUncancelledActiveOrder && order.Status != OrderStatus.Cancelled)
+            {
+                List<InventoryMovement>? currentMovements = null;
+                if (movementsByRef.TryGetValue(order.OrderNumber, out var m1)) currentMovements = m1;
+                else if (movementsByRef.TryGetValue(order.Id.ToString(), out var m2)) currentMovements = m2;
+
+                bool alreadyFixed = currentMovements != null && currentMovements.Any(m => m.Notes != null && m.Notes.Contains("Fix: Re-deduct stock for uncancelled order"));
+
+                if (!alreadyFixed)
+                {
+                    foreach (var item in order.Items)
+                    {
+                        if (item.Quantity > 0)
+                        {
+                            var movement = new InventoryMovement
+                            {
+                                ProductId = item.ProductId,
+                                ProductVariantId = item.ProductVariantId,
+                                Quantity = -item.Quantity,
+                                Type = InventoryMovementType.Sale,
+                                Reference = order.OrderNumber,
+                                Notes = $"Fix: Re-deduct stock for uncancelled order #{order.OrderNumber}",
+                                CreatedAt = TimeHelper.GetEgyptTime(),
+                                Source = order.Source
+                            };
+
+                            _db.InventoryMovements.Add(movement);
+                            totalMovementsLogged++;
+
+                            if (item.ProductVariantId.HasValue && item.ProductVariantId.Value > 0)
+                            {
+                                var variant = await _db.ProductVariants.FindAsync(item.ProductVariantId.Value);
+                                if (variant != null)
+                                {
+                                    variant.StockQuantity -= item.Quantity;
+                                    variant.UpdatedAt = TimeHelper.GetEgyptTime();
+                                }
+                            }
+                            if (item.ProductId.HasValue && item.ProductId.Value > 0)
+                            {
+                                var prod = await _db.Products.FindAsync(item.ProductId.Value);
+                                if (prod != null)
+                                {
+                                    prod.StockQuantity -= item.Quantity;
+                                    prod.UpdatedAt = TimeHelper.GetEgyptTime();
+                                }
+                            }
+                        }
+                    }
+
+                    totalOrdersFixed++;
+                    fixedOrderDetails.Add(new
+                    {
+                        order.Id,
+                        order.OrderNumber,
+                        CustomerName = order.Customer != null ? order.Customer.FullName : "",
+                        Status = order.Status.ToString(),
+                        order.TotalAmount,
+                        Items = order.Items.Select(i => new {
+                            i.ProductId,
+                            i.ProductVariantId,
+                            i.ProductNameAr,
+                            i.Size,
+                            i.Color,
+                            i.Quantity
+                        })
+                    });
+                }
+            }
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            message = "Uncancelled order inventory successfully fixed in database.",
+            totalOrdersFixed,
+            totalMovementsLogged,
+            fixedOrders = fixedOrderDetails
+        });
+    }
+
     [HttpGet("run-v17")]
     [AllowAnonymous]
     public async Task<IActionResult> RunV17([FromQuery] string? secret = null)
