@@ -737,6 +737,79 @@ public class SchemaFixController : ControllerBase
         });
     }
 
+    [HttpGet("inspect-order-movements")]
+    [AllowAnonymous]
+    public async Task<IActionResult> InspectOrderMovements([FromQuery] string? secret = null, [FromQuery] string orderNumber = "SPT-2607-0165")
+    {
+        if (secret != "sportive-fix-stock-2026")
+            return Unauthorized(new { message = "Invalid secret key." });
+
+        var trimmed = orderNumber.Trim();
+        var order = await _db.Orders
+            .AsNoTracking()
+            .Include(o => o.Items)
+            .Include(o => o.Customer)
+            .FirstOrDefaultAsync(o => o.OrderNumber == trimmed || o.Id.ToString() == trimmed);
+
+        if (order == null) return NotFound(new { message = $"Order {orderNumber} not found." });
+
+        var histories = await _db.OrderStatusHistories
+            .AsNoTracking()
+            .Where(h => h.OrderId == order.Id)
+            .OrderBy(h => h.CreatedAt)
+            .Select(h => new { h.Id, h.Status, h.Note, h.CreatedAt, h.ChangedByUserId })
+            .ToListAsync();
+
+        var movements = await _db.InventoryMovements
+            .AsNoTracking()
+            .Where(m => m.Reference == order.OrderNumber || m.Reference == order.Id.ToString())
+            .OrderBy(m => m.CreatedAt)
+            .Select(m => new {
+                m.Id,
+                m.ProductId,
+                m.ProductVariantId,
+                m.Type,
+                m.Quantity,
+                m.RemainingStock,
+                m.Reference,
+                m.Note,
+                m.CreatedAt
+            })
+            .ToListAsync();
+
+        var itemsDetail = new List<object>();
+        foreach (var item in order.Items)
+        {
+            var variant = item.ProductVariantId.HasValue ? await _db.ProductVariants.AsNoTracking().FirstOrDefaultAsync(v => v.Id == item.ProductVariantId.Value) : null;
+            var prod = item.ProductId.HasValue ? await _db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == item.ProductId.Value) : null;
+
+            itemsDetail.Add(new {
+                item.ProductId,
+                item.ProductVariantId,
+                item.ProductNameAr,
+                item.Size,
+                item.Color,
+                item.Quantity,
+                ItemCurrentVariantStock = variant != null ? (int?)variant.StockQuantity : null,
+                ItemCurrentProductTotalStock = prod != null ? (int?)prod.TotalStock : null,
+            });
+        }
+
+        return Ok(new {
+            order = new {
+                order.Id,
+                order.OrderNumber,
+                CustomerName = order.Customer != null ? order.Customer.FullName : "",
+                order.Status,
+                order.TotalAmount,
+                order.CreatedAt
+            },
+            items = itemsDetail,
+            histories,
+            movements
+        });
+    }
+
     [HttpGet("run-v17")]
     [AllowAnonymous]
     public async Task<IActionResult> RunV17([FromQuery] string? secret = null)
