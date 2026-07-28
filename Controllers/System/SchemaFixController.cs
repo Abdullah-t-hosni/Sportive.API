@@ -454,29 +454,62 @@ public class SchemaFixController : ControllerBase
         if (secret != "sportive-fix-stock-2026")
             return Unauthorized(new { message = "Invalid or missing secret key." });
 
-        var logs = await _db.AuditLogs
+        // 1. Check OrderStatusHistories for any order that had status 'Cancelled' and then transitioned to another status
+        var cancelledOrderIds = await _db.OrderStatusHistories
+            .AsNoTracking()
+            .Where(h => h.Status == OrderStatus.Cancelled)
+            .Select(h => h.OrderId)
+            .Distinct()
+            .ToListAsync();
+
+        var affectedOrderIds = new HashSet<int>();
+
+        foreach (var orderId in cancelledOrderIds)
+        {
+            var histories = await _db.OrderStatusHistories
+                .AsNoTracking()
+                .Where(h => h.OrderId == orderId)
+                .OrderBy(h => h.CreatedAt)
+                .ToListAsync();
+
+            bool hadCancelled = false;
+            foreach (var h in histories)
+            {
+                if (h.Status == OrderStatus.Cancelled)
+                {
+                    hadCancelled = true;
+                }
+                else if (hadCancelled && h.Status != OrderStatus.Cancelled)
+                {
+                    affectedOrderIds.Add(orderId);
+                    break;
+                }
+            }
+        }
+
+        // 2. Also check AuditLogs
+        var auditLogs = await _db.AuditLogs
             .AsNoTracking()
             .Where(x => (x.EntityType == "Order" || x.EntityType == "OrderStatus" || x.Action.Contains("Status")) &&
                         x.OldValues != null && x.OldValues.Contains("Cancelled") &&
                         x.NewValues != null && !x.NewValues.Contains("Cancelled"))
             .OrderByDescending(x => x.CreatedAt)
             .Take(200)
-            .Select(x => new {
-                x.Id,
-                x.CreatedAt,
-                OrderId = x.EntityId,
-                x.UserName,
-                x.OldValues,
-                x.NewValues,
-                x.Notes
-            })
             .ToListAsync();
 
-        var orderIds = logs.Select(l => l.OrderId).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
+        foreach (var l in auditLogs)
+        {
+            if (int.TryParse(l.EntityId, out var id))
+            {
+                affectedOrderIds.Add(id);
+            }
+        }
+
         var orders = await _db.Orders
             .AsNoTracking()
+            .Include(o => o.Customer)
             .Include(o => o.Items)
-            .Where(o => orderIds.Contains(o.Id.ToString()) || orderIds.Contains(o.OrderNumber))
+            .Where(o => affectedOrderIds.Contains(o.Id))
             .Select(o => new {
                 o.Id,
                 o.OrderNumber,
@@ -498,7 +531,7 @@ public class SchemaFixController : ControllerBase
             })
             .ToListAsync();
 
-        return Ok(new { logs, orders });
+        return Ok(new { affectedCount = orders.Count, orders, auditLogs });
     }
 
     [HttpGet("run-v17")]
