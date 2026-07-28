@@ -454,84 +454,124 @@ public class SchemaFixController : ControllerBase
         if (secret != "sportive-fix-stock-2026")
             return Unauthorized(new { message = "Invalid or missing secret key." });
 
-        // 1. Check OrderStatusHistories for any order that had status 'Cancelled' and then transitioned to another status
-        var cancelledOrderIds = await _db.OrderStatusHistories
-            .AsNoTracking()
-            .Where(h => h.Status == OrderStatus.Cancelled)
-            .Select(h => h.OrderId)
-            .Distinct()
-            .ToListAsync();
-
-        var affectedOrderIds = new HashSet<int>();
-
-        foreach (var orderId in cancelledOrderIds)
-        {
-            var histories = await _db.OrderStatusHistories
-                .AsNoTracking()
-                .Where(h => h.OrderId == orderId)
-                .OrderBy(h => h.CreatedAt)
-                .ToListAsync();
-
-            bool hadCancelled = false;
-            foreach (var h in histories)
-            {
-                if (h.Status == OrderStatus.Cancelled)
-                {
-                    hadCancelled = true;
-                }
-                else if (hadCancelled && h.Status != OrderStatus.Cancelled)
-                {
-                    affectedOrderIds.Add(orderId);
-                    break;
-                }
-            }
-        }
-
-        // 2. Also check AuditLogs
-        var auditLogs = await _db.AuditLogs
-            .AsNoTracking()
-            .Where(x => (x.EntityType == "Order" || x.EntityType == "OrderStatus" || x.Action.Contains("Status")) &&
-                        x.OldValues != null && x.OldValues.Contains("Cancelled") &&
-                        x.NewValues != null && !x.NewValues.Contains("Cancelled"))
-            .OrderByDescending(x => x.CreatedAt)
-            .Take(200)
-            .ToListAsync();
-
-        foreach (var l in auditLogs)
-        {
-            if (int.TryParse(l.EntityId, out var id))
-            {
-                affectedOrderIds.Add(id);
-            }
-        }
-
-        var orders = await _db.Orders
+        // 🛡️ Scan 100% of ALL orders in the database
+        var allOrders = await _db.Orders
             .AsNoTracking()
             .Include(o => o.Customer)
             .Include(o => o.Items)
-            .Where(o => affectedOrderIds.Contains(o.Id))
-            .Select(o => new {
-                o.Id,
-                o.OrderNumber,
-                CustomerName = o.Customer != null ? o.Customer.FullName : "",
-                CustomerPhone = o.Customer != null ? o.Customer.Phone : "",
-                o.Status,
-                o.TotalAmount,
-                o.CreatedAt,
-                Items = o.Items.Select(i => new {
-                    i.ProductId,
-                    i.ProductVariantId,
-                    i.ProductNameAr,
-                    i.ProductNameEn,
-                    i.Size,
-                    i.Color,
-                    i.Quantity,
-                    i.UnitPrice
-                })
-            })
             .ToListAsync();
 
-        return Ok(new { affectedCount = orders.Count, orders, auditLogs });
+        var allHistories = await _db.OrderStatusHistories
+            .AsNoTracking()
+            .ToListAsync();
+
+        var allMovements = await _db.InventoryMovements
+            .AsNoTracking()
+            .Where(m => m.Reference != null)
+            .ToListAsync();
+
+        var allAuditLogs = await _db.AuditLogs
+            .AsNoTracking()
+            .Where(l => l.EntityType == "Order" || l.EntityType == "OrderStatus" || (l.Notes != null && l.Notes.Contains("Order")))
+            .ToListAsync();
+
+        var historiesByOrder = allHistories.GroupBy(h => h.OrderId).ToDictionary(g => g.Key, g => g.OrderBy(h => h.CreatedAt).ToList());
+        var movementsByRef = allMovements.GroupBy(m => m.Reference!.Trim()).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var affectedOrdersList = new List<object>();
+
+        foreach (var order in allOrders)
+        {
+            bool isAffected = false;
+            string reason = "";
+
+            // Vector 1: Check OrderStatusHistories for Cancelled -> Non-Cancelled transition
+            if (historiesByOrder.TryGetValue(order.Id, out var histories))
+            {
+                bool hadCancelled = false;
+                foreach (var h in histories)
+                {
+                    if (h.Status == OrderStatus.Cancelled)
+                    {
+                        hadCancelled = true;
+                    }
+                    else if (hadCancelled && h.Status != OrderStatus.Cancelled)
+                    {
+                        isAffected = true;
+                        reason = $"حالات الطلب السابقة تظهر إلغاء ثم إعادة تفعيل إلى ({h.Status})";
+                        break;
+                    }
+                }
+            }
+
+            // Vector 2: Check InventoryMovements (Order is currently ACTIVE, but has a Cancellation/Return stock movement)
+            if (!isAffected && order.Status != OrderStatus.Cancelled && order.Status != OrderStatus.Returned)
+            {
+                List<InventoryMovement>? orderMovements = null;
+                if (movementsByRef.TryGetValue(order.OrderNumber, out var movs1)) orderMovements = movs1;
+                else if (movementsByRef.TryGetValue(order.Id.ToString(), out var movs2)) orderMovements = movs2;
+
+                if (orderMovements != null && orderMovements.Any())
+                {
+                    var cancelMovements = orderMovements.Where(m => 
+                        (m.Type == InventoryMovementType.Adjustment || m.Type == InventoryMovementType.ReturnIn) &&
+                        (m.Notes != null && (m.Notes.Contains("Cancelled") || m.Notes.Contains("إلغاء") || m.Notes.Contains("Order Cancelled")))
+                    ).ToList();
+
+                    if (cancelMovements.Any())
+                    {
+                        isAffected = true;
+                        reason = $"الطلب حالته الحالية ({order.Status}) ولكن يوجد له حركة مخزنية سابقة مرجعة بسبب الإلغاء";
+                    }
+                }
+            }
+
+            // Vector 3: Check AuditLogs
+            if (!isAffected)
+            {
+                var logs = allAuditLogs.Where(l => l.EntityId == order.Id.ToString() || l.EntityId == order.OrderNumber).ToList();
+                foreach (var l in logs)
+                {
+                    if (l.OldValues != null && l.OldValues.Contains("Cancelled") && l.NewValues != null && !l.NewValues.Contains("Cancelled"))
+                    {
+                        isAffected = true;
+                        reason = "سجل التدقيق يظهر تغيير من حالة ملغي إلى حالة نشطة";
+                        break;
+                    }
+                }
+            }
+
+            if (isAffected)
+            {
+                affectedOrdersList.Add(new
+                {
+                    order.Id,
+                    order.OrderNumber,
+                    CustomerName = order.Customer != null ? order.Customer.FullName : "",
+                    CustomerPhone = order.Customer != null ? order.Customer.Phone : "",
+                    Status = order.Status.ToString(),
+                    order.TotalAmount,
+                    order.CreatedAt,
+                    DetectionReason = reason,
+                    Items = order.Items.Select(i => new {
+                        i.ProductId,
+                        i.ProductVariantId,
+                        i.ProductNameAr,
+                        i.ProductNameEn,
+                        i.Size,
+                        i.Color,
+                        i.Quantity,
+                        i.UnitPrice
+                    })
+                });
+            }
+        }
+
+        return Ok(new { 
+            scannedTotalOrders = allOrders.Count, 
+            affectedCount = affectedOrdersList.Count, 
+            orders = affectedOrdersList 
+        });
     }
 
     [HttpGet("run-v17")]
