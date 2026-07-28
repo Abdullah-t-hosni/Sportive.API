@@ -480,8 +480,8 @@ public class SchemaFixController : ControllerBase
             .Select(o => new {
                 o.Id,
                 o.OrderNumber,
-                o.CustomerName,
-                o.CustomerPhone,
+                CustomerName = o.Customer != null ? o.Customer.FullName : "",
+                CustomerPhone = o.Customer != null ? o.Customer.Phone : "",
                 o.Status,
                 o.TotalAmount,
                 o.CreatedAt,
