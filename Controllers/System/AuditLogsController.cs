@@ -99,6 +99,21 @@ public class AuditLogsController : ControllerBase
         return Ok(log);
     }
 
+    [HttpGet("uncancelled-orders")]
+    public async Task<IActionResult> GetUncancelledOrdersAudit()
+    {
+        var logs = await _db.AuditLogs
+            .AsNoTracking()
+            .Where(x => (x.EntityType == "Order" || x.EntityType == "OrderStatus" || x.Action.Contains("Status")) &&
+                        x.OldValues != null && x.OldValues.Contains("Cancelled") &&
+                        x.NewValues != null && !x.NewValues.Contains("Cancelled"))
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(200)
+            .ToListAsync();
+
+        return Ok(logs);
+    }
+
     [HttpPost("archive")]
     [Authorize(Roles = "SuperAdmin")]
     public async Task<IActionResult> ArchiveOldLogs()
