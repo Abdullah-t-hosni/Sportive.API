@@ -1836,8 +1836,8 @@ public class OrderService : IOrderService
                 }
             }
 
-            // 2️⃣ Reverse the inventory ReturnIn movements (re-deduct stock)
-            if (oldStatus == OrderStatus.Returned)
+            // 2️⃣ Reverse the inventory ReturnIn/Cancellation movements (re-deduct stock)
+            if (oldStatus == OrderStatus.Returned || oldStatus == OrderStatus.Cancelled)
             {
                 var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
                 foreach (var item in orderWithItems.Items)
@@ -1847,7 +1847,7 @@ public class OrderService : IOrderService
                         await _inventory.LogMovementAsync(
                             InventoryMovementType.Sale,
                             -item.Quantity, item.ProductId, item.ProductVariantId,
-                            order.OrderNumber, "Revert: Order status changed from Returned", updatedByUserId,
+                            order.OrderNumber, $"Revert: Order status changed from {oldStatus}", updatedByUserId,
                             0, // unitCost fallback
                             order.Source,
                             autoSave: false,
@@ -1856,7 +1856,10 @@ public class OrderService : IOrderService
                     }
                 }
                 // Reset returned quantities on items
-                foreach (var it in orderWithItems.Items) it.ReturnedQuantity = 0;
+                if (oldStatus == OrderStatus.Returned)
+                {
+                    foreach (var it in orderWithItems.Items) it.ReturnedQuantity = 0;
+                }
             }
         }
 
