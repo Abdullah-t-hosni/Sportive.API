@@ -515,7 +515,7 @@ public class SchemaFixController : ControllerBase
                 {
                     var cancelMovements = orderMovements.Where(m => 
                         (m.Type == InventoryMovementType.Adjustment || m.Type == InventoryMovementType.ReturnIn) &&
-                        (m.Notes != null && (m.Notes.Contains("Cancelled") || m.Notes.Contains("إلغاء") || m.Notes.Contains("Order Cancelled")))
+                        (m.Note != null && (m.Note.Contains("Cancelled") || m.Note.Contains("إلغاء") || m.Note.Contains("Order Cancelled")))
                     ).ToList();
 
                     if (cancelMovements.Any())
@@ -631,11 +631,11 @@ public class SchemaFixController : ControllerBase
                 {
                     var cancelMovements = orderMovements.Where(m => 
                         (m.Type == InventoryMovementType.Adjustment || m.Type == InventoryMovementType.ReturnIn) &&
-                        (m.Notes != null && (m.Notes.Contains("Cancelled") || m.Notes.Contains("إلغاء") || m.Notes.Contains("Order Cancelled")))
+                        (m.Note != null && (m.Note.Contains("Cancelled") || m.Note.Contains("إلغاء") || m.Note.Contains("Order Cancelled")))
                     ).ToList();
 
                     var fixMovements = orderMovements.Where(m => 
-                        m.Notes != null && m.Notes.Contains("Fix: Re-deduct stock for uncancelled order")
+                        m.Note != null && m.Note.Contains("Fix: Re-deduct stock for uncancelled order")
                     ).ToList();
 
                     if (cancelMovements.Any() && !fixMovements.Any())
@@ -661,7 +661,7 @@ public class SchemaFixController : ControllerBase
                 if (movementsByRef.TryGetValue(order.OrderNumber, out var m1)) currentMovements = m1;
                 else if (movementsByRef.TryGetValue(order.Id.ToString(), out var m2)) currentMovements = m2;
 
-                bool alreadyFixed = currentMovements != null && currentMovements.Any(m => m.Notes != null && m.Notes.Contains("Fix: Re-deduct stock for uncancelled order"));
+                bool alreadyFixed = currentMovements != null && currentMovements.Any(m => m.Note != null && m.Note.Contains("Fix: Re-deduct stock for uncancelled order"));
 
                 if (!alreadyFixed)
                 {
@@ -676,9 +676,9 @@ public class SchemaFixController : ControllerBase
                                 Quantity = -item.Quantity,
                                 Type = InventoryMovementType.Sale,
                                 Reference = order.OrderNumber,
-                                Notes = $"Fix: Re-deduct stock for uncancelled order #{order.OrderNumber}",
+                                Note = $"Fix: Re-deduct stock for uncancelled order #{order.OrderNumber}",
                                 CreatedAt = TimeHelper.GetEgyptTime(),
-                                Source = order.Source
+                                CostCenter = order.Source
                             };
 
                             _db.InventoryMovements.Add(movement);
@@ -698,7 +698,7 @@ public class SchemaFixController : ControllerBase
                                 var prod = await _db.Products.FindAsync(item.ProductId.Value);
                                 if (prod != null)
                                 {
-                                    prod.StockQuantity -= item.Quantity;
+                                    prod.TotalStock -= item.Quantity;
                                     prod.UpdatedAt = TimeHelper.GetEgyptTime();
                                 }
                             }
