@@ -447,6 +447,60 @@ public class SchemaFixController : ControllerBase
         catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
     }
 
+    [HttpGet("check-uncancelled")]
+    [AllowAnonymous]
+    public async Task<IActionResult> CheckUncancelledOrders([FromQuery] string? secret = null)
+    {
+        if (secret != "sportive-fix-stock-2026")
+            return Unauthorized(new { message = "Invalid or missing secret key." });
+
+        var logs = await _db.AuditLogs
+            .AsNoTracking()
+            .Where(x => (x.EntityType == "Order" || x.EntityType == "OrderStatus" || x.Action.Contains("Status")) &&
+                        x.OldValues != null && x.OldValues.Contains("Cancelled") &&
+                        x.NewValues != null && !x.NewValues.Contains("Cancelled"))
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(200)
+            .Select(x => new {
+                x.Id,
+                x.CreatedAt,
+                OrderId = x.EntityId,
+                x.UserName,
+                x.OldValues,
+                x.NewValues,
+                x.Notes
+            })
+            .ToListAsync();
+
+        var orderIds = logs.Select(l => l.OrderId).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
+        var orders = await _db.Orders
+            .AsNoTracking()
+            .Include(o => o.Items)
+            .Where(o => orderIds.Contains(o.Id.ToString()) || orderIds.Contains(o.OrderNumber))
+            .Select(o => new {
+                o.Id,
+                o.OrderNumber,
+                o.CustomerName,
+                o.CustomerPhone,
+                o.Status,
+                o.TotalAmount,
+                o.CreatedAt,
+                Items = o.Items.Select(i => new {
+                    i.ProductId,
+                    i.ProductVariantId,
+                    i.ProductNameAr,
+                    i.ProductNameEn,
+                    i.Size,
+                    i.Color,
+                    i.Quantity,
+                    i.UnitPrice
+                })
+            })
+            .ToListAsync();
+
+        return Ok(new { logs, orders });
+    }
+
     [HttpGet("run-v17")]
     [AllowAnonymous]
     public async Task<IActionResult> RunV17([FromQuery] string? secret = null)
