@@ -1119,15 +1119,15 @@ public class OrderService : IOrderService
                 var now = TimeHelper.GetEgyptTime();
                 var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
 
-                // 1. CALCULATE DIFFS FOR INVENTORY
+                // 1. CALCULATE DIFFS FOR INVENTORY (Smart Variant & Option Matching)
                 var oldItemSummary = order.Items
                     .Where(i => i.ProductId > 0)
-                    .GroupBy(i => new { ProductId = (int)i.ProductId!, VariantId = i.ProductVariantId ?? 0 })
+                    .GroupBy(i => new { ProductId = (int)i.ProductId!, VariantId = i.ProductVariantId ?? 0, Size = (i.Size ?? "").Trim().ToLower(), Color = (i.Color ?? "").Trim().ToLower() })
                     .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
 
                 var newItemSummary = dto.Items
                     .Where(i => i.ProductId > 0)
-                    .GroupBy(i => new { ProductId = (int)i.ProductId, VariantId = i.ProductVariantId ?? 0 })
+                    .GroupBy(i => new { ProductId = (int)i.ProductId, VariantId = i.ProductVariantId ?? 0, Size = (i.Size ?? "").Trim().ToLower(), Color = (i.Color ?? "").Trim().ToLower() })
                     .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
 
                 var allKeys = oldItemSummary.Keys.Union(newItemSummary.Keys).Distinct().ToList();

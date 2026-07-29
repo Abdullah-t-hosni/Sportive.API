@@ -27,19 +27,22 @@ public class ReturnExchangeRequestsController : ControllerBase
     private readonly ILogger<ReturnExchangeRequestsController> _logger;
     private readonly IAccountingService _accounting;
     private readonly INotificationService _notificationService;
+    private readonly IInventoryService _inventory;
 
     public ReturnExchangeRequestsController(
         AppDbContext db,
         IHubContext<NotificationHub> hubContext,
         ILogger<ReturnExchangeRequestsController> logger,
         IAccountingService accounting,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        IInventoryService inventory)
     {
         _db = db;
         _hubContext = hubContext;
         _logger = logger;
         _accounting = accounting;
         _notificationService = notificationService;
+        _inventory = inventory;
     }
 
     /// <summary>
@@ -1024,7 +1027,7 @@ public class ReturnExchangeRequestsController : ControllerBase
 
         decimal totalRefundValue = 0;
 
-        // 1. Restock items in inventory & update ReturnedQuantity
+        // 1. Restock items in inventory & update ReturnedQuantity + Log Movement
         foreach (var reqItem in req.Items)
         {
             var orderItem = reqItem.OrderItem;
@@ -1033,22 +1036,36 @@ public class ReturnExchangeRequestsController : ControllerBase
                 orderItem.ReturnedQuantity += reqItem.Quantity;
                 totalRefundValue += (orderItem.UnitPrice * reqItem.Quantity);
 
-                // Increment ProductVariant Stock if exists
-                if (orderItem.ProductVariantId.HasValue)
+                int qtyToRestock = Math.Max(1, reqItem.Quantity);
+
+                if (_inventory != null)
                 {
-                    var variant = await _db.ProductVariants.FirstOrDefaultAsync(v => v.Id == orderItem.ProductVariantId.Value);
-                    if (variant != null)
-                    {
-                        variant.StockQuantity += reqItem.Quantity;
-                    }
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.Return,
+                        qtyToRestock,
+                        orderItem.ProductId,
+                        orderItem.ProductVariantId,
+                        req.Order.OrderNumber,
+                        $"مرتجع شحنة بالمخزن - طلب استرجاع #{req.Id}",
+                        User.FindFirstValue(ClaimTypes.NameIdentifier),
+                        0,
+                        req.Order.Source,
+                        false,
+                        true,
+                        true
+                    );
                 }
-                // Or Product Stock
-                else if (orderItem.ProductId.HasValue)
+                else
                 {
-                    var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == orderItem.ProductId.Value);
-                    if (product != null)
+                    if (orderItem.ProductVariantId.HasValue)
                     {
-                        product.TotalStock += reqItem.Quantity;
+                        var variant = await _db.ProductVariants.FirstOrDefaultAsync(v => v.Id == orderItem.ProductVariantId.Value);
+                        if (variant != null) variant.StockQuantity += qtyToRestock;
+                    }
+                    else if (orderItem.ProductId.HasValue)
+                    {
+                        var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == orderItem.ProductId.Value);
+                        if (product != null) product.TotalStock += qtyToRestock;
                     }
                 }
             }
@@ -1058,37 +1075,60 @@ public class ReturnExchangeRequestsController : ControllerBase
         bool isFullReturn = req.Order.Items.All(i => i.ReturnedQuantity >= i.Quantity);
         req.Order.Status = isFullReturn ? OrderStatus.Returned : OrderStatus.PartiallyReturned;
 
-        // 3. Generate Accounting Entry for Refund
-        if (dto.RefundAccountId.HasValue && totalRefundValue > 0)
+        // 3. Generate Full / Partial Accounting Entry for Sales Return in General Ledger
+        try
         {
-            var account = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == dto.RefundAccountId.Value);
-            if (account != null)
+            if (_accounting != null && req.Order != null)
             {
-                var entry = new JournalEntry
+                var returnedOrderItemsForAccounting = new List<OrderItem>();
+                foreach (var reqItem in req.Items)
                 {
-                    EntryNumber = $"JE-RTN-{req.Id}-{TimeHelper.GetEgyptTime():yyyyMMddHHmmss}",
-                    EntryDate = TimeHelper.GetEgyptTime(),
-                    Type = JournalEntryType.SalesReturn,
-                    Status = JournalEntryStatus.Posted,
-                    Reference = req.Order.OrderNumber,
-                    Description = $"مرتجع فاتورة #{req.Order.OrderNumber} - طلب استرجاع ذاتي #{req.Id}",
-                    OrderId = req.OrderId,
-                    CreatedAt = TimeHelper.GetEgyptTime()
-                };
+                    if (reqItem.OrderItem != null)
+                    {
+                        var orig = reqItem.OrderItem;
+                        int qty = Math.Max(1, reqItem.Quantity);
+                        returnedOrderItemsForAccounting.Add(new OrderItem
+                        {
+                            Id = orig.Id,
+                            OrderId = orig.OrderId,
+                            ProductId = orig.ProductId,
+                            ProductVariantId = orig.ProductVariantId,
+                            ProductNameAr = orig.ProductNameAr,
+                            ProductNameEn = orig.ProductNameEn,
+                            Quantity = qty,
+                            UnitPrice = orig.UnitPrice,
+                            OriginalUnitPrice = orig.OriginalUnitPrice,
+                            DiscountAmount = orig.DiscountAmount,
+                            TotalPrice = qty * orig.UnitPrice,
+                            HasTax = orig.HasTax,
+                            VatRateApplied = orig.VatRateApplied,
+                            ItemVatAmount = orig.HasTax && orig.VatRateApplied.HasValue ? (qty * orig.UnitPrice * orig.VatRateApplied.Value / 100m) : 0m,
+                            Product = orig.Product
+                        });
+                    }
+                }
 
-                // Credit Refund Treasury / Bank account
-                entry.Lines.Add(new JournalLine
+                if (isFullReturn)
                 {
-                    AccountId = account.Id,
-                    Credit = totalRefundValue,
-                    Debit = 0,
-                    Description = $"خصم مرتجع فاتورة #{req.Order.OrderNumber}",
-                    CustomerId = req.CustomerId,
-                    OrderId = req.OrderId
-                });
-
-                _db.JournalEntries.Add(entry);
+                    await _accounting.PostSalesReturnAsync(req.Order, dto.RefundAccountId);
+                }
+                else if (returnedOrderItemsForAccounting.Any())
+                {
+                    await _accounting.PostPartialSalesReturnAsync(
+                        req.Order,
+                        returnedOrderItemsForAccounting,
+                        totalRefundValue,
+                        dto.RefundAccountId,
+                        false,
+                        $"{req.Order.OrderNumber}-RTN-{req.Id}",
+                        TimeHelper.GetEgyptTime()
+                    );
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to post return accounting entry for request #{RequestId} on order #{OrderNumber}", req.Id, req.Order?.OrderNumber);
         }
 
         await _db.SaveChangesAsync();
