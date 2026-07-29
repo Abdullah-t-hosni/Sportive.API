@@ -234,6 +234,19 @@ public class AuthController : ControllerBase
 
     [HttpPost("reset-password")]
     [EnableRateLimiting("auth")]
+    [HttpPost("verify-reset-code")]
+    [EnableRateLimiting("auth")]
+    public IActionResult VerifyResetCode([FromBody] VerifyResetCodeDto dto)
+    {
+        if (!_cache.TryGetValue($"ResetCode_{dto.Identifier}", out string? cachedCode) || cachedCode != dto.Code)
+        {
+            return BadRequest(new { message = _translator.Get("Auth.InvalidCode") });
+        }
+        return Ok(new { message = _translator.Get("Auth.OtpVerified") });
+    }
+
+    [HttpPost("reset-password")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto dto)
     {
         if (!_cache.TryGetValue($"ResetCode_{dto.Identifier}", out string? cachedCode) || cachedCode != dto.Code)
@@ -653,4 +666,5 @@ public class AuthController : ControllerBase
         return perms.ToList();
     }
 }
+
 

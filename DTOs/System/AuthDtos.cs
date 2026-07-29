@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // DTOs/AuthDtos.cs
 // تم الفصل من Dtos.cs الكبير لتحسين التنظيم والصيانة
 // ============================================================
@@ -52,3 +52,5 @@ public record RequestRegisterCodeDto(string Email, string? Phone = null);
 
 public record SendOtpDto(string PhoneNumber, bool CheckUniqueness = false);
 public record VerifyOtpDto(string PhoneNumber, string Code);
+public record VerifyResetCodeDto(string Identifier, string Code);
+
