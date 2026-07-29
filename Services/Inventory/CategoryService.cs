@@ -236,7 +236,7 @@ public class CategoryService : ICategoryService
         var subDtos = children.Select(c => BuildTreeRecursive(c, all)).ToList();
         
         // حساب عدد المنتجات بشكل تراكمي (القسم الحالي + الأقسام الفرعية)
-        int directCount = current.Products?.Count ?? 0;
+        int directCount = current.Products?.Count(p => p.Status == ProductStatus.Active) ?? 0;
         int childrenCount = subDtos.Sum(s => s.ProductCount);
         int totalProductCount = directCount + childrenCount;
 
@@ -269,7 +269,7 @@ public class CategoryService : ICategoryService
             c.Id, c.NameAr, c.NameEn, c.DescriptionAr, c.DescriptionEn,
             c.ImageUrl, c.IsActive,
             c.Type,
-            c.Products?.Count ?? 0, c.CreatedAt,
+            c.Products?.Count(p => p.Status == ProductStatus.Active) ?? 0, c.CreatedAt,
             c.ParentId,
             c.SizeGroupId,
             c.SizeGroup?.Name,
