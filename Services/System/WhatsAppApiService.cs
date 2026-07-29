@@ -111,7 +111,7 @@ public class WhatsAppApiService : IWhatsAppApiService
             // 3. Wapilot Gateway Fallback
             using (var scope = _scopeFactory.CreateScope())
             {
-                var db = scope.ServiceProvider.GetRequiredService<Sportive.API.Data.ApplicationDbContext>();
+                var db = scope.ServiceProvider.GetRequiredService<Sportive.API.Data.AppDbContext>();
                 var storeSettings = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(db.StoreInfo, s => s.StoreConfigId == 1);
                 if (storeSettings != null && !string.IsNullOrEmpty(storeSettings.WapilotApiKey) && !string.IsNullOrEmpty(storeSettings.WapilotWebInstanceId))
                 {
