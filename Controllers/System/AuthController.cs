@@ -1,4 +1,4 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -232,8 +232,6 @@ public class AuthController : ControllerBase
         });
     }
 
-    [HttpPost("reset-password")]
-    [EnableRateLimiting("auth")]
     [HttpPost("verify-reset-code")]
     [EnableRateLimiting("auth")]
     public IActionResult VerifyResetCode([FromBody] VerifyResetCodeDto dto)
