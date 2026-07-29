@@ -196,16 +196,17 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto)
     {
         var user = await _userManager.FindByEmailAsync(dto.Identifier ?? "") 
-                   ?? await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == dto.Identifier);
-        
-        if (user == null)
-            return NotFound(new { message = _translator.Get("Auth.UserNotFound") });
-
-        // ✅ FIX: استخدام RandomNumberGenerator الآمن بدلاً من new Random() غير الآمن
+                   ?? await _db.Users.FirstOrDefaultAsync        // ✅ FIX: استخدام RandomNumberGenerator الآمن بدلاً من new Random() غير الآمن
         var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
         _cache.Set($"ResetCode_{dto.Identifier}", code, TimeSpan.FromMinutes(10));
 
-        // Ã°Å¸â€ºÂ¡Ã¯Â¸Â SECURITY FIX: Only send via email/WhatsApp, never return in production!
+        // إرسال عبر الواتساب إذا كان المعرف رقم هاتف أو للمستخدم رقم هاتف
+        if (!string.IsNullOrEmpty(user.PhoneNumber))
+        {
+            await _whatsappApi.SendOtpAsync(user.PhoneNumber, code);
+        }
+
+        // 🛡️ SECURITY FIX: Only send via email/WhatsApp, never return in production!
         if (!string.IsNullOrEmpty(user.Email))
         {
             var subject = _translator.Get("Auth.ResetEmailSubject");
@@ -257,20 +258,41 @@ public class AuthController : ControllerBase
 
     [HttpPost("send-otp")]
     [EnableRateLimiting("auth")]
-    public IActionResult SendOtp([FromBody] SendOtpDto dto)
+    public async Task<IActionResult> SendOtp([FromBody] SendOtpDto dto)
     {
-        // ✅ FIX: استخدام RandomNumberGenerator الآمن
+        // 1. فحص وجود الرقم مسبقاً في حال تم طلب التحقق عند التسجيل
+        if (dto.CheckUniqueness)
+        {
+            try
+            {
+                await _auth.CheckUniquenessAsync(null, dto.PhoneNumber);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { 
+                    message = ex.Message,
+                    isAlreadyRegistered = true 
+                });
+            }
+        }
+
+        // 2. توليد الكود وإرساله
         var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-        // حفظ الكود لمدة 5 دقائق
         _cache.Set($"OtpCode_{dto.PhoneNumber}", code, TimeSpan.FromMinutes(5));
 
-        bool isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
-        
-        // إرسال رسالة باستخدام الواتساب
-        BackgroundJob.Enqueue<IWhatsAppApiService>(api => api.SendOtpAsync(dto.PhoneNumber, code));
+        // إرسال رسالة مباشرة عبر خدمة الواتساب
+        var sent = await _whatsappApi.SendOtpAsync(dto.PhoneNumber, code);
 
         return Ok(new { 
-            message = _translator.Get("Auth.OtpSent")
+            message = _translator.Get("Auth.OtpSent"),
+            sent = sent
+        });
+    }�شرة عبر خدمة الواتساب بدلاً من قائمة انتظار خلفية
+        var sent = await _whatsappApi.SendOtpAsync(dto.PhoneNumber, code);
+
+        return Ok(new { 
+            message = _translator.Get("Auth.OtpSent"),
+            sent = sent
         });
     }
 

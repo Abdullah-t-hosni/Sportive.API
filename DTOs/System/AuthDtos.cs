@@ -50,5 +50,5 @@ public record RefreshTokenRequestDto(string RefreshToken);
 // ========== OTP VIA WHATSAPP ==========
 public record RequestRegisterCodeDto(string Email, string? Phone = null);
 
-public record SendOtpDto(string PhoneNumber);
+public record SendOtpDto(string PhoneNumber, bool CheckUniqueness = false);
 public record VerifyOtpDto(string PhoneNumber, string Code);

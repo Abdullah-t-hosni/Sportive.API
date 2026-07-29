@@ -80,7 +80,31 @@ public class WhatsAppApiService : IWhatsAppApiService
                 _logger.LogError("WhatsApp Meta API Error: {Error}", errorResponse);
             }
 
-            // 2. Node Baileys WhatsApp Gateway (sportive-whatsapp-service)
+            // 2. Wapilot Gateway (Primary store settings)
+            try
+            {
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var db = scope.ServiceProvider.GetRequiredService<Sportive.API.Data.AppDbContext>();
+                    var storeSettings = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(db.StoreInfo, s => s.StoreConfigId == 1);
+                    if (storeSettings != null && !string.IsNullOrEmpty(storeSettings.WapilotApiKey) && !string.IsNullOrEmpty(storeSettings.WapilotWebInstanceId))
+                    {
+                        var messageText = $"رمز التحقق الخاص بك في متجر Sportive هو: *{otpCode}*\nرمز التحقق صالح لمدة 5 دقائق.";
+                        var sentViaWapilot = await SendWapilotMessageAsync(phoneNumber, messageText, storeSettings.WapilotApiKey, storeSettings.WapilotWebInstanceId);
+                        if (sentViaWapilot)
+                        {
+                            _logger.LogInformation("OTP sent via Wapilot to {Phone}", phoneNumber);
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Wapilot OTP send failed, trying Node WhatsApp Gateway fallback");
+            }
+
+            // 3. Node Baileys WhatsApp Gateway (sportive-whatsapp-service)
             var serviceUrl = _config["WhatsApp:ServiceUrl"] ?? "https://sportive-whatsapp-production.up.railway.app";
             if (!string.IsNullOrEmpty(serviceUrl))
             {
@@ -90,7 +114,7 @@ public class WhatsAppApiService : IWhatsAppApiService
                     var payload = new
                     {
                         phone = formattedPhone,
-                        message = $"رمز التحقق الخاص بك في متجر Sportive هو: *{otpCode}*\nرمز التحقق صالحة لمدة 5 دقائق."
+                        message = $"رمز التحقق الخاص بك في متجر Sportive هو: *{otpCode}*\nرمز التحقق صالح لمدة 5 دقائق."
                     };
                     var request = new HttpRequestMessage(HttpMethod.Post, $"{serviceUrl.TrimEnd('/')}/send");
                     request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
@@ -104,23 +128,11 @@ public class WhatsAppApiService : IWhatsAppApiService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to send OTP via Node WhatsApp Gateway, trying Wapilot fallback");
+                    _logger.LogWarning(ex, "Failed to send OTP via Node WhatsApp Gateway");
                 }
             }
 
-            // 3. Wapilot Gateway Fallback
-            using (var scope = _scopeFactory.CreateScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<Sportive.API.Data.AppDbContext>();
-                var storeSettings = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(db.StoreInfo, s => s.StoreConfigId == 1);
-                if (storeSettings != null && !string.IsNullOrEmpty(storeSettings.WapilotApiKey) && !string.IsNullOrEmpty(storeSettings.WapilotWebInstanceId))
-                {
-                    var messageText = $"رمز التحقق الخاص بك في متجر Sportive هو: *{otpCode}*\nرمز التحقق صالحة لمدة 5 دقائق.";
-                    return await SendWapilotMessageAsync(phoneNumber, messageText, storeSettings.WapilotApiKey, storeSettings.WapilotWebInstanceId);
-                }
-            }
-
-            _logger.LogWarning("No WhatsApp service configured for sending OTP.");
+            _logger.LogWarning("No active WhatsApp service configured for sending OTP.");
             return false;
         }
         catch (Exception ex)
