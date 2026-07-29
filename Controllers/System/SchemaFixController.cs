@@ -957,6 +957,61 @@ public class SchemaFixController : ControllerBase
         });
     }
 
+    [HttpGet("delete-adjust-fix-movements")]
+    [AllowAnonymous]
+    public async Task<IActionResult> DeleteAdjustFixMovements([FromQuery] string? secret = null)
+    {
+        if (secret != "sportive-fix-stock-2026")
+            return Unauthorized(new { message = "Invalid secret key." });
+
+        var adjustMovements = await _db.InventoryMovements
+            .Where(m => m.Reference == "ADJUST-FIX")
+            .ToListAsync();
+
+        int count = adjustMovements.Count;
+        var affectedVariantIds = adjustMovements.Select(m => m.ProductVariantId).Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+
+        _db.InventoryMovements.RemoveRange(adjustMovements);
+        await _db.SaveChangesAsync();
+
+        foreach (var vId in affectedVariantIds)
+        {
+            var variantMovs = await _db.InventoryMovements
+                .Where(m => m.ProductVariantId == vId)
+                .OrderBy(m => m.CreatedAt)
+                .ThenBy(m => m.Id)
+                .ToListAsync();
+
+            int runningStock = 0;
+            foreach (var m in variantMovs)
+            {
+                runningStock += m.Quantity;
+                m.RemainingStock = runningStock;
+            }
+
+            var variant = await _db.ProductVariants.Include(v => v.Product).FirstOrDefaultAsync(v => v.Id == vId);
+            if (variant != null)
+            {
+                variant.StockQuantity = runningStock;
+                variant.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                if (variant.Product != null)
+                {
+                    var allVariants = await _db.ProductVariants.Where(v => v.ProductId == variant.ProductId).ToListAsync();
+                    variant.Product.TotalStock = allVariants.Sum(v => v.Id == variant.Id ? runningStock : v.StockQuantity);
+                    variant.Product.UpdatedAt = TimeHelper.GetEgyptTime();
+                }
+            }
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new {
+            message = "ADJUST-FIX movements deleted successfully.",
+            deletedCount = count
+        });
+    }
+
     [HttpGet("run-v17")]
     [AllowAnonymous]
     public async Task<IActionResult> RunV17([FromQuery] string? secret = null)
