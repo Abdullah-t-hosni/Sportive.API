@@ -899,6 +899,64 @@ public class SchemaFixController : ControllerBase
         });
     }
 
+    [HttpGet("adjust-variant-stock")]
+    [AllowAnonymous]
+    public async Task<IActionResult> AdjustVariantStock([FromQuery] string? secret = null, [FromQuery] int variantId = 0, [FromQuery] int newStock = 0, [FromQuery] string? note = null)
+    {
+        if (secret != "sportive-fix-stock-2026")
+            return Unauthorized(new { message = "Invalid secret key." });
+
+        var variant = await _db.ProductVariants
+            .Include(v => v.Product)
+            .FirstOrDefaultAsync(v => v.Id == variantId);
+
+        if (variant == null) return NotFound(new { message = $"Variant {variantId} not found." });
+
+        int currentStock = variant.StockQuantity;
+        int diff = newStock - currentStock;
+
+        if (diff != 0)
+        {
+            var movement = new InventoryMovement
+            {
+                ProductId = variant.ProductId,
+                ProductVariantId = variant.Id,
+                Quantity = diff,
+                Type = InventoryMovementType.Adjustment,
+                Reference = "ADJUST-FIX",
+                Note = string.IsNullOrEmpty(note) ? $"تعديل يدوي للمخزون (من {currentStock} إلى {newStock})" : note,
+                CreatedAt = TimeHelper.GetEgyptTime(),
+                RemainingStock = newStock
+            };
+
+            _db.InventoryMovements.Add(movement);
+
+            variant.StockQuantity = newStock;
+            variant.UpdatedAt = TimeHelper.GetEgyptTime();
+
+            if (variant.Product != null)
+            {
+                var allVariants = await _db.ProductVariants.Where(v => v.ProductId == variant.ProductId).ToListAsync();
+                variant.Product.TotalStock = allVariants.Sum(v => v.Id == variant.Id ? newStock : v.StockQuantity);
+                variant.Product.UpdatedAt = TimeHelper.GetEgyptTime();
+            }
+
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new {
+            message = $"Variant {variantId} stock adjusted from {currentStock} to {newStock}.",
+            variantId = variant.Id,
+            productId = variant.ProductId,
+            productName = variant.Product?.NameAr,
+            size = variant.Size,
+            color = variant.Color,
+            previousStock = currentStock,
+            newStock = variant.StockQuantity,
+            productTotalStock = variant.Product?.TotalStock
+        });
+    }
+
     [HttpGet("run-v17")]
     [AllowAnonymous]
     public async Task<IActionResult> RunV17([FromQuery] string? secret = null)
