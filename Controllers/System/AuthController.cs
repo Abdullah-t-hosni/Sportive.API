@@ -1,4 +1,4 @@
-using Sportive.API.Attributes;
+﻿using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -196,7 +196,7 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto)
     {
         var user = await _userManager.FindByEmailAsync(dto.Identifier ?? "") 
-                   ?? await _db.Users.FirstOrDefaultAsync        // ✅ FIX: استخدام RandomNumberGenerator الآمن بدلاً من new Random() غير الآمن
+                   ?? await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == dto.Identifier);
         var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
         _cache.Set($"ResetCode_{dto.Identifier}", code, TimeSpan.FromMinutes(10));
 
@@ -280,14 +280,7 @@ public class AuthController : ControllerBase
         var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
         _cache.Set($"OtpCode_{dto.PhoneNumber}", code, TimeSpan.FromMinutes(5));
 
-        // إرسال رسالة مباشرة عبر خدمة الواتساب
-        var sent = await _whatsappApi.SendOtpAsync(dto.PhoneNumber, code);
-
-        return Ok(new { 
-            message = _translator.Get("Auth.OtpSent"),
-            sent = sent
-        });
-    }�شرة عبر خدمة الواتساب بدلاً من قائمة انتظار خلفية
+        // Send OTP via WhatsApp
         var sent = await _whatsappApi.SendOtpAsync(dto.PhoneNumber, code);
 
         return Ok(new { 
