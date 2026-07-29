@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Sportive.API.Interfaces;
@@ -105,7 +105,20 @@ public class WhatsAppApiService : IWhatsAppApiService
             }
 
             // 3. Node Baileys WhatsApp Gateway (sportive-whatsapp-service)
-            var serviceUrl = _config["WhatsApp:ServiceUrl"] ?? "https://sportive-whatsapp-production.up.railway.app";
+            var serviceUrl = _config["WhatsApp:ServiceUrl"];
+            if (string.IsNullOrEmpty(serviceUrl))
+            {
+                try
+                {
+                    using (var scope = _scopeFactory.CreateScope())
+                    {
+                        var db = scope.ServiceProvider.GetRequiredService<Sportive.API.Data.AppDbContext>();
+                        var storeSettings = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(db.StoreInfo, s => s.StoreConfigId == 1);
+                        serviceUrl = storeSettings?.WhatsAppStoreGatewayUrl ?? "https://sportive-frontend-production-65ac.up.railway.app";
+                    }
+                }
+                catch { serviceUrl = "https://sportive-frontend-production-65ac.up.railway.app"; }
+            }
             if (!string.IsNullOrEmpty(serviceUrl))
             {
                 try
@@ -191,3 +204,4 @@ public class WhatsAppApiService : IWhatsAppApiService
         }
     }
 }
+

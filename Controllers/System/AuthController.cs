@@ -281,6 +281,7 @@ public class AuthController : ControllerBase
         _cache.Set($"OtpCode_{dto.PhoneNumber}", code, TimeSpan.FromMinutes(5));
 
         // Send OTP via WhatsApp
+        Console.WriteLine($"[DEV-OTP] Verification code for {dto.PhoneNumber}: {code}");
         var sent = await _whatsappApi.SendOtpAsync(dto.PhoneNumber, code);
 
         return Ok(new { 
