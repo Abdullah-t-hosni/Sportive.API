@@ -1072,9 +1072,21 @@ public class ReturnExchangeRequestsController : ControllerBase
             }
         }
 
-        // 2. Check Order Return Status (Full vs Partial)
+        // 2. Check Order Return Status (Full vs Partial) & Log Status History Timeline
         bool isFullReturn = req.Order.Items.All(i => i.ReturnedQuantity >= i.Quantity);
-        req.Order.Status = isFullReturn ? OrderStatus.Returned : OrderStatus.PartiallyReturned;
+        var targetStatus = isFullReturn ? OrderStatus.Returned : OrderStatus.PartiallyReturned;
+        req.Order.Status = targetStatus;
+
+        req.Order.StatusHistory.Add(new OrderStatusHistory
+        {
+            OrderId = req.OrderId,
+            Status = targetStatus,
+            Note = isFullReturn 
+                ? $"[مرتجع كامل]: تم تأكيد استلام الشحنة وإعادة الأصناف للمخزن (طلب استرجاع #{req.Id})" 
+                : $"[مرتجع جزئي]: تم تأكيد استلام المرتجع بالمخزن (طلب استرجاع #{req.Id})",
+            ChangedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "system",
+            CreatedAt = TimeHelper.GetEgyptTime()
+        });
 
         // 3. Generate Full / Partial Accounting Entry for Sales Return in General Ledger
         try
