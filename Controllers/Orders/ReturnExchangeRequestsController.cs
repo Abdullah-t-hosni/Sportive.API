@@ -1042,7 +1042,7 @@ public class ReturnExchangeRequestsController : ControllerBase
                 if (_inventory != null)
                 {
                     await _inventory.LogMovementAsync(
-                        InventoryMovementType.Return,
+                        InventoryMovementType.ReturnIn,
                         qtyToRestock,
                         orderItem.ProductId,
                         orderItem.ProductVariantId,
