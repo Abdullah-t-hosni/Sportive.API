@@ -14,6 +14,7 @@ using Sportive.API.Models;
 using Sportive.API.Utils;
 
 using Sportive.API.Services;
+using Sportive.API.Interfaces;
 
 namespace Sportive.API.Controllers;
 
