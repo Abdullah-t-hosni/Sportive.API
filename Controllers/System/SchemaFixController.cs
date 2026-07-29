@@ -810,6 +810,95 @@ public class SchemaFixController : ControllerBase
         });
     }
 
+    [HttpGet("fix-duplicate-cancellation-movements")]
+    [AllowAnonymous]
+    public async Task<IActionResult> FixDuplicateCancellationMovements([FromQuery] string? secret = null)
+    {
+        if (secret != "sportive-fix-stock-2026")
+            return Unauthorized(new { message = "Invalid secret key." });
+
+        var cancellationMovements = await _db.InventoryMovements
+            .Where(m => m.Reference != null && 
+                        (m.Type == InventoryMovementType.Adjustment || m.Type == InventoryMovementType.ReturnIn) &&
+                        m.Note != null && (m.Note.Contains("Cancelled") || m.Note.Contains("Order Cancelled") || m.Note.Contains("إلغاء")))
+            .OrderBy(m => m.CreatedAt)
+            .ToListAsync();
+
+        var grouped = cancellationMovements
+            .GroupBy(m => new { Ref = m.Reference!.Trim(), VariantId = m.ProductVariantId, ProductId = m.ProductId })
+            .Where(g => g.Count() > 1)
+            .ToList();
+
+        int duplicateMovementsRemoved = 0;
+        int variantsAdjusted = 0;
+        var removedIds = new List<int>();
+
+        foreach (var group in grouped)
+        {
+            var duplicates = group.Skip(1).ToList();
+            foreach (var dup in duplicates)
+            {
+                if (dup.ProductVariantId.HasValue)
+                {
+                    var variant = await _db.ProductVariants.FindAsync(dup.ProductVariantId.Value);
+                    if (variant != null)
+                    {
+                        variant.StockQuantity -= dup.Quantity;
+                        variant.UpdatedAt = TimeHelper.GetEgyptTime();
+                        variantsAdjusted++;
+                    }
+                }
+                if (dup.ProductId.HasValue)
+                {
+                    var prod = await _db.Products.FindAsync(dup.ProductId.Value);
+                    if (prod != null)
+                    {
+                        prod.TotalStock -= dup.Quantity;
+                        prod.UpdatedAt = TimeHelper.GetEgyptTime();
+                    }
+                }
+
+                _db.InventoryMovements.Remove(dup);
+                removedIds.Add(dup.Id);
+                duplicateMovementsRemoved++;
+            }
+        }
+
+        await _db.SaveChangesAsync();
+
+        var affectedVariantIds = grouped.Select(g => g.Key.VariantId).Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+        foreach (var vId in affectedVariantIds)
+        {
+            var variantMovs = await _db.InventoryMovements
+                .Where(m => m.ProductVariantId == vId)
+                .OrderBy(m => m.CreatedAt)
+                .ThenBy(m => m.Id)
+                .ToListAsync();
+
+            int runningStock = 0;
+            foreach (var m in variantMovs)
+            {
+                runningStock += m.Quantity;
+                m.RemainingStock = runningStock;
+            }
+
+            var variant = await _db.ProductVariants.FindAsync(vId);
+            if (variant != null)
+            {
+                variant.StockQuantity = runningStock;
+            }
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new {
+            message = "Duplicate cancellation movements cleaned up successfully.",
+            duplicateMovementsRemoved,
+            variantsAdjusted,
+            removedMovementIds = removedIds
+        });
+    }
+
     [HttpGet("run-v17")]
     [AllowAnonymous]
     public async Task<IActionResult> RunV17([FromQuery] string? secret = null)
