@@ -60,6 +60,7 @@ public class AuthService : IAuthService
             UserName = userName,
             Email = !string.IsNullOrEmpty(dto.Email) ? dto.Email : null,
             PhoneNumber = dto.Phone,
+            PhoneNumberConfirmed = true,
             FullName = dto.FullName,
             CreatedAt = TimeHelper.GetEgyptTime(),
             IsActive = true
