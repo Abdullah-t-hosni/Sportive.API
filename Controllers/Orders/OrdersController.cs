@@ -1441,6 +1441,32 @@ public class OrdersController : ControllerBase
 
         return Ok(new { message = "Bosta shipment tracking info updated successfully", orderId = id, trackingNumber = order.BostaTrackingNumber });
     }
+
+    [HttpGet("{id}/bosta-awb")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetBostaAwb(int id)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id);
+        if (order == null || string.IsNullOrEmpty(order.BostaDeliveryId))
+            return NotFound("Order or Bosta Delivery ID not found.");
+
+        var storeSettings = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        if (storeSettings == null || string.IsNullOrEmpty(storeSettings.BostaApiKey))
+            return BadRequest("Bosta API Key is not configured.");
+
+        string baseUrl = storeSettings.BostaUseSandbox ? "https://stg-api.bosta.co" : "https://api.bosta.co";
+        using var client = new System.Net.Http.HttpClient();
+        client.DefaultRequestHeaders.Add("Authorization", storeSettings.BostaApiKey);
+
+        var response = await client.GetAsync($"{baseUrl}/api/v2/deliveries/awb/{order.BostaDeliveryId}");
+        if (!response.IsSuccessStatusCode)
+        {
+            return StatusCode((int)response.StatusCode, "Failed to fetch AWB PDF from Bosta.");
+        }
+
+        var pdfBytes = await response.Content.ReadAsByteArrayAsync();
+        return File(pdfBytes, "application/pdf", $"bosta-awb-{order.OrderNumber}.pdf");
+    }
 }
 
 public record ArchiveBatchDto(int[] Ids, bool? Archive = true);
