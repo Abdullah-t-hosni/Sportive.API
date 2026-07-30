@@ -247,7 +247,6 @@ public class POSReportController : ControllerBase
                                                  destCode.StartsWith("1103") || // POS drawers
                                                  destCode.StartsWith("1105") || // Vodafone cash
                                                  destCode.StartsWith("1107") || // Instapay
-                                                 destCode.StartsWith("111") ||
                                                  destCode.StartsWith("3105") || // Partner current
                                                  destName.Contains("جاري") ||
                                                  destName.Contains("شريك");
