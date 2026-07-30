@@ -1663,6 +1663,8 @@ public class OperationalReportsController : ControllerBase
                     : (x.Product != null ? (x.Product.Images.FirstOrDefault(im => im.IsMain)?.ImageUrl ?? x.Product.Images.FirstOrDefault()?.ImageUrl ?? "") : "");
 
                 return new {
+                    ProductId = x.ProductId,
+                    ProductVariantId = x.ProductVariantId,
                     ProductName = x.Product != null ? x.Product.NameAr : (x.Product?.NameEn ?? ""),
                     ProductSKU = x.Product != null ? x.Product.SKU : "",
                     Size = x.ProductVariant != null ? x.ProductVariant.Size : "",
