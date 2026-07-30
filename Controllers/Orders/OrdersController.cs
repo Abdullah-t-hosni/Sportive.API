@@ -1424,10 +1424,14 @@ public class OrdersController : ControllerBase
         var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id);
         if (order == null) return NotFound();
 
-        order.BostaDeliveryId = dto.BostaDeliveryId ?? order.BostaDeliveryId;
-        order.BostaTrackingNumber = dto.BostaTrackingNumber ?? order.BostaTrackingNumber;
-        order.BostaShipmentStatus = dto.BostaShipmentStatus ?? order.BostaShipmentStatus;
-        order.BostaAwbUrl = dto.BostaAwbUrl ?? order.BostaAwbUrl;
+        order.BostaDeliveryId = dto.BostaDeliveryId;
+        order.BostaTrackingNumber = dto.BostaTrackingNumber;
+        order.BostaShipmentStatus = dto.BostaShipmentStatus;
+        order.BostaAwbUrl = dto.BostaAwbUrl;
+
+        order.ShippingCarrierName = dto.ShippingCarrierName ?? order.ShippingCarrierName;
+        order.ShippingTrackingNumber = dto.ShippingTrackingNumber ?? order.ShippingTrackingNumber;
+        order.ShippingType = dto.ShippingType ?? order.ShippingType;
 
         await _db.SaveChangesAsync();
 

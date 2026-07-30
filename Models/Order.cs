@@ -115,11 +115,15 @@ public class Order : BaseEntity
     public string? TaxAuthorityQrCode { get; set; } // URL or Base64 TLV
     public string? TaxAuthorityStatus { get; set; } // Valid, Invalid, Rejected
 
-    // Bosta Courier Tracking
+    // Shipping / Logistics Fields
     public string? BostaDeliveryId { get; set; }
     public string? BostaTrackingNumber { get; set; }
     public string? BostaShipmentStatus { get; set; }
     public string? BostaAwbUrl { get; set; }
+
+    public string? ShippingCarrierName { get; set; }
+    public string? ShippingTrackingNumber { get; set; }
+    public string? ShippingType { get; set; } // "Bosta", "Custom", "BranchPickup"
 
     // Navigation
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();

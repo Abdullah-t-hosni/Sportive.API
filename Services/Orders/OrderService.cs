@@ -297,7 +297,10 @@ public class OrderService : IOrderService
             o.BostaDeliveryId,
             o.BostaTrackingNumber,
             o.BostaShipmentStatus,
-            o.BostaAwbUrl
+            o.BostaAwbUrl,
+            o.ShippingCarrierName,
+            o.ShippingTrackingNumber,
+            o.ShippingType
         );
     }
 

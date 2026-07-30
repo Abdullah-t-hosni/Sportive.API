@@ -207,14 +207,20 @@ public record OrderDetailDto(
     string? BostaDeliveryId = null,
     string? BostaTrackingNumber = null,
     string? BostaShipmentStatus = null,
-    string? BostaAwbUrl = null
+    string? BostaAwbUrl = null,
+    string? ShippingCarrierName = null,
+    string? ShippingTrackingNumber = null,
+    string? ShippingType = null
 );
 
 public record UpdateBostaShipmentDto(
     string? BostaDeliveryId = null,
     string? BostaTrackingNumber = null,
     string? BostaShipmentStatus = null,
-    string? BostaAwbUrl = null
+    string? BostaAwbUrl = null,
+    string? ShippingCarrierName = null,
+    string? ShippingTrackingNumber = null,
+    string? ShippingType = null
 );
 
 public record OrderDetailPaymentDto(
