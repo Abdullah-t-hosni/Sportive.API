@@ -112,15 +112,15 @@ public class POSReportController : ControllerBase
 
         var allAccountsDict = await _db.Accounts.AsNoTracking().ToDictionaryAsync(a => a.Id);
 
-        // Filter: only entries that touch a POS account OR have POS cost center OR Payment/Receipt Vouchers touching cash/drawers
+        // Filter: only entries that touch a POS account OR have POS cost center OR Payment/Receipt Vouchers touching cashier drawers
         var posEntries = journalEntries.Where(j =>
             j.CostCenter == OrderSource.POS
-            || (j.Reference != null && (j.Reference.StartsWith("POS-") || j.Reference.StartsWith("PV-") || j.Reference.StartsWith("RV-")))
+            || (j.Reference != null && j.Reference.StartsWith("POS-"))
             || j.Lines.Any(l => {
                 var acc = l.Account ?? (allAccountsDict.TryGetValue(l.AccountId, out var a) ? a : null);
                 var code = acc?.Code ?? "";
                 var name = acc?.NameAr ?? "";
-                return posAccountIds.Contains(l.AccountId) || code.StartsWith("1103") || code.StartsWith("1101") || name.Contains("كاشير") || name.Contains("درج") || name.Contains("المسله");
+                return posAccountIds.Contains(l.AccountId) || code.StartsWith("1103") || name.Contains("كاشير") || name.Contains("درج") || name.Contains("المسله");
             })
         ).ToList();
 
@@ -219,13 +219,13 @@ public class POSReportController : ControllerBase
 
         bool IsPosCashAccount(int accountId, Account? acc)
         {
-            if (accountId == effectiveDrawerId || posAccountIds.Contains(accountId)) return true;
+            if (accountId == effectiveDrawerId || (posCashId.HasValue && accountId == posCashId.Value)) return true;
             var targetAcc = acc ?? (allAccountsDict.TryGetValue(accountId, out var a) ? a : null);
             if (targetAcc != null)
             {
                 var code = targetAcc.Code ?? "";
                 var name = targetAcc.NameAr ?? "";
-                if (code.StartsWith("1103") || code.StartsWith("1101") || name.Contains("كاشير") || name.Contains("درج") || name.Contains("المسله")) return true;
+                if (code.StartsWith("1103") || (name.Contains("كاشير") && !name.Contains("رئيسية")) || name.Contains("درج") || name.Contains("المسله")) return true;
             }
             return false;
         }

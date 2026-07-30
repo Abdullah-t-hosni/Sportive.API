@@ -378,13 +378,13 @@ namespace Sportive.API.Controllers
 
                     bool IsPosCashAccount(int accountId, Account? acc)
                     {
-                        if (accountId == effectiveDrawerId || posCashId == accountId || mainCashId == accountId) return true;
+                        if (accountId == effectiveDrawerId || (posCashId.HasValue && posCashId.Value == accountId)) return true;
                         var targetAcc = acc ?? (allAccountsDict.TryGetValue(accountId, out var a) ? a : null);
                         if (targetAcc != null)
                         {
                             var code = targetAcc.Code ?? "";
                             var name = targetAcc.NameAr ?? "";
-                            if (code.StartsWith("1103") || code.StartsWith("1101") || name.Contains("كاشير") || name.Contains("درج") || name.Contains("المسله")) return true;
+                            if (code.StartsWith("1103") || (name.Contains("كاشير") && !name.Contains("رئيسية")) || name.Contains("درج") || name.Contains("المسله")) return true;
                         }
                         return false;
                     }
