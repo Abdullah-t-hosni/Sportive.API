@@ -1810,9 +1810,11 @@ public class OrderService : IOrderService
             {
                 order.PaymentStatus = PaymentStatus.Pending;
                 order.PaidAmount = 0;
-                if (order.Payments != null && order.Payments.Any())
+                
+                var existingPayments = await _db.OrderPayments.Where(p => p.OrderId == order.Id).ToListAsync();
+                if (existingPayments.Any())
                 {
-                    _db.OrderPayments.RemoveRange(order.Payments);
+                    _db.OrderPayments.RemoveRange(existingPayments);
                 }
             }
 
