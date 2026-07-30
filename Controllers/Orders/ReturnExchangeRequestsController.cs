@@ -1215,6 +1215,8 @@ public class ReturnExchangeRequestsController : ControllerBase
             }
         }
 
+        req.Status = ReturnExchangeStatus.Completed;
+
         bool isFullReturn = req.Order != null && req.Order.Items.All(i => i.ReturnedQuantity >= i.Quantity);
         if (req.Order != null)
         {
