@@ -31,6 +31,7 @@ public class POSReportController : ControllerBase
     /// Business day: 02:00 AM → next day 02:00 AM (Egypt time)
     /// </summary>
     [HttpGet("summary")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetDailySummary(
         [FromQuery] string date,
         [FromQuery] string? stationId = null,
