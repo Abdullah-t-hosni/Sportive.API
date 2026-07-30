@@ -1170,6 +1170,131 @@ public class ReturnExchangeRequestsController : ControllerBase
         return Ok(new { message = "تم رفض الطلب." });
     }
 
+    /// <summary>
+    /// إعادة مزامنة وتوليد قيد المحاسبة وحركة المخزون لطلب مرتجع مؤكد سابقاً
+    /// </summary>
+    [HttpPost("reprocess-return-request/{requestId}")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> ReprocessReturnRequest(int requestId)
+    {
+        var req = await _db.ReturnExchangeRequests
+            .Include(r => r.Order)
+                .ThenInclude(o => o.Items)
+            .Include(r => r.Items)
+                .ThenInclude(i => i.OrderItem)
+            .FirstOrDefaultAsync(r => r.Id == requestId);
+
+        if (req == null) return NotFound("طلب المرتجع غير موجود.");
+
+        decimal totalRefundValue = 0;
+        foreach (var reqItem in req.Items)
+        {
+            var orderItem = reqItem.OrderItem;
+            if (orderItem != null)
+            {
+                totalRefundValue += (orderItem.UnitPrice * reqItem.Quantity);
+                int qtyToRestock = Math.Max(1, reqItem.Quantity);
+
+                if (_inventory != null && req.Order != null)
+                {
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.ReturnIn,
+                        qtyToRestock,
+                        orderItem.ProductId,
+                        orderItem.ProductVariantId,
+                        req.Order.OrderNumber,
+                        $"إعادة مزامنة مرتجع بالمخزن - طلب #{req.Id}",
+                        User.FindFirstValue(ClaimTypes.NameIdentifier),
+                        0,
+                        req.Order.Source,
+                        false,
+                        true,
+                        true
+                    );
+                }
+            }
+        }
+
+        bool isFullReturn = req.Order != null && req.Order.Items.All(i => i.ReturnedQuantity >= i.Quantity);
+        if (req.Order != null)
+        {
+            req.Order.Status = isFullReturn ? OrderStatus.Returned : OrderStatus.PartiallyReturned;
+
+            bool hasHistory = await _db.OrderStatusHistories.AnyAsync(h => h.OrderId == req.OrderId && (h.Status == OrderStatus.Returned || h.Status == OrderStatus.PartiallyReturned));
+            if (!hasHistory)
+            {
+                req.Order.StatusHistory.Add(new OrderStatusHistory
+                {
+                    OrderId = req.OrderId,
+                    Status = req.Order.Status,
+                    Note = isFullReturn 
+                        ? $"[مرتجع كامل]: تم تأكيد استلام الشحنة وإعادة الأصناف للمخزن (طلب استرجاع #{req.Id})" 
+                        : $"[مرتجع جزئي]: تم تأكيد استلام المرتجع بالمخزن (طلب استرجاع #{req.Id})",
+                    ChangedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "system",
+                    CreatedAt = TimeHelper.GetEgyptTime()
+                });
+            }
+
+            try
+            {
+                if (_accounting != null)
+                {
+                    var returnedOrderItemsForAccounting = new List<OrderItem>();
+                    foreach (var reqItem in req.Items)
+                    {
+                        if (reqItem.OrderItem != null)
+                        {
+                            var orig = reqItem.OrderItem;
+                            int qty = Math.Max(1, reqItem.Quantity);
+                            returnedOrderItemsForAccounting.Add(new OrderItem
+                            {
+                                Id = orig.Id,
+                                OrderId = orig.OrderId,
+                                ProductId = orig.ProductId,
+                                ProductVariantId = orig.ProductVariantId,
+                                ProductNameAr = orig.ProductNameAr,
+                                ProductNameEn = orig.ProductNameEn,
+                                Quantity = qty,
+                                UnitPrice = orig.UnitPrice,
+                                OriginalUnitPrice = orig.OriginalUnitPrice,
+                                DiscountAmount = orig.DiscountAmount,
+                                TotalPrice = qty * orig.UnitPrice,
+                                HasTax = orig.HasTax,
+                                VatRateApplied = orig.VatRateApplied,
+                                ItemVatAmount = orig.HasTax && orig.VatRateApplied.HasValue ? (qty * orig.UnitPrice * orig.VatRateApplied.Value / 100m) : 0m,
+                                Product = orig.Product
+                            });
+                        }
+                    }
+
+                    if (isFullReturn)
+                    {
+                        await _accounting.PostSalesReturnAsync(req.Order, null);
+                    }
+                    else if (returnedOrderItemsForAccounting.Any())
+                    {
+                        await _accounting.PostPartialSalesReturnAsync(
+                            req.Order,
+                            returnedOrderItemsForAccounting,
+                            totalRefundValue,
+                            null,
+                            false,
+                            $"{req.Order.OrderNumber}-RTN-{req.Id}",
+                            TimeHelper.GetEgyptTime()
+                        );
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to reprocess return accounting entry for request #{RequestId}", req.Id);
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { message = $"تمت إعادة مزامنة القيد اليومي وحركة المخزون لطلب المرتجع #{requestId} بنجاح." });
+    }
+
     private static ReturnExchangeRequestResponseDto MapToResponseDto(ReturnExchangeRequest r)
     {
         var itemSummaries = r.Items.Select(i =>
