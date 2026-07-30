@@ -17,7 +17,6 @@ namespace Sportive.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [RequirePermission(ModuleKeys.Pos)]
     public class POSShiftClosuresController : ControllerBase
     {
         private readonly AppDbContext _db;
