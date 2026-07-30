@@ -15,7 +15,6 @@ namespace Sportive.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/pos-report")]
-[RequirePermission(ModuleKeys.Pos)]
 public class POSReportController : ControllerBase
 {
     private readonly AppDbContext _db;
