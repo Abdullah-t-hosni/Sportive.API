@@ -336,5 +336,106 @@ namespace Sportive.API.Controllers
                 return StatusCode(500, new { message = "Failed to update shift closure", error = ex.Message });
             }
         }
+
+        [HttpPost("recalculate")]
+        [Authorize(Roles = "Admin,SuperAdmin,Manager")]
+        public async Task<IActionResult> RecalculateAllHistoricalClosures()
+        {
+            try
+            {
+                var closures = await _db.POSShiftClosures.ToListAsync();
+                var mappings = await _db.AccountSystemMappings
+                    .AsNoTracking()
+                    .ToDictionaryAsync(m => m.Key.ToLower(), m => m.AccountId);
+
+                mappings.TryGetValue(MappingKeys.PosCash.ToLower(), out var posCashId);
+                mappings.TryGetValue(MappingKeys.PosBank.ToLower(), out var posBankId);
+                mappings.TryGetValue(MappingKeys.PosVodafone.ToLower(), out var posVodaId);
+                mappings.TryGetValue(MappingKeys.PosInstaPay.ToLower(), out var posInstaId);
+                mappings.TryGetValue(MappingKeys.Cash.ToLower(), out var mainCashId);
+
+                var effectiveDrawerId = (posCashId != 0 && posCashId != null) ? posCashId.Value : (mainCashId != 0 && mainCashId != null ? mainCashId.Value : 0);
+
+                int updatedCount = 0;
+
+                foreach (var c in closures)
+                {
+                    if (!DateTime.TryParse(c.ClosureDate, out var parsedDate)) continue;
+
+                    var from = parsedDate.Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+                    var to = parsedDate.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
+
+                    var journalEntries = await _db.JournalEntries
+                        .AsNoTracking()
+                        .Include(j => j.Lines).ThenInclude(l => l.Account)
+                        .Where(j => j.EntryDate >= from && j.EntryDate <= to && j.Status == JournalEntryStatus.Posted)
+                        .ToListAsync();
+
+                    decimal expenses = 0;
+                    decimal safeDrops = 0;
+
+                    foreach (var j in journalEntries)
+                    {
+                        var type = j.Type.ToString();
+                        var isExpense = type == "PaymentVoucher";
+                        var isManual = type == "Manual";
+
+                        foreach (var l in j.Lines)
+                        {
+                            var aid = l.AccountId;
+                            var credit = l.Credit;
+
+                            if (isExpense && aid == effectiveDrawerId && credit > 0)
+                            {
+                                var debitedLine = j.Lines.FirstOrDefault(line => line.Debit > 0);
+                                var isTransferToSafeOrBank = false;
+                                if (debitedLine != null && debitedLine.Account != null)
+                                {
+                                    var destAccountId = debitedLine.AccountId;
+                                    var destCode = debitedLine.Account.Code ?? "";
+                                    var destName = debitedLine.Account.NameAr ?? "";
+                                    isTransferToSafeOrBank = destAccountId == mainCashId ||
+                                                             destAccountId == posCashId ||
+                                                             destAccountId == posBankId ||
+                                                             destAccountId == posVodaId ||
+                                                             destAccountId == posInstaId ||
+                                                             destCode.StartsWith("1101") ||
+                                                             destCode.StartsWith("1102") ||
+                                                             destCode.StartsWith("1103") ||
+                                                             destCode.StartsWith("1105") ||
+                                                             destCode.StartsWith("1107") ||
+                                                             destCode.StartsWith("3105") ||
+                                                             destName.Contains("جاري") ||
+                                                             destName.Contains("شريك");
+                                }
+
+                                if (isTransferToSafeOrBank) safeDrops += credit;
+                                else expenses += credit;
+                            }
+
+                            if (isManual && aid == effectiveDrawerId && credit > 0)
+                            {
+                                if (string.IsNullOrEmpty(j.Reference) || !j.Reference.StartsWith("SHIFT-CLOSE-", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    safeDrops += credit;
+                                }
+                            }
+                        }
+                    }
+
+                    c.Expenses = expenses;
+                    c.SafeDrops = safeDrops;
+                    c.UpdatedAt = TimeHelper.GetEgyptTime();
+                    updatedCount++;
+                }
+
+                await _db.SaveChangesAsync();
+                return Ok(new { message = $"Successfully recalculated and updated {updatedCount} historical shift closures.", updatedCount });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to recalculate historical closures", error = ex.Message });
+            }
+        }
     }
 }
