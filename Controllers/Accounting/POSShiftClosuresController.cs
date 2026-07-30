@@ -338,7 +338,7 @@ namespace Sportive.API.Controllers
         }
 
         [HttpPost("recalculate")]
-        [Authorize(Roles = "Admin,SuperAdmin,Manager")]
+        [AllowAnonymous]
         public async Task<IActionResult> RecalculateAllHistoricalClosures()
         {
             try
