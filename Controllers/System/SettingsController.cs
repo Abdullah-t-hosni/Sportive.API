@@ -52,6 +52,9 @@ public class SettingsController : ControllerBase
             "ALTER TABLE `Orders` ADD `BostaTrackingNumber` longtext NULL;",
             "ALTER TABLE `Orders` ADD `BostaShipmentStatus` longtext NULL;",
             "ALTER TABLE `Orders` ADD `BostaAwbUrl` longtext NULL;",
+            "ALTER TABLE `Orders` ADD `ShippingCarrierName` longtext NULL;",
+            "ALTER TABLE `Orders` ADD `ShippingTrackingNumber` longtext NULL;",
+            "ALTER TABLE `Orders` ADD `ShippingType` longtext NULL;",
             "ALTER TABLE `StoreSettings` ADD `BostaAllowPackageOpen` tinyint(1) NOT NULL DEFAULT 0;"
         };
 
