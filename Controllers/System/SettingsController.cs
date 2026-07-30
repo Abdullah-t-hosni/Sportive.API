@@ -51,7 +51,8 @@ public class SettingsController : ControllerBase
             "ALTER TABLE `Orders` ADD `BostaDeliveryId` longtext NULL;",
             "ALTER TABLE `Orders` ADD `BostaTrackingNumber` longtext NULL;",
             "ALTER TABLE `Orders` ADD `BostaShipmentStatus` longtext NULL;",
-            "ALTER TABLE `Orders` ADD `BostaAwbUrl` longtext NULL;"
+            "ALTER TABLE `Orders` ADD `BostaAwbUrl` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `BostaAllowPackageOpen` tinyint(1) NOT NULL DEFAULT 0;"
         };
 
         foreach (var sql in sqlStatements)
@@ -287,6 +288,7 @@ public class SettingsController : ControllerBase
             info.BostaPickupCity         = dto.BostaPickupCity;
             info.BostaAutoCreateShipment = dto.BostaAutoCreateShipment;
             info.BostaUseSandbox         = dto.BostaUseSandbox;
+            info.BostaAllowPackageOpen   = dto.BostaAllowPackageOpen;
 
             // E-Invoicing
             info.TaxAuthorityType = dto.TaxAuthorityType;

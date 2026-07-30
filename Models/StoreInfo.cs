@@ -683,6 +683,9 @@ public class StoreInfo
     [JsonPropertyName("bostaUseSandbox")]
     public bool BostaUseSandbox { get; set; } = false;
 
+    [JsonPropertyName("bostaAllowPackageOpen")]
+    public bool BostaAllowPackageOpen { get; set; } = false;
+
     // --- 16. WhatsApp Baileys Multi-Device Gateway Settings ---
     [MaxLength(500)]
     [JsonPropertyName("whatsAppStoreGatewayUrl")]
