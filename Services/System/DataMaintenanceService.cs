@@ -767,9 +767,22 @@ public class DataMaintenanceService : IDataMaintenanceService
                 var variantQtyMap = variantSums.ToDictionary(x => x.VariantId, x => x.TotalQty);
 
                 var allVariants = await _db.ProductVariants.ToListAsync();
+                var allWarehouseStocks = await _db.ProductWarehouseStocks.ToListAsync();
+                var whGroup = allWarehouseStocks.GroupBy(w => w.ProductVariantId).ToDictionary(g => g.Key, g => g.ToList());
+
                 foreach (var v in allVariants)
                 {
-                    v.StockQuantity = variantQtyMap.TryGetValue(v.Id, out var q) ? q : 0;
+                    var calcQty = variantQtyMap.TryGetValue(v.Id, out var q) ? q : 0;
+                    v.StockQuantity = calcQty;
+
+                    if (whGroup.TryGetValue(v.Id, out var whList))
+                    {
+                        foreach (var ws in whList)
+                        {
+                            ws.Quantity = calcQty;
+                            ws.UpdatedAt = TimeHelper.GetEgyptTime();
+                        }
+                    }
                 }
                 await _db.SaveChangesAsync();
 
