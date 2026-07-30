@@ -99,7 +99,12 @@ public class JournalEntriesController : ControllerBase
         }
         else if (branchId.HasValue) 
         {
-            q = q.Where(e => e.Lines.Any(l => l.BranchId == branchId.Value));
+            var targetBranchName = await _db.Branches.Where(b => b.Id == branchId.Value).Select(b => b.Name).FirstOrDefaultAsync();
+            bool isWebBranch = targetBranchName != null && (targetBranchName.Contains("موقع") || targetBranchName.ToLower().Contains("web") || targetBranchName.Contains("الكتروني"));
+
+            q = q.Where(e => e.Lines.Any(l => l.BranchId == branchId.Value) 
+                         || (isWebBranch && e.CostCenter == OrderSource.Website)
+                         || (e.Order != null && e.Order.BranchId == branchId.Value));
         }
 
         if (status.HasValue) q = q.Where(e => e.Status == status.Value);
