@@ -208,6 +208,18 @@ public class POSReportController : ControllerBase
         decimal cashReceipts  = 0; // debt collections
         decimal cashReturns   = 0;
 
+        bool IsPosCashAccount(int accountId, Account? acc)
+        {
+            if (accountId == effectiveDrawerId || posAccountIds.Contains(accountId)) return true;
+            if (acc != null)
+            {
+                var code = acc.Code ?? "";
+                var name = acc.NameAr ?? "";
+                if (code.StartsWith("1103") || code.StartsWith("1101") || name.Contains("كاشير") || name.Contains("درج") || name.Contains("المسله")) return true;
+            }
+            return false;
+        }
+
         foreach (var j in posEntries)
         {
             var type = j.Type.ToString();
@@ -228,7 +240,7 @@ public class POSReportController : ControllerBase
                     totalReturns += debit;
 
                 // Expenses: debit from POS cash
-                if (isExpense && aid == effectiveDrawerId && credit > 0)
+                if (isExpense && IsPosCashAccount(aid, l.Account) && credit > 0)
                 {
                     var debitedLine = j.Lines.FirstOrDefault(line => line.Debit > 0);
                     var isTransferToSafeOrBank = false;
@@ -244,7 +256,6 @@ public class POSReportController : ControllerBase
                                                  destAccountId == posInstaId ||
                                                  destCode.StartsWith("1101") || // Cashier/Safes
                                                  destCode.StartsWith("1102") || // Banks
-                                                 destCode.StartsWith("1103") || // POS drawers
                                                  destCode.StartsWith("1105") || // Vodafone cash
                                                  destCode.StartsWith("1107") || // Instapay
                                                  destCode.StartsWith("3105") || // Partner current
@@ -263,7 +274,7 @@ public class POSReportController : ControllerBase
                 }
 
                 // Safe drops: manual debit from POS cash → main safe (excluding shift closure entries)
-                if (isManual && aid == effectiveDrawerId && credit > 0)
+                if (isManual && IsPosCashAccount(aid, l.Account) && credit > 0)
                 {
                     if (string.IsNullOrEmpty(j.Reference) || !j.Reference.StartsWith("SHIFT-CLOSE-", StringComparison.OrdinalIgnoreCase))
                     {
@@ -272,11 +283,11 @@ public class POSReportController : ControllerBase
                 }
 
                 // Cash returns: credit to POS cash drawer from a return entry
-                if (isReturn && aid == effectiveDrawerId && credit > 0)
+                if (isReturn && IsPosCashAccount(aid, l.Account) && credit > 0)
                     cashReturns += credit;
 
                 // Debt collections: receipt voucher cash received or Manual transfers IN
-                if ((isReceipt || isManual) && aid == effectiveDrawerId && debit > 0)
+                if ((isReceipt || isManual) && IsPosCashAccount(aid, l.Account) && debit > 0)
                     cashReceipts += debit;
             }
         }

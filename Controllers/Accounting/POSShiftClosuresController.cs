@@ -374,6 +374,18 @@ namespace Sportive.API.Controllers
                     decimal expenses = 0;
                     decimal safeDrops = 0;
 
+                    bool IsPosCashAccount(int accountId, Account? acc)
+                    {
+                        if (accountId == effectiveDrawerId || posCashId == accountId || mainCashId == accountId) return true;
+                        if (acc != null)
+                        {
+                            var code = acc.Code ?? "";
+                            var name = acc.NameAr ?? "";
+                            if (code.StartsWith("1103") || code.StartsWith("1101") || name.Contains("كاشير") || name.Contains("درج") || name.Contains("المسله")) return true;
+                        }
+                        return false;
+                    }
+
                     foreach (var j in journalEntries)
                     {
                         var type = j.Type.ToString();
@@ -385,7 +397,7 @@ namespace Sportive.API.Controllers
                             var aid = l.AccountId;
                             var credit = l.Credit;
 
-                            if (isExpense && aid == effectiveDrawerId && credit > 0)
+                            if (isExpense && IsPosCashAccount(aid, l.Account) && credit > 0)
                             {
                                 var debitedLine = j.Lines.FirstOrDefault(line => line.Debit > 0);
                                 var isTransferToSafeOrBank = false;
@@ -401,7 +413,6 @@ namespace Sportive.API.Controllers
                                                              destAccountId == posInstaId ||
                                                              destCode.StartsWith("1101") ||
                                                              destCode.StartsWith("1102") ||
-                                                             destCode.StartsWith("1103") ||
                                                              destCode.StartsWith("1105") ||
                                                              destCode.StartsWith("1107") ||
                                                              destCode.StartsWith("3105") ||
@@ -413,7 +424,7 @@ namespace Sportive.API.Controllers
                                 else expenses += credit;
                             }
 
-                            if (isManual && aid == effectiveDrawerId && credit > 0)
+                            if (isManual && IsPosCashAccount(aid, l.Account) && credit > 0)
                             {
                                 if (string.IsNullOrEmpty(j.Reference) || !j.Reference.StartsWith("SHIFT-CLOSE-", StringComparison.OrdinalIgnoreCase))
                                 {
