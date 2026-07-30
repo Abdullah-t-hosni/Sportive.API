@@ -1220,6 +1220,13 @@ public class ReturnExchangeRequestsController : ControllerBase
         {
             req.Order.Status = isFullReturn ? OrderStatus.Returned : OrderStatus.PartiallyReturned;
 
+            if (!isFullReturn && req.Order.PaymentMethod != PaymentMethod.Credit)
+            {
+                decimal returnedVal = req.Order.Items.Sum(i => i.UnitPrice * i.ReturnedQuantity);
+                req.Order.PaidAmount = Math.Max(0, req.Order.TotalAmount - returnedVal);
+                req.Order.PaymentStatus = PaymentStatus.Paid;
+            }
+
             bool hasHistory = await _db.OrderStatusHistories.AnyAsync(h => h.OrderId == req.OrderId && (h.Status == OrderStatus.Returned || h.Status == OrderStatus.PartiallyReturned));
             if (!hasHistory)
             {

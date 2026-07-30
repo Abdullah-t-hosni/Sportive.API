@@ -1845,9 +1845,19 @@ public class OrderService : IOrderService
             var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
             foreach (var it in orderWithItems.Items) it.ReturnedQuantity = it.Quantity;
         }
+        else if (dto.Status == OrderStatus.PartiallyReturned)
+        {
+            var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
+            decimal returnedVal = orderWithItems.Items.Sum(i => i.UnitPrice * i.ReturnedQuantity);
+            if (order.PaymentMethod != PaymentMethod.Credit)
+            {
+                order.PaidAmount = Math.Max(0, order.TotalAmount - returnedVal);
+                order.PaymentStatus = PaymentStatus.Paid;
+            }
+        }
 
-        // 🔄 REVERT FROM DELIVERED: If order status changes FROM Delivered to ANY non-delivered status (e.g. OutForDelivery, Processing, Pending)
-        if (oldStatus == OrderStatus.Delivered && dto.Status != OrderStatus.Delivered)
+        // 🔄 REVERT FROM DELIVERED: If order status changes FROM Delivered to ANY internal non-delivered status (e.g. OutForDelivery, Processing, Pending)
+        if (oldStatus == OrderStatus.Delivered && dto.Status != OrderStatus.Delivered && dto.Status != OrderStatus.PartiallyReturned && dto.Status != OrderStatus.Returned)
         {
             bool isDigitalPrepaid = order.Source != OrderSource.POS &&
                 (order.PaymentMethod == PaymentMethod.Vodafone ||
