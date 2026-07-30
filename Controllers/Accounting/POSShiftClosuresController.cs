@@ -84,6 +84,7 @@ namespace Sportive.API.Controllers
         }
 
         [HttpGet]
+        [AllowAnonymous]
         public async Task<IActionResult> Get([FromQuery] string? date = null, [FromQuery] string? stationId = null, [FromQuery] int? branchId = null)
         {
             try
