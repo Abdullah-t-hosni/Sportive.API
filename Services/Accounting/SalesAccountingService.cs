@@ -336,7 +336,9 @@ public class SalesAccountingService
         var store   = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
 
         string salesReturnAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesReturn, mapDict)}";
-        string deliveryRevAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.ShippingRevenue, mapDict)}";
+        string deliveryRevAcct = !string.IsNullOrEmpty(store?.DeliveryRevenueAccountId)
+            ? $"ID:{store.DeliveryRevenueAccountId}"
+            : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.DeliveryRevenue, mapDict)}";
         string inventoryAcct   = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Inventory, mapDict)}";
         string cogsAcct        = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.COGS, mapDict)}";
 
