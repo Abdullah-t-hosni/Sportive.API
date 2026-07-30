@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Attributes;
 using Sportive.API.Data;
@@ -15,6 +16,7 @@ namespace Sportive.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/pos-report")]
+[RequirePermission(ModuleKeys.Pos)]
 public class POSReportController : ControllerBase
 {
     private readonly AppDbContext _db;
