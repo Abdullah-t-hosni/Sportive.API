@@ -110,11 +110,18 @@ public class POSReportController : ControllerBase
             .OrderBy(j => j.EntryDate).ThenBy(j => j.Id)
             .ToListAsync();
 
-        // Filter: only entries that touch a POS account OR have POS cost center
+        var allAccountsDict = await _db.Accounts.AsNoTracking().ToDictionaryAsync(a => a.Id);
+
+        // Filter: only entries that touch a POS account OR have POS cost center OR Payment/Receipt Vouchers touching cash/drawers
         var posEntries = journalEntries.Where(j =>
             j.CostCenter == OrderSource.POS
-            || (j.Reference != null && j.Reference.StartsWith("POS-"))
-            || j.Lines.Any(l => posAccountIds.Contains(l.AccountId))
+            || (j.Reference != null && (j.Reference.StartsWith("POS-") || j.Reference.StartsWith("PV-") || j.Reference.StartsWith("RV-")))
+            || j.Lines.Any(l => {
+                var acc = l.Account ?? (allAccountsDict.TryGetValue(l.AccountId, out var a) ? a : null);
+                var code = acc?.Code ?? "";
+                var name = acc?.NameAr ?? "";
+                return posAccountIds.Contains(l.AccountId) || code.StartsWith("1103") || code.StartsWith("1101") || name.Contains("كاشير") || name.Contains("درج") || name.Contains("المسله");
+            })
         ).ToList();
 
         // ── 4. Compute KPIs from Orders ───────────────────────────────────────
@@ -213,10 +220,11 @@ public class POSReportController : ControllerBase
         bool IsPosCashAccount(int accountId, Account? acc)
         {
             if (accountId == effectiveDrawerId || posAccountIds.Contains(accountId)) return true;
-            if (acc != null)
+            var targetAcc = acc ?? (allAccountsDict.TryGetValue(accountId, out var a) ? a : null);
+            if (targetAcc != null)
             {
-                var code = acc.Code ?? "";
-                var name = acc.NameAr ?? "";
+                var code = targetAcc.Code ?? "";
+                var name = targetAcc.NameAr ?? "";
                 if (code.StartsWith("1103") || code.StartsWith("1101") || name.Contains("كاشير") || name.Contains("درج") || name.Contains("المسله")) return true;
             }
             return false;
@@ -246,11 +254,12 @@ public class POSReportController : ControllerBase
                 {
                     var debitedLine = j.Lines.FirstOrDefault(line => line.Debit > 0);
                     var isTransferToSafeOrBank = false;
-                    if (debitedLine != null && debitedLine.Account != null)
+                    if (debitedLine != null)
                     {
                         var destAccountId = debitedLine.AccountId;
-                        var destCode = debitedLine.Account.Code ?? "";
-                        var destName = debitedLine.Account.NameAr ?? "";
+                        var destAcc = debitedLine.Account ?? (allAccountsDict.TryGetValue(destAccountId, out var a) ? a : null);
+                        var destCode = destAcc?.Code ?? "";
+                        var destName = destAcc?.NameAr ?? "";
                         isTransferToSafeOrBank = destAccountId == mainCashId ||
                                                  destAccountId == posCashId ||
                                                  destAccountId == posBankId ||

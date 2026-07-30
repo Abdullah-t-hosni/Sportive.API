@@ -358,6 +358,8 @@ namespace Sportive.API.Controllers
 
                 int updatedCount = 0;
 
+                var allAccountsDict = await _db.Accounts.AsNoTracking().ToDictionaryAsync(a => a.Id);
+
                 foreach (var c in closures)
                 {
                     if (!DateTime.TryParse(c.ClosureDate, out var parsedDate)) continue;
@@ -377,10 +379,11 @@ namespace Sportive.API.Controllers
                     bool IsPosCashAccount(int accountId, Account? acc)
                     {
                         if (accountId == effectiveDrawerId || posCashId == accountId || mainCashId == accountId) return true;
-                        if (acc != null)
+                        var targetAcc = acc ?? (allAccountsDict.TryGetValue(accountId, out var a) ? a : null);
+                        if (targetAcc != null)
                         {
-                            var code = acc.Code ?? "";
-                            var name = acc.NameAr ?? "";
+                            var code = targetAcc.Code ?? "";
+                            var name = targetAcc.NameAr ?? "";
                             if (code.StartsWith("1103") || code.StartsWith("1101") || name.Contains("كاشير") || name.Contains("درج") || name.Contains("المسله")) return true;
                         }
                         return false;
@@ -401,11 +404,12 @@ namespace Sportive.API.Controllers
                             {
                                 var debitedLine = j.Lines.FirstOrDefault(line => line.Debit > 0);
                                 var isTransferToSafeOrBank = false;
-                                if (debitedLine != null && debitedLine.Account != null)
+                                if (debitedLine != null)
                                 {
                                     var destAccountId = debitedLine.AccountId;
-                                    var destCode = debitedLine.Account.Code ?? "";
-                                    var destName = debitedLine.Account.NameAr ?? "";
+                                    var destAcc = debitedLine.Account ?? (allAccountsDict.TryGetValue(destAccountId, out var a) ? a : null);
+                                    var destCode = destAcc?.Code ?? "";
+                                    var destName = destAcc?.NameAr ?? "";
                                     isTransferToSafeOrBank = destAccountId == mainCashId ||
                                                              destAccountId == posCashId ||
                                                              destAccountId == posBankId ||
