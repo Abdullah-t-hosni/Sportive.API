@@ -1123,7 +1123,7 @@ public class ReturnExchangeRequestsController : ControllerBase
 
                 if (isFullReturn)
                 {
-                    await _accounting.PostSalesReturnAsync(req.Order, dto.RefundAccountId);
+                    await _accounting.PostSalesReturnAsync(req.Order, dto.RefundAccountId, req.RefundShipping);
                 }
                 else if (returnedOrderItemsForAccounting.Any())
                 {
@@ -1269,7 +1269,7 @@ public class ReturnExchangeRequestsController : ControllerBase
 
                     if (isFullReturn)
                     {
-                        await _accounting.PostSalesReturnAsync(req.Order, null);
+                        await _accounting.PostSalesReturnAsync(req.Order, null, req.RefundShipping);
                     }
                     else if (returnedOrderItemsForAccounting.Any())
                     {
