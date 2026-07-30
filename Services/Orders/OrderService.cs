@@ -1123,9 +1123,11 @@ public class OrderService : IOrderService
                 var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
 
                 // 1. CALCULATE DIFFS FOR INVENTORY (Smart Variant & Option Matching)
+                var dtoVariantMap = new Dictionary<CreateOrderItemDto, int>();
                 foreach (var dtoItem in dto.Items.Where(i => i.ProductId > 0))
                 {
-                    if ((dtoItem.ProductVariantId ?? 0) == 0 && (!string.IsNullOrWhiteSpace(dtoItem.Size) || !string.IsNullOrWhiteSpace(dtoItem.Color)))
+                    int vId = dtoItem.ProductVariantId ?? 0;
+                    if (vId == 0 && (!string.IsNullOrWhiteSpace(dtoItem.Size) || !string.IsNullOrWhiteSpace(dtoItem.Color)))
                     {
                         var normSize = (dtoItem.Size ?? "").Trim().ToLower();
                         var normColor = (dtoItem.Color ?? "").Trim().ToLower();
@@ -1135,14 +1137,17 @@ public class OrderService : IOrderService
                                 (((v.Color ?? "").Trim().ToLower() == normColor || (v.ColorAr ?? "").Trim().ToLower() == normColor) || (string.IsNullOrEmpty(normColor) && string.IsNullOrEmpty(v.Color))));
                         if (matched != null)
                         {
-                            dtoItem.ProductVariantId = matched.Id;
+                            vId = matched.Id;
                         }
                     }
+                    dtoVariantMap[dtoItem] = vId;
                 }
 
+                var oldVariantMap = new Dictionary<OrderItem, int>();
                 foreach (var oldItem in order.Items.Where(i => i.ProductId > 0))
                 {
-                    if ((oldItem.ProductVariantId ?? 0) == 0 && (!string.IsNullOrWhiteSpace(oldItem.Size) || !string.IsNullOrWhiteSpace(oldItem.Color)))
+                    int vId = oldItem.ProductVariantId ?? 0;
+                    if (vId == 0 && (!string.IsNullOrWhiteSpace(oldItem.Size) || !string.IsNullOrWhiteSpace(oldItem.Color)))
                     {
                         var normSize = (oldItem.Size ?? "").Trim().ToLower();
                         var normColor = (oldItem.Color ?? "").Trim().ToLower();
@@ -1152,19 +1157,26 @@ public class OrderService : IOrderService
                                 (((v.Color ?? "").Trim().ToLower() == normColor || (v.ColorAr ?? "").Trim().ToLower() == normColor) || (string.IsNullOrEmpty(normColor) && string.IsNullOrEmpty(v.Color))));
                         if (matched != null)
                         {
-                            oldItem.ProductVariantId = matched.Id;
+                            vId = matched.Id;
                         }
                     }
+                    oldVariantMap[oldItem] = vId;
                 }
 
                 var oldItemSummary = order.Items
                     .Where(i => i.ProductId > 0)
-                    .GroupBy(i => new { ProductId = (int)i.ProductId!, VariantId = i.ProductVariantId ?? 0, Size = i.ProductVariantId > 0 ? "" : (i.Size ?? "").Trim().ToLower(), Color = i.ProductVariantId > 0 ? "" : (i.Color ?? "").Trim().ToLower() })
+                    .GroupBy(i => {
+                        int vId = oldVariantMap.GetValueOrDefault(i);
+                        return new { ProductId = (int)i.ProductId!, VariantId = vId, Size = vId > 0 ? "" : (i.Size ?? "").Trim().ToLower(), Color = vId > 0 ? "" : (i.Color ?? "").Trim().ToLower() };
+                    })
                     .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
 
                 var newItemSummary = dto.Items
                     .Where(i => i.ProductId > 0)
-                    .GroupBy(i => new { ProductId = (int)i.ProductId, VariantId = i.ProductVariantId ?? 0, Size = i.ProductVariantId > 0 ? "" : (i.Size ?? "").Trim().ToLower(), Color = i.ProductVariantId > 0 ? "" : (i.Color ?? "").Trim().ToLower() })
+                    .GroupBy(i => {
+                        int vId = dtoVariantMap.GetValueOrDefault(i);
+                        return new { ProductId = (int)i.ProductId, VariantId = vId, Size = vId > 0 ? "" : (i.Size ?? "").Trim().ToLower(), Color = vId > 0 ? "" : (i.Color ?? "").Trim().ToLower() };
+                    })
                     .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
 
                 var allKeys = oldItemSummary.Keys.Union(newItemSummary.Keys).Distinct().ToList();
@@ -1269,11 +1281,12 @@ public class OrderService : IOrderService
                 {
                     if (!productsDict.TryGetValue(itemDto.ProductId, out var product)) continue;
 
-                    var variant = itemDto.ProductVariantId.HasValue 
-                        ? product.Variants.FirstOrDefault(v => v.Id == itemDto.ProductVariantId)
-                        : null;
+                    int dtoVId = dtoVariantMap.GetValueOrDefault(itemDto);
+                    var variant = (dtoVId > 0)
+                        ? product.Variants.FirstOrDefault(v => v.Id == dtoVId)
+                        : (itemDto.ProductVariantId.HasValue ? product.Variants.FirstOrDefault(v => v.Id == itemDto.ProductVariantId) : null);
 
-                    var existingItemForPrice = order.Items.FirstOrDefault(i => i.ProductId == itemDto.ProductId && i.ProductVariantId == itemDto.ProductVariantId);
+                    var existingItemForPrice = order.Items.FirstOrDefault(i => i.ProductId == itemDto.ProductId && (i.ProductVariantId == itemDto.ProductVariantId || (dtoVId > 0 && oldVariantMap.GetValueOrDefault(i) == dtoVId)));
                     decimal catalogPrice = product.Price + (variant?.PriceAdjustment ?? 0);
                     decimal originalUnitPrice = isCostSale ? itemDto.UnitPrice 
                         : (existingItemForPrice != null ? existingItemForPrice.OriginalUnitPrice : catalogPrice);
@@ -1282,7 +1295,7 @@ public class OrderService : IOrderService
                     bool hasTax = itemDto.HasTax ?? product.HasTax;
                     decimal vatRateApplied = itemDto.VatRate ?? product.VatRate ?? (store?.VatRatePercent ?? 14);
 
-                    var existingItem = existingItemsPool.FirstOrDefault(i => i.ProductId == itemDto.ProductId && i.ProductVariantId == itemDto.ProductVariantId);
+                    var existingItem = existingItemsPool.FirstOrDefault(i => i.ProductId == itemDto.ProductId && (i.ProductVariantId == itemDto.ProductVariantId || (dtoVId > 0 && oldVariantMap.GetValueOrDefault(i) == dtoVId)));
                     
                     if (existingItem != null)
                     {
