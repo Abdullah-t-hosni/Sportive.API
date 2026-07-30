@@ -1796,6 +1796,49 @@ public class OrderService : IOrderService
             foreach (var it in orderWithItems.Items) it.ReturnedQuantity = it.Quantity;
         }
 
+        // 🔄 REVERT FROM DELIVERED: If order status changes FROM Delivered to ANY non-delivered status (e.g. OutForDelivery, Processing, Pending)
+        if (oldStatus == OrderStatus.Delivered && dto.Status != OrderStatus.Delivered)
+        {
+            bool isDigitalPrepaid = order.Source != OrderSource.POS &&
+                (order.PaymentMethod == PaymentMethod.Vodafone ||
+                 order.PaymentMethod == PaymentMethod.InstaPay ||
+                 order.PaymentMethod == PaymentMethod.CreditCard ||
+                 order.PaymentMethod == PaymentMethod.Bank);
+
+            // For Cash / COD orders: Reset payment status & paid amount to unpaid / pending
+            if (!isDigitalPrepaid && order.PaymentMethod != PaymentMethod.Credit)
+            {
+                order.PaymentStatus = PaymentStatus.Pending;
+                order.PaidAmount = 0;
+                if (order.Payments != null && order.Payments.Any())
+                {
+                    _db.OrderPayments.RemoveRange(order.Payments);
+                }
+            }
+
+            // Remove/Void any auto-created Receipt Voucher Journal Entry for this order (-PMT)
+            var pmtEntries = await _db.JournalEntries
+                .Include(e => e.Lines)
+                .Where(e => e.OrderId == order.Id && 
+                           (e.Type == JournalEntryType.ReceiptVoucher || 
+                            (e.Reference != null && e.Reference.StartsWith(order.OrderNumber + "-PMT"))))
+                .ToListAsync();
+
+            if (pmtEntries.Any())
+            {
+                _db.JournalLines.RemoveRange(pmtEntries.SelectMany(e => e.Lines));
+                _db.JournalEntries.RemoveRange(pmtEntries);
+                _logger.LogInformation("[Accounting] Removed {Count} ReceiptVoucher entries for order {Ref} on status revert from Delivered to {NewStatus}.", pmtEntries.Count, order.OrderNumber, dto.Status);
+            }
+
+            // Remove linked ReceiptVouchers entity if any
+            var linkedRVs = await _db.ReceiptVouchers.Where(v => v.OrderId == order.Id).ToListAsync();
+            if (linkedRVs.Any())
+            {
+                _db.ReceiptVouchers.RemoveRange(linkedRVs);
+            }
+        }
+
         // ✅ REVERT: If reverting FROM Returned/Cancelled → reverse accounting & inventory
         if ((oldStatus == OrderStatus.Returned || oldStatus == OrderStatus.Cancelled) &&
              dto.Status != OrderStatus.Returned && dto.Status != OrderStatus.Cancelled)
