@@ -1123,14 +1123,48 @@ public class OrderService : IOrderService
                 var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
 
                 // 1. CALCULATE DIFFS FOR INVENTORY (Smart Variant & Option Matching)
+                foreach (var dtoItem in dto.Items.Where(i => i.ProductId > 0))
+                {
+                    if ((dtoItem.ProductVariantId ?? 0) == 0 && (!string.IsNullOrWhiteSpace(dtoItem.Size) || !string.IsNullOrWhiteSpace(dtoItem.Color)))
+                    {
+                        var normSize = (dtoItem.Size ?? "").Trim().ToLower();
+                        var normColor = (dtoItem.Color ?? "").Trim().ToLower();
+                        var matched = await _db.ProductVariants
+                            .FirstOrDefaultAsync(v => v.ProductId == dtoItem.ProductId &&
+                                ((v.Size ?? "").Trim().ToLower() == normSize || (string.IsNullOrEmpty(normSize) && string.IsNullOrEmpty(v.Size))) &&
+                                (((v.Color ?? "").Trim().ToLower() == normColor || (v.ColorAr ?? "").Trim().ToLower() == normColor) || (string.IsNullOrEmpty(normColor) && string.IsNullOrEmpty(v.Color))));
+                        if (matched != null)
+                        {
+                            dtoItem.ProductVariantId = matched.Id;
+                        }
+                    }
+                }
+
+                foreach (var oldItem in order.Items.Where(i => i.ProductId > 0))
+                {
+                    if ((oldItem.ProductVariantId ?? 0) == 0 && (!string.IsNullOrWhiteSpace(oldItem.Size) || !string.IsNullOrWhiteSpace(oldItem.Color)))
+                    {
+                        var normSize = (oldItem.Size ?? "").Trim().ToLower();
+                        var normColor = (oldItem.Color ?? "").Trim().ToLower();
+                        var matched = await _db.ProductVariants
+                            .FirstOrDefaultAsync(v => v.ProductId == oldItem.ProductId &&
+                                ((v.Size ?? "").Trim().ToLower() == normSize || (string.IsNullOrEmpty(normSize) && string.IsNullOrEmpty(v.Size))) &&
+                                (((v.Color ?? "").Trim().ToLower() == normColor || (v.ColorAr ?? "").Trim().ToLower() == normColor) || (string.IsNullOrEmpty(normColor) && string.IsNullOrEmpty(v.Color))));
+                        if (matched != null)
+                        {
+                            oldItem.ProductVariantId = matched.Id;
+                        }
+                    }
+                }
+
                 var oldItemSummary = order.Items
                     .Where(i => i.ProductId > 0)
-                    .GroupBy(i => new { ProductId = (int)i.ProductId!, VariantId = i.ProductVariantId ?? 0, Size = (i.Size ?? "").Trim().ToLower(), Color = (i.Color ?? "").Trim().ToLower() })
+                    .GroupBy(i => new { ProductId = (int)i.ProductId!, VariantId = i.ProductVariantId ?? 0, Size = i.ProductVariantId > 0 ? "" : (i.Size ?? "").Trim().ToLower(), Color = i.ProductVariantId > 0 ? "" : (i.Color ?? "").Trim().ToLower() })
                     .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
 
                 var newItemSummary = dto.Items
                     .Where(i => i.ProductId > 0)
-                    .GroupBy(i => new { ProductId = (int)i.ProductId, VariantId = i.ProductVariantId ?? 0, Size = (i.Size ?? "").Trim().ToLower(), Color = (i.Color ?? "").Trim().ToLower() })
+                    .GroupBy(i => new { ProductId = (int)i.ProductId, VariantId = i.ProductVariantId ?? 0, Size = i.ProductVariantId > 0 ? "" : (i.Size ?? "").Trim().ToLower(), Color = i.ProductVariantId > 0 ? "" : (i.Color ?? "").Trim().ToLower() })
                     .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
 
                 var allKeys = oldItemSummary.Keys.Union(newItemSummary.Keys).Distinct().ToList();
