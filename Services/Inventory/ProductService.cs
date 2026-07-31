@@ -212,7 +212,7 @@ public class ProductService : IProductService
             .Include(x => x.Images.OrderBy(i => i.SortOrder))
             .Include(x => x.Variants)
             .Include(x => x.Unit)
-            .Include(x => x.Reviews).ThenInclude(r => r.Customer)
+            // ❌ Do NOT include Reviews here - can cause OutOfMemoryException for products with many reviews
             .Include(x => x.LinkedProduct).ThenInclude(lp => lp!.Category)
             .Include(x => x.LinkedProduct).ThenInclude(lp => lp!.Brand)
             .Include(x => x.LinkedProduct).ThenInclude(lp => lp!.Images)
@@ -221,6 +221,19 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (p == null) return null;
+
+        // ✅ Fetch only latest 10 approved reviews with minimal data — avoids OOM
+        var recentReviews = await _db.Set<Review>()
+            .AsNoTracking()
+            .Where(r => r.ProductId == id && r.IsApproved)
+            .OrderByDescending(r => r.CreatedAt)
+            .Take(10)
+            .Select(r => new { r.Id, CustomerName = r.Customer != null ? r.Customer.FullName : null, r.Rating, r.Comment, r.CreatedAt })
+            .ToListAsync();
+
+        var reviewDtos = recentReviews
+            .Select(r => new ReviewListItemDto(r.Id, r.CustomerName ?? _t.Get("Products.AnonymousReviewer"), r.Rating, r.Comment, r.CreatedAt))
+            .ToList();
 
         var variantIds = p.Variants.Select(v => v.Id).ToList();
         var movementSums = await _db.InventoryMovements
@@ -289,7 +302,7 @@ public class ProductService : IProductService
             linkedSummary = linkedList.FirstOrDefault();
         }
 
-        return MapToDetail(p, d, linkedSummary);
+        return MapToDetail(p, d, linkedSummary, reviewDtos);
     }
 
     public async Task<ProductDetailDto?> GetProductBySlugAsync(string slug, DiscountApplyTo? source = null, int? warehouseId = null, bool rawPricing = false)
@@ -301,7 +314,7 @@ public class ProductService : IProductService
             .Include(x => x.Images.OrderBy(i => i.SortOrder))
             .Include(x => x.Variants)
             .Include(x => x.Unit)
-            .Include(x => x.Reviews).ThenInclude(r => r.Customer)
+            // ❌ Do NOT include Reviews here - can cause OutOfMemoryException for products with many reviews
             .Include(x => x.LinkedProduct).ThenInclude(lp => lp!.Category)
             .Include(x => x.LinkedProduct).ThenInclude(lp => lp!.Brand)
             .Include(x => x.LinkedProduct).ThenInclude(lp => lp!.Images)
@@ -310,6 +323,19 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync(x => x.Slug == slug);
 
         if (p == null) return null;
+
+        // ✅ Fetch only latest 10 approved reviews with minimal data — avoids OOM
+        var recentReviews = await _db.Set<Review>()
+            .AsNoTracking()
+            .Where(r => r.ProductId == p.Id && r.IsApproved)
+            .OrderByDescending(r => r.CreatedAt)
+            .Take(10)
+            .Select(r => new { r.Id, CustomerName = r.Customer != null ? r.Customer.FullName : null, r.Rating, r.Comment, r.CreatedAt })
+            .ToListAsync();
+
+        var reviewDtos = recentReviews
+            .Select(r => new ReviewListItemDto(r.Id, r.CustomerName ?? _t.Get("Products.AnonymousReviewer"), r.Rating, r.Comment, r.CreatedAt))
+            .ToList();
 
         var variantIds = p.Variants.Select(v => v.Id).ToList();
         var movementSums = await _db.InventoryMovements
@@ -378,7 +404,7 @@ public class ProductService : IProductService
             linkedSummary = linkedList.FirstOrDefault();
         }
 
-        return MapToDetail(p, d, linkedSummary);
+        return MapToDetail(p, d, linkedSummary, reviewDtos);
     }
 
     public async Task<ProductDetailDto> CreateProductAsync(CreateProductDto dto)
@@ -698,17 +724,21 @@ public class ProductService : IProductService
 
     public async Task SyncAllProductRatingsAsync()
     {
-        // ✅ Incremental sync: only update products whose AverageRating or ReviewCount
-        //    may be stale. Ratings are already kept in sync atomically in ReviewService,
-        //    so this full-scan is only needed as a manual repair tool (not on startup).
-        var products = await _db.Products.Include(p => p.Reviews).ToListAsync();
+        // ✅ Lightweight sync: calculate rating stats via GroupBy query without loading full review entity graphs
+        var ratingStats = await _db.Set<Review>()
+            .AsNoTracking()
+            .Where(r => r.IsApproved)
+            .GroupBy(r => r.ProductId)
+            .Select(g => new { ProductId = g.Key, Avg = g.Average(r => r.Rating), Count = g.Count() })
+            .ToDictionaryAsync(x => x.ProductId, x => x);
+
+        var products = await _db.Products.ToListAsync();
         foreach (var p in products)
         {
-            var approved = p.Reviews.Where(r => r.IsApproved).ToList();
-            if (approved.Any())
+            if (ratingStats.TryGetValue(p.Id, out var stats))
             {
-                p.AverageRating = approved.Average(r => r.Rating);
-                p.ReviewCount = approved.Count;
+                p.AverageRating = stats.Avg;
+                p.ReviewCount = stats.Count;
             }
             else
             {
@@ -946,7 +976,7 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync();
     }
 
-    private ProductDetailDto MapToDetail(Product p, ProductDiscount? d = null, ProductSummaryDto? linkedProduct = null)
+    private ProductDetailDto MapToDetail(Product p, ProductDiscount? d = null, ProductSummaryDto? linkedProduct = null, List<ReviewListItemDto>? reviewDtos = null)
     {
         decimal finalDiscountPrice = (p.DiscountPrice > 0) ? p.DiscountPrice.Value : p.Price;
         string? activeLabel = null;
@@ -958,6 +988,8 @@ public class ProductService : IProductService
                 ? Math.Round(p.Price - (p.Price * d.DiscountValue / 100), 2)
                 : Math.Round(p.Price - d.DiscountValue, 2);
         }
+
+        var reviewsList = reviewDtos ?? p.Reviews?.Where(r => r.IsApproved).OrderByDescending(r => r.CreatedAt).Select(r => new ReviewListItemDto(r.Id, r.Customer?.FullName ?? _t.Get("Products.AnonymousReviewer"), r.Rating, r.Comment, r.CreatedAt)).ToList();
 
         return new ProductDetailDto(
             p.Id, p.NameAr, p.NameEn, p.Slug, p.DescriptionAr, p.DescriptionEn,
@@ -982,7 +1014,7 @@ public class ProductService : IProductService
             p.Unit?.NameEn,
             p.Unit?.Symbol,
             p.CreatedAt,
-            p.Reviews?.Where(r => r.IsApproved).OrderByDescending(r => r.CreatedAt).Select(r => new ReviewListItemDto(r.Id, r.Customer?.FullName ?? _t.Get("Products.AnonymousReviewer"), r.Rating, r.Comment, r.CreatedAt)).ToList(),
+            reviewsList,
             activeLabel,
             p.SizeChartImageUrl,
             p.SizeChartJson,
