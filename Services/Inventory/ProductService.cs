@@ -243,6 +243,26 @@ public class ProductService : IProductService
             }
             p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
         }
+        else
+        {
+            var variantWhStocks = await _db.ProductWarehouseStocks
+                .Where(w => w.ProductVariant.ProductId == p.Id)
+                .GroupBy(w => w.ProductVariantId)
+                .Select(g => new { VariantId = g.Key, TotalQty = g.Sum(x => x.Quantity) })
+                .ToDictionaryAsync(x => x.VariantId, x => x.TotalQty);
+
+            if (variantWhStocks.Count > 0)
+            {
+                foreach (var v in p.Variants)
+                {
+                    if (variantWhStocks.TryGetValue(v.Id, out var whTotal))
+                    {
+                        v.StockQuantity = whTotal;
+                    }
+                }
+                p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
+            }
+        }
 
         ProductDiscount? d = null;
         if (!rawPricing)
@@ -308,6 +328,26 @@ public class ProductService : IProductService
                 }
             }
             p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
+        }
+        else
+        {
+            var variantWhStocks = await _db.ProductWarehouseStocks
+                .Where(w => w.ProductVariant.ProductId == p.Id)
+                .GroupBy(w => w.ProductVariantId)
+                .Select(g => new { VariantId = g.Key, TotalQty = g.Sum(x => x.Quantity) })
+                .ToDictionaryAsync(x => x.VariantId, x => x.TotalQty);
+
+            if (variantWhStocks.Count > 0)
+            {
+                foreach (var v in p.Variants)
+                {
+                    if (variantWhStocks.TryGetValue(v.Id, out var whTotal))
+                    {
+                        v.StockQuantity = whTotal;
+                    }
+                }
+                p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
+            }
         }
 
         ProductDiscount? d = null;
@@ -1004,6 +1044,20 @@ public class ProductService : IProductService
             variantStocks = stocks.ToDictionary(s => s.ProductVariantId, s => s.Quantity);
             productStocks = stocks.GroupBy(s => s.ProductId).ToDictionary(g => g.Key, g => g.Sum(s => s.Quantity));
         }
+        else
+        {
+            var stocks = await _db.ProductWarehouseStocks
+                .Where(w => productIds.Contains(w.ProductVariant.ProductId))
+                .GroupBy(w => new { w.ProductVariantId, w.ProductVariant.ProductId })
+                .Select(g => new { g.Key.ProductVariantId, g.Key.ProductId, Quantity = g.Sum(x => x.Quantity) })
+                .ToListAsync();
+
+            if (stocks.Count > 0)
+            {
+                variantStocks = stocks.ToDictionary(s => s.ProductVariantId, s => s.Quantity);
+                productStocks = stocks.GroupBy(s => s.ProductId).ToDictionary(g => g.Key, g => g.Sum(s => s.Quantity));
+            }
+        }
 
         foreach (var p in products)
         {
@@ -1041,7 +1095,7 @@ public class ProductService : IProductService
                 finalPrice = p.DiscountPrice.Value;
             }
 
-            int totalStock = (warehouseId.HasValue && productStocks.ContainsKey(p.Id)) 
+            int totalStock = productStocks.ContainsKey(p.Id)
                 ? productStocks[p.Id] 
                 : (p.Variants != null && p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock);
 
@@ -1070,7 +1124,7 @@ public class ProductService : IProductService
                     v.Size, 
                     v.Color, 
                     v.ColorAr, 
-                    warehouseId.HasValue 
+                    variantStocks.Count > 0 
                         ? (variantStocks.TryGetValue(v.Id, out var qty) ? qty : 0) 
                         : v.StockQuantity, 
                     v.ReorderLevel, 

@@ -66,11 +66,13 @@ public class InventoryService : IInventoryService
         // Skip check if it's an opening balance to speed up bulk imports
         if (!ignoreIdempotency && !string.IsNullOrEmpty(reference) && type != InventoryMovementType.OpeningBalance)
         {
+            var tenSecsAgo = TimeHelper.GetEgyptTime().AddSeconds(-10);
             bool exists = await _db.InventoryMovements.AnyAsync(m => 
                 m.Type == type && 
                 m.Reference == reference && 
                 m.ProductId == productId && 
-                m.ProductVariantId == variantId);
+                m.ProductVariantId == variantId &&
+                m.CreatedAt >= tenSecsAgo);
                 
             if (exists) return;
         }
