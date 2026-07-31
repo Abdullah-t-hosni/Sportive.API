@@ -276,8 +276,8 @@ using (var scope = app.Services.CreateScope())
                 // Auto-patch new columns for StoreSettings safely
                 try
                 {
-                    using var scope = services.CreateScope();
-                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    using var patchScope = services.CreateScope();
+                    var db = patchScope.ServiceProvider.GetRequiredService<AppDbContext>();
                     try { db.Database.ExecuteSqlRaw("ALTER TABLE StoreSettings ADD COLUMN FacebookAdAccountId longtext NULL;"); } catch {}
                     try { db.Database.ExecuteSqlRaw("ALTER TABLE StoreSettings ADD COLUMN RealAdCampaignsJson longtext NULL;"); } catch {}
                 }
