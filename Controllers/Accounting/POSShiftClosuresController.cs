@@ -452,7 +452,7 @@ namespace Sportive.API.Controllers
                 return StatusCode(500, new { message = "Failed to recalculate historical closures", error = ex.Message });
             }
         }
-        [HttpPost("fix-closure-60")]
+        [HttpGet("fix-closure-60")]
         [AllowAnonymous]
         public async Task<IActionResult> FixClosure60()
         {
