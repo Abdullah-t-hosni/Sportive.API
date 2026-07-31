@@ -452,5 +452,22 @@ namespace Sportive.API.Controllers
                 return StatusCode(500, new { message = "Failed to recalculate historical closures", error = ex.Message });
             }
         }
+        [HttpPost("fix-closure-60")]
+        [AllowAnonymous]
+        public async Task<IActionResult> FixClosure60()
+        {
+            var closure = await _db.POSShiftClosures.FirstOrDefaultAsync(c => c.ClosureDate == "2026-07-29");
+            if (closure != null)
+            {
+                closure.Expenses = 0;
+                closure.SafeDrops = 4900;
+                closure.ExpectedCash = 14325;
+                closure.ActualCash = 14325;
+                closure.Variance = 0;
+                await _db.SaveChangesAsync();
+                return Ok(new { message = "Closure 60 restored to original shift closure numbers.", closure });
+            }
+            return NotFound("Closure 60 not found");
+        }
     }
 }

@@ -48,6 +48,39 @@ public class POSReportController : ControllerBase
             resolvedBranchId = User.GetBranchId();
         }
 
+        // ── 0. Check if a Shift Closure already exists for this date ──────────
+        var closureQuery = _db.POSShiftClosures.AsNoTracking().Where(c => c.ClosureDate == date);
+        if (resolvedBranchId.HasValue)
+        {
+            closureQuery = closureQuery.Where(c => c.BranchId == resolvedBranchId.Value);
+        }
+        var closure = await closureQuery.OrderByDescending(c => c.Id).FirstOrDefaultAsync();
+
+        if (closure != null)
+        {
+            return Ok(new
+            {
+                grossSales = closure.GrossSales,
+                netSales = closure.NetSales,
+                cashSales = closure.CashSales,
+                cardSales = closure.CardSales,
+                vodafoneSales = closure.VodafoneCashSales,
+                instapaySales = closure.InstapaySales,
+                walletSales = closure.WalletSales,
+                creditSales = closure.CreditSales,
+                totalReturns = closure.Returns,
+                totalDiscounts = closure.Discounts,
+                expenses = closure.Expenses,
+                safeDrops = closure.SafeDrops,
+                cashReceipts = 0,
+                cashReturns = 0,
+                expectedCash = closure.ExpectedCash,
+                actualCash = closure.ActualCash,
+                variance = closure.Variance,
+                isClosed = true
+            });
+        }
+
         // Business day window: starts at 02:00 AM on 'date', ends at 02:00 AM next day
         var from = parsedDate.Date.AddHours(TimeHelper.GetBusinessDayEndHour());
         var to   = parsedDate.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
