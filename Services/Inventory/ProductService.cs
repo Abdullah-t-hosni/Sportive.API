@@ -833,6 +833,7 @@ public class ProductService : IProductService
     {
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         var query = _db.Products
+            .AsNoTracking()
             .Include(p => p.Category)
             .Include(p => p.Brand)
             .Include(p => p.Images)
@@ -864,7 +865,7 @@ public class ProductService : IProductService
 
     public async Task<List<ProductSummaryDto>> GetRelatedProductsAsync(int productId, int count = 4, int? warehouseId = null)
     {
-        var product = await _db.Products.Include(p => p.Category).FirstOrDefaultAsync(p => p.Id == productId);
+        var product = await _db.Products.AsNoTracking().Include(p => p.Category).FirstOrDefaultAsync(p => p.Id == productId);
         if (product == null) return new List<ProductSummaryDto>();
 
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
@@ -914,6 +915,7 @@ public class ProductService : IProductService
         {
             // "Complete the Look" (أكمل المظهر): suggest matching apparel and accessories (especially socks!)
             query = _db.Products
+                .AsNoTracking()
                 .Include(p => p.Category)
                 .Include(p => p.Brand)
                 .Include(p => p.Images)
@@ -925,6 +927,7 @@ public class ProductService : IProductService
         else
         {
             query = _db.Products
+                .AsNoTracking()
                 .Include(p => p.Category)
                 .Include(p => p.Brand)
                 .Include(p => p.Images)

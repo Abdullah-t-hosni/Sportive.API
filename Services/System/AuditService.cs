@@ -80,13 +80,34 @@ public class AuditService : IAuditService
         var rawTime = TimeHelper.GetEgyptTime();
         var createdAt = new DateTime(rawTime.Year, rawTime.Month, rawTime.Day, rawTime.Hour, rawTime.Minute, rawTime.Second, DateTimeKind.Unspecified);
 
+        string? oldValuesJson = null;
+        string? newValuesJson = null;
+
+        try
+        {
+            if (oldValue != null) oldValuesJson = JsonSerializer.Serialize(oldValue, _jsonOpts);
+        }
+        catch
+        {
+            oldValuesJson = $"{{\"entityId\":\"{entityId}\",\"note\":\"Old values serialization skipped\"}}";
+        }
+
+        try
+        {
+            if (newValue != null) newValuesJson = JsonSerializer.Serialize(newValue, _jsonOpts);
+        }
+        catch
+        {
+            newValuesJson = $"{{\"entityId\":\"{entityId}\",\"note\":\"New values serialization skipped\"}}";
+        }
+
         var log = new AuditLog
         {
             Action       = action,
             EntityType   = entityType,
             EntityId     = entityId,
-            OldValues    = oldValue  != null ? JsonSerializer.Serialize(oldValue,  _jsonOpts) : null,
-            NewValues    = newValue  != null ? JsonSerializer.Serialize(newValue,  _jsonOpts) : null,
+            OldValues    = oldValuesJson,
+            NewValues    = newValuesJson,
             UserId       = userId,
             UserName     = userName,
             IpAddress    = ip,
