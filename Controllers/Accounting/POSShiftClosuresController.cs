@@ -456,7 +456,7 @@ namespace Sportive.API.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> FixClosure60()
         {
-            await _db.Database.ExecuteSqlRawAsync("UPDATE \"JournalEntries\" SET \"BranchId\" = NULL WHERE \"CostCenter\" = 0 OR \"EntryNumber\" LIKE 'JE-GEN-%';");
+            await _db.Database.ExecuteSqlRawAsync("UPDATE \"JournalEntries\" SET \"BranchId\" = NULL WHERE (\"Reference\" IS NULL OR (\"Reference\" NOT LIKE 'POS-%' AND \"Reference\" NOT LIKE 'SHIFT-CLOSE-%')) AND \"EntryNumber\" NOT LIKE 'JE-POS-%' AND (\"Description\" IS NULL OR (\"Description\" NOT LIKE '%وردية%' AND \"Description\" NOT LIKE '%كاشير%'));");
             await _db.Database.ExecuteSqlRawAsync("UPDATE \"JournalLines\" SET \"BranchId\" = NULL WHERE \"JournalEntryId\" IN (SELECT \"Id\" FROM \"JournalEntries\" WHERE \"BranchId\" IS NULL);");
 
             var closure = await _db.POSShiftClosures.FirstOrDefaultAsync(c => c.ClosureDate == "2026-07-29");
