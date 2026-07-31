@@ -238,16 +238,6 @@ public class ProductService : IProductService
             .Select(r => new ReviewListItemDto(r.Id, r.CustomerName ?? _t.Get("Products.AnonymousReviewer"), r.Rating, r.Comment, r.CreatedAt))
             .ToList();
 
-        var variantIds = p.Variants.Select(v => v.Id).ToList();
-        var movementSums = variantIds.Any() 
-            ? await _db.InventoryMovements
-                .AsNoTracking()
-                .Where(m => m.ProductVariantId.HasValue && variantIds.Contains(m.ProductVariantId.Value))
-                .GroupBy(m => m.ProductVariantId!.Value)
-                .Select(g => new { VariantId = g.Key, TotalQty = g.Sum(m => (int?)m.Quantity) ?? 0 })
-                .ToDictionaryAsync(x => x.VariantId, x => x.TotalQty)
-            : new Dictionary<int, int>();
-
         if (warehouseId.HasValue)
         {
             var warehouseStocks = await _db.ProductWarehouseStocks
@@ -258,31 +248,19 @@ public class ProductService : IProductService
 
             foreach (var v in p.Variants)
             {
-                var calcQty = movementSums.TryGetValue(v.Id, out var mq) ? mq : v.StockQuantity;
                 if (warehouseStocks.TryGetValue(v.Id, out var qty))
                 {
-                    v.StockQuantity = Math.Min(qty, calcQty);
+                    v.StockQuantity = qty;
                 }
                 else if (hasWarehouseRecords)
                 {
                     v.StockQuantity = 0;
-                }
-                else
-                {
-                    v.StockQuantity = calcQty;
                 }
             }
             p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
         }
         else
         {
-            foreach (var v in p.Variants)
-            {
-                if (movementSums.TryGetValue(v.Id, out var calcQty))
-                {
-                    v.StockQuantity = calcQty;
-                }
-            }
             p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
         }
 
@@ -345,13 +323,6 @@ public class ProductService : IProductService
             .Select(r => new ReviewListItemDto(r.Id, r.CustomerName ?? _t.Get("Products.AnonymousReviewer"), r.Rating, r.Comment, r.CreatedAt))
             .ToList();
 
-        var variantIds = p.Variants.Select(v => v.Id).ToList();
-        var movementSums = await _db.InventoryMovements
-            .Where(m => m.ProductVariantId.HasValue && variantIds.Contains(m.ProductVariantId.Value))
-            .GroupBy(m => m.ProductVariantId!.Value)
-            .Select(g => new { VariantId = g.Key, TotalQty = g.Sum(m => (int?)m.Quantity) ?? 0 })
-            .ToDictionaryAsync(x => x.VariantId, x => x.TotalQty);
-
         if (warehouseId.HasValue)
         {
             var warehouseStocks = await _db.ProductWarehouseStocks
@@ -362,31 +333,19 @@ public class ProductService : IProductService
 
             foreach (var v in p.Variants)
             {
-                var calcQty = movementSums.TryGetValue(v.Id, out var mq) ? mq : v.StockQuantity;
                 if (warehouseStocks.TryGetValue(v.Id, out var qty))
                 {
-                    v.StockQuantity = Math.Min(qty, calcQty);
+                    v.StockQuantity = qty;
                 }
                 else if (hasWarehouseRecords)
                 {
                     v.StockQuantity = 0;
-                }
-                else
-                {
-                    v.StockQuantity = calcQty;
                 }
             }
             p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
         }
         else
         {
-            foreach (var v in p.Variants)
-            {
-                if (movementSums.TryGetValue(v.Id, out var calcQty))
-                {
-                    v.StockQuantity = calcQty;
-                }
-            }
             p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
         }
 
@@ -1081,17 +1040,10 @@ public class ProductService : IProductService
             )
             .ToListAsync();
 
-        var movementSums = await _db.InventoryMovements
-            .Where(m => m.ProductVariantId.HasValue && productIds.Contains(m.Product!.Id))
-            .GroupBy(m => m.ProductVariantId!.Value)
-            .Select(g => new { VariantId = g.Key, TotalQty = g.Sum(m => (int?)m.Quantity) ?? 0 })
-            .ToDictionaryAsync(x => x.VariantId, x => x.TotalQty);
-
-        var resultList = new List<ProductSummaryDto>();
-        
-        // Fetch warehouse stocks in a single batch to avoid N+1 queries if warehouseId is passed
         Dictionary<int, int> variantStocks = new Dictionary<int, int>();
         Dictionary<int, int> productStocks = new Dictionary<int, int>();
+        bool hasWarehouseRecords = false;
+
         if (warehouseId.HasValue)
         {
             var stocks = await _db.ProductWarehouseStocks
@@ -1101,6 +1053,7 @@ public class ProductService : IProductService
 
             variantStocks = stocks.ToDictionary(s => s.ProductVariantId, s => s.Quantity);
             productStocks = stocks.GroupBy(s => s.ProductId).ToDictionary(g => g.Key, g => g.Sum(s => s.Quantity));
+            hasWarehouseRecords = await _db.ProductWarehouseStocks.AnyAsync(w => w.WarehouseId == warehouseId.Value);
         }
         else
         {
@@ -1116,6 +1069,8 @@ public class ProductService : IProductService
                 productStocks = stocks.GroupBy(s => s.ProductId).ToDictionary(g => g.Key, g => g.Sum(s => s.Quantity));
             }
         }
+
+        var resultList = new List<ProductSummaryDto>();
 
         foreach (var p in products)
         {
@@ -1153,8 +1108,8 @@ public class ProductService : IProductService
                 finalPrice = p.DiscountPrice.Value;
             }
 
-            int totalStock = productStocks.ContainsKey(p.Id)
-                ? productStocks[p.Id] 
+            int totalStock = warehouseId.HasValue
+                ? (productStocks.TryGetValue(p.Id, out var ps) ? ps : (hasWarehouseRecords ? 0 : (p.Variants != null && p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock)))
                 : (p.Variants != null && p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock);
 
             resultList.Add(new ProductSummaryDto(
@@ -1178,10 +1133,18 @@ public class ProductService : IProductService
                 p.SKU,
                 p.Variants != null && p.Variants.Any(),
                 p.Variants?.Select(v => {
-                    int calcQty = movementSums.TryGetValue(v.Id, out var mq) ? mq : v.StockQuantity;
-                    int effectiveStock = variantStocks.Count > 0 
-                        ? Math.Min(variantStocks.TryGetValue(v.Id, out var qty) ? qty : 0, calcQty)
-                        : calcQty;
+                    int effectiveStock = v.StockQuantity;
+                    if (warehouseId.HasValue)
+                    {
+                        if (variantStocks.TryGetValue(v.Id, out var qty))
+                        {
+                            effectiveStock = qty;
+                        }
+                        else if (hasWarehouseRecords)
+                        {
+                            effectiveStock = 0;
+                        }
+                    }
                     return new ProductVariantDto(
                         v.Id, 
                         v.Size, 

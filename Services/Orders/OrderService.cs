@@ -1220,11 +1220,11 @@ public class OrderService : IOrderService
                     int diff = newItemSummary.GetValueOrDefault(key) - oldItemSummary.GetValueOrDefault(key);
                     if (diff > 0)
                     {
-                        await _inventory.LogMovementAsync(InventoryMovementType.Sale, -diff, key.ProductId, key.VariantId == 0 ? (int?)null : key.VariantId, order.OrderNumber, "Order Edited (Item Added or Increased)", updatedByUserId, 0, order.Source, false, true);
+                        await _inventory.LogMovementAsync(InventoryMovementType.Sale, -diff, key.ProductId, key.VariantId == 0 ? (int?)null : key.VariantId, order.OrderNumber, "Order Edited (Item Added or Increased)", updatedByUserId, 0, order.Source, false, true, warehouseId: order.WarehouseId);
                     }
                     else if (diff < 0)
                     {
-                        await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, -diff, key.ProductId, key.VariantId == 0 ? (int?)null : key.VariantId, order.OrderNumber, "Order Edited (Item Removed or Decreased)", updatedByUserId, 0, order.Source, false, true);
+                        await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, -diff, key.ProductId, key.VariantId == 0 ? (int?)null : key.VariantId, order.OrderNumber, "Order Edited (Item Removed or Decreased)", updatedByUserId, 0, order.Source, false, true, warehouseId: order.WarehouseId);
                     }
                 }
 

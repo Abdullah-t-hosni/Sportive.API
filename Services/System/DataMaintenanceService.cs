@@ -755,8 +755,15 @@ public class DataMaintenanceService : IDataMaintenanceService
 
                 _logger.LogInformation("[RecalculateStock] Phase 1 done. OB movements rebuilt: {Count}", rebuiltObMovements);
 
-                // ─── Phase 2: إعادة حساب StockQuantity للـ Variants ──────────────────
-                // نجمع كل الحركات لكل Variant ونضع الناتج في StockQuantity
+                // ─── Phase 2: إعادة حساب StockQuantity للـ Variants والمخازن ──────────
+                // نجمع كل الحركات لكل Variant ولكل Warehouse
+                var whVariantSums = await _db.InventoryMovements
+                    .Where(m => m.ProductVariantId.HasValue && m.WarehouseId.HasValue)
+                    .GroupBy(m => new { VariantId = m.ProductVariantId!.Value, WarehouseId = m.WarehouseId!.Value })
+                    .Select(g => new { g.Key.VariantId, g.Key.WarehouseId, TotalQty = g.Sum(m => (int?)m.Quantity) ?? 0 })
+                    .ToListAsync();
+
+                var whQtyMap = whVariantSums.ToDictionary(x => (x.VariantId, x.WarehouseId), x => x.TotalQty);
 
                 var variantSums = await _db.InventoryMovements
                     .Where(m => m.ProductVariantId.HasValue)
@@ -772,16 +779,21 @@ public class DataMaintenanceService : IDataMaintenanceService
 
                 foreach (var v in allVariants)
                 {
-                    var calcQty = variantQtyMap.TryGetValue(v.Id, out var q) ? q : 0;
-                    v.StockQuantity = calcQty;
-
                     if (whGroup.TryGetValue(v.Id, out var whList))
                     {
                         foreach (var ws in whList)
                         {
-                            ws.Quantity = calcQty;
+                            if (whQtyMap.TryGetValue((v.Id, ws.WarehouseId), out var whQty))
+                            {
+                                ws.Quantity = whQty;
+                            }
                             ws.UpdatedAt = TimeHelper.GetEgyptTime();
                         }
+                        v.StockQuantity = whList.Sum(w => w.Quantity);
+                    }
+                    else
+                    {
+                        v.StockQuantity = variantQtyMap.TryGetValue(v.Id, out var q) ? q : 0;
                     }
                 }
                 await _db.SaveChangesAsync();
