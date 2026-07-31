@@ -456,8 +456,17 @@ namespace Sportive.API.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> FixClosure60()
         {
-            await _db.Database.ExecuteSqlRawAsync("UPDATE \"JournalEntries\" SET \"BranchId\" = NULL WHERE (\"Reference\" IS NULL OR (\"Reference\" NOT LIKE 'POS-%' AND \"Reference\" NOT LIKE 'SHIFT-CLOSE-%')) AND (\"EntryNumber\" IS NULL OR \"EntryNumber\" NOT LIKE 'JE-POS-%') AND (\"Description\" IS NULL OR (\"Description\" NOT LIKE '%وردية%' AND \"Description\" NOT LIKE '%كاشير%'));");
-            await _db.Database.ExecuteSqlRawAsync("UPDATE \"JournalLines\" SET \"BranchId\" = NULL WHERE \"JournalEntryId\" IN (SELECT \"Id\" FROM \"JournalEntries\" WHERE \"BranchId\" IS NULL);");
+            var nonPosEntries = await _db.JournalEntries
+                .Where(j => (j.Reference == null || (!j.Reference.StartsWith("POS-") && !j.Reference.StartsWith("SHIFT-CLOSE-")))
+                         && (j.EntryNumber == null || !j.EntryNumber.StartsWith("JE-POS-"))
+                         && (j.Description == null || (!j.Description.Contains("وردية") && !j.Description.Contains("كاشير"))))
+                .ToListAsync();
+
+            foreach (var e in nonPosEntries)
+            {
+                e.BranchId = null;
+            }
+            await _db.SaveChangesAsync();
 
             var closure = await _db.POSShiftClosures.FirstOrDefaultAsync(c => c.ClosureDate == "2026-07-29");
             if (closure != null)
