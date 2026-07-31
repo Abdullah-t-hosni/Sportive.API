@@ -206,6 +206,7 @@ public class ProductService : IProductService
     public async Task<ProductDetailDto?> GetProductByIdAsync(int id, DiscountApplyTo? source = null, int? warehouseId = null, bool rawPricing = false)
     {
         var p = await _db.Products
+            .AsNoTracking()
             .Include(x => x.Category)
             .Include(x => x.SecondaryCategories).ThenInclude(sc => sc.Category)
             .Include(x => x.Brand)
@@ -236,11 +237,14 @@ public class ProductService : IProductService
             .ToList();
 
         var variantIds = p.Variants.Select(v => v.Id).ToList();
-        var movementSums = await _db.InventoryMovements
-            .Where(m => m.ProductVariantId.HasValue && variantIds.Contains(m.ProductVariantId.Value))
-            .GroupBy(m => m.ProductVariantId!.Value)
-            .Select(g => new { VariantId = g.Key, TotalQty = g.Sum(m => (int?)m.Quantity) ?? 0 })
-            .ToDictionaryAsync(x => x.VariantId, x => x.TotalQty);
+        var movementSums = variantIds.Any() 
+            ? await _db.InventoryMovements
+                .AsNoTracking()
+                .Where(m => m.ProductVariantId.HasValue && variantIds.Contains(m.ProductVariantId.Value))
+                .GroupBy(m => m.ProductVariantId!.Value)
+                .Select(g => new { VariantId = g.Key, TotalQty = g.Sum(m => (int?)m.Quantity) ?? 0 })
+                .ToDictionaryAsync(x => x.VariantId, x => x.TotalQty)
+            : new Dictionary<int, int>();
 
         if (warehouseId.HasValue)
         {
@@ -296,7 +300,7 @@ public class ProductService : IProductService
         }
 
         ProductSummaryDto? linkedSummary = null;
-        if (p.LinkedProduct != null)
+        if (p.LinkedProduct != null && p.LinkedProduct.Id != id)
         {
             var linkedList = await MapToSummaryListAsync(new List<Product> { p.LinkedProduct }, source, warehouseId);
             linkedSummary = linkedList.FirstOrDefault();
@@ -308,6 +312,7 @@ public class ProductService : IProductService
     public async Task<ProductDetailDto?> GetProductBySlugAsync(string slug, DiscountApplyTo? source = null, int? warehouseId = null, bool rawPricing = false)
     {
         var p = await _db.Products
+            .AsNoTracking()
             .Include(x => x.Category)
             .Include(x => x.SecondaryCategories).ThenInclude(sc => sc.Category)
             .Include(x => x.Brand)
