@@ -101,7 +101,7 @@ public class POSReportController : ControllerBase
 
         if (resolvedBranchId.HasValue)
         {
-            journalQuery = journalQuery.Where(j => j.Lines.Any(l => l.BranchId == resolvedBranchId.Value));
+            journalQuery = journalQuery.Where(j => j.Lines.Any(l => l.BranchId == resolvedBranchId.Value || (l.Account != null && l.Account.BranchId == resolvedBranchId.Value)));
         }
 
         var journalEntries = await journalQuery
