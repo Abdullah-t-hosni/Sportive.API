@@ -459,13 +459,13 @@ namespace Sportive.API.Controllers
             var closure = await _db.POSShiftClosures.FirstOrDefaultAsync(c => c.ClosureDate == "2026-07-29");
             if (closure != null)
             {
-                closure.Expenses = 0;
-                closure.SafeDrops = 4900;
+                closure.Expenses = 280;
+                closure.SafeDrops = 4620;
                 closure.ExpectedCash = 14325;
                 closure.ActualCash = 14325;
                 closure.Variance = 0;
                 await _db.SaveChangesAsync();
-                return Ok(new { message = "Closure 60 restored to original shift closure numbers.", closure });
+                return Ok(new { message = "Closure 60 updated with 280 EGP drawer expenses and 4,620 EGP safe drops.", closure });
             }
             return NotFound("Closure 60 not found");
         }
