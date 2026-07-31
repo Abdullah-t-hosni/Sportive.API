@@ -222,6 +222,13 @@ public class ProductService : IProductService
 
         if (p == null) return null;
 
+        var variantIds = p.Variants.Select(v => v.Id).ToList();
+        var movementSums = await _db.InventoryMovements
+            .Where(m => m.ProductVariantId.HasValue && variantIds.Contains(m.ProductVariantId.Value))
+            .GroupBy(m => m.ProductVariantId!.Value)
+            .Select(g => new { VariantId = g.Key, TotalQty = g.Sum(m => (int?)m.Quantity) ?? 0 })
+            .ToDictionaryAsync(x => x.VariantId, x => x.TotalQty);
+
         if (warehouseId.HasValue)
         {
             var warehouseStocks = await _db.ProductWarehouseStocks
@@ -232,36 +239,32 @@ public class ProductService : IProductService
 
             foreach (var v in p.Variants)
             {
+                var calcQty = movementSums.TryGetValue(v.Id, out var mq) ? mq : v.StockQuantity;
                 if (warehouseStocks.TryGetValue(v.Id, out var qty))
                 {
-                    v.StockQuantity = qty;
+                    v.StockQuantity = Math.Min(qty, calcQty);
                 }
                 else if (hasWarehouseRecords)
                 {
                     v.StockQuantity = 0;
+                }
+                else
+                {
+                    v.StockQuantity = calcQty;
                 }
             }
             p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
         }
         else
         {
-            var variantWhStocks = await _db.ProductWarehouseStocks
-                .Where(w => w.ProductVariant.ProductId == p.Id)
-                .GroupBy(w => w.ProductVariantId)
-                .Select(g => new { VariantId = g.Key, TotalQty = g.Sum(x => x.Quantity) })
-                .ToDictionaryAsync(x => x.VariantId, x => x.TotalQty);
-
-            if (variantWhStocks.Count > 0)
+            foreach (var v in p.Variants)
             {
-                foreach (var v in p.Variants)
+                if (movementSums.TryGetValue(v.Id, out var calcQty))
                 {
-                    if (variantWhStocks.TryGetValue(v.Id, out var whTotal))
-                    {
-                        v.StockQuantity = whTotal;
-                    }
+                    v.StockQuantity = calcQty;
                 }
-                p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
             }
+            p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
         }
 
         ProductDiscount? d = null;
@@ -308,6 +311,13 @@ public class ProductService : IProductService
 
         if (p == null) return null;
 
+        var variantIds = p.Variants.Select(v => v.Id).ToList();
+        var movementSums = await _db.InventoryMovements
+            .Where(m => m.ProductVariantId.HasValue && variantIds.Contains(m.ProductVariantId.Value))
+            .GroupBy(m => m.ProductVariantId!.Value)
+            .Select(g => new { VariantId = g.Key, TotalQty = g.Sum(m => (int?)m.Quantity) ?? 0 })
+            .ToDictionaryAsync(x => x.VariantId, x => x.TotalQty);
+
         if (warehouseId.HasValue)
         {
             var warehouseStocks = await _db.ProductWarehouseStocks
@@ -318,36 +328,32 @@ public class ProductService : IProductService
 
             foreach (var v in p.Variants)
             {
+                var calcQty = movementSums.TryGetValue(v.Id, out var mq) ? mq : v.StockQuantity;
                 if (warehouseStocks.TryGetValue(v.Id, out var qty))
                 {
-                    v.StockQuantity = qty;
+                    v.StockQuantity = Math.Min(qty, calcQty);
                 }
                 else if (hasWarehouseRecords)
                 {
                     v.StockQuantity = 0;
+                }
+                else
+                {
+                    v.StockQuantity = calcQty;
                 }
             }
             p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
         }
         else
         {
-            var variantWhStocks = await _db.ProductWarehouseStocks
-                .Where(w => w.ProductVariant.ProductId == p.Id)
-                .GroupBy(w => w.ProductVariantId)
-                .Select(g => new { VariantId = g.Key, TotalQty = g.Sum(x => x.Quantity) })
-                .ToDictionaryAsync(x => x.VariantId, x => x.TotalQty);
-
-            if (variantWhStocks.Count > 0)
+            foreach (var v in p.Variants)
             {
-                foreach (var v in p.Variants)
+                if (movementSums.TryGetValue(v.Id, out var calcQty))
                 {
-                    if (variantWhStocks.TryGetValue(v.Id, out var whTotal))
-                    {
-                        v.StockQuantity = whTotal;
-                    }
+                    v.StockQuantity = calcQty;
                 }
-                p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
             }
+            p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
         }
 
         ProductDiscount? d = null;
@@ -1029,6 +1035,12 @@ public class ProductService : IProductService
             )
             .ToListAsync();
 
+        var movementSums = await _db.InventoryMovements
+            .Where(m => m.ProductVariantId.HasValue && productIds.Contains(m.Product!.Id))
+            .GroupBy(m => m.ProductVariantId!.Value)
+            .Select(g => new { VariantId = g.Key, TotalQty = g.Sum(m => (int?)m.Quantity) ?? 0 })
+            .ToDictionaryAsync(x => x.VariantId, x => x.TotalQty);
+
         var resultList = new List<ProductSummaryDto>();
         
         // Fetch warehouse stocks in a single batch to avoid N+1 queries if warehouseId is passed
@@ -1119,19 +1131,23 @@ public class ProductService : IProductService
                 p.ReorderLevel,
                 p.SKU,
                 p.Variants != null && p.Variants.Any(),
-                p.Variants?.Select(v => new ProductVariantDto(
-                    v.Id, 
-                    v.Size, 
-                    v.Color, 
-                    v.ColorAr, 
-                    variantStocks.Count > 0 
-                        ? (variantStocks.TryGetValue(v.Id, out var qty) ? qty : 0) 
-                        : v.StockQuantity, 
-                    v.ReorderLevel, 
-                    v.PriceAdjustment ?? 0, 
-                    v.ImageUrl, 
-                    v.ImagePublicId
-                )).ToList() ?? new List<ProductVariantDto>(),
+                p.Variants?.Select(v => {
+                    int calcQty = movementSums.TryGetValue(v.Id, out var mq) ? mq : v.StockQuantity;
+                    int effectiveStock = variantStocks.Count > 0 
+                        ? Math.Min(variantStocks.TryGetValue(v.Id, out var qty) ? qty : 0, calcQty)
+                        : calcQty;
+                    return new ProductVariantDto(
+                        v.Id, 
+                        v.Size, 
+                        v.Color, 
+                        v.ColorAr, 
+                        effectiveStock, 
+                        v.ReorderLevel, 
+                        v.PriceAdjustment ?? 0, 
+                        v.ImageUrl, 
+                        v.ImagePublicId
+                    );
+                }).ToList() ?? new List<ProductVariantDto>(),
                 p.HasTax,
                 p.IsTaxInclusive,
                 p.VatRate,
