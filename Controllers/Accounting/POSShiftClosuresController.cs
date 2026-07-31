@@ -456,6 +456,9 @@ namespace Sportive.API.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> FixClosure60()
         {
+            await _db.Database.ExecuteSqlRawAsync("UPDATE \"JournalEntries\" SET \"BranchId\" = NULL WHERE \"CostCenter\" = 0 OR \"EntryNumber\" LIKE 'JE-GEN-%';");
+            await _db.Database.ExecuteSqlRawAsync("UPDATE \"JournalLines\" SET \"BranchId\" = NULL WHERE \"JournalEntryId\" IN (SELECT \"Id\" FROM \"JournalEntries\" WHERE \"BranchId\" IS NULL);");
+
             var closure = await _db.POSShiftClosures.FirstOrDefaultAsync(c => c.ClosureDate == "2026-07-29");
             if (closure != null)
             {
@@ -465,7 +468,7 @@ namespace Sportive.API.Controllers
                 closure.ActualCash = 14325;
                 closure.Variance = 0;
                 await _db.SaveChangesAsync();
-                return Ok(new { message = "Closure 60 updated with 280 EGP drawer expenses and 4,620 EGP safe drops.", closure });
+                return Ok(new { message = "Closure 60 updated and general entries restored to BranchId NULL.", closure });
             }
             return NotFound("Closure 60 not found");
         }
