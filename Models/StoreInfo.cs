@@ -496,6 +496,12 @@ public class StoreInfo
     [JsonPropertyName("facebookTestEventCode")]
     public string? FacebookTestEventCode { get; set; }
 
+    [JsonPropertyName("facebookAdAccountId")]
+    public string? FacebookAdAccountId { get; set; }
+
+    [JsonPropertyName("realAdCampaignsJson")]
+    public string? RealAdCampaignsJson { get; set; }
+
     [JsonPropertyName("siteMetaDescriptionAr")]
     public string? SiteMetaDescriptionAr { get; set; }
 

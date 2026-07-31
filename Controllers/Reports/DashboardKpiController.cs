@@ -149,6 +149,15 @@ public class DashboardKpiController : ControllerBase
         return Ok(await ga4Service.GetStoreVisitorsStatsAsync(startDate, endDate));
     }
 
+    [HttpGet("facebook-campaigns")]
+    public async Task<IActionResult> GetFacebookCampaigns(
+        [FromServices] IFacebookCapiService facebookService,
+        [FromQuery] string? adAccountId = null)
+    {
+        var result = await facebookService.GetAdAccountCampaignsAsync(adAccountId);
+        return Ok(result);
+    }
+
     [HttpGet("store-visitors/export")]
     public async Task<IActionResult> GetStoreVisitorsExport(
         [FromServices] IGoogleAnalyticsService ga4Service,
