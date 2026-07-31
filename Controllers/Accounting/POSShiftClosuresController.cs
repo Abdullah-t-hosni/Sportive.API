@@ -17,6 +17,7 @@ namespace Sportive.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [RequirePermission(ModuleKeys.Pos)]
     public class POSShiftClosuresController : ControllerBase
     {
         private readonly AppDbContext _db;
@@ -83,7 +84,6 @@ namespace Sportive.API.Controllers
         }
 
         [HttpGet]
-        [AllowAnonymous]
         public async Task<IActionResult> Get([FromQuery] string? date = null, [FromQuery] string? stationId = null, [FromQuery] int? branchId = null)
         {
             try
@@ -335,151 +335,6 @@ namespace Sportive.API.Controllers
             {
                 return StatusCode(500, new { message = "Failed to update shift closure", error = ex.Message });
             }
-        }
-
-        [HttpPost("recalculate")]
-        [AllowAnonymous]
-        public async Task<IActionResult> RecalculateAllHistoricalClosures()
-        {
-            try
-            {
-                var closures = await _db.POSShiftClosures.ToListAsync();
-                var mappings = await _db.AccountSystemMappings
-                    .AsNoTracking()
-                    .ToDictionaryAsync(m => m.Key.ToLower(), m => m.AccountId);
-
-                mappings.TryGetValue(MappingKeys.PosCash.ToLower(), out var posCashId);
-                mappings.TryGetValue(MappingKeys.PosBank.ToLower(), out var posBankId);
-                mappings.TryGetValue(MappingKeys.PosVodafone.ToLower(), out var posVodaId);
-                mappings.TryGetValue(MappingKeys.PosInstaPay.ToLower(), out var posInstaId);
-                mappings.TryGetValue(MappingKeys.Cash.ToLower(), out var mainCashId);
-
-                var effectiveDrawerId = (posCashId != 0 && posCashId != null) ? posCashId.Value : (mainCashId != 0 && mainCashId != null ? mainCashId.Value : 0);
-
-                int updatedCount = 0;
-
-                var allAccountsDict = await _db.Accounts.AsNoTracking().ToDictionaryAsync(a => a.Id);
-
-                foreach (var c in closures)
-                {
-                    if (!DateTime.TryParse(c.ClosureDate, out var parsedDate)) continue;
-
-                    var from = parsedDate.Date.AddHours(TimeHelper.GetBusinessDayEndHour());
-                    var to = parsedDate.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
-
-                    var journalEntries = await _db.JournalEntries
-                        .AsNoTracking()
-                        .Include(j => j.Lines).ThenInclude(l => l.Account)
-                        .Where(j => j.EntryDate >= from && j.EntryDate <= to && j.Status == JournalEntryStatus.Posted)
-                        .ToListAsync();
-
-                    decimal expenses = 0;
-                    decimal safeDrops = 0;
-
-                    bool IsPosCashAccount(int accountId, Account? acc)
-                    {
-                        if (accountId == effectiveDrawerId || (posCashId.HasValue && posCashId.Value == accountId)) return true;
-                        var targetAcc = acc ?? (allAccountsDict.TryGetValue(accountId, out var a) ? a : null);
-                        if (targetAcc != null)
-                        {
-                            var code = targetAcc.Code ?? "";
-                            var name = targetAcc.NameAr ?? "";
-                            if (code.StartsWith("1103") || (name.Contains("كاشير") && !name.Contains("رئيسية")) || name.Contains("درج") || name.Contains("المسله")) return true;
-                        }
-                        return false;
-                    }
-
-                    foreach (var j in journalEntries)
-                    {
-                        var type = j.Type.ToString();
-                        var isExpense = type == "PaymentVoucher";
-                        var isManual = type == "Manual";
-
-                        foreach (var l in j.Lines)
-                        {
-                            var aid = l.AccountId;
-                            var credit = l.Credit;
-
-                            if (isExpense && IsPosCashAccount(aid, l.Account) && credit > 0)
-                            {
-                                var debitedLine = j.Lines.FirstOrDefault(line => line.Debit > 0);
-                                var isTransferToSafeOrBank = false;
-                                if (debitedLine != null)
-                                {
-                                    var destAccountId = debitedLine.AccountId;
-                                    var destAcc = debitedLine.Account ?? (allAccountsDict.TryGetValue(destAccountId, out var a) ? a : null);
-                                    var destCode = destAcc?.Code ?? "";
-                                    var destName = destAcc?.NameAr ?? "";
-                                    isTransferToSafeOrBank = destAccountId == mainCashId ||
-                                                             destAccountId == posCashId ||
-                                                             destAccountId == posBankId ||
-                                                             destAccountId == posVodaId ||
-                                                             destAccountId == posInstaId ||
-                                                             destCode.StartsWith("1101") ||
-                                                             destCode.StartsWith("1102") ||
-                                                             destCode.StartsWith("1105") ||
-                                                             destCode.StartsWith("1107") ||
-                                                             destCode.StartsWith("3105") ||
-                                                             destName.Contains("جاري") ||
-                                                             destName.Contains("شريك");
-                                }
-
-                                if (isTransferToSafeOrBank) safeDrops += credit;
-                                else expenses += credit;
-                            }
-
-                            if (isManual && IsPosCashAccount(aid, l.Account) && credit > 0)
-                            {
-                                if (string.IsNullOrEmpty(j.Reference) || !j.Reference.StartsWith("SHIFT-CLOSE-", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    safeDrops += credit;
-                                }
-                            }
-                        }
-                    }
-
-                    c.Expenses = expenses;
-                    c.SafeDrops = safeDrops;
-                    c.UpdatedAt = TimeHelper.GetEgyptTime();
-                    updatedCount++;
-                }
-
-                await _db.SaveChangesAsync();
-                return Ok(new { message = $"Successfully recalculated and updated {updatedCount} historical shift closures.", updatedCount });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Failed to recalculate historical closures", error = ex.Message });
-            }
-        }
-        [HttpGet("fix-closure-60")]
-        [AllowAnonymous]
-        public async Task<IActionResult> FixClosure60()
-        {
-            var nonPosEntries = await _db.JournalEntries
-                .Where(j => (j.Reference == null || (!j.Reference.StartsWith("POS-") && !j.Reference.StartsWith("SHIFT-CLOSE-")))
-                         && (j.EntryNumber == null || !j.EntryNumber.StartsWith("JE-POS-"))
-                         && (j.Description == null || (!j.Description.Contains("وردية") && !j.Description.Contains("كاشير"))))
-                .ToListAsync();
-
-            foreach (var e in nonPosEntries)
-            {
-                e.BranchId = null;
-            }
-            await _db.SaveChangesAsync();
-
-            var closure = await _db.POSShiftClosures.FirstOrDefaultAsync(c => c.ClosureDate == "2026-07-29");
-            if (closure != null)
-            {
-                closure.Expenses = 280;
-                closure.SafeDrops = 4620;
-                closure.ExpectedCash = 14325;
-                closure.ActualCash = 14325;
-                closure.Variance = 0;
-                await _db.SaveChangesAsync();
-                return Ok(new { message = "Closure 60 updated and general entries restored to BranchId NULL.", closure });
-            }
-            return NotFound("Closure 60 not found");
         }
     }
 }

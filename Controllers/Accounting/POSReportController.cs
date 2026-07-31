@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Attributes;
 using Sportive.API.Data;
@@ -32,7 +31,6 @@ public class POSReportController : ControllerBase
     /// Business day: 02:00 AM → next day 02:00 AM (Egypt time)
     /// </summary>
     [HttpGet("summary")]
-    [AllowAnonymous]
     public async Task<IActionResult> GetDailySummary(
         [FromQuery] string date,
         [FromQuery] string? stationId = null,
@@ -46,39 +44,6 @@ public class POSReportController : ControllerBase
         if (!canViewAll)
         {
             resolvedBranchId = User.GetBranchId();
-        }
-
-        // ── 0. Check if a Shift Closure already exists for this date ──────────
-        var closureQuery = _db.POSShiftClosures.AsNoTracking().Where(c => c.ClosureDate == date);
-        if (resolvedBranchId.HasValue)
-        {
-            closureQuery = closureQuery.Where(c => c.BranchId == resolvedBranchId.Value);
-        }
-        var closure = await closureQuery.OrderByDescending(c => c.Id).FirstOrDefaultAsync();
-
-        if (closure != null)
-        {
-            return Ok(new
-            {
-                grossSales = closure.GrossSales,
-                netSales = closure.NetSales,
-                cashSales = closure.CashSales,
-                cardSales = closure.CardSales,
-                vodafoneSales = closure.VodafoneCashSales,
-                instapaySales = closure.InstapaySales,
-                walletSales = closure.WalletSales,
-                creditSales = closure.CreditSales,
-                totalReturns = closure.Returns,
-                totalDiscounts = closure.Discounts,
-                expenses = closure.Expenses,
-                safeDrops = closure.SafeDrops,
-                cashReceipts = 0,
-                cashReturns = 0,
-                expectedCash = closure.ExpectedCash,
-                actualCash = closure.ActualCash,
-                variance = closure.Variance,
-                isClosed = true
-            });
         }
 
         // Business day window: starts at 02:00 AM on 'date', ends at 02:00 AM next day
@@ -136,25 +101,18 @@ public class POSReportController : ControllerBase
 
         if (resolvedBranchId.HasValue)
         {
-            journalQuery = journalQuery.Where(j => j.Lines.Any(l => l.BranchId == resolvedBranchId.Value || l.BranchId == null));
+            journalQuery = journalQuery.Where(j => j.Lines.Any(l => l.BranchId == resolvedBranchId.Value));
         }
 
         var journalEntries = await journalQuery
             .OrderBy(j => j.EntryDate).ThenBy(j => j.Id)
             .ToListAsync();
 
-        var allAccountsDict = await _db.Accounts.AsNoTracking().ToDictionaryAsync(a => a.Id);
-
-        // Filter: only entries that touch a POS account OR have POS cost center OR Payment/Receipt Vouchers touching cashier drawers
+        // Filter: only entries that touch a POS account OR have POS cost center
         var posEntries = journalEntries.Where(j =>
             j.CostCenter == OrderSource.POS
             || (j.Reference != null && j.Reference.StartsWith("POS-"))
-            || j.Lines.Any(l => {
-                var acc = l.Account ?? (allAccountsDict.TryGetValue(l.AccountId, out var a) ? a : null);
-                var code = acc?.Code ?? "";
-                var name = acc?.NameAr ?? "";
-                return posAccountIds.Contains(l.AccountId) || code.StartsWith("1103") || name.Contains("كاشير") || name.Contains("درج") || name.Contains("المسله");
-            })
+            || j.Lines.Any(l => posAccountIds.Contains(l.AccountId))
         ).ToList();
 
         // ── 4. Compute KPIs from Orders ───────────────────────────────────────
@@ -250,19 +208,6 @@ public class POSReportController : ControllerBase
         decimal cashReceipts  = 0; // debt collections
         decimal cashReturns   = 0;
 
-        bool IsPosCashAccount(int accountId, Account? acc)
-        {
-            if (accountId == effectiveDrawerId || (posCashId.HasValue && accountId == posCashId.Value)) return true;
-            var targetAcc = acc ?? (allAccountsDict.TryGetValue(accountId, out var a) ? a : null);
-            if (targetAcc != null)
-            {
-                var code = targetAcc.Code ?? "";
-                var name = targetAcc.NameAr ?? "";
-                if (code.StartsWith("1103") || (name.Contains("كاشير") && !name.Contains("رئيسية")) || name.Contains("درج") || name.Contains("المسله")) return true;
-            }
-            return false;
-        }
-
         foreach (var j in posEntries)
         {
             var type = j.Type.ToString();
@@ -283,16 +228,15 @@ public class POSReportController : ControllerBase
                     totalReturns += debit;
 
                 // Expenses: debit from POS cash
-                if (isExpense && IsPosCashAccount(aid, l.Account) && credit > 0)
+                if (isExpense && aid == effectiveDrawerId && credit > 0)
                 {
                     var debitedLine = j.Lines.FirstOrDefault(line => line.Debit > 0);
                     var isTransferToSafeOrBank = false;
-                    if (debitedLine != null)
+                    if (debitedLine != null && debitedLine.Account != null)
                     {
                         var destAccountId = debitedLine.AccountId;
-                        var destAcc = debitedLine.Account ?? (allAccountsDict.TryGetValue(destAccountId, out var a) ? a : null);
-                        var destCode = destAcc?.Code ?? "";
-                        var destName = destAcc?.NameAr ?? "";
+                        var destCode = debitedLine.Account.Code ?? "";
+                        var destName = debitedLine.Account.NameAr ?? "";
                         isTransferToSafeOrBank = destAccountId == mainCashId ||
                                                  destAccountId == posCashId ||
                                                  destAccountId == posBankId ||
@@ -300,8 +244,10 @@ public class POSReportController : ControllerBase
                                                  destAccountId == posInstaId ||
                                                  destCode.StartsWith("1101") || // Cashier/Safes
                                                  destCode.StartsWith("1102") || // Banks
+                                                 destCode.StartsWith("1103") || // POS drawers
                                                  destCode.StartsWith("1105") || // Vodafone cash
                                                  destCode.StartsWith("1107") || // Instapay
+                                                 destCode.StartsWith("111") ||
                                                  destCode.StartsWith("3105") || // Partner current
                                                  destName.Contains("جاري") ||
                                                  destName.Contains("شريك");
@@ -318,7 +264,7 @@ public class POSReportController : ControllerBase
                 }
 
                 // Safe drops: manual debit from POS cash → main safe (excluding shift closure entries)
-                if (isManual && IsPosCashAccount(aid, l.Account) && credit > 0)
+                if (isManual && aid == effectiveDrawerId && credit > 0)
                 {
                     if (string.IsNullOrEmpty(j.Reference) || !j.Reference.StartsWith("SHIFT-CLOSE-", StringComparison.OrdinalIgnoreCase))
                     {
@@ -327,11 +273,11 @@ public class POSReportController : ControllerBase
                 }
 
                 // Cash returns: credit to POS cash drawer from a return entry
-                if (isReturn && IsPosCashAccount(aid, l.Account) && credit > 0)
+                if (isReturn && aid == effectiveDrawerId && credit > 0)
                     cashReturns += credit;
 
                 // Debt collections: receipt voucher cash received or Manual transfers IN
-                if ((isReceipt || isManual) && IsPosCashAccount(aid, l.Account) && debit > 0)
+                if ((isReceipt || isManual) && aid == effectiveDrawerId && debit > 0)
                     cashReceipts += debit;
             }
         }
@@ -443,40 +389,8 @@ public class POSReportController : ControllerBase
             DuplicateInvoices = duplicateInvoices,
             SumSales = sumSales,
             SumReceipts = sumReceipts,
-            ExpectedCash = expectedCash,
+            ExpectedCashFromOrders = expectedCash,
             MissingReturns = missingReturns
         });
-    }
-
-    [HttpGet("debug-july29")]
-    [AllowAnonymous]
-    public async Task<IActionResult> DebugJuly29()
-    {
-        var parsedDate = new DateTime(2026, 7, 29);
-        var from = parsedDate.Date.AddHours(TimeHelper.GetBusinessDayEndHour());
-        var to = parsedDate.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
-
-        var journalEntries = await _db.JournalEntries
-            .AsNoTracking()
-            .Include(j => j.Lines).ThenInclude(l => l.Account)
-            .Where(j => j.EntryDate >= from && j.EntryDate <= to && j.Status == JournalEntryStatus.Posted)
-            .ToListAsync();
-
-        var details = journalEntries.Select(j => new {
-            j.Id,
-            j.Reference,
-            j.Type,
-            j.CostCenter,
-            j.Description,
-            Lines = j.Lines.Select(l => new {
-                l.AccountId,
-                AccountCode = l.Account?.Code,
-                AccountName = l.Account?.NameAr,
-                l.Debit,
-                l.Credit
-            })
-        });
-
-        return Ok(details);
     }
 }
