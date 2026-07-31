@@ -106,11 +106,12 @@ public class InventoryService : IInventoryService
                         .FirstOrDefaultAsync(pws => pws.ProductVariantId == variantId.Value && pws.WarehouseId == warehouseIdToUse.Value);
                     if (warehouseStock == null)
                     {
+                        var hasOtherWhStocks = await _db.ProductWarehouseStocks.AnyAsync(pws => pws.ProductVariantId == variantId.Value);
                         warehouseStock = new ProductWarehouseStock
                         {
                             ProductVariantId = variantId.Value,
                             WarehouseId = warehouseIdToUse.Value,
-                            Quantity = variant.StockQuantity,
+                            Quantity = hasOtherWhStocks ? 0 : variant.StockQuantity,
                             CreatedAt = TimeHelper.GetEgyptTime()
                         };
                         _db.ProductWarehouseStocks.Add(warehouseStock);

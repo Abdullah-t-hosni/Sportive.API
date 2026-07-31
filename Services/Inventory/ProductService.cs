@@ -228,18 +228,20 @@ public class ProductService : IProductService
                 .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == warehouseId.Value)
                 .ToDictionaryAsync(w => w.ProductVariantId, w => w.Quantity);
 
-            if (warehouseStocks.Count > 0)
+            bool hasWarehouseRecords = await _db.ProductWarehouseStocks.AnyAsync(w => w.WarehouseId == warehouseId.Value);
+
+            foreach (var v in p.Variants)
             {
-                foreach (var v in p.Variants)
+                if (warehouseStocks.TryGetValue(v.Id, out var qty))
                 {
-                    v.StockQuantity = warehouseStocks.TryGetValue(v.Id, out var qty) ? qty : 0;
+                    v.StockQuantity = qty;
                 }
-                p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
+                else if (hasWarehouseRecords)
+                {
+                    v.StockQuantity = 0;
+                }
             }
-            else
-            {
-                p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
-            }
+            p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
         }
 
         ProductDiscount? d = null;
@@ -292,18 +294,20 @@ public class ProductService : IProductService
                 .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == warehouseId.Value)
                 .ToDictionaryAsync(w => w.ProductVariantId, w => w.Quantity);
 
-            if (warehouseStocks.Count > 0)
+            bool hasWarehouseRecords = await _db.ProductWarehouseStocks.AnyAsync(w => w.WarehouseId == warehouseId.Value);
+
+            foreach (var v in p.Variants)
             {
-                foreach (var v in p.Variants)
+                if (warehouseStocks.TryGetValue(v.Id, out var qty))
                 {
-                    v.StockQuantity = warehouseStocks.TryGetValue(v.Id, out var qty) ? qty : 0;
+                    v.StockQuantity = qty;
                 }
-                p.TotalStock = p.Variants.Sum(v => v.StockQuantity);
+                else if (hasWarehouseRecords)
+                {
+                    v.StockQuantity = 0;
+                }
             }
-            else
-            {
-                p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
-            }
+            p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
         }
 
         ProductDiscount? d = null;
