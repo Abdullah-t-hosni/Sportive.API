@@ -410,8 +410,40 @@ public class POSReportController : ControllerBase
             DuplicateInvoices = duplicateInvoices,
             SumSales = sumSales,
             SumReceipts = sumReceipts,
-            ExpectedCashFromOrders = expectedCash,
+            ExpectedCash = expectedCash,
             MissingReturns = missingReturns
         });
+    }
+
+    [HttpGet("debug-july29")]
+    [AllowAnonymous]
+    public async Task<IActionResult> DebugJuly29()
+    {
+        var parsedDate = new DateTime(2026, 7, 29);
+        var from = parsedDate.Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to = parsedDate.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
+
+        var journalEntries = await _db.JournalEntries
+            .AsNoTracking()
+            .Include(j => j.Lines).ThenInclude(l => l.Account)
+            .Where(j => j.EntryDate >= from && j.EntryDate <= to && j.Status == JournalEntryStatus.Posted)
+            .ToListAsync();
+
+        var details = journalEntries.Select(j => new {
+            j.Id,
+            j.Reference,
+            j.Type,
+            j.CostCenter,
+            j.Description,
+            Lines = j.Lines.Select(l => new {
+                l.AccountId,
+                AccountCode = l.Account?.Code,
+                AccountName = l.Account?.NameAr,
+                l.Debit,
+                l.Credit
+            })
+        });
+
+        return Ok(details);
     }
 }
