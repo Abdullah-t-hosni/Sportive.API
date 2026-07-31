@@ -29,6 +29,7 @@ public class ProductService : IProductService
     {
         var query = _db.Products
             .AsNoTracking()
+            .AsSplitQuery()
             .Include(p => p.Category!).ThenInclude(c => c.Parent!).ThenInclude(c => c.Parent!)
             .Include(p => p.Brand)
             .Include(p => p.Images)
@@ -207,6 +208,7 @@ public class ProductService : IProductService
     {
         var p = await _db.Products
             .AsNoTracking()
+            .AsSplitQuery()
             .Include(x => x.Category)
             .Include(x => x.SecondaryCategories).ThenInclude(sc => sc.Category)
             .Include(x => x.Brand)
@@ -313,6 +315,7 @@ public class ProductService : IProductService
     {
         var p = await _db.Products
             .AsNoTracking()
+            .AsSplitQuery()
             .Include(x => x.Category)
             .Include(x => x.SecondaryCategories).ThenInclude(sc => sc.Category)
             .Include(x => x.Brand)
@@ -834,6 +837,7 @@ public class ProductService : IProductService
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         var query = _db.Products
             .AsNoTracking()
+            .AsSplitQuery()
             .Include(p => p.Category)
             .Include(p => p.Brand)
             .Include(p => p.Images)
@@ -916,6 +920,7 @@ public class ProductService : IProductService
             // "Complete the Look" (أكمل المظهر): suggest matching apparel and accessories (especially socks!)
             query = _db.Products
                 .AsNoTracking()
+                .AsSplitQuery()
                 .Include(p => p.Category)
                 .Include(p => p.Brand)
                 .Include(p => p.Images)
@@ -928,6 +933,7 @@ public class ProductService : IProductService
         {
             query = _db.Products
                 .AsNoTracking()
+                .AsSplitQuery()
                 .Include(p => p.Category)
                 .Include(p => p.Brand)
                 .Include(p => p.Images)
