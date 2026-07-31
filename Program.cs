@@ -273,6 +273,15 @@ using (var scope = app.Services.CreateScope())
 
                 // 2. We no longer run automatic migrations for all active tenants sequentially at startup.
                 // Migrations should be handled via a dedicated administrative endpoint on-demand to avoid scaling bottlenecks.
+                // Auto-patch new columns for StoreSettings safely
+                try
+                {
+                    using var scope = services.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    try { db.Database.ExecuteSqlRaw("ALTER TABLE StoreSettings ADD COLUMN FacebookAdAccountId longtext NULL;"); } catch {}
+                    try { db.Database.ExecuteSqlRaw("ALTER TABLE StoreSettings ADD COLUMN RealAdCampaignsJson longtext NULL;"); } catch {}
+                }
+                catch {}
             }
             catch (Exception ex)
             {
