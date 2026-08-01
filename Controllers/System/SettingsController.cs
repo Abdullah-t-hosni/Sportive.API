@@ -55,7 +55,9 @@ public class SettingsController : ControllerBase
             "ALTER TABLE `Orders` ADD `ShippingCarrierName` longtext NULL;",
             "ALTER TABLE `Orders` ADD `ShippingTrackingNumber` longtext NULL;",
             "ALTER TABLE `Orders` ADD `ShippingType` longtext NULL;",
-            "ALTER TABLE `StoreSettings` ADD `BostaAllowPackageOpen` tinyint(1) NOT NULL DEFAULT 0;"
+            "ALTER TABLE `StoreSettings` ADD `BostaAllowPackageOpen` tinyint(1) NOT NULL DEFAULT 0;",
+            "ALTER TABLE `StoreSettings` ADD `FacebookAdAccountId` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `RealAdCampaignsJson` longtext NULL;"
         };
 
         foreach (var sql in sqlStatements)
