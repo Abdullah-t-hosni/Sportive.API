@@ -238,14 +238,14 @@ public record UpdateSizeChartDto(
 
 
 public record CreateVariantDto(
-    [property: JsonPropertyName("size")] string? Size,
-    [property: JsonPropertyName("color")] string? Color,
-    [property: JsonPropertyName("colorAr")] string? ColorAr,
-    [property: JsonPropertyName("stockQuantity")] int? StockQuantity,
-    [property: JsonPropertyName("priceAdjustment")] decimal? PriceAdjustment,
-    [property: JsonPropertyName("reorderLevel")] int? ReorderLevel = 0,
-    [property: JsonPropertyName("isActive")] bool? IsActive = true,
-    [property: JsonPropertyName("maxOnlineStock")] int? MaxOnlineStock = null
+    string? Size,
+    string? Color,
+    string? ColorAr,
+    int? StockQuantity,
+    decimal? PriceAdjustment,
+    int? ReorderLevel = 0,
+    bool? IsActive = true,
+    int? MaxOnlineStock = null
 );
 
 // ========== REVIEWS & WISHLIST ==========
