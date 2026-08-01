@@ -75,6 +75,7 @@ public class ProductVariant : BaseEntity
     public string? ImageUrl { get; set; }
     public string? ImagePublicId { get; set; }
     public bool IsActive { get; set; } = true;
+    public int? MaxOnlineStock { get; set; }
 }
 
 public class ProductImage : BaseEntity

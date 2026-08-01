@@ -399,6 +399,17 @@ if (args.Contains("--migrate-isactive"))
         {
             Log.Information("Migration Note: {Message}", ex.Message);
         }
+
+        try
+        {
+            Log.Information("Adding MaxOnlineStock column to ProductVariants table if missing...");
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE `ProductVariants` ADD COLUMN `MaxOnlineStock` int NULL DEFAULT NULL;");
+            Log.Information("SUCCESS: Added MaxOnlineStock column to ProductVariants table.");
+        }
+        catch (Exception ex)
+        {
+            Log.Information("Migration Note: {Message}", ex.Message);
+        }
     }
     return;
 }

@@ -419,7 +419,8 @@ public class ProductService : IProductService
                     StockQuantity = 0, // Start with 0, let LogMovement handle it
                     ReorderLevel = v.ReorderLevel ?? 0,
                     PriceAdjustment = v.PriceAdjustment,
-                    IsActive = v.IsActive ?? true
+                    IsActive = v.IsActive ?? true,
+                    MaxOnlineStock = v.MaxOnlineStock
                 });
             }
             product.TotalStock = 0;
@@ -751,6 +752,8 @@ public class ProductService : IProductService
         // Do NOT overwrite StockQuantity here. Inventory is managed via InventoryService/Adjustments.
         v.ReorderLevel = dto.ReorderLevel ?? 0;
         v.PriceAdjustment = dto.PriceAdjustment;
+        v.IsActive = dto.IsActive ?? v.IsActive;
+        v.MaxOnlineStock = dto.MaxOnlineStock;
         v.UpdatedAt = TimeHelper.GetEgyptTime();
 
         var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == v.ProductId);
@@ -763,7 +766,7 @@ public class ProductService : IProductService
         await _db.SaveChangesAsync();
         await _notifications.BroadcastStockUpdateAsync(v.ProductId, v.Id, v.StockQuantity);
         
-        return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId);
+        return new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId, v.IsActive, v.MaxOnlineStock);
     }
 
     public async Task<bool> DeleteVariantAsync(int variantId)
@@ -964,7 +967,7 @@ public class ProductService : IProductService
             p.Status.ToString(), p.IsFeatured,
             p.CategoryId, p.Category?.NameAr ?? _t.Get("Products.CategoryMissing"), p.Category?.NameEn ?? _t.Get("Products.CategoryMissing"),
             p.Category?.Type.ToString(),
-            p.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId, v.IsActive)).ToList() ?? new List<ProductVariantDto>(),
+            p.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId, v.IsActive, v.MaxOnlineStock)).ToList() ?? new List<ProductVariantDto>(),
             p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr, i.CategoryId)).ToList() ?? new List<ProductImageDto>(),
             p.AverageRating,
             p.ReviewCount,
@@ -1146,7 +1149,8 @@ public class ProductService : IProductService
                         v.PriceAdjustment ?? 0, 
                         v.ImageUrl, 
                         v.ImagePublicId,
-                        v.IsActive
+                        v.IsActive,
+                        v.MaxOnlineStock
                     );
                 }).ToList() ?? new List<ProductVariantDto>(),
                 p.HasTax,

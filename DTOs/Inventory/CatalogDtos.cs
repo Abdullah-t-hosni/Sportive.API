@@ -170,7 +170,8 @@ public record ProductVariantDto(
     decimal PriceAdjustment,
     string? ImageUrl,
     string? ImagePublicId = null,
-    bool IsActive = true
+    bool IsActive = true,
+    int? MaxOnlineStock = null
 );
 
 public record ProductImageDto(int Id, string ImageUrl, string? ImagePublicId = null, bool IsMain = false, int SortOrder = 0, string? ColorAr = null, int? CategoryId = null);
@@ -243,7 +244,8 @@ public record CreateVariantDto(
     int? StockQuantity,
     decimal? PriceAdjustment,
     int? ReorderLevel = 0,
-    bool? IsActive = true
+    bool? IsActive = true,
+    int? MaxOnlineStock = null
 );
 
 // ========== REVIEWS & WISHLIST ==========
