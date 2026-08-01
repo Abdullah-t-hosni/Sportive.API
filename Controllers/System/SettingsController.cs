@@ -313,6 +313,8 @@ public class SettingsController : ControllerBase
             info.FacebookPixelId          = dto.FacebookPixelId;
             info.FacebookCapiToken        = dto.FacebookCapiToken;
             info.FacebookTestEventCode    = dto.FacebookTestEventCode;
+            info.FacebookAdAccountId      = dto.FacebookAdAccountId;
+            info.RealAdCampaignsJson      = dto.RealAdCampaignsJson;
             info.SiteMetaDescriptionAr    = dto.SiteMetaDescriptionAr;
             info.SiteMetaDescriptionEn    = dto.SiteMetaDescriptionEn;
             info.SiteKeywords             = dto.SiteKeywords;

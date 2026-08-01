@@ -496,11 +496,9 @@ public class StoreInfo
     [JsonPropertyName("facebookTestEventCode")]
     public string? FacebookTestEventCode { get; set; }
 
-    [NotMapped]
     [JsonPropertyName("facebookAdAccountId")]
     public string? FacebookAdAccountId { get; set; }
 
-    [NotMapped]
     [JsonPropertyName("realAdCampaignsJson")]
     public string? RealAdCampaignsJson { get; set; }
 
