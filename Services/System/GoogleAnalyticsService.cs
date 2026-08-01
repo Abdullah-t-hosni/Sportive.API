@@ -226,12 +226,12 @@ namespace Sportive.API.Services
                     _logger.LogWarning(ex, "Failed to fetch device metrics");
                 }
 
-                // 6. Traffic Sources Data (sessionSource)
+                // 6. Traffic Sources & Campaign Data (sessionCampaignName / sessionSource)
                 var sourcesRequest = new RunReportRequest
                 {
                     Property = $"properties/{_propertyId}",
                     DateRanges = { new DateRange { StartDate = start, EndDate = end } },
-                    Dimensions = { new Dimension { Name = "sessionSource" } },
+                    Dimensions = { new Dimension { Name = "sessionCampaignName" } },
                     Metrics = { new Metric { Name = "activeUsers" } },
                     OrderBys = { new OrderBy { Metric = new OrderBy.Types.MetricOrderBy { MetricName = "activeUsers" }, Desc = true } },
                     Limit = 5
@@ -246,10 +246,25 @@ namespace Sportive.API.Services
 
                     foreach (var row in sourcesResponse.Rows)
                     {
-                        var src = row.DimensionValues[0].Value;
+                        var rawName = row.DimensionValues[0].Value;
+                        if (string.IsNullOrWhiteSpace(rawName) || rawName == "(not set)" || rawName == "(direct)") continue;
                         long.TryParse(row.MetricValues[0].Value, out long u);
-                        sourceCounts[src] = u;
+                        sourceCounts[rawName] = u;
                         totalSourceUsers += u;
+                    }
+
+                    // Fallback to sessionSource if no campaign names set
+                    if (sourceCounts.Count == 0)
+                    {
+                        sourcesRequest.Dimensions[0] = new Dimension { Name = "sessionSource" };
+                        sourcesResponse = await client.RunReportAsync(sourcesRequest);
+                        foreach (var row in sourcesResponse.Rows)
+                        {
+                            var rawName = row.DimensionValues[0].Value;
+                            long.TryParse(row.MetricValues[0].Value, out long u);
+                            sourceCounts[rawName] = u;
+                            totalSourceUsers += u;
+                        }
                     }
 
                     if (totalSourceUsers > 0)
@@ -257,11 +272,10 @@ namespace Sportive.API.Services
                         foreach (var kvp in sourceCounts)
                         {
                             var name = kvp.Key;
-                            if (name.Contains("facebook", StringComparison.OrdinalIgnoreCase)) name = "فيسبوك (Facebook Ads)";
-                            else if (name.Contains("instagram", StringComparison.OrdinalIgnoreCase)) name = "إنستجرام (Instagram)";
-                            else if (name.Contains("google", StringComparison.OrdinalIgnoreCase)) name = "بحث جوجل (Google)";
-                            else if (name.Contains("direct", StringComparison.OrdinalIgnoreCase) || name == "(direct)") name = "زيارة مباشرة / واتساب";
-                            else if (name.Contains("tiktok", StringComparison.OrdinalIgnoreCase)) name = "تيك توك (TikTok)";
+                            if (name == "(direct)" || name.Equals("direct", StringComparison.OrdinalIgnoreCase)) name = "زيارة مباشرة / واتساب";
+                            else if (name.Equals("facebook", StringComparison.OrdinalIgnoreCase)) name = "فيسبوك (Facebook Ads)";
+                            else if (name.Equals("instagram", StringComparison.OrdinalIgnoreCase)) name = "إنستجرام (Instagram)";
+                            else if (name.Equals("google", StringComparison.OrdinalIgnoreCase)) name = "بحث جوجل (Google)";
 
                             var pct = Math.Round((double)kvp.Value / totalSourceUsers * 100, 1);
                             trafficSources.Add(new { name = name, users = kvp.Value, percent = $"{pct}%" });
