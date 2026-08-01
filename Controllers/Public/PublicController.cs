@@ -30,7 +30,6 @@ public class PublicController : ControllerBase
         _config = config;
     }
 
-    /// <summary>جلب الباقات المتاحة للعرض في صفحة الأسعار</summary>
     [HttpGet("plans")]
     public async Task<IActionResult> GetActivePlans()
     {

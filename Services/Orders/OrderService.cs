@@ -442,10 +442,9 @@ public class OrderService : IOrderService
 
                 if (!branchIdToUse.HasValue)
                 {
-                    if (actualSource == OrderSource.Website)
+                    if (actualSource == OrderSource.Website && store?.WebsiteBranchId.HasValue == true)
                     {
-                        var webBranch = await _db.Branches.FirstOrDefaultAsync(b => b.Name == "الموقع الإلكتروني");
-                        if (webBranch != null) branchIdToUse = webBranch.Id;
+                        branchIdToUse = store.WebsiteBranchId.Value;
                     }
 
                     if (!branchIdToUse.HasValue)

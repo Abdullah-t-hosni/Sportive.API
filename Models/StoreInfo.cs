@@ -216,6 +216,9 @@ public class StoreInfo
     // مخزن الموقع الإلكتروني - يُستخدم لخصم مبيعات الموقع منه تلقائياً
     [JsonPropertyName("websiteWarehouseId")]
     public int? WebsiteWarehouseId { get; set; }
+    
+    [JsonPropertyName("websiteBranchId")]
+    public int? WebsiteBranchId { get; set; }
 
     [MaxLength(50)]
     [JsonPropertyName("taxNumber")]
