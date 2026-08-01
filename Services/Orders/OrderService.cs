@@ -460,7 +460,7 @@ public class OrderService : IOrderService
                     CustomerId = customerId.Value,
                     OrderNumber = await GenerateOrderNumberAsync(actualSource),
                     Status = actualSource == OrderSource.POS ? OrderStatus.Delivered : OrderStatus.Pending,
-                    FulfillmentType = dto.FulfillmentType,
+                    FulfillmentType = ((int)dto.FulfillmentType == 0) ? FulfillmentType.Delivery : dto.FulfillmentType,
                     PaymentMethod = dto.PaymentMethod,
                     PaymentStatus = (actualSource == OrderSource.POS && (dto.PaymentMethod != PaymentMethod.Credit && dto.PaymentMethod != (PaymentMethod)7)) ? PaymentStatus.Paid : PaymentStatus.Pending,
                     DeliveryAddressId = (finalDeliveryAddressId.HasValue && finalDeliveryAddressId.Value > 0) 

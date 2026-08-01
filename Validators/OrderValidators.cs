@@ -10,7 +10,8 @@ public class CreateOrderValidator : AbstractValidator<CreateOrderDto>
     public CreateOrderValidator(ITranslator translator)
     {
         RuleFor(x => x.FulfillmentType)
-            .IsInEnum().WithMessage(translator.Get("Orders.FulfillmentTypeInvalid"));
+            .Must(x => (int)x == 0 || Enum.IsDefined(typeof(FulfillmentType), x))
+            .WithMessage(translator.Get("Orders.FulfillmentTypeInvalid"));
 
         RuleFor(x => x.PaymentMethod)
             .IsInEnum().WithMessage(translator.Get("Orders.PaymentMethodInvalid"));
