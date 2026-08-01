@@ -161,17 +161,17 @@ public record ProductDetailDto(
 );
 
 public record ProductVariantDto(
-    int Id,
-    string? Size,
-    string? Color,
-    string? ColorAr,
-    int StockQuantity,
-    int ReorderLevel,
-    decimal PriceAdjustment,
-    string? ImageUrl,
-    string? ImagePublicId = null,
-    bool IsActive = true,
-    int? MaxOnlineStock = null
+    [property: JsonPropertyName("id")] int Id,
+    [property: JsonPropertyName("size")] string? Size,
+    [property: JsonPropertyName("color")] string? Color,
+    [property: JsonPropertyName("colorAr")] string? ColorAr,
+    [property: JsonPropertyName("stockQuantity")] int StockQuantity,
+    [property: JsonPropertyName("reorderLevel")] int ReorderLevel,
+    [property: JsonPropertyName("priceAdjustment")] decimal PriceAdjustment,
+    [property: JsonPropertyName("imageUrl")] string? ImageUrl,
+    [property: JsonPropertyName("imagePublicId")] string? ImagePublicId = null,
+    [property: JsonPropertyName("isActive")] bool IsActive = true,
+    [property: JsonPropertyName("maxOnlineStock")] int? MaxOnlineStock = null
 );
 
 public record ProductImageDto(int Id, string ImageUrl, string? ImagePublicId = null, bool IsMain = false, int SortOrder = 0, string? ColorAr = null, int? CategoryId = null);
@@ -238,14 +238,14 @@ public record UpdateSizeChartDto(
 
 
 public record CreateVariantDto(
-    string? Size,
-    string? Color,
-    string? ColorAr,
-    int? StockQuantity,
-    decimal? PriceAdjustment,
-    int? ReorderLevel = 0,
-    bool? IsActive = true,
-    int? MaxOnlineStock = null
+    [property: JsonPropertyName("size")] string? Size,
+    [property: JsonPropertyName("color")] string? Color,
+    [property: JsonPropertyName("colorAr")] string? ColorAr,
+    [property: JsonPropertyName("stockQuantity")] int? StockQuantity,
+    [property: JsonPropertyName("priceAdjustment")] decimal? PriceAdjustment,
+    [property: JsonPropertyName("reorderLevel")] int? ReorderLevel = 0,
+    [property: JsonPropertyName("isActive")] bool? IsActive = true,
+    [property: JsonPropertyName("maxOnlineStock")] int? MaxOnlineStock = null
 );
 
 // ========== REVIEWS & WISHLIST ==========
