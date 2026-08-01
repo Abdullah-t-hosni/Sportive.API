@@ -343,7 +343,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPatch("{id}/cancel")]
-    public async Task<ActionResult<OrderDetailDto>> CancelOrderCustomer(int id)
+    public async Task<ActionResult<OrderDetailDto>> CancelOrderCustomer(int id, [FromBody] CancelOrderDto? body = null)
     {
         var order = await _orderService.GetOrderByIdAsync(id);
         if (order == null) return NotFound();
@@ -362,12 +362,17 @@ public class OrdersController : ControllerBase
         }
 
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "customer_" + customerIdStr;
+
+        var reason = !string.IsNullOrWhiteSpace(body?.Reason)
+            ? $"تم إلغاء الطلب من قبل العميل عبر الموقع. سبب الإلغاء: {body.Reason.Trim()}"
+            : "تم إلغاء الطلب من قبل العميل عبر الموقع";
         
-        var dto = new UpdateOrderStatusDto(OrderStatus.Cancelled, "تم إلغاء الطلب من قبل العميل عبر الموقع");
+        var dto = new UpdateOrderStatusDto(OrderStatus.Cancelled, reason);
         
         var updatedOrder = await _orderService.UpdateOrderStatusAsync(id, dto, userId);
         return Ok(updatedOrder);
     }
+
 
     [HttpPut("{id}")]
     [Authorize(Policy = "AdminOnly")]

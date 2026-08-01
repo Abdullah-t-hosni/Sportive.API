@@ -272,6 +272,7 @@ public record OrderStatusHistoryDto(
 public record UpdateOrderStatusDto(OrderStatus Status, string? Note, int? PerformedByEmployeeId = null, int? RefundAccountId = null);
 public record UpdatePaymentStatusDto(PaymentStatus PaymentStatus, string? Note, int? PerformedByEmployeeId = null);
 public record UpdateOrderAdminNoteDto(string Note);
+public record CancelOrderDto(string? Reason = null);
 
 
 public record PartialReturnDto(
