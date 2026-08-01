@@ -18,7 +18,7 @@ public class CreateOrderValidator : AbstractValidator<CreateOrderDto>
 
         RuleFor(x => x.DeliveryAddressId)
             .NotNull()
-            .When(x => x.FulfillmentType == FulfillmentType.Delivery && (x.Source == OrderSource.Website || (int)x.Source == 0) && x.GuestAddress == null)
+            .When(x => x.FulfillmentType == FulfillmentType.Delivery && (x.Source == OrderSource.Website || (int)x.Source == 0) && x.GuestAddress == null && string.IsNullOrEmpty(x.Address) && string.IsNullOrEmpty(x.ShippingAddress))
             .WithMessage(translator.Get("Orders.DeliveryAddressRequired"));
 
         RuleFor(x => x.Items)

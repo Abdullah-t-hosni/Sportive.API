@@ -395,11 +395,24 @@ public class OrderService : IOrderService
 
                 if (!customerId.HasValue) throw new ArgumentException(_t.Get("Auth.IdentifierRequired"));
 
-                // If guest address is provided, save it to the customer account and get Address ID
+                // If guest address is provided (or top-level address fields sent), save it to the customer account and get Address ID
                 int? finalDeliveryAddressId = dto.DeliveryAddressId;
-                if (dto.GuestAddress != null && customerId.HasValue)
+                var effectiveGuestAddress = dto.GuestAddress;
+                if (effectiveGuestAddress == null && (!string.IsNullOrEmpty(dto.Address) || !string.IsNullOrEmpty(dto.ShippingAddress)))
                 {
-                    var addedAddr = await _customerService.AddAddressAsync(customerId.Value, dto.GuestAddress);
+                    effectiveGuestAddress = new CreateAddressDto(
+                        "عنوان التوصيل",
+                        "Delivery Address",
+                        dto.Address ?? dto.ShippingAddress ?? "عنوان عميل",
+                        dto.Governorate ?? dto.City ?? "القاهرة",
+                        dto.City,
+                        null, null, null, null, null, null
+                    );
+                }
+
+                if (effectiveGuestAddress != null && customerId.HasValue)
+                {
+                    var addedAddr = await _customerService.AddAddressAsync(customerId.Value, effectiveGuestAddress);
                     finalDeliveryAddressId = addedAddr.Id;
                 }
 

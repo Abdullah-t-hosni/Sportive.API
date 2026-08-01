@@ -66,6 +66,14 @@ public record CreateOrderDto(
     string? Fbp = null,
     [property: global::System.Text.Json.Serialization.JsonPropertyName("fbc")]
     string? Fbc = null,
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("address")]
+    string? Address = null,
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("shippingAddress")]
+    string? ShippingAddress = null,
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("governorate")]
+    string? Governorate = null,
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("city")]
+    string? City = null,
     [property: global::System.Text.Json.Serialization.JsonPropertyName("guestAddress")]
     CreateAddressDto? GuestAddress = null
 );
