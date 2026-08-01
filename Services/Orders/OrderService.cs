@@ -606,7 +606,10 @@ public class OrderService : IOrderService
                             order.TotalVatAmount += orderItem.ItemVatAmount;
                         }
 
-                        var availableStock = variant?.StockQuantity ?? (product.TotalStock);
+                        var rawStock = variant?.StockQuantity ?? (product.TotalStock);
+                        var availableStock = (actualSource == OrderSource.Website && variant?.MaxOnlineStock != null)
+                            ? Math.Min(rawStock, variant.MaxOnlineStock.Value)
+                            : rawStock;
                         if (store != null && !store.AllowBackorders && item.Quantity > availableStock)
                         {
                             throw new ArgumentException(
@@ -645,7 +648,10 @@ public class OrderService : IOrderService
                     foreach (var ci in cartItems)
                     {
                     if (ci.Product == null) continue;
-                    var availableStock = ci.ProductVariant?.StockQuantity ?? ci.Product.TotalStock;
+                    var rawStock = ci.ProductVariant?.StockQuantity ?? ci.Product.TotalStock;
+                    var availableStock = (ci.ProductVariant?.MaxOnlineStock != null)
+                        ? Math.Min(rawStock, ci.ProductVariant.MaxOnlineStock.Value)
+                        : rawStock;
                     if (store != null && !store.AllowBackorders && ci.Quantity > availableStock)
                     {
                         throw new ArgumentException(_t.Get("Orders.StockUnavailable", ci.Quantity, ci.Product.NameAr, availableStock));
