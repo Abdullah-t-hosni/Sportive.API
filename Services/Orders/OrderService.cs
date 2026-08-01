@@ -1786,6 +1786,15 @@ public class OrderService : IOrderService
             CreatedAt = TimeHelper.GetEgyptTime()
         });
 
+        // Add cancellation/return reason to AdminNotes so it appears in list views
+        if ((dto.Status == OrderStatus.Cancelled || dto.Status == OrderStatus.Returned || dto.Status == OrderStatus.PartiallyReturned) && !string.IsNullOrWhiteSpace(dto.Note))
+        {
+            if (string.IsNullOrWhiteSpace(order.AdminNotes))
+                order.AdminNotes = dto.Note;
+            else if (!order.AdminNotes.Contains(dto.Note))
+                order.AdminNotes = $"{order.AdminNotes} | {dto.Note}";
+        }
+
         // 💡 AUTO-FLOW: For Non-POS orders, Digital Payments (Vodafone, InstaPay, Visa, Bank) are paid upon Confirmation. Cash is paid ONLY upon Delivery.
         if (order.Source != OrderSource.POS && dto.Status == OrderStatus.Confirmed)
         {
