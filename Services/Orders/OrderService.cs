@@ -607,7 +607,7 @@ public class OrderService : IOrderService
                         }
 
                         var rawStock = variant?.StockQuantity ?? (product.TotalStock);
-                        var availableStock = (actualSource == OrderSource.Website && variant?.MaxOnlineStock != null)
+                        var availableStock = (actualSource == OrderSource.Website && variant?.MaxOnlineStock != null && variant.MaxOnlineStock.Value > 0)
                             ? Math.Min(rawStock, variant.MaxOnlineStock.Value)
                             : rawStock;
                         if (store != null && !store.AllowBackorders && item.Quantity > availableStock)
@@ -649,7 +649,7 @@ public class OrderService : IOrderService
                     {
                     if (ci.Product == null) continue;
                     var rawStock = ci.ProductVariant?.StockQuantity ?? ci.Product.TotalStock;
-                    var availableStock = (ci.ProductVariant?.MaxOnlineStock != null)
+                    var availableStock = (ci.ProductVariant?.MaxOnlineStock != null && ci.ProductVariant.MaxOnlineStock.Value > 0)
                         ? Math.Min(rawStock, ci.ProductVariant.MaxOnlineStock.Value)
                         : rawStock;
                     if (store != null && !store.AllowBackorders && ci.Quantity > availableStock)

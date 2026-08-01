@@ -1139,10 +1139,6 @@ public class ProductService : IProductService
                             effectiveStock = 0;
                         }
                     }
-                    if (v.MaxOnlineStock.HasValue && v.MaxOnlineStock.Value >= 0)
-                    {
-                        effectiveStock = Math.Min(effectiveStock, v.MaxOnlineStock.Value);
-                    }
                     return new ProductVariantDto(
                         v.Id, 
                         v.Size, 
