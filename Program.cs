@@ -384,5 +384,17 @@ app.MapHub<NotificationHub>("/notifications-hub");
 //         service => service.CleanupOldLogsAsync(3),
 //         "30 3 * * *"); // Every day at 3:30 AM
 // 
+if (args.Contains("--recalculate-stock"))
+{
+    using (var scope = app.Services.CreateScope())
+    {
+        var maintenance = scope.ServiceProvider.GetRequiredService<IDataMaintenanceService>();
+        Log.Information("Executing RecalculateStockAsync via CLI...");
+        var (success, message) = await maintenance.RecalculateStockAsync();
+        Log.Information("RecalculateStock result: Success={Success}, Message={Message}", success, message);
+    }
+    return;
+}
+
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Run($"http://0.0.0.0:{port}");

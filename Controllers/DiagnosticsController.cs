@@ -10,10 +10,19 @@ namespace Sportive.API.Controllers;
 public class DiagnosticsController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly Sportive.API.Interfaces.IDataMaintenanceService _maintenance;
 
-    public DiagnosticsController(AppDbContext db)
+    public DiagnosticsController(AppDbContext db, Sportive.API.Interfaces.IDataMaintenanceService maintenance)
     {
         _db = db;
+        _maintenance = maintenance;
+    }
+
+    [HttpGet("trigger-recalculate-stock")]
+    public async Task<IActionResult> TriggerRecalculateStock()
+    {
+        var (success, message) = await _maintenance.RecalculateStockAsync();
+        return Ok(new { success, message });
     }
 
     [HttpGet("orphaned-movements")]
