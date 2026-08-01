@@ -252,7 +252,7 @@ public class FacebookCapiService : IFacebookCapiService
                 accountIdToUse = "act_" + accountIdToUse;
             }
 
-            var url = $"https://graph.facebook.com/v20.0/{accountIdToUse}/campaigns?fields=id,name,status,effective_status&access_token={settings.FacebookCapiToken}";
+            var url = $"https://graph.facebook.com/v20.0/{accountIdToUse}/campaigns?fields=id,name,status,effective_status,insights.date_preset(maximum){{spend,actions}}&access_token={settings.FacebookCapiToken}";
 
             var response = await _httpClient.GetAsync(url);
             if (response.IsSuccessStatusCode)
@@ -267,13 +267,42 @@ public class FacebookCapiService : IFacebookCapiService
                         var name = item.TryGetProperty("name", out var n) ? n.GetString() : $"حملة فيسبوك #{idx}";
                         var status = item.TryGetProperty("effective_status", out var s) ? s.GetString() : "ACTIVE";
 
+                        decimal spendAmount = 0;
+                        int ordersCount = 0;
+
+                        if (item.TryGetProperty("insights", out var insightsProp) &&
+                            insightsProp.TryGetProperty("data", out var insightsData) &&
+                            insightsData.ValueKind == JsonValueKind.Array &&
+                            insightsData.GetArrayLength() > 0)
+                        {
+                            var firstInsight = insightsData[0];
+                            if (firstInsight.TryGetProperty("spend", out var spendProp) && decimal.TryParse(spendProp.GetString(), out var sVal))
+                            {
+                                spendAmount = Math.Round(sVal, 2);
+                            }
+                            if (firstInsight.TryGetProperty("actions", out var actionsProp) && actionsProp.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var act in actionsProp.EnumerateArray())
+                                {
+                                    var actionType = act.TryGetProperty("action_type", out var at) ? at.GetString() : "";
+                                    if (actionType == "purchase" || actionType == "omni_purchase" || actionType == "offsite_conversion.fb_pixel_purchase")
+                                    {
+                                        if (act.TryGetProperty("value", out var actVal) && int.TryParse(actVal.GetString(), out var aVal))
+                                        {
+                                            ordersCount += aVal;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         result.Add(new
                         {
                             id = item.TryGetProperty("id", out var idProp) ? idProp.GetString() : idx.ToString(),
                             name = name,
                             platform = (name != null && (name.ToLower().Contains("ig") || name.ToLower().Contains("instagram"))) ? "Instagram" : "Facebook",
-                            spendAmount = 3500 + (idx * 2200),
-                            ordersCount = 15 + (idx * 8),
+                            spendAmount = spendAmount,
+                            ordersCount = ordersCount,
                             status = status
                         });
                         idx++;
