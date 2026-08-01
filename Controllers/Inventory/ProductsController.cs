@@ -230,5 +230,19 @@ public class ProductsController : ControllerBase
         await _db.SaveChangesAsync();
         return Ok(new { message = $"Discrepancy fixed successfully. {fixedVariants} variants updated.", defaultWarehouseId = defaultWarehouse.Id });
     }
+
+    [HttpPatch("variant/{variantId}/toggle-active")]
+    [RequirePermission(ModuleKeys.Products)]
+    public async Task<IActionResult> ToggleVariantActive(int variantId)
+    {
+        var variant = await _db.ProductVariants.FindAsync(variantId);
+        if (variant == null) return NotFound();
+
+        variant.IsActive = !variant.IsActive;
+        variant.UpdatedAt = Sportive.API.Utils.TimeHelper.GetEgyptTime();
+        await _db.SaveChangesAsync();
+
+        return Ok(new { variantId = variant.Id, isActive = variant.IsActive });
+    }
 }
 

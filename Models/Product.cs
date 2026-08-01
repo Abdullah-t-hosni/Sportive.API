@@ -74,6 +74,7 @@ public class ProductVariant : BaseEntity
     public decimal? PriceAdjustment { get; set; } = 0; // extra price for this variant
     public string? ImageUrl { get; set; }
     public string? ImagePublicId { get; set; }
+    public bool IsActive { get; set; } = true;
 }
 
 public class ProductImage : BaseEntity

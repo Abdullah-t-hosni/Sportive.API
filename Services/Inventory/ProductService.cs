@@ -418,7 +418,8 @@ public class ProductService : IProductService
                     ColorAr = v.ColorAr,
                     StockQuantity = 0, // Start with 0, let LogMovement handle it
                     ReorderLevel = v.ReorderLevel ?? 0,
-                    PriceAdjustment = v.PriceAdjustment
+                    PriceAdjustment = v.PriceAdjustment,
+                    IsActive = v.IsActive ?? true
                 });
             }
             product.TotalStock = 0;
@@ -963,7 +964,7 @@ public class ProductService : IProductService
             p.Status.ToString(), p.IsFeatured,
             p.CategoryId, p.Category?.NameAr ?? _t.Get("Products.CategoryMissing"), p.Category?.NameEn ?? _t.Get("Products.CategoryMissing"),
             p.Category?.Type.ToString(),
-            p.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId)).ToList() ?? new List<ProductVariantDto>(),
+            p.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId, v.IsActive)).ToList() ?? new List<ProductVariantDto>(),
             p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr, i.CategoryId)).ToList() ?? new List<ProductImageDto>(),
             p.AverageRating,
             p.ReviewCount,
@@ -1144,7 +1145,8 @@ public class ProductService : IProductService
                         v.ReorderLevel, 
                         v.PriceAdjustment ?? 0, 
                         v.ImageUrl, 
-                        v.ImagePublicId
+                        v.ImagePublicId,
+                        v.IsActive
                     );
                 }).ToList() ?? new List<ProductVariantDto>(),
                 p.HasTax,

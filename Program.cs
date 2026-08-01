@@ -384,6 +384,25 @@ app.MapHub<NotificationHub>("/notifications-hub");
 //         service => service.CleanupOldLogsAsync(3),
 //         "30 3 * * *"); // Every day at 3:30 AM
 // 
+if (args.Contains("--migrate-isactive"))
+{
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        try
+        {
+            Log.Information("Adding IsActive column to ProductVariants table if missing...");
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE `ProductVariants` ADD COLUMN `IsActive` tinyint(1) NOT NULL DEFAULT 1;");
+            Log.Information("SUCCESS: Added IsActive column to ProductVariants table.");
+        }
+        catch (Exception ex)
+        {
+            Log.Information("Migration Note: {Message}", ex.Message);
+        }
+    }
+    return;
+}
+
 if (args.Contains("--recalculate-stock"))
 {
     using (var scope = app.Services.CreateScope())

@@ -169,7 +169,8 @@ public record ProductVariantDto(
     int ReorderLevel,
     decimal PriceAdjustment,
     string? ImageUrl,
-    string? ImagePublicId = null
+    string? ImagePublicId = null,
+    bool IsActive = true
 );
 
 public record ProductImageDto(int Id, string ImageUrl, string? ImagePublicId = null, bool IsMain = false, int SortOrder = 0, string? ColorAr = null, int? CategoryId = null);
@@ -241,7 +242,8 @@ public record CreateVariantDto(
     string? ColorAr,
     int? StockQuantity,
     decimal? PriceAdjustment,
-    int? ReorderLevel = 0
+    int? ReorderLevel = 0,
+    bool? IsActive = true
 );
 
 // ========== REVIEWS & WISHLIST ==========
