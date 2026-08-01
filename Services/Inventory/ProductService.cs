@@ -1109,7 +1109,7 @@ public class ProductService : IProductService
                 p.Slug,
                 p.Price,
                 finalPrice,
-                p.Images?.Where(i => i.IsMain).Select(i => i.ImageUrl).FirstOrDefault(),
+                p.Images?.FirstOrDefault(i => i.IsMain)?.ImageUrl ?? p.Images?.FirstOrDefault()?.ImageUrl,
                 p.Category != null ? p.Category.NameAr : _t.Get("Products.CategoryMissing"),
                 p.Category != null ? p.Category.NameEn : _t.Get("Products.CategoryMissing"),
                 p.Brand != null ? p.Brand.NameAr : null,
