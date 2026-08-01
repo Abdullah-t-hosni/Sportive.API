@@ -1053,7 +1053,8 @@ public class ReturnExchangeRequestsController : ControllerBase
                         req.Order.Source,
                         false,
                         true,
-                        true
+                        true,
+                        warehouseId: req.Order.WarehouseId
                     );
                 }
                 else
@@ -1209,7 +1210,8 @@ public class ReturnExchangeRequestsController : ControllerBase
                         req.Order.Source,
                         false,
                         true,
-                        true
+                        true,
+                        warehouseId: req.Order.WarehouseId
                     );
                 }
             }

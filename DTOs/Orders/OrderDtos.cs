@@ -291,7 +291,8 @@ public record DirectReturnDto(
     PaymentMethod RefundMethod,
     int? RefundAccountId,
     string? Reason,
-    string? Note
+    string? Note,
+    int? WarehouseId = null
 );
 
 public record DirectReturnItemDto(

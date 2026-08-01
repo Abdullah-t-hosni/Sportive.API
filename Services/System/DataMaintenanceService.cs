@@ -756,10 +756,13 @@ public class DataMaintenanceService : IDataMaintenanceService
                 _logger.LogInformation("[RecalculateStock] Phase 1 done. OB movements rebuilt: {Count}", rebuiltObMovements);
 
                 // ─── Phase 2: إعادة حساب StockQuantity للـ Variants والمخازن ──────────
-                // نجمع كل الحركات لكل Variant ولكل Warehouse
+                var defaultWarehouse = await _db.Warehouses.FirstOrDefaultAsync(w => w.Name == "المخزن الرئيسي" || w.IsActive);
+                int defaultWhId = defaultWarehouse?.Id ?? 1;
+
+                // نجمع كل الحركات لكل Variant ولكل Warehouse (مع توجيه الحركات التي بدون warehouse إلى المخزن الرئيسي)
                 var whVariantSums = await _db.InventoryMovements
-                    .Where(m => m.ProductVariantId.HasValue && m.WarehouseId.HasValue)
-                    .GroupBy(m => new { VariantId = m.ProductVariantId!.Value, WarehouseId = m.WarehouseId!.Value })
+                    .Where(m => m.ProductVariantId.HasValue)
+                    .GroupBy(m => new { VariantId = m.ProductVariantId!.Value, WarehouseId = m.WarehouseId ?? defaultWhId })
                     .Select(g => new { g.Key.VariantId, g.Key.WarehouseId, TotalQty = g.Sum(m => (int?)m.Quantity) ?? 0 })
                     .ToListAsync();
 
@@ -779,22 +782,36 @@ public class DataMaintenanceService : IDataMaintenanceService
 
                 foreach (var v in allVariants)
                 {
-                    if (whGroup.TryGetValue(v.Id, out var whList))
+                    if (!whGroup.TryGetValue(v.Id, out var whList))
                     {
-                        foreach (var ws in whList)
+                        whList = new List<ProductWarehouseStock>();
+                        whGroup[v.Id] = whList;
+                    }
+
+                    // التأكد من وجود سجل للمخزن الرئيسي لجميع المتغيرات
+                    var mainWhStock = whList.FirstOrDefault(w => w.WarehouseId == defaultWhId);
+                    if (mainWhStock == null)
+                    {
+                        mainWhStock = new ProductWarehouseStock
                         {
-                            if (whQtyMap.TryGetValue((v.Id, ws.WarehouseId), out var whQty))
-                            {
-                                ws.Quantity = whQty;
-                            }
-                            ws.UpdatedAt = TimeHelper.GetEgyptTime();
-                        }
-                        v.StockQuantity = whList.Sum(w => w.Quantity);
+                            ProductVariantId = v.Id,
+                            WarehouseId = defaultWhId,
+                            Quantity = whQtyMap.TryGetValue((v.Id, defaultWhId), out var dq) ? dq : (variantQtyMap.TryGetValue(v.Id, out var vq) ? vq : 0),
+                            CreatedAt = TimeHelper.GetEgyptTime()
+                        };
+                        _db.ProductWarehouseStocks.Add(mainWhStock);
+                        whList.Add(mainWhStock);
                     }
-                    else
+
+                    foreach (var ws in whList)
                     {
-                        v.StockQuantity = variantQtyMap.TryGetValue(v.Id, out var q) ? q : 0;
+                        if (whQtyMap.TryGetValue((v.Id, ws.WarehouseId), out var whQty))
+                        {
+                            ws.Quantity = whQty;
+                        }
+                        ws.UpdatedAt = TimeHelper.GetEgyptTime();
                     }
+                    v.StockQuantity = whList.Sum(w => w.Quantity);
                 }
                 await _db.SaveChangesAsync();
 

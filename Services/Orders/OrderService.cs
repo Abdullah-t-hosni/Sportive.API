@@ -1956,7 +1956,8 @@ public class OrderService : IOrderService
                             0, // unitCost fallback
                             order.Source,
                             autoSave: false,
-                            ignoreIdempotency: true
+                            ignoreIdempotency: true,
+                            warehouseId: order.WarehouseId
                         );
                     }
                 }
@@ -2002,7 +2003,8 @@ public class OrderService : IOrderService
                     0, // unitCost fallback
                     order.Source,
                     autoSave: false,
-                    ignoreIdempotency: true
+                    ignoreIdempotency: true,
+                    warehouseId: order.WarehouseId
                 );
             }
 
@@ -2138,7 +2140,8 @@ public class OrderService : IOrderService
                         0, // unitCost fallback
                         order.Source,
                         autoSave: false,
-                        ignoreIdempotency: true
+                        ignoreIdempotency: true,
+                        warehouseId: order.WarehouseId
                     );
                 }
 
@@ -2224,7 +2227,8 @@ public class OrderService : IOrderService
                         unitCostValue,
                         OrderSource.POS,
                         autoSave: false,
-                        force: true
+                        force: true,
+                        warehouseId: dto.WarehouseId
                     );
                 }
 
