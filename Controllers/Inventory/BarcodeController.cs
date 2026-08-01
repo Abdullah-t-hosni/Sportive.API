@@ -36,8 +36,9 @@ public class BarcodeController : ControllerBase
                 byPrice ? (isDecimal && (p.Price == price || p.DiscountPrice == price)) : (
                     p.SKU.ToLower() == queryVal || 
                     (isInt && p.Id == id) ||
-                    // البحث في المتغيرات (مثلاً لو كان الكود هو SKU-Size-Color)
-                    p.Variants.Any(v => (p.SKU + "-" + v.Size + "-" + v.Color).ToLower() == queryVal)
+                    (p.EgyptianProductCode != null && p.EgyptianProductCode.ToLower() == queryVal) ||
+                    (p.SaudiProductCode != null && p.SaudiProductCode.ToLower() == queryVal) ||
+                    p.Variants.Any(v => (p.SKU + "-" + v.Size + "-" + v.Color).ToLower() == queryVal || (isInt && v.Id == id))
                 )
             );
 
@@ -45,7 +46,7 @@ public class BarcodeController : ControllerBase
 
         // تحديد المتغير الذي طابق البحث (إن وجد)
         var matchedVariant = product.Variants.FirstOrDefault(v => 
-            (product.SKU + "-" + v.Size + "-" + v.Color).ToLower() == queryVal
+            (product.SKU + "-" + v.Size + "-" + v.Color).ToLower() == queryVal || (isInt && v.Id == id)
         );
 
         var warehouseStocks = new Dictionary<int, int>();

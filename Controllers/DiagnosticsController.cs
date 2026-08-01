@@ -146,4 +146,65 @@ public class DiagnosticsController : ControllerBase
 
         return Ok(new { synced = count, orders = orders.Select(o => o.OrderNumber) });
     }
+
+    [HttpGet("inspect-product/{q}")]
+    public async Task<IActionResult> GetProductDiagnostics(string q)
+    {
+        bool isInt = int.TryParse(q, out int id);
+        var product = await _db.Products
+            .Include(p => p.Variants)
+            .Include(p => p.Category)
+            .Include(p => p.Brand)
+            .FirstOrDefaultAsync(p => (isInt && p.Id == id) || p.SKU.ToLower() == q.Trim().ToLower() || p.NameAr.Contains(q) || p.NameEn.Contains(q));
+
+        if (product == null)
+            return NotFound(new { message = $"Product with query '{q}' not found" });
+
+        var variantIds = product.Variants.Select(v => v.Id).ToList();
+
+        var whStocks = await _db.ProductWarehouseStocks
+            .Include(w => w.Warehouse)
+            .Where(w => variantIds.Contains(w.ProductVariantId))
+            .Select(w => new { w.Id, w.ProductVariantId, w.WarehouseId, WarehouseName = w.Warehouse.Name, w.Quantity, w.UpdatedAt })
+            .ToListAsync();
+
+        var movements = await _db.InventoryMovements
+            .Include(m => m.Warehouse)
+            .Where(m => m.ProductId == product.Id || (m.ProductVariantId.HasValue && variantIds.Contains(m.ProductVariantId.Value)))
+            .OrderByDescending(m => m.CreatedAt)
+            .Take(30)
+            .Select(m => new { m.Id, Type = m.Type.ToString(), m.Quantity, m.ProductVariantId, m.WarehouseId, WarehouseName = m.Warehouse != null ? m.Warehouse.Name : null, m.Reference, m.Note, m.CreatedAt })
+            .ToListAsync();
+
+        var warehouses = await _db.Warehouses.Select(w => new { w.Id, w.Name, w.IsActive, w.BranchId }).ToListAsync();
+
+        return Ok(new
+        {
+            Product = new
+            {
+                product.Id,
+                product.NameAr,
+                product.NameEn,
+                product.SKU,
+                Status = product.Status.ToString(),
+                product.TotalStock,
+                product.Price,
+                product.DiscountPrice,
+                CategoryName = product.Category?.NameAr,
+                BrandName = product.Brand?.NameAr,
+            },
+            Variants = product.Variants.Select(v => new
+            {
+                v.Id,
+                v.Size,
+                v.Color,
+                v.ColorAr,
+                v.StockQuantity,
+                v.ReorderLevel
+            }),
+            WarehouseStocks = whStocks,
+            Warehouses = warehouses,
+            RecentMovements = movements
+        });
+    }
 }
