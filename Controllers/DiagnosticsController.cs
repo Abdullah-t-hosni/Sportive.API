@@ -25,6 +25,40 @@ public class DiagnosticsController : ControllerBase
         return Ok(new { success, message });
     }
 
+    [HttpGet("inspect-skus")]
+    public async Task<IActionResult> InspectSkus()
+    {
+        var skus = new[] { "2212", "2214", "2074" };
+        var variants = await _db.ProductVariants
+            .Include(v => v.Product)
+            .Where(v => skus.Contains(v.Product.SKU) || skus.Contains(v.Product.Id.ToString()))
+            .Select(v => new {
+                v.Id,
+                v.ProductId,
+                ProductSku = v.Product.SKU,
+                ProductName = v.Product.NameAr,
+                VariantSize = v.Size,
+                VariantColor = v.Color,
+                VariantColorAr = v.ColorAr
+            })
+            .ToListAsync();
+            
+        var orderItems = await _db.OrderItems
+            .Include(i => i.Order)
+            .Where(i => i.Order.OrderNumber == "SPT-2608-0028")
+            .Select(i => new {
+                i.Id,
+                i.ProductId,
+                i.ProductVariantId,
+                i.Size,
+                i.Color,
+                i.ProductNameAr
+            })
+            .ToListAsync();
+
+        return Ok(new { variants, orderItems });
+    }
+
     [HttpGet("orphaned-movements")]
     public async Task<IActionResult> GetOrphanedMovements()
     {

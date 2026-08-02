@@ -527,6 +527,11 @@ public class OrderService : IOrderService
                             ? product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId)
                             : null;
 
+                        if (product.Variants.Any(v => v.IsActive) && variant == null)
+                        {
+                            throw new ArgumentException($"يجب تحديد المقاس واللون للمنتج '{product.NameAr}' لإتمام الطلب.");
+                        }
+
                         decimal originalUnitPrice = product.Price;
                         if (variant?.PriceAdjustment.HasValue == true)
                             originalUnitPrice += variant.PriceAdjustment.Value;

@@ -30,6 +30,14 @@ public class CartService : ICartService
 
     public async Task<CartSummaryDto> AddToCartAsync(int customerId, AddToCartDto dto)
     {
+        var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == dto.ProductId);
+        if (product == null) throw new KeyNotFoundException("المنتج غير موجود");
+
+        if (product.Variants.Any(v => v.IsActive) && !dto.ProductVariantId.HasValue)
+        {
+            throw new ArgumentException($"يجب تحديد المقاس واللون للمنتج '{product.NameAr}' لإضافته للسلة.");
+        }
+
         var existing = await _db.CartItems.FirstOrDefaultAsync(c =>
             c.CustomerId == customerId &&
             c.ProductId == dto.ProductId &&
@@ -54,8 +62,18 @@ public class CartService : ICartService
     {
         if (dto.Items == null || !dto.Items.Any()) return await GetCartAsync(customerId);
 
+        var productIds = dto.Items.Select(i => i.ProductId).Distinct().ToList();
+        var productsDict = await _db.Products.Include(p => p.Variants).Where(p => productIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
+
         foreach (var item in dto.Items)
         {
+            if (!productsDict.TryGetValue(item.ProductId, out var product)) continue;
+
+            if (product.Variants.Any(v => v.IsActive) && !item.ProductVariantId.HasValue)
+            {
+                throw new ArgumentException($"يجب تحديد المقاس واللون للمنتج '{product.NameAr}' لإضافته للسلة.");
+            }
+
             var existing = await _db.CartItems.FirstOrDefaultAsync(c =>
                 c.CustomerId == customerId &&
                 c.ProductId == item.ProductId &&
