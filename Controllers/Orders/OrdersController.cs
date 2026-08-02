@@ -1470,7 +1470,8 @@ public class OrdersController : ControllerBase
         var response = await client.GetAsync($"{baseUrl}/api/v2/deliveries/awb/{order.BostaDeliveryId}");
         if (!response.IsSuccessStatusCode)
         {
-            return StatusCode((int)response.StatusCode, "Failed to fetch AWB PDF from Bosta.");
+            var errorContent = await response.Content.ReadAsStringAsync();
+            return StatusCode((int)response.StatusCode, $"Failed to fetch AWB PDF from Bosta. Status: {response.StatusCode}. Details: {errorContent}");
         }
 
         var pdfBytes = await response.Content.ReadAsByteArrayAsync();
