@@ -1741,7 +1741,7 @@ public class OrderService : IOrderService
             var storeSettings = await db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
             if (storeSettings != null && storeSettings.AutoSendWhatsAppInvoices)
             {
-                var customerPhone = order.Customer?.Phone ?? order.DeliveryAddress?.Phone;
+                var customerPhone = order.Customer?.Phone;
                 if (!string.IsNullOrEmpty(customerPhone))
                 {
                     var waMeService = scope.ServiceProvider.GetRequiredService<IWaMeService>();
