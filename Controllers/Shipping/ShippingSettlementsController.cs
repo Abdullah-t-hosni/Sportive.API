@@ -36,7 +36,7 @@ public class ShippingSettlementsController : ControllerBase
             .Select(o => new {
                 o.Id,
                 o.OrderNumber,
-                CustomerName = o.Customer.Name,
+                CustomerName = o.Customer.FullName,
                 o.TotalAmount,
                 DeliveryDate = o.ActualDeliveryDate ?? o.UpdatedAt,
                 o.ShippingTrackingNumber,
@@ -87,8 +87,8 @@ public class ShippingSettlementsController : ControllerBase
         await _accountingCore.PostEntryAsync(
             type: JournalEntryType.ReceiptVoucher,
             reference: reference,
-            mainDesc: $"تسوية مدفوعات شركة الشحن: {company.NameAr}",
-            entryDate: TimeHelper.GetEgyptBusinessDayDate(DateTime.UtcNow),
+            description: $"تسوية مدفوعات شركة الشحن: {company.NameAr}",
+            date: TimeHelper.GetEgyptBusinessDayDate(DateTime.UtcNow),
             lines: lines,
             source: OrderSource.Website
         );
