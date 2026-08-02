@@ -23,6 +23,9 @@ namespace Sportive.API.Migrations
                     ContactInfo = table.Column<string>(type: "longtext", nullable: true)
                         .Annotation("MySql:CharSet", "utf8mb4"),
                     IntegrationType = table.Column<int>(type: "int", nullable: false),
+                    ApiKey = table.Column<string>(type: "longtext", nullable: true)
+                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    UseSandbox = table.Column<bool>(type: "tinyint(1)", nullable: false, defaultValue: false),
                     AccountId = table.Column<int>(type: "int", nullable: true),
                     IsActive = table.Column<bool>(type: "tinyint(1)", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime(6)", nullable: false),

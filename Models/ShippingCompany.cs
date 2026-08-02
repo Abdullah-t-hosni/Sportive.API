@@ -14,6 +14,10 @@ public class ShippingCompany : BaseEntity
     
     public ShippingIntegrationType IntegrationType { get; set; } = ShippingIntegrationType.Manual;
     
+    // إعدادات الربط الخاصة بالشركة (API Credentials)
+    public string? ApiKey { get; set; }
+    public bool UseSandbox { get; set; }
+    
     // الربط المحاسبي
     public int? AccountId { get; set; }
     public Account? Account { get; set; }

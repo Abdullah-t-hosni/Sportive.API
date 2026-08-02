@@ -55,6 +55,8 @@ namespace Sportive.API.Controllers.Shipping
                 NameEn = dto.NameEn,
                 ContactInfo = dto.ContactInfo,
                 IntegrationType = dto.IntegrationType,
+                ApiKey = dto.ApiKey,
+                UseSandbox = dto.UseSandbox,
                 IsActive = dto.IsActive
             };
 
@@ -101,6 +103,8 @@ namespace Sportive.API.Controllers.Shipping
             company.NameEn = dto.NameEn;
             company.ContactInfo = dto.ContactInfo;
             company.IntegrationType = dto.IntegrationType;
+            company.ApiKey = dto.ApiKey;
+            company.UseSandbox = dto.UseSandbox;
             company.IsActive = dto.IsActive;
 
             if (company.Account != null)
@@ -153,6 +157,8 @@ namespace Sportive.API.Controllers.Shipping
         public string? NameEn { get; set; }
         public string? ContactInfo { get; set; }
         public ShippingIntegrationType IntegrationType { get; set; }
+        public string? ApiKey { get; set; }
+        public bool UseSandbox { get; set; }
         public bool IsActive { get; set; } = true;
     }
 }
