@@ -1739,15 +1739,10 @@ public class OrderService : IOrderService
         try
         {
             var storeSettings = await db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
-            if (storeSettings != null && storeSettings.AutoSendWhatsAppInvoices 
-                && !string.IsNullOrEmpty(storeSettings.WapilotApiKey) 
-                && order.Customer != null && !string.IsNullOrEmpty(order.Customer.Phone))
+            if (storeSettings != null && storeSettings.AutoSendWhatsAppInvoices)
             {
-                string? instanceIdToUse = order.Source == OrderSource.POS 
-                    ? storeSettings.WapilotPosInstanceId 
-                    : storeSettings.WapilotWebInstanceId;
-
-                if (!string.IsNullOrEmpty(instanceIdToUse))
+                var customerPhone = order.Customer?.Phone ?? order.DeliveryAddress?.Phone;
+                if (!string.IsNullOrEmpty(customerPhone))
                 {
                     var waMeService = scope.ServiceProvider.GetRequiredService<IWaMeService>();
                     var waApiService = scope.ServiceProvider.GetRequiredService<IWhatsAppApiService>();
@@ -1755,11 +1750,10 @@ public class OrderService : IOrderService
                     var waMeResult = waMeService.OrderConfirmation(order);
                     if (!string.IsNullOrEmpty(waMeResult.FullMessage))
                     {
-                        await waApiService.SendWapilotMessageAsync(
-                            order.Customer.Phone, 
+                        await waApiService.SendWhatsAppMessageAsync(
+                            customerPhone, 
                             waMeResult.FullMessage, 
-                            storeSettings.WapilotApiKey, 
-                            instanceIdToUse);
+                            order.Source == OrderSource.POS);
                     }
                 }
             }

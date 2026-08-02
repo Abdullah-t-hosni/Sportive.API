@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Sportive.API.Interfaces;
@@ -25,128 +25,8 @@ public class WhatsAppApiService : IWhatsAppApiService
     {
         try
         {
-            var phoneNumberId = _config["WhatsApp:PhoneNumberId"];
-            var accessToken = _config["WhatsApp:AccessToken"];
-            
-            // 1. Meta Cloud API (if configured)
-            if (!string.IsNullOrEmpty(phoneNumberId) && !string.IsNullOrEmpty(accessToken))
-            {
-                var templateName = _config["WhatsApp:TemplateName"] ?? "auth_otp_template";
-                var languageCode = _config["WhatsApp:LanguageCode"] ?? "ar";
-                var url = $"https://graph.facebook.com/v19.0/{phoneNumberId}/messages";
-                var formattedPhone = NormalizePhone(phoneNumber);
-
-                var payload = new
-                {
-                    messaging_product = "whatsapp",
-                    to = formattedPhone,
-                    type = "template",
-                    template = new
-                    {
-                        name = templateName,
-                        language = new { code = languageCode },
-                        components = new object[]
-                        {
-                            new
-                            {
-                                type = "body",
-                                parameters = new object[]
-                                {
-                                    new { type = "text", text = otpCode }
-                                }
-                            },
-                            new 
-                            {
-                                type = "button",
-                                sub_type = "url",
-                                index = "0",
-                                parameters = new object[]
-                                {
-                                    new { type = "text", text = otpCode }
-                                }
-                            }
-                        }
-                    }
-                };
-
-                var request = new HttpRequestMessage(HttpMethod.Post, url);
-                request.Headers.Add("Authorization", $"Bearer {accessToken}");
-                request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-                var response = await _httpClient.SendAsync(request);
-                if (response.IsSuccessStatusCode) return true;
-                
-                var errorResponse = await response.Content.ReadAsStringAsync();
-                _logger.LogError("WhatsApp Meta API Error: {Error}", errorResponse);
-            }
-
-            // 2. Wapilot Gateway (Primary store settings)
-            try
-            {
-                using (var scope = _scopeFactory.CreateScope())
-                {
-                    var db = scope.ServiceProvider.GetRequiredService<Sportive.API.Data.AppDbContext>();
-                    var storeSettings = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(db.StoreInfo, s => s.StoreConfigId == 1);
-                    if (storeSettings != null && !string.IsNullOrEmpty(storeSettings.WapilotApiKey) && !string.IsNullOrEmpty(storeSettings.WapilotWebInstanceId))
-                    {
-                        var messageText = $"رمز التحقق الخاص بك في متجر Sportive هو: *{otpCode}*\nرمز التحقق صالح لمدة 5 دقائق.";
-                        var sentViaWapilot = await SendWapilotMessageAsync(phoneNumber, messageText, storeSettings.WapilotApiKey, storeSettings.WapilotWebInstanceId);
-                        if (sentViaWapilot)
-                        {
-                            _logger.LogInformation("OTP sent via Wapilot to {Phone}", phoneNumber);
-                            return true;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Wapilot OTP send failed, trying Node WhatsApp Gateway fallback");
-            }
-
-            // 3. Node Baileys WhatsApp Gateway (sportive-whatsapp-service)
-            var serviceUrl = _config["WhatsApp:ServiceUrl"];
-            if (string.IsNullOrEmpty(serviceUrl))
-            {
-                try
-                {
-                    using (var scope = _scopeFactory.CreateScope())
-                    {
-                        var db = scope.ServiceProvider.GetRequiredService<Sportive.API.Data.AppDbContext>();
-                        var storeSettings = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(db.StoreInfo, s => s.StoreConfigId == 1);
-                        serviceUrl = storeSettings?.WhatsAppStoreGatewayUrl ?? "https://sportive-frontend-production-65ac.up.railway.app";
-                    }
-                }
-                catch { serviceUrl = "https://sportive-frontend-production-65ac.up.railway.app"; }
-            }
-            if (!string.IsNullOrEmpty(serviceUrl))
-            {
-                try
-                {
-                    var formattedPhone = NormalizePhone(phoneNumber);
-                    var payload = new
-                    {
-                        phone = formattedPhone,
-                        message = $"رمز التحقق الخاص بك في متجر Sportive هو: *{otpCode}*\nرمز التحقق صالح لمدة 5 دقائق."
-                    };
-                    var request = new HttpRequestMessage(HttpMethod.Post, $"{serviceUrl.TrimEnd('/')}/send");
-                    request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-                    var response = await _httpClient.SendAsync(request);
-                    if (response.IsSuccessStatusCode)
-                    {
-                        _logger.LogInformation("OTP sent via Node WhatsApp Gateway to {Phone}", phoneNumber);
-                        return true;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to send OTP via Node WhatsApp Gateway");
-                }
-            }
-
-            _logger.LogWarning("No active WhatsApp service configured for sending OTP.");
-            return false;
+            var message = $"رمز التحقق الخاص بك في متجر Sportive هو: *{otpCode}*\nرمز التحقق صالح لمدة 5 دقائق.";
+            return await SendWhatsAppMessageAsync(phoneNumber, message);
         }
         catch (Exception ex)
         {
@@ -163,45 +43,48 @@ public class WhatsAppApiService : IWhatsAppApiService
         return digits;
     }
 
-    public async Task<bool> SendWapilotMessageAsync(string phoneNumber, string messageText, string apiKey, string instanceId)
+    public async Task<bool> SendWhatsAppMessageAsync(string phoneNumber, string messageText, bool isPos = false)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(instanceId))
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<Sportive.API.Data.AppDbContext>();
+            var storeSettings = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(db.StoreInfo, s => s.StoreConfigId == 1);
+
+            // Use Node Baileys WhatsApp Gateway (sportive-whatsapp-service)
+            var serviceUrl = _config["WhatsApp:ServiceUrl"] ?? storeSettings?.WhatsAppStoreGatewayUrl ?? "https://sportive-frontend-production-65ac.up.railway.app";
+            if (!string.IsNullOrWhiteSpace(serviceUrl))
             {
-                _logger.LogWarning("Wapilot API is not configured completely. Missing API Key or Instance ID.");
-                return false;
-            }
+                var formattedPhone = NormalizePhone(phoneNumber);
+                var payload = new
+                {
+                    phone = formattedPhone,
+                    message = messageText
+                };
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{serviceUrl.TrimEnd('/')}/send");
+                request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
-            var url = $"https://api.wapilot.net/api/v2/{instanceId}/send-message";
-            var formattedPhone = NormalizePhone(phoneNumber);
-
-            var payload = new
-            {
-                chat_id = formattedPhone + "@c.us",
-                text = messageText
-            };
-
-            var request = new HttpRequestMessage(HttpMethod.Post, url);
-            request.Headers.Add("token", apiKey);
-            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-            var response = await _httpClient.SendAsync(request);
-            
-            if (!response.IsSuccessStatusCode)
-            {
+                var response = await _httpClient.SendAsync(request);
+                if (response.IsSuccessStatusCode)
+                {
+                    _logger.LogInformation("Message sent via Node WhatsApp Gateway to {Phone}", phoneNumber);
+                    return true;
+                }
+                
                 var errorResponse = await response.Content.ReadAsStringAsync();
-                _logger.LogError("Wapilot API Error: {Error}", errorResponse);
-                return false;
+                _logger.LogError("Node WhatsApp Gateway API Error: {Error}", errorResponse);
+            }
+            else
+            {
+                _logger.LogWarning("No active Node WhatsApp Gateway configured for sending message.");
             }
 
-            return true;
+            return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send message via Wapilot");
+            _logger.LogError(ex, "Failed to send generic message via Node WhatsApp Gateway");
             return false;
         }
     }
 }
-
