@@ -125,6 +125,9 @@ public class Order : BaseEntity
     public string? ShippingTrackingNumber { get; set; }
     public string? ShippingType { get; set; } // "Bosta", "Custom", "BranchPickup"
 
+    public int? ShippingCompanyId { get; set; }
+    public ShippingCompany? ShippingCompany { get; set; }
+
     // Navigation
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
     public ICollection<OrderStatusHistory> StatusHistory { get; set; } = new List<OrderStatusHistory>();

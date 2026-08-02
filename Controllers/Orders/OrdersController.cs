@@ -1437,6 +1437,7 @@ public class OrdersController : ControllerBase
         order.ShippingCarrierName = dto.ShippingCarrierName ?? order.ShippingCarrierName;
         order.ShippingTrackingNumber = dto.ShippingTrackingNumber ?? order.ShippingTrackingNumber;
         order.ShippingType = dto.ShippingType ?? order.ShippingType;
+        order.ShippingCompanyId = dto.ShippingCompanyId ?? order.ShippingCompanyId;
 
         await _db.SaveChangesAsync();
 

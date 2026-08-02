@@ -57,6 +57,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<UserModulePermission> UserModulePermissions => Set<UserModulePermission>();
     public DbSet<StoreInfo> StoreInfo           => Set<StoreInfo>();
     public DbSet<ShippingZone> ShippingZones    => Set<ShippingZone>();
+    public DbSet<ShippingCompany> ShippingCompanies { get; set; }
     public DbSet<SizeGroup>    SizeGroups       => Set<SizeGroup>();
     public DbSet<SizeValue>    SizeValues       => Set<SizeValue>();
     public DbSet<ColorGroup>   ColorGroups      => Set<ColorGroup>();

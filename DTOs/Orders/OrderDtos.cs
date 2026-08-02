@@ -218,7 +218,8 @@ public record OrderDetailDto(
     string? BostaAwbUrl = null,
     string? ShippingCarrierName = null,
     string? ShippingTrackingNumber = null,
-    string? ShippingType = null
+    string? ShippingType = null,
+    int? ShippingCompanyId = null
 );
 
 public record UpdateBostaShipmentDto(
@@ -228,7 +229,8 @@ public record UpdateBostaShipmentDto(
     string? BostaAwbUrl = null,
     string? ShippingCarrierName = null,
     string? ShippingTrackingNumber = null,
-    string? ShippingType = null
+    string? ShippingType = null,
+    int? ShippingCompanyId = null
 );
 
 public record OrderDetailPaymentDto(
