@@ -2010,6 +2010,12 @@ public class OperationalReportsController : ControllerBase
             var orderMap = await _db.Orders.AsNoTracking().Where(o => orderRefs.Contains(o.OrderNumber)).ToDictionaryAsync(o => o.OrderNumber, o => o.Id);
             var purchaseMap = await _db.PurchaseInvoices.AsNoTracking().Where(i => purchaseRefs.Contains(i.InvoiceNumber)).ToDictionaryAsync(i => i.InvoiceNumber, i => i.Id);
 
+            var orderItemsList = await _db.OrderItems.AsNoTracking()
+                .Include(i => i.Order)
+                .Where(i => i.Order != null && orderRefs.Contains(i.Order.OrderNumber))
+                .Select(i => new { i.Order.OrderNumber, i.ProductId, i.ProductVariantId, i.Size, i.Color })
+                .ToListAsync();
+
             // 🛡️ REFINEMENT: Resolve staff names for the report
             var personIds = dbMovements.Select(m => m.CreatedByUserId).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
             var numericIds = personIds.Where(id => int.TryParse(id, out _)).Select(id => int.Parse(id!)).ToList();
@@ -2032,12 +2038,29 @@ public class OperationalReportsController : ControllerBase
                         sourceId = purchaseId;
                 }
 
+                string? finalSize = m.ProductVariant?.Size;
+                string? finalColor = m.ProductVariant?.ColorAr ?? m.ProductVariant?.Color;
+
+                if ((m.Type == InventoryMovementType.Sale || m.Type == InventoryMovementType.ReturnIn) && m.Reference != null)
+                {
+                    var matchingItem = orderItemsList.FirstOrDefault(i => 
+                        i.OrderNumber == m.Reference && 
+                        i.ProductId == m.ProductId && 
+                        (m.ProductVariantId == null || i.ProductVariantId == m.ProductVariantId));
+                        
+                    if (matchingItem != null)
+                    {
+                        if (string.IsNullOrEmpty(finalSize)) finalSize = matchingItem.Size;
+                        if (string.IsNullOrEmpty(finalColor)) finalColor = matchingItem.Color;
+                    }
+                }
+
                 return new ProductMovementLine(
                     m.CreatedAt,
                     TranslateMovementType(m.Type),
                     m.Reference ?? "N/A",
                     m.Note ?? "-",
-                    (m.ProductVariant != null ? (m.ProductVariant.Size + " / " + (m.ProductVariant.ColorAr ?? m.ProductVariant.Color ?? "")) : "أساسي"),
+                    (!string.IsNullOrEmpty(finalSize) || !string.IsNullOrEmpty(finalColor) ? $"{finalSize ?? "أساسي"} / {finalColor ?? "-"}" : "أساسي"),
                     m.Quantity > 0 ? m.Quantity : 0,
                     m.Quantity < 0 ? Math.Abs(m.Quantity) : 0,
                     m.Quantity * m.UnitCost,
@@ -2047,8 +2070,8 @@ public class OperationalReportsController : ControllerBase
                     m.Product?.SKU ?? "N/A",
                     productBalanceMap.TryGetValue(m.Id, out var bal) ? bal : m.RemainingStock,
                     sourceId,
-                    m.ProductVariant?.Size ?? "أساسي",
-                    m.ProductVariant?.ColorAr ?? m.ProductVariant?.Color ?? "-"
+                    !string.IsNullOrEmpty(finalSize) ? finalSize : "أساسي",
+                    !string.IsNullOrEmpty(finalColor) ? finalColor : "-"
                 );
             }).ToList();
 
