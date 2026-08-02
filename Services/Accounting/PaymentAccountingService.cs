@@ -72,7 +72,22 @@ public class PaymentAccountingService
             {
                 if (p.Method == PaymentMethod.CustomerBalance) continue;
                 
-                var code = await _core.GetMappedCashAccountAsync(p.Method, order.Source, mapDict);
+                string code = await _core.GetMappedCashAccountAsync(p.Method, order.Source, mapDict);
+                
+                // --- Shipping Settlements Integration ---
+                if (p.Method == PaymentMethod.Cash && order.ShippingCompanyId.HasValue && !order.IsSettledWithCourier)
+                {
+                    if (order.ShippingCompany == null)
+                    {
+                        order.ShippingCompany = await _db.ShippingCompanies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.ShippingCompanyId);
+                    }
+                    if (order.ShippingCompany?.AccountId != null)
+                    {
+                        code = $"ID:{order.ShippingCompany.AccountId}";
+                    }
+                }
+                // ----------------------------------------
+                
                 var methodLabel = _core.GetMethodLabel(p.Method);
                 lines.Add((code, p.Amount, 0, _t.Get("Accounting.CollectionShortDesc", methodLabel, order.OrderNumber)));
                 lines.Add((receivablesAcct, 0, p.Amount, _t.Get("Accounting.DebtClosureDesc", methodLabel, order.OrderNumber)));
@@ -88,7 +103,22 @@ public class PaymentAccountingService
                 {
                     if (m == PaymentMethod.CustomerBalance) continue;
                     
-                    var code = await _core.GetMappedCashAccountAsync(m, order.Source, mapDict);
+                    string code = await _core.GetMappedCashAccountAsync(m, order.Source, mapDict);
+                    
+                    // --- Shipping Settlements Integration ---
+                    if (m == PaymentMethod.Cash && order.ShippingCompanyId.HasValue && !order.IsSettledWithCourier)
+                    {
+                        if (order.ShippingCompany == null)
+                        {
+                            order.ShippingCompany = await _db.ShippingCompanies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.ShippingCompanyId);
+                        }
+                        if (order.ShippingCompany?.AccountId != null)
+                        {
+                            code = $"ID:{order.ShippingCompany.AccountId}";
+                        }
+                    }
+                    // ----------------------------------------
+                    
                     var methodLabel = _core.GetMethodLabel(m);
                     lines.Add((code, v, 0, _t.Get("Accounting.CollectionShortDesc", methodLabel, order.OrderNumber)));
                     lines.Add((receivablesAcct, 0, v, _t.Get("Accounting.DebtClosureDesc", methodLabel, order.OrderNumber)));
@@ -97,7 +127,22 @@ public class PaymentAccountingService
             }
             else if (order.PaymentMethod != PaymentMethod.Credit && order.PaymentMethod != PaymentMethod.CustomerBalance && order.TotalAmount > 0)
             {
-                var cashCode = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
+                string cashCode = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
+                
+                // --- Shipping Settlements Integration ---
+                if (order.PaymentMethod == PaymentMethod.Cash && order.ShippingCompanyId.HasValue && !order.IsSettledWithCourier)
+                {
+                    if (order.ShippingCompany == null)
+                    {
+                        order.ShippingCompany = await _db.ShippingCompanies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.ShippingCompanyId);
+                    }
+                    if (order.ShippingCompany?.AccountId != null)
+                    {
+                        cashCode = $"ID:{order.ShippingCompany.AccountId}";
+                    }
+                }
+                // ----------------------------------------
+                
                 var methodLabel = _core.GetMethodLabel(order.PaymentMethod);
                 lines.Add((cashCode, order.TotalAmount, 0, _t.Get("Accounting.OrderCollectionDesc", order.OrderNumber, methodLabel)));
                 lines.Add((receivablesAcct, 0, order.TotalAmount, _t.Get("Accounting.OrderDebtClosureDesc", order.OrderNumber)));

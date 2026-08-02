@@ -127,6 +127,10 @@ public class Order : BaseEntity
 
     public int? ShippingCompanyId { get; set; }
     public ShippingCompany? ShippingCompany { get; set; }
+    
+    public bool IsSettledWithCourier { get; set; } = false;
+    public DateTime? CourierSettlementDate { get; set; }
+
 
     // Navigation
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
