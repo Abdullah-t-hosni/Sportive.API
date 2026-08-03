@@ -37,6 +37,12 @@ public class BostaWebhookController : ControllerBase
         try
         {
             _logger.LogInformation("Received Bosta Webhook payload: {Payload}", payload.GetRawText());
+            
+            try 
+            {
+                await _audit.LogAsync("BostaWebhookRaw", "Webhook", "0", payload.GetRawText(), null, "Bosta");
+            } 
+            catch { }
 
             string? trackingNumber = null;
             string? deliveryId = null;
