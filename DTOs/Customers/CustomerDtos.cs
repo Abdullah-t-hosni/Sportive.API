@@ -102,6 +102,21 @@ public record CreateAddressDto(
     double? Longitude
 );
 
+public record UpdateAddressDto(
+    string TitleAr,
+    string TitleEn,
+    string Street,
+    string City,
+    string? District,
+    string? BuildingNo,
+    string? Floor,
+    string? ApartmentNo,
+    string? AdditionalInfo,
+    bool IsDefault = false,
+    double? Latitude = null,
+    double? Longitude = null
+);
+
 public record CreateCustomerDto(
     [property: JsonPropertyName("fullName")] string FullName,
     [property: JsonPropertyName("email")] string? Email = null,

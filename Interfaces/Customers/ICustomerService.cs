@@ -19,6 +19,7 @@ public interface ICustomerService
     Task<bool> ToggleCustomerAsync(int id);
     Task<bool> DeleteCustomerAsync(int id);
     Task<AddressDto> AddAddressAsync(int customerId, CreateAddressDto dto);
+    Task<AddressDto> UpdateAddressAsync(int customerId, int addressId, UpdateAddressDto dto);
     Task DeleteAddressAsync(int customerId, int addressId);
     Task SetDefaultAddressAsync(int customerId, int addressId);
     Task EnsureCustomerAccountAsync(int customerId, bool isEmployee = false, int? employeeId = null);

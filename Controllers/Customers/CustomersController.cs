@@ -133,6 +133,15 @@ public class CustomersController : ControllerBase
     }
 
     [Authorize]
+    [HttpPut("{customerId}/addresses/{addressId}")]
+    public async Task<IActionResult> UpdateAddress(int customerId, int addressId, [FromBody] UpdateAddressDto dto)
+    {
+        if (!IsOwnerOrAdmin(customerId)) return Forbid();
+        try { return Ok(await _customers.UpdateAddressAsync(customerId, addressId, dto)); }
+        catch (KeyNotFoundException) { return NotFound(); }
+    }
+
+    [Authorize]
     [HttpDelete("{customerId}/addresses/{addressId}")]
     public async Task<IActionResult> DeleteAddress(int customerId, int addressId)
     {

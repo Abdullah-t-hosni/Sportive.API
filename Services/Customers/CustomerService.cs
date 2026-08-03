@@ -569,6 +569,32 @@ public class CustomerService : ICustomerService
             address.Latitude, address.Longitude);
     }
 
+    public async Task<AddressDto> UpdateAddressAsync(int customerId, int addressId, UpdateAddressDto dto)
+    {
+        var address = await _db.Addresses
+            .FirstOrDefaultAsync(a => a.Id == addressId && a.CustomerId == customerId)
+            ?? throw new KeyNotFoundException("Address not found");
+
+        address.TitleAr        = string.IsNullOrWhiteSpace(dto.TitleAr) ? address.TitleAr : dto.TitleAr;
+        address.TitleEn        = string.IsNullOrWhiteSpace(dto.TitleEn) ? address.TitleEn : dto.TitleEn;
+        address.Street         = dto.Street;
+        address.City           = dto.City;
+        address.District       = dto.District;
+        address.BuildingNo     = dto.BuildingNo;
+        address.Floor          = dto.Floor;
+        address.ApartmentNo    = dto.ApartmentNo;
+        address.AdditionalInfo = dto.AdditionalInfo;
+        if (dto.Latitude.HasValue)  address.Latitude  = dto.Latitude;
+        if (dto.Longitude.HasValue) address.Longitude = dto.Longitude;
+
+        await _db.SaveChangesAsync();
+
+        return new AddressDto(address.Id, address.TitleAr, address.TitleEn,
+            address.Street, address.City, address.District,
+            address.BuildingNo, address.Floor, address.ApartmentNo, address.IsDefault,
+            address.Latitude, address.Longitude);
+    }
+
     public async Task DeleteAddressAsync(int customerId, int addressId)
     {
         var address = await _db.Addresses
