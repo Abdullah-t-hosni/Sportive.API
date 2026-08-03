@@ -2870,7 +2870,18 @@ public class OrderService : IOrderService
                         foreach (var req in newReturnItems)
                         {
                             var line = order.Items.FirstOrDefault(i => i.ProductId == req.ProductId && i.ProductVariantId == req.ProductVariantId);
-                            if (line == null) continue;
+                            if (line == null) 
+                            {
+                                var matchingProducts = order.Items.Where(i => i.ProductId == req.ProductId).ToList();
+                                if (matchingProducts.Count == 1)
+                                {
+                                    line = matchingProducts.First();
+                                }
+                                else
+                                {
+                                    throw new InvalidOperationException($"Cannot find matching item in order to return for product ID {req.ProductId} and variant ID {req.ProductVariantId}. The variant might have been changed inappropriately.");
+                                }
+                            }
 
                             int maxCanReturn = line.Quantity - line.ReturnedQuantity;
                             if (req.Quantity > maxCanReturn) 
