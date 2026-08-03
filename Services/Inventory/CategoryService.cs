@@ -229,7 +229,8 @@ public class CategoryService : ICategoryService
     {
         var children = all
             .Where(c => c.ParentId == current.Id)
-            .OrderBy(x => x.NameAr)
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.NameAr)
             .ToList();
 
         // نضع الأب لكل ابن لعرض اسمه
