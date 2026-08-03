@@ -76,5 +76,21 @@ public class CategoriesController : ControllerBase
         }
         catch (KeyNotFoundException) { return NotFound(); }
     }
+
+    [RequirePermission(ModuleKeys.Categories, requireEdit: true)]
+    [HttpPut("reorder")]
+    public async Task<IActionResult> Reorder([FromBody] List<CategorySortUpdateDto> updates)
+    {
+        try
+        {
+            await _categories.UpdateSortOrderAsync(updates);
+            try { await _audit.LogAsync("ReorderCategories", "Category", "Batch", "Reordered categories", System.Security.Claims.ClaimTypes.NameIdentifier, System.Security.Claims.ClaimTypes.Name); } catch { }
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
 }
 

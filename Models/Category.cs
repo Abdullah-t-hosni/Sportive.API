@@ -23,6 +23,8 @@ public class Category : BaseEntity
     public Category? Parent { get; set; }
     public ICollection<Category> Children { get; set; } = new List<Category>();
 
+    public int SortOrder { get; set; } = 0;
+
     // Navigation
     public ICollection<Product> Products { get; set; } = new List<Product>();
 }

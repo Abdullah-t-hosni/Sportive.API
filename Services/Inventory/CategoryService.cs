@@ -34,7 +34,9 @@ public class CategoryService : ICategoryService
             .Include(c => c.Parent)
             .Include(c => c.SizeGroup)
             .Include(c => c.Products)
-            .OrderBy(c => c.ParentId).ThenBy(c => c.NameAr)
+            .OrderBy(c => c.ParentId)
+            .ThenBy(c => c.SortOrder)
+            .ThenBy(c => c.NameAr)
             .ToListAsync();
 
         var result = cats.Select(c => MapFlat(c)).ToList();
@@ -58,7 +60,8 @@ public class CategoryService : ICategoryService
 
         var roots = allCats
             .Where(c => c.ParentId == null)
-            .OrderBy(x => x.NameAr)
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.NameAr)
             .ToList();
 
         var result = roots.Select(r => BuildTreeRecursive(r, allCats)).ToList();
@@ -295,5 +298,24 @@ public class CategoryService : ICategoryService
         }
 
         return false;
+    }
+
+    public async Task UpdateSortOrderAsync(List<CategorySortUpdateDto> updates)
+    {
+        var ids = updates.Select(u => u.Id).ToList();
+        var categories = await _db.Categories.Where(c => ids.Contains(c.Id)).ToListAsync();
+
+        foreach (var cat in categories)
+        {
+            var update = updates.FirstOrDefault(u => u.Id == cat.Id);
+            if (update != null)
+            {
+                cat.SortOrder = update.SortOrder;
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        await _cache.RemoveAsync(CacheKeyAll);
+        await _cache.RemoveAsync(CacheKeyTree);
     }
 }

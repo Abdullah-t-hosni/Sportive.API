@@ -1,4 +1,4 @@
-﻿using Sportive.API.DTOs;
+using Sportive.API.DTOs;
 
 namespace Sportive.API.Interfaces;
 
@@ -10,4 +10,5 @@ public interface ICategoryService
     Task<CategoryDto> CreateAsync(CreateCategoryDto dto);
     Task<CategoryDto> UpdateAsync(int id, CreateCategoryDto dto);
     Task DeleteAsync(int id);
+    Task UpdateSortOrderAsync(List<CategorySortUpdateDto> updates);
 }
