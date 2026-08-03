@@ -402,6 +402,12 @@ public class ReceiptVouchersController : ControllerBase
         var voucher = await _db.ReceiptVouchers.FindAsync(id);
         if (voucher == null) return NotFound();
 
+        var linkedInstallment = await _db.InstallmentPayments.AnyAsync(ip => ip.ReceiptVoucherId == id);
+        if (linkedInstallment)
+        {
+            return BadRequest(new { message = "لا يمكن حذف هذا السند لأنه مرتبط بسداد قسط. يرجى إلغاء السداد من صفحة الأقساط بدلاً من ذلك." });
+        }
+
         var entry = await _db.JournalEntries.Include(e => e.Lines).FirstOrDefaultAsync(e => e.Type == JournalEntryType.ReceiptVoucher && e.Reference == voucher.VoucherNumber);
         
         if (entry != null && entry.Status == JournalEntryStatus.Posted && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin"))) {
