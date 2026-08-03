@@ -30,7 +30,7 @@ public class CategoriesController : ControllerBase
     public async Task<IActionResult> GetTree() =>
         Ok(await _categories.GetTreeAsync());
 
-    [HttpGet("{id}")]
+    [HttpGet("{id:int}")]
     public async Task<IActionResult> GetById(int id)
     {
         var cat = await _categories.GetByIdAsync(id);
@@ -51,7 +51,7 @@ public class CategoriesController : ControllerBase
     }
 
     [RequirePermission(ModuleKeys.Categories, requireEdit: true)]
-    [HttpPut("{id}")]
+    [HttpPut("{id:int}")]
     public async Task<IActionResult> Update(int id, [FromBody] CreateCategoryDto dto)
     {
         try 
@@ -65,7 +65,7 @@ public class CategoriesController : ControllerBase
     }
 
     [RequirePermission(ModuleKeys.Categories, requireEdit: true)]
-    [HttpDelete("{id}")]
+    [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
         try 
