@@ -40,7 +40,8 @@ public class ShippingSettlementsController : ControllerBase
                 o.TotalAmount,
                 DeliveryDate = o.ActualDeliveryDate ?? o.UpdatedAt,
                 o.ShippingTrackingNumber,
-                o.BostaTrackingNumber
+                o.BostaTrackingNumber,
+                ActualDeliveryCost = o.ActualDeliveryCost == 0 ? o.DeliveryFee : o.ActualDeliveryCost
             })
             .ToListAsync();
 
@@ -50,7 +51,8 @@ public class ShippingSettlementsController : ControllerBase
     [HttpPost("settle")]
     public async Task<IActionResult> SettleOrders([FromBody] SettleShippingRequest request)
     {
-        if (request == null || request.OrderIds == null || !request.OrderIds.Any())
+        var orderIds = request.Orders?.Select(o => o.OrderId).ToList() ?? request.OrderIds;
+        if (orderIds == null || !orderIds.Any())
             return BadRequest("يجب تحديد الطلبات المراد تسويتها.");
 
         var company = await _db.ShippingCompanies.FindAsync(request.ShippingCompanyId);
@@ -58,7 +60,7 @@ public class ShippingSettlementsController : ControllerBase
             return BadRequest("شركة الشحن غير موجودة أو غير مربوطة بحساب في الدليل المحاسبي.");
 
         var orders = await _db.Orders
-            .Where(o => request.OrderIds.Contains(o.Id) && 
+            .Where(o => orderIds.Contains(o.Id) && 
                         o.ShippingCompanyId == request.ShippingCompanyId &&
                         o.IsSettledWithCourier == false)
             .ToListAsync();
@@ -66,49 +68,149 @@ public class ShippingSettlementsController : ControllerBase
         if (!orders.Any())
             return BadRequest("لا توجد طلبات متاحة للتسوية أو تم تسويتها مسبقاً.");
 
-        decimal totalSettled = orders.Sum(o => o.TotalAmount);
+        // Get Store Settings for Delivery Expense Account
+        var storeSettings = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        string deliveryExpenseAccount = storeSettings?.DeliveryAccountId ?? "511";
 
         // Get Cash Account from Mapping
         var mapDict = await _accountingCore.GetSafeSystemMappingsAsync();
         var cashAccountCode = await _accountingCore.GetMappedCashAccountAsync(request.Method, OrderSource.Website, mapDict);
 
-        // إنشاء قيد التسوية (سند قبض من شركة الشحن)
-        var reference = $"SETTLE-SHP-{company.Id}-{DateTime.Now:yyyyMMddHHmmss}";
-        var lines = new List<(string code, decimal debit, decimal credit, string desc)>
-        {
-            // مدين: حساب الخزينة/البنك اللي تم تحويل الفلوس عليه
-            (cashAccountCode, totalSettled, 0, $"تسوية متحصلات من شركة شحن: {company.NameAr} - لعدد {orders.Count} طلب"),
-            
-            // دائن: حساب شركة الشحن (تقليل مديونيتهم)
-            ($"ID:{company.AccountId}", 0, totalSettled, $"تسديد متحصلات طلبات مجمعة")
-        };
-
-        // تسجيل القيد
-        await _accountingCore.PostEntryAsync(
-            type: JournalEntryType.ReceiptVoucher,
-            reference: reference,
-            description: $"تسوية مدفوعات شركة الشحن: {company.NameAr}",
-            date: TimeHelper.GetEgyptBusinessDayDate(DateTime.UtcNow),
-            lines: lines,
-            source: OrderSource.Website
-        );
-
-        // تحديث حالة الطلبات
+        // Update shipping costs and calculate totals
         foreach (var order in orders)
         {
+            var reqOrder = request.Orders?.FirstOrDefault(o => o.OrderId == order.Id);
+            if (reqOrder != null)
+            {
+                order.ActualDeliveryCost = reqOrder.ActualDeliveryCost;
+            }
             order.IsSettledWithCourier = true;
             order.CourierSettlementDate = TimeHelper.GetEgyptTime();
         }
 
+        decimal totalCollected = orders.Sum(o => o.TotalAmount);
+        decimal totalShippingCost = orders.Sum(o => o.ActualDeliveryCost);
+        decimal netAmount = totalCollected - totalShippingCost;
+
+        // إنشاء قيد التسوية
+        var reference = $"SETTLE-SHP-{company.Id}-{DateTime.Now:yyyyMMddHHmmss}";
+        var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
+
+        // 1. حساب البنك/الخزينة (صافي التحويل)
+        if (netAmount > 0)
+        {
+            lines.Add((cashAccountCode, netAmount, 0, $"تسوية متحصلات من شركة شحن: {company.NameAr} - لعدد {orders.Count} طلب"));
+        }
+        else if (netAmount < 0)
+        {
+            lines.Add((cashAccountCode, 0, Math.Abs(netAmount), $"سداد عجز وتسوية شركة شحن: {company.NameAr} - لعدد {orders.Count} طلب"));
+        }
+
+        // 2. حساب مصاريف الشحن (العمولة المدفوعة للشركة)
+        if (totalShippingCost > 0)
+        {
+            lines.Add((deliveryExpenseAccount, totalShippingCost, 0, $"مصاريف شحن وتوصيل لشركة {company.NameAr} (تسوية {orders.Count} طلب)"));
+        }
+
+        // 3. حساب شركة الشحن (دائن لتقليل مديونيتهم بإجمالي المبالغ المحصلة)
+        if (totalCollected > 0)
+        {
+            lines.Add(($"ID:{company.AccountId}", 0, totalCollected, $"تسديد متحصلات طلبات مجمعة"));
+        }
+
+        // Check if unbalanced due to only negative netAmount (unlikely if totalCollected > 0)
+        if (lines.Any())
+        {
+            // تسجيل القيد
+            await _accountingCore.PostEntryAsync(
+                type: JournalEntryType.ReceiptVoucher,
+                reference: reference,
+                description: $"تسوية مدفوعات شركة الشحن: {company.NameAr}",
+                date: TimeHelper.GetEgyptBusinessDayDate(DateTime.UtcNow),
+                lines: lines,
+                source: OrderSource.Website
+            );
+        }
+
         await _db.SaveChangesAsync();
 
-        return Ok(new { success = true, totalSettled, count = orders.Count });
+        return Ok(new { success = true, totalSettled = netAmount, count = orders.Count });
     }
+
+    [HttpPost("sync-bosta-prices")]
+    public async Task<IActionResult> SyncBostaPrices([FromBody] SyncBostaPricesRequest request)
+    {
+        if (request == null || request.OrderIds == null || !request.OrderIds.Any())
+            return BadRequest("يجب تحديد الطلبات.");
+
+        var storeSettings = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        if (storeSettings == null || string.IsNullOrEmpty(storeSettings.BostaApiKey))
+            return BadRequest("Bosta API Key is not configured.");
+
+        string baseUrl = storeSettings.BostaUseSandbox ? "https://stg-api.bosta.co" : "https://api.bosta.co";
+        using var client = new System.Net.Http.HttpClient();
+        client.DefaultRequestHeaders.Add("Authorization", storeSettings.BostaApiKey);
+
+        var orders = await _db.Orders
+            .Where(o => request.OrderIds.Contains(o.Id) && !string.IsNullOrEmpty(o.BostaDeliveryId))
+            .ToListAsync();
+
+        int successCount = 0;
+        foreach (var order in orders)
+        {
+            try
+            {
+                var response = await client.GetAsync($"{baseUrl}/api/v2/deliveries/{order.BostaDeliveryId}");
+                if (response.IsSuccessStatusCode)
+                {
+                    var jsonStr = await response.Content.ReadAsStringAsync();
+                    using var doc = System.Text.Json.JsonDocument.Parse(jsonStr);
+                    var root = doc.RootElement;
+                    
+                    // Try to find pricing info in Bosta's response
+                    decimal foundCost = 0;
+                    if (root.TryGetProperty("pricing", out var pricingObj))
+                    {
+                        if (pricingObj.TryGetProperty("bostaRevenue", out var revProp) && revProp.TryGetDecimal(out var rev))
+                            foundCost = rev;
+                        else if (pricingObj.TryGetProperty("shippingCost", out var costProp) && costProp.TryGetDecimal(out var cost))
+                            foundCost = cost;
+                        else if (pricingObj.TryGetProperty("shipmentTotal", out var totalProp) && totalProp.TryGetDecimal(out var tot))
+                            foundCost = tot;
+                    }
+
+                    if (foundCost > 0)
+                    {
+                        order.ActualDeliveryCost = foundCost;
+                        successCount++;
+                    }
+                }
+            }
+            catch (Exception) { /* Ignore individual order failure */ }
+        }
+
+        if (successCount > 0)
+            await _db.SaveChangesAsync();
+
+        return Ok(new { success = true, syncedCount = successCount, totalRequested = orders.Count });
+    }
+}
+
+public class SyncBostaPricesRequest
+{
+    public List<int> OrderIds { get; set; } = new();
 }
 
 public class SettleShippingRequest
 {
     public int ShippingCompanyId { get; set; }
     public List<int> OrderIds { get; set; } = new();
+    public List<SettleOrderDto> Orders { get; set; } = new();
     public PaymentMethod Method { get; set; } = PaymentMethod.Bank;
+}
+
+public class SettleOrderDto
+{
+    public int OrderId { get; set; }
+    public decimal ActualDeliveryCost { get; set; }
 }
