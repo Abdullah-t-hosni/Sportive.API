@@ -137,6 +137,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<DbSequence>        DbSequences          { get; set; }
     public DbSet<WelcomeMessage>     WelcomeMessages      { get; set; }
     public DbSet<WelcomeMessageSeen> WelcomeMessageSeens  { get; set; }
+    public DbSet<Governorate> Governorates { get; set; }
+    public DbSet<District> Districts { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
