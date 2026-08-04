@@ -171,11 +171,16 @@ public class ProductService : IProductService
         }
 
         // Sorting
-        query = filter.SortBy switch
+        query = filter.SortBy?.ToLower() switch
         {
-            "price" => filter.SortDir == "asc" ? query.OrderBy(p => p.Price).ThenBy(p => p.Id) : query.OrderByDescending(p => p.Price).ThenBy(p => p.Id),
-            "name" => filter.SortDir == "asc" ? query.OrderBy(p => p.NameEn).ThenBy(p => p.Id) : query.OrderByDescending(p => p.NameEn).ThenBy(p => p.Id),
-            _ => query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenByDescending(p => p.CreatedAt).ThenBy(p => p.Id)
+            "price" => filter.SortDir == "asc" ? query.OrderBy(p => p.Price).ThenByDescending(p => p.Id) : query.OrderByDescending(p => p.Price).ThenByDescending(p => p.Id),
+            "name" => filter.SortDir == "asc" ? query.OrderBy(p => p.NameAr).ThenByDescending(p => p.Id) : query.OrderByDescending(p => p.NameAr).ThenByDescending(p => p.Id),
+            "id" => filter.SortDir == "asc" ? query.OrderBy(p => p.Id) : query.OrderByDescending(p => p.Id),
+            "sku" => filter.SortDir == "asc" ? query.OrderBy(p => p.SKU) : query.OrderByDescending(p => p.SKU),
+            "createdat" or "newest" => filter.SortDir == "asc" ? query.OrderBy(p => p.CreatedAt).ThenBy(p => p.Id) : query.OrderByDescending(p => p.CreatedAt).ThenByDescending(p => p.Id),
+            _ => filter.OnlyPublic == true
+                ? query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenByDescending(p => p.CreatedAt).ThenByDescending(p => p.Id)
+                : query.OrderByDescending(p => p.Id)
         };
 
         var total = await query.CountAsync();
