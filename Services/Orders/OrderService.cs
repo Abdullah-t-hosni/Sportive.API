@@ -1040,7 +1040,7 @@ public class OrderService : IOrderService
                     }
                 }
 
-                // ✅ UPDATE COUPON USAGE
+                // ✅ UPDATE COUPON USAGE (عند تأكيد العميل للطلب مباشرة)
                 if (!string.IsNullOrEmpty(order.CouponCode))
                 {
                     var coupon = await _db.Coupons.FirstOrDefaultAsync(c => c.Code.ToUpper() == order.CouponCode.ToUpper());

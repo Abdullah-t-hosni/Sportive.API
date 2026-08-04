@@ -85,8 +85,23 @@ public class CouponService : ICouponService
         return coupon;
     }
 
-    public async Task<List<CouponListDto>> GetAllAsync() =>
-        await _db.Coupons
+    public async Task<List<CouponListDto>> GetAllAsync()
+    {
+        var now = TimeHelper.GetEgyptTime();
+        var expiredCoupons = await _db.Coupons
+            .Where(c => c.IsActive && c.ExpiresAt.HasValue && c.ExpiresAt < now)
+            .ToListAsync();
+
+        if (expiredCoupons.Any())
+        {
+            foreach (var c in expiredCoupons)
+            {
+                c.IsActive = false;
+            }
+            await _db.SaveChangesAsync();
+        }
+
+        return await _db.Coupons
             .OrderByDescending(c => c.CreatedAt)
             .Select(c => new CouponListDto(
                 c.Id, c.Code, c.DescriptionAr, c.DescriptionEn,
@@ -95,6 +110,7 @@ public class CouponService : ICouponService
                 c.MaxUsageCount, c.CurrentUsageCount,
                 c.ExpiresAt, c.IsActive))
             .ToListAsync();
+    }
 
     public async Task<CouponListDto?> UpdateAsync(int id, CreateCouponDto dto)
     {
