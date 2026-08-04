@@ -155,21 +155,26 @@ public class ShippingSettlementsController : ControllerBase
             .Where(o => request.OrderIds.Contains(o.Id) && !string.IsNullOrEmpty(o.BostaDeliveryId))
             .ToListAsync();
 
+        if (!orders.Any())
+            return BadRequest("لا توجد طلبات برقم تتبع بوسطة في القائمة المحددة.");
+
         int successCount = 0;
+        List<string> debugLogs = new();
+
         foreach (var order in orders)
         {
             try
             {
                 var response = await client.GetAsync($"{baseUrl}/api/v2/deliveries/{order.BostaDeliveryId}");
+                var jsonStr = await response.Content.ReadAsStringAsync();
+                
                 if (response.IsSuccessStatusCode)
                 {
-                    var jsonStr = await response.Content.ReadAsStringAsync();
                     using var doc = System.Text.Json.JsonDocument.Parse(jsonStr);
                     var root = doc.RootElement;
                     
                     decimal foundCost = 0;
                     
-                    // The main payload might be wrapped in a "data" object
                     var targetElement = root;
                     if (root.TryGetProperty("data", out var dataObj) && dataObj.ValueKind == System.Text.Json.JsonValueKind.Object)
                     {
@@ -180,26 +185,29 @@ public class ShippingSettlementsController : ControllerBase
                     {
                         decimal bostaRevenue = 0, shippingCost = 0, vat = 0, insurance = 0;
 
-                        if (pricingObj.TryGetProperty("bostaRevenue", out var revProp) && revProp.TryGetDecimal(out var rev))
-                            bostaRevenue = rev;
-                        else if (pricingObj.TryGetProperty("bostaDue", out var dueProp) && dueProp.TryGetDecimal(out var due))
-                            bostaRevenue = due;
+                        if (pricingObj.TryGetProperty("bostaRevenue", out var revProp) && revProp.TryGetDecimal(out var rev)) bostaRevenue = rev;
+                        else if (pricingObj.TryGetProperty("bostaDue", out var dueProp) && dueProp.TryGetDecimal(out var due)) bostaRevenue = due;
+                        else if (pricingObj.TryGetProperty("netRevenue", out var netProp) && netProp.TryGetDecimal(out var net)) bostaRevenue = net;
 
-                        if (pricingObj.TryGetProperty("shippingCost", out var costProp) && costProp.TryGetDecimal(out var cost))
-                            shippingCost = cost;
-                        else if (pricingObj.TryGetProperty("shippingPrice", out var costProp2) && costProp2.TryGetDecimal(out var cost2))
-                            shippingCost = cost2;
+                        if (pricingObj.TryGetProperty("shippingCost", out var costProp) && costProp.TryGetDecimal(out var cost)) shippingCost = cost;
+                        else if (pricingObj.TryGetProperty("shippingPrice", out var costProp2) && costProp2.TryGetDecimal(out var cost2)) shippingCost = cost2;
 
-                        if (pricingObj.TryGetProperty("vat", out var vatProp) && vatProp.TryGetDecimal(out var v))
-                            vat = v;
+                        if (pricingObj.TryGetProperty("vat", out var vatProp) && vatProp.TryGetDecimal(out var v)) vat = v;
+                        if (pricingObj.TryGetProperty("insurance", out var insProp) && insProp.TryGetDecimal(out var i)) insurance = i;
 
-                        if (pricingObj.TryGetProperty("insurance", out var insProp) && insProp.TryGetDecimal(out var i))
-                            insurance = i;
-
-                        // Bosta's estimated due is typically shippingCost + vat + insurance, unless bostaRevenue explicitly overrides it
                         decimal calculatedDue = shippingCost + vat + insurance;
-
                         foundCost = bostaRevenue > 0 ? bostaRevenue : (calculatedDue > 0 ? calculatedDue : shippingCost);
+                        
+                        debugLogs.Add($"Order {order.Id} Pricing: {pricingObj.GetRawText()} | Found: {foundCost}");
+                    }
+                    else if (targetElement.TryGetProperty("price", out var priceProp) && priceProp.TryGetDecimal(out var priceObjVal))
+                    {
+                        foundCost = priceObjVal;
+                        debugLogs.Add($"Order {order.Id} Price: {priceObjVal}");
+                    }
+                    else
+                    {
+                        debugLogs.Add($"Order {order.Id} Missing Pricing, keys: {string.Join(",", targetElement.EnumerateObject().Select(p => p.Name))}");
                     }
 
                     if (foundCost > 0)
@@ -208,14 +216,21 @@ public class ShippingSettlementsController : ControllerBase
                         successCount++;
                     }
                 }
+                else
+                {
+                    debugLogs.Add($"Order {order.Id} Failed API Call: {response.StatusCode} - {jsonStr}");
+                }
             }
-            catch (Exception) { /* Ignore individual order failure */ }
+            catch (Exception ex) 
+            { 
+                debugLogs.Add($"Order {order.Id} Exception: {ex.Message}");
+            }
         }
 
         if (successCount > 0)
             await _db.SaveChangesAsync();
 
-        return Ok(new { success = true, syncedCount = successCount, totalRequested = orders.Count });
+        return Ok(new { success = true, syncedCount = successCount, totalRequested = orders.Count, debugLogs });
     }
 }
 
