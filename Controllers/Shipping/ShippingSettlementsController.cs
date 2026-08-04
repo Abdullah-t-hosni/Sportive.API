@@ -222,7 +222,7 @@ public class ShippingSettlementsController : ControllerBase
                             decimal calculatedDue = shippingCost + vat + insurance;
                             foundCost = bostaRevenue > 0 ? bostaRevenue : (calculatedDue > 0 ? calculatedDue : shippingCost);
                             
-                            debugLogs.Add($"Order {order.Id} Pricing: {pricingObj.GetRawText()} | Found: {foundCost}");
+                            debugLogs.Add($"Order {order.Id} RAW: {targetElement.GetRawText()}");
                         }
                         else if (targetElement.TryGetProperty("price", out var priceProp) && priceProp.TryGetDecimal(out var priceObjVal))
                         {
@@ -231,7 +231,7 @@ public class ShippingSettlementsController : ControllerBase
                         }
                         else
                         {
-                            debugLogs.Add($"Order {order.Id} Missing Pricing, keys: {string.Join(",", targetElement.EnumerateObject().Select(p => p.Name))}");
+                            debugLogs.Add($"Order {order.Id} RAW: {targetElement.GetRawText()}");
                         }
 
                         if (foundCost > 0)
