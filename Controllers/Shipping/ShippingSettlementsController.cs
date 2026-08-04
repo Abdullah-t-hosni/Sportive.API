@@ -165,73 +165,86 @@ public class ShippingSettlementsController : ControllerBase
         {
             try
             {
-                // We use tracking number since BostaDeliveryId might sometimes hold tracking number by mistake, 
-                // or Bosta's Get By ID might fail.
-                string trackingOrId = !string.IsNullOrEmpty(order.BostaTrackingNumber) ? order.BostaTrackingNumber : order.BostaDeliveryId;
-                
-                var response = await client.GetAsync($"{baseUrl}/api/v2/deliveries?trackingNumber={trackingOrId}");
-                var jsonStr = await response.Content.ReadAsStringAsync();
-                
-                if (response.IsSuccessStatusCode)
+                string id = order.BostaDeliveryId;
+                string trk = order.BostaTrackingNumber;
+                string[] possibleEndpoints = {
+                    $"/api/v2/deliveries/business/{id}",
+                    $"/api/v2/deliveries/business/{trk}",
+                    $"/api/v0/deliveries/{id}",
+                    $"/api/v0/deliveries/{trk}"
+                };
+
+                bool foundValidResponse = false;
+
+                foreach (var endpoint in possibleEndpoints)
                 {
-                    using var doc = System.Text.Json.JsonDocument.Parse(jsonStr);
-                    var root = doc.RootElement;
+                    if (foundValidResponse || string.IsNullOrEmpty(endpoint.Split('/').Last())) continue;
+
+                    var response = await client.GetAsync($"{baseUrl}{endpoint}");
+                    var jsonStr = await response.Content.ReadAsStringAsync();
                     
-                    decimal foundCost = 0;
-                    
-                    var targetElement = root;
-                    if (root.TryGetProperty("data", out var dataObj))
+                    if (response.IsSuccessStatusCode && jsonStr.TrimStart().StartsWith("{"))
                     {
-                        if (dataObj.ValueKind == System.Text.Json.JsonValueKind.Array && dataObj.GetArrayLength() > 0)
-                        {
-                            targetElement = dataObj[0]; // Take first delivery from array
-                        }
-                        else if (dataObj.ValueKind == System.Text.Json.JsonValueKind.Object)
-                        {
-                            targetElement = dataObj;
-                        }
-                    }
-
-
-                    if (targetElement.TryGetProperty("pricing", out var pricingObj))
-                    {
-                        decimal bostaRevenue = 0, shippingCost = 0, vat = 0, insurance = 0;
-
-                        if (pricingObj.TryGetProperty("bostaRevenue", out var revProp) && revProp.TryGetDecimal(out var rev)) bostaRevenue = rev;
-                        else if (pricingObj.TryGetProperty("bostaDue", out var dueProp) && dueProp.TryGetDecimal(out var due)) bostaRevenue = due;
-                        else if (pricingObj.TryGetProperty("netRevenue", out var netProp) && netProp.TryGetDecimal(out var net)) bostaRevenue = net;
-
-                        if (pricingObj.TryGetProperty("shippingCost", out var costProp) && costProp.TryGetDecimal(out var cost)) shippingCost = cost;
-                        else if (pricingObj.TryGetProperty("shippingPrice", out var costProp2) && costProp2.TryGetDecimal(out var cost2)) shippingCost = cost2;
-
-                        if (pricingObj.TryGetProperty("vat", out var vatProp) && vatProp.TryGetDecimal(out var v)) vat = v;
-                        if (pricingObj.TryGetProperty("insurance", out var insProp) && insProp.TryGetDecimal(out var i)) insurance = i;
-
-                        decimal calculatedDue = shippingCost + vat + insurance;
-                        foundCost = bostaRevenue > 0 ? bostaRevenue : (calculatedDue > 0 ? calculatedDue : shippingCost);
+                        foundValidResponse = true;
+                        using var doc = System.Text.Json.JsonDocument.Parse(jsonStr);
+                        var root = doc.RootElement;
                         
-                        debugLogs.Add($"Order {order.Id} Pricing: {pricingObj.GetRawText()} | Found: {foundCost}");
-                    }
-                    else if (targetElement.TryGetProperty("price", out var priceProp) && priceProp.TryGetDecimal(out var priceObjVal))
-                    {
-                        foundCost = priceObjVal;
-                        debugLogs.Add($"Order {order.Id} Price: {priceObjVal}");
+                        decimal foundCost = 0;
+                        
+                        var targetElement = root;
+                        if (root.TryGetProperty("message", out var msgObj) && msgObj.ValueKind == System.Text.Json.JsonValueKind.Object)
+                        {
+                            targetElement = msgObj; // Some Bosta v0 endpoints return it in "message"
+                        }
+                        else if (root.TryGetProperty("data", out var dataObj))
+                        {
+                            if (dataObj.ValueKind == System.Text.Json.JsonValueKind.Array && dataObj.GetArrayLength() > 0)
+                                targetElement = dataObj[0];
+                            else if (dataObj.ValueKind == System.Text.Json.JsonValueKind.Object)
+                                targetElement = dataObj;
+                        }
+
+
+                        if (targetElement.TryGetProperty("pricing", out var pricingObj))
+                        {
+                            decimal bostaRevenue = 0, shippingCost = 0, vat = 0, insurance = 0;
+
+                            if (pricingObj.TryGetProperty("bostaRevenue", out var revProp) && revProp.TryGetDecimal(out var rev)) bostaRevenue = rev;
+                            else if (pricingObj.TryGetProperty("bostaDue", out var dueProp) && dueProp.TryGetDecimal(out var due)) bostaRevenue = due;
+                            else if (pricingObj.TryGetProperty("netRevenue", out var netProp) && netProp.TryGetDecimal(out var net)) bostaRevenue = net;
+
+                            if (pricingObj.TryGetProperty("shippingCost", out var costProp) && costProp.TryGetDecimal(out var cost)) shippingCost = cost;
+                            else if (pricingObj.TryGetProperty("shippingPrice", out var costProp2) && costProp2.TryGetDecimal(out var cost2)) shippingCost = cost2;
+
+                            if (pricingObj.TryGetProperty("vat", out var vatProp) && vatProp.TryGetDecimal(out var v)) vat = v;
+                            if (pricingObj.TryGetProperty("insurance", out var insProp) && insProp.TryGetDecimal(out var i)) insurance = i;
+
+                            decimal calculatedDue = shippingCost + vat + insurance;
+                            foundCost = bostaRevenue > 0 ? bostaRevenue : (calculatedDue > 0 ? calculatedDue : shippingCost);
+                            
+                            debugLogs.Add($"Order {order.Id} Pricing: {pricingObj.GetRawText()} | Found: {foundCost}");
+                        }
+                        else if (targetElement.TryGetProperty("price", out var priceProp) && priceProp.TryGetDecimal(out var priceObjVal))
+                        {
+                            foundCost = priceObjVal;
+                            debugLogs.Add($"Order {order.Id} Price: {priceObjVal}");
+                        }
+                        else
+                        {
+                            debugLogs.Add($"Order {order.Id} Missing Pricing, keys: {string.Join(",", targetElement.EnumerateObject().Select(p => p.Name))}");
+                        }
+
+                        if (foundCost > 0)
+                        {
+                            order.ActualDeliveryCost = foundCost;
+                            successCount++;
+                        }
                     }
                     else
                     {
-                        debugLogs.Add($"Order {order.Id} Missing Pricing, keys: {string.Join(",", targetElement.EnumerateObject().Select(p => p.Name))}");
+                        debugLogs.Add($"Order {order.Id} Failed API Call ({endpoint}): {response.StatusCode} - {jsonStr}");
                     }
-
-                    if (foundCost > 0)
-                    {
-                        order.ActualDeliveryCost = foundCost;
-                        successCount++;
-                    }
-                }
-                else
-                {
-                    debugLogs.Add($"Order {order.Id} Failed API Call: {response.StatusCode} - {jsonStr}");
-                }
+                } // End foreach endpoint
             }
             catch (Exception ex) 
             { 
