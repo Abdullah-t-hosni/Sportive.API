@@ -297,23 +297,23 @@ public class OrdersController : ControllerBase
         // تسجيل المفتاح لمدة 10 ثواني لمنع التكرار
         _cache.Set(idempotencyKey, true, TimeSpan.FromSeconds(10));
 
-        var finalNote = string.IsNullOrEmpty(posDto.OfflineRef)
-            ? posDto.Note
-            : $"[OfflineRef: {posDto.OfflineRef}] {posDto.Note}".Trim();
+        var adminNote = string.IsNullOrEmpty(posDto.OfflineRef)
+            ? "POS Sale"
+            : $"POS Sale [OfflineRef: {posDto.OfflineRef}]";
 
         var dto = new CreateOrderDto(
             FulfillmentType.Pickup,
             (PaymentMethod)posDto.PaymentMethod,
             null,
             null,
-            "POS Sale",
+            adminNote,
             posDto.CouponCode,
             posDto.PosEmployeeId ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             (OrderSource)posDto.OrderSource,
             posDto.Items.Select(i => new CreateOrderItemDto(i.ProductId, i.ProductVariantId, i.Quantity, i.UnitPrice, i.TotalPrice, i.HasTax, i.VatRate, i.Size, i.Color)).ToList(),
             posDto.CustomerPhone,
             posDto.CustomerName,
-            finalNote,
+            posDto.Note,
             posDto.DiscountAmount,
             posDto.TemporalDiscount,
             posDto.Subtotal,
