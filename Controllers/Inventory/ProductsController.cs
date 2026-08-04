@@ -30,6 +30,31 @@ public class ProductsController : ControllerBase
     public async Task<IActionResult> GetAll([FromQuery] ProductFilterDto filter) =>
         Ok(await _products.GetProductsAsync(filter));
 
+    /// <summary>أعلى رقم SKU في قاعدة البيانات (للعرض في فورم الإضافة)</summary>
+    [HttpGet("last-sku")]
+    public async Task<IActionResult> GetLastSku()
+    {
+        var allSkus = await _db.Products
+            .Where(p => p.Sku != null && p.Sku != "")
+            .Select(p => p.Sku!)
+            .ToListAsync();
+
+        string? maxSku = null;
+        int maxNum = -1;
+        foreach (var sku in allSkus)
+        {
+            var digits = new string(sku.Where(char.IsDigit).ToArray());
+            if (int.TryParse(digits, out int num) && num > maxNum)
+            {
+                maxNum = num;
+                maxSku = sku;
+            }
+        }
+
+        return Ok(new { lastSku = maxSku, lastNum = maxNum < 0 ? (int?)null : maxNum });
+    }
+
+
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id, [FromQuery] DiscountApplyTo? source = null, [FromQuery] int? warehouseId = null, [FromQuery] bool rawPricing = false)
     {
