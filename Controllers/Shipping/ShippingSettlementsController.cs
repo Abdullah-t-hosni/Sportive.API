@@ -92,43 +92,80 @@ public class ShippingSettlementsController : ControllerBase
         decimal totalShippingCost = orders.Sum(o => o.ActualDeliveryCost);
         decimal netAmount = totalCollected - totalShippingCost;
 
-        // إنشاء قيد التسوية
-        var reference = $"SETTLE-SHP-{company.Id}-{DateTime.Now:yyyyMMddHHmmss}";
-        var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
+        DateTime collectionDate = request.CollectionDate ?? TimeHelper.GetEgyptTime();
+        DateTime invoiceDate = request.InvoiceDate ?? collectionDate;
 
-        // 1. حساب البنك/الخزينة (صافي التحويل)
+        var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
+        var invNumStr = !string.IsNullOrWhiteSpace(request.InvoiceNumber) ? $" - فاتورة: {request.InvoiceNumber}" : "";
+
+        // ----------------------------------------------------
+        // 1️⃣ القيد الأول: قيد تحصيل الصافي (بتاريخ التحصيل)
+        // ----------------------------------------------------
         if (netAmount > 0)
         {
-            lines.Add((cashAccountCode, netAmount, 0, $"تسوية متحصلات من شركة شحن: {company.NameAr} - لعدد {orders.Count} طلب"));
+            var collectionRef = $"SETTLE-COLLECTION-{company.Id}-{timestamp}";
+            var collectionLines = new List<(string code, decimal debit, decimal credit, string desc)>
+            {
+                // مدين: البنك / الخزينة / إنستا باي (بالصافي المحول)
+                (cashAccountCode, netAmount, 0, $"تحصيل صافي مستحقات شحن {company.NameAr} - {orders.Count} طلبات{invNumStr}"),
+                // دائن: حساب شركة الشحن (بالصافي المحول)
+                ($"ID:{company.AccountId}", 0, netAmount, $"تسديد صافي متحصلات طلبات مجمعة{invNumStr}")
+            };
+
+            await _accountingCore.PostEntryAsync(
+                type: JournalEntryType.ReceiptVoucher,
+                reference: collectionRef,
+                description: $"تسوية تحصيل صافي شركة الشحن: {company.NameAr}{invNumStr}",
+                date: TimeHelper.GetEgyptBusinessDayDate(collectionDate),
+                lines: collectionLines,
+                source: OrderSource.Website,
+                createdAt: collectionDate
+            );
         }
         else if (netAmount < 0)
         {
-            lines.Add((cashAccountCode, 0, Math.Abs(netAmount), $"سداد عجز وتسوية شركة شحن: {company.NameAr} - لعدد {orders.Count} طلب"));
+            var deficitRef = $"SETTLE-DEFICIT-{company.Id}-{timestamp}";
+            var deficitLines = new List<(string code, decimal debit, decimal credit, string desc)>
+            {
+                // مدين: حساب شركة الشحن
+                ($"ID:{company.AccountId}", Math.Abs(netAmount), 0, $"سداد عجز شركة الشحن: {company.NameAr}{invNumStr}"),
+                // دائن: الخزينة / البنك
+                (cashAccountCode, 0, Math.Abs(netAmount), $"سداد عجز تسوية شحن {company.NameAr}{invNumStr}")
+            };
+
+            await _accountingCore.PostEntryAsync(
+                type: JournalEntryType.PaymentVoucher,
+                reference: deficitRef,
+                description: $"سداد عجز تسوية شركة الشحن: {company.NameAr}{invNumStr}",
+                date: TimeHelper.GetEgyptBusinessDayDate(collectionDate),
+                lines: deficitLines,
+                source: OrderSource.Website,
+                createdAt: collectionDate
+            );
         }
 
-        // 2. حساب مصاريف الشحن (العمولة المدفوعة للشركة)
+        // ----------------------------------------------------
+        // 2️⃣ القيد الثاني: قيد مصروف خدمة التوصيل (بتاريخ الفاتورة)
+        // ----------------------------------------------------
         if (totalShippingCost > 0)
         {
-            lines.Add((deliveryExpenseAccount, totalShippingCost, 0, $"مصاريف شحن وتوصيل لشركة {company.NameAr} (تسوية {orders.Count} طلب)"));
-        }
+            var expenseRef = $"SETTLE-EXPENSE-{company.Id}-{timestamp}";
+            var expenseLines = new List<(string code, decimal debit, decimal credit, string desc)>
+            {
+                // مدين: حساب مصروف خدمة التوصيل
+                (deliveryExpenseAccount, totalShippingCost, 0, $"مصاريف شحن وتوصيل لشركة {company.NameAr} ({orders.Count} طلبات){invNumStr}"),
+                // دائن: حساب شركة الشحن
+                ($"ID:{company.AccountId}", 0, totalShippingCost, $"إثبات استحقاق مصروف الشحن لشركة {company.NameAr}{invNumStr}")
+            };
 
-        // 3. حساب شركة الشحن (دائن لتقليل مديونيتهم بإجمالي المبالغ المحصلة)
-        if (totalCollected > 0)
-        {
-            lines.Add(($"ID:{company.AccountId}", 0, totalCollected, $"تسديد متحصلات طلبات مجمعة"));
-        }
-
-        // Check if unbalanced due to only negative netAmount (unlikely if totalCollected > 0)
-        if (lines.Any())
-        {
-            // تسجيل القيد
             await _accountingCore.PostEntryAsync(
-                type: JournalEntryType.ReceiptVoucher,
-                reference: reference,
-                description: $"تسوية مدفوعات شركة الشحن: {company.NameAr}",
-                date: TimeHelper.GetEgyptBusinessDayDate(DateTime.UtcNow),
-                lines: lines,
-                source: OrderSource.Website
+                type: JournalEntryType.PaymentVoucher,
+                reference: expenseRef,
+                description: $"إثبات مصروف خدمة توصيل شركة الشحن: {company.NameAr}{invNumStr}",
+                date: TimeHelper.GetEgyptBusinessDayDate(invoiceDate),
+                lines: expenseLines,
+                source: OrderSource.Website,
+                createdAt: invoiceDate
             );
         }
 
@@ -280,6 +317,9 @@ public class SettleShippingRequest
     public List<int> OrderIds { get; set; } = new();
     public List<SettleOrderDto> Orders { get; set; } = new();
     public PaymentMethod Method { get; set; } = PaymentMethod.Bank;
+    public string? InvoiceNumber { get; set; }
+    public DateTime? InvoiceDate { get; set; }
+    public DateTime? CollectionDate { get; set; }
 }
 
 public class SettleOrderDto
