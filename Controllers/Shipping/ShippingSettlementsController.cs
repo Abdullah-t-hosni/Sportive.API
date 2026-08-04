@@ -165,7 +165,11 @@ public class ShippingSettlementsController : ControllerBase
         {
             try
             {
-                var response = await client.GetAsync($"{baseUrl}/api/v2/deliveries/{order.BostaDeliveryId}");
+                // We use tracking number since BostaDeliveryId might sometimes hold tracking number by mistake, 
+                // or Bosta's Get By ID might fail.
+                string trackingOrId = !string.IsNullOrEmpty(order.BostaTrackingNumber) ? order.BostaTrackingNumber : order.BostaDeliveryId;
+                
+                var response = await client.GetAsync($"{baseUrl}/api/v2/deliveries?trackingNumber={trackingOrId}");
                 var jsonStr = await response.Content.ReadAsStringAsync();
                 
                 if (response.IsSuccessStatusCode)
@@ -176,10 +180,18 @@ public class ShippingSettlementsController : ControllerBase
                     decimal foundCost = 0;
                     
                     var targetElement = root;
-                    if (root.TryGetProperty("data", out var dataObj) && dataObj.ValueKind == System.Text.Json.JsonValueKind.Object)
+                    if (root.TryGetProperty("data", out var dataObj))
                     {
-                        targetElement = dataObj;
+                        if (dataObj.ValueKind == System.Text.Json.JsonValueKind.Array && dataObj.GetArrayLength() > 0)
+                        {
+                            targetElement = dataObj[0]; // Take first delivery from array
+                        }
+                        else if (dataObj.ValueKind == System.Text.Json.JsonValueKind.Object)
+                        {
+                            targetElement = dataObj;
+                        }
                     }
+
 
                     if (targetElement.TryGetProperty("pricing", out var pricingObj))
                     {
