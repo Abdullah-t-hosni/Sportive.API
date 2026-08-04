@@ -205,31 +205,40 @@ public class ShippingSettlementsController : ControllerBase
                         }
 
 
-                        if (targetElement.TryGetProperty("pricing", out var pricingObj))
+                        // Bosta sometimes hides the full pricing inside the log array or provides 'shipmentFees' (without VAT).
+                        if (targetElement.TryGetProperty("log", out var logArray) && logArray.ValueKind == System.Text.Json.JsonValueKind.Array)
                         {
-                            decimal bostaRevenue = 0, shippingCost = 0, vat = 0, insurance = 0;
-
-                            if (pricingObj.TryGetProperty("bostaRevenue", out var revProp) && revProp.TryGetDecimal(out var rev)) bostaRevenue = rev;
-                            else if (pricingObj.TryGetProperty("bostaDue", out var dueProp) && dueProp.TryGetDecimal(out var due)) bostaRevenue = due;
-                            else if (pricingObj.TryGetProperty("netRevenue", out var netProp) && netProp.TryGetDecimal(out var net)) bostaRevenue = net;
-
-                            if (pricingObj.TryGetProperty("shippingCost", out var costProp) && costProp.TryGetDecimal(out var cost)) shippingCost = cost;
-                            else if (pricingObj.TryGetProperty("shippingPrice", out var costProp2) && costProp2.TryGetDecimal(out var cost2)) shippingCost = cost2;
-
-                            if (pricingObj.TryGetProperty("vat", out var vatProp) && vatProp.TryGetDecimal(out var v)) vat = v;
-                            if (pricingObj.TryGetProperty("insurance", out var insProp) && insProp.TryGetDecimal(out var i)) insurance = i;
-
-                            decimal calculatedDue = shippingCost + vat + insurance;
-                            foundCost = bostaRevenue > 0 ? bostaRevenue : (calculatedDue > 0 ? calculatedDue : shippingCost);
-                            
-                            debugLogs.Add($"Order {order.Id} RAW: {targetElement.GetRawText()}");
+                            // Search backwards to find the latest pricing update
+                            for (int j = logArray.GetArrayLength() - 1; j >= 0; j--)
+                            {
+                                var logItem = logArray[j];
+                                if (logItem.TryGetProperty("actionsList", out var actionsList) && 
+                                    actionsList.TryGetProperty("pricing", out var logPricing) && 
+                                    logPricing.TryGetProperty("after", out var pricingAfter) &&
+                                    pricingAfter.TryGetProperty("priceAfterVat", out var priceAfterVatProp) && 
+                                    priceAfterVatProp.TryGetDecimal(out var logPrice))
+                                {
+                                    foundCost = Math.Round(logPrice, 2);
+                                    break;
+                                }
+                            }
                         }
-                        else if (targetElement.TryGetProperty("price", out var priceProp) && priceProp.TryGetDecimal(out var priceObjVal))
+
+                        if (foundCost == 0)
+                        {
+                            if (targetElement.TryGetProperty("shipmentFees", out var shipFeesProp) && shipFeesProp.TryGetDecimal(out var shipFees))
+                            {
+                                // Bosta shipmentFees usually excludes 14% VAT
+                                foundCost = Math.Round(shipFees * 1.14m, 2);
+                            }
+                        }
+
+                        if (foundCost == 0 && targetElement.TryGetProperty("price", out var priceProp) && priceProp.TryGetDecimal(out var priceObjVal))
                         {
                             foundCost = priceObjVal;
-                            debugLogs.Add($"Order {order.Id} Price: {priceObjVal}");
                         }
-                        else
+
+                        if (foundCost == 0)
                         {
                             debugLogs.Add($"Order {order.Id} RAW: {targetElement.GetRawText()}");
                         }
