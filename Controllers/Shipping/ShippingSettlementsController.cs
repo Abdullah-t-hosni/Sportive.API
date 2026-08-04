@@ -218,7 +218,8 @@ public class ShippingSettlementsController : ControllerBase
                                     pricingAfter.TryGetProperty("priceAfterVat", out var priceAfterVatProp) && 
                                     priceAfterVatProp.TryGetDecimal(out var logPrice))
                                 {
-                                    foundCost = Math.Round(logPrice, 2);
+                                    // تقريب لأقرب رقم عشري واحد ليتطابق مع واجهة بوسطة 100%
+                                    foundCost = Math.Round(logPrice, 1, MidpointRounding.AwayFromZero);
                                     break;
                                 }
                             }
@@ -229,13 +230,13 @@ public class ShippingSettlementsController : ControllerBase
                             if (targetElement.TryGetProperty("shipmentFees", out var shipFeesProp) && shipFeesProp.TryGetDecimal(out var shipFees))
                             {
                                 // Bosta shipmentFees usually excludes 14% VAT
-                                foundCost = Math.Round(shipFees * 1.14m, 2);
+                                foundCost = Math.Round(shipFees * 1.14m, 1, MidpointRounding.AwayFromZero);
                             }
                         }
 
                         if (foundCost == 0 && targetElement.TryGetProperty("price", out var priceProp) && priceProp.TryGetDecimal(out var priceObjVal))
                         {
-                            foundCost = priceObjVal;
+                            foundCost = Math.Round(priceObjVal, 1, MidpointRounding.AwayFromZero);
                         }
 
                         if (foundCost == 0)
