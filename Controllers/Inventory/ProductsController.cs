@@ -35,8 +35,8 @@ public class ProductsController : ControllerBase
     public async Task<IActionResult> GetLastSku()
     {
         var allSkus = await _db.Products
-            .Where(p => p.Sku != null && p.Sku != "")
-            .Select(p => p.Sku!)
+            .Where(p => p.SKU != null && p.SKU != "")
+            .Select(p => p.SKU!)
             .ToListAsync();
 
         string? maxSku = null;
