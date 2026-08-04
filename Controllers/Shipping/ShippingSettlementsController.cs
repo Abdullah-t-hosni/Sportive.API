@@ -167,16 +167,39 @@ public class ShippingSettlementsController : ControllerBase
                     using var doc = System.Text.Json.JsonDocument.Parse(jsonStr);
                     var root = doc.RootElement;
                     
-                    // Try to find pricing info in Bosta's response
                     decimal foundCost = 0;
-                    if (root.TryGetProperty("pricing", out var pricingObj))
+                    
+                    // The main payload might be wrapped in a "data" object
+                    var targetElement = root;
+                    if (root.TryGetProperty("data", out var dataObj) && dataObj.ValueKind == System.Text.Json.JsonValueKind.Object)
                     {
+                        targetElement = dataObj;
+                    }
+
+                    if (targetElement.TryGetProperty("pricing", out var pricingObj))
+                    {
+                        decimal bostaRevenue = 0, shippingCost = 0, vat = 0, insurance = 0;
+
                         if (pricingObj.TryGetProperty("bostaRevenue", out var revProp) && revProp.TryGetDecimal(out var rev))
-                            foundCost = rev;
-                        else if (pricingObj.TryGetProperty("shippingCost", out var costProp) && costProp.TryGetDecimal(out var cost))
-                            foundCost = cost;
-                        else if (pricingObj.TryGetProperty("shipmentTotal", out var totalProp) && totalProp.TryGetDecimal(out var tot))
-                            foundCost = tot;
+                            bostaRevenue = rev;
+                        else if (pricingObj.TryGetProperty("bostaDue", out var dueProp) && dueProp.TryGetDecimal(out var due))
+                            bostaRevenue = due;
+
+                        if (pricingObj.TryGetProperty("shippingCost", out var costProp) && costProp.TryGetDecimal(out var cost))
+                            shippingCost = cost;
+                        else if (pricingObj.TryGetProperty("shippingPrice", out var costProp2) && costProp2.TryGetDecimal(out var cost2))
+                            shippingCost = cost2;
+
+                        if (pricingObj.TryGetProperty("vat", out var vatProp) && vatProp.TryGetDecimal(out var v))
+                            vat = v;
+
+                        if (pricingObj.TryGetProperty("insurance", out var insProp) && insProp.TryGetDecimal(out var i))
+                            insurance = i;
+
+                        // Bosta's estimated due is typically shippingCost + vat + insurance, unless bostaRevenue explicitly overrides it
+                        decimal calculatedDue = shippingCost + vat + insurance;
+
+                        foundCost = bostaRevenue > 0 ? bostaRevenue : (calculatedDue > 0 ? calculatedDue : shippingCost);
                     }
 
                     if (foundCost > 0)
