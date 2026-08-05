@@ -337,7 +337,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPatch("{id}/status")]
-    [RequirePermission(ModuleKeys.Orders, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Orders + "," + ModuleKeys.OrdersMain + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineOrders)]
     public async Task<ActionResult<OrderDetailDto>> UpdateStatus(int id, [FromBody] UpdateOrderStatusDto dto)
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
