@@ -133,11 +133,16 @@ public class ReturnExchangeRequestsController : ControllerBase
         {
             if (order.Status == OrderStatus.Delivered)
             {
-                var baseDate = (order.UpdatedAt.HasValue && order.UpdatedAt.Value > order.CreatedAt) ? order.UpdatedAt.Value : order.CreatedAt;
-                var diffDays = (TimeHelper.GetEgyptTime() - baseDate).TotalDays;
-                if (diffDays > 14)
+                // الأدمن والمدير يقدروا يعملوا مرتجع في أي وقت بدون قيد المدة
+                bool isAdminUser = User.IsInRole("SuperAdmin") || User.IsInRole("Admin") || User.IsInRole("Manager");
+                if (!isAdminUser)
                 {
-                    return BadRequest("تجاوزت الفترة المسموحة لطلب الاستبدال أو الاسترجاع (14 يوماً من تاريخ الاستلام).");
+                    var baseDate = (order.UpdatedAt.HasValue && order.UpdatedAt.Value > order.CreatedAt) ? order.UpdatedAt.Value : order.CreatedAt;
+                    var diffDays = (TimeHelper.GetEgyptTime() - baseDate).TotalDays;
+                    if (diffDays > 14)
+                    {
+                        return BadRequest("تجاوزت الفترة المسموحة لطلب الاستبدال أو الاسترجاع (14 يوماً من تاريخ الاستلام).");
+                    }
                 }
             }
         }
