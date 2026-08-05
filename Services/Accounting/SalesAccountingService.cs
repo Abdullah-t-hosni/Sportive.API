@@ -738,7 +738,7 @@ public class SalesAccountingService
             return;
 
         var reference = $"{order.OrderNumber}-SHP-RTN-{returnRequestId}";
-        if (await _core.EntryExistsAsync(JournalEntryType.JournalVoucher, reference))
+        if (await _core.EntryExistsAsync(JournalEntryType.Manual, reference))
             return;
 
         if (order.ShippingCompany == null && order.ShippingCompanyId.HasValue)
@@ -778,7 +778,7 @@ public class SalesAccountingService
         };
 
         await _core.PostEntryAsync(
-            type:        JournalEntryType.JournalVoucher,
+            type:        JournalEntryType.Manual,
             reference:   reference,
             description: $"قيد مصاريف شحن مرتجع — {order.ShippingCompany.NameAr} | طلب #{returnRequestId} | فاتورة #{order.OrderNumber}",
             date:        TimeHelper.GetEgyptBusinessDayDate(postingDate),
