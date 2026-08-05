@@ -115,6 +115,9 @@ public class OrdersController : ControllerBase
             var permissionService = HttpContext.RequestServices.GetRequiredService<IPermissionService>();
             if (await permissionService.HasPosAccessAsync(userId))
                 return true;
+
+            if (await permissionService.CanViewAsync(userId, new[] { ModuleKeys.Orders, ModuleKeys.OrdersMain, ModuleKeys.OnlineStore, ModuleKeys.OnlineOrders }))
+                return true;
         }
 
         var currentCustomerId = User.FindFirst("CustomerId")?.Value;
