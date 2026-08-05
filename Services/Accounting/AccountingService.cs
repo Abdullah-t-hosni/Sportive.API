@@ -73,6 +73,7 @@ public class AccountingService : IAccountingService
         _journal = journal;
     }
 
+    public Task PostSalesOrderAsync(Order order, DateTime? overrideDate = null) => _sales.PostSalesOrderAsync(order, overrideDate);
     public Task PostSalesReturnAsync(Order order, int? refundAccountId = null, bool refundShipping = false) => _sales.PostSalesReturnAsync(order, refundAccountId, refundShipping);
     public Task PostCourierReturnShippingFeeAsync(Order order, int returnRequestId) => _sales.PostCourierReturnShippingFeeAsync(order, returnRequestId);
     public Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? overrideReference = null, DateTime? overrideDate = null) 
