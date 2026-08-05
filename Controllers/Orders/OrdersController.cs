@@ -634,7 +634,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Policy = "AdminOnly")]
+    [RequirePermission(ModuleKeys.OrdersDelete + "," + ModuleKeys.OrdersMain + ".edit", requireEdit: true)]
     public async Task<IActionResult> Delete(int id)
     {
         var order = await _db.Orders

@@ -96,6 +96,10 @@ public static class ModuleKeys
     public const string Profitability = "profitability";
     public const string ViewAllBranches = "view-all-branches";
 
+    // Sales & Orders
+    public const string OrdersDelete = "orders-delete";
+    public const string OrdersEdit = "orders-edit";
+
     // Online Store
     public const string OnlineStore = "online-store";
     public const string OnlineOrders = "online-orders";
@@ -114,7 +118,7 @@ public static class ModuleKeys
 
     public static readonly string[] All = {
         Dashboard, Pos, PosSellAtCost, Cashier,
-        OrdersMain, Orders, ReturnsFull, ReturnsPartial, Customers, CustomerReceipts, Reviews,
+        OrdersMain, Orders, OrdersDelete, OrdersEdit, ReturnsFull, ReturnsPartial, Customers, CustomerReceipts, Reviews,
         ProductsGroup, Products, Categories, Brands, Units, Barcode, ColorGroups, SizeGroups, SizeGuides,
         PromotionsGroup, Promotions, Coupons, Discounts,
         InventoryGroup, Inventory, InventoryOpening, Import, InventoryCount,
