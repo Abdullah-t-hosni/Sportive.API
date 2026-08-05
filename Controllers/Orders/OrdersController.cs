@@ -53,7 +53,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpGet]
-    [RequirePermission(ModuleKeys.Orders)]
+    [RequirePermission(ModuleKeys.Orders + "," + ModuleKeys.OrdersMain + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineOrders)]
     [AllowPosAccess]
     public async Task<ActionResult<PaginatedResult<OrderSummaryDto>>> GetOrders(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 12,

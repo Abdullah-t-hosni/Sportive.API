@@ -11,7 +11,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[RequirePermission(ModuleKeys.Settings)]
+[RequirePermission(ModuleKeys.Settings + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineWhatsapp)]
 [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("auth")]
 public class WaMeController : ControllerBase
 {

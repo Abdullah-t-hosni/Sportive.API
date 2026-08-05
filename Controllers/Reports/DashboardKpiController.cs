@@ -17,7 +17,7 @@ namespace Sportive.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/dashboard")]
-[RequirePermission(ModuleKeys.Dashboard)]
+[RequirePermission(ModuleKeys.Dashboard + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineOrders + "," + ModuleKeys.OnlineAnalytics)]
 public class DashboardKpiController : ControllerBase
 {
     private readonly IDashboardService _dashboard;

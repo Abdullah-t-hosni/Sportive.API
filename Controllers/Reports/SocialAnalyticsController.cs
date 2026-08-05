@@ -21,7 +21,7 @@ namespace Sportive.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/social-analytics")]
-[RequirePermission(ModuleKeys.Dashboard)]
+[RequirePermission(ModuleKeys.Dashboard + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineAnalytics)]
 public class SocialAnalyticsController : ControllerBase
 {
     private readonly AppDbContext _db;

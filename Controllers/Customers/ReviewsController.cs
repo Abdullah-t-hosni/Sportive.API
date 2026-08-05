@@ -57,7 +57,7 @@ public class ReviewsController : ControllerBase
         }
     }
 
-    [RequirePermission(ModuleKeys.Reviews, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Reviews + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineReviews, requireEdit: true)]
     [HttpGet("pending")]
     public async Task<IActionResult> GetPending() => Ok(await _reviews.GetPendingReviewsAsync());
 
@@ -65,17 +65,17 @@ public class ReviewsController : ControllerBase
     [HttpGet("approved")]
     public async Task<IActionResult> GetApproved() => Ok(await _reviews.GetAllApprovedReviewsAsync());
 
-    [RequirePermission(ModuleKeys.Reviews, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Reviews + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineReviews, requireEdit: true)]
     [HttpPost("{id}/approve")]
     public async Task<IActionResult> Approve(int id) =>
         await _reviews.ApproveReviewAsync(id) ? Ok() : NotFound();
 
-    [RequirePermission(ModuleKeys.Reviews, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Reviews + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineReviews, requireEdit: true)]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id) =>
         await _reviews.DeleteReviewAsync(id) ? NoContent() : NotFound();
 
-    [RequirePermission(ModuleKeys.Reviews, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Reviews + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineReviews, requireEdit: true)]
     [HttpPost("{id}/reply")]
     public async Task<IActionResult> Reply(int id, [FromBody] ReplyDto dto)
     {
@@ -83,7 +83,7 @@ public class ReviewsController : ControllerBase
         return await _reviews.ReplyToReviewAsync(id, dto.Reply, adminName) ? Ok() : NotFound();
     }
 
-    [RequirePermission(ModuleKeys.Reviews, requireEdit: true)]
+    [RequirePermission(ModuleKeys.Reviews + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineReviews, requireEdit: true)]
     [HttpPost("admin-add")]
     public async Task<IActionResult> AdminAddReview([FromBody] AdminAddReviewDto dto)
     {

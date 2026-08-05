@@ -96,6 +96,22 @@ public static class ModuleKeys
     public const string Profitability = "profitability";
     public const string ViewAllBranches = "view-all-branches";
 
+    // Online Store
+    public const string OnlineStore = "online-store";
+    public const string OnlineOrders = "online-orders";
+    public const string OnlineOrdersPending = "online-orders-pending";
+    public const string OnlineOrdersConfirmed = "online-orders-confirmed";
+    public const string OnlineOrdersProcessing = "online-orders-processing";
+    public const string OnlineOrdersShipping = "online-orders-shipping";
+    public const string OnlineOrdersDelivered = "online-orders-delivered";
+    public const string OnlineOrdersCancelled = "online-orders-cancelled";
+    public const string OnlineOrdersReturned = "online-orders-returned";
+    public const string OnlineReturns = "online-returns";
+    public const string OnlineAbandoned = "online-abandoned";
+    public const string OnlineReviews = "online-reviews";
+    public const string OnlineWhatsapp = "online-whatsapp";
+    public const string OnlineAnalytics = "online-analytics";
+
     public static readonly string[] All = {
         Dashboard, Pos, PosSellAtCost, Cashier,
         OrdersMain, Orders, ReturnsFull, ReturnsPartial, Customers, CustomerReceipts, Reviews,
@@ -106,6 +122,7 @@ public static class ModuleKeys
         AccountingGroup, AccountingMain, Chart, Mapping, Journal, Receipts, Payments, Installments,
         AssetsGroup, AssetsMain, Assets, AssetCategories, AssetDepBatch, AssetDisposals, AssetPurchases,
         Hr, HrEmployees, HrEmpList, HrVouchers, HrPayroll, HrAdvances, HrCommissions, HrCommissionsDist, HrDepartments, HrAttendance,
-        System, ReportsMain, Staff, Settings, WelcomeMessages, LinksManager, DataFeeds, Maintenance, Diagnostics, Backup, Ai, Performance, Profitability, ViewAllBranches
+        System, ReportsMain, Staff, Settings, WelcomeMessages, LinksManager, DataFeeds, Maintenance, Diagnostics, Backup, Ai, Performance, Profitability, ViewAllBranches,
+        OnlineStore, OnlineOrders, OnlineOrdersPending, OnlineOrdersConfirmed, OnlineOrdersProcessing, OnlineOrdersShipping, OnlineOrdersDelivered, OnlineOrdersCancelled, OnlineOrdersReturned, OnlineReturns, OnlineAbandoned, OnlineReviews, OnlineWhatsapp, OnlineAnalytics
     };
 }

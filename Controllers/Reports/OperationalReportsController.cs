@@ -1625,7 +1625,7 @@ public class OperationalReportsController : ControllerBase
     }
 
     [HttpGet("abandoned-carts")]
-    [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard)]
+    [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineAbandoned)]
     public async Task<IActionResult> GetAbandonedCarts()
     {
         var cutoffDate = Utils.TimeHelper.GetEgyptTime().AddDays(-30);
