@@ -39,6 +39,7 @@ public class ShippingSettlementsController : ControllerBase
                 CustomerName = o.Customer.FullName,
                 o.TotalAmount,
                 DeliveryDate = o.ActualDeliveryDate ?? o.UpdatedAt,
+                CreatedAt = o.CreatedAt,
                 o.ShippingTrackingNumber,
                 o.BostaTrackingNumber,
                 ActualDeliveryCost = o.ActualDeliveryCost == 0 ? o.DeliveryFee : o.ActualDeliveryCost
@@ -72,9 +73,17 @@ public class ShippingSettlementsController : ControllerBase
         var storeSettings = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         string deliveryExpenseAccount = storeSettings?.DeliveryAccountId ?? "511";
 
-        // Get Cash Account from Mapping
-        var mapDict = await _accountingCore.GetSafeSystemMappingsAsync();
-        var cashAccountCode = await _accountingCore.GetMappedCashAccountAsync(request.Method, OrderSource.Website, mapDict);
+        // Get Cash Account from TargetAccountId or System Mapping
+        string cashAccountCode;
+        if (request.TargetAccountId.HasValue && request.TargetAccountId.Value > 0)
+        {
+            cashAccountCode = $"ID:{request.TargetAccountId.Value}";
+        }
+        else
+        {
+            var mapDict = await _accountingCore.GetSafeSystemMappingsAsync();
+            cashAccountCode = await _accountingCore.GetMappedCashAccountAsync(request.Method, OrderSource.Website, mapDict);
+        }
 
         // Update shipping costs and calculate totals
         foreach (var order in orders)
@@ -317,6 +326,7 @@ public class SettleShippingRequest
     public List<int> OrderIds { get; set; } = new();
     public List<SettleOrderDto> Orders { get; set; } = new();
     public PaymentMethod Method { get; set; } = PaymentMethod.Bank;
+    public int? TargetAccountId { get; set; }
     public string? InvoiceNumber { get; set; }
     public DateTime? InvoiceDate { get; set; }
     public DateTime? CollectionDate { get; set; }
