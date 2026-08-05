@@ -725,4 +725,72 @@ public class SalesAccountingService
             source:      order.Source
         );
     }
+
+    /// <summary>
+    /// قيد مصاريف الشحن عند تأكيد وصول المرتجع للمخزن:
+    /// - مدين: حساب شركة الشحن (الشركة تستحق مصاريف الشحن حتى في حالة الرجوع)
+    /// - دائن: حساب العميل صاحب الفاتورة (الشحن يظل على العميل ما استلمش)
+    /// - المبلغ: رسوم الشحن بالفاتورة (DeliveryFee)
+    /// </summary>
+    public async Task PostCourierReturnShippingFeeAsync(Order order, int returnRequestId)
+    {
+        if (!order.ShippingCompanyId.HasValue || order.DeliveryFee <= 0)
+            return;
+
+        var reference = $"{order.OrderNumber}-SHP-RTN-{returnRequestId}";
+        if (await _core.EntryExistsAsync(JournalEntryType.JournalVoucher, reference))
+            return;
+
+        if (order.ShippingCompany == null && order.ShippingCompanyId.HasValue)
+        {
+            order.ShippingCompany = await _db.ShippingCompanies
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == order.ShippingCompanyId.Value);
+        }
+
+        if (order.ShippingCompany?.AccountId == null)
+        {
+            _logger.LogWarning("[Accounting] Courier return shipping fee skipped for order {OrderNum}: ShippingCompany or AccountId missing.", order.OrderNumber);
+            return;
+        }
+
+        if (order.Customer == null && order.CustomerId > 0)
+        {
+            order.Customer = await _db.Customers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == order.CustomerId);
+        }
+
+        var mapDict = await _core.GetSafeSystemMappingsAsync();
+        string customerAcct = order.Customer?.MainAccountId != null
+            ? $"ID:{order.Customer.MainAccountId}"
+            : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
+        string courierAcct = $"ID:{order.ShippingCompany.AccountId}";
+        decimal shippingFee = order.DeliveryFee;
+        var postingDate = TimeHelper.GetEgyptTime();
+
+        var lines = new List<(string code, decimal debit, decimal credit, string desc)>
+        {
+            // مدين: حساب شركة الشحن — يستحقون مصاريف الشحن حتى لو رجع المنتج
+            (courierAcct,  shippingFee, 0,           $"مصاريف شحن مرتجع — {order.ShippingCompany.NameAr} | طلب #{returnRequestId} | فاتورة #{order.OrderNumber}"),
+            // دائن: حساب العميل — مصاريف الشحن تظل على العميل اللي ما استلمش
+            (customerAcct, 0,           shippingFee, $"خصم مصاريف شحن مرتجع من حساب العميل — طلب #{returnRequestId} | فاتورة #{order.OrderNumber}")
+        };
+
+        await _core.PostEntryAsync(
+            type:        JournalEntryType.JournalVoucher,
+            reference:   reference,
+            description: $"قيد مصاريف شحن مرتجع — {order.ShippingCompany.NameAr} | طلب #{returnRequestId} | فاتورة #{order.OrderNumber}",
+            date:        TimeHelper.GetEgyptBusinessDayDate(postingDate),
+            lines:       lines,
+            orderId:     order.Id,
+            customerId:  order.CustomerId,
+            source:      order.Source,
+            createdAt:   postingDate
+        );
+
+        _logger.LogInformation("[Accounting] Posted courier return shipping fee for request #{RequestId} order {OrderNum} (Amount: {Amount}, Courier: {Courier}).",
+            returnRequestId, order.OrderNumber, shippingFee, order.ShippingCompany.NameAr);
+    }
+
 }

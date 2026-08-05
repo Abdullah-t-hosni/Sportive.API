@@ -10,7 +10,7 @@ public enum OrderStatus
     Delivered = 6,      // تم التوصيل
     Cancelled = 7,      // ملغي
     Returned = 8,       // مرتجع كامل
-    PartiallyReturned = 9 // مرتجع جزئي
+    PartiallyReturned = 9, // مرتجع جزئي
 }
 
 public enum FulfillmentType
