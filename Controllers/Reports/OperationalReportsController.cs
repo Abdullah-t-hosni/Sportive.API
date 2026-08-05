@@ -13,7 +13,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard + "," + ModuleKeys.Pos + "," + ModuleKeys.InventoryGroup)]
+[RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard + "," + ModuleKeys.Pos + "," + ModuleKeys.InventoryGroup + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineAbandoned)]
 public class OperationalReportsController : ControllerBase
 {
     private readonly AppDbContext _db;
