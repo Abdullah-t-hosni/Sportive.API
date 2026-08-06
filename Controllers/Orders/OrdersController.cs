@@ -1222,7 +1222,7 @@ public class OrdersController : ControllerBase
 
     [HttpPost("repost-journal-by-number/{orderNumber}")]
     [RequirePermission(ModuleKeys.Orders)]
-    public async Task<IActionResult> RepostJournalByNumber(string orderNumber)
+    public async Task<IActionResult> RepostJournalByNumber(string orderNumber, [FromServices] IAccountingService accounting)
     {
         var order = await _db.Orders
             .Include(o => o.Items)
@@ -1233,10 +1233,10 @@ public class OrdersController : ControllerBase
         if (order == null)
             return NotFound("الطلب غير موجود.");
 
-        await _accounting.PostSalesOrderAsync(order);
+        await accounting.PostSalesOrderAsync(order);
         if (order.PaidAmount > 0)
         {
-            try { await _accounting.PostOrderPaymentAsync(order); } catch { }
+            try { await accounting.PostOrderPaymentAsync(order); } catch { }
         }
 
         return Ok(new { message = $"تم إنشاء وتأكيد قيد المبيعات بنجاح للطلب {order.OrderNumber}." });
