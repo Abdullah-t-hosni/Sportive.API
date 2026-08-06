@@ -102,7 +102,45 @@ public class ShippingSettlementsController : ControllerBase
 
         // Get Store Settings for Delivery Expense Account
         var storeSettings = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
-        string deliveryExpenseAccount = storeSettings?.DeliveryAccountId ?? "511";
+        string deliveryExpenseAccount = storeSettings?.DeliveryAccountId;
+
+        if (string.IsNullOrEmpty(deliveryExpenseAccount) || deliveryExpenseAccount == "511")
+        {
+            var mapDictTemp = await _accountingCore.GetSafeSystemMappingsAsync();
+            if (mapDictTemp.TryGetValue(Utils.MappingKeys.DeliveryExpense.ToLower(), out var devAccId) && devAccId.HasValue)
+            {
+                deliveryExpenseAccount = $"ID:{devAccId.Value}";
+            }
+            else
+            {
+                var delAcc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "5207" || a.NameAr.Contains("مصاريف شحن") || a.NameAr.Contains("مصروف شحن") || a.NameAr.Contains("مصاريف توصيل"));
+                if (delAcc != null)
+                {
+                    deliveryExpenseAccount = delAcc.IsLeaf ? $"ID:{delAcc.Id}" : delAcc.Code;
+                }
+                else
+                {
+                    var adminExp = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "52" || a.Code == "51");
+                    var newDelAcc = new Account
+                    {
+                        Code = "5207",
+                        NameAr = "مصاريف الشحن والتوصيل",
+                        NameEn = "Delivery & Shipping Expenses",
+                        Type = AccountType.Expense,
+                        Nature = AccountNature.Debit,
+                        Level = 3,
+                        ParentId = adminExp?.Id,
+                        IsLeaf = true,
+                        AllowPosting = true,
+                        IsSystem = true,
+                        CreatedAt = TimeHelper.GetEgyptTime()
+                    };
+                    _db.Accounts.Add(newDelAcc);
+                    await _db.SaveChangesAsync();
+                    deliveryExpenseAccount = $"ID:{newDelAcc.Id}";
+                }
+            }
+        }
 
         // Get Cash Account from TargetAccountId or System Mapping
         string cashAccountCode;
@@ -113,7 +151,7 @@ public class ShippingSettlementsController : ControllerBase
         else
         {
             var mapDict = await _accountingCore.GetSafeSystemMappingsAsync();
-            cashAccountCode = await _accountingCore.GetMappedCashAccountAsync(request.Method, OrderSource.Website, mapDict);
+            cashAccountCode = await _accountingCore.GetMappedCashAccountAsync(request.Method, OrderSource.POS, mapDict);
         }
 
         var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
@@ -140,6 +178,7 @@ public class ShippingSettlementsController : ControllerBase
         DateTime invoiceDate = request.InvoiceDate ?? collectionDate;
 
         var invNumStr = !string.IsNullOrWhiteSpace(request.InvoiceNumber) ? $" - فاتورة: {request.InvoiceNumber}" : "";
+        var currentSysTime = TimeHelper.GetEgyptTime();
 
         // ----------------------------------------------------
         // 1️⃣ القيد الأول: قيد تحصيل الصافي (بتاريخ التحصيل)
@@ -161,7 +200,7 @@ public class ShippingSettlementsController : ControllerBase
                 date: TimeHelper.GetEgyptBusinessDayDate(collectionDate),
                 lines: collectionLines,
                 source: OrderSource.Website,
-                createdAt: collectionDate
+                createdAt: currentSysTime
             );
         }
         else if (netAmount < 0)
@@ -182,7 +221,7 @@ public class ShippingSettlementsController : ControllerBase
                 date: TimeHelper.GetEgyptBusinessDayDate(collectionDate),
                 lines: deficitLines,
                 source: OrderSource.Website,
-                createdAt: collectionDate
+                createdAt: currentSysTime
             );
         }
 
@@ -207,7 +246,7 @@ public class ShippingSettlementsController : ControllerBase
                 date: TimeHelper.GetEgyptBusinessDayDate(invoiceDate),
                 lines: expenseLines,
                 source: OrderSource.Website,
-                createdAt: invoiceDate
+                createdAt: currentSysTime
             );
         }
 
