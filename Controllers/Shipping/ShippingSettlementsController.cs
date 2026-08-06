@@ -122,7 +122,6 @@ public class ShippingSettlementsController : ControllerBase
         DateTime collectionDate = request.CollectionDate ?? TimeHelper.GetEgyptTime();
         DateTime invoiceDate = request.InvoiceDate ?? collectionDate;
 
-        var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
         var invNumStr = !string.IsNullOrWhiteSpace(request.InvoiceNumber) ? $" - فاتورة: {request.InvoiceNumber}" : "";
 
         // ----------------------------------------------------
@@ -130,7 +129,6 @@ public class ShippingSettlementsController : ControllerBase
         // ----------------------------------------------------
         if (netAmount > 0)
         {
-            var collectionRef = $"SETTLE-COLLECTION-{company.Id}-{timestamp}";
             var collectionLines = new List<(string code, decimal debit, decimal credit, string desc)>
             {
                 // مدين: البنك / الخزينة / إنستا باي (بالصافي المحول)
