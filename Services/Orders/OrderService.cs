@@ -137,7 +137,7 @@ public class OrderService : IOrderService
                 o.TaxAuthorityQrCode,
                 o.DeliveryAddress != null ? o.DeliveryAddress.City : null,
                 o.JournalEntries.Where(j => j.Type == JournalEntryType.SalesInvoice && j.Status != JournalEntryStatus.Reversed).Select(j => (int?)j.Id).FirstOrDefault(),
-                o.HasReviewRequested || o.Items.Any(i => i.ReviewRequested)
+                o.Items.Any(i => i.ReviewRequested) // HasReviewRequested column added via startup migration
             ))
             .ToListAsync();
 
