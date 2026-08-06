@@ -21,29 +21,35 @@ public class BackfillService : IBackfillService
     public async Task<(int Total, int Success, int Failed, List<string> Errors)> PostMissingOrdersAsync()
     {
         var missingOrders = await _db.Orders
-            .AsNoTracking()
+            .Include(o => o.Items)
             .Include(o => o.Customer)
+            .Include(o => o.Payments)
             .Where(o => o.Status != OrderStatus.Cancelled)
-            .Where(o => !_db.JournalEntries.Any(e => e.OrderId == o.Id))
+            .Where(o => !_db.JournalEntries.Any(e => (e.OrderId == o.Id || e.Reference == o.OrderNumber) && e.Type == JournalEntryType.SalesInvoice && e.Status != JournalEntryStatus.Reversed))
+            .Take(50)
             .ToListAsync();
+
+        if (!missingOrders.Any())
+            return (0, 0, 0, new List<string>());
 
         int successCount = 0;
         var errors = new List<string>();
 
-        foreach (var batch in missingOrders.Chunk(20))
+        foreach (var order in missingOrders)
         {
-            foreach (var order in batch)
+            try 
             {
-                try 
+                await _accounting.PostSalesOrderAsync(order);
+                if (order.PaidAmount > 0)
                 {
-                    await _accounting.PostSalesOrderAsync(order);
-                    successCount++;
+                    try { await _accounting.PostOrderPaymentAsync(order); } catch { }
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "[Backfill] Failed for order {OrderId} - {OrderNumber}", order.Id, order.OrderNumber);
-                    errors.Add($"Order {order.OrderNumber}: {ex.Message}");
-                }
+                successCount++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[Backfill] Failed for order {OrderId} - {OrderNumber}", order.Id, order.OrderNumber);
+                errors.Add($"Order {order.OrderNumber}: {ex.Message}");
             }
         }
 

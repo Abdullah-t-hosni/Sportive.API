@@ -43,6 +43,16 @@ public class SalesAccountingService
             if (found != null) order.Customer = found;
         }
 
+        if (order.Items == null || !order.Items.Any())
+        {
+            try { await _db.Entry(order).Collection(o => o.Items).LoadAsync(); } catch { }
+        }
+
+        if (order.DeliveryAddress == null)
+        {
+            try { await _db.Entry(order).Reference(o => o.DeliveryAddress).LoadAsync(); } catch { }
+        }
+
         var store  = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         var vatRate = (store?.VatRatePercent ?? 0) / 100m;
 

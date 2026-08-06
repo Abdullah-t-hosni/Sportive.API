@@ -432,8 +432,27 @@ using (var scope = app.Services.CreateScope())
     {
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.ExecuteSqlRawAsync("ALTER TABLE `Orders` ADD COLUMN `CourierSettlementReference` longtext NULL;");
+
+        // 🎯 Targeted one-time fix for SPT-2608-0028 and SPT-2608-0063
+        var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+        var targetOrders = await db.Orders
+            .Include(o => o.Items)
+            .Include(o => o.Customer)
+            .Include(o => o.Payments)
+            .Where(o => (o.OrderNumber == "SPT-2608-0028" || o.OrderNumber == "SPT-2608-0063") &&
+                        !db.JournalEntries.Any(e => (e.OrderId == o.Id || e.Reference == o.OrderNumber) && e.Type == JournalEntryType.SalesInvoice && e.Status != JournalEntryStatus.Reversed))
+            .ToListAsync();
+
+        foreach (var ord in targetOrders)
+        {
+            await accounting.PostSalesOrderAsync(ord);
+            if (ord.PaidAmount > 0)
+            {
+                try { await accounting.PostOrderPaymentAsync(ord); } catch { }
+            }
+        }
     }
-    catch { /* Column already exists or already migrated */ }
+    catch { /* Safe catch */ }
 }
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";

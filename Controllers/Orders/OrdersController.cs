@@ -1212,6 +1212,36 @@ public class OrdersController : ControllerBase
         return Ok(new { processed = orders.Count, archived = shouldArchive });
     }
 
+    [HttpPost("repost-missing-journals")]
+    [RequirePermission(ModuleKeys.Orders)]
+    public async Task<IActionResult> RepostMissingJournals([FromServices] IBackfillService backfill)
+    {
+        var res = await backfill.PostMissingOrdersAsync();
+        return Ok(new { message = $"تم إنشاء قيود مبيعات أوتوماتيكية لعدد {res.Success} طلب من إجمالي {res.Total} طلبات مفقودة.", res.Total, res.Success, res.Failed, res.Errors });
+    }
+
+    [HttpPost("repost-journal-by-number/{orderNumber}")]
+    [RequirePermission(ModuleKeys.Orders)]
+    public async Task<IActionResult> RepostJournalByNumber(string orderNumber)
+    {
+        var order = await _db.Orders
+            .Include(o => o.Items)
+            .Include(o => o.Customer)
+            .Include(o => o.Payments)
+            .FirstOrDefaultAsync(o => o.OrderNumber == orderNumber);
+
+        if (order == null)
+            return NotFound("الطلب غير موجود.");
+
+        await _accounting.PostSalesOrderAsync(order);
+        if (order.PaidAmount > 0)
+        {
+            try { await _accounting.PostOrderPaymentAsync(order); } catch { }
+        }
+
+        return Ok(new { message = $"تم إنشاء وتأكيد قيد المبيعات بنجاح للطلب {order.OrderNumber}." });
+    }
+
     [HttpGet("archived")]
     [RequirePermission(ModuleKeys.Orders)]
     [AllowPosAccess]
