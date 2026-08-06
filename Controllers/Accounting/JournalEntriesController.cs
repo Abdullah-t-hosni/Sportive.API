@@ -432,6 +432,27 @@ public class JournalEntriesController : ControllerBase
         var payrollRuns = await _db.PayrollRuns.Where(r => r.Status != PayrollStatus.Draft).ToListAsync();
         var runsToSync = payrollRuns.Where(r => textToSearch.Contains(r.PayrollNumber.ToLower())).ToList();
 
+        // If deleting a shipping settlement entry, revert order settlement status so orders need settlement again
+        if (!string.IsNullOrEmpty(entry.Reference) && entry.Reference.StartsWith("SETTLE-"))
+        {
+            var matchRef = entry.Reference;
+            var parts = matchRef.Split('-');
+            var timestampPart = parts.Length >= 4 ? parts[3] : "";
+
+            var settledOrders = await _db.Orders
+                .Where(o => o.IsSettledWithCourier && 
+                       (o.CourierSettlementReference == matchRef || 
+                        (!string.IsNullOrEmpty(timestampPart) && o.CourierSettlementReference != null && o.CourierSettlementReference.Contains(timestampPart))))
+                .ToListAsync();
+
+            foreach (var o in settledOrders)
+            {
+                o.IsSettledWithCourier = false;
+                o.CourierSettlementDate = null;
+                o.CourierSettlementReference = null;
+            }
+        }
+
         // Log Audit Deletion
         await _audit.LogChangeAsync<JournalEntry>("DeleteJournalEntry", "JournalEntry", id.ToString(), entry, null, userId, userName);
 

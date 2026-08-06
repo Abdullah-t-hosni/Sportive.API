@@ -23,16 +23,27 @@ public class ShippingSettlementsController : ControllerBase
     }
 
     [HttpGet("pending/{companyId}")]
-    public async Task<IActionResult> GetPendingSettlements(int companyId)
+    public async Task<IActionResult> GetPendingSettlements(int companyId, [FromQuery] string statusFilter = "pending")
     {
-        var orders = await _db.Orders
+        var q = _db.Orders
             .Include(o => o.Customer)
             .Where(o => o.ShippingCompanyId == companyId && 
                         o.Status == OrderStatus.Delivered &&
                         o.PaymentMethod == PaymentMethod.Cash && 
-                        o.IsSettledWithCourier == false &&
-                        o.Source != OrderSource.POS)
-            .OrderBy(o => o.ActualDeliveryDate ?? o.UpdatedAt)
+                        o.Source != OrderSource.POS);
+
+        if (statusFilter == "pending")
+        {
+            q = q.Where(o => o.IsSettledWithCourier == false);
+        }
+        else if (statusFilter == "settled")
+        {
+            q = q.Where(o => o.IsSettledWithCourier == true);
+        }
+
+        var orders = await q
+            .OrderByDescending(o => o.CourierSettlementDate)
+            .ThenByDescending(o => o.ActualDeliveryDate ?? o.UpdatedAt)
             .Select(o => new {
                 o.Id,
                 o.OrderNumber,
@@ -42,7 +53,10 @@ public class ShippingSettlementsController : ControllerBase
                 CreatedAt = o.CreatedAt,
                 o.ShippingTrackingNumber,
                 o.BostaTrackingNumber,
-                ActualDeliveryCost = o.ActualDeliveryCost == 0 ? o.DeliveryFee : o.ActualDeliveryCost
+                ActualDeliveryCost = o.ActualDeliveryCost == 0 ? o.DeliveryFee : o.ActualDeliveryCost,
+                o.IsSettledWithCourier,
+                o.CourierSettlementDate,
+                o.CourierSettlementReference
             })
             .ToListAsync();
 
@@ -85,7 +99,10 @@ public class ShippingSettlementsController : ControllerBase
             cashAccountCode = await _accountingCore.GetMappedCashAccountAsync(request.Method, OrderSource.Website, mapDict);
         }
 
-        // Update shipping costs and calculate totals
+        var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
+        var collectionRef = $"SETTLE-COLLECTION-{company.Id}-{timestamp}";
+
+        // Update shipping costs, set settlement flag and batch reference
         foreach (var order in orders)
         {
             var reqOrder = request.Orders?.FirstOrDefault(o => o.OrderId == order.Id);
@@ -95,6 +112,7 @@ public class ShippingSettlementsController : ControllerBase
             }
             order.IsSettledWithCourier = true;
             order.CourierSettlementDate = TimeHelper.GetEgyptTime();
+            order.CourierSettlementReference = collectionRef;
         }
 
         decimal totalCollected = orders.Sum(o => o.TotalAmount);
@@ -181,6 +199,59 @@ public class ShippingSettlementsController : ControllerBase
         await _db.SaveChangesAsync();
 
         return Ok(new { success = true, totalSettled = netAmount, count = orders.Count });
+    }
+
+    [HttpPost("unsettle")]
+    public async Task<IActionResult> UnsettleOrders([FromBody] UnsettleShippingRequest request)
+    {
+        if (request.OrderIds == null || !request.OrderIds.Any())
+            return BadRequest("يجب تحديد الطلبات المراد إلغاء تسويتها.");
+
+        var orders = await _db.Orders
+            .Where(o => request.OrderIds.Contains(o.Id) && o.IsSettledWithCourier == true)
+            .ToListAsync();
+
+        if (!orders.Any())
+            return BadRequest("لا توجد طلبات مسواة لإلغائها.");
+
+        var references = orders
+            .Select(o => o.CourierSettlementReference)
+            .Where(r => !string.IsNullOrEmpty(r))
+            .Distinct()
+            .ToList();
+
+        var journalEntriesToRemove = await _db.JournalEntries
+            .Include(j => j.Lines)
+            .Where(j => j.Reference != null && j.Reference.StartsWith("SETTLE-"))
+            .ToListAsync();
+
+        if (references.Any())
+        {
+            journalEntriesToRemove = journalEntriesToRemove
+                .Where(j => references.Any(r => j.Reference != null && (j.Reference == r || (r != null && r.Length > 14 && j.Reference.EndsWith(r.Substring(r.Length - 14))))))
+                .ToList();
+        }
+
+        if (journalEntriesToRemove.Any())
+        {
+            foreach (var entry in journalEntriesToRemove)
+            {
+                _db.JournalLines.RemoveRange(entry.Lines);
+            }
+            _db.JournalEntries.RemoveRange(journalEntriesToRemove);
+        }
+
+        foreach (var order in orders)
+        {
+            order.IsSettledWithCourier = false;
+            order.CourierSettlementDate = null;
+            order.CourierSettlementReference = null;
+        }
+
+        await _db.SaveChangesAsync();
+        try { Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { }
+
+        return Ok(new { success = true, count = orders.Count });
     }
 
     [HttpPost("sync-bosta-prices")]
@@ -316,6 +387,11 @@ public class ShippingSettlementsController : ControllerBase
 }
 
 public class SyncBostaPricesRequest
+{
+    public List<int> OrderIds { get; set; } = new();
+}
+
+public class UnsettleShippingRequest
 {
     public List<int> OrderIds { get; set; } = new();
 }

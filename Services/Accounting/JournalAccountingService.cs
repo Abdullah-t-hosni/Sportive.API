@@ -40,6 +40,28 @@ public class JournalAccountingService
         }
         entry.Status = JournalEntryStatus.Reversed;
         _db.JournalEntries.Add(reversal);
+
+        // If reversing a shipping settlement entry, revert order settlement status so orders need settlement again
+        if (!string.IsNullOrEmpty(entry.Reference) && entry.Reference.StartsWith("SETTLE-"))
+        {
+            var matchRef = entry.Reference;
+            var parts = matchRef.Split('-');
+            var timestampPart = parts.Length >= 4 ? parts[3] : "";
+
+            var settledOrders = await _db.Orders
+                .Where(o => o.IsSettledWithCourier && 
+                       (o.CourierSettlementReference == matchRef || 
+                        (!string.IsNullOrEmpty(timestampPart) && o.CourierSettlementReference != null && o.CourierSettlementReference.Contains(timestampPart))))
+                .ToListAsync();
+
+            foreach (var o in settledOrders)
+            {
+                o.IsSettledWithCourier = false;
+                o.CourierSettlementDate = null;
+                o.CourierSettlementReference = null;
+            }
+        }
+
         await _db.SaveChangesAsync();
         try { Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id)); } catch { /* non-critical */ }
         try { Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { /* non-critical */ }

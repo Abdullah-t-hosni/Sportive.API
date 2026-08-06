@@ -130,6 +130,7 @@ public class Order : BaseEntity
     
     public bool IsSettledWithCourier { get; set; } = false;
     public DateTime? CourierSettlementDate { get; set; }
+    public string? CourierSettlementReference { get; set; }
 
 
     // Navigation
