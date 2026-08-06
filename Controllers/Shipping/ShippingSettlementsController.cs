@@ -25,6 +25,23 @@ public class ShippingSettlementsController : ControllerBase
     [HttpGet("pending/{companyId}")]
     public async Task<IActionResult> GetPendingSettlements(int companyId, [FromQuery] string statusFilter = "pending")
     {
+        try
+        {
+            return await FetchSettlementOrdersAsync(companyId, statusFilter);
+        }
+        catch (Exception ex) when (ex.Message.Contains("CourierSettlementReference"))
+        {
+            try
+            {
+                await _db.Database.ExecuteSqlRawAsync("ALTER TABLE `Orders` ADD COLUMN `CourierSettlementReference` longtext NULL;");
+            }
+            catch { }
+            return await FetchSettlementOrdersAsync(companyId, statusFilter);
+        }
+    }
+
+    private async Task<IActionResult> FetchSettlementOrdersAsync(int companyId, string statusFilter)
+    {
         var q = _db.Orders
             .Include(o => o.Customer)
             .Where(o => o.ShippingCompanyId == companyId && 
