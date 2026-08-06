@@ -109,6 +109,10 @@ public class Order : BaseEntity
     public bool IsPrinted { get; set; } = false;
     public DateTime? PrintedAt { get; set; }
 
+    // Review Tracking
+    public bool HasReviewRequested { get; set; } = false;
+    public DateTime? ReviewRequestedAt { get; set; }
+
     // Tax Authority Tracking (E-Invoicing)
     public bool IsSubmittedToTaxAuthority { get; set; } = false;
     public string? TaxAuthorityReference { get; set; } // UUID or ZATCA Hash

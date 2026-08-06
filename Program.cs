@@ -431,7 +431,9 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await db.Database.ExecuteSqlRawAsync("ALTER TABLE `Orders` ADD COLUMN `CourierSettlementReference` longtext NULL;");
+        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `Orders` ADD COLUMN `CourierSettlementReference` longtext NULL;"); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `Orders` ADD COLUMN `HasReviewRequested` tinyint(1) NOT NULL DEFAULT 0;"); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `Orders` ADD COLUMN `ReviewRequestedAt` datetime NULL;"); } catch { }
 
         // 🎯 Targeted one-time fix for SPT-2608-0028 and SPT-2608-0063
         var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();

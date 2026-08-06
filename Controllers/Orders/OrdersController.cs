@@ -94,6 +94,26 @@ public class OrdersController : ControllerBase
         return Ok();
     }
 
+    [RequirePermission(ModuleKeys.Orders, requireEdit: true)]
+    [HttpPost("{id}/mark-review-requested")]
+    public async Task<IActionResult> MarkOrderReviewRequested(int id)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id);
+        if (order == null) return NotFound();
+
+        order.HasReviewRequested = true;
+        order.ReviewRequestedAt = DateTime.UtcNow;
+
+        var items = await _db.OrderItems.Where(i => i.OrderId == id).ToListAsync();
+        foreach (var item in items)
+        {
+            item.ReviewRequested = true;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true, hasReviewRequested = true });
+    }
+
     [HttpGet("my")]
     public async Task<ActionResult<PaginatedResult<OrderSummaryDto>>> GetMyOrders([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
