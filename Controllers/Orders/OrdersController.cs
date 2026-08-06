@@ -398,7 +398,7 @@ public class OrdersController : ControllerBase
 
 
     [HttpPut("{id}")]
-    [Authorize(Policy = "AdminOnly")]
+    [RequirePermission(ModuleKeys.OrdersEdit + "," + ModuleKeys.Orders + "," + ModuleKeys.OrdersMain)]
     public async Task<ActionResult<OrderDetailDto>> UpdateOrder(int id, [FromBody] UpdateOrderDto dto)
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
@@ -410,7 +410,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPatch("{id}/note")]
-    [Authorize(Policy = "AdminOnly")]
+    [RequirePermission(ModuleKeys.OrdersEdit + "," + ModuleKeys.Orders + "," + ModuleKeys.OrdersMain)]
     public async Task<IActionResult> UpdateAdminNote(int id, [FromBody] UpdateOrderAdminNoteDto dto)
     {
         var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id);
@@ -425,7 +425,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPatch("{id}/date")]
-    [Authorize(Policy = "AdminOnly")]
+    [RequirePermission(ModuleKeys.OrdersEdit + "," + ModuleKeys.Orders + "," + ModuleKeys.OrdersMain)]
     public async Task<IActionResult> UpdateDate(int id, [FromBody] UpdateOrderDateDto dto)
     {
         var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id);
@@ -533,8 +533,8 @@ public class OrdersController : ControllerBase
         return Convert.ToHexString(hashBytes).ToLower().Substring(0, 10);
     }
 
-    [Authorize(Policy = "AdminOnly")]
     [HttpPatch("{id}/payment-status")]
+    [RequirePermission(ModuleKeys.OrdersEdit + "," + ModuleKeys.Orders + "," + ModuleKeys.OrdersMain)]
     public async Task<IActionResult> UpdatePaymentStatus(int id, [FromBody] UpdatePaymentStatusDto dto)
     {
         var order = await _db.Orders.Include(o => o.Customer).FirstOrDefaultAsync(o => o.Id == id);
