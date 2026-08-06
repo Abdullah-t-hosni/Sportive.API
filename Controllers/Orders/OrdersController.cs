@@ -1476,7 +1476,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPatch("{id}/bosta-shipment")]
-    [RequirePermission(ModuleKeys.Orders)]
+    [RequirePermission(ModuleKeys.Orders + "," + ModuleKeys.OrdersMain + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineOrders)]
     public async Task<IActionResult> UpdateBostaShipment(int id, [FromBody] UpdateBostaShipmentDto dto)
     {
         var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == id);
