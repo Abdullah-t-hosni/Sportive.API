@@ -113,19 +113,19 @@ public class ShippingSettlementsController : ControllerBase
             }
             else
             {
-                var delAcc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "5207" || a.NameAr.Contains("مصاريف شحن") || a.NameAr.Contains("مصروف شحن") || a.NameAr.Contains("مصاريف توصيل"));
+                var delAcc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "5220706" || a.NameAr.Contains("مصروف خدمة التوصيل") || a.NameAr.Contains("مصاريف شحن") || a.NameAr.Contains("مصروف شحن") || a.NameAr.Contains("مصاريف توصيل"));
                 if (delAcc != null)
                 {
                     deliveryExpenseAccount = delAcc.IsLeaf ? $"ID:{delAcc.Id}" : delAcc.Code;
                 }
                 else
                 {
-                    var adminExp = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "52" || a.Code == "51");
+                    var adminExp = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "522" || a.Code == "52" || a.Code == "51");
                     var newDelAcc = new Account
                     {
-                        Code = "5207",
-                        NameAr = "مصاريف الشحن والتوصيل",
-                        NameEn = "Delivery & Shipping Expenses",
+                        Code = "5220706",
+                        NameAr = "مصروف خدمة التوصيل",
+                        NameEn = "Delivery Service Expense",
                         Type = AccountType.Expense,
                         Nature = AccountNature.Debit,
                         Level = 3,
@@ -142,7 +142,7 @@ public class ShippingSettlementsController : ControllerBase
             }
         }
 
-        // Get Cash Account from TargetAccountId or System Mapping
+        // Get Cash Account from TargetAccountId or System Mapping (Website / Online Store Branch)
         string cashAccountCode;
         if (request.TargetAccountId.HasValue && request.TargetAccountId.Value > 0)
         {
@@ -151,7 +151,7 @@ public class ShippingSettlementsController : ControllerBase
         else
         {
             var mapDict = await _accountingCore.GetSafeSystemMappingsAsync();
-            cashAccountCode = await _accountingCore.GetMappedCashAccountAsync(request.Method, OrderSource.POS, mapDict);
+            cashAccountCode = await _accountingCore.GetMappedCashAccountAsync(request.Method, OrderSource.Website, mapDict);
         }
 
         var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
