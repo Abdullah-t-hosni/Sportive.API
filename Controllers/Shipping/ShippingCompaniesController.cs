@@ -76,10 +76,16 @@ namespace Sportive.API.Controllers.Shipping
                     IsActive = true
                 };
 
-                // Generate code based on parent
-                var siblingsCount = await _db.Accounts.CountAsync(a => a.ParentId == parentAccount.Id);
-                newAccount.Code = $"{parentAccount.Code}{(siblingsCount + 1).ToString("D2")}";
+                // Gap-filling code generation starting from 01 onwards
+                int nextSeq = 1;
+                string candidateCode = $"{parentAccount.Code}{nextSeq:D2}";
+                while (await _db.Accounts.AnyAsync(a => a.Code == candidateCode))
+                {
+                    nextSeq++;
+                    candidateCode = $"{parentAccount.Code}{nextSeq:D2}";
+                }
 
+                newAccount.Code = candidateCode;
                 _db.Accounts.Add(newAccount);
                 company.Account = newAccount;
             }
