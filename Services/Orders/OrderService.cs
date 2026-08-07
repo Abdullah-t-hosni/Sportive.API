@@ -1406,6 +1406,32 @@ public class OrderService : IOrderService
                 order.SalesPersonId = dto.SalesPersonId == "" ? null : (dto.SalesPersonId ?? order.SalesPersonId);
                 if (dto.DeliveryFee.HasValue)
                     order.DeliveryFee = dto.DeliveryFee.Value;
+
+                // UPDATE DELIVERY ADDRESS if provided
+                if (!string.IsNullOrWhiteSpace(dto.ShippingAddress) || !string.IsNullOrWhiteSpace(dto.Governorate) || !string.IsNullOrWhiteSpace(dto.District))
+                {
+                    if (order.DeliveryAddress == null)
+                    {
+                        order.DeliveryAddress = new Address
+                        {
+                            CustomerId = order.CustomerId,
+                            TitleAr = "عنوان التوصيل",
+                            TitleEn = "Shipping Address",
+                            City = !string.IsNullOrWhiteSpace(dto.Governorate) ? dto.Governorate : "القاهرة",
+                            District = dto.District,
+                            Street = dto.ShippingAddress ?? "",
+                            CreatedAt = now
+                        };
+                    }
+                    else
+                    {
+                        if (!string.IsNullOrWhiteSpace(dto.Governorate)) order.DeliveryAddress.City = dto.Governorate;
+                        if (dto.District != null) order.DeliveryAddress.District = dto.District;
+                        if (!string.IsNullOrWhiteSpace(dto.ShippingAddress)) order.DeliveryAddress.Street = dto.ShippingAddress;
+                        order.DeliveryAddress.UpdatedAt = now;
+                    }
+                }
+
                 order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount);
 
                 // 6. UPDATE PAYMENTS
