@@ -1412,7 +1412,7 @@ public class OrderService : IOrderService
                 {
                     if (order.DeliveryAddress == null)
                     {
-                        order.DeliveryAddress = new Address
+                        var newAddress = new Address
                         {
                             CustomerId = order.CustomerId,
                             TitleAr = "عنوان التوصيل",
@@ -1422,6 +1422,8 @@ public class OrderService : IOrderService
                             Street = dto.ShippingAddress ?? "",
                             CreatedAt = now
                         };
+                        _db.Addresses.Add(newAddress);
+                        order.DeliveryAddress = newAddress;
                     }
                     else
                     {
@@ -1429,6 +1431,23 @@ public class OrderService : IOrderService
                         if (dto.District != null) order.DeliveryAddress.District = dto.District;
                         if (!string.IsNullOrWhiteSpace(dto.ShippingAddress)) order.DeliveryAddress.Street = dto.ShippingAddress;
                         order.DeliveryAddress.UpdatedAt = now;
+                    }
+
+                    // Sync changes to Customer's profile address if customer exists
+                    if (order.CustomerId > 0)
+                    {
+                        var custAddr = await _db.Addresses
+                            .Where(a => a.CustomerId == order.CustomerId)
+                            .OrderByDescending(a => a.IsDefault)
+                            .FirstOrDefaultAsync();
+
+                        if (custAddr != null && (order.DeliveryAddress == null || custAddr.Id != order.DeliveryAddress.Id))
+                        {
+                            if (!string.IsNullOrWhiteSpace(dto.Governorate)) custAddr.City = dto.Governorate;
+                            if (dto.District != null) custAddr.District = dto.District;
+                            if (!string.IsNullOrWhiteSpace(dto.ShippingAddress)) custAddr.Street = dto.ShippingAddress;
+                            custAddr.UpdatedAt = now;
+                        }
                     }
                 }
 
