@@ -22,7 +22,8 @@ public interface IInventoryService
         bool force = false,
         DateTime? date = null,
         bool ignoreIdempotency = false,
-        int? warehouseId = null
+        int? warehouseId = null,
+        bool isDamaged = false
     );
 
     /// <summary>

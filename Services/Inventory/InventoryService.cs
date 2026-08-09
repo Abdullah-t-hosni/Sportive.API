@@ -42,7 +42,8 @@ public class InventoryService : IInventoryService
         bool force = false,
         DateTime? date = null,
         bool ignoreIdempotency = false,
-        int? warehouseId = null)
+        int? warehouseId = null,
+        bool isDamaged = false)
     {
         using var activity = Sportive.API.Utils.Telemetry.ActivitySource.StartActivity("Inventory Adjustment");
         if (activity != null)
@@ -82,7 +83,25 @@ public class InventoryService : IInventoryService
 
         // Resolve warehouseId first
         int? warehouseIdToUse = warehouseId;
-        if (!warehouseIdToUse.HasValue)
+        
+        if (isDamaged)
+        {
+            var damagedWarehouse = await _db.Warehouses.FirstOrDefaultAsync(w => w.Name == "توالف");
+            if (damagedWarehouse == null)
+            {
+                var branch = await _db.Branches.FirstOrDefaultAsync();
+                damagedWarehouse = new Warehouse
+                {
+                    Name = "توالف",
+                    IsActive = true,
+                    BranchId = branch?.Id ?? 1
+                };
+                _db.Warehouses.Add(damagedWarehouse);
+                await _db.SaveChangesAsync();
+            }
+            warehouseIdToUse = damagedWarehouse.Id;
+        }
+        else if (!warehouseIdToUse.HasValue)
         {
             var defaultWarehouse = await _db.Warehouses.FirstOrDefaultAsync(w => w.Name == "المخزن الرئيسي" || w.IsActive);
             if (defaultWarehouse != null)
@@ -126,24 +145,31 @@ public class InventoryService : IInventoryService
                     warehouseStock.UpdatedAt = TimeHelper.GetEgyptTime();
                 }
                 
-                variant.StockQuantity += roundedQty;
-                newStock = variant.StockQuantity;
-                variant.UpdatedAt = TimeHelper.GetEgyptTime();
-
-                // Sync parent product total stock — OPTIMIZED: Avoid Re-Summing everything
-                variant.Product.TotalStock += roundedQty;
-                
-                // 💡 AUTO-STATUS: Active <-> OutOfStock based on physical stock
-                if (variant.Product.Status == ProductStatus.Active && variant.Product.TotalStock <= 0)
+                if (!isDamaged)
                 {
-                    variant.Product.Status = ProductStatus.OutOfStock;
-                }
-                else if (variant.Product.Status == ProductStatus.OutOfStock && variant.Product.TotalStock > 0)
-                {
-                    variant.Product.Status = ProductStatus.Active;
-                }
+                    variant.StockQuantity += roundedQty;
+                    newStock = variant.StockQuantity;
+                    variant.UpdatedAt = TimeHelper.GetEgyptTime();
 
-                variant.Product.UpdatedAt  = TimeHelper.GetEgyptTime();
+                    // Sync parent product total stock — OPTIMIZED: Avoid Re-Summing everything
+                    variant.Product.TotalStock += roundedQty;
+                    
+                    // 💡 AUTO-STATUS: Active <-> OutOfStock based on physical stock
+                    if (variant.Product.Status == ProductStatus.Active && variant.Product.TotalStock <= 0)
+                    {
+                        variant.Product.Status = ProductStatus.OutOfStock;
+                    }
+                    else if (variant.Product.Status == ProductStatus.OutOfStock && variant.Product.TotalStock > 0)
+                    {
+                        variant.Product.Status = ProductStatus.Active;
+                    }
+
+                    variant.Product.UpdatedAt  = TimeHelper.GetEgyptTime();
+                }
+                else
+                {
+                    newStock = variant.StockQuantity; // unchanged
+                }
 
                 productId = variant.ProductId; // ensure we log the product id too
             }
@@ -157,20 +183,27 @@ public class InventoryService : IInventoryService
                 if (!force && product.TotalStock + roundedQty < 0) 
                     throw new InvalidOperationException(_t.Get("Inventory.InsufficientStock", product.TotalStock, -roundedQty));
                 
-                product.TotalStock += roundedQty;
-                newStock = product.TotalStock;
-
-                // 💡 AUTO-STATUS: Active <-> OutOfStock based on physical stock
-                if (product.Status == ProductStatus.Active && product.TotalStock <= 0)
+                if (!isDamaged)
                 {
-                    product.Status = ProductStatus.OutOfStock;
-                }
-                else if (product.Status == ProductStatus.OutOfStock && product.TotalStock > 0)
-                {
-                    product.Status = ProductStatus.Active;
-                }
+                    product.TotalStock += roundedQty;
+                    newStock = product.TotalStock;
 
-                product.UpdatedAt = TimeHelper.GetEgyptTime();
+                    // 💡 AUTO-STATUS: Active <-> OutOfStock based on physical stock
+                    if (product.Status == ProductStatus.Active && product.TotalStock <= 0)
+                    {
+                        product.Status = ProductStatus.OutOfStock;
+                    }
+                    else if (product.Status == ProductStatus.OutOfStock && product.TotalStock > 0)
+                    {
+                        product.Status = ProductStatus.Active;
+                    }
+
+                    product.UpdatedAt = TimeHelper.GetEgyptTime();
+                }
+                else
+                {
+                    newStock = product.TotalStock; // unchanged
+                }
             }
         }
 

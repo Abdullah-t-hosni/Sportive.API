@@ -2212,7 +2212,8 @@ public class OrderService : IOrderService
                         order.Source,
                         autoSave: false,
                         ignoreIdempotency: true,
-                        warehouseId: order.WarehouseId
+                        warehouseId: order.WarehouseId,
+                        isDamaged: dto.Reason?.Contains("تالف") == true || dto.Reason?.Contains("Damaged") == true
                     );
                 }
 
@@ -2299,7 +2300,8 @@ public class OrderService : IOrderService
                         OrderSource.POS,
                         autoSave: false,
                         force: true,
-                        warehouseId: dto.WarehouseId
+                        warehouseId: dto.WarehouseId,
+                        isDamaged: dto.Reason?.Contains("تالف") == true || dto.Reason?.Contains("Damaged") == true
                     );
                 }
 
@@ -2958,7 +2960,8 @@ public class OrderService : IOrderService
                                 0,
                                 order.Source,
                                 autoSave: false,
-                                ignoreIdempotency: true
+                                ignoreIdempotency: true,
+                                isDamaged: dto.Reason?.Contains("تالف") == true || dto.Reason?.Contains("Damaged") == true
                             );
                         }
 
@@ -3024,7 +3027,8 @@ public class OrderService : IOrderService
                                 trimmedRef, $"Direct Return: {dto.Reason} (Updated)", updatedByUserId,
                                 0,
                                 OrderSource.POS,
-                                autoSave: false
+                                autoSave: false,
+                                isDamaged: dto.Reason?.Contains("تالف") == true || dto.Reason?.Contains("Damaged") == true
                             );
 
                             totalCost += (product.CostPrice ?? 0) * req.Quantity;

@@ -1046,6 +1046,7 @@ public class ReturnExchangeRequestsController : ControllerBase
 
                 if (_inventory != null)
                 {
+                    bool isDamaged = req.Reason?.Contains("تالف") == true || req.Reason?.Contains("Damaged") == true;
                     await _inventory.LogMovementAsync(
                         InventoryMovementType.ReturnIn,
                         qtyToRestock,
@@ -1059,7 +1060,8 @@ public class ReturnExchangeRequestsController : ControllerBase
                         false,
                         true,
                         true,
-                        warehouseId: req.Order.WarehouseId
+                        warehouseId: req.Order.WarehouseId,
+                        isDamaged: isDamaged
                     );
                 }
                 else
