@@ -25,6 +25,9 @@ public class Category : BaseEntity
 
     public int SortOrder { get; set; } = 0;
 
+    public string? DefaultSortBy { get; set; }
+    public string? DefaultSortDir { get; set; }
+
     // Navigation
     public ICollection<Product> Products { get; set; } = new List<Product>();
 }

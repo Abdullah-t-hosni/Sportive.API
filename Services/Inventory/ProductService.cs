@@ -81,6 +81,16 @@ public class ProductService : IProductService
         {
             var categoryIds = await GetCategoryDescendants(filter.CategoryId.Value);
             query = query.Where(p => (p.CategoryId.HasValue && categoryIds.Contains(p.CategoryId.Value)) || _db.ProductSecondaryCategories.Any(sc => sc.ProductId == p.Id && categoryIds.Contains(sc.CategoryId)));
+
+            if (string.IsNullOrWhiteSpace(filter.SortBy))
+            {
+                var cat = await _db.Categories.AsNoTracking().FirstOrDefaultAsync(c => c.Id == filter.CategoryId.Value);
+                if (cat != null && !string.IsNullOrWhiteSpace(cat.DefaultSortBy))
+                {
+                    filter.SortBy = cat.DefaultSortBy;
+                    filter.SortDir = cat.DefaultSortDir ?? "desc";
+                }
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Search))
@@ -177,6 +187,7 @@ public class ProductService : IProductService
             "name" => filter.SortDir == "asc" ? query.OrderBy(p => p.NameAr).ThenByDescending(p => p.Id) : query.OrderByDescending(p => p.NameAr).ThenByDescending(p => p.Id),
             "id" => filter.SortDir == "asc" ? query.OrderBy(p => p.Id) : query.OrderByDescending(p => p.Id),
             "sku" => filter.SortDir == "asc" ? query.OrderBy(p => p.SKU) : query.OrderByDescending(p => p.SKU),
+            "stock" => filter.SortDir == "asc" ? query.OrderBy(p => p.TotalStock).ThenByDescending(p => p.Id) : query.OrderByDescending(p => p.TotalStock).ThenByDescending(p => p.Id),
             "createdat" or "newest" => filter.SortDir == "asc" ? query.OrderBy(p => p.CreatedAt).ThenBy(p => p.Id) : query.OrderByDescending(p => p.CreatedAt).ThenByDescending(p => p.Id),
             _ => filter.OnlyPublic == true
                 ? query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenByDescending(p => p.CreatedAt).ThenByDescending(p => p.Id)

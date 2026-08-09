@@ -130,7 +130,9 @@ public class CategoryService : ICategoryService
             ImageUrl      = dto.ImageUrl,
             Type          = type,
             ParentId      = dto.ParentId,
-            SizeGroupId   = dto.SizeGroupId
+            SizeGroupId   = dto.SizeGroupId,
+            DefaultSortBy = dto.DefaultSortBy,
+            DefaultSortDir = dto.DefaultSortDir
         };
         _db.Categories.Add(cat);
         await _db.SaveChangesAsync();
@@ -173,6 +175,8 @@ public class CategoryService : ICategoryService
         cat.Type          = (CategoryType)type;
         cat.ParentId      = dto.ParentId;
         cat.SizeGroupId   = dto.SizeGroupId;
+        cat.DefaultSortBy = dto.DefaultSortBy;
+        cat.DefaultSortDir = dto.DefaultSortDir;
         cat.UpdatedAt     = TimeHelper.GetEgyptTime();
 
         if (typeChanged)
@@ -261,6 +265,8 @@ public class CategoryService : ICategoryService
             current.SizeGroup?.Name,
             current.Parent?.NameAr,
             current.Parent?.NameEn,
+            current.DefaultSortBy,
+            current.DefaultSortDir,
             subDtos.Count > 0 ? subDtos : null
         );
     }
@@ -281,7 +287,9 @@ public class CategoryService : ICategoryService
             c.SizeGroup?.Name,
             c.Parent?.NameAr,
             c.Parent?.NameEn,
-            null  // لا نُرجع الأبناء في القائمة المسطحة
+            c.DefaultSortBy,
+            c.DefaultSortDir,
+            null  // لا نرجع الأقسام الفرعية في الهيكل المسطح
         );
     }
 

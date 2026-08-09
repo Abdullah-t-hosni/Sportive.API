@@ -26,6 +26,8 @@ public record CategoryDto(
     [property: JsonPropertyName("sizeGroupName")] string? SizeGroupName = null,
     [property: JsonPropertyName("parentCategoryNameAr")] string? ParentCategoryNameAr = null,
     [property: JsonPropertyName("parentCategoryNameEn")] string? ParentCategoryNameEn = null,
+    [property: JsonPropertyName("defaultSortBy")] string? DefaultSortBy = null,
+    [property: JsonPropertyName("defaultSortDir")] string? DefaultSortDir = null,
     [property: JsonPropertyName("subCategories")] List<CategoryDto>? SubCategories = null
 );
 
@@ -38,7 +40,9 @@ public record CreateCategoryDto(
     [property: JsonPropertyName("type")] CategoryType Type = CategoryType.Men,
     [property: JsonPropertyName("sortOrder")] int? SortOrder = 0,
     [property: JsonPropertyName("parentId")] int? ParentId = null,
-    [property: JsonPropertyName("sizeGroupId")] int? SizeGroupId = null
+    [property: JsonPropertyName("sizeGroupId")] int? SizeGroupId = null,
+    [property: JsonPropertyName("defaultSortBy")] string? DefaultSortBy = null,
+    [property: JsonPropertyName("defaultSortDir")] string? DefaultSortDir = null
 );
 
 public record CategorySortUpdateDto(
@@ -283,8 +287,8 @@ public class ProductFilterDto
     public string? Color { get; set; }
     public bool? IsFeatured { get; set; }
     public ProductStatus? Status { get; set; }
-    public string SortBy { get; set; } = "createdAt";
-    public string SortDir { get; set; } = "desc";
+    public string? SortBy { get; set; } = null;
+    public string? SortDir { get; set; } = null;
     public int? SupplierId { get; set; }
     public bool? OnlyInStock { get; set; }
     public bool? OnlyPublic { get; set; }
