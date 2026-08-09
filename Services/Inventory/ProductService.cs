@@ -82,7 +82,7 @@ public class ProductService : IProductService
             var categoryIds = await GetCategoryDescendants(filter.CategoryId.Value);
             query = query.Where(p => (p.CategoryId.HasValue && categoryIds.Contains(p.CategoryId.Value)) || _db.ProductSecondaryCategories.Any(sc => sc.ProductId == p.Id && categoryIds.Contains(sc.CategoryId)));
 
-            if (string.IsNullOrWhiteSpace(filter.SortBy))
+            if (string.IsNullOrWhiteSpace(filter.SortBy) || filter.SortBy.Equals("random", StringComparison.OrdinalIgnoreCase) || filter.SortBy.Equals("default", StringComparison.OrdinalIgnoreCase))
             {
                 var cat = await _db.Categories.AsNoTracking().FirstOrDefaultAsync(c => c.Id == filter.CategoryId.Value);
                 if (cat != null && !string.IsNullOrWhiteSpace(cat.DefaultSortBy))
