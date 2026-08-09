@@ -181,18 +181,32 @@ public class ProductService : IProductService
         }
 
         // Sorting
-        query = filter.SortBy?.ToLower() switch
+        if (filter.OnlyPublic == true)
         {
-            "price" => filter.SortDir == "asc" ? query.OrderBy(p => p.Price).ThenByDescending(p => p.Id) : query.OrderByDescending(p => p.Price).ThenByDescending(p => p.Id),
-            "name" => filter.SortDir == "asc" ? query.OrderBy(p => p.NameAr).ThenByDescending(p => p.Id) : query.OrderByDescending(p => p.NameAr).ThenByDescending(p => p.Id),
-            "id" => filter.SortDir == "asc" ? query.OrderBy(p => p.Id) : query.OrderByDescending(p => p.Id),
-            "sku" => filter.SortDir == "asc" ? query.OrderBy(p => p.SKU) : query.OrderByDescending(p => p.SKU),
-            "stock" => filter.SortDir == "asc" ? query.OrderBy(p => p.TotalStock).ThenByDescending(p => p.Id) : query.OrderByDescending(p => p.TotalStock).ThenByDescending(p => p.Id),
-            "createdat" or "newest" => filter.SortDir == "asc" ? query.OrderBy(p => p.CreatedAt).ThenBy(p => p.Id) : query.OrderByDescending(p => p.CreatedAt).ThenByDescending(p => p.Id),
-            _ => filter.OnlyPublic == true
-                ? query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenByDescending(p => p.CreatedAt).ThenByDescending(p => p.Id)
-                : query.OrderByDescending(p => p.Id)
-        };
+            query = filter.SortBy?.ToLower() switch
+            {
+                "price" => filter.SortDir == "asc" ? query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenBy(p => p.Price).ThenByDescending(p => p.Id) : query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenByDescending(p => p.Price).ThenByDescending(p => p.Id),
+                "name" => filter.SortDir == "asc" ? query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenBy(p => p.NameAr).ThenByDescending(p => p.Id) : query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenByDescending(p => p.NameAr).ThenByDescending(p => p.Id),
+                "id" => filter.SortDir == "asc" ? query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenBy(p => p.Id) : query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenByDescending(p => p.Id),
+                "sku" => filter.SortDir == "asc" ? query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenBy(p => p.SKU) : query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenByDescending(p => p.SKU),
+                "stock" => filter.SortDir == "asc" ? query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenBy(p => p.TotalStock).ThenByDescending(p => p.Id) : query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenByDescending(p => p.TotalStock).ThenByDescending(p => p.Id),
+                "createdat" or "newest" => filter.SortDir == "asc" ? query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenBy(p => p.CreatedAt).ThenBy(p => p.Id) : query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenByDescending(p => p.CreatedAt).ThenByDescending(p => p.Id),
+                _ => query.OrderBy(p => p.Category != null ? p.Category.SortOrder : 9999).ThenByDescending(p => p.CreatedAt).ThenByDescending(p => p.Id)
+            };
+        }
+        else
+        {
+            query = filter.SortBy?.ToLower() switch
+            {
+                "price" => filter.SortDir == "asc" ? query.OrderBy(p => p.Price).ThenByDescending(p => p.Id) : query.OrderByDescending(p => p.Price).ThenByDescending(p => p.Id),
+                "name" => filter.SortDir == "asc" ? query.OrderBy(p => p.NameAr).ThenByDescending(p => p.Id) : query.OrderByDescending(p => p.NameAr).ThenByDescending(p => p.Id),
+                "id" => filter.SortDir == "asc" ? query.OrderBy(p => p.Id) : query.OrderByDescending(p => p.Id),
+                "sku" => filter.SortDir == "asc" ? query.OrderBy(p => p.SKU) : query.OrderByDescending(p => p.SKU),
+                "stock" => filter.SortDir == "asc" ? query.OrderBy(p => p.TotalStock).ThenByDescending(p => p.Id) : query.OrderByDescending(p => p.TotalStock).ThenByDescending(p => p.Id),
+                "createdat" or "newest" => filter.SortDir == "asc" ? query.OrderBy(p => p.CreatedAt).ThenBy(p => p.Id) : query.OrderByDescending(p => p.CreatedAt).ThenByDescending(p => p.Id),
+                _ => query.OrderByDescending(p => p.Id)
+            };
+        }
 
         var total = await query.CountAsync();
 
