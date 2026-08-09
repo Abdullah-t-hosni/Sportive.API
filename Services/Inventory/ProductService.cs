@@ -399,7 +399,7 @@ public class ProductService : IProductService
             SizeGroupId = dto.SizeGroupId,
             SizeChartImageUrl = dto.SizeChartImageUrl,
             SizeChartJson = dto.SizeChartJson,
-            Status = ProductStatus.Active,
+            Status = dto.Status ?? ProductStatus.Active,
             Slug = GenerateSlug(dto.NameEn ?? dto.NameAr) + "-" + Guid.NewGuid().ToString().Substring(0, 4),
             LinkedProductId = dto.LinkedProductId
         };

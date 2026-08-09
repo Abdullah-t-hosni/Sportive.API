@@ -208,7 +208,8 @@ public record CreateProductDto(
     [property: JsonPropertyName("linkedProductId")] int? LinkedProductId = null,
     [property: JsonPropertyName("egyptianProductCode")] string? EgyptianProductCode = null,
     [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null,
-    [property: JsonPropertyName("secondaryCategoryIds")] List<int>? SecondaryCategoryIds = null
+    [property: JsonPropertyName("secondaryCategoryIds")] List<int>? SecondaryCategoryIds = null,
+    [property: JsonPropertyName("status")] ProductStatus? Status = null
 );
 
 public record UpdateProductDto(
