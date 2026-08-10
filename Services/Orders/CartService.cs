@@ -54,6 +54,18 @@ public class CartService : ICartService
                 Quantity = dto.Quantity
             });
 
+        // Reset abandoned cart fields if it was previously recovered
+        var customer = await _db.Customers.FindAsync(customerId);
+        if (customer != null && customer.IsAbandonedCartRecovered)
+        {
+            customer.IsAbandonedCartRecovered = false;
+            customer.AbandonedCartRecoveredAt = null;
+            customer.AbandonedCartRecoveredOrderNumber = null;
+            customer.AbandonedCartReminderSentAt = null;
+            customer.AbandonedCartCouponCode = null;
+            customer.AbandonedCartValue = null;
+        }
+
         await _db.SaveChangesAsync();
         return await GetCartAsync(customerId);
     }
@@ -89,6 +101,18 @@ public class CartService : ICartService
                     ProductVariantId = item.ProductVariantId,
                     Quantity = item.Quantity
                 });
+        }
+
+        // Reset abandoned cart fields if it was previously recovered
+        var customer = await _db.Customers.FindAsync(customerId);
+        if (customer != null && customer.IsAbandonedCartRecovered)
+        {
+            customer.IsAbandonedCartRecovered = false;
+            customer.AbandonedCartRecoveredAt = null;
+            customer.AbandonedCartRecoveredOrderNumber = null;
+            customer.AbandonedCartReminderSentAt = null;
+            customer.AbandonedCartCouponCode = null;
+            customer.AbandonedCartValue = null;
         }
 
         await _db.SaveChangesAsync();
