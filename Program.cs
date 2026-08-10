@@ -476,6 +476,8 @@ using (var scope = app.Services.CreateScope())
                     // Move to new warehouse
                     mov.WarehouseId = damagedWh.Id;
 
+                    if (mov.ProductVariantId == null) continue;
+
                     // Add to new stock
                     var newStock = await db.ProductWarehouseStocks
                         .FirstOrDefaultAsync(s => s.ProductVariantId == mov.ProductVariantId && s.WarehouseId == damagedWh.Id);
@@ -483,8 +485,7 @@ using (var scope = app.Services.CreateScope())
                     {
                         newStock = new ProductWarehouseStock
                         {
-                            ProductId = mov.ProductId,
-                            ProductVariantId = mov.ProductVariantId,
+                            ProductVariantId = mov.ProductVariantId.Value,
                             WarehouseId = damagedWh.Id,
                             Quantity = 0
                         };
