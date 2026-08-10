@@ -435,6 +435,68 @@ using (var scope = app.Services.CreateScope())
         try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `Orders` ADD COLUMN `HasReviewRequested` tinyint(1) NOT NULL DEFAULT 0;"); } catch { }
         try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `Orders` ADD COLUMN `ReviewRequestedAt` datetime NULL;"); } catch { }
 
+        // Seed fresh Damaged Warehouse and move targeted item
+        try
+        {
+            var damagedWh = await db.Warehouses.FirstOrDefaultAsync(w => w.Name == "مخزن التوالف");
+            if (damagedWh == null)
+            {
+                var mainBranch = await db.Branches.OrderBy(b => b.Id).FirstOrDefaultAsync();
+                damagedWh = new Warehouse
+                {
+                    Name = "مخزن التوالف",
+                    Location = "مخزن للمنتجات التالفة والمسترجعة",
+                    BranchId = mainBranch?.Id ?? 1,
+                    IsActive = true
+                };
+                db.Warehouses.Add(damagedWh);
+                await db.SaveChangesAsync();
+            }
+
+            // 🎯 Move ONLY the specific product from the picture to the new warehouse
+            string targetRef = "POS-2607-#0460-PRT-22503428";
+            
+            // Find movements related to this return/order
+            var targetMovements = await db.InventoryMovements
+                .Where(m => m.Reference == targetRef && m.WarehouseId != damagedWh.Id)
+                .ToListAsync();
+
+            if (targetMovements.Any())
+            {
+                foreach (var mov in targetMovements)
+                {
+                    // Revert old stock if it was placed in another warehouse
+                    if (mov.WarehouseId.HasValue)
+                    {
+                        var oldStock = await db.ProductWarehouseStocks
+                            .FirstOrDefaultAsync(s => s.ProductVariantId == mov.ProductVariantId && s.WarehouseId == mov.WarehouseId);
+                        if (oldStock != null) oldStock.Quantity -= mov.Quantity; // undo the movement in old warehouse
+                    }
+
+                    // Move to new warehouse
+                    mov.WarehouseId = damagedWh.Id;
+
+                    // Add to new stock
+                    var newStock = await db.ProductWarehouseStocks
+                        .FirstOrDefaultAsync(s => s.ProductVariantId == mov.ProductVariantId && s.WarehouseId == damagedWh.Id);
+                    if (newStock == null)
+                    {
+                        newStock = new ProductWarehouseStock
+                        {
+                            ProductId = mov.ProductId,
+                            ProductVariantId = mov.ProductVariantId,
+                            WarehouseId = damagedWh.Id,
+                            Quantity = 0
+                        };
+                        db.ProductWarehouseStocks.Add(newStock);
+                    }
+                    newStock.Quantity += mov.Quantity;
+                }
+                await db.SaveChangesAsync();
+            }
+        }
+        catch { }
+
         // 🎯 Targeted one-time fix for SPT-2608-0028 and SPT-2608-0063
         var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
         var targetOrders = await db.Orders

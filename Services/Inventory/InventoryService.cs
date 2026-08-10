@@ -86,13 +86,13 @@ public class InventoryService : IInventoryService
         
         if (isDamaged)
         {
-            var damagedWarehouse = await _db.Warehouses.FirstOrDefaultAsync(w => w.Name == "توالف");
+            var damagedWarehouse = await _db.Warehouses.FirstOrDefaultAsync(w => w.Name == "مخزن التوالف");
             if (damagedWarehouse == null)
             {
                 var branch = await _db.Branches.FirstOrDefaultAsync();
                 damagedWarehouse = new Warehouse
                 {
-                    Name = "توالف",
+                    Name = "مخزن التوالف",
                     IsActive = true,
                     BranchId = branch?.Id ?? 1
                 };
