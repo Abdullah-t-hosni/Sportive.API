@@ -226,28 +226,43 @@ public class ShippingSettlementsController : ControllerBase
         }
 
         // ----------------------------------------------------
-        // 2️⃣ القيد الثاني: قيد مصروف خدمة التوصيل (بتاريخ الفاتورة)
+        // 2️⃣ القيد الثاني: قيود مصروف خدمة التوصيل (مقسمة حسب تاريخ إنشاء الطلبات)
         // ----------------------------------------------------
         if (totalShippingCost > 0)
         {
-            var expenseRef = $"SETTLE-EXPENSE-{company.Id}-{timestamp}";
-            var expenseLines = new List<(string code, decimal debit, decimal credit, string desc)>
-            {
-                // مدين: حساب مصروف خدمة التوصيل
-                (deliveryExpenseAccount, totalShippingCost, 0, $"مصاريف شحن وتوصيل لشركة {company.NameAr} ({orders.Count} طلبات){invNumStr}"),
-                // دائن: حساب شركة الشحن
-                ($"ID:{company.AccountId}", 0, totalShippingCost, $"إثبات استحقاق مصروف الشحن لشركة {company.NameAr}{invNumStr}")
-            };
+            // Group orders by their creation date (Egypt Time)
+            var ordersGroupedByDate = orders
+                .GroupBy(o => Sportive.API.Utils.TimeHelper.GetEgyptBusinessDayDate(o.CreatedAt).Date)
+                .OrderBy(g => g.Key)
+                .ToList();
 
-            await _accountingCore.PostEntryAsync(
-                type: JournalEntryType.PaymentVoucher,
-                reference: expenseRef,
-                description: $"إثبات مصروف خدمة توصيل شركة الشحن: {company.NameAr}{invNumStr}",
-                date: TimeHelper.GetEgyptBusinessDayDate(invoiceDate),
-                lines: expenseLines,
-                source: OrderSource.Website,
-                createdAt: currentSysTime
-            );
+            int groupIndex = 1;
+            foreach (var group in ordersGroupedByDate)
+            {
+                decimal groupShippingCost = group.Sum(o => o.ActualDeliveryCost);
+                if (groupShippingCost <= 0) continue;
+
+                var expenseRef = $"SETTLE-EXP-{company.Id}-{timestamp}-{groupIndex}";
+                var expenseLines = new List<(string code, decimal debit, decimal credit, string desc)>
+                {
+                    // مدين: حساب مصروف خدمة التوصيل
+                    (deliveryExpenseAccount, groupShippingCost, 0, $"مصاريف شحن وتوصيل لشركة {company.NameAr} ({group.Count()} طلبات){invNumStr}"),
+                    // دائن: حساب شركة الشحن
+                    ($"ID:{company.AccountId}", 0, groupShippingCost, $"إثبات استحقاق مصروف الشحن لشركة {company.NameAr}{invNumStr}")
+                };
+
+                await _accountingCore.PostEntryAsync(
+                    type: JournalEntryType.PaymentVoucher,
+                    reference: expenseRef,
+                    description: $"إثبات مصروف خدمة توصيل شركة الشحن: {company.NameAr}{invNumStr}",
+                    date: group.Key, // تسجيل القيد بتاريخ إنشاء الطلبات لضبط قائمة الدخل
+                    lines: expenseLines,
+                    source: OrderSource.Website,
+                    createdAt: currentSysTime
+                );
+
+                groupIndex++;
+            }
         }
 
         await _db.SaveChangesAsync();
