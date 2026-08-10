@@ -161,13 +161,16 @@ public class ShippingSettlementsController : ControllerBase
         foreach (var order in orders)
         {
             var reqOrder = request.Orders?.FirstOrDefault(o => o.OrderId == order.Id);
+            bool isExplicitlySet = false;
+
             if (reqOrder != null)
             {
                 order.ActualDeliveryCost = reqOrder.ActualDeliveryCost;
+                isExplicitlySet = true;
             }
             
-            // 🔥 Fallback: If cost is 0 (and the user didn't explicitly send 0 from UI, or if UI bug sent 0), fallback to DeliveryFee
-            if (order.ActualDeliveryCost == 0 && order.DeliveryFee > 0)
+            // 🔥 Fallback: Only if the frontend didn't send this order at all (which shouldn't happen, but just in case)
+            if (!isExplicitlySet && order.ActualDeliveryCost == 0 && order.DeliveryFee > 0)
             {
                 order.ActualDeliveryCost = order.DeliveryFee;
             }
@@ -401,38 +404,52 @@ public class ShippingSettlementsController : ControllerBase
                         }
 
 
-                        // Bosta sometimes hides the full pricing inside the log array or provides 'shipmentFees' (without VAT).
-                        if (targetElement.TryGetProperty("log", out var logArray) && logArray.ValueKind == System.Text.Json.JsonValueKind.Array)
+                        // Try to find the pricing object
+                        var pricingObj = targetElement;
+                        if (targetElement.TryGetProperty("pricing", out var pObj) && pObj.ValueKind == System.Text.Json.JsonValueKind.Object)
                         {
-                            // Search backwards to find the latest pricing update
-                            for (int j = logArray.GetArrayLength() - 1; j >= 0; j--)
+                            pricingObj = pObj;
+                        }
+
+                        // Extract individual fee components
+                        decimal shipmentFees = pricingObj.TryGetProperty("shipmentFees", out var sProp) && sProp.TryGetDecimal(out var sVal) ? sVal : 0;
+                        decimal codFees = pricingObj.TryGetProperty("cashOnDelivery", out var cProp) && cProp.TryGetDecimal(out var cVal) ? cVal : 0;
+                        decimal returnFees = pricingObj.TryGetProperty("returnFees", out var rProp) && rProp.TryGetDecimal(out var rVal) ? rVal : 0;
+                        decimal vat = pricingObj.TryGetProperty("vat", out var vProp) && vProp.TryGetDecimal(out var vVal) ? vVal : 0;
+
+                        if (shipmentFees > 0 || codFees > 0)
+                        {
+                            if (vat == 0) 
                             {
-                                var logItem = logArray[j];
-                                if (logItem.TryGetProperty("actionsList", out var actionsList) && 
-                                    actionsList.TryGetProperty("pricing", out var logPricing) && 
-                                    logPricing.TryGetProperty("after", out var pricingAfter) &&
-                                    pricingAfter.TryGetProperty("priceAfterVat", out var priceAfterVatProp) && 
-                                    priceAfterVatProp.TryGetDecimal(out var logPrice))
+                                // Calculate 14% VAT if not explicitly provided
+                                vat = (shipmentFees + codFees + returnFees) * 0.14m;
+                            }
+                            foundCost = Math.Round(shipmentFees + codFees + returnFees + vat, 2);
+                        }
+                        else 
+                        {
+                            // Fallback to log backward search if pricing object is empty
+                            if (targetElement.TryGetProperty("log", out var logArray) && logArray.ValueKind == System.Text.Json.JsonValueKind.Array)
+                            {
+                                for (int j = logArray.GetArrayLength() - 1; j >= 0; j--)
                                 {
-                                    // تقريب لأقرب رقم عشري واحد ليتطابق مع واجهة بوسطة 100%
-                                    foundCost = Math.Round(logPrice, 1, MidpointRounding.AwayFromZero);
-                                    break;
+                                    var logItem = logArray[j];
+                                    if (logItem.TryGetProperty("actionsList", out var actionsList) && 
+                                        actionsList.TryGetProperty("pricing", out var logPricing) && 
+                                        logPricing.TryGetProperty("after", out var pricingAfter) &&
+                                        pricingAfter.TryGetProperty("priceAfterVat", out var priceAfterVatProp) && 
+                                        priceAfterVatProp.TryGetDecimal(out var logPrice))
+                                    {
+                                        foundCost = logPrice; // No rounding
+                                        break;
+                                    }
                                 }
                             }
-                        }
 
-                        if (foundCost == 0)
-                        {
-                            if (targetElement.TryGetProperty("shipmentFees", out var shipFeesProp) && shipFeesProp.TryGetDecimal(out var shipFees))
+                            if (foundCost == 0 && targetElement.TryGetProperty("price", out var priceProp) && priceProp.TryGetDecimal(out var priceObjVal))
                             {
-                                // Bosta shipmentFees usually excludes 14% VAT
-                                foundCost = Math.Round(shipFees * 1.14m, 1, MidpointRounding.AwayFromZero);
+                                foundCost = priceObjVal;
                             }
-                        }
-
-                        if (foundCost == 0 && targetElement.TryGetProperty("price", out var priceProp) && priceProp.TryGetDecimal(out var priceObjVal))
-                        {
-                            foundCost = Math.Round(priceObjVal, 1, MidpointRounding.AwayFromZero);
                         }
 
                         if (foundCost == 0)
