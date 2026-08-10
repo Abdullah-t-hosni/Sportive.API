@@ -768,11 +768,23 @@ public class OrderService : IOrderService
                         if (addr != null && !string.IsNullOrEmpty(addr.City))
                         {
                             var city = addr.City.Trim().ToLower();
-                            var zone = await _db.ShippingZones.AsNoTracking()
+                            var districtStr = !string.IsNullOrWhiteSpace(addr.District) 
+                                ? $"{city} - {addr.District.Trim().ToLower()}" 
+                                : city;
+
+                            var zones = await _db.ShippingZones.AsNoTracking()
                                 .Where(z => z.IsActive)
                                 .ToListAsync();
                             
-                            var matched = zone.FirstOrDefault(z => z.Governorates.ToLower().Split(',').Any(g => g.Trim() == city));
+                            // 1. Try to match the exact district first (e.g. "الفيوم - ابشواي")
+                            var matched = zones.FirstOrDefault(z => z.Governorates.ToLower().Split(',').Any(g => g.Trim() == districtStr));
+                            
+                            // 2. If no exact district match, fallback to just the city (Governorate) match (e.g. "الفيوم")
+                            if (matched == null)
+                            {
+                                matched = zones.FirstOrDefault(z => z.Governorates.ToLower().Split(',').Any(g => g.Trim() == city));
+                            }
+
                             if (matched != null)
                             {
                                 fee = matched.Fee;
