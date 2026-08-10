@@ -4294,6 +4294,28 @@ public class OperationalReportsController : ControllerBase
             zakatAccountBalance += zakatAccount.OpeningBalance;
         }
 
+        // --- Shipping Companies Account Balances ---
+        // Each active ShippingCompany may have a linked AccountId (asset/receivable)
+        // Balance = Debit - Credit (they owe us money from cash-on-delivery)
+        var shippingCompanies = await _db.ShippingCompanies.AsNoTracking()
+            .Where(s => s.IsActive && s.AccountId != null)
+            .Include(s => s.Account)
+            .ToListAsync();
+
+        var shippingCompanyBalances = new List<object>();
+        foreach (var sc in shippingCompanies)
+        {
+            var scBalance = await _db.JournalLines.AsNoTracking()
+                .Where(l => l.AccountId == sc.AccountId)
+                .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0m;
+            scBalance += sc.Account?.OpeningBalance ?? 0m;
+            shippingCompanyBalances.Add(new {
+                accountId = sc.AccountId,
+                accountName = sc.NameAr,
+                cumulativeBalance = scBalance
+            });
+        }
+
         // Dynamic cost valuation using inventory movements up to dayEnd
         var movementsQuery = _db.InventoryMovements.AsNoTracking().Where(m => m.CreatedAt <= dayEnd);
         if (branchId.HasValue) movementsQuery = movementsQuery.Where(m => m.BranchId == branchId.Value);
@@ -4710,7 +4732,9 @@ public class OperationalReportsController : ControllerBase
             // 🆕 Zakat account balance (210201)
             zakatAccountBalance,
             zakatAccountName,
-            zakatAccountId
+            zakatAccountId,
+            // 🆕 Shipping companies balances
+            shippingCompanyBalances
         });
     }
 
