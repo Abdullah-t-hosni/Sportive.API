@@ -207,7 +207,8 @@ public class ShippingSettlementsController : ControllerBase
                 date: TimeHelper.GetEgyptBusinessDayDate(collectionDate),
                 lines: collectionLines,
                 source: OrderSource.Website,
-                createdAt: currentSysTime
+                createdAt: currentSysTime,
+                branchId: orders.FirstOrDefault()?.BranchId
             );
         }
         else if (netAmount < 0)
@@ -228,7 +229,8 @@ public class ShippingSettlementsController : ControllerBase
                 date: TimeHelper.GetEgyptBusinessDayDate(collectionDate),
                 lines: deficitLines,
                 source: OrderSource.Website,
-                createdAt: currentSysTime
+                createdAt: currentSysTime,
+                branchId: orders.FirstOrDefault()?.BranchId
             );
         }
 
@@ -265,7 +267,8 @@ public class ShippingSettlementsController : ControllerBase
                     date: group.Key, // تسجيل القيد بتاريخ إنشاء الطلبات لضبط قائمة الدخل
                     lines: expenseLines,
                     source: OrderSource.Website,
-                    createdAt: currentSysTime
+                    createdAt: currentSysTime,
+                    branchId: group.FirstOrDefault()?.BranchId
                 );
 
                 groupIndex++;
