@@ -165,6 +165,13 @@ public class ShippingSettlementsController : ControllerBase
             {
                 order.ActualDeliveryCost = reqOrder.ActualDeliveryCost;
             }
+            
+            // 🔥 Fallback: If cost is 0 (and the user didn't explicitly send 0 from UI, or if UI bug sent 0), fallback to DeliveryFee
+            if (order.ActualDeliveryCost == 0 && order.DeliveryFee > 0)
+            {
+                order.ActualDeliveryCost = order.DeliveryFee;
+            }
+
             order.IsSettledWithCourier = true;
             order.CourierSettlementDate = TimeHelper.GetEgyptTime();
             order.CourierSettlementReference = collectionRef;
