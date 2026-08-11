@@ -381,13 +381,15 @@ public class ShippingSettlementsController : ControllerBase
                 string refNum = order.OrderNumber;
                 string[] possibleEndpoints = {
                     $"/api/v2/deliveries/business/{refNum}",
-                    $"/api/v0/deliveries/awb/{trk}",
-                    $"/api/v2/deliveries/awb/{trk}",
+                    $"/api/v0/deliveries?trackingNumber={trk}",
                     $"/api/v2/deliveries/business/{id}",
                     $"/api/v2/deliveries/business/{trk}",
                     $"/api/v0/deliveries/{id}",
                     $"/api/v0/deliveries/{trk}"
                 };
+
+                if (!debugLogs.Any(l => l.StartsWith("Base URL:")))
+                    debugLogs.Add($"Base URL: {baseUrl}");
 
                 bool foundValidResponse = false;
 
