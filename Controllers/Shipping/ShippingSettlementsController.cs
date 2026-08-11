@@ -72,6 +72,7 @@ public class ShippingSettlementsController : ControllerBase
                 o.ShippingTrackingNumber,
                 o.BostaTrackingNumber,
                 ActualDeliveryCost = o.ActualDeliveryCost == 0 ? o.DeliveryFee : o.ActualDeliveryCost,
+                DeliveryFee = o.DeliveryFee,
                 o.IsSettledWithCourier,
                 o.CourierSettlementDate,
                 o.CourierSettlementReference,
@@ -183,8 +184,16 @@ public class ShippingSettlementsController : ControllerBase
             order.CourierSettlementReference = collectionRef;
         }
 
-        decimal totalCollected = orders.Sum(o => o.TotalAmount);
-        decimal totalShippingCost = orders.Sum(o => o.ActualDeliveryCost);
+        decimal totalCollected = 0;
+        decimal totalShippingCost = 0;
+
+        foreach (var order in orders)
+        {
+            var reqOrder = request.Orders?.FirstOrDefault(x => x.OrderId == order.Id);
+            totalCollected += reqOrder?.CollectedAmount ?? order.TotalAmount;
+            totalShippingCost += reqOrder?.ActualDeliveryCost ?? order.ActualDeliveryCost;
+        }
+
         decimal netAmount = totalCollected - totalShippingCost;
 
         DateTime collectionDate = request.CollectionDate ?? TimeHelper.GetEgyptTime();
@@ -511,4 +520,5 @@ public class SettleOrderDto
 {
     public int OrderId { get; set; }
     public decimal ActualDeliveryCost { get; set; }
+    public decimal? CollectedAmount { get; set; }
 }
