@@ -42,11 +42,12 @@ public class ShippingSettlementsController : ControllerBase
 
     private async Task<IActionResult> FetchSettlementOrdersAsync(int companyId, string statusFilter)
     {
+        var validStatuses = new[] { OrderStatus.Delivered, OrderStatus.Returned, OrderStatus.PartiallyReturned };
+        
         var q = _db.Orders
             .Include(o => o.Customer)
             .Where(o => o.ShippingCompanyId == companyId && 
-                        o.Status == OrderStatus.Delivered &&
-                        o.PaymentMethod == PaymentMethod.Cash && 
+                        validStatuses.Contains(o.Status) &&
                         o.Source != OrderSource.POS);
 
         if (statusFilter == "pending")
@@ -73,7 +74,9 @@ public class ShippingSettlementsController : ControllerBase
                 ActualDeliveryCost = o.ActualDeliveryCost == 0 ? o.DeliveryFee : o.ActualDeliveryCost,
                 o.IsSettledWithCourier,
                 o.CourierSettlementDate,
-                o.CourierSettlementReference
+                o.CourierSettlementReference,
+                Status = o.Status.ToString(),
+                PaymentMethod = o.PaymentMethod.ToString()
             })
             .ToListAsync();
 
