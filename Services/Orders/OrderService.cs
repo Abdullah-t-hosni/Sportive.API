@@ -1466,6 +1466,11 @@ public class OrderService : IOrderService
                 order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount);
 
                 // 6. UPDATE PAYMENTS
+                if (dto.PaymentMethod.HasValue)
+                {
+                    order.PaymentMethod = dto.PaymentMethod.Value;
+                }
+
                 if (dto.Payments != null && dto.Payments.Any())
                 {
                     order.Payments.Clear();

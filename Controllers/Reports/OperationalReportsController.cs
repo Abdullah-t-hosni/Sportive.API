@@ -1629,13 +1629,14 @@ public class OperationalReportsController : ControllerBase
     public async Task<IActionResult> GetAbandonedCarts()
     {
         var cutoffDate = Utils.TimeHelper.GetEgyptTime().AddDays(-30);
+        var activeCutoff = Utils.TimeHelper.GetEgyptTime().AddHours(-1); // Only carts older than 1 hour are abandoned
         
         // 1. Get active cart items
         var cartItems = await _db.CartItems.AsNoTracking()
             .Include(c => c.Customer)
             .Include(c => c.Product).ThenInclude(p => p.Images)
             .Include(c => c.ProductVariant)
-            .Where(c => c.Customer != null && c.Product != null && (c.UpdatedAt ?? c.CreatedAt) >= cutoffDate)
+            .Where(c => c.Customer != null && c.Product != null && (c.UpdatedAt ?? c.CreatedAt) >= cutoffDate && (c.UpdatedAt ?? c.CreatedAt) <= activeCutoff)
             .ToListAsync();
 
         // 2. Get customer tracking fields
@@ -1671,6 +1672,7 @@ public class OperationalReportsController : ControllerBase
                     Color = x.ProductVariant != null ? (x.ProductVariant.ColorAr ?? x.ProductVariant.Color) : "",
                     Quantity = x.Quantity,
                     UnitPrice = unitPrice,
+                    TotalPrice = unitPrice * x.Quantity,
                     ImageUrl = imgUrl
                 };
             }).ToList();
@@ -1693,9 +1695,9 @@ public class OperationalReportsController : ControllerBase
                 Items = items,
                 ReminderSentAt = dbCustomer?.AbandonedCartReminderSentAt,
                 CouponCode = dbCustomer?.AbandonedCartCouponCode,
-                IsRecovered = dbCustomer?.IsAbandonedCartRecovered ?? false,
-                RecoveredAt = dbCustomer?.AbandonedCartRecoveredAt,
-                RecoveredOrderNumber = dbCustomer?.AbandonedCartRecoveredOrderNumber
+                IsRecovered = false,
+                RecoveredAt = (DateTime?)null,
+                RecoveredOrderNumber = (string?)null
             });
         }
 
