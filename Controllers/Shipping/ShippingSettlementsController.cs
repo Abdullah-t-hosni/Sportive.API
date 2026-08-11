@@ -428,15 +428,16 @@ public class ShippingSettlementsController : ControllerBase
                         decimal codFees = pricingObj.TryGetProperty("cashOnDelivery", out var cProp) && cProp.TryGetDecimal(out var cVal) ? cVal : 0;
                         decimal returnFees = pricingObj.TryGetProperty("returnFees", out var rProp) && rProp.TryGetDecimal(out var rVal) ? rVal : 0;
                         decimal vat = pricingObj.TryGetProperty("vat", out var vProp) && vProp.TryGetDecimal(out var vVal) ? vVal : 0;
+                        decimal insurance = pricingObj.TryGetProperty("insurance", out var iProp) && iProp.TryGetDecimal(out var iVal) ? iVal : 0;
 
-                        if (shipmentFees > 0 || codFees > 0)
+                        if (shipmentFees > 0 || codFees > 0 || returnFees > 0)
                         {
                             if (vat == 0) 
                             {
                                 // Calculate 14% VAT if not explicitly provided
-                                vat = (shipmentFees + codFees + returnFees) * 0.14m;
+                                vat = (shipmentFees + codFees + returnFees + insurance) * 0.14m;
                             }
-                            foundCost = Math.Round(shipmentFees + codFees + returnFees + vat, 2);
+                            foundCost = Math.Round(shipmentFees + codFees + returnFees + insurance + vat, 2);
                         }
                         else 
                         {
@@ -488,9 +489,14 @@ public class ShippingSettlementsController : ControllerBase
         }
 
         if (successCount > 0)
+        {
             await _db.SaveChangesAsync();
-
-        return Ok(new { success = true, syncedCount = successCount, totalRequested = orders.Count, debugLogs });
+            return Ok(new { success = true, syncedCount = successCount, totalRequested = orders.Count, debugLogs });
+        }
+        else
+        {
+            return BadRequest($"فشل تحديث أسعار بوسطة. السجل:\n{string.Join("\n", debugLogs)}");
+        }
     }
 }
 
