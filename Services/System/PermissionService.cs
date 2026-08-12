@@ -74,6 +74,7 @@ public class PermissionService : IPermissionService
                         ModuleKeys.Dashboard, 
                         ModuleKeys.InventoryGroup, 
                         ModuleKeys.Inventory,
+                        ModuleKeys.Inventory + ".edit",
                         ModuleKeys.Products,
                         ModuleKeys.ProductsGroup,
                         ModuleKeys.Categories,
@@ -125,7 +126,7 @@ public class PermissionService : IPermissionService
             TimeSpan.FromMinutes(15));
     }
 
-    private static string CacheKey(string userId) => $"UserPermissions_{userId}";
+    private static string CacheKey(string userId) => $"UserPermissions_v2_{userId}";
 
     // lightweight projection — avoids anonymous type limitations across methods
     private record PermEntry(string ModuleKey, bool CanView, bool CanEdit);
