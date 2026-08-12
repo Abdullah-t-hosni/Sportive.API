@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
 using Sportive.API.Models;
@@ -336,16 +336,16 @@ public class SalesAccountingService
 
     public async Task PostSalesReturnAsync(Order order, int? refundAccountId = null, bool refundShipping = false)
     {
-        if (order.Customer == null && order.CustomerId > 0)
+        if (order.Items == null || !order.Items.Any())
         {
-            var found = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.CustomerId);
-            if (found != null) order.Customer = found;
+            try { await _db.Entry(order).Collection(o => o.Items).LoadAsync(); } catch { }
         }
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
-        var store   = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
 
         string salesReturnAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesReturn, mapDict)}";
+        string salesDiscAcct   = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesDiscount, mapDict)}";
         string deliveryRevAcct = !string.IsNullOrEmpty(store?.DeliveryRevenueAccountId)
             ? $"ID:{store.DeliveryRevenueAccountId}"
             : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.DeliveryRevenue, mapDict)}";
@@ -360,88 +360,89 @@ public class SalesAccountingService
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
-        var totalVatAmount = order.TotalVatAmount;
+        decimal totalGrossReturn = 0;
+        decimal totalNetDiscount = 0;
+        decimal totalNetReturn = 0;
+        decimal totalVatReturn = 0;
+        decimal totalCostReturn = 0;
 
-        if (!refundShipping && order.DeliveryFee > 0)
+        if (order.Items != null)
         {
-            // ✅ EXACT ACCOUNTANT SINGLE COMPOUND ENTRY MATCHING TABLE 1-TO-1:
-            // 1. Sales return debit (371 EGP)
-            lines.Add((salesReturnAcct, order.TotalAmount - totalVatAmount, 0, _t.Get("Accounting.SalesReturnDesc", order.OrderNumber)));
+            foreach (var item in order.Items)
+            {
+                decimal rate = (item.VatRateApplied ?? 0) / 100m;
+                decimal itemOriginalTotal = item.OriginalUnitPrice * item.Quantity;
+                decimal itemOriginalNet   = item.HasTax ? Math.Round(itemOriginalTotal / (1 + rate), 2) : itemOriginalTotal;
+                decimal itemActualTotal   = item.TotalPrice;
+                decimal itemActualNet     = item.HasTax ? Math.Round(itemActualTotal / (1 + rate), 2) : itemActualTotal;
 
-            // 2. Full customer debt clearance credit (371 EGP)
-            lines.Add((receivablesAcct, 0, order.TotalAmount, _t.Get("Accounting.SalesReturnDebtReductionDesc", order.Customer?.FullName ?? order.OrderNumber)));
+                totalGrossReturn += itemOriginalNet;
+                totalNetDiscount += (itemOriginalNet - itemActualNet);
+                totalNetReturn   += itemActualNet;
+                totalVatReturn   += item.ItemVatAmount;
+                totalCostReturn  += (item.Product?.CostPrice ?? 0) * item.Quantity;
+            }
+        }
 
-            // 3. Delivery fee revenue credit (95 EGP)
-            lines.Add((deliveryRevAcct, 0, order.DeliveryFee, $"إيراد خدمة التوصيل - طلب #{order.OrderNumber}"));
+        if (totalGrossReturn > 0)
+        {
+            lines.Add((salesReturnAcct, totalGrossReturn, 0, _t.Get("Accounting.SalesReturnDesc", order.OrderNumber)));
+        }
 
-            // 4. Store cash / treasury debit (95 EGP) for courier cash collection
+        if (totalNetDiscount > 0)
+        {
+            lines.Add((salesDiscAcct, 0, totalNetDiscount, $"إلغاء خصم مبيعات مرتجع - طلب #{order.OrderNumber}"));
+        }
+
+        if (totalVatReturn > 0)
+        {
+            string vatAcct = !string.IsNullOrEmpty(store?.StoreVatAccountId)
+                ? $"ID:{store.StoreVatAccountId}"
+                : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatOutput, mapDict)}";
+            lines.Add((vatAcct, totalVatReturn, 0, _t.Get("Accounting.SalesReturnTaxDesc", order.OrderNumber)));
+        }
+
+        decimal deliveryFeeToRefund = 0;
+        if (refundShipping && order.DeliveryFee > 0)
+        {
+            deliveryFeeToRefund = order.DeliveryFee;
+            lines.Add((deliveryRevAcct, deliveryFeeToRefund, 0, $"إلغاء إيراد الشحن - طلب #{order.OrderNumber}"));
+        }
+
+        decimal totalRefundValue = totalNetReturn + totalVatReturn + deliveryFeeToRefund;
+
+        int receivablesAcctId = int.Parse(receivablesAcct.Replace("ID:", ""));
+        decimal alreadySettledDebt = await _db.JournalLines
+            .Where(l => l.JournalEntry.OrderId == order.Id 
+                     && l.JournalEntry.Type == JournalEntryType.SalesReturn 
+                     && l.AccountId == receivablesAcctId)
+            .SumAsync(l => l.Credit);
+
+        decimal originalDebt = Math.Round(order.TotalAmount - order.PaidAmount, 2);
+        decimal currentRemainingDebt = Math.Max(0, originalDebt - alreadySettledDebt);
+
+        decimal creditRefundAmount = Math.Min(currentRemainingDebt, totalRefundValue);
+        decimal cashRefundAmount   = Math.Round(totalRefundValue - creditRefundAmount, 2);
+
+        if (cashRefundAmount > 0)
+        {
             string cashId = (order.PaymentMethod == PaymentMethod.CustomerBalance || order.PaymentMethod == PaymentMethod.Credit)
                 ? receivablesAcct
                 : (refundAccountId.HasValue ? $"ID:{refundAccountId.Value}" : await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict));
 
             string methodLabel = _core.GetMethodLabel(order.PaymentMethod);
-            lines.Add((cashId, order.DeliveryFee, 0, $"نقدية الموقع / تحصيل التوصيل - طلب #{order.OrderNumber}"));
-        }
-        else
-        {
-            // Case B: refundShipping == true or no delivery fee
-            decimal deliveryFeeToRefund = (refundShipping && order.DeliveryFee > 0) ? order.DeliveryFee : 0m;
-            decimal productReturnPrice = Math.Max(0, order.TotalAmount - order.DeliveryFee - totalVatAmount);
-
-            if (productReturnPrice > 0)
-            {
-                lines.Add((salesReturnAcct, productReturnPrice, 0, _t.Get("Accounting.SalesReturnDesc", order.OrderNumber)));
-            }
-
-            if (deliveryFeeToRefund > 0)
-            {
-                lines.Add((deliveryRevAcct, deliveryFeeToRefund, 0, $"إلغاء إيراد الشحن - طلب #{order.OrderNumber}"));
-            }
-
-            decimal totalRefundValue = productReturnPrice + totalVatAmount + deliveryFeeToRefund;
-
-            int receivablesAcctId = int.Parse(receivablesAcct.Replace("ID:", ""));
-            decimal alreadySettledDebt = await _db.JournalLines
-                .Where(l => l.JournalEntry.OrderId == order.Id 
-                         && l.JournalEntry.Type == JournalEntryType.SalesReturn 
-                         && l.AccountId == receivablesAcctId)
-                .SumAsync(l => l.Credit);
-
-            decimal originalDebt = Math.Round(order.TotalAmount - order.PaidAmount, 2);
-            decimal currentRemainingDebt = Math.Max(0, originalDebt - alreadySettledDebt);
-
-            decimal creditRefundAmount = Math.Min(currentRemainingDebt, totalRefundValue);
-            decimal cashRefundAmount   = Math.Round(totalRefundValue - creditRefundAmount, 2);
-
-            if (cashRefundAmount > 0)
-            {
-                string cashId = (order.PaymentMethod == PaymentMethod.CustomerBalance || order.PaymentMethod == PaymentMethod.Credit)
-                    ? receivablesAcct
-                    : (refundAccountId.HasValue ? $"ID:{refundAccountId.Value}" : await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict));
-
-                string methodLabel = _core.GetMethodLabel(order.PaymentMethod);
-                lines.Add((cashId, 0, cashRefundAmount, _t.Get("Accounting.SalesReturnRefundDesc", methodLabel, order.OrderNumber)));
-            }
-
-            if (creditRefundAmount > 0)
-            {
-                lines.Add((receivablesAcct, 0, creditRefundAmount, _t.Get("Accounting.SalesReturnDebtReductionDesc", order.Customer?.FullName ?? order.OrderNumber)));
-            }
+            lines.Add((cashId, 0, cashRefundAmount, _t.Get("Accounting.SalesReturnRefundDesc", methodLabel, order.OrderNumber)));
         }
 
-        if (totalVatAmount > 0)
+        if (creditRefundAmount > 0)
         {
-            string vatAcct = !string.IsNullOrEmpty(store?.StoreVatAccountId)
-                ? $"ID:{store.StoreVatAccountId}"
-                : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatOutput, mapDict)}";
-            lines.Add((vatAcct, totalVatAmount, 0, _t.Get("Accounting.SalesReturnTaxDesc", order.OrderNumber)));
+            lines.Add((receivablesAcct, 0, creditRefundAmount, _t.Get("Accounting.SalesReturnDebtReductionDesc", order.Customer?.FullName ?? order.OrderNumber)));
         }
 
-        var totalCost = order.Items?.Sum(i => (i.Product?.CostPrice ?? 0) * i.Quantity) ?? 0;
-        if (totalCost > 0)
+        if (totalCostReturn > 0)
         {
-            lines.Add((inventoryAcct, totalCost, 0,         _t.Get("Accounting.InventoryInDesc")));
-            lines.Add((cogsAcct,      0,         totalCost, _t.Get("Accounting.CogsReductionDesc")));
+            lines.Add((inventoryAcct, totalCostReturn, 0,         _t.Get("Accounting.InventoryInDesc")));
+            lines.Add((cogsAcct,      0,         totalCostReturn, _t.Get("Accounting.CogsReductionDesc")));
         }
 
         await _core.PostEntryAsync(
@@ -483,30 +484,48 @@ public class SalesAccountingService
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
+        decimal totalGrossReturn = 0;
+        decimal totalNetDiscount = 0;
         decimal totalNetReturn  = 0;
         decimal totalVatReturn  = 0;
         decimal totalCostReturn = 0;
 
         foreach (var item in returnedItems)
         {
-            var net = item.TotalPrice - item.ItemVatAmount;
-            totalNetReturn  += net;
-            totalVatReturn  += item.ItemVatAmount;
-            totalCostReturn += (item.Product?.CostPrice ?? 0) * item.Quantity;
+            decimal rate = (item.VatRateApplied ?? 0) / 100m;
+            decimal itemOriginalTotal = item.OriginalUnitPrice * item.Quantity;
+            decimal itemOriginalNet   = item.HasTax ? Math.Round(itemOriginalTotal / (1 + rate), 2) : itemOriginalTotal;
+            decimal itemActualTotal   = item.TotalPrice;
+            decimal itemActualNet     = item.HasTax ? Math.Round(itemActualTotal / (1 + rate), 2) : itemActualTotal;
+
+            totalGrossReturn += itemOriginalNet;
+            totalNetDiscount += (itemOriginalNet - itemActualNet);
+            totalNetReturn   += itemActualNet;
+            totalVatReturn   += item.ItemVatAmount;
+            totalCostReturn  += (item.Product?.CostPrice ?? 0) * item.Quantity;
         }
 
-        lines.Add((salesReturnAcct, totalNetReturn, 0, _t.Get("Accounting.PartialReturnNetDesc", order.OrderNumber)));
+        if (totalGrossReturn > 0)
+        {
+            lines.Add((salesReturnAcct, totalGrossReturn, 0, _t.Get("Accounting.PartialReturnNetDesc", order.OrderNumber)));
+        }
+
+        if (totalNetDiscount > 0)
+        {
+            lines.Add((salesDiscAcct, 0, totalNetDiscount, $"إلغاء خصم مبيعات مرتجع - طلب #{order.OrderNumber}"));
+        }
+
         if (totalVatReturn > 0)
         {
-            string vatAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatOutput, mapDict)}";
+            var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+            string vatAcct = !string.IsNullOrEmpty(store?.StoreVatAccountId)
+                ? $"ID:{store.StoreVatAccountId}"
+                : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatOutput, mapDict)}";
             lines.Add((vatAcct, totalVatReturn, 0, _t.Get("Accounting.PartialReturnTaxCancelDesc", order.OrderNumber)));
         }
 
-        decimal discountReversal = (totalNetReturn + totalVatReturn) - refundAmount;
-        if (discountReversal > 0)
-            lines.Add((salesDiscAcct, 0, discountReversal, _t.Get("Accounting.PartialReturnDiscountBalDesc", order.OrderNumber)));
-        else if (discountReversal < 0)
-            lines.Add((salesDiscAcct, Math.Abs(discountReversal), 0, _t.Get("Accounting.PartialReturnDiffAdjDesc", order.OrderNumber)));
+        decimal totalRefundValue = totalNetReturn + totalVatReturn; // Excludes shipping for partial returns
+
 
         // ✅ ROBUST MULTI-RETURN DEBT LOGIC:
         // We calculate how much of the original debt is still "remaining" after previous returns.

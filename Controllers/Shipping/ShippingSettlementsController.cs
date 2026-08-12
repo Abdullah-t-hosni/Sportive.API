@@ -219,6 +219,37 @@ public class ShippingSettlementsController : ControllerBase
                             desc: $"عكس قيد مصاريف شحن لعدم التحصيل - فاتورة #{order.OrderNumber}"
                         )).ToList();
 
+                        var mapDict = await _accountingCore.GetSafeSystemMappingsAsync();
+                        var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+                        string deliveryRevAcct = !string.IsNullOrEmpty(store?.DeliveryRevenueAccountId)
+                            ? $"ID:{store.DeliveryRevenueAccountId}"
+                            : $"ID:{await _accountingCore.GetRequiredMappedAccountAsync(Sportive.API.Utils.MappingKeys.DeliveryRevenue, mapDict)}";
+                        
+                        string receivablesAcct;
+                        if (order.Customer?.MainAccountId != null)
+                            receivablesAcct = $"ID:{order.Customer.MainAccountId}";
+                        else
+                            receivablesAcct = $"ID:{await _accountingCore.GetRequiredMappedAccountAsync(Sportive.API.Utils.MappingKeys.Customer, mapDict)}";
+
+                        if (order.DeliveryFee > 0)
+                        {
+                            // 1. Debit Delivery Revenue
+                            reversalLines.Add((
+                                code: deliveryRevAcct,
+                                debit: order.DeliveryFee,
+                                credit: 0,
+                                desc: $"عكس إيراد شحن لعدم التحصيل - فاتورة #{order.OrderNumber}"
+                            ));
+
+                            // 2. Credit Customer (Clear Debt)
+                            reversalLines.Add((
+                                code: receivablesAcct,
+                                debit: 0,
+                                credit: order.DeliveryFee,
+                                desc: $"إسقاط مديونية شحن لعدم التحصيل - فاتورة #{order.OrderNumber}"
+                            ));
+                        }
+
                         await _accountingCore.PostEntryAsync(
                             type: JournalEntryType.Manual,
                             reference: $"REV-{returnEntry.Reference}",
