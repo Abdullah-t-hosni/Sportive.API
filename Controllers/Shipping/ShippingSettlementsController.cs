@@ -497,11 +497,11 @@ public class ShippingSettlementsController : ControllerBase
         if (successCount > 0)
         {
             await _db.SaveChangesAsync();
-            return Ok(new { success = true, syncedCount = successCount, totalRequested = orders.Count, debugLogs });
+            return Ok(new { success = true, syncedCount = successCount, totalRequested = orders.Count });
         }
         else
         {
-            return BadRequest($"فشل تحديث أسعار بوسطة. السجل:\n{string.Join("\n", debugLogs)}");
+            return BadRequest("فشل تحديث أسعار بوسطة: لم يتم العثور على أي أسعار صالحة للطلبات المحددة. قد تكون مرتبطة بحساب قديم أو غير موجودة في بوسطة.");
         }
     }
 }
