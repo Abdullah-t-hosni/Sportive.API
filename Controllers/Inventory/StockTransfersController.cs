@@ -223,39 +223,43 @@ public class StockTransfersController : ControllerBase
 
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-        using var dbTransaction = await _db.Database.BeginTransactionAsync();
-        try
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            foreach (var item in transfer.Items)
+            using var dbTransaction = await _db.Database.BeginTransactionAsync();
+            try
             {
-                // Deduct stock from source warehouse
-                await _inventory.LogMovementAsync(
-                    InventoryMovementType.TransferOut,
-                    -item.Quantity,
-                    variantId: item.ProductVariantId,
-                    reference: transfer.TransferNumber,
-                    note: $"Stock Transfer Out: {transfer.TransferNumber}",
-                    userId: userId,
-                    warehouseId: transfer.SourceWarehouseId,
-                    autoSave: false
-                );
+                foreach (var item in transfer.Items)
+                {
+                    // Deduct stock from source warehouse
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.TransferOut,
+                        -item.Quantity,
+                        variantId: item.ProductVariantId,
+                        reference: transfer.TransferNumber,
+                        note: $"Stock Transfer Out: {transfer.TransferNumber}",
+                        userId: userId,
+                        warehouseId: transfer.SourceWarehouseId,
+                        autoSave: false
+                    );
+                }
+
+                transfer.Status = StockTransferStatus.Shipped;
+                transfer.ShippedByUserId = userId;
+                transfer.ShippedAt = TimeHelper.GetEgyptTime();
+                transfer.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                await _db.SaveChangesAsync();
+                await dbTransaction.CommitAsync();
+                
+                try { await _audit.LogChangeAsync<StockTransfer>("ShipStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, userId, User.FindFirstValue(ClaimTypes.Name)); } catch { }
             }
-
-            transfer.Status = StockTransferStatus.Shipped;
-            transfer.ShippedByUserId = userId;
-            transfer.ShippedAt = TimeHelper.GetEgyptTime();
-            transfer.UpdatedAt = TimeHelper.GetEgyptTime();
-
-            await _db.SaveChangesAsync();
-            await dbTransaction.CommitAsync();
-            
-            try { await _audit.LogChangeAsync<StockTransfer>("ShipStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
-        }
-        catch (Exception ex)
-        {
-            await dbTransaction.RollbackAsync();
-            return BadRequest(new { message = ex.Message });
-        }
+            catch (Exception ex)
+            {
+                await dbTransaction.RollbackAsync();
+                throw;
+            }
+        });
 
         return Ok(transfer);
     }
@@ -276,39 +280,43 @@ public class StockTransfersController : ControllerBase
 
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-        using var dbTransaction = await _db.Database.BeginTransactionAsync();
-        try
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            foreach (var item in transfer.Items)
+            using var dbTransaction = await _db.Database.BeginTransactionAsync();
+            try
             {
-                // Add stock to destination warehouse
-                await _inventory.LogMovementAsync(
-                    InventoryMovementType.TransferIn,
-                    item.Quantity,
-                    variantId: item.ProductVariantId,
-                    reference: transfer.TransferNumber,
-                    note: $"Stock Transfer In: {transfer.TransferNumber}",
-                    userId: userId,
-                    warehouseId: transfer.DestinationWarehouseId,
-                    autoSave: false
-                );
+                foreach (var item in transfer.Items)
+                {
+                    // Add stock to destination warehouse
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.TransferIn,
+                        item.Quantity,
+                        variantId: item.ProductVariantId,
+                        reference: transfer.TransferNumber,
+                        note: $"Stock Transfer In: {transfer.TransferNumber}",
+                        userId: userId,
+                        warehouseId: transfer.DestinationWarehouseId,
+                        autoSave: false
+                    );
+                }
+
+                transfer.Status = StockTransferStatus.Received;
+                transfer.ReceivedByUserId = userId;
+                transfer.ReceivedAt = TimeHelper.GetEgyptTime();
+                transfer.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                await _db.SaveChangesAsync();
+                await dbTransaction.CommitAsync();
+                
+                try { await _audit.LogChangeAsync<StockTransfer>("ReceiveStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, userId, User.FindFirstValue(ClaimTypes.Name)); } catch { }
             }
-
-            transfer.Status = StockTransferStatus.Received;
-            transfer.ReceivedByUserId = userId;
-            transfer.ReceivedAt = TimeHelper.GetEgyptTime();
-            transfer.UpdatedAt = TimeHelper.GetEgyptTime();
-
-            await _db.SaveChangesAsync();
-            await dbTransaction.CommitAsync();
-            
-            try { await _audit.LogChangeAsync<StockTransfer>("ReceiveStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
-        }
-        catch (Exception ex)
-        {
-            await dbTransaction.RollbackAsync();
-            return BadRequest(new { message = ex.Message });
-        }
+            catch (Exception ex)
+            {
+                await dbTransaction.RollbackAsync();
+                throw;
+            }
+        });
 
         return Ok(transfer);
     }
@@ -329,40 +337,44 @@ public class StockTransfersController : ControllerBase
 
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-        using var dbTransaction = await _db.Database.BeginTransactionAsync();
-        try
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            // If it was shipped, we need to return the deducted stock back to the source warehouse
-            if (transfer.Status == StockTransferStatus.Shipped)
+            using var dbTransaction = await _db.Database.BeginTransactionAsync();
+            try
             {
-                foreach (var item in transfer.Items)
+                // If it was shipped, we need to return the deducted stock back to the source warehouse
+                if (transfer.Status == StockTransferStatus.Shipped)
                 {
-                    await _inventory.LogMovementAsync(
-                        InventoryMovementType.TransferIn,
-                        item.Quantity,
-                        variantId: item.ProductVariantId,
-                        reference: transfer.TransferNumber,
-                        note: $"Cancelled Transfer Return: {transfer.TransferNumber}",
-                        userId: userId,
-                        warehouseId: transfer.SourceWarehouseId,
-                        autoSave: false
-                    );
+                    foreach (var item in transfer.Items)
+                    {
+                        await _inventory.LogMovementAsync(
+                            InventoryMovementType.TransferIn,
+                            item.Quantity,
+                            variantId: item.ProductVariantId,
+                            reference: transfer.TransferNumber,
+                            note: $"Cancelled Transfer Return: {transfer.TransferNumber}",
+                            userId: userId,
+                            warehouseId: transfer.SourceWarehouseId,
+                            autoSave: false
+                        );
+                    }
                 }
+
+                transfer.Status = StockTransferStatus.Cancelled;
+                transfer.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                await _db.SaveChangesAsync();
+                await dbTransaction.CommitAsync();
+                
+                try { await _audit.LogChangeAsync<StockTransfer>("CancelStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, userId, User.FindFirstValue(ClaimTypes.Name)); } catch { }
             }
-
-            transfer.Status = StockTransferStatus.Cancelled;
-            transfer.UpdatedAt = TimeHelper.GetEgyptTime();
-
-            await _db.SaveChangesAsync();
-            await dbTransaction.CommitAsync();
-            
-            try { await _audit.LogChangeAsync<StockTransfer>("CancelStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
-        }
-        catch (Exception ex)
-        {
-            await dbTransaction.RollbackAsync();
-            return BadRequest(new { message = ex.Message });
-        }
+            catch (Exception ex)
+            {
+                await dbTransaction.RollbackAsync();
+                throw;
+            }
+        });
 
         return Ok(transfer);
     }
