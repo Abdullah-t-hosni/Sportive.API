@@ -531,14 +531,16 @@ public class ShippingSettlementsController : ControllerBase
             }
         }
 
+        int failedCount = orders.Count - successCount;
+
         if (successCount > 0)
         {
             await _db.SaveChangesAsync();
-            return Ok(new { success = true, syncedCount = successCount, totalRequested = orders.Count });
+            return Ok(new { success = true, syncedCount = successCount, failedCount = failedCount, totalRequested = orders.Count });
         }
         else
         {
-            return BadRequest("فشل تحديث أسعار بوسطة: لم يتم العثور على أي أسعار صالحة للطلبات المحددة. قد تكون مرتبطة بحساب قديم أو غير موجودة في بوسطة.");
+            return BadRequest($"فشل تحديث أسعار بوسطة لجميع الطلبات المحددة (عدد {failedCount}). تأكد أن الطلبات موجودة على الحساب الحالي في بوسطة ولم يتم حذفها.");
         }
     }
 }
