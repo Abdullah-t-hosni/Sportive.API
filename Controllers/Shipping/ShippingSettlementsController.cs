@@ -522,7 +522,6 @@ public class ShippingSettlementsController : ControllerBase
 
                         if (foundCost > 0)
                         {
-                            if (trk == "3147389614") System.IO.File.WriteAllText("bosta_test.json", targetElement.GetRawText());
                             order.ActualDeliveryCost = foundCost;
                             successCount++;
                         }
