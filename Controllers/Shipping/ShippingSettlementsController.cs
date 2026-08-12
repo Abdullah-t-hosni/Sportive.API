@@ -540,7 +540,8 @@ public class ShippingSettlementsController : ControllerBase
         }
         else
         {
-            return BadRequest($"فشل تحديث أسعار بوسطة لجميع الطلبات المحددة (عدد {failedCount}). تأكد أن الطلبات موجودة على الحساب الحالي في بوسطة ولم يتم حذفها.");
+            string errorDetails = debugLogs.FirstOrDefault(l => l.Contains("Failed API Call") || l.Contains("RAW:")) ?? "لا يوجد تفاصيل";
+            return BadRequest($"فشل تحديث أسعار بوسطة لجميع الطلبات المحددة (عدد {failedCount}). تفاصيل: {errorDetails}");
         }
     }
 }
