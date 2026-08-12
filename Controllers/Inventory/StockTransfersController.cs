@@ -247,13 +247,12 @@ public class StockTransfersController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        await _audit.LogAsync(
+        await _audit.LogChangeAsync<StockTransfer>(
             "StockTransfer.Approve",
             "StockTransfer",
-            transfer.Id,
+            transfer.Id.ToString(),
             oldTransfer,
             transfer,
-            $"Approved Stock Transfer {transfer.TransferNumber}",
             userId
         );
 
@@ -307,7 +306,7 @@ public class StockTransfersController : ControllerBase
                 
                 try { await _audit.LogChangeAsync<StockTransfer>("ShipStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, userId, User.FindFirstValue(ClaimTypes.Name)); } catch { }
             }
-            catch (Exception ex)
+            catch
             {
                 await dbTransaction.RollbackAsync();
                 throw;
@@ -364,7 +363,7 @@ public class StockTransfersController : ControllerBase
                 
                 try { await _audit.LogChangeAsync<StockTransfer>("ReceiveStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, userId, User.FindFirstValue(ClaimTypes.Name)); } catch { }
             }
-            catch (Exception ex)
+            catch
             {
                 await dbTransaction.RollbackAsync();
                 throw;
@@ -422,7 +421,7 @@ public class StockTransfersController : ControllerBase
                 
                 try { await _audit.LogChangeAsync<StockTransfer>("CancelStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, userId, User.FindFirstValue(ClaimTypes.Name)); } catch { }
             }
-            catch (Exception ex)
+            catch
             {
                 await dbTransaction.RollbackAsync();
                 throw;

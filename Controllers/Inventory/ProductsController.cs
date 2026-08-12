@@ -9,6 +9,7 @@ using Sportive.API.Services;
 
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
+using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers;
 
