@@ -56,6 +56,17 @@ public static class DefaultPermissions
                 (ModuleKeys.Ai,             true, true),
             },
 
+            AppRoles.Storekeeper => new[]
+            {
+                (ModuleKeys.Dashboard,      true, false),
+                (ModuleKeys.InventoryGroup, true, false),
+                (ModuleKeys.Inventory,      true, true),
+                (ModuleKeys.Products,       true, false),
+                (ModuleKeys.ProductsGroup,  true, false),
+                (ModuleKeys.Categories,     true, false),
+                (ModuleKeys.Units,          true, false),
+            },
+
             _ => Array.Empty<(string, bool, bool)>()
         };
         foreach (var item in oldFormat) {
