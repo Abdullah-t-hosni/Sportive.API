@@ -547,8 +547,9 @@ public class ShippingSettlementsController : ControllerBase
         }
         else
         {
-            string errorDetails = debugLogs.FirstOrDefault(l => l.Contains("Failed API Call") || l.Contains("RAW:")) ?? "لا يوجد تفاصيل";
-            return BadRequest($"فشل تحديث أسعار بوسطة لجميع الطلبات المحددة (عدد {failedCount}). تفاصيل: {errorDetails}");
+            var importantLogs = debugLogs.Where(l => l.Contains("Failed API Call") || l.Contains("RAW:") || l.Contains("Exception:")).Take(5);
+            string errorDetails = importantLogs.Any() ? string.Join(" \n ", importantLogs) : "لا يوجد تفاصيل";
+            return BadRequest($"فشل تحديث أسعار بوسطة لجميع الطلبات المحددة (عدد {failedCount}). \n تفاصيل: \n {errorDetails}");
         }
     }
 }
