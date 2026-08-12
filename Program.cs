@@ -394,56 +394,9 @@ catch (Exception ex)
 {
     Log.Warning(ex, "Could not register Hangfire recurring jobs — app will still start.");
 } 
-if (args.Contains("--migrate-isactive"))
-{
     using (var scope = app.Services.CreateScope())
     {
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        try
-        {
-            Log.Information("Adding IsActive column to ProductVariants table if missing...");
-            await db.Database.ExecuteSqlRawAsync("ALTER TABLE `ProductVariants` ADD COLUMN `IsActive` tinyint(1) NOT NULL DEFAULT 1;");
-            Log.Information("SUCCESS: Added IsActive column to ProductVariants table.");
-        }
-        catch (Exception ex)
-        {
-            Log.Information("Migration Note: {Message}", ex.Message);
-        }
-
-        try
-        {
-            Log.Information("Adding MaxOnlineStock column to ProductVariants table if missing...");
-            await db.Database.ExecuteSqlRawAsync("ALTER TABLE `ProductVariants` ADD COLUMN `MaxOnlineStock` int NULL DEFAULT NULL;");
-            Log.Information("SUCCESS: Added MaxOnlineStock column to ProductVariants table.");
-        }
-        catch (Exception ex)
-        {
-            Log.Information("Migration Note: {Message}", ex.Message);
-        }
-    }
-    return;
-}
-
-if (args.Contains("--recalculate-stock"))
-{
-    using (var scope = app.Services.CreateScope())
-    {
-        var maintenance = scope.ServiceProvider.GetRequiredService<IDataMaintenanceService>();
-        Log.Information("Executing RecalculateStockAsync via CLI...");
-        var (success, message) = await maintenance.RecalculateStockAsync();
-        Log.Information("RecalculateStock result: Success={Success}, Message={Message}", success, message);
-    }
-    return;
-}
-
-using (var scope = app.Services.CreateScope())
-{
-    try
-    {
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `Orders` ADD COLUMN `CourierSettlementReference` longtext NULL;"); } catch { }
-        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `Orders` ADD COLUMN `HasReviewRequested` tinyint(1) NOT NULL DEFAULT 0;"); } catch { }
-        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `Orders` ADD COLUMN `ReviewRequestedAt` datetime NULL;"); } catch { }
 
         // Seed fresh Damaged Warehouse and move targeted item
         try
@@ -507,6 +460,60 @@ using (var scope = app.Services.CreateScope())
             }
         }
         catch { }
+    }
+
+if (args.Contains("--migrate-isactive"))
+{
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        try
+        {
+            Log.Information("Adding IsActive column to ProductVariants table if missing...");
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE `ProductVariants` ADD COLUMN `IsActive` tinyint(1) NOT NULL DEFAULT 1;");
+            Log.Information("SUCCESS: Added IsActive column to ProductVariants table.");
+        }
+        catch (Exception ex)
+        {
+            Log.Information("Migration Note: {Message}", ex.Message);
+        }
+
+        try
+        {
+            Log.Information("Adding MaxOnlineStock column to ProductVariants table if missing...");
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE `ProductVariants` ADD COLUMN `MaxOnlineStock` int NULL DEFAULT NULL;");
+            Log.Information("SUCCESS: Added MaxOnlineStock column to ProductVariants table.");
+        }
+        catch (Exception ex)
+        {
+            Log.Information("Migration Note: {Message}", ex.Message);
+        }
+    }
+    return;
+}
+
+if (args.Contains("--recalculate-stock"))
+{
+    using (var scope = app.Services.CreateScope())
+    {
+        var maintenance = scope.ServiceProvider.GetRequiredService<IDataMaintenanceService>();
+        Log.Information("Executing RecalculateStockAsync via CLI...");
+        var (success, message) = await maintenance.RecalculateStockAsync();
+        Log.Information("RecalculateStock result: Success={Success}, Message={Message}", success, message);
+    }
+    return;
+}
+
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `Orders` ADD COLUMN `CourierSettlementReference` longtext NULL;"); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `Orders` ADD COLUMN `HasReviewRequested` tinyint(1) NOT NULL DEFAULT 0;"); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `Orders` ADD COLUMN `ReviewRequestedAt` datetime NULL;"); } catch { }
+
+
 
         // 🎯 Targeted one-time fix for SPT-2608-0028 and SPT-2608-0063
         var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
