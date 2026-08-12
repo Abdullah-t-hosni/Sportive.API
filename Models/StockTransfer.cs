@@ -9,7 +9,8 @@ public enum StockTransferStatus
     Pending = 2,      // بانتظار الشحن/الموافقة
     Shipped = 3,      // تم الشحن (خرجت البضاعة من المخزن الأول)
     Received = 4,     // تم الاستلام (دخلت البضاعة المخزن الثاني)
-    Cancelled = 5     // ملغي
+    Cancelled = 5,    // ملغي
+    Approved = 6      // تمت الموافقة (جاهز للصرف)
 }
 
 public class StockTransfer : BaseEntity
@@ -29,6 +30,7 @@ public class StockTransfer : BaseEntity
     public DateTime? ReceivedAt { get; set; }
 
     public string? CreatedByUserId { get; set; }
+    public string? ApprovedByUserId { get; set; }
     public string? ShippedByUserId { get; set; }
     public string? ReceivedByUserId { get; set; }
 

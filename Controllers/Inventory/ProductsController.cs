@@ -27,8 +27,22 @@ public class ProductsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] ProductFilterDto filter) =>
-        Ok(await _products.GetProductsAsync(filter));
+    public async Task<IActionResult> GetAll([FromQuery] ProductFilterDto filter)
+    {
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedWarehouseId = User.GetWarehouseId();
+            if (isolatedWarehouseId.HasValue)
+            {
+                filter.WarehouseId = isolatedWarehouseId.Value;
+                // Force OnlyInStock if they are only allowed to see their own inventory
+                // Though for a storekeeper, seeing all products but only their stock might be needed.
+                // We'll just enforce WarehouseId so totalStock calculations in ProductService use it.
+            }
+        }
+        return Ok(await _products.GetProductsAsync(filter));
+    }
 
     /// <summary>أعلى رقم SKU في قاعدة البيانات (للعرض في فورم الإضافة)</summary>
     [HttpGet("last-sku")]

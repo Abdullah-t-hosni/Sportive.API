@@ -79,6 +79,16 @@ public class StockTransfersController : ControllerBase
         if (dto.SourceWarehouseId == dto.DestinationWarehouseId)
             return BadRequest(new { message = "Source and destination warehouses must be different." });
 
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedWarehouseId = User.GetWarehouseId();
+            if (isolatedWarehouseId.HasValue && dto.SourceWarehouseId != isolatedWarehouseId.Value && dto.DestinationWarehouseId != isolatedWarehouseId.Value)
+            {
+                return BadRequest(new { message = "You can only create transfers involving your assigned warehouse." });
+            }
+        }
+
         var sourceExists = await _db.Warehouses.AnyAsync(w => w.Id == dto.SourceWarehouseId && w.IsActive);
         var destExists = await _db.Warehouses.AnyAsync(w => w.Id == dto.DestinationWarehouseId && w.IsActive);
         if (!sourceExists || !destExists)
@@ -146,6 +156,16 @@ public class StockTransfersController : ControllerBase
         if (dto.SourceWarehouseId == dto.DestinationWarehouseId)
             return BadRequest(new { message = "Source and destination warehouses must be different." });
 
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedWarehouseId = User.GetWarehouseId();
+            if (isolatedWarehouseId.HasValue && dto.SourceWarehouseId != isolatedWarehouseId.Value && dto.DestinationWarehouseId != isolatedWarehouseId.Value)
+            {
+                return BadRequest(new { message = "You can only update transfers involving your assigned warehouse." });
+            }
+        }
+
         var sourceExists = await _db.Warehouses.AnyAsync(w => w.Id == dto.SourceWarehouseId && w.IsActive);
         var destExists = await _db.Warehouses.AnyAsync(w => w.Id == dto.DestinationWarehouseId && w.IsActive);
         if (!sourceExists || !destExists)
@@ -208,6 +228,39 @@ public class StockTransfersController : ControllerBase
     }
 
     [RequirePermission(ModuleKeys.Inventory, requireEdit: true)]
+    [HttpPost("{id}/approve")]
+    public async Task<IActionResult> Approve(int id)
+    {
+        var transfer = await _db.StockTransfers.FirstOrDefaultAsync(t => t.Id == id);
+        if (transfer == null) return NotFound();
+
+        if (transfer.Status != StockTransferStatus.Draft && transfer.Status != StockTransferStatus.Pending)
+            return BadRequest(new { message = "Only Draft or Pending transfers can be approved." });
+
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        
+        var oldTransfer = await _db.StockTransfers.AsNoTracking().Include(t => t.Items).FirstOrDefaultAsync(t => t.Id == id);
+
+        transfer.Status = StockTransferStatus.Approved;
+        transfer.ApprovedByUserId = userId;
+        transfer.UpdatedAt = TimeHelper.GetEgyptTime();
+
+        await _db.SaveChangesAsync();
+
+        await _audit.LogAsync(
+            "StockTransfer.Approve",
+            "StockTransfer",
+            transfer.Id,
+            oldTransfer,
+            transfer,
+            $"Approved Stock Transfer {transfer.TransferNumber}",
+            userId
+        );
+
+        return Ok(transfer);
+    }
+
+    [RequirePermission(ModuleKeys.Inventory, requireEdit: true)]
     [HttpPost("{id}/ship")]
     public async Task<IActionResult> Ship(int id)
     {
@@ -218,8 +271,8 @@ public class StockTransfersController : ControllerBase
 
         if (transfer == null) return NotFound();
 
-        if (transfer.Status != StockTransferStatus.Draft && transfer.Status != StockTransferStatus.Pending)
-            return BadRequest(new { message = "Only Draft or Pending transfers can be shipped." });
+        if (transfer.Status != StockTransferStatus.Approved)
+            return BadRequest(new { message = "Only Approved transfers can be shipped. Please approve it first." });
 
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 

@@ -23,21 +23,23 @@ public static class AppRoles
     public const string Accountant = "Accountant";
     public const string Staff      = "Staff";
     public const string Customer   = "Customer";
+    public const string Storekeeper= "Storekeeper";
     public const string Custom     = "Custom";
 
     // Groups للـ Authorize attributes
     public const string AdminOrManager    = "Admin,Manager";
     public const string AdminOrManagerOrStaff = "Admin,Manager,Staff";
-    public const string AllStaff          = "Admin,Manager,Cashier,Accountant,Staff";
+    public const string AllStaff          = "Admin,Manager,Cashier,Accountant,Staff,Storekeeper";
     public const string PosAccess         = "Admin,Manager,Cashier";
     public const string ReportsAccess     = "Admin,Manager,Accountant";
     public const string OrdersAccess      = "Admin,Manager,Staff,Cashier";
+    public const string InventoryAccess   = "Admin,Manager,Storekeeper";
 
     public static readonly string[] All = {
-        SuperAdmin, Admin, Manager, Cashier, Accountant, Staff, Customer, Custom
+        SuperAdmin, Admin, Manager, Cashier, Accountant, Staff, Customer, Storekeeper, Custom
     };
 
     public static readonly string[] StaffRoles = {
-        SuperAdmin, Admin, Manager, Cashier, Accountant, Staff, Custom
+        SuperAdmin, Admin, Manager, Cashier, Accountant, Staff, Storekeeper, Custom
     };
 }
