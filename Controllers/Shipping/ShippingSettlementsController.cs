@@ -106,7 +106,7 @@ public class ShippingSettlementsController : ControllerBase
 
         // Get Store Settings for Delivery Expense Account
         var storeSettings = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
-        string deliveryExpenseAccount = storeSettings?.DeliveryAccountId;
+        string? deliveryExpenseAccount = storeSettings?.DeliveryAccountId;
 
         if (string.IsNullOrEmpty(deliveryExpenseAccount) || deliveryExpenseAccount == "511")
         {
@@ -376,9 +376,9 @@ public class ShippingSettlementsController : ControllerBase
         {
             try
             {
-                string id = order.BostaDeliveryId;
-                string trk = order.BostaTrackingNumber;
-                string refNum = order.OrderNumber;
+                string? id = order.BostaDeliveryId;
+                string? trk = order.BostaTrackingNumber;
+                string? refNum = order.OrderNumber;
                 string[] possibleEndpoints = {
                     $"/api/v2/deliveries/business/{refNum}",
                     $"/api/v0/deliveries?trackingNumber={trk}",

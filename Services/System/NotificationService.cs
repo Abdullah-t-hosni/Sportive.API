@@ -76,7 +76,7 @@ public class NotificationService : INotificationService
             foreach (var u in users)
             {
                 bool shouldNotify = false;
-                var roles = rolesByUserId.ContainsKey(u.Id) ? rolesByUserId[u.Id] : new List<string?>();
+                var roles = rolesByUserId.ContainsKey(u.Id) ? rolesByUserId[u.Id] : new List<string>();
 
                 if (!string.IsNullOrEmpty(u.NotificationPreferences))
                 {

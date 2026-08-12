@@ -55,7 +55,7 @@ public class ExportController : ControllerBase
             var s = search.ToLower();
             query = query.Where(o => o.OrderNumber.ToLower().Contains(s) || 
                                     (o.Customer != null && o.Customer.FullName.ToLower().Contains(s)) || 
-                                    (o.Customer != null && o.Customer.Phone.Contains(s)));
+                                    (o.Customer != null && o.Customer.Phone != null && o.Customer.Phone.Contains(s)));
         }
 
         var orders = await query.OrderByDescending(o => o.CreatedAt).ToListAsync();
@@ -201,7 +201,7 @@ public class ExportController : ControllerBase
             var s = search.ToLower();
             query = query.Where(o => o.OrderNumber.ToLower().Contains(s) || 
                                     (o.Customer != null && o.Customer.FullName.ToLower().Contains(s)) || 
-                                    (o.Customer != null && o.Customer.Phone.Contains(s)));
+                                    (o.Customer != null && o.Customer.Phone != null && o.Customer.Phone.Contains(s)));
         }
 
         var orders = await query.OrderByDescending(o => o.CreatedAt).ToListAsync();

@@ -201,13 +201,13 @@ public class AuthController : ControllerBase
         _cache.Set($"ResetCode_{dto.Identifier}", code, TimeSpan.FromMinutes(10));
 
         // إرسال عبر الواتساب إذا كان المعرف رقم هاتف أو للمستخدم رقم هاتف
-        if (!string.IsNullOrEmpty(user.PhoneNumber))
+        if (user != null && !string.IsNullOrEmpty(user.PhoneNumber))
         {
             await _whatsappApi.SendOtpAsync(user.PhoneNumber, code);
         }
 
         // 🛡️ SECURITY FIX: Only send via email/WhatsApp, never return in production!
-        if (!string.IsNullOrEmpty(user.Email))
+        if (user != null && !string.IsNullOrEmpty(user.Email))
         {
             var subject = _translator.Get("Auth.ResetEmailSubject");
             var body = $@"

@@ -168,13 +168,17 @@ public class TenantManagementController : ControllerBase
             foreach(var col in columns)
             {
                 try {
+#pragma warning disable EF1002 // Values come from a fixed hardcoded array — no user input
                     await context.Database.ExecuteSqlRawAsync($"ALTER TABLE `StoreSettings` ADD COLUMN `{col}` longtext NULL");
+#pragma warning restore EF1002
                     results.Add($"{col}: ADDED");
                 } 
                 catch (Exception ex) {
                     if (ex.Message.Contains("Duplicate column")) {
                         try {
+#pragma warning disable EF1002
                             await context.Database.ExecuteSqlRawAsync($"ALTER TABLE `StoreSettings` MODIFY COLUMN `{col}` longtext NULL");
+#pragma warning restore EF1002
                             results.Add($"{col}: MODIFIED");
                         } catch (Exception ex2) {
                             results.Add($"{col}: MODIFY FAILED - {ex2.Message}");

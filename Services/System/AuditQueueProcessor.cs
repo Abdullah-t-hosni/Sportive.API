@@ -75,7 +75,7 @@ namespace Sportive.API.Services
                                 var newProductName = await GetProductName(log.NewValues);
                                 if (!string.IsNullOrEmpty(newProductName))
                                 {
-                                    var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(log.NewValues, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                                    var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(log.NewValues ?? "{}", new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                                     if (dict != null) {
                                         dict["productName"] = newProductName;
                                         log.NewValues = System.Text.Json.JsonSerializer.Serialize(dict);
@@ -85,7 +85,7 @@ namespace Sportive.API.Services
                                 var oldProductName = await GetProductName(log.OldValues);
                                 if (!string.IsNullOrEmpty(oldProductName))
                                 {
-                                    var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(log.OldValues, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                                    var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(log.OldValues ?? "{}", new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                                     if (dict != null) {
                                         dict["productName"] = oldProductName;
                                         log.OldValues = System.Text.Json.JsonSerializer.Serialize(dict);

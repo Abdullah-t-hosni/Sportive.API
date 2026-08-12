@@ -605,7 +605,7 @@ public class AiAssistantService : IAiAssistantService
                         .Where(p => p.NameAr.ToLower().Contains(qLower) || 
                                     p.NameEn.ToLower().Contains(qLower) || 
                                     p.SKU.ToLower() == qLower ||
-                                    p.Variants.Any(v => v.Size.ToLower() == qLower || v.Color.ToLower() == qLower))
+                                    p.Variants.Any(v => (v.Size != null && v.Size.ToLower() == qLower) || (v.Color != null && v.Color.ToLower() == qLower)))
                         .Take(15)
                         .Select(p => new {
                             p.Id,

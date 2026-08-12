@@ -227,7 +227,7 @@ namespace Sportive.API.Controllers
 
                         if (closureAccountId == 0)
                         {
-                            var acc = await _db.Accounts.FirstOrDefaultAsync(a => a.NameAr.Contains("تقفيلات اليومية") || a.NameAr.Contains("تسويات نقدية") || a.NameEn.Contains("Daily Closure") || a.NameAr.Contains("الخزينة الرئيسية") || a.NameEn.Contains("Main Safe") || a.Code.StartsWith("110"));
+                            var acc = await _db.Accounts.FirstOrDefaultAsync(a => (a.NameAr != null && (a.NameAr.Contains("تقفيلات اليومية") || a.NameAr.Contains("تسويات نقدية") || a.NameAr.Contains("الخزينة الرئيسية"))) || (a.NameEn != null && (a.NameEn.Contains("Daily Closure") || a.NameEn.Contains("Main Safe"))) || (a.Code != null && a.Code.StartsWith("110")));
                             if (acc != null) closureAccountId = acc.Id;
                         }
 
@@ -242,12 +242,15 @@ namespace Sportive.API.Controllers
                         
                         if (overShortId == null || overShortId == 0)
                         {
-                            var acc = await _db.Accounts.FirstOrDefaultAsync(a => a.NameAr.Contains("عجز") || a.NameAr.Contains("زيادة") || a.NameEn.Contains("Short") || a.NameEn.Contains("Overage"));
+                            var acc = await _db.Accounts.FirstOrDefaultAsync(a => (a.NameAr != null && (a.NameAr.Contains("عجز") || a.NameAr.Contains("زيادة"))) || (a.NameEn != null && (a.NameEn.Contains("Short") || a.NameEn.Contains("Overage"))));
                             if (acc != null) overShortId = acc.Id;
                         }
 
-                        _db.JournalLines.RemoveRange(journalEntry.Lines);
-                        journalEntry.Lines.Clear();
+                        if (journalEntry.Lines != null)
+                        {
+                            _db.JournalLines.RemoveRange(journalEntry.Lines);
+                            journalEntry.Lines.Clear();
+                        }
 
                         var roundedExpected = Math.Round(dto.ExpectedCash * 100) / 100;
                         var roundedActual = Math.Round(dto.ActualCash * 100) / 100;
@@ -320,10 +323,11 @@ namespace Sportive.API.Controllers
 
                         foreach (var l in lines)
                         {
-                            journalEntry.Lines.Add(l);
+                            journalEntry?.Lines?.Add(l);
                         }
 
-                        journalEntry.UpdatedAt = TimeHelper.GetEgyptTime();
+                        if (journalEntry != null)
+                            journalEntry.UpdatedAt = TimeHelper.GetEgyptTime();
                     }
                 }
 

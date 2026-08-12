@@ -137,7 +137,7 @@ public class DiagnosticsController : ControllerBase
         var entries = await _db.JournalEntries
             .Include(e => e.Lines)
             .ThenInclude(l => l.Account)
-            .Where(e => entryRefs.Contains(e.Reference) || e.PurchaseInvoiceId == invoice.Id)
+            .Where(e => (e.Reference != null && entryRefs.Contains(e.Reference)) || e.PurchaseInvoiceId == invoice.Id)
             .ToListAsync();
 
         return Ok(new

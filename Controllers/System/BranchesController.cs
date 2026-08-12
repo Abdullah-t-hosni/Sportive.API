@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Utils;
 using Sportive.API.Services;
-using System.Security.Claims;
+
 
 namespace Sportive.API.Controllers;
 

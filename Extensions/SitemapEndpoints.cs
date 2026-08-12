@@ -41,7 +41,7 @@ namespace Sportive.API.Extensions
             {
                 var baseUrl = config["Store:Url"]?.TrimEnd('/') ?? "https://sportive-sportwear.com";
                 
-                if (!cache.TryGetValue("sitemap_products", out string xml))
+                if (!cache.TryGetValue("sitemap_products", out string? xml) || xml == null)
                 {
                     var products = await db.Products
                         .Where(p => p.Status == Sportive.API.Models.ProductStatus.Active || p.Status == Sportive.API.Models.ProductStatus.OutOfStock)
@@ -78,7 +78,7 @@ namespace Sportive.API.Extensions
             {
                 var baseUrl = config["Store:Url"]?.TrimEnd('/') ?? "https://sportive-sportwear.com";
                 
-                if (!cache.TryGetValue("sitemap_categories", out string xml))
+                if (!cache.TryGetValue("sitemap_categories", out string? xml) || xml == null)
                 {
                     var categories = await db.Categories.Select(c => c.Id).ToListAsync();
 
@@ -108,7 +108,7 @@ namespace Sportive.API.Extensions
             {
                 var baseUrl = config["Store:Url"]?.TrimEnd('/') ?? "https://sportive-sportwear.com";
                 
-                if (!cache.TryGetValue("sitemap_brands", out string xml))
+                if (!cache.TryGetValue("sitemap_brands", out string? xml) || xml == null)
                 {
                     var brands = await db.Brands.Select(b => b.Id).ToListAsync();
 

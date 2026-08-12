@@ -1170,7 +1170,7 @@ public class ReturnExchangeRequestsController : ControllerBase
         {
             message = "تم تأكيد وصول المرتجع للمخزن وتحديث المخزون والقيد المحاسبي بنجاح.",
             refundAmount = totalRefundValue,
-            orderStatus = req.Order.Status.ToString()
+            orderStatus = req.Order?.Status.ToString()
         });
     }
 

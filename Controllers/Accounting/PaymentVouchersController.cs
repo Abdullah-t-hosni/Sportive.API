@@ -7,7 +7,7 @@ using Sportive.API.Models;
 using Sportive.API.Interfaces;
 using Sportive.API.Services;
 using Sportive.API.DTOs;
-using System.Security.Claims;
+
 using Sportive.API.Utils;
 using Sportive.API.Extensions;
 using Hangfire;

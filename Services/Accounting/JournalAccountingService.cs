@@ -124,13 +124,13 @@ public class JournalAccountingService
             .ToDictionaryAsync(a => a.Id);
 
         // Auto-resolve entity IDs from accounts if not explicitly provided
-        var suppliersList = await _db.Suppliers.AsNoTracking().Where(s => s.MainAccountId != null && neededAccountIds.Contains(s.MainAccountId.Value)).Select(s => new { s.Id, AccountId = s.MainAccountId.Value }).ToListAsync();
+        var suppliersList = await _db.Suppliers.AsNoTracking().Where(s => s.MainAccountId != null && neededAccountIds.Contains(s.MainAccountId!.Value)).Select(s => new { s.Id, AccountId = s.MainAccountId!.Value }).ToListAsync();
         var supplierAccountsMap = suppliersList.GroupBy(x => x.AccountId).ToDictionary(g => g.Key, g => g.First().Id);
 
-        var customersList = await _db.Customers.AsNoTracking().Where(c => c.MainAccountId != null && neededAccountIds.Contains(c.MainAccountId.Value)).Select(c => new { c.Id, AccountId = c.MainAccountId.Value }).ToListAsync();
+        var customersList = await _db.Customers.AsNoTracking().Where(c => c.MainAccountId != null && neededAccountIds.Contains(c.MainAccountId!.Value)).Select(c => new { c.Id, AccountId = c.MainAccountId!.Value }).ToListAsync();
         var customerAccountsMap = customersList.GroupBy(x => x.AccountId).ToDictionary(g => g.Key, g => g.First().Id);
 
-        var employeesList = await _db.Employees.AsNoTracking().Where(e => e.AccountId != null && neededAccountIds.Contains(e.AccountId.Value)).Select(e => new { e.Id, AccountId = e.AccountId.Value }).ToListAsync();
+        var employeesList = await _db.Employees.AsNoTracking().Where(e => e.AccountId != null && neededAccountIds.Contains(e.AccountId!.Value)).Select(e => new { e.Id, AccountId = e.AccountId!.Value }).ToListAsync();
         var employeeAccountsMap = employeesList.GroupBy(x => x.AccountId).ToDictionary(g => g.Key, g => g.First().Id);
 
         // ✅ PERF FIX: batch-load order branch IDs in ONE query (avoid N+1 round-trips)
@@ -272,13 +272,13 @@ public class JournalAccountingService
             .ToDictionaryAsync(a => a.Id);
 
         // Auto-resolve entity IDs from accounts if not explicitly provided
-        var suppliersList = await _db.Suppliers.AsNoTracking().Where(s => s.MainAccountId != null && neededAccountIds.Contains(s.MainAccountId.Value)).Select(s => new { s.Id, AccountId = s.MainAccountId.Value }).ToListAsync();
+        var suppliersList = await _db.Suppliers.AsNoTracking().Where(s => s.MainAccountId != null && neededAccountIds.Contains(s.MainAccountId!.Value)).Select(s => new { s.Id, AccountId = s.MainAccountId!.Value }).ToListAsync();
         var supplierAccountsMap = suppliersList.GroupBy(x => x.AccountId).ToDictionary(g => g.Key, g => g.First().Id);
 
-        var customersList = await _db.Customers.AsNoTracking().Where(c => c.MainAccountId != null && neededAccountIds.Contains(c.MainAccountId.Value)).Select(c => new { c.Id, AccountId = c.MainAccountId.Value }).ToListAsync();
+        var customersList = await _db.Customers.AsNoTracking().Where(c => c.MainAccountId != null && neededAccountIds.Contains(c.MainAccountId!.Value)).Select(c => new { c.Id, AccountId = c.MainAccountId!.Value }).ToListAsync();
         var customerAccountsMap = customersList.GroupBy(x => x.AccountId).ToDictionary(g => g.Key, g => g.First().Id);
 
-        var employeesList = await _db.Employees.AsNoTracking().Where(e => e.AccountId != null && neededAccountIds.Contains(e.AccountId.Value)).Select(e => new { e.Id, AccountId = e.AccountId.Value }).ToListAsync();
+        var employeesList = await _db.Employees.AsNoTracking().Where(e => e.AccountId != null && neededAccountIds.Contains(e.AccountId!.Value)).Select(e => new { e.Id, AccountId = e.AccountId!.Value }).ToListAsync();
         var employeeAccountsMap = employeesList.GroupBy(x => x.AccountId).ToDictionary(g => g.Key, g => g.First().Id);
 
         // ✅ PERF FIX: batch-load order branch IDs in ONE query (avoid N+1 round-trips)

@@ -1426,7 +1426,7 @@ public class OperationalReportsController : ControllerBase
             {
                 returnsQ = returnsQ.Where(j => 
                     !(j.Order != null && j.Order.StatusHistory.Any(h => (h.Status == OrderStatus.Returned || h.Status == OrderStatus.PartiallyReturned) && 
-                        (h.Note.Contains("منتج تالف") || h.Note.Contains("صنف خاطئ") || h.Note.Contains("مقاس غير مناسب") || h.Note.Contains("جودة غير مرضية") || h.Note.Contains("تغيير رأي"))))
+                        (h.Note != null && (h.Note.Contains("منتج تالف") || h.Note.Contains("صنف خاطئ") || h.Note.Contains("مقاس غير مناسب") || h.Note.Contains("جودة غير مرضية") || h.Note.Contains("تغيير رأي")))))
                     && !(j.OrderId == null && j.Description != null && 
                         (j.Description.Contains("منتج تالف") || j.Description.Contains("صنف خاطئ") || j.Description.Contains("مقاس غير مناسب") || j.Description.Contains("جودة غير مرضية") || j.Description.Contains("تغيير رأي")))
                 );
@@ -1434,7 +1434,7 @@ public class OperationalReportsController : ControllerBase
             else
             {
                 returnsQ = returnsQ.Where(j => 
-                    (j.Order != null && j.Order.StatusHistory.Any(h => (h.Status == OrderStatus.Returned || h.Status == OrderStatus.PartiallyReturned) && h.Note.Contains(reason))) ||
+                    (j.Order != null && j.Order.StatusHistory.Any(h => (h.Status == OrderStatus.Returned || h.Status == OrderStatus.PartiallyReturned) && h.Note != null && h.Note.Contains(reason))) ||
                     (j.OrderId == null && j.Description != null && j.Description.Contains(reason))
                 );
             }
@@ -1594,7 +1594,7 @@ public class OperationalReportsController : ControllerBase
             ).SumAsync();
         }
 
-        var returnOrderNumbersSummary = await returnsQ.Where(j => j.Order != null).Select(j => j.Order.OrderNumber).ToListAsync();
+        var returnOrderNumbersSummary = await returnsQ.Where(j => j.Order != null).Select(j => j.Order!.OrderNumber).ToListAsync();
         var directReturnRefsSummary = await returnsQ.Where(j => j.Order == null).Select(j => j.Reference ?? j.EntryNumber).ToListAsync();
         var allRefsToMatch = returnOrderNumbersSummary.Concat(directReturnRefsSummary).Distinct().ToList();
 
@@ -1634,7 +1634,7 @@ public class OperationalReportsController : ControllerBase
         // 1. Get active cart items
         var cartItems = await _db.CartItems.AsNoTracking()
             .Include(c => c.Customer)
-            .Include(c => c.Product).ThenInclude(p => p.Images)
+            .Include(c => c.Product!).ThenInclude(p => p.Images)
             .Include(c => c.ProductVariant)
             .Where(c => c.Customer != null && c.Product != null && (c.UpdatedAt ?? c.CreatedAt) >= cutoffDate && (c.UpdatedAt ?? c.CreatedAt) <= activeCutoff)
             .ToListAsync();

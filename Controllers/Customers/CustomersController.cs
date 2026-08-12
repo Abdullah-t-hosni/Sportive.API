@@ -8,7 +8,7 @@ using Sportive.API.Interfaces;
 using Sportive.API.Data;
 using Sportive.API.Utils;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
+
 using ClosedXML.Excel;
 using Sportive.API.Services;
 

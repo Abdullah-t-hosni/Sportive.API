@@ -9,7 +9,7 @@ using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Interfaces;
 using Sportive.API.Utils;
-using System.Security.Claims;
+
 using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers;

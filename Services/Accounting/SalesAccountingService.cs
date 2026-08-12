@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
 using Sportive.API.Models;
@@ -768,7 +768,7 @@ public class SalesAccountingService
         {
             order.Customer = await _db.Customers
                 .AsNoTracking()
-                .FirstOrDefaultAsync(c => c.Id == order.CustomerId);
+                .FirstOrDefaultAsync(c => c.Id == order.CustomerId) ?? new Customer();
         }
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
@@ -802,5 +802,4 @@ public class SalesAccountingService
         _logger.LogInformation("[Accounting] Posted courier return shipping fee for request #{RequestId} order {OrderNum} (Amount: {Amount}, Courier: {Courier}).",
             returnRequestId, order.OrderNumber, shippingFee, order.ShippingCompany.NameAr);
     }
-
 }

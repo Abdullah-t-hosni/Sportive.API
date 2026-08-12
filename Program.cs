@@ -290,8 +290,6 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
-app.UseResponseCompression();
-
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -302,7 +300,7 @@ if (app.Environment.IsDevelopment())
         c.DocumentTitle = "Sportive API";
     });
 }
-app.UseResponseCompression();
+app.UseResponseCompression(); // ✅ single call — was duplicated previously
 app.UseCors("AllowReactApp");
 app.UseSerilogRequestLogging();
 
@@ -354,36 +352,48 @@ app.MapSitemapEndpoints();
 app.MapHub<NotificationHub>("/notifications-hub");
 
 // ── RECURRING JOBS ────────────────────────────────────
-// TEMPORARY SUSPENSION: Disabled to unblock production deployment
-// try
-// {
-//     Log.Information("Registering Hangfire recurring jobs...");
-//     var backgroundJobs = app.Services.GetRequiredService<IRecurringJobManager>();
-//     backgroundJobs.AddOrUpdate<IStatisticsService>(
-//         "UpdateTodayStats", 
-//         service => service.UpdateDailyStatsAsync(TimeHelper.GetEgyptTime()), 
-//         "*/15 * * * *");
-//         
-//     backgroundJobs.AddOrUpdate<IOutboxProcessor>(
-//         "ProcessOutbox", 
-//         processor => processor.ProcessMessagesAsync(), 
-//         "*/5 * * * *"); // ✅ was every 1 min (60/hour) — now every 5 min (12/hour)
-// 
-//     backgroundJobs.AddOrUpdate<IOrderService>(
-//         "SyncOrderAccounting",
-//         service => service.SyncAllOrderAccountingAsync(30),
-//         "0 3 * * *"); // Every day at 3:00 AM
-// 
-//     backgroundJobs.AddOrUpdate<IAccountingService>(
-//         "SyncPurchaseAccounting",
-//         service => service.SyncAllPurchaseAccountingAsync(30),
-//         "15 3 * * *"); // Every day at 3:15 AM
-// 
-//     backgroundJobs.AddOrUpdate<IAuditService>(
-//         "CleanupOldAuditLogs",
-//         service => service.CleanupOldLogsAsync(3),
-//         "30 3 * * *"); // Every day at 3:30 AM
-// 
+// ✅ Re-enabled safe recurring jobs (low DB pressure).
+// Heavy nightly jobs (SyncOrderAccounting, SyncPurchaseAccounting) remain
+// commented out to stay within Hostinger's MySQL 500 connections/hour limit.
+try
+{
+    Log.Information("Registering Hangfire recurring jobs...");
+    var backgroundJobs = app.Services.GetRequiredService<IRecurringJobManager>();
+
+    // ✅ Outbox processor — picks up any stats/notification messages missed by the
+    //    in-process DashboardEventService trigger. Runs every 5 min (12/hour).
+    backgroundJobs.AddOrUpdate<IOutboxProcessor>(
+        "ProcessOutbox",
+        processor => processor.ProcessMessagesAsync(),
+        "*/5 * * * *");
+
+    // ✅ Daily stats refresh — keeps dashboard KPIs current.
+    //    Runs every 15 min (4/hour) which is safe on Hostinger.
+    backgroundJobs.AddOrUpdate<IStatisticsService>(
+        "UpdateTodayStats",
+        service => service.UpdateDailyStatsAsync(TimeHelper.GetEgyptTime()),
+        "*/15 * * * *");
+
+    // ── Nightly jobs (commented out — heavy DB load, re-enable on dedicated server) ──
+    //     backgroundJobs.AddOrUpdate<IOrderService>(
+    //         "SyncOrderAccounting",
+    //         service => service.SyncAllOrderAccountingAsync(30),
+    //         "0 3 * * *"); // Every day at 3:00 AM
+    //
+    //     backgroundJobs.AddOrUpdate<IAccountingService>(
+    //         "SyncPurchaseAccounting",
+    //         service => service.SyncAllPurchaseAccountingAsync(30),
+    //         "15 3 * * *"); // Every day at 3:15 AM
+    //
+    //     backgroundJobs.AddOrUpdate<IAuditService>(
+    //         "CleanupOldAuditLogs",
+    //         service => service.CleanupOldLogsAsync(3),
+    //         "30 3 * * *"); // Every day at 3:30 AM
+}
+catch (Exception ex)
+{
+    Log.Warning(ex, "Could not register Hangfire recurring jobs — app will still start.");
+} 
 if (args.Contains("--migrate-isactive"))
 {
     using (var scope = app.Services.CreateScope())

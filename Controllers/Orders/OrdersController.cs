@@ -9,7 +9,7 @@ using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using Sportive.API.Services;
-using System.Security.Claims;
+
 using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;

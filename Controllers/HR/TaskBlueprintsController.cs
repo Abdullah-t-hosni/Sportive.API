@@ -30,8 +30,8 @@ namespace Sportive.API.Controllers.HR
                 {
                     b.Id,
                     b.Name,
-                    Employee = new { b.Employee.Id, b.Employee.Name },
-                    ResponsibilityType = new { b.ResponsibilityType.Id, b.ResponsibilityType.Name },
+                    Employee = new { b.Employee!.Id, b.Employee.Name },
+                    ResponsibilityType = new { b.ResponsibilityType!.Id, b.ResponsibilityType.Name },
                     b.StartDate,
                     b.EndDate,
                     b.ActiveDaysOfWeek,
