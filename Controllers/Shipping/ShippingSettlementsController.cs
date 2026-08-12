@@ -187,20 +187,57 @@ public class ShippingSettlementsController : ControllerBase
         decimal totalCollected = 0;
         decimal totalShippingCost = 0;
 
+        DateTime collectionDate = request.CollectionDate ?? TimeHelper.GetEgyptTime();
+        DateTime invoiceDate = request.InvoiceDate ?? collectionDate;
+        var currentSysTime = TimeHelper.GetEgyptTime();
+
         foreach (var order in orders)
         {
             var reqOrder = request.Orders?.FirstOrDefault(x => x.OrderId == order.Id);
-            totalCollected += reqOrder?.CollectedAmount ?? order.TotalAmount;
+            decimal collected = reqOrder?.CollectedAmount ?? order.TotalAmount;
+            totalCollected += collected;
             totalShippingCost += reqOrder?.ActualDeliveryCost ?? order.ActualDeliveryCost;
+
+            // 🔥 FIX: If this is an order where Bosta did NOT collect anything ("لم يحصل")
+            // We MUST reverse the premature Debit to Bosta that was created in PostCourierReturnShippingFeeAsync!
+            if (collected == 0)
+            {
+                var returnEntry = await _db.JournalEntries
+                    .Include(e => e.Lines)
+                    .FirstOrDefaultAsync(e => e.OrderId == order.Id && e.Reference != null && e.Reference.Contains("-SHP-RTN-") && !e.Reference.StartsWith("REV-"));
+                    
+                if (returnEntry != null)
+                {
+                    // Verify we haven't already reversed it
+                    bool alreadyReversed = await _db.JournalEntries.AnyAsync(e => e.Reference == $"REV-{returnEntry.Reference}");
+                    if (!alreadyReversed)
+                    {
+                        var reversalLines = returnEntry.Lines.Select(l => (
+                            code: $"ID:{l.AccountId}",
+                            debit: l.Credit,
+                            credit: l.Debit,
+                            desc: $"عكس قيد مصاريف شحن لعدم التحصيل - فاتورة #{order.OrderNumber}"
+                        )).ToList();
+
+                        await _accountingCore.PostEntryAsync(
+                            type: JournalEntryType.Manual,
+                            reference: $"REV-{returnEntry.Reference}",
+                            description: $"عكس قيد شحن مرتجع لعدم التحصيل - فاتورة #{order.OrderNumber}",
+                            date: TimeHelper.GetEgyptBusinessDayDate(collectionDate),
+                            lines: reversalLines,
+                            source: order.Source,
+                            createdAt: currentSysTime,
+                            orderId: order.Id,
+                            branchId: order.BranchId
+                        );
+                    }
+                }
+            }
         }
 
         decimal netAmount = totalCollected - totalShippingCost;
 
-        DateTime collectionDate = request.CollectionDate ?? TimeHelper.GetEgyptTime();
-        DateTime invoiceDate = request.InvoiceDate ?? collectionDate;
-
         var invNumStr = !string.IsNullOrWhiteSpace(request.InvoiceNumber) ? $" - فاتورة: {request.InvoiceNumber}" : "";
-        var currentSysTime = TimeHelper.GetEgyptTime();
 
         // ----------------------------------------------------
         // 1️⃣ القيد الأول: قيد تحصيل الصافي (بتاريخ التحصيل)
