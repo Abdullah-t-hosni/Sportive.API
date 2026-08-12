@@ -59,9 +59,31 @@ public class PermissionService : IPermissionService
                 var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
                 if (user == null) return new List<PermEntry>();
 
+                var strings = new List<string>();
                 if (!string.IsNullOrEmpty(user.PermissionsJson))
                 {
-                    var strings = System.Text.Json.JsonSerializer.Deserialize<List<string>>(user.PermissionsJson) ?? new List<string>();
+                    strings = System.Text.Json.JsonSerializer.Deserialize<List<string>>(user.PermissionsJson) ?? new List<string>();
+                }
+                
+                // --- QUICK FIX: Hardcode Storekeeper Default Permissions if empty ---
+                // We add the necessary modules manually if the user is a Storekeeper but has empty permissions.
+                var isStorekeeper = await _db.UserRoles.AnyAsync(ur => ur.UserId == userId && _db.Roles.Any(r => r.Id == ur.RoleId && r.Name == AppRoles.Storekeeper));
+                if (isStorekeeper && !strings.Contains(ModuleKeys.Inventory))
+                {
+                    strings.AddRange(new[] { 
+                        ModuleKeys.Dashboard, 
+                        ModuleKeys.InventoryGroup, 
+                        ModuleKeys.Inventory,
+                        ModuleKeys.Products,
+                        ModuleKeys.ProductsGroup,
+                        ModuleKeys.Categories,
+                        ModuleKeys.Units
+                    });
+                }
+                // --------------------------------------------------------------------
+
+                if (strings.Any())
+                {
                     var map = new Dictionary<string, PermEntry>(StringComparer.OrdinalIgnoreCase);
 
                     foreach (var s in strings)
