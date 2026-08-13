@@ -2214,6 +2214,9 @@ public class OrderService : IOrderService
                         ProductNameAr = line.ProductNameAr,
                         Quantity = req.Quantity,
                         UnitPrice = line.UnitPrice,
+                        OriginalUnitPrice = line.OriginalUnitPrice,
+                        HasTax = line.HasTax,
+                        VatRateApplied = line.VatRateApplied,
                         TotalPrice = itemTotalReturn, // This part is refunded
                         ItemVatAmount = itemVatReturn,
                         Product = line.Product // For COGS
@@ -2964,6 +2967,9 @@ public class OrderService : IOrderService
                                 ProductNameAr = line.ProductNameAr,
                                 Quantity = req.Quantity,
                                 UnitPrice = line.UnitPrice,
+                                OriginalUnitPrice = line.OriginalUnitPrice,
+                                HasTax = line.HasTax,
+                                VatRateApplied = line.VatRateApplied,
                                 TotalPrice = itemTotalReturn,
                                 ItemVatAmount = itemVatReturn,
                                 Product = line.Product
