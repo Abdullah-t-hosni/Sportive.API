@@ -502,6 +502,15 @@ public class StoreInfo
     [JsonPropertyName("facebookAdAccountId")]
     public string? FacebookAdAccountId { get; set; }
 
+    [JsonPropertyName("tikTokPixelId")]
+    public string? TikTokPixelId { get; set; }
+
+    [JsonPropertyName("snapchatPixelId")]
+    public string? SnapchatPixelId { get; set; }
+
+    [JsonPropertyName("headerCustomScript")]
+    public string? HeaderCustomScript { get; set; }
+
     [JsonPropertyName("realAdCampaignsJson")]
     public string? RealAdCampaignsJson { get; set; }
 

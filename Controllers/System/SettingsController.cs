@@ -57,7 +57,10 @@ public class SettingsController : ControllerBase
             "ALTER TABLE `Orders` ADD `ShippingType` longtext NULL;",
             "ALTER TABLE `StoreSettings` ADD `BostaAllowPackageOpen` tinyint(1) NOT NULL DEFAULT 0;",
             "ALTER TABLE `StoreSettings` ADD `FacebookAdAccountId` longtext NULL;",
-            "ALTER TABLE `StoreSettings` ADD `RealAdCampaignsJson` longtext NULL;"
+            "ALTER TABLE `StoreSettings` ADD `RealAdCampaignsJson` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `TikTokPixelId` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `SnapchatPixelId` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `HeaderCustomScript` longtext NULL;"
         };
 
         foreach (var sql in sqlStatements)
@@ -316,6 +319,9 @@ public class SettingsController : ControllerBase
             info.FacebookCapiToken        = dto.FacebookCapiToken;
             info.FacebookTestEventCode    = dto.FacebookTestEventCode;
             info.FacebookAdAccountId      = dto.FacebookAdAccountId;
+            info.TikTokPixelId            = dto.TikTokPixelId;
+            info.SnapchatPixelId          = dto.SnapchatPixelId;
+            info.HeaderCustomScript       = dto.HeaderCustomScript;
             info.RealAdCampaignsJson      = dto.RealAdCampaignsJson;
             info.SiteMetaDescriptionAr    = dto.SiteMetaDescriptionAr;
             info.SiteMetaDescriptionEn    = dto.SiteMetaDescriptionEn;
