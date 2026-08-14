@@ -2593,7 +2593,7 @@ public class OrderService : IOrderService
         }
     }
 
-    private async Task PostPartialReturnWithRetryAsync(int orderId, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? reference = null)
+    private async Task PostPartialReturnWithRetryAsync(int orderId, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? reference = null, OrderStatus? oldStatus = null, bool isManufacturingDefect = false)
     {
         const int maxAttempts = 3;
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
@@ -2607,7 +2607,16 @@ public class OrderService : IOrderService
                     .Include(o => o.Customer)
                     .Include(o => o.Payments)
                     .FirstAsync(o => o.Id == orderId);
-                await accounting.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId, refundToStoreCredit, overrideReference: reference);
+
+                bool chargeReturnShipping = false;
+                decimal returnShippingFee = 0;
+                if (oldStatus != OrderStatus.Delivered)
+                {
+                    returnShippingFee = order.DeliveryFee;
+                    chargeReturnShipping = !isManufacturingDefect;
+                }
+
+                await accounting.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId, refundToStoreCredit, overrideReference: reference, chargeReturnShipping: chargeReturnShipping, returnShippingFee: returnShippingFee);
                 return;
             }
             catch (Exception ex) when (attempt < maxAttempts)

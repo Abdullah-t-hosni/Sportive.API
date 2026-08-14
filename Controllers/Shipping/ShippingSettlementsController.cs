@@ -197,7 +197,7 @@ public class ShippingSettlementsController : ControllerBase
             decimal collected = reqOrder?.CollectedAmount ?? order.TotalAmount;
             totalCollected += collected;
             totalShippingCost += reqOrder?.ActualDeliveryCost ?? order.ActualDeliveryCost;
-
+        }
 
         decimal netAmount = totalCollected - totalShippingCost;
 

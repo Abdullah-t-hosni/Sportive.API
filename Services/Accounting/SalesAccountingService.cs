@@ -809,8 +809,8 @@ public class SalesAccountingService
             ? $"ID:{store.DeliveryRevenueAccountId}"
             : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.DeliveryRevenue, mapDict)}";
             
-        string deliveryExpAcct = !string.IsNullOrEmpty(store?.DeliveryExpenseAccountId)
-            ? $"ID:{store.DeliveryExpenseAccountId}"
+        string deliveryExpAcct = !string.IsNullOrEmpty(store?.DeliveryAccountId)
+            ? $"ID:{store.DeliveryAccountId}"
             : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.DeliveryExpense, mapDict)}";
 
         string courierAcct = $"ID:{order.ShippingCompany.AccountId}";
@@ -881,8 +881,8 @@ public class SalesAccountingService
             : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
             
         var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
-        string deliveryExpAcct = !string.IsNullOrEmpty(store?.DeliveryExpenseAccountId)
-            ? $"ID:{store.DeliveryExpenseAccountId}"
+        string deliveryExpAcct = !string.IsNullOrEmpty(store?.DeliveryAccountId)
+            ? $"ID:{store.DeliveryAccountId}"
             : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.DeliveryExpense, mapDict)}";
 
         string courierAcct = $"ID:{order.ShippingCompany.AccountId}";
