@@ -75,16 +75,11 @@ public class PaymentAccountingService
                 string code = await _core.GetMappedCashAccountAsync(p.Method, order.Source, mapDict);
                 
                 // --- Shipping Settlements Integration ---
+                // If it's a cash payment handled by a shipping company, we skip it here!
+                // It will be handled entirely by PostSuccessfulDeliveryAccountingAsync
                 if (p.Method == PaymentMethod.Cash && order.ShippingCompanyId.HasValue && !order.IsSettledWithCourier)
                 {
-                    if (order.ShippingCompany == null)
-                    {
-                        order.ShippingCompany = await _db.ShippingCompanies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.ShippingCompanyId);
-                    }
-                    if (order.ShippingCompany?.AccountId != null)
-                    {
-                        code = $"ID:{order.ShippingCompany.AccountId}";
-                    }
+                    continue;
                 }
                 // ----------------------------------------
                 
@@ -108,14 +103,7 @@ public class PaymentAccountingService
                     // --- Shipping Settlements Integration ---
                     if (m == PaymentMethod.Cash && order.ShippingCompanyId.HasValue && !order.IsSettledWithCourier)
                     {
-                        if (order.ShippingCompany == null)
-                        {
-                            order.ShippingCompany = await _db.ShippingCompanies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.ShippingCompanyId);
-                        }
-                        if (order.ShippingCompany?.AccountId != null)
-                        {
-                            code = $"ID:{order.ShippingCompany.AccountId}";
-                        }
+                        continue;
                     }
                     // ----------------------------------------
                     
@@ -132,14 +120,8 @@ public class PaymentAccountingService
                 // --- Shipping Settlements Integration ---
                 if (order.PaymentMethod == PaymentMethod.Cash && order.ShippingCompanyId.HasValue && !order.IsSettledWithCourier)
                 {
-                    if (order.ShippingCompany == null)
-                    {
-                        order.ShippingCompany = await _db.ShippingCompanies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == order.ShippingCompanyId);
-                    }
-                    if (order.ShippingCompany?.AccountId != null)
-                    {
-                        cashCode = $"ID:{order.ShippingCompany.AccountId}";
-                    }
+                    // If it's a full COD order with a shipping company, we skip creating the entry here entirely.
+                    return;
                 }
                 // ----------------------------------------
                 

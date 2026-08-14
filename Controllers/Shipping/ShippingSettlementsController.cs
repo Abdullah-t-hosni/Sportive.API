@@ -198,73 +198,6 @@ public class ShippingSettlementsController : ControllerBase
             totalCollected += collected;
             totalShippingCost += reqOrder?.ActualDeliveryCost ?? order.ActualDeliveryCost;
 
-            // 🔥 FIX: If this is an order where Bosta did NOT collect anything ("لم يحصل")
-            // We MUST reverse the premature Debit to Bosta that was created in PostCourierReturnShippingFeeAsync!
-            if (collected == 0)
-            {
-                var returnEntry = await _db.JournalEntries
-                    .Include(e => e.Lines)
-                    .FirstOrDefaultAsync(e => e.OrderId == order.Id && e.Reference != null && e.Reference.Contains("-SHP-RTN-") && !e.Reference.StartsWith("REV-"));
-                    
-                if (returnEntry != null)
-                {
-                    // Verify we haven't already reversed it
-                    bool alreadyReversed = await _db.JournalEntries.AnyAsync(e => e.Reference == $"REV-{returnEntry.Reference}");
-                    if (!alreadyReversed)
-                    {
-                        var reversalLines = returnEntry.Lines.Select(l => (
-                            code: $"ID:{l.AccountId}",
-                            debit: l.Credit,
-                            credit: l.Debit,
-                            desc: $"عكس قيد مصاريف شحن لعدم التحصيل - فاتورة #{order.OrderNumber}"
-                        )).ToList();
-
-                        var mapDict = await _accountingCore.GetSafeSystemMappingsAsync();
-                        var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
-                        string deliveryRevAcct = !string.IsNullOrEmpty(store?.DeliveryRevenueAccountId)
-                            ? $"ID:{store.DeliveryRevenueAccountId}"
-                            : $"ID:{await _accountingCore.GetRequiredMappedAccountAsync(Sportive.API.Utils.MappingKeys.DeliveryRevenue, mapDict)}";
-                        
-                        string receivablesAcct;
-                        if (order.Customer?.MainAccountId != null)
-                            receivablesAcct = $"ID:{order.Customer.MainAccountId}";
-                        else
-                            receivablesAcct = $"ID:{await _accountingCore.GetRequiredMappedAccountAsync(Sportive.API.Utils.MappingKeys.Customer, mapDict)}";
-
-                        if (order.DeliveryFee > 0)
-                        {
-                            // 1. Debit Delivery Revenue
-                            reversalLines.Add((
-                                code: deliveryRevAcct,
-                                debit: order.DeliveryFee,
-                                credit: 0,
-                                desc: $"عكس إيراد شحن لعدم التحصيل - فاتورة #{order.OrderNumber}"
-                            ));
-
-                            // 2. Credit Customer (Clear Debt)
-                            reversalLines.Add((
-                                code: receivablesAcct,
-                                debit: 0,
-                                credit: order.DeliveryFee,
-                                desc: $"إسقاط مديونية شحن لعدم التحصيل - فاتورة #{order.OrderNumber}"
-                            ));
-                        }
-
-                        await _accountingCore.PostEntryAsync(
-                            type: JournalEntryType.Manual,
-                            reference: $"REV-{returnEntry.Reference}",
-                            description: $"عكس قيد شحن مرتجع لعدم التحصيل - فاتورة #{order.OrderNumber}",
-                            date: TimeHelper.GetEgyptBusinessDayDate(collectionDate),
-                            lines: reversalLines,
-                            source: order.Source,
-                            createdAt: currentSysTime,
-                            orderId: order.Id,
-                            branchId: order.BranchId
-                        );
-                    }
-                }
-            }
-        }
 
         decimal netAmount = totalCollected - totalShippingCost;
 
@@ -317,46 +250,7 @@ public class ShippingSettlementsController : ControllerBase
             );
         }
 
-        // ----------------------------------------------------
-        // 2️⃣ القيد الثاني: قيود مصروف خدمة التوصيل (مقسمة حسب تاريخ إنشاء الطلبات)
-        // ----------------------------------------------------
-        if (totalShippingCost > 0)
-        {
-            // Group orders by their creation date (Egypt Time)
-            var ordersGroupedByDate = orders
-                .GroupBy(o => Sportive.API.Utils.TimeHelper.GetEgyptBusinessDayDate(o.CreatedAt).Date)
-                .OrderBy(g => g.Key)
-                .ToList();
 
-            int groupIndex = 1;
-            foreach (var group in ordersGroupedByDate)
-            {
-                decimal groupShippingCost = group.Sum(o => o.ActualDeliveryCost);
-                if (groupShippingCost <= 0) continue;
-
-                var expenseRef = $"SETTLE-EXP-{company.Id}-{timestamp}-{groupIndex}";
-                var expenseLines = new List<(string code, decimal debit, decimal credit, string desc)>
-                {
-                    // مدين: حساب مصروف خدمة التوصيل
-                    (deliveryExpenseAccount, groupShippingCost, 0, $"مصاريف شحن وتوصيل لشركة {company.NameAr} ({group.Count()} طلبات){invNumStr}"),
-                    // دائن: حساب شركة الشحن
-                    ($"ID:{company.AccountId}", 0, groupShippingCost, $"إثبات استحقاق مصروف الشحن لشركة {company.NameAr}{invNumStr}")
-                };
-
-                await _accountingCore.PostEntryAsync(
-                    type: JournalEntryType.PaymentVoucher,
-                    reference: expenseRef,
-                    description: $"إثبات مصروف خدمة توصيل شركة الشحن: {company.NameAr}{invNumStr}",
-                    date: group.Key, // تسجيل القيد بتاريخ إنشاء الطلبات لضبط قائمة الدخل
-                    lines: expenseLines,
-                    source: OrderSource.Website,
-                    createdAt: currentSysTime,
-                    branchId: group.FirstOrDefault()?.BranchId
-                );
-
-                groupIndex++;
-            }
-        }
 
         await _db.SaveChangesAsync();
 

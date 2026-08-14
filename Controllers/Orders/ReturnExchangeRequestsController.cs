@@ -1146,15 +1146,7 @@ public class ReturnExchangeRequestsController : ControllerBase
                     );
                 }
 
-                // ─────────────────────────────────────────────────────────────
-                // قيد مصاريف الشحن: مدين شركة الشحن / دائن العميل
-                // يتعمل فقط لو الأوردر مربوط بشركة شحن ولها حساب محاسبي
-                // السبب: مصاريف الشحن تظل على العميل حتى لو المنتجات اترجعت
-                // ─────────────────────────────────────────────────────────────
-                if (req.Order.ShippingCompanyId.HasValue && req.Order.DeliveryFee > 0)
-                {
-                    await _accounting.PostCourierReturnShippingFeeAsync(req.Order, req.Id);
-                }
+
 
 
             } // end if (_accounting != null)

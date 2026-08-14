@@ -334,7 +334,7 @@ public class SalesAccountingService
         );
     }
 
-    public async Task PostSalesReturnAsync(Order order, int? refundAccountId = null, bool refundShipping = false)
+    public async Task PostSalesReturnAsync(Order order, int? refundAccountId = null, bool refundShipping = false, bool chargeReturnShipping = false, decimal returnShippingFee = 0)
     {
         if (order.Items == null || !order.Items.Any())
         {
@@ -409,6 +409,12 @@ public class SalesAccountingService
             lines.Add((deliveryRevAcct, deliveryFeeToRefund, 0, $"إلغاء إيراد الشحن - طلب #{order.OrderNumber}"));
         }
 
+        if (chargeReturnShipping && returnShippingFee > 0)
+        {
+            lines.Add((receivablesAcct, returnShippingFee, 0, $"رسوم شحن إرجاع - طلب #{order.OrderNumber}"));
+            lines.Add((deliveryRevAcct, 0, returnShippingFee, $"إيراد شحن إرجاع - طلب #{order.OrderNumber}"));
+        }
+
         decimal totalRefundValue = totalNetReturn + totalVatReturn + deliveryFeeToRefund;
 
         int receivablesAcctId = int.Parse(receivablesAcct.Replace("ID:", ""));
@@ -457,7 +463,7 @@ public class SalesAccountingService
         );
     }
 
-    public async Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? overrideReference = null, DateTime? overrideDate = null)
+    public async Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? overrideReference = null, DateTime? overrideDate = null, bool chargeReturnShipping = false, decimal returnShippingFee = 0)
     {
         if (order.Customer == null && order.CustomerId > 0)
         {
@@ -469,9 +475,13 @@ public class SalesAccountingService
         var entryDate = overrideDate ?? TimeHelper.GetEgyptTime();
 
         var mapDict = await _core.GetSafeSystemMappingsAsync();
+        var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
 
         string salesReturnAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesReturn,    mapDict)}";
         string salesDiscAcct   = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesDiscount,  mapDict)}";
+        string deliveryRevAcct = !string.IsNullOrEmpty(store?.DeliveryRevenueAccountId)
+            ? $"ID:{store.DeliveryRevenueAccountId}"
+            : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.DeliveryRevenue, mapDict)}";
         
         string receivablesAcct;
         if (order.Customer?.MainAccountId != null)
@@ -517,7 +527,6 @@ public class SalesAccountingService
 
         if (totalVatReturn > 0)
         {
-            var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
             string vatAcct = !string.IsNullOrEmpty(store?.StoreVatAccountId)
                 ? $"ID:{store.StoreVatAccountId}"
                 : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatOutput, mapDict)}";
@@ -525,6 +534,12 @@ public class SalesAccountingService
         }
 
         decimal totalRefundValue = totalNetReturn + totalVatReturn; // Excludes shipping for partial returns
+
+        if (chargeReturnShipping && returnShippingFee > 0)
+        {
+            lines.Add((receivablesAcct, returnShippingFee, 0, $"رسوم شحن إرجاع جزئي - طلب #{order.OrderNumber}"));
+            lines.Add((deliveryRevAcct, 0, returnShippingFee, $"إيراد شحن إرجاع جزئي - طلب #{order.OrderNumber}"));
+        }
 
 
         // ✅ ROBUST MULTI-RETURN DEBT LOGIC:
@@ -756,17 +771,14 @@ public class SalesAccountingService
     }
 
     /// <summary>
-    /// قيد مصاريف الشحن عند تأكيد وصول المرتجع للمخزن:
-    /// - مدين: حساب شركة الشحن (الشركة تستحق مصاريف الشحن حتى في حالة الرجوع)
-    /// - دائن: حساب العميل صاحب الفاتورة (الشحن يظل على العميل ما استلمش)
-    /// - المبلغ: رسوم الشحن بالفاتورة (DeliveryFee)
+    /// قيد المرتجع (لشركة الشحن) - يطابق الصورة 8
     /// </summary>
-    public async Task PostCourierReturnShippingFeeAsync(Order order, int returnRequestId)
+    public async Task PostCourierReturnShippingFeeAsync(Order order, int? returnRequestId = null)
     {
         if (!order.ShippingCompanyId.HasValue || order.DeliveryFee <= 0)
             return;
 
-        var reference = $"{order.OrderNumber}-SHP-RTN-{returnRequestId}";
+        var reference = returnRequestId.HasValue ? $"{order.OrderNumber}-SHP-RTN-{returnRequestId}" : $"{order.OrderNumber}-SHP-RTN";
         if (await _core.EntryExistsAsync(JournalEntryType.Manual, reference))
             return;
 
@@ -778,10 +790,7 @@ public class SalesAccountingService
         }
 
         if (order.ShippingCompany?.AccountId == null)
-        {
-            _logger.LogWarning("[Accounting] Courier return shipping fee skipped for order {OrderNum}: ShippingCompany or AccountId missing.", order.OrderNumber);
             return;
-        }
 
         if (order.Customer == null && order.CustomerId > 0)
         {
@@ -794,22 +803,39 @@ public class SalesAccountingService
         string customerAcct = order.Customer?.MainAccountId != null
             ? $"ID:{order.Customer.MainAccountId}"
             : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
+            
+        var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        string deliveryRevAcct = !string.IsNullOrEmpty(store?.DeliveryRevenueAccountId)
+            ? $"ID:{store.DeliveryRevenueAccountId}"
+            : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.DeliveryRevenue, mapDict)}";
+            
+        string deliveryExpAcct = !string.IsNullOrEmpty(store?.DeliveryExpenseAccountId)
+            ? $"ID:{store.DeliveryExpenseAccountId}"
+            : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.DeliveryExpense, mapDict)}";
+
         string courierAcct = $"ID:{order.ShippingCompany.AccountId}";
+        
         decimal shippingFee = order.DeliveryFee;
+        // In return cases, we might charge the courier's actual cost, but usually the system uses ActualDeliveryCost, fallback to DeliveryFee
+        decimal courierCost = order.ActualDeliveryCost > 0 ? order.ActualDeliveryCost : order.DeliveryFee; 
+        
         var postingDate = TimeHelper.GetEgyptTime();
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>
         {
-            // مدين: حساب شركة الشحن — يستحقون مصاريف الشحن حتى لو رجع المنتج
-            (courierAcct,  shippingFee, 0,           $"مصاريف شحن مرتجع — {order.ShippingCompany.NameAr} | طلب #{returnRequestId} | فاتورة #{order.OrderNumber}"),
-            // دائن: حساب العميل — مصاريف الشحن تظل على العميل اللي ما استلمش
-            (customerAcct, 0,           shippingFee, $"خصم مصاريف شحن مرتجع من حساب العميل — طلب #{returnRequestId} | فاتورة #{order.OrderNumber}")
+            // 1. مدين: إيراد خدمة توصيل / دائن: عميل (بإجمالي قيمة الشحن لإلغاء الإيراد الوهمي وإسقاطه من العميل)
+            (deliveryRevAcct, shippingFee, 0,           $"إلغاء إيراد الشحن لعدم التسليم - فاتورة #{order.OrderNumber}"),
+            (customerAcct,    0,           shippingFee, $"إسقاط مديونية الشحن لعدم التسليم - فاتورة #{order.OrderNumber}"),
+            
+            // 2. مدين: مصروف شحن وتوصيل / دائن: شركة الشحن (قيمة تكلفة الشحن المستحقة للشركة نظير المحاولة)
+            (deliveryExpAcct, courierCost, 0,           $"مصاريف شحن مرتجع - {order.ShippingCompany.NameAr} | فاتورة #{order.OrderNumber}"),
+            (courierAcct,     0,           courierCost, $"استحقاق مصاريف شحن لشركة - {order.ShippingCompany.NameAr} | فاتورة #{order.OrderNumber}")
         };
 
         await _core.PostEntryAsync(
             type:        JournalEntryType.Manual,
             reference:   reference,
-            description: $"قيد مصاريف شحن مرتجع — {order.ShippingCompany.NameAr} | طلب #{returnRequestId} | فاتورة #{order.OrderNumber}",
+            description: $"قيد شحن مرتجع — {order.ShippingCompany.NameAr} | {(returnRequestId.HasValue ? $"طلب #{returnRequestId} | " : "")}فاتورة #{order.OrderNumber}",
             date:        TimeHelper.GetEgyptBusinessDayDate(postingDate),
             lines:       lines,
             orderId:     order.Id,
@@ -817,8 +843,82 @@ public class SalesAccountingService
             source:      order.Source,
             createdAt:   postingDate
         );
+    }
 
-        _logger.LogInformation("[Accounting] Posted courier return shipping fee for request #{RequestId} order {OrderNum} (Amount: {Amount}, Courier: {Courier}).",
-            returnRequestId, order.OrderNumber, shippingFee, order.ShippingCompany.NameAr);
+    /// <summary>
+    /// قيد توصيل الطلب بنجاح (لشركة الشحن) - يطابق الصورة 7
+    /// </summary>
+    public async Task PostSuccessfulDeliveryAccountingAsync(Order order)
+    {
+        if (!order.ShippingCompanyId.HasValue)
+            return;
+
+        var reference = $"{order.OrderNumber}-DELIVERED";
+        if (await _core.EntryExistsAsync(JournalEntryType.ReceiptVoucher, reference) || 
+            await _core.EntryExistsAsync(JournalEntryType.Manual, reference))
+            return;
+
+        if (order.ShippingCompany == null && order.ShippingCompanyId.HasValue)
+        {
+            order.ShippingCompany = await _db.ShippingCompanies
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == order.ShippingCompanyId.Value);
+        }
+
+        if (order.ShippingCompany?.AccountId == null)
+            return;
+
+        if (order.Customer == null && order.CustomerId > 0)
+        {
+            order.Customer = await _db.Customers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == order.CustomerId) ?? new Customer();
+        }
+
+        var mapDict = await _core.GetSafeSystemMappingsAsync();
+        string customerAcct = order.Customer?.MainAccountId != null
+            ? $"ID:{order.Customer.MainAccountId}"
+            : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
+            
+        var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        string deliveryExpAcct = !string.IsNullOrEmpty(store?.DeliveryExpenseAccountId)
+            ? $"ID:{store.DeliveryExpenseAccountId}"
+            : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.DeliveryExpense, mapDict)}";
+
+        string courierAcct = $"ID:{order.ShippingCompany.AccountId}";
+        
+        decimal courierCost = order.ActualDeliveryCost > 0 ? order.ActualDeliveryCost : order.DeliveryFee; 
+        var postingDate = TimeHelper.GetEgyptTime();
+
+        var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
+
+        // 1. إثبات تحصيل شركة الشحن من العميل (فقط إذا كان الدفع نقدي عند الاستلام ولم يُسدد مسبقاً)
+        if (order.PaymentMethod == PaymentMethod.Cash)
+        {
+            lines.Add((courierAcct,  order.TotalAmount, 0,                 $"تحصيل نقدية طلب #{order.OrderNumber} - {order.ShippingCompany.NameAr}"));
+            lines.Add((customerAcct, 0,                 order.TotalAmount, $"إقفال مديونية طلب #{order.OrderNumber}"));
+        }
+
+        // 2. إثبات استحقاق مصروف الشحن للشركة
+        if (courierCost > 0)
+        {
+            lines.Add((deliveryExpAcct, courierCost, 0,           $"مصاريف شحن وتوصيل - {order.ShippingCompany.NameAr} | فاتورة #{order.OrderNumber}"));
+            lines.Add((courierAcct,     0,           courierCost, $"استحقاق مصاريف شحن لشركة - {order.ShippingCompany.NameAr} | فاتورة #{order.OrderNumber}"));
+        }
+        
+        if (!lines.Any())
+            return;
+
+        await _core.PostEntryAsync(
+            type:        order.PaymentMethod == PaymentMethod.Cash ? JournalEntryType.ReceiptVoucher : JournalEntryType.Manual,
+            reference:   reference,
+            description: $"قيد توصيل الطلب بنجاح — {order.ShippingCompany.NameAr} | فاتورة #{order.OrderNumber}",
+            date:        TimeHelper.GetEgyptBusinessDayDate(postingDate),
+            lines:       lines,
+            orderId:     order.Id,
+            customerId:  order.CustomerId,
+            source:      order.Source,
+            createdAt:   postingDate
+        );
     }
 }

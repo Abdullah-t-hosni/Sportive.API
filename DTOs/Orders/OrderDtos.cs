@@ -274,7 +274,7 @@ public record OrderStatusHistoryDto(
     string? ChangedByName = null
 );
 
-public record UpdateOrderStatusDto(OrderStatus Status, string? Note, int? PerformedByEmployeeId = null, int? RefundAccountId = null);
+public record UpdateOrderStatusDto(OrderStatus Status, string? Note, int? PerformedByEmployeeId = null, int? RefundAccountId = null, bool IsManufacturingDefect = false);
 public record UpdatePaymentStatusDto(PaymentStatus PaymentStatus, string? Note, int? PerformedByEmployeeId = null);
 public record UpdateOrderAdminNoteDto(string Note);
 public record CancelOrderDto(string? Reason = null);
@@ -286,7 +286,8 @@ public record PartialReturnDto(
     string? Note,
     int? RefundAccountId = null,
     int? PerformedByEmployeeId = null,
-    bool RefundToStoreCredit = false
+    bool RefundToStoreCredit = false,
+    bool IsManufacturingDefect = false
 );
 
 public record ReturnItemRequest(

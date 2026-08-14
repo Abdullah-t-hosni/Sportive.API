@@ -2138,9 +2138,19 @@ public class OrderService : IOrderService
             _ = PostOrderPaymentWithRetryAsync(orderId);
         }
 
+        if (dto.Status == OrderStatus.Delivered)
+        {
+            _ = PostSuccessfulDeliveryAccountingWithRetryAsync(orderId);
+        }
+
         if (dto.Status == OrderStatus.Returned)
         {
-            _ = PostSalesReturnWithRetryAsync(orderId, dto.RefundAccountId);
+            _ = PostSalesReturnWithRetryAsync(orderId, dto.RefundAccountId, oldStatus, dto.IsManufacturingDefect);
+            
+            if (oldStatus != OrderStatus.Delivered)
+            {
+                _ = PostCourierReturnShippingFeeWithRetryAsync(orderId);
+            }
         }
         else if (dto.Status == OrderStatus.Cancelled)
         {
@@ -2157,6 +2167,7 @@ public class OrderService : IOrderService
         string? reference = null;
 
         var strategy = _db.Database.CreateExecutionStrategy();
+        OrderStatus? oldStatus = null;
         var result = await strategy.ExecuteAsync(async () =>
         {
             await using var tx = await _db.Database.BeginTransactionAsync();
@@ -2165,6 +2176,8 @@ public class OrderService : IOrderService
                 var order = await _db.Orders.Include(o => o.Items).ThenInclude(i => i.Product).FirstOrDefaultAsync(o => o.Id == orderId);
                 if (order == null) throw new KeyNotFoundException("Order not found.");
                 if (order.Status == OrderStatus.Cancelled) throw new InvalidOperationException("Cannot return items from a cancelled order.");
+                
+                oldStatus = order.Status;
 
                 var ticksSuffix = TimeHelper.GetEgyptTime().Ticks.ToString().Substring(10);
                 reference = $"{order.OrderNumber}-PRT-{ticksSuffix}";
@@ -2278,7 +2291,7 @@ public class OrderService : IOrderService
         });
 
         // 6. Post Accounting
-        _ = PostPartialReturnWithRetryAsync(orderId, returnedOrderItems, refundAmount, dto.RefundAccountId, dto.RefundToStoreCredit, reference);
+        _ = PostPartialReturnWithRetryAsync(orderId, returnedOrderItems, refundAmount, dto.RefundAccountId, dto.RefundToStoreCredit, reference, oldStatus, dto.IsManufacturingDefect);
 
         return result;
     }
@@ -2496,7 +2509,7 @@ public class OrderService : IOrderService
         }
     }
 
-    private async Task PostSalesReturnWithRetryAsync(int orderId, int? refundAccountId = null)
+    private async Task PostSalesReturnWithRetryAsync(int orderId, int? refundAccountId = null, OrderStatus? oldStatus = null, bool isManufacturingDefect = false)
     {
         const int maxAttempts = 3;
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
@@ -2512,7 +2525,23 @@ public class OrderService : IOrderService
                     .Include(o => o.Items).ThenInclude(i => i.Product)
                     .Include(o => o.DeliveryAddress)
                     .FirstAsync(o => o.Id == orderId);
-                await accounting.PostSalesReturnAsync(order, refundAccountId);
+                
+                bool refundShipping = false;
+                bool chargeReturnShipping = false;
+                decimal returnShippingFee = order.DeliveryFee;
+
+                if (oldStatus.HasValue && oldStatus.Value < OrderStatus.OutForDelivery)
+                {
+                    refundShipping = true;
+                    chargeReturnShipping = false;
+                }
+                else if (oldStatus.HasValue && oldStatus.Value >= OrderStatus.OutForDelivery)
+                {
+                    refundShipping = false;
+                    chargeReturnShipping = !isManufacturingDefect;
+                }
+
+                await accounting.PostSalesReturnAsync(order, refundAccountId, refundShipping, chargeReturnShipping, returnShippingFee);
                 return;
             }
             catch (Exception ex) when (attempt < maxAttempts)
@@ -3103,6 +3132,64 @@ public class OrderService : IOrderService
         item.ReviewRequested = true;
         await _db.SaveChangesAsync();
         return true;
+    }
+
+    private async Task PostSuccessfulDeliveryAccountingWithRetryAsync(int orderId)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var order = await db.Orders
+                    .Include(o => o.Customer)
+                    .Include(o => o.ShippingCompany)
+                    .FirstAsync(o => o.Id == orderId);
+                await accounting.PostSuccessfulDeliveryAccountingAsync(order);
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogWarning(ex, "[Accounting] PostSuccessfulDeliveryAccounting attempt {Attempt}/{Max} failed for order {OrderId}. Retrying...", attempt, maxAttempts, orderId);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Accounting] PostSuccessfulDeliveryAccounting permanently failed for order {OrderId}.", orderId);
+            }
+        }
+    }
+
+    private async Task PostCourierReturnShippingFeeWithRetryAsync(int orderId)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var order = await db.Orders
+                    .Include(o => o.Customer)
+                    .Include(o => o.ShippingCompany)
+                    .FirstAsync(o => o.Id == orderId);
+                await accounting.PostCourierReturnShippingFeeAsync(order, null);
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogWarning(ex, "[Accounting] PostCourierReturnShippingFee attempt {Attempt}/{Max} failed for order {OrderId}. Retrying...", attempt, maxAttempts, orderId);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Accounting] PostCourierReturnShippingFee permanently failed for order {OrderId}.", orderId);
+            }
+        }
     }
 }
 
