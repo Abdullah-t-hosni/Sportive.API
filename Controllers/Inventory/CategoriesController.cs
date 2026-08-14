@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Services;
+using System.Security.Claims;
 
 namespace Sportive.API.Controllers;
 
@@ -44,7 +45,7 @@ public class CategoriesController : ControllerBase
         try
         {
             var cat = await _categories.CreateAsync(dto);
-            try { await _audit.LogAsync("CreateCategory", "Category", cat.Id.ToString(), $"Created category {cat.NameAr}", System.Security.Claims.ClaimTypes.NameIdentifier, System.Security.Claims.ClaimTypes.Name); } catch { }
+            try { await _audit.LogAsync("CreateCategory", "Category", cat.Id.ToString(), $"تم إنشاء قسم جديد: {cat.NameAr}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
             return CreatedAtAction(nameof(GetById), new { id = cat.Id }, cat);
         }
         catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
@@ -57,7 +58,7 @@ public class CategoriesController : ControllerBase
         try 
         { 
             var cat = await _categories.UpdateAsync(id, dto);
-            try { await _audit.LogAsync("UpdateCategory", "Category", id.ToString(), $"Updated category", System.Security.Claims.ClaimTypes.NameIdentifier, System.Security.Claims.ClaimTypes.Name); } catch { }
+            try { await _audit.LogAsync("UpdateCategory", "Category", id.ToString(), $"تم تعديل بيانات القسم: {cat.NameAr}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
             return Ok(cat); 
         }
         catch (KeyNotFoundException) { return NotFound(); }
@@ -71,7 +72,7 @@ public class CategoriesController : ControllerBase
         try 
         { 
             await _categories.DeleteAsync(id); 
-            try { await _audit.LogAsync("DeleteCategory", "Category", id.ToString(), $"Deleted category", System.Security.Claims.ClaimTypes.NameIdentifier, System.Security.Claims.ClaimTypes.Name); } catch { }
+            try { await _audit.LogAsync("DeleteCategory", "Category", id.ToString(), $"تم حذف القسم رقم {id}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
             return NoContent(); 
         }
         catch (KeyNotFoundException) { return NotFound(); }
@@ -84,7 +85,7 @@ public class CategoriesController : ControllerBase
         try
         {
             await _categories.UpdateSortOrderAsync(updates);
-            try { await _audit.LogAsync("ReorderCategories", "Category", "Batch", "Reordered categories", System.Security.Claims.ClaimTypes.NameIdentifier, System.Security.Claims.ClaimTypes.Name); } catch { }
+            try { await _audit.LogAsync("ReorderCategories", "Category", "Batch", "تم إعادة ترتيب الأقسام", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
             return NoContent();
         }
         catch (Exception ex)

@@ -82,14 +82,105 @@ public class AuditLogsController : ControllerBase
             .Take(pageSize)
             .ToListAsync();
 
+        var userIds = items.Select(x => x.UserId).Where(u => !string.IsNullOrEmpty(u)).Distinct().ToList();
+        var usersMap = await _db.Users
+            .Where(u => userIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => !string.IsNullOrEmpty(u.FullName) ? u.FullName : u.UserName ?? "مدير النظام");
+
+        var formattedItems = items.Select(x => {
+            string? resolvedUser = x.UserName;
+            if (string.IsNullOrEmpty(resolvedUser) || resolvedUser.Contains("http://") || resolvedUser.Contains("schemas.xmlsoap") || resolvedUser == x.UserId)
+            {
+                if (!string.IsNullOrEmpty(x.UserId) && usersMap.TryGetValue(x.UserId, out var name))
+                    resolvedUser = name;
+                else
+                    resolvedUser = "مدير النظام";
+            }
+
+            return new {
+                x.Id,
+                Action = FormatActionNameAr(x.Action),
+                ActionRaw = x.Action,
+                EntityType = FormatEntityTypeAr(x.EntityType),
+                EntityTypeRaw = x.EntityType,
+                x.EntityId,
+                x.Notes,
+                UserId = x.UserId,
+                UserName = resolvedUser,
+                x.IpAddress,
+                x.OldValues,
+                x.NewValues,
+                x.CreatedAt
+            };
+        });
+
         return Ok(new
         {
             Total = total,
             Page = page,
             PageSize = pageSize,
-            Items = items
+            Items = formattedItems
         });
     }
+
+    private static string FormatActionNameAr(string action) => action switch
+    {
+        "ReorderCategories" => "إعادة ترتيب الأقسام",
+        "CreateCategory" => "إضافة قسم جديد",
+        "UpdateCategory" => "تعديل بيانات قسم",
+        "DeleteCategory" => "حذف قسم",
+        "CreateBrand" => "إضافة ماركة جديدة",
+        "UpdateBrand" => "تعديل ماركة",
+        "DeleteBrand" => "حذف ماركة",
+        "CreateOrder" => "إنشاء طلب أونلاين",
+        "CreatePosOrder" => "إنشاء طلب كاشير",
+        "UpdateOrder" => "تعديل بيانات طلب",
+        "DeleteOrder" => "حذف طلب",
+        "UpdatePaymentStatus" => "تحديث حالة السداد",
+        "UpdateAdminNote" => "تعديل ملاحظة الإدارة",
+        "PartialReturn" => "إرجاع جزئي للطلب",
+        "CreateCustomer" => "إضافة عميل جديد",
+        "UpdateCustomer" => "تعديل بيانات عميل",
+        "DeleteCustomer" => "حذف عميل",
+        "ToggleCustomer" => "تغيير حالة عميل",
+        "CreateBranch" => "إضافة فرع جديد",
+        "UpdateBranch" => "تعديل بيانات فرع",
+        "DeleteBranch" => "حذف فرع",
+        "CreateWarehouse" => "إضافة مخزن جديد",
+        "UpdateWarehouse" => "تعديل بيانات مخزن",
+        "DeleteWarehouse" => "حذف مخزن",
+        "Login" => "تسجيل دخول",
+        "Logout" => "تسجيل خروج",
+        "UpdateSettings" => "تعديل إعدادات النظام",
+        "ImportProducts" => "استيراد منتجات",
+        "ImportInventory" => "استيراد كميات المخزون",
+        "CreatePOSClosure" => "إغلاق وردية كاشير",
+        "UpdatePOSClosure" => "تعديل وردية كاشير",
+        "DeletePOSClosure" => "حذف وردية كاشير",
+        "CreateInventoryAudit" => "بدء جرد مخزني",
+        "PostInventoryAudit" => "اعتماد جرد مخزني",
+        "BostaWebhook" => "تحديث من شركة بوسطة",
+        _ => action
+    };
+
+    private static string FormatEntityTypeAr(string entityType) => entityType switch
+    {
+        "Category" => "قسم",
+        "Brand" => "ماركة",
+        "Customer" => "عميل",
+        "Order" => "طلب",
+        "User" => "مستخدم",
+        "Branch" => "فرع",
+        "Warehouse" => "مخزن",
+        "Product" => "منتج",
+        "ProductVariant" => "متغير منتج",
+        "PurchaseInvoice" => "فاتورة شراء",
+        "InventoryAudit" => "جرد مخزني",
+        "StoreInfo" => "إعدادات",
+        "System" => "النظام",
+        "POSShiftClosure" => "وردية كاشير",
+        _ => entityType
+    };
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetLogById(int id)

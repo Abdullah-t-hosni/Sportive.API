@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Services;
+using System.Security.Claims;
 
 namespace Sportive.API.Controllers;
 
@@ -44,7 +45,7 @@ public class BrandController : ControllerBase
         try
         {
             var brand = await _brands.CreateAsync(dto);
-            try { await _audit.LogAsync("CreateBrand", "Brand", brand.Id.ToString(), $"Created brand {brand.NameAr}", System.Security.Claims.ClaimTypes.NameIdentifier, System.Security.Claims.ClaimTypes.Name); } catch { }
+            try { await _audit.LogAsync("CreateBrand", "Brand", brand.Id.ToString(), $"تم إنشاء ماركة جديدة: {brand.NameAr}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
             return CreatedAtAction(nameof(GetById), new { id = brand.Id }, brand);
         }
         catch (ArgumentException ex) 
@@ -60,7 +61,7 @@ public class BrandController : ControllerBase
         try 
         { 
             var updated = await _brands.UpdateAsync(id, dto);
-            try { await _audit.LogAsync("UpdateBrand", "Brand", id.ToString(), $"Updated brand {dto.NameAr}", System.Security.Claims.ClaimTypes.NameIdentifier, System.Security.Claims.ClaimTypes.Name); } catch { }
+            try { await _audit.LogAsync("UpdateBrand", "Brand", id.ToString(), $"تم تعديل الماركة: {dto.NameAr}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
             return Ok(updated); 
         }
         catch (KeyNotFoundException) 
@@ -80,7 +81,7 @@ public class BrandController : ControllerBase
         try 
         { 
             await _brands.DeleteAsync(id); 
-            try { await _audit.LogAsync("DeleteBrand", "Brand", id.ToString(), $"Deleted brand", System.Security.Claims.ClaimTypes.NameIdentifier, System.Security.Claims.ClaimTypes.Name); } catch { }
+            try { await _audit.LogAsync("DeleteBrand", "Brand", id.ToString(), $"تم حذف الماركة رقم {id}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
             return NoContent(); 
         }
         catch (KeyNotFoundException) 
