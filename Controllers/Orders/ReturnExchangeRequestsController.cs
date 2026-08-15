@@ -1012,8 +1012,12 @@ public class ReturnExchangeRequestsController : ControllerBase
         var req = await _db.ReturnExchangeRequests
             .Include(r => r.Order)
                 .ThenInclude(o => o.Items)
+                    .ThenInclude(i => i.Product)
+            .Include(r => r.Order)
+                .ThenInclude(o => o.Customer)
             .Include(r => r.Items)
                 .ThenInclude(i => i.OrderItem)
+                    .ThenInclude(oi => oi.Product)
             .FirstOrDefaultAsync(r => r.Id == requestId);
 
         if (req == null) return NotFound("الطلب غير موجود.");
@@ -1129,9 +1133,24 @@ public class ReturnExchangeRequestsController : ControllerBase
                     }
                 }
 
+                // تحديد ما إذا كانت البضاعة لا تزال لدى شركة الشحن (لم تُسلَّم للعميل)
+                // → isReturnedFromCourier = true إذا كان المصدر ليس POS وكانت حالة الطلب >= خارج للتوصيل
+                bool isReturnedFromCourier = req.Order.Source != OrderSource.POS &&
+                    req.Order.Status >= OrderStatus.OutForDelivery;
+
+                // رسوم شحن الإرجاع تُحمَّل على العميل إذا:
+                // 1. كانت البضاعة وصلت للعميل (Delivered) أو خرجت للتوصيل
+                // 2. المشكلة ليست عيب تصنيع أو صنف خطأ
+                bool isManufacturingDefect = req.Reason?.Contains("عيب تصنيع") == true ||
+                    req.Reason?.Contains("صنف خطأ") == true ||
+                    req.Reason?.Contains("Manufacturing") == true ||
+                    req.Reason?.Contains("Wrong Item") == true;
+                bool chargeReturnShipping = isReturnedFromCourier && !isManufacturingDefect;
+                decimal returnShippingFee = chargeReturnShipping ? req.Order.DeliveryFee : 0;
+
                 if (isFullReturn)
                 {
-                    await _accounting.PostSalesReturnAsync(req.Order, dto.RefundAccountId, req.RefundShipping);
+                    await _accounting.PostSalesReturnAsync(req.Order, dto.RefundAccountId, req.RefundShipping, chargeReturnShipping, returnShippingFee, isReturnedFromCourier);
                 }
                 else if (returnedOrderItemsForAccounting.Any())
                 {
