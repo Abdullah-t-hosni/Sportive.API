@@ -216,45 +216,162 @@ namespace Sportive.API.Services
                     _logger.LogWarning(ex, "Failed to fetch session metrics, using fallback");
                 }
 
-                // 5. Devices Data
-                var devicesRequest = new RunReportRequest
+                // 5. Devices & Operating Systems Data
+                var osRequest = new RunReportRequest
                 {
                     Property = $"properties/{_propertyId}",
                     DateRanges = { new DateRange { StartDate = start, EndDate = end } },
-                    Dimensions = { new Dimension { Name = "deviceCategory" } },
-                    Metrics = { new Metric { Name = "activeUsers" } }
+                    Dimensions = { new Dimension { Name = "operatingSystem" } },
+                    Metrics = { new Metric { Name = "activeUsers" } },
+                    OrderBys = { new OrderBy { Metric = new OrderBy.Types.MetricOrderBy { MetricName = "activeUsers" }, Desc = true } }
                 };
-                
+
+                var osList = new List<object>();
                 string mobilePercent = "0%";
                 string desktopPercent = "0%";
                 try 
                 {
-                    var devicesResponse = await client.RunReportAsync(devicesRequest);
-                    long totalDevices = 0;
+                    var osResponse = await client.RunReportAsync(osRequest);
+                    long totalOsUsers = 0;
                     long mobileUsers = 0;
                     long desktopUsers = 0;
-                    
-                    foreach(var row in devicesResponse.Rows)
+                    var osMap = new Dictionary<string, long>();
+
+                    foreach(var row in osResponse.Rows)
                     {
+                        var osName = row.DimensionValues[0].Value;
                         long.TryParse(row.MetricValues[0].Value, out long u);
-                        totalDevices += u;
-                        var cat = row.DimensionValues[0].Value.ToLower();
-                        if (cat == "mobile" || cat == "tablet") mobileUsers += u;
+                        osMap[osName] = u;
+                        totalOsUsers += u;
+
+                        var cat = osName.ToLower();
+                        if (cat.Contains("android") || cat.Contains("ios")) mobileUsers += u;
                         else desktopUsers += u;
                     }
                     
-                    if (totalDevices > 0)
+                    if (totalOsUsers > 0)
                     {
-                        mobilePercent = $"{Math.Round((double)mobileUsers / totalDevices * 100)}%";
-                        desktopPercent = $"{Math.Round((double)desktopUsers / totalDevices * 100)}%";
+                        mobilePercent = $"{Math.Round((double)mobileUsers / totalOsUsers * 100)}%";
+                        desktopPercent = $"{Math.Round((double)desktopUsers / totalOsUsers * 100)}%";
+
+                        foreach (var kvp in osMap)
+                        {
+                            var pct = Math.Round((double)kvp.Value / totalOsUsers * 100);
+                            osList.Add(new { name = kvp.Key, percent = $"{pct}%" });
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to fetch device metrics");
+                    _logger.LogWarning(ex, "Failed to fetch OS metrics");
                 }
 
-                // 6. Traffic Sources Data (sessionSource)
+                // 6. Browsers Data
+                var browserRequest = new RunReportRequest
+                {
+                    Property = $"properties/{_propertyId}",
+                    DateRanges = { new DateRange { StartDate = start, EndDate = end } },
+                    Dimensions = { new Dimension { Name = "browser" } },
+                    Metrics = { new Metric { Name = "activeUsers" } },
+                    OrderBys = { new OrderBy { Metric = new OrderBy.Types.MetricOrderBy { MetricName = "activeUsers" }, Desc = true } }
+                };
+
+                var browserList = new List<object>();
+                try
+                {
+                    var browserResponse = await client.RunReportAsync(browserRequest);
+                    long totalBrowserUsers = 0;
+                    var browserMap = new Dictionary<string, long>();
+                    foreach (var row in browserResponse.Rows)
+                    {
+                        var bName = row.DimensionValues[0].Value;
+                        long.TryParse(row.MetricValues[0].Value, out long u);
+                        browserMap[bName] = u;
+                        totalBrowserUsers += u;
+                    }
+                    if (totalBrowserUsers > 0)
+                    {
+                        foreach (var kvp in browserMap)
+                        {
+                            var pct = Math.Round((double)kvp.Value / totalBrowserUsers * 100);
+                            browserList.Add(new { name = kvp.Key, percent = $"{pct}%" });
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to fetch browser metrics");
+                }
+
+                // 7. New vs Returning Visitors
+                var userTypeRequest = new RunReportRequest
+                {
+                    Property = $"properties/{_propertyId}",
+                    DateRanges = { new DateRange { StartDate = start, EndDate = end } },
+                    Dimensions = { new Dimension { Name = "newVsReturning" } },
+                    Metrics = { new Metric { Name = "activeUsers" } }
+                };
+
+                string newPercent = "70%";
+                string returningPercent = "30%";
+                try
+                {
+                    var userTypeResponse = await client.RunReportAsync(userTypeRequest);
+                    long newUsers = 0;
+                    long returningUsers = 0;
+                    long totalTypeUsers = 0;
+                    foreach (var row in userTypeResponse.Rows)
+                    {
+                        var type = row.DimensionValues[0].Value.ToLower();
+                        long.TryParse(row.MetricValues[0].Value, out long u);
+                        totalTypeUsers += u;
+                        if (type.Contains("new")) newUsers += u;
+                        else returningUsers += u;
+                    }
+                    if (totalTypeUsers > 0)
+                    {
+                        double nPct = Math.Round((double)newUsers / totalTypeUsers * 100, 1);
+                        double rPct = Math.Round(100.0 - nPct, 1);
+                        newPercent = $"{nPct}%";
+                        returningPercent = $"{rPct}%";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to fetch user loyalty metrics");
+                }
+
+                // 8. Internal Site Search Terms
+                var searchRequest = new RunReportRequest
+                {
+                    Property = $"properties/{_propertyId}",
+                    DateRanges = { new DateRange { StartDate = start, EndDate = end } },
+                    Dimensions = { new Dimension { Name = "searchTerm" } },
+                    Metrics = { new Metric { Name = "eventCount" } },
+                    OrderBys = { new OrderBy { Metric = new OrderBy.Types.MetricOrderBy { MetricName = "eventCount" }, Desc = true } },
+                    Limit = 5
+                };
+
+                var searchTermsList = new List<object>();
+                try
+                {
+                    var searchResponse = await client.RunReportAsync(searchRequest);
+                    foreach (var row in searchResponse.Rows)
+                    {
+                        var term = row.DimensionValues[0].Value;
+                        if (!string.IsNullOrWhiteSpace(term) && term != "(not set)")
+                        {
+                            long.TryParse(row.MetricValues[0].Value, out long count);
+                            searchTermsList.Add(new { term = term, count = count });
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to fetch search terms");
+                }
+
+                // 9. Traffic Sources Data (sessionSource)
                 var sourcesRequest = new RunReportRequest
                 {
                     Property = $"properties/{_propertyId}",
@@ -310,6 +427,10 @@ namespace Sportive.API.Services
                     topPages = topPages,
                     topProducts = topProducts,
                     trafficSources = trafficSources.Count > 0 ? trafficSources.ToArray() : GetMockSources(),
+                    operatingSystems = osList,
+                    browsers = browserList,
+                    userLoyalty = new { newPercent = newPercent, returningPercent = returningPercent },
+                    searchTerms = searchTermsList,
                     sessionDuration = avgDurationStr, 
                     bounceRate = bounceRateStr 
                 };
