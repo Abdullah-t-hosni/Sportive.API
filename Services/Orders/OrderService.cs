@@ -2029,6 +2029,29 @@ public class OrderService : IOrderService
                 }
             }
 
+            if (oldStatus == OrderStatus.Cancelled)
+            {
+                var reversalEntries = await _db.JournalEntries
+                    .Include(e => e.Lines)
+                    .Where(e => e.Type == JournalEntryType.SalesInvoice && e.ReversalOfId != null && e.Description.Contains("إلغاء الطلب رقم " + order.OrderNumber))
+                    .ToListAsync();
+                    
+                if (reversalEntries.Any())
+                {
+                    var originalEntryIds = reversalEntries.Select(e => e.ReversalOfId).ToList();
+                    _db.JournalLines.RemoveRange(reversalEntries.SelectMany(e => e.Lines));
+                    _db.JournalEntries.RemoveRange(reversalEntries);
+                    
+                    var originalEntries = await _db.JournalEntries.Where(e => originalEntryIds.Contains(e.Id)).ToListAsync();
+                    foreach (var oe in originalEntries)
+                    {
+                        oe.Status = JournalEntryStatus.Posted;
+                    }
+                    
+                    _logger.LogInformation("[Accounting] Voided {Count} SalesInvoice Reversal entries and restored original entries for order {Ref} on status revert.", reversalEntries.Count, order.OrderNumber);
+                }
+            }
+
             // 2️⃣ Reverse the inventory ReturnIn/Cancellation movements (re-deduct stock)
             if (oldStatus == OrderStatus.Returned || oldStatus == OrderStatus.Cancelled)
             {
