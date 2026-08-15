@@ -96,6 +96,7 @@ public class ShippingSettlementsController : ControllerBase
             return BadRequest("شركة الشحن غير موجودة أو غير مربوطة بحساب في الدليل المحاسبي.");
 
         var orders = await _db.Orders
+            .Include(o => o.Customer)
             .Where(o => orderIds.Contains(o.Id) && 
                         o.ShippingCompanyId == request.ShippingCompanyId &&
                         o.IsSettledWithCourier == false)
@@ -203,8 +204,124 @@ public class ShippingSettlementsController : ControllerBase
 
         var invNumStr = !string.IsNullOrWhiteSpace(request.InvoiceNumber) ? $" - فاتورة: {request.InvoiceNumber}" : "";
 
+        var fullMapDict = await _accountingCore.GetSafeSystemMappingsAsync();
+        var defaultCustomerAcctId = await _accountingCore.GetRequiredMappedAccountAsync(Utils.MappingKeys.Customer, fullMapDict);
+        string deliveryRevenueAccount = storeSettings?.DeliveryRevenueAccountId != null
+            ? $"ID:{storeSettings.DeliveryRevenueAccountId}"
+            : $"ID:{await _accountingCore.GetRequiredMappedAccountAsync(Utils.MappingKeys.DeliveryRevenue, fullMapDict)}";
+
         // ----------------------------------------------------
-        // 1️⃣ القيد الأول: قيد تحصيل الصافي (بتاريخ التحصيل)
+        // 1️⃣ قيد المصروف (بتاريخ الفاتورة)
+        // ----------------------------------------------------
+        if (totalShippingCost > 0)
+        {
+            var expenseRef = $"SETTLE-EXP-{company.Id}-{timestamp}";
+            var expenseLines = new List<(string code, decimal debit, decimal credit, string desc)>
+            {
+                (deliveryExpenseAccount, totalShippingCost, 0, $"مصاريف شحن وتوصيل - {company.NameAr}{invNumStr}"),
+                ($"ID:{company.AccountId}", 0, totalShippingCost, $"استحقاق مصاريف شحن لشركة - {company.NameAr}{invNumStr}")
+            };
+
+            await _accountingCore.PostEntryAsync(
+                type: JournalEntryType.Manual,
+                reference: expenseRef,
+                description: $"قيد مصروف تسوية شحن: {company.NameAr}{invNumStr}",
+                date: TimeHelper.GetEgyptBusinessDayDate(invoiceDate),
+                lines: expenseLines,
+                source: OrderSource.Website,
+                createdAt: currentSysTime,
+                branchId: orders.FirstOrDefault()?.BranchId
+            );
+        }
+
+        // ----------------------------------------------------
+        // 2️⃣ قيد التسوية ونقل المديونية للطلبات المحصلة (بتاريخ التسوية)
+        // ----------------------------------------------------
+        if (totalCollected > 0)
+        {
+            var settlementRef = $"SETTLE-CUST-{company.Id}-{timestamp}";
+            var settlementLines = new List<(string code, decimal debit, decimal credit, string desc)>();
+            
+            // إجمالي المبلغ مدين لشركة الشحن
+            settlementLines.Add(($"ID:{company.AccountId}", totalCollected, 0, $"تحصيل مديونية طلبات مجمعة - {company.NameAr}{invNumStr}"));
+
+            // التفقيط الدائن للعملاء
+            foreach (var order in orders)
+            {
+                var reqOrder = request.Orders?.FirstOrDefault(x => x.OrderId == order.Id);
+                decimal collected = reqOrder?.CollectedAmount ?? order.TotalAmount;
+                if (collected > 0)
+                {
+                    string customerAcct = order.Customer?.MainAccountId != null 
+                        ? $"ID:{order.Customer.MainAccountId}" 
+                        : $"ID:{defaultCustomerAcctId}";
+                    
+                    settlementLines.Add((customerAcct, 0, collected, $"إقفال مديونية طلب #{order.OrderNumber}"));
+                }
+            }
+
+            if (settlementLines.Count > 1)
+            {
+                await _accountingCore.PostEntryAsync(
+                    type: JournalEntryType.Manual,
+                    reference: settlementRef,
+                    description: $"قيد تسوية وتحصيل من العملاء لشركة الشحن: {company.NameAr}{invNumStr}",
+                    date: TimeHelper.GetEgyptBusinessDayDate(collectionDate),
+                    lines: settlementLines,
+                    source: OrderSource.Website,
+                    createdAt: currentSysTime,
+                    branchId: orders.FirstOrDefault()?.BranchId
+                );
+            }
+        }
+
+        // ----------------------------------------------------
+        // قيد تسوية للطلبات التي لم تُحصل (مرتجع من المندوب) (بتاريخ التسوية)
+        // ----------------------------------------------------
+        var uncollectedOrders = orders.Where(o => 
+        {
+            var r = request.Orders?.FirstOrDefault(x => x.OrderId == o.Id);
+            decimal col = r?.CollectedAmount ?? o.TotalAmount;
+            return col == 0 && o.DeliveryFee > 0;
+        }).ToList();
+
+        if (uncollectedOrders.Any())
+        {
+            var uncollectedRef = $"SETTLE-UNCOLLECTED-{company.Id}-{timestamp}";
+            var uncollectedLines = new List<(string code, decimal debit, decimal credit, string desc)>();
+            
+            decimal totalDeliveryFee = uncollectedOrders.Sum(o => o.DeliveryFee);
+
+            // مدين لإيراد التوصيل بإجمالي الإيراد المرتجع
+            uncollectedLines.Add((deliveryRevenueAccount, totalDeliveryFee, 0, $"عكس إيراد توصيل لطلبات لم تُحصل - {company.NameAr}{invNumStr}"));
+
+            // التفقيط الدائن للعملاء
+            foreach (var order in uncollectedOrders)
+            {
+                string customerAcct = order.Customer?.MainAccountId != null 
+                    ? $"ID:{order.Customer.MainAccountId}" 
+                    : $"ID:{defaultCustomerAcctId}";
+                
+                uncollectedLines.Add((customerAcct, 0, order.DeliveryFee, $"إلغاء مديونية شحن لعدم الاستلام طلب #{order.OrderNumber}"));
+            }
+
+            if (uncollectedLines.Count > 1)
+            {
+                await _accountingCore.PostEntryAsync(
+                    type: JournalEntryType.Manual,
+                    reference: uncollectedRef,
+                    description: $"قيد إلغاء إيرادات توصيل لطلبات لم تُحصل: {company.NameAr}{invNumStr}",
+                    date: TimeHelper.GetEgyptBusinessDayDate(collectionDate),
+                    lines: uncollectedLines,
+                    source: OrderSource.Website,
+                    createdAt: currentSysTime,
+                    branchId: uncollectedOrders.FirstOrDefault()?.BranchId
+                );
+            }
+        }
+
+        // ----------------------------------------------------
+        // 3️⃣ قيد تحصيل الصافي (بتاريخ التحصيل)
         // ----------------------------------------------------
         if (netAmount > 0)
         {

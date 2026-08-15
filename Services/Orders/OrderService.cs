@@ -2549,23 +2549,24 @@ public class OrderService : IOrderService
                     .Include(o => o.DeliveryAddress)
                     .FirstAsync(o => o.Id == orderId);
                 
-                bool refundShipping = false;
-                bool chargeReturnShipping = false;
-                decimal returnShippingFee = order.DeliveryFee;
+                bool isReturnedFromCourier = order.Source != OrderSource.POS && oldStatus.HasValue && oldStatus.Value >= OrderStatus.OutForDelivery;
 
+                // ── المنطق الجديد (بعد مراجعة المحاسب) ──
+                // قبل الشحن: نرجع إيراد الشحن للعميل (refundShipping = true)
+                // بعد الشحن + عيب تصنيع: نرجع إيراد الشحن للعميل (refundShipping = true)
+                // بعد الشحن + ليس عيب تصنيع: لا شيء إضافي (refundShipping = false)
+                // chargeReturnShipping = false دائماً
+                bool refundShipping = false;
                 if (oldStatus.HasValue && oldStatus.Value < OrderStatus.OutForDelivery)
                 {
-                    refundShipping = true;
-                    chargeReturnShipping = false;
+                    refundShipping = true; // لم يُشحن بعد: نرجع إيراد الشحن
                 }
-                else if (oldStatus.HasValue && oldStatus.Value >= OrderStatus.OutForDelivery)
+                else if (isReturnedFromCourier && isManufacturingDefect)
                 {
-                    refundShipping = false;
-                    chargeReturnShipping = !isManufacturingDefect;
+                    refundShipping = true; // عيب تصنيع/صنف خطأ: نرجع إيراد الشحن للعميل
                 }
 
-                bool isReturnedFromCourier = order.Source != OrderSource.POS && oldStatus.HasValue && oldStatus.Value >= OrderStatus.OutForDelivery;
-                await accounting.PostSalesReturnAsync(order, refundAccountId, refundShipping, chargeReturnShipping, returnShippingFee, isReturnedFromCourier);
+                await accounting.PostSalesReturnAsync(order, refundAccountId, refundShipping, false, 0m, isReturnedFromCourier);
                 return;
             }
             catch (Exception ex) when (attempt < maxAttempts)

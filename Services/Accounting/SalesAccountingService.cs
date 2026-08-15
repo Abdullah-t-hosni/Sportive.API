@@ -873,80 +873,17 @@ public class SalesAccountingService
     }
 
     /// <summary>
-    /// Ù‚ÙŠØ¯ ØªÙˆØµÙŠÙ„ Ø§Ù„Ø·Ù„Ø¨ Ø¨Ù†Ø¬Ø§Ø­ (Ù„Ø´Ø±ÙƒØ© Ø§Ù„Ø´Ø­Ù†) - ÙŠØ·Ø§Ø¨Ù‚ Ø§Ù„ØµÙˆØ±Ø© 7
+
+    /// تم إيقاف هذا القيد ليتم نقله إلى شاشة تسويات الشحن بناء على طلب المحاسب
+
     /// </summary>
-    public async Task PostSuccessfulDeliveryAccountingAsync(Order order)
+
+    public Task PostSuccessfulDeliveryAccountingAsync(Order order)
+
     {
-        if (!order.ShippingCompanyId.HasValue)
-            return;
 
-        var reference = $"{order.OrderNumber}-DELIVERED";
-        if (await _core.EntryExistsAsync(JournalEntryType.ReceiptVoucher, reference) || 
-            await _core.EntryExistsAsync(JournalEntryType.Manual, reference))
-            return;
+        return Task.CompletedTask;
 
-        if (order.ShippingCompany == null && order.ShippingCompanyId.HasValue)
-        {
-            order.ShippingCompany = await _db.ShippingCompanies
-                .AsNoTracking()
-                .FirstOrDefaultAsync(c => c.Id == order.ShippingCompanyId.Value);
-        }
-
-        if (order.ShippingCompany?.AccountId == null)
-            return;
-
-        if (order.Customer == null && order.CustomerId > 0)
-        {
-            order.Customer = await _db.Customers
-                .AsNoTracking()
-                .FirstOrDefaultAsync(c => c.Id == order.CustomerId) ?? new Customer();
-        }
-
-        var mapDict = await _core.GetSafeSystemMappingsAsync();
-        string customerAcct = order.Customer?.MainAccountId != null
-            ? $"ID:{order.Customer.MainAccountId}"
-            : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
-            
-        var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
-        string deliveryExpAcct = !string.IsNullOrEmpty(store?.DeliveryAccountId)
-            ? $"ID:{store.DeliveryAccountId}"
-            : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.DeliveryExpense, mapDict)}";
-
-        string courierAcct = $"ID:{order.ShippingCompany.AccountId}";
-        
-        decimal courierCost = order.ActualDeliveryCost > 0 ? order.ActualDeliveryCost : order.DeliveryFee; 
-        var postingDate = TimeHelper.GetEgyptTime();
-
-        var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
-
-        // 1. Ø¥Ø«Ø¨Ø§Øª ØªØ­ØµÙŠÙ„ Ø´Ø±ÙƒØ© Ø§Ù„Ø´Ø­Ù† Ù…Ù† Ø§Ù„Ø¹Ù…ÙŠÙ„ (ÙÙ‚Ø· Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ø¯ÙØ¹ Ù†Ù‚Ø¯ÙŠ Ø¹Ù†Ø¯ Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù… ÙˆÙ„Ù… ÙŠÙØ³Ø¯Ø¯ Ù…Ø³Ø¨Ù‚Ø§Ù‹)
-        if (order.PaymentMethod == PaymentMethod.Cash)
-        {
-            lines.Add((courierAcct,  order.TotalAmount, 0,                 $"ØªØ­ØµÙŠÙ„ Ù†Ù‚Ø¯ÙŠØ© Ø·Ù„Ø¨ #{order.OrderNumber} - {order.ShippingCompany.NameAr}"));
-            lines.Add((customerAcct, 0,                 order.TotalAmount, $"Ø¥Ù‚ÙØ§Ù„ Ù…Ø¯ÙŠÙˆÙ†ÙŠØ© Ø·Ù„Ø¨ #{order.OrderNumber}"));
-        }
-
-        // 2. Ø¥Ø«Ø¨Ø§Øª Ø§Ø³ØªØ­Ù‚Ø§Ù‚ Ù…ØµØ±ÙˆÙ Ø§Ù„Ø´Ø­Ù† Ù„Ù„Ø´Ø±ÙƒØ©
-        if (courierCost > 0)
-        {
-            lines.Add((deliveryExpAcct, courierCost, 0,           $"Ù…ØµØ§Ø±ÙŠÙ Ø´Ø­Ù† ÙˆØªÙˆØµÙŠÙ„ - {order.ShippingCompany.NameAr} | ÙØ§ØªÙˆØ±Ø© #{order.OrderNumber}"));
-            lines.Add((courierAcct,     0,           courierCost, $"Ø§Ø³ØªØ­Ù‚Ø§Ù‚ Ù…ØµØ§Ø±ÙŠÙ Ø´Ø­Ù† Ù„Ø´Ø±ÙƒØ© - {order.ShippingCompany.NameAr} | ÙØ§ØªÙˆØ±Ø© #{order.OrderNumber}"));
-        }
-        
-        if (!lines.Any())
-            return;
-
-        await _core.PostEntryAsync(
-            type:        order.PaymentMethod == PaymentMethod.Cash ? JournalEntryType.ReceiptVoucher : JournalEntryType.Manual,
-            reference:   reference,
-            description: $"Ù‚ÙŠØ¯ ØªÙˆØµÙŠÙ„ Ø§Ù„Ø·Ù„Ø¨ Ø¨Ù†Ø¬Ø§Ø­ â€” {order.ShippingCompany.NameAr} | ÙØ§ØªÙˆØ±Ø© #{order.OrderNumber}",
-            date:        TimeHelper.GetEgyptBusinessDayDate(postingDate),
-            lines:       lines,
-            orderId:     order.Id,
-            customerId:  order.CustomerId,
-            source:      order.Source,
-            createdAt:   postingDate
-        );
     }
 
     public async Task PostWarehouseReceiptFromCourierAsync(Order order, int returnRequestId)

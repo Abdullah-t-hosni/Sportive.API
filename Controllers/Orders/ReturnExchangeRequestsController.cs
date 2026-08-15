@@ -884,39 +884,19 @@ public class ReturnExchangeRequestsController : ControllerBase
 					returnExchangeRequest.Reason?.Contains("Manufacturing") == true ||
 					returnExchangeRequest.Reason?.Contains("Wrong Item") == true;
 
-				bool chargeReturnShipping = isReturnedFromCourier && !isManufacturingDefect;
-				decimal returnShippingFee = chargeReturnShipping ? returnExchangeRequest.Order.DeliveryFee : 0;
+				// ── المنطق الجديد (بعد مراجعة المحاسب) ──
+				// لا نُحمّل العميل رسوم الإرجاع في قيد المرتجع نهائياً
+				// نُرجع الشحن للعميل فقط في حالة عيب التصنيع / صنف خطأ (إيراد التوصيل يُعكس والعميل يسترد كامل المبلغ شامل الشحن)
+				bool refundShippingOverride = isReturnedFromCourier && isManufacturingDefect;
 
 				await _accounting.PostSalesReturnAsync(
 					returnExchangeRequest.Order,
 					returnExchangeRequest.RefundAccountId,
-					returnExchangeRequest.RefundShipping,
-					chargeReturnShipping,
-					returnShippingFee,
+					refundShippingOverride,   // refundShipping
+					false,                    // chargeReturnShipping = always false
+					0m,                       // returnShippingFee = always 0
 					isReturnedFromCourier
 				);
-
-				// ── قيد المصروف + نقل مديونية الشحن لشركة الشحن (بتاريخ الفاتورة) ──
-				// يُسجَّل فقط إذا كان العميل يتحمل رسوم الإرجاع وكانت البضاعة لدى شركة الشحن
-				if (chargeReturnShipping && isReturnedFromCourier)
-				{
-					try
-					{
-						await _accounting.PostCourierReturnShippingFeeAsync(
-							returnExchangeRequest.Order,
-							returnExchangeRequest.Id
-						);
-						_logger.LogInformation(
-							"[Accounting] Courier return shipping fee entry posted for request #{RequestId} order #{OrderNumber}.",
-							returnExchangeRequest.Id, returnExchangeRequest.Order.OrderNumber);
-					}
-					catch (Exception exCourier)
-					{
-						_logger.LogError(exCourier,
-							"[Accounting] Failed to post courier return shipping fee for request #{RequestId} on order #{OrderNumber}.",
-							returnExchangeRequest.Id, returnExchangeRequest.Order?.OrderNumber);
-					}
-				}
 
 				_logger.LogInformation(
 					"[Accounting] Return entry posted for request #{RequestId} order #{OrderNumber} at ApproveReturn stage.",
@@ -1052,16 +1032,18 @@ public class ReturnExchangeRequestsController : ControllerBase
 				}
 				bool isReturnedFromCourier = req.Order.Source != OrderSource.POS && req.Order.Status >= OrderStatus.OutForDelivery;
 				bool isManufacturingDefect = (req.Reason?.Contains("عيب تصنيع") ?? false) || (req.Reason?.Contains("صنف خطأ") ?? false) || (req.Reason?.Contains("Manufacturing") ?? false) || (req.Reason?.Contains("Wrong Item") ?? false);
-				bool chargeReturnShipping = isReturnedFromCourier && !isManufacturingDefect;
-				decimal returnShippingFee = (chargeReturnShipping ? req.Order.DeliveryFee : 0m);
-				
+				// ── المنطق الجديد (بعد مراجعة المحاسب) ──
+				// لا نُحمّل العميل رسوم الإرجاع في قيد المرتجع نهائياً
+				// نُرجع الشحن للعميل فقط في حالة عيب التصنيع / صنف خطأ
+				bool refundShippingOverride = isReturnedFromCourier && isManufacturingDefect;
+
 				// ── منع ازدواجية القيد المحاسبي ──
 				// إذا كان الطلب قد مر بمرحلة الموافقة (Approved) وتم تسجيل القيد بالفعل، فلا تقم بتسجيله مرة أخرى هنا
 				if (originalStatus != ReturnExchangeStatus.Approved)
 				{
 					if (flag2)
 					{
-						await _accounting.PostSalesReturnAsync(req.Order, dto.RefundAccountId, req.RefundShipping, chargeReturnShipping, returnShippingFee, isReturnedFromCourier);
+						await _accounting.PostSalesReturnAsync(req.Order, dto.RefundAccountId, refundShippingOverride, false, 0m, isReturnedFromCourier);
 					}
 					else if (list.Any())
 					{
