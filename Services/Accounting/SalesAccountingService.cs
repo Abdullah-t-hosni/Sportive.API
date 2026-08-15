@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
 using Sportive.API.Models;
@@ -336,130 +336,148 @@ public class SalesAccountingService
 
     public async Task PostSalesReturnAsync(Order order, int? refundAccountId = null, bool refundShipping = false, bool chargeReturnShipping = false, decimal returnShippingFee = 0, bool isReturnedFromCourier = false)
     {
+        // ── 1. تأكد من تحميل العناصر والمنتجات ──
         if (order.Items == null || !order.Items.Any())
-        {
             try { await _db.Entry(order).Collection(o => o.Items).LoadAsync(); } catch { }
+
+        if (order.Items != null && order.Items.Any(i => i.Product == null))
+        {
+            try
+            {
+                var productIds = order.Items.Where(i => i.ProductId.HasValue)
+                                            .Select(i => i.ProductId!.Value).Distinct().ToList();
+                var products = await _db.Products.AsNoTracking()
+                                        .Where(p => productIds.Contains(p.Id)).ToListAsync();
+                foreach (var item in order.Items)
+                    item.Product ??= products.FirstOrDefault(p => p.Id == item.ProductId);
+            }
+            catch { }
         }
 
+        // ── 2. جلب الحسابات المحاسبية ──
         var mapDict = await _core.GetSafeSystemMappingsAsync();
-        var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        var store   = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
 
-        string salesReturnAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesReturn, mapDict)}";
+        string salesReturnAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesReturn,   mapDict)}";
         string salesDiscAcct   = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.SalesDiscount, mapDict)}";
+        string cogsAcct        = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.COGS,          mapDict)}";
+        string inventoryAcct   = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Inventory,     mapDict)}";
         string deliveryRevAcct = !string.IsNullOrEmpty(store?.DeliveryRevenueAccountId)
             ? $"ID:{store.DeliveryRevenueAccountId}"
             : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.DeliveryRevenue, mapDict)}";
-        string inventoryAcct   = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Inventory, mapDict)}";
-        string cogsAcct        = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.COGS, mapDict)}";
+        string receivablesAcct = order.Customer?.MainAccountId != null
+            ? $"ID:{order.Customer.MainAccountId}"
+            : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
 
-        string receivablesAcct;
-        if (order.Customer?.MainAccountId != null)
-            receivablesAcct = $"ID:{order.Customer.MainAccountId}";
-        else
-            receivablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
-
-        var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
-
-        decimal totalGrossReturn = 0;
-        decimal totalNetDiscount = 0;
-        decimal totalNetReturn = 0;
-        decimal totalVatReturn = 0;
-        decimal totalCostReturn = 0;
+        // ── 3. حساب الأرقام من الأصناف ──
+        decimal totalGrossReturn = 0; // السعر الأصلي قبل الخصم  → مدين: مرتجع مبيعات
+        decimal totalNetDiscount = 0; // قيمة الخصم الممنوح       → دائن: إلغاء الخصم
+        decimal totalNetReturn   = 0; // صافي قيمة البضاعة        → دائن: العملاء
+        decimal totalVatReturn   = 0; // الضريبة المضافة           → مدين ثم دائن
+        decimal totalCostReturn  = 0; // تكلفة البضاعة             → مدين: مخزن / دائن: COGS
 
         if (order.Items != null)
         {
             foreach (var item in order.Items)
             {
                 decimal rate = (item.VatRateApplied ?? 0) / 100m;
-                decimal itemOriginalTotal = item.OriginalUnitPrice * item.Quantity;
-                decimal itemOriginalNet   = item.HasTax ? Math.Round(itemOriginalTotal / (1 + rate), 2) : itemOriginalTotal;
-                decimal itemActualTotal   = item.TotalPrice;
-                decimal itemActualNet     = item.HasTax ? Math.Round(itemActualTotal / (1 + rate), 2) : itemActualTotal;
+                decimal originalNet = item.HasTax
+                    ? Math.Round((item.OriginalUnitPrice * item.Quantity) / (1 + rate), 2)
+                    : item.OriginalUnitPrice * item.Quantity;
+                decimal actualNet = item.HasTax
+                    ? Math.Round(item.TotalPrice / (1 + rate), 2)
+                    : item.TotalPrice;
 
-                totalGrossReturn += itemOriginalNet;
-                totalNetDiscount += (itemOriginalNet - itemActualNet);
-                totalNetReturn   += itemActualNet;
+                totalGrossReturn += originalNet;
+                totalNetDiscount += originalNet - actualNet;
+                totalNetReturn   += actualNet;
                 totalVatReturn   += item.ItemVatAmount;
                 totalCostReturn  += (item.Product?.CostPrice ?? 0) * item.Quantity;
             }
         }
 
+        // ── 4. بناء القيد المتوازن رياضياً ──
+        //
+        // مدين  مرتجع مبيعات        = totalGrossReturn
+        // مدين  ضريبة المخرجات      = totalVatReturn          [إن وجدت]
+        // مدين  إيراد الشحن (إلغاء) = deliveryFeeToRefund     [refundShipping]
+        // مدين  مخزن الشحن/الرئيسي  = totalCostReturn
+        // مدين  العملاء (رسوم رجوع)  = returnShippingFee       [chargeReturnShipping]
+        // ──────────────────────────────────────────
+        // دائن  الخصم الممنوح        = totalNetDiscount        [إن وجد]
+        // دائن  العملاء (استرداد)    = totalNetReturn + totalVatReturn + deliveryFeeToRefund
+        // دائن  تكلفة البضاعة COGS   = totalCostReturn
+        // دائن  إيراد التوصيل        = returnShippingFee       [chargeReturnShipping]
+        //
+        // الإجمالان متساويان دائماً (هوية رياضية) ✓
+
+        var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
+
+        // [ مدين ] مرتجع مبيعات (بالسعر الأصلي قبل الخصم)
         if (totalGrossReturn > 0)
-        {
-            lines.Add((salesReturnAcct, totalGrossReturn, 0, _t.Get("Accounting.SalesReturnDesc", order.OrderNumber)));
-        }
+            lines.Add((salesReturnAcct, totalGrossReturn, 0,
+                _t.Get("Accounting.SalesReturnDesc", order.OrderNumber)));
 
-        if (totalNetDiscount > 0)
-        {
-            lines.Add((salesDiscAcct, 0, totalNetDiscount, $"إلغاء خصم مبيعات مرتجع - طلب #{order.OrderNumber}"));
-        }
-
+        // [ مدين ] ضريبة المخرجات
         if (totalVatReturn > 0)
         {
             string vatAcct = !string.IsNullOrEmpty(store?.StoreVatAccountId)
                 ? $"ID:{store.StoreVatAccountId}"
                 : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatOutput, mapDict)}";
-            lines.Add((vatAcct, totalVatReturn, 0, _t.Get("Accounting.SalesReturnTaxDesc", order.OrderNumber)));
+            lines.Add((vatAcct, totalVatReturn, 0,
+                _t.Get("Accounting.SalesReturnTaxDesc", order.OrderNumber)));
         }
 
+        // [ مدين ] إلغاء إيراد الشحن (إذا كان المفروض يُرد الشحن للعميل)
         decimal deliveryFeeToRefund = 0;
         if (refundShipping && order.DeliveryFee > 0)
         {
             deliveryFeeToRefund = order.DeliveryFee;
-            lines.Add((deliveryRevAcct, deliveryFeeToRefund, 0, $"إلغاء إيراد الشحن - طلب #{order.OrderNumber}"));
+            lines.Add((deliveryRevAcct, deliveryFeeToRefund, 0,
+                $"إلغاء إيراد الشحن - طلب #{order.OrderNumber}"));
         }
 
-        if (chargeReturnShipping && returnShippingFee > 0)
-        {
-            lines.Add((receivablesAcct, returnShippingFee, 0, $"رسوم شحن إرجاع - طلب #{order.OrderNumber}"));
-            lines.Add((deliveryRevAcct, 0, returnShippingFee, $"إيراد شحن إرجاع - طلب #{order.OrderNumber}"));
-        }
-
-        decimal totalRefundValue = totalNetReturn + totalVatReturn + deliveryFeeToRefund;
-
-        int receivablesAcctId = int.Parse(receivablesAcct.Replace("ID:", ""));
-        decimal alreadySettledDebt = await _db.JournalLines
-            .Where(l => l.JournalEntry.OrderId == order.Id 
-                     && l.JournalEntry.Type == JournalEntryType.SalesReturn 
-                     && l.AccountId == receivablesAcctId)
-            .SumAsync(l => l.Credit);
-
-        decimal originalDebt = Math.Round(order.TotalAmount - order.PaidAmount, 2);
-        decimal currentRemainingDebt = Math.Max(0, originalDebt - alreadySettledDebt);
-
-        decimal creditRefundAmount = Math.Min(currentRemainingDebt, totalRefundValue);
-        decimal cashRefundAmount   = Math.Round(totalRefundValue - creditRefundAmount, 2);
-
-        if (cashRefundAmount > 0)
-        {
-            string cashId = (order.PaymentMethod == PaymentMethod.CustomerBalance || order.PaymentMethod == PaymentMethod.Credit)
-                ? receivablesAcct
-                : (refundAccountId.HasValue ? $"ID:{refundAccountId.Value}" : await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict));
-
-            string methodLabel = _core.GetMethodLabel(order.PaymentMethod);
-            lines.Add((cashId, 0, cashRefundAmount, _t.Get("Accounting.SalesReturnRefundDesc", methodLabel, order.OrderNumber)));
-        }
-
-        if (creditRefundAmount > 0)
-        {
-            lines.Add((receivablesAcct, 0, creditRefundAmount, _t.Get("Accounting.SalesReturnDebtReductionDesc", order.Customer?.FullName ?? order.OrderNumber)));
-        }
-
+        // [ مدين ] مخزن شركة الشحن أو المخزن الرئيسي (ترجع البضاعة للمخزن)
         if (totalCostReturn > 0)
         {
             string returnInventoryAcct = inventoryAcct;
-            if (isReturnedFromCourier)
+            if (isReturnedFromCourier &&
+                mapDict.TryGetValue(MK.CourierInventory.ToLower(), out var courierInvId) &&
+                courierInvId.HasValue)
             {
-                if (mapDict.TryGetValue(MK.CourierInventory.ToLower(), out var courierInvId) && courierInvId.HasValue)
-                {
-                    returnInventoryAcct = $"ID:{courierInvId.Value}";
-                }
+                returnInventoryAcct = $"ID:{courierInvId.Value}";
             }
-
-            lines.Add((returnInventoryAcct, totalCostReturn, 0,         _t.Get("Accounting.InventoryInDesc")));
-            lines.Add((cogsAcct,            0,             totalCostReturn, _t.Get("Accounting.COGSReturnDesc")));
+            lines.Add((returnInventoryAcct, totalCostReturn, 0,
+                _t.Get("Accounting.InventoryInDesc")));
         }
 
+        // [ مدين ] العملاء - رسوم شحن الإرجاع (ديْن جديد على العميل - مش عيب تصنيع)
+        if (chargeReturnShipping && returnShippingFee > 0)
+            lines.Add((receivablesAcct, returnShippingFee, 0,
+                $"رسوم شحن إرجاع - طلب #{order.OrderNumber}"));
+
+        // [ دائن ] إلغاء الخصم الممنوح أصلاً
+        if (totalNetDiscount > 0)
+            lines.Add((salesDiscAcct, 0, totalNetDiscount,
+                $"إلغاء خصم مبيعات مرتجع - طلب #{order.OrderNumber}"));
+
+        // [ دائن ] العملاء - صافي قيمة البضاعة المرتجعة (يُحسب في رصيد العميل)
+        decimal customerCreditAmount = Math.Round(totalNetReturn + totalVatReturn + deliveryFeeToRefund, 2);
+        if (customerCreditAmount > 0)
+            lines.Add((receivablesAcct, 0, customerCreditAmount,
+                _t.Get("Accounting.SalesReturnDebtReductionDesc", order.Customer?.FullName ?? order.OrderNumber)));
+
+        // [ دائن ] عكس تكلفة البضاعة المباعة (COGS)
+        if (totalCostReturn > 0)
+            lines.Add((cogsAcct, 0, totalCostReturn,
+                _t.Get("Accounting.COGSReturnDesc")));
+
+        // [ دائن ] إيراد شحن الإرجاع (في مقابل الرسوم المُحملة على العميل)
+        if (chargeReturnShipping && returnShippingFee > 0)
+            lines.Add((deliveryRevAcct, 0, returnShippingFee,
+                $"إيراد شحن إرجاع - طلب #{order.OrderNumber}"));
+
+        // ── 5. تسجيل القيد ──
         await _core.PostEntryAsync(
             type:        JournalEntryType.SalesReturn,
             reference:   order.OrderNumber + "-RTN",
