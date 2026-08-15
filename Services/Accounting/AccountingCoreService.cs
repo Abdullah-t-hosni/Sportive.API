@@ -34,6 +34,7 @@ public class AccountingCoreService
     public const string RECEIVABLES   = "1107";
     public const string PAYABLES      = "2101";
     public const string INVENTORY     = "1106";
+    public const string COURIER_INVENTORY = "110601";
     public const string SALES_REVENUE = "4101";
     public const string SALES_RETURN  = "4102";
     public const string SALES_DISCOUNT = "410101";

@@ -2564,7 +2564,8 @@ public class OrderService : IOrderService
                     chargeReturnShipping = !isManufacturingDefect;
                 }
 
-                await accounting.PostSalesReturnAsync(order, refundAccountId, refundShipping, chargeReturnShipping, returnShippingFee);
+                bool isReturnedFromCourier = order.Source != OrderSource.POS && oldStatus.HasValue && oldStatus.Value >= OrderStatus.OutForDelivery;
+                await accounting.PostSalesReturnAsync(order, refundAccountId, refundShipping, chargeReturnShipping, returnShippingFee, isReturnedFromCourier);
                 return;
             }
             catch (Exception ex) when (attempt < maxAttempts)

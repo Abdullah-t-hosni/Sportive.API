@@ -25,6 +25,7 @@ public static class MappingKeys
     // ── مخزون / تكلفة ───────────────────────────────────
     public const string Inventory         = "inventoryAccountID";
     public const string COGS              = "costOfGoodsSoldAccountID";
+    public const string CourierInventory  = "courierInventoryAccountID";
 
     // ── ضرائب ───────────────────────────────────────────
     public const string VatOutput         = "vatOutputAccountID";

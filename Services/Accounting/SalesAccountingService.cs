@@ -334,7 +334,7 @@ public class SalesAccountingService
         );
     }
 
-    public async Task PostSalesReturnAsync(Order order, int? refundAccountId = null, bool refundShipping = false, bool chargeReturnShipping = false, decimal returnShippingFee = 0)
+    public async Task PostSalesReturnAsync(Order order, int? refundAccountId = null, bool refundShipping = false, bool chargeReturnShipping = false, decimal returnShippingFee = 0, bool isReturnedFromCourier = false)
     {
         if (order.Items == null || !order.Items.Any())
         {
@@ -447,8 +447,17 @@ public class SalesAccountingService
 
         if (totalCostReturn > 0)
         {
-            lines.Add((inventoryAcct, totalCostReturn, 0,         _t.Get("Accounting.InventoryInDesc")));
-            lines.Add((cogsAcct,      0,         totalCostReturn, _t.Get("Accounting.CogsReductionDesc")));
+            string returnInventoryAcct = inventoryAcct;
+            if (isReturnedFromCourier)
+            {
+                if (mapDict.TryGetValue(MK.CourierInventory.ToLower(), out var courierInvId) && courierInvId.HasValue)
+                {
+                    returnInventoryAcct = $"ID:{courierInvId.Value}";
+                }
+            }
+
+            lines.Add((returnInventoryAcct, totalCostReturn, 0,         _t.Get("Accounting.InventoryInDesc")));
+            lines.Add((cogsAcct,            0,             totalCostReturn, _t.Get("Accounting.COGSReturnDesc")));
         }
 
         await _core.PostEntryAsync(
