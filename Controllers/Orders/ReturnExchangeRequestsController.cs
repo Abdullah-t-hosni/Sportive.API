@@ -887,33 +887,6 @@ public class ReturnExchangeRequestsController : ControllerBase
 				bool chargeReturnShipping = isReturnedFromCourier && !isManufacturingDefect;
 				decimal returnShippingFee = chargeReturnShipping ? returnExchangeRequest.Order.DeliveryFee : 0;
 
-				returnExchangeRequest.Order.Items = returnExchangeRequest.Items
-					.Where(i => i.OrderItem != null)
-					.Select(i =>
-					{
-						var orig = i.OrderItem;
-						int qty = Math.Max(1, i.Quantity);
-						return new OrderItem
-						{
-							Id = orig.Id,
-							OrderId = orig.OrderId,
-							ProductId = orig.ProductId,
-							ProductVariantId = orig.ProductVariantId,
-							ProductNameAr = orig.ProductNameAr,
-							ProductNameEn = orig.ProductNameEn,
-							Quantity = qty,
-							UnitPrice = orig.UnitPrice,
-							OriginalUnitPrice = orig.OriginalUnitPrice,
-							DiscountAmount = orig.DiscountAmount,
-							TotalPrice = qty * orig.UnitPrice,
-							HasTax = orig.HasTax,
-							VatRateApplied = orig.VatRateApplied,
-							ItemVatAmount = orig.HasTax && orig.VatRateApplied.HasValue
-								? (qty * orig.UnitPrice * orig.VatRateApplied.Value / 100m) : 0m,
-							Product = orig.Product
-						};
-					}).ToList();
-
 				await _accounting.PostSalesReturnAsync(
 					returnExchangeRequest.Order,
 					returnExchangeRequest.RefundAccountId,
@@ -923,9 +896,32 @@ public class ReturnExchangeRequestsController : ControllerBase
 					isReturnedFromCourier
 				);
 
+				// ── قيد المصروف + نقل مديونية الشحن لشركة الشحن (بتاريخ الفاتورة) ──
+				// يُسجَّل فقط إذا كان العميل يتحمل رسوم الإرجاع وكانت البضاعة لدى شركة الشحن
+				if (chargeReturnShipping && isReturnedFromCourier)
+				{
+					try
+					{
+						await _accounting.PostCourierReturnShippingFeeAsync(
+							returnExchangeRequest.Order,
+							returnExchangeRequest.Id
+						);
+						_logger.LogInformation(
+							"[Accounting] Courier return shipping fee entry posted for request #{RequestId} order #{OrderNumber}.",
+							returnExchangeRequest.Id, returnExchangeRequest.Order.OrderNumber);
+					}
+					catch (Exception exCourier)
+					{
+						_logger.LogError(exCourier,
+							"[Accounting] Failed to post courier return shipping fee for request #{RequestId} on order #{OrderNumber}.",
+							returnExchangeRequest.Id, returnExchangeRequest.Order?.OrderNumber);
+					}
+				}
+
 				_logger.LogInformation(
 					"[Accounting] Return entry posted for request #{RequestId} order #{OrderNumber} at ApproveReturn stage.",
 					returnExchangeRequest.Id, returnExchangeRequest.Order.OrderNumber);
+
 			}
 			catch (Exception ex)
 			{
