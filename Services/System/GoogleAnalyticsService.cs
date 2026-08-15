@@ -94,7 +94,7 @@ namespace Sportive.API.Services
                 // 1. Realtime Data (Active Users)
                 var realtimeRequest = new RunRealtimeReportRequest
                 {
-                    Property = $"properties/{activePropertyId}",
+                    Property = $"properties/{_propertyId}",
                     Metrics = { new Metric { Name = "activeUsers" } }
                 };
                 
