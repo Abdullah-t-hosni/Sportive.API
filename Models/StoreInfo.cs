@@ -490,6 +490,12 @@ public class StoreInfo
     [JsonPropertyName("googleAnalyticsId")]
     public string? GoogleAnalyticsId { get; set; }
 
+    [JsonPropertyName("ga4PropertyId")]
+    public string? Ga4PropertyId { get; set; }
+
+    [JsonPropertyName("ga4CredentialsJson")]
+    public string? Ga4CredentialsJson { get; set; }
+
     [JsonPropertyName("facebookPixelId")]
     public string? FacebookPixelId { get; set; }
 

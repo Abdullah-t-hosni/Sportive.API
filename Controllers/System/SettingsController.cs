@@ -60,7 +60,9 @@ public class SettingsController : ControllerBase
             "ALTER TABLE `StoreSettings` ADD `RealAdCampaignsJson` longtext NULL;",
             "ALTER TABLE `StoreSettings` ADD `TikTokPixelId` longtext NULL;",
             "ALTER TABLE `StoreSettings` ADD `SnapchatPixelId` longtext NULL;",
-            "ALTER TABLE `StoreSettings` ADD `HeaderCustomScript` longtext NULL;"
+            "ALTER TABLE `StoreSettings` ADD `HeaderCustomScript` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `Ga4PropertyId` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `Ga4CredentialsJson` longtext NULL;"
         };
 
         foreach (var sql in sqlStatements)
@@ -315,6 +317,8 @@ public class SettingsController : ControllerBase
             info.AutoPrintReceipt         = dto.AutoPrintReceipt;
             info.ReceiptExtraCopies       = dto.ReceiptExtraCopies;
             info.GoogleAnalyticsId        = dto.GoogleAnalyticsId;
+            info.Ga4PropertyId            = dto.Ga4PropertyId;
+            info.Ga4CredentialsJson       = dto.Ga4CredentialsJson;
             info.FacebookPixelId          = dto.FacebookPixelId;
             info.FacebookCapiToken        = dto.FacebookCapiToken;
             info.FacebookTestEventCode    = dto.FacebookTestEventCode;

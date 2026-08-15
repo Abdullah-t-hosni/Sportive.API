@@ -6,6 +6,9 @@ using Google.Apis.Auth.OAuth2;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
+using Sportive.API.Data;
 
 namespace Sportive.API.Services
 {
@@ -19,18 +22,22 @@ namespace Sportive.API.Services
         private readonly ILogger<GoogleAnalyticsService> _logger;
         private readonly IMemoryCache _cache;
         private readonly IConfiguration _config;
+        private readonly IServiceScopeFactory _scopeFactory;
 
-        // Property ID is non-sensitive — safe to keep in config/code
-        private readonly string _propertyId = "538049228";
+        // Default Property ID fallback
+        private readonly string _defaultPropertyId = "538049228";
+        private string _propertyId = "538049228";
 
         public GoogleAnalyticsService(
             ILogger<GoogleAnalyticsService> logger,
             IMemoryCache cache,
-            IConfiguration config)
+            IConfiguration config,
+            IServiceScopeFactory scopeFactory)
         {
             _logger = logger;
             _cache = cache;
             _config = config;
+            _scopeFactory = scopeFactory;
         }
 
         public async Task<object> GetStoreVisitorsStatsAsync(DateTime? startDate = null, DateTime? endDate = null)
@@ -46,8 +53,27 @@ namespace Sportive.API.Services
 
             try
             {
-                // ✅ Read credentials from environment variable / appsettings — never hardcoded
                 var jsonCreds = _config["GoogleAnalytics:CredentialsJson"];
+                _propertyId = _config["GoogleAnalytics:PropertyId"] ?? _defaultPropertyId;
+
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var db = scope.ServiceProvider.GetService<AppDbContext>();
+                    if (db != null)
+                    {
+                        var store = await db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+                        if (store != null)
+                        {
+                            if (!string.IsNullOrWhiteSpace(store.Ga4CredentialsJson))
+                                jsonCreds = store.Ga4CredentialsJson;
+                            if (!string.IsNullOrWhiteSpace(store.Ga4PropertyId))
+                                _propertyId = store.Ga4PropertyId;
+                        }
+                    }
+                }
+                catch { }
+
                 if (string.IsNullOrWhiteSpace(jsonCreds))
                 {
                     _logger.LogWarning("GA4 credentials not configured (GoogleAnalytics:CredentialsJson). Returning mock data.");
@@ -55,7 +81,6 @@ namespace Sportive.API.Services
                 }
 
 #pragma warning disable CS0618 // Type or member is obsolete
-                // ✅ Use GoogleCredential.FromJson() — replaces deprecated JsonCredentials property
                 var credential = GoogleCredential.FromJson(jsonCreds)
                     .CreateScoped("https://www.googleapis.com/auth/analytics.readonly");
 #pragma warning restore CS0618 // Type or member is obsolete
@@ -69,7 +94,7 @@ namespace Sportive.API.Services
                 // 1. Realtime Data (Active Users)
                 var realtimeRequest = new RunRealtimeReportRequest
                 {
-                    Property = $"properties/{_propertyId}",
+                    Property = $"properties/{activePropertyId}",
                     Metrics = { new Metric { Name = "activeUsers" } }
                 };
                 
@@ -329,7 +354,7 @@ namespace Sportive.API.Services
                     new { name = "تيشيرت رياضي دراي فيت", views = 850 }
                 },
                 trafficSources = GetMockSources(),
-                sessionDuration = errorMsg.Length > 20 ? errorMsg.Substring(0, 20) : errorMsg,
+                sessionDuration = "2:15", 
                 bounceRate = "38.5%"
             };
         }
