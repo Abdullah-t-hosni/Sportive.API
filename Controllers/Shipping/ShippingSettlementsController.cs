@@ -344,28 +344,7 @@ public class ShippingSettlementsController : ControllerBase
                 branchId: orders.FirstOrDefault()?.BranchId
             );
         }
-        else if (netAmount < 0)
-        {
-            var deficitRef = $"SETTLE-DEFICIT-{company.Id}-{timestamp}";
-            var deficitLines = new List<(string code, decimal debit, decimal credit, string desc)>
-            {
-                // مدين: حساب شركة الشحن
-                ($"ID:{company.AccountId}", Math.Abs(netAmount), 0, $"سداد عجز شركة الشحن: {company.NameAr}{invNumStr}"),
-                // دائن: الخزينة / البنك
-                (cashAccountCode, 0, Math.Abs(netAmount), $"سداد عجز تسوية شحن {company.NameAr}{invNumStr}")
-            };
-
-            await _accountingCore.PostEntryAsync(
-                type: JournalEntryType.PaymentVoucher,
-                reference: deficitRef,
-                description: $"سداد عجز تسوية شركة الشحن: {company.NameAr}{invNumStr}",
-                date: TimeHelper.GetEgyptBusinessDayDate(collectionDate),
-                lines: deficitLines,
-                source: OrderSource.Website,
-                createdAt: currentSysTime,
-                branchId: orders.FirstOrDefault()?.BranchId
-            );
-        }
+        // Removed the automatic deficit payment voucher (netAmount < 0) as requested by the user.
 
 
 
