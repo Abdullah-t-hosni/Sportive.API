@@ -626,6 +626,7 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] OrderSource? source  = null,
         [FromQuery] DateTime? toDate    = null,
         [FromQuery] int?    branchId    = null,
+        [FromQuery] int?    warehouseId = null,
         [FromQuery] bool    excel       = false)
     {
         if (branchId.HasValue)
@@ -640,7 +641,7 @@ public class OperationalReportsController : ControllerBase
 
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var cacheKey = $"Inventory_{search}_{categoryId}_{brandId}_{color}_{size}_{lowStock}_{stockStatus}_{page}_{pageSize}_{source}_{toDate}_{branchId}";
+        var cacheKey = $"Inventory_{search}_{categoryId}_{brandId}_{color}_{size}_{lowStock}_{stockStatus}_{page}_{pageSize}_{source}_{toDate}_{branchId}_{warehouseId}";
         if (!excel && _cache.TryGetValue(cacheKey, out var cachedData))
             return Ok(cachedData);
 
@@ -672,7 +673,7 @@ public class OperationalReportsController : ControllerBase
         if (!string.IsNullOrEmpty(size))
             q = q.Where(p => p.Variants.Any(v => v.Size == size));
 
-        if (toDate.HasValue || branchId.HasValue)
+        if (toDate.HasValue || branchId.HasValue || warehouseId.HasValue)
         {
             Dictionary<int, int> variantStocks;
             Dictionary<int, int> simpleProductStocks;
@@ -685,7 +686,12 @@ public class OperationalReportsController : ControllerBase
                 {
                     movementQuery = movementQuery.Where(m => m.CostCenter == source.Value);
                 }
-                if (branchId.HasValue)
+                
+                if (warehouseId.HasValue)
+                {
+                    movementQuery = movementQuery.Where(m => m.WarehouseId == warehouseId.Value);
+                }
+                else if (branchId.HasValue)
                 {
                     var branchWarehouseIds = await _db.Warehouses.Where(w => w.BranchId == branchId.Value).Select(w => w.Id).ToListAsync();
                     movementQuery = movementQuery.Where(m => m.WarehouseId.HasValue && branchWarehouseIds.Contains(m.WarehouseId.Value));
@@ -705,17 +711,25 @@ public class OperationalReportsController : ControllerBase
             }
             else
             {
-                // toDate is null, but branchId.HasValue
-                var branchWarehouseIds = await _db.Warehouses.Where(w => w.BranchId == branchId).Select(w => w.Id).ToListAsync();
+                // toDate is null, but warehouseId or branchId has a value
+                List<int> targetWarehouseIds = new List<int>();
+                if (warehouseId.HasValue)
+                {
+                    targetWarehouseIds.Add(warehouseId.Value);
+                }
+                else if (branchId.HasValue)
+                {
+                    targetWarehouseIds = await _db.Warehouses.Where(w => w.BranchId == branchId).Select(w => w.Id).ToListAsync();
+                }
 
                 variantStocks = await _db.ProductWarehouseStocks
-                    .Where(w => branchWarehouseIds.Contains(w.WarehouseId))
+                    .Where(w => targetWarehouseIds.Contains(w.WarehouseId))
                     .GroupBy(w => w.ProductVariantId)
                     .Select(g => new { VariantId = g.Key, Stock = g.Sum(w => w.Quantity) })
                     .ToDictionaryAsync(x => x.VariantId, x => x.Stock);
 
                 simpleProductStocks = await _db.InventoryMovements
-                    .Where(m => !m.ProductVariantId.HasValue && m.ProductId.HasValue && m.WarehouseId.HasValue && branchWarehouseIds.Contains(m.WarehouseId.Value))
+                    .Where(m => !m.ProductVariantId.HasValue && m.ProductId.HasValue && m.WarehouseId.HasValue && targetWarehouseIds.Contains(m.WarehouseId.Value))
                     .GroupBy(m => m.ProductId!.Value)
                     .Select(g => new { ProductId = g.Key, Stock = g.Sum(m => m.Quantity) })
                     .ToDictionaryAsync(x => x.ProductId, x => x.Stock);
