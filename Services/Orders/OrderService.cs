@@ -1944,8 +1944,8 @@ public class OrderService : IOrderService
             }
         }
 
-        // 🔄 REVERT FROM DELIVERED: If order status changes FROM Delivered to ANY internal non-delivered status (e.g. OutForDelivery, Processing, Pending)
-        if (oldStatus == OrderStatus.Delivered && dto.Status != OrderStatus.Delivered && dto.Status != OrderStatus.PartiallyReturned && dto.Status != OrderStatus.Returned)
+        // 🔄 REVERT PAYMENTS: If order status moves backward, remove payments if we dropped below the payment threshold
+        if (dto.Status < oldStatus && dto.Status != OrderStatus.Returned && dto.Status != OrderStatus.Cancelled && dto.Status != OrderStatus.PartiallyReturned)
         {
             bool isDigitalPrepaid = order.Source != OrderSource.POS &&
                 (order.PaymentMethod == PaymentMethod.Vodafone ||
@@ -1953,39 +1953,44 @@ public class OrderService : IOrderService
                  order.PaymentMethod == PaymentMethod.CreditCard ||
                  order.PaymentMethod == PaymentMethod.Bank);
 
-            // For Cash / COD orders: Reset payment status & paid amount to unpaid / pending
-            if (!isDigitalPrepaid && order.PaymentMethod != PaymentMethod.Credit)
+            OrderStatus paymentThreshold = isDigitalPrepaid ? OrderStatus.Confirmed : OrderStatus.Delivered;
+
+            if (dto.Status < paymentThreshold)
             {
-                order.PaymentStatus = PaymentStatus.Pending;
-                order.PaidAmount = 0;
-                
-                var existingPayments = await _db.OrderPayments.Where(p => p.OrderId == order.Id).ToListAsync();
-                if (existingPayments.Any())
+                // We dropped below the status where payment is collected. Revert payment!
+                if (order.PaymentMethod != PaymentMethod.Credit)
                 {
-                    _db.OrderPayments.RemoveRange(existingPayments);
+                    order.PaymentStatus = PaymentStatus.Pending;
+                    order.PaidAmount = 0;
+                    
+                    var existingPayments = await _db.OrderPayments.Where(p => p.OrderId == order.Id).ToListAsync();
+                    if (existingPayments.Any())
+                    {
+                        _db.OrderPayments.RemoveRange(existingPayments);
+                    }
                 }
-            }
 
-            // Remove/Void any auto-created Receipt Voucher Journal Entry for this order (-PMT)
-            var pmtEntries = await _db.JournalEntries
-                .Include(e => e.Lines)
-                .Where(e => e.OrderId == order.Id && 
-                           (e.Type == JournalEntryType.ReceiptVoucher || 
-                            (e.Reference != null && e.Reference.StartsWith(order.OrderNumber + "-PMT"))))
-                .ToListAsync();
+                // Remove/Void any auto-created Receipt Voucher Journal Entry for this order (-PMT)
+                var pmtEntries = await _db.JournalEntries
+                    .Include(e => e.Lines)
+                    .Where(e => e.OrderId == order.Id && 
+                               (e.Type == JournalEntryType.ReceiptVoucher || 
+                                (e.Reference != null && e.Reference.StartsWith(order.OrderNumber + "-PMT"))))
+                    .ToListAsync();
 
-            if (pmtEntries.Any())
-            {
-                _db.JournalLines.RemoveRange(pmtEntries.SelectMany(e => e.Lines));
-                _db.JournalEntries.RemoveRange(pmtEntries);
-                _logger.LogInformation("[Accounting] Removed {Count} ReceiptVoucher entries for order {Ref} on status revert from Delivered to {NewStatus}.", pmtEntries.Count, order.OrderNumber, dto.Status);
-            }
+                if (pmtEntries.Any())
+                {
+                    _db.JournalLines.RemoveRange(pmtEntries.SelectMany(e => e.Lines));
+                    _db.JournalEntries.RemoveRange(pmtEntries);
+                    _logger.LogInformation("[Accounting] Removed {Count} ReceiptVoucher entries for order {Ref} on status revert from {OldStatus} to {NewStatus}.", pmtEntries.Count, order.OrderNumber, oldStatus, dto.Status);
+                }
 
-            // Remove linked ReceiptVouchers entity if any
-            var linkedRVs = await _db.ReceiptVouchers.Where(v => v.OrderId == order.Id).ToListAsync();
-            if (linkedRVs.Any())
-            {
-                _db.ReceiptVouchers.RemoveRange(linkedRVs);
+                // Remove linked ReceiptVouchers entity if any
+                var linkedRVs = await _db.ReceiptVouchers.Where(v => v.OrderId == order.Id).ToListAsync();
+                if (linkedRVs.Any())
+                {
+                    _db.ReceiptVouchers.RemoveRange(linkedRVs);
+                }
             }
         }
 
@@ -1993,10 +1998,12 @@ public class OrderService : IOrderService
         if ((oldStatus == OrderStatus.Returned || oldStatus == OrderStatus.Cancelled) &&
              dto.Status != OrderStatus.Returned && dto.Status != OrderStatus.Cancelled)
         {
-            // 1️⃣ Remove SalesReturn journal entries for this order
+            // 1️⃣ Remove SalesReturn and associated return journal entries for this order
             var returnEntries = await _db.JournalEntries
                 .Include(e => e.Lines)
-                .Where(e => e.Type == JournalEntryType.SalesReturn && e.Reference != null && e.Reference.StartsWith(order.OrderNumber))
+                .Where(e => e.Reference != null && e.Reference.StartsWith(order.OrderNumber) &&
+                            (e.Type == JournalEntryType.SalesReturn || 
+                            (e.Type == JournalEntryType.Manual && (e.Reference.Contains("-SHP-RTN") || e.Reference.Contains("-WH-RTN")))))
                 .ToListAsync();
 
             if (returnEntries.Any())
