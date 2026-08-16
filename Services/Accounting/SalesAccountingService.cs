@@ -10,8 +10,8 @@ using MK = Sportive.API.Utils.MappingKeys;
 namespace Sportive.API.Services;
 
 /// <summary>
-/// Ø®Ø¯Ù…Ø© Ù…Ø®ØµØµØ© Ù„Ù‚ÙŠÙˆØ¯ Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª: ÙÙˆØ§ØªÙŠØ± Ø§Ù„Ø¨ÙŠØ¹ + Ø§Ù„Ù…Ø±ØªØ¬Ø¹Ø§Øª
-/// ØªØ¹ØªÙ…Ø¯ Ø¹Ù„Ù‰ AccountingCoreService Ù„Ù„Ù€ helpers Ø§Ù„Ù…Ø´ØªØ±ÙƒØ©
+/// خدمة مخصصة لقيود المبيعات: فواتير البيع + المرتجعات
+/// تعتمد على AccountingCoreService للـ helpers المشتركة
 /// </summary>
 public class SalesAccountingService
 {
@@ -32,8 +32,8 @@ public class SalesAccountingService
         _t = t;
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-    // ÙØ§ØªÙˆØ±Ø© Ù…Ø¨ÙŠØ¹Ø§Øª â€” Invoice
+    // ══════════════════════════════════════════════════════
+    // فاتورة مبيعات — Invoice
     // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     public async Task PostSalesOrderAsync(Order order, DateTime? overrideDate = null)
     {
@@ -63,7 +63,7 @@ public class SalesAccountingService
         string inventoryAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Inventory, mapDict)}";
         string cogsAcct      = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.COGS, mapDict)}";
 
-        // â”€â”€ Employee (Sales Person) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Employee (Sales Person) ──────────────────────────
         int? employeeId = null;
         if (!string.IsNullOrEmpty(order.SalesPersonId))
         {
@@ -95,7 +95,7 @@ public class SalesAccountingService
             }
         }
 
-        // â”€â”€ Customer Account â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Customer Account ─────────────────────────────────
         string receivablesAcct;
         if (order.Customer?.MainAccountId != null)
         {
@@ -116,7 +116,7 @@ public class SalesAccountingService
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
-        // â”€â”€ 1. Credits: Revenue + VAT + Delivery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── 1. Credits: Revenue + VAT + Delivery ─────────────
         decimal totalOriginalNetRevenue = 0;
         decimal totalActualVatAmount    = 0;
         decimal totalNetDiscount        = 0;
@@ -164,9 +164,9 @@ public class SalesAccountingService
         }
         else if (order.FulfillmentType == FulfillmentType.Delivery && !string.IsNullOrEmpty(order.DeliveryAddress?.City))
         {
-            // âœ… Free Shipping Logic: record as revenue vs discount
-            // âœ… Optimized: load only active zones with non-zero fees, then match in memory
-            //    (avoids full ToListAsync() on every invoice â€” only zones with IsActive=true and Fee>0)
+            // ✅ Free Shipping Logic: record as revenue vs discount
+            // ✅ Optimized: load only active zones with non-zero fees, then match in memory
+            //    (avoids full ToListAsync() on every invoice — only zones with IsActive=true and Fee>0)
             var city = order.DeliveryAddress.City.Trim().ToLower();
             var activeZones = await _db.ShippingZones
                 .AsNoTracking()
@@ -182,7 +182,7 @@ public class SalesAccountingService
             }
         }
 
-        // â”€â”€ 2. Debits: Discount + Cash/Credit Routing â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── 2. Debits: Discount + Cash/Credit Routing ─────────
         
         // Manual/Coupon discount handling
         decimal manualNetDisc = 0;
@@ -200,13 +200,13 @@ public class SalesAccountingService
             lines.Add((salesDiscAcct, remainingPromoDisc, 0, _t.Get("Accounting.OfferDiscountDesc", order.OrderNumber, totalGrossDiscount)));
         }
 
-        // âœ… ROBUSTNESS: Ensure payments are loaded and fresh
+        // ✅ ROBUSTNESS: Ensure payments are loaded and fresh
         if (order.Payments == null || !order.Payments.Any())
         {
             await _db.Entry(order).Collection(o => o.Payments).LoadAsync();
         }
 
-        // ðŸ”‘ NON-POS PAYMENTS: Website and Admin orders are ALWAYS
+        // 🔑 NON-POS PAYMENTS: Website and Admin orders are ALWAYS
         // settled via a SEPARATE ReceiptVoucher (PMT entry) either at Confirmed or Delivered.
         // The SalesInvoice must ALWAYS record the full amount as Debit Customer (receivable debt),
         // regardless of PaidAmount or Payments collection. Embedding cash debits here would cause
@@ -228,7 +228,7 @@ public class SalesAccountingService
                     // CustomerBalance: Customer uses their stored credit balance to pay.
                     // This is debited directly to the Receivables account (1103), reducing the customer's credit balance.
                     // We do NOT debit POS Cash, to avoid introducing phantom cash in the shift/daily closing.
-                    lines.Add((receivablesAcct, p.Amount, 0, "ØªØ³Ø¯ÙŠØ¯ Ø¨Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø±ØµÙŠØ¯ Ø§Ù„Ø¹Ù…ÙŠÙ„ Ø§Ù„Ù…ØªØ§Ø­"));
+                    lines.Add((receivablesAcct, p.Amount, 0, "تسديد باستخدام رصيد العميل المتاح"));
                     handledPaidAmt += p.Amount;
                 }
                 else
@@ -257,7 +257,7 @@ public class SalesAccountingService
             {
                 if (order.PaymentMethod == PaymentMethod.CustomerBalance)
                 {
-                    lines.Add((receivablesAcct, order.PaidAmount, 0, "ØªØ³Ø¯ÙŠØ¯ Ø¨Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø±ØµÙŠØ¯ Ø§Ù„Ø¹Ù…ÙŠÙ„ Ø§Ù„Ù…ØªØ§Ø­"));
+                    lines.Add((receivablesAcct, order.PaidAmount, 0, "تسديد باستخدام رصيد العميل المتاح"));
                 }
                 else
                 {
@@ -269,7 +269,7 @@ public class SalesAccountingService
             }
         }
 
-        // âš ï¸ STRICT VALIDATION: No silent adjustments or magic fixes.
+        // ⚠️ STRICT VALIDATION: No silent adjustments or magic fixes.
         // For website digital payments, handledPaidAmt is intentionally 0 (settled via separate PMT entry).
         decimal expectedHandled = isNonPosOrder ? 0 : order.PaidAmount;
         if (Math.Abs(handledPaidAmt - expectedHandled) > 0.01m)
@@ -277,7 +277,7 @@ public class SalesAccountingService
             throw new InvalidOperationException(_t.Get("Accounting.PaymentMismatchError", order.PaidAmount, handledPaidAmt));
         }
 
-        // Remaining debt â†’ Receivables
+        // Remaining debt → Receivables
         // For website digital payments: full amount is always receivable (settled via PMT entry separately)
         var remainingDebt = isNonPosOrder
             ? Math.Round(order.TotalAmount, 2)
@@ -286,7 +286,7 @@ public class SalesAccountingService
         if (Math.Abs(remainingDebt) > 0.01m)
             lines.Add((receivablesAcct, remainingDebt, 0, _t.Get("Accounting.DebtRecognitionDesc", order.OrderNumber)));
 
-        // â”€â”€ 2.5 Final Balancing Check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── 2.5 Final Balancing Check ────────────────────────
         decimal sumDr = lines.Sum(l => l.debit);
         decimal sumCr = lines.Sum(l => l.credit);
         decimal diff = sumDr - sumCr;
@@ -301,7 +301,7 @@ public class SalesAccountingService
             }
         }
 
-        // â”€â”€ 3. COGS / Inventory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── 3. COGS / Inventory ───────────────────────────────
         decimal totalCost = 0;
         if (order.Items != null && order.Items.Any())
         {
@@ -336,7 +336,7 @@ public class SalesAccountingService
 
     public async Task PostSalesReturnAsync(Order order, int? refundAccountId = null, bool refundShipping = false, bool chargeReturnShipping = false, decimal returnShippingFee = 0, bool isReturnedFromCourier = false)
     {
-        // â”€â”€ 1. ØªØ£ÙƒØ¯ Ù…Ù† ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø¹Ù†Ø§ØµØ± ÙˆØ§Ù„Ù…Ù†ØªØ¬Ø§Øª â”€â”€
+        // ── 1. تأكد من تحميل العناصر والمنتجات ──
         if (order.Items == null || !order.Items.Any())
             try { await _db.Entry(order).Collection(o => o.Items).LoadAsync(); } catch { }
 
@@ -354,7 +354,7 @@ public class SalesAccountingService
             catch { }
         }
 
-        // â”€â”€ 2. Ø¬Ù„Ø¨ Ø§Ù„Ø­Ø³Ø§Ø¨Ø§Øª Ø§Ù„Ù…Ø­Ø§Ø³Ø¨ÙŠØ© â”€â”€
+        // ── 2. جلب الحسابات المحاسبية ──
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         var store   = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
 
@@ -369,12 +369,12 @@ public class SalesAccountingService
             ? $"ID:{order.Customer.MainAccountId}"
             : $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict)}";
 
-        // â”€â”€ 3. Ø­Ø³Ø§Ø¨ Ø§Ù„Ø£Ø±Ù‚Ø§Ù… Ù…Ù† Ø§Ù„Ø£ØµÙ†Ø§Ù â”€â”€
-        decimal totalGrossReturn = 0; // Ø§Ù„Ø³Ø¹Ø± Ø§Ù„Ø£ØµÙ„ÙŠ Ù‚Ø¨Ù„ Ø§Ù„Ø®ØµÙ…  â†’ Ù…Ø¯ÙŠÙ†: Ù…Ø±ØªØ¬Ø¹ Ù…Ø¨ÙŠØ¹Ø§Øª
-        decimal totalNetDiscount = 0; // Ù‚ÙŠÙ…Ø© Ø§Ù„Ø®ØµÙ… Ø§Ù„Ù…Ù…Ù†ÙˆØ­       â†’ Ø¯Ø§Ø¦Ù†: Ø¥Ù„ØºØ§Ø¡ Ø§Ù„Ø®ØµÙ…
-        decimal totalNetReturn   = 0; // ØµØ§ÙÙŠ Ù‚ÙŠÙ…Ø© Ø§Ù„Ø¨Ø¶Ø§Ø¹Ø©        â†’ Ø¯Ø§Ø¦Ù†: Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡
-        decimal totalVatReturn   = 0; // Ø§Ù„Ø¶Ø±ÙŠØ¨Ø© Ø§Ù„Ù…Ø¶Ø§ÙØ©           â†’ Ù…Ø¯ÙŠÙ† Ø«Ù… Ø¯Ø§Ø¦Ù†
-        decimal totalCostReturn  = 0; // ØªÙƒÙ„ÙØ© Ø§Ù„Ø¨Ø¶Ø§Ø¹Ø©             â†’ Ù…Ø¯ÙŠÙ†: Ù…Ø®Ø²Ù† / Ø¯Ø§Ø¦Ù†: COGS
+        // ── 3. حساب الأرقام من الأصناف ──
+        decimal totalGrossReturn = 0; // السعر الأصلي قبل الخصم  → مدين: مرتجع مبيعات
+        decimal totalNetDiscount = 0; // قيمة الخصم الممنوح       → دائن: إلغاء الخصم
+        decimal totalNetReturn   = 0; // صافي قيمة البضاعة        → دائن: العملاء
+        decimal totalVatReturn   = 0; // الضريبة المضافة           → مدين ثم دائن
+        decimal totalCostReturn  = 0; // تكلفة البضاعة             → مدين: مخزن / دائن: COGS
 
         if (order.Items != null)
         {
@@ -396,29 +396,29 @@ public class SalesAccountingService
             }
         }
 
-        // â”€â”€ 4. Ø¨Ù†Ø§Ø¡ Ø§Ù„Ù‚ÙŠØ¯ Ø§Ù„Ù…ØªÙˆØ§Ø²Ù† Ø±ÙŠØ§Ø¶ÙŠØ§Ù‹ â”€â”€
+        // ── 4. بناء القيد المتوازن رياضياً ──
         //
-        // Ù…Ø¯ÙŠÙ†  Ù…Ø±ØªØ¬Ø¹ Ù…Ø¨ÙŠØ¹Ø§Øª        = totalGrossReturn
-        // Ù…Ø¯ÙŠÙ†  Ø¶Ø±ÙŠØ¨Ø© Ø§Ù„Ù…Ø®Ø±Ø¬Ø§Øª      = totalVatReturn          [Ø¥Ù† ÙˆØ¬Ø¯Øª]
-        // Ù…Ø¯ÙŠÙ†  Ø¥ÙŠØ±Ø§Ø¯ Ø§Ù„Ø´Ø­Ù† (Ø¥Ù„ØºØ§Ø¡) = deliveryFeeToRefund     [refundShipping]
-        // Ù…Ø¯ÙŠÙ†  Ù…Ø®Ø²Ù† Ø§Ù„Ø´Ø­Ù†/Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠ  = totalCostReturn
-        // Ù…Ø¯ÙŠÙ†  Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ (Ø±Ø³ÙˆÙ… Ø±Ø¬ÙˆØ¹)  = returnShippingFee       [chargeReturnShipping]
-        // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        // Ø¯Ø§Ø¦Ù†  Ø§Ù„Ø®ØµÙ… Ø§Ù„Ù…Ù…Ù†ÙˆØ­        = totalNetDiscount        [Ø¥Ù† ÙˆØ¬Ø¯]
-        // Ø¯Ø§Ø¦Ù†  Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ (Ø§Ø³ØªØ±Ø¯Ø§Ø¯)    = totalNetReturn + totalVatReturn + deliveryFeeToRefund
-        // Ø¯Ø§Ø¦Ù†  ØªÙƒÙ„ÙØ© Ø§Ù„Ø¨Ø¶Ø§Ø¹Ø© COGS   = totalCostReturn
-        // Ø¯Ø§Ø¦Ù†  Ø¥ÙŠØ±Ø§Ø¯ Ø§Ù„ØªÙˆØµÙŠÙ„        = returnShippingFee       [chargeReturnShipping]
+        // مدين  مرتجع مبيعات        = totalGrossReturn
+        // مدين  ضريبة المخرجات      = totalVatReturn          [إن وجدت]
+        // مدين  إيراد الشحن (إلغاء) = deliveryFeeToRefund     [refundShipping]
+        // مدين  مخزن الشحن/الرئيسي  = totalCostReturn
+        // مدين  العملاء (رسوم رجوع)  = returnShippingFee       [chargeReturnShipping]
+        // ──────────────────────────────────────────
+        // دائن  الخصم الممنوح        = totalNetDiscount        [إن وجد]
+        // دائن  العملاء (استرداد)    = totalNetReturn + totalVatReturn + deliveryFeeToRefund
+        // دائن  تكلفة البضاعة COGS   = totalCostReturn
+        // دائن  إيراد التوصيل        = returnShippingFee       [chargeReturnShipping]
         //
-        // Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„Ø§Ù† Ù…ØªØ³Ø§ÙˆÙŠØ§Ù† Ø¯Ø§Ø¦Ù…Ø§Ù‹ (Ù‡ÙˆÙŠØ© Ø±ÙŠØ§Ø¶ÙŠØ©) âœ“
+        // الإجمالان متساويان دائماً (هوية رياضية) ✓
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>();
 
-        // [ Ù…Ø¯ÙŠÙ† ] Ù…Ø±ØªØ¬Ø¹ Ù…Ø¨ÙŠØ¹Ø§Øª (Ø¨Ø§Ù„Ø³Ø¹Ø± Ø§Ù„Ø£ØµÙ„ÙŠ Ù‚Ø¨Ù„ Ø§Ù„Ø®ØµÙ…)
+        // [ مدين ] مرتجع مبيعات (بالسعر الأصلي قبل الخصم)
         if (totalGrossReturn > 0)
             lines.Add((salesReturnAcct, totalGrossReturn, 0,
                 _t.Get("Accounting.SalesReturnDesc", order.OrderNumber)));
 
-        // [ Ù…Ø¯ÙŠÙ† ] Ø¶Ø±ÙŠØ¨Ø© Ø§Ù„Ù…Ø®Ø±Ø¬Ø§Øª
+        // [ مدين ] ضريبة المخرجات
         if (totalVatReturn > 0)
         {
             string vatAcct = !string.IsNullOrEmpty(store?.StoreVatAccountId)
@@ -428,16 +428,16 @@ public class SalesAccountingService
                 _t.Get("Accounting.SalesReturnTaxDesc", order.OrderNumber)));
         }
 
-        // [ Ù…Ø¯ÙŠÙ† ] Ø¥Ù„ØºØ§Ø¡ Ø¥ÙŠØ±Ø§Ø¯ Ø§Ù„Ø´Ø­Ù† (Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„Ù…ÙØ±ÙˆØ¶ ÙŠÙØ±Ø¯ Ø§Ù„Ø´Ø­Ù† Ù„Ù„Ø¹Ù…ÙŠÙ„)
+        // [ مدين ] إلغاء إيراد الشحن (إذا كان المفروض يُرد الشحن للعميل)
         decimal deliveryFeeToRefund = 0;
         if (refundShipping && order.DeliveryFee > 0)
         {
             deliveryFeeToRefund = order.DeliveryFee;
             lines.Add((deliveryRevAcct, deliveryFeeToRefund, 0,
-                $"Ø¥Ù„ØºØ§Ø¡ Ø¥ÙŠØ±Ø§Ø¯ Ø§Ù„Ø´Ø­Ù† - Ø·Ù„Ø¨ #{order.OrderNumber}"));
+                $"إلغاء إيراد الشحن - طلب #{order.OrderNumber}"));
         }
 
-        // [ Ù…Ø¯ÙŠÙ† ] Ù…Ø®Ø²Ù† Ø´Ø±ÙƒØ© Ø§Ù„Ø´Ø­Ù† Ø£Ùˆ Ø§Ù„Ù…Ø®Ø²Ù† Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠ (ØªØ±Ø¬Ø¹ Ø§Ù„Ø¨Ø¶Ø§Ø¹Ø© Ù„Ù„Ù…Ø®Ø²Ù†)
+        // [ مدين ] مخزن شركة الشحن أو المخزن الرئيسي (ترجع البضاعة للمخزن)
         if (totalCostReturn > 0)
         {
             string returnInventoryAcct = inventoryAcct;
@@ -451,33 +451,33 @@ public class SalesAccountingService
                 _t.Get("Accounting.InventoryInDesc")));
         }
 
-        // [ Ù…Ø¯ÙŠÙ† ] Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ - Ø±Ø³ÙˆÙ… Ø´Ø­Ù† Ø§Ù„Ø¥Ø±Ø¬Ø§Ø¹ (Ø¯ÙŠÙ’Ù† Ø¬Ø¯ÙŠØ¯ Ø¹Ù„Ù‰ Ø§Ù„Ø¹Ù…ÙŠÙ„ - Ù…Ø´ Ø¹ÙŠØ¨ ØªØµÙ†ÙŠØ¹)
+        // [ مدين ] العملاء - رسوم شحن الإرجاع (ديْن جديد على العميل - مش عيب تصنيع)
         if (chargeReturnShipping && returnShippingFee > 0)
             lines.Add((receivablesAcct, returnShippingFee, 0,
-                $"Ø±Ø³ÙˆÙ… Ø´Ø­Ù† Ø¥Ø±Ø¬Ø§Ø¹ - Ø·Ù„Ø¨ #{order.OrderNumber}"));
+                $"رسوم شحن إرجاع - طلب #{order.OrderNumber}"));
 
-        // [ Ø¯Ø§Ø¦Ù† ] Ø¥Ù„ØºØ§Ø¡ Ø§Ù„Ø®ØµÙ… Ø§Ù„Ù…Ù…Ù†ÙˆØ­ Ø£ØµÙ„Ø§Ù‹
+        // [ دائن ] إلغاء الخصم الممنوح أصلاً
         if (totalNetDiscount > 0)
             lines.Add((salesDiscAcct, 0, totalNetDiscount,
-                $"Ø¥Ù„ØºØ§Ø¡ Ø®ØµÙ… Ù…Ø¨ÙŠØ¹Ø§Øª Ù…Ø±ØªØ¬Ø¹ - Ø·Ù„Ø¨ #{order.OrderNumber}"));
+                $"إلغاء خصم مبيعات مرتجع - طلب #{order.OrderNumber}"));
 
-        // [ Ø¯Ø§Ø¦Ù† ] Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ - ØµØ§ÙÙŠ Ù‚ÙŠÙ…Ø© Ø§Ù„Ø¨Ø¶Ø§Ø¹Ø© Ø§Ù„Ù…Ø±ØªØ¬Ø¹Ø© (ÙŠÙØ­Ø³Ø¨ ÙÙŠ Ø±ØµÙŠØ¯ Ø§Ù„Ø¹Ù…ÙŠÙ„)
+        // [ دائن ] العملاء - صافي قيمة البضاعة المرتجعة (يُحسب في رصيد العميل)
         decimal customerCreditAmount = Math.Round(totalNetReturn + totalVatReturn + deliveryFeeToRefund, 2);
         if (customerCreditAmount > 0)
             lines.Add((receivablesAcct, 0, customerCreditAmount,
                 _t.Get("Accounting.SalesReturnDebtReductionDesc", order.Customer?.FullName ?? order.OrderNumber)));
 
-        // [ Ø¯Ø§Ø¦Ù† ] Ø¹ÙƒØ³ ØªÙƒÙ„ÙØ© Ø§Ù„Ø¨Ø¶Ø§Ø¹Ø© Ø§Ù„Ù…Ø¨Ø§Ø¹Ø© (COGS)
+        // [ دائن ] عكس تكلفة البضاعة المباعة (COGS)
         if (totalCostReturn > 0)
             lines.Add((cogsAcct, 0, totalCostReturn,
                 _t.Get("Accounting.COGSReturnDesc")));
 
-        // [ Ø¯Ø§Ø¦Ù† ] Ø¥ÙŠØ±Ø§Ø¯ Ø´Ø­Ù† Ø§Ù„Ø¥Ø±Ø¬Ø§Ø¹ (ÙÙŠ Ù…Ù‚Ø§Ø¨Ù„ Ø§Ù„Ø±Ø³ÙˆÙ… Ø§Ù„Ù…ÙØ­Ù…Ù„Ø© Ø¹Ù„Ù‰ Ø§Ù„Ø¹Ù…ÙŠÙ„)
+        // [ دائن ] إيراد شحن الإرجاع (في مقابل الرسوم المُحملة على العميل)
         if (chargeReturnShipping && returnShippingFee > 0)
             lines.Add((deliveryRevAcct, 0, returnShippingFee,
-                $"Ø¥ÙŠØ±Ø§Ø¯ Ø´Ø­Ù† Ø¥Ø±Ø¬Ø§Ø¹ - Ø·Ù„Ø¨ #{order.OrderNumber}"));
+                $"إيراد شحن إرجاع - طلب #{order.OrderNumber}"));
 
-        // â”€â”€ 5. ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ù‚ÙŠØ¯ â”€â”€
+        // ── 5. تسجيل القيد ──
         await _core.PostEntryAsync(
             type:        JournalEntryType.SalesReturn,
             reference:   order.OrderNumber + "-RTN",
@@ -549,7 +549,7 @@ public class SalesAccountingService
 
         if (totalNetDiscount > 0)
         {
-            lines.Add((salesDiscAcct, 0, totalNetDiscount, $"Ø¥Ù„ØºØ§Ø¡ Ø®ØµÙ… Ù…Ø¨ÙŠØ¹Ø§Øª Ù…Ø±ØªØ¬Ø¹ - Ø·Ù„Ø¨ #{order.OrderNumber}"));
+            lines.Add((salesDiscAcct, 0, totalNetDiscount, $"إلغاء خصم مبيعات مرتجع - طلب #{order.OrderNumber}"));
         }
 
         if (totalVatReturn > 0)
@@ -564,12 +564,12 @@ public class SalesAccountingService
 
         if (chargeReturnShipping && returnShippingFee > 0)
         {
-            lines.Add((receivablesAcct, returnShippingFee, 0, $"Ø±Ø³ÙˆÙ… Ø´Ø­Ù† Ø¥Ø±Ø¬Ø§Ø¹ Ø¬Ø²Ø¦ÙŠ - Ø·Ù„Ø¨ #{order.OrderNumber}"));
-            lines.Add((deliveryRevAcct, 0, returnShippingFee, $"Ø¥ÙŠØ±Ø§Ø¯ Ø´Ø­Ù† Ø¥Ø±Ø¬Ø§Ø¹ Ø¬Ø²Ø¦ÙŠ - Ø·Ù„Ø¨ #{order.OrderNumber}"));
+            lines.Add((receivablesAcct, returnShippingFee, 0, $"رسوم شحن إرجاع جزئي - طلب #{order.OrderNumber}"));
+            lines.Add((deliveryRevAcct, 0, returnShippingFee, $"إيراد شحن إرجاع جزئي - طلب #{order.OrderNumber}"));
         }
 
 
-        // âœ… ROBUST MULTI-RETURN DEBT LOGIC:
+        // ✅ ROBUST MULTI-RETURN DEBT LOGIC:
         // We calculate how much of the original debt is still "remaining" after previous returns.
         // This prevents the system from "forgetting" previous debt reductions and over-crediting the customer.
         int receivablesAcctId = int.Parse(receivablesAcct.Replace("ID:", ""));
@@ -744,12 +744,12 @@ public class SalesAccountingService
         decimal vatDiff = originalVatAmount - order.TotalVatAmount;
         decimal netDiff = difference - vatDiff;
 
-        lines.Add((salesReturnAcct, netDiff, 0, $"ØªØ®ÙÙŠØ¶ Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª Ù„ØªØ¹Ø¯ÙŠÙ„ Ø§Ù„ØªÙƒÙ„ÙØ© - ÙØ§ØªÙˆØ±Ø© {order.OrderNumber}"));
+        lines.Add((salesReturnAcct, netDiff, 0, $"تخفيض المبيعات لتعديل التكلفة - فاتورة {order.OrderNumber}"));
 
         if (vatDiff > 0)
         {
             string vatAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.VatOutput, mapDict)}";
-            lines.Add((vatAcct, vatDiff, 0, $"ØªØ®ÙÙŠØ¶ Ø¶Ø±ÙŠØ¨Ø© Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª Ù„ØªØ¹Ø¯ÙŠÙ„ Ø§Ù„ØªÙƒÙ„ÙØ© - ÙØ§ØªÙˆØ±Ø© {order.OrderNumber}"));
+            lines.Add((vatAcct, vatDiff, 0, $"تخفيض ضريبة المبيعات لتعديل التكلفة - فاتورة {order.OrderNumber}"));
         }
 
         if (refundMethod == "cash")
@@ -760,7 +760,7 @@ public class SalesAccountingService
 
             if (amountToReceivables > 0)
             {
-                lines.Add((receivablesAcct, 0, amountToReceivables, $"ØªØ®ÙÙŠØ¶ Ù…Ø¯ÙŠÙˆÙ†ÙŠØ© Ø§Ù„Ø¹Ù…ÙŠÙ„ Ù„ØªØ¹Ø¯ÙŠÙ„ Ø§Ù„ØªÙƒÙ„ÙØ© - ÙØ§ØªÙˆØ±Ø© {order.OrderNumber}"));
+                lines.Add((receivablesAcct, 0, amountToReceivables, $"تخفيض مديونية العميل لتعديل التكلفة - فاتورة {order.OrderNumber}"));
             }
 
             if (amountToCash > 0)
@@ -774,12 +774,12 @@ public class SalesAccountingService
                 {
                     cashId = await _core.GetMappedCashAccountAsync(order.PaymentMethod, order.Source, mapDict);
                 }
-                lines.Add((cashId, 0, amountToCash, $"Ø§Ø³ØªØ±Ø¯Ø§Ø¯ Ù„ÙØ±Ù‚ Ø§Ù„ØªÙƒÙ„ÙØ© - ÙØ§ØªÙˆØ±Ø© {order.OrderNumber}"));
+                lines.Add((cashId, 0, amountToCash, $"استرداد لفرق التكلفة - فاتورة {order.OrderNumber}"));
             }
         }
         else // refundMethod == "credit"
         {
-            lines.Add((receivablesAcct, 0, difference, $"Ø¥Ø¶Ø§ÙØ© ÙØ±Ù‚ ØªØ¹Ø¯ÙŠÙ„ Ø§Ù„ØªÙƒÙ„ÙØ© Ù„Ø±ØµÙŠØ¯ Ø§Ù„Ø­Ø³Ø§Ø¨ - ÙØ§ØªÙˆØ±Ø© {order.OrderNumber}"));
+            lines.Add((receivablesAcct, 0, difference, $"إضافة فرق تعديل التكلفة لرصيد الحساب - فاتورة {order.OrderNumber}"));
         }
 
         var suffix = TimeHelper.GetEgyptTime().Ticks.ToString().Substring(10);
@@ -788,7 +788,7 @@ public class SalesAccountingService
         await _core.PostEntryAsync(
             type:        JournalEntryType.SalesReturn,
             reference:   reference,
-            description: $"ØªØ¹Ø¯ÙŠÙ„ Ø§Ù„ÙØ§ØªÙˆØ±Ø© Ø±Ù‚Ù… {order.OrderNumber} Ù„Ø³Ø¹Ø± Ø§Ù„ØªÙƒÙ„ÙØ©",
+            description: $"تعديل الفاتورة رقم {order.OrderNumber} لسعر التكلفة",
             date:        TimeHelper.GetEgyptTime(),
             lines:       lines,
             orderId:     order.Id,
@@ -798,7 +798,7 @@ public class SalesAccountingService
     }
 
     /// <summary>
-    /// Ù‚ÙŠØ¯ Ø§Ù„Ù…Ø±ØªØ¬Ø¹ (Ù„Ø´Ø±ÙƒØ© Ø§Ù„Ø´Ø­Ù†) - ÙŠØ·Ø§Ø¨Ù‚ Ø§Ù„ØµÙˆØ±Ø© 8
+    /// قيد المرتجع (لشركة الشحن) - يطابق الصورة 8
     /// </summary>
     public async Task PostCourierReturnShippingFeeAsync(Order order, int? returnRequestId = null)
     {
@@ -850,19 +850,19 @@ public class SalesAccountingService
 
         var lines = new List<(string code, decimal debit, decimal credit, string desc)>
         {
-            // 1. Ù…Ø¯ÙŠÙ†: Ø¥ÙŠØ±Ø§Ø¯ Ø®Ø¯Ù…Ø© ØªÙˆØµÙŠÙ„ / Ø¯Ø§Ø¦Ù†: Ø¹Ù…ÙŠÙ„ (Ø¨Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ù‚ÙŠÙ…Ø© Ø§Ù„Ø´Ø­Ù† Ù„Ø¥Ù„ØºØ§Ø¡ Ø§Ù„Ø¥ÙŠØ±Ø§Ø¯ Ø§Ù„ÙˆÙ‡Ù…ÙŠ ÙˆØ¥Ø³Ù‚Ø§Ø·Ù‡ Ù…Ù† Ø§Ù„Ø¹Ù…ÙŠÙ„)
-            (deliveryRevAcct, shippingFee, 0,           $"Ø¥Ù„ØºØ§Ø¡ Ø¥ÙŠØ±Ø§Ø¯ Ø§Ù„Ø´Ø­Ù† Ù„Ø¹Ø¯Ù… Ø§Ù„ØªØ³Ù„ÙŠÙ… - ÙØ§ØªÙˆØ±Ø© #{order.OrderNumber}"),
-            (customerAcct,    0,           shippingFee, $"Ø¥Ø³Ù‚Ø§Ø· Ù…Ø¯ÙŠÙˆÙ†ÙŠØ© Ø§Ù„Ø´Ø­Ù† Ù„Ø¹Ø¯Ù… Ø§Ù„ØªØ³Ù„ÙŠÙ… - ÙØ§ØªÙˆØ±Ø© #{order.OrderNumber}"),
+            // 1. مدين: إيراد خدمة توصيل / دائن: عميل (بإجمالي قيمة الشحن لإلغاء الإيراد الوهمي وإسقاطه من العميل)
+            (deliveryRevAcct, shippingFee, 0,           $"إلغاء إيراد الشحن لعدم التسليم - فاتورة #{order.OrderNumber}"),
+            (customerAcct,    0,           shippingFee, $"إسقاط مديونية الشحن لعدم التسليم - فاتورة #{order.OrderNumber}"),
             
-            // 2. Ù…Ø¯ÙŠÙ†: Ù…ØµØ±ÙˆÙ Ø´Ø­Ù† ÙˆØªÙˆØµÙŠÙ„ / Ø¯Ø§Ø¦Ù†: Ø´Ø±ÙƒØ© Ø§Ù„Ø´Ø­Ù† (Ù‚ÙŠÙ…Ø© ØªÙƒÙ„ÙØ© Ø§Ù„Ø´Ø­Ù† Ø§Ù„Ù…Ø³ØªØ­Ù‚Ø© Ù„Ù„Ø´Ø±ÙƒØ© Ù†Ø¸ÙŠØ± Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø©)
-            (deliveryExpAcct, courierCost, 0,           $"Ù…ØµØ§Ø±ÙŠÙ Ø´Ø­Ù† Ù…Ø±ØªØ¬Ø¹ - {order.ShippingCompany.NameAr} | ÙØ§ØªÙˆØ±Ø© #{order.OrderNumber}"),
-            (courierAcct,     0,           courierCost, $"Ø§Ø³ØªØ­Ù‚Ø§Ù‚ Ù…ØµØ§Ø±ÙŠÙ Ø´Ø­Ù† Ù„Ø´Ø±ÙƒØ© - {order.ShippingCompany.NameAr} | ÙØ§ØªÙˆØ±Ø© #{order.OrderNumber}")
+            // 2. مدين: مصروف شحن وتوصيل / دائن: شركة الشحن (قيمة تكلفة الشحن المستحقة للشركة نظير المحاولة)
+            (deliveryExpAcct, courierCost, 0,           $"مصاريف شحن مرتجع - {order.ShippingCompany.NameAr} | فاتورة #{order.OrderNumber}"),
+            (courierAcct,     0,           courierCost, $"استحقاق مصاريف شحن لشركة - {order.ShippingCompany.NameAr} | فاتورة #{order.OrderNumber}")
         };
 
         await _core.PostEntryAsync(
             type:        JournalEntryType.Manual,
             reference:   reference,
-            description: $"Ù‚ÙŠØ¯ Ø´Ø­Ù† Ù…Ø±ØªØ¬Ø¹ â€” {order.ShippingCompany.NameAr} | {(returnRequestId.HasValue ? $"Ø·Ù„Ø¨ #{returnRequestId} | " : "")}ÙØ§ØªÙˆØ±Ø© #{order.OrderNumber}",
+            description: $"قيد شحن مرتجع — {order.ShippingCompany.NameAr} | {(returnRequestId.HasValue ? $"طلب #{returnRequestId} | " : "")}فاتورة #{order.OrderNumber}",
             date:        TimeHelper.GetEgyptBusinessDayDate(postingDate),
             lines:       lines,
             orderId:     order.Id,
