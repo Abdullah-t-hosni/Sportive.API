@@ -85,7 +85,7 @@ public class AuditLogsController : ControllerBase
         var userIds = items.Select(x => x.UserId).Where(u => !string.IsNullOrEmpty(u)).Distinct().ToList();
         var usersMap = await _db.Users
             .Where(u => userIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => !string.IsNullOrEmpty(u.FullName) ? u.FullName : u.UserName ?? "مدير النظام");
+            .ToDictionaryAsync(u => u.Id, u => !string.IsNullOrEmpty(u.FullName) ? u.FullName : u.UserName ?? "النظام");
 
         var formattedItems = items.Select(x => {
             string? resolvedUser = x.UserName;
@@ -94,7 +94,16 @@ public class AuditLogsController : ControllerBase
                 if (!string.IsNullOrEmpty(x.UserId) && usersMap.TryGetValue(x.UserId, out var name))
                     resolvedUser = name;
                 else
-                    resolvedUser = "مدير النظام";
+                {
+                    if (x.Action == "BOSTAWEBHOOKRAW") 
+                        resolvedUser = "نظام شحن بوسطة";
+                    else if (x.EntityType == "Cart" || x.EntityType == "CartItem") 
+                        resolvedUser = "العميل (عبر المتجر)";
+                    else if (x.Action == "createorder" || x.Action == "updateorder") 
+                        resolvedUser = "العميل / النظام";
+                    else 
+                        resolvedUser = "النظام (System)";
+                }
             }
 
             return new {
