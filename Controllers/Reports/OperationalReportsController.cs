@@ -745,8 +745,19 @@ public class OperationalReportsController : ControllerBase
                     (string.IsNullOrEmpty(size) || v.Size == size)
                 ).ToList();
 
+                if (branchId.HasValue || warehouseId.HasValue)
+                {
+                    filteredVariants = filteredVariants.Where(v => variantStocks.ContainsKey(v.Id)).ToList();
+                    
+                    if (p.Variants.Any() && !filteredVariants.Any())
+                        continue;
+                        
+                    if (!p.Variants.Any() && !simpleProductStocks.ContainsKey(p.Id))
+                        continue;
+                }
+
                 var variantRows = filteredVariants.Select(v => {
-                    var vStock = variantStocks.GetValueOrDefault(v.Id, 0);
+                    var vStock = variantStocks?.GetValueOrDefault(v.Id, 0) ?? 0;
                     return new VariantInventoryRow(
                         v.Id, v.Size ?? "", v.Color ?? "", v.ColorAr ?? "",
                         vStock,
