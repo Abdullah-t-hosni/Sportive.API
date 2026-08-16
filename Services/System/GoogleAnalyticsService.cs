@@ -449,6 +449,8 @@ namespace Sportive.API.Services
         {
             return new
             {
+                isMock = true,
+                error = errorMsg,
                 activeUsers = 24,
                 devices = new { mobile = "82%", desktop = "18%" },
                 countries = new[]
