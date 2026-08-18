@@ -1611,16 +1611,16 @@ public class OperationalReportsController : ControllerBase
             if (itemsList != null && itemsList.Any())
             {
                 itemsList = itemsList
-                    .GroupBy(i => new { i.ProductSKU, i.ProductNameAr, i.Size, i.Color, i.UnitPrice, i.ProductId, i.ProductVariantId })
+                    .GroupBy(i => new { i.SKU, i.ProductName, i.Size, i.Color, i.UnitPrice, i.ProductId, i.ProductVariantId })
                     .Select(g => new ReportItemDto(
-                        g.Key.ProductSKU,
-                        g.Key.ProductNameAr,
+                        g.Key.SKU,
+                        g.Key.ProductName,
                         g.Key.Size,
                         g.Key.Color,
                         g.Sum(x => x.Quantity),
                         g.Key.UnitPrice,
                         0,
-                        g.Average(x => x.DiscountAmount),
+                        g.Average(x => x.Discount),
                         g.Sum(x => x.LineTotal),
                         g.Key.ProductId,
                         g.Key.ProductVariantId
