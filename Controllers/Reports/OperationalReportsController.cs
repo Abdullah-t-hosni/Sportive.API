@@ -1542,10 +1542,20 @@ public class OperationalReportsController : ControllerBase
 
         var rows = returns.Select(j => {
             List<ReportItemDto>? itemsList = null;
-            var refKey = j.Reference ?? j.EntryNumber;
-            var lookupKey = j.OrderNumber ?? refKey;
+            var refKey = j.Reference ?? j.EntryNumber ?? "";
+            var orderKey = j.OrderNumber ?? "";
 
-            if (movementsMap.TryGetValue(lookupKey, out var movs) && movs.Any())
+            List<Sportive.API.Models.InventoryMovement>? movs = null;
+            if (!string.IsNullOrEmpty(refKey) && movementsMap.TryGetValue(refKey, out var refMovs) && refMovs.Any())
+            {
+                movs = refMovs;
+            }
+            else if (!string.IsNullOrEmpty(orderKey) && movementsMap.TryGetValue(orderKey, out var orderMovs) && orderMovs.Any())
+            {
+                movs = orderMovs;
+            }
+
+            if (movs != null && movs.Any())
             {
                 itemsList = movs.Select(m => {
                     decimal unitPrice = m.UnitCost;
@@ -1591,6 +1601,25 @@ public class OperationalReportsController : ControllerBase
                     i.ProductId ?? 0,
                     i.ProductVariantId ?? 0
                 )).ToList();
+            }
+
+            if (itemsList != null && itemsList.Any())
+            {
+                itemsList = itemsList
+                    .GroupBy(i => new { i.ProductSKU, i.ProductNameAr, i.Size, i.Color, i.UnitPrice, i.ProductId, i.ProductVariantId })
+                    .Select(g => new ReportItemDto(
+                        g.Key.ProductSKU,
+                        g.Key.ProductNameAr,
+                        g.Key.Size,
+                        g.Key.Color,
+                        g.Sum(x => x.Quantity),
+                        g.Key.UnitPrice,
+                        0,
+                        g.Average(x => x.DiscountAmount),
+                        g.Sum(x => x.LineTotal),
+                        g.Key.ProductId,
+                        g.Key.ProductVariantId
+                    )).ToList();
             }
 
             var itemsAmount = itemsList?.Sum(it => it.LineTotal) ?? 0;
