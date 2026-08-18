@@ -1542,65 +1542,70 @@ public class OperationalReportsController : ControllerBase
 
         var rows = returns.Select(j => {
             List<ReportItemDto>? itemsList = null;
-            var refKey = j.Reference ?? j.EntryNumber ?? "";
-            var orderKey = j.OrderNumber ?? "";
-
-            List<Sportive.API.Models.InventoryMovement>? movs = null;
-            if (!string.IsNullOrEmpty(refKey) && movementsMap.TryGetValue(refKey, out var refMovs) && refMovs.Any())
+            if (j.OrderId != null && j.Items != null && j.Items.Any(i => i.ReturnedQuantity > 0))
             {
-                movs = refMovs;
+                itemsList = j.Items
+                    .Where(i => i.ReturnedQuantity > 0)
+                    .Select(i => new ReportItemDto(
+                        i.ProductSKU,
+                        i.ProductNameAr,
+                        i.Size ?? "",
+                        i.Color ?? "",
+                        i.ReturnedQuantity,
+                        i.UnitPrice,
+                        0,
+                        i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1),
+                        (i.UnitPrice - (i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1))) * i.ReturnedQuantity,
+                        i.ProductId ?? 0,
+                        i.ProductVariantId ?? 0
+                    )).ToList();
             }
-            else if (!string.IsNullOrEmpty(orderKey) && movementsMap.TryGetValue(orderKey, out var orderMovs) && orderMovs.Any())
+            else
             {
-                movs = orderMovs;
-            }
+                var refKey = j.Reference ?? j.EntryNumber ?? "";
+                var orderKey = j.OrderNumber ?? "";
 
-            if (movs != null && movs.Any())
-            {
-                itemsList = movs.Select(m => {
-                    decimal unitPrice = m.UnitCost;
-                    if (j.OrderId != null && j.Items != null)
-                    {
-                        var orderItem = j.Items.FirstOrDefault(oi => 
-                            oi.ProductSKU == (m.Product?.SKU ?? "") && 
-                            (oi.Size ?? "") == (m.ProductVariant?.Size ?? "") && 
-                            (oi.Color ?? "") == (m.ProductVariant?.ColorAr ?? m.ProductVariant?.Color ?? "")
-                        );
-                        if (orderItem != null)
+                List<Sportive.API.Models.InventoryMovement>? movs = null;
+                if (!string.IsNullOrEmpty(refKey) && movementsMap.TryGetValue(refKey, out var refMovs) && refMovs.Any())
+                {
+                    movs = refMovs;
+                }
+                else if (!string.IsNullOrEmpty(orderKey) && movementsMap.TryGetValue(orderKey, out var orderMovs) && orderMovs.Any())
+                {
+                    movs = orderMovs;
+                }
+
+                if (movs != null && movs.Any())
+                {
+                    itemsList = movs.Select(m => {
+                        decimal unitPrice = m.UnitCost;
+                        if (j.OrderId != null && j.Items != null)
                         {
-                            unitPrice = orderItem.UnitPrice;
+                            var orderItem = j.Items.FirstOrDefault(oi => 
+                                oi.ProductSKU == (m.Product?.SKU ?? "") && 
+                                (oi.Size ?? "") == (m.ProductVariant?.Size ?? "") && 
+                                (oi.Color ?? "") == (m.ProductVariant?.ColorAr ?? m.ProductVariant?.Color ?? "")
+                            );
+                            if (orderItem != null)
+                            {
+                                unitPrice = orderItem.UnitPrice;
+                            }
                         }
-                    }
-                    return new ReportItemDto(
-                        m.Product?.SKU ?? "",
-                        m.Product?.NameAr ?? "",
-                        m.ProductVariant?.Size ?? "",
-                        m.ProductVariant?.ColorAr ?? m.ProductVariant?.Color ?? "",
-                        Math.Abs(m.Quantity),
-                        unitPrice,
-                        0,
-                        0,
-                        Math.Abs(m.Quantity) * unitPrice,
-                        m.ProductId ?? 0,
-                        m.ProductVariantId ?? 0
-                    );
-                }).ToList();
-            }
-            else if (j.Items != null)
-            {
-                itemsList = j.Items.Select(i => new ReportItemDto(
-                    i.ProductSKU,
-                    i.ProductNameAr,
-                    i.Size ?? "",
-                    i.Color ?? "",
-                    i.ReturnedQuantity,
-                    i.UnitPrice,
-                    0,
-                    i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1),
-                    (i.UnitPrice - (i.DiscountAmount / (i.Quantity > 0 ? i.Quantity : 1))) * i.ReturnedQuantity,
-                    i.ProductId ?? 0,
-                    i.ProductVariantId ?? 0
-                )).ToList();
+                        return new ReportItemDto(
+                            m.Product?.SKU ?? "",
+                            m.Product?.NameAr ?? "",
+                            m.ProductVariant?.Size ?? "",
+                            m.ProductVariant?.ColorAr ?? m.ProductVariant?.Color ?? "",
+                            Math.Abs(m.Quantity),
+                            unitPrice,
+                            0,
+                            0,
+                            Math.Abs(m.Quantity) * unitPrice,
+                            m.ProductId ?? 0,
+                            m.ProductVariantId ?? 0
+                        );
+                    }).ToList();
+                }
             }
 
             if (itemsList != null && itemsList.Any())
