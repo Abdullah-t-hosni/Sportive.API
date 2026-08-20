@@ -805,6 +805,22 @@ public class ProductService : IProductService
         if (v == null) return false;
 
         var productId = v.ProductId;
+
+        // 1. Remove warehouse stocks for this variant
+        var stocks = await _db.ProductWarehouseStocks.Where(s => s.ProductVariantId == variantId).ToListAsync();
+        if (stocks.Any()) _db.ProductWarehouseStocks.RemoveRange(stocks);
+
+        // 2. Remove cart items referencing this variant
+        var cartItems = await _db.CartItems.Where(ci => ci.ProductVariantId == variantId).ToListAsync();
+        if (cartItems.Any()) _db.CartItems.RemoveRange(cartItems);
+
+        // 3. Nullify historical references
+        var orderItems = await _db.OrderItems.Where(oi => oi.ProductVariantId == variantId).ToListAsync();
+        foreach (var oi in orderItems) oi.ProductVariantId = null;
+
+        var movements = await _db.InventoryMovements.Where(m => m.ProductVariantId == variantId).ToListAsync();
+        foreach (var m in movements) m.ProductVariantId = null;
+
         _db.ProductVariants.Remove(v);
         await _db.SaveChangesAsync();
 
