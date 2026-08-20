@@ -530,10 +530,13 @@ public class SalesAccountingService
         foreach (var item in returnedItems)
         {
             decimal rate = (item.VatRateApplied ?? 0) / 100m;
-            decimal itemOriginalTotal = item.OriginalUnitPrice * item.Quantity;
-            decimal itemOriginalNet   = item.HasTax ? Math.Round(itemOriginalTotal / (1 + rate), 2) : itemOriginalTotal;
+            decimal origPrice = item.OriginalUnitPrice > 0 ? item.OriginalUnitPrice : (item.UnitPrice > 0 ? item.UnitPrice : (item.Quantity > 0 ? item.TotalPrice / item.Quantity : 0));
             decimal itemActualTotal   = item.TotalPrice;
+            decimal itemOriginalTotal = Math.Max(itemActualTotal, origPrice * item.Quantity);
+            decimal itemOriginalNet   = item.HasTax ? Math.Round(itemOriginalTotal / (1 + rate), 2) : itemOriginalTotal;
             decimal itemActualNet     = item.HasTax ? Math.Round(itemActualTotal / (1 + rate), 2) : itemActualTotal;
+
+            if (itemOriginalNet < itemActualNet) itemOriginalNet = itemActualNet;
 
             totalGrossReturn += itemOriginalNet;
             totalNetDiscount += (itemOriginalNet - itemActualNet);
@@ -545,6 +548,10 @@ public class SalesAccountingService
         if (totalGrossReturn > 0)
         {
             lines.Add((salesReturnAcct, totalGrossReturn, 0, _t.Get("Accounting.PartialReturnNetDesc", order.OrderNumber)));
+        }
+        else if (totalNetReturn > 0)
+        {
+            lines.Add((salesReturnAcct, totalNetReturn, 0, _t.Get("Accounting.PartialReturnNetDesc", order.OrderNumber)));
         }
 
         if (totalNetDiscount > 0)

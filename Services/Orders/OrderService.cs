@@ -2216,6 +2216,9 @@ public class OrderService : IOrderService
                         ProductNameAr = line.ProductNameAr,
                         Quantity = req.Quantity,
                         UnitPrice = line.UnitPrice,
+                        OriginalUnitPrice = line.OriginalUnitPrice > 0 ? line.OriginalUnitPrice : (line.UnitPrice > 0 ? line.UnitPrice : (line.Quantity > 0 ? line.TotalPrice / line.Quantity : 0)),
+                        HasTax = line.HasTax,
+                        VatRateApplied = line.VatRateApplied,
                         TotalPrice = itemTotalReturn, // This part is refunded
                         ItemVatAmount = itemVatReturn,
                         Product = line.Product // For COGS
@@ -2858,6 +2861,19 @@ public class OrderService : IOrderService
 
         if (journalEntry == null)
         {
+            var matchedOrder = await _db.Orders
+                .Include(o => o.Items).ThenInclude(i => i.Product)
+                .Include(o => o.Customer)
+                .FirstOrDefaultAsync(o => o.OrderNumber == trimmedRef);
+
+            if (matchedOrder != null && (matchedOrder.Status == OrderStatus.PartiallyReturned || matchedOrder.Status == OrderStatus.Returned || matchedOrder.Items.Any(i => i.ReturnedQuantity > 0)))
+            {
+                var returnedItems = matchedOrder.Items.Where(i => i.ReturnedQuantity > 0).ToList();
+                decimal refAmount = returnedItems.Sum(i => i.ReturnedQuantity * i.UnitPrice);
+                await _accounting.PostPartialSalesReturnAsync(matchedOrder, returnedItems, refAmount, dto.RefundAccountId, overrideReference: $"{matchedOrder.OrderNumber}-RTN", overrideDate: dto.ReturnDate ?? TimeHelper.GetEgyptTime());
+                return;
+            }
+
             throw new KeyNotFoundException("Sales return entry not found.");
         }
 
