@@ -1944,8 +1944,8 @@ public class OrderService : IOrderService
             }
         }
 
-        // 🔄 REVERT PAYMENTS: If order status moves backward, remove payments if we dropped below the payment threshold
-        if (dto.Status < oldStatus && dto.Status != OrderStatus.Returned && dto.Status != OrderStatus.Cancelled && dto.Status != OrderStatus.PartiallyReturned)
+        // 🔄 REVERT FROM DELIVERED: If order status changes FROM Delivered to ANY internal non-delivered status (e.g. OutForDelivery, Processing, Pending)
+        if (oldStatus == OrderStatus.Delivered && dto.Status != OrderStatus.Delivered && dto.Status != OrderStatus.PartiallyReturned && dto.Status != OrderStatus.Returned)
         {
             bool isDigitalPrepaid = order.Source != OrderSource.POS &&
                 (order.PaymentMethod == PaymentMethod.Vodafone ||
@@ -1953,44 +1953,39 @@ public class OrderService : IOrderService
                  order.PaymentMethod == PaymentMethod.CreditCard ||
                  order.PaymentMethod == PaymentMethod.Bank);
 
-            OrderStatus paymentThreshold = isDigitalPrepaid ? OrderStatus.Confirmed : OrderStatus.Delivered;
-
-            if (dto.Status < paymentThreshold)
+            // For Cash / COD orders: Reset payment status & paid amount to unpaid / pending
+            if (!isDigitalPrepaid && order.PaymentMethod != PaymentMethod.Credit)
             {
-                // We dropped below the status where payment is collected. Revert payment!
-                if (order.PaymentMethod != PaymentMethod.Credit)
+                order.PaymentStatus = PaymentStatus.Pending;
+                order.PaidAmount = 0;
+                
+                var existingPayments = await _db.OrderPayments.Where(p => p.OrderId == order.Id).ToListAsync();
+                if (existingPayments.Any())
                 {
-                    order.PaymentStatus = PaymentStatus.Pending;
-                    order.PaidAmount = 0;
-                    
-                    var existingPayments = await _db.OrderPayments.Where(p => p.OrderId == order.Id).ToListAsync();
-                    if (existingPayments.Any())
-                    {
-                        _db.OrderPayments.RemoveRange(existingPayments);
-                    }
+                    _db.OrderPayments.RemoveRange(existingPayments);
                 }
+            }
 
-                // Remove/Void any auto-created Receipt Voucher Journal Entry for this order (-PMT)
-                var pmtEntries = await _db.JournalEntries
-                    .Include(e => e.Lines)
-                    .Where(e => e.OrderId == order.Id && 
-                               (e.Type == JournalEntryType.ReceiptVoucher || 
-                                (e.Reference != null && e.Reference.StartsWith(order.OrderNumber + "-PMT"))))
-                    .ToListAsync();
+            // Remove/Void any auto-created Receipt Voucher Journal Entry for this order (-PMT)
+            var pmtEntries = await _db.JournalEntries
+                .Include(e => e.Lines)
+                .Where(e => e.OrderId == order.Id && 
+                           (e.Type == JournalEntryType.ReceiptVoucher || 
+                            (e.Reference != null && e.Reference.StartsWith(order.OrderNumber + "-PMT"))))
+                .ToListAsync();
 
-                if (pmtEntries.Any())
-                {
-                    _db.JournalLines.RemoveRange(pmtEntries.SelectMany(e => e.Lines));
-                    _db.JournalEntries.RemoveRange(pmtEntries);
-                    _logger.LogInformation("[Accounting] Removed {Count} ReceiptVoucher entries for order {Ref} on status revert from {OldStatus} to {NewStatus}.", pmtEntries.Count, order.OrderNumber, oldStatus, dto.Status);
-                }
+            if (pmtEntries.Any())
+            {
+                _db.JournalLines.RemoveRange(pmtEntries.SelectMany(e => e.Lines));
+                _db.JournalEntries.RemoveRange(pmtEntries);
+                _logger.LogInformation("[Accounting] Removed {Count} ReceiptVoucher entries for order {Ref} on status revert from Delivered to {NewStatus}.", pmtEntries.Count, order.OrderNumber, dto.Status);
+            }
 
-                // Remove linked ReceiptVouchers entity if any
-                var linkedRVs = await _db.ReceiptVouchers.Where(v => v.OrderId == order.Id).ToListAsync();
-                if (linkedRVs.Any())
-                {
-                    _db.ReceiptVouchers.RemoveRange(linkedRVs);
-                }
+            // Remove linked ReceiptVouchers entity if any
+            var linkedRVs = await _db.ReceiptVouchers.Where(v => v.OrderId == order.Id).ToListAsync();
+            if (linkedRVs.Any())
+            {
+                _db.ReceiptVouchers.RemoveRange(linkedRVs);
             }
         }
 
@@ -1998,12 +1993,10 @@ public class OrderService : IOrderService
         if ((oldStatus == OrderStatus.Returned || oldStatus == OrderStatus.Cancelled) &&
              dto.Status != OrderStatus.Returned && dto.Status != OrderStatus.Cancelled)
         {
-            // 1️⃣ Remove SalesReturn and associated return journal entries for this order
+            // 1️⃣ Remove SalesReturn journal entries for this order
             var returnEntries = await _db.JournalEntries
                 .Include(e => e.Lines)
-                .Where(e => e.Reference != null && e.Reference.StartsWith(order.OrderNumber) &&
-                            (e.Type == JournalEntryType.SalesReturn || 
-                            (e.Type == JournalEntryType.Manual && (e.Reference.Contains("-SHP-RTN") || e.Reference.Contains("-WH-RTN")))))
+                .Where(e => e.Type == JournalEntryType.SalesReturn && e.Reference != null && e.Reference.StartsWith(order.OrderNumber))
                 .ToListAsync();
 
             if (returnEntries.Any())
@@ -2033,29 +2026,6 @@ public class OrderService : IOrderService
                         await _accounting.ReverseEntryAsync(e.Id, $"إلغاء المرتجع للفاتورة رقم {order.OrderNumber}");
                     }
                     _logger.LogInformation("[Accounting] Reversed {Count} SalesReturn entries for order {Ref} on status revert.", returnEntries.Count, order.OrderNumber);
-                }
-            }
-
-            if (oldStatus == OrderStatus.Cancelled)
-            {
-                var reversalEntries = await _db.JournalEntries
-                    .Include(e => e.Lines)
-                    .Where(e => e.Type == JournalEntryType.SalesInvoice && e.ReversalOfId != null && e.Description.Contains("إلغاء الطلب رقم " + order.OrderNumber))
-                    .ToListAsync();
-                    
-                if (reversalEntries.Any())
-                {
-                    var originalEntryIds = reversalEntries.Select(e => e.ReversalOfId).ToList();
-                    _db.JournalLines.RemoveRange(reversalEntries.SelectMany(e => e.Lines));
-                    _db.JournalEntries.RemoveRange(reversalEntries);
-                    
-                    var originalEntries = await _db.JournalEntries.Where(e => originalEntryIds.Contains(e.Id)).ToListAsync();
-                    foreach (var oe in originalEntries)
-                    {
-                        oe.Status = JournalEntryStatus.Posted;
-                    }
-                    
-                    _logger.LogInformation("[Accounting] Voided {Count} SalesInvoice Reversal entries and restored original entries for order {Ref} on status revert.", reversalEntries.Count, order.OrderNumber);
                 }
             }
 
@@ -2168,19 +2138,9 @@ public class OrderService : IOrderService
             _ = PostOrderPaymentWithRetryAsync(orderId);
         }
 
-        if (dto.Status == OrderStatus.Delivered)
-        {
-            _ = PostSuccessfulDeliveryAccountingWithRetryAsync(orderId);
-        }
-
         if (dto.Status == OrderStatus.Returned)
         {
-            _ = PostSalesReturnWithRetryAsync(orderId, dto.RefundAccountId, oldStatus, dto.IsManufacturingDefect);
-            
-            if (oldStatus != OrderStatus.Delivered)
-            {
-                _ = PostCourierReturnShippingFeeWithRetryAsync(orderId);
-            }
+            _ = PostSalesReturnWithRetryAsync(orderId, dto.RefundAccountId);
         }
         else if (dto.Status == OrderStatus.Cancelled)
         {
@@ -2197,7 +2157,6 @@ public class OrderService : IOrderService
         string? reference = null;
 
         var strategy = _db.Database.CreateExecutionStrategy();
-        OrderStatus? oldStatus = null;
         var result = await strategy.ExecuteAsync(async () =>
         {
             await using var tx = await _db.Database.BeginTransactionAsync();
@@ -2206,15 +2165,15 @@ public class OrderService : IOrderService
                 var order = await _db.Orders.Include(o => o.Items).ThenInclude(i => i.Product).FirstOrDefaultAsync(o => o.Id == orderId);
                 if (order == null) throw new KeyNotFoundException("Order not found.");
                 if (order.Status == OrderStatus.Cancelled) throw new InvalidOperationException("Cannot return items from a cancelled order.");
-                
-                oldStatus = order.Status;
 
                 var ticksSuffix = TimeHelper.GetEgyptTime().Ticks.ToString().Substring(10);
                 reference = $"{order.OrderNumber}-PRT-{ticksSuffix}";
 
-                // 1. Calculate Refund Amount (Proportional to Total Paid) First
+                // 1. Calculate Refund Amount (Proportional to Total Paid for items excluding shipping)
                 decimal refundAmountTotal = 0;
                 var itemsTotal = order.Items.Sum(i => i.TotalPrice) > 0 ? order.Items.Sum(i => i.TotalPrice) : 1;
+                decimal netPaidForItems = Math.Max(0, order.TotalAmount - order.DeliveryFee);
+                decimal returnRatio = itemsTotal > 0 ? Math.Min(1m, netPaidForItems / itemsTotal) : 1m;
 
                 foreach (var req in dto.Items)
                 {
@@ -2222,7 +2181,7 @@ public class OrderService : IOrderService
                     if (line != null && req.Quantity > 0)
                     {
                         var lineShare = line.TotalPrice * ((decimal)req.Quantity / line.Quantity);
-                        refundAmountTotal += Math.Round(lineShare * (order.TotalAmount / itemsTotal), 2);
+                        refundAmountTotal += Math.Round(lineShare * returnRatio, 2);
                     }
                 }
 
@@ -2243,7 +2202,7 @@ public class OrderService : IOrderService
                        throw new InvalidOperationException($"Cannot return {req.Quantity} for item {line.ProductNameAr}. Already returned: {line.ReturnedQuantity}. Max remaining: {maxCanReturn}.");
 
                     // 1. Calculate partial values for this item
-                    var itemTotalReturn = Math.Round((line.TotalPrice * ((decimal)req.Quantity / line.Quantity)) * (order.TotalAmount / itemsTotal), 2);
+                    var itemTotalReturn = Math.Round((line.TotalPrice * ((decimal)req.Quantity / line.Quantity)) * returnRatio, 2);
                     var itemVatReturn = Math.Round(line.ItemVatAmount * ((decimal)req.Quantity / line.Quantity), 2);
                     
                     refundAmount += itemTotalReturn;
@@ -2257,9 +2216,6 @@ public class OrderService : IOrderService
                         ProductNameAr = line.ProductNameAr,
                         Quantity = req.Quantity,
                         UnitPrice = line.UnitPrice,
-                        OriginalUnitPrice = line.OriginalUnitPrice,
-                        HasTax = line.HasTax,
-                        VatRateApplied = line.VatRateApplied,
                         TotalPrice = itemTotalReturn, // This part is refunded
                         ItemVatAmount = itemVatReturn,
                         Product = line.Product // For COGS
@@ -2321,7 +2277,7 @@ public class OrderService : IOrderService
         });
 
         // 6. Post Accounting
-        _ = PostPartialReturnWithRetryAsync(orderId, returnedOrderItems, refundAmount, dto.RefundAccountId, dto.RefundToStoreCredit, reference, oldStatus, dto.IsManufacturingDefect);
+        _ = PostPartialReturnWithRetryAsync(orderId, returnedOrderItems, refundAmount, dto.RefundAccountId, dto.RefundToStoreCredit, reference);
 
         return result;
     }
@@ -2539,7 +2495,7 @@ public class OrderService : IOrderService
         }
     }
 
-    private async Task PostSalesReturnWithRetryAsync(int orderId, int? refundAccountId = null, OrderStatus? oldStatus = null, bool isManufacturingDefect = false)
+    private async Task PostSalesReturnWithRetryAsync(int orderId, int? refundAccountId = null)
     {
         const int maxAttempts = 3;
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
@@ -2555,25 +2511,7 @@ public class OrderService : IOrderService
                     .Include(o => o.Items).ThenInclude(i => i.Product)
                     .Include(o => o.DeliveryAddress)
                     .FirstAsync(o => o.Id == orderId);
-                
-                bool isReturnedFromCourier = order.Source != OrderSource.POS && oldStatus.HasValue && oldStatus.Value >= OrderStatus.OutForDelivery;
-
-                // ── المنطق الجديد (بعد مراجعة المحاسب) ──
-                // قبل الشحن: نرجع إيراد الشحن للعميل (refundShipping = true)
-                // بعد الشحن + عيب تصنيع: نرجع إيراد الشحن للعميل (refundShipping = true)
-                // بعد الشحن + ليس عيب تصنيع: لا شيء إضافي (refundShipping = false)
-                // chargeReturnShipping = false دائماً
-                bool refundShipping = false;
-                if (oldStatus.HasValue && oldStatus.Value < OrderStatus.OutForDelivery)
-                {
-                    refundShipping = true; // لم يُشحن بعد: نرجع إيراد الشحن
-                }
-                else if (isReturnedFromCourier && isManufacturingDefect)
-                {
-                    refundShipping = true; // عيب تصنيع/صنف خطأ: نرجع إيراد الشحن للعميل
-                }
-
-                await accounting.PostSalesReturnAsync(order, refundAccountId, refundShipping, false, 0m, isReturnedFromCourier);
+                await accounting.PostSalesReturnAsync(order, refundAccountId);
                 return;
             }
             catch (Exception ex) when (attempt < maxAttempts)
@@ -2625,7 +2563,7 @@ public class OrderService : IOrderService
         }
     }
 
-    private async Task PostPartialReturnWithRetryAsync(int orderId, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? reference = null, OrderStatus? oldStatus = null, bool isManufacturingDefect = false)
+    private async Task PostPartialReturnWithRetryAsync(int orderId, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? reference = null)
     {
         const int maxAttempts = 3;
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
@@ -2639,16 +2577,7 @@ public class OrderService : IOrderService
                     .Include(o => o.Customer)
                     .Include(o => o.Payments)
                     .FirstAsync(o => o.Id == orderId);
-
-                bool chargeReturnShipping = false;
-                decimal returnShippingFee = 0;
-                if (oldStatus != OrderStatus.Delivered)
-                {
-                    returnShippingFee = order.DeliveryFee;
-                    chargeReturnShipping = !isManufacturingDefect;
-                }
-
-                await accounting.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId, refundToStoreCredit, overrideReference: reference, chargeReturnShipping: chargeReturnShipping, returnShippingFee: returnShippingFee);
+                await accounting.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId, refundToStoreCredit, overrideReference: reference);
                 return;
             }
             catch (Exception ex) when (attempt < maxAttempts)
@@ -3037,9 +2966,6 @@ public class OrderService : IOrderService
                                 ProductNameAr = line.ProductNameAr,
                                 Quantity = req.Quantity,
                                 UnitPrice = line.UnitPrice,
-                                OriginalUnitPrice = line.OriginalUnitPrice,
-                                HasTax = line.HasTax,
-                                VatRateApplied = line.VatRateApplied,
                                 TotalPrice = itemTotalReturn,
                                 ItemVatAmount = itemVatReturn,
                                 Product = line.Product
@@ -3173,64 +3099,6 @@ public class OrderService : IOrderService
         item.ReviewRequested = true;
         await _db.SaveChangesAsync();
         return true;
-    }
-
-    private async Task PostSuccessfulDeliveryAccountingWithRetryAsync(int orderId)
-    {
-        const int maxAttempts = 3;
-        for (int attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var order = await db.Orders
-                    .Include(o => o.Customer)
-                    .Include(o => o.ShippingCompany)
-                    .FirstAsync(o => o.Id == orderId);
-                await accounting.PostSuccessfulDeliveryAccountingAsync(order);
-                return;
-            }
-            catch (Exception ex) when (attempt < maxAttempts)
-            {
-                _logger.LogWarning(ex, "[Accounting] PostSuccessfulDeliveryAccounting attempt {Attempt}/{Max} failed for order {OrderId}. Retrying...", attempt, maxAttempts, orderId);
-                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "[Accounting] PostSuccessfulDeliveryAccounting permanently failed for order {OrderId}.", orderId);
-            }
-        }
-    }
-
-    private async Task PostCourierReturnShippingFeeWithRetryAsync(int orderId)
-    {
-        const int maxAttempts = 3;
-        for (int attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var accounting = scope.ServiceProvider.GetRequiredService<IAccountingService>();
-                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var order = await db.Orders
-                    .Include(o => o.Customer)
-                    .Include(o => o.ShippingCompany)
-                    .FirstAsync(o => o.Id == orderId);
-                await accounting.PostCourierReturnShippingFeeAsync(order, null);
-                return;
-            }
-            catch (Exception ex) when (attempt < maxAttempts)
-            {
-                _logger.LogWarning(ex, "[Accounting] PostCourierReturnShippingFee attempt {Attempt}/{Max} failed for order {OrderId}. Retrying...", attempt, maxAttempts, orderId);
-                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "[Accounting] PostCourierReturnShippingFee permanently failed for order {OrderId}.", orderId);
-            }
-        }
     }
 }
 

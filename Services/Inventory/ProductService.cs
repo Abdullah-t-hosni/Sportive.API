@@ -746,7 +746,7 @@ public class ProductService : IProductService
             Size = dto.Size,
             Color = dto.Color,
             ColorAr = dto.ColorAr,
-            StockQuantity = dto.StockQuantity ?? 0,
+            StockQuantity = 0, // Start with 0, let LogMovement handle it
             ReorderLevel = dto.ReorderLevel ?? 0,
             PriceAdjustment = dto.PriceAdjustment
         };
