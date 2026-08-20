@@ -1989,9 +1989,9 @@ public class OrderService : IOrderService
             }
         }
 
-        // ✅ REVERT: If reverting FROM Returned/Cancelled → reverse accounting & inventory
-        if ((oldStatus == OrderStatus.Returned || oldStatus == OrderStatus.Cancelled) &&
-             dto.Status != OrderStatus.Returned && dto.Status != OrderStatus.Cancelled)
+        // ✅ REVERT: If reverting FROM Returned/Cancelled/PartiallyReturned → reverse accounting & inventory
+        if ((oldStatus == OrderStatus.Returned || oldStatus == OrderStatus.Cancelled || oldStatus == OrderStatus.PartiallyReturned) &&
+             dto.Status != OrderStatus.Returned && dto.Status != OrderStatus.Cancelled && dto.Status != OrderStatus.PartiallyReturned)
         {
             // 1️⃣ Remove SalesReturn journal entries for this order
             var returnEntries = await _db.JournalEntries
@@ -2030,30 +2030,25 @@ public class OrderService : IOrderService
             }
 
             // 2️⃣ Reverse the inventory ReturnIn/Cancellation movements (re-deduct stock)
-            if (oldStatus == OrderStatus.Returned || oldStatus == OrderStatus.Cancelled)
+            var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
+            foreach (var item in orderWithItems.Items)
             {
-                var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
-                foreach (var item in orderWithItems.Items)
+                int qtyToRevert = oldStatus == OrderStatus.PartiallyReturned ? item.ReturnedQuantity : item.Quantity;
+                if ((item.ProductId ?? 0) > 0 && qtyToRevert > 0)
                 {
-                    if ((item.ProductId ?? 0) > 0)
-                    {
-                        await _inventory.LogMovementAsync(
-                            InventoryMovementType.Sale,
-                            -item.Quantity, item.ProductId, item.ProductVariantId,
-                            order.OrderNumber, $"Revert: Order status changed from {oldStatus}", updatedByUserId,
-                            0, // unitCost fallback
-                            order.Source,
-                            autoSave: false,
-                            ignoreIdempotency: true,
-                            warehouseId: order.WarehouseId
-                        );
-                    }
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.Sale,
+                        -qtyToRevert, item.ProductId, item.ProductVariantId,
+                        order.OrderNumber, $"Revert: Order status changed from {oldStatus}", updatedByUserId,
+                        0, // unitCost fallback
+                        order.Source,
+                        autoSave: false,
+                        ignoreIdempotency: true,
+                        warehouseId: order.WarehouseId
+                    );
                 }
                 // Reset returned quantities on items
-                if (oldStatus == OrderStatus.Returned)
-                {
-                    foreach (var it in orderWithItems.Items) it.ReturnedQuantity = 0;
-                }
+                item.ReturnedQuantity = 0;
             }
         }
 
@@ -2939,7 +2934,28 @@ public class OrderService : IOrderService
                 await _db.SaveChangesAsync();
 
                 var newReturnItems = dto.Items.Where(i => i.Quantity > 0).ToList();
-                if (newReturnItems.Any())
+                if (!newReturnItems.Any() && order != null)
+                {
+                    if (order.Items.All(i => i.ReturnedQuantity == 0))
+                    {
+                        order.Status = order.Source == OrderSource.POS ? OrderStatus.Confirmed : OrderStatus.Delivered;
+                        order.PaymentStatus = PaymentStatus.Paid;
+                    }
+                    else if (order.Items.Any(i => i.ReturnedQuantity > 0))
+                    {
+                        order.Status = OrderStatus.PartiallyReturned;
+                    }
+
+                    order.StatusHistory.Add(new OrderStatusHistory {
+                        Status = order.Status,
+                        Note = $"[حذف مرتجع] {dto.Reason}: {dto.Note}",
+                        ChangedByUserId = updatedByUserId,
+                        CreatedAt = now
+                    });
+                    order.UpdatedAt = now;
+                    await _db.SaveChangesAsync();
+                }
+                else if (newReturnItems.Any())
                 {
                     var returnDate = dto.ReturnDate ?? now;
 
