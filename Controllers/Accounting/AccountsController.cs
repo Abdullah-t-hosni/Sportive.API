@@ -160,6 +160,12 @@ public class AccountsController : ControllerBase
         var account = await _db.Accounts.FindAsync(id);
         if (account == null) return NotFound();
 
+        if (account.IsSystem)
+            return BadRequest(_t.Get("Accounting.CannotDeleteSystemAccount"));
+
+        if (await _db.Accounts.AnyAsync(a => a.ParentId == id))
+            return BadRequest(_t.Get("Accounting.CannotDeleteParentWithChildren"));
+
         if (await _db.JournalLines.AnyAsync(l => l.AccountId == id))
             return BadRequest(_t.Get("Accounting.CannotDeleteWithTransactions"));
 
