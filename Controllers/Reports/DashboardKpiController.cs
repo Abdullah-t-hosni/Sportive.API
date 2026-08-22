@@ -182,9 +182,9 @@ public class DashboardKpiController : ControllerBase
             });
         }
 
-        var validPhoneCount = await query.CountAsync(o => o.Customer != null && !string.IsNullOrWhiteSpace(o.Customer.Phone));
-        var validCityCount = await query.CountAsync(o => o.DeliveryAddress != null && !string.IsNullOrWhiteSpace(o.DeliveryAddress.City));
-        var validNameCount = await query.CountAsync(o => o.Customer != null && !string.IsNullOrWhiteSpace(o.Customer.FullName));
+        var validPhoneCount = await query.CountAsync(o => o.Customer != null && o.Customer.PhoneEncrypted != null && o.Customer.PhoneEncrypted != "");
+        var validCityCount = await query.CountAsync(o => o.DeliveryAddress != null && o.DeliveryAddress.City != null && o.DeliveryAddress.City != "");
+        var validNameCount = await query.CountAsync(o => o.Customer != null && o.Customer.FullName != null && o.Customer.FullName != "");
 
         double phonePct = Math.Round((double)validPhoneCount / totalOrders * 100, 1);
         double cityPct = Math.Round((double)validCityCount / totalOrders * 100, 1);
