@@ -2029,6 +2029,57 @@ public class OrderService : IOrderService
                 }
             }
 
+            // 1️⃣.b If reverting FROM Cancelled: remove cancellation reversal entries and restore original sales entry
+            if (oldStatus == OrderStatus.Cancelled)
+            {
+                var salesEntries = await _db.JournalEntries
+                    .Include(e => e.Lines)
+                    .Where(e => (e.OrderId == order.Id || e.Reference == order.OrderNumber) &&
+                                (e.Type == JournalEntryType.SalesInvoice || e.Type == JournalEntryType.Sales))
+                    .ToListAsync();
+
+                var salesEntryIds = salesEntries.Select(e => e.Id).ToList();
+
+                var reversalEntries = await _db.JournalEntries
+                    .Include(e => e.Lines)
+                    .Where(e => (e.ReversalOfId.HasValue && salesEntryIds.Contains(e.ReversalOfId.Value)) ||
+                                (e.Reference != null && salesEntries.Select(s => s.EntryNumber).Contains(e.Reference) && e.Description != null && e.Description.Contains("عكس")) ||
+                                (e.OrderId == order.Id && e.Description != null && e.Description.Contains("عكس") && e.Description.Contains(order.OrderNumber)))
+                    .ToListAsync();
+
+                if (reversalEntries.Any())
+                {
+                    var revIds = reversalEntries.Select(r => r.Id).ToList();
+                    await _db.JournalEntries
+                        .Where(e => e.ReversalOfId.HasValue && revIds.Contains(e.ReversalOfId.Value))
+                        .ExecuteUpdateAsync(s => s.SetProperty(e => e.ReversalOfId, (int?)null));
+
+                    _db.JournalLines.RemoveRange(reversalEntries.SelectMany(e => e.Lines));
+                    _db.JournalEntries.RemoveRange(reversalEntries);
+                    _logger.LogInformation("[Accounting] Voided {Count} cancellation reversal entries for order {Ref} upon reactivation.", reversalEntries.Count, order.OrderNumber);
+                }
+
+                bool hasActiveSalesEntry = false;
+                foreach (var se in salesEntries)
+                {
+                    if (se.Status == JournalEntryStatus.Reversed)
+                    {
+                        se.Status = JournalEntryStatus.Posted;
+                        _logger.LogInformation("[Accounting] Restored sales entry {EntryNo} status to Posted for order {Ref}.", se.EntryNumber, order.OrderNumber);
+                    }
+                    if (se.Status == JournalEntryStatus.Posted)
+                    {
+                        hasActiveSalesEntry = true;
+                    }
+                }
+
+                if (!hasActiveSalesEntry)
+                {
+                    _logger.LogInformation("[Accounting] No active sales entry found for reactivated order {Ref}, re-posting sales order.", order.OrderNumber);
+                    await _accounting.PostSalesOrderAsync(order);
+                }
+            }
+
             // 2️⃣ Reverse the inventory ReturnIn/Cancellation movements (re-deduct stock)
             var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
             foreach (var item in orderWithItems.Items)
@@ -2098,6 +2149,18 @@ public class OrderService : IOrderService
                 if (coupon != null && coupon.CurrentUsageCount > 0)
                 {
                     coupon.CurrentUsageCount--;
+                }
+            }
+        }
+        else if ((oldStatus == OrderStatus.Cancelled || oldStatus == OrderStatus.Returned) &&
+                 dto.Status != OrderStatus.Cancelled && dto.Status != OrderStatus.Returned)
+        {
+            if (!string.IsNullOrEmpty(order.CouponCode))
+            {
+                var coupon = await _db.Coupons.FirstOrDefaultAsync(c => c.Code.ToUpper() == order.CouponCode.ToUpper());
+                if (coupon != null)
+                {
+                    coupon.CurrentUsageCount++;
                 }
             }
         }
