@@ -252,7 +252,7 @@ public class FacebookCapiService : IFacebookCapiService
                 accountIdToUse = "act_" + accountIdToUse;
             }
 
-            var url = $"https://graph.facebook.com/v20.0/{accountIdToUse}/campaigns?fields=id,name,status,effective_status,insights.date_preset(maximum){{spend,actions}}&access_token={settings.FacebookCapiToken}";
+            var url = $"https://graph.facebook.com/v20.0/{accountIdToUse}/campaigns?fields=id,name,status,effective_status,insights.date_preset(maximum){{spend,actions,impressions,clicks,cpc,ctr}}&access_token={settings.FacebookCapiToken}";
 
             var response = await _httpClient.GetAsync(url);
             if (response.IsSuccessStatusCode)
@@ -269,6 +269,10 @@ public class FacebookCapiService : IFacebookCapiService
 
                         decimal spendAmount = 0;
                         int ordersCount = 0;
+                        long impressions = 0;
+                        long clicks = 0;
+                        decimal cpc = 0;
+                        decimal ctr = 0;
 
                         if (item.TryGetProperty("insights", out var insightsProp) &&
                             insightsProp.TryGetProperty("data", out var insightsData) &&
@@ -279,6 +283,22 @@ public class FacebookCapiService : IFacebookCapiService
                             if (firstInsight.TryGetProperty("spend", out var spendProp) && decimal.TryParse(spendProp.GetString(), out var sVal))
                             {
                                 spendAmount = Math.Round(sVal, 2);
+                            }
+                            if (firstInsight.TryGetProperty("impressions", out var impProp) && long.TryParse(impProp.GetString(), out var impVal))
+                            {
+                                impressions = impVal;
+                            }
+                            if (firstInsight.TryGetProperty("clicks", out var clkProp) && long.TryParse(clkProp.GetString(), out var clkVal))
+                            {
+                                clicks = clkVal;
+                            }
+                            if (firstInsight.TryGetProperty("cpc", out var cpcProp) && decimal.TryParse(cpcProp.GetString(), out var cpcVal))
+                            {
+                                cpc = Math.Round(cpcVal, 2);
+                            }
+                            if (firstInsight.TryGetProperty("ctr", out var ctrProp) && decimal.TryParse(ctrProp.GetString(), out var ctrVal))
+                            {
+                                ctr = Math.Round(ctrVal, 2);
                             }
                             if (firstInsight.TryGetProperty("actions", out var actionsProp) && actionsProp.ValueKind == JsonValueKind.Array)
                             {
@@ -303,6 +323,10 @@ public class FacebookCapiService : IFacebookCapiService
                             platform = (name != null && (name.ToLower().Contains("ig") || name.ToLower().Contains("instagram"))) ? "Instagram" : "Facebook",
                             spendAmount = spendAmount,
                             ordersCount = ordersCount,
+                            impressions = impressions,
+                            clicks = clicks,
+                            cpc = cpc,
+                            ctr = ctr,
                             status = status
                         });
                         idx++;
