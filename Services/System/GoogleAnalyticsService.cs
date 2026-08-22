@@ -341,7 +341,7 @@ namespace Sportive.API.Services
                     _logger.LogWarning(ex, "Failed to fetch user loyalty metrics");
                 }
 
-                // 8. Internal Site Search Terms
+                // 8. Internal Site Search Terms (Filter out admin/employee SKU lookups & test queries)
                 var searchRequest = new RunReportRequest
                 {
                     Property = $"properties/{_propertyId}",
@@ -349,7 +349,7 @@ namespace Sportive.API.Services
                     Dimensions = { new Dimension { Name = "searchTerm" } },
                     Metrics = { new Metric { Name = "eventCount" } },
                     OrderBys = { new OrderBy { Metric = new OrderBy.Types.MetricOrderBy { MetricName = "eventCount" }, Desc = true } },
-                    Limit = 5
+                    Limit = 20
                 };
 
                 var searchTermsList = new List<object>();
@@ -358,11 +358,20 @@ namespace Sportive.API.Services
                     var searchResponse = await client.RunReportAsync(searchRequest);
                     foreach (var row in searchResponse.Rows)
                     {
-                        var term = row.DimensionValues[0].Value;
+                        var term = row.DimensionValues[0].Value?.Trim();
                         if (!string.IsNullOrWhiteSpace(term) && term != "(not set)")
                         {
-                            long.TryParse(row.MetricValues[0].Value, out long count);
-                            searchTermsList.Add(new { term = term, count = count });
+                            // Filter out admin/staff internal codes, SKUs (e.g. SPT-..., ORD-..., POS-...), or technical words
+                            bool isEmployeeCode = System.Text.RegularExpressions.Regex.IsMatch(term, @"^(SPT|ORD|INV|POS|RET)-\d+", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ||
+                                                  term.StartsWith("admin", StringComparison.OrdinalIgnoreCase) ||
+                                                  term.StartsWith("pos", StringComparison.OrdinalIgnoreCase) ||
+                                                  term.StartsWith("test", StringComparison.OrdinalIgnoreCase);
+
+                            if (!isEmployeeCode && searchTermsList.Count < 6)
+                            {
+                                long.TryParse(row.MetricValues[0].Value, out long count);
+                                searchTermsList.Add(new { term = term, count = count });
+                            }
                         }
                     }
                 }
