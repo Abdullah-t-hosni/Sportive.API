@@ -897,23 +897,25 @@ public class SalesAccountingService
         decimal amountToCollect = order.TotalAmount;
         if (amountToCollect <= 0) return;
 
-        // 1. Find Shipping Company
+        // 1. Find Shipping Company strictly from Order
         ShippingCompany? company = null;
         if (order.ShippingCompanyId.HasValue && order.ShippingCompanyId.Value > 0)
         {
             company = await _db.ShippingCompanies.FindAsync(order.ShippingCompanyId.Value);
         }
-
-        if (company == null)
+        else if (!string.IsNullOrEmpty(order.BostaTrackingNumber) || !string.IsNullOrEmpty(order.BostaDeliveryId))
         {
-            // Default to Bosta or first active shipping company
-            company = await _db.ShippingCompanies.FirstOrDefaultAsync(c => c.IsActive && (c.IntegrationType == ShippingIntegrationType.Bosta || (c.NameEn != null && c.NameEn.Contains("Bosta")) || c.NameAr.Contains("بوسطة")))
-                   ?? await _db.ShippingCompanies.FirstOrDefaultAsync(c => c.IsActive);
+            company = await _db.ShippingCompanies.FirstOrDefaultAsync(c => c.IsActive && c.IntegrationType == ShippingIntegrationType.Bosta);
+        }
+        else if (!string.IsNullOrEmpty(order.ShippingCarrierName))
+        {
+            company = await _db.ShippingCompanies.FirstOrDefaultAsync(c => c.IsActive && 
+                (c.NameAr.Contains(order.ShippingCarrierName) || (c.NameEn != null && c.NameEn.Contains(order.ShippingCarrierName))));
         }
 
+        // If the order does NOT belong to any shipping company (e.g. manual in-house delivery / pickup / no carrier), skip!
         if (company == null || !company.AccountId.HasValue)
         {
-            _logger.LogWarning("[Accounting] Cannot post delivery transfer for Order #{OrderNumber}: No shipping company or linked account found.", order.OrderNumber);
             return;
         }
 
