@@ -1531,6 +1531,70 @@ public class OrdersController : ControllerBase
         var pdfBytes = await response.Content.ReadAsByteArrayAsync();
         return File(pdfBytes, "application/pdf", $"bosta-awb-{order.OrderNumber}.pdf");
     }
+
+    /// <summary>
+    /// مزامنة ومعالجة القيود المحاسبية للطلبات السابقة المسلمة تلقائياً (Delivered / Unsettled)
+    /// POST /api/orders/accounting/reconcile-delivered
+    /// </summary>
+    [HttpPost("accounting/reconcile-delivered")]
+    [Authorize(Roles = "Admin,Accountant")]
+    public async Task<IActionResult> ReconcileDeliveredOrdersAccounting([FromQuery] int? daysLimit = null)
+    {
+        var accounting = HttpContext.RequestServices.GetRequiredService<IAccountingService>();
+        
+        var query = _db.Orders
+            .Include(o => o.Customer)
+            .Include(o => o.Payments)
+            .Where(o => o.Status == OrderStatus.Delivered && !o.IsSettledWithCourier && o.Source != OrderSource.POS);
+
+        if (daysLimit.HasValue && daysLimit.Value > 0)
+        {
+            var limitDate = TimeHelper.GetEgyptTime().AddDays(-daysLimit.Value);
+            query = query.Where(o => o.CreatedAt >= limitDate);
+        }
+
+        var deliveredOrders = await query.ToListAsync();
+
+        // Get existing DELV-CUST entries
+        var existingRefs = await _db.JournalEntries
+            .Where(e => e.Reference != null && e.Reference.StartsWith("DELV-CUST-") && e.Status == JournalEntryStatus.Posted)
+            .Select(e => e.Reference!)
+            .ToListAsync();
+
+        int createdCount = 0;
+        int skippedCount = 0;
+        var errorOrders = new List<string>();
+
+        foreach (var order in deliveredOrders)
+        {
+            var expectedRef = $"DELV-CUST-{order.OrderNumber}";
+            if (existingRefs.Contains(expectedRef))
+            {
+                skippedCount++;
+                continue;
+            }
+
+            try
+            {
+                await accounting.PostSuccessfulDeliveryAccountingAsync(order);
+                createdCount++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Reconciliation] Failed to post delivery accounting for order #{OrderNumber}", order.OrderNumber);
+                errorOrders.Add(order.OrderNumber);
+            }
+        }
+
+        return Ok(new {
+            success = true,
+            totalChecked = deliveredOrders.Count,
+            entriesCreated = createdCount,
+            alreadyUpToDate = skippedCount,
+            errors = errorOrders,
+            message = $"تمت المزامنة بنجاح: تم إنشاء {createdCount} قيد نقل مديونية، و {skippedCount} طلب كان محدثاً مسبقاً."
+        });
+    }
 }
 
 public record ArchiveBatchDto(int[] Ids, bool? Archive = true);

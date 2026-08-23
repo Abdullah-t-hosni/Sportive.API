@@ -2483,6 +2483,12 @@ public class OrderService : IOrderService
                     await _accounting.PostSalesOrderAsync(order);
                 }
                 if (order.PaymentStatus == PaymentStatus.Paid) await _accounting.PostOrderPaymentAsync(order);
+
+                // 🚀 Sync Delivery Transfer for Delivered Orders that haven't been settled yet
+                if (order.Status == OrderStatus.Delivered && !order.IsSettledWithCourier && order.Source != OrderSource.POS)
+                {
+                    await _accounting.PostSuccessfulDeliveryAccountingAsync(order);
+                }
             }
             catch (Exception ex)
             {
