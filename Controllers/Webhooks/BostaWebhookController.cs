@@ -51,6 +51,7 @@ public class BostaWebhookController : ControllerBase
             string? trackingNumber = null;
             string? deliveryId = null;
             string? status = null;
+            bool isConfirmedDelivery = false;
 
             if (payload.TryGetProperty("trackingNumber", out var trackingProp))
                 trackingNumber = trackingProp.GetString();
@@ -60,19 +61,41 @@ public class BostaWebhookController : ControllerBase
             else if (payload.TryGetProperty("deliveryId", out var deliveryIdProp))
                 deliveryId = deliveryIdProp.GetString();
 
-            if (payload.TryGetProperty("status", out var statusProp))
+            // Read isConfirmedDelivery flag
+            if (payload.TryGetProperty("isConfirmedDelivery", out var confirmedProp) && confirmedProp.ValueKind == JsonValueKind.True)
+                isConfirmedDelivery = true;
+
+            // Read status - handle String, Number, and nested Object formats from Bosta
+            if (payload.TryGetProperty("code", out var codeProp))
+            {
+                // Bosta sometimes sends status as numeric 'code' field
+                if (codeProp.ValueKind == JsonValueKind.Number)
+                    status = codeProp.GetInt32().ToString();
+                else if (codeProp.ValueKind == JsonValueKind.String)
+                    status = codeProp.GetString();
+            }
+            else if (payload.TryGetProperty("status", out var statusProp))
             {
                 if (statusProp.ValueKind == JsonValueKind.String)
                     status = statusProp.GetString();
-                else if (statusProp.ValueKind == JsonValueKind.Object && statusProp.TryGetProperty("value", out var statusVal))
-                    status = statusVal.GetString();
+                else if (statusProp.ValueKind == JsonValueKind.Number)
+                    status = statusProp.GetInt32().ToString();
+                else if (statusProp.ValueKind == JsonValueKind.Object)
+                {
+                    if (statusProp.TryGetProperty("value", out var statusVal))
+                        status = statusVal.ValueKind == JsonValueKind.Number ? statusVal.GetInt32().ToString() : statusVal.GetString();
+                    else if (statusProp.TryGetProperty("code", out var statusCode))
+                        status = statusCode.ValueKind == JsonValueKind.Number ? statusCode.GetInt32().ToString() : statusCode.GetString();
+                }
             }
             else if (payload.TryGetProperty("state", out var stateProp))
             {
                 if (stateProp.ValueKind == JsonValueKind.String)
                     status = stateProp.GetString();
+                else if (stateProp.ValueKind == JsonValueKind.Number)
+                    status = stateProp.GetInt32().ToString();
                 else if (stateProp.ValueKind == JsonValueKind.Object && stateProp.TryGetProperty("value", out var stateVal))
-                    status = stateVal.GetString();
+                    status = stateVal.ValueKind == JsonValueKind.Number ? stateVal.GetInt32().ToString() : stateVal.GetString();
             }
 
             if (string.IsNullOrEmpty(trackingNumber) && string.IsNullOrEmpty(deliveryId))
@@ -91,34 +114,31 @@ public class BostaWebhookController : ControllerBase
                 return Ok(new { success = false, message = "Order not found" });
             }
 
-            if (!string.IsNullOrEmpty(status))
+            if (!string.IsNullOrEmpty(status) || isConfirmedDelivery)
             {
-                order.BostaShipmentStatus = status;
-                
-                var upperStatus = status.ToUpperInvariant();
-                if (upperStatus.Contains("DELIVERED") || upperStatus == "100" || upperStatus == "45")
+                // Always save the latest Bosta shipment status for tracking
+                if (!string.IsNullOrEmpty(status))
+                    order.BostaShipmentStatus = status;
+
+                var upperStatus = (status ?? "").ToUpperInvariant();
+
+                // Only auto-update order status when Bosta confirms delivery
+                // All other events (out for delivery, cancelled, returned, etc.) are tracked via BostaShipmentStatus only
+                bool isDelivered = isConfirmedDelivery
+                    || upperStatus == "45"
+                    || upperStatus == "100"
+                    || upperStatus.Contains("DELIVERED");
+
+                if (isDelivered)
                 {
                     if (order.Status != OrderStatus.Delivered)
                     {
-                        await _orderService.UpdateOrderStatusAsync(order.Id, new UpdateOrderStatusDto(OrderStatus.Delivered, $"Bosta Webhook: {status}"), "BostaWebhook");
-                    }
-                }
-                else if (upperStatus.Contains("CANCEL") || upperStatus.Contains("RETURN") || upperStatus.Contains("TERMINAT"))
-                {
-                    if (order.Status != OrderStatus.Cancelled && order.Status != OrderStatus.Returned)
-                    {
-                        await _orderService.UpdateOrderStatusAsync(order.Id, new UpdateOrderStatusDto(OrderStatus.Cancelled, $"Bosta Webhook: {status}"), "BostaWebhook");
-                    }
-                }
-                else if (upperStatus.Contains("DELIVERY") || upperStatus.Contains("TRANSIT") || upperStatus.Contains("PICKED"))
-                {
-                    if (order.Status != OrderStatus.OutForDelivery)
-                    {
-                        await _orderService.UpdateOrderStatusAsync(order.Id, new UpdateOrderStatusDto(OrderStatus.OutForDelivery, $"Bosta Webhook: {status}"), "BostaWebhook");
+                        await _orderService.UpdateOrderStatusAsync(order.Id, new UpdateOrderStatusDto(OrderStatus.Delivered, $"Bosta Webhook: code={status}, confirmed={isConfirmedDelivery}"), "BostaWebhook");
                     }
                 }
                 else
                 {
+                    // Just save the Bosta status update without changing order status
                     await _db.SaveChangesAsync();
                 }
 
