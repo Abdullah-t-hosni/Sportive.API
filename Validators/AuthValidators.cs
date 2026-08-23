@@ -10,7 +10,8 @@ public class RegisterValidator : AbstractValidator<RegisterDto>
     {
         RuleFor(x => x.FullName)
             .NotEmpty().WithMessage(translator.Get("Auth.FullNameRequired"))
-            .MinimumLength(2).WithMessage(translator.Get("Auth.FullNameMinLength"))
+            .Must(name => Sportive.API.Utils.NameValidator.ValidateCustomerName(name).IsValid)
+            .WithMessage("يرجى كتابة الاسم ثنائي على الأقل (الاسم الأول والعائلة)")
             .MaximumLength(100).WithMessage(translator.Get("Auth.FullNameMaxLength"));
 
         RuleFor(x => x.Email)

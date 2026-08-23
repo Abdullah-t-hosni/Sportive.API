@@ -359,6 +359,16 @@ public class OrderService : IOrderService
                         if (existing != null)
                         {
                             customerId = existing.Id;
+                            // 🛡️ AUTO-HEAL: If existing customer had a single character or invalid name, and a valid full name is supplied in the order, update it!
+                            if (!string.IsNullOrWhiteSpace(dto.CustomerName))
+                            {
+                                var check = Sportive.API.Utils.NameValidator.ValidateCustomerName(dto.CustomerName);
+                                if (check.IsValid && (string.IsNullOrWhiteSpace(existing.FullName) || existing.FullName.Trim().Length < 4 || !existing.FullName.Trim().Contains(' ')))
+                                {
+                                    existing.FullName = dto.CustomerName.Trim();
+                                    existing.UpdatedAt = now;
+                                }
+                            }
                             // Ensure account exists
                             await _customerService.EnsureCustomerAccountAsync(customerId.Value);
                         }

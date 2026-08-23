@@ -16,6 +16,11 @@ public class CreateOrderValidator : AbstractValidator<CreateOrderDto>
         RuleFor(x => x.PaymentMethod)
             .IsInEnum().WithMessage(translator.Get("Orders.PaymentMethodInvalid"));
 
+        RuleFor(x => x.CustomerName)
+            .Must(name => string.IsNullOrWhiteSpace(name) || Sportive.API.Utils.NameValidator.ValidateCustomerName(name).IsValid)
+            .When(x => !string.IsNullOrWhiteSpace(x.CustomerName) && (x.Source == OrderSource.Website || (int)x.Source == 0))
+            .WithMessage("يرجى كتابة اسم العميل ثنائي على الأقل (الاسم الأول والعائلة)");
+
         RuleFor(x => x.DeliveryAddressId)
             .NotNull()
             .When(x => x.FulfillmentType == FulfillmentType.Delivery && (x.Source == OrderSource.Website || (int)x.Source == 0) && x.GuestAddress == null && string.IsNullOrEmpty(x.Address) && string.IsNullOrEmpty(x.ShippingAddress))
