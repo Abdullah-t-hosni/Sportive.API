@@ -880,17 +880,92 @@ public class SalesAccountingService
     }
 
     /// <summary>
-
-    /// تم إيقاف هذا القيد ليتم نقله إلى شاشة تسويات الشحن بناء على طلب المحاسب
-
+    /// قيد تسليم الأوردر ونقل المديونية من العميل إلى شركة الشحن (بوسطة) فور تحول حالة الطلب إلى Delivered
     /// </summary>
-
-    public Task PostSuccessfulDeliveryAccountingAsync(Order order)
-
+    public async Task PostSuccessfulDeliveryAccountingAsync(Order order)
     {
+        if (order == null || order.Source == OrderSource.POS) return;
 
-        return Task.CompletedTask;
+        // Digital payments (Vodafone, InstaPay, CreditCard, Bank) were already settled at order confirmation
+        bool isDigitalPrepaid = order.PaymentMethod == PaymentMethod.Vodafone ||
+                                order.PaymentMethod == PaymentMethod.InstaPay ||
+                                order.PaymentMethod == PaymentMethod.CreditCard ||
+                                order.PaymentMethod == PaymentMethod.Bank;
 
+        if (isDigitalPrepaid) return;
+
+        decimal amountToCollect = order.TotalAmount;
+        if (amountToCollect <= 0) return;
+
+        // 1. Find Shipping Company
+        ShippingCompany? company = null;
+        if (order.ShippingCompanyId.HasValue && order.ShippingCompanyId.Value > 0)
+        {
+            company = await _db.ShippingCompanies.FindAsync(order.ShippingCompanyId.Value);
+        }
+
+        if (company == null)
+        {
+            // Default to Bosta or first active shipping company
+            company = await _db.ShippingCompanies.FirstOrDefaultAsync(c => c.IsActive && (c.IntegrationType == ShippingIntegrationType.Bosta || (c.NameEn != null && c.NameEn.Contains("Bosta")) || c.NameAr.Contains("بوسطة")))
+                   ?? await _db.ShippingCompanies.FirstOrDefaultAsync(c => c.IsActive);
+        }
+
+        if (company == null || !company.AccountId.HasValue)
+        {
+            _logger.LogWarning("[Accounting] Cannot post delivery transfer for Order #{OrderNumber}: No shipping company or linked account found.", order.OrderNumber);
+            return;
+        }
+
+        // 2. Ensure customer is loaded
+        if (order.Customer == null && order.CustomerId > 0)
+        {
+            order.Customer = await _db.Customers.FindAsync(order.CustomerId);
+        }
+
+        var mapDict = await _core.GetSafeSystemMappingsAsync();
+        var defaultCustomerAcctId = await _core.GetRequiredMappedAccountAsync(MK.Customer, mapDict);
+        string customerAcct = order.Customer?.MainAccountId != null 
+            ? $"ID:{order.Customer.MainAccountId}" 
+            : $"ID:{defaultCustomerAcctId}";
+
+        string companyAcct = $"ID:{company.AccountId.Value}";
+
+        // 3. Prevent duplicate entries
+        var refNo = $"DELV-CUST-{order.OrderNumber}";
+        var alreadyExists = await _db.JournalEntries.AnyAsync(e => 
+            (e.Reference == refNo || (e.OrderId == order.Id && e.Reference != null && e.Reference.StartsWith("DELV-CUST-"))) &&
+            e.Status == JournalEntryStatus.Posted);
+
+        if (alreadyExists)
+        {
+            _logger.LogInformation("[Accounting] Delivery transfer entry already exists for Order #{OrderNumber}.", order.OrderNumber);
+            return;
+        }
+
+        var lines = new List<(string code, decimal debit, decimal credit, string desc)>
+        {
+            (companyAcct, amountToCollect, 0, $"تحصيل مديونية طلب #{order.OrderNumber} طرف شركة الشحن ({company.NameAr})"),
+            (customerAcct, 0, amountToCollect, $"إقفال مديونية طلب #{order.OrderNumber} - تم التوصيل")
+        };
+
+        var entryDate = order.ActualDeliveryDate ?? TimeHelper.GetEgyptTime();
+
+        await _core.PostEntryAsync(
+            type:        JournalEntryType.Manual,
+            reference:   refNo,
+            description: $"قيد تحصيل ونقل مديونية طلب #{order.OrderNumber} إلى شركة الشحن ({company.NameAr})",
+            date:        TimeHelper.GetEgyptBusinessDayDate(entryDate),
+            lines:       lines,
+            orderId:     order.Id,
+            customerId:  order.CustomerId,
+            source:      order.Source,
+            createdAt:   TimeHelper.GetEgyptTime(),
+            branchId:    order.BranchId
+        );
+
+        _logger.LogInformation("[Accounting] Posted delivery transfer entry for Order #{OrderNumber}: {Amount} EGP from Customer to {Company}", 
+            order.OrderNumber, amountToCollect, company.NameAr);
     }
 
     public async Task PostWarehouseReceiptFromCourierAsync(Order order, int returnRequestId)

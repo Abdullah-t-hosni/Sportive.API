@@ -239,39 +239,56 @@ public class ShippingSettlementsController : ControllerBase
         // ----------------------------------------------------
         if (totalCollected > 0)
         {
-            var settlementRef = $"SETTLE-CUST-{company.Id}-{timestamp}";
-            var settlementLines = new List<(string code, decimal debit, decimal credit, string desc)>();
-            
-            // إجمالي المبلغ مدين لشركة الشحن
-            settlementLines.Add(($"ID:{company.AccountId}", totalCollected, 0, $"تحصيل مديونية طلبات مجمعة - {company.NameAr}{invNumStr}"));
+            var deliveredOrderIds = orders.Select(o => o.Id).ToList();
+            var alreadyTransferredOrderIds = await _db.JournalEntries
+                .Where(e => e.OrderId.HasValue && deliveredOrderIds.Contains(e.OrderId.Value) &&
+                            e.Reference != null && (e.Reference.StartsWith("DELV-CUST-") || e.Reference.StartsWith("SETTLE-CUST-")))
+                .Where(e => e.Status == JournalEntryStatus.Posted)
+                .Select(e => e.OrderId!.Value)
+                .ToListAsync();
 
-            // التفقيط الدائن للعملاء
-            foreach (var order in orders)
+            var pendingTransferOrders = orders.Where(o => !alreadyTransferredOrderIds.Contains(o.Id)).ToList();
+            decimal pendingCollected = pendingTransferOrders.Sum(o => {
+                var reqOrder = request.Orders?.FirstOrDefault(x => x.OrderId == o.Id);
+                return reqOrder?.CollectedAmount ?? o.TotalAmount;
+            });
+
+            if (pendingCollected > 0 && pendingTransferOrders.Any())
             {
-                var reqOrder = request.Orders?.FirstOrDefault(x => x.OrderId == order.Id);
-                decimal collected = reqOrder?.CollectedAmount ?? order.TotalAmount;
-                if (collected > 0)
+                var settlementRef = $"SETTLE-CUST-{company.Id}-{timestamp}";
+                var settlementLines = new List<(string code, decimal debit, decimal credit, string desc)>();
+                
+                // إجمالي المبلغ مدين لشركة الشحن
+                settlementLines.Add(($"ID:{company.AccountId}", pendingCollected, 0, $"تحصيل مديونية طلبات مجمعة - {company.NameAr}{invNumStr}"));
+
+                // التفقيط الدائن للعملاء
+                foreach (var order in pendingTransferOrders)
                 {
-                    string customerAcct = order.Customer?.MainAccountId != null 
-                        ? $"ID:{order.Customer.MainAccountId}" 
-                        : $"ID:{defaultCustomerAcctId}";
-                    
-                    settlementLines.Add((customerAcct, 0, collected, $"إقفال مديونية طلب #{order.OrderNumber}"));
+                    var reqOrder = request.Orders?.FirstOrDefault(x => x.OrderId == order.Id);
+                    decimal collected = reqOrder?.CollectedAmount ?? order.TotalAmount;
+                    if (collected > 0)
+                    {
+                        string customerAcct = order.Customer?.MainAccountId != null 
+                            ? $"ID:{order.Customer.MainAccountId}" 
+                            : $"ID:{defaultCustomerAcctId}";
+                        
+                        settlementLines.Add((customerAcct, 0, collected, $"إقفال مديونية طلب #{order.OrderNumber}"));
+                    }
                 }
-            }
 
-            if (settlementLines.Count > 1)
-            {
-                await _accountingCore.PostEntryAsync(
-                    type: JournalEntryType.Manual,
-                    reference: settlementRef,
-                    description: $"قيد تسوية وتحصيل من العملاء لشركة الشحن: {company.NameAr}{invNumStr}",
-                    date: TimeHelper.GetEgyptBusinessDayDate(collectionDate),
-                    lines: settlementLines,
-                    source: OrderSource.Website,
-                    createdAt: currentSysTime,
-                    branchId: orders.FirstOrDefault()?.BranchId
-                );
+                if (settlementLines.Count > 1)
+                {
+                    await _accountingCore.PostEntryAsync(
+                        type: JournalEntryType.Manual,
+                        reference: settlementRef,
+                        description: $"قيد تسوية وتحصيل من العملاء لشركة الشحن: {company.NameAr}{invNumStr}",
+                        date: TimeHelper.GetEgyptBusinessDayDate(collectionDate),
+                        lines: settlementLines,
+                        source: OrderSource.Website,
+                        createdAt: currentSysTime,
+                        branchId: orders.FirstOrDefault()?.BranchId
+                    );
+                }
             }
         }
 

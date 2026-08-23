@@ -1904,21 +1904,18 @@ public class OrderService : IOrderService
                     order.Payments.Add(new OrderPayment { Method = order.PaymentMethod, Amount = order.TotalAmount, CreatedAt = TimeHelper.GetEgyptTime() });
                 }
             }
+
+            // 🚀 Real-time Delivery Transfer Entry: Transfer receivable from Customer to Shipping Company (Bosta)
+            try
+            {
+                await _accounting.PostSuccessfulDeliveryAccountingAsync(order);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Accounting] Failed to post delivery accounting for order #{OrderNumber}", order.OrderNumber);
+            }
             
-            // âœ… Evaluate customer category after delivery
-
-
-
-
-
-
-
-
-
-
-
-
-
+            // ✅ Evaluate customer category after delivery
             await _customerService.EvaluateCustomerCategoryAsync(order.CustomerId);
 
             // Notification on Delivery
@@ -1989,6 +1986,20 @@ public class OrderService : IOrderService
                 _db.JournalLines.RemoveRange(pmtEntries.SelectMany(e => e.Lines));
                 _db.JournalEntries.RemoveRange(pmtEntries);
                 _logger.LogInformation("[Accounting] Removed {Count} ReceiptVoucher entries for order {Ref} on status revert from Delivered to {NewStatus}.", pmtEntries.Count, order.OrderNumber, dto.Status);
+            }
+
+            // Remove/Void any delivery transfer Journal Entry for this order (DELV-CUST-)
+            var delvEntries = await _db.JournalEntries
+                .Include(e => e.Lines)
+                .Where(e => (e.OrderId == order.Id || e.Reference == $"DELV-CUST-{order.OrderNumber}") && 
+                            e.Reference != null && e.Reference.StartsWith("DELV-CUST-"))
+                .ToListAsync();
+
+            if (delvEntries.Any())
+            {
+                _db.JournalLines.RemoveRange(delvEntries.SelectMany(e => e.Lines));
+                _db.JournalEntries.RemoveRange(delvEntries);
+                _logger.LogInformation("[Accounting] Removed {Count} delivery transfer entries for order {Ref} on status revert from Delivered.", delvEntries.Count, order.OrderNumber);
             }
 
             // Remove linked ReceiptVouchers entity if any

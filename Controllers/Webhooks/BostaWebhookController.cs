@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
+using Sportive.API.DTOs;
+using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using Sportive.API.Services;
 
@@ -19,12 +21,14 @@ public class BostaWebhookController : ControllerBase
     private readonly AppDbContext _db;
     private readonly ILogger<BostaWebhookController> _logger;
     private readonly IAuditService _audit;
+    private readonly IOrderService _orderService;
 
-    public BostaWebhookController(AppDbContext db, ILogger<BostaWebhookController> logger, IAuditService audit)
+    public BostaWebhookController(AppDbContext db, ILogger<BostaWebhookController> logger, IAuditService audit, IOrderService orderService)
     {
         _db = db;
         _logger = logger;
         _audit = audit;
+        _orderService = orderService;
     }
 
     /// <summary>
@@ -94,19 +98,29 @@ public class BostaWebhookController : ControllerBase
                 var upperStatus = status.ToUpperInvariant();
                 if (upperStatus.Contains("DELIVERED") || upperStatus == "100" || upperStatus == "45")
                 {
-                    order.Status = OrderStatus.Delivered;
-                    order.PaymentStatus = PaymentStatus.Paid;
+                    if (order.Status != OrderStatus.Delivered)
+                    {
+                        await _orderService.UpdateOrderStatusAsync(order.Id, new UpdateOrderStatusDto(OrderStatus.Delivered, $"Bosta Webhook: {status}"), "BostaWebhook");
+                    }
                 }
                 else if (upperStatus.Contains("CANCEL") || upperStatus.Contains("RETURN") || upperStatus.Contains("TERMINAT"))
                 {
-                    order.Status = OrderStatus.Cancelled;
+                    if (order.Status != OrderStatus.Cancelled && order.Status != OrderStatus.Returned)
+                    {
+                        await _orderService.UpdateOrderStatusAsync(order.Id, new UpdateOrderStatusDto(OrderStatus.Cancelled, $"Bosta Webhook: {status}"), "BostaWebhook");
+                    }
                 }
                 else if (upperStatus.Contains("DELIVERY") || upperStatus.Contains("TRANSIT") || upperStatus.Contains("PICKED"))
                 {
-                    order.Status = OrderStatus.OutForDelivery;
+                    if (order.Status != OrderStatus.OutForDelivery)
+                    {
+                        await _orderService.UpdateOrderStatusAsync(order.Id, new UpdateOrderStatusDto(OrderStatus.OutForDelivery, $"Bosta Webhook: {status}"), "BostaWebhook");
+                    }
                 }
-
-                await _db.SaveChangesAsync();
+                else
+                {
+                    await _db.SaveChangesAsync();
+                }
 
                 try
                 {
