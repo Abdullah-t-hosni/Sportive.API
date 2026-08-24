@@ -297,7 +297,8 @@ public class OrdersController : ControllerBase
         if (!string.IsNullOrEmpty(posDto.OfflineRef))
         {
             var existingOrder = await _db.Orders
-                .FirstOrDefaultAsync(o => o.AdminNotes != null && o.AdminNotes.Contains($"[OfflineRef: {posDto.OfflineRef}]"));
+                .FirstOrDefaultAsync(o => (o.AdminNotes != null && o.AdminNotes.Contains($"[OfflineRef: {posDto.OfflineRef}]")) ||
+                                          (o.CustomerNotes != null && o.CustomerNotes.Contains($"[OfflineRef: {posDto.OfflineRef}]")));
             if (existingOrder != null)
             {
                 _logger.LogWarning("[Idempotency] Order with OfflineRef {OfflineRef} already exists. Returning existing order {OrderId}", posDto.OfflineRef, existingOrder.Id);
@@ -320,32 +321,36 @@ public class OrdersController : ControllerBase
         // تسجيل المفتاح لمدة 10 ثواني لمنع التكرار
         _cache.Set(idempotencyKey, true, TimeSpan.FromSeconds(10));
 
-        var adminNote = string.IsNullOrEmpty(posDto.OfflineRef)
+        var systemNote = string.IsNullOrEmpty(posDto.OfflineRef)
             ? "POS Sale"
             : $"POS Sale [OfflineRef: {posDto.OfflineRef}]";
 
+        var combinedAdminNote = string.IsNullOrWhiteSpace(posDto.Note)
+            ? systemNote
+            : $"{systemNote} - {posDto.Note.Trim()}";
+
         var dto = new CreateOrderDto(
-            FulfillmentType.Pickup,
-            (PaymentMethod)posDto.PaymentMethod,
-            null,
-            null,
-            adminNote,
-            posDto.CouponCode,
-            posDto.PosEmployeeId ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-            (OrderSource)posDto.OrderSource,
-            posDto.Items.Select(i => new CreateOrderItemDto(i.ProductId, i.ProductVariantId, i.Quantity, i.UnitPrice, i.TotalPrice, i.HasTax, i.VatRate, i.Size, i.Color)).ToList(),
-            posDto.CustomerPhone,
-            posDto.CustomerName,
-            posDto.Note,
-            posDto.DiscountAmount,
-            posDto.TemporalDiscount,
-            posDto.Subtotal,
-            posDto.Payments,
-            posDto.PaidAmount,
-            posDto.AttachmentUrl,
-            posDto.AttachmentPublicId,
-            User.GetBranchId() ?? posDto.BranchId,
-            User.GetWarehouseId() ?? posDto.WarehouseId
+            FulfillmentType: FulfillmentType.Pickup,
+            PaymentMethod: (PaymentMethod)posDto.PaymentMethod,
+            DeliveryAddressId: null,
+            PickupScheduledAt: null,
+            CustomerNotes: null,
+            CouponCode: posDto.CouponCode,
+            SalesPersonId: posDto.PosEmployeeId ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+            Source: (OrderSource)posDto.OrderSource,
+            Items: posDto.Items.Select(i => new CreateOrderItemDto(i.ProductId, i.ProductVariantId, i.Quantity, i.UnitPrice, i.TotalPrice, i.HasTax, i.VatRate, i.Size, i.Color)).ToList(),
+            CustomerPhone: posDto.CustomerPhone,
+            CustomerName: posDto.CustomerName,
+            Note: combinedAdminNote,
+            DiscountAmount: posDto.DiscountAmount,
+            TemporalDiscount: posDto.TemporalDiscount,
+            SubTotal: posDto.Subtotal,
+            Payments: posDto.Payments,
+            PaidAmount: posDto.PaidAmount,
+            AttachmentUrl: posDto.AttachmentUrl,
+            AttachmentPublicId: posDto.AttachmentPublicId,
+            BranchId: User.GetBranchId() ?? posDto.BranchId,
+            WarehouseId: User.GetWarehouseId() ?? posDto.WarehouseId
         );
 
         var order = await _orderService.CreateOrderAsync(posDto.CustomerId, dto);
