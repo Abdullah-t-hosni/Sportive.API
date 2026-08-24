@@ -315,6 +315,27 @@ public class DataMaintenanceService : IDataMaintenanceService
         }
     }
 
+    public async Task<(bool Success, string Message, int FixedCount)> FixWebsitePendingCashOrdersAsync()
+    {
+        try {
+            var affected = await _db.Orders
+                .Where(o => o.Source == OrderSource.Website 
+                         && o.PaymentMethod == PaymentMethod.Cash 
+                         && o.Status != OrderStatus.Delivered 
+                         && o.Status != OrderStatus.PartiallyReturned
+                         && o.Status != OrderStatus.Returned
+                         && o.PaidAmount > 0)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(o => o.PaidAmount, 0)
+                    .SetProperty(o => o.PaymentStatus, PaymentStatus.Pending));
+
+            return (true, affected > 0 ? $"تم تصحيح وتصفير المدفوع لعدد {affected} طلب دفع عند الاستلام معلق." : "كافة طلبات الدفع عند الاستلام سليمة ومضبوطة.", affected);
+        } catch (Exception ex) { 
+            _logger.LogError(ex, "FixWebsitePendingCashOrders failed"); 
+            return (false, "العملية فشلت. يرجى المحاولة مرة أخرى.", 0); 
+        }
+    }
+
     public async Task<(bool Success, string Message)> CleanupDuplicatesAsync()
     {
         try {

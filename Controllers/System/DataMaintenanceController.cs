@@ -110,6 +110,14 @@ public class DataMaintenanceController : ControllerBase
         return success ? Ok(new { success, message }) : BadRequest(new { success, message });
     }
 
+    [HttpPost("fix-website-pending-cash-orders"), HttpGet("fix-website-pending-cash-orders")]
+    [Authorize(Policy = "SuperAdminOnly")]
+    public async Task<IActionResult> FixWebsitePendingCashOrders()
+    {
+        var (success, message, count) = await _service.FixWebsitePendingCashOrdersAsync();
+        return success ? Ok(new { success, message, count }) : BadRequest(new { success, message });
+    }
+
     [HttpPost("cleanup-duplicates")]
     [Authorize(Policy = "SuperAdminOnly")]
     public async Task<IActionResult> CleanupDuplicates()

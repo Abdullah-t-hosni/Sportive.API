@@ -119,7 +119,7 @@ public class OrderService : IOrderService
                 o.Status.ToString(),
                 o.FulfillmentType.ToString(),
                 o.TotalAmount,
-                o.PaidAmount,
+                (o.Source == OrderSource.Website && o.PaymentMethod == PaymentMethod.Cash && o.Status != OrderStatus.Delivered && o.Status != OrderStatus.PartiallyReturned) ? 0 : o.PaidAmount,
                 o.CreatedAt,
                 o.Items.Count,
                 o.Source.ToString(),
@@ -182,14 +182,24 @@ public class OrderService : IOrderService
             }
         }
 
-        // 💡 SMART FINANCE: Calculate actual paid amount from Journal Entries
+        // 💡 SMART FINANCE: Calculate actual paid amount from Receipt Voucher Journal Entries (exclude Sales Invoices and Sales Returns)
         // Use a safe query that handles null accounts or missing lines
         var paidAmountQuery = _db.JournalLines
-            .Where(l => l.OrderId == id && l.Credit > 0 && l.JournalEntry.Type != JournalEntryType.SalesReturn);
+            .Where(l => l.OrderId == id && l.Credit > 0 && l.JournalEntry.Type != JournalEntryType.SalesReturn && l.JournalEntry.Type != JournalEntryType.SalesInvoice);
             
         var paidAmount = await paidAmountQuery
             .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("1107"))
             .SumAsync(l => l.Credit);
+
+        decimal effectivePaidAmount;
+        if (o.Source == OrderSource.Website && o.PaymentMethod == PaymentMethod.Cash && o.Status != OrderStatus.Delivered && o.Status != OrderStatus.PartiallyReturned)
+        {
+            effectivePaidAmount = paidAmount;
+        }
+        else
+        {
+            effectivePaidAmount = Math.Max(o.PaidAmount, paidAmount);
+        }
 
         var itemDtos = o.Items.Select(i => {
             string? itemSize = !string.IsNullOrWhiteSpace(i.Size) ? i.Size : i.ProductVariant?.Size;
@@ -286,7 +296,7 @@ public class OrderService : IOrderService
             salesPersonName,
             null, 
             0, 
-            Math.Max(o.PaidAmount, paidAmount), 
+            effectivePaidAmount, 
             o.Source.ToString(),
             o.AttachmentUrl, 
             o.AttachmentPublicId,

@@ -1205,5 +1205,34 @@ public class SchemaFixController : ControllerBase
         s = System.Text.RegularExpressions.Regex.Replace(s, @"\s+", "-").Trim('-');
         return s;
     }
+
+    [HttpGet("fix-website-pending-orders")]
+    public async Task<IActionResult> FixWebsitePendingOrders()
+    {
+        _logger.LogWarning("SchemaFix fix-website-pending-orders triggered.");
+        try
+        {
+            var affected = await _db.Orders
+                .Where(o => o.Source == OrderSource.Website 
+                         && o.PaymentMethod == PaymentMethod.Cash 
+                         && o.Status != OrderStatus.Delivered 
+                         && o.Status != OrderStatus.PartiallyReturned
+                         && o.Status != OrderStatus.Returned
+                         && o.PaidAmount > 0)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(o => o.PaidAmount, 0)
+                    .SetProperty(o => o.PaymentStatus, PaymentStatus.Pending));
+
+            return Ok(new { 
+                success = true, 
+                message = affected > 0 ? $"تم تصحيح وتصفير المدفوع لعدد {affected} طلب دفع عند الاستلام بنجاح." : "كافة طلبات الدفع عند الاستلام سليمة ومضبوطة.",
+                affected 
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
 }
 
