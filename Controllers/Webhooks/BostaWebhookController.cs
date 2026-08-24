@@ -98,6 +98,14 @@ public class BostaWebhookController : ControllerBase
                     status = stateVal.ValueKind == JsonValueKind.Number ? stateVal.GetInt32().ToString() : stateVal.GetString();
             }
 
+            string? bType = null;
+            if (payload.TryGetProperty("type", out var typeProp))
+                bType = typeProp.GetString();
+
+            string? bDesc = null;
+            if (payload.TryGetProperty("description", out var descProp))
+                bDesc = descProp.GetString();
+
             if (string.IsNullOrEmpty(trackingNumber) && string.IsNullOrEmpty(deliveryId))
             {
                 _logger.LogWarning("Bosta Webhook missing tracking number and delivery ID.");
@@ -114,37 +122,53 @@ public class BostaWebhookController : ControllerBase
                 return Ok(new { success = false, message = "Order not found" });
             }
 
-            if (!string.IsNullOrEmpty(status) || isConfirmedDelivery)
+            if (!string.IsNullOrEmpty(status) || isConfirmedDelivery || !string.IsNullOrEmpty(bDesc))
             {
-                // Always save the latest Bosta shipment status for tracking
-                if (!string.IsNullOrEmpty(status))
-                    order.BostaShipmentStatus = status;
+                // Format friendly status text for tracking
+                string statusLabel = !string.IsNullOrEmpty(bDesc) ? $"{status ?? ""} - {bDesc}".Trim(' ', '-') : (status ?? "");
+                order.BostaShipmentStatus = !string.IsNullOrWhiteSpace(statusLabel) ? statusLabel : order.BostaShipmentStatus;
 
+                var upperType = (bType ?? "").ToUpperInvariant();
+                var upperDesc = (bDesc ?? "").ToUpperInvariant();
                 var upperStatus = (status ?? "").ToUpperInvariant();
 
-                // Only auto-update order status when Bosta confirms delivery
-                // All other events (out for delivery, cancelled, returned, etc.) are tracked via BostaShipmentStatus only
-                bool isDelivered = isConfirmedDelivery
-                    || upperStatus == "45"
-                    || upperStatus == "100"
-                    || upperStatus.Contains("DELIVERED");
+                // 🚫 1. RETURN TO SENDER / BUSINESS CHECK:
+                // في بوسطة: كود 46 أو وصف "Returned to business" أو نوع RTO أو "تم التسليم" للمحل/الراسل
+                bool isReturnToBusiness = upperStatus == "46" 
+                    || upperType == "RTO" 
+                    || upperType == "CUSTOMER_RETURN_PICKUP"
+                    || upperDesc.Contains("RETURNED TO BUSINESS")
+                    || upperDesc.Contains("DELIVERED TO SENDER")
+                    || upperDesc.Contains("DELIVERED TO ORIGIN")
+                    || upperDesc.Contains("RETURNED")
+                    || (bDesc != null && (bDesc.Contains("تم التسليم للراسل") || bDesc.Contains("تم التسليم للتاجر") || bDesc.Contains("تم إرجاع الشحنة")));
 
-                if (isDelivered)
+                // ✅ 2. GENUINE CUSTOMER DELIVERY CHECK (تم بنجاح / تم التوصيل للعميل):
+                // كود 45 أو confirmedDelivery=true (لنوع SEND فقط) أو وصف "Delivered" / "تم بنجاح"
+                bool isDeliveredToCustomer = !isReturnToBusiness && (
+                    upperStatus == "45" 
+                    || upperStatus == "100" 
+                    || (isConfirmedDelivery && upperType != "RTO")
+                    || (upperDesc == "DELIVERED" && upperType == "SEND")
+                    || (bDesc != null && (bDesc.Contains("تم بنجاح") || bDesc.Contains("تم التوصيل للعميل") || bDesc == "تم التوصيل"))
+                );
+
+                if (isDeliveredToCustomer)
                 {
                     if (order.Status != OrderStatus.Delivered)
                     {
-                        await _orderService.UpdateOrderStatusAsync(order.Id, new UpdateOrderStatusDto(OrderStatus.Delivered, $"Bosta Webhook: code={status}, confirmed={isConfirmedDelivery}"), "BostaWebhook");
+                        await _orderService.UpdateOrderStatusAsync(order.Id, new UpdateOrderStatusDto(OrderStatus.Delivered, $"Bosta Webhook (تسليم ناجح للعميل): code={status}, desc={bDesc}"), "BostaWebhook");
                     }
                 }
                 else
                 {
-                    // Just save the Bosta status update without changing order status
+                    // Just save the Bosta status update (Out for delivery, Exception, Return to store, etc.) without false delivery transitions
                     await _db.SaveChangesAsync();
                 }
 
                 try
                 {
-                    await _audit.LogAsync("BostaWebhook", "Order", order.Id.ToString(), $"Bosta Webhook updated order #{order.OrderNumber} status to {status}", null, "BostaWebhook");
+                    await _audit.LogAsync("BostaWebhook", "Order", order.Id.ToString(), $"Bosta Webhook updated order #{order.OrderNumber} status to {order.BostaShipmentStatus} (isDeliveredToCustomer={isDeliveredToCustomer})", null, "BostaWebhook");
                 }
                 catch { }
             }
