@@ -34,6 +34,14 @@ public class PaymentAccountingService
         var reference = order.OrderNumber + "-PMT";
         if (await _core.EntryExistsAsync(JournalEntryType.ReceiptVoucher, reference)) return;
 
+        // 🚨 CRITICAL: Website / Non-POS orders with Cash on Delivery (COD) MUST NOT generate a -PMT ReceiptVoucher!
+        // Cash has NOT been collected yet; collection and receivable transfer are handled upon delivery via DELV-CUST.
+        if (order.Source != OrderSource.POS && order.PaymentMethod == PaymentMethod.Cash)
+        {
+            _logger.LogInformation("[Accounting] Skipping separate ReceiptVoucher for COD order {OrderNum}; collection is handled on delivery.", order.OrderNumber);
+            return;
+        }
+
         // ✅ SMART SKIP: POS orders and Credit orders embed payments directly in the SalesInvoice.
         // For Website/Admin orders, payments often happen after the SalesInvoice is generated:
         // - Digital payments happen at Confirmed.

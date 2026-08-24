@@ -950,14 +950,23 @@ public class OrderService : IOrderService
                     }
                     else if (order.PaymentMethod != PaymentMethod.Credit && order.PaymentMethod != (PaymentMethod)7)
                     {
-                        order.PaidAmount = order.TotalAmount;
-                        // Single payment method - record it
-                        order.Payments.Add(new OrderPayment 
-                        { 
-                            Method = order.PaymentMethod, 
-                            Amount = order.TotalAmount, 
-                            CreatedAt = now 
-                        });
+                        if (order.Source != OrderSource.POS && order.PaymentMethod == PaymentMethod.Cash)
+                        {
+                            order.PaidAmount = 0;
+                            order.PaymentStatus = PaymentStatus.Pending;
+                        }
+                        else
+                        {
+                            order.PaidAmount = order.TotalAmount;
+                            order.PaymentStatus = PaymentStatus.Paid;
+                            // Single payment method - record it
+                            order.Payments.Add(new OrderPayment 
+                            { 
+                                Method = order.PaymentMethod, 
+                                Amount = order.TotalAmount, 
+                                CreatedAt = now 
+                            });
+                        }
                     }
                     else if (order.PaymentMethod == (PaymentMethod)7 && !string.IsNullOrEmpty(dto.Note))
                     {
@@ -1167,6 +1176,14 @@ public class OrderService : IOrderService
                 var now = TimeHelper.GetEgyptTime();
                 var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
 
+                // Snapshot old order state for rich change tracking in audit history
+                decimal snapshotOldTotal = order.TotalAmount;
+                decimal snapshotOldDiscount = order.DiscountAmount;
+                decimal snapshotOldDeliveryFee = order.DeliveryFee;
+                PaymentMethod snapshotOldPaymentMethod = order.PaymentMethod;
+                string? snapshotOldCity = order.DeliveryAddress?.City;
+                int snapshotOldCustomerId = order.CustomerId;
+
                 // 1. CALCULATE DIFFS FOR INVENTORY (Smart Variant & Option Matching)
                 var dtoVariantMap = new Dictionary<CreateOrderItemDto, int>();
                 foreach (var dtoItem in dto.Items.Where(i => i.ProductId > 0))
@@ -1307,12 +1324,9 @@ public class OrderService : IOrderService
                         
                         if (oldQty == 0) diffLines.Add($"إضافة [{prodName}] (كمية: {newQty})");
                         else if (newQty == 0) diffLines.Add($"حذف [{prodName}]");
-                        else diffLines.Add($"[{prodName}] من {oldQty} إلى {newQty}");
+                        else diffLines.Add($"كمية [{prodName}]: من {oldQty} إلى {newQty}");
                     }
                 }
-                string editNote = diffLines.Any() 
-                    ? "تعديلات: " + string.Join(" ، ", diffLines)
-                    : "تم تعديل بيانات الفاتورة (بدون تعديل كميات)";
                 bool isCostSale = (dto.AdminNotes != null && dto.AdminNotes.Contains("[CostSale]")) || 
                                   order.PaymentMethod == PaymentMethod.CostPrice || 
                                   dto.PaymentMethod == PaymentMethod.CostPrice;
@@ -1497,17 +1511,33 @@ public class OrderService : IOrderService
                 {
                     // 🚨 IMPORTANT: Clear old payments to avoid accumulation when admin edits the total paid
                     order.Payments.Clear();
-                    order.PaidAmount = dto.PaidAmount.Value;
                     
                     var method = dto.PaymentMethod ?? order.PaymentMethod;
-                    if (method != PaymentMethod.Credit && order.PaidAmount > 0)
+                    if (order.Source != OrderSource.POS && method == PaymentMethod.Cash && order.Status != OrderStatus.Delivered)
                     {
-                         order.Payments.Add(new OrderPayment { Method = method, Amount = order.PaidAmount, CreatedAt = now });
+                        order.PaidAmount = 0;
                     }
+                    else
+                    {
+                        order.PaidAmount = dto.PaidAmount.Value;
+                        if (method != PaymentMethod.Credit && order.PaidAmount > 0)
+                        {
+                             order.Payments.Add(new OrderPayment { Method = method, Amount = order.PaidAmount, CreatedAt = now });
+                        }
+                    }
+                }
+                else if (order.Source != OrderSource.POS && order.PaymentMethod == PaymentMethod.Cash && order.Status != OrderStatus.Delivered)
+                {
+                    order.PaidAmount = 0;
+                    order.Payments.Clear();
                 }
 
                 // Update Payment Status
-                if (order.PaidAmount >= order.TotalAmount - 0.01m) order.PaymentStatus = PaymentStatus.Paid;
+                if (order.Source != OrderSource.POS && order.PaymentMethod == PaymentMethod.Cash && order.Status != OrderStatus.Delivered)
+                {
+                    order.PaymentStatus = PaymentStatus.Pending;
+                }
+                else if (order.PaidAmount >= order.TotalAmount - 0.01m) order.PaymentStatus = PaymentStatus.Paid;
                 else if (order.PaidAmount > 0) order.PaymentStatus = PaymentStatus.PartiallyPaid;
                 else order.PaymentStatus = PaymentStatus.Pending;
 
@@ -1524,6 +1554,53 @@ public class OrderService : IOrderService
                         v.CreatedAt   = dto.CreatedAt.Value;
                     }
                 }
+
+                // 📝 DETAILED AUDIT TRAIL: Track all non-item modifications (Financials, Shipping, Address, Payment Method, Customer)
+                if (Math.Abs(order.DeliveryFee - snapshotOldDeliveryFee) > 0.01m)
+                {
+                    diffLines.Add($"الشحن: من {snapshotOldDeliveryFee:G29} إلى {order.DeliveryFee:G29} ج.م");
+                }
+
+                if (Math.Abs(order.DiscountAmount - snapshotOldDiscount) > 0.01m)
+                {
+                    diffLines.Add($"الخصم: من {snapshotOldDiscount:G29} إلى {order.DiscountAmount:G29} ج.م");
+                }
+
+                if (Math.Abs(order.TotalAmount - snapshotOldTotal) > 0.01m)
+                {
+                    diffLines.Add($"إجمالي الفاتورة: من {snapshotOldTotal:N2} إلى {order.TotalAmount:N2} ج.م");
+                }
+
+                if (order.PaymentMethod != snapshotOldPaymentMethod)
+                {
+                    static string GetPmLabel(PaymentMethod m) => m switch
+                    {
+                        PaymentMethod.Cash => "كاش عند الاستلام",
+                        PaymentMethod.CreditCard => "فيزا / بطاقة",
+                        PaymentMethod.Vodafone => "فودافون كاش",
+                        PaymentMethod.InstaPay => "إنستاباي",
+                        PaymentMethod.Bank => "تحويل بنكي",
+                        PaymentMethod.Credit => "آجل",
+                        PaymentMethod.CustomerBalance => "رصيد العميل",
+                        PaymentMethod.CostPrice => "سعر التكلفة",
+                        _ => m.ToString()
+                    };
+                    diffLines.Add($"طريقة الدفع: من ({GetPmLabel(snapshotOldPaymentMethod)}) إلى ({GetPmLabel(order.PaymentMethod)})");
+                }
+
+                if (order.DeliveryAddress != null && !string.IsNullOrEmpty(snapshotOldCity) && order.DeliveryAddress.City != snapshotOldCity)
+                {
+                    diffLines.Add($"المحافظة: من ({snapshotOldCity}) إلى ({order.DeliveryAddress.City})");
+                }
+
+                if (dto.CustomerId.HasValue && dto.CustomerId.Value != snapshotOldCustomerId)
+                {
+                    diffLines.Add("تعديل العميل");
+                }
+
+                string editNote = diffLines.Any() 
+                    ? "تعديل الفاتورة: " + string.Join(" | ", diffLines)
+                    : "تحديث وحفظ بيانات الفاتورة";
 
                 order.UpdatedAt = now;
                 order.StatusHistory.Add(new OrderStatusHistory 
@@ -1549,7 +1626,12 @@ public class OrderService : IOrderService
                         isAdminOrSuperAdmin = await _db.UserRoles.AnyAsync(ur => ur.UserId == updatedByUserId && adminRoleIds.Contains(ur.RoleId));
                     }
 
-                    var isSameBusinessDay = isAdminOrSuperAdmin || TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt) == TimeHelper.GetEgyptBusinessDayDate(now);
+                    // 🚀 CLEAN IN-PLACE UPDATE: For Website/Online orders, or Admin/SuperAdmin edits, or any undelivered order:
+                    // We update the existing entries cleanly in-place without generating messy reversal entries.
+                    var isSameBusinessDay = isAdminOrSuperAdmin 
+                        || order.Source != OrderSource.POS 
+                        || order.Status != OrderStatus.Delivered 
+                        || TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt) == TimeHelper.GetEgyptBusinessDayDate(now);
 
                     if (isSameBusinessDay)
                     {
@@ -1575,7 +1657,7 @@ public class OrderService : IOrderService
                     }
                     else
                     {
-                        // 🔄 REVERSAL & REPOSTING FOR PREVIOUS DAYS
+                        // 🔄 REVERSAL & REPOSTING FOR PREVIOUS DAYS (POS Closed Shifts only)
                         // To avoid altering closed shifts and past daily reports, we reverse the old entries TODAY instead of deleting them.
                         var entriesToReverse = oldEntries.Where(e => e.Status != JournalEntryStatus.Reversed).ToList();
                         foreach (var e in entriesToReverse)
@@ -1634,7 +1716,7 @@ public class OrderService : IOrderService
 
                 // POST NEW ACCOUNTING
                 var isSameBusinessDayCheck = TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt) == TimeHelper.GetEgyptBusinessDayDate(now);
-                DateTime? overrideDate = isSameBusinessDayCheck ? null : now;
+                DateTime? overrideDate = (order.Source == OrderSource.POS && !isSameBusinessDayCheck) ? now : null;
 
                 await _accounting.PostSalesOrderAsync(order, overrideDate);
                 if (order.PaidAmount > 0)
