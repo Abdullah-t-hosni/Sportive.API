@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using Sportive.API.Utils;
 
 namespace Sportive.API.Services;
 
@@ -25,35 +26,78 @@ public class BackupHostedService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // لو الـ backup مش enabled، مش تشتغل خالص
         if (!_config.GetValue<bool>("Backup:Enabled", true))
         {
             _log.LogInformation("[Backup] Disabled by config");
             return;
         }
 
-        _log.LogInformation("[Backup] Hosted service started");
+        _log.LogInformation("[Backup] Hosted service started. Periodic checker running every minute.");
+
+        // Small initial delay on startup to let DB migrations / startup tasks finish cleanly
+        await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var delay = await CalculateDelayAsync(stoppingToken);
-                _log.LogInformation("[Backup] Next backup in {h:N1}h ({time})",
-                    delay.TotalHours, DateTime.UtcNow.Add(delay).ToString("HH:mm UTC"));
-
-                await Task.Delay(delay, stoppingToken);
-                if (stoppingToken.IsCancellationRequested) break;
-
-                await RunBackupSafeAsync(stoppingToken);
+                await CheckAndRunScheduledBackupAsync(stoppingToken);
             }
             catch (TaskCanceledException) { break; }
             catch (Exception ex)
             {
-                _log.LogError(ex, "[Backup] Hosted service error");
-                await Task.Delay(TimeSpan.FromMinutes(30), stoppingToken);
+                _log.LogError(ex, "[Backup] Error during scheduled backup check");
             }
+
+            // Check every 1 minute
+            try
+            {
+                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+            }
+            catch (TaskCanceledException) { break; }
         }
+    }
+
+    private async Task CheckAndRunScheduledBackupAsync(CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // Get store settings
+        var settings = await db.StoreInfo.OrderBy(s => s.StoreConfigId).FirstOrDefaultAsync(ct) ?? new StoreInfo();
+        
+        var targetTime = settings.BackupTime ?? "02:00";
+        var parts      = targetTime.Split(':');
+        var targetHour = int.TryParse(parts[0], out var h) ? h : 2;
+        var targetMin  = parts.Length > 1 && int.TryParse(parts[1], out var m) ? m : 0;
+
+        // Use store local time
+        var nowLocal = TimeHelper.GetEgyptTime();
+
+        // Check if current local time is at or past the scheduled target time today
+        bool isScheduledTimeOrPast = (nowLocal.Hour > targetHour) || 
+                                     (nowLocal.Hour == targetHour && nowLocal.Minute >= targetMin);
+
+        if (!isScheduledTimeOrPast)
+        {
+            // Not yet time today
+            return;
+        }
+
+        // Check if a backup has already run today (since midnight local time)
+        var todayLocalStartUtc = TimeZoneInfo.ConvertTimeToUtc(nowLocal.Date, TimeHelper.GetStoreTimeZone());
+
+        var backupDoneToday = await db.BackupRecords.AnyAsync(r => 
+            r.CreatedAt >= todayLocalStartUtc && r.Success, ct);
+
+        if (backupDoneToday)
+        {
+            // Today's backup is already completed
+            return;
+        }
+
+        _log.LogInformation("[Backup] Triggering auto scheduled backup for {Date:yyyy-MM-dd} (Scheduled at {Time})", nowLocal.Date, targetTime);
+        await RunBackupSafeAsync(ct);
     }
 
     private async Task RunBackupSafeAsync(CancellationToken ct)
@@ -67,38 +111,8 @@ public class BackupHostedService : BackgroundService
         else
             _log.LogError("[Backup] Auto backup failed: {error}", result.Error);
 
-        // حذف النسخ القديمة
+        // Clean old backups
         var keepDays = _config.GetValue<int>("Backup:KeepDays", 30);
         await svc.DeleteOldBackupsAsync(keepDays);
-    }
-
-    private async Task<TimeSpan> CalculateDelayAsync(CancellationToken ct)
-    {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        
-        // Get store settings
-        var settings = await db.StoreInfo.OrderBy(s => s.StoreConfigId).FirstOrDefaultAsync(ct) ?? new StoreInfo();
-        
-        var targetTime = settings.BackupTime ?? "02:00";
-        var parts      = targetTime.Split(':');
-        var localHour  = int.Parse(parts[0]);
-        var localMin   = parts.Length > 1 ? int.Parse(parts[1]) : 0;
-        var offsetHours= settings.BackupUtcOffset;
-
-        // Calculate UTC time: UTC = Local - Offset
-        var nowUtcS    = DateTime.UtcNow;
-        var nowLocal   = nowUtcS.AddHours(offsetHours);
-        
-        // Target local time today
-        var nextLocal  = nowLocal.Date.AddHours(localHour).AddMinutes(localMin);
-        
-        // If local time has passed, move to tomorrow
-        if (nextLocal <= nowLocal) nextLocal = nextLocal.AddDays(1);
-
-        // Convert back to UTC for the delay
-        var nextUtc    = nextLocal.AddHours(-offsetHours);
-        
-        return nextUtc - nowUtcS;
     }
 }
