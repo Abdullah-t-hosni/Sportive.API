@@ -179,7 +179,9 @@ public record OrderSummaryDto(
     string? TaxAuthorityQrCode = null,
     string? Governorate = null,
     int? JournalEntryId = null,
-    bool HasReviewRequested = false
+    bool HasReviewRequested = false,
+    DateTime? StatusChangedAt = null,
+    List<OrderStatusHistoryDto>? StatusHistory = null
 );
 
 

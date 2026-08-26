@@ -72,6 +72,7 @@ public class OrderService : IOrderService
         var query = _db.Orders
             .Include(o => o.Customer)
             .Include(o => o.DeliveryAddress)
+            .Include(o => o.StatusHistory)
             .AsNoTracking();
 
         if (status.HasValue) query = query.Where(o => o.Status == status.Value);
@@ -137,7 +138,9 @@ public class OrderService : IOrderService
                 o.TaxAuthorityQrCode,
                 o.DeliveryAddress != null ? o.DeliveryAddress.City : null,
                 o.JournalEntries.Where(j => j.Type == JournalEntryType.SalesInvoice && j.Status != JournalEntryStatus.Reversed).Select(j => (int?)j.Id).FirstOrDefault(),
-                o.Items.Any(i => i.ReviewRequested) // HasReviewRequested column added via startup migration
+                o.Items.Any(i => i.ReviewRequested), // HasReviewRequested column added via startup migration
+                o.StatusHistory.Where(h => h.Status == o.Status).OrderByDescending(h => h.CreatedAt).Select(h => (DateTime?)h.CreatedAt).FirstOrDefault() ?? o.UpdatedAt ?? o.CreatedAt,
+                o.StatusHistory.OrderByDescending(h => h.CreatedAt).Select(h => new OrderStatusHistoryDto(h.Status.ToString(), h.Note, h.CreatedAt, null)).ToList()
             ))
             .ToListAsync();
 
