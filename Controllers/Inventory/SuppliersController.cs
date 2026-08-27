@@ -88,16 +88,37 @@ public class SuppliersController : ControllerBase
             .ToListAsync();
 
         var items = rawList.Select(s => {
-            // 💡 إجمالي الدائن (المستحق للمورد) = قيود الأستاذ العام أو مجموع الفواتير ورصيد أول
-            var credit = s.JournalCredit > 0 ? s.JournalCredit : (s.InvoicesTotal + s.OpeningBalance);
-            // 💡 إجمالي المدين (المسدد للمورد) = قيود الأستاذ العام أو مجموع السندات والمرتجعات
-            var debit  = s.JournalDebit > 0  ? s.JournalDebit  : (s.PaymentsTotal + s.ReturnsTotal);
-            // 💡 رصيد آخر المدة المطابق لكشف الحساب 100%
-            var balance = credit - debit;
+            decimal totalPurchases;
+            decimal totalPaid;
+            decimal balance;
+
+            var hasLedger = s.JournalCredit > 0 || s.JournalDebit > 0;
+
+            if (hasLedger)
+            {
+                totalPurchases = s.JournalCredit > 0 ? s.JournalCredit : (s.InvoicesTotal + s.OpeningBalance);
+                totalPaid      = s.JournalDebit  > 0 ? s.JournalDebit  : (s.PaymentsTotal + s.ReturnsTotal);
+
+                if (s.JournalCredit == 0 && s.InvoicesTotal > 0)
+                {
+                    totalPurchases = s.InvoicesTotal + s.OpeningBalance;
+                    balance = totalPurchases - totalPaid;
+                }
+                else
+                {
+                    balance = s.JournalCredit - s.JournalDebit;
+                }
+            }
+            else
+            {
+                totalPurchases = s.InvoicesTotal + s.OpeningBalance;
+                totalPaid      = s.PaymentsTotal + s.ReturnsTotal;
+                balance        = totalPurchases - totalPaid;
+            }
 
             return new SupplierDto(
                 s.Id, s.Name, s.Phone, s.CompanyName, s.TaxNumber, s.Email, s.Address,
-                s.IsActive, credit, debit, balance,
+                s.IsActive, totalPurchases, totalPaid, balance,
                 s.InvoiceCount,
                 s.AttachmentUrl, s.AttachmentPublicId
             );
@@ -143,9 +164,33 @@ public class SuppliersController : ControllerBase
             .Where(r => r.SupplierId == s.Id)
             .SumAsync(r => (decimal?)r.TotalAmount) ?? 0;
 
-        var totalPurchases = journalCredit > 0 ? journalCredit : (invoicesTotal + s.OpeningBalance);
-        var totalPaid = journalDebit > 0 ? journalDebit : (paymentsTotal + returnsTotal);
-        var balance = totalPurchases - totalPaid;
+        decimal totalPurchases;
+        decimal totalPaid;
+        decimal balance;
+
+        var hasLedger = journalCredit > 0 || journalDebit > 0;
+
+        if (hasLedger)
+        {
+            totalPurchases = journalCredit > 0 ? journalCredit : (invoicesTotal + s.OpeningBalance);
+            totalPaid      = journalDebit  > 0 ? journalDebit  : (paymentsTotal + returnsTotal);
+
+            if (journalCredit == 0 && invoicesTotal > 0)
+            {
+                totalPurchases = invoicesTotal + s.OpeningBalance;
+                balance = totalPurchases - totalPaid;
+            }
+            else
+            {
+                balance = journalCredit - journalDebit;
+            }
+        }
+        else
+        {
+            totalPurchases = invoicesTotal + s.OpeningBalance;
+            totalPaid      = paymentsTotal + returnsTotal;
+            balance        = totalPurchases - totalPaid;
+        }
 
         return Ok(new SupplierDto(s.Id, s.Name, s.Phone, s.CompanyName, s.TaxNumber,
             s.Email, s.Address, s.IsActive, totalPurchases, totalPaid,
