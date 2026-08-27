@@ -66,14 +66,17 @@ public class SuppliersController : ControllerBase
             s.AttachmentUrl,
             s.AttachmentPublicId,
             InvoiceCount = s.Invoices.Count,
-            // 💡 حساب إجمالي المشتريات من الفواتير مباشرة
             TotalPurchases = _db.PurchaseInvoices
                 .Where(i => i.SupplierId == s.Id && i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
-                .Sum(i => (decimal?)i.TotalAmount) ?? 0,
-            // 💡 حساب إجمالي المسدد من جدول سندات الصرف والمدفوعات مباشرة
-            TotalPaid = _db.SupplierPayments
-                .Where(p => p.SupplierId == s.Id)
-                .Sum(p => (decimal?)p.Amount) ?? 0
+                .Sum(i => (decimal?)i.TotalAmount) ?? s.TotalPurchases,
+            TotalPaid = _db.JournalLines
+                .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                .Sum(l => (decimal?)l.Debit) ?? s.TotalPaid,
+            // 💡 حساب الرصيد من دفتر الأستاذ العام وقيود اليومية ليطابق كشف الحساب 100%
+            JournalNet = _db.JournalLines
+                .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                .Sum(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0,
+            HasJournal = _db.JournalLines.Any(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
         }).Select(x => new {
             x.Id,
             x.Name,
@@ -88,8 +91,7 @@ public class SuppliersController : ControllerBase
             x.InvoiceCount,
             x.AttachmentUrl,
             x.AttachmentPublicId,
-            // 💡 الباقي الفعلي = (رصيد أول + إجمالي المشتريات) - إجمالي ما تم سداده
-            Balance = (x.OpeningBalance + x.TotalPurchases) - x.TotalPaid
+            Balance = x.HasJournal ? x.JournalNet : (x.OpeningBalance + x.TotalPurchases - x.TotalPaid)
         });
 
         var ordered = sortBy?.ToLower() switch {
@@ -120,13 +122,18 @@ public class SuppliersController : ControllerBase
 
         var totalPurchases = await _db.PurchaseInvoices
             .Where(i => i.SupplierId == s.Id && i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
-            .SumAsync(i => (decimal?)i.TotalAmount) ?? 0;
+            .SumAsync(i => (decimal?)i.TotalAmount) ?? s.TotalPurchases;
 
-        var totalPaid = await _db.SupplierPayments
-            .Where(p => p.SupplierId == s.Id)
-            .SumAsync(p => (decimal?)p.Amount) ?? 0;
+        var totalPaid = await _db.JournalLines
+            .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .SumAsync(l => (decimal?)l.Debit) ?? s.TotalPaid;
 
-        var balance = (s.OpeningBalance + totalPurchases) - totalPaid;
+        var hasJournal = await _db.JournalLines.AnyAsync(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft);
+        var balance = hasJournal
+            ? await _db.JournalLines
+                .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                .SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0
+            : (s.OpeningBalance + totalPurchases - totalPaid);
 
         return Ok(new SupplierDto(s.Id, s.Name, s.Phone, s.CompanyName, s.TaxNumber,
             s.Email, s.Address, s.IsActive, totalPurchases, totalPaid,
