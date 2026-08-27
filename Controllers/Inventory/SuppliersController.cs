@@ -66,17 +66,18 @@ public class SuppliersController : ControllerBase
             s.AttachmentUrl,
             s.AttachmentPublicId,
             InvoiceCount = s.Invoices.Count,
-            TotalPurchases = _db.PurchaseInvoices
+            InvoicesTotal = _db.PurchaseInvoices
                 .Where(i => i.SupplierId == s.Id && i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
-                .Sum(i => (decimal?)i.TotalAmount) ?? s.TotalPurchases,
-            TotalPaid = _db.JournalLines
-                .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
-                .Sum(l => (decimal?)l.Debit) ?? s.TotalPaid,
-            // 💡 حساب الرصيد من دفتر الأستاذ العام وقيود اليومية ليطابق كشف الحساب 100%
-            JournalNet = _db.JournalLines
-                .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                .Sum(i => (decimal?)i.TotalAmount) ?? 0,
+            PaymentsTotal = _db.SupplierPayments
+                .Where(p => p.SupplierId == s.Id)
+                .Sum(p => (decimal?)p.Amount) ?? 0,
+            OpeningJournal = _db.JournalLines
+                .Where(l => l.SupplierId == s.Id && l.JournalEntry.Type == JournalEntryType.OpeningBalance && l.JournalEntry.Status != JournalEntryStatus.Draft)
                 .Sum(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0,
-            HasJournal = _db.JournalLines.Any(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            ReturnsTotal = _db.PurchaseReturns
+                .Where(r => r.SupplierId == s.Id)
+                .Sum(r => (decimal?)r.TotalAmount) ?? 0
         }).Select(x => new {
             x.Id,
             x.Name,
@@ -86,12 +87,13 @@ public class SuppliersController : ControllerBase
             x.Email,
             x.Address,
             x.IsActive,
-            x.TotalPurchases,
-            x.TotalPaid,
+            TotalPurchases = x.InvoicesTotal,
+            TotalPaid = x.PaymentsTotal,
             x.InvoiceCount,
             x.AttachmentUrl,
             x.AttachmentPublicId,
-            Balance = x.HasJournal ? x.JournalNet : (x.OpeningBalance + x.TotalPurchases - x.TotalPaid)
+            // 💡 الباقي الفعلي = (الرصيد الافتتاحي + إجمالي الفواتير) - (إجمالي المدفوعات + المرتجعات)
+            Balance = (x.OpeningBalance + x.OpeningJournal + x.InvoicesTotal) - (x.PaymentsTotal + x.ReturnsTotal)
         });
 
         var ordered = sortBy?.ToLower() switch {
@@ -120,23 +122,26 @@ public class SuppliersController : ControllerBase
         var s = await _db.Suppliers.Include(s => s.Invoices).FirstOrDefaultAsync(x => x.Id == id);
         if (s == null) return NotFound();
 
-        var totalPurchases = await _db.PurchaseInvoices
+        var invoicesTotal = await _db.PurchaseInvoices
             .Where(i => i.SupplierId == s.Id && i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
-            .SumAsync(i => (decimal?)i.TotalAmount) ?? s.TotalPurchases;
+            .SumAsync(i => (decimal?)i.TotalAmount) ?? 0;
 
-        var totalPaid = await _db.JournalLines
-            .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
-            .SumAsync(l => (decimal?)l.Debit) ?? s.TotalPaid;
+        var paymentsTotal = await _db.SupplierPayments
+            .Where(p => p.SupplierId == s.Id)
+            .SumAsync(p => (decimal?)p.Amount) ?? 0;
 
-        var hasJournal = await _db.JournalLines.AnyAsync(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft);
-        var balance = hasJournal
-            ? await _db.JournalLines
-                .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
-                .SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0
-            : (s.OpeningBalance + totalPurchases - totalPaid);
+        var openingJournal = await _db.JournalLines
+            .Where(l => l.SupplierId == s.Id && l.JournalEntry.Type == JournalEntryType.OpeningBalance && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0;
+
+        var returnsTotal = await _db.PurchaseReturns
+            .Where(r => r.SupplierId == s.Id)
+            .SumAsync(r => (decimal?)r.TotalAmount) ?? 0;
+
+        var balance = (s.OpeningBalance + openingJournal + invoicesTotal) - (paymentsTotal + returnsTotal);
 
         return Ok(new SupplierDto(s.Id, s.Name, s.Phone, s.CompanyName, s.TaxNumber,
-            s.Email, s.Address, s.IsActive, totalPurchases, totalPaid,
+            s.Email, s.Address, s.IsActive, invoicesTotal, paymentsTotal,
             balance, s.Invoices.Count,
             s.AttachmentUrl, s.AttachmentPublicId));
     }
