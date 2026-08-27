@@ -268,12 +268,34 @@ public class SuppliersController : ControllerBase
         
         try { await _audit.LogAsync("UpdateSupplier", "Supplier", id.ToString(), $"Updated supplier info", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
-        var balance = supplier.OpeningBalance + supplier.TotalPurchases - supplier.TotalPaid;
+        var invoicesTotal = await _db.PurchaseInvoices
+            .Where(i => i.SupplierId == supplier.Id && i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
+            .SumAsync(i => (decimal?)i.TotalAmount) ?? 0;
+
+        var journalCredit = await _db.JournalLines
+            .Where(l => l.SupplierId == supplier.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .SumAsync(l => (decimal?)l.Credit) ?? 0;
+
+        var paymentsTotal = await _db.SupplierPayments
+            .Where(p => p.SupplierId == supplier.Id)
+            .SumAsync(p => (decimal?)p.Amount) ?? 0;
+
+        var journalDebit = await _db.JournalLines
+            .Where(l => l.SupplierId == supplier.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .SumAsync(l => (decimal?)l.Debit) ?? 0;
+
+        var returnsTotal = await _db.PurchaseReturns
+            .Where(r => r.SupplierId == supplier.Id)
+            .SumAsync(r => (decimal?)r.TotalAmount) ?? 0;
+
+        var totalPurchases = journalCredit > 0 ? journalCredit : (invoicesTotal + supplier.OpeningBalance);
+        var totalPaid = journalDebit > 0 ? journalDebit : (paymentsTotal + returnsTotal);
+        var balance = totalPurchases - totalPaid;
 
         return Ok(new SupplierDto(
             supplier.Id, supplier.Name, supplier.Phone, supplier.CompanyName,
             supplier.TaxNumber, supplier.Email, supplier.Address, supplier.IsActive,
-            supplier.TotalPurchases, supplier.TotalPaid,
+            totalPurchases, totalPaid,
             balance,
             await _db.PurchaseInvoices.CountAsync(i => i.SupplierId == supplier.Id),
             supplier.AttachmentUrl, supplier.AttachmentPublicId
