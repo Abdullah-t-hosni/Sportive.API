@@ -75,11 +75,12 @@ public class SuppliersController : ControllerBase
                 PaymentsTotal = _db.SupplierPayments
                     .Where(p => p.SupplierId == s.Id)
                     .Sum(p => (decimal?)p.Amount) ?? 0,
+                // 💡 تصفية قيود اليومية على حسابات الموردين فقط (2101) تماماً مثل كشف الحساب التفصيلي
                 JournalCredit = _db.JournalLines
-                    .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                    .Where(l => l.SupplierId == s.Id && l.Account.Code.StartsWith("2101") && l.JournalEntry.Status != JournalEntryStatus.Draft)
                     .Sum(l => (decimal?)l.Credit) ?? 0,
                 JournalDebit = _db.JournalLines
-                    .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                    .Where(l => l.SupplierId == s.Id && l.Account.Code.StartsWith("2101") && l.JournalEntry.Status != JournalEntryStatus.Draft)
                     .Sum(l => (decimal?)l.Debit) ?? 0,
                 ReturnsTotal = _db.PurchaseReturns
                     .Where(r => r.SupplierId == s.Id)
@@ -106,6 +107,7 @@ public class SuppliersController : ControllerBase
                 }
                 else
                 {
+                    // 💡 رصيد آخر المدة = إجمالي الدائن - إجمالي المدين من كشف حساب المورد
                     balance = s.JournalCredit - s.JournalDebit;
                 }
             }
@@ -149,7 +151,7 @@ public class SuppliersController : ControllerBase
             .SumAsync(i => (decimal?)i.TotalAmount) ?? 0;
 
         var journalCredit = await _db.JournalLines
-            .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .Where(l => l.SupplierId == s.Id && l.Account.Code.StartsWith("2101") && l.JournalEntry.Status != JournalEntryStatus.Draft)
             .SumAsync(l => (decimal?)l.Credit) ?? 0;
 
         var paymentsTotal = await _db.SupplierPayments
@@ -157,7 +159,7 @@ public class SuppliersController : ControllerBase
             .SumAsync(p => (decimal?)p.Amount) ?? 0;
 
         var journalDebit = await _db.JournalLines
-            .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .Where(l => l.SupplierId == s.Id && l.Account.Code.StartsWith("2101") && l.JournalEntry.Status != JournalEntryStatus.Draft)
             .SumAsync(l => (decimal?)l.Debit) ?? 0;
 
         var returnsTotal = await _db.PurchaseReturns
@@ -308,7 +310,7 @@ public class SuppliersController : ControllerBase
             .SumAsync(i => (decimal?)i.TotalAmount) ?? 0;
 
         var journalCredit = await _db.JournalLines
-            .Where(l => l.SupplierId == supplier.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .Where(l => l.SupplierId == supplier.Id && l.Account.Code.StartsWith("2101") && l.JournalEntry.Status != JournalEntryStatus.Draft)
             .SumAsync(l => (decimal?)l.Credit) ?? 0;
 
         var paymentsTotal = await _db.SupplierPayments
@@ -316,16 +318,40 @@ public class SuppliersController : ControllerBase
             .SumAsync(p => (decimal?)p.Amount) ?? 0;
 
         var journalDebit = await _db.JournalLines
-            .Where(l => l.SupplierId == supplier.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .Where(l => l.SupplierId == supplier.Id && l.Account.Code.StartsWith("2101") && l.JournalEntry.Status != JournalEntryStatus.Draft)
             .SumAsync(l => (decimal?)l.Debit) ?? 0;
 
         var returnsTotal = await _db.PurchaseReturns
             .Where(r => r.SupplierId == supplier.Id)
             .SumAsync(r => (decimal?)r.TotalAmount) ?? 0;
 
-        var totalPurchases = journalCredit > 0 ? journalCredit : (invoicesTotal + supplier.OpeningBalance);
-        var totalPaid = journalDebit > 0 ? journalDebit : (paymentsTotal + returnsTotal);
-        var balance = totalPurchases - totalPaid;
+        decimal totalPurchases;
+        decimal totalPaid;
+        decimal balance;
+
+        var hasLedger = journalCredit > 0 || journalDebit > 0;
+
+        if (hasLedger)
+        {
+            totalPurchases = journalCredit > 0 ? journalCredit : (invoicesTotal + supplier.OpeningBalance);
+            totalPaid      = journalDebit  > 0 ? journalDebit  : (paymentsTotal + returnsTotal);
+
+            if (journalCredit == 0 && invoicesTotal > 0)
+            {
+                totalPurchases = invoicesTotal + supplier.OpeningBalance;
+                balance = totalPurchases - totalPaid;
+            }
+            else
+            {
+                balance = journalCredit - journalDebit;
+            }
+        }
+        else
+        {
+            totalPurchases = invoicesTotal + supplier.OpeningBalance;
+            totalPaid      = paymentsTotal + returnsTotal;
+            balance        = totalPurchases - totalPaid;
+        }
 
         return Ok(new SupplierDto(
             supplier.Id, supplier.Name, supplier.Phone, supplier.CompanyName,
