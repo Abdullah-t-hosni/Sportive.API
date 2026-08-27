@@ -53,75 +53,65 @@ public class SuppliersController : ControllerBase
         var total = await q.CountAsync();
         var desc = sortDir.Equals("desc", StringComparison.OrdinalIgnoreCase);
 
-        var projected = q.Select(s => new {
-            s.Id,
-            s.Name,
-            s.Phone,
-            s.CompanyName,
-            s.TaxNumber,
-            s.Email,
-            s.Address,
-            s.IsActive,
-            s.OpeningBalance,
-            s.AttachmentUrl,
-            s.AttachmentPublicId,
-            InvoiceCount = s.Invoices.Count,
-            // 1. فواتير المشتريات المباشرة
-            InvoicesTotal = _db.PurchaseInvoices
-                .Where(i => i.SupplierId == s.Id && i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
-                .Sum(i => (decimal?)i.TotalAmount) ?? 0,
-            // 2. إجمالي الدائن من دفتر الأستاذ العام (كشف الحساب)
-            JournalCredit = _db.JournalLines
-                .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
-                .Sum(l => (decimal?)l.Credit) ?? 0,
-            // 3. سندات الصرف المباشرة
-            PaymentsTotal = _db.SupplierPayments
-                .Where(p => p.SupplierId == s.Id)
-                .Sum(p => (decimal?)p.Amount) ?? 0,
-            // 4. إجمالي المدين من دفتر الأستاذ العام (كشف الحساب)
-            JournalDebit = _db.JournalLines
-                .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
-                .Sum(l => (decimal?)l.Debit) ?? 0,
-            // 5. مرتجعات المشتريات
-            ReturnsTotal = _db.PurchaseReturns
-                .Where(r => r.SupplierId == s.Id)
-                .Sum(r => (decimal?)r.TotalAmount) ?? 0
-        }).Select(x => new {
-            x.Id,
-            x.Name,
-            x.Phone,
-            x.CompanyName,
-            x.TaxNumber,
-            x.Email,
-            x.Address,
-            x.IsActive,
-            // 💡 إجمالي المستحق للمورد (الدائن) = الأكبر بين قيود الأستاذ العام أو مجموع الفواتير مع الرصيد الافتتاحي
-            TotalPurchases = x.JournalCredit > 0 ? x.JournalCredit : (x.InvoicesTotal + x.OpeningBalance),
-            // 💡 إجمالي المسدد للمورد (المدين) = الأكبر بين قيود الأستاذ العام أو مجموع السندات والمرتجعات
-            TotalPaid = x.JournalDebit > 0 ? x.JournalDebit : (x.PaymentsTotal + x.ReturnsTotal),
-            x.InvoiceCount,
-            x.AttachmentUrl,
-            x.AttachmentPublicId,
-            // 💡 رصيد آخر المدة = إجمالي الدائن - إجمالي المدين (مطابق لكشف الحساب بالقرش)
-            Balance = (x.JournalCredit > 0 ? x.JournalCredit : (x.InvoicesTotal + x.OpeningBalance)) 
-                    - (x.JournalDebit > 0 ? x.JournalDebit : (x.PaymentsTotal + x.ReturnsTotal))
-        });
-
-        var ordered = sortBy?.ToLower() switch {
-            "totalpurchases" => desc ? projected.OrderByDescending(s => s.TotalPurchases) : projected.OrderBy(s => s.TotalPurchases),
-            "totalpaid"      => desc ? projected.OrderByDescending(s => s.TotalPaid)      : projected.OrderBy(s => s.TotalPaid),
-            "balance"        => desc ? projected.OrderByDescending(s => s.Balance)        : projected.OrderBy(s => s.Balance),
-            _                => desc ? projected.OrderByDescending(s => s.Name)           : projected.OrderBy(s => s.Name),
-        };
-
-        var items = await ordered
+        var rawList = await q
+            .OrderBy(s => s.Name)
             .Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(s => new SupplierDto(
+            .Select(s => new {
+                s.Id,
+                s.Name,
+                s.Phone,
+                s.CompanyName,
+                s.TaxNumber,
+                s.Email,
+                s.Address,
+                s.IsActive,
+                s.OpeningBalance,
+                s.AttachmentUrl,
+                s.AttachmentPublicId,
+                InvoiceCount = s.Invoices.Count,
+                InvoicesTotal = _db.PurchaseInvoices
+                    .Where(i => i.SupplierId == s.Id && i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
+                    .Sum(i => (decimal?)i.TotalAmount) ?? 0,
+                PaymentsTotal = _db.SupplierPayments
+                    .Where(p => p.SupplierId == s.Id)
+                    .Sum(p => (decimal?)p.Amount) ?? 0,
+                JournalCredit = _db.JournalLines
+                    .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                    .Sum(l => (decimal?)l.Credit) ?? 0,
+                JournalDebit = _db.JournalLines
+                    .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                    .Sum(l => (decimal?)l.Debit) ?? 0,
+                ReturnsTotal = _db.PurchaseReturns
+                    .Where(r => r.SupplierId == s.Id)
+                    .Sum(r => (decimal?)r.TotalAmount) ?? 0
+            })
+            .ToListAsync();
+
+        var items = rawList.Select(s => {
+            // 💡 إجمالي الدائن (المستحق للمورد) = قيود الأستاذ العام أو مجموع الفواتير ورصيد أول
+            var credit = s.JournalCredit > 0 ? s.JournalCredit : (s.InvoicesTotal + s.OpeningBalance);
+            // 💡 إجمالي المدين (المسدد للمورد) = قيود الأستاذ العام أو مجموع السندات والمرتجعات
+            var debit  = s.JournalDebit > 0  ? s.JournalDebit  : (s.PaymentsTotal + s.ReturnsTotal);
+            // 💡 رصيد آخر المدة المطابق لكشف الحساب 100%
+            var balance = credit - debit;
+
+            return new SupplierDto(
                 s.Id, s.Name, s.Phone, s.CompanyName, s.TaxNumber, s.Email, s.Address,
-                s.IsActive, s.TotalPurchases, s.TotalPaid, s.Balance,
+                s.IsActive, credit, debit, balance,
                 s.InvoiceCount,
                 s.AttachmentUrl, s.AttachmentPublicId
-            )).ToListAsync();
+            );
+        }).ToList();
+
+        if (!string.IsNullOrEmpty(sortBy))
+        {
+            items = sortBy.ToLower() switch {
+                "totalpurchases" => desc ? items.OrderByDescending(s => s.TotalPurchases).ToList() : items.OrderBy(s => s.TotalPurchases).ToList(),
+                "totalpaid"      => desc ? items.OrderByDescending(s => s.TotalPaid).ToList()      : items.OrderBy(s => s.TotalPaid).ToList(),
+                "balance"        => desc ? items.OrderByDescending(s => s.Balance).ToList()        : items.OrderBy(s => s.Balance).ToList(),
+                _                => desc ? items.OrderByDescending(s => s.Name).ToList()           : items.OrderBy(s => s.Name).ToList(),
+            };
+        }
 
         return Ok(new PaginatedResult<SupplierDto>(items, total, page, pageSize,
             (int)Math.Ceiling((double)total / pageSize)));
