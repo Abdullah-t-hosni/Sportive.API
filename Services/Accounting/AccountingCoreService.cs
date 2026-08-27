@@ -915,7 +915,6 @@ public class AccountingCoreService
         _logger.LogInformation("[Sync] Completed purchase invoice balances sync.");
 
         // 3. Sync Suppliers
-        // Group purchase invoices by SupplierId and sum TotalAmount in ONE query
         var supplierInvoicesTotal = await _db.PurchaseInvoices
             .Where(i => i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
             .GroupBy(i => i.SupplierId)
@@ -925,32 +924,18 @@ public class AccountingCoreService
             })
             .ToDictionaryAsync(x => x.SupplierId, x => x.Total);
 
-        // Group journal lines by SupplierId or AccountId and sum credit - debit in ONE query
-        var supplierLedgerBalancesList = await _db.JournalLines
-            .Where(l => l.SupplierId != null || (l.Account != null && l.Account.Code != null && l.Account.Code.StartsWith("2101")))
-            .GroupBy(l => new { l.SupplierId, l.AccountId })
+        var supplierPaymentsTotal = await _db.SupplierPayments
+            .GroupBy(p => p.SupplierId)
             .Select(g => new {
-                SupplierId = g.Key.SupplierId,
-                AccountId = g.Key.AccountId,
-                Debt = g.Sum(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0
+                SupplierId = g.Key,
+                Total = g.Sum(p => (decimal?)p.Amount) ?? 0
             })
-            .ToListAsync();
+            .ToDictionaryAsync(x => x.SupplierId, x => x.Total);
 
         var suppliersProj = await _db.Suppliers
             .AsNoTracking()
-            .Select(s => new { s.Id, s.MainAccountId, s.TotalPurchases, s.TotalPaid })
+            .Select(s => new { s.Id, s.TotalPurchases, s.TotalPaid })
             .ToListAsync();
-
-        var supplierLedgerBalances = new Dictionary<int, decimal>();
-        foreach (var s in suppliersProj)
-        {
-            decimal bal = supplierLedgerBalancesList.Where(x => x.SupplierId == s.Id).Sum(x => x.Debt);
-            if (s.MainAccountId.HasValue)
-            {
-                bal += supplierLedgerBalancesList.Where(x => x.SupplierId == null && x.AccountId == s.MainAccountId.Value).Sum(x => x.Debt);
-            }
-            supplierLedgerBalances[s.Id] = bal;
-        }
 
         var mismatchedSupplierIds = new List<int>();
         var calculatedSupplierData = new Dictionary<int, (decimal TotalPurchases, decimal TotalPaid)>();
@@ -958,17 +943,12 @@ public class AccountingCoreService
         foreach (var s in suppliersProj)
         {
             var volume = supplierInvoicesTotal.GetValueOrDefault(s.Id, 0);
-            // LedgerDebt = Credit - Debit on supplier account (remaining balance we owe them)
-            // TotalPaid = TotalPurchases - LedgerDebt (what has been settled)
-            // ✅ This captures manual journal debits correctly because they reduce LedgerDebt,
-            // which increases TotalPaid, which reduces Balance.
-            var ledgerDebt = supplierLedgerBalances.GetValueOrDefault(s.Id, 0);
-            var expectedPaid = volume - ledgerDebt;
+            var paid = supplierPaymentsTotal.GetValueOrDefault(s.Id, 0);
 
-            if (Math.Abs(s.TotalPurchases - volume) > 0.001m || Math.Abs(s.TotalPaid - expectedPaid) > 0.001m)
+            if (Math.Abs(s.TotalPurchases - volume) > 0.001m || Math.Abs(s.TotalPaid - paid) > 0.001m)
             {
                 mismatchedSupplierIds.Add(s.Id);
-                calculatedSupplierData[s.Id] = (volume, expectedPaid);
+                calculatedSupplierData[s.Id] = (volume, paid);
             }
         }
 

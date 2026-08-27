@@ -62,14 +62,34 @@ public class SuppliersController : ControllerBase
             s.Email,
             s.Address,
             s.IsActive,
-            s.TotalPurchases,
-            s.TotalPaid,
             s.OpeningBalance,
             s.AttachmentUrl,
             s.AttachmentPublicId,
             InvoiceCount = s.Invoices.Count,
-            // 💡 الباقي الفعلي = (رصيد أول + إجمالي المشتريات) - إجمالي المسدد
-            Balance = s.OpeningBalance + s.TotalPurchases - s.TotalPaid
+            // 💡 حساب إجمالي المشتريات من الفواتير مباشرة
+            TotalPurchases = _db.PurchaseInvoices
+                .Where(i => i.SupplierId == s.Id && i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
+                .Sum(i => (decimal?)i.TotalAmount) ?? 0,
+            // 💡 حساب إجمالي المسدد من جدول سندات الصرف والمدفوعات مباشرة
+            TotalPaid = _db.SupplierPayments
+                .Where(p => p.SupplierId == s.Id)
+                .Sum(p => (decimal?)p.Amount) ?? 0
+        }).Select(x => new {
+            x.Id,
+            x.Name,
+            x.Phone,
+            x.CompanyName,
+            x.TaxNumber,
+            x.Email,
+            x.Address,
+            x.IsActive,
+            x.TotalPurchases,
+            x.TotalPaid,
+            x.InvoiceCount,
+            x.AttachmentUrl,
+            x.AttachmentPublicId,
+            // 💡 الباقي الفعلي = (رصيد أول + إجمالي المشتريات) - إجمالي ما تم سداده
+            Balance = (x.OpeningBalance + x.TotalPurchases) - x.TotalPaid
         });
 
         var ordered = sortBy?.ToLower() switch {
@@ -98,10 +118,18 @@ public class SuppliersController : ControllerBase
         var s = await _db.Suppliers.Include(s => s.Invoices).FirstOrDefaultAsync(x => x.Id == id);
         if (s == null) return NotFound();
 
-        var balance = s.OpeningBalance + s.TotalPurchases - s.TotalPaid;
+        var totalPurchases = await _db.PurchaseInvoices
+            .Where(i => i.SupplierId == s.Id && i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
+            .SumAsync(i => (decimal?)i.TotalAmount) ?? 0;
+
+        var totalPaid = await _db.SupplierPayments
+            .Where(p => p.SupplierId == s.Id)
+            .SumAsync(p => (decimal?)p.Amount) ?? 0;
+
+        var balance = (s.OpeningBalance + totalPurchases) - totalPaid;
 
         return Ok(new SupplierDto(s.Id, s.Name, s.Phone, s.CompanyName, s.TaxNumber,
-            s.Email, s.Address, s.IsActive, s.TotalPurchases, s.TotalPaid,
+            s.Email, s.Address, s.IsActive, totalPurchases, totalPaid,
             balance, s.Invoices.Count,
             s.AttachmentUrl, s.AttachmentPublicId));
     }
