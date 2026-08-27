@@ -68,26 +68,8 @@ public class SuppliersController : ControllerBase
             s.AttachmentUrl,
             s.AttachmentPublicId,
             InvoiceCount = s.Invoices.Count,
-            // 💡 Calculate Real Ledger Balance (Credit - Debit on this specific supplier) matching Supplier Statement
-            JournalNet = _db.JournalLines
-                .Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
-                .Sum(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0,
-            HasJournalLines = _db.JournalLines.Any(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
-        }).Select(x => new {
-            x.Id,
-            x.Name,
-            x.Phone,
-            x.CompanyName,
-            x.TaxNumber,
-            x.Email,
-            x.Address,
-            x.IsActive,
-            x.TotalPurchases,
-            x.TotalPaid,
-            x.InvoiceCount,
-            x.AttachmentUrl,
-            x.AttachmentPublicId,
-            Balance = x.HasJournalLines ? x.JournalNet : (x.OpeningBalance + x.TotalPurchases - x.TotalPaid)
+            // 💡 الباقي الفعلي = (رصيد أول + إجمالي المشتريات) - إجمالي المسدد
+            Balance = s.OpeningBalance + s.TotalPurchases - s.TotalPaid
         });
 
         var ordered = sortBy?.ToLower() switch {
@@ -116,10 +98,7 @@ public class SuppliersController : ControllerBase
         var s = await _db.Suppliers.Include(s => s.Invoices).FirstOrDefaultAsync(x => x.Id == id);
         if (s == null) return NotFound();
 
-        var hasJournal = await _db.JournalLines.AnyAsync(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft);
-        decimal balance = hasJournal
-            ? (await _db.JournalLines.Where(l => l.SupplierId == s.Id && l.JournalEntry.Status != JournalEntryStatus.Draft).SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0)
-            : (s.OpeningBalance + s.TotalPurchases - s.TotalPaid);
+        var balance = s.OpeningBalance + s.TotalPurchases - s.TotalPaid;
 
         return Ok(new SupplierDto(s.Id, s.Name, s.Phone, s.CompanyName, s.TaxNumber,
             s.Email, s.Address, s.IsActive, s.TotalPurchases, s.TotalPaid,
@@ -232,10 +211,7 @@ public class SuppliersController : ControllerBase
         
         try { await _audit.LogAsync("UpdateSupplier", "Supplier", id.ToString(), $"Updated supplier info", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
-        var hasJournal = await _db.JournalLines.AnyAsync(l => (l.SupplierId == supplier.Id || (supplier.MainAccountId != null && l.AccountId == supplier.MainAccountId.Value)) && l.JournalEntry.Status != JournalEntryStatus.Draft);
-        decimal balance = hasJournal
-            ? (await _db.JournalLines.Where(l => (l.SupplierId == supplier.Id || (supplier.MainAccountId != null && l.AccountId == supplier.MainAccountId.Value)) && l.JournalEntry.Status != JournalEntryStatus.Draft).SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0)
-            : (supplier.OpeningBalance + supplier.TotalPurchases - supplier.TotalPaid);
+        var balance = supplier.OpeningBalance + supplier.TotalPurchases - supplier.TotalPaid;
 
         return Ok(new SupplierDto(
             supplier.Id, supplier.Name, supplier.Phone, supplier.CompanyName,
