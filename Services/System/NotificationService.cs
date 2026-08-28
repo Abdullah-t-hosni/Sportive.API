@@ -60,7 +60,7 @@ public class NotificationService : INotificationService
         var adminUserIds = new List<string>();
 
         // 1. Determine if this notification should go to staff/admins
-        if (type == "Order" || type == "OnlineOrder" || type == "POSOrder" || type == "Alert" || type == "Stock" || type == "System" || string.IsNullOrEmpty(userId))
+        if (type == "Order" || type == "OnlineOrder" || type == "POSOrder" || type == "WhatsApp" || type == "Alert" || type == "Stock" || type == "System" || string.IsNullOrEmpty(userId))
         {
             var users = await _db.Users.ToListAsync();
 
