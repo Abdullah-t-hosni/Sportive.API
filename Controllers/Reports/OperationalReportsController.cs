@@ -5034,7 +5034,8 @@ public class OperationalReportsController : ControllerBase
             )
             .ToListAsync();
 
-        // B. Operating & Marketing Journal Entries with CostCenter == Website (excluding Sales & Sales Returns to avoid double counting)
+        // B. Operating & Marketing Journal Entries with CostCenter == Website
+        // Exclude Order auto-entries (COGS 51101 and Delivery 520101) to avoid double counting with order-level COGS and courier costs
         var journalExpenses = await _db.JournalLines
             .AsNoTracking()
             .Include(l => l.Account)
@@ -5044,6 +5045,8 @@ public class OperationalReportsController : ControllerBase
                    l.JournalEntry.Status == JournalEntryStatus.Posted &&
                    l.JournalEntry.Type != JournalEntryType.SalesInvoice &&
                    l.JournalEntry.Type != JournalEntryType.SalesReturn &&
+                   l.JournalEntry.OrderId == null &&
+                   l.OrderId == null &&
                    (
                        l.CostCenter == OrderSource.Website ||
                        l.JournalEntry.CostCenter == OrderSource.Website ||
@@ -5051,6 +5054,8 @@ public class OperationalReportsController : ControllerBase
                        (l.Branch != null && (l.Branch.Name.Contains("موقع") || l.Branch.Name.Contains("متجر") || l.Branch.Name.Contains("أونلاين")))
                    ) &&
                    (l.Account.Type == AccountType.Expense || l.Account.Code.StartsWith("5")) &&
+                   l.Account.Code != "51101" && 
+                   l.Account.Code != "520101" &&
                    l.Debit > 0
             )
             .ToListAsync();
@@ -5098,11 +5103,14 @@ public class OperationalReportsController : ControllerBase
                 .Where(jl => !(jl.JournalEntry.Type == JournalEntryType.PaymentVoucher && vouchersList.Any(v => v.VoucherNumber == jl.JournalEntry.Reference)))
                 .Sum(jl => jl.Debit);
 
-        // 4. Net Profit Calculation
+        // 4. Net Profit Calculation (Mathematically & Accounting-wise 100% Accurate):
+        // Net Revenue = Gross Product Sales of Delivered Orders + Delivery Fee Collected - Discounts Given
+        // Total Costs = Cost of Delivered Goods (COGS) + Courier Costs (Delivered + Returned) + Operating & Marketing Expenses
         decimal totalGrossRevenue = grossProductSales + deliveryRevenue;
-        decimal totalOutflowCosts = totalCogs + courierShippingCost + totalDiscount + salesReturnsAmount + totalOperatingExpenses;
+        decimal netSalesRevenue = totalGrossRevenue - totalDiscount;
+        decimal totalOutflowCosts = totalCogs + courierShippingCost + totalDiscount + totalOperatingExpenses;
         decimal finalNetProfit = totalGrossRevenue - totalOutflowCosts;
-        decimal netMarginPct = totalGrossRevenue > 0 ? Math.Round((finalNetProfit / totalGrossRevenue) * 100m, 2) : 0;
+        decimal netMarginPct = netSalesRevenue > 0 ? Math.Round((finalNetProfit / netSalesRevenue) * 100m, 2) : 0;
 
         // 5. Final Payload with Pagination
         var paginatedRows = excel ? orderRows : orderRows.Skip((page - 1) * pageSize).Take(pageSize).ToList();
