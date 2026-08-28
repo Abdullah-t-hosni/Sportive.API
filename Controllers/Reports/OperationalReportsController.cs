@@ -4799,6 +4799,310 @@ public class OperationalReportsController : ControllerBase
         });
     }
 
+    // ══════════════════════════════════════════════════════
+    // تقرير محاسبة وأرباح المتجر الإلكتروني الشامل
+    // GET /api/operationalreports/online-store-accounting
+    // ══════════════════════════════════════════════════════
+    [HttpGet("online-store-accounting")]
+    [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Dashboard + "," + ModuleKeys.OnlineStore)]
+    public async Task<IActionResult> GetOnlineStoreAccountingReport(
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] string?   status = null,
+        [FromQuery] string?   paymentMethod = null,
+        [FromQuery] int?      shippingCompanyId = null,
+        [FromQuery] string?   shippingType = null,
+        [FromQuery] bool?     isSettled = null,
+        [FromQuery] string?   search = null,
+        [FromQuery] int       page = 1,
+        [FromQuery] int       pageSize = 50,
+        [FromQuery] bool      excel = false)
+    {
+        pageSize = Math.Clamp(pageSize, 1, 500);
+
+        // Date range
+        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, TimeHelper.GetEgyptTime().Month, 1)).Date;
+        var to = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddTicks(-1);
+
+        // 1. Orders Base Query for Online Store (Source == Website or 3)
+        var ordersQuery = _db.Orders
+            .AsNoTracking()
+            .Include(o => o.Customer)
+            .Include(o => o.ShippingCompany)
+            .Include(o => o.Items)
+                .ThenInclude(i => i.Product)
+            .Include(o => o.Items)
+                .ThenInclude(i => i.ProductVariant)
+            .Where(o => o.Source == OrderSource.Website && o.CreatedAt >= from && o.CreatedAt <= to);
+
+        // Filters
+        if (!string.IsNullOrEmpty(status) && Enum.TryParse<OrderStatus>(status, true, out var parsedStatus))
+        {
+            ordersQuery = ordersQuery.Where(o => o.Status == parsedStatus);
+        }
+
+        if (!string.IsNullOrEmpty(paymentMethod) && Enum.TryParse<PaymentMethod>(paymentMethod, true, out var parsedPm))
+        {
+            ordersQuery = ordersQuery.Where(o => o.PaymentMethod == parsedPm);
+        }
+
+        if (shippingCompanyId.HasValue && shippingCompanyId.Value > 0)
+        {
+            ordersQuery = ordersQuery.Where(o => o.ShippingCompanyId == shippingCompanyId.Value);
+        }
+
+        if (!string.IsNullOrEmpty(shippingType))
+        {
+            ordersQuery = ordersQuery.Where(o => o.ShippingType == shippingType);
+        }
+
+        if (isSettled.HasValue)
+        {
+            ordersQuery = ordersQuery.Where(o => o.IsSettledWithCourier == isSettled.Value);
+        }
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            var s = search.Trim().ToLower();
+            ordersQuery = ordersQuery.Where(o =>
+                o.OrderNumber.ToLower().Contains(s) ||
+                (o.Customer != null && (o.Customer.FullName.ToLower().Contains(s) || o.Customer.Phone.Contains(s))) ||
+                (o.ShippingTrackingNumber != null && o.ShippingTrackingNumber.ToLower().Contains(s)) ||
+                (o.BostaTrackingNumber != null && o.BostaTrackingNumber.ToLower().Contains(s))
+            );
+        }
+
+        var allOrders = await ordersQuery.OrderByDescending(o => o.CreatedAt).ToListAsync();
+
+        // 2. Financial Aggregations
+        decimal grossProductSales = 0;
+        decimal totalDiscount = 0;
+        decimal deliveryRevenue = 0;
+        decimal totalCogs = 0;
+        decimal courierShippingCost = 0;
+        decimal salesReturnsAmount = 0;
+        decimal shippingLossOnReturns = 0;
+        decimal pendingCodAmount = 0;
+        decimal settledCodAmount = 0;
+        int totalOrdersCount = allOrders.Count;
+        int deliveredOrdersCount = 0;
+        int returnedOrdersCount = 0;
+        int inShippingOrdersCount = 0;
+
+        var courierMap = new Dictionary<string, (int Total, int Delivered, int Returned, decimal Collected, decimal Pending, decimal DeliveryFee, decimal CourierCost)>();
+        var pmMap = new Dictionary<string, (int Count, decimal Amount)>();
+
+        var orderRows = new List<object>();
+
+        foreach (var o in allOrders)
+        {
+            decimal orderItemsGross = o.SubTotal > 0 ? o.SubTotal : o.Items.Sum(i => i.TotalPrice);
+            decimal orderDisc = o.DiscountAmount + o.TemporalDiscount;
+            decimal orderDeliveryFee = o.DeliveryFee;
+            decimal orderActualCost = o.ActualDeliveryCost;
+            
+            decimal orderCogs = o.Items.Sum(i => (i.Product?.CostPrice ?? 0) * (i.Quantity > 0 ? i.Quantity : 1));
+
+            // Status counts
+            if (o.Status == OrderStatus.Delivered)
+            {
+                deliveredOrdersCount++;
+                grossProductSales += orderItemsGross;
+                totalDiscount += orderDisc;
+                deliveryRevenue += orderDeliveryFee;
+                totalCogs += orderCogs;
+                courierShippingCost += orderActualCost;
+
+                if (o.IsSettledWithCourier)
+                {
+                    settledCodAmount += o.TotalAmount;
+                }
+                else
+                {
+                    pendingCodAmount += o.TotalAmount;
+                }
+            }
+            else if (o.Status == OrderStatus.Returned || o.Status == OrderStatus.PartiallyReturned)
+            {
+                returnedOrdersCount++;
+                salesReturnsAmount += o.TotalAmount;
+                shippingLossOnReturns += orderActualCost;
+            }
+            else if (o.Status == OrderStatus.OutForDelivery)
+            {
+                inShippingOrdersCount++;
+                pendingCodAmount += o.TotalAmount;
+            }
+
+            // Courier Breakdown
+            string carrierKey = !string.IsNullOrEmpty(o.ShippingCarrierName) 
+                ? o.ShippingCarrierName 
+                : (o.ShippingCompany?.NameAr ?? (o.ShippingType == "Bosta" ? "بوسطة (Bosta)" : "شحن مباشر / أخرى"));
+
+            if (!courierMap.TryGetValue(carrierKey, out var cStats))
+                cStats = (0, 0, 0, 0, 0, 0, 0);
+
+            cStats.Total++;
+            if (o.Status == OrderStatus.Delivered)
+            {
+                cStats.Delivered++;
+                cStats.Collected += o.TotalAmount;
+                if (!o.IsSettledWithCourier) cStats.Pending += o.TotalAmount;
+                cStats.DeliveryFee += orderDeliveryFee;
+                cStats.CourierCost += orderActualCost;
+            }
+            else if (o.Status == OrderStatus.Returned || o.Status == OrderStatus.PartiallyReturned)
+            {
+                cStats.Returned++;
+                cStats.CourierCost += orderActualCost;
+            }
+            else if (o.Status == OrderStatus.OutForDelivery)
+            {
+                cStats.Pending += o.TotalAmount;
+            }
+            courierMap[carrierKey] = cStats;
+
+            // Payment Method Breakdown
+            string pmKey = o.PaymentMethod.ToString();
+            if (!pmMap.TryGetValue(pmKey, out var pStats))
+                pStats = (0, 0);
+            pStats.Count++;
+            pStats.Amount += o.TotalAmount;
+            pmMap[pmKey] = pStats;
+
+            // Row Item Profit
+            decimal rowGrossRevenue = orderItemsGross + orderDeliveryFee - orderDisc;
+            decimal rowCost = orderCogs + orderActualCost;
+            decimal rowNetProfit = o.Status == OrderStatus.Delivered 
+                ? (rowGrossRevenue - rowCost) 
+                : (o.Status == OrderStatus.Returned ? -orderActualCost : 0);
+
+            orderRows.Add(new {
+                id = o.Id,
+                orderNumber = o.OrderNumber,
+                createdAt = o.CreatedAt,
+                customerName = o.Customer?.FullName ?? "عميل متجر",
+                customerPhone = o.Customer?.Phone ?? "",
+                status = o.Status.ToString(),
+                paymentMethod = o.PaymentMethod.ToString(),
+                paymentStatus = o.PaymentStatus.ToString(),
+                fulfillmentType = o.FulfillmentType.ToString(),
+                shippingCarrierName = carrierKey,
+                shippingTrackingNumber = o.ShippingTrackingNumber ?? o.BostaTrackingNumber ?? "",
+                subTotal = orderItemsGross,
+                discountAmount = orderDisc,
+                deliveryFee = orderDeliveryFee,
+                actualDeliveryCost = orderActualCost,
+                totalAmount = o.TotalAmount,
+                cogs = orderCogs,
+                netProfit = rowNetProfit,
+                isSettledWithCourier = o.IsSettledWithCourier,
+                courierSettlementDate = o.CourierSettlementDate,
+                courierSettlementReference = o.CourierSettlementReference,
+                itemsCount = o.Items.Count,
+                items = o.Items.Select(i => new {
+                    sku = i.Product?.SKU ?? "",
+                    productName = i.Product?.NameAr ?? "",
+                    size = i.ProductVariant?.Size ?? "",
+                    color = i.ProductVariant?.ColorAr ?? i.ProductVariant?.Color ?? "",
+                    quantity = i.Quantity,
+                    unitPrice = i.UnitPrice,
+                    costPrice = i.Product?.CostPrice ?? 0,
+                    lineTotal = i.TotalPrice
+                }).ToList()
+            });
+        }
+
+        // 3. Operating & Marketing Expenses for E-Commerce
+        var eComBranch = await _db.Branches.FirstOrDefaultAsync(b => b.Name.Contains("متجر") || b.Name.Contains("الموقع") || b.Name.Contains("أونلاين") || b.Name.Contains("Online") || b.IsActive);
+        int? eComBranchId = eComBranch?.Id;
+
+        var expensesQuery = _db.PaymentVouchers
+            .AsNoTracking()
+            .Include(v => v.ToAccount)
+            .Include(v => v.CashAccount)
+            .Where(v => v.VoucherDate >= from && v.VoucherDate <= to &&
+                   (v.CostCenter == OrderSource.Website || (eComBranchId.HasValue && v.BranchId == eComBranchId.Value) || (v.Description != null && (v.Description.Contains("إعلان") || v.Description.Contains("تغليف") || v.Description.Contains("متجر") || v.Description.Contains("بوسطة") || v.Description.Contains("شحن")))));
+
+        var expenses = await expensesQuery.OrderByDescending(v => v.VoucherDate).ToListAsync();
+        decimal totalOperatingExpenses = expenses.Sum(v => v.Amount);
+
+        var expenseRows = expenses.Select(v => new {
+            id = v.Id,
+            voucherNumber = v.VoucherNumber,
+            date = v.VoucherDate,
+            amount = v.Amount,
+            toAccountName = v.ToAccount?.NameAr ?? "حساب مصروفات",
+            toAccountCode = v.ToAccount?.Code ?? "",
+            cashAccountName = v.CashAccount?.NameAr ?? "الخزينة/البنك",
+            description = v.Description ?? "",
+            reference = v.Reference ?? ""
+        }).ToList();
+
+        // 4. Net Profit Calculation
+        decimal totalGrossRevenue = grossProductSales + deliveryRevenue;
+        decimal totalOutflowCosts = totalCogs + courierShippingCost + totalDiscount + salesReturnsAmount + totalOperatingExpenses;
+        decimal finalNetProfit = totalGrossRevenue - totalOutflowCosts;
+        decimal netMarginPct = totalGrossRevenue > 0 ? Math.Round((finalNetProfit / totalGrossRevenue) * 100m, 2) : 0;
+
+        // 5. Final Payload with Pagination
+        var paginatedRows = excel ? orderRows : orderRows.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+        var courierBreakdownList = courierMap.Select(kvp => new {
+            carrierName = kvp.Key,
+            totalShipments = kvp.Value.Total,
+            deliveredCount = kvp.Value.Delivered,
+            returnedCount = kvp.Value.Returned,
+            totalCollected = kvp.Value.Collected,
+            pendingAmount = kvp.Value.Pending,
+            deliveryFeeEarned = kvp.Value.DeliveryFee,
+            courierCostCharged = kvp.Value.CourierCost,
+            netDueFromCourier = kvp.Value.Collected - kvp.Value.CourierCost
+        }).OrderByDescending(c => c.totalShipments).ToList();
+
+        var paymentBreakdownList = pmMap.Select(kvp => new {
+            method = kvp.Key,
+            count = kvp.Value.Count,
+            totalAmount = kvp.Value.Amount,
+            percentage = totalOrdersCount > 0 ? Math.Round(((decimal)kvp.Value.Count / totalOrdersCount) * 100m, 1) : 0
+        }).OrderByDescending(p => p.totalAmount).ToList();
+
+        var response = new {
+            summary = new {
+                totalOrdersCount,
+                deliveredOrdersCount,
+                returnedOrdersCount,
+                inShippingOrdersCount,
+                grossProductSales,
+                totalDiscount,
+                deliveryRevenue,
+                cogs = totalCogs,
+                courierShippingCost,
+                salesReturnsAmount,
+                shippingLossOnReturns,
+                pendingCodAmount,
+                settledCodAmount,
+                operatingExpenses = totalOperatingExpenses,
+                netProfit = finalNetProfit,
+                netMarginPercentage = netMarginPct,
+                totalGrossRevenue,
+                totalOutflowCosts
+            },
+            couriers = courierBreakdownList,
+            paymentMethods = paymentBreakdownList,
+            expenses = expenseRows,
+            orders = paginatedRows,
+            pagination = new {
+                totalCount = allOrders.Count,
+                page,
+                pageSize,
+                totalPages = (int)Math.Ceiling(allOrders.Count / (double)pageSize)
+            }
+        };
+
+        return Ok(response);
+    }
+
 }
 
 //  Report DTOs 
