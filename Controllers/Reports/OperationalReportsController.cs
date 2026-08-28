@@ -5013,38 +5013,90 @@ public class OperationalReportsController : ControllerBase
             });
         }
 
-        // 3. Operating & Marketing Expenses for E-Commerce
+        // 3. Operating & Marketing Expenses for E-Commerce from Cost Center / Branch (الموقع الإلكتروني)
         var eComBranch = await _db.Branches.FirstOrDefaultAsync(b => b.Name.Contains("متجر") || b.Name.Contains("الموقع") || b.Name.Contains("أونلاين") || b.Name.Contains("Online") || b.Name.Contains("الويب") || b.Name.Contains("Website"));
         int? eComBranchId = eComBranch?.Id;
 
-        var expensesQuery = _db.PaymentVouchers
+        // A. Payment Vouchers tagged for Website cost center or branch
+        var vouchersList = await _db.PaymentVouchers
             .AsNoTracking()
             .Include(v => v.ToAccount)
             .Include(v => v.CashAccount)
             .Include(v => v.Branch)
+            .Include(v => v.JournalEntry)
             .Where(v => v.VoucherDate >= from && v.VoucherDate <= to &&
                    (
                        v.CostCenter == OrderSource.Website ||
+                       (v.JournalEntry != null && v.JournalEntry.CostCenter == OrderSource.Website) ||
                        (eComBranchId.HasValue && v.BranchId == eComBranchId.Value) ||
-                       (v.CashAccount != null && (v.CashAccount.NameAr.Contains("الموقع") || v.CashAccount.NameAr.Contains("المتجر"))) ||
-                       (v.ToAccount != null && (v.ToAccount.NameAr.Contains("الموقع") || v.ToAccount.NameAr.Contains("إعلانات المتجر")))
+                       (v.Branch != null && (v.Branch.Name.Contains("موقع") || v.Branch.Name.Contains("متجر") || v.Branch.Name.Contains("أونلاين")))
                    )
-            );
+            )
+            .ToListAsync();
 
-        var expenses = await expensesQuery.OrderByDescending(v => v.VoucherDate).ToListAsync();
-        decimal totalOperatingExpenses = expenses.Sum(v => v.Amount);
+        // B. Operating & Marketing Journal Entries with CostCenter == Website (excluding Sales & Sales Returns to avoid double counting)
+        var journalExpenses = await _db.JournalLines
+            .AsNoTracking()
+            .Include(l => l.Account)
+            .Include(l => l.JournalEntry)
+            .Include(l => l.Branch)
+            .Where(l => l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to &&
+                   l.JournalEntry.Status == JournalEntryStatus.Posted &&
+                   l.JournalEntry.Type != JournalEntryType.SalesInvoice &&
+                   l.JournalEntry.Type != JournalEntryType.SalesReturn &&
+                   (
+                       l.CostCenter == OrderSource.Website ||
+                       l.JournalEntry.CostCenter == OrderSource.Website ||
+                       (eComBranchId.HasValue && l.BranchId == eComBranchId.Value) ||
+                       (l.Branch != null && (l.Branch.Name.Contains("موقع") || l.Branch.Name.Contains("متجر") || l.Branch.Name.Contains("أونلاين")))
+                   ) &&
+                   (l.Account.Type == AccountType.Expense || l.Account.Code.StartsWith("5")) &&
+                   l.Debit > 0
+            )
+            .ToListAsync();
 
-        var expenseRows = expenses.Select(v => new {
-            id = v.Id,
-            voucherNumber = v.VoucherNumber,
-            date = v.VoucherDate,
-            amount = v.Amount,
-            toAccountName = v.ToAccount?.NameAr ?? "حساب مصروفات",
-            toAccountCode = v.ToAccount?.Code ?? "",
-            cashAccountName = v.CashAccount?.NameAr ?? "الخزينة/البنك",
-            description = v.Description ?? "",
-            reference = v.Reference ?? ""
-        }).ToList();
+        var expenseRows = new List<object>();
+
+        foreach (var v in vouchersList)
+        {
+            expenseRows.Add(new {
+                id = v.Id,
+                voucherNumber = v.VoucherNumber,
+                date = v.VoucherDate,
+                amount = v.Amount,
+                toAccountName = v.ToAccount?.NameAr ?? "حساب مصروفات",
+                toAccountCode = v.ToAccount?.Code ?? "",
+                cashAccountName = v.CashAccount?.NameAr ?? "الخزينة/البنك",
+                description = v.Description ?? "",
+                reference = v.Reference ?? ""
+            });
+        }
+
+        foreach (var jl in journalExpenses)
+        {
+            // Avoid duplicates if this journal entry was created from one of the payment vouchers above
+            if (jl.JournalEntry.Type == JournalEntryType.PaymentVoucher && jl.JournalEntry.Reference != null)
+            {
+                if (vouchersList.Any(v => v.VoucherNumber == jl.JournalEntry.Reference)) continue;
+            }
+
+            expenseRows.Add(new {
+                id = jl.Id,
+                voucherNumber = jl.JournalEntry.EntryNumber,
+                date = jl.JournalEntry.EntryDate,
+                amount = jl.Debit,
+                toAccountName = jl.Account?.NameAr ?? "حساب مصروفات",
+                toAccountCode = jl.Account?.Code ?? "",
+                cashAccountName = "قيد يومية - " + (jl.JournalEntry.CostCenter == OrderSource.Website ? "الموقع الإلكتروني" : "مركز التكلفة"),
+                description = jl.Description ?? jl.JournalEntry.Description ?? "مصروف مسجل بقيود اليومية",
+                reference = jl.JournalEntry.Reference ?? jl.JournalEntry.EntryNumber
+            });
+        }
+
+        decimal totalOperatingExpenses = vouchersList.Sum(v => v.Amount) + 
+            journalExpenses
+                .Where(jl => !(jl.JournalEntry.Type == JournalEntryType.PaymentVoucher && vouchersList.Any(v => v.VoucherNumber == jl.JournalEntry.Reference)))
+                .Sum(jl => jl.Debit);
 
         // 4. Net Profit Calculation
         decimal totalGrossRevenue = grossProductSales + deliveryRevenue;
