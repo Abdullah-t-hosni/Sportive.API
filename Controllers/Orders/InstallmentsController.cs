@@ -37,11 +37,13 @@ public class InstallmentsController : ControllerBase
         [FromQuery] int?    customerId = null,
         [FromQuery] string? status     = null,
         [FromQuery] bool?   overdue    = null,
+        [FromQuery] string? source     = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 30)
     {
         var q = _db.CustomerInstallments
             .AsNoTracking()
             .Include(i => i.Customer)
+            .Include(i => i.Order)
             .AsQueryable();
 
         if (customerId.HasValue)
@@ -53,6 +55,18 @@ public class InstallmentsController : ControllerBase
         if (overdue == true)
             q = q.Where(i => i.DueDate < DateTime.Today && i.Status != InstallmentStatus.Paid && i.Status != InstallmentStatus.Cancelled);
 
+        if (!string.IsNullOrEmpty(source))
+        {
+            if (source.Equals("Website", StringComparison.OrdinalIgnoreCase))
+            {
+                q = q.Where(i => i.Customer.AppUserId != null || (i.Order != null && i.Order.Source == OrderSource.Website) || _db.Orders.Any(o => o.CustomerId == i.CustomerId && o.Source == OrderSource.Website));
+            }
+            else if (source.Equals("POS", StringComparison.OrdinalIgnoreCase))
+            {
+                q = q.Where(i => i.Customer.AppUserId == null && (i.Order == null || i.Order.Source != OrderSource.Website) && !_db.Orders.Any(o => o.CustomerId == i.CustomerId && o.Source == OrderSource.Website));
+            }
+        }
+
         var total = await q.CountAsync();
         var items = await q
             .OrderBy(i => i.DueDate)
@@ -62,6 +76,8 @@ public class InstallmentsController : ControllerBase
                 i.Id, i.CustomerId,
                 CustomerName = i.Customer.FullName,
                 CustomerPhone = i.Customer.Phone,
+                CustomerAppUserId = i.Customer.AppUserId,
+                CustomerSource = (i.Customer.AppUserId != null || (i.Order != null && i.Order.Source == OrderSource.Website) || _db.Orders.Any(o => o.CustomerId == i.CustomerId && o.Source == OrderSource.Website)) ? "Website" : "POS",
                 i.OrderId, i.TotalAmount, i.PaidAmount, i.RemainingAmount,
                 i.DueDate, i.Note, i.Status,
                 IsOverdue = i.DueDate < DateTime.Today && i.Status != InstallmentStatus.Paid && i.Status != InstallmentStatus.Cancelled
@@ -86,13 +102,28 @@ public class InstallmentsController : ControllerBase
     }
 
     [HttpGet("summary")]
-    public async Task<IActionResult> GetSummary()
+    public async Task<IActionResult> GetSummary([FromQuery] string? source = null)
     {
         var today = DateTime.Today;
-        var all = await _db.CustomerInstallments
+        var q = _db.CustomerInstallments
             .AsNoTracking()
-            .Where(i => i.Status != InstallmentStatus.Cancelled)
-            .ToListAsync();
+            .Include(i => i.Customer)
+            .Include(i => i.Order)
+            .Where(i => i.Status != InstallmentStatus.Cancelled);
+
+        if (!string.IsNullOrEmpty(source))
+        {
+            if (source.Equals("Website", StringComparison.OrdinalIgnoreCase))
+            {
+                q = q.Where(i => i.Customer.AppUserId != null || (i.Order != null && i.Order.Source == OrderSource.Website) || _db.Orders.Any(o => o.CustomerId == i.CustomerId && o.Source == OrderSource.Website));
+            }
+            else if (source.Equals("POS", StringComparison.OrdinalIgnoreCase))
+            {
+                q = q.Where(i => i.Customer.AppUserId == null && (i.Order == null || i.Order.Source != OrderSource.Website) && !_db.Orders.Any(o => o.CustomerId == i.CustomerId && o.Source == OrderSource.Website));
+            }
+        }
+
+        var all = await q.ToListAsync();
 
         return Ok(new {
             totalOutstanding = all.Where(i => i.Status != InstallmentStatus.Paid).Sum(i => i.RemainingAmount),

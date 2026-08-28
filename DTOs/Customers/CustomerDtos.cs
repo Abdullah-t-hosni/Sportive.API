@@ -59,7 +59,8 @@ public record CustomerDetailDto(
     [property: JsonPropertyName("categoryId")] int? CategoryId = null,
     [property: JsonPropertyName("categoryName")] string? CategoryName = null,
     [property: JsonPropertyName("fixedDiscount")] decimal FixedDiscount = 0,
-    [property: JsonPropertyName("tags")] List<string>? Tags = null
+    [property: JsonPropertyName("tags")] List<string>? Tags = null,
+    [property: JsonPropertyName("source")] string? Source = "POS"
 );
 
 // ========== RFM (lightweight — no addresses, no balance) ==========

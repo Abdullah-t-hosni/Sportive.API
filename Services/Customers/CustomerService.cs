@@ -60,11 +60,11 @@ public class CustomerService : ICustomerService
         {
             if (source.Equals("Website", StringComparison.OrdinalIgnoreCase))
             {
-                query = query.Where(c => c.AppUserId != null);
+                query = query.Where(c => c.AppUserId != null || c.Orders.Any(o => o.Source == OrderSource.Website));
             }
             else if (source.Equals("POS", StringComparison.OrdinalIgnoreCase))
             {
-                query = query.Where(c => c.AppUserId == null);
+                query = query.Where(c => c.AppUserId == null && !c.Orders.Any(o => o.Source == OrderSource.Website));
             }
         }
 
@@ -113,6 +113,7 @@ public class CustomerService : ICustomerService
             OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
             OrderCount = c.Orders.Count,
             OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
+            HasWebsiteOrders = c.Orders.Any(o => o.Source == OrderSource.Website),
             // Calculate Net Balance in SQL - ONLY for this Customer ID
             JournalNet = _db.JournalLines
                 .Where(l => l.CustomerId == c.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
@@ -121,6 +122,7 @@ public class CustomerService : ICustomerService
             x.Id, x.FullName, x.Email, x.Phone, x.AppUserId,
             x.MainAccountId, x.CategoryId, x.CategoryNameAr, x.CategoryNameEn,
             x.FixedDiscount, x.CreatedAt, x.Tags, x.OrderCount, x.OrderTotal,
+            x.HasWebsiteOrders,
             Balance = x.OpeningBalance + x.JournalNet
         });
 
@@ -170,7 +172,8 @@ public class CustomerService : ICustomerService
             CategoryId: c.CategoryId, 
             CategoryName: c.CategoryNameAr,
             FixedDiscount: c.FixedDiscount,
-            Tags: string.IsNullOrEmpty(c.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(c.Tags)!
+            Tags: string.IsNullOrEmpty(c.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(c.Tags)!,
+            Source: (c.AppUserId != null || c.HasWebsiteOrders) ? "Website" : "POS"
         )).ToList();
 
         return new PaginatedResult<CustomerDetailDto>(
