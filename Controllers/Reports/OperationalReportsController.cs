@@ -5014,15 +5014,22 @@ public class OperationalReportsController : ControllerBase
         }
 
         // 3. Operating & Marketing Expenses for E-Commerce
-        var eComBranch = await _db.Branches.FirstOrDefaultAsync(b => b.Name.Contains("متجر") || b.Name.Contains("الموقع") || b.Name.Contains("أونلاين") || b.Name.Contains("Online") || b.IsActive);
+        var eComBranch = await _db.Branches.FirstOrDefaultAsync(b => b.Name.Contains("متجر") || b.Name.Contains("الموقع") || b.Name.Contains("أونلاين") || b.Name.Contains("Online") || b.Name.Contains("الويب") || b.Name.Contains("Website"));
         int? eComBranchId = eComBranch?.Id;
 
         var expensesQuery = _db.PaymentVouchers
             .AsNoTracking()
             .Include(v => v.ToAccount)
             .Include(v => v.CashAccount)
+            .Include(v => v.Branch)
             .Where(v => v.VoucherDate >= from && v.VoucherDate <= to &&
-                   (v.CostCenter == OrderSource.Website || (eComBranchId.HasValue && v.BranchId == eComBranchId.Value) || (v.Description != null && (v.Description.Contains("إعلان") || v.Description.Contains("تغليف") || v.Description.Contains("متجر") || v.Description.Contains("بوسطة") || v.Description.Contains("شحن")))));
+                   (
+                       v.CostCenter == OrderSource.Website ||
+                       (eComBranchId.HasValue && v.BranchId == eComBranchId.Value) ||
+                       (v.CashAccount != null && (v.CashAccount.NameAr.Contains("الموقع") || v.CashAccount.NameAr.Contains("المتجر"))) ||
+                       (v.ToAccount != null && (v.ToAccount.NameAr.Contains("الموقع") || v.ToAccount.NameAr.Contains("إعلانات المتجر")))
+                   )
+            );
 
         var expenses = await expensesQuery.OrderByDescending(v => v.VoucherDate).ToListAsync();
         decimal totalOperatingExpenses = expenses.Sum(v => v.Amount);
