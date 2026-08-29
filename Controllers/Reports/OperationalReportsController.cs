@@ -5130,7 +5130,7 @@ public class OperationalReportsController : ControllerBase
             )
             .ToListAsync();
 
-        var expenseRows = new List<(int Id, string VoucherNumber, DateTime Date, decimal Amount, string ToAccountName, string ToAccountCode, string CashAccountName, string Description, string Reference)>();
+        var expenseRows = new List<(int Id, string VoucherNumber, DateTime Date, decimal Amount, string ToAccountName, string ToAccountCode, string CashAccountName, string Description, string Reference, int? JournalEntryId)>();
 
         foreach (var v in vouchersList)
         {
@@ -5143,7 +5143,8 @@ public class OperationalReportsController : ControllerBase
                 v.ToAccount?.Code ?? "",
                 v.CashAccount?.NameAr ?? "الخزينة/البنك",
                 v.Description ?? "",
-                v.Reference ?? ""
+                v.Reference ?? "",
+                v.JournalEntryId ?? v.JournalEntry?.Id
             ));
         }
 
@@ -5164,7 +5165,8 @@ public class OperationalReportsController : ControllerBase
                 jl.Account?.Code ?? "",
                 "قيد يومية - " + (jl.JournalEntry.CostCenter == OrderSource.Website ? "الموقع الإلكتروني" : "مركز التكلفة"),
                 jl.Description ?? jl.JournalEntry.Description ?? "مصروف مسجل بقيود اليومية",
-                jl.JournalEntry.Reference ?? jl.JournalEntry.EntryNumber
+                jl.JournalEntry.Reference ?? jl.JournalEntry.EntryNumber,
+                jl.JournalEntryId
             ));
         }
 
@@ -5173,6 +5175,7 @@ public class OperationalReportsController : ControllerBase
             .ThenByDescending(e => e.VoucherNumber)
             .Select(e => new {
                 id = e.Id,
+                journalEntryId = e.JournalEntryId ?? e.Id,
                 voucherNumber = e.VoucherNumber,
                 date = e.Date,
                 amount = e.Amount,
