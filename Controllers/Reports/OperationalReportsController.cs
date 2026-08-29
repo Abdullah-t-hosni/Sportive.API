@@ -5130,21 +5130,21 @@ public class OperationalReportsController : ControllerBase
             )
             .ToListAsync();
 
-        var expenseRows = new List<object>();
+        var expenseRows = new List<(int Id, string VoucherNumber, DateTime Date, decimal Amount, string ToAccountName, string ToAccountCode, string CashAccountName, string Description, string Reference)>();
 
         foreach (var v in vouchersList)
         {
-            expenseRows.Add(new {
-                id = v.Id,
-                voucherNumber = v.VoucherNumber,
-                date = v.VoucherDate,
-                amount = v.Amount,
-                toAccountName = v.ToAccount?.NameAr ?? "حساب مصروفات",
-                toAccountCode = v.ToAccount?.Code ?? "",
-                cashAccountName = v.CashAccount?.NameAr ?? "الخزينة/البنك",
-                description = v.Description ?? "",
-                reference = v.Reference ?? ""
-            });
+            expenseRows.Add((
+                v.Id,
+                v.VoucherNumber,
+                v.VoucherDate,
+                v.Amount,
+                v.ToAccount?.NameAr ?? "حساب مصروفات",
+                v.ToAccount?.Code ?? "",
+                v.CashAccount?.NameAr ?? "الخزينة/البنك",
+                v.Description ?? "",
+                v.Reference ?? ""
+            ));
         }
 
         foreach (var jl in journalExpenses)
@@ -5155,18 +5155,34 @@ public class OperationalReportsController : ControllerBase
                 if (vouchersList.Any(v => v.VoucherNumber == jl.JournalEntry.Reference)) continue;
             }
 
-            expenseRows.Add(new {
-                id = jl.Id,
-                voucherNumber = jl.JournalEntry.EntryNumber,
-                date = jl.JournalEntry.EntryDate,
-                amount = jl.Debit,
-                toAccountName = jl.Account?.NameAr ?? "حساب مصروفات",
-                toAccountCode = jl.Account?.Code ?? "",
-                cashAccountName = "قيد يومية - " + (jl.JournalEntry.CostCenter == OrderSource.Website ? "الموقع الإلكتروني" : "مركز التكلفة"),
-                description = jl.Description ?? jl.JournalEntry.Description ?? "مصروف مسجل بقيود اليومية",
-                reference = jl.JournalEntry.Reference ?? jl.JournalEntry.EntryNumber
-            });
+            expenseRows.Add((
+                jl.Id,
+                jl.JournalEntry.EntryNumber,
+                jl.JournalEntry.EntryDate,
+                jl.Debit,
+                jl.Account?.NameAr ?? "حساب مصروفات",
+                jl.Account?.Code ?? "",
+                "قيد يومية - " + (jl.JournalEntry.CostCenter == OrderSource.Website ? "الموقع الإلكتروني" : "مركز التكلفة"),
+                jl.Description ?? jl.JournalEntry.Description ?? "مصروف مسجل بقيود اليومية",
+                jl.JournalEntry.Reference ?? jl.JournalEntry.EntryNumber
+            ));
         }
+
+        var sortedExpenseRows = expenseRows
+            .OrderByDescending(e => e.Date)
+            .ThenByDescending(e => e.VoucherNumber)
+            .Select(e => new {
+                id = e.Id,
+                voucherNumber = e.VoucherNumber,
+                date = e.Date,
+                amount = e.Amount,
+                toAccountName = e.ToAccountName,
+                toAccountCode = e.ToAccountCode,
+                cashAccountName = e.CashAccountName,
+                description = e.Description,
+                reference = e.Reference
+            })
+            .ToList();
 
         decimal totalOperatingExpenses = vouchersList.Sum(v => v.Amount) + 
             journalExpenses
@@ -5227,7 +5243,7 @@ public class OperationalReportsController : ControllerBase
             },
             couriers = courierBreakdownList,
             paymentMethods = paymentBreakdownList,
-            expenses = expenseRows,
+            expenses = sortedExpenseRows,
             orders = paginatedRows,
             pagination = new {
                 totalCount = allOrders.Count,
