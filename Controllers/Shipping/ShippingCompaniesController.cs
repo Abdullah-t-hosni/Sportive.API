@@ -29,6 +29,39 @@ namespace Sportive.API.Controllers.Shipping
                 .OrderBy(c => c.NameAr)
                 .ToListAsync();
 
+            // Auto-heal/link accounts for legacy companies missing account association
+            var parentAccount = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1108");
+            if (parentAccount != null && companies.Any(c => c.AccountId == null || c.Account == null))
+            {
+                int nextSeq = 1;
+                foreach (var c in companies.Where(c => c.AccountId == null || c.Account == null))
+                {
+                    string candidateCode = $"{parentAccount.Code}{nextSeq:D2}";
+                    while (await _db.Accounts.AnyAsync(a => a.Code == candidateCode))
+                    {
+                        nextSeq++;
+                        candidateCode = $"{parentAccount.Code}{nextSeq:D2}";
+                    }
+
+                    var newAccount = new Account
+                    {
+                        NameAr = c.NameAr,
+                        NameEn = c.NameEn,
+                        ParentId = parentAccount.Id,
+                        Code = candidateCode,
+                        Type = AccountType.Asset,
+                        Nature = AccountNature.Debit,
+                        CanReceivePayment = true,
+                        Level = parentAccount.Level + 1,
+                        IsActive = true
+                    };
+                    _db.Accounts.Add(newAccount);
+                    c.Account = newAccount;
+                    nextSeq++;
+                }
+                await _db.SaveChangesAsync();
+            }
+
             return Ok(companies);
         }
 

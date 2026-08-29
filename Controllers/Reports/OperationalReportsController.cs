@@ -4835,6 +4835,16 @@ public class OperationalReportsController : ControllerBase
                 .ThenInclude(i => i.ProductVariant)
             .Where(o => o.Source == OrderSource.Website && o.CreatedAt >= from && o.CreatedAt <= to);
 
+        // Load Shipping Companies to identify Bosta, Gohary, and AS
+        var shippingCompanies = await _db.ShippingCompanies.AsNoTracking().ToListAsync();
+        var bostaCompany = shippingCompanies.FirstOrDefault(c => c.NameAr.Contains("بوسطة") || (c.NameEn != null && c.NameEn.Contains("Bosta", StringComparison.OrdinalIgnoreCase)) || c.IntegrationType == ShippingIntegrationType.Bosta);
+        var goharyCompany = shippingCompanies.FirstOrDefault(c => c.NameAr.Contains("الجوهري") || (c.NameEn != null && c.NameEn.Contains("gohary", StringComparison.OrdinalIgnoreCase)));
+        var asCompany = shippingCompanies.FirstOrDefault(c => c.NameAr.Contains("AS", StringComparison.OrdinalIgnoreCase) || c.NameAr.Contains("A&S", StringComparison.OrdinalIgnoreCase) || (c.NameEn != null && (c.NameEn.Contains("AS", StringComparison.OrdinalIgnoreCase) || c.NameEn.Contains("A&S", StringComparison.OrdinalIgnoreCase))));
+
+        string asName = asCompany?.NameAr ?? "شركة شحن AS";
+        string bostaName = bostaCompany?.NameAr ?? "شركة شحن بوسطة";
+        string goharyName = goharyCompany?.NameAr ?? "شركة الجوهري";
+
         // Filters
         if (!string.IsNullOrEmpty(status) && Enum.TryParse<OrderStatus>(status, true, out var parsedStatus))
         {
@@ -4848,7 +4858,44 @@ public class OperationalReportsController : ControllerBase
 
         if (shippingCompanyId.HasValue && shippingCompanyId.Value > 0)
         {
-            ordersQuery = ordersQuery.Where(o => o.ShippingCompanyId == shippingCompanyId.Value);
+            if (asCompany != null && shippingCompanyId.Value == asCompany.Id)
+            {
+                // AS includes explicit AS, plus any legacy delivery orders that are not Bosta, not Gohary, and not Pickup
+                ordersQuery = ordersQuery.Where(o =>
+                    (o.ShippingCompanyId == asCompany.Id ||
+                    (
+                        (o.ShippingCompanyId == null || o.ShippingCompanyId == 0) &&
+                        o.FulfillmentType != FulfillmentType.Pickup &&
+                        o.ShippingType != "Pickup" &&
+                        o.ShippingType != "Bosta" &&
+                        o.BostaDeliveryId == null &&
+                        o.BostaTrackingNumber == null &&
+                        (o.ShippingCarrierName == null || (!o.ShippingCarrierName.Contains("الجوهري") && !o.ShippingCarrierName.Contains("بوسطة") && !o.ShippingCarrierName.Contains("Bosta") && !o.ShippingCarrierName.Contains("استلام") && !o.ShippingCarrierName.Contains("فرع")))
+                    )) &&
+                    o.FulfillmentType != FulfillmentType.Pickup
+                );
+            }
+            else if (bostaCompany != null && shippingCompanyId.Value == bostaCompany.Id)
+            {
+                ordersQuery = ordersQuery.Where(o =>
+                    o.ShippingCompanyId == bostaCompany.Id ||
+                    o.ShippingType == "Bosta" ||
+                    o.BostaDeliveryId != null ||
+                    o.BostaTrackingNumber != null ||
+                    (o.ShippingCarrierName != null && (o.ShippingCarrierName.Contains("بوسطة") || o.ShippingCarrierName.Contains("Bosta")))
+                );
+            }
+            else if (goharyCompany != null && shippingCompanyId.Value == goharyCompany.Id)
+            {
+                ordersQuery = ordersQuery.Where(o =>
+                    o.ShippingCompanyId == goharyCompany.Id ||
+                    (o.ShippingCarrierName != null && o.ShippingCarrierName.Contains("الجوهري"))
+                );
+            }
+            else
+            {
+                ordersQuery = ordersQuery.Where(o => o.ShippingCompanyId == shippingCompanyId.Value);
+            }
         }
 
         if (!string.IsNullOrEmpty(shippingType))
@@ -4934,10 +4981,33 @@ public class OperationalReportsController : ControllerBase
                 pendingCodAmount += o.TotalAmount;
             }
 
-            // Courier Breakdown
-            string carrierKey = !string.IsNullOrEmpty(o.ShippingCarrierName) 
-                ? o.ShippingCarrierName 
-                : (o.ShippingCompany?.NameAr ?? (o.ShippingType == "Bosta" ? "بوسطة (Bosta)" : "شحن مباشر / أخرى"));
+            // Courier Breakdown - In-store pickup, specific courier, or AS for legacy delivery
+            string carrierKey;
+            if (o.FulfillmentType == FulfillmentType.Pickup || o.ShippingType == "Pickup" || (o.ShippingCarrierName != null && (o.ShippingCarrierName.Contains("استلام") || o.ShippingCarrierName.Contains("فرع"))))
+            {
+                carrierKey = "استلام من الفرع";
+            }
+            else if (o.ShippingCompany != null && !string.IsNullOrEmpty(o.ShippingCompany.NameAr))
+            {
+                carrierKey = o.ShippingCompany.NameAr;
+            }
+            else if (o.ShippingType == "Bosta" || !string.IsNullOrEmpty(o.BostaDeliveryId) || !string.IsNullOrEmpty(o.BostaTrackingNumber) || (o.ShippingCarrierName != null && (o.ShippingCarrierName.Contains("بوسطة") || o.ShippingCarrierName.Contains("Bosta"))))
+            {
+                carrierKey = bostaName;
+            }
+            else if (o.ShippingCarrierName != null && o.ShippingCarrierName.Contains("الجوهري"))
+            {
+                carrierKey = goharyName;
+            }
+            else if (o.ShippingCarrierName != null && (o.ShippingCarrierName.Contains("AS", StringComparison.OrdinalIgnoreCase) || o.ShippingCarrierName.Contains("A&S", StringComparison.OrdinalIgnoreCase)))
+            {
+                carrierKey = asName;
+            }
+            else
+            {
+                // Any other legacy delivery order was shipped via AS
+                carrierKey = asName;
+            }
 
             if (!courierMap.TryGetValue(carrierKey, out var cStats))
                 cStats = (0, 0, 0, 0, 0, 0, 0);

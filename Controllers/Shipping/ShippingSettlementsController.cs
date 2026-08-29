@@ -43,10 +43,14 @@ public class ShippingSettlementsController : ControllerBase
     private async Task<IActionResult> FetchSettlementOrdersAsync(int companyId, string statusFilter)
     {
         var validStatuses = new[] { OrderStatus.Delivered, OrderStatus.Returned, OrderStatus.PartiallyReturned };
+        var company = await _db.ShippingCompanies.FindAsync(companyId);
+        bool isAsCompany = company != null && (company.NameAr.Contains("AS", StringComparison.OrdinalIgnoreCase) || company.NameAr.Contains("A&S", StringComparison.OrdinalIgnoreCase) || (company.NameEn != null && (company.NameEn.Contains("AS", StringComparison.OrdinalIgnoreCase) || company.NameEn.Contains("A&S", StringComparison.OrdinalIgnoreCase))));
         
         var q = _db.Orders
             .Include(o => o.Customer)
-            .Where(o => o.ShippingCompanyId == companyId && 
+            .Where(o => o.FulfillmentType != FulfillmentType.Pickup &&
+                        o.ShippingType != "Pickup" &&
+                        (o.ShippingCompanyId == companyId || (isAsCompany && o.ShippingCompanyId == null && o.ShippingType != "Bosta" && o.BostaDeliveryId == null && o.BostaTrackingNumber == null && (o.ShippingCarrierName == null || (!o.ShippingCarrierName.Contains("الجوهري") && !o.ShippingCarrierName.Contains("بوسطة") && !o.ShippingCarrierName.Contains("Bosta") && !o.ShippingCarrierName.Contains("استلام") && !o.ShippingCarrierName.Contains("فرع"))))) && 
                         validStatuses.Contains(o.Status) &&
                         o.Source != OrderSource.POS);
 
@@ -95,10 +99,14 @@ public class ShippingSettlementsController : ControllerBase
         if (company == null || company.AccountId == null)
             return BadRequest("شركة الشحن غير موجودة أو غير مربوطة بحساب في الدليل المحاسبي.");
 
+        bool isAsCompany = company != null && (company.NameAr.Contains("AS", StringComparison.OrdinalIgnoreCase) || company.NameAr.Contains("A&S", StringComparison.OrdinalIgnoreCase) || (company.NameEn != null && (company.NameEn.Contains("AS", StringComparison.OrdinalIgnoreCase) || company.NameEn.Contains("A&S", StringComparison.OrdinalIgnoreCase))));
+
         var orders = await _db.Orders
             .Include(o => o.Customer)
             .Where(o => orderIds.Contains(o.Id) && 
-                        o.ShippingCompanyId == request.ShippingCompanyId &&
+                        o.FulfillmentType != FulfillmentType.Pickup &&
+                        o.ShippingType != "Pickup" &&
+                        (o.ShippingCompanyId == request.ShippingCompanyId || (isAsCompany && o.ShippingCompanyId == null)) &&
                         o.IsSettledWithCourier == false)
             .ToListAsync();
 
