@@ -611,7 +611,13 @@ public class ShippingSettlementsController : ControllerBase
         var to = dto.ToDate.Date.AddDays(1).AddTicks(-1);
 
         var query = _db.Orders
-            .Where(o => o.Status == OrderStatus.Delivered && !o.IsSettledWithCourier && o.CreatedAt >= from && o.CreatedAt <= to);
+            .Where(o => o.Status == OrderStatus.Delivered && 
+                        !o.IsSettledWithCourier && 
+                        o.Source != OrderSource.POS &&
+                        o.FulfillmentType != FulfillmentType.Pickup &&
+                        o.ShippingType != "Pickup" &&
+                        o.CreatedAt >= from && 
+                        o.CreatedAt <= to);
 
         if (dto.ShippingCompanyId.HasValue && dto.ShippingCompanyId.Value > 0)
         {
@@ -640,7 +646,7 @@ public class ShippingSettlementsController : ControllerBase
         return Ok(new { 
             success = true, 
             count, 
-            message = $"تم تسوية حالة {count} طلب مسلم في الفترة من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd} بدون قيود محاسبية مكررة." 
+            message = $"تم تسوية حالة {count} طلب أونلاين مسلم في الفترة من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd} بدون قيود محاسبية مكررة." 
         });
     }
 
@@ -650,7 +656,11 @@ public class ShippingSettlementsController : ControllerBase
     {
         var firstSettledOrder = await _db.Orders
             .AsNoTracking()
-            .Where(o => o.IsSettledWithCourier && (o.CourierSettlementDate != null || o.CourierSettlementReference != null))
+            .Where(o => o.IsSettledWithCourier && 
+                        (o.CourierSettlementDate != null || o.CourierSettlementReference != null) &&
+                        o.Source != OrderSource.POS &&
+                        o.FulfillmentType != FulfillmentType.Pickup &&
+                        o.ShippingType != "Pickup")
             .OrderBy(o => o.CourierSettlementDate ?? o.CreatedAt)
             .FirstOrDefaultAsync();
 
@@ -658,6 +668,9 @@ public class ShippingSettlementsController : ControllerBase
 
         var earliestOrder = await _db.Orders
             .AsNoTracking()
+            .Where(o => o.Source != OrderSource.POS &&
+                        o.FulfillmentType != FulfillmentType.Pickup &&
+                        o.ShippingType != "Pickup")
             .OrderBy(o => o.CreatedAt)
             .FirstOrDefaultAsync();
 
@@ -667,7 +680,12 @@ public class ShippingSettlementsController : ControllerBase
 
         var pendingBeforeCutoff = await _db.Orders
             .AsNoTracking()
-            .Where(o => o.Status == OrderStatus.Delivered && !o.IsSettledWithCourier && o.CreatedAt < cutoff)
+            .Where(o => o.Status == OrderStatus.Delivered && 
+                        !o.IsSettledWithCourier && 
+                        o.Source != OrderSource.POS &&
+                        o.FulfillmentType != FulfillmentType.Pickup &&
+                        o.ShippingType != "Pickup" &&
+                        o.CreatedAt < cutoff)
             .ToListAsync();
 
         return Ok(new {
@@ -689,14 +707,23 @@ public class ShippingSettlementsController : ControllerBase
     {
         var firstSettledOrder = await _db.Orders
             .AsNoTracking()
-            .Where(o => o.IsSettledWithCourier && (o.CourierSettlementDate != null || o.CourierSettlementReference != null))
+            .Where(o => o.IsSettledWithCourier && 
+                        (o.CourierSettlementDate != null || o.CourierSettlementReference != null) &&
+                        o.Source != OrderSource.POS &&
+                        o.FulfillmentType != FulfillmentType.Pickup &&
+                        o.ShippingType != "Pickup")
             .OrderBy(o => o.CourierSettlementDate ?? o.CreatedAt)
             .FirstOrDefaultAsync();
 
         DateTime cutoff = firstSettledOrder?.CourierSettlementDate ?? firstSettledOrder?.CreatedAt ?? TimeHelper.GetEgyptTime();
 
         var ordersToSettle = await _db.Orders
-            .Where(o => o.Status == OrderStatus.Delivered && !o.IsSettledWithCourier && o.CreatedAt < cutoff)
+            .Where(o => o.Status == OrderStatus.Delivered && 
+                        !o.IsSettledWithCourier && 
+                        o.Source != OrderSource.POS &&
+                        o.FulfillmentType != FulfillmentType.Pickup &&
+                        o.ShippingType != "Pickup" &&
+                        o.CreatedAt < cutoff)
             .ToListAsync();
 
         int count = 0;
@@ -720,7 +747,7 @@ public class ShippingSettlementsController : ControllerBase
             success = true,
             count,
             cutoffDate = cutoff.ToString("yyyy-MM-dd"),
-            message = $"تم تسوية حالة {count} طلب مسلم تم إنشاؤها قبل تاريخ أول تسوية ({cutoff:yyyy-MM-dd}) بدون قيود محاسبية مكررة."
+            message = $"تم تسوية حالة {count} طلب أونلاين مسلم تم إنشاؤها قبل تاريخ أول تسوية ({cutoff:yyyy-MM-dd}) بدون قيود محاسبية مكررة."
         });
     }
 }
