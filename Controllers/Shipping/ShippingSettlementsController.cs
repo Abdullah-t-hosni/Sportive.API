@@ -10,6 +10,7 @@ namespace Sportive.API.Controllers.Shipping;
 
 [ApiController]
 [Route("api/shipping-settlements")]
+[Route("api/shippingsettlements")]
 [Authorize(Policy = "AdminOnly")]
 public class ShippingSettlementsController : ControllerBase
 {
