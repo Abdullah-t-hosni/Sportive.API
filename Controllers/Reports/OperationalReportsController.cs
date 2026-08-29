@@ -4860,19 +4860,9 @@ public class OperationalReportsController : ControllerBase
         {
             if (asCompany != null && shippingCompanyId.Value == asCompany.Id)
             {
-                // AS includes explicit AS, plus any legacy delivery orders that are not Bosta, not Gohary, and not Pickup
                 ordersQuery = ordersQuery.Where(o =>
-                    (o.ShippingCompanyId == asCompany.Id ||
-                    (
-                        (o.ShippingCompanyId == null || o.ShippingCompanyId == 0) &&
-                        o.FulfillmentType != FulfillmentType.Pickup &&
-                        o.ShippingType != "Pickup" &&
-                        o.ShippingType != "Bosta" &&
-                        o.BostaDeliveryId == null &&
-                        o.BostaTrackingNumber == null &&
-                        (o.ShippingCarrierName == null || (!o.ShippingCarrierName.Contains("الجوهري") && !o.ShippingCarrierName.Contains("بوسطة") && !o.ShippingCarrierName.Contains("Bosta") && !o.ShippingCarrierName.Contains("استلام") && !o.ShippingCarrierName.Contains("فرع")))
-                    )) &&
-                    o.FulfillmentType != FulfillmentType.Pickup
+                    o.ShippingCompanyId == asCompany.Id ||
+                    (o.ShippingCarrierName != null && (o.ShippingCarrierName.Contains("AS", StringComparison.OrdinalIgnoreCase) || o.ShippingCarrierName.Contains("A&S", StringComparison.OrdinalIgnoreCase)))
                 );
             }
             else if (bostaCompany != null && shippingCompanyId.Value == bostaCompany.Id)
@@ -5003,10 +4993,13 @@ public class OperationalReportsController : ControllerBase
             {
                 carrierKey = asName;
             }
+            else if (!string.IsNullOrWhiteSpace(o.ShippingCarrierName))
+            {
+                carrierKey = o.ShippingCarrierName;
+            }
             else
             {
-                // Any other legacy delivery order was shipped via AS
-                carrierKey = asName;
+                carrierKey = "غير محدد";
             }
 
             if (!courierMap.TryGetValue(carrierKey, out var cStats))
