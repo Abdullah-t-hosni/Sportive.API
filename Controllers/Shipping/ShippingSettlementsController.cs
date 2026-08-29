@@ -624,6 +624,21 @@ public class ShippingSettlementsController : ControllerBase
             query = query.Where(o => o.ShippingCompanyId == dto.ShippingCompanyId.Value);
         }
 
+        ShippingCompany? targetCompany = null;
+        if (dto.ShippingCompanyId.HasValue && dto.ShippingCompanyId.Value > 0)
+        {
+            targetCompany = await _db.ShippingCompanies.FindAsync(dto.ShippingCompanyId.Value);
+        }
+
+        if (targetCompany == null)
+        {
+            targetCompany = await _db.ShippingCompanies.FirstOrDefaultAsync(c => 
+                c.NameAr.Contains("AS", StringComparison.OrdinalIgnoreCase) || 
+                c.NameAr.Contains("A&S", StringComparison.OrdinalIgnoreCase) ||
+                (c.NameEn != null && (c.NameEn.Contains("AS", StringComparison.OrdinalIgnoreCase) || c.NameEn.Contains("A&S", StringComparison.OrdinalIgnoreCase)))
+            );
+        }
+
         var orders = await query.ToListAsync();
 
         int count = 0;
@@ -632,6 +647,11 @@ public class ShippingSettlementsController : ControllerBase
 
         foreach (var o in orders)
         {
+            if (targetCompany != null)
+            {
+                o.ShippingCompanyId = targetCompany.Id;
+                o.ShippingCarrierName = targetCompany.NameAr;
+            }
             o.IsSettledWithCourier = true;
             o.CourierSettlementDate = now;
             o.CourierSettlementReference = refStr;
@@ -646,7 +666,8 @@ public class ShippingSettlementsController : ControllerBase
         return Ok(new { 
             success = true, 
             count, 
-            message = $"تم تسوية حالة {count} طلب أونلاين مسلم في الفترة من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd} بدون قيود محاسبية مكررة." 
+            shippingCompanyName = targetCompany?.NameAr ?? "شركة شحن AS",
+            message = $"تم ربط وتسوية حالة {count} طلب أونلاين مسلم بشركة ({targetCompany?.NameAr ?? "AS"}) في الفترة من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd} بدون قيود محاسبية مكررة." 
         });
     }
 
@@ -688,6 +709,12 @@ public class ShippingSettlementsController : ControllerBase
                         o.CreatedAt < cutoff)
             .ToListAsync();
 
+        var asCompany = await _db.ShippingCompanies.FirstOrDefaultAsync(c => 
+            c.NameAr.Contains("AS", StringComparison.OrdinalIgnoreCase) || 
+            c.NameAr.Contains("A&S", StringComparison.OrdinalIgnoreCase) ||
+            (c.NameEn != null && (c.NameEn.Contains("AS", StringComparison.OrdinalIgnoreCase) || c.NameEn.Contains("A&S", StringComparison.OrdinalIgnoreCase)))
+        );
+
         return Ok(new {
             hasSettlements = firstSettledOrder != null,
             firstSettledOrderNumber = firstSettledOrder?.OrderNumber,
@@ -697,7 +724,9 @@ public class ShippingSettlementsController : ControllerBase
             suggestedFromDate = earliestCreated.ToString("yyyy-MM-dd"),
             suggestedToDate = firstSettledDate?.AddDays(-1).ToString("yyyy-MM-dd") ?? TimeHelper.GetEgyptTime().ToString("yyyy-MM-dd"),
             pendingHistoricalCount = pendingBeforeCutoff.Count,
-            pendingHistoricalTotalAmount = pendingBeforeCutoff.Sum(o => o.TotalAmount)
+            pendingHistoricalTotalAmount = pendingBeforeCutoff.Sum(o => o.TotalAmount),
+            asCompanyId = asCompany?.Id,
+            asCompanyName = asCompany?.NameAr ?? "شركة شحن AS"
         });
     }
 
@@ -726,12 +755,23 @@ public class ShippingSettlementsController : ControllerBase
                         o.CreatedAt < cutoff)
             .ToListAsync();
 
+        var asCompany = await _db.ShippingCompanies.FirstOrDefaultAsync(c => 
+            c.NameAr.Contains("AS", StringComparison.OrdinalIgnoreCase) || 
+            c.NameAr.Contains("A&S", StringComparison.OrdinalIgnoreCase) ||
+            (c.NameEn != null && (c.NameEn.Contains("AS", StringComparison.OrdinalIgnoreCase) || c.NameEn.Contains("A&S", StringComparison.OrdinalIgnoreCase)))
+        );
+
         int count = 0;
         var now = TimeHelper.GetEgyptTime();
         string refStr = $"تسوية تاريخية مجمعة للطلبات السابقة لأول تسوية ({cutoff:yyyy-MM-dd})";
 
         foreach (var o in ordersToSettle)
         {
+            if (asCompany != null)
+            {
+                o.ShippingCompanyId = asCompany.Id;
+                o.ShippingCarrierName = asCompany.NameAr;
+            }
             o.IsSettledWithCourier = true;
             o.CourierSettlementDate = now;
             o.CourierSettlementReference = refStr;
@@ -747,7 +787,7 @@ public class ShippingSettlementsController : ControllerBase
             success = true,
             count,
             cutoffDate = cutoff.ToString("yyyy-MM-dd"),
-            message = $"تم تسوية حالة {count} طلب أونلاين مسلم تم إنشاؤها قبل تاريخ أول تسوية ({cutoff:yyyy-MM-dd}) بدون قيود محاسبية مكررة."
+            message = $"تم ربط وتسوية حالة {count} طلب أونلاين مسلم بشركة ({asCompany?.NameAr ?? "AS"}) قبل تاريخ ({cutoff:yyyy-MM-dd}) بدون قيود محاسبية مكررة."
         });
     }
 }
