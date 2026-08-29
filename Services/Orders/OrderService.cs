@@ -1038,9 +1038,18 @@ public class OrderService : IOrderService
                 }
 
                 // 4. Validate Business Rules/Settings
-                if (order.Source == OrderSource.Website && store != null && order.TotalAmount < store.MinOrderAmount)
+                if (order.Source == OrderSource.Website && store != null && store.MinOrderAmount.HasValue && store.MinOrderAmount > 0 && order.TotalAmount < store.MinOrderAmount.Value)
                 {
-                    throw new ArgumentException(_t.Get("Orders.MinAmountError", store.MinOrderAmount, order.TotalAmount));
+                    var minMethodsStr = store.MinOrderPaymentMethods;
+                    var minMethodsList = !string.IsNullOrWhiteSpace(minMethodsStr)
+                        ? minMethodsStr.Split(',').Select(m => m.Trim()).ToList()
+                        : new List<string> { "Cash", "Vodafone", "InstaPay", "CreditCard", "Bank", "Credit" };
+
+                    string currentMethodStr = order.PaymentMethod.ToString();
+                    if (minMethodsList.Contains(currentMethodStr, StringComparer.OrdinalIgnoreCase))
+                    {
+                        throw new ArgumentException(_t.Get("Orders.MinAmountError", store.MinOrderAmount.Value, order.TotalAmount));
+                    }
                 }
 
                 if (store != null && !store.AllowBackorders)

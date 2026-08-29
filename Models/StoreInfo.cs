@@ -213,6 +213,10 @@ public class StoreInfo
     [JsonPropertyName("allowedPaymentMethods")]
     public string AllowedPaymentMethods { get; set; } = "Cash,Vodafone,InstaPay";
 
+    [MaxLength(500)]
+    [JsonPropertyName("minOrderPaymentMethods")]
+    public string? MinOrderPaymentMethods { get; set; } = "Cash,Vodafone,InstaPay";
+
     // مخزن الموقع الإلكتروني - يُستخدم لخصم مبيعات الموقع منه تلقائياً
     [JsonPropertyName("websiteWarehouseId")]
     public int? WebsiteWarehouseId { get; set; }

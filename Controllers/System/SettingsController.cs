@@ -220,6 +220,7 @@ public class SettingsController : ControllerBase
             info.ReviewsRequirePurchase  = dto.ReviewsRequirePurchase;
             info.EnableUrgencyTags       = dto.EnableUrgencyTags;
             info.AllowedPaymentMethods   = dto.AllowedPaymentMethods;
+            info.MinOrderPaymentMethods  = dto.MinOrderPaymentMethods;
             info.ReceiptHeaderText       = dto.ReceiptHeaderText;
             info.ReceiptFooterText       = dto.ReceiptFooterText;
             info.ReceiptShowLogo         = dto.ReceiptShowLogo;
