@@ -796,6 +796,285 @@ public class ShippingSettlementsController : ControllerBase
             message = $"تم ربط وتسوية حالة {count} طلب أونلاين مسلم بشركة ({asCompany?.NameAr ?? "AS"}) قبل تاريخ ({cutoff:yyyy-MM-dd}) بدون قيود محاسبية مكررة."
         });
     }
+
+    [HttpPost("import-as-excel")]
+    [Authorize(Roles = "Admin,SuperAdmin")]
+    public async Task<IActionResult> ImportAsExcel([FromBody] ImportAsExcelDto dto)
+    {
+        if (dto.Rows == null || !dto.Rows.Any())
+            return BadRequest("شيت الإكسيل فارغ أو لا يحتوي على أي شحنات.");
+
+        var asCompany = await _db.ShippingCompanies.FirstOrDefaultAsync(c => 
+            c.NameAr.Contains("AS") || 
+            c.NameAr.Contains("A&S") ||
+            (c.NameEn != null && (c.NameEn.Contains("AS") || c.NameEn.Contains("A&S")))
+        );
+
+        int settledCount = 0;
+        int updatedStatusCount = 0;
+        decimal totalCodSettled = 0;
+        decimal totalFeesRecorded = 0;
+        var now = TimeHelper.GetEgyptTime();
+
+        var allOrders = await _db.Orders
+            .Include(o => o.Customer)
+            .Where(o => o.Source != OrderSource.POS && 
+                        o.FulfillmentType != FulfillmentType.Pickup && 
+                        o.ShippingType != "Pickup")
+            .ToListAsync();
+
+        var unmatchedList = new List<object>();
+
+        foreach (var row in dto.Rows)
+        {
+            string waybill = row.WaybillNo?.Trim() ?? "";
+            string receiver = row.ReceiverName?.Trim() ?? "";
+            bool isReturnSign = row.SigningStatus?.Equals("Return Sign", StringComparison.OrdinalIgnoreCase) == true;
+            decimal cod = row.CodAmount;
+            decimal fees = row.TotalFees;
+
+            // 1. Try match by tracking number
+            Order? matchedOrder = null;
+            if (!string.IsNullOrEmpty(waybill))
+            {
+                matchedOrder = allOrders.FirstOrDefault(o => 
+                    (!string.IsNullOrEmpty(o.ShippingTrackingNumber) && o.ShippingTrackingNumber.Equals(waybill, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(o.BostaTrackingNumber) && o.BostaTrackingNumber.Equals(waybill, StringComparison.OrdinalIgnoreCase))
+                );
+            }
+
+            // 2. Try match by Receiver Name & amount if tracking not matched
+            if (matchedOrder == null && !string.IsNullOrEmpty(receiver))
+            {
+                matchedOrder = allOrders.FirstOrDefault(o => 
+                    !o.IsSettledWithCourier &&
+                    (o.Customer != null && !string.IsNullOrEmpty(o.Customer.FullName) && (o.Customer.FullName.Contains(receiver) || receiver.Contains(o.Customer.FullName)))
+                );
+            }
+
+            if (matchedOrder != null)
+            {
+                if (asCompany != null)
+                {
+                    matchedOrder.ShippingCompanyId = asCompany.Id;
+                    matchedOrder.ShippingCarrierName = asCompany.NameAr;
+                }
+                
+                if (!string.IsNullOrEmpty(waybill))
+                {
+                    matchedOrder.ShippingTrackingNumber = waybill;
+                }
+
+                // Take exact AS shipping fee directly from Excel row
+                matchedOrder.ActualDeliveryCost = fees;
+                matchedOrder.IsSettledWithCourier = true;
+                matchedOrder.CourierSettlementDate = now;
+                matchedOrder.CourierSettlementReference = $"تسوية شيت AS الرسمية (بوليصة: {waybill})";
+
+                // Update order status & collected amount directly from Excel row
+                if (isReturnSign)
+                {
+                    if (matchedOrder.Status != OrderStatus.Returned && matchedOrder.Status != OrderStatus.PartiallyReturned)
+                    {
+                        matchedOrder.Status = OrderStatus.Returned;
+                        updatedStatusCount++;
+                    }
+                }
+                else if (row.SigningStatus?.Equals("Normal Sign", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    if (matchedOrder.Status != OrderStatus.Delivered)
+                    {
+                        matchedOrder.Status = OrderStatus.Delivered;
+                        updatedStatusCount++;
+                    }
+                    if (cod > 0 && Math.Abs(matchedOrder.TotalAmount - cod) > 0.01m)
+                    {
+                        matchedOrder.TotalAmount = cod;
+                    }
+                }
+
+                settledCount++;
+                totalCodSettled += matchedOrder.Status == OrderStatus.Delivered ? matchedOrder.TotalAmount : 0;
+                totalFeesRecorded += fees;
+            }
+            else
+            {
+                unmatchedList.Add(new { waybill, receiver, cod, fees, status = row.SigningStatus });
+            }
+        }
+
+        if (settledCount > 0)
+        {
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new {
+            success = true,
+            totalInExcel = dto.Rows.Count,
+            settledCount,
+            updatedStatusCount,
+            totalCodSettled,
+            totalFeesRecorded,
+            unmatchedCount = unmatchedList.Count,
+            unmatchedList,
+            message = $"تم بنجاح مطابقة وتسوية {settledCount} طلب من شيت AS وتحديث التكاليف والمبالغ المحصلة بدون قيود مكررة."
+        });
+    }
+
+    [HttpPost("import-bosta-excel")]
+    [Authorize(Roles = "Admin,SuperAdmin")]
+    public async Task<IActionResult> ImportBostaExcel([FromBody] ImportBostaExcelDto dto)
+    {
+        if (dto.Rows == null || !dto.Rows.Any())
+            return BadRequest("شيت بوسطة فارغ أو لا يحتوي على أي شحنات.");
+
+        var bostaCompany = await _db.ShippingCompanies.FirstOrDefaultAsync(c => 
+            c.NameAr.Contains("بوسطة") || 
+            (c.NameEn != null && c.NameEn.Contains("Bosta"))
+        );
+
+        int settledCount = 0;
+        int updatedStatusCount = 0;
+        decimal totalCodSettled = 0;
+        var now = TimeHelper.GetEgyptTime();
+
+        var allOrders = await _db.Orders
+            .Include(o => o.Customer)
+            .Where(o => o.Source != OrderSource.POS && 
+                        o.FulfillmentType != FulfillmentType.Pickup && 
+                        o.ShippingType != "Pickup")
+            .ToListAsync();
+
+        var unmatchedList = new List<object>();
+
+        foreach (var row in dto.Rows)
+        {
+            string tracking = row.TrackingNumber?.Trim() ?? "";
+            string refNo = row.BusinessReferenceNumber?.Trim() ?? "";
+            string deliveryState = row.DeliveryState?.Trim() ?? "";
+            decimal cod = row.CodAmount;
+
+            // 1. Match by Business Reference Number (OrderNumber like SPT-2608-xxxx)
+            Order? matchedOrder = null;
+            if (!string.IsNullOrEmpty(refNo))
+            {
+                matchedOrder = allOrders.FirstOrDefault(o => 
+                    o.OrderNumber.Equals(refNo, StringComparison.OrdinalIgnoreCase)
+                );
+            }
+
+            // 2. Match by Tracking Number if not matched by ref
+            if (matchedOrder == null && !string.IsNullOrEmpty(tracking))
+            {
+                matchedOrder = allOrders.FirstOrDefault(o => 
+                    (!string.IsNullOrEmpty(o.ShippingTrackingNumber) && o.ShippingTrackingNumber.Equals(tracking, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(o.BostaTrackingNumber) && o.BostaTrackingNumber.Equals(tracking, StringComparison.OrdinalIgnoreCase))
+                );
+            }
+
+            if (matchedOrder != null)
+            {
+                if (bostaCompany != null)
+                {
+                    matchedOrder.ShippingCompanyId = bostaCompany.Id;
+                    matchedOrder.ShippingCarrierName = bostaCompany.NameAr;
+                }
+                matchedOrder.ShippingType = "Bosta";
+                
+                if (!string.IsNullOrEmpty(tracking))
+                {
+                    matchedOrder.ShippingTrackingNumber = tracking;
+                    matchedOrder.BostaTrackingNumber = tracking;
+                }
+
+                // Update Status from Bosta Delivery State
+                string stateLower = deliveryState.ToLower();
+                if (stateLower.Contains("delivered"))
+                {
+                    if (matchedOrder.Status != OrderStatus.Delivered)
+                    {
+                        matchedOrder.Status = OrderStatus.Delivered;
+                        updatedStatusCount++;
+                    }
+                    matchedOrder.IsSettledWithCourier = true;
+                    matchedOrder.CourierSettlementDate = now;
+                    matchedOrder.CourierSettlementReference = $"تسوية شيت بوسطة (بوليصة: {tracking})";
+                    if (cod > 0 && Math.Abs(matchedOrder.TotalAmount - cod) > 0.01m)
+                    {
+                        matchedOrder.TotalAmount = cod;
+                    }
+                    settledCount++;
+                    totalCodSettled += matchedOrder.TotalAmount;
+                }
+                else if (stateLower.Contains("return"))
+                {
+                    if (matchedOrder.Status != OrderStatus.Returned && matchedOrder.Status != OrderStatus.PartiallyReturned)
+                    {
+                        matchedOrder.Status = OrderStatus.Returned;
+                        updatedStatusCount++;
+                    }
+                    matchedOrder.IsSettledWithCourier = true;
+                    matchedOrder.CourierSettlementDate = now;
+                    matchedOrder.CourierSettlementReference = $"مرتجع شيت بوسطة (بوليصة: {tracking})";
+                }
+                else if (stateLower.Contains("out for delivery") || stateLower.Contains("pickup"))
+                {
+                    if (matchedOrder.Status != OrderStatus.OutForDelivery)
+                    {
+                        matchedOrder.Status = OrderStatus.OutForDelivery;
+                        updatedStatusCount++;
+                    }
+                }
+            }
+            else
+            {
+                unmatchedList.Add(new { tracking, refNo, deliveryState, cod });
+            }
+        }
+
+        if (settledCount > 0 || updatedStatusCount > 0)
+        {
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new {
+            success = true,
+            totalInExcel = dto.Rows.Count,
+            settledCount,
+            updatedStatusCount,
+            totalCodSettled,
+            unmatchedCount = unmatchedList.Count,
+            unmatchedList,
+            message = $"تم بنجاح مطابقة وتسوية {settledCount} طلب وتحديث حالة {updatedStatusCount} طلب من شيت بوسطة."
+        });
+    }
+}
+
+public class ImportAsExcelDto
+{
+    public List<AsExcelRowDto> Rows { get; set; } = new();
+}
+
+public class AsExcelRowDto
+{
+    public string? WaybillNo { get; set; }
+    public string? ReceiverName { get; set; }
+    public string? SigningStatus { get; set; }
+    public decimal CodAmount { get; set; }
+    public decimal TotalFees { get; set; }
+}
+
+public class ImportBostaExcelDto
+{
+    public List<BostaExcelRowDto> Rows { get; set; } = new();
+}
+
+public class BostaExcelRowDto
+{
+    public string? TrackingNumber { get; set; }
+    public string? BusinessReferenceNumber { get; set; }
+    public string? DeliveryState { get; set; }
+    public decimal CodAmount { get; set; }
 }
 
 public class BulkHistoricalSettlementDto
