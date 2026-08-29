@@ -37,6 +37,12 @@ public class SettingsController : ControllerBase
 
     private async Task EnsureBostaColumnsExistAsync()
     {
+        try
+        {
+            await _db.Database.ExecuteSqlRawAsync("ALTER TABLE `StoreSettings` ADD `MinOrderPaymentMethods` varchar(500) NULL DEFAULT 'Cash,Vodafone,InstaPay';");
+        }
+        catch { }
+
         if (_bostaColumnsChecked) return;
         _bostaColumnsChecked = true;
 
@@ -62,8 +68,10 @@ public class SettingsController : ControllerBase
             "ALTER TABLE `StoreSettings` ADD `SnapchatPixelId` longtext NULL;",
             "ALTER TABLE `StoreSettings` ADD `HeaderCustomScript` longtext NULL;",
             "ALTER TABLE `StoreSettings` ADD `Ga4PropertyId` longtext NULL;",
-            "ALTER TABLE `StoreSettings` ADD `Ga4CredentialsJson` longtext NULL;"
+            "ALTER TABLE `StoreSettings` ADD `Ga4CredentialsJson` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `MinOrderPaymentMethods` varchar(500) NULL DEFAULT 'Cash,Vodafone,InstaPay';"
         };
+
 
         foreach (var sql in sqlStatements)
         {
