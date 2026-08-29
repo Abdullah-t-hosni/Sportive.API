@@ -610,8 +610,10 @@ public class ShippingSettlementsController : ControllerBase
         var from = dto.FromDate.Date;
         var to = dto.ToDate.Date.AddDays(1).AddTicks(-1);
 
+        var validStatuses = new[] { OrderStatus.Delivered, OrderStatus.Returned, OrderStatus.PartiallyReturned };
+
         var query = _db.Orders
-            .Where(o => o.Status == OrderStatus.Delivered && 
+            .Where(o => validStatuses.Contains(o.Status) && 
                         !o.IsSettledWithCourier && 
                         o.Source != OrderSource.POS &&
                         o.FulfillmentType != FulfillmentType.Pickup &&
@@ -699,9 +701,11 @@ public class ShippingSettlementsController : ControllerBase
 
         DateTime cutoff = firstSettledDate ?? TimeHelper.GetEgyptTime();
 
+        var validStatuses = new[] { OrderStatus.Delivered, OrderStatus.Returned, OrderStatus.PartiallyReturned };
+
         var pendingBeforeCutoff = await _db.Orders
             .AsNoTracking()
-            .Where(o => o.Status == OrderStatus.Delivered && 
+            .Where(o => validStatuses.Contains(o.Status) && 
                         !o.IsSettledWithCourier && 
                         o.Source != OrderSource.POS &&
                         o.FulfillmentType != FulfillmentType.Pickup &&
@@ -746,8 +750,10 @@ public class ShippingSettlementsController : ControllerBase
 
         DateTime cutoff = firstSettledOrder?.CourierSettlementDate ?? firstSettledOrder?.CreatedAt ?? TimeHelper.GetEgyptTime();
 
+        var validStatuses = new[] { OrderStatus.Delivered, OrderStatus.Returned, OrderStatus.PartiallyReturned };
+
         var ordersToSettle = await _db.Orders
-            .Where(o => o.Status == OrderStatus.Delivered && 
+            .Where(o => validStatuses.Contains(o.Status) && 
                         !o.IsSettledWithCourier && 
                         o.Source != OrderSource.POS &&
                         o.FulfillmentType != FulfillmentType.Pickup &&
