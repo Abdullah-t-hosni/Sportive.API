@@ -598,6 +598,138 @@ public class ShippingSettlementsController : ControllerBase
             return BadRequest($"فشل تحديث أسعار بوسطة لجميع الطلبات المحددة (عدد {failedCount}). \n تفاصيل: \n {errorDetails}");
         }
     }
+
+    [HttpPost("bulk-settle-historical-range")]
+    [Authorize(Roles = "Admin,SuperAdmin")]
+    public async Task<IActionResult> BulkSettleHistoricalRange([FromBody] BulkHistoricalSettlementDto dto)
+    {
+        if (dto.FromDate == default || dto.ToDate == default)
+            return BadRequest("يرجى تحديد تاريخ بداية ونهاية صحيح للفترة المطلوب تسويتها.");
+
+        var from = dto.FromDate.Date;
+        var to = dto.ToDate.Date.AddDays(1).AddTicks(-1);
+
+        var query = _db.Orders
+            .Where(o => o.Status == OrderStatus.Delivered && !o.IsSettledWithCourier && o.CreatedAt >= from && o.CreatedAt <= to);
+
+        if (dto.ShippingCompanyId.HasValue && dto.ShippingCompanyId.Value > 0)
+        {
+            query = query.Where(o => o.ShippingCompanyId == dto.ShippingCompanyId.Value);
+        }
+
+        var orders = await query.ToListAsync();
+
+        int count = 0;
+        var now = TimeHelper.GetEgyptTime();
+        string refStr = !string.IsNullOrWhiteSpace(dto.Reference) ? dto.Reference : "تسوية تاريخية سابقة (بدون قيد مكرر)";
+
+        foreach (var o in orders)
+        {
+            o.IsSettledWithCourier = true;
+            o.CourierSettlementDate = now;
+            o.CourierSettlementReference = refStr;
+            count++;
+        }
+
+        if (count > 0)
+        {
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new { 
+            success = true, 
+            count, 
+            message = $"تم تسوية حالة {count} طلب مسلم في الفترة من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd} بدون قيود محاسبية مكررة." 
+        });
+    }
+
+    [HttpGet("historical-summary")]
+    [Authorize(Roles = "Admin,SuperAdmin")]
+    public async Task<IActionResult> GetHistoricalSummary()
+    {
+        var firstSettledOrder = await _db.Orders
+            .AsNoTracking()
+            .Where(o => o.IsSettledWithCourier && (o.CourierSettlementDate != null || o.CourierSettlementReference != null))
+            .OrderBy(o => o.CourierSettlementDate ?? o.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        DateTime? firstSettledDate = firstSettledOrder?.CourierSettlementDate ?? firstSettledOrder?.CreatedAt;
+
+        var earliestOrder = await _db.Orders
+            .AsNoTracking()
+            .OrderBy(o => o.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        DateTime earliestCreated = earliestOrder?.CreatedAt ?? TimeHelper.GetEgyptTime();
+
+        DateTime cutoff = firstSettledDate ?? TimeHelper.GetEgyptTime();
+
+        var pendingBeforeCutoff = await _db.Orders
+            .AsNoTracking()
+            .Where(o => o.Status == OrderStatus.Delivered && !o.IsSettledWithCourier && o.CreatedAt < cutoff)
+            .ToListAsync();
+
+        return Ok(new {
+            hasSettlements = firstSettledOrder != null,
+            firstSettledOrderNumber = firstSettledOrder?.OrderNumber,
+            firstSettledDate = firstSettledDate?.ToString("yyyy-MM-dd HH:mm"),
+            firstSettledReference = firstSettledOrder?.CourierSettlementReference,
+            earliestOrderDate = earliestCreated.ToString("yyyy-MM-dd"),
+            suggestedFromDate = earliestCreated.ToString("yyyy-MM-dd"),
+            suggestedToDate = firstSettledDate?.AddDays(-1).ToString("yyyy-MM-dd") ?? TimeHelper.GetEgyptTime().ToString("yyyy-MM-dd"),
+            pendingHistoricalCount = pendingBeforeCutoff.Count,
+            pendingHistoricalTotalAmount = pendingBeforeCutoff.Sum(o => o.TotalAmount)
+        });
+    }
+
+    [HttpPost("bulk-settle-before-first")]
+    [Authorize(Roles = "Admin,SuperAdmin")]
+    public async Task<IActionResult> BulkSettleBeforeFirst()
+    {
+        var firstSettledOrder = await _db.Orders
+            .AsNoTracking()
+            .Where(o => o.IsSettledWithCourier && (o.CourierSettlementDate != null || o.CourierSettlementReference != null))
+            .OrderBy(o => o.CourierSettlementDate ?? o.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        DateTime cutoff = firstSettledOrder?.CourierSettlementDate ?? firstSettledOrder?.CreatedAt ?? TimeHelper.GetEgyptTime();
+
+        var ordersToSettle = await _db.Orders
+            .Where(o => o.Status == OrderStatus.Delivered && !o.IsSettledWithCourier && o.CreatedAt < cutoff)
+            .ToListAsync();
+
+        int count = 0;
+        var now = TimeHelper.GetEgyptTime();
+        string refStr = $"تسوية تاريخية مجمعة للطلبات السابقة لأول تسوية ({cutoff:yyyy-MM-dd})";
+
+        foreach (var o in ordersToSettle)
+        {
+            o.IsSettledWithCourier = true;
+            o.CourierSettlementDate = now;
+            o.CourierSettlementReference = refStr;
+            count++;
+        }
+
+        if (count > 0)
+        {
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new {
+            success = true,
+            count,
+            cutoffDate = cutoff.ToString("yyyy-MM-dd"),
+            message = $"تم تسوية حالة {count} طلب مسلم تم إنشاؤها قبل تاريخ أول تسوية ({cutoff:yyyy-MM-dd}) بدون قيود محاسبية مكررة."
+        });
+    }
+}
+
+public class BulkHistoricalSettlementDto
+{
+    public DateTime FromDate { get; set; }
+    public DateTime ToDate { get; set; }
+    public int? ShippingCompanyId { get; set; }
+    public string? Reference { get; set; }
 }
 
 public class SyncBostaPricesRequest
