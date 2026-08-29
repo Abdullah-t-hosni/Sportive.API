@@ -4989,7 +4989,7 @@ public class OperationalReportsController : ControllerBase
             {
                 carrierKey = goharyName;
             }
-            else if (o.ShippingCarrierName != null && (o.ShippingCarrierName.Contains("AS", StringComparison.OrdinalIgnoreCase) || o.ShippingCarrierName.Contains("A&S", StringComparison.OrdinalIgnoreCase)))
+            else if (o.ShippingCarrierName != null && (o.ShippingCarrierName.Contains("AS") || o.ShippingCarrierName.Contains("A&S")))
             {
                 carrierKey = asName;
             }
