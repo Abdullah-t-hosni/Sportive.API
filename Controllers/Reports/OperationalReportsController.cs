@@ -4862,7 +4862,7 @@ public class OperationalReportsController : ControllerBase
             {
                 ordersQuery = ordersQuery.Where(o =>
                     o.ShippingCompanyId == asCompany.Id ||
-                    (o.ShippingCarrierName != null && (o.ShippingCarrierName.Contains("AS", StringComparison.OrdinalIgnoreCase) || o.ShippingCarrierName.Contains("A&S", StringComparison.OrdinalIgnoreCase)))
+                    (o.ShippingCarrierName != null && (o.ShippingCarrierName.Contains("AS") || o.ShippingCarrierName.Contains("A&S")))
                 );
             }
             else if (bostaCompany != null && shippingCompanyId.Value == bostaCompany.Id)

@@ -45,7 +45,7 @@ public class ShippingSettlementsController : ControllerBase
     {
         var validStatuses = new[] { OrderStatus.Delivered, OrderStatus.Returned, OrderStatus.PartiallyReturned };
         var company = await _db.ShippingCompanies.FindAsync(companyId);
-        bool isAsCompany = company != null && (company.NameAr.Contains("AS", StringComparison.OrdinalIgnoreCase) || company.NameAr.Contains("A&S", StringComparison.OrdinalIgnoreCase) || (company.NameEn != null && (company.NameEn.Contains("AS", StringComparison.OrdinalIgnoreCase) || company.NameEn.Contains("A&S", StringComparison.OrdinalIgnoreCase))));
+        bool isAsCompany = company != null && (company.NameAr.Contains("AS") || company.NameAr.Contains("A&S") || (company.NameEn != null && (company.NameEn.Contains("AS") || company.NameEn.Contains("A&S"))));
         
         var q = _db.Orders
             .Include(o => o.Customer)
@@ -633,9 +633,9 @@ public class ShippingSettlementsController : ControllerBase
         if (targetCompany == null)
         {
             targetCompany = await _db.ShippingCompanies.FirstOrDefaultAsync(c => 
-                c.NameAr.Contains("AS", StringComparison.OrdinalIgnoreCase) || 
-                c.NameAr.Contains("A&S", StringComparison.OrdinalIgnoreCase) ||
-                (c.NameEn != null && (c.NameEn.Contains("AS", StringComparison.OrdinalIgnoreCase) || c.NameEn.Contains("A&S", StringComparison.OrdinalIgnoreCase)))
+                c.NameAr.Contains("AS") || 
+                c.NameAr.Contains("A&S") ||
+                (c.NameEn != null && (c.NameEn.Contains("AS") || c.NameEn.Contains("A&S")))
             );
         }
 
@@ -710,9 +710,9 @@ public class ShippingSettlementsController : ControllerBase
             .ToListAsync();
 
         var asCompany = await _db.ShippingCompanies.FirstOrDefaultAsync(c => 
-            c.NameAr.Contains("AS", StringComparison.OrdinalIgnoreCase) || 
-            c.NameAr.Contains("A&S", StringComparison.OrdinalIgnoreCase) ||
-            (c.NameEn != null && (c.NameEn.Contains("AS", StringComparison.OrdinalIgnoreCase) || c.NameEn.Contains("A&S", StringComparison.OrdinalIgnoreCase)))
+            c.NameAr.Contains("AS") || 
+            c.NameAr.Contains("A&S") ||
+            (c.NameEn != null && (c.NameEn.Contains("AS") || c.NameEn.Contains("A&S")))
         );
 
         return Ok(new {
@@ -756,9 +756,9 @@ public class ShippingSettlementsController : ControllerBase
             .ToListAsync();
 
         var asCompany = await _db.ShippingCompanies.FirstOrDefaultAsync(c => 
-            c.NameAr.Contains("AS", StringComparison.OrdinalIgnoreCase) || 
-            c.NameAr.Contains("A&S", StringComparison.OrdinalIgnoreCase) ||
-            (c.NameEn != null && (c.NameEn.Contains("AS", StringComparison.OrdinalIgnoreCase) || c.NameEn.Contains("A&S", StringComparison.OrdinalIgnoreCase)))
+            c.NameAr.Contains("AS") || 
+            c.NameAr.Contains("A&S") ||
+            (c.NameEn != null && (c.NameEn.Contains("AS") || c.NameEn.Contains("A&S")))
         );
 
         int count = 0;
