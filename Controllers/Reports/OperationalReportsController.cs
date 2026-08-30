@@ -5119,6 +5119,7 @@ public class OperationalReportsController : ControllerBase
                    (l.Account.Type == AccountType.Expense || l.Account.Code.StartsWith("5")) &&
                    l.Account.Code != "51101" && 
                    l.Account.Code != "520101" &&
+                   !(l.JournalEntry.Reference != null && l.JournalEntry.Reference.StartsWith("SETTLE-EXP-")) &&
                    l.Debit > 0
             )
             .ToListAsync();
