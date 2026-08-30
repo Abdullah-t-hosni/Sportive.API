@@ -90,23 +90,25 @@ public class NotificationService : INotificationService
 
                 // 🛡️ STRICT PERMISSION ENFORCEMENT:
                 // Check if user has explicit permission for this notification type in their NotificationPreferences
-                if (!string.IsNullOrEmpty(u.NotificationPreferences))
+                if (!string.IsNullOrWhiteSpace(u.NotificationPreferences) && u.NotificationPreferences.Trim() != "[]")
                 {
                     try
                     {
                         var prefs = JsonSerializer.Deserialize<List<string>>(u.NotificationPreferences);
-                        if (prefs != null && prefs.Any(p => p.Equals(type, StringComparison.OrdinalIgnoreCase)))
+                        if (prefs != null && prefs.Any(p => 
+                            p.Equals(type, StringComparison.OrdinalIgnoreCase) || 
+                            (type == "WhatsApp" && (p.Equals("WhatsApp", StringComparison.OrdinalIgnoreCase) || p.Contains("الواتساب")))))
                         {
                             shouldNotify = true;
                         }
                     }
                     catch { }
                 }
-
-                // If user's preferences are empty/not set yet, allow critical store/order alerts for Admins, but STRICTLY REQUIRE explicit "WhatsApp" permission for WhatsApp notifications!
-                if (!shouldNotify && isStaffOrAdmin && type != "WhatsApp")
+                else
                 {
-                    if (string.IsNullOrEmpty(u.NotificationPreferences))
+                    // For general store/order notifications (EXCLUDING WhatsApp!), default to notifying staff/admins if preferences are empty.
+                    // WhatsApp notifications strictly require explicit "WhatsApp" permission!
+                    if (isStaffOrAdmin && type != "WhatsApp")
                     {
                         shouldNotify = true;
                     }
@@ -162,13 +164,35 @@ public class NotificationService : INotificationService
         foreach (var notif in notificationsToSave)
         {
             var userPayload = new {
-                notif.Id, notif.TitleAr, notif.TitleEn, notif.MessageAr, 
-                notif.MessageEn, notif.Type, notif.IsRead, notif.OrderId, notif.CreatedAt
+                notif.Id,
+                id = notif.Id,
+                notif.TitleAr,
+                titleAr = notif.TitleAr,
+                notif.TitleEn,
+                titleEn = notif.TitleEn,
+                notif.MessageAr,
+                messageAr = notif.MessageAr,
+                notif.MessageEn,
+                messageEn = notif.MessageEn,
+                notif.Type,
+                type = notif.Type,
+                notif.IsRead,
+                isRead = notif.IsRead,
+                notif.OrderId,
+                orderId = notif.OrderId,
+                notif.CreatedAt,
+                createdAt = notif.CreatedAt
             };
             
+            // Broadcast to tenant group, global group, and raw user group for 100% SignalR delivery
             await _hubContext.Clients.Group($"{prefix}_{notif.UserId}").SendAsync("ReceiveNotification", userPayload);
+            await _hubContext.Clients.Group($"global_{notif.UserId}").SendAsync("ReceiveNotification", userPayload);
+            await _hubContext.Clients.Group($"user_{notif.UserId}").SendAsync("ReceiveNotification", userPayload);
+
             var unreadCount = await GetUnreadCountAsync(notif.UserId);
             await _hubContext.Clients.Group($"{prefix}_{notif.UserId}").SendAsync("ReceiveUnreadCount", unreadCount);
+            await _hubContext.Clients.Group($"global_{notif.UserId}").SendAsync("ReceiveUnreadCount", unreadCount);
+            await _hubContext.Clients.Group($"user_{notif.UserId}").SendAsync("ReceiveUnreadCount", unreadCount);
             
             _ = Task.Run(() => SendWebPushAsync(notif.UserId, titleAr, titleEn, msgAr, msgEn, type, orderId));
         }

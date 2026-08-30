@@ -30,9 +30,14 @@ public class NotificationHub : Hub
         var connectionId = Context.ConnectionId;
 
         await Groups.AddToGroupAsync(connectionId, $"{prefix}_All");
+        await Groups.AddToGroupAsync(connectionId, "global_All");
 
         if (!string.IsNullOrEmpty(userId))
+        {
             await Groups.AddToGroupAsync(connectionId, $"{prefix}_{userId}");
+            await Groups.AddToGroupAsync(connectionId, $"global_{userId}");
+            await Groups.AddToGroupAsync(connectionId, $"user_{userId}");
+        }
 
         // Admin / Staff print group
         bool isAdminOrStaff = Context.User?.IsInRole("Admin") == true 
