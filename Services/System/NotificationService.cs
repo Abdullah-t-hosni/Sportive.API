@@ -88,25 +88,41 @@ public class NotificationService : INotificationService
                     r.Equals("Moderator", StringComparison.OrdinalIgnoreCase)
                 );
 
-                if (!string.IsNullOrEmpty(u.NotificationPreferences))
+                if (type == "WhatsApp")
                 {
-                    try
+                    // 🛡️ STRICT PERMISSION: WhatsApp notifications are ONLY sent if "WhatsApp" is explicitly enabled in the user's NotificationPreferences on their User Card!
+                    if (!string.IsNullOrEmpty(u.NotificationPreferences))
                     {
-                        var prefs = JsonSerializer.Deserialize<List<string>>(u.NotificationPreferences);
-                        if (prefs != null && (prefs.Contains(type) || (isStaffOrAdmin && (type == "WhatsApp" || type == "Order" || type == "OnlineOrder" || type == "POSOrder"))))
+                        try
                         {
-                            shouldNotify = true;
+                            var prefs = JsonSerializer.Deserialize<List<string>>(u.NotificationPreferences);
+                            if (prefs != null && prefs.Any(p => p.Equals("WhatsApp", StringComparison.OrdinalIgnoreCase)))
+                            {
+                                shouldNotify = true;
+                            }
                         }
-                    }
-                    catch 
-                    { 
-                        if (isStaffOrAdmin) shouldNotify = true;
+                        catch { }
                     }
                 }
-
-                if (!shouldNotify && isStaffOrAdmin)
+                else
                 {
-                    shouldNotify = true;
+                    if (!string.IsNullOrEmpty(u.NotificationPreferences))
+                    {
+                        try
+                        {
+                            var prefs = JsonSerializer.Deserialize<List<string>>(u.NotificationPreferences);
+                            if (prefs != null && prefs.Contains(type))
+                            {
+                                shouldNotify = true;
+                            }
+                        }
+                        catch { }
+                    }
+
+                    if (!shouldNotify && isStaffOrAdmin)
+                    {
+                        shouldNotify = true;
+                    }
                 }
 
                 if (shouldNotify)
