@@ -78,25 +78,35 @@ public class NotificationService : INotificationService
                 bool shouldNotify = false;
                 var roles = rolesByUserId.ContainsKey(u.Id) ? rolesByUserId[u.Id] : new List<string>();
 
+                bool isStaffOrAdmin = roles.Any(r => 
+                    r.Equals("Admin", StringComparison.OrdinalIgnoreCase) || 
+                    r.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) || 
+                    r.Equals("Super Admin", StringComparison.OrdinalIgnoreCase) ||
+                    r.Equals("Manager", StringComparison.OrdinalIgnoreCase) ||
+                    r.Equals("Staff", StringComparison.OrdinalIgnoreCase) ||
+                    r.Equals("Cashier", StringComparison.OrdinalIgnoreCase) ||
+                    r.Equals("Moderator", StringComparison.OrdinalIgnoreCase)
+                );
+
                 if (!string.IsNullOrEmpty(u.NotificationPreferences))
                 {
                     try
                     {
                         var prefs = JsonSerializer.Deserialize<List<string>>(u.NotificationPreferences);
-                        if (prefs != null && prefs.Contains(type))
+                        if (prefs != null && (prefs.Contains(type) || (isStaffOrAdmin && (type == "WhatsApp" || type == "Order" || type == "OnlineOrder" || type == "POSOrder"))))
                         {
                             shouldNotify = true;
                         }
                     }
-                    catch { } // Ignore malformed JSON
-                }
-                else
-                {
-                    // Fallback: If no preferences are set, enable for Admin and SuperAdmin
-                    if (roles.Contains("Admin") || roles.Contains("SuperAdmin") || roles.Contains("Super Admin"))
-                    {
-                        shouldNotify = true;
+                    catch 
+                    { 
+                        if (isStaffOrAdmin) shouldNotify = true;
                     }
+                }
+
+                if (!shouldNotify && isStaffOrAdmin)
+                {
+                    shouldNotify = true;
                 }
 
                 if (shouldNotify)
