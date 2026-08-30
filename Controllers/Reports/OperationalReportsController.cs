@@ -5080,7 +5080,7 @@ public class OperationalReportsController : ControllerBase
         var eComBranch = await _db.Branches.FirstOrDefaultAsync(b => b.Name.Contains("متجر") || b.Name.Contains("الموقع") || b.Name.Contains("أونلاين") || b.Name.Contains("Online") || b.Name.Contains("الويب") || b.Name.Contains("Website"));
         int? eComBranchId = eComBranch?.Id;
 
-        // A. Payment Vouchers tagged for Website cost center or branch
+        // A. Payment Vouchers tagged for Website cost center or Website branch (even if paid from cashier drawer)
         var vouchersList = await _db.PaymentVouchers
             .AsNoTracking()
             .Include(v => v.ToAccount)
@@ -5090,15 +5090,14 @@ public class OperationalReportsController : ControllerBase
             .Where(v => v.VoucherDate >= from && v.VoucherDate <= to &&
                    (
                        v.CostCenter == OrderSource.Website ||
-                       (v.JournalEntry != null && v.JournalEntry.CostCenter == OrderSource.Website) ||
                        (eComBranchId.HasValue && v.BranchId == eComBranchId.Value) ||
                        (v.Branch != null && (v.Branch.Name.Contains("موقع") || v.Branch.Name.Contains("متجر") || v.Branch.Name.Contains("أونلاين")))
                    )
             )
             .ToListAsync();
 
-        // B. Operating & Marketing Journal Entries with CostCenter == Website
-        // Exclude Order auto-entries (COGS 51101 and Delivery 520101) to avoid double counting with order-level COGS and courier costs
+        // B. Operating & Marketing Journal Entries with CostCenter == Website or Website branch
+        // Exclude Order auto-entries (COGS 51101 and Delivery 520101) and courier auto-settlements
         var journalExpenses = await _db.JournalLines
             .AsNoTracking()
             .Include(l => l.Account)
@@ -5112,7 +5111,6 @@ public class OperationalReportsController : ControllerBase
                    l.OrderId == null &&
                    (
                        l.CostCenter == OrderSource.Website ||
-                       l.JournalEntry.CostCenter == OrderSource.Website ||
                        (eComBranchId.HasValue && l.BranchId == eComBranchId.Value) ||
                        (l.Branch != null && (l.Branch.Name.Contains("موقع") || l.Branch.Name.Contains("متجر") || l.Branch.Name.Contains("أونلاين")))
                    ) &&
