@@ -88,38 +88,25 @@ public class NotificationService : INotificationService
                     r.Equals("Moderator", StringComparison.OrdinalIgnoreCase)
                 );
 
-                if (type == "WhatsApp")
+                // 🛡️ STRICT PERMISSION ENFORCEMENT:
+                // Check if user has explicit permission for this notification type in their NotificationPreferences
+                if (!string.IsNullOrEmpty(u.NotificationPreferences))
                 {
-                    // 🛡️ STRICT PERMISSION: WhatsApp notifications are ONLY sent if "WhatsApp" is explicitly enabled in the user's NotificationPreferences on their User Card!
-                    if (!string.IsNullOrEmpty(u.NotificationPreferences))
+                    try
                     {
-                        try
+                        var prefs = JsonSerializer.Deserialize<List<string>>(u.NotificationPreferences);
+                        if (prefs != null && prefs.Any(p => p.Equals(type, StringComparison.OrdinalIgnoreCase)))
                         {
-                            var prefs = JsonSerializer.Deserialize<List<string>>(u.NotificationPreferences);
-                            if (prefs != null && prefs.Any(p => p.Equals("WhatsApp", StringComparison.OrdinalIgnoreCase)))
-                            {
-                                shouldNotify = true;
-                            }
+                            shouldNotify = true;
                         }
-                        catch { }
                     }
+                    catch { }
                 }
-                else
-                {
-                    if (!string.IsNullOrEmpty(u.NotificationPreferences))
-                    {
-                        try
-                        {
-                            var prefs = JsonSerializer.Deserialize<List<string>>(u.NotificationPreferences);
-                            if (prefs != null && prefs.Contains(type))
-                            {
-                                shouldNotify = true;
-                            }
-                        }
-                        catch { }
-                    }
 
-                    if (!shouldNotify && isStaffOrAdmin)
+                // If user's preferences are empty/not set yet, allow critical store/order alerts for Admins, but STRICTLY REQUIRE explicit "WhatsApp" permission for WhatsApp notifications!
+                if (!shouldNotify && isStaffOrAdmin && type != "WhatsApp")
+                {
+                    if (string.IsNullOrEmpty(u.NotificationPreferences))
                     {
                         shouldNotify = true;
                     }
