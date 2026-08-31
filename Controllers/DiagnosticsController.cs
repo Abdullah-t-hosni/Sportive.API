@@ -251,6 +251,110 @@ public class DiagnosticsController : ControllerBase
         });
     }
 
+    [HttpGet("discover-settlement-launch")]
+    public async Task<IActionResult> DiscoverSettlementLaunch()
+    {
+        // 1. Find earliest CourierSettlementDate on settled orders
+        var earliestSettledOrder = await _db.Orders
+            .Where(o => o.IsSettledWithCourier && o.CourierSettlementDate != null)
+            .OrderBy(o => o.CourierSettlementDate)
+            .Select(o => new { o.Id, o.OrderNumber, o.CourierSettlementDate, o.CourierSettlementReference, o.CreatedAt })
+            .FirstOrDefaultAsync();
+
+        // 2. Find earliest order created date that has IsSettledWithCourier = true
+        var earliestSettledOrderCreated = await _db.Orders
+            .Where(o => o.IsSettledWithCourier)
+            .OrderBy(o => o.CreatedAt)
+            .Select(o => new { o.Id, o.OrderNumber, o.CourierSettlementDate, o.CourierSettlementReference, o.CreatedAt })
+            .FirstOrDefaultAsync();
+
+        // 3. Find earliest JournalEntry or ReceiptVoucher related to settlements
+        var earliestSettlementJournal = await _db.JournalEntries
+            .Where(e => (e.Reference != null && (e.Reference.Contains("STL") || e.Reference.Contains("SETTLE"))) || (e.Description != null && e.Description.Contains("تسوية")))
+            .OrderBy(e => e.CreatedAt)
+            .Select(e => new { e.Id, e.EntryNumber, e.Reference, e.Description, e.CreatedAt })
+            .FirstOrDefaultAsync();
+
+        // 4. Count settled vs unsettled website orders by month
+        var allWebsiteDelivered = await _db.Orders
+            .Where(o => o.Source == OrderSource.Website && o.Status == OrderStatus.Delivered)
+            .Select(o => new { o.Id, o.CreatedAt, o.IsSettledWithCourier, o.CourierSettlementDate, o.PaymentMethod })
+            .ToListAsync();
+
+        var monthlyStats = allWebsiteDelivered
+            .GroupBy(o => new { o.CreatedAt.Year, o.CreatedAt.Month })
+            .OrderBy(g => g.Key.Year).ThenBy(g => g.Key.Month)
+            .Select(g => new
+            {
+                YearMonth = $"{g.Key.Year}-{g.Key.Month:D2}",
+                TotalDelivered = g.Count(),
+                SettledCount = g.Count(o => o.IsSettledWithCourier),
+                UnsettledCount = g.Count(o => !o.IsSettledWithCourier)
+            })
+            .ToList();
+
+        return Ok(new
+        {
+            EarliestSettlementDateRecorded = earliestSettledOrder?.CourierSettlementDate,
+            EarliestSettledOrderDetails = earliestSettledOrder,
+            EarliestSettledOrderCreated = earliestSettledOrderCreated,
+            EarliestSettlementJournal = earliestSettlementJournal,
+            MonthlyDeliveredOrdersStats = monthlyStats
+        });
+    }
+
+    [HttpGet("inspect-july-accounting")]
+    public async Task<IActionResult> InspectJulyAccounting()
+    {
+        var from = new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc);
+        var to = new DateTime(2026, 7, 31, 23, 59, 59, DateTimeKind.Utc);
+
+        var orders = await _db.Orders
+            .Include(o => o.ShippingCompany)
+            .Include(o => o.Customer)
+            .Where(o => o.Source == OrderSource.Website && o.CreatedAt >= from && o.CreatedAt <= to)
+            .ToListAsync();
+
+        var pendingOrders = orders
+            .Where(o => o.Status == OrderStatus.Delivered && !o.IsSettledWithCourier)
+            .Select(o => new
+            {
+                o.Id,
+                o.OrderNumber,
+                o.TotalAmount,
+                Status = o.Status.ToString(),
+                PaymentMethod = o.PaymentMethod.ToString(),
+                PaymentStatus = o.PaymentStatus.ToString(),
+                FulfillmentType = o.FulfillmentType.ToString(),
+                ShippingType = o.ShippingType,
+                ShippingCarrierName = o.ShippingCarrierName,
+                ShippingCompanyName = o.ShippingCompany?.NameAr,
+                o.IsSettledWithCourier,
+                o.CreatedAt
+            })
+            .ToList();
+
+        var breakdownByPaymentMethod = pendingOrders
+            .GroupBy(o => o.PaymentMethod)
+            .Select(g => new { PaymentMethod = g.Key, Count = g.Count(), TotalAmount = g.Sum(o => o.TotalAmount) })
+            .ToList();
+
+        var breakdownByCarrier = pendingOrders
+            .GroupBy(o => o.ShippingCarrierName ?? o.ShippingCompanyName ?? o.ShippingType ?? "Unknown")
+            .Select(g => new { Carrier = g.Key, Count = g.Count(), TotalAmount = g.Sum(o => o.TotalAmount) })
+            .ToList();
+
+        return Ok(new
+        {
+            TotalJulyWebsiteOrders = orders.Count,
+            PendingSettlementOrdersCount = pendingOrders.Count,
+            PendingSettlementTotalAmount = pendingOrders.Sum(o => o.TotalAmount),
+            BreakdownByPaymentMethod = breakdownByPaymentMethod,
+            BreakdownByCarrier = breakdownByCarrier,
+            Orders = pendingOrders
+        });
+    }
+
     [HttpGet("audit-duplicate-returns")]
     public async Task<IActionResult> AuditDuplicateReturns()
     {

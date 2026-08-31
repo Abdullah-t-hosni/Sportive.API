@@ -4940,7 +4940,28 @@ public class OperationalReportsController : ControllerBase
             
             decimal orderCogs = o.Items.Sum(i => (i.Product?.CostPrice ?? 0) * (i.Quantity > 0 ? i.Quantity : 1));
 
-            // Status counts
+            // Determine if this order actually has pending COD funds with a shipping courier
+            bool isPickupOrBranch = o.FulfillmentType == FulfillmentType.Pickup || 
+                                   o.ShippingType == "Pickup" || 
+                                   (o.ShippingCarrierName != null && (o.ShippingCarrierName.Contains("استلام") || o.ShippingCarrierName.Contains("فرع")));
+
+            bool isDigitalPayment = o.PaymentMethod == PaymentMethod.Vodafone ||
+                                   o.PaymentMethod == PaymentMethod.InstaPay ||
+                                   o.PaymentMethod == PaymentMethod.CreditCard ||
+                                   o.PaymentMethod == PaymentMethod.Bank;
+
+            // An order ONLY has pending funds with a courier if it is COD (Cash), shipped via courier (not Pickup), and not yet settled
+            bool requiresCourierSettlement = !isPickupOrBranch && !isDigitalPayment;
+
+            // For closed historical periods (e.g. past months like July 2026), delivered/paid orders are considered settled
+            bool isPastClosedPeriodOrder = o.CreatedAt < new DateTime(TimeHelper.GetEgyptTime().Year, TimeHelper.GetEgyptTime().Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
+            bool isOrderSettled = o.IsSettledWithCourier || 
+                                 !requiresCourierSettlement || 
+                                 (isPastClosedPeriodOrder && o.Status == OrderStatus.Delivered) ||
+                                 o.PaymentStatus == PaymentStatus.Paid;
+
+            // Status counts & financial aggregations
             if (o.Status == OrderStatus.Delivered)
             {
                 deliveredOrdersCount++;
@@ -4950,7 +4971,7 @@ public class OperationalReportsController : ControllerBase
                 totalCogs += orderCogs;
                 courierShippingCost += orderActualCost;
 
-                if (o.IsSettledWithCourier)
+                if (isOrderSettled)
                 {
                     settledCodAmount += o.TotalAmount;
                 }
@@ -4968,12 +4989,19 @@ public class OperationalReportsController : ControllerBase
             else if (o.Status == OrderStatus.OutForDelivery)
             {
                 inShippingOrdersCount++;
-                pendingCodAmount += o.TotalAmount;
+                if (requiresCourierSettlement && !isOrderSettled)
+                {
+                    pendingCodAmount += o.TotalAmount;
+                }
+                else
+                {
+                    settledCodAmount += o.TotalAmount;
+                }
             }
 
             // Courier Breakdown - In-store pickup, specific courier, or AS for legacy delivery
             string carrierKey;
-            if (o.FulfillmentType == FulfillmentType.Pickup || o.ShippingType == "Pickup" || (o.ShippingCarrierName != null && (o.ShippingCarrierName.Contains("استلام") || o.ShippingCarrierName.Contains("فرع"))))
+            if (isPickupOrBranch)
             {
                 carrierKey = "استلام من الفرع";
             }
@@ -5010,7 +5038,7 @@ public class OperationalReportsController : ControllerBase
             {
                 cStats.Delivered++;
                 cStats.Collected += o.TotalAmount;
-                if (!o.IsSettledWithCourier) cStats.Pending += o.TotalAmount;
+                if (!isOrderSettled) cStats.Pending += o.TotalAmount;
                 cStats.DeliveryFee += orderDeliveryFee;
                 cStats.CourierCost += orderActualCost;
             }
@@ -5021,7 +5049,7 @@ public class OperationalReportsController : ControllerBase
             }
             else if (o.Status == OrderStatus.OutForDelivery)
             {
-                cStats.Pending += o.TotalAmount;
+                if (!isOrderSettled) cStats.Pending += o.TotalAmount;
             }
             courierMap[carrierKey] = cStats;
 
