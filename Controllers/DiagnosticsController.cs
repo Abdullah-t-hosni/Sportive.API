@@ -357,24 +357,28 @@ public class DiagnosticsController : ControllerBase
             await _db.SaveChangesAsync();
         }
 
-        // 1. Fetch all ReturnIn inventory movements with non-null Reference
-        var returnMovements = await _db.InventoryMovements
+        // 1. Fetch all ReturnIn and Sale inventory movements with non-null Reference
+        var allOrderMovements = await _db.InventoryMovements
             .Include(m => m.Product)
             .Include(m => m.ProductVariant)
-            .Where(m => m.Type == InventoryMovementType.ReturnIn && !string.IsNullOrEmpty(m.Reference))
+            .Where(m => (m.Type == InventoryMovementType.ReturnIn || m.Type == InventoryMovementType.Sale) && !string.IsNullOrEmpty(m.Reference))
             .OrderBy(m => m.CreatedAt)
             .ToListAsync();
 
-        var orderNumbers = returnMovements.Select(m => m.Reference).Distinct().ToList();
+        var orderNumbers = allOrderMovements.Select(m => m.Reference).Distinct().ToList();
         var orders = await _db.Orders
             .Include(o => o.Items)
             .Where(o => orderNumbers.Contains(o.OrderNumber))
             .ToDictionaryAsync(o => o.OrderNumber, o => o);
 
         var fixedResults = new List<object>();
-        var grouped = returnMovements.GroupBy(m => new { m.Reference, m.ProductId, m.ProductVariantId });
 
-        foreach (var g in grouped)
+        // A. Handle ReturnIn duplicates
+        var returnGrouped = allOrderMovements
+            .Where(m => m.Type == InventoryMovementType.ReturnIn)
+            .GroupBy(m => new { m.Reference, m.ProductId, m.ProductVariantId });
+
+        foreach (var g in returnGrouped)
         {
             orders.TryGetValue(g.Key.Reference!, out var order);
             int soldQuantity = order != null 
@@ -388,8 +392,6 @@ public class DiagnosticsController : ControllerBase
                 var firstProduct = g.First().Product;
                 var firstVariant = g.First().ProductVariant;
 
-                // Keep ONLY 1 ReturnIn record (or records up to soldQuantity), remove the duplicate log records
-                // Removing the duplicate +1 ReturnIn record directly removes the duplicate stock addition!
                 var movementsToRemove = g.Skip(1).ToList();
                 int excessQtyRemoved = movementsToRemove.Sum(m => m.Quantity);
 
@@ -397,11 +399,48 @@ public class DiagnosticsController : ControllerBase
 
                 fixedResults.Add(new
                 {
+                    Type = "ReturnIn Duplicate Cleaned",
                     OrderNumber = g.Key.Reference,
                     ProductName = firstProduct?.NameAr ?? firstProduct?.NameEn ?? "Unknown Product",
                     VariantSize = firstVariant?.Size,
                     VariantColor = firstVariant?.ColorAr ?? firstVariant?.Color,
-                    DeductedExcessQty = excessQtyRemoved,
+                    AdjustedQty = excessQtyRemoved,
+                    RemovedMovementIds = movementsToRemove.Select(m => m.Id).ToList()
+                });
+            }
+        }
+
+        // B. Handle Sale duplicates (from status toggling)
+        var saleGrouped = allOrderMovements
+            .Where(m => m.Type == InventoryMovementType.Sale)
+            .GroupBy(m => new { m.Reference, m.ProductId, m.ProductVariantId });
+
+        foreach (var g in saleGrouped)
+        {
+            orders.TryGetValue(g.Key.Reference!, out var order);
+            int soldQuantity = order != null 
+                ? order.Items.Where(i => i.ProductId == g.Key.ProductId && i.ProductVariantId == g.Key.ProductVariantId).Sum(i => i.Quantity)
+                : 0;
+
+            if (g.Count() > 1 && soldQuantity > 0)
+            {
+                var firstProduct = g.First().Product;
+                var firstVariant = g.First().ProductVariant;
+
+                // Keep only 1 Sale movement per item (or movements up to soldQuantity)
+                var movementsToRemove = g.Skip(1).ToList();
+                int excessSaleQtyRemoved = movementsToRemove.Sum(m => Math.Abs(m.Quantity));
+
+                _db.InventoryMovements.RemoveRange(movementsToRemove);
+
+                fixedResults.Add(new
+                {
+                    Type = "Sale Duplicate Cleaned",
+                    OrderNumber = g.Key.Reference,
+                    ProductName = firstProduct?.NameAr ?? firstProduct?.NameEn ?? "Unknown Product",
+                    VariantSize = firstVariant?.Size,
+                    VariantColor = firstVariant?.ColorAr ?? firstVariant?.Color,
+                    AdjustedQty = excessSaleQtyRemoved,
                     RemovedMovementIds = movementsToRemove.Select(m => m.Id).ToList()
                 });
             }
@@ -416,7 +455,7 @@ public class DiagnosticsController : ControllerBase
         {
             FixedCasesCount = fixedResults.Count,
             FixedDetails = fixedResults,
-            Message = "تم تصحيح وتنظيف كافة حركات المرتجع المكررة وإعادة بناء الأرصدة التراكمية بنجاح 🎉"
+            Message = "تم تصحيح وتنظيف كافة حركات المرتجع والمبيعات المكررة وإعادة بناء الأرصدة التراكمية بنجاح 🎉"
         });
     }
 }

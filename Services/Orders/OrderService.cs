@@ -2205,24 +2205,48 @@ public class OrderService : IOrderService
                 }
             }
 
-            // 2️⃣ Reverse the inventory ReturnIn/Cancellation movements (re-deduct stock)
+            // 2️⃣ Reverse the inventory ReturnIn/Cancellation movements (re-deduct stock safely via Net Delta calculation)
             var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
+            var existingMovements = await _db.InventoryMovements
+                .Where(m => m.Reference == order.OrderNumber)
+                .ToListAsync();
+
             foreach (var item in orderWithItems.Items)
             {
-                int qtyToRevert = oldStatus == OrderStatus.PartiallyReturned ? item.ReturnedQuantity : item.Quantity;
-                if ((item.ProductId ?? 0) > 0 && qtyToRevert > 0)
+                if ((item.ProductId ?? 0) <= 0) continue;
+
+                int currentNetQty = existingMovements
+                    .Where(m => m.ProductId == item.ProductId && m.ProductVariantId == item.ProductVariantId)
+                    .Sum(m => m.Quantity);
+
+                int targetNetQty = -item.Quantity;
+                int deltaToLog = targetNetQty - currentNetQty;
+
+                if (deltaToLog < 0)
                 {
                     await _inventory.LogMovementAsync(
                         InventoryMovementType.Sale,
-                        -qtyToRevert, item.ProductId, item.ProductVariantId,
-                        order.OrderNumber, $"Revert: Order status changed from {oldStatus}", updatedByUserId,
+                        deltaToLog, item.ProductId, item.ProductVariantId,
+                        order.OrderNumber, $"Revert: Order status changed from {oldStatus} to {dto.Status}", updatedByUserId,
                         0, // unitCost fallback
                         order.Source,
                         autoSave: false,
-                        ignoreIdempotency: true,
                         warehouseId: order.WarehouseId
                     );
                 }
+                else if (deltaToLog > 0)
+                {
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.ReturnIn,
+                        deltaToLog, item.ProductId, item.ProductVariantId,
+                        order.OrderNumber, $"Revert: Order status changed from {oldStatus} to {dto.Status}", updatedByUserId,
+                        0, // unitCost fallback
+                        order.Source,
+                        autoSave: false,
+                        warehouseId: order.WarehouseId
+                    );
+                }
+
                 // Reset returned quantities on items
                 item.ReturnedQuantity = 0;
             }
