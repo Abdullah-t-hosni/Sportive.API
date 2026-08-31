@@ -51,8 +51,16 @@ public class WhatsAppApiService : IWhatsAppApiService
             var db = scope.ServiceProvider.GetRequiredService<Sportive.API.Data.AppDbContext>();
             var storeSettings = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(db.StoreInfo, s => s.StoreConfigId == 1);
 
-            // Use Node Baileys WhatsApp Gateway (sportive-whatsapp-service)
-            var serviceUrl = _config["WhatsApp:ServiceUrl"] ?? storeSettings?.WhatsAppStoreGatewayUrl ?? "https://sportive-frontend-production-65ac.up.railway.app";
+            // 🌟 100% DYNAMIC: Read whatever URL is saved in Store Settings UI by the user!
+            var userConfiguredUrl = isPos 
+                ? storeSettings?.WhatsAppPosGatewayUrl 
+                : storeSettings?.WhatsAppStoreGatewayUrl;
+
+            // Fallback hierarchy: 1. User DB Setting -> 2. AppSettings Config -> 3. Hardcoded Fallback
+            var serviceUrl = !string.IsNullOrWhiteSpace(userConfiguredUrl)
+                ? userConfiguredUrl
+                : (_config["WhatsApp:ServiceUrl"] ?? "https://sportive-frontend-production-65ac.up.railway.app");
+
             if (!string.IsNullOrWhiteSpace(serviceUrl))
             {
                 var formattedPhone = NormalizePhone(phoneNumber);
@@ -61,22 +69,25 @@ public class WhatsAppApiService : IWhatsAppApiService
                     phone = formattedPhone,
                     message = messageText
                 };
-                var request = new HttpRequestMessage(HttpMethod.Post, $"{serviceUrl.TrimEnd('/')}/send");
+                var targetUri = $"{serviceUrl.TrimEnd('/')}/send";
+                _logger.LogInformation("[WhatsApp] Sending message via Dynamic Gateway {Url} to {Phone}", targetUri, formattedPhone);
+
+                var request = new HttpRequestMessage(HttpMethod.Post, targetUri);
                 request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
                 var response = await _httpClient.SendAsync(request);
                 if (response.IsSuccessStatusCode)
                 {
-                    _logger.LogInformation("Message sent via Node WhatsApp Gateway to {Phone}", phoneNumber);
+                    _logger.LogInformation("[WhatsApp] Message successfully sent via Dynamic Gateway to {Phone}", phoneNumber);
                     return true;
                 }
                 
                 var errorResponse = await response.Content.ReadAsStringAsync();
-                _logger.LogError("Node WhatsApp Gateway API Error: {Error}", errorResponse);
+                _logger.LogError("[WhatsApp] Node WhatsApp Gateway API Error ({StatusCode}): {Error}", response.StatusCode, errorResponse);
             }
             else
             {
-                _logger.LogWarning("No active Node WhatsApp Gateway configured for sending message.");
+                _logger.LogWarning("[WhatsApp] No active Node WhatsApp Gateway configured for sending message.");
             }
 
             return false;

@@ -281,6 +281,18 @@ public class DiagnosticsController : ControllerBase
         });
     }
 
+    [HttpGet("inspect-whatsapp")]
+    public async Task<IActionResult> InspectWhatsApp([FromServices] IConfiguration config)
+    {
+        var storeInfo = await _db.StoreInfo.FirstOrDefaultAsync();
+        return Ok(new
+        {
+            ConfigServiceUrl = config["WhatsApp:ServiceUrl"],
+            StoreSettingsGatewayUrl = storeInfo?.WhatsAppStoreGatewayUrl,
+            FallbackUrl = "https://sportive-frontend-production-65ac.up.railway.app"
+        });
+    }
+
     [HttpPost("fix-legacy-website-settlements")]
     public async Task<IActionResult> FixLegacyWebsiteSettlements()
     {
