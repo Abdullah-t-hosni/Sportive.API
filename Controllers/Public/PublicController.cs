@@ -97,7 +97,10 @@ public class PublicController : ControllerBase
     public async Task<IActionResult> GetFacebookFeed(
         [FromQuery] string? section = null,
         [FromQuery] CategoryType? type = null,
-        [FromQuery] int? categoryId = null)
+        [FromQuery] int? categoryId = null,
+        [FromQuery] decimal? originalPriceMultiplier = null,
+        [FromQuery] decimal? discountPercent = null,
+        [FromQuery] bool? showOriginalPrice = null)
     {
         // 1. Fetch active products along with images and brand/category details
         var query = _db.Products
@@ -231,11 +234,47 @@ public class PublicController : ControllerBase
 
             // Description clean fallback
             var description = string.IsNullOrWhiteSpace(p.DescriptionAr) ? p.NameAr : p.DescriptionAr;
-            // Facebook expects a minimum description
             if (string.IsNullOrWhiteSpace(description))
             {
                 description = p.NameEn;
             }
+
+            // Price & Pre-Discount (Sale Price) Logic for Facebook/Meta Catalog Feed
+            decimal sellingPrice = p.Price;
+            decimal? originalPrice = null;
+
+            if (p.DiscountPrice.HasValue && p.DiscountPrice.Value > 0 && p.DiscountPrice.Value != p.Price)
+            {
+                if (p.DiscountPrice.Value < p.Price)
+                {
+                    originalPrice = p.Price;
+                    sellingPrice = p.DiscountPrice.Value;
+                }
+                else
+                {
+                    originalPrice = p.DiscountPrice.Value;
+                    sellingPrice = p.Price;
+                }
+            }
+            else if (discountPercent.HasValue && discountPercent.Value > 0 && discountPercent.Value < 100)
+            {
+                decimal factor = 1m - (discountPercent.Value / 100m);
+                if (factor > 0)
+                {
+                    originalPrice = Math.Round(sellingPrice / factor, 2);
+                }
+            }
+            else if (originalPriceMultiplier.HasValue && originalPriceMultiplier.Value > 1m)
+            {
+                originalPrice = Math.Round(sellingPrice * originalPriceMultiplier.Value, 2);
+            }
+            else if (showOriginalPrice == true)
+            {
+                // Default pre-discount price ratio: +25% pre-discount markup if requested without specific percentage
+                originalPrice = Math.Round(sellingPrice * 1.25m, 2);
+            }
+
+            string priceStr = originalPrice.HasValue ? $"{originalPrice.Value:F2} EGP" : $"{sellingPrice:F2} EGP";
 
             var itemElement = new XElement("item",
                 new XElement(g + "id", p.Id.ToString()),
@@ -246,13 +285,13 @@ public class PublicController : ControllerBase
                 new XElement(g + "brand", p.Brand?.NameAr ?? "Sportive"),
                 new XElement(g + "condition", "new"),
                 new XElement(g + "availability", availability),
-                new XElement(g + "price", $"{p.Price:F2} EGP")
+                new XElement(g + "price", priceStr)
             );
 
-            // Optional discounted price mapping
-            if (p.DiscountPrice.HasValue && p.DiscountPrice.Value < p.Price && p.DiscountPrice.Value > 0)
+            // If a pre-discount original price exists, add <g:sale_price> with the actual discounted selling price
+            if (originalPrice.HasValue)
             {
-                itemElement.Add(new XElement(g + "sale_price", $"{p.DiscountPrice.Value:F2} EGP"));
+                itemElement.Add(new XElement(g + "sale_price", $"{sellingPrice:F2} EGP"));
             }
 
             // Google product category map (optional but useful)
