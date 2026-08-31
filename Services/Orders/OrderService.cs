@@ -2252,19 +2252,32 @@ public class OrderService : IOrderService
             oldStatus != OrderStatus.Cancelled && oldStatus != OrderStatus.Returned)
         {
             var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
+            
+            // 🛡️ DUPLICATE RETURN PROTECTION: Fetch existing return movements for this order to prevent double-restocking
+            var existingReturnMovements = await _db.InventoryMovements
+                .Where(m => m.Reference == order.OrderNumber && m.Type == InventoryMovementType.ReturnIn)
+                .ToListAsync();
+
             foreach (var item in orderWithItems.Items)
             {
-                await _inventory.LogMovementAsync(
-                    dto.Status == OrderStatus.Returned ? InventoryMovementType.ReturnIn : InventoryMovementType.Adjustment,
-                    item.Quantity, item.ProductId, item.ProductVariantId, 
-                    order.OrderNumber, 
-                    $"Order {dto.Status}", updatedByUserId,
-                    0, // unitCost fallback
-                    order.Source,
-                    autoSave: false,
-                    ignoreIdempotency: true,
-                    warehouseId: order.WarehouseId
-                );
+                int alreadyRestockedQty = existingReturnMovements
+                    .Where(m => m.ProductId == item.ProductId && m.ProductVariantId == item.ProductVariantId)
+                    .Sum(m => m.Quantity);
+
+                int qtyToRestock = item.Quantity - alreadyRestockedQty;
+                if (qtyToRestock > 0)
+                {
+                    await _inventory.LogMovementAsync(
+                        dto.Status == OrderStatus.Returned ? InventoryMovementType.ReturnIn : InventoryMovementType.Adjustment,
+                        qtyToRestock, item.ProductId, item.ProductVariantId, 
+                        order.OrderNumber, 
+                        $"Order {dto.Status}", updatedByUserId,
+                        0, // unitCost fallback
+                        order.Source,
+                        autoSave: false,
+                        warehouseId: order.WarehouseId
+                    );
+                }
             }
 
             // ✅ RESTORE COUPON USAGE IF CANCELLED OR FULLY RETURNED
@@ -2416,7 +2429,6 @@ public class OrderService : IOrderService
                         0, // unitCost fallback
                         order.Source,
                         autoSave: false,
-                        ignoreIdempotency: true,
                         warehouseId: order.WarehouseId,
                         isDamaged: dto.Reason?.Contains("تالف") == true || dto.Reason?.Contains("Damaged") == true
                     );
