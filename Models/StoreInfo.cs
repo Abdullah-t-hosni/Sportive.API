@@ -717,7 +717,7 @@ public class StoreInfo
     // --- 16. WhatsApp Baileys Multi-Device Gateway Settings ---
     [MaxLength(500)]
     [JsonPropertyName("whatsAppStoreGatewayUrl")]
-    public string? WhatsAppStoreGatewayUrl { get; set; } = "https://sportive-frontend-production.up.railway.app";
+    public string? WhatsAppStoreGatewayUrl { get; set; } = "https://sportive-frontend-production-65ac.up.railway.app";
 
     [MaxLength(500)]
     [JsonPropertyName("whatsAppPosGatewayUrl")]

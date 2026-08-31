@@ -56,6 +56,12 @@ public class WhatsAppApiService : IWhatsAppApiService
                 ? storeSettings?.WhatsAppPosGatewayUrl 
                 : storeSettings?.WhatsAppStoreGatewayUrl;
 
+            // Auto-repair legacy/broken Railway URL if missing -65ac suffix
+            if (!string.IsNullOrWhiteSpace(userConfiguredUrl) && userConfiguredUrl.Equals("https://sportive-frontend-production.up.railway.app", StringComparison.OrdinalIgnoreCase))
+            {
+                userConfiguredUrl = "https://sportive-frontend-production-65ac.up.railway.app";
+            }
+
             // Fallback hierarchy: 1. User DB Setting -> 2. AppSettings Config -> 3. Hardcoded Fallback
             var serviceUrl = !string.IsNullOrWhiteSpace(userConfiguredUrl)
                 ? userConfiguredUrl
