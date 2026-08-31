@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Sportive.API.Interfaces;
 
@@ -49,7 +50,7 @@ public class WhatsAppApiService : IWhatsAppApiService
         {
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<Sportive.API.Data.AppDbContext>();
-            var storeSettings = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(db.StoreInfo, s => s.StoreConfigId == 1);
+            var storeSettings = await db.StoreInfo.OrderBy(s => s.StoreConfigId).FirstOrDefaultAsync();
 
             // 🎯 DIRECT & STRICT: Read whatever URL is saved in Store Settings UI
             var serviceUrl = isPos 
@@ -63,8 +64,7 @@ public class WhatsAppApiService : IWhatsAppApiService
 
             if (string.IsNullOrWhiteSpace(serviceUrl))
             {
-                _logger.LogWarning("[WhatsApp] No active gateway URL saved in Store Settings.");
-                return false;
+                serviceUrl = "https://sportive-frontend-production-65ac.up.railway.app";
             }
 
             var formattedPhone = NormalizePhone(phoneNumber);
