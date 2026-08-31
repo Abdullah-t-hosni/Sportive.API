@@ -374,6 +374,12 @@ try
         service => service.UpdateDailyStatsAsync(TimeHelper.GetEgyptTime()),
         "*/15 * * * *");
 
+    // ✅ Daily Database Backup — runs every night at 2:00 AM Egypt Time (23:00 UTC)
+    backgroundJobs.AddOrUpdate<IBackupService>(
+        "DailyDatabaseBackup",
+        service => service.RunBackupAsync("Scheduled", System.Threading.CancellationToken.None),
+        "0 23 * * *");
+
     // ── Nightly jobs (commented out — heavy DB load, re-enable on dedicated server) ──
     //     backgroundJobs.AddOrUpdate<IOrderService>(
     //         "SyncOrderAccounting",

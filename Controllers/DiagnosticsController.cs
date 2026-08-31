@@ -251,6 +251,36 @@ public class DiagnosticsController : ControllerBase
         });
     }
 
+    [HttpGet("inspect-backups")]
+    public async Task<IActionResult> InspectBackups()
+    {
+        var records = await _db.BackupRecords
+            .OrderByDescending(r => r.CreatedAt)
+            .Take(30)
+            .Select(r => new
+            {
+                r.Id,
+                r.FileName,
+                r.FileSizeBytes,
+                r.Success,
+                r.Error,
+                r.TriggerType,
+                r.EmailSent,
+                r.EmailError,
+                r.CreatedAt
+            })
+            .ToListAsync();
+
+        var storeInfo = await _db.StoreInfo.FirstOrDefaultAsync();
+
+        return Ok(new
+        {
+            StoreBackupTime = storeInfo?.BackupTime ?? "02:00",
+            TotalRecords = records.Count,
+            Records = records
+        });
+    }
+
     [HttpPost("fix-legacy-website-settlements")]
     public async Task<IActionResult> FixLegacyWebsiteSettlements()
     {

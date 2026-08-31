@@ -147,41 +147,161 @@ public class BackupService : IBackupService
     // ══════════════════════════════════════════════════
     private async Task DumpDatabaseAsync(string outputPath, CancellationToken ct)
     {
-        // فك الـ connection string
         var connStr = _config.GetConnectionString("DefaultConnection")
                    ?? _config["DATABASE_URL"]
                    ?? throw new InvalidOperationException("No connection string");
 
-        var (host, port, db, user, password) = ParseConnectionString(connStr);
-
-        var args = $"--host={host} --port={port} --user={user} --single-transaction " +
-                   $"--routines --triggers --no-tablespaces {db}";
-
-        var psi = new ProcessStartInfo
+        try
         {
-            FileName               = "mysqldump",
-            Arguments              = args,
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            UseShellExecute        = false,
-            CreateNoWindow         = true,
-        };
-        psi.EnvironmentVariables["MYSQL_PWD"] = password;
+            var (host, port, db, user, password) = ParseConnectionString(connStr);
 
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("mysqldump process failed to start");
+            var args = $"--host={host} --port={port} --user={user} --single-transaction " +
+                       $"--routines --triggers --no-tablespaces {db}";
 
-        await using var fileStream = File.Create(outputPath);
-        var copyTask  = process.StandardOutput.BaseStream.CopyToAsync(fileStream, ct);
-        var errorTask = process.StandardError.ReadToEndAsync(ct);
+            var psi = new ProcessStartInfo
+            {
+                FileName               = "mysqldump",
+                Arguments              = args,
+                RedirectStandardOutput = true,
+                RedirectStandardError  = true,
+                UseShellExecute        = false,
+                CreateNoWindow         = true,
+            };
+            psi.EnvironmentVariables["MYSQL_PWD"] = password;
 
-        await Task.WhenAll(copyTask, process.WaitForExitAsync(ct));
-        var errorOutput = await errorTask;
+            using var process = Process.Start(psi);
+            if (process != null)
+            {
+                await using (var fileStream = File.Create(outputPath))
+                {
+                    var copyTask  = process.StandardOutput.BaseStream.CopyToAsync(fileStream, ct);
+                    var errorTask = process.StandardError.ReadToEndAsync(ct);
 
-        if (process.ExitCode != 0)
-            throw new InvalidOperationException($"mysqldump exited {process.ExitCode}: {errorOutput}");
+                    await Task.WhenAll(copyTask, process.WaitForExitAsync(ct));
+                    var errorOutput = await errorTask;
 
-        _log.LogInformation("[Backup] mysqldump completed, output: {path}", outputPath);
+                    if (process.ExitCode == 0 && new FileInfo(outputPath).Length > 0)
+                    {
+                        _log.LogInformation("[Backup] mysqldump completed successfully, output: {path}", outputPath);
+                        return;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "[Backup] mysqldump CLI failed or is not installed. Falling back to C# ADO.NET SQL Exporter.");
+        }
+
+        // Fallback: Pure C# ADO.NET SQL Exporter (Works everywhere without needing mysqldump CLI)
+        await DumpDatabaseCSharpAsync(connStr, outputPath, ct);
+    }
+
+    private async Task DumpDatabaseCSharpAsync(string connStr, string outputPath, CancellationToken ct)
+    {
+        _log.LogInformation("[Backup] Starting C# ADO.NET SQL dump to {path}", outputPath);
+
+        await using var conn = new MySqlConnector.MySqlConnection(connStr);
+        await conn.OpenAsync(ct);
+
+        var tables = new List<string>();
+        await using (var cmd = new MySqlConnector.MySqlCommand("SHOW TABLES;", conn))
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                tables.Add(reader.GetString(0));
+            }
+        }
+
+        await using var writer = new StreamWriter(outputPath, false, Encoding.UTF8);
+        await writer.WriteLineAsync("-- Sportive Auto Backup (C# ADO.NET Exporter)");
+        await writer.WriteLineAsync($"-- Date: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
+        await writer.WriteLineAsync("SET FOREIGN_KEY_CHECKS=0;");
+
+        foreach (var table in tables)
+        {
+            if (table.StartsWith("Hangfire", StringComparison.OrdinalIgnoreCase)) continue; // skip temporary hangfire tables
+
+            // 1. Table Schema
+            await using (var cmd = new MySqlConnector.MySqlCommand($"SHOW CREATE TABLE `{table}`;", conn))
+            await using (var reader = await cmd.ExecuteReaderAsync(ct))
+            {
+                if (await reader.ReadAsync(ct))
+                {
+                    var createSql = reader.GetString(1);
+                    await writer.WriteLineAsync($"\n-- Table structure for `{table}`");
+                    await writer.WriteLineAsync($"DROP TABLE IF EXISTS `{table}`;");
+                    await writer.WriteLineAsync($"{createSql};");
+                }
+            }
+
+            // 2. Table Data
+            await using (var cmd = new MySqlConnector.MySqlCommand($"SELECT * FROM `{table}`;", conn))
+            await using (var reader = await cmd.ExecuteReaderAsync(ct))
+            {
+                var fieldCount = reader.FieldCount;
+                var colNames = new string[fieldCount];
+                for (int i = 0; i < fieldCount; i++) colNames[i] = $"`{reader.GetName(i)}`";
+
+                var insertHeader = $"INSERT INTO `{table}` ({string.Join(", ", colNames)}) VALUES ";
+                var rows = new List<string>();
+
+                while (await reader.ReadAsync(ct))
+                {
+                    var values = new string[fieldCount];
+                    for (int i = 0; i < fieldCount; i++)
+                    {
+                        if (reader.IsDBNull(i))
+                        {
+                            values[i] = "NULL";
+                        }
+                        else
+                        {
+                            var val = reader.GetValue(i);
+                            if (val is byte[] bytes)
+                            {
+                                values[i] = "X'" + Convert.ToHexString(bytes) + "'";
+                            }
+                            else if (val is bool b)
+                            {
+                                values[i] = b ? "1" : "0";
+                            }
+                            else if (val is DateTime dt)
+                            {
+                                values[i] = $"'{dt:yyyy-MM-dd HH:mm:ss}'";
+                            }
+                            else if (val is sbyte || val is byte || val is short || val is ushort || val is int || val is uint || val is long || val is ulong || val is decimal || val is double || val is float)
+                            {
+                                values[i] = Convert.ToString(val, System.Globalization.CultureInfo.InvariantCulture) ?? "NULL";
+                            }
+                            else
+                            {
+                                var strVal = val.ToString()?.Replace("\\", "\\\\").Replace("'", "''").Replace("\r", "\\r").Replace("\n", "\\n") ?? "";
+                                values[i] = $"'{strVal}'";
+                            }
+                        }
+                    }
+                    rows.Add($"({string.Join(", ", values)})");
+
+                    if (rows.Count >= 250)
+                    {
+                        await writer.WriteLineAsync($"{insertHeader}{string.Join(", ", rows)};");
+                        rows.Clear();
+                    }
+                }
+
+                if (rows.Count > 0)
+                {
+                    await writer.WriteLineAsync($"{insertHeader}{string.Join(", ", rows)};");
+                }
+            }
+        }
+
+        await writer.WriteLineAsync("\nSET FOREIGN_KEY_CHECKS=1;");
+        await writer.FlushAsync(ct);
+
+        _log.LogInformation("[Backup] C# ADO.NET SQL dump completed: {path}", outputPath);
     }
 
     // ══════════════════════════════════════════════════
