@@ -1072,15 +1072,15 @@ public class DataMaintenanceService : IDataMaintenanceService
             int fixedCount = 0;
             foreach (var order in candidateOrders)
             {
-                bool isFullReturnedByItems = order.Items.Any() && order.Items.All(i => i.ReturnedQuantity >= i.Quantity && i.Quantity > 0);
-                bool hasCompletedReturnReq = returnReqOrderIds.Contains(order.Id);
-                bool hasReturnedHistory = order.StatusHistory.Any(h => h.Status == OrderStatus.Returned);
+                var reqs = returnRequests.Where(r => r.OrderId == order.Id).ToList();
+                var reqItemOrderIds = reqs.SelectMany(r => r.Items).Select(i => i.OrderItemId).ToHashSet();
 
-                if (isFullReturnedByItems || hasCompletedReturnReq || hasReturnedHistory)
+                bool allItemsReturnedByQty = order.Items.Any() && order.Items.All(i => i.ReturnedQuantity >= i.Quantity && i.Quantity > 0);
+                bool allItemsInReturnReq = order.Items.Any() && order.Items.All(i => reqItemOrderIds.Contains(i.Id));
+
+                if (allItemsReturnedByQty || allItemsInReturnReq)
                 {
                     order.Status = OrderStatus.Returned;
-                    
-                    // Mark all items as returned if full return
                     foreach (var item in order.Items)
                     {
                         if (item.ReturnedQuantity < item.Quantity)
@@ -1088,22 +1088,21 @@ public class DataMaintenanceService : IDataMaintenanceService
                             item.ReturnedQuantity = item.Quantity;
                         }
                     }
-
-                    bool hasHistory = order.StatusHistory.Any(h => h.Status == OrderStatus.Returned);
-                    if (!hasHistory)
-                    {
-                        order.StatusHistory.Add(new OrderStatusHistory
-                        {
-                            OrderId = order.Id,
-                            Status = OrderStatus.Returned,
-                            Note = "تصحيح آلي: تحويل حالة الفاتورة لـ مرتجع بالمخزن بناءً على سجلات المرتجعات",
-                            ChangedByUserId = "system",
-                            CreatedAt = TimeHelper.GetEgyptTime()
-                        });
-                    }
-
-                    fixedCount++;
                 }
+                else if (reqs.Any() || order.Items.Any(i => i.ReturnedQuantity > 0))
+                {
+                    order.Status = OrderStatus.PartiallyReturned;
+                    foreach (var item in order.Items)
+                    {
+                        bool isReturnedInReq = reqItemOrderIds.Contains(item.Id);
+                        if (!isReturnedInReq && item.ReturnedQuantity > 0)
+                        {
+                            item.ReturnedQuantity = 0; // Reset item that was not in return request
+                        }
+                    }
+                }
+
+                fixedCount++;
             }
 
             if (fixedCount > 0)

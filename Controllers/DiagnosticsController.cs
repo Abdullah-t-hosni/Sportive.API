@@ -697,6 +697,43 @@ public class DiagnosticsController : ControllerBase
         return Ok(new { success = true, count, orderNumbers });
     }
 
+    public class SetItemReturnedQtyDto
+    {
+        public string OrderNumber { get; set; } = string.Empty;
+        public int OrderItemId { get; set; }
+        public int ReturnedQuantity { get; set; }
+    }
+
+    [HttpPost("set-item-returned-qty")]
+    public async Task<IActionResult> SetItemReturnedQty([FromBody] SetItemReturnedQtyDto dto)
+    {
+        var order = await _db.Orders
+            .Include(o => o.Items)
+            .FirstOrDefaultAsync(o => o.OrderNumber == dto.OrderNumber);
+        if (order == null) return NotFound("Order not found");
+
+        var item = order.Items.FirstOrDefault(i => i.Id == dto.OrderItemId);
+        if (item == null) return NotFound("Item not found");
+
+        item.ReturnedQuantity = dto.ReturnedQuantity;
+
+        if (order.Items.All(i => i.ReturnedQuantity >= i.Quantity))
+        {
+            order.Status = OrderStatus.Returned;
+        }
+        else if (order.Items.Any(i => i.ReturnedQuantity > 0))
+        {
+            order.Status = OrderStatus.PartiallyReturned;
+        }
+        else
+        {
+            order.Status = OrderStatus.Delivered;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true, orderNumber = order.OrderNumber, status = order.Status.ToString(), itemId = item.Id, itemReturnedQty = item.ReturnedQuantity });
+    }
+
     [HttpGet("inspect-order-status")]
     public async Task<IActionResult> InspectOrderStatus([FromQuery] string orderNumber)
     {
