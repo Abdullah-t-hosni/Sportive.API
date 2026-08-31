@@ -50,7 +50,11 @@ public class TenantConnectionResolver : ITenantConnectionResolver
         {
             Database = tenant.DatabaseName,
             UserID = tenant.DatabaseUser,
-            Password = tenant.DatabasePassword
+            Password = tenant.DatabasePassword,
+            Pooling = true,
+            MinimumPoolSize = 1,
+            MaximumPoolSize = 25,
+            ConnectionLifeTime = 300
         };
 
         builder.AllowUserVariables = true;

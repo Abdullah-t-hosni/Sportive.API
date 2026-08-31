@@ -289,7 +289,26 @@ public class DiagnosticsController : ControllerBase
         {
             ConfigServiceUrl = config["WhatsApp:ServiceUrl"],
             StoreSettingsGatewayUrl = storeInfo?.WhatsAppStoreGatewayUrl,
-            FallbackUrl = "https://sportive-frontend-production-65ac.up.railway.app"
+            StoreSettingsPosGatewayUrl = storeInfo?.WhatsAppPosGatewayUrl,
+            WorkingGatewayUrl = "https://sportive-frontend-production-65ac.up.railway.app"
+        });
+    }
+
+    [HttpPost("fix-whatsapp-gateway-url")]
+    public async Task<IActionResult> FixWhatsAppGatewayUrl()
+    {
+        var storeInfo = await _db.StoreInfo.FirstOrDefaultAsync();
+        if (storeInfo != null)
+        {
+            storeInfo.WhatsAppStoreGatewayUrl = "https://sportive-frontend-production-65ac.up.railway.app";
+            storeInfo.WhatsAppPosGatewayUrl = "https://sportive-frontend-production-65ac.up.railway.app";
+            await _db.SaveChangesAsync();
+        }
+        return Ok(new
+        {
+            message = "SUCCESS: Updated WhatsApp Gateway URLs in database to https://sportive-frontend-production-65ac.up.railway.app",
+            UpdatedStoreGatewayUrl = storeInfo?.WhatsAppStoreGatewayUrl,
+            UpdatedPosGatewayUrl = storeInfo?.WhatsAppPosGatewayUrl
         });
     }
 
