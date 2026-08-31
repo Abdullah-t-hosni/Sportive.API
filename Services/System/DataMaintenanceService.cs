@@ -1051,4 +1051,73 @@ public class DataMaintenanceService : IDataMaintenanceService
             return (false, $"فشلت العملية: {ex.Message}");
         }
     }
+
+    public async Task<(bool Success, string Message, int FixedCount)> FixReturnedOrderStatusesAsync()
+    {
+        try
+        {
+            var candidateOrders = await _db.Orders
+                .Include(o => o.Items)
+                .Include(o => o.StatusHistory)
+                .Where(o => o.Status != OrderStatus.Returned)
+                .ToListAsync();
+
+            var returnRequests = await _db.ReturnExchangeRequests
+                .Include(r => r.Items)
+                .Where(r => r.Status == ReturnExchangeStatus.Completed || r.Status == ReturnExchangeStatus.ReceivedAtWarehouse)
+                .ToListAsync();
+
+            var returnReqOrderIds = returnRequests.Select(r => r.OrderId).ToHashSet();
+
+            int fixedCount = 0;
+            foreach (var order in candidateOrders)
+            {
+                bool isFullReturnedByItems = order.Items.Any() && order.Items.All(i => i.ReturnedQuantity >= i.Quantity && i.Quantity > 0);
+                bool hasCompletedReturnReq = returnReqOrderIds.Contains(order.Id);
+                bool hasReturnedHistory = order.StatusHistory.Any(h => h.Status == OrderStatus.Returned);
+
+                if (isFullReturnedByItems || hasCompletedReturnReq || hasReturnedHistory)
+                {
+                    order.Status = OrderStatus.Returned;
+                    
+                    // Mark all items as returned if full return
+                    foreach (var item in order.Items)
+                    {
+                        if (item.ReturnedQuantity < item.Quantity)
+                        {
+                            item.ReturnedQuantity = item.Quantity;
+                        }
+                    }
+
+                    bool hasHistory = order.StatusHistory.Any(h => h.Status == OrderStatus.Returned);
+                    if (!hasHistory)
+                    {
+                        order.StatusHistory.Add(new OrderStatusHistory
+                        {
+                            OrderId = order.Id,
+                            Status = OrderStatus.Returned,
+                            Note = "تصحيح آلي: تحويل حالة الفاتورة لـ مرتجع بالمخزن بناءً على سجلات المرتجعات",
+                            ChangedByUserId = "system",
+                            CreatedAt = TimeHelper.GetEgyptTime()
+                        });
+                    }
+
+                    fixedCount++;
+                }
+            }
+
+            if (fixedCount > 0)
+            {
+                await _db.SaveChangesAsync();
+            }
+
+            _logger.LogWarning("[FixReturnedOrderStatuses] Updated {Count} orders to Returned status.", fixedCount);
+            return (true, $"تم تصحيح حالة {fixedCount} طلب وتحويلها إلى (مرتجع بالمخزن) بنجاح.", fixedCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "FixReturnedOrderStatuses failed");
+            return (false, $"فشلت العملية: {ex.Message}", 0);
+        }
+    }
 }

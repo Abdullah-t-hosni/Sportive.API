@@ -655,4 +655,70 @@ public class DiagnosticsController : ControllerBase
             Message = "تم تصحيح وتنظيف كافة حركات المرتجع والمبيعات المكررة وإعادة بناء الأرصدة التراكمية بنجاح 🎉"
         });
     }
+
+    [HttpGet("fix-returned-orders")]
+    public async Task<IActionResult> FixReturnedOrders()
+    {
+        var (success, message, count) = await _maintenance.FixReturnedOrderStatusesAsync();
+        return Ok(new { success, message, count });
+    }
+
+    [HttpGet("inspect-order-status")]
+    public async Task<IActionResult> InspectOrderStatus([FromQuery] string orderNumber)
+    {
+        if (string.IsNullOrWhiteSpace(orderNumber)) return BadRequest("orderNumber is required");
+
+        var order = await _db.Orders
+            .Include(o => o.Items)
+            .Include(o => o.StatusHistory)
+            .FirstOrDefaultAsync(o => o.OrderNumber == orderNumber);
+
+        if (order == null) return NotFound($"Order {orderNumber} not found");
+
+        var returnRequests = await _db.ReturnExchangeRequests
+            .Include(r => r.Items)
+            .Where(r => r.OrderId == order.Id)
+            .ToListAsync();
+
+        return Ok(new
+        {
+            order.Id,
+            order.OrderNumber,
+            Status = order.Status.ToString(),
+            order.TotalAmount,
+            order.PaidAmount,
+            order.DeliveryFee,
+            Items = order.Items.Select(i => new
+            {
+                i.Id,
+                i.ProductNameAr,
+                i.UnitPrice,
+                i.Quantity,
+                i.ReturnedQuantity
+            }),
+            StatusHistory = order.StatusHistory.Select(h => new
+            {
+                h.Id,
+                Status = h.Status.ToString(),
+                h.Note,
+                h.ChangedByUserId,
+                h.CreatedAt
+            }),
+            ReturnRequests = returnRequests.Select(r => new
+            {
+                r.Id,
+                Status = r.Status.ToString(),
+                r.Reason,
+                r.RefundShipping,
+                r.CreatedAt,
+                r.ReceivedAtWarehouseAt,
+                Items = r.Items.Select(ri => new
+                {
+                    ri.Id,
+                    ri.OrderItemId,
+                    ri.Quantity
+                })
+            })
+        });
+    }
 }

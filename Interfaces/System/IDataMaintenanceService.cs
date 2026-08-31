@@ -41,4 +41,5 @@ public interface IDataMaintenanceService
     Task<(bool Success, string Message, int Deleted)> CleanupCustomerBalancePmtVouchersAsync();
     Task<(bool Success, string Message)> MigrateExistingCustomersAsync();
     Task<(bool Success, string Message, int FixedCount)> FixWebsitePendingCashOrdersAsync();
+    Task<(bool Success, string Message, int FixedCount)> FixReturnedOrderStatusesAsync();
 }

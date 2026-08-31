@@ -444,5 +444,20 @@ if (args.Contains("--recalculate-stock"))
 }
 
 
+// 🔄 Auto-Fix Returned Order Statuses on startup (non-blocking)
+_ = Task.Run(async () =>
+{
+    try
+    {
+        using var scope = app.Services.CreateScope();
+        var maintenance = scope.ServiceProvider.GetRequiredService<IDataMaintenanceService>();
+        await maintenance.FixReturnedOrderStatusesAsync();
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Error running startup FixReturnedOrderStatusesAsync");
+    }
+});
+
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Run($"http://0.0.0.0:{port}");
