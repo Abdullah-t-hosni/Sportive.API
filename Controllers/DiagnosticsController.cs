@@ -663,6 +663,40 @@ public class DiagnosticsController : ControllerBase
         return Ok(new { success, message, count });
     }
 
+    [HttpGet("fix-legacy-settlements")]
+    public async Task<IActionResult> FixLegacySettlements()
+    {
+        var (success, message, count) = await _maintenance.FixLegacyWebsiteSettlementsAsync();
+        return Ok(new { success, message, count });
+    }
+
+    [HttpPost("unsettle-orders-by-number")]
+    public async Task<IActionResult> UnsettleOrdersByNumber([FromBody] List<string> orderNumbers)
+    {
+        if (orderNumbers == null || !orderNumbers.Any())
+            return BadRequest("orderNumbers required");
+
+        var orders = await _db.Orders
+            .Where(o => orderNumbers.Contains(o.OrderNumber) && o.IsSettledWithCourier == true)
+            .ToListAsync();
+
+        int count = 0;
+        foreach (var o in orders)
+        {
+            o.IsSettledWithCourier = false;
+            o.CourierSettlementDate = null;
+            o.CourierSettlementReference = null;
+            count++;
+        }
+
+        if (count > 0)
+        {
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new { success = true, count, orderNumbers });
+    }
+
     [HttpGet("inspect-order-status")]
     public async Task<IActionResult> InspectOrderStatus([FromQuery] string orderNumber)
     {
@@ -688,6 +722,11 @@ public class DiagnosticsController : ControllerBase
             order.TotalAmount,
             order.PaidAmount,
             order.DeliveryFee,
+            order.IsSettledWithCourier,
+            order.CourierSettlementDate,
+            order.CourierSettlementReference,
+            order.ShippingCompanyId,
+            order.ShippingCarrierName,
             Items = order.Items.Select(i => new
             {
                 i.Id,

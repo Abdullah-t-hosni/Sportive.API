@@ -1120,4 +1120,54 @@ public class DataMaintenanceService : IDataMaintenanceService
             return (false, $"فشلت العملية: {ex.Message}", 0);
         }
     }
+
+    public async Task<(bool Success, string Message, int UnsettledCount)> FixLegacyWebsiteSettlementsAsync(List<string>? specificOrderNumbers = null)
+    {
+        try
+        {
+            var targetNumbers = specificOrderNumbers ?? new List<string>
+            {
+                "SPT-2608-0596", "SPT-2608-0559", "SPT-2608-0597", "SPT-2608-0368", "SPT-2608-0323",
+                "SPT-2608-0518", "SPT-2608-0542", "SPT-2608-0474", "SPT-2608-0503", "SPT-2608-0114",
+                "SPT-2608-0603", "SPT-2608-0617", "SPT-2608-0472", "SPT-2608-0551", "SPT-2608-0609",
+                "SPT-2608-0614", "SPT-2608-0556", "SPT-2608-0311", "SPT-2608-0521", "SPT-2608-0507",
+                "SPT-2608-0524", "SPT-2608-0587", "SPT-2608-0595", "SPT-2608-0585", "SPT-2608-0396",
+                "SPT-2608-0601", "SPT-2608-0625", "SPT-2608-0651", "SPT-2608-0638", "SPT-2608-0623",
+                "SPT-2608-0626", "SPT-2608-0612", "SPT-2608-0636", "SPT-2608-0646", "SPT-2608-0629",
+                "SPT-2608-0615", "SPT-2608-0644", "SPT-2608-0635", "SPT-2608-0657", "SPT-2608-0541",
+                "SPT-2608-0577", "SPT-2608-0652", "SPT-2608-0641", "SPT-2608-0607", "SPT-2608-0622",
+                "SPT-2608-0645", "SPT-2608-0621", "SPT-2608-0631", "SPT-2608-0632", "SPT-2608-0654",
+                "SPT-2608-0630", "SPT-2608-0683", "SPT-2608-0685", "SPT-2608-0568", "SPT-2608-0477",
+                "SPT-2608-0449", "SPT-2608-0473", "SPT-2608-0616", "SPT-2608-0584", "SPT-2608-0613",
+                "SPT-2608-0619", "SPT-2608-0673", "SPT-2608-0666", "SPT-2608-0376", "SPT-2608-0680",
+                "SPT-2608-0668"
+            };
+
+            var ordersToUnsettle = await _db.Orders
+                .Where(o => targetNumbers.Contains(o.OrderNumber) && o.IsSettledWithCourier == true)
+                .ToListAsync();
+
+            int unsettledCount = 0;
+            foreach (var o in ordersToUnsettle)
+            {
+                o.IsSettledWithCourier = false;
+                o.CourierSettlementDate = null;
+                o.CourierSettlementReference = null;
+                unsettledCount++;
+            }
+
+            if (unsettledCount > 0)
+            {
+                await _db.SaveChangesAsync();
+            }
+
+            _logger.LogWarning("[FixLegacyWebsiteSettlements] Reset settlement status for {Count} orders.", unsettledCount);
+            return (true, $"تم إلغاء تسوية {unsettledCount} طلب بنجاح وإعادتها لقائمة (في انتظار التسوية).", unsettledCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "FixLegacyWebsiteSettlements failed");
+            return (false, $"فشلت العملية: {ex.Message}", 0);
+        }
+    }
 }

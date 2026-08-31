@@ -444,7 +444,7 @@ if (args.Contains("--recalculate-stock"))
 }
 
 
-// 🔄 Auto-Fix Returned Order Statuses on startup (non-blocking)
+// 🔄 Auto-Fix Returned Order Statuses & Legacy Settlements on startup (non-blocking)
 _ = Task.Run(async () =>
 {
     try
@@ -452,10 +452,11 @@ _ = Task.Run(async () =>
         using var scope = app.Services.CreateScope();
         var maintenance = scope.ServiceProvider.GetRequiredService<IDataMaintenanceService>();
         await maintenance.FixReturnedOrderStatusesAsync();
+        await maintenance.FixLegacyWebsiteSettlementsAsync();
     }
     catch (Exception ex)
     {
-        Log.Error(ex, "Error running startup FixReturnedOrderStatusesAsync");
+        Log.Error(ex, "Error running startup maintenance tasks");
     }
 });
 
