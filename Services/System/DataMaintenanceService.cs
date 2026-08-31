@@ -872,6 +872,22 @@ public class DataMaintenanceService : IDataMaintenanceService
                         nowBackInStock++;
                     }
                 }
+                // ─── Phase 4: إعادة حساب Running Stock Balance (RemainingStock) زمنياً لكل حركة ───
+                var allMovementsSorted = await _db.InventoryMovements
+                    .OrderBy(m => m.CreatedAt)
+                    .ThenBy(m => m.Id)
+                    .ToListAsync();
+
+                var runningBalances = new Dictionary<string, int>();
+                foreach (var m in allMovementsSorted)
+                {
+                    string key = m.ProductVariantId.HasValue ? $"V_{m.ProductVariantId.Value}" : $"P_{m.ProductId}";
+                    int currentBal = runningBalances.TryGetValue(key, out var bal) ? bal : 0;
+                    currentBal += m.Quantity;
+                    m.RemainingStock = currentBal;
+                    runningBalances[key] = currentBal;
+                }
+
                 await _db.SaveChangesAsync();
                 await tx.CommitAsync();
 
