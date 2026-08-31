@@ -250,4 +250,193 @@ public class DiagnosticsController : ControllerBase
             RecentMovements = movements
         });
     }
+
+    [HttpGet("audit-duplicate-returns")]
+    public async Task<IActionResult> AuditDuplicateReturns()
+    {
+        // 1. Fetch all ReturnIn inventory movements with non-null Reference
+        var returnMovements = await _db.InventoryMovements
+            .Include(m => m.Product)
+            .Include(m => m.ProductVariant)
+            .Where(m => m.Type == InventoryMovementType.ReturnIn && !string.IsNullOrEmpty(m.Reference))
+            .OrderBy(m => m.CreatedAt)
+            .ToListAsync();
+
+        // 2. Fetch linked orders
+        var orderNumbers = returnMovements.Select(m => m.Reference).Distinct().ToList();
+        var orders = await _db.Orders
+            .Include(o => o.Items)
+            .Where(o => orderNumbers.Contains(o.OrderNumber))
+            .ToDictionaryAsync(o => o.OrderNumber, o => o);
+
+        var auditResults = new List<object>();
+
+        // Group by Order Reference + Product + Variant
+        var grouped = returnMovements.GroupBy(m => new { m.Reference, m.ProductId, m.ProductVariantId });
+
+        foreach (var g in grouped)
+        {
+            orders.TryGetValue(g.Key.Reference!, out var order);
+            int soldQuantity = 0;
+            if (order != null)
+            {
+                soldQuantity = order.Items
+                    .Where(i => i.ProductId == g.Key.ProductId && i.ProductVariantId == g.Key.ProductVariantId)
+                    .Sum(i => i.Quantity);
+            }
+
+            int totalReturnQtyInLogs = g.Sum(m => m.Quantity);
+
+            // If logged ReturnIn > soldQuantity OR there are multiple ReturnIn movement records for a single-item return
+            if (g.Count() > 1 || totalReturnQtyInLogs > soldQuantity)
+            {
+                var firstProduct = g.First().Product;
+                var firstVariant = g.First().ProductVariant;
+
+                int excessQty = Math.Max(0, totalReturnQtyInLogs - (soldQuantity > 0 ? soldQuantity : 1));
+                if (g.Count() > 1 && excessQty == 0)
+                {
+                    // Case where multiple movements add up to sold quantity, but were logged separately
+                    // Check if duplicate entries were created within 60 seconds
+                    var timestamps = g.Select(m => m.CreatedAt).OrderBy(t => t).ToList();
+                    bool hasCloseDuplicates = false;
+                    for (int i = 0; i < timestamps.Count - 1; i++)
+                    {
+                        if ((timestamps[i + 1] - timestamps[i]).TotalSeconds < 60)
+                        {
+                            hasCloseDuplicates = true;
+                            break;
+                        }
+                    }
+                    if (hasCloseDuplicates)
+                    {
+                        excessQty = g.Skip(1).Sum(m => m.Quantity);
+                    }
+                }
+
+                if (excessQty > 0 || g.Count() > 1)
+                {
+                    auditResults.Add(new
+                    {
+                        OrderNumber = g.Key.Reference,
+                        ProductId = g.Key.ProductId,
+                        ProductName = firstProduct?.NameAr ?? firstProduct?.NameEn ?? "Unknown Product",
+                        VariantId = g.Key.ProductVariantId,
+                        VariantSize = firstVariant?.Size,
+                        VariantColor = firstVariant?.ColorAr ?? firstVariant?.Color,
+                        SoldQuantity = soldQuantity,
+                        TotalReturnLogsCount = g.Count(),
+                        TotalReturnQtyInLogs = totalReturnQtyInLogs,
+                        ExcessDuplicateQty = excessQty,
+                        MovementIds = g.Select(m => m.Id).ToList(),
+                        MovementDates = g.Select(m => m.CreatedAt).ToList()
+                    });
+                }
+            }
+        }
+
+        return Ok(new
+        {
+            TotalDuplicateCases = auditResults.Count,
+            AffectedOrdersCount = auditResults.Select(r => (r as dynamic).OrderNumber).Distinct().Count(),
+            DuplicateDetails = auditResults
+        });
+    }
+
+    [HttpPost("fix-duplicate-returns")]
+    public async Task<IActionResult> FixDuplicateReturns([FromServices] Sportive.API.Interfaces.IInventoryService inventory)
+    {
+        var returnMovements = await _db.InventoryMovements
+            .Include(m => m.Product)
+            .Include(m => m.ProductVariant)
+            .Where(m => m.Type == InventoryMovementType.ReturnIn && !string.IsNullOrEmpty(m.Reference))
+            .OrderBy(m => m.CreatedAt)
+            .ToListAsync();
+
+        var orderNumbers = returnMovements.Select(m => m.Reference).Distinct().ToList();
+        var orders = await _db.Orders
+            .Include(o => o.Items)
+            .Where(o => orderNumbers.Contains(o.OrderNumber))
+            .ToDictionaryAsync(o => o.OrderNumber, o => o);
+
+        var fixedResults = new List<object>();
+        var grouped = returnMovements.GroupBy(m => new { m.Reference, m.ProductId, m.ProductVariantId });
+
+        foreach (var g in grouped)
+        {
+            orders.TryGetValue(g.Key.Reference!, out var order);
+            int soldQuantity = order != null 
+                ? order.Items.Where(i => i.ProductId == g.Key.ProductId && i.ProductVariantId == g.Key.ProductVariantId).Sum(i => i.Quantity)
+                : 0;
+
+            int totalReturnQtyInLogs = g.Sum(m => m.Quantity);
+
+            if (g.Count() > 1 || totalReturnQtyInLogs > soldQuantity)
+            {
+                int maxAllowedReturn = soldQuantity > 0 ? soldQuantity : 1;
+                int excessQty = totalReturnQtyInLogs - maxAllowedReturn;
+
+                // Check for rapid duplicates (logged within 60s)
+                if (excessQty <= 0 && g.Count() > 1)
+                {
+                    var timestamps = g.Select(m => m.CreatedAt).OrderBy(t => t).ToList();
+                    bool hasCloseDuplicates = false;
+                    for (int i = 0; i < timestamps.Count - 1; i++)
+                    {
+                        if ((timestamps[i + 1] - timestamps[i]).TotalSeconds < 60)
+                        {
+                            hasCloseDuplicates = true;
+                            break;
+                        }
+                    }
+                    if (hasCloseDuplicates)
+                    {
+                        excessQty = g.Skip(1).Sum(m => m.Quantity);
+                    }
+                }
+
+                if (excessQty > 0)
+                {
+                    var firstProduct = g.First().Product;
+                    var firstVariant = g.First().ProductVariant;
+
+                    // 1. Log inventory adjustment OUT (-excessQty) to fix the stock
+                    await inventory.LogMovementAsync(
+                        type: InventoryMovementType.Adjustment,
+                        quantity: -excessQty,
+                        productId: g.Key.ProductId,
+                        variantId: g.Key.ProductVariantId,
+                        reference: g.Key.Reference,
+                        note: $"تعديل آلي - تصحيح مرتجع مكرر للفاتورة #{g.Key.Reference}",
+                        userId: "system-audit",
+                        autoSave: false,
+                        force: true
+                    );
+
+                    // 2. Remove excess movement log records to keep audit trail clean
+                    var movementsToRemove = g.Skip(1).ToList();
+                    _db.InventoryMovements.RemoveRange(movementsToRemove);
+
+                    fixedResults.Add(new
+                    {
+                        OrderNumber = g.Key.Reference,
+                        ProductName = firstProduct?.NameAr ?? firstProduct?.NameEn ?? "Unknown Product",
+                        VariantSize = firstVariant?.Size,
+                        VariantColor = firstVariant?.ColorAr ?? firstVariant?.Color,
+                        DeductedExcessQty = excessQty,
+                        RemovedMovementIds = movementsToRemove.Select(m => m.Id).ToList()
+                    });
+                }
+            }
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            FixedCasesCount = fixedResults.Count,
+            FixedDetails = fixedResults,
+            Message = "تم تصحيح كافة حركات المرتجع المكررة وتعديل المخزون بنجاح 🎉"
+        });
+    }
 }
