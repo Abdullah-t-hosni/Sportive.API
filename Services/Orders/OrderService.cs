@@ -1380,9 +1380,10 @@ public class OrderService : IOrderService
                     
                     if (existingItem != null)
                     {
+                        // Allow reducing quantity or resetting returnedQuantity if reduced below returnedQuantity
                         if (itemDto.Quantity < existingItem.ReturnedQuantity)
                         {
-                            throw new InvalidOperationException($"لا يمكن تقليل كمية '{product.NameAr}' لأقل من الكمية المرتجعة ({existingItem.ReturnedQuantity}).");
+                            existingItem.ReturnedQuantity = itemDto.Quantity;
                         }
                         
                         // Update existing item
@@ -1447,15 +1448,25 @@ public class OrderService : IOrderService
                     }
                 }
 
-                // Remove the ones that weren't matched
+                // Remove the ones that finished
                 foreach (var itemToRemove in existingItemsPool)
                 {
-                    if (itemToRemove.ReturnedQuantity > 0)
-                    {
-                        throw new InvalidOperationException($"لا يمكن حذف '{itemToRemove.ProductNameAr}' لأنه يحتوي على كمية مرتجعة ({itemToRemove.ReturnedQuantity}).");
-                    }
+                    itemToRemove.ReturnedQuantity = 0;
                     order.Items.Remove(itemToRemove);
                     _db.OrderItems.Remove(itemToRemove);
+                }
+
+                // Recalculate Order Status if items were updated or un-returned
+                if (order.Items.All(i => i.ReturnedQuantity == 0))
+                {
+                    if (order.Status == OrderStatus.Returned || order.Status == OrderStatus.PartiallyReturned)
+                    {
+                        order.Status = OrderStatus.Delivered;
+                    }
+                }
+                else if (order.Items.Any(i => i.ReturnedQuantity > 0) && order.Items.Any(i => i.ReturnedQuantity < i.Quantity))
+                {
+                    order.Status = OrderStatus.PartiallyReturned;
                 }
 
                 // 5. UPDATE TOTALS
