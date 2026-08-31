@@ -251,6 +251,38 @@ public class DiagnosticsController : ControllerBase
         });
     }
 
+    [HttpPost("fix-legacy-website-settlements")]
+    public async Task<IActionResult> FixLegacyWebsiteSettlements()
+    {
+        // Cutoff Date: Exact launch date of the settlement feature (11 August 2026)
+        var cutoffDate = new DateTime(2026, 8, 11, 0, 0, 0, DateTimeKind.Utc);
+
+        // Filter STRICTLY for Website Orders ONLY (Source == OrderSource.Website)
+        var legacyWebsiteOrders = await _db.Orders
+            .Where(o => o.Source == OrderSource.Website 
+                     && o.Status == OrderStatus.Delivered 
+                     && !o.IsSettledWithCourier 
+                     && o.CreatedAt < cutoffDate)
+            .ToListAsync();
+
+        int count = legacyWebsiteOrders.Count;
+        foreach (var o in legacyWebsiteOrders)
+        {
+            o.IsSettledWithCourier = true;
+            o.CourierSettlementDate ??= o.CreatedAt;
+            o.CourierSettlementReference ??= "تسوية آلي لطلبات المتجر الإلكتروني القديمة قبل أغسطس";
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            FixedWebsiteOrdersCount = count,
+            FixedOrdersList = legacyWebsiteOrders.Select(o => new { o.Id, o.OrderNumber, o.TotalAmount, o.CreatedAt }),
+            Message = $"تم تعميد وتسوية {count} طلب متجر إلكتروني أونلاين فقط (قبل أغسطس) بنجاح 100% دون المساس إطلاقاً بطلبات الكاشير 🎉"
+        });
+    }
+
     [HttpGet("discover-settlement-launch")]
     public async Task<IActionResult> DiscoverSettlementLaunch()
     {
