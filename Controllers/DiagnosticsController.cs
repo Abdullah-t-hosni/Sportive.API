@@ -734,6 +734,55 @@ public class DiagnosticsController : ControllerBase
         return Ok(new { success = true, orderNumber = order.OrderNumber, status = order.Status.ToString(), itemId = item.Id, itemReturnedQty = item.ReturnedQuantity });
     }
 
+    public class AddSoldItemDto
+    {
+        public string OrderNumber { get; set; } = string.Empty;
+        public string ProductNameAr { get; set; } = "شورت واتر بروف نايلون بتلبيسه ليجن";
+        public string Size { get; set; } = "M";
+        public string Color { get; set; } = "أسود";
+        public decimal UnitPrice { get; set; } = 565.25m;
+        public int Quantity { get; set; } = 1;
+    }
+
+    [HttpPost("add-sold-item-to-order")]
+    public async Task<IActionResult> AddSoldItemToOrder([FromBody] AddSoldItemDto dto)
+    {
+        var order = await _db.Orders
+            .Include(o => o.Items)
+            .FirstOrDefaultAsync(o => o.OrderNumber == dto.OrderNumber);
+        if (order == null) return NotFound("Order not found");
+
+        var existingFirst = order.Items.FirstOrDefault();
+
+        var newItem = new OrderItem
+        {
+            OrderId = order.Id,
+            ProductId = existingFirst?.ProductId,
+            ProductVariantId = existingFirst?.ProductVariantId,
+            ProductNameAr = dto.ProductNameAr,
+            ProductNameEn = dto.ProductNameAr,
+            SKU = existingFirst?.SKU,
+            Size = dto.Size,
+            Color = dto.Color,
+            Quantity = dto.Quantity,
+            ReturnedQuantity = 0,
+            UnitPrice = dto.UnitPrice,
+            OriginalUnitPrice = dto.UnitPrice,
+            TotalPrice = dto.UnitPrice * dto.Quantity,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        order.Items.Add(newItem);
+
+        if (order.Items.Any(i => i.ReturnedQuantity > 0) && order.Items.Any(i => i.ReturnedQuantity < i.Quantity))
+        {
+            order.Status = OrderStatus.PartiallyReturned;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true, orderNumber = order.OrderNumber, status = order.Status.ToString(), itemsCount = order.Items.Count });
+    }
+
     [HttpGet("inspect-order-status")]
     public async Task<IActionResult> InspectOrderStatus([FromQuery] string orderNumber)
     {
