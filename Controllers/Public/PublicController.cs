@@ -158,6 +158,24 @@ public class PublicController : ControllerBase
 
         var products = await query.ToListAsync();
 
+        // 1.5 Fetch active campaign discounts (from نظام العروض)
+        var now = Sportive.API.Utils.TimeHelper.GetEgyptTime();
+        var productIds = products.Select(x => x.Id).ToList();
+        var categoryIds = products.Where(x => x.CategoryId.HasValue).Select(x => x.CategoryId!.Value).ToList();
+        var brandIds = products.Where(x => x.BrandId.HasValue).Select(x => x.BrandId!.Value).ToList();
+
+        var activeCampaignDiscounts = await _db.ProductDiscounts
+            .AsNoTracking()
+            .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now)
+            .Where(d => d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == DiscountApplyTo.Store)
+            .Where(d => 
+                (d.ProductId == null && d.CategoryId == null && d.BrandId == null) ||
+                (d.ProductId != null && productIds.Contains(d.ProductId.Value)) ||
+                (d.CategoryId != null && categoryIds.Contains(d.CategoryId.Value)) ||
+                (d.BrandId != null && brandIds.Contains(d.BrandId.Value))
+            )
+            .ToListAsync();
+
         // 2. Prepare domain URLs
         var request = HttpContext.Request;
         var host = request.Host.Value ?? "sportive.eg";
@@ -243,7 +261,30 @@ public class PublicController : ControllerBase
             decimal sellingPrice = p.Price;
             decimal? originalPrice = null;
 
-            if (p.DiscountPrice.HasValue && p.DiscountPrice.Value > 0 && p.DiscountPrice.Value != p.Price)
+            // 1. Evaluate Campaign Discount (نظام العروض)
+            var pDiscount = activeCampaignDiscounts
+                .Where(d => 
+                    (d.ProductId == p.Id) ||
+                    (p.CategoryId.HasValue && d.CategoryId.HasValue && d.CategoryId.Value == p.CategoryId.Value) ||
+                    (p.BrandId.HasValue && d.BrandId.HasValue && d.BrandId.Value == p.BrandId.Value) ||
+                    (d.ProductId == null && d.CategoryId == null && d.BrandId == null)
+                )
+                .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
+                .FirstOrDefault();
+
+            if (pDiscount != null)
+            {
+                decimal calculatedDiscount = pDiscount.DiscountType == DiscountType.Percentage
+                    ? Math.Round(p.Price - (p.Price * pDiscount.DiscountValue / 100), 2)
+                    : Math.Round(p.Price - pDiscount.DiscountValue, 2);
+
+                if (calculatedDiscount < p.Price && calculatedDiscount > 0)
+                {
+                    originalPrice = p.Price;
+                    sellingPrice = calculatedDiscount;
+                }
+            }
+            else if (p.DiscountPrice.HasValue && p.DiscountPrice.Value > 0 && p.DiscountPrice.Value != p.Price)
             {
                 if (p.DiscountPrice.Value < p.Price)
                 {
