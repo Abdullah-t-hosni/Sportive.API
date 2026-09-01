@@ -69,12 +69,6 @@ public class WhatsAppWebhookController : ControllerBase
             string? messageText = ExtractMessageText(payload);
             bool fromMe = ExtractFromMe(payload);
 
-            // Do not notify admins about outgoing messages sent by the store bot/staff
-            if (fromMe)
-            {
-                return Ok(new { status = "ignored", reason = "Message is from store bot/staff" });
-            }
-
             if (string.IsNullOrWhiteSpace(phone) && string.IsNullOrWhiteSpace(messageText))
             {
                 return BadRequest(new { status = "error", message = "Missing phone number and message content" });
@@ -113,29 +107,32 @@ public class WhatsAppWebhookController : ControllerBase
 
             var chatLink = $"/admin/store-management?tab=orders&chatPhone={cleanPhone}&customerName={Uri.EscapeDataString(displayName)}&openChat=true";
 
-            // Broadcast notification to all staff who have WhatsApp preferences enabled
-            await _notificationService.SendAsync(
-                userId: null,
-                titleAr: titleAr,
-                titleEn: titleEn,
-                msgAr: displayMsg,
-                msgEn: displayMsg,
-                type: "WhatsApp",
-                orderId: customerId
-            );
+            // Only send staff audio/toast notifications for INCOMING customer messages (fromMe == false)
+            if (!fromMe)
+            {
+                await _notificationService.SendAsync(
+                    userId: null,
+                    titleAr: titleAr,
+                    titleEn: titleEn,
+                    msgAr: displayMsg,
+                    msgEn: displayMsg,
+                    type: "WhatsApp",
+                    orderId: customerId
+                );
+            }
 
-            // Broadcast real-time incoming WhatsApp message event to connected SignalR clients
+            // Broadcast real-time WhatsApp message event to connected SignalR clients (both incoming & outgoing)
             await _hubContext.Clients.All.SendAsync("ReceiveWhatsAppMessage", new
             {
                 phone = cleanPhone,
                 customerName = displayName,
                 text = displayMsg,
                 timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                fromMe = false,
+                fromMe = fromMe,
                 link = chatLink
             });
 
-            _logger.LogInformation("Dispatched WhatsApp notification and SignalR message for customer {Name} ({Phone})", displayName, cleanPhone);
+            _logger.LogInformation("Dispatched WhatsApp SignalR message for {Name} ({Phone}), fromMe={FromMe}", displayName, cleanPhone, fromMe);
 
             return Ok(new
             {
