@@ -5,9 +5,11 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Sportive.API.Data;
+using Sportive.API.Hubs;
 using Sportive.API.Models;
 using Sportive.API.Services;
 using Sportive.API.Utils;
@@ -22,15 +24,18 @@ public class WhatsAppWebhookController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly INotificationService _notificationService;
+    private readonly IHubContext<NotificationHub> _hubContext;
     private readonly ILogger<WhatsAppWebhookController> _logger;
 
     public WhatsAppWebhookController(
         AppDbContext db,
         INotificationService notificationService,
+        IHubContext<NotificationHub> hubContext,
         ILogger<WhatsAppWebhookController> logger)
     {
         _db = db;
         _notificationService = notificationService;
+        _hubContext = hubContext;
         _logger = logger;
     }
 
@@ -170,6 +175,8 @@ public class WhatsAppWebhookController : ControllerBase
             var titleAr = $"💬 رسالة واتساب: {displayName} ({cleanPhone})";
             var titleEn = $"💬 WhatsApp from {displayName} ({cleanPhone})";
 
+            var chatLink = $"/admin/store-management?tab=orders&chatPhone={cleanPhone}&customerName={Uri.EscapeDataString(displayName)}&openChat=true";
+
             // Broadcast notification to all staff who have WhatsApp preferences enabled
             await _notificationService.SendAsync(
                 userId: null,
@@ -181,7 +188,18 @@ public class WhatsAppWebhookController : ControllerBase
                 orderId: customerId
             );
 
-            _logger.LogInformation("Dispatched WhatsApp notification for customer {Name} ({Phone})", displayName, cleanPhone);
+            // Broadcast real-time incoming WhatsApp message event to connected SignalR clients
+            await _hubContext.Clients.All.SendAsync("ReceiveWhatsAppMessage", new
+            {
+                phone = cleanPhone,
+                customerName = displayName,
+                text = displayMsg,
+                timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                fromMe = false,
+                link = chatLink
+            });
+
+            _logger.LogInformation("Dispatched WhatsApp notification and SignalR message for customer {Name} ({Phone})", displayName, cleanPhone);
 
             return Ok(new
             {
