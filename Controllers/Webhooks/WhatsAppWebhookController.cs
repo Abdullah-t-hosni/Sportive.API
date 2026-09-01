@@ -64,74 +64,10 @@ public class WhatsAppWebhookController : ControllerBase
         {
             _logger.LogInformation("Received WhatsApp Webhook Payload: {Payload}", payload.GetRawText());
 
-            string? phone = null;
-            string? customerName = null;
-            string? messageText = null;
-            bool fromMe = false;
-
-            // 1. Direct format: { phone, customerName, message, fromMe }
-            if (payload.TryGetProperty("phone", out var phoneProp))
-                phone = phoneProp.GetString();
-            else if (payload.TryGetProperty("from", out var fromProp))
-                phone = fromProp.GetString();
-            else if (payload.TryGetProperty("sender", out var senderProp))
-                phone = senderProp.GetString();
-
-            if (payload.TryGetProperty("customerName", out var nameProp))
-                customerName = nameProp.GetString();
-            else if (payload.TryGetProperty("name", out var nProp))
-                customerName = nProp.GetString();
-            else if (payload.TryGetProperty("pushName", out var pnProp))
-                customerName = pnProp.GetString();
-
-            if (payload.TryGetProperty("message", out var msgProp))
-            {
-                if (msgProp.ValueKind == JsonValueKind.String)
-                    messageText = msgProp.GetString();
-                else if (msgProp.ValueKind == JsonValueKind.Object)
-                {
-                    if (msgProp.TryGetProperty("conversation", out var convProp))
-                        messageText = convProp.GetString();
-                    else if (msgProp.TryGetProperty("text", out var textProp))
-                        messageText = textProp.GetString();
-                    else if (msgProp.TryGetProperty("caption", out var capProp))
-                        messageText = capProp.GetString();
-                }
-            }
-            else if (payload.TryGetProperty("text", out var tProp))
-                messageText = tProp.GetString();
-            else if (payload.TryGetProperty("body", out var bProp))
-                messageText = bProp.GetString();
-
-            if (payload.TryGetProperty("fromMe", out var fromMeProp))
-                fromMe = fromMeProp.GetBoolean();
-
-            // 2. Baileys / Nested format: { event: "messages.upsert", data: { key: { remoteJid, fromMe }, message: { ... } } }
-            if (payload.TryGetProperty("data", out var dataProp))
-            {
-                if (dataProp.TryGetProperty("key", out var keyProp))
-                {
-                    if (keyProp.TryGetProperty("remoteJid", out var jidProp) && string.IsNullOrEmpty(phone))
-                        phone = jidProp.GetString();
-                    if (keyProp.TryGetProperty("fromMe", out var dataFromMeProp))
-                        fromMe = dataFromMeProp.GetBoolean();
-                }
-                if (dataProp.TryGetProperty("pushName", out var dNameProp) && string.IsNullOrEmpty(customerName))
-                    customerName = dNameProp.GetString();
-                if (dataProp.TryGetProperty("message", out var dMsgProp) && string.IsNullOrEmpty(messageText))
-                {
-                    if (dMsgProp.TryGetProperty("conversation", out var cProp))
-                        messageText = cProp.GetString();
-                    else if (dMsgProp.TryGetProperty("text", out var tProp2))
-                        messageText = tProp2.GetString();
-                    else if (dMsgProp.TryGetProperty("imageMessage", out var imgProp) && imgProp.TryGetProperty("caption", out var imgCap))
-                        messageText = "📷 " + (imgCap.GetString() ?? "صورة");
-                    else if (dMsgProp.TryGetProperty("audioMessage", out _))
-                        messageText = "🎤 رسالة صوتية";
-                    else if (dMsgProp.TryGetProperty("documentMessage", out var docProp) && docProp.TryGetProperty("fileName", out var fnProp))
-                        messageText = "📄 ملف: " + fnProp.GetString();
-                }
-            }
+            string? phone = ExtractPhone(payload);
+            string? customerName = ExtractCustomerName(payload);
+            string? messageText = ExtractMessageText(payload);
+            bool fromMe = ExtractFromMe(payload);
 
             // Do not notify admins about outgoing messages sent by the store bot/staff
             if (fromMe)
@@ -217,6 +153,99 @@ public class WhatsAppWebhookController : ControllerBase
         }
     }
 
+    private static string? GetPropCaseInsensitive(JsonElement elem, params string[] names)
+    {
+        if (elem.ValueKind != JsonValueKind.Object) return null;
+
+        foreach (var prop in elem.EnumerateObject())
+        {
+            foreach (var target in names)
+            {
+                if (string.Equals(prop.Name, target, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.String)
+                        return prop.Value.GetString();
+                    if (prop.Value.ValueKind == JsonValueKind.Number)
+                        return prop.Value.GetRawText();
+                }
+            }
+        }
+        return null;
+    }
+
+    private static string? ExtractPhone(JsonElement payload)
+    {
+        var p = GetPropCaseInsensitive(payload, "phone", "from", "sender", "remoteJid", "jid");
+        if (!string.IsNullOrEmpty(p)) return p;
+
+        if (payload.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
+        {
+            if (data.TryGetProperty("key", out var key) && key.ValueKind == JsonValueKind.Object)
+            {
+                var jid = GetPropCaseInsensitive(key, "remoteJid", "participant", "from");
+                if (!string.IsNullOrEmpty(jid)) return jid;
+            }
+            var dPhone = GetPropCaseInsensitive(data, "phone", "from", "sender", "remoteJid");
+            if (!string.IsNullOrEmpty(dPhone)) return dPhone;
+        }
+        return null;
+    }
+
+    private static string? ExtractCustomerName(JsonElement payload)
+    {
+        var n = GetPropCaseInsensitive(payload, "customerName", "name", "pushName", "author");
+        if (!string.IsNullOrEmpty(n)) return n;
+
+        if (payload.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
+        {
+            var dn = GetPropCaseInsensitive(data, "pushName", "customerName", "name", "verifiedBizName");
+            if (!string.IsNullOrEmpty(dn)) return dn;
+        }
+        return null;
+    }
+
+    private static string? ExtractMessageText(JsonElement payload)
+    {
+        var direct = GetPropCaseInsensitive(payload, "message", "text", "body", "conversation", "caption");
+        if (!string.IsNullOrEmpty(direct)) return direct;
+
+        if (payload.TryGetProperty("message", out var msgObj) && msgObj.ValueKind == JsonValueKind.Object)
+        {
+            var subMsg = GetPropCaseInsensitive(msgObj, "conversation", "text", "caption");
+            if (!string.IsNullOrEmpty(subMsg)) return subMsg;
+        }
+
+        if (payload.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
+        {
+            var dMsg = ExtractMessageText(data);
+            if (!string.IsNullOrEmpty(dMsg)) return dMsg;
+        }
+
+        return null;
+    }
+
+    private static bool ExtractFromMe(JsonElement payload)
+    {
+        if (payload.TryGetProperty("fromMe", out var f1))
+        {
+            if (f1.ValueKind == JsonValueKind.True) return true;
+            if (f1.ValueKind == JsonValueKind.String && bool.TryParse(f1.GetString(), out var b1)) return b1;
+        }
+
+        if (payload.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
+        {
+            if (data.TryGetProperty("key", out var key) && key.ValueKind == JsonValueKind.Object)
+            {
+                if (key.TryGetProperty("fromMe", out var f2))
+                {
+                    if (f2.ValueKind == JsonValueKind.True) return true;
+                    if (f2.ValueKind == JsonValueKind.String && bool.TryParse(f2.GetString(), out var b2)) return b2;
+                }
+            }
+        }
+        return false;
+    }
+
     /// <summary>
     /// Test endpoint to trigger a WhatsApp incoming message notification
     /// POST /api/webhooks/whatsapp/test
@@ -230,6 +259,7 @@ public class WhatsAppWebhookController : ControllerBase
 
         var titleAr = $"💬 رسالة واتساب: {customerName} ({cleanPhone})";
         var titleEn = $"💬 WhatsApp from {customerName} ({cleanPhone})";
+        var chatLink = $"/admin/store-management?tab=orders&chatPhone={cleanPhone}&customerName={Uri.EscapeDataString(customerName)}&openChat=true";
 
         await _notificationService.SendAsync(
             userId: null,
@@ -240,6 +270,16 @@ public class WhatsAppWebhookController : ControllerBase
             type: "WhatsApp",
             orderId: null
         );
+
+        await _hubContext.Clients.All.SendAsync("ReceiveWhatsAppMessage", new
+        {
+            phone = cleanPhone,
+            customerName = customerName,
+            text = message,
+            timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            fromMe = false,
+            link = chatLink
+        });
 
         return Ok(new
         {
