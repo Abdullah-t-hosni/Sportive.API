@@ -87,7 +87,7 @@ public class WhatsAppWebhookController : ControllerBase
             {
                 var phoneHash = Customer.EncryptionHelper?.ComputeSearchHash(cleanPhone) ?? cleanPhone;
                 customer = await _db.Customers
-                    .FirstOrDefaultAsync(c => c.PhoneHash == phoneHash || c.Phone == cleanPhone);
+                    .FirstOrDefaultAsync(c => c.PhoneHash == phoneHash);
 
                 if (customer != null)
                 {
