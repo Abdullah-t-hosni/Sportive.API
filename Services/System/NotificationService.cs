@@ -50,6 +50,47 @@ public class NotificationService : INotificationService
 
     private string GetPrefix() => _tenantContext.CurrentTenant?.Slug?.ToLowerInvariant() ?? "global";
 
+    private static bool MatchesPreference(string type, string preference)
+    {
+        if (string.Equals(type, preference, StringComparison.OrdinalIgnoreCase)) return true;
+
+        if (IsOnlineOrder(type) && IsOnlineOrder(preference)) return true;
+        if (IsPosOrder(type) && IsPosOrder(preference)) return true;
+        if (IsWhatsAppType(type) && IsWhatsAppType(preference)) return true;
+        if (IsStockType(type) && IsStockType(preference)) return true;
+        if (IsAlertType(type) && IsAlertType(preference)) return true;
+        if (IsSystemType(type) && IsSystemType(preference)) return true;
+
+        return false;
+    }
+
+    private static bool IsOnlineOrder(string t) =>
+        t.Equals("OnlineOrder", StringComparison.OrdinalIgnoreCase) ||
+        t.Equals("Order", StringComparison.OrdinalIgnoreCase) ||
+        t.Equals("Orders", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPosOrder(string t) =>
+        t.Equals("POSOrder", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsWhatsAppType(string t) =>
+        t.Equals("WhatsApp", StringComparison.OrdinalIgnoreCase) ||
+        t.Contains("الواتساب", StringComparison.OrdinalIgnoreCase) ||
+        t.Contains("واتساب", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsStockType(string t) =>
+        t.Equals("Stock", StringComparison.OrdinalIgnoreCase) ||
+        t.Equals("StockAlert", StringComparison.OrdinalIgnoreCase) ||
+        t.Contains("المخزون", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsAlertType(string t) =>
+        t.Equals("Alert", StringComparison.OrdinalIgnoreCase) ||
+        t.Equals("General", StringComparison.OrdinalIgnoreCase) ||
+        t.Contains("تنبيه", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSystemType(string t) =>
+        t.Equals("System", StringComparison.OrdinalIgnoreCase) ||
+        t.Contains("نظام", StringComparison.OrdinalIgnoreCase);
+
     public async Task SendAsync(
         string? userId, string titleAr, string titleEn, string msgAr, string msgEn, 
         string type = "General", int? orderId = null)
@@ -75,7 +116,6 @@ public class NotificationService : INotificationService
 
             foreach (var u in users)
             {
-                bool shouldNotify = false;
                 var roles = rolesByUserId.ContainsKey(u.Id) ? rolesByUserId[u.Id] : new List<string>();
 
                 bool isStaffOrAdmin = roles.Any(r => 
@@ -88,30 +128,34 @@ public class NotificationService : INotificationService
                     r.Equals("Moderator", StringComparison.OrdinalIgnoreCase)
                 );
 
-                // 🛡️ STRICT PERMISSION ENFORCEMENT:
-                // Check if user has explicit permission for this notification type in their NotificationPreferences
+                if (!isStaffOrAdmin) continue;
+
+                bool shouldNotify = false;
+
+                // If user has specific NotificationPreferences array set
                 if (!string.IsNullOrWhiteSpace(u.NotificationPreferences) && u.NotificationPreferences.Trim() != "[]")
                 {
                     try
                     {
                         var prefs = JsonSerializer.Deserialize<List<string>>(u.NotificationPreferences);
-                        if (prefs != null && prefs.Any(p => 
-                            p.Equals(type, StringComparison.OrdinalIgnoreCase) || 
-                            (type == "WhatsApp" && (p.Equals("WhatsApp", StringComparison.OrdinalIgnoreCase) || p.Contains("الواتساب")))))
+                        if (prefs != null && prefs.Any())
+                        {
+                            shouldNotify = prefs.Any(p => MatchesPreference(type, p));
+                        }
+                        else
                         {
                             shouldNotify = true;
                         }
                     }
-                    catch { }
-                }
-                else
-                {
-                    // For general store/order notifications (EXCLUDING WhatsApp!), default to notifying staff/admins if preferences are empty.
-                    // WhatsApp notifications strictly require explicit "WhatsApp" permission!
-                    if (isStaffOrAdmin && type != "WhatsApp")
+                    catch
                     {
                         shouldNotify = true;
                     }
+                }
+                else
+                {
+                    // By default, ALL staff and admins receive ALL store notifications (including WhatsApp, Orders, Stock, System, Alerts)
+                    shouldNotify = true;
                 }
 
                 if (shouldNotify)
@@ -137,7 +181,7 @@ public class NotificationService : INotificationService
             });
         }
 
-        // Add notifications for all admins
+        // Add notifications for all admins/staff
         foreach (var adminId in adminUserIds)
         {
             if (adminId != finalUserId)
