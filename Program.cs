@@ -450,6 +450,10 @@ _ = Task.Run(async () =>
     try
     {
         using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `PayrollRuns` ADD COLUMN `PeriodType` int NOT NULL DEFAULT 1;"); } catch {}
+        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `PayrollRuns` ADD COLUMN `FromDate` datetime NULL;"); } catch {}
+        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `PayrollRuns` ADD COLUMN `ToDate` datetime NULL;"); } catch {}
         var maintenance = scope.ServiceProvider.GetRequiredService<IDataMaintenanceService>();
         await maintenance.FixReturnedOrderStatusesAsync();
         await maintenance.FixLegacyWebsiteSettlementsAsync();

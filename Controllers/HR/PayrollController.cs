@@ -34,6 +34,10 @@ public class PayrollController : ControllerBase
         [FromQuery] int? year = null, [FromQuery] int? month = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
+        try { await _db.Database.ExecuteSqlRawAsync("ALTER TABLE `PayrollRuns` ADD COLUMN `PeriodType` int NOT NULL DEFAULT 1;"); } catch {}
+        try { await _db.Database.ExecuteSqlRawAsync("ALTER TABLE `PayrollRuns` ADD COLUMN `FromDate` datetime NULL;"); } catch {}
+        try { await _db.Database.ExecuteSqlRawAsync("ALTER TABLE `PayrollRuns` ADD COLUMN `ToDate` datetime NULL;"); } catch {}
+
         var q = _db.PayrollRuns.Include(p => p.Items).ThenInclude(i => i.Employee).AsQueryable();
         if (year.HasValue)  q = q.Where(p => p.PeriodYear  == year.Value);
         if (month.HasValue) q = q.Where(p => p.PeriodMonth == month.Value);
