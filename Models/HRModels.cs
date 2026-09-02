@@ -167,11 +167,22 @@ public class Employee : BaseEntity
 // تبويبة مسير الرواتب — Payroll Run
 // ══════════════════════════════════════════════════════
 
+public enum PayrollRunType
+{
+    Monthly = 1,
+    Weekly = 2,
+    Daily = 3,
+    Custom = 4
+}
+
 public class PayrollRun : BaseEntity
 {
     public string  PayrollNumber    { get; set; } = string.Empty; // PAY-2604-0001
     public int     PeriodYear       { get; set; }
     public int     PeriodMonth      { get; set; }
+    public PayrollRunType PeriodType { get; set; } = PayrollRunType.Monthly;
+    public DateTime? FromDate       { get; set; }
+    public DateTime? ToDate         { get; set; }
 
     // ملخص مالي (يُحسب عند الترحيل)
     public decimal TotalBasicSalary          { get; set; } = 0;

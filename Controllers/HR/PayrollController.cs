@@ -55,7 +55,8 @@ public class PayrollController : ControllerBase
                 p.Id, p.PayrollNumber, p.PeriodYear, p.PeriodMonth,
                 p.TotalNetPayable, p.Items.Count, (int)p.Status, p.JournalEntryId, p.PaymentJournalEntryId, p.CreatedAt,
                 p.Items.Count(i => i.IsPaid),
-                p.Items.Sum(i => i.PaidAmount)))
+                p.Items.Sum(i => i.PaidAmount),
+                p.PeriodType, p.FromDate, p.ToDate))
             .ToListAsync();
 
         return Ok(new PaginatedResult<PayrollRunSummaryDto>(items, total, page, pageSize,
@@ -77,10 +78,26 @@ public class PayrollController : ControllerBase
     }
 
     [HttpGet("calculate-attendance")]
-    public async Task<IActionResult> CalculateAttendance([FromQuery] int year, [FromQuery] int month)
+    public async Task<IActionResult> CalculateAttendance(
+        [FromQuery] int year, 
+        [FromQuery] int month,
+        [FromQuery] PayrollRunType runType = PayrollRunType.Monthly,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null)
     {
-        var startOfPeriod = new DateTime(year, month, 1);
-        var endOfPeriod = startOfPeriod.AddMonths(1).AddDays(-1);
+        DateTime startOfPeriod;
+        DateTime endOfPeriod;
+
+        if (runType == PayrollRunType.Weekly || runType == PayrollRunType.Daily || runType == PayrollRunType.Custom)
+        {
+            startOfPeriod = (fromDate ?? TimeHelper.GetEgyptTime()).Date;
+            endOfPeriod = (toDate ?? startOfPeriod).Date.AddDays(1).AddTicks(-1);
+        }
+        else
+        {
+            startOfPeriod = new DateTime(year, month, 1);
+            endOfPeriod = startOfPeriod.AddMonths(1).AddDays(-1);
+        }
 
         var settings = await _db.StoreInfo.FirstOrDefaultAsync(x => x.StoreConfigId == 1);
         var enableGradPolicy = settings?.EnableGraduatedDelayPolicy ?? true;
@@ -548,7 +565,10 @@ public class PayrollController : ControllerBase
 
             var lang = Request.Headers["Accept-Language"].ToString().StartsWith("en") ? "en" : "ar";
 
-            var existing = await _db.PayrollRuns.FirstOrDefaultAsync(p => p.PeriodYear == dto.PeriodYear && p.PeriodMonth == dto.PeriodMonth);
+            var existing = await _db.PayrollRuns.FirstOrDefaultAsync(p => 
+                p.PeriodType == dto.PeriodType && 
+                ((dto.PeriodType == PayrollRunType.Monthly && p.PeriodYear == dto.PeriodYear && p.PeriodMonth == dto.PeriodMonth) ||
+                 (dto.PeriodType != PayrollRunType.Monthly && p.FromDate == dto.FromDate && p.ToDate == dto.ToDate)));
             if (existing != null)
             {
                 return Conflict(new { 
@@ -564,6 +584,9 @@ public class PayrollController : ControllerBase
                 PayrollNumber              = payNo,
                 PeriodYear                 = dto.PeriodYear,
                 PeriodMonth                = dto.PeriodMonth,
+                PeriodType                 = dto.PeriodType,
+                FromDate                   = dto.FromDate,
+                ToDate                     = dto.ToDate,
                 Notes                      = dto.Notes?.Trim(),
                 WagesExpenseAccountId      = dto.WagesExpenseAccountId,
                 AccruedSalariesAccountId   = dto.AccruedSalariesAccountId,
@@ -577,8 +600,19 @@ public class PayrollController : ControllerBase
             decimal totalBasic = 0, totalTrans = 0, totalComm = 0, totalBonus = 0, totalFixedAll = 0, totalDed = 0, totalAdv = 0, totalAbsence = 0, totalOvertime = 0;
             decimal totalCommission = 0;
 
-            var startOfPeriod = new DateTime(dto.PeriodYear, dto.PeriodMonth, 1);
-            var endOfPeriod = startOfPeriod.AddMonths(1);
+            DateTime startOfPeriod;
+            DateTime endOfPeriod;
+
+            if (dto.PeriodType == PayrollRunType.Weekly || dto.PeriodType == PayrollRunType.Daily || dto.PeriodType == PayrollRunType.Custom)
+            {
+                startOfPeriod = (dto.FromDate ?? TimeHelper.GetEgyptTime()).Date;
+                endOfPeriod = (dto.ToDate ?? startOfPeriod).Date.AddDays(1).AddTicks(-1);
+            }
+            else
+            {
+                startOfPeriod = new DateTime(dto.PeriodYear, dto.PeriodMonth, 1);
+                endOfPeriod = startOfPeriod.AddMonths(1);
+            }
             
             var orders = await _db.Orders
                 .Include(o => o.Items)
@@ -1762,7 +1796,8 @@ public class PayrollController : ControllerBase
             GeneratePayslipHash(i.Id), i.PaidAmount
         )).ToList(),
         run.Items.Count(i => i.IsPaid),
-        run.Items.Sum(i => i.PaidAmount)
+        run.Items.Sum(i => i.PaidAmount),
+        run.PeriodType, run.FromDate, run.ToDate
     );
 }
 

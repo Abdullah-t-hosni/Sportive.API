@@ -143,7 +143,10 @@ public record CreatePayrollRunDto(
     int?    WagesExpenseAccountId      = null,
     int?    AccruedSalariesAccountId   = null,
     int?    DeductionRevenueAccountId  = null,
-    int?    AdvancesAccountId          = null
+    int?    AdvancesAccountId          = null,
+    PayrollRunType PeriodType          = PayrollRunType.Monthly,
+    DateTime? FromDate                 = null,
+    DateTime? ToDate                   = null
 );
 
 public record PayPayrollDto(
@@ -203,7 +206,10 @@ public record PayrollRunDto(
     DateTime      CreatedAt,
     List<PayrollItemDto> Items,
     int           PaidCount = 0,
-    decimal       TotalPaidAmount = 0
+    decimal       TotalPaidAmount = 0,
+    PayrollRunType PeriodType = PayrollRunType.Monthly,
+    DateTime?     FromDate = null,
+    DateTime?     ToDate = null
 );
 
 public record PayrollItemDto(
@@ -246,7 +252,10 @@ public record PayrollRunSummaryDto(
     int?          PaymentJournalEntryId,
     DateTime      CreatedAt,
     int           PaidCount = 0,
-    decimal       TotalPaidAmount = 0
+    decimal       TotalPaidAmount = 0,
+    PayrollRunType PeriodType = PayrollRunType.Monthly,
+    DateTime?     FromDate = null,
+    DateTime?     ToDate = null
 );
 
 // ══════════════════════════════════════════════════════
