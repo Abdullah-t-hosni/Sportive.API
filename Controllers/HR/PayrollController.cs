@@ -1260,11 +1260,12 @@ public class PayrollController : ControllerBase
                 Lines           = new List<JournalLine>()
             };
 
-            var itemsByCostCenter = run.Items.GroupBy(i => i.Employee?.CostCenter ?? OrderSource.General);
+            var itemsByBranchAndCostCenter = run.Items.GroupBy(i => new { BranchId = i.Employee?.BranchId, CostCenter = i.Employee?.CostCenter ?? OrderSource.General });
 
-            foreach (var group in itemsByCostCenter)
+            foreach (var group in itemsByBranchAndCostCenter)
             {
-                var cc = group.Key;
+                var branchId = group.Key.BranchId;
+                var cc = group.Key.CostCenter;
                 var ccBasic = group.Sum(i => i.BasicSalary); // Gross basic salary (not net of absence)
                 var ccOvertime = group.Sum(i => i.OvertimeAmount);
                 var ccTrans = group.Sum(i => i.TransportationAllowance);
@@ -1276,47 +1277,48 @@ public class PayrollController : ControllerBase
 
                 if (ccBasic > 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = wagesAccId, Debit = ccBasic, Description = _t.Get("HR.BasicSalaryDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = wagesAccId, Debit = ccBasic, Description = _t.Get("HR.BasicSalaryDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc, BranchId = branchId });
                 }
                 else if (ccBasic < 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = wagesAccId, Credit = Math.Abs(ccBasic), Description = _t.Get("HR.BasicSalaryDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = wagesAccId, Credit = Math.Abs(ccBasic), Description = _t.Get("HR.BasicSalaryDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc, BranchId = branchId });
                 }
 
                 if (ccOvertime > 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = overtimeAccId, Debit = ccOvertime, Description = _t.Get("HR.OvertimeDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = overtimeAccId, Debit = ccOvertime, Description = _t.Get("HR.OvertimeDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc, BranchId = branchId });
                 }
                 
                 if (ccTrans > 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = transAccId, Debit = ccTrans, Description = _t.Get("HR.TransAllowanceDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = transAccId, Debit = ccTrans, Description = _t.Get("HR.TransAllowanceDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc, BranchId = branchId });
                 }
                 if (ccComm > 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = commAccId, Debit = ccComm, Description = _t.Get("HR.CommAllowanceDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = commAccId, Debit = ccComm, Description = _t.Get("HR.CommAllowanceDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc, BranchId = branchId });
                 }
                 if (ccFix > 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = fixAllAccId, Debit = ccFix, Description = _t.Get("HR.FixedAllowanceDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = fixAllAccId, Debit = ccFix, Description = _t.Get("HR.FixedAllowanceDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc, BranchId = branchId });
                 }
                 if (ccBonus > 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = bonusAccId, Debit = ccBonus, Description = _t.Get("HR.BonusDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = bonusAccId, Debit = ccBonus, Description = _t.Get("HR.BonusDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc, BranchId = branchId });
                 }
                 if (ccCommission > 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = commissionAccId, Debit = ccCommission, Description = _t.Get("HR.CommissionDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = commissionAccId, Debit = ccCommission, Description = _t.Get("HR.CommissionDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc, BranchId = branchId });
                 }
                 if (ccDed > 0)
                 {
-                    je.Lines.Add(new JournalLine { AccountId = dedAccId, Credit = ccDed, Description = _t.Get("HR.DeductionDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc });
+                    je.Lines.Add(new JournalLine { AccountId = dedAccId, Credit = ccDed, Description = _t.Get("HR.DeductionDesc", cc, run.PeriodMonth, run.PeriodYear), CostCenter = cc, BranchId = branchId });
                 }
             }
 
             foreach (var item in run.Items)
             {
                 var employeeCC = item.Employee?.CostCenter ?? OrderSource.General;
+                var employeeBranchId = item.Employee?.BranchId;
 
                 // Accrued Salaries gets the net amount due (صافي المستحق)
                 if (item.NetPayable > 0)
@@ -1328,7 +1330,8 @@ public class PayrollController : ControllerBase
                         Credit      = item.NetPayable,
                         Description = _t.Get("HR.NetPayableDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
                         EmployeeId  = item.EmployeeId,
-                        CostCenter  = employeeCC
+                        CostCenter  = employeeCC,
+                        BranchId    = employeeBranchId
                     });
                 }
                 else if (item.NetPayable < 0)
@@ -1340,7 +1343,8 @@ public class PayrollController : ControllerBase
                         Credit      = 0,
                         Description = _t.Get("HR.NetPayableDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
                         EmployeeId  = item.EmployeeId,
-                        CostCenter  = employeeCC
+                        CostCenter  = employeeCC,
+                        BranchId    = employeeBranchId
                     });
                 }
 
@@ -1354,7 +1358,8 @@ public class PayrollController : ControllerBase
                         Credit      = item.AdvanceDeducted,
                         Description = _t.Get("HR.AdvanceSettlementDesc", item.Employee?.Name ?? "", run.PeriodMonth, run.PeriodYear),
                         EmployeeId  = item.EmployeeId,
-                        CostCenter  = employeeCC
+                        CostCenter  = employeeCC,
+                        BranchId    = employeeBranchId
                     });
                 }
             }
@@ -1459,7 +1464,8 @@ public class PayrollController : ControllerBase
                 Credit    = 0,
                 Description = _t.Get("HR.PayrollPaymentLineDescription", item.Employee?.Name ?? "", run.PayrollNumber),
                 EmployeeId  = item.EmployeeId,
-                CostCenter  = item.Employee?.CostCenter ?? OrderSource.General
+                CostCenter  = item.Employee?.CostCenter ?? OrderSource.General,
+                BranchId    = item.Employee?.BranchId
             });
         }
 
@@ -1571,7 +1577,8 @@ public class PayrollController : ControllerBase
                 Credit      = 0,
                 Description = _t.Get("HR.PayrollPaymentLineDescription", item.Employee?.Name ?? "", run.PayrollNumber),
                 EmployeeId  = item.EmployeeId,
-                CostCenter  = employeeCC
+                CostCenter  = employeeCC,
+                BranchId    = item.Employee?.BranchId
             });
         }
 
