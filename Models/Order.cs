@@ -11,6 +11,7 @@ public enum OrderStatus
     Cancelled = 7,      // ملغي
     Returned = 8,       // مرتجع كامل
     PartiallyReturned = 9, // مرتجع جزئي
+    ReturnInShipping = 10, // مرتجع لدى شركة الشحن 🚚
 }
 
 public enum FulfillmentType
