@@ -207,6 +207,13 @@ public class POSReportController : ControllerBase
         decimal safeDrops     = 0;
         decimal cashReceipts  = 0; // debt collections
         decimal cashReturns   = 0;
+        
+        decimal nonCashExpenses = 0;
+        decimal nonCashDrops    = 0;
+        
+        decimal vodaExpenses = 0;
+        decimal instaExpenses = 0;
+        decimal bankExpenses = 0;
 
         foreach (var j in posEntries)
         {
@@ -227,8 +234,8 @@ public class POSReportController : ControllerBase
                 if (isReturn && aid == returnId && debit > 0)
                     totalReturns += debit;
 
-                // Expenses: debit from POS cash
-                if (isExpense && aid == effectiveDrawerId && credit > 0)
+                // Expenses: credit from POS drawers
+                if (isExpense && credit > 0 && posAccountIds.Contains(aid))
                 {
                     var debitedLine = j.Lines.FirstOrDefault(line => line.Debit > 0);
                     var isTransferToSafeOrBank = false;
@@ -236,7 +243,6 @@ public class POSReportController : ControllerBase
                     {
                         var destAccountId = debitedLine.AccountId;
                         var destCode = debitedLine.Account.Code ?? "";
-                        var destName = debitedLine.Account.NameAr ?? "";
                         isTransferToSafeOrBank = destAccountId == mainCashId ||
                                                  destAccountId == posCashId ||
                                                  destAccountId == posBankId ||
@@ -250,22 +256,31 @@ public class POSReportController : ControllerBase
                                                  destCode.StartsWith("111");
                     }
 
-                    if (isTransferToSafeOrBank)
+                    if (aid == effectiveDrawerId)
                     {
-                        safeDrops += credit;
+                        if (isTransferToSafeOrBank) safeDrops += credit;
+                        else expenses += credit;
                     }
-                    else
+                    else 
                     {
-                        expenses += credit;
+                        if (isTransferToSafeOrBank) nonCashDrops += credit;
+                        else 
+                        {
+                            nonCashExpenses += credit;
+                            if (aid == posVodaId) vodaExpenses += credit;
+                            else if (aid == posInstaId) instaExpenses += credit;
+                            else if (aid == posBankId) bankExpenses += credit;
+                        }
                     }
                 }
 
-                // Safe drops: manual debit from POS cash → main safe (excluding shift closure entries)
-                if (isManual && aid == effectiveDrawerId && credit > 0)
+                // Safe drops (Manual transfers) from POS drawers
+                if (isManual && credit > 0 && posAccountIds.Contains(aid))
                 {
                     if (string.IsNullOrEmpty(j.Reference) || !j.Reference.StartsWith("SHIFT-CLOSE-", StringComparison.OrdinalIgnoreCase))
                     {
-                        safeDrops += credit;
+                        if (aid == effectiveDrawerId) safeDrops += credit;
+                        else nonCashDrops += credit;
                     }
                 }
 
@@ -332,6 +347,12 @@ public class POSReportController : ControllerBase
             safeDrops       = Math.Round(safeDrops, 2),
             cashReturns     = Math.Round(cashReturns, 2),
             expectedCash    = Math.Round(expectedCash, 2),
+            
+            nonCashExpenses = Math.Round(nonCashExpenses, 2),
+            nonCashDrops    = Math.Round(nonCashDrops, 2),
+            vodaExpenses    = Math.Round(vodaExpenses, 2),
+            instaExpenses   = Math.Round(instaExpenses, 2),
+            bankExpenses    = Math.Round(bankExpenses, 2),
 
             // Counts
             ordersCount,
