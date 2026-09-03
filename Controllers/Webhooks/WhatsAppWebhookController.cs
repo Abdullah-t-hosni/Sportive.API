@@ -12,8 +12,9 @@ using Sportive.API.Data;
 using Sportive.API.Hubs;
 using Sportive.API.Models;
 using Sportive.API.Services;
+using Sportive.API.Services;
 using Sportive.API.Utils;
-
+using Sportive.API.Models.System;
 namespace Sportive.API.Controllers.Webhooks;
 
 [ApiController]
@@ -120,6 +121,19 @@ public class WhatsAppWebhookController : ControllerBase
                     orderId: customerId
                 );
             }
+
+            // Save message to persistent storage (Database)
+            var waMessage = new WhatsAppMessage
+            {
+                Phone = cleanPhone ?? string.Empty,
+                CustomerName = displayName,
+                Text = displayMsg,
+                FromMe = fromMe,
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                CreatedAt = DateTime.UtcNow
+            };
+            _db.WhatsAppMessages.Add(waMessage);
+            await _db.SaveChangesAsync();
 
             // Broadcast real-time WhatsApp message event to connected SignalR clients (both incoming & outgoing)
             await _hubContext.Clients.All.SendAsync("ReceiveWhatsAppMessage", new

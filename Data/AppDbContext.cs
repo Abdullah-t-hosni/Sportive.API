@@ -11,6 +11,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using System.Security.Claims;
 
+using Sportive.API.Models.System;
+
 namespace Sportive.API.Data;
 
 public class AppDbContext : IdentityDbContext<AppUser>
@@ -96,6 +98,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
     public DbSet<ProductDiscount>      ProductDiscounts      { get; set; }
     public DbSet<SpecialOffer>         SpecialOffers         { get; set; }
+    public DbSet<WhatsAppMessage>      WhatsAppMessages      { get; set; }
 
     public DbSet<Department>           Departments           { get; set; }
 
