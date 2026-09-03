@@ -837,6 +837,7 @@ public class ShippingSettlementsController : ControllerBase
             .ToListAsync();
 
         var unmatchedList = new List<object>();
+        var matchedOrderIds = new List<int>();
 
         foreach (var row in dto.Rows)
         {
@@ -880,9 +881,11 @@ public class ShippingSettlementsController : ControllerBase
 
                 // Take exact AS shipping fee directly from Excel row
                 matchedOrder.ActualDeliveryCost = fees;
-                matchedOrder.IsSettledWithCourier = true;
-                matchedOrder.CourierSettlementDate = now;
-                matchedOrder.CourierSettlementReference = $"تسوية شيت AS الرسمية (بوليصة: {waybill})";
+                // DO NOT MARK AS SETTLED YET! Allow frontend to select them for proper accounting settlement.
+                // matchedOrder.IsSettledWithCourier = true;
+                // matchedOrder.CourierSettlementDate = now;
+                // matchedOrder.CourierSettlementReference = $"تسوية شيت AS الرسمية (بوليصة: {waybill})";
+                matchedOrderIds.Add(matchedOrder.Id);
 
                 // Update order status & collected amount directly from Excel row
                 if (isReturnSign)
@@ -924,13 +927,14 @@ public class ShippingSettlementsController : ControllerBase
         return Ok(new {
             success = true,
             totalInExcel = dto.Rows.Count,
-            settledCount,
+            settledCount = matchedOrderIds.Count,
             updatedStatusCount,
             totalCodSettled,
             totalFeesRecorded,
             unmatchedCount = unmatchedList.Count,
             unmatchedList,
-            message = $"تم بنجاح مطابقة وتسوية {settledCount} طلب من شيت AS وتحديث التكاليف والمبالغ المحصلة بدون قيود مكررة."
+            matchedOrderIds,
+            message = $"تم بنجاح مطابقة وتحديث حالة {matchedOrderIds.Count} طلب من شيت AS بدون تسوية محاسبية. يرجى المراجعة والضغط على تسوية."
         });
     }
 
@@ -959,6 +963,7 @@ public class ShippingSettlementsController : ControllerBase
             .ToListAsync();
 
         var unmatchedList = new List<object>();
+        var matchedOrderIds = new List<int>();
 
         foreach (var row in dto.Rows)
         {
@@ -1009,9 +1014,12 @@ public class ShippingSettlementsController : ControllerBase
                         matchedOrder.Status = OrderStatus.Delivered;
                         updatedStatusCount++;
                     }
-                    matchedOrder.IsSettledWithCourier = true;
-                    matchedOrder.CourierSettlementDate = now;
-                    matchedOrder.CourierSettlementReference = $"تسوية شيت بوسطة (بوليصة: {tracking})";
+                    // DO NOT MARK AS SETTLED YET!
+                    // matchedOrder.IsSettledWithCourier = true;
+                    // matchedOrder.CourierSettlementDate = now;
+                    // matchedOrder.CourierSettlementReference = $"تسوية شيت بوسطة (بوليصة: {tracking})";
+                    matchedOrderIds.Add(matchedOrder.Id);
+                    
                     if (cod > 0 && Math.Abs(matchedOrder.TotalAmount - cod) > 0.01m)
                     {
                         matchedOrder.TotalAmount = cod;
@@ -1026,9 +1034,11 @@ public class ShippingSettlementsController : ControllerBase
                         matchedOrder.Status = OrderStatus.Returned;
                         updatedStatusCount++;
                     }
-                    matchedOrder.IsSettledWithCourier = true;
-                    matchedOrder.CourierSettlementDate = now;
-                    matchedOrder.CourierSettlementReference = $"مرتجع شيت بوسطة (بوليصة: {tracking})";
+                    // DO NOT MARK AS SETTLED YET!
+                    // matchedOrder.IsSettledWithCourier = true;
+                    // matchedOrder.CourierSettlementDate = now;
+                    // matchedOrder.CourierSettlementReference = $"مرتجع شيت بوسطة (بوليصة: {tracking})";
+                    matchedOrderIds.Add(matchedOrder.Id);
                 }
                 else if (stateLower.Contains("out for delivery") || stateLower.Contains("pickup"))
                 {
@@ -1053,12 +1063,13 @@ public class ShippingSettlementsController : ControllerBase
         return Ok(new {
             success = true,
             totalInExcel = dto.Rows.Count,
-            settledCount,
+            settledCount = matchedOrderIds.Count,
             updatedStatusCount,
             totalCodSettled,
             unmatchedCount = unmatchedList.Count,
             unmatchedList,
-            message = $"تم بنجاح مطابقة وتسوية {settledCount} طلب وتحديث حالة {updatedStatusCount} طلب من شيت بوسطة."
+            matchedOrderIds,
+            message = $"تم بنجاح مطابقة وتحديث حالة {matchedOrderIds.Count} طلب. يمكنك الآن تحديدها وتسويتها لإنشاء القيود."
         });
     }
 }
