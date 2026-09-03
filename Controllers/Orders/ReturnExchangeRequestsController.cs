@@ -1119,6 +1119,12 @@ public class ReturnExchangeRequestsController : ControllerBase
             }
         }
 
+        // Calculate courier and shipping fee statuses before modifying the status
+        bool isReturnedFromCourier = req.Order.Source != OrderSource.POS && req.Order.Status >= OrderStatus.OutForDelivery && req.Order.Status != OrderStatus.Delivered;
+        bool isManufacturingDefect = req.Reason?.Contains("عيب تصنيع") == true || req.Reason?.Contains("صنف خطأ") == true || req.Reason?.Contains("Manufacturing") == true || req.Reason?.Contains("Wrong Item") == true;
+        bool chargeReturnShipping = isReturnedFromCourier && !isManufacturingDefect;
+        decimal returnShippingFee = chargeReturnShipping ? req.Order.DeliveryFee : 0;
+
         // 2. Check Order Return Status (Full vs Partial) & Log Status History Timeline
         bool isFullReturn = req.Order.Items.All(i => i.ReturnedQuantity >= i.Quantity);
         var targetStatus = isFullReturn ? OrderStatus.Returned : OrderStatus.PartiallyReturned;
@@ -1170,7 +1176,7 @@ public class ReturnExchangeRequestsController : ControllerBase
 
                 if (isFullReturn)
                 {
-                    await _accounting.PostSalesReturnAsync(req.Order, dto.RefundAccountId, req.RefundShipping);
+                    await _accounting.PostSalesReturnAsync(req.Order, dto.RefundAccountId, req.RefundShipping, chargeReturnShipping, returnShippingFee, isReturnedFromCourier);
                 }
                 else if (returnedOrderItemsForAccounting.Any())
                 {
@@ -1181,7 +1187,10 @@ public class ReturnExchangeRequestsController : ControllerBase
                         dto.RefundAccountId,
                         false,
                         $"{req.Order.OrderNumber}-RTN-{req.Id}",
-                        TimeHelper.GetEgyptTime()
+                        TimeHelper.GetEgyptTime(),
+                        chargeReturnShipping,
+                        returnShippingFee,
+                        isReturnedFromCourier
                     );
                 }
 
@@ -1280,6 +1289,12 @@ public class ReturnExchangeRequestsController : ControllerBase
         bool isFullReturn = req.Order != null && req.Order.Items.All(i => i.ReturnedQuantity >= i.Quantity);
         if (req.Order != null)
         {
+            // Calculate before status changes
+            bool isReturnedFromCourier = req.Order.Source != OrderSource.POS && req.Order.Status >= OrderStatus.OutForDelivery && req.Order.Status != OrderStatus.Delivered;
+            bool isManufacturingDefect = req.Reason?.Contains("عيب تصنيع") == true || req.Reason?.Contains("صنف خطأ") == true || req.Reason?.Contains("Manufacturing") == true || req.Reason?.Contains("Wrong Item") == true;
+            bool chargeReturnShipping = isReturnedFromCourier && !isManufacturingDefect;
+            decimal returnShippingFee = chargeReturnShipping ? req.Order.DeliveryFee : 0;
+
             req.Order.Status = isFullReturn ? OrderStatus.Returned : OrderStatus.PartiallyReturned;
 
             if (!isFullReturn && req.Order.PaymentMethod != PaymentMethod.Credit)
@@ -1338,7 +1353,7 @@ public class ReturnExchangeRequestsController : ControllerBase
 
                     if (isFullReturn)
                     {
-                        await _accounting.PostSalesReturnAsync(req.Order, null, req.RefundShipping);
+                        await _accounting.PostSalesReturnAsync(req.Order, null, req.RefundShipping, chargeReturnShipping, returnShippingFee, isReturnedFromCourier);
                     }
                     else if (returnedOrderItemsForAccounting.Any())
                     {
@@ -1349,7 +1364,10 @@ public class ReturnExchangeRequestsController : ControllerBase
                             null,
                             false,
                             $"{req.Order.OrderNumber}-RTN-{req.Id}",
-                            TimeHelper.GetEgyptTime()
+                            TimeHelper.GetEgyptTime(),
+                            chargeReturnShipping,
+                            returnShippingFee,
+                            isReturnedFromCourier
                         );
                     }
                 }

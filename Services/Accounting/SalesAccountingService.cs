@@ -490,7 +490,7 @@ public class SalesAccountingService
         );
     }
 
-    public async Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? overrideReference = null, DateTime? overrideDate = null, bool chargeReturnShipping = false, decimal returnShippingFee = 0)
+    public async Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? overrideReference = null, DateTime? overrideDate = null, bool chargeReturnShipping = false, decimal returnShippingFee = 0, bool isReturnedFromCourier = false)
     {
         if (order.Customer == null && order.CustomerId > 0)
         {
@@ -627,7 +627,15 @@ public class SalesAccountingService
 
         if (totalCostReturn > 0)
         {
-            lines.Add((inventoryAcct, totalCostReturn, 0,              _t.Get("Accounting.PartialInventoryInDesc")));
+            string returnInventoryAcct = inventoryAcct;
+            if (isReturnedFromCourier &&
+                mapDict.TryGetValue(MK.CourierInventory.ToLower(), out var courierInvId) &&
+                courierInvId.HasValue)
+            {
+                returnInventoryAcct = $"ID:{courierInvId.Value}";
+            }
+
+            lines.Add((returnInventoryAcct, totalCostReturn, 0,              _t.Get("Accounting.PartialInventoryInDesc")));
             lines.Add((cogsAcct,      0,               totalCostReturn, _t.Get("Accounting.PartialCogsReductionDesc")));
         }
 

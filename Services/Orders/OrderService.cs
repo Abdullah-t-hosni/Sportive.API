@@ -2371,7 +2371,11 @@ public class OrderService : IOrderService
 
         if (dto.Status == OrderStatus.Returned)
         {
-            _ = PostSalesReturnWithRetryAsync(orderId, dto.RefundAccountId);
+            bool isReturnedFromCourier = order.Source != OrderSource.POS && oldStatus.HasValue && oldStatus.Value >= OrderStatus.OutForDelivery;
+            bool isManufacturingDefect = dto.CancelReason?.Contains("عيب تصنيع") == true || dto.CancelReason?.Contains("صنف خطأ") == true || dto.CancelReason?.Contains("Manufacturing") == true || dto.CancelReason?.Contains("Wrong Item") == true;
+            bool chargeReturnShipping = isReturnedFromCourier && !isManufacturingDefect;
+            decimal returnShippingFee = chargeReturnShipping ? order.DeliveryFee : 0;
+            _ = PostSalesReturnWithRetryAsync(orderId, dto.RefundAccountId, false, chargeReturnShipping, returnShippingFee, isReturnedFromCourier);
         }
         else if (dto.Status == OrderStatus.Cancelled)
         {
@@ -2510,7 +2514,24 @@ public class OrderService : IOrderService
         });
 
         // 6. Post Accounting
-        _ = PostPartialReturnWithRetryAsync(orderId, returnedOrderItems, refundAmount, dto.RefundAccountId, dto.RefundToStoreCredit, reference);
+        // For partial returns initiated directly from this method, we can determine courier status
+        // Usually this is called from the admin panel directly.
+        bool isReturnedFromCourier = false;
+        bool chargeReturnShipping = false;
+        decimal returnShippingFee = 0;
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var initialOrder = await dbContext.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.Id == orderId);
+            if (initialOrder != null)
+            {
+                isReturnedFromCourier = initialOrder.Source != OrderSource.POS && initialOrder.Status >= OrderStatus.OutForDelivery && initialOrder.Status != OrderStatus.Delivered;
+                bool isManufacturingDefect = dto.Reason?.Contains("عيب تصنيع") == true || dto.Reason?.Contains("صنف خطأ") == true || dto.Reason?.Contains("Manufacturing") == true || dto.Reason?.Contains("Wrong Item") == true;
+                chargeReturnShipping = isReturnedFromCourier && !isManufacturingDefect;
+                returnShippingFee = chargeReturnShipping ? initialOrder.DeliveryFee : 0;
+            }
+        }
+        _ = PostPartialReturnWithRetryAsync(orderId, returnedOrderItems, refundAmount, dto.RefundAccountId, dto.RefundToStoreCredit, reference, chargeReturnShipping, returnShippingFee, isReturnedFromCourier);
 
         return result;
     }
@@ -2734,7 +2755,7 @@ public class OrderService : IOrderService
         }
     }
 
-    private async Task PostSalesReturnWithRetryAsync(int orderId, int? refundAccountId = null)
+    private async Task PostSalesReturnWithRetryAsync(int orderId, int? refundAccountId = null, bool refundShipping = false, bool chargeReturnShipping = false, decimal returnShippingFee = 0, bool isReturnedFromCourier = false)
     {
         const int maxAttempts = 3;
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
@@ -2750,7 +2771,7 @@ public class OrderService : IOrderService
                     .Include(o => o.Items).ThenInclude(i => i.Product)
                     .Include(o => o.DeliveryAddress)
                     .FirstAsync(o => o.Id == orderId);
-                await accounting.PostSalesReturnAsync(order, refundAccountId);
+                await accounting.PostSalesReturnAsync(order, refundAccountId, refundShipping, chargeReturnShipping, returnShippingFee, isReturnedFromCourier);
                 return;
             }
             catch (Exception ex) when (attempt < maxAttempts)
@@ -2802,7 +2823,7 @@ public class OrderService : IOrderService
         }
     }
 
-    private async Task PostPartialReturnWithRetryAsync(int orderId, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? reference = null)
+    private async Task PostPartialReturnWithRetryAsync(int orderId, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? reference = null, bool chargeReturnShipping = false, decimal returnShippingFee = 0, bool isReturnedFromCourier = false)
     {
         const int maxAttempts = 3;
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
@@ -2816,7 +2837,7 @@ public class OrderService : IOrderService
                     .Include(o => o.Customer)
                     .Include(o => o.Payments)
                     .FirstAsync(o => o.Id == orderId);
-                await accounting.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId, refundToStoreCredit, overrideReference: reference);
+                await accounting.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId, refundToStoreCredit, overrideReference: reference, overrideDate: null, chargeReturnShipping: chargeReturnShipping, returnShippingFee: returnShippingFee, isReturnedFromCourier: isReturnedFromCourier);
                 return;
             }
             catch (Exception ex) when (attempt < maxAttempts)

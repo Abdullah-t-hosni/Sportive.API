@@ -24,7 +24,7 @@ public interface IAccountingService
     Task PostOrderPaymentAsync(Order order, DateTime? overrideDate = null);
     Task PostOrderPaymentByIdAsync(int orderId);
     Task PostOrderRefundAsync(Order order);
-    Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? overrideReference = null, DateTime? overrideDate = null, bool chargeReturnShipping = false, decimal returnShippingFee = 0);
+    Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? overrideReference = null, DateTime? overrideDate = null, bool chargeReturnShipping = false, decimal returnShippingFee = 0, bool isReturnedFromCourier = false);
     Task PostCostPriceAdjustmentAsync(Order order, decimal originalTotalAmount, decimal originalVatAmount, string refundMethod);
     Task PostSupplierPaymentAsync(SupplierPayment payment);
     Task PostDirectSalesReturnAsync(DirectReturnDto dto, string returnNumber, decimal totalCost, DateTime? overrideDate = null);
@@ -85,8 +85,8 @@ public class AccountingService : IAccountingService
     public async Task PostCourierReturnShippingFeeAsync(Order order, int? returnRequestId = null)
         => await _sales.PostCourierReturnShippingFeeAsync(order, returnRequestId);
     public Task PostSuccessfulDeliveryAccountingAsync(Order order) => _sales.PostSuccessfulDeliveryAccountingAsync(order);
-    public Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? overrideReference = null, DateTime? overrideDate = null, bool chargeReturnShipping = false, decimal returnShippingFee = 0) 
-        => _sales.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId, refundToStoreCredit, overrideReference, overrideDate, chargeReturnShipping, returnShippingFee);
+    public Task PostPartialSalesReturnAsync(Order order, List<OrderItem> returnedItems, decimal refundAmount, int? refundAccountId = null, bool refundToStoreCredit = false, string? overrideReference = null, DateTime? overrideDate = null, bool chargeReturnShipping = false, decimal returnShippingFee = 0, bool isReturnedFromCourier = false) 
+        => _sales.PostPartialSalesReturnAsync(order, returnedItems, refundAmount, refundAccountId, refundToStoreCredit, overrideReference, overrideDate, chargeReturnShipping, returnShippingFee, isReturnedFromCourier);
 
     public Task PostCostPriceAdjustmentAsync(Order order, decimal originalTotalAmount, decimal originalVatAmount, string refundMethod)
         => _sales.PostCostPriceAdjustmentAsync(order, originalTotalAmount, originalVatAmount, refundMethod);
