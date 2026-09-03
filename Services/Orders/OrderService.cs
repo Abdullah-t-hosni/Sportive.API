@@ -2371,8 +2371,8 @@ public class OrderService : IOrderService
 
         if (dto.Status == OrderStatus.Returned)
         {
-            bool isReturnedFromCourier = order.Source != OrderSource.POS && oldStatus.HasValue && oldStatus.Value >= OrderStatus.OutForDelivery;
-            bool isManufacturingDefect = dto.CancelReason?.Contains("عيب تصنيع") == true || dto.CancelReason?.Contains("صنف خطأ") == true || dto.CancelReason?.Contains("Manufacturing") == true || dto.CancelReason?.Contains("Wrong Item") == true;
+            bool isReturnedFromCourier = order.Source != OrderSource.POS && oldStatus >= OrderStatus.OutForDelivery;
+            bool isManufacturingDefect = dto.IsManufacturingDefect || dto.Note?.Contains("عيب تصنيع") == true || dto.Note?.Contains("صنف خطأ") == true || dto.Note?.Contains("Manufacturing") == true || dto.Note?.Contains("Wrong Item") == true;
             bool chargeReturnShipping = isReturnedFromCourier && !isManufacturingDefect;
             decimal returnShippingFee = chargeReturnShipping ? order.DeliveryFee : 0;
             _ = PostSalesReturnWithRetryAsync(orderId, dto.RefundAccountId, false, chargeReturnShipping, returnShippingFee, isReturnedFromCourier);
