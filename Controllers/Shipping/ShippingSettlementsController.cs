@@ -398,6 +398,16 @@ public class ShippingSettlementsController : ControllerBase
             .Distinct()
             .ToList();
 
+        // Also fetch any OTHER orders that share this same settlement reference
+        // because we are about to delete the entire batch Journal Entry!
+        var allOrdersSharingReferences = new List<Order>();
+        if (references.Any())
+        {
+            allOrdersSharingReferences = await _db.Orders
+                .Where(o => o.CourierSettlementReference != null && references.Contains(o.CourierSettlementReference))
+                .ToListAsync();
+        }
+
         var journalEntriesToRemove = await _db.JournalEntries
             .Include(j => j.Lines)
             .Where(j => j.Reference != null && j.Reference.StartsWith("SETTLE-"))
@@ -419,7 +429,10 @@ public class ShippingSettlementsController : ControllerBase
             _db.JournalEntries.RemoveRange(journalEntriesToRemove);
         }
 
-        foreach (var order in orders)
+        // Unsettle ALL orders that share the deleted references to avoid data corruption (Settled without JE)
+        var ordersToUnsettle = allOrdersSharingReferences.Any() ? allOrdersSharingReferences : orders;
+        
+        foreach (var order in ordersToUnsettle)
         {
             order.IsSettledWithCourier = false;
             order.CourierSettlementDate = null;
