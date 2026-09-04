@@ -1044,6 +1044,20 @@ public class ReturnExchangeRequestsController : ControllerBase
         req.Status = ReturnExchangeStatus.Approved;
         req.AdminNotes = $"[موافقة تمهيدية - بانتظار استلام المرتجع بالمخزن {TimeHelper.GetEgyptTime():yyyy-MM-dd HH:mm}]";
 
+        // تحديث حالة الطلب لـ "مرتجع لدى شركة الشحن"
+        if (req.Order != null && req.Order.Status != OrderStatus.ReturnInShipping)
+        {
+            req.Order.Status = OrderStatus.ReturnInShipping;
+            req.Order.StatusHistory.Add(new OrderStatusHistory
+            {
+                OrderId = req.Order.Id,
+                Status = OrderStatus.ReturnInShipping,
+                Note = $"تم الموافقة المبدئية على المرتجع، الشحنة الآن مرتجع لدى شركة الشحن (طلب #{req.Id})",
+                ChangedByUserId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier) ?? "system",
+                CreatedAt = TimeHelper.GetEgyptTime()
+            });
+        }
+
         // 3. Generate Full / Partial Accounting Entry for Sales Return in General Ledger (Courier Virtual Warehouse)
         try
         {
