@@ -1030,7 +1030,13 @@ public class ReturnExchangeRequestsController : ControllerBase
     [HttpPost("return-exchange-requests/{requestId}/approve-return")]
     public async Task<IActionResult> ApproveReturn(int requestId)
     {
-        var req = await _db.ReturnExchangeRequests.FirstOrDefaultAsync(r => r.Id == requestId);
+        var req = await _db.ReturnExchangeRequests
+            .Include(r => r.Order)
+                .ThenInclude(o => o.Items)
+            .Include(r => r.Items)
+                .ThenInclude(i => i.OrderItem)
+            .FirstOrDefaultAsync(r => r.Id == requestId);
+            
         if (req == null) return NotFound("الطلب غير موجود.");
         if (req.Type != ReturnExchangeType.Return) return BadRequest("هذا الطلب ليس طلب استرجاع.");
         if (req.Status != ReturnExchangeStatus.Pending) return BadRequest("الطلب ليس في حالة قيد الانتظار.");
@@ -1038,8 +1044,76 @@ public class ReturnExchangeRequestsController : ControllerBase
         req.Status = ReturnExchangeStatus.Approved;
         req.AdminNotes = $"[موافقة تمهيدية - بانتظار استلام المرتجع بالمخزن {TimeHelper.GetEgyptTime():yyyy-MM-dd HH:mm}]";
 
+        // 3. Generate Full / Partial Accounting Entry for Sales Return in General Ledger (Courier Virtual Warehouse)
+        try
+        {
+            if (_accounting != null && req.Order != null)
+            {
+                bool isReturnedFromCourier = req.Order.Source != OrderSource.POS && req.Order.Status >= OrderStatus.OutForDelivery;
+                bool isManufacturingDefect = req.Reason?.Contains("عيب تصنيع") == true || req.Reason?.Contains("صنف خطأ") == true || req.Reason?.Contains("Manufacturing") == true || req.Reason?.Contains("Wrong Item") == true;
+                bool chargeReturnShipping = isReturnedFromCourier && !isManufacturingDefect;
+                decimal returnShippingFee = chargeReturnShipping ? req.Order.DeliveryFee : 0;
+
+                decimal totalRefundValue = 0;
+                var returnedOrderItemsForAccounting = new List<OrderItem>();
+                foreach (var reqItem in req.Items)
+                {
+                    if (reqItem.OrderItem != null)
+                    {
+                        var orig = reqItem.OrderItem;
+                        int qty = Math.Max(1, reqItem.Quantity);
+                        totalRefundValue += (orig.UnitPrice * qty);
+                        returnedOrderItemsForAccounting.Add(new OrderItem
+                        {
+                            Id = orig.Id,
+                            OrderId = orig.OrderId,
+                            ProductId = orig.ProductId,
+                            ProductVariantId = orig.ProductVariantId,
+                            ProductNameAr = orig.ProductNameAr,
+                            ProductNameEn = orig.ProductNameEn,
+                            Quantity = qty,
+                            UnitPrice = orig.UnitPrice,
+                            OriginalUnitPrice = orig.OriginalUnitPrice,
+                            DiscountAmount = orig.DiscountAmount,
+                            TotalPrice = qty * orig.UnitPrice,
+                            HasTax = orig.HasTax,
+                            VatRateApplied = orig.VatRateApplied,
+                            ItemVatAmount = orig.HasTax && orig.VatRateApplied.HasValue ? (qty * orig.UnitPrice * orig.VatRateApplied.Value / 100m) : 0m,
+                            Product = orig.Product
+                        });
+                    }
+                }
+
+                bool isFullReturn = req.Order.Items.All(i => i.Quantity <= req.Items.Where(ri => ri.OrderItemId == i.Id).Sum(ri => ri.Quantity) + i.ReturnedQuantity);
+
+                if (isFullReturn)
+                {
+                    await _accounting.PostSalesReturnAsync(req.Order, null, req.RefundShipping, chargeReturnShipping, returnShippingFee, isReturnedFromCourier);
+                }
+                else if (returnedOrderItemsForAccounting.Any())
+                {
+                    await _accounting.PostPartialSalesReturnAsync(
+                        req.Order,
+                        returnedOrderItemsForAccounting,
+                        totalRefundValue,
+                        null,
+                        false,
+                        $"{req.Order.OrderNumber}-RTN-{req.Id}",
+                        TimeHelper.GetEgyptTime(),
+                        chargeReturnShipping,
+                        returnShippingFee,
+                        isReturnedFromCourier
+                    );
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to post return accounting entry for request #{RequestId} on order #{OrderNumber}", req.Id, req.Order?.OrderNumber);
+        }
+
         await _db.SaveChangesAsync();
-        return Ok(new { message = "تمت الموافقة المبدئية. في انتظار وصول المنتجات للمخزن." });
+        return Ok(new { message = "تمت الموافقة المبدئية وتم إنشاء القيد. في انتظار وصول المنتجات للمخزن." });
     }
 
     /// <summary>
@@ -1120,7 +1194,7 @@ public class ReturnExchangeRequestsController : ControllerBase
         }
 
         // Calculate courier and shipping fee statuses before modifying the status
-        bool isReturnedFromCourier = req.Order.Source != OrderSource.POS && req.Order.Status >= OrderStatus.OutForDelivery && req.Order.Status != OrderStatus.Delivered;
+        bool isReturnedFromCourier = req.Order.Source != OrderSource.POS && req.Order.Status >= OrderStatus.OutForDelivery;
         bool isManufacturingDefect = req.Reason?.Contains("عيب تصنيع") == true || req.Reason?.Contains("صنف خطأ") == true || req.Reason?.Contains("Manufacturing") == true || req.Reason?.Contains("Wrong Item") == true;
         bool chargeReturnShipping = isReturnedFromCourier && !isManufacturingDefect;
         decimal returnShippingFee = chargeReturnShipping ? req.Order.DeliveryFee : 0;
@@ -1141,57 +1215,123 @@ public class ReturnExchangeRequestsController : ControllerBase
             CreatedAt = TimeHelper.GetEgyptTime()
         });
 
-        // 3. Generate Full / Partial Accounting Entry for Sales Return in General Ledger
+        // 3. Generate Warehouse Receipt from Courier & Manual Refund Payment Entry
         try
         {
             if (_accounting != null && req.Order != null)
             {
-                var returnedOrderItemsForAccounting = new List<OrderItem>();
-                foreach (var reqItem in req.Items)
+                if (isReturnedFromCourier)
                 {
-                    if (reqItem.OrderItem != null)
+                    var returnedOrderItemsForAccounting = new List<OrderItem>();
+                    foreach (var reqItem in req.Items)
                     {
-                        var orig = reqItem.OrderItem;
-                        int qty = Math.Max(1, reqItem.Quantity);
-                        returnedOrderItemsForAccounting.Add(new OrderItem
+                        if (reqItem.OrderItem != null)
                         {
-                            Id = orig.Id,
-                            OrderId = orig.OrderId,
-                            ProductId = orig.ProductId,
-                            ProductVariantId = orig.ProductVariantId,
-                            ProductNameAr = orig.ProductNameAr,
-                            ProductNameEn = orig.ProductNameEn,
-                            Quantity = qty,
-                            UnitPrice = orig.UnitPrice,
-                            OriginalUnitPrice = orig.OriginalUnitPrice,
-                            DiscountAmount = orig.DiscountAmount,
-                            TotalPrice = qty * orig.UnitPrice,
-                            HasTax = orig.HasTax,
-                            VatRateApplied = orig.VatRateApplied,
-                            ItemVatAmount = orig.HasTax && orig.VatRateApplied.HasValue ? (qty * orig.UnitPrice * orig.VatRateApplied.Value / 100m) : 0m,
-                            Product = orig.Product
-                        });
+                            var orig = reqItem.OrderItem;
+                            int qty = Math.Max(1, reqItem.Quantity);
+                            returnedOrderItemsForAccounting.Add(new OrderItem
+                            {
+                                Id = orig.Id,
+                                OrderId = orig.OrderId,
+                                ProductId = orig.ProductId,
+                                ProductVariantId = orig.ProductVariantId,
+                                Quantity = qty,
+                                UnitPrice = orig.UnitPrice,
+                                OriginalUnitPrice = orig.OriginalUnitPrice,
+                                DiscountAmount = orig.DiscountAmount,
+                                TotalPrice = qty * orig.UnitPrice,
+                                HasTax = orig.HasTax,
+                                VatRateApplied = orig.VatRateApplied,
+                                ItemVatAmount = orig.HasTax && orig.VatRateApplied.HasValue ? (qty * orig.UnitPrice * orig.VatRateApplied.Value / 100m) : 0m,
+                                Product = orig.Product
+                            });
+                        }
                     }
+
+                    await _accounting.PostWarehouseReceiptFromCourierAsync(req.Order, req.Id, returnedOrderItemsForAccounting);
                 }
 
-                if (isFullReturn)
+                // Generate Accounting Entry for Refund Payment to Customer
+                decimal netRefundToPay = totalRefundValue;
+                if (chargeReturnShipping) netRefundToPay -= returnShippingFee;
+                if (dto.RefundShipping == true) netRefundToPay += req.Order.DeliveryFee;
+
+                if (dto.RefundAccountId.HasValue && netRefundToPay > 0)
                 {
-                    await _accounting.PostSalesReturnAsync(req.Order, dto.RefundAccountId, req.RefundShipping, chargeReturnShipping, returnShippingFee, isReturnedFromCourier);
-                }
-                else if (returnedOrderItemsForAccounting.Any())
-                {
-                    await _accounting.PostPartialSalesReturnAsync(
-                        req.Order,
-                        returnedOrderItemsForAccounting,
-                        totalRefundValue,
-                        dto.RefundAccountId,
-                        false,
-                        $"{req.Order.OrderNumber}-RTN-{req.Id}",
-                        TimeHelper.GetEgyptTime(),
-                        chargeReturnShipping,
-                        returnShippingFee,
-                        isReturnedFromCourier
-                    );
+                    var account = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == dto.RefundAccountId.Value);
+                    if (account != null)
+                    {
+                        var entry = new JournalEntry
+                        {
+                            Date = TimeHelper.GetEgyptTime(),
+                            Description = $"رد مبلغ للعميل لمرتجع فاتورة #{req.Order.OrderNumber} - طلب #{req.Id}",
+                            ReferenceNumber = req.Order.OrderNumber,
+                            IsPosted = true,
+                            CreatedAt = TimeHelper.GetEgyptTime()
+                        };
+
+                        // Credit Cash/Bank
+                        entry.Lines.Add(new JournalLine
+                        {
+                            AccountId = account.Id,
+                            Credit = netRefundToPay,
+                            Debit = 0,
+                            Notes = $"خصم لرد مبلغ لعميل - فاتورة #{req.Order.OrderNumber}"
+                        });
+
+                        // Debit Customer A/R
+                        int? customerAcctId = req.Order.Customer?.MainAccountId;
+                        if (!customerAcctId.HasValue)
+                        {
+                            var defaultCustSetting = await _db.SystemMappings.FirstOrDefaultAsync(m => m.Key == MK.Customer);
+                            if (defaultCustSetting != null && int.TryParse(defaultCustSetting.Value, out int cid))
+                            {
+                                customerAcctId = cid;
+                            }
+                        }
+                        
+                        if (customerAcctId.HasValue)
+                        {
+                            entry.Lines.Add(new JournalLine
+                            {
+                                AccountId = customerAcctId.Value,
+                                Debit = netRefundToPay,
+                                Credit = 0,
+                                Notes = $"رد مبلغ للعميل - فاتورة #{req.Order.OrderNumber}"
+                            });
+
+                            // If shipping is refunded, we must adjust the A/R and Delivery Revenue since it wasn't done in ApproveReturn
+                            if (dto.RefundShipping == true && req.Order.DeliveryFee > 0)
+                            {
+                                var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+                                var mapDict = await _db.SystemMappings.ToDictionaryAsync(m => m.Key, m => m.Value);
+                                string deliveryRevAcctStr = !string.IsNullOrEmpty(store?.DeliveryRevenueAccountId)
+                                    ? store.DeliveryRevenueAccountId
+                                    : (mapDict.ContainsKey(MK.DeliveryRevenue) ? mapDict[MK.DeliveryRevenue] : "");
+                                
+                                if (int.TryParse(deliveryRevAcctStr, out int deliveryRevAcctId))
+                                {
+                                    entry.Lines.Add(new JournalLine
+                                    {
+                                        AccountId = deliveryRevAcctId,
+                                        Debit = req.Order.DeliveryFee,
+                                        Credit = 0,
+                                        Notes = $"إلغاء إيراد شحن مسترد - فاتورة #{req.Order.OrderNumber}"
+                                    });
+                                    entry.Lines.Add(new JournalLine
+                                    {
+                                        AccountId = customerAcctId.Value,
+                                        Debit = 0,
+                                        Credit = req.Order.DeliveryFee,
+                                        Notes = $"إثبات استرداد مصاريف شحن - فاتورة #{req.Order.OrderNumber}"
+                                    });
+                                }
+                            }
+                        }
+
+                        _db.JournalEntries.Add(entry);
+                        account.CurrentBalance -= netRefundToPay;
+                    }
                 }
 
                 // ─────────────────────────────────────────────────────────────

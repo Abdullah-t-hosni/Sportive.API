@@ -2525,7 +2525,7 @@ public class OrderService : IOrderService
             var initialOrder = await dbContext.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.Id == orderId);
             if (initialOrder != null)
             {
-                isReturnedFromCourier = initialOrder.Source != OrderSource.POS && initialOrder.Status >= OrderStatus.OutForDelivery && initialOrder.Status != OrderStatus.Delivered;
+                isReturnedFromCourier = initialOrder.Source != OrderSource.POS && initialOrder.Status >= OrderStatus.OutForDelivery;
                 bool isManufacturingDefect = dto.Reason?.Contains("عيب تصنيع") == true || dto.Reason?.Contains("صنف خطأ") == true || dto.Reason?.Contains("Manufacturing") == true || dto.Reason?.Contains("Wrong Item") == true;
                 chargeReturnShipping = isReturnedFromCourier && !isManufacturingDefect;
                 returnShippingFee = chargeReturnShipping ? initialOrder.DeliveryFee : 0;
