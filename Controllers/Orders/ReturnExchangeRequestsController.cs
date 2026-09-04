@@ -1248,7 +1248,7 @@ public class ReturnExchangeRequestsController : ControllerBase
                         }
                     }
 
-                    await _accounting.PostWarehouseReceiptFromCourierAsync(req.Order, req.Id, returnedOrderItemsForAccounting);
+                    await _accounting.PostWarehouseReceiptFromCourierAsync(req.Order, req.Id);
                 }
 
                 // Generate Accounting Entry for Refund Payment to Customer
@@ -1263,10 +1263,10 @@ public class ReturnExchangeRequestsController : ControllerBase
                     {
                         var entry = new JournalEntry
                         {
-                            Date = TimeHelper.GetEgyptTime(),
+                            EntryDate = TimeHelper.GetEgyptTime(),
                             Description = $"رد مبلغ للعميل لمرتجع فاتورة #{req.Order.OrderNumber} - طلب #{req.Id}",
-                            ReferenceNumber = req.Order.OrderNumber,
-                            IsPosted = true,
+                            Reference = req.Order.OrderNumber,
+                            Status = JournalEntryStatus.Posted,
                             CreatedAt = TimeHelper.GetEgyptTime()
                         };
 
@@ -1276,17 +1276,17 @@ public class ReturnExchangeRequestsController : ControllerBase
                             AccountId = account.Id,
                             Credit = netRefundToPay,
                             Debit = 0,
-                            Notes = $"خصم لرد مبلغ لعميل - فاتورة #{req.Order.OrderNumber}"
+                            Description = $"خصم لرد مبلغ لعميل - فاتورة #{req.Order.OrderNumber}"
                         });
 
                         // Debit Customer A/R
                         int? customerAcctId = req.Order.Customer?.MainAccountId;
                         if (!customerAcctId.HasValue)
                         {
-                            var defaultCustSetting = await _db.SystemMappings.FirstOrDefaultAsync(m => m.Key == MK.Customer);
-                            if (defaultCustSetting != null && int.TryParse(defaultCustSetting.Value, out int cid))
+                            var defaultCustSetting = await _db.AccountSystemMappings.FirstOrDefaultAsync(m => m.Key == Sportive.API.Utils.MappingKeys.Customer);
+                            if (defaultCustSetting != null && defaultCustSetting.AccountId.HasValue)
                             {
-                                customerAcctId = cid;
+                                customerAcctId = defaultCustSetting.AccountId.Value;
                             }
                         }
                         
@@ -1297,40 +1297,45 @@ public class ReturnExchangeRequestsController : ControllerBase
                                 AccountId = customerAcctId.Value,
                                 Debit = netRefundToPay,
                                 Credit = 0,
-                                Notes = $"رد مبلغ للعميل - فاتورة #{req.Order.OrderNumber}"
+                                Description = $"رد مبلغ للعميل - فاتورة #{req.Order.OrderNumber}"
                             });
 
                             // If shipping is refunded, we must adjust the A/R and Delivery Revenue since it wasn't done in ApproveReturn
                             if (dto.RefundShipping == true && req.Order.DeliveryFee > 0)
                             {
                                 var store = await _db.StoreInfo.FirstOrDefaultAsync(s => s.StoreConfigId == 1);
-                                var mapDict = await _db.SystemMappings.ToDictionaryAsync(m => m.Key, m => m.Value);
-                                string deliveryRevAcctStr = !string.IsNullOrEmpty(store?.DeliveryRevenueAccountId)
-                                    ? store.DeliveryRevenueAccountId
-                                    : (mapDict.ContainsKey(MK.DeliveryRevenue) ? mapDict[MK.DeliveryRevenue] : "");
+                                var mapDict = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key, m => m.AccountId);
+                                int? deliveryRevAcctId = null;
+                                if (!string.IsNullOrEmpty(store?.DeliveryRevenueAccountId) && int.TryParse(store.DeliveryRevenueAccountId, out int parsed))
+                                {
+                                    deliveryRevAcctId = parsed;
+                                }
+                                else if (mapDict.ContainsKey(Sportive.API.Utils.MappingKeys.DeliveryRevenue))
+                                {
+                                    deliveryRevAcctId = mapDict[Sportive.API.Utils.MappingKeys.DeliveryRevenue];
+                                }
                                 
-                                if (int.TryParse(deliveryRevAcctStr, out int deliveryRevAcctId))
+                                if (deliveryRevAcctId.HasValue)
                                 {
                                     entry.Lines.Add(new JournalLine
                                     {
-                                        AccountId = deliveryRevAcctId,
+                                        AccountId = deliveryRevAcctId.Value,
                                         Debit = req.Order.DeliveryFee,
                                         Credit = 0,
-                                        Notes = $"إلغاء إيراد شحن مسترد - فاتورة #{req.Order.OrderNumber}"
+                                        Description = $"إلغاء إيراد شحن مسترد - فاتورة #{req.Order.OrderNumber}"
                                     });
                                     entry.Lines.Add(new JournalLine
                                     {
                                         AccountId = customerAcctId.Value,
                                         Debit = 0,
                                         Credit = req.Order.DeliveryFee,
-                                        Notes = $"إثبات استرداد مصاريف شحن - فاتورة #{req.Order.OrderNumber}"
+                                        Description = $"إثبات استرداد مصاريف شحن - فاتورة #{req.Order.OrderNumber}"
                                     });
                                 }
                             }
                         }
 
                         _db.JournalEntries.Add(entry);
-                        account.CurrentBalance -= netRefundToPay;
                     }
                 }
 
