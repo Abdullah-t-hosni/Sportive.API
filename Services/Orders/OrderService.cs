@@ -2303,7 +2303,7 @@ public class OrderService : IOrderService
                 if (qtyToRestock > 0)
                 {
                     await _inventory.LogMovementAsync(
-                        dto.Status == OrderStatus.Returned ? InventoryMovementType.ReturnIn : InventoryMovementType.Adjustment,
+                        InventoryMovementType.ReturnIn,
                         qtyToRestock, item.ProductId, item.ProductVariantId, 
                         order.OrderNumber, 
                         $"Order {dto.Status}", updatedByUserId,
