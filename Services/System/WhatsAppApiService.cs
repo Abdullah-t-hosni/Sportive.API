@@ -38,14 +38,24 @@ public class WhatsAppApiService : IWhatsAppApiService
 
     private static string NormalizePhone(string phone)
     {
+        if (string.IsNullOrWhiteSpace(phone)) return "";
         var digits = new string(phone.Where(char.IsDigit).ToArray());
+        if (digits.StartsWith("0020")) digits = digits.Substring(2);
         if (digits.StartsWith("01") && digits.Length == 11) return "20" + digits.Substring(1);
         if (digits.StartsWith("20") && digits.Length == 12) return digits;
+        if (digits.Length == 10 && !digits.StartsWith("20")) return "20" + digits;
         return digits;
     }
 
     public async Task<bool> SendWhatsAppMessageAsync(string phoneNumber, string messageText, bool isPos = false)
     {
+        var formattedPhone = NormalizePhone(phoneNumber);
+        if (string.IsNullOrEmpty(formattedPhone))
+        {
+            _logger.LogWarning("[WhatsApp] Aborting send: Phone number is empty or invalid ({Phone})", phoneNumber);
+            return false;
+        }
+
         try
         {
             using var scope = _scopeFactory.CreateScope();
@@ -67,32 +77,50 @@ public class WhatsAppApiService : IWhatsAppApiService
                 serviceUrl = "https://sportive-frontend-production-65ac.up.railway.app";
             }
 
-            var formattedPhone = NormalizePhone(phoneNumber);
-            var payload = new
-            {
-                phone = formattedPhone,
-                message = messageText
-            };
             var targetUri = $"{serviceUrl.TrimEnd('/')}/send";
-            _logger.LogInformation("[WhatsApp] Sending message via Gateway {Url} to {Phone}", targetUri, formattedPhone);
 
-            var request = new HttpRequestMessage(HttpMethod.Post, targetUri);
-            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-            var response = await _httpClient.SendAsync(request);
-            if (response.IsSuccessStatusCode)
+            // 🔄 Retry loop: 3 attempts with 2.5s delay to handle temporary disconnects / cold starts
+            for (int attempt = 1; attempt <= 3; attempt++)
             {
-                _logger.LogInformation("[WhatsApp] Message successfully sent via Gateway to {Phone}", phoneNumber);
-                return true;
+                try
+                {
+                    var payload = new
+                    {
+                        phone = formattedPhone,
+                        message = messageText
+                    };
+
+                    _logger.LogInformation("[WhatsApp Attempt {Attempt}/3] Sending message via Gateway {Url} to {Phone}", attempt, targetUri, formattedPhone);
+
+                    using var request = new HttpRequestMessage(HttpMethod.Post, targetUri);
+                    request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+                    var response = await _httpClient.SendAsync(request);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        _logger.LogInformation("[WhatsApp] Message successfully sent via Gateway to {Phone}", formattedPhone);
+                        return true;
+                    }
+
+                    var errorResponse = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning("[WhatsApp Attempt {Attempt}/3] Gateway API Error ({StatusCode}): {Error}", attempt, response.StatusCode, errorResponse);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[WhatsApp Attempt {Attempt}/3] Exception sending to Gateway for {Phone}", attempt, formattedPhone);
+                }
+
+                if (attempt < 3)
+                {
+                    await Task.Delay(2500);
+                }
             }
-            
-            var errorResponse = await response.Content.ReadAsStringAsync();
-            _logger.LogError("[WhatsApp] Gateway API Error ({StatusCode}): {Error}", response.StatusCode, errorResponse);
+
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send message via WhatsApp Gateway");
+            _logger.LogError(ex, "Failed to send message via WhatsApp Gateway for {Phone}", phoneNumber);
             return false;
         }
     }
