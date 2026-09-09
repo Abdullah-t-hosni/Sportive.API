@@ -12,7 +12,6 @@ using Sportive.API.Data;
 using Sportive.API.Hubs;
 using Sportive.API.Models;
 using Sportive.API.Services;
-using Sportive.API.Services;
 using Sportive.API.Utils;
 using Sportive.API.Models.System;
 namespace Sportive.API.Controllers.Webhooks;
@@ -122,18 +121,37 @@ public class WhatsAppWebhookController : ControllerBase
                 );
             }
 
-            // Save message to persistent storage (Database)
-            var waMessage = new WhatsAppMessage
+            // Extract optional fields from payload (mediaUrl, mediaType, fileName, timestamp)
+            string? mediaUrl = GetPropCaseInsensitive(payload, "mediaUrl", "media_url");
+            string? mediaType = GetPropCaseInsensitive(payload, "mediaType", "media_type");
+            string? fileName = GetPropCaseInsensitive(payload, "fileName", "file_name");
+            long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            if (payload.TryGetProperty("timestamp", out var tsEl) && tsEl.ValueKind == JsonValueKind.Number)
+                timestamp = tsEl.GetInt64();
+
+            // Save message to persistent storage (Database) — skip duplicates
+            var isDuplicate = await _db.WhatsAppMessages
+                .AnyAsync(m => m.Phone == cleanPhone && m.Text == displayMsg && m.FromMe == fromMe
+                            && Math.Abs(m.Timestamp - timestamp) < 10000); // within 10 seconds
+
+            if (!isDuplicate)
             {
-                Phone = cleanPhone ?? string.Empty,
-                CustomerName = displayName,
-                Text = displayMsg,
-                FromMe = fromMe,
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                CreatedAt = DateTime.UtcNow
-            };
-            _db.WhatsAppMessages.Add(waMessage);
-            await _db.SaveChangesAsync();
+                var waMessage = new WhatsAppMessage
+                {
+                    Phone = cleanPhone ?? string.Empty,
+                    CustomerName = displayName,
+                    Text = displayMsg,
+                    FromMe = fromMe,
+                    Timestamp = timestamp,
+                    MediaUrl = mediaUrl,
+                    MediaType = mediaType,
+                    FileName = fileName,
+                    CreatedAt = DateTime.UtcNow
+                };
+                _db.WhatsAppMessages.Add(waMessage);
+                await _db.SaveChangesAsync();
+            }
+
 
             // Broadcast real-time WhatsApp message event to connected SignalR clients (both incoming & outgoing)
             await _hubContext.Clients.All.SendAsync("ReceiveWhatsAppMessage", new

@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
@@ -9,6 +10,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/whatsapp/chats")]
+[AllowAnonymous]
 public class WhatsAppChatController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -24,13 +26,29 @@ public class WhatsAppChatController : ControllerBase
         if (string.IsNullOrWhiteSpace(phone))
             return BadRequest("Phone is required");
 
-        // Clean phone
-        var cleanPhone = phone.Replace("+", "").Replace(" ", "").Trim();
-        if (cleanPhone.StartsWith("20") && cleanPhone.Length == 12)
-            cleanPhone = "0" + cleanPhone.Substring(2);
+        // Normalize phone — build both variants to search DB regardless of how it was stored
+        var raw = phone.Replace("+", "").Replace(" ", "").Replace("-", "").Trim();
+
+        // Variant A: Egyptian local format → 01XXXXXXXXX (11 digits)
+        string variantLocal;
+        if (raw.StartsWith("20") && raw.Length == 12)
+            variantLocal = "0" + raw.Substring(2);
+        else if (raw.StartsWith("0") && raw.Length == 11)
+            variantLocal = raw;
+        else
+            variantLocal = raw;
+
+        // Variant B: International format → 201XXXXXXXXX (12 digits)
+        string variantIntl;
+        if (variantLocal.StartsWith("0") && variantLocal.Length == 11)
+            variantIntl = "2" + variantLocal;
+        else if (raw.StartsWith("20") && raw.Length == 12)
+            variantIntl = raw;
+        else
+            variantIntl = "20" + variantLocal.TrimStart('0');
 
         var messages = await _db.WhatsAppMessages
-            .Where(m => m.Phone == cleanPhone)
+            .Where(m => m.Phone == variantLocal || m.Phone == variantIntl || m.Phone == raw)
             .OrderByDescending(m => m.Timestamp)
             .Take(200)
             .ToListAsync();
@@ -39,7 +57,7 @@ public class WhatsAppChatController : ControllerBase
 
         return Ok(new
         {
-            phone = cleanPhone,
+            phone = variantLocal,
             connected = true, // To satisfy frontend expectations
             count = messages.Count,
             messages = messages.Select(m => new
