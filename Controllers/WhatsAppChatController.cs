@@ -55,9 +55,9 @@ public class WhatsAppChatController : ControllerBase
             .Take(200)
             .ToListAsync();
 
-        // Remove duplicates in case of multiple phone variants for same message
+        // Remove duplicates by message ID
         var distinctMessages = messages
-            .GroupBy(m => new { m.FromMe, m.Text, ApproxTime = m.Timestamp / 5000 })
+            .GroupBy(m => m.Id)
             .Select(g => g.First())
             .OrderBy(m => m.Timestamp)
             .ToList();

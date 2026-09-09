@@ -212,6 +212,45 @@ public class OrdersController : ControllerBase
             }
         } catch (Exception ex) { _logger.LogWarning(ex, "CAPI invoke failed"); }
 
+        // 💬 Dispatch automatic WhatsApp Order Received Confirmation to Customer
+        try
+        {
+            var waService = HttpContext.RequestServices.GetService<IWaMeService>();
+            var waApi = HttpContext.RequestServices.GetService<IWhatsAppApiService>();
+            if (waService != null && waApi != null)
+            {
+                var fullOrderForWa = await _db.Orders
+                    .Include(o => o.Customer)
+                    .Include(o => o.Items)
+                    .FirstOrDefaultAsync(o => o.Id == order.Id);
+
+                if (fullOrderForWa != null && !string.IsNullOrWhiteSpace(fullOrderForWa.Customer?.Phone))
+                {
+                    var confirmResult = waService.OrderConfirmation(fullOrderForWa);
+                    if (!string.IsNullOrWhiteSpace(confirmResult.FullMessage))
+                    {
+                        var targetPhone = fullOrderForWa.Customer.Phone;
+                        var msgText = confirmResult.FullMessage;
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await waApi.SendWhatsAppMessageAsync(targetPhone, msgText);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "Failed to send auto WhatsApp confirmation for order {OrderId}", order.Id);
+                            }
+                        });
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error building WhatsApp order confirmation for order {OrderId}", order.Id);
+        }
+
         return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
     }
 
