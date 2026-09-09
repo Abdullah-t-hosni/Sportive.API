@@ -54,6 +54,8 @@ public class WaMeService : IWaMeService
             .Replace("{orderNumber}", order.OrderNumber)
             .Replace("{storeName}", storeBrandName)
             .Replace("{itemsList}", itemsSummary.ToString().TrimEnd())
+            .Replace("{subTotal}", $"{order.SubTotal:N2}")
+            .Replace("{shippingCost}", order.DeliveryFee > 0 ? $"{order.DeliveryFee:N2}" : _t.Get("WhatsApp.FreeShipping"))
             .Replace("{totalAmount}", $"{order.TotalAmount:N2}")
             .Replace("{discountPart}", discountPart)
             .Replace("{paymentMethod}", PaymentMethodLabel(order.PaymentMethod))
