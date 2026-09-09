@@ -1927,26 +1927,24 @@ public class OrderService : IOrderService
         }
         */
 
-        // 3. Automated WhatsApp via Wapilot
+        // 3. Automated WhatsApp via Gateway
         try
         {
             var storeSettings = await db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
-            if (storeSettings != null && storeSettings.AutoSendWhatsAppInvoices)
-            {
-                var customerPhone = order.Customer?.Phone;
-                if (!string.IsNullOrEmpty(customerPhone))
-                {
-                    var waMeService = scope.ServiceProvider.GetRequiredService<IWaMeService>();
-                    var waApiService = scope.ServiceProvider.GetRequiredService<IWhatsAppApiService>();
+            var customerPhone = order.Customer?.Phone;
 
-                    var waMeResult = waMeService.OrderConfirmation(order);
-                    if (!string.IsNullOrEmpty(waMeResult.FullMessage))
-                    {
-                        await waApiService.SendWhatsAppMessageAsync(
-                            customerPhone, 
-                            waMeResult.FullMessage, 
-                            order.Source == OrderSource.POS);
-                    }
+            if (!string.IsNullOrEmpty(customerPhone))
+            {
+                var waMeService = scope.ServiceProvider.GetRequiredService<IWaMeService>();
+                var waApiService = scope.ServiceProvider.GetRequiredService<IWhatsAppApiService>();
+
+                var waMeResult = waMeService.OrderConfirmation(order);
+                if (!string.IsNullOrEmpty(waMeResult.FullMessage))
+                {
+                    await waApiService.SendWhatsAppMessageAsync(
+                        customerPhone, 
+                        waMeResult.FullMessage, 
+                        order.Source == OrderSource.POS);
                 }
             }
         }

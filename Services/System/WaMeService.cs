@@ -85,10 +85,14 @@ public class WaMeService : IWaMeService
     public WaMeResult OrderConfirmation(Order order)
     {
         var settings = _db.StoreInfo.AsNoTracking().FirstOrDefault(s => s.StoreConfigId == 1);
-        string message;
-        if (settings != null && !string.IsNullOrWhiteSpace(settings.WhatsAppOrderTemplate))
+        string message = "";
+        var tpl = (order.Source != OrderSource.POS && !string.IsNullOrWhiteSpace(settings?.WhatsAppWebsiteConfirmTemplate))
+            ? settings.WhatsAppWebsiteConfirmTemplate
+            : settings?.WhatsAppOrderTemplate;
+
+        if (!string.IsNullOrWhiteSpace(tpl))
         {
-            message = FormatTemplate(settings.WhatsAppOrderTemplate, order);
+            message = FormatTemplate(tpl, order);
         }
         else
         {
