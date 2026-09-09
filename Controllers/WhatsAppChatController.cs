@@ -10,7 +10,7 @@ namespace Sportive.API.Controllers;
 
 [ApiController]
 [Route("api/whatsapp/chats")]
-[AllowAnonymous]
+[Authorize]
 public class WhatsAppChatController : ControllerBase
 {
     private readonly AppDbContext _db;
