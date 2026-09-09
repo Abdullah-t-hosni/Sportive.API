@@ -49,8 +49,17 @@ public class WhatsAppChatController : ControllerBase
 
         var last9 = raw.Length >= 9 ? raw.Substring(raw.Length - 9) : raw;
 
+        // Lookup customer name to match any orphan messages saved with customer name
+        string? targetCustName = null;
+        var phoneHash = Sportive.API.Models.Customer.EncryptionHelper?.ComputeSearchHash(variantLocal) ?? variantLocal;
+        var cust = await _db.Customers.FirstOrDefaultAsync(c => c.PhoneHash == phoneHash || (last9.Length >= 8 && c.Phone.EndsWith(last9)));
+        if (cust != null && !string.IsNullOrWhiteSpace(cust.FullName))
+        {
+            targetCustName = cust.FullName.Trim();
+        }
+
         var messages = await _db.WhatsAppMessages
-            .Where(m => m.Phone == variantLocal || m.Phone == variantIntl || m.Phone == raw || (last9.Length >= 8 && m.Phone.EndsWith(last9)))
+            .Where(m => m.Phone == variantLocal || m.Phone == variantIntl || m.Phone == raw || (last9.Length >= 8 && m.Phone.EndsWith(last9)) || (!string.IsNullOrEmpty(targetCustName) && m.CustomerName == targetCustName))
             .OrderByDescending(m => m.Timestamp)
             .Take(200)
             .ToListAsync();

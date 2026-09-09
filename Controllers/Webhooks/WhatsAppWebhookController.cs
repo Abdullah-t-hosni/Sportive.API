@@ -89,6 +89,18 @@ public class WhatsAppWebhookController : ControllerBase
                 customer = await _db.Customers
                     .FirstOrDefaultAsync(c => c.PhoneHash == phoneHash);
 
+                if (customer == null && !string.IsNullOrWhiteSpace(customerName))
+                {
+                    var nameTrim = customerName.Trim().ToLower();
+                    customer = await _db.Customers
+                        .FirstOrDefaultAsync(c => c.FullName.ToLower() == nameTrim);
+                    if (customer != null && !string.IsNullOrWhiteSpace(customer.Phone))
+                    {
+                        var cDigits = Regex.Replace(customer.Phone, @"\D", "");
+                        cleanPhone = cDigits.StartsWith("20") && cDigits.Length == 12 ? "0" + cDigits.Substring(2) : cDigits;
+                    }
+                }
+
                 if (customer != null)
                 {
                     customerId = customer.Id;
@@ -96,6 +108,21 @@ public class WhatsAppWebhookController : ControllerBase
                     {
                         customerName = customer.FullName;
                     }
+                }
+            }
+
+            // Fallback: If cleanPhone is still a long raw LID, adopt the real customer phone from recent DB messages with matching name
+            if ((cleanPhone.Length > 11 && !cleanPhone.StartsWith("01")) && !string.IsNullOrWhiteSpace(customerName))
+            {
+                var matchName = customerName.Trim();
+                var prevMsg = await _db.WhatsAppMessages
+                    .Where(m => m.CustomerName == matchName && m.Phone.StartsWith("01"))
+                    .OrderByDescending(m => m.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                if (prevMsg != null)
+                {
+                    cleanPhone = prevMsg.Phone;
                 }
             }
 
