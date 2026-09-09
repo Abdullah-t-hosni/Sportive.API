@@ -52,7 +52,11 @@ public class WhatsAppChatController : ControllerBase
         // Lookup customer name to match any orphan messages saved with customer name
         string? targetCustName = null;
         var phoneHash = Sportive.API.Models.Customer.EncryptionHelper?.ComputeSearchHash(variantLocal) ?? variantLocal;
-        var cust = await _db.Customers.FirstOrDefaultAsync(c => c.PhoneHash == phoneHash || (last9.Length >= 8 && c.Phone.EndsWith(last9)));
+        
+        // Fetch matching customer into memory first, then check EndsWith to avoid LINQ translation error
+        var custs = await _db.Customers.Where(c => c.PhoneHash == phoneHash).ToListAsync();
+        var cust = custs.FirstOrDefault() ?? await _db.Customers.ToListAsync().ContinueWith(t => t.Result.FirstOrDefault(c => last9.Length >= 8 && !string.IsNullOrEmpty(c.Phone) && c.Phone.EndsWith(last9)));
+        
         if (cust != null && !string.IsNullOrWhiteSpace(cust.FullName))
         {
             targetCustName = cust.FullName.Trim();
