@@ -47,20 +47,27 @@ public class WhatsAppChatController : ControllerBase
         else
             variantIntl = "20" + variantLocal.TrimStart('0');
 
+        var last9 = raw.Length >= 9 ? raw.Substring(raw.Length - 9) : raw;
+
         var messages = await _db.WhatsAppMessages
-            .Where(m => m.Phone == variantLocal || m.Phone == variantIntl || m.Phone == raw)
+            .Where(m => m.Phone == variantLocal || m.Phone == variantIntl || m.Phone == raw || (last9.Length >= 8 && m.Phone.EndsWith(last9)))
             .OrderByDescending(m => m.Timestamp)
             .Take(200)
             .ToListAsync();
 
-        messages.Reverse();
+        // Remove duplicates in case of multiple phone variants for same message
+        var distinctMessages = messages
+            .GroupBy(m => new { m.FromMe, m.Text, ApproxTime = m.Timestamp / 5000 })
+            .Select(g => g.First())
+            .OrderBy(m => m.Timestamp)
+            .ToList();
 
         return Ok(new
         {
             phone = variantLocal,
             connected = true, // To satisfy frontend expectations
-            count = messages.Count,
-            messages = messages.Select(m => new
+            count = distinctMessages.Count,
+            messages = distinctMessages.Select(m => new
             {
                 id = m.Id.ToString(),
                 fromMe = m.FromMe,
