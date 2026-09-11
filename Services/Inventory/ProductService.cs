@@ -581,7 +581,22 @@ public class ProductService : IProductService
         if (variant == null) return false;
         
         var diff = quantity - variant.StockQuantity;
-        if (diff == 0) return true;
+        if (diff == 0)
+        {
+            // StockQuantity is already correct, but ProductWarehouseStocks might be out of sync.
+            // Safe to fix only when there's a single warehouse (multi-warehouse: each warehouse
+            // holds its own portion — we can't blindly set all of them to the total quantity).
+            var whStocksSync = await _db.ProductWarehouseStocks
+                .Where(pws => pws.ProductVariantId == variantId)
+                .ToListAsync();
+            if (whStocksSync.Count == 1 && whStocksSync[0].Quantity != quantity)
+            {
+                whStocksSync[0].Quantity  = quantity;
+                whStocksSync[0].UpdatedAt = TimeHelper.GetEgyptTime();
+                await _db.SaveChangesAsync();
+            }
+            return true;
+        }
 
         await _inventory.LogMovementAsync(
             InventoryMovementType.Adjustment,
@@ -594,10 +609,26 @@ public class ProductService : IProductService
             ignoreIdempotency: true
         );
 
+        // After LogMovementAsync, ProductWarehouseStocks was incremented by `diff` on the
+        // default warehouse. But if the variant only has ONE warehouse and that warehouse
+        // was out of sync with StockQuantity before this call (e.g. a negative-stock sale
+        // reduced StockQuantity while WarehouseStocks was already 0), the result will be
+        // wrong. Force-set ONLY when there is exactly one warehouse so the two tables agree.
+        // For multi-warehouse variants, LogMovementAsync already handled the correct warehouse.
+        var whStocks = await _db.ProductWarehouseStocks
+            .Where(pws => pws.ProductVariantId == variantId)
+            .ToListAsync();
+        if (whStocks.Count == 1)
+        {
+            whStocks[0].Quantity  = quantity;
+            whStocks[0].UpdatedAt = TimeHelper.GetEgyptTime();
+        }
+
         await _db.SaveChangesAsync();
         await _notifications.BroadcastStockUpdateAsync(variant.ProductId, variantId, quantity);
         return true;
     }
+
 
     public async Task<bool> UpdateProductStockAsync(int productId, int quantity)
     {
