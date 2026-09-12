@@ -67,7 +67,8 @@ public class NotificationService : INotificationService
     private static bool IsOnlineOrder(string t) =>
         t.Equals("OnlineOrder", StringComparison.OrdinalIgnoreCase) ||
         t.Equals("Order", StringComparison.OrdinalIgnoreCase) ||
-        t.Equals("Orders", StringComparison.OrdinalIgnoreCase);
+        t.Equals("Orders", StringComparison.OrdinalIgnoreCase) ||
+        t.Equals("ReturnExchangeRequest", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsPosOrder(string t) =>
         t.Equals("POSOrder", StringComparison.OrdinalIgnoreCase);
