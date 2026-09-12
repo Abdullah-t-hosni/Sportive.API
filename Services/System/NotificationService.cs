@@ -195,9 +195,24 @@ public class NotificationService : INotificationService
             await _db.SaveChangesAsync();
         }
 
+        // Determine default link for admin/staff notifications if not provided
+        string? adminLink = link;
+        if (string.IsNullOrEmpty(adminLink))
+        {
+            if (type == "OnlineOrder" && orderId.HasValue)
+                adminLink = $"/admin/store-management?tab=orders&viewId={orderId.Value}";
+            else if ((type == "POSOrder" || type == "Order") && orderId.HasValue)
+                adminLink = $"/admin/orders?viewId={orderId.Value}";
+            else if (type == "ReturnExchangeRequest" && orderId.HasValue)
+                adminLink = $"/admin/store-management?tab=returns&viewId={orderId.Value}";
+        }
+
         // Broadcast each saved notification to its respective owner in real-time
         foreach (var notif in notificationsToSave)
         {
+            bool isStaffRecipient = adminUserIds.Contains(notif.UserId);
+            var effectiveLink = isStaffRecipient ? (adminLink ?? link) : link;
+
             var userPayload = new {
                 notif.Id,
                 id = notif.Id,
@@ -217,7 +232,7 @@ public class NotificationService : INotificationService
                 orderId = notif.OrderId,
                 notif.CreatedAt,
                 createdAt = notif.CreatedAt,
-                link = link
+                link = effectiveLink
             };
             
             // Broadcast to tenant group, global group, and raw user group for 100% SignalR delivery
@@ -230,11 +245,11 @@ public class NotificationService : INotificationService
             await _hubContext.Clients.Group($"global_{notif.UserId}").SendAsync("ReceiveUnreadCount", unreadCount);
             await _hubContext.Clients.Group($"user_{notif.UserId}").SendAsync("ReceiveUnreadCount", unreadCount);
             
-            _ = Task.Run(() => SendWebPushAsync(notif.UserId, titleAr, titleEn, msgAr, msgEn, type, orderId, link));
+            _ = Task.Run(() => SendWebPushAsync(notif.UserId, titleAr, titleEn, msgAr, msgEn, type, orderId, effectiveLink, isStaffRecipient));
         }
     }
 
-    private async Task SendWebPushAsync(string userId, string titleAr, string titleEn, string msgAr, string msgEn, string type, int? orderId, string? link = null)
+    private async Task SendWebPushAsync(string userId, string titleAr, string titleEn, string msgAr, string msgEn, string type, int? orderId, string? link = null, bool isStaff = false)
     {
         try
         {
@@ -270,7 +285,9 @@ public class NotificationService : INotificationService
                 msgEn,
                 type,
                 orderId,
-                link
+                link,
+                isStaff,
+                isAdmin = isStaff
             });
 
             foreach (var sub in subscriptions)
