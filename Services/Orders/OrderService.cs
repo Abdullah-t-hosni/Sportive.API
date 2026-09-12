@@ -2042,7 +2042,7 @@ public class OrderService : IOrderService
                       "تهانينا! تم توصيل طلبك", "Order Delivered!",
                       $"تم توصيل طلبك رقم {order.OrderNumber} بنجاح. يسعدنا تقييم تجربتك!", 
                       $"Your order #{order.OrderNumber} has been delivered. We'd love to hear your feedback!",
-                      "Order", order.Id);
+                      "CustomerOrder", order.Id);
                 }
             });
         }

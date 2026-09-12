@@ -378,7 +378,7 @@ public class ReturnExchangeRequestsController : ControllerBase
                         "Item Added to Order Invoice",
                         $"قام العميل بإضافة أصناف جديدة للفاتورة رقم #{order.OrderNumber}: {string.Join(", ", addedItemsNotes)} (الإجمالي الجديد: {order.TotalAmount:N2} ج.م)",
                         $"Customer added items to order #{order.OrderNumber}: {string.Join(", ", addedItemsNotes)}",
-                        "Order",
+                        "OnlineOrder",
                         order.Id
                     );
                 }
@@ -505,7 +505,7 @@ public class ReturnExchangeRequestsController : ControllerBase
                         "Item Deleted from Order",
                         $"قام العميل بحذف أصناف من الفاتورة رقم #{order.OrderNumber}: {string.Join(", ", deletedItemsNotes)}",
                         $"Customer deleted items from order #{order.OrderNumber}: {string.Join(", ", deletedItemsNotes)}",
-                        "Order",
+                        "OnlineOrder",
                         order.Id
                     );
                 }
@@ -1001,15 +1001,22 @@ public class ReturnExchangeRequestsController : ControllerBase
         {
             if (_notificationService != null)
             {
-                await _notificationService.SendAsync(
-                    req.CustomerId?.ToString(),
-                    "تمت الموافقة على طلب الاستبدال 🎉",
-                    "Exchange Request Approved",
-                    $"تمت الموافقة على طلب الاستبدال للفاتورة #{req.Order?.OrderNumber} وتحديث الفاتورة بنجاح.",
-                    $"Your exchange request for order #{req.Order?.OrderNumber} has been approved.",
-                    "Order",
-                    req.OrderId
-                );
+                // جلب AppUserId الصحيح للعميل بدلاً من CustomerId (رقم DB)
+                var custForNotif = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == req.CustomerId);
+                var custAppUserId = custForNotif?.AppUserId;
+
+                if (!string.IsNullOrEmpty(custAppUserId))
+                {
+                    await _notificationService.SendAsync(
+                        custAppUserId,
+                        "تمت الموافقة على طلب الاستبدال 🎉",
+                        "Exchange Request Approved",
+                        $"تمت الموافقة على طلب الاستبدال للفاتورة #{req.Order?.OrderNumber} وتحديث الفاتورة بنجاح.",
+                        $"Your exchange request for order #{req.Order?.OrderNumber} has been approved.",
+                        "CustomerOrder",
+                        req.OrderId
+                    );
+                }
             }
         }
         catch { }
