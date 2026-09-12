@@ -13,7 +13,7 @@ namespace Sportive.API.Services;
 
 public interface INotificationService
 {
-    Task SendAsync(string? userId, string titleAr, string titleEn, string msgAr, string msgEn, string type = "General", int? orderId = null);
+    Task SendAsync(string? userId, string titleAr, string titleEn, string msgAr, string msgEn, string type = "General", int? orderId = null, string? link = null);
     Task<List<Notification>> GetMyNotificationsAsync(string userId, int count = 50);
     Task MarkAsReadAsync(string userId, int notificationId);
     Task MarkAllAsReadAsync(string userId);
@@ -94,7 +94,7 @@ public class NotificationService : INotificationService
 
     public async Task SendAsync(
         string? userId, string titleAr, string titleEn, string msgAr, string msgEn, 
-        string type = "General", int? orderId = null)
+        string type = "General", int? orderId = null, string? link = null)
     {
         var finalUserId = userId ?? string.Empty;
         var prefix = GetPrefix();
@@ -105,16 +105,19 @@ public class NotificationService : INotificationService
         var staffTypes = new[] { "Order", "OnlineOrder", "POSOrder", "WhatsApp", "Alert", "Stock", "System", "ReturnExchangeRequest" };
         if (staffTypes.Contains(type) || string.IsNullOrEmpty(userId))
         {
-            // ✅ جلب الموظفين والأدمن مباشرة بـ JOIN واحد بدلاً من جلب كل المستخدمين
-            var staffRoleNames = new[] { "Admin", "SuperAdmin", "Super Admin", "Manager", "Staff", "Cashier", "Moderator" };
+            // ✅ جلب الموظفين بـ JOIN واحد مع مقارنة غير حساسة لحالة الأحرف
+            var staffRoleNames = new[] { "admin", "superadmin", "super admin", "manager", "staff", "cashier", "moderator" };
 
             var staffUsers = await (
                 from ur in _db.UserRoles
                 join r in _db.Roles on ur.RoleId equals r.Id
                 join u in _db.Users on ur.UserId equals u.Id
-                where staffRoleNames.Contains(r.Name)
+                where r.Name != null && staffRoleNames.Contains(r.Name.ToLower())
                 select new { u.Id, u.NotificationPreferences }
-            ).Distinct().ToListAsync();
+            )
+            .GroupBy(x => x.Id)
+            .Select(g => new { Id = g.Key, NotificationPreferences = g.First().NotificationPreferences })
+            .ToListAsync();
 
             foreach (var u in staffUsers)
             {
@@ -213,7 +216,8 @@ public class NotificationService : INotificationService
                 notif.OrderId,
                 orderId = notif.OrderId,
                 notif.CreatedAt,
-                createdAt = notif.CreatedAt
+                createdAt = notif.CreatedAt,
+                link = link
             };
             
             // Broadcast to tenant group, global group, and raw user group for 100% SignalR delivery
@@ -226,11 +230,11 @@ public class NotificationService : INotificationService
             await _hubContext.Clients.Group($"global_{notif.UserId}").SendAsync("ReceiveUnreadCount", unreadCount);
             await _hubContext.Clients.Group($"user_{notif.UserId}").SendAsync("ReceiveUnreadCount", unreadCount);
             
-            _ = Task.Run(() => SendWebPushAsync(notif.UserId, titleAr, titleEn, msgAr, msgEn, type, orderId));
+            _ = Task.Run(() => SendWebPushAsync(notif.UserId, titleAr, titleEn, msgAr, msgEn, type, orderId, link));
         }
     }
 
-    private async Task SendWebPushAsync(string userId, string titleAr, string titleEn, string msgAr, string msgEn, string type, int? orderId)
+    private async Task SendWebPushAsync(string userId, string titleAr, string titleEn, string msgAr, string msgEn, string type, int? orderId, string? link = null)
     {
         try
         {
@@ -265,7 +269,8 @@ public class NotificationService : INotificationService
                 msgAr,
                 msgEn,
                 type,
-                orderId
+                orderId,
+                link
             });
 
             foreach (var sub in subscriptions)

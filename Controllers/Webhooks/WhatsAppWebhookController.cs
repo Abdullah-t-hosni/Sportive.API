@@ -19,6 +19,8 @@ namespace Sportive.API.Controllers.Webhooks;
 [ApiController]
 [Route("api/webhooks/whatsapp")]
 [Route("api/whatsapp/webhook")]
+[Route("webhooks/whatsapp")]
+[Route("whatsapp/webhook")]
 [AllowAnonymous]
 public class WhatsAppWebhookController : ControllerBase
 {
@@ -144,7 +146,8 @@ public class WhatsAppWebhookController : ControllerBase
                     msgAr: displayMsg,
                     msgEn: displayMsg,
                     type: "WhatsApp",
-                    orderId: customerId
+                    orderId: customerId,
+                    link: chatLink
                 );
             }
 
@@ -324,7 +327,8 @@ public class WhatsAppWebhookController : ControllerBase
             msgAr: message,
             msgEn: message,
             type: "WhatsApp",
-            orderId: null
+            orderId: null,
+            link: chatLink
         );
 
         await _hubContext.Clients.All.SendAsync("ReceiveWhatsAppMessage", new
