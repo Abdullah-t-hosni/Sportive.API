@@ -1793,7 +1793,7 @@ public class OrderService : IOrderService
             await notificationService.SendAsync(order.Customer.AppUserId, 
                 "تم استلام طلبك", "Order Received",
                 $"طلبك رقم {order.OrderNumber} قيد الانتظار.", $"Your order #{order.OrderNumber} is pending.",
-                "Order", order.Id);
+                "CustomerOrder", order.Id);
         }
 
         // 1.5 Admin App Notification
