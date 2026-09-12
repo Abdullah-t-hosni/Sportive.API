@@ -40,24 +40,43 @@ public class WaMeService : IWaMeService
             itemsSummary.AppendLine($"• {item.ProductNameAr} ({item.Size} - {item.Color}) x{item.Quantity}");
         }
 
-        var discountPart = order.DiscountAmount > 0
-            ? $"🎁 {_t.Get("WhatsApp.Discount")}: *{order.DiscountAmount:N2}*\n"
+        var subTotalVal = order.SubTotal;
+        var discountVal = order.DiscountAmount + order.TemporalDiscount;
+        var subTotalAfterDiscountVal = Math.Max(0, subTotalVal - discountVal);
+        var shippingVal = order.DeliveryFee;
+        var totalVal = order.TotalAmount;
+
+        var discountPart = discountVal > 0
+            ? $"🎁 {_t.Get("WhatsApp.Discount")}: *{discountVal:N2} ج.م*\n"
             : "";
+        var discountText = discountVal > 0
+            ? $"{discountVal:N2} ج.م"
+            : "0.00 ج.م";
+        var shippingText = shippingVal > 0
+            ? $"{shippingVal:N2} ج.م"
+            : (_t.Get("WhatsApp.FreeShipping") ?? "مجاني 🚚");
 
         var address = _config["Store:Address"] ?? "فرع Sportive الرئيسي";
         var trackingPart = string.IsNullOrEmpty(tracking) ? "" : $"📍 {_t.Get("WhatsApp.TrackingCode")}: *{tracking}*\n";
         var storeBrandName = _db.StoreInfo.AsNoTracking().FirstOrDefault(s => s.StoreConfigId == 1)?.StoreBrandName ?? "Sportive";
 
-        return template
+        var result = template
             .Replace("{customerName}", customerName)
             .Replace("{customerFirstName}", customerFirstName)
             .Replace("{orderNumber}", order.OrderNumber)
             .Replace("{storeName}", storeBrandName)
             .Replace("{itemsList}", itemsSummary.ToString().TrimEnd())
-            .Replace("{subTotal}", $"{order.SubTotal:N2}")
-            .Replace("{shippingCost}", order.DeliveryFee > 0 ? $"{order.DeliveryFee:N2}" : _t.Get("WhatsApp.FreeShipping"))
-            .Replace("{totalAmount}", $"{order.TotalAmount:N2}")
+            .Replace("{subTotal}", $"{subTotalVal:N2} ج.م")
+            .Replace("{subtotal}", $"{subTotalVal:N2} ج.م")
+            .Replace("{subTotalBeforeDiscount}", $"{subTotalVal:N2} ج.م")
+            .Replace("{discountAmount}", discountText)
+            .Replace("{discount}", discountText)
             .Replace("{discountPart}", discountPart)
+            .Replace("{subTotalAfterDiscount}", $"{subTotalAfterDiscountVal:N2} ج.م")
+            .Replace("{totalAfterDiscount}", $"{subTotalAfterDiscountVal:N2} ج.م")
+            .Replace("{shippingCost}", shippingText)
+            .Replace("{shippingFee}", shippingText)
+            .Replace("{totalAmount}", $"{totalVal:N2} ج.م")
             .Replace("{paymentMethod}", PaymentMethodLabel(order.PaymentMethod))
             .Replace("{fulfillmentType}", FulfillmentLabel(order.FulfillmentType))
             .Replace("{storeUrl}", StoreUrl)
@@ -65,6 +84,9 @@ public class WaMeService : IWaMeService
             .Replace("{storeAddress}", address)
             .Replace("{trackingPart}", trackingPart)
             .Replace("{trackingCode}", tracking ?? "");
+
+        result = result.Replace("ج.م ج.م", "ج.م").Replace("EGP EGP", "EGP");
+        return result;
     }
 
     private WaMeResult CreateLink(string phone, string message)
