@@ -101,35 +101,22 @@ public class NotificationService : INotificationService
         var adminUserIds = new List<string>();
 
         // 1. Determine if this notification should go to staff/admins
-        if (type == "Order" || type == "OnlineOrder" || type == "POSOrder" || type == "WhatsApp" || type == "Alert" || type == "Stock" || type == "System" || string.IsNullOrEmpty(userId))
+        var staffTypes = new[] { "Order", "OnlineOrder", "POSOrder", "WhatsApp", "Alert", "Stock", "System", "ReturnExchangeRequest" };
+        if (staffTypes.Contains(type) || string.IsNullOrEmpty(userId))
         {
-            var users = await _db.Users.ToListAsync();
+            // ✅ جلب الموظفين والأدمن مباشرة بـ JOIN واحد بدلاً من جلب كل المستخدمين
+            var staffRoleNames = new[] { "Admin", "SuperAdmin", "Super Admin", "Manager", "Staff", "Cashier", "Moderator" };
 
-            var userRolesData = await (from ur in _db.UserRoles
-                                       join r in _db.Roles on ur.RoleId equals r.Id
-                                       select new { ur.UserId, RoleName = r.Name })
-                                       .ToListAsync();
+            var staffUsers = await (
+                from ur in _db.UserRoles
+                join r in _db.Roles on ur.RoleId equals r.Id
+                join u in _db.Users on ur.UserId equals u.Id
+                where staffRoleNames.Contains(r.Name)
+                select new { u.Id, u.NotificationPreferences }
+            ).Distinct().ToListAsync();
 
-            var rolesByUserId = userRolesData
-                                .GroupBy(x => x.UserId)
-                                .ToDictionary(g => g.Key, g => g.Select(x => x.RoleName).ToList());
-
-            foreach (var u in users)
+            foreach (var u in staffUsers)
             {
-                var roles = rolesByUserId.ContainsKey(u.Id) ? rolesByUserId[u.Id] : new List<string>();
-
-                bool isStaffOrAdmin = roles.Any(r => 
-                    r.Equals("Admin", StringComparison.OrdinalIgnoreCase) || 
-                    r.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) || 
-                    r.Equals("Super Admin", StringComparison.OrdinalIgnoreCase) ||
-                    r.Equals("Manager", StringComparison.OrdinalIgnoreCase) ||
-                    r.Equals("Staff", StringComparison.OrdinalIgnoreCase) ||
-                    r.Equals("Cashier", StringComparison.OrdinalIgnoreCase) ||
-                    r.Equals("Moderator", StringComparison.OrdinalIgnoreCase)
-                );
-
-                if (!isStaffOrAdmin) continue;
-
                 bool shouldNotify = false;
 
                 // If user has specific NotificationPreferences array set
@@ -154,7 +141,7 @@ public class NotificationService : INotificationService
                 }
                 else
                 {
-                    // By default, ALL staff and admins receive ALL store notifications (including WhatsApp, Orders, Stock, System, Alerts)
+                    // By default, ALL staff and admins receive ALL store notifications
                     shouldNotify = true;
                 }
 
