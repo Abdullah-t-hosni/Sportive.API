@@ -874,18 +874,23 @@ public class AccountingCoreService
                 newPaidAmount = inv.TotalAmount;
                 newStatus = PurchaseInvoiceStatus.Paid;
             }
-            else if (newPaidAmount >= (inv.TotalAmount - inv.ReturnedAmount) - 0.01m && inv.TotalAmount > 0)
+            else
             {
-                newStatus = PurchaseInvoiceStatus.Paid;
-            }
-            else if (newPaidAmount > 0)
-            {
-                newStatus = PurchaseInvoiceStatus.PartPaid;
-            }
-            else if (inv.Status == PurchaseInvoiceStatus.Paid || inv.Status == PurchaseInvoiceStatus.PartPaid)
-            {
-                // Reset to Received if PaidAmount is 0 but it was marked paid
-                newStatus = PurchaseInvoiceStatus.Received;
+                var netPayable = Math.Max(0, inv.TotalAmount - inv.ReturnedAmount);
+                if (newPaidAmount >= netPayable - 0.01m && inv.TotalAmount > 0)
+                {
+                    newPaidAmount = netPayable;
+                    newStatus = PurchaseInvoiceStatus.Paid;
+                }
+                else if (newPaidAmount > 0)
+                {
+                    newStatus = PurchaseInvoiceStatus.PartPaid;
+                }
+                else if (inv.Status == PurchaseInvoiceStatus.Paid || inv.Status == PurchaseInvoiceStatus.PartPaid)
+                {
+                    // Reset to Received if PaidAmount is 0 but it was marked paid
+                    newStatus = PurchaseInvoiceStatus.Received;
+                }
             }
 
             // 3. Auto-Overdue & Notifications
