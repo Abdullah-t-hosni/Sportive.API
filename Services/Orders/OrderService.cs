@@ -1038,7 +1038,8 @@ public class OrderService : IOrderService
                 }
 
                 // 4. Validate Business Rules/Settings
-                if (order.Source == OrderSource.Website && store != null && store.MinOrderAmount.HasValue && store.MinOrderAmount > 0 && order.TotalAmount < store.MinOrderAmount.Value)
+                var orderProductsTotal = Math.Max(0, order.SubTotal - order.DiscountAmount - order.TemporalDiscount);
+                if (order.Source == OrderSource.Website && store != null && store.MinOrderAmount.HasValue && store.MinOrderAmount > 0 && orderProductsTotal < store.MinOrderAmount.Value)
                 {
                     var minMethodsStr = store.MinOrderPaymentMethods;
                     var minMethodsList = !string.IsNullOrWhiteSpace(minMethodsStr)
@@ -1048,7 +1049,7 @@ public class OrderService : IOrderService
                     string currentMethodStr = order.PaymentMethod.ToString();
                     if (minMethodsList.Contains(currentMethodStr, StringComparer.OrdinalIgnoreCase))
                     {
-                        throw new ArgumentException(_t.Get("Orders.MinAmountError", store.MinOrderAmount.Value, order.TotalAmount));
+                        throw new ArgumentException(_t.Get("Orders.MinAmountError", store.MinOrderAmount.Value, orderProductsTotal));
                     }
                 }
 
