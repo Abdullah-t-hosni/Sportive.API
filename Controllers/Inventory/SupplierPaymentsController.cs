@@ -528,13 +528,6 @@ public class SupplierPaymentsController : ControllerBase
             // Split the payment
             decimal remainder = payment.Amount - remaining;
 
-            // Delete original journal entry for the payment to replace it with split ones
-            if (existingJE != null)
-            {
-                _db.JournalLines.RemoveRange(existingJE.Lines);
-                _db.JournalEntries.Remove(existingJE);
-            }
-
             // The current payment takes the remaining amount of the invoice and gets linked
             payment.Amount = remaining;
             payment.PurchaseInvoiceId = invoice.Id;
@@ -560,7 +553,54 @@ public class SupplierPaymentsController : ControllerBase
                 ReferenceNumber = payment.ReferenceNumber
             };
             _db.SupplierPayments.Add(splitPayment);
-            newlySplitAdvancePayments.Add(splitPayment);
+
+            if (existingJE != null)
+            {
+                // Update existing JE to reflect the linked portion
+                existingJE.PurchaseInvoiceId = invoice.Id;
+                foreach (var l in existingJE.Lines)
+                {
+                    if (l.Debit > 0) l.Debit = remaining;
+                    if (l.Credit > 0) l.Credit = remaining;
+                    l.PurchaseInvoiceId = invoice.Id;
+                }
+
+                // Create a split JE for the remainder without pulling new cash
+                var splitJE = new JournalEntry
+                {
+                    EntryNumber = "JE-GEN-" + newPNo,
+                    EntryDate = existingJE.EntryDate,
+                    Type = JournalEntryType.PaymentVoucher,
+                    Status = JournalEntryStatus.Posted,
+                    Reference = newPNo,
+                    Description = splitPayment.Notes,
+                    CostCenter = existingJE.CostCenter,
+                    CreatedByUserId = existingJE.CreatedByUserId,
+                    PurchaseInvoiceId = null
+                };
+                foreach (var l in existingJE.Lines)
+                {
+                    splitJE.Lines.Add(new JournalLine
+                    {
+                        AccountId = l.AccountId,
+                        Debit = l.Debit > 0 ? remainder : 0,
+                        Credit = l.Credit > 0 ? remainder : 0,
+                        SupplierId = l.SupplierId,
+                        CustomerId = l.CustomerId,
+                        EmployeeId = l.EmployeeId,
+                        CostCenter = l.CostCenter,
+                        BranchId = l.BranchId,
+                        Description = splitPayment.Notes,
+                        PurchaseInvoiceId = null
+                    });
+                }
+                _db.JournalEntries.Add(splitJE);
+            }
+            else
+            {
+                // Only if no JE existed, create one
+                newlySplitAdvancePayments.Add(splitPayment);
+            }
 
             invoice.PaidAmount += remaining;
         }
@@ -579,6 +619,10 @@ public class SupplierPaymentsController : ControllerBase
                     l.PurchaseInvoiceId = invoice.Id;
                 }
             }
+            else
+            {
+                _ = PostSupplierPaymentWithRetryAsync(payment.Id, payment.PaymentNumber);
+            }
         }
 
         var netTotal = invoice.TotalAmount - invoice.ReturnedAmount;
@@ -586,13 +630,7 @@ public class SupplierPaymentsController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        // Sync journal entries for the modified payment if needed
-        if (existingJE == null || payment.Amount > remaining)
-        {
-            _ = PostSupplierPaymentWithRetryAsync(payment.Id, payment.PaymentNumber);
-        }
-        
-        // Sync journal entries for the newly split payments
+        // Sync journal entries only for newly created payments that had no previous journal
         if (newlySplitAdvancePayments.Any())
         {
             var newlySplitIds = newlySplitAdvancePayments.Select(p => p.Id).ToList();
