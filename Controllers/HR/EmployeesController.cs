@@ -345,6 +345,21 @@ public class EmployeesController : ControllerBase
             }
         }
 
+        // Auto-clean delay minutes for flexible hours or disabled delay rules
+        if (!emp.EnableDelayRules || (emp.AttendanceMode == AttendanceMode.Daily && emp.IsFlexible) || emp.AttendanceMode == AttendanceMode.Flexible || emp.AttendanceMode == AttendanceMode.MonthlyTotal)
+        {
+            var now = TimeHelper.GetEgyptTime();
+            var startOfMonth = new DateTime(now.Year, now.Month, 1);
+            var attendancesToClear = await _db.EmployeeAttendances
+                .Where(a => a.EmployeeId == id && a.Date >= startOfMonth && a.DelayMinutes > 0)
+                .ToListAsync();
+
+            foreach (var att in attendancesToClear)
+            {
+                att.DelayMinutes = 0;
+            }
+        }
+
         await _db.SaveChangesAsync();
         
         try { await _audit.LogAsync("UpdateEmployee", "Employee", id.ToString(), $"Updated employee {emp.Name}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
