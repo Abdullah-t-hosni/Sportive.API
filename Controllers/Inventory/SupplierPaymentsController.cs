@@ -440,6 +440,7 @@ public class SupplierPaymentsController : ControllerBase
     }
 
     [HttpPatch("{id}/link-invoice")]
+    [HttpPost("{id}/link-invoice")]
     [RequirePermission(ModuleKeys.SupplierVouchers, requireEdit: true)]
     public async Task<IActionResult> LinkInvoice(int id, [FromBody] LinkInvoiceDto dto)
     {
@@ -488,6 +489,11 @@ public class SupplierPaymentsController : ControllerBase
                 inv.PaidAmount += line.Debit;
             }
 
+            if (line.JournalEntry != null && line.JournalEntry.PurchaseInvoiceId == null)
+            {
+                line.JournalEntry.PurchaseInvoiceId = inv.Id;
+            }
+
             var netTotalLines = inv.TotalAmount - inv.ReturnedAmount;
             inv.Status = inv.PaidAmount >= netTotalLines - 0.01m ? PurchaseInvoiceStatus.Paid : PurchaseInvoiceStatus.PartPaid;
             
@@ -512,14 +518,22 @@ public class SupplierPaymentsController : ControllerBase
 
         var newlySplitAdvancePayments = new List<SupplierPayment>();
 
+        // Always check if an existing JournalEntry exists for this payment
+        var existingJE = await _db.JournalEntries
+            .Include(e => e.Lines)
+            .FirstOrDefaultAsync(e => e.Reference == payment.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher);
+
         if (payment.Amount > remaining)
         {
             // Split the payment
             decimal remainder = payment.Amount - remaining;
 
             // Delete original journal entry for the payment to replace it with split ones
-            var oldJE = await _db.JournalEntries.FirstOrDefaultAsync(e => e.Reference == payment.PaymentNumber && e.Type == JournalEntryType.PaymentVoucher);
-            if (oldJE != null) _db.JournalEntries.Remove(oldJE);
+            if (existingJE != null)
+            {
+                _db.JournalLines.RemoveRange(existingJE.Lines);
+                _db.JournalEntries.Remove(existingJE);
+            }
 
             // The current payment takes the remaining amount of the invoice and gets linked
             payment.Amount = remaining;
@@ -542,7 +556,8 @@ public class SupplierPaymentsController : ControllerBase
                 CostCenter = payment.CostCenter,
                 AttachmentUrl = payment.AttachmentUrl,
                 AttachmentPublicId = payment.AttachmentPublicId,
-                CreatedByUserId = payment.CreatedByUserId
+                CreatedByUserId = payment.CreatedByUserId,
+                ReferenceNumber = payment.ReferenceNumber
             };
             _db.SupplierPayments.Add(splitPayment);
             newlySplitAdvancePayments.Add(splitPayment);
@@ -554,6 +569,16 @@ public class SupplierPaymentsController : ControllerBase
             invoice.PaidAmount += payment.Amount;
             payment.PurchaseInvoiceId = invoice.Id;
             payment.Invoice = invoice;
+
+            // 💡 Immediately link the journal entry and lines to the invoice
+            if (existingJE != null)
+            {
+                existingJE.PurchaseInvoiceId = invoice.Id;
+                foreach (var l in existingJE.Lines)
+                {
+                    l.PurchaseInvoiceId = invoice.Id;
+                }
+            }
         }
 
         var netTotal = invoice.TotalAmount - invoice.ReturnedAmount;
@@ -561,8 +586,11 @@ public class SupplierPaymentsController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        // Sync journal entries for the modified payment
-        _ = PostSupplierPaymentWithRetryAsync(payment.Id, payment.PaymentNumber);
+        // Sync journal entries for the modified payment if needed
+        if (existingJE == null || payment.Amount > remaining)
+        {
+            _ = PostSupplierPaymentWithRetryAsync(payment.Id, payment.PaymentNumber);
+        }
         
         // Sync journal entries for the newly split payments
         if (newlySplitAdvancePayments.Any())
@@ -581,9 +609,11 @@ public class SupplierPaymentsController : ControllerBase
             });
         }
 
+        await _accounting.SyncEntityBalancesAsync();
+
         try { await _audit.LogAsync("LinkSupplierPayment", "SupplierPayment", id.ToString(), $"Linked payment {payment.PaymentNumber} to invoice {invoice.InvoiceNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
-        return Ok(new { message = "تم الربط بنجاح" });
+        return Ok(new { message = "تم ربط السند بالفاتورة بنجاح." });
     }
 }
 

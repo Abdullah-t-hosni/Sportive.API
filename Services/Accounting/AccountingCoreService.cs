@@ -751,14 +751,68 @@ public class AccountingCoreService
         _logger.LogInformation("[Sync] Completed order balances sync.");
 
         // 2. Sync Purchase Invoices
+        // 🔧 Auto-heal: Ensure all JournalEntries and JournalLines for linked SupplierPayments have PurchaseInvoiceId set
+        var linkedPayments = await _db.SupplierPayments
+            .AsNoTracking()
+            .Where(sp => sp.PurchaseInvoiceId != null && sp.Amount > 0)
+            .Select(sp => new { sp.PaymentNumber, sp.PurchaseInvoiceId })
+            .ToListAsync();
+
+        if (linkedPayments.Any())
+        {
+            var pNos = linkedPayments.Select(p => p.PaymentNumber).Distinct().ToList();
+            var paymentJEs = await _db.JournalEntries
+                .Include(e => e.Lines)
+                .Where(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference != null && pNos.Contains(e.Reference))
+                .ToListAsync();
+
+            var paymentMap = linkedPayments.GroupBy(p => p.PaymentNumber).ToDictionary(g => g.Key, g => g.First().PurchaseInvoiceId!.Value);
+            bool healedAny = false;
+
+            foreach (var je in paymentJEs)
+            {
+                if (je.Reference != null && paymentMap.TryGetValue(je.Reference, out var targetInvId))
+                {
+                    if (je.PurchaseInvoiceId != targetInvId)
+                    {
+                        je.PurchaseInvoiceId = targetInvId;
+                        healedAny = true;
+                    }
+                    foreach (var line in je.Lines)
+                    {
+                        if (line.PurchaseInvoiceId != targetInvId)
+                        {
+                            line.PurchaseInvoiceId = targetInvId;
+                            healedAny = true;
+                        }
+                    }
+                }
+            }
+
+            if (healedAny)
+            {
+                await _db.SaveChangesAsync();
+            }
+        }
+
         // Group journal lines by PurchaseInvoiceId and sum Debit (payment) in ONE query
         var invoiceLedgerPaid = await _db.JournalLines
-            .Where(l => l.PurchaseInvoiceId != null && l.Debit > 0)
+            .Where(l => (l.PurchaseInvoiceId != null || (l.JournalEntry != null && l.JournalEntry.PurchaseInvoiceId != null)) && l.Debit > 0)
             .Where(l => l.Account.Code != null && l.Account.Code.StartsWith("2101"))
-            .GroupBy(l => l.PurchaseInvoiceId)
+            .GroupBy(l => l.PurchaseInvoiceId ?? l.JournalEntry!.PurchaseInvoiceId)
             .Select(g => new {
                 InvoiceId = g.Key!.Value,
                 Paid = g.Sum(l => (decimal?)l.Debit) ?? 0
+            })
+            .ToDictionaryAsync(x => x.InvoiceId, x => x.Paid);
+
+        // Group direct supplier payments by PurchaseInvoiceId as a reliable source of truth
+        var directPaymentsPaid = await _db.SupplierPayments
+            .Where(p => p.PurchaseInvoiceId != null && p.Amount > 0)
+            .GroupBy(p => p.PurchaseInvoiceId!.Value)
+            .Select(g => new {
+                InvoiceId = g.Key,
+                Paid = g.Sum(p => (decimal?)p.Amount) ?? 0
             })
             .ToDictionaryAsync(x => x.InvoiceId, x => x.Paid);
 
@@ -782,6 +836,7 @@ public class AccountingCoreService
                 i.PaymentTerms,
                 i.PaidAmount,
                 i.TotalAmount,
+                i.ReturnedAmount,
                 i.Status,
                 i.DueDate,
                 i.SupplierId,
@@ -807,8 +862,10 @@ public class AccountingCoreService
             {
                 ledgerPaidAmount = refLedgerPaid.GetValueOrDefault(inv.InvoiceNumber, 0);
             }
+            var directPaidAmount = directPaymentsPaid.GetValueOrDefault(inv.Id, 0);
+            decimal effectivePaid = Math.Max(ledgerPaidAmount, directPaidAmount);
 
-            decimal newPaidAmount = ledgerPaidAmount;
+            decimal newPaidAmount = effectivePaid;
             PurchaseInvoiceStatus newStatus = inv.Status;
 
             // 💡 FIX: For Cash purchases, there's no liability in the 2101 account, so we set PaidAmount = TotalAmount to show 0 remaining in UI
@@ -817,11 +874,11 @@ public class AccountingCoreService
                 newPaidAmount = inv.TotalAmount;
                 newStatus = PurchaseInvoiceStatus.Paid;
             }
-            else if (ledgerPaidAmount >= inv.TotalAmount && inv.TotalAmount > 0)
+            else if (newPaidAmount >= (inv.TotalAmount - inv.ReturnedAmount) - 0.01m && inv.TotalAmount > 0)
             {
                 newStatus = PurchaseInvoiceStatus.Paid;
             }
-            else if (ledgerPaidAmount > 0)
+            else if (newPaidAmount > 0)
             {
                 newStatus = PurchaseInvoiceStatus.PartPaid;
             }

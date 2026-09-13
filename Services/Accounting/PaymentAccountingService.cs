@@ -207,10 +207,31 @@ public class PaymentAccountingService
         await _db.SaveChangesAsync();
         _dashboardEvents.TriggerImmediateProcessing();
     }
-
     public async Task PostSupplierPaymentAsync(SupplierPayment payment)
     {
-        if (await _core.EntryExistsAsync(JournalEntryType.PaymentVoucher, payment.PaymentNumber)) return;
+        var existing = await _db.JournalEntries
+            .Include(e => e.Lines)
+            .FirstOrDefaultAsync(e => e.Type == JournalEntryType.PaymentVoucher && e.Reference == payment.PaymentNumber);
+
+        if (existing != null)
+        {
+            bool modified = false;
+            if (payment.PurchaseInvoiceId.HasValue && (existing.PurchaseInvoiceId != payment.PurchaseInvoiceId || existing.Lines.Any(l => l.PurchaseInvoiceId != payment.PurchaseInvoiceId)))
+            {
+                existing.PurchaseInvoiceId = payment.PurchaseInvoiceId;
+                foreach (var line in existing.Lines)
+                {
+                    line.PurchaseInvoiceId = payment.PurchaseInvoiceId;
+                }
+                modified = true;
+            }
+            if (modified)
+            {
+                await _db.SaveChangesAsync();
+                try { Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncEntityBalancesAsync()); } catch { }
+            }
+            return;
+        }
         var mapDict = await _core.GetSafeSystemMappingsAsync();
         string payablesAcct = $"ID:{await _core.GetRequiredMappedAccountAsync(MK.Supplier, mapDict)}";
         
