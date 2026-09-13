@@ -336,6 +336,14 @@ public class PayrollController : ControllerBase
                     delayMinutes     = 0; // لا تأخير في هذا الوضع
                 }
             }
+            else if (emp.AttendanceMode == AttendanceMode.Daily)
+            {
+                // ═══ وضع وردية باليوم (العمالة اليومية) ══════════════════════════════════════════
+                // يُحاسب العامل على أيام الحضور الفعلية فقط (لا يوجد خصم غياب)
+                absenceDays = 0;
+                overtimeHours = empAttendances.Sum(a => a.OvertimeHours);
+                delayMinutes = (!emp.IsFlexible && emp.EnableDelayRules) ? empAttendances.Sum(a => a.DelayMinutes) : 0;
+            }
             else
             {
                 // ═══ وضع Fixed / Flexible: حساب يومي كالمعتاد ══════════════════════
@@ -375,50 +383,104 @@ public class PayrollController : ControllerBase
 
 
             // Financial Calculations
-            var baseSalary = emp.BaseSalary;
-            var daysPerMonth = emp.DaysPerMonth > 0 ? emp.DaysPerMonth : 26;
-            var workHoursPerDay = emp.WorkHoursPerDay > 0 ? (decimal)emp.WorkHoursPerDay : 9m;
-
-            var absenceDeduction = Math.Round(absenceDays * (baseSalary / daysPerMonth), 2);
-            var overtimeAmount = Math.Round(overtimeHours * (baseSalary / daysPerMonth / workHoursPerDay) * emp.OvertimeMultiplier, 2);
-
+            decimal? overrideBasicSalary = null;
+            decimal absenceDeduction = 0m;
+            decimal overtimeAmount = 0m;
             decimal delayDeduction = 0m;
-            if (enableGradPolicy)
+
+            if (emp.AttendanceMode == AttendanceMode.Daily)
             {
-                decimal totalDeductedDays = 0m;
-                foreach (var att in empAttendances)
+                var dailyWage = emp.BaseSalary;
+                var workedDays = empAttendances.Count(a => !a.IsAbsent && (a.WorkHours > 0 || a.CheckIn != null));
+                var calculatedBasic = Math.Round(workedDays * dailyWage, 2);
+                overrideBasicSalary = calculatedBasic;
+
+                absenceDeduction = 0m;
+
+                var workHoursPerDay = emp.WorkHoursPerDay > 0 ? (decimal)emp.WorkHoursPerDay : 9m;
+                var hourlyWage = workHoursPerDay > 0 ? (dailyWage / workHoursPerDay) : 0m;
+
+                overtimeAmount = Math.Round(overtimeHours * hourlyWage * emp.OvertimeMultiplier, 2);
+
+                if (!emp.IsFlexible && emp.EnableDelayRules)
                 {
-                    if (att.DelayMinutes > 0 && !att.IsAbsent)
+                    if (enableGradPolicy)
                     {
-                        if (att.DelayMinutes > graceMins)
+                        decimal totalDeductedDays = 0m;
+                        foreach (var att in empAttendances)
                         {
-                            if (quarterLimit > 0 && att.DelayMinutes <= quarterLimit)
+                            if (att.DelayMinutes > 0 && !att.IsAbsent)
                             {
-                                totalDeductedDays += 0.25m; // ربع يوم
-                            }
-                            else if (halfLimit > 0 && att.DelayMinutes <= halfLimit)
-                            {
-                                totalDeductedDays += 0.50m; // نصف يوم
-                            }
-                            else if (halfLimit > 0 && att.DelayMinutes > halfLimit)
-                            {
-                                totalDeductedDays += 1.00m; // يوم كامل
+                                if (att.DelayMinutes > graceMins)
+                                {
+                                    if (quarterLimit > 0 && att.DelayMinutes <= quarterLimit)
+                                        totalDeductedDays += 0.25m;
+                                    else if (halfLimit > 0 && att.DelayMinutes <= halfLimit)
+                                        totalDeductedDays += 0.50m;
+                                    else if (halfLimit > 0 && att.DelayMinutes > halfLimit)
+                                        totalDeductedDays += 1.00m;
+                                }
                             }
                         }
+                        delayDeduction = Math.Round(totalDeductedDays * dailyWage, 2);
+                    }
+                    else
+                    {
+                        delayDeduction = Math.Round((delayMinutes / 60m) * hourlyWage, 2);
                     }
                 }
-                delayDeduction = Math.Round(totalDeductedDays * (baseSalary / daysPerMonth), 2);
+                else
+                {
+                    delayDeduction = 0m;
+                }
             }
             else
             {
-                delayDeduction = Math.Round((delayMinutes / 60m) * (baseSalary / daysPerMonth / workHoursPerDay), 2);
+                var baseSalary = emp.BaseSalary;
+                var daysPerMonth = emp.DaysPerMonth > 0 ? emp.DaysPerMonth : 26;
+                var workHoursPerDay = emp.WorkHoursPerDay > 0 ? (decimal)emp.WorkHoursPerDay : 9m;
+
+                absenceDeduction = Math.Round(absenceDays * (baseSalary / daysPerMonth), 2);
+                overtimeAmount = Math.Round(overtimeHours * (baseSalary / daysPerMonth / workHoursPerDay) * emp.OvertimeMultiplier, 2);
+
+                if (enableGradPolicy)
+                {
+                    decimal totalDeductedDays = 0m;
+                    foreach (var att in empAttendances)
+                    {
+                        if (att.DelayMinutes > 0 && !att.IsAbsent)
+                        {
+                            if (att.DelayMinutes > graceMins)
+                            {
+                                if (quarterLimit > 0 && att.DelayMinutes <= quarterLimit)
+                                {
+                                    totalDeductedDays += 0.25m; // ربع يوم
+                                }
+                                else if (halfLimit > 0 && att.DelayMinutes <= halfLimit)
+                                {
+                                    totalDeductedDays += 0.50m; // نصف يوم
+                                }
+                                else if (halfLimit > 0 && att.DelayMinutes > halfLimit)
+                                {
+                                    totalDeductedDays += 1.00m; // يوم كامل
+                                }
+                            }
+                        }
+                    }
+                    delayDeduction = Math.Round(totalDeductedDays * (baseSalary / daysPerMonth), 2);
+                }
+                else
+                {
+                    delayDeduction = Math.Round((delayMinutes / 60m) * (baseSalary / daysPerMonth / workHoursPerDay), 2);
+                }
             }
 
             // Advances
             var remainingAdvance = emp.Advances
                 .Where(a => a.Status != AdvanceStatus.FullyDeducted && a.AdvanceDate <= endOfPeriod)
                 .Sum(a => a.Amount - a.DeductedAmount);
-            var proposedAdvanceDeduct = Math.Min(remainingAdvance, Math.Round(baseSalary * 0.25m, 2));
+            var effectiveBaseForAdvance = overrideBasicSalary ?? emp.BaseSalary;
+            var proposedAdvanceDeduct = Math.Min(remainingAdvance, Math.Round(effectiveBaseForAdvance * 0.25m, 2));
 
             // Bonuses (Pending)
             var pendingBonuses = emp.Bonuses
@@ -433,6 +495,11 @@ public class PayrollController : ControllerBase
             var totalDeduction = pendingDeductions + delayDeduction;
 
             var notesList = new List<string>();
+            if (emp.AttendanceMode == AttendanceMode.Daily)
+            {
+                var workedCount = empAttendances.Count(a => !a.IsAbsent && (a.WorkHours > 0 || a.CheckIn != null));
+                notesList.Add($"يومية: {workedCount} أيام عمل × {emp.BaseSalary} ج.م = {overrideBasicSalary} ج.م");
+            }
             if (delayMinutes > 0)
                 notesList.Add($"خصم تأخير: {(int)delayMinutes} دقيقة بقيمة {delayDeduction} ج.م");
             if (absenceDays > 0)
@@ -539,7 +606,7 @@ public class PayrollController : ControllerBase
 
             result.Add(new CreatePayrollItemDto(
                 emp.Id,
-                null, // OverrideBasicSalary = null to use BaseSalary
+                overrideBasicSalary,
                 emp.TransportationAllowance,
                 emp.CommunicationAllowance,
                 emp.BonusAmount + pendingBonuses,

@@ -295,9 +295,23 @@ public class EmployeeAttendancesController : ControllerBase
                                 overtime = workHours - stdHours;
                             }
 
-                            if (emp.AttendanceMode == AttendanceMode.Fixed && !string.IsNullOrEmpty(emp.ShiftStartTime))
+                            bool delayActive = false;
+                            string? shiftStartStr = null;
+
+                            if (emp.AttendanceMode == AttendanceMode.Daily)
                             {
-                                if (TimeSpan.TryParse(emp.ShiftStartTime, out var shiftStart))
+                                delayActive = !emp.IsFlexible && emp.EnableDelayRules;
+                                shiftStartStr = emp.ShiftStartTime;
+                            }
+                            else if (emp.AttendanceMode == AttendanceMode.Fixed)
+                            {
+                                delayActive = emp.EnableDelayRules;
+                                shiftStartStr = emp.ShiftStartTime;
+                            }
+
+                            if (delayActive && !string.IsNullOrEmpty(shiftStartStr))
+                            {
+                                if (TimeSpan.TryParse(shiftStartStr, out var shiftStart))
                                 {
                                     var stdCheckIn = attendanceDate.Add(shiftStart);
                                     if (checkIn.Value > stdCheckIn)

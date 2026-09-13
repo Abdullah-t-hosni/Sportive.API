@@ -58,6 +58,9 @@ public record CreateEmployeeDto(
     int           DaysPerMonth       = 26,
     AttendanceMode AttendanceMode    = AttendanceMode.Fixed,
     string        ShiftStartTime     = "09:00",
+    string?       ShiftEndTime       = "18:00",
+    bool          EnableDelayRules   = true,
+    bool          IsFlexible         = false,
     string        WeeklyDaysOff      = "Friday",
     int           MonthlyVacationDays = 0,
     int?          BranchId           = null
@@ -88,6 +91,9 @@ public record UpdateEmployeeDto(
     int           DaysPerMonth       = 26,
     AttendanceMode AttendanceMode    = AttendanceMode.Fixed,
     string        ShiftStartTime     = "09:00",
+    string?       ShiftEndTime       = "18:00",
+    bool          EnableDelayRules   = true,
+    bool          IsFlexible         = false,
     string        WeeklyDaysOff      = "Friday",
     int           MonthlyVacationDays = 0,
     int?          BranchId           = null
@@ -124,12 +130,15 @@ public record EmployeeDto(
     int            DaysPerMonth = 26,
     AttendanceMode AttendanceMode  = AttendanceMode.Fixed,
     string         ShiftStartTime  = "09:00",
+    string?        ShiftEndTime    = "18:00",
+    bool           EnableDelayRules = true,
+    bool           IsFlexible      = false,
     string         WeeklyDaysOff   = "Friday",
     int            MonthlyVacationDays = 0,
     int?           BranchId        = null
 );
 
-public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, int? DepartmentId, string? DepartmentName, decimal BaseSalary, decimal TransportationAllowance, decimal CommunicationAllowance, decimal BonusAmount, decimal FixedAllowance, decimal PendingAdvancesAmount, decimal PendingBonusesAmount, decimal PendingDeductionsAmount, int Status, decimal WorkHoursPerDay, decimal OvertimeMultiplier, int DaysPerMonth);
+public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, int? DepartmentId, string? DepartmentName, decimal BaseSalary, decimal TransportationAllowance, decimal CommunicationAllowance, decimal BonusAmount, decimal FixedAllowance, decimal PendingAdvancesAmount, decimal PendingBonusesAmount, decimal PendingDeductionsAmount, int Status, decimal WorkHoursPerDay, decimal OvertimeMultiplier, int DaysPerMonth, AttendanceMode AttendanceMode = AttendanceMode.Fixed, bool IsFlexible = false, bool EnableDelayRules = true);
 
 // ══════════════════════════════════════════════════════
 // PAYROLL RUN DTOs
@@ -470,7 +479,10 @@ public record EmployeeShiftOverrideDto(
     DateTime? OverrideDate,
     DayOfWeek? DayOfWeek,
     string? ShiftStartTime,
+    string? ShiftEndTime,
     decimal? WorkHoursPerDay,
+    bool IsFlexible,
+    bool EnableDelayRules,
     bool IsDayOff,
     string? Notes
 );
@@ -479,8 +491,15 @@ public record CreateEmployeeShiftOverrideDto(
     DateTime? OverrideDate,
     DayOfWeek? DayOfWeek,
     string? ShiftStartTime,
-    decimal? WorkHoursPerDay,
-    bool IsDayOff,
-    string? Notes
+    string? ShiftEndTime = null,
+    decimal? WorkHoursPerDay = 9,
+    bool IsFlexible = false,
+    bool EnableDelayRules = true,
+    bool IsDayOff = false,
+    string? Notes = null
+);
+
+public record SaveWeeklyShiftsDto(
+    List<CreateEmployeeShiftOverrideDto> Shifts
 );
 

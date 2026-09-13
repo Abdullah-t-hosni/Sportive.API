@@ -62,7 +62,8 @@ public enum AttendanceMode
 {
     Fixed        = 1, // ثابت — بميعاد حضور يومي
     Flexible     = 2, // مرن — ساعات عمل يومية فقط
-    MonthlyTotal = 3  // إجمالي شهري — مجموع ساعات الشهر (للوردية المقسّمة)
+    MonthlyTotal = 3, // إجمالي شهري — مجموع ساعات الشهر (للوردية المقسّمة)
+    Daily        = 4  // وردية باليوم (للعمالة اليومية)
 }
 
 public class Department : BaseEntity
@@ -119,6 +120,9 @@ public class Employee : BaseEntity
 
     public AttendanceMode AttendanceMode   { get; set; } = AttendanceMode.Fixed;
     public string         ShiftStartTime   { get; set; } = "09:00";
+    public string?        ShiftEndTime     { get; set; } = "18:00";
+    public bool           EnableDelayRules { get; set; } = true;
+    public bool           IsFlexible       { get; set; } = false;
     public string         WeeklyDaysOff    { get; set; } = "Friday"; // Comma-separated list of days (e.g. "Friday,Saturday")
 
     // ─── إعدادات نظام الحضور الشهري المجمّع (MonthlyTotal) ───────────
@@ -616,7 +620,10 @@ public class EmployeeShiftOverride : BaseEntity
     public DayOfWeek? DayOfWeek { get; set; } // Recurring day of the week override
     
     public string? ShiftStartTime { get; set; } // e.g., "14:00"
+    public string? ShiftEndTime { get; set; } // e.g., "18:00"
     public decimal? WorkHoursPerDay { get; set; } // e.g., 8
+    public bool IsFlexible { get; set; } = false; // هل الوردية مرنة بعدد ساعات فقط
+    public bool EnableDelayRules { get; set; } = true; // تفعيل قواعد التأخير
     public bool IsDayOff { get; set; } = false; // Check if this override forces a day off
     public string? Notes { get; set; }
 }

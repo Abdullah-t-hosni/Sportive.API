@@ -214,25 +214,57 @@ namespace Sportive.API.Services.HR
                 {
                     attendance.DelayMinutes = 0;
                 }
-                else if (emp.AttendanceMode == AttendanceMode.Fixed && !string.IsNullOrEmpty(shiftStartStr))
+                else
                 {
-                    if (TimeSpan.TryParse(shiftStartStr, out var shiftStart))
+                    // Check whether delay rules are active for this day's shift
+                    bool delayRulesActive = false;
+                    string? activeShiftStart = null;
+
+                    if (over != null)
                     {
-                        var stdCheckIn = attendance.Date.Add(shiftStart);
-                        if (attendance.CheckIn.Value > stdCheckIn)
+                        // Specific day or recurring day override
+                        delayRulesActive = !over.IsFlexible && over.EnableDelayRules;
+                        activeShiftStart = over.ShiftStartTime;
+                    }
+                    else
+                    {
+                        // Employee base settings
+                        if (emp.AttendanceMode == AttendanceMode.Daily)
                         {
-                            var diff = (attendance.CheckIn.Value - stdCheckIn).TotalMinutes;
-                            attendance.DelayMinutes = diff > 0 ? (decimal)diff : 0;
+                            delayRulesActive = !emp.IsFlexible && emp.EnableDelayRules;
+                            activeShiftStart = emp.ShiftStartTime;
+                        }
+                        else
+                        {
+                            delayRulesActive = emp.AttendanceMode == AttendanceMode.Fixed && emp.EnableDelayRules;
+                            activeShiftStart = emp.ShiftStartTime;
+                        }
+                    }
+
+                    if (delayRulesActive && !string.IsNullOrEmpty(activeShiftStart))
+                    {
+                        if (TimeSpan.TryParse(activeShiftStart, out var shiftStart))
+                        {
+                            var stdCheckIn = attendance.Date.Add(shiftStart);
+                            if (attendance.CheckIn.Value > stdCheckIn)
+                            {
+                                var diff = (attendance.CheckIn.Value - stdCheckIn).TotalMinutes;
+                                attendance.DelayMinutes = diff > 0 ? (decimal)diff : 0;
+                            }
+                            else
+                            {
+                                attendance.DelayMinutes = 0;
+                            }
                         }
                         else
                         {
                             attendance.DelayMinutes = 0;
                         }
                     }
-                }
-                else
-                {
-                    attendance.DelayMinutes = 0;
+                    else
+                    {
+                        attendance.DelayMinutes = 0;
+                    }
                 }
             }
         }

@@ -81,7 +81,7 @@ public class EmployeesController : ControllerBase
                 e.AppUserId, e.AppUser != null ? e.AppUser.FullName : null,
                 e.CostCenter,
                 e.WorkHoursPerDay, e.OvertimeMultiplier, e.DaysPerMonth,
-                e.AttendanceMode, e.ShiftStartTime, e.WeeklyDaysOff,
+                e.AttendanceMode, e.ShiftStartTime, e.ShiftEndTime, e.EnableDelayRules, e.IsFlexible, e.WeeklyDaysOff,
                 e.MonthlyVacationDays,
                 e.BranchId
             )).ToListAsync();
@@ -133,7 +133,8 @@ public class EmployeesController : ControllerBase
                 e.Bonuses.Where(b => b.PayrollRunId == null && b.CashAccountId == null && (!endOfPeriod.HasValue || b.BonusDate <= endOfPeriod.Value)).Sum(b => b.Amount),
                 e.Deductions.Where(d => d.PayrollRunId == null && d.CashAccountId == null && (!endOfPeriod.HasValue || d.DeductionDate <= endOfPeriod.Value)).Sum(d => d.Amount),
                 (int)e.Status,
-                e.WorkHoursPerDay, e.OvertimeMultiplier, e.DaysPerMonth))
+                e.WorkHoursPerDay, e.OvertimeMultiplier, e.DaysPerMonth,
+                e.AttendanceMode, e.IsFlexible, e.EnableDelayRules))
             .ToListAsync());
     }
 
@@ -156,7 +157,7 @@ public class EmployeesController : ControllerBase
             e.AppUserId, e.AppUser?.FullName,
             e.CostCenter,
             e.WorkHoursPerDay, e.OvertimeMultiplier, e.DaysPerMonth,
-            e.AttendanceMode, e.ShiftStartTime, e.WeeklyDaysOff,
+            e.AttendanceMode, e.ShiftStartTime, e.ShiftEndTime, e.EnableDelayRules, e.IsFlexible, e.WeeklyDaysOff,
             e.MonthlyVacationDays,
             e.BranchId));
     }
@@ -227,6 +228,9 @@ public class EmployeesController : ControllerBase
             DaysPerMonth     = dto.DaysPerMonth,
             AttendanceMode   = dto.AttendanceMode,
             ShiftStartTime   = dto.ShiftStartTime ?? "09:00",
+            ShiftEndTime     = dto.ShiftEndTime ?? "18:00",
+            EnableDelayRules = dto.EnableDelayRules,
+            IsFlexible       = dto.IsFlexible,
             WeeklyDaysOff    = dto.WeeklyDaysOff ?? "Friday",
             MonthlyVacationDays = dto.MonthlyVacationDays,
             BranchId         = dto.BranchId,
@@ -323,6 +327,9 @@ public class EmployeesController : ControllerBase
         emp.DaysPerMonth      = dto.DaysPerMonth;
         emp.AttendanceMode   = dto.AttendanceMode;
         emp.ShiftStartTime   = dto.ShiftStartTime ?? "09:00";
+        emp.ShiftEndTime     = dto.ShiftEndTime ?? "18:00";
+        emp.EnableDelayRules = dto.EnableDelayRules;
+        emp.IsFlexible       = dto.IsFlexible;
         emp.WeeklyDaysOff    = dto.WeeklyDaysOff ?? "Friday";
         emp.MonthlyVacationDays = dto.MonthlyVacationDays;
         emp.BranchId         = dto.BranchId;
@@ -696,7 +703,18 @@ public class EmployeesController : ControllerBase
         var overrides = await _db.EmployeeShiftOverrides
             .Where(x => x.EmployeeId == id)
             .OrderByDescending(x => x.OverrideDate)
-            .Select(x => new EmployeeShiftOverrideDto(x.Id, x.EmployeeId, x.OverrideDate, x.DayOfWeek, x.ShiftStartTime, x.WorkHoursPerDay, x.IsDayOff, x.Notes))
+            .Select(x => new EmployeeShiftOverrideDto(
+                x.Id,
+                x.EmployeeId,
+                x.OverrideDate,
+                x.DayOfWeek,
+                x.ShiftStartTime,
+                x.ShiftEndTime,
+                x.WorkHoursPerDay,
+                x.IsFlexible,
+                x.EnableDelayRules,
+                x.IsDayOff,
+                x.Notes))
             .ToListAsync();
         return Ok(overrides);
     }
@@ -720,9 +738,13 @@ public class EmployeesController : ControllerBase
         if (existing != null)
         {
             existing.ShiftStartTime = dto.ShiftStartTime;
+            existing.ShiftEndTime = dto.ShiftEndTime;
             existing.WorkHoursPerDay = dto.WorkHoursPerDay;
+            existing.IsFlexible = dto.IsFlexible;
+            existing.EnableDelayRules = dto.EnableDelayRules;
             existing.IsDayOff = dto.IsDayOff;
             existing.Notes = dto.Notes;
+            existing.UpdatedAt = TimeHelper.GetEgyptTime();
         }
         else
         {
@@ -732,13 +754,55 @@ public class EmployeesController : ControllerBase
                 OverrideDate = dto.OverrideDate?.Date,
                 DayOfWeek = dto.DayOfWeek,
                 ShiftStartTime = dto.ShiftStartTime,
+                ShiftEndTime = dto.ShiftEndTime,
                 WorkHoursPerDay = dto.WorkHoursPerDay,
+                IsFlexible = dto.IsFlexible,
+                EnableDelayRules = dto.EnableDelayRules,
                 IsDayOff = dto.IsDayOff,
-                Notes = dto.Notes
+                Notes = dto.Notes,
+                CreatedAt = TimeHelper.GetEgyptTime()
             });
         }
         await _db.SaveChangesAsync();
         return Ok(new { message = "Shift override saved successfully" });
+    }
+
+    [HttpPost("{id}/weekly-shifts")]
+    [RequirePermission(ModuleKeys.Hr)]
+    public async Task<IActionResult> SaveWeeklyShifts(int id, [FromBody] SaveWeeklyShiftsDto dto)
+    {
+        var emp = await _db.Employees.FindAsync(id);
+        if (emp == null) return NotFound("Employee not found");
+
+        // Remove existing weekly overrides (DayOfWeek != null) for this employee
+        var existingWeekly = await _db.EmployeeShiftOverrides
+            .Where(x => x.EmployeeId == id && x.DayOfWeek != null)
+            .ToListAsync();
+        _db.EmployeeShiftOverrides.RemoveRange(existingWeekly);
+
+        // Add incoming weekly shifts
+        if (dto.Shifts != null && dto.Shifts.Any())
+        {
+            foreach (var s in dto.Shifts.Where(x => x.DayOfWeek.HasValue))
+            {
+                _db.EmployeeShiftOverrides.Add(new EmployeeShiftOverride
+                {
+                    EmployeeId = id,
+                    DayOfWeek = s.DayOfWeek,
+                    ShiftStartTime = s.ShiftStartTime,
+                    ShiftEndTime = s.ShiftEndTime,
+                    WorkHoursPerDay = s.WorkHoursPerDay,
+                    IsFlexible = s.IsFlexible,
+                    EnableDelayRules = s.EnableDelayRules,
+                    IsDayOff = s.IsDayOff,
+                    Notes = s.Notes,
+                    CreatedAt = TimeHelper.GetEgyptTime()
+                });
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { message = "Weekly shifts saved successfully" });
     }
 
     [HttpDelete("shift-overrides/{overrideId}")]
