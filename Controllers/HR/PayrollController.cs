@@ -391,14 +391,20 @@ public class PayrollController : ControllerBase
             if (emp.AttendanceMode == AttendanceMode.Daily)
             {
                 var dailyWage = emp.BaseSalary;
-                var workedDays = empAttendances.Count(a => !a.IsAbsent && (a.WorkHours > 0 || a.CheckIn != null));
-                var calculatedBasic = Math.Round(workedDays * dailyWage, 2);
+                var targetDailyHours = emp.WorkHoursPerDay > 0 ? (decimal)emp.WorkHoursPerDay : 9m;
+                var hourlyWage = targetDailyHours > 0 ? (dailyWage / targetDailyHours) : 0m;
+
+                // حساب ساعات العمل العادية الفعلية لكل يوم (بحد أقصى ساعات الوردية المستهدفة لليوم)
+                decimal totalRegularHours = 0m;
+                foreach (var att in empAttendances.Where(a => !a.IsAbsent && a.WorkHours > 0))
+                {
+                    totalRegularHours += Math.Min(att.WorkHours, targetDailyHours);
+                }
+
+                var calculatedBasic = Math.Round(totalRegularHours * hourlyWage, 2);
                 overrideBasicSalary = calculatedBasic;
 
                 absenceDeduction = 0m;
-
-                var workHoursPerDay = emp.WorkHoursPerDay > 0 ? (decimal)emp.WorkHoursPerDay : 9m;
-                var hourlyWage = workHoursPerDay > 0 ? (dailyWage / workHoursPerDay) : 0m;
 
                 overtimeAmount = Math.Round(overtimeHours * hourlyWage * emp.OvertimeMultiplier, 2);
 
@@ -497,8 +503,11 @@ public class PayrollController : ControllerBase
             var notesList = new List<string>();
             if (emp.AttendanceMode == AttendanceMode.Daily)
             {
-                var workedCount = empAttendances.Count(a => !a.IsAbsent && (a.WorkHours > 0 || a.CheckIn != null));
-                notesList.Add($"يومية: {workedCount} أيام عمل × {emp.BaseSalary} ج.م = {overrideBasicSalary} ج.م");
+                var targetDailyHours = emp.WorkHoursPerDay > 0 ? (decimal)emp.WorkHoursPerDay : 9m;
+                var hourlyWage = targetDailyHours > 0 ? (emp.BaseSalary / targetDailyHours) : 0m;
+                var totalRegularHours = empAttendances.Where(a => !a.IsAbsent && a.WorkHours > 0).Sum(a => Math.Min(a.WorkHours, targetDailyHours));
+                var equivalentDays = targetDailyHours > 0 ? Math.Round(totalRegularHours / targetDailyHours, 1) : 0m;
+                notesList.Add($"يومية: {totalRegularHours:F1} س عمل ({equivalentDays:F1} يوم) × {hourlyWage:F2} ج.م/س = {overrideBasicSalary} ج.م");
             }
             if (delayMinutes > 0)
                 notesList.Add($"خصم تأخير: {(int)delayMinutes} دقيقة بقيمة {delayDeduction} ج.م");
