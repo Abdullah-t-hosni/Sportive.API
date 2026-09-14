@@ -33,8 +33,14 @@ public class WarehousesController : ControllerBase
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
         if (!canViewAll)
         {
+            int? isolatedWarehouseId = User.GetWarehouseId();
             int? isolatedBranchId = User.GetBranchId();
-            if (isolatedBranchId.HasValue)
+
+            if (isolatedWarehouseId.HasValue)
+            {
+                query = query.Where(w => w.Id == isolatedWarehouseId.Value);
+            }
+            else if (isolatedBranchId.HasValue)
             {
                 query = query.Where(w => w.BranchId == isolatedBranchId.Value);
             }

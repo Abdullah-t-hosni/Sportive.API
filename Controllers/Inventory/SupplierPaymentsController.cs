@@ -70,81 +70,120 @@ public class SupplierPaymentsController : ControllerBase
             );
         }
 
-        if (supplierId.HasValue)
-        {
-            var pQueryDto = q.Select(p => new SupplierPaymentSummaryDto(
-                p.Id, p.PaymentNumber, p.Supplier.Name, 
-                p.Invoice != null ? p.Invoice.InvoiceNumber : null,
-                p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes,
-                p.AttachmentUrl, p.AttachmentPublicId,
-                p.CostCenter,
-                p.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (p.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
-                p.SupplierId,
-                p.PurchaseInvoiceId,
-                p.CashAccountId,
-                p.ReferenceNumber
+        var pQueryDto = q.Select(p => new SupplierPaymentSummaryDto(
+            p.Id, p.PaymentNumber, p.Supplier.Name, 
+            p.Invoice != null ? p.Invoice.InvoiceNumber : null,
+            p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes,
+            p.AttachmentUrl, p.AttachmentPublicId,
+            p.CostCenter,
+            p.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (p.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
+            p.SupplierId,
+            p.PurchaseInvoiceId,
+            p.CashAccountId,
+            p.ReferenceNumber
+        ));
+
+        // Include manual journal entries affecting suppliers (حساب الموردين مدين)
+        var jLinesQ = _db.JournalLines
+            .AsNoTracking()
+            .Include(l => l.Supplier)
+            .Include(l => l.Account)
+            .Include(l => l.JournalEntry)
+                .ThenInclude(e => e.Lines)
+                    .ThenInclude(other => other.Account)
+            .Where(l => l.SupplierId != null && l.Debit > 0 && l.JournalEntry.Type == JournalEntryType.Manual && (
+                l.AccountId == l.Supplier!.MainAccountId ||
+                (l.Supplier!.MainAccountId == null && l.Account.Code != null && l.Account.Code.StartsWith("2101"))
             ));
 
-            var allP = await pQueryDto.ToListAsync();
+        if (supplierId.HasValue) jLinesQ = jLinesQ.Where(l => l.SupplierId == supplierId.Value);
+        if (purchaseInvoiceId.HasValue) jLinesQ = jLinesQ.Where(l => l.PurchaseInvoiceId == purchaseInvoiceId.Value);
+        if (fromDate.HasValue) jLinesQ = jLinesQ.Where(l => l.JournalEntry.EntryDate >= fromDate.Value);
+        if (toDate.HasValue) jLinesQ = jLinesQ.Where(l => l.JournalEntry.EntryDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
 
-            var jQuery = _db.JournalLines
-                .Where(l => l.SupplierId == supplierId.Value && l.Debit > 0 && l.JournalEntry.Type == JournalEntryType.Manual && (
-                    l.AccountId == l.Supplier!.MainAccountId ||
-                    (l.Supplier!.MainAccountId == null && l.Account.Code != null && l.Account.Code.StartsWith("2101"))
-                ))
-                .Select(l => new SupplierPaymentSummaryDto(
-                    -l.Id, 
-                    l.JournalEntry.EntryNumber, 
-                    l.Supplier!.Name, 
-                    l.PurchaseInvoice != null ? l.PurchaseInvoice.InvoiceNumber : null,
-                    l.JournalEntry.EntryDate, 
-                    l.Debit, 
-                    "Manual", 
-                    l.Account.NameAr, 
-                    l.Description ?? l.JournalEntry.Description,
-                    l.JournalEntry.AttachmentUrl, 
-                    l.JournalEntry.AttachmentPublicId,
-                    l.JournalEntry.CostCenter,
-                    l.JournalEntry.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (l.JournalEntry.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
-                    l.SupplierId,
-                    l.PurchaseInvoiceId,
-                    null,
-                    l.JournalEntry.Reference
-                ));
-
-            var allJ = await jQuery.ToListAsync();
-
-            var combined = allP.Concat(allJ).OrderByDescending(x => x.PaymentDate).ToList();
-            var totalItems = combined.Count;
-            var itemsList = combined.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-
-            return Ok(new PaginatedResult<SupplierPaymentSummaryDto>(itemsList, totalItems, page, pageSize,
-                (int)Math.Ceiling((double)totalItems / pageSize)));
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var searchLower = search.Trim().ToLower();
+            jLinesQ = jLinesQ.Where(l => 
+                l.JournalEntry.EntryNumber.ToLower().Contains(searchLower) ||
+                l.Supplier!.Name.ToLower().Contains(searchLower) ||
+                (l.PurchaseInvoice != null && l.PurchaseInvoice.InvoiceNumber.ToLower().Contains(searchLower)) ||
+                (l.Account.NameAr != null && l.Account.NameAr.ToLower().Contains(searchLower)) ||
+                (l.Description != null && l.Description.ToLower().Contains(searchLower)) ||
+                (l.JournalEntry.Description != null && l.JournalEntry.Description.ToLower().Contains(searchLower)) ||
+                (l.JournalEntry.Reference != null && l.JournalEntry.Reference.ToLower().Contains(searchLower))
+            );
         }
 
-        var total = await q.CountAsync();
-        var items = await q.OrderByDescending(p => p.PaymentDate)
-            .Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(p => new SupplierPaymentSummaryDto(
-                p.Id, p.PaymentNumber, p.Supplier.Name, 
-                p.Invoice != null ? p.Invoice.InvoiceNumber : null,
-                p.PaymentDate, p.Amount, p.PaymentMethod.ToString(), p.AccountName, p.Notes,
-                p.AttachmentUrl, p.AttachmentPublicId,
-                p.CostCenter,
-                p.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (p.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
-                p.SupplierId,
-                p.PurchaseInvoiceId,
-                p.CashAccountId,
-                p.ReferenceNumber
-            )).ToListAsync();
+        var jQuery = jLinesQ.Select(l => new SupplierPaymentSummaryDto(
+            -l.Id, 
+            l.JournalEntry.EntryNumber, 
+            l.Supplier!.Name, 
+            l.PurchaseInvoice != null ? l.PurchaseInvoice.InvoiceNumber : null,
+            l.JournalEntry.EntryDate, 
+            l.Debit, 
+            "Manual", 
+            l.JournalEntry.Lines.Where(o => o.Credit > 0 && o.Id != l.Id).Select(o => o.Account.NameAr).FirstOrDefault() ?? l.Account.NameAr, 
+            l.Description ?? l.JournalEntry.Description,
+            l.JournalEntry.AttachmentUrl, 
+            l.JournalEntry.AttachmentPublicId,
+            l.JournalEntry.CostCenter,
+            l.JournalEntry.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (l.JournalEntry.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
+            l.SupplierId,
+            l.PurchaseInvoiceId,
+            null,
+            l.JournalEntry.Reference
+        ));
 
-        return Ok(new PaginatedResult<SupplierPaymentSummaryDto>(items, total, page, pageSize,
-            (int)Math.Ceiling((double)total / pageSize)));
+        var allP = await pQueryDto.ToListAsync();
+        var allJ = await jQuery.ToListAsync();
+
+        var combined = allP.Concat(allJ).OrderByDescending(x => x.PaymentDate).ToList();
+        var totalItems = combined.Count;
+        var itemsList = combined.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+        return Ok(new PaginatedResult<SupplierPaymentSummaryDto>(itemsList, totalItems, page, pageSize,
+            (int)Math.Ceiling((double)totalItems / pageSize)));
     }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
+        if (id < 0)
+        {
+            var lineId = -id;
+            var l = await _db.JournalLines
+                .Include(x => x.JournalEntry)
+                    .ThenInclude(e => e.Lines)
+                        .ThenInclude(other => other.Account)
+                .Include(x => x.Supplier)
+                .Include(x => x.Account)
+                .Include(x => x.PurchaseInvoice)
+                .FirstOrDefaultAsync(x => x.Id == lineId);
+
+            if (l == null) return NotFound();
+
+            return Ok(new SupplierPaymentSummaryDto(
+                -l.Id, 
+                l.JournalEntry.EntryNumber, 
+                l.Supplier?.Name ?? "", 
+                l.PurchaseInvoice != null ? l.PurchaseInvoice.InvoiceNumber : null,
+                l.JournalEntry.EntryDate, 
+                l.Debit, 
+                "Manual", 
+                l.JournalEntry.Lines.Where(o => o.Credit > 0 && o.Id != l.Id).Select(o => o.Account.NameAr).FirstOrDefault() ?? l.Account.NameAr, 
+                l.Description ?? l.JournalEntry.Description,
+                l.JournalEntry.AttachmentUrl, 
+                l.JournalEntry.AttachmentPublicId,
+                l.JournalEntry.CostCenter,
+                l.JournalEntry.CostCenter == OrderSource.Website ? _t.Get("SupplierPayments.Website") : (l.JournalEntry.CostCenter == OrderSource.POS ? _t.Get("SupplierPayments.POS") : _t.Get("SupplierPayments.General")),
+                l.SupplierId,
+                l.PurchaseInvoiceId,
+                null,
+                l.JournalEntry.Reference
+            ));
+        }
+
         var p = await _db.SupplierPayments
             .Include(p => p.Supplier)
             .Include(p => p.Invoice)

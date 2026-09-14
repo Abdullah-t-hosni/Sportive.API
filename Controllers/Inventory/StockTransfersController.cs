@@ -7,7 +7,6 @@ using Sportive.API.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Utils;
-
 using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers;
@@ -34,6 +33,9 @@ public class StockTransfersController : ControllerBase
         var q = _db.StockTransfers
             .Include(t => t.SourceWarehouse)
             .Include(t => t.DestinationWarehouse)
+            .Include(t => t.Items)
+                .ThenInclude(i => i.ProductVariant)
+                    .ThenInclude(v => v.Product)
             .AsQueryable();
 
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
@@ -69,7 +71,74 @@ public class StockTransfersController : ControllerBase
             .FirstOrDefaultAsync(t => t.Id == id);
 
         if (transfer == null) return NotFound();
-        return Ok(transfer);
+
+        var userIds = new[] { transfer.CreatedByUserId, transfer.ShippedByUserId, transfer.ReceivedByUserId }
+            .Where(u => !string.IsNullOrEmpty(u))
+            .Distinct()
+            .ToList();
+
+        var userMap = await _db.Users
+            .Where(u => userIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.FullName);
+
+        return Ok(new
+        {
+            transfer.Id,
+            transfer.TransferNumber,
+            transfer.SourceWarehouseId,
+            SourceWarehouse = transfer.SourceWarehouse != null ? new { transfer.SourceWarehouse.Id, transfer.SourceWarehouse.Name } : null,
+            transfer.DestinationWarehouseId,
+            DestinationWarehouse = transfer.DestinationWarehouse != null ? new { transfer.DestinationWarehouse.Id, transfer.DestinationWarehouse.Name } : null,
+            transfer.Status,
+            transfer.Description,
+            transfer.ShippedAt,
+            transfer.ReceivedAt,
+            transfer.CreatedByUserId,
+            transfer.ShippedByUserId,
+            transfer.ReceivedByUserId,
+            CreatedByName = transfer.CreatedByUserId != null && userMap.ContainsKey(transfer.CreatedByUserId) ? userMap[transfer.CreatedByUserId] : null,
+            ShippedByName = transfer.ShippedByUserId != null && userMap.ContainsKey(transfer.ShippedByUserId) ? userMap[transfer.ShippedByUserId] : null,
+            ReceivedByName = transfer.ReceivedByUserId != null && userMap.ContainsKey(transfer.ReceivedByUserId) ? userMap[transfer.ReceivedByUserId] : null,
+            transfer.CreatedAt,
+            transfer.UpdatedAt,
+            Items = transfer.Items.Select(i => new
+            {
+                i.Id,
+                i.StockTransferId,
+                i.ProductVariantId,
+                i.Quantity,
+                i.Note,
+                ProductVariant = i.ProductVariant != null ? new
+                {
+                    i.ProductVariant.Id,
+                    i.ProductVariant.ProductId,
+                    i.ProductVariant.Size,
+                    i.ProductVariant.Color,
+                    i.ProductVariant.ColorAr,
+                    i.ProductVariant.StockQuantity,
+                    i.ProductVariant.ImageUrl,
+                    Product = i.ProductVariant.Product != null ? new
+                    {
+                        i.ProductVariant.Product.Id,
+                        i.ProductVariant.Product.NameAr,
+                        i.ProductVariant.Product.NameEn,
+                        Sku = i.ProductVariant.Product.SKU
+                    } : null
+                } : null
+            })
+        });
+    }
+
+    [RequirePermission(ModuleKeys.Inventory)]
+    [HttpGet("variant-stock")]
+    public async Task<IActionResult> GetVariantStock([FromQuery] int variantId, [FromQuery] int warehouseId)
+    {
+        var stock = await _db.ProductWarehouseStocks
+            .Where(s => s.ProductVariantId == variantId && s.WarehouseId == warehouseId)
+            .Select(s => s.Quantity)
+            .FirstOrDefaultAsync();
+
+        return Ok(new { variantId, warehouseId, stockQuantity = stock });
     }
 
     [RequirePermission(ModuleKeys.Inventory, requireEdit: true)]
@@ -78,16 +147,6 @@ public class StockTransfersController : ControllerBase
     {
         if (dto.SourceWarehouseId == dto.DestinationWarehouseId)
             return BadRequest(new { message = "Source and destination warehouses must be different." });
-
-        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
-        if (!canViewAll)
-        {
-            int? isolatedWarehouseId = User.GetWarehouseId();
-            if (isolatedWarehouseId.HasValue && dto.SourceWarehouseId != isolatedWarehouseId.Value && dto.DestinationWarehouseId != isolatedWarehouseId.Value)
-            {
-                return BadRequest(new { message = "You can only create transfers involving your assigned warehouse." });
-            }
-        }
 
         var sourceExists = await _db.Warehouses.AnyAsync(w => w.Id == dto.SourceWarehouseId && w.IsActive);
         var destExists = await _db.Warehouses.AnyAsync(w => w.Id == dto.DestinationWarehouseId && w.IsActive);
@@ -102,14 +161,19 @@ public class StockTransfersController : ControllerBase
         var count = await _db.StockTransfers.CountAsync(t => t.TransferNumber.StartsWith($"ST-{todayStr}-"));
         var transferNumber = $"ST-{todayStr}-{(count + 1):D4}";
 
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var transfer = new StockTransfer
         {
             TransferNumber = transferNumber,
             SourceWarehouseId = dto.SourceWarehouseId,
             DestinationWarehouseId = dto.DestinationWarehouseId,
             Description = dto.Description,
-            Status = StockTransferStatus.Draft,
-            CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+            Status = dto.IsDirectTransfer ? StockTransferStatus.Received : StockTransferStatus.Draft,
+            CreatedByUserId = userId,
+            ShippedByUserId = dto.IsDirectTransfer ? userId : null,
+            ReceivedByUserId = dto.IsDirectTransfer ? userId : null,
+            ShippedAt = dto.IsDirectTransfer ? TimeHelper.GetEgyptTime() : null,
+            ReceivedAt = dto.IsDirectTransfer ? TimeHelper.GetEgyptTime() : null,
             CreatedAt = TimeHelper.GetEgyptTime()
         };
 
@@ -131,12 +195,59 @@ public class StockTransfersController : ControllerBase
             });
         }
 
-        _db.StockTransfers.Add(transfer);
-        await _db.SaveChangesAsync();
-        
-        try { await _audit.LogChangeAsync<StockTransfer>("CreateStockTransfer", "StockTransfer", transfer.Id.ToString(), null, transfer, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
+        {
+            using var dbTransaction = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                _db.StockTransfers.Add(transfer);
+                await _db.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetById), new { id = transfer.Id }, transfer);
+                if (dto.IsDirectTransfer)
+                {
+                    foreach (var item in transfer.Items)
+                    {
+                        // 1. Deduct stock from source warehouse
+                        await _inventory.LogMovementAsync(
+                            InventoryMovementType.TransferOut,
+                            -item.Quantity,
+                            variantId: item.ProductVariantId,
+                            reference: transfer.TransferNumber,
+                            note: $"Direct Stock Transfer Out: {transfer.TransferNumber}",
+                            userId: userId,
+                            warehouseId: transfer.SourceWarehouseId,
+                            autoSave: false
+                        );
+
+                        // 2. Add stock to destination warehouse
+                        await _inventory.LogMovementAsync(
+                            InventoryMovementType.TransferIn,
+                            item.Quantity,
+                            variantId: item.ProductVariantId,
+                            reference: transfer.TransferNumber,
+                            note: $"Direct Stock Transfer In: {transfer.TransferNumber}",
+                            userId: userId,
+                            warehouseId: transfer.DestinationWarehouseId,
+                            autoSave: false
+                        );
+                    }
+
+                    await _db.SaveChangesAsync();
+                }
+
+                await dbTransaction.CommitAsync();
+
+                try { await _audit.LogChangeAsync<StockTransfer>("CreateStockTransfer", "StockTransfer", transfer.Id.ToString(), null, transfer, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
+                return CreatedAtAction(nameof(GetById), new { id = transfer.Id }, transfer);
+            }
+            catch (Exception ex)
+            {
+                await dbTransaction.RollbackAsync();
+                return BadRequest(new { message = ex.Message });
+            }
+        });
     }
 
     [RequirePermission(ModuleKeys.Inventory, requireEdit: true)]
@@ -155,16 +266,6 @@ public class StockTransfersController : ControllerBase
 
         if (dto.SourceWarehouseId == dto.DestinationWarehouseId)
             return BadRequest(new { message = "Source and destination warehouses must be different." });
-
-        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
-        if (!canViewAll)
-        {
-            int? isolatedWarehouseId = User.GetWarehouseId();
-            if (isolatedWarehouseId.HasValue && dto.SourceWarehouseId != isolatedWarehouseId.Value && dto.DestinationWarehouseId != isolatedWarehouseId.Value)
-            {
-                return BadRequest(new { message = "You can only update transfers involving your assigned warehouse." });
-            }
-        }
 
         var sourceExists = await _db.Warehouses.AnyAsync(w => w.Id == dto.SourceWarehouseId && w.IsActive);
         var destExists = await _db.Warehouses.AnyAsync(w => w.Id == dto.DestinationWarehouseId && w.IsActive);
@@ -228,38 +329,6 @@ public class StockTransfersController : ControllerBase
     }
 
     [RequirePermission(ModuleKeys.Inventory, requireEdit: true)]
-    [HttpPost("{id}/approve")]
-    public async Task<IActionResult> Approve(int id)
-    {
-        var transfer = await _db.StockTransfers.FirstOrDefaultAsync(t => t.Id == id);
-        if (transfer == null) return NotFound();
-
-        if (transfer.Status != StockTransferStatus.Draft && transfer.Status != StockTransferStatus.Pending)
-            return BadRequest(new { message = "Only Draft or Pending transfers can be approved." });
-
-        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        
-        var oldTransfer = await _db.StockTransfers.AsNoTracking().Include(t => t.Items).FirstOrDefaultAsync(t => t.Id == id);
-
-        transfer.Status = StockTransferStatus.Approved;
-        transfer.ApprovedByUserId = userId;
-        transfer.UpdatedAt = TimeHelper.GetEgyptTime();
-
-        await _db.SaveChangesAsync();
-
-        await _audit.LogChangeAsync<StockTransfer>(
-            "StockTransfer.Approve",
-            "StockTransfer",
-            transfer.Id.ToString(),
-            oldTransfer,
-            transfer,
-            userId
-        );
-
-        return Ok(transfer);
-    }
-
-    [RequirePermission(ModuleKeys.Inventory, requireEdit: true)]
     [HttpPost("{id}/ship")]
     public async Task<IActionResult> Ship(int id)
     {
@@ -270,13 +339,30 @@ public class StockTransfersController : ControllerBase
 
         if (transfer == null) return NotFound();
 
-        if (transfer.Status != StockTransferStatus.Approved)
-            return BadRequest(new { message = "Only Approved transfers can be shipped. Please approve it first." });
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedWarehouseId = User.GetWarehouseId();
+            int? isolatedBranchId = User.GetBranchId();
+
+            if (isolatedWarehouseId.HasValue && transfer.SourceWarehouseId != isolatedWarehouseId.Value)
+                return Forbid();
+
+            if (isolatedBranchId.HasValue)
+            {
+                var sourceBranchId = await _db.Warehouses.Where(w => w.Id == transfer.SourceWarehouseId).Select(w => w.BranchId).FirstOrDefaultAsync();
+                if (sourceBranchId != isolatedBranchId.Value)
+                    return Forbid();
+            }
+        }
+
+        if (transfer.Status != StockTransferStatus.Draft && transfer.Status != StockTransferStatus.Pending)
+            return BadRequest(new { message = "Only Draft or Pending transfers can be shipped." });
 
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
         var strategy = _db.Database.CreateExecutionStrategy();
-        await strategy.ExecuteAsync(async () =>
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
         {
             using var dbTransaction = await _db.Database.BeginTransactionAsync();
             try
@@ -304,16 +390,16 @@ public class StockTransfersController : ControllerBase
                 await _db.SaveChangesAsync();
                 await dbTransaction.CommitAsync();
                 
-                try { await _audit.LogChangeAsync<StockTransfer>("ShipStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, userId, User.FindFirstValue(ClaimTypes.Name)); } catch { }
+                try { await _audit.LogChangeAsync<StockTransfer>("ShipStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
+                return Ok(transfer);
             }
-            catch
+            catch (Exception ex)
             {
                 await dbTransaction.RollbackAsync();
-                throw;
+                return BadRequest(new { message = ex.Message });
             }
         });
-
-        return Ok(transfer);
     }
 
     [RequirePermission(ModuleKeys.Inventory, requireEdit: true)]
@@ -327,13 +413,30 @@ public class StockTransfersController : ControllerBase
 
         if (transfer == null) return NotFound();
 
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedWarehouseId = User.GetWarehouseId();
+            int? isolatedBranchId = User.GetBranchId();
+
+            if (isolatedWarehouseId.HasValue && transfer.DestinationWarehouseId != isolatedWarehouseId.Value)
+                return Forbid();
+
+            if (isolatedBranchId.HasValue)
+            {
+                var destBranchId = await _db.Warehouses.Where(w => w.Id == transfer.DestinationWarehouseId).Select(w => w.BranchId).FirstOrDefaultAsync();
+                if (destBranchId != isolatedBranchId.Value)
+                    return Forbid();
+            }
+        }
+
         if (transfer.Status != StockTransferStatus.Shipped)
             return BadRequest(new { message = "Only Shipped transfers can be received." });
 
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
         var strategy = _db.Database.CreateExecutionStrategy();
-        await strategy.ExecuteAsync(async () =>
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
         {
             using var dbTransaction = await _db.Database.BeginTransactionAsync();
             try
@@ -361,16 +464,105 @@ public class StockTransfersController : ControllerBase
                 await _db.SaveChangesAsync();
                 await dbTransaction.CommitAsync();
                 
-                try { await _audit.LogChangeAsync<StockTransfer>("ReceiveStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, userId, User.FindFirstValue(ClaimTypes.Name)); } catch { }
+                try { await _audit.LogChangeAsync<StockTransfer>("ReceiveStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
+                return Ok(transfer);
             }
-            catch
+            catch (Exception ex)
             {
                 await dbTransaction.RollbackAsync();
-                throw;
+                return BadRequest(new { message = ex.Message });
             }
         });
+    }
 
-        return Ok(transfer);
+    [RequirePermission(ModuleKeys.Inventory, requireEdit: true)]
+    [HttpPost("{id}/direct-complete")]
+    public async Task<IActionResult> DirectComplete(int id)
+    {
+        var oldTransfer = await _db.StockTransfers.AsNoTracking().Include(t => t.Items).FirstOrDefaultAsync(t => t.Id == id);
+        var transfer = await _db.StockTransfers
+            .Include(t => t.Items)
+            .FirstOrDefaultAsync(t => t.Id == id);
+
+        if (transfer == null) return NotFound();
+
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedWarehouseId = User.GetWarehouseId();
+            int? isolatedBranchId = User.GetBranchId();
+
+            if (isolatedWarehouseId.HasValue && transfer.SourceWarehouseId != isolatedWarehouseId.Value && transfer.DestinationWarehouseId != isolatedWarehouseId.Value)
+                return Forbid();
+
+            if (isolatedBranchId.HasValue)
+            {
+                var sourceBranchId = await _db.Warehouses.Where(w => w.Id == transfer.SourceWarehouseId).Select(w => w.BranchId).FirstOrDefaultAsync();
+                var destBranchId = await _db.Warehouses.Where(w => w.Id == transfer.DestinationWarehouseId).Select(w => w.BranchId).FirstOrDefaultAsync();
+                if (sourceBranchId != isolatedBranchId.Value && destBranchId != isolatedBranchId.Value)
+                    return Forbid();
+            }
+        }
+
+        if (transfer.Status != StockTransferStatus.Draft && transfer.Status != StockTransferStatus.Pending)
+            return BadRequest(new { message = "Only Draft or Pending transfers can be directly completed." });
+
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
+        {
+            using var dbTransaction = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                foreach (var item in transfer.Items)
+                {
+                    // Deduct stock from source warehouse
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.TransferOut,
+                        -item.Quantity,
+                        variantId: item.ProductVariantId,
+                        reference: transfer.TransferNumber,
+                        note: $"Stock Transfer Out: {transfer.TransferNumber}",
+                        userId: userId,
+                        warehouseId: transfer.SourceWarehouseId,
+                        autoSave: false
+                    );
+
+                    // Add stock to destination warehouse
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.TransferIn,
+                        item.Quantity,
+                        variantId: item.ProductVariantId,
+                        reference: transfer.TransferNumber,
+                        note: $"Stock Transfer In: {transfer.TransferNumber}",
+                        userId: userId,
+                        warehouseId: transfer.DestinationWarehouseId,
+                        autoSave: false
+                    );
+                }
+
+                transfer.Status = StockTransferStatus.Received;
+                transfer.ShippedByUserId = userId;
+                transfer.ShippedAt = TimeHelper.GetEgyptTime();
+                transfer.ReceivedByUserId = userId;
+                transfer.ReceivedAt = TimeHelper.GetEgyptTime();
+                transfer.UpdatedAt = TimeHelper.GetEgyptTime();
+
+                await _db.SaveChangesAsync();
+                await dbTransaction.CommitAsync();
+
+                try { await _audit.LogChangeAsync<StockTransfer>("DirectCompleteStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
+                return Ok(transfer);
+            }
+            catch (Exception ex)
+            {
+                await dbTransaction.RollbackAsync();
+                return BadRequest(new { message = ex.Message });
+            }
+        });
     }
 
     [RequirePermission(ModuleKeys.Inventory, requireEdit: true)]
@@ -390,7 +582,7 @@ public class StockTransfersController : ControllerBase
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
         var strategy = _db.Database.CreateExecutionStrategy();
-        await strategy.ExecuteAsync(async () =>
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
         {
             using var dbTransaction = await _db.Database.BeginTransactionAsync();
             try
@@ -419,16 +611,16 @@ public class StockTransfersController : ControllerBase
                 await _db.SaveChangesAsync();
                 await dbTransaction.CommitAsync();
                 
-                try { await _audit.LogChangeAsync<StockTransfer>("CancelStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, userId, User.FindFirstValue(ClaimTypes.Name)); } catch { }
+                try { await _audit.LogChangeAsync<StockTransfer>("CancelStockTransfer", "StockTransfer", id.ToString(), oldTransfer, transfer, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
+                return Ok(transfer);
             }
-            catch
+            catch (Exception ex)
             {
                 await dbTransaction.RollbackAsync();
-                throw;
+                return BadRequest(new { message = ex.Message });
             }
         });
-
-        return Ok(transfer);
     }
 }
 
@@ -437,6 +629,7 @@ public class CreateStockTransferDto
     public int SourceWarehouseId { get; set; }
     public int DestinationWarehouseId { get; set; }
     public string? Description { get; set; }
+    public bool IsDirectTransfer { get; set; } = false;
     public List<CreateStockTransferItemDto> Items { get; set; } = new();
 }
 
