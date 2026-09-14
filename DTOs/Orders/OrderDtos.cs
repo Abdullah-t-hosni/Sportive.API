@@ -224,7 +224,8 @@ public record OrderDetailDto(
     string? ShippingCarrierName = null,
     string? ShippingTrackingNumber = null,
     string? ShippingType = null,
-    int? ShippingCompanyId = null
+    int? ShippingCompanyId = null,
+    bool IsDuplicate = false
 );
 
 public record UpdateBostaShipmentDto(

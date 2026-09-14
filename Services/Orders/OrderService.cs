@@ -460,6 +460,71 @@ public class OrderService : IOrderService
 
                  var actualSource = ((int)dto.Source == 0) ? OrderSource.Website : dto.Source;
 
+                // 🛡️ ANTI-DUPLICATE / IDEMPOTENCY GUARD:
+                // Prevent duplicate website orders from the same customer within 120 seconds.
+                // If a pending website order with the same items or total exists, return it instead of creating a new one.
+                if (actualSource == OrderSource.Website && customerId.HasValue)
+                {
+                    var duplicateWindow = now.AddSeconds(-120);
+                    var recentWebsiteOrder = await _db.Orders
+                        .Include(o => o.Items)
+                        .Where(o => o.CustomerId == customerId.Value &&
+                                    o.Source == OrderSource.Website &&
+                                    o.Status == OrderStatus.Pending &&
+                                    o.CreatedAt >= duplicateWindow)
+                        .OrderByDescending(o => o.CreatedAt)
+                        .FirstOrDefaultAsync();
+
+                    if (recentWebsiteOrder != null)
+                    {
+                        bool isDuplicate = false;
+                        if (dto.Items != null && dto.Items.Any() && recentWebsiteOrder.Items.Any())
+                        {
+                            var newItemsSummary = dto.Items
+                                .GroupBy(i => new { i.ProductId, VariantId = i.ProductVariantId ?? 0 })
+                                .Select(g => $"{g.Key.ProductId}:{g.Key.VariantId}:{g.Sum(x => x.Quantity)}")
+                                .OrderBy(s => s)
+                                .ToList();
+
+                            var existingItemsSummary = recentWebsiteOrder.Items
+                                .GroupBy(i => new { i.ProductId, VariantId = i.ProductVariantId ?? 0 })
+                                .Select(g => $"{g.Key.ProductId}:{g.Key.VariantId}:{g.Sum(x => x.Quantity)}")
+                                .OrderBy(s => s)
+                                .ToList();
+
+                            isDuplicate = newItemsSummary.SequenceEqual(existingItemsSummary);
+                        }
+                        else if (dto.SubTotal.HasValue && Math.Abs(recentWebsiteOrder.SubTotal - dto.SubTotal.Value) < 1)
+                        {
+                            isDuplicate = true;
+                        }
+
+                        if (isDuplicate)
+                        {
+                            bool needsSave = false;
+                            if (finalDeliveryAddressId.HasValue && recentWebsiteOrder.DeliveryAddressId != finalDeliveryAddressId.Value)
+                            {
+                                recentWebsiteOrder.DeliveryAddressId = finalDeliveryAddressId.Value;
+                                needsSave = true;
+                            }
+                            if (!string.IsNullOrWhiteSpace(dto.CustomerNotes) && recentWebsiteOrder.CustomerNotes != dto.CustomerNotes)
+                            {
+                                recentWebsiteOrder.CustomerNotes = dto.CustomerNotes;
+                                needsSave = true;
+                            }
+                            if (needsSave)
+                            {
+                                await _db.SaveChangesAsync();
+                            }
+
+                            await tx.CommitAsync();
+                            _logger.LogWarning("Idempotency guard: Duplicate website order detected for CustomerId {CustomerId} within 120s. Returning existing Order #{OrderNumber}", customerId.Value, recentWebsiteOrder.OrderNumber);
+                            var existingDto = await GetOrderByIdAsync(recentWebsiteOrder.Id);
+                            return existingDto! with { IsDuplicate = true };
+                        }
+                    }
+                }
+
                 int? branchIdToUse = dto.BranchId;
                 int? warehouseIdToUse = dto.WarehouseId;
 

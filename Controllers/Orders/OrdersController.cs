@@ -162,6 +162,12 @@ public class OrdersController : ControllerBase
 
         var order = await _orderService.CreateOrderAsync(finalCustomerId, dto);
         
+        if (order.IsDuplicate)
+        {
+            _logger.LogInformation("Idempotency Guard: Order #{OrderNumber} is an existing duplicate request. Returning without re-triggering print or messaging events.", order.OrderNumber);
+            return Ok(order);
+        }
+        
         try 
         { 
             string auditUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
