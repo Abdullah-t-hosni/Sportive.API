@@ -30,7 +30,7 @@ public class NullableDateTimeConverter : JsonConverter<DateTime?>
     public override void Write(Utf8JsonWriter writer, DateTime? value, JsonSerializerOptions options)
     {
         if (value.HasValue)
-            writer.WriteStringValue(value.Value.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
+            writer.WriteStringValue(value.Value.ToString("yyyy-MM-ddTHH:mm:ss.fff"));
         else
             writer.WriteNullValue();
     }

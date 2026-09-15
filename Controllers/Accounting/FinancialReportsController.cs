@@ -743,16 +743,23 @@ public class FinancialReportsController : ControllerBase
         var desc = sortDir?.Equals("desc", StringComparison.OrdinalIgnoreCase) == true;
         if (sortBy?.ToLower() == "createdat")
         {
-            periodLines = desc
-                ? periodLines.OrderByDescending(l => l.JournalEntry.CreatedAt).ThenByDescending(l => l.JournalEntry.EntryDate).ThenByDescending(l => l.JournalEntryId).ThenByDescending(l => l.Id).ToList()
-                : periodLines.OrderBy(l => l.JournalEntry.CreatedAt).ThenBy(l => l.JournalEntry.EntryDate).ThenBy(l => l.JournalEntryId).ThenBy(l => l.Id).ToList();
+            periodLines = periodLines
+                .OrderBy(l => l.JournalEntry.CreatedAt)
+                .ThenBy(l => l.JournalEntry.EntryDate)
+                .ThenBy(l => l.JournalEntryId)
+                .ThenBy(l => l.Id)
+                .ToList();
         }
         else
         {
-            periodLines = desc
-                ? periodLines.OrderByDescending(l => l.JournalEntry.EntryDate).ThenByDescending(l => l.JournalEntry.CreatedAt).ThenByDescending(l => l.JournalEntryId).ThenByDescending(l => l.Id).ToList()
-                : periodLines.OrderBy(l => l.JournalEntry.EntryDate).ThenBy(l => l.JournalEntry.CreatedAt).ThenBy(l => l.JournalEntryId).ThenBy(l => l.Id).ToList();
+            periodLines = periodLines
+                .OrderBy(l => l.JournalEntry.EntryDate)
+                .ThenBy(l => l.JournalEntry.CreatedAt)
+                .ThenBy(l => l.JournalEntryId)
+                .ThenBy(l => l.Id)
+                .ToList();
         }
+
         var runBal = openBal;
         var rows = periodLines.Select(l => {
             if (acct.Nature == AccountNature.Debit) runBal += l.Debit - l.Credit; else runBal += l.Credit - l.Debit;
@@ -763,6 +770,11 @@ public class FinancialReportsController : ControllerBase
                 l.JournalEntry.OrderId, l.JournalEntry.PurchaseInvoiceId,
                 l.JournalEntry.CreatedAt);
         }).ToList();
+
+        if (desc)
+        {
+            rows.Reverse();
+        }
 
         if (excel)
         {
