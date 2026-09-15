@@ -415,18 +415,8 @@ public class FinancialReportsController : ControllerBase
             q = q.Where(l => l.EmployeeId == employeeId.Value);
 
         var lines = await q.ToListAsync();
-        lines = lines.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
-                     .ThenBy(l => {
-                         var type = l.JournalEntry.Type;
-                         var reference = l.JournalEntry.Reference ?? "";
-                         if (type == JournalEntryType.OpeningBalance) return 0;
-                         if (type == JournalEntryType.SalesInvoice || type == JournalEntryType.PurchaseInvoice) return 10;
-                         if (type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseReturn) return 20;
-                         if (type == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
-                         if (type == JournalEntryType.ReceiptVoucher || type == JournalEntryType.PaymentVoucher) return 40;
-                         return 50;
-                     })
-                     .ThenBy(l => l.JournalEntry.EntryDate)
+        lines = lines.OrderBy(l => l.JournalEntry.EntryDate)
+                     .ThenBy(l => l.JournalEntry.CreatedAt)
                      .ThenBy(l => l.JournalEntryId)
                      .ThenBy(l => l.Id)
                      .ToList();
@@ -489,7 +479,8 @@ public class FinancialReportsController : ControllerBase
                 line.JournalEntry.Type == JournalEntryType.AssetDepreciation || line.JournalEntry.Type == JournalEntryType.AssetDisposal
                     ? line.JournalEntry.Reference
                     : (line.Supplier?.Name ?? line.Customer?.FullName ?? line.Employee?.Name),
-                line.JournalEntry.OrderId, line.JournalEntry.PurchaseInvoiceId
+                line.JournalEntry.OrderId, line.JournalEntry.PurchaseInvoiceId,
+                line.JournalEntry.CreatedAt
             ));
         }
 
@@ -523,37 +514,11 @@ public class FinancialReportsController : ControllerBase
                     AccountCode = g.Key.Code,
                     AccountName = g.Key.Name,
                     openingBalance = totalOpen,
-                    rows = g.OrderBy(r => TimeHelper.GetBusinessDate(r.Date))
-                            .ThenBy(r => {
-                                if (Enum.TryParse<JournalEntryType>(r.EntryType, out var t))
-                                {
-                                    var reference = r.Reference ?? "";
-                                    if (t == JournalEntryType.OpeningBalance) return 0;
-                                    if (t == JournalEntryType.SalesInvoice || t == JournalEntryType.PurchaseInvoice) return 10;
-                                    if (t == JournalEntryType.SalesReturn || t == JournalEntryType.PurchaseReturn) return 20;
-                                    if (t == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
-                                    if (t == JournalEntryType.ReceiptVoucher || t == JournalEntryType.PaymentVoucher) return 40;
-                                    return 50;
-                                }
-                                return 99;
-                            })
-                            .ThenBy(r => r.Date)
+                    rows = g.OrderBy(r => r.Date)
+                            .ThenBy(r => r.CreatedAt ?? r.Date)
                             .ThenBy(r => r.JournalEntryId).ToList(),
-                    closingBalance = g.OrderBy(r => TimeHelper.GetBusinessDate(r.Date))
-                                      .ThenBy(r => {
-                                          if (Enum.TryParse<JournalEntryType>(r.EntryType, out var t))
-                                          {
-                                              var reference = r.Reference ?? "";
-                                              if (t == JournalEntryType.OpeningBalance) return 0;
-                                              if (t == JournalEntryType.SalesInvoice || t == JournalEntryType.PurchaseInvoice) return 10;
-                                              if (t == JournalEntryType.SalesReturn || t == JournalEntryType.PurchaseReturn) return 20;
-                                              if (t == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
-                                              if (t == JournalEntryType.ReceiptVoucher || t == JournalEntryType.PaymentVoucher) return 40;
-                                              return 50;
-                                          }
-                                          return 99;
-                                      })
-                                      .ThenBy(r => r.Date)
+                    closingBalance = g.OrderBy(r => r.Date)
+                                      .ThenBy(r => r.CreatedAt ?? r.Date)
                                       .ThenBy(r => r.JournalEntryId).LastOrDefault()?.RunningBalance ?? 0
                 };
             }).ToList();
@@ -629,7 +594,9 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] string?   search     = null,
         [FromQuery] OrderSource? source  = null,
         [FromQuery] bool      excel      = false,
-        [FromQuery] int?      branchId   = null)
+        [FromQuery] int?      branchId   = null,
+        [FromQuery] string?   sortBy     = null,
+        [FromQuery] string?   sortDir    = null)
     {
         var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
@@ -773,21 +740,19 @@ public class FinancialReportsController : ControllerBase
         if (!string.IsNullOrEmpty(search)) q = q.Where(l => (l.Description != null && l.Description.Contains(search)) || (l.JournalEntry.Description != null && l.JournalEntry.Description.Contains(search)));
 
         var periodLines = await q.ToListAsync();
-        periodLines = periodLines.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
-                     .ThenBy(l => {
-                         var type = l.JournalEntry.Type;
-                         var reference = l.JournalEntry.Reference ?? "";
-                         if (type == JournalEntryType.OpeningBalance) return 0;
-                         if (type == JournalEntryType.SalesInvoice || type == JournalEntryType.PurchaseInvoice) return 10;
-                         if (type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseReturn) return 20;
-                         if (type == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
-                         if (type == JournalEntryType.ReceiptVoucher || type == JournalEntryType.PaymentVoucher) return 40;
-                         return 50;
-                     })
-                     .ThenBy(l => l.JournalEntry.EntryDate)
-                     .ThenBy(l => l.JournalEntryId)
-                     .ThenBy(l => l.Id)
-                     .ToList();
+        var desc = sortDir?.Equals("desc", StringComparison.OrdinalIgnoreCase) == true;
+        if (sortBy?.ToLower() == "createdat")
+        {
+            periodLines = desc
+                ? periodLines.OrderByDescending(l => l.JournalEntry.CreatedAt).ThenByDescending(l => l.JournalEntry.EntryDate).ThenByDescending(l => l.JournalEntryId).ThenByDescending(l => l.Id).ToList()
+                : periodLines.OrderBy(l => l.JournalEntry.CreatedAt).ThenBy(l => l.JournalEntry.EntryDate).ThenBy(l => l.JournalEntryId).ThenBy(l => l.Id).ToList();
+        }
+        else
+        {
+            periodLines = desc
+                ? periodLines.OrderByDescending(l => l.JournalEntry.EntryDate).ThenByDescending(l => l.JournalEntry.CreatedAt).ThenByDescending(l => l.JournalEntryId).ThenByDescending(l => l.Id).ToList()
+                : periodLines.OrderBy(l => l.JournalEntry.EntryDate).ThenBy(l => l.JournalEntry.CreatedAt).ThenBy(l => l.JournalEntryId).ThenBy(l => l.Id).ToList();
+        }
         var runBal = openBal;
         var rows = periodLines.Select(l => {
             if (acct.Nature == AccountNature.Debit) runBal += l.Debit - l.Credit; else runBal += l.Credit - l.Debit;
@@ -795,7 +760,8 @@ public class FinancialReportsController : ControllerBase
                 l.JournalEntry.Type == JournalEntryType.AssetDepreciation || l.JournalEntry.Type == JournalEntryType.AssetDisposal 
                     ? l.JournalEntry.Reference 
                     : (l.Supplier?.Name ?? l.Customer?.FullName ?? l.Employee?.Name ?? l.Branch?.Name ?? "فرع المسلة"),
-                l.JournalEntry.OrderId, l.JournalEntry.PurchaseInvoiceId);
+                l.JournalEntry.OrderId, l.JournalEntry.PurchaseInvoiceId,
+                l.JournalEntry.CreatedAt);
         }).ToList();
 
         if (excel)
@@ -856,18 +822,8 @@ public class FinancialReportsController : ControllerBase
             cashLinesQuery = cashLinesQuery.Where(l => l.CostCenter == source.Value);
 
         var cashLines = await cashLinesQuery.ToListAsync();
-        cashLines = cashLines.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
-                     .ThenBy(l => {
-                         var type = l.JournalEntry.Type;
-                         var reference = l.JournalEntry.Reference ?? "";
-                         if (type == JournalEntryType.OpeningBalance) return 0;
-                         if (type == JournalEntryType.SalesInvoice || type == JournalEntryType.PurchaseInvoice) return 10;
-                         if (type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseReturn) return 20;
-                         if (type == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
-                         if (type == JournalEntryType.ReceiptVoucher || type == JournalEntryType.PaymentVoucher) return 40;
-                         return 50;
-                     })
-                     .ThenBy(l => l.JournalEntry.EntryDate)
+        cashLines = cashLines.OrderBy(l => l.JournalEntry.EntryDate)
+                     .ThenBy(l => l.JournalEntry.CreatedAt)
                      .ThenBy(l => l.JournalEntryId)
                      .ThenBy(l => l.Id)
                      .ToList();
@@ -1198,32 +1154,33 @@ public class FinancialReportsController : ControllerBase
 
         bool isClosuresAccount = acct.NameAr.Contains("تقفيلات") || (acct.NameEn != null && acct.NameEn.ToLower().Contains("closure"));
         string nameHeader = isClosuresAccount ? "Branch" : "Name";
-        string[] hdrs = { "Date", "Entry", nameHeader, "Notes", "Debit", "Credit", "Balance" };
+        string[] hdrs = { "Posting Date", "Creation Date", "Entry", nameHeader, "Notes", "Debit", "Credit", "Balance" };
         for (int c = 0; c < hdrs.Length; c++) { ws.Cell(3, c + 1).Value = hdrs[c]; ws.Cell(3, c + 1).Style.Font.Bold = true; }
 
-        ws.Cell(4, 4).Value = "Opening Balance"; ws.Cell(4, 7).Value = openBal;
-        ws.Cell(4, 7).Style.NumberFormat.Format = "General";
+        ws.Cell(4, 5).Value = "Opening Balance"; ws.Cell(4, 8).Value = openBal;
+        ws.Cell(4, 8).Style.NumberFormat.Format = "General";
 
         int r = 5;
         foreach (var row in rows)
         {
-            ws.Cell(r, 1).Value = row.Date.ToString("yyyy-MM-dd");
-            ws.Cell(r, 2).Value = row.EntryNumber;
-            ws.Cell(r, 3).Value = row.PartnerName ?? "-";
-            ws.Cell(r, 4).Value = row.Description;
-            ws.Cell(r, 5).Value = row.Debit;
-            ws.Cell(r, 6).Value = row.Credit;
-            ws.Cell(r, 7).Value = row.RunningBalance;
-            ws.Cell(r, 5).Style.NumberFormat.Format = "General";
+            ws.Cell(r, 1).Value = row.Date.ToString("yyyy-MM-dd HH:mm");
+            ws.Cell(r, 2).Value = row.CreatedAt?.ToString("yyyy-MM-dd HH:mm") ?? "-";
+            ws.Cell(r, 3).Value = row.EntryNumber;
+            ws.Cell(r, 4).Value = row.PartnerName ?? "-";
+            ws.Cell(r, 5).Value = row.Description;
+            ws.Cell(r, 6).Value = row.Debit;
+            ws.Cell(r, 7).Value = row.Credit;
+            ws.Cell(r, 8).Value = row.RunningBalance;
             ws.Cell(r, 6).Style.NumberFormat.Format = "General";
             ws.Cell(r, 7).Style.NumberFormat.Format = "General";
+            ws.Cell(r, 8).Style.NumberFormat.Format = "General";
             r++;
         }
-        ws.Cell(r, 4).Value = "Total"; ws.Cell(r, 4).Style.Font.Bold = true;
-        ws.Cell(r, 5).Value = rows.Sum(x => x.Debit); ws.Cell(r, 5).Style.Font.Bold = true;
-        ws.Cell(r, 6).Value = rows.Sum(x => x.Credit); ws.Cell(r, 6).Style.Font.Bold = true;
-        ws.Cell(r, 5).Style.NumberFormat.Format = "#,##0.00";
+        ws.Cell(r, 5).Value = "Total"; ws.Cell(r, 5).Style.Font.Bold = true;
+        ws.Cell(r, 6).Value = rows.Sum(x => x.Debit); ws.Cell(r, 6).Style.Font.Bold = true;
+        ws.Cell(r, 7).Value = rows.Sum(x => x.Credit); ws.Cell(r, 7).Style.Font.Bold = true;
         ws.Cell(r, 6).Style.NumberFormat.Format = "#,##0.00";
+        ws.Cell(r, 7).Style.NumberFormat.Format = "#,##0.00";
         if (r > 4) ws.Range(3, 1, r - 1, hdrs.Length).SetAutoFilter();
 
         ws.Columns().AdjustToContents();
@@ -1291,33 +1248,34 @@ public class FinancialReportsController : ControllerBase
         ws.Cell(2,1).Value = $"From {from:yyyy-MM-dd} To {to:yyyy-MM-dd}";
         ws.Cell(2,1).Style.Font.FontColor = XLColor.Gray;
 
-        string[] hdrs = { "Date","Entry","Type","Description","Debit","Credit","Balance" };
+        string[] hdrs = { "Date","Creation Date","Entry","Type","Description","Debit","Credit","Balance" };
         for (int c = 0; c < hdrs.Length; c++) { ws.Cell(3,c+1).Value = hdrs[c]; ws.Cell(3,c+1).Style.Font.Bold = true; }
 
-        ws.Cell(4,4).Value = "Opening Balance"; ws.Cell(4,7).Value = openBal;
-        ws.Cell(4,7).Style.NumberFormat.Format = "General";
+        ws.Cell(4,5).Value = "Opening Balance"; ws.Cell(4,8).Value = openBal;
+        ws.Cell(4,8).Style.NumberFormat.Format = "General";
 
         int r = 5;
         foreach (var row in rows)
         {
             ws.Cell(r,1).Value = row.Date.ToString("yyyy-MM-dd");
-            ws.Cell(r,2).Value = row.Reference;
-            ws.Cell(r,3).Value = row.Type;
-            ws.Cell(r,4).Value = row.Description;
-            ws.Cell(r,5).Value = row.Debit;
-            ws.Cell(r,6).Value = row.Credit;
-            ws.Cell(r,7).Value = row.Balance;
-            ws.Cell(r,5).Style.NumberFormat.Format = "General";
+            ws.Cell(r,2).Value = row.CreatedAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "";
+            ws.Cell(r,3).Value = row.Reference;
+            ws.Cell(r,4).Value = row.Type;
+            ws.Cell(r,5).Value = row.Description;
+            ws.Cell(r,6).Value = row.Debit;
+            ws.Cell(r,7).Value = row.Credit;
+            ws.Cell(r,8).Value = row.Balance;
             ws.Cell(r,6).Style.NumberFormat.Format = "General";
             ws.Cell(r,7).Style.NumberFormat.Format = "General";
+            ws.Cell(r,8).Style.NumberFormat.Format = "General";
             r++;
         }
-        ws.Cell(r,4).Value = "Total"; ws.Cell(r,4).Style.Font.Bold = true;
-        ws.Cell(r,5).Value = rows.Sum(x=>x.Debit); ws.Cell(r,5).Style.Font.Bold = true;
-        ws.Cell(r,6).Value = rows.Sum(x=>x.Credit); ws.Cell(r,6).Style.Font.Bold = true;
-        ws.Cell(r,5).Style.NumberFormat.Format = "General";
+        ws.Cell(r,5).Value = "Total"; ws.Cell(r,5).Style.Font.Bold = true;
+        ws.Cell(r,6).Value = rows.Sum(x=>x.Debit); ws.Cell(r,6).Style.Font.Bold = true;
+        ws.Cell(r,7).Value = rows.Sum(x=>x.Credit); ws.Cell(r,7).Style.Font.Bold = true;
         ws.Cell(r,6).Style.NumberFormat.Format = "General";
         ws.Cell(r,7).Style.NumberFormat.Format = "General";
+        ws.Cell(r,8).Style.NumberFormat.Format = "General";
         if (r > 4) ws.Range(3, 1, r - 1, hdrs.Length).SetAutoFilter();
 
         ws.Columns().AdjustToContents();
@@ -1358,18 +1316,8 @@ public class FinancialReportsController : ControllerBase
                      && l.JournalEntry.EntryDate <= to)
             .ToListAsync();
 
-        jeLines = jeLines.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
-                     .ThenBy(l => {
-                         var type = l.JournalEntry.Type;
-                         var reference = l.JournalEntry.Reference ?? "";
-                         if (type == JournalEntryType.OpeningBalance) return 0;
-                         if (type == JournalEntryType.SalesInvoice || type == JournalEntryType.PurchaseInvoice) return 10;
-                         if (type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseReturn) return 20;
-                         if (type == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
-                         if (type == JournalEntryType.ReceiptVoucher || type == JournalEntryType.PaymentVoucher) return 40;
-                         return 50;
-                     })
-                     .ThenBy(l => l.JournalEntry.EntryDate)
+        jeLines = jeLines.OrderBy(l => l.JournalEntry.EntryDate)
+                     .ThenBy(l => l.JournalEntry.CreatedAt)
                      .ThenBy(l => l.JournalEntryId)
                      .ThenBy(l => l.Id)
                      .ToList();
@@ -1442,7 +1390,8 @@ public class FinancialReportsController : ControllerBase
                 l.Debit,
                 l.Credit,
                 runBal,
-                JournalEntryId: l.JournalEntryId
+                JournalEntryId: l.JournalEntryId,
+                CreatedAt: l.JournalEntry.CreatedAt
             ));
         }
 
@@ -1499,21 +1448,7 @@ public class FinancialReportsController : ControllerBase
             p.PeriodMonth,
             p.PayrollNumber,
             p.NetPayable
-        ))).OrderBy(r => TimeHelper.GetBusinessDate(r.Date))
-          .ThenBy(r => {
-              if (Enum.TryParse<JournalEntryType>(r.Type, out var t))
-              {
-                  var reference = r.Reference ?? "";
-                  if (t == JournalEntryType.OpeningBalance) return 0;
-                  if (t == JournalEntryType.SalesInvoice || t == JournalEntryType.PurchaseInvoice) return 10;
-                  if (t == JournalEntryType.SalesReturn || t == JournalEntryType.PurchaseReturn) return 20;
-                  if (t == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
-                  if (t == JournalEntryType.ReceiptVoucher || t == JournalEntryType.PaymentVoucher) return 40;
-                  return 50;
-              }
-              return 99;
-          })
-          .ThenBy(r => r.Date)
+        ))).OrderBy(r => r.Date)
           .ThenBy(r => r.JournalEntryId ?? 0)
           .ToList();
 
@@ -1905,7 +1840,8 @@ public record LedgerRow(
     string? Reference = null, int JournalEntryId = 0,
     string? PartnerName = null,
     int? OrderId = null,
-    int? PurchaseId = null);
+    int? PurchaseId = null,
+    DateTime? CreatedAt = null);
 public record CashFlowItem(DateTime Date, string EntryNumber, string Description, string Account, decimal Amount);
 
 public record VatRowDto(decimal Net, decimal Adjustment, decimal Tax);

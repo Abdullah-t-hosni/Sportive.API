@@ -427,19 +427,8 @@ public class EmployeesController : ControllerBase
             .Where(l => l.EmployeeId == id && personalAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate >= egyptFrom && l.JournalEntry.EntryDate <= egyptTo && l.JournalEntry.Status != JournalEntryStatus.Draft)
             .ToListAsync();
 
-        lines = lines.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
-                     .ThenBy(l => {
-                         var type = l.JournalEntry.Type;
-                         var reference = l.JournalEntry.Reference ?? "";
-                         if (type == JournalEntryType.OpeningBalance) return 0;
-                         if (type == JournalEntryType.SalesInvoice || type == JournalEntryType.PurchaseInvoice) return 10;
-                         if (type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseReturn) return 20;
-                         if (type == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
-                         if (type == JournalEntryType.Payroll) return 40;
-                         if (type == JournalEntryType.ReceiptVoucher || type == JournalEntryType.PaymentVoucher) return 60;
-                         return 50;
-                     })
-                     .ThenBy(l => l.JournalEntry.EntryDate)
+        lines = lines.OrderBy(l => l.JournalEntry.EntryDate)
+                     .ThenBy(l => l.JournalEntry.CreatedAt)
                      .ThenBy(l => l.JournalEntryId)
                      .ThenBy(l => l.Id)
                      .ToList();
@@ -503,7 +492,8 @@ public class EmployeesController : ControllerBase
                 l.Credit,
                 runningBalance,
                 Notes: rowNotes,
-                JournalEntryId: l.JournalEntryId
+                JournalEntryId: l.JournalEntryId,
+                CreatedAt: l.JournalEntry.CreatedAt
             ));
         }
 
@@ -532,19 +522,8 @@ public class EmployeesController : ControllerBase
             .Where(l => l.EmployeeId != null && hrAccountIds.Contains(l.AccountId) && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status != JournalEntryStatus.Draft)
             .ToListAsync();
 
-        lines = lines.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
-                     .ThenBy(l => {
-                         var type = l.JournalEntry.Type;
-                         var reference = l.JournalEntry.Reference ?? "";
-                         if (type == JournalEntryType.OpeningBalance) return 0;
-                         if (type == JournalEntryType.SalesInvoice || type == JournalEntryType.PurchaseInvoice) return 10;
-                         if (type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseReturn) return 20;
-                         if (type == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
-                         if (type == JournalEntryType.Payroll) return 40;
-                         if (type == JournalEntryType.ReceiptVoucher || type == JournalEntryType.PaymentVoucher) return 60;
-                         return 50;
-                     })
-                     .ThenBy(l => l.JournalEntry.EntryDate)
+        lines = lines.OrderBy(l => l.JournalEntry.EntryDate)
+                     .ThenBy(l => l.JournalEntry.CreatedAt)
                      .ThenBy(l => l.JournalEntryId)
                      .ThenBy(l => l.Id)
                      .ToList();
@@ -606,7 +585,8 @@ public class EmployeesController : ControllerBase
                 l.Debit,
                 l.Credit,
                 runningBalance,
-                JournalEntryId: l.JournalEntryId
+                JournalEntryId: l.JournalEntryId,
+                CreatedAt: l.JournalEntry.CreatedAt
             ));
         }
 

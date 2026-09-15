@@ -147,18 +147,8 @@ public class OperationalReportsController : ControllerBase
         }
 
         var entries = await entriesQuery.ToListAsync();
-        entries = entries.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
-                     .ThenBy(l => {
-                         var type = l.JournalEntry.Type;
-                         var reference = l.JournalEntry.Reference ?? "";
-                         if (type == JournalEntryType.OpeningBalance) return 0;
-                         if (type == JournalEntryType.SalesInvoice || type == JournalEntryType.PurchaseInvoice) return 10;
-                         if (type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseReturn) return 20;
-                         if (type == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
-                         if (type == JournalEntryType.ReceiptVoucher || type == JournalEntryType.PaymentVoucher) return 40;
-                         return 50;
-                     })
-                     .ThenBy(l => l.JournalEntry.EntryDate)
+        entries = entries.OrderBy(l => l.JournalEntry.EntryDate)
+                     .ThenBy(l => l.JournalEntry.CreatedAt)
                      .ThenBy(l => l.JournalEntryId)
                      .ThenBy(l => l.Id)
                      .ToList();
@@ -183,7 +173,7 @@ public class OperationalReportsController : ControllerBase
             lines.Add(new CustomerStatementLine(
                 l.JournalEntry.EntryDate, typeStr, l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber,
                 l.Description ?? l.JournalEntry.Description ?? _t.Get("Reports.AccountActivity"),
-                l.Debit, l.Credit, balance));
+                l.Debit, l.Credit, balance, l.JournalEntry.CreatedAt));
         }
 
         if (unpaidOnly) {
@@ -287,18 +277,8 @@ public class OperationalReportsController : ControllerBase
         }
 
         var entries = await entriesQuery.ToListAsync();
-        entries = entries.OrderBy(l => TimeHelper.GetBusinessDate(l.JournalEntry.EntryDate))
-                     .ThenBy(l => {
-                         var type = l.JournalEntry.Type;
-                         var reference = l.JournalEntry.Reference ?? "";
-                         if (type == JournalEntryType.OpeningBalance) return 0;
-                         if (type == JournalEntryType.SalesInvoice || type == JournalEntryType.PurchaseInvoice) return 10;
-                         if (type == JournalEntryType.SalesReturn || type == JournalEntryType.PurchaseReturn) return 20;
-                         if (type == JournalEntryType.Manual && reference.StartsWith("SHIFT-CLOSE")) return 30;
-                         if (type == JournalEntryType.ReceiptVoucher || type == JournalEntryType.PaymentVoucher) return 40;
-                         return 50;
-                     })
-                     .ThenBy(l => l.JournalEntry.EntryDate)
+        entries = entries.OrderBy(l => l.JournalEntry.EntryDate)
+                     .ThenBy(l => l.JournalEntry.CreatedAt)
                      .ThenBy(l => l.JournalEntryId)
                      .ThenBy(l => l.Id)
                      .ToList();
@@ -321,7 +301,7 @@ public class OperationalReportsController : ControllerBase
             lines.Add(new CustomerStatementLine(
                 l.JournalEntry.EntryDate, typeStr, l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber,
                 l.Description ?? l.JournalEntry.Description ?? _t.Get("Reports.AccountActivity"),
-                l.Credit, l.Debit, balance));
+                l.Credit, l.Debit, balance, l.JournalEntry.CreatedAt));
         }
 
         if (unpaidOnly) lines = lines.Where(l => l.Credit > 0 && l.Balance > 0).ToList();
@@ -2319,13 +2299,13 @@ public class OperationalReportsController : ControllerBase
         ws.Cell(1,1).Style.Font.Bold = true; ws.Cell(1,1).Style.Font.FontSize = 13;
         ws.Cell(2,1).Value = _t.Get("Reports.DateRange", from.ToString("yyyy-MM-dd"), to.ToString("yyyy-MM-dd"));
 
-        string[] h = {_t.Get("Reports.DateHeader"), _t.Get("Reports.TypeHeader"), _t.Get("Reports.ReferenceHeader"), _t.Get("Reports.DescriptionHeader"), _t.Get("Reports.DebitHeader"), _t.Get("Reports.CreditHeader"), _t.Get("Reports.BalanceHeader")};
+        string[] h = {_t.Get("Reports.DateHeader"), "Creation Date", _t.Get("Reports.TypeHeader"), _t.Get("Reports.ReferenceHeader"), _t.Get("Reports.DescriptionHeader"), _t.Get("Reports.DebitHeader"), _t.Get("Reports.CreditHeader"), _t.Get("Reports.BalanceHeader")};
         for (int i=0;i<h.Length;i++){ws.Cell(3,i+1).Value=h[i];ws.Cell(3,i+1).Style.Font.Bold=true;ws.Cell(3,i+1).Style.Fill.BackgroundColor=XLColor.FromHtml("#1a237e");ws.Cell(3,i+1).Style.Font.FontColor=XLColor.White;}
 
         int r=4;
-        foreach(var l in lines){ws.Cell(r,1).Value=l.Date.ToString("yyyy-MM-dd");ws.Cell(r,2).Value=l.Type;ws.Cell(r,3).Value=l.Reference;ws.Cell(r,4).Value=l.Description;ws.Cell(r,5).Value=l.Debit;ws.Cell(r,6).Value=l.Credit;ws.Cell(r,7).Value=l.Balance;for(int c2=5;c2<=7;c2++)ws.Cell(r,c2).Style.NumberFormat.Format="#,##0.00";r++;}
+        foreach(var l in lines){ws.Cell(r,1).Value=l.Date.ToString("yyyy-MM-dd HH:mm");ws.Cell(r,2).Value=l.CreatedAt?.ToString("yyyy-MM-dd HH:mm") ?? "-";ws.Cell(r,3).Value=l.Type;ws.Cell(r,4).Value=l.Reference;ws.Cell(r,5).Value=l.Description;ws.Cell(r,6).Value=l.Debit;ws.Cell(r,7).Value=l.Credit;ws.Cell(r,8).Value=l.Balance;for(int c2=6;c2<=8;c2++)ws.Cell(r,c2).Style.NumberFormat.Format="#,##0.00";r++;}
 
-        ws.Cell(r,4).Value = _t.Get("Reports.Total"); ws.Cell(r,4).Style.Font.Bold=true;ws.Cell(r,5).Value=invoiced;ws.Cell(r,6).Value=paid;ws.Cell(r,7).Value=outstanding;for(int c2=5;c2<=7;c2++){ws.Cell(r,c2).Style.Font.Bold=true;ws.Cell(r,c2).Style.NumberFormat.Format="#,##0.00";}
+        ws.Cell(r,5).Value = _t.Get("Reports.Total"); ws.Cell(r,5).Style.Font.Bold=true;ws.Cell(r,6).Value=invoiced;ws.Cell(r,7).Value=paid;ws.Cell(r,8).Value=outstanding;for(int c2=6;c2<=8;c2++){ws.Cell(r,c2).Style.Font.Bold=true;ws.Cell(r,c2).Style.NumberFormat.Format="#,##0.00";}
         if (r > 4) ws.Range(3, 1, r - 1, h.Length).SetAutoFilter();
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"customer_{c.Id}_{from:yyyyMMdd}.xlsx");
@@ -2377,11 +2357,11 @@ public class OperationalReportsController : ControllerBase
         ws.Cell(1,1).Style.Font.Bold = true;
         ws.Cell(2,1).Value = _t.Get("Reports.DateRange", from.ToString("yyyy-MM-dd"), to.ToString("yyyy-MM-dd"));
 
-        string[] h = {_t.Get("Reports.DateHeader"), _t.Get("Reports.TypeHeader"), _t.Get("Reports.ReferenceHeader"), _t.Get("Reports.DescriptionHeader"), _t.Get("Reports.DebitHeader"), _t.Get("Reports.CreditHeader"), _t.Get("Reports.BalanceHeader")};
+        string[] h = {_t.Get("Reports.DateHeader"), "Creation Date", _t.Get("Reports.TypeHeader"), _t.Get("Reports.ReferenceHeader"), _t.Get("Reports.DescriptionHeader"), _t.Get("Reports.DebitHeader"), _t.Get("Reports.CreditHeader"), _t.Get("Reports.BalanceHeader")};
         for (int i=0;i<h.Length;i++){ws.Cell(3,i+1).Value=h[i];ws.Cell(3,i+1).Style.Font.Bold=true;ws.Cell(3,i+1).Style.Fill.BackgroundColor=XLColor.FromHtml("#c62828");ws.Cell(3,i+1).Style.Font.FontColor=XLColor.White;}
 
         int r=4;
-        foreach(var l in lines){ws.Cell(r,1).Value=l.Date.ToString("yyyy-MM-dd");ws.Cell(r,2).Value=l.Type;ws.Cell(r,3).Value=l.Reference;ws.Cell(r,4).Value=l.Description;ws.Cell(r,5).Value=l.Debit;ws.Cell(r,6).Value=l.Credit;ws.Cell(r,7).Value=l.Balance;for(int c=5;c<=7;c++)ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";r++;}
+        foreach(var l in lines){ws.Cell(r,1).Value=l.Date.ToString("yyyy-MM-dd HH:mm");ws.Cell(r,2).Value=l.CreatedAt?.ToString("yyyy-MM-dd HH:mm") ?? "-";ws.Cell(r,3).Value=l.Type;ws.Cell(r,4).Value=l.Reference;ws.Cell(r,5).Value=l.Description;ws.Cell(r,6).Value=l.Debit;ws.Cell(r,7).Value=l.Credit;ws.Cell(r,8).Value=l.Balance;for(int c=6;c<=8;c++)ws.Cell(r,c).Style.NumberFormat.Format="#,##0.00";r++;}
         if (r > 4) ws.Range(3, 1, r - 1, h.Length).SetAutoFilter();
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"supplier_statement_{s.Id}_{from:yyyyMMdd}.xlsx");
@@ -5282,7 +5262,7 @@ public class OperationalReportsController : ControllerBase
 }
 
 //  Report DTOs 
-public record CustomerStatementLine(DateTime Date, string Type, string Reference, string Description, decimal Debit, decimal Credit, decimal Balance);
+public record CustomerStatementLine(DateTime Date, string Type, string Reference, string Description, decimal Debit, decimal Credit, decimal Balance, DateTime? CreatedAt = null);
 public record CustomerAgingRow(int CustomerId, string Name, string Phone, decimal Total, decimal Current, decimal Days60, decimal Days90, decimal Over90);
 public record SupplierAgingRow(int SupplierId, string Name, string Phone, string CompanyName, decimal Total, decimal Current, decimal Days60, decimal Days90, decimal Over90);
 public record InventoryRow(int Id, string NameAr, string NameEn, string SKU, string CategoryName, decimal Price, decimal? DiscountPrice, decimal CostPrice, int TotalStock, decimal TotalValue, decimal TotalCostValue, List<VariantInventoryRow> Variants);
