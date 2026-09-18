@@ -353,13 +353,16 @@ public class OrdersController : ControllerBase
         }
 
         // ✅ Idempotency Guard (Short-term cache): منع تكرار الطلب خلال 10 ثواني من نفس الكاشير بنفس الإجمالي ونفس الأصناف
+        // إذا كان الطلب قادماً من الأوفلاين بمفتاح OfflineRef فريد، يُربط الكاش بالمفتاح الأوفلاين لمنع حظر الفواتير المتشابهة أثناء المزامنة
         var cashierId = posDto.PosEmployeeId ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "anonymous";
         var itemsKey  = string.Join("|", posDto.Items.Select(i => $"{i.ProductId}:{i.ProductVariantId}:{i.Quantity}").OrderBy(x => x));
-        var idempotencyKey = $"pos_order:{cashierId}:{posDto.TotalAmount}:{posDto.CustomerId}:{itemsKey}";
+        var idempotencyKey = string.IsNullOrEmpty(posDto.OfflineRef)
+            ? $"pos_order:{cashierId}:{posDto.TotalAmount}:{posDto.CustomerId}:{itemsKey}"
+            : $"pos_order_off:{posDto.OfflineRef}";
 
         if (_cache.TryGetValue(idempotencyKey, out _))
         {
-            _logger.LogWarning("[Idempotency] Duplicate POS order blocked for cashier={Cashier} total={Total}", cashierId, posDto.TotalAmount);
+            _logger.LogWarning("[Idempotency] Duplicate POS order blocked for cashier={Cashier} total={Total} offlineRef={OfflineRef}", cashierId, posDto.TotalAmount, posDto.OfflineRef);
             return Conflict(_translator.Get("Orders.DuplicateOrderBlocked") ?? "تم حجب طلب مكرر. الفاتورة السابقة تمت بنجاح.");
         }
 
