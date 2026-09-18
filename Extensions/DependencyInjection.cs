@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 using FluentValidation;
@@ -345,6 +345,7 @@ public static class DependencyInjection
         services.AddScoped<ITaxIntegrationService, TaxIntegrationService>();
         services.AddScoped<Sportive.API.Services.ETA.IEtaIntegrationService, Sportive.API.Services.ETA.EtaIntegrationService>();
         services.AddScoped<ICustomerService, CustomerService>();
+        services.AddScoped<Sportive.API.Services.Loyalty.ILoyaltyService, Sportive.API.Services.Loyalty.LoyaltyService>();
         services.AddScoped<ICustomerCategoryService, CustomerCategoryService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<ICouponService, CouponService>();

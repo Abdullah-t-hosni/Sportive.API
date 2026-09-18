@@ -41,7 +41,11 @@ public record CustomerBasicDto(
     string FullName,
     string Email,
     string? Phone,
-    decimal FixedDiscount = 0
+    decimal FixedDiscount = 0,
+    decimal Balance = 0,
+    decimal LoyaltyPoints = 0,
+    int LoyaltyTier = 1,
+    string LoyaltyTierName = "Bronze"
 );
 
 public record CustomerDetailDto(
@@ -60,7 +64,77 @@ public record CustomerDetailDto(
     [property: JsonPropertyName("categoryName")] string? CategoryName = null,
     [property: JsonPropertyName("fixedDiscount")] decimal FixedDiscount = 0,
     [property: JsonPropertyName("tags")] List<string>? Tags = null,
+    [property: JsonPropertyName("supplierId")] int? SupplierId = null,
+    [property: JsonPropertyName("supplierName")] string? SupplierName = null,
+    [property: JsonPropertyName("isAlsoSupplier")] bool IsAlsoSupplier = false,
+    [property: JsonPropertyName("loyaltyPoints")] decimal LoyaltyPoints = 0,
+    [property: JsonPropertyName("lifetimePoints")] decimal LifetimePoints = 0,
+    [property: JsonPropertyName("loyaltyTier")] int LoyaltyTier = 1,
+    [property: JsonPropertyName("loyaltyTierName")] string LoyaltyTierName = "Bronze",
     [property: JsonPropertyName("source")] string? Source = "POS"
+);
+
+// ========== LOYALTY DTOs ==========
+public record LoyaltyProgramSettingsDto(
+    bool IsEnabled,
+    decimal PointsPerCurrencyUnit,
+    decimal CurrencyUnitPerPointRedeemed,
+    int MinPointsToRedeem,
+    decimal MaxRedemptionPercentage,
+    int PointsExpiryDays,
+    decimal SilverThreshold,
+    decimal SilverMultiplier,
+    decimal GoldThreshold,
+    decimal GoldMultiplier,
+    decimal PlatinumThreshold,
+    decimal PlatinumMultiplier,
+    DateTime UpdatedAt
+);
+
+public record UpdateLoyaltySettingsDto(
+    bool IsEnabled,
+    decimal PointsPerCurrencyUnit,
+    decimal CurrencyUnitPerPointRedeemed,
+    int MinPointsToRedeem,
+    decimal MaxRedemptionPercentage,
+    int PointsExpiryDays,
+    decimal SilverThreshold,
+    decimal SilverMultiplier,
+    decimal GoldThreshold,
+    decimal GoldMultiplier,
+    decimal PlatinumThreshold,
+    decimal PlatinumMultiplier
+);
+
+public record LoyaltyPointTransactionDto(
+    int Id,
+    int CustomerId,
+    int? OrderId,
+    string? OrderNumber,
+    decimal Points,
+    string TransactionType,
+    decimal AmountEquivalent,
+    string? Note,
+    string? CreatedBy,
+    DateTime CreatedAt
+);
+
+public record AdjustLoyaltyPointsDto(
+    decimal Points,
+    string Note
+);
+
+public record CustomerLoyaltyInfoDto(
+    int CustomerId,
+    string CustomerName,
+    decimal Balance,
+    decimal LifetimePoints,
+    int Tier,
+    string TierName,
+    decimal Multiplier,
+    decimal CashValue,
+    bool IsEligibleToRedeem,
+    int MinPointsToRedeem
 );
 
 // ========== RFM (lightweight — no addresses, no balance) ==========
@@ -144,4 +218,14 @@ public record CustomerInsightsDto(
 );
 
 public record GrowthTrendDto(string Name, decimal Val);
+
+// ========== REWARDS CAMPAIGN ==========
+public record CustomerRewardRequestDto(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("mobile")] string Mobile,
+    [property: JsonPropertyName("email")] string? Email = null,
+    [property: JsonPropertyName("tenantId")] int TenantId = 0,
+    [property: JsonPropertyName("slug")] string? Slug = null,
+    [property: JsonPropertyName("campaignCouponCode")] string? CampaignCouponCode = null
+);
 

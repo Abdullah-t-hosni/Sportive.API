@@ -37,8 +37,20 @@ public class OrdersController : ControllerBase
     private readonly IMemoryCache _cache;
     private readonly IHubContext<NotificationHub> _hubContext;
     private readonly ITenantContext _tenantContext;
+    private readonly Sportive.API.Services.Loyalty.ILoyaltyService _loyaltyService;
 
-    public OrdersController(IOrderService orderService, IPdfService pdfService, AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<OrdersController> logger, IAuditService audit, ITranslator translator, IMemoryCache cache, IHubContext<NotificationHub> hubContext, ITenantContext tenantContext)
+    public OrdersController(
+        IOrderService orderService, 
+        IPdfService pdfService, 
+        AppDbContext db, 
+        IServiceScopeFactory scopeFactory, 
+        ILogger<OrdersController> logger, 
+        IAuditService audit, 
+        ITranslator translator, 
+        IMemoryCache cache, 
+        IHubContext<NotificationHub> hubContext, 
+        ITenantContext tenantContext,
+        Sportive.API.Services.Loyalty.ILoyaltyService loyaltyService)
     {
         _orderService = orderService;
         _pdfService   = pdfService;
@@ -50,6 +62,7 @@ public class OrdersController : ControllerBase
         _cache        = cache;
         _hubContext   = hubContext;
         _tenantContext = tenantContext;
+        _loyaltyService = loyaltyService;
     }
 
     [HttpGet]
@@ -404,7 +417,53 @@ public class OrdersController : ControllerBase
         var order = await _orderService.CreateOrderAsync(posDto.CustomerId, dto);
         if (order == null) return StatusCode(500, _translator.Get("Orders.CreationFailed"));
         
-        try { await _audit.LogAsync("CreatePosOrder", "Order", order.Id.ToString(), $"Created POS order #{order.OrderNumber} (Total: {order.TotalAmount})", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+        // ✅ Process Loyalty Points (Redemption & Earning)
+        decimal earnedLoyaltyPoints = 0;
+        decimal currentLoyaltyBalance = 0;
+        if (posDto.CustomerId.HasValue)
+        {
+            try
+            {
+                if (posDto.LoyaltyPointsToRedeem.HasValue && posDto.LoyaltyPointsToRedeem.Value > 0)
+                {
+                    await _loyaltyService.ProcessOrderRedemptionAsync(
+                        order.Id,
+                        posDto.CustomerId.Value,
+                        posDto.LoyaltyPointsToRedeem.Value,
+                        posDto.LoyaltyDiscountAmount ?? 0,
+                        order.OrderNumber
+                    );
+                }
+
+                if (order.TotalAmount > 0)
+                {
+                    var (pts, _) = await _loyaltyService.ProcessOrderEarnedPointsAsync(
+                        order.Id,
+                        posDto.CustomerId.Value,
+                        order.TotalAmount,
+                        order.OrderNumber
+                    );
+                    earnedLoyaltyPoints = pts;
+                }
+
+                var cust = await _db.Customers.FindAsync(posDto.CustomerId.Value);
+                currentLoyaltyBalance = cust?.LoyaltyPointsBalance ?? 0;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Non-critical error processing loyalty for POS order {OrderId}", order.Id);
+            }
+        }
+
+        order = order with
+        {
+            LoyaltyPointsRedeemed = posDto.LoyaltyPointsToRedeem ?? 0,
+            LoyaltyDiscountAmount = posDto.LoyaltyDiscountAmount ?? 0,
+            LoyaltyPointsEarned = earnedLoyaltyPoints,
+            CustomerLoyaltyBalance = currentLoyaltyBalance
+        };
+
+        try { await _audit.LogAsync("CreatePosOrder", "Order", order.Id.ToString(), $"Created POS order #{order.OrderNumber} (Total: {order.TotalAmount}, LoyaltyEarned: {earnedLoyaltyPoints})", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
         return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
     }

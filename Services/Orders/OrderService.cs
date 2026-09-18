@@ -313,7 +313,13 @@ public class OrderService : IOrderService
             o.BostaAwbUrl,
             o.ShippingCarrierName,
             o.ShippingTrackingNumber,
-            o.ShippingType
+            o.ShippingType,
+            null,
+            false,
+            o.LoyaltyPointsRedeemed,
+            o.LoyaltyDiscountAmount,
+            o.LoyaltyPointsEarned,
+            o.Customer?.LoyaltyPointsBalance ?? 0
         );
     }
 

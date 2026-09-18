@@ -1,4 +1,4 @@
-namespace Sportive.API.Models;
+﻿namespace Sportive.API.Models;
 
 public enum OrderStatus
 {
@@ -81,6 +81,11 @@ public class Order : BaseEntity
     public string? CouponCode { get; set; }
     public decimal TotalAmount { get; set; }
     public decimal TotalVatAmount { get; set; } = 0;
+
+    // Loyalty Points
+    public decimal LoyaltyPointsRedeemed { get; set; } = 0;
+    public decimal LoyaltyDiscountAmount { get; set; } = 0;
+    public decimal LoyaltyPointsEarned { get; set; } = 0;
 
     // Notes
     public string? CustomerNotes { get; set; }

@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // Data/AppDbContext.cs — تم إضافة AuditLogs DbSet وتحديث التصنيفات والمقاسات
 // ============================================================
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -41,7 +41,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<ProductSecondaryCategory> ProductSecondaryCategories => Set<ProductSecondaryCategory>();
     public DbSet<Review> Reviews                 => Set<Review>();
     public DbSet<ReviewToken> ReviewTokens       => Set<ReviewToken>();
-    public DbSet<Customer> Customers             => Set<Customer>();
+    public DbSet<Customer> Customers             => Set<Customer>();
+    public DbSet<LoyaltyProgramSettings> LoyaltyProgramSettings => Set<LoyaltyProgramSettings>();
+    public DbSet<LoyaltyPointTransaction> LoyaltyPointTransactions => Set<LoyaltyPointTransaction>();
     public DbSet<CustomerCategory> CustomerCategories => Set<CustomerCategory>();
     public DbSet<Address> Addresses              => Set<Address>();
     public DbSet<Order> Orders                   => Set<Order>();

@@ -32,6 +32,8 @@ public class AppUser : IdentityUser
 
     public int? WarehouseId { get; set; }
     public Warehouse? Warehouse { get; set; }
+
+    public bool MustChangePassword { get; set; } = false;
 }
 
 public class Customer : BaseEntity
@@ -92,6 +94,10 @@ public class Customer : BaseEntity
     public int? CategoryId { get; set; }
     public CustomerCategory? Category { get; set; }
 
+    // Dual Entity Linking
+    public int? SupplierId { get; set; }
+    public Supplier? Supplier { get; set; }
+
     // Financial Tracking
     public decimal TotalSales { get; set; } = 0;
     public decimal TotalPaid  { get; set; } = 0;
@@ -104,6 +110,12 @@ public class Customer : BaseEntity
     public bool IsAbandonedCartRecovered { get; set; } = false;
     public DateTime? AbandonedCartRecoveredAt { get; set; }
     public string? AbandonedCartRecoveredOrderNumber { get; set; }
+
+    // Loyalty Program
+    public decimal LoyaltyPointsBalance { get; set; } = 0;
+    public decimal LifetimePointsEarned { get; set; } = 0;
+    public CustomerLoyaltyTier CurrentTier { get; set; } = CustomerLoyaltyTier.Bronze;
+    public ICollection<LoyaltyPointTransaction> LoyaltyTransactions { get; set; } = new List<LoyaltyPointTransaction>();
 
     // Navigation
     public ICollection<Order> Orders { get; set; } = new List<Order>();

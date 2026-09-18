@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // DTOs/OrderDtos.cs
 // تم الفصل من Dtos.cs الكبير — يشمل Cart, Orders, POS
 // ============================================================
@@ -137,7 +137,11 @@ public record CreatePOSOrderDto(
     [property: global::System.Text.Json.Serialization.JsonPropertyName("branchId")]
     int? BranchId = null,
     [property: global::System.Text.Json.Serialization.JsonPropertyName("warehouseId")]
-    int? WarehouseId = null
+    int? WarehouseId = null,
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("loyaltyPointsToRedeem")]
+    decimal? LoyaltyPointsToRedeem = null,
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("loyaltyDiscountAmount")]
+    decimal? LoyaltyDiscountAmount = null
 );
 
 public record CreatePOSOrderItemDto(
@@ -225,7 +229,11 @@ public record OrderDetailDto(
     string? ShippingTrackingNumber = null,
     string? ShippingType = null,
     int? ShippingCompanyId = null,
-    bool IsDuplicate = false
+    bool IsDuplicate = false,
+    decimal LoyaltyPointsRedeemed = 0,
+    decimal LoyaltyDiscountAmount = 0,
+    decimal LoyaltyPointsEarned = 0,
+    decimal CustomerLoyaltyBalance = 0
 );
 
 public record UpdateBostaShipmentDto(
