@@ -55,7 +55,7 @@ public class LoyaltyService : ILoyaltyService
                     `Note` varchar(500) NULL,
                     `CreatedBy` varchar(150) NULL,
                     `CreatedAt` datetime(6) NOT NULL,
-                    `UpdatedAt` datetime(6) NOT NULL,
+                    `UpdatedAt` datetime(6) NULL DEFAULT NULL,
                     PRIMARY KEY (`Id`),
                     KEY `IX_LoyaltyPointTransactions_CustomerId` (`CustomerId`),
                     KEY `IX_LoyaltyPointTransactions_OrderId` (`OrderId`)
@@ -213,7 +213,8 @@ public class LoyaltyService : ILoyaltyService
             AmountEquivalent = amountEq,
             Note = note,
             CreatedBy = createdBy,
-            CreatedAt = TimeHelper.GetEgyptTime()
+            CreatedAt = TimeHelper.GetEgyptTime(),
+            UpdatedAt = TimeHelper.GetEgyptTime()
         };
 
         _db.LoyaltyPointTransactions.Add(tx);
@@ -266,7 +267,8 @@ public class LoyaltyService : ILoyaltyService
                 TransactionType = LoyaltyTransactionType.Earned,
                 AmountEquivalent = amountEq,
                 Note = $"نقاط مكتسبة عن فاتورة #{orderNumber}",
-                CreatedAt = TimeHelper.GetEgyptTime()
+                CreatedAt = TimeHelper.GetEgyptTime(),
+                UpdatedAt = TimeHelper.GetEgyptTime()
             };
 
             _db.LoyaltyPointTransactions.Add(tx);
@@ -312,7 +314,8 @@ public class LoyaltyService : ILoyaltyService
             TransactionType = LoyaltyTransactionType.Redeemed,
             AmountEquivalent = discountAmount,
             Note = $"استبدال نقاط بخصم {discountAmount:N2} ج في فاتورة #{orderNumber}",
-            CreatedAt = TimeHelper.GetEgyptTime()
+            CreatedAt = TimeHelper.GetEgyptTime(),
+            UpdatedAt = TimeHelper.GetEgyptTime()
         };
 
         _db.LoyaltyPointTransactions.Add(tx);
@@ -353,7 +356,8 @@ public class LoyaltyService : ILoyaltyService
             TransactionType = LoyaltyTransactionType.Reversed,
             AmountEquivalent = amountEq,
             Note = $"إلغاء نقاط مكتسبة بسبب مرتجع فاتورة #{orderNumber}",
-            CreatedAt = TimeHelper.GetEgyptTime()
+            CreatedAt = TimeHelper.GetEgyptTime(),
+            UpdatedAt = TimeHelper.GetEgyptTime()
         };
 
         _db.LoyaltyPointTransactions.Add(tx);
