@@ -411,7 +411,9 @@ public class OrdersController : ControllerBase
             AttachmentUrl: posDto.AttachmentUrl,
             AttachmentPublicId: posDto.AttachmentPublicId,
             BranchId: User.GetBranchId() ?? posDto.BranchId,
-            WarehouseId: User.GetWarehouseId() ?? posDto.WarehouseId
+            WarehouseId: User.GetWarehouseId() ?? posDto.WarehouseId,
+            LoyaltyPointsToRedeem: posDto.LoyaltyPointsToRedeem,
+            LoyaltyDiscountAmount: posDto.LoyaltyDiscountAmount
         );
 
         var order = await _orderService.CreateOrderAsync(posDto.CustomerId, dto);

@@ -193,8 +193,16 @@ public class SalesAccountingService
              lines.Add((salesDiscAcct, manualNetDisc, 0, _t.Get("Accounting.ManualDiscountDesc", order.OrderNumber, order.DiscountAmount)));
         }
 
-        // Fix: Subtract manualNetDisc from totalNetDiscount to prevent double-counting distributed global discounts
-        decimal remainingPromoDisc = Math.Round(totalNetDiscount - manualNetDisc, 2);
+        // Loyalty points discount handling
+        decimal loyaltyNetDisc = 0;
+        if (order.LoyaltyDiscountAmount > 0)
+        {
+             loyaltyNetDisc = Math.Round(order.LoyaltyDiscountAmount / (1 + vatRate), 2);
+             lines.Add((salesDiscAcct, loyaltyNetDisc, 0, $"خصم نقاط الولاء لفاتورة #{order.OrderNumber} ({order.LoyaltyPointsRedeemed} نقطة)"));
+        }
+
+        // Fix: Subtract manualNetDisc and loyaltyNetDisc from totalNetDiscount to prevent double-counting distributed global discounts
+        decimal remainingPromoDisc = Math.Round(totalNetDiscount - manualNetDisc - loyaltyNetDisc, 2);
         if (remainingPromoDisc > 0.05m)
         {
             lines.Add((salesDiscAcct, remainingPromoDisc, 0, _t.Get("Accounting.OfferDiscountDesc", order.OrderNumber, totalGrossDiscount)));

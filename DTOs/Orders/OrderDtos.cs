@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // DTOs/OrderDtos.cs
 // تم الفصل من Dtos.cs الكبير — يشمل Cart, Orders, POS
 // ============================================================
@@ -75,7 +75,11 @@ public record CreateOrderDto(
     [property: global::System.Text.Json.Serialization.JsonPropertyName("city")]
     string? City = null,
     [property: global::System.Text.Json.Serialization.JsonPropertyName("guestAddress")]
-    CreateAddressDto? GuestAddress = null
+    CreateAddressDto? GuestAddress = null,
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("loyaltyPointsToRedeem")]
+    decimal? LoyaltyPointsToRedeem = null,
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("loyaltyDiscountAmount")]
+    decimal? LoyaltyDiscountAmount = null
 );
 
 public record UpdateOrderDto(

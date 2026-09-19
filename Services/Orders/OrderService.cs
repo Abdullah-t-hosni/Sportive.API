@@ -583,6 +583,8 @@ public class OrderService : IOrderService
                     AdminNotes = dto.Note,
                     DiscountAmount = 0,
                     TemporalDiscount = 0,
+                    LoyaltyPointsRedeemed = dto.LoyaltyPointsToRedeem ?? 0,
+                    LoyaltyDiscountAmount = dto.LoyaltyDiscountAmount ?? 0,
                     AttachmentUrl = dto.AttachmentUrl,
                     AttachmentPublicId = dto.AttachmentPublicId,
                     BranchId = branchIdToUse,
@@ -983,6 +985,15 @@ public class OrderService : IOrderService
                     }
                 }
 
+                // 💎 Loyalty Points Discount
+                if (order.LoyaltyDiscountAmount > 0)
+                {
+                    if (order.TemporalDiscount >= order.LoyaltyDiscountAmount)
+                    {
+                        order.TemporalDiscount -= order.LoyaltyDiscountAmount;
+                    }
+                }
+
                 // 🛡️ Priority Logic: Temporal Discount (Offers) > Manual/Coupon Discount
                 if (order.TemporalDiscount > 0)
                 {
@@ -994,7 +1005,7 @@ public class OrderService : IOrderService
                     order.DiscountAmount += (dto.DiscountAmount ?? 0);
                 }
 
-                order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount);
+                order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount - order.LoyaltyDiscountAmount);
 
                 // 💡 Initial Paid Amount calculation for POS Mixed payments & Structured Payment Table
                 if (order.Source == OrderSource.POS)
