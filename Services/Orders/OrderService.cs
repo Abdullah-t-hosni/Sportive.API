@@ -143,7 +143,9 @@ public class OrderService : IOrderService
                 o.JournalEntries.Where(j => j.Type == JournalEntryType.SalesInvoice && j.Status != JournalEntryStatus.Reversed).Select(j => (int?)j.Id).FirstOrDefault(),
                 o.Items.Any(i => i.ReviewRequested), // HasReviewRequested column added via startup migration
                 o.StatusHistory.Where(h => h.Status == o.Status).OrderByDescending(h => h.CreatedAt).Select(h => (DateTime?)h.CreatedAt).FirstOrDefault() ?? o.UpdatedAt ?? o.CreatedAt,
-                o.StatusHistory.OrderByDescending(h => h.CreatedAt).Select(h => new OrderStatusHistoryDto(h.Status.ToString(), h.Note, h.CreatedAt, null)).ToList()
+                o.StatusHistory.OrderByDescending(h => h.CreatedAt).Select(h => new OrderStatusHistoryDto(h.Status.ToString(), h.Note, h.CreatedAt, null)).ToList(),
+                o.LoyaltyDiscountAmount,
+                o.LoyaltyPointsRedeemed
             ))
             .ToListAsync();
 

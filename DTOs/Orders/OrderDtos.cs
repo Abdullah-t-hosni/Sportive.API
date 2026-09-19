@@ -189,7 +189,9 @@ public record OrderSummaryDto(
     int? JournalEntryId = null,
     bool HasReviewRequested = false,
     DateTime? StatusChangedAt = null,
-    List<OrderStatusHistoryDto>? StatusHistory = null
+    List<OrderStatusHistoryDto>? StatusHistory = null,
+    decimal? LoyaltyDiscountAmount = 0,
+    decimal? LoyaltyPointsRedeemed = 0
 );
 
 
