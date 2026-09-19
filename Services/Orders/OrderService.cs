@@ -28,6 +28,7 @@ public class OrderService : IOrderService
     private readonly IDashboardEventService _dashboardEvents;
     private readonly EncryptionHelper _encryptionHelper;
     private readonly ITaxIntegrationService _taxIntegrationService;
+    private readonly Sportive.API.Services.Loyalty.ILoyaltyService _loyaltyService;
 
     public OrderService(
         AppDbContext db,
@@ -44,7 +45,8 @@ public class OrderService : IOrderService
         IBackgroundJobClient backgroundJobs,
         IDashboardEventService dashboardEvents,
         EncryptionHelper encryptionHelper,
-        ITaxIntegrationService taxIntegrationService)
+        ITaxIntegrationService taxIntegrationService,
+        Sportive.API.Services.Loyalty.ILoyaltyService loyaltyService)
     {
         _db = db;
         _notificationService = notificationService;
@@ -61,6 +63,7 @@ public class OrderService : IOrderService
         _dashboardEvents = dashboardEvents;
         _encryptionHelper = encryptionHelper;
         _taxIntegrationService = taxIntegrationService;
+        _loyaltyService = loyaltyService;
     }
 
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
@@ -2199,6 +2202,19 @@ public class OrderService : IOrderService
         if ((oldStatus == OrderStatus.Returned || oldStatus == OrderStatus.Cancelled || oldStatus == OrderStatus.PartiallyReturned) &&
              dto.Status != OrderStatus.Returned && dto.Status != OrderStatus.Cancelled && dto.Status != OrderStatus.PartiallyReturned)
         {
+            // 🔄 Revert loyalty reversals if order was previously Returned or Cancelled
+            if (order.CustomerId > 0)
+            {
+                try
+                {
+                    await _loyaltyService.ProcessOrderReactivateAsync(order.Id, order.CustomerId, order.OrderNumber);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error reactivating loyalty points on order {OrderId}", order.Id);
+                }
+            }
+
             // 1️⃣ Remove SalesReturn journal entries for this order
             var returnEntries = await _db.JournalEntries
                 .Include(e => e.Lines)
@@ -2446,10 +2462,36 @@ public class OrderService : IOrderService
             bool chargeReturnShipping = isReturnedFromCourier && !isManufacturingDefect;
             decimal returnShippingFee = chargeReturnShipping ? order.DeliveryFee : 0;
             _ = PostSalesReturnWithRetryAsync(orderId, dto.RefundAccountId, false, chargeReturnShipping, returnShippingFee, isReturnedFromCourier);
+
+            // ✅ REVERSE LOYALTY POINTS ON FULL RETURN
+            if (order.CustomerId > 0)
+            {
+                try
+                {
+                    await _loyaltyService.ProcessOrderReturnReversalAsync(order.Id, order.CustomerId, 1.0m, order.OrderNumber);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error reversing loyalty points for status Returned on order {OrderId}", orderId);
+                }
+            }
         }
         else if (dto.Status == OrderStatus.Cancelled)
         {
             _ = ReverseOrderSalesEntryWithRetryAsync(orderId);
+
+            // ✅ REVERSE LOYALTY POINTS ON CANCELLATION
+            if (order.CustomerId > 0)
+            {
+                try
+                {
+                    await _loyaltyService.ProcessOrderCancellationAsync(order.Id, order.CustomerId, order.OrderNumber);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error reversing loyalty points for status Cancelled on order {OrderId}", orderId);
+                }
+            }
         }
 
         return (await GetOrderByIdAsync(orderId))!;
@@ -2544,7 +2586,8 @@ public class OrderService : IOrderService
                 }
 
                 // 4. Update Order Status
-                if (order.Items.All(i => i.Quantity == i.ReturnedQuantity))
+                bool isFullReturn = order.Items.All(i => i.Quantity == i.ReturnedQuantity);
+                if (isFullReturn)
                 {
                    order.Status = OrderStatus.Returned;
                    order.PaymentStatus = PaymentStatus.Refunded;
@@ -2562,6 +2605,23 @@ public class OrderService : IOrderService
                 else if (order.Items.Any(i => i.ReturnedQuantity > 0))
                 {
                    order.Status = OrderStatus.PartiallyReturned;
+                }
+
+                // ✅ REVERSE LOYALTY POINTS ON RETURN (FULL OR PARTIAL)
+                if (order.CustomerId > 0)
+                {
+                    try
+                    {
+                        decimal loyaltyReturnRatio = isFullReturn ? 1.0m : (netPaidForItems > 0 ? Math.Min(1.0m, refundAmount / netPaidForItems) : 0m);
+                        if (loyaltyReturnRatio > 0)
+                        {
+                            await _loyaltyService.ProcessOrderReturnReversalAsync(order.Id, order.CustomerId, loyaltyReturnRatio, order.OrderNumber);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error reversing loyalty points for return on order {OrderId}", orderId);
+                    }
                 }
 
                 if (!returnedOrderItems.Any()) throw new InvalidOperationException("No items selected for return.");

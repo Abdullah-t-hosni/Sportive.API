@@ -982,6 +982,16 @@ public class OrdersController : ControllerBase
             }
         }
 
+        // Clean up loyalty points & transactions for the deleted order
+        try
+        {
+            await _loyaltyService.ProcessOrderDeletionAsync(order.Id, order.CustomerId, order.OrderNumber);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing loyalty points removal for deleted order {OrderId}", id);
+        }
+
         // Remove order and save changes
         _db.Orders.Remove(order);
         await _db.SaveChangesAsync();

@@ -14,4 +14,7 @@ public interface ILoyaltyService
     Task<(decimal pointsEarned, CustomerLoyaltyTier newTier)> ProcessOrderEarnedPointsAsync(int orderId, int customerId, decimal eligibleAmount, string orderNumber);
     Task<bool> ProcessOrderRedemptionAsync(int orderId, int customerId, decimal pointsToRedeem, decimal discountAmount, string orderNumber);
     Task ProcessOrderReturnReversalAsync(int orderId, int customerId, decimal returnedRatio, string orderNumber);
+    Task ProcessOrderDeletionAsync(int orderId, int? customerId, string orderNumber);
+    Task ProcessOrderCancellationAsync(int orderId, int customerId, string orderNumber);
+    Task ProcessOrderReactivateAsync(int orderId, int customerId, string orderNumber);
 }

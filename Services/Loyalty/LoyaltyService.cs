@@ -334,33 +334,267 @@ public class LoyaltyService : ILoyaltyService
     public async Task ProcessOrderReturnReversalAsync(int orderId, int customerId, decimal returnedRatio, string orderNumber)
     {
         await EnsureTablesAsync();
+        if (returnedRatio <= 0) return;
+
         var order = await _db.Orders.FindAsync(orderId);
-        if (order == null || order.LoyaltyPointsEarned <= 0) return;
+        var customer = await _db.Customers.FindAsync(customerId);
+        if (customer == null) return;
+
+        // 1. Calculate how many points were earned on this order
+        decimal totalEarned = order?.LoyaltyPointsEarned ?? 0;
+        if (totalEarned <= 0)
+        {
+            totalEarned = await _db.LoyaltyPointTransactions
+                .Where(t => (t.OrderId == orderId || (t.CustomerId == customerId && t.Note != null && t.Note.Contains(orderNumber))) 
+                            && t.TransactionType == LoyaltyTransactionType.Earned)
+                .SumAsync(t => (decimal?)t.Points) ?? 0;
+        }
+
+        if (totalEarned > 0)
+        {
+            var alreadyReversed = await _db.LoyaltyPointTransactions
+                .Where(t => (t.OrderId == orderId || (t.CustomerId == customerId && t.Note != null && t.Note.Contains(orderNumber))) 
+                            && t.TransactionType == LoyaltyTransactionType.Reversed)
+                .SumAsync(t => (decimal?)Math.Abs(t.Points)) ?? 0;
+
+            var maxReversible = Math.Max(0, totalEarned - alreadyReversed);
+            if (maxReversible > 0)
+            {
+                bool isFullReturn = returnedRatio >= 0.999m;
+                decimal pointsToReverse = isFullReturn
+                    ? maxReversible
+                    : Math.Min(maxReversible, Math.Round(totalEarned * returnedRatio, 2));
+
+                if (pointsToReverse > 0)
+                {
+                    customer.LoyaltyPointsBalance = Math.Max(0, customer.LoyaltyPointsBalance - pointsToReverse);
+                    customer.LifetimePointsEarned = Math.Max(0, customer.LifetimePointsEarned - pointsToReverse);
+
+                    var settings = await GetOrCreateSettingsInternalAsync();
+                    var amountEq = Math.Round(pointsToReverse * settings.CurrencyUnitPerPointRedeemed, 2);
+
+                    var note = isFullReturn
+                        ? $"إلغاء نقاط مكتسبة بسبب مرتجع كامل للفاتورة #{orderNumber}"
+                        : $"إلغاء نقاط مكتسبة بسبب مرتجع جزئي للفاتورة #{orderNumber} (نسبة {(returnedRatio * 100):0.#}%)";
+
+                    var tx = new LoyaltyPointTransaction
+                    {
+                        CustomerId = customerId,
+                        OrderId = orderId,
+                        Points = -pointsToReverse,
+                        TransactionType = LoyaltyTransactionType.Reversed,
+                        AmountEquivalent = amountEq,
+                        Note = note,
+                        CreatedAt = TimeHelper.GetEgyptTime(),
+                        UpdatedAt = TimeHelper.GetEgyptTime()
+                    };
+
+                    _db.LoyaltyPointTransactions.Add(tx);
+                }
+            }
+        }
+
+        // 2. If FULL return, restore points redeemed by customer on this order
+        if (returnedRatio >= 0.999m && order != null && order.LoyaltyPointsRedeemed > 0)
+        {
+            var alreadyRestored = await _db.LoyaltyPointTransactions
+                .AnyAsync(t => (t.OrderId == orderId || (t.CustomerId == customerId && t.Note != null && t.Note.Contains(orderNumber))) 
+                               && t.Note != null && t.Note.Contains("استرجاع نقاط مستبدلة"));
+
+            if (!alreadyRestored)
+            {
+                var pointsToRestore = order.LoyaltyPointsRedeemed;
+                customer.LoyaltyPointsBalance += pointsToRestore;
+
+                var settings = await GetOrCreateSettingsInternalAsync();
+                var amountEq = Math.Round(pointsToRestore * settings.CurrencyUnitPerPointRedeemed, 2);
+
+                var refundTx = new LoyaltyPointTransaction
+                {
+                    CustomerId = customerId,
+                    OrderId = orderId,
+                    Points = pointsToRestore,
+                    TransactionType = LoyaltyTransactionType.Adjusted,
+                    AmountEquivalent = amountEq,
+                    Note = $"استرجاع نقاط مستبدلة بسبب مرتجع كامل للفاتورة #{orderNumber}",
+                    CreatedAt = TimeHelper.GetEgyptTime(),
+                    UpdatedAt = TimeHelper.GetEgyptTime()
+                };
+
+                _db.LoyaltyPointTransactions.Add(refundTx);
+            }
+        }
+
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task ProcessOrderDeletionAsync(int orderId, int? customerId, string orderNumber)
+    {
+        await EnsureTablesAsync();
+
+        var txs = await _db.LoyaltyPointTransactions
+            .Where(t => t.OrderId == orderId || (!string.IsNullOrEmpty(orderNumber) && t.Note != null && t.Note.Contains(orderNumber)))
+            .ToListAsync();
+
+        if (!customerId.HasValue && txs.Any())
+        {
+            customerId = txs.First().CustomerId;
+        }
+
+        if (customerId.HasValue && customerId.Value > 0)
+        {
+            var customer = await _db.Customers.FindAsync(customerId.Value);
+            if (customer != null)
+            {
+                var order = await _db.Orders.FindAsync(orderId);
+
+                decimal earnedPoints = txs.Where(t => t.Points > 0 && t.TransactionType == LoyaltyTransactionType.Earned).Sum(t => t.Points);
+                if (order != null && order.LoyaltyPointsEarned > earnedPoints)
+                {
+                    earnedPoints = order.LoyaltyPointsEarned;
+                }
+
+                decimal redeemedPoints = txs.Where(t => t.Points < 0 && t.TransactionType == LoyaltyTransactionType.Redeemed).Sum(t => Math.Abs(t.Points));
+                if (order != null && order.LoyaltyPointsRedeemed > redeemedPoints)
+                {
+                    redeemedPoints = order.LoyaltyPointsRedeemed;
+                }
+
+                decimal alreadyReversed = txs.Where(t => t.TransactionType == LoyaltyTransactionType.Reversed).Sum(t => Math.Abs(t.Points));
+                decimal netEarnedToDeduct = Math.Max(0, earnedPoints - alreadyReversed);
+
+                if (netEarnedToDeduct > 0)
+                {
+                    customer.LoyaltyPointsBalance = Math.Max(0, customer.LoyaltyPointsBalance - netEarnedToDeduct);
+                    customer.LifetimePointsEarned = Math.Max(0, customer.LifetimePointsEarned - netEarnedToDeduct);
+                }
+
+                if (redeemedPoints > 0)
+                {
+                    customer.LoyaltyPointsBalance += redeemedPoints;
+                }
+            }
+        }
+
+        if (txs.Any())
+        {
+            _db.LoyaltyPointTransactions.RemoveRange(txs);
+        }
+
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task ProcessOrderCancellationAsync(int orderId, int customerId, string orderNumber)
+    {
+        await EnsureTablesAsync();
+
+        var order = await _db.Orders.FindAsync(orderId);
+        var customer = await _db.Customers.FindAsync(customerId);
+        if (customer == null) return;
+
+        decimal earnedPoints = order?.LoyaltyPointsEarned ?? 0;
+        if (earnedPoints <= 0)
+        {
+            earnedPoints = await _db.LoyaltyPointTransactions
+                .Where(t => (t.OrderId == orderId || (t.CustomerId == customerId && t.Note != null && t.Note.Contains(orderNumber))) 
+                            && t.TransactionType == LoyaltyTransactionType.Earned)
+                .SumAsync(t => (decimal?)t.Points) ?? 0;
+        }
+
+        var alreadyReversed = await _db.LoyaltyPointTransactions
+            .Where(t => (t.OrderId == orderId || (t.CustomerId == customerId && t.Note != null && t.Note.Contains(orderNumber))) 
+                        && t.TransactionType == LoyaltyTransactionType.Reversed)
+            .SumAsync(t => (decimal?)Math.Abs(t.Points)) ?? 0;
+
+        var netToReverse = Math.Max(0, earnedPoints - alreadyReversed);
+        if (netToReverse > 0)
+        {
+            customer.LoyaltyPointsBalance = Math.Max(0, customer.LoyaltyPointsBalance - netToReverse);
+            customer.LifetimePointsEarned = Math.Max(0, customer.LifetimePointsEarned - netToReverse);
+
+            var settings = await GetOrCreateSettingsInternalAsync();
+            var amountEq = Math.Round(netToReverse * settings.CurrencyUnitPerPointRedeemed, 2);
+
+            var tx = new LoyaltyPointTransaction
+            {
+                CustomerId = customerId,
+                OrderId = orderId,
+                Points = -netToReverse,
+                TransactionType = LoyaltyTransactionType.Reversed,
+                AmountEquivalent = amountEq,
+                Note = $"إلغاء نقاط مكتسبة بسبب إلغاء الفاتورة #{orderNumber}",
+                CreatedAt = TimeHelper.GetEgyptTime(),
+                UpdatedAt = TimeHelper.GetEgyptTime()
+            };
+
+            _db.LoyaltyPointTransactions.Add(tx);
+        }
+
+        if (order != null && order.LoyaltyPointsRedeemed > 0)
+        {
+            var alreadyRestored = await _db.LoyaltyPointTransactions
+                .AnyAsync(t => (t.OrderId == orderId || (t.CustomerId == customerId && t.Note != null && t.Note.Contains(orderNumber))) 
+                               && t.Note != null && t.Note.Contains("استرجاع نقاط مستبدلة"));
+
+            if (!alreadyRestored)
+            {
+                customer.LoyaltyPointsBalance += order.LoyaltyPointsRedeemed;
+                var settings = await GetOrCreateSettingsInternalAsync();
+                var amountEq = Math.Round(order.LoyaltyPointsRedeemed * settings.CurrencyUnitPerPointRedeemed, 2);
+
+                var refundTx = new LoyaltyPointTransaction
+                {
+                    CustomerId = customerId,
+                    OrderId = orderId,
+                    Points = order.LoyaltyPointsRedeemed,
+                    TransactionType = LoyaltyTransactionType.Adjusted,
+                    AmountEquivalent = amountEq,
+                    Note = $"استرجاع نقاط مستبدلة بسبب إلغاء الفاتورة #{orderNumber}",
+                    CreatedAt = TimeHelper.GetEgyptTime(),
+                    UpdatedAt = TimeHelper.GetEgyptTime()
+                };
+
+                _db.LoyaltyPointTransactions.Add(refundTx);
+            }
+        }
+
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task ProcessOrderReactivateAsync(int orderId, int customerId, string orderNumber)
+    {
+        await EnsureTablesAsync();
 
         var customer = await _db.Customers.FindAsync(customerId);
         if (customer == null) return;
 
-        var pointsToReverse = Math.Round(order.LoyaltyPointsEarned * returnedRatio, 2);
-        if (pointsToReverse <= 0) return;
+        // Remove any cancellation/return reversal transactions for this order
+        var reversals = await _db.LoyaltyPointTransactions
+            .Where(t => (t.OrderId == orderId || (t.CustomerId == customerId && t.Note != null && t.Note.Contains(orderNumber))) 
+                        && t.TransactionType == LoyaltyTransactionType.Reversed)
+            .ToListAsync();
 
-        customer.LoyaltyPointsBalance = Math.Max(0, customer.LoyaltyPointsBalance - pointsToReverse);
-
-        var settings = await GetOrCreateSettingsInternalAsync();
-        var amountEq = Math.Round(pointsToReverse * settings.CurrencyUnitPerPointRedeemed, 2);
-
-        var tx = new LoyaltyPointTransaction
+        if (reversals.Any())
         {
-            CustomerId = customerId,
-            OrderId = orderId,
-            Points = -pointsToReverse,
-            TransactionType = LoyaltyTransactionType.Reversed,
-            AmountEquivalent = amountEq,
-            Note = $"إلغاء نقاط مكتسبة بسبب مرتجع فاتورة #{orderNumber}",
-            CreatedAt = TimeHelper.GetEgyptTime(),
-            UpdatedAt = TimeHelper.GetEgyptTime()
-        };
+            decimal pointsToRestore = reversals.Sum(r => Math.Abs(r.Points));
+            customer.LoyaltyPointsBalance += pointsToRestore;
+            customer.LifetimePointsEarned += pointsToRestore;
+            _db.LoyaltyPointTransactions.RemoveRange(reversals);
+        }
 
-        _db.LoyaltyPointTransactions.Add(tx);
+        // Remove any restoration transactions if redeemed points were restored
+        var restorations = await _db.LoyaltyPointTransactions
+            .Where(t => (t.OrderId == orderId || (t.CustomerId == customerId && t.Note != null && t.Note.Contains(orderNumber))) 
+                        && t.Note != null && t.Note.Contains("استرجاع نقاط مستبدلة"))
+            .ToListAsync();
+
+        if (restorations.Any())
+        {
+            decimal pointsToDeduct = restorations.Sum(r => r.Points);
+            customer.LoyaltyPointsBalance = Math.Max(0, customer.LoyaltyPointsBalance - pointsToDeduct);
+            _db.LoyaltyPointTransactions.RemoveRange(restorations);
+        }
+
         await _db.SaveChangesAsync();
     }
 
