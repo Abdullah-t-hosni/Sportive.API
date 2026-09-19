@@ -110,6 +110,7 @@ public class CustomerService : ICustomerService
             CategoryNameAr = c.Category != null ? c.Category.NameAr : null,
             CategoryNameEn = c.Category != null ? c.Category.NameEn : null,
             c.FixedDiscount, c.CreatedAt, c.Tags,
+            c.LoyaltyPointsBalance, c.LifetimePointsEarned, c.CurrentTier,
             OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
             OrderCount = c.Orders.Count,
             OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
@@ -123,6 +124,7 @@ public class CustomerService : ICustomerService
             x.MainAccountId, x.CategoryId, x.CategoryNameAr, x.CategoryNameEn,
             x.FixedDiscount, x.CreatedAt, x.Tags, x.OrderCount, x.OrderTotal,
             x.HasWebsiteOrders,
+            x.LoyaltyPointsBalance, x.LifetimePointsEarned, x.CurrentTier,
             Balance = x.OpeningBalance + x.JournalNet
         });
 
@@ -173,6 +175,10 @@ public class CustomerService : ICustomerService
             CategoryName: c.CategoryNameAr,
             FixedDiscount: c.FixedDiscount,
             Tags: string.IsNullOrEmpty(c.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(c.Tags)!,
+            LoyaltyPoints: c.LoyaltyPointsBalance,
+            LifetimePoints: c.LifetimePointsEarned,
+            LoyaltyTier: (int)c.CurrentTier,
+            LoyaltyTierName: c.CurrentTier.ToString(),
             Source: (c.AppUserId != null || c.HasWebsiteOrders) ? "Website" : "POS"
         )).ToList();
 
@@ -233,6 +239,7 @@ public class CustomerService : ICustomerService
                 c.MainAccountId, c.CategoryId,
                 CategoryNameAr = c.Category != null ? c.Category.NameAr : null,
                 c.FixedDiscount, c.Tags,
+                c.LoyaltyPointsBalance, c.LifetimePointsEarned, c.CurrentTier,
                 OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
                 OrderCount = c.Orders.Count,
                 OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
@@ -264,7 +271,11 @@ public class CustomerService : ICustomerService
             CategoryId: rawResult.CategoryId, 
             CategoryName: rawResult.CategoryNameAr,
             FixedDiscount: rawResult.FixedDiscount,
-            Tags: string.IsNullOrEmpty(rawResult.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(rawResult.Tags)!
+            Tags: string.IsNullOrEmpty(rawResult.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(rawResult.Tags)!,
+            LoyaltyPoints: rawResult.LoyaltyPointsBalance,
+            LifetimePoints: rawResult.LifetimePointsEarned,
+            LoyaltyTier: (int)rawResult.CurrentTier,
+            LoyaltyTierName: rawResult.CurrentTier.ToString()
         );
     }
 
@@ -292,6 +303,7 @@ public class CustomerService : ICustomerService
                 c.MainAccountId, c.CategoryId,
                 CategoryNameAr = c.Category != null ? c.Category.NameAr : null,
                 c.FixedDiscount, c.Tags,
+                c.LoyaltyPointsBalance, c.LifetimePointsEarned, c.CurrentTier,
                 OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
                 OrderCount = c.Orders.Count,
                 OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
@@ -323,7 +335,11 @@ public class CustomerService : ICustomerService
             CategoryId: rawResult.CategoryId, 
             CategoryName: rawResult.CategoryNameAr,
             FixedDiscount: rawResult.FixedDiscount,
-            Tags: string.IsNullOrEmpty(rawResult.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(rawResult.Tags)!
+            Tags: string.IsNullOrEmpty(rawResult.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(rawResult.Tags)!,
+            LoyaltyPoints: rawResult.LoyaltyPointsBalance,
+            LifetimePoints: rawResult.LifetimePointsEarned,
+            LoyaltyTier: (int)rawResult.CurrentTier,
+            LoyaltyTierName: rawResult.CurrentTier.ToString()
         );
     }
 
@@ -350,6 +366,7 @@ public class CustomerService : ICustomerService
                 c.MainAccountId, c.CategoryId,
                 CategoryNameAr = c.Category != null ? c.Category.NameAr : null,
                 c.FixedDiscount, c.Tags,
+                c.LoyaltyPointsBalance, c.LifetimePointsEarned, c.CurrentTier,
                 OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
                 OrderCount = c.Orders.Count,
                 OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
@@ -381,7 +398,11 @@ public class CustomerService : ICustomerService
             CategoryId: rawResult.CategoryId, 
             CategoryName: rawResult.CategoryNameAr,
             FixedDiscount: rawResult.FixedDiscount,
-            Tags: string.IsNullOrEmpty(rawResult.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(rawResult.Tags)!
+            Tags: string.IsNullOrEmpty(rawResult.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(rawResult.Tags)!,
+            LoyaltyPoints: rawResult.LoyaltyPointsBalance,
+            LifetimePoints: rawResult.LifetimePointsEarned,
+            LoyaltyTier: (int)rawResult.CurrentTier,
+            LoyaltyTierName: rawResult.CurrentTier.ToString()
         );
     }
 
