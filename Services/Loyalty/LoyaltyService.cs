@@ -290,7 +290,7 @@ public class LoyaltyService : ILoyaltyService
     {
         await EnsureTablesAsync();
         var settings = await GetOrCreateSettingsInternalAsync();
-        if (!settings.IsEnabled || pointsToRedeem <= 0) return false;
+        if (pointsToRedeem <= 0) return false;
 
         var customer = await _db.Customers.FindAsync(customerId);
         if (customer == null) return false;
