@@ -932,14 +932,21 @@ public class SalesAccountingService
         string companyAcct = $"ID:{company.AccountId.Value}";
 
         // 3. Prevent duplicate entries
+        if (order.IsSettledWithCourier)
+        {
+            _logger.LogInformation("[Accounting] Order #{OrderNumber} is already settled with courier. Skipping delivery transfer.", order.OrderNumber);
+            return;
+        }
+
         var refNo = $"DELV-CUST-{order.OrderNumber}";
         var alreadyExists = await _db.JournalEntries.AnyAsync(e => 
-            (e.Reference == refNo || (e.OrderId == order.Id && e.Reference != null && e.Reference.StartsWith("DELV-CUST-"))) &&
+            (e.Reference == refNo || 
+             (e.OrderId == order.Id && e.Reference != null && (e.Reference.StartsWith("DELV-CUST-") || e.Reference.StartsWith("SETTLE-CUST-")))) &&
             e.Status == JournalEntryStatus.Posted);
 
         if (alreadyExists)
         {
-            _logger.LogInformation("[Accounting] Delivery transfer entry already exists for Order #{OrderNumber}.", order.OrderNumber);
+            _logger.LogInformation("[Accounting] Delivery transfer or settlement entry already exists for Order #{OrderNumber}.", order.OrderNumber);
             return;
         }
 

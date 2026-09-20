@@ -243,19 +243,19 @@ public class ShippingSettlementsController : ControllerBase
             );
         }
 
+        var allOrderIds = orders.Select(o => o.Id).ToList();
+        var alreadyTransferredOrderIds = await _db.JournalEntries
+            .Where(e => e.OrderId.HasValue && allOrderIds.Contains(e.OrderId.Value) &&
+                        e.Reference != null && (e.Reference.StartsWith("DELV-CUST-") || e.Reference.StartsWith("SETTLE-CUST-")))
+            .Where(e => e.Status == JournalEntryStatus.Posted)
+            .Select(e => e.OrderId!.Value)
+            .ToListAsync();
+
         // ----------------------------------------------------
         // 2️⃣ قيد التسوية ونقل المديونية للطلبات المحصلة (بتاريخ التسوية)
         // ----------------------------------------------------
         if (totalCollected > 0)
         {
-            var deliveredOrderIds = orders.Select(o => o.Id).ToList();
-            var alreadyTransferredOrderIds = await _db.JournalEntries
-                .Where(e => e.OrderId.HasValue && deliveredOrderIds.Contains(e.OrderId.Value) &&
-                            e.Reference != null && (e.Reference.StartsWith("DELV-CUST-") || e.Reference.StartsWith("SETTLE-CUST-")))
-                .Where(e => e.Status == JournalEntryStatus.Posted)
-                .Select(e => e.OrderId!.Value)
-                .ToListAsync();
-
             var pendingTransferOrders = orders.Where(o => !alreadyTransferredOrderIds.Contains(o.Id)).ToList();
             decimal pendingCollected = pendingTransferOrders.Sum(o => {
                 var reqOrder = request.Orders?.FirstOrDefault(x => x.OrderId == o.Id);
@@ -304,12 +304,14 @@ public class ShippingSettlementsController : ControllerBase
         // ----------------------------------------------------
         // قيد تسوية للطلبات التي لم تُحصل (مرتجع من المندوب) (بتاريخ التسوية)
         // ----------------------------------------------------
-        var uncollectedCandidateOrders = orders.Where(o => 
-        {
-            var r = request.Orders?.FirstOrDefault(x => x.OrderId == o.Id);
-            decimal col = r?.CollectedAmount ?? o.TotalAmount;
-            return col == 0 && o.DeliveryFee > 0;
-        }).ToList();
+        var uncollectedCandidateOrders = orders
+            .Where(o => !alreadyTransferredOrderIds.Contains(o.Id))
+            .Where(o => 
+            {
+                var r = request.Orders?.FirstOrDefault(x => x.OrderId == o.Id);
+                decimal col = r?.CollectedAmount ?? o.TotalAmount;
+                return col == 0 && o.DeliveryFee > 0;
+            }).ToList();
 
         var uncollectedOrders = uncollectedCandidateOrders;
         if (uncollectedCandidateOrders.Any())
