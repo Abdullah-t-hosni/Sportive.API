@@ -74,12 +74,26 @@ public class JournalEntriesController : ControllerBase
 
         if (!string.IsNullOrEmpty(search))
         {
-            var isNumeric = int.TryParse(search, out var searchId);
-            var isDecimal = decimal.TryParse(search, out var searchAmt);
+            var trimmedSearch = search.Trim();
+            var cleanSearch = trimmedSearch.TrimStart('#').Trim();
+            var isNumeric = int.TryParse(cleanSearch, out var searchId);
+            var isDecimal = decimal.TryParse(cleanSearch, out var searchAmt);
 
-            q = q.Where(r => r.EntryNumber.Contains(search) 
-                           || (r.Description != null && r.Description.Contains(search)) 
-                           || (r.Reference != null && r.Reference.Contains(search))
+            var matchingOrderIds = _db.Orders
+                .Where(o => o.OrderNumber.Contains(cleanSearch) || o.OrderNumber.Contains(trimmedSearch))
+                .Select(o => o.Id);
+
+            q = q.Where(r => r.EntryNumber.Contains(trimmedSearch) 
+                           || r.EntryNumber.Contains(cleanSearch)
+                           || (r.Description != null && (r.Description.Contains(trimmedSearch) || r.Description.Contains(cleanSearch))) 
+                           || (r.Reference != null && (r.Reference.Contains(trimmedSearch) || r.Reference.Contains(cleanSearch)))
+                           || (r.OrderId.HasValue && matchingOrderIds.Contains(r.OrderId.Value))
+                           || (r.Order != null && (r.Order.OrderNumber.Contains(cleanSearch) || r.Order.OrderNumber.Contains(trimmedSearch)))
+                           || r.Lines.Any(l => (l.Description != null && (l.Description.Contains(trimmedSearch) || l.Description.Contains(cleanSearch)))
+                                            || (l.OrderId.HasValue && matchingOrderIds.Contains(l.OrderId.Value))
+                                            || (l.Customer != null && l.Customer.FullName.Contains(trimmedSearch))
+                                            || (l.Supplier != null && (l.Supplier.Name.Contains(trimmedSearch) || (l.Supplier.Phone != null && l.Supplier.Phone.Contains(trimmedSearch))))
+                                            || (l.Account != null && (l.Account.NameAr.Contains(trimmedSearch) || l.Account.Code.Contains(trimmedSearch))))
                            || (isNumeric && r.Id == searchId)
                            || (isDecimal && r.Lines.Any(l => l.Debit == searchAmt || l.Credit == searchAmt)));
         }

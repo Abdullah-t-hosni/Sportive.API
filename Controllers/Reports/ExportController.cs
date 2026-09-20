@@ -742,10 +742,25 @@ public class ExportController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(search))
         {
+            var trimmedSearch = search.Trim();
+            var cleanSearch = trimmedSearch.TrimStart('#').Trim();
+
+            var matchingOrderIds = _db.Orders
+                .Where(o => o.OrderNumber.Contains(cleanSearch) || o.OrderNumber.Contains(trimmedSearch))
+                .Select(o => o.Id);
+
             query = query.Where(j => 
-                j.EntryNumber.Contains(search) || 
-                (j.Reference != null && j.Reference.Contains(search)) ||
-                (j.Description != null && j.Description.Contains(search)));
+                j.EntryNumber.Contains(trimmedSearch) || 
+                j.EntryNumber.Contains(cleanSearch) || 
+                (j.Reference != null && (j.Reference.Contains(trimmedSearch) || j.Reference.Contains(cleanSearch))) ||
+                (j.Description != null && (j.Description.Contains(trimmedSearch) || j.Description.Contains(cleanSearch))) ||
+                (j.OrderId.HasValue && matchingOrderIds.Contains(j.OrderId.Value)) ||
+                (j.Order != null && (j.Order.OrderNumber.Contains(cleanSearch) || j.Order.OrderNumber.Contains(trimmedSearch))) ||
+                j.Lines.Any(l => (l.Description != null && (l.Description.Contains(trimmedSearch) || l.Description.Contains(cleanSearch)))
+                              || (l.OrderId.HasValue && matchingOrderIds.Contains(l.OrderId.Value))
+                              || (l.Customer != null && l.Customer.FullName.Contains(trimmedSearch))
+                              || (l.Supplier != null && (l.Supplier.Name.Contains(trimmedSearch) || (l.Supplier.Phone != null && l.Supplier.Phone.Contains(trimmedSearch))))
+                              || (l.Account != null && (l.Account.NameAr.Contains(trimmedSearch) || l.Account.Code.Contains(trimmedSearch)))));
         }
 
         if (source.HasValue)   query = query.Where(j => j.CostCenter == source.Value);
