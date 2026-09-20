@@ -287,7 +287,7 @@ public class ShippingSettlementsController : ControllerBase
 
                 if (settlementLines.Count > 1)
                 {
-                    await _accountingCore.PostEntryAsync(
+                    var entrySettle = await _accountingCore.PostEntryAsync(
                         type: JournalEntryType.Manual,
                         reference: settlementRef,
                         description: $"قيد تسوية وتحصيل من العملاء لشركة الشحن: {company.NameAr}{invNumStr}",
@@ -297,6 +297,20 @@ public class ShippingSettlementsController : ControllerBase
                         createdAt: currentSysTime,
                         branchId: orders.FirstOrDefault()?.BranchId
                     );
+
+                    if (entrySettle != null)
+                    {
+                        foreach (var line in entrySettle.Lines)
+                        {
+                            var matchedOrder = pendingTransferOrders.FirstOrDefault(o => line.Description != null && line.Description.Contains(o.OrderNumber));
+                            if (matchedOrder != null)
+                            {
+                                line.CustomerId = matchedOrder.CustomerId;
+                                line.OrderId = matchedOrder.Id;
+                            }
+                        }
+                        await _db.SaveChangesAsync();
+                    }
                 }
             }
         }
@@ -357,7 +371,7 @@ public class ShippingSettlementsController : ControllerBase
 
             if (uncollectedLines.Count > 1)
             {
-                await _accountingCore.PostEntryAsync(
+                var entryUncollected = await _accountingCore.PostEntryAsync(
                     type: JournalEntryType.Manual,
                     reference: uncollectedRef,
                     description: $"قيد إلغاء إيرادات توصيل لطلبات لم تُحصل: {company.NameAr}{invNumStr}",
@@ -367,6 +381,20 @@ public class ShippingSettlementsController : ControllerBase
                     createdAt: currentSysTime,
                     branchId: uncollectedOrders.FirstOrDefault()?.BranchId
                 );
+
+                if (entryUncollected != null)
+                {
+                    foreach (var line in entryUncollected.Lines)
+                    {
+                        var matchedOrder = uncollectedOrders.FirstOrDefault(o => line.Description != null && line.Description.Contains(o.OrderNumber));
+                        if (matchedOrder != null)
+                        {
+                            line.CustomerId = matchedOrder.CustomerId;
+                            line.OrderId = matchedOrder.Id;
+                        }
+                    }
+                    await _db.SaveChangesAsync();
+                }
             }
         }
 

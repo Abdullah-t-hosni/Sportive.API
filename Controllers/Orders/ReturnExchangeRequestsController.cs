@@ -1241,35 +1241,64 @@ public class ReturnExchangeRequestsController : ControllerBase
         {
             if (_accounting != null && req.Order != null)
             {
+                var returnedOrderItemsForAccounting = new List<OrderItem>();
+                foreach (var reqItem in req.Items)
+                {
+                    if (reqItem.OrderItem != null)
+                    {
+                        var orig = reqItem.OrderItem;
+                        int qty = Math.Max(1, reqItem.Quantity);
+                        returnedOrderItemsForAccounting.Add(new OrderItem
+                        {
+                            Id = orig.Id,
+                            OrderId = orig.OrderId,
+                            ProductId = orig.ProductId,
+                            ProductVariantId = orig.ProductVariantId,
+                            Quantity = qty,
+                            UnitPrice = orig.UnitPrice,
+                            OriginalUnitPrice = orig.OriginalUnitPrice,
+                            DiscountAmount = orig.DiscountAmount,
+                            TotalPrice = qty * orig.UnitPrice,
+                            HasTax = orig.HasTax,
+                            VatRateApplied = orig.VatRateApplied,
+                            ItemVatAmount = orig.HasTax && orig.VatRateApplied.HasValue ? (qty * orig.UnitPrice * orig.VatRateApplied.Value / 100m) : 0m,
+                            Product = orig.Product
+                        });
+                    }
+                }
+
                 if (isReturnedFromCourier)
                 {
-                    var returnedOrderItemsForAccounting = new List<OrderItem>();
-                    foreach (var reqItem in req.Items)
-                    {
-                        if (reqItem.OrderItem != null)
-                        {
-                            var orig = reqItem.OrderItem;
-                            int qty = Math.Max(1, reqItem.Quantity);
-                            returnedOrderItemsForAccounting.Add(new OrderItem
-                            {
-                                Id = orig.Id,
-                                OrderId = orig.OrderId,
-                                ProductId = orig.ProductId,
-                                ProductVariantId = orig.ProductVariantId,
-                                Quantity = qty,
-                                UnitPrice = orig.UnitPrice,
-                                OriginalUnitPrice = orig.OriginalUnitPrice,
-                                DiscountAmount = orig.DiscountAmount,
-                                TotalPrice = qty * orig.UnitPrice,
-                                HasTax = orig.HasTax,
-                                VatRateApplied = orig.VatRateApplied,
-                                ItemVatAmount = orig.HasTax && orig.VatRateApplied.HasValue ? (qty * orig.UnitPrice * orig.VatRateApplied.Value / 100m) : 0m,
-                                Product = orig.Product
-                            });
-                        }
-                    }
-
                     await _accounting.PostWarehouseReceiptFromCourierAsync(req.Order, req.Id);
+                }
+
+                // 🛡️ ENSURE SALES RETURN ACCOUNTING: Post Sales Return entry if not already posted in ApproveRequest
+                var hasSalesReturn = await _db.JournalEntries.AnyAsync(e => 
+                    e.OrderId == req.OrderId && 
+                    (e.Type == JournalEntryType.SalesReturn || (e.Reference != null && e.Reference.StartsWith(req.Order.OrderNumber + "-RTN"))) && 
+                    e.Status != JournalEntryStatus.Reversed);
+
+                if (!hasSalesReturn)
+                {
+                    if (isFullReturn)
+                    {
+                        await _accounting.PostSalesReturnAsync(req.Order, null, req.RefundShipping, chargeReturnShipping, returnShippingFee, isReturnedFromCourier);
+                    }
+                    else if (returnedOrderItemsForAccounting.Any())
+                    {
+                        await _accounting.PostPartialSalesReturnAsync(
+                            req.Order,
+                            returnedOrderItemsForAccounting,
+                            totalRefundValue,
+                            null,
+                            false,
+                            $"{req.Order.OrderNumber}-RTN-{req.Id}",
+                            TimeHelper.GetEgyptTime(),
+                            chargeReturnShipping,
+                            returnShippingFee,
+                            isReturnedFromCourier
+                        );
+                    }
                 }
 
                 // Generate Accounting Entry for Refund Payment to Customer
