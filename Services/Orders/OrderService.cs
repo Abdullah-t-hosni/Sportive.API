@@ -1741,6 +1741,24 @@ public class OrderService : IOrderService
                 if (oldEntries.Any())
                 {
                     var entryIds = oldEntries.Select(e => e.Id).ToList();
+                    var entryNumbers = oldEntries.Select(e => e.EntryNumber).ToList();
+
+                    // 🛡️ REMOVE CHILD REVERSALS: Include any child reversal entries linked to these entries to prevent orphaned reversal lines
+                    var childReversals = await _db.JournalEntries
+                        .Where(e => (e.ReversalOfId.HasValue && entryIds.Contains(e.ReversalOfId.Value)) ||
+                                    (e.Reference != null && entryNumbers.Contains(e.Reference) && e.Description != null && e.Description.Contains("عكس")))
+                        .ToListAsync();
+
+                    if (childReversals.Any())
+                    {
+                        var childRevIds = childReversals.Select(c => c.Id).ToList();
+                        oldEntries.AddRange(childReversals.Where(c => !entryIds.Contains(c.Id)));
+                        entryIds = oldEntries.Select(e => e.Id).ToList();
+
+                        await _db.JournalEntries
+                            .Where(e => e.ReversalOfId.HasValue && childRevIds.Contains(e.ReversalOfId.Value))
+                            .ExecuteUpdateAsync(s => s.SetProperty(e => e.ReversalOfId, (int?)null));
+                    }
                     
                     // 🛡️ UNLINK VOUCHERS: Prevent FK violations (Receipt/Payment vouchers linked to these entries)
                     await _db.ReceiptVouchers
@@ -1750,11 +1768,6 @@ public class OrderService : IOrderService
                     await _db.PaymentVouchers
                         .Where(v => v.JournalEntryId.HasValue && entryIds.Contains(v.JournalEntryId.Value))
                         .ExecuteUpdateAsync(s => s.SetProperty(v => v.JournalEntryId, (int?)null));
-
-                    // 🛡️ UNLINK REVERSALS: Prevent FK violations if any of these entries were reversed
-                    await _db.JournalEntries
-                        .Where(e => e.ReversalOfId.HasValue && entryIds.Contains(e.ReversalOfId.Value))
-                        .ExecuteUpdateAsync(s => s.SetProperty(e => e.ReversalOfId, (int?)null));
 
                     var lines = await _db.JournalLines.Where(l => entryIds.Contains(l.JournalEntryId)).ToListAsync();
                     _db.JournalLines.RemoveRange(lines);
