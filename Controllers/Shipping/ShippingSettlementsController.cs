@@ -304,12 +304,34 @@ public class ShippingSettlementsController : ControllerBase
         // ----------------------------------------------------
         // قيد تسوية للطلبات التي لم تُحصل (مرتجع من المندوب) (بتاريخ التسوية)
         // ----------------------------------------------------
-        var uncollectedOrders = orders.Where(o => 
+        var uncollectedCandidateOrders = orders.Where(o => 
         {
             var r = request.Orders?.FirstOrDefault(x => x.OrderId == o.Id);
             decimal col = r?.CollectedAmount ?? o.TotalAmount;
             return col == 0 && o.DeliveryFee > 0;
         }).ToList();
+
+        var uncollectedOrders = uncollectedCandidateOrders;
+        if (uncollectedCandidateOrders.Any())
+        {
+            var candidateOrderIds = uncollectedCandidateOrders.Select(o => o.Id).ToList();
+            int delRevAccountId = int.TryParse(deliveryRevenueAccount.Replace("ID:", ""), out var parsedAccId) ? parsedAccId : 0;
+            if (delRevAccountId > 0)
+            {
+                var alreadyReversedOrderIds = await _db.JournalLines
+                    .Where(jl => jl.AccountId == delRevAccountId && jl.Debit > 0 && jl.JournalEntry.OrderId.HasValue && candidateOrderIds.Contains(jl.JournalEntry.OrderId.Value))
+                    .Select(jl => jl.JournalEntry.OrderId!.Value)
+                    .Distinct()
+                    .ToListAsync();
+
+                if (alreadyReversedOrderIds.Any())
+                {
+                    uncollectedOrders = uncollectedCandidateOrders
+                        .Where(o => !alreadyReversedOrderIds.Contains(o.Id))
+                        .ToList();
+                }
+            }
+        }
 
         if (uncollectedOrders.Any())
         {

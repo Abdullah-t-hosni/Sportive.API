@@ -410,12 +410,10 @@ public class SalesAccountingService
         // مدين  ضريبة المخرجات      = totalVatReturn          [إن وجدت]
         // مدين  إيراد الشحن (إلغاء) = deliveryFeeToRefund     [refundShipping]
         // مدين  مخزن الشحن/الرئيسي  = totalCostReturn
-        // مدين  العملاء (رسوم رجوع)  = returnShippingFee       [chargeReturnShipping]
         // ──────────────────────────────────────────
         // دائن  الخصم الممنوح        = totalNetDiscount        [إن وجد]
         // دائن  العملاء (استرداد)    = totalNetReturn + totalVatReturn + deliveryFeeToRefund
         // دائن  تكلفة البضاعة COGS   = totalCostReturn
-        // دائن  إيراد التوصيل        = returnShippingFee       [chargeReturnShipping]
         //
         // الإجمالان متساويان دائماً (هوية رياضية) ✓
 
@@ -436,7 +434,7 @@ public class SalesAccountingService
                 _t.Get("Accounting.SalesReturnTaxDesc", order.OrderNumber)));
         }
 
-        // [ مدين ] إلغاء إيراد الشحن (إذا كان المفروض يُرد الشحن للعميل)
+        // [ مدين ] إلغاء إيراد الشحن (إذا كان المفروض يُرد الشحن للعميل - مثلاً عيب تصنيع)
         decimal deliveryFeeToRefund = 0;
         if (refundShipping && order.DeliveryFee > 0)
         {
@@ -459,11 +457,6 @@ public class SalesAccountingService
                 _t.Get("Accounting.InventoryInDesc")));
         }
 
-        // [ مدين ] العملاء - رسوم شحن الإرجاع (ديْن جديد على العميل - مش عيب تصنيع)
-        if (chargeReturnShipping && returnShippingFee > 0)
-            lines.Add((receivablesAcct, returnShippingFee, 0,
-                $"رسوم شحن إرجاع - طلب #{order.OrderNumber}"));
-
         // [ دائن ] إلغاء الخصم الممنوح أصلاً
         if (totalNetDiscount > 0)
             lines.Add((salesDiscAcct, 0, totalNetDiscount,
@@ -479,11 +472,6 @@ public class SalesAccountingService
         if (totalCostReturn > 0)
             lines.Add((cogsAcct, 0, totalCostReturn,
                 _t.Get("Accounting.COGSReturnDesc")));
-
-        // [ دائن ] إيراد شحن الإرجاع (في مقابل الرسوم المُحملة على العميل)
-        if (chargeReturnShipping && returnShippingFee > 0)
-            lines.Add((deliveryRevAcct, 0, returnShippingFee,
-                $"إيراد شحن إرجاع - طلب #{order.OrderNumber}"));
 
         // ── 5. تسجيل القيد ──
         await _core.PostEntryAsync(
@@ -576,12 +564,6 @@ public class SalesAccountingService
         }
 
         decimal totalRefundValue = totalNetReturn + totalVatReturn; // Excludes shipping for partial returns
-
-        if (chargeReturnShipping && returnShippingFee > 0)
-        {
-            lines.Add((receivablesAcct, returnShippingFee, 0, $"رسوم شحن إرجاع جزئي - طلب #{order.OrderNumber}"));
-            lines.Add((deliveryRevAcct, 0, returnShippingFee, $"إيراد شحن إرجاع جزئي - طلب #{order.OrderNumber}"));
-        }
 
 
         // ✅ ROBUST MULTI-RETURN DEBT LOGIC:
