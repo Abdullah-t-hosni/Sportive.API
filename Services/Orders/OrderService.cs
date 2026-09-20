@@ -1732,7 +1732,7 @@ public class OrderService : IOrderService
                     CreatedAt = now 
                 });
 
-                // 7. SYNC ACCOUNTING: Delete old entries first
+                // 7. SYNC ACCOUNTING: Cleanly update existing entries in-place preserving the original invoice date
                 // We find all entries related to this order by ID or Reference (Invoice, Payments, Returns)
                 var oldEntries = await _db.JournalEntries
                     .Where(e => e.OrderId == order.Id || e.Reference == order.OrderNumber || (e.Reference != null && e.Reference.StartsWith(order.OrderNumber + "-")))
@@ -1740,52 +1740,25 @@ public class OrderService : IOrderService
 
                 if (oldEntries.Any())
                 {
-                    bool isAdminOrSuperAdmin = false;
-                    if (!string.IsNullOrEmpty(updatedByUserId))
-                    {
-                        var adminRoleIds = await _db.Roles.Where(r => r.Name == AppRoles.Admin || r.Name == AppRoles.SuperAdmin).Select(r => r.Id).ToListAsync();
-                        isAdminOrSuperAdmin = await _db.UserRoles.AnyAsync(ur => ur.UserId == updatedByUserId && adminRoleIds.Contains(ur.RoleId));
-                    }
+                    var entryIds = oldEntries.Select(e => e.Id).ToList();
+                    
+                    // 🛡️ UNLINK VOUCHERS: Prevent FK violations (Receipt/Payment vouchers linked to these entries)
+                    await _db.ReceiptVouchers
+                        .Where(v => v.JournalEntryId.HasValue && entryIds.Contains(v.JournalEntryId.Value))
+                        .ExecuteUpdateAsync(s => s.SetProperty(v => v.JournalEntryId, (int?)null));
 
-                    // 🚀 CLEAN IN-PLACE UPDATE: For Website/Online orders, or Admin/SuperAdmin edits, or any undelivered order:
-                    // We update the existing entries cleanly in-place without generating messy reversal entries.
-                    var isSameBusinessDay = isAdminOrSuperAdmin 
-                        || order.Source != OrderSource.POS 
-                        || order.Status != OrderStatus.Delivered 
-                        || TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt) == TimeHelper.GetEgyptBusinessDayDate(now);
+                    await _db.PaymentVouchers
+                        .Where(v => v.JournalEntryId.HasValue && entryIds.Contains(v.JournalEntryId.Value))
+                        .ExecuteUpdateAsync(s => s.SetProperty(v => v.JournalEntryId, (int?)null));
 
-                    if (isSameBusinessDay)
-                    {
-                        var entryIds = oldEntries.Select(e => e.Id).ToList();
-                        
-                        // 🛡️ UNLINK VOUCHERS: Prevent FK violations (Receipt/Payment vouchers linked to these entries)
-                        await _db.ReceiptVouchers
-                            .Where(v => v.JournalEntryId.HasValue && entryIds.Contains(v.JournalEntryId.Value))
-                            .ExecuteUpdateAsync(s => s.SetProperty(v => v.JournalEntryId, (int?)null));
+                    // 🛡️ UNLINK REVERSALS: Prevent FK violations if any of these entries were reversed
+                    await _db.JournalEntries
+                        .Where(e => e.ReversalOfId.HasValue && entryIds.Contains(e.ReversalOfId.Value))
+                        .ExecuteUpdateAsync(s => s.SetProperty(e => e.ReversalOfId, (int?)null));
 
-                        await _db.PaymentVouchers
-                            .Where(v => v.JournalEntryId.HasValue && entryIds.Contains(v.JournalEntryId.Value))
-                            .ExecuteUpdateAsync(s => s.SetProperty(v => v.JournalEntryId, (int?)null));
-
-                        // 🛡️ UNLINK REVERSALS: Prevent FK violations if any of these entries were reversed
-                        await _db.JournalEntries
-                            .Where(e => e.ReversalOfId.HasValue && entryIds.Contains(e.ReversalOfId.Value))
-                            .ExecuteUpdateAsync(s => s.SetProperty(e => e.ReversalOfId, (int?)null));
-
-                        var lines = await _db.JournalLines.Where(l => entryIds.Contains(l.JournalEntryId)).ToListAsync();
-                        _db.JournalLines.RemoveRange(lines);
-                        _db.JournalEntries.RemoveRange(oldEntries);
-                    }
-                    else
-                    {
-                        // 🔄 REVERSAL & REPOSTING FOR PREVIOUS DAYS (POS Closed Shifts only)
-                        // To avoid altering closed shifts and past daily reports, we reverse the old entries TODAY instead of deleting them.
-                        var entriesToReverse = oldEntries.Where(e => e.Status != JournalEntryStatus.Reversed).ToList();
-                        foreach (var e in entriesToReverse)
-                        {
-                            await _accounting.ReverseEntryAsync(e.Id, $"تعديل الفاتورة رقم {order.OrderNumber}");
-                        }
-                    }
+                    var lines = await _db.JournalLines.Where(l => entryIds.Contains(l.JournalEntryId)).ToListAsync();
+                    _db.JournalLines.RemoveRange(lines);
+                    _db.JournalEntries.RemoveRange(oldEntries);
                 }
 
                 // 💳 SYNC INSTALLMENT ON ORDER UPDATE
@@ -1812,7 +1785,7 @@ public class OrderService : IOrderService
                             var installment = new CustomerInstallment
                             {
                                 CustomerId = order.CustomerId,
-                                OrderId = order.Id,
+                               OrderId = order.Id,
                                 TotalAmount = creditAmount,
                                 PaidAmount = 0,
                                 DueDate = now.AddDays(30),
@@ -1835,14 +1808,13 @@ public class OrderService : IOrderService
 
                 await _db.SaveChangesAsync();
 
-                // POST NEW ACCOUNTING
-                var isSameBusinessDayCheck = TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt) == TimeHelper.GetEgyptBusinessDayDate(now);
-                DateTime? overrideDate = (order.Source == OrderSource.POS && !isSameBusinessDayCheck) ? now : null;
-
-                await _accounting.PostSalesOrderAsync(order, overrideDate);
+                // POST NEW ACCOUNTING:
+                // Always preserve the original order creation date/time (overrideDate = null)
+                // so that editing the order never shifts the sales journal entry to today.
+                await _accounting.PostSalesOrderAsync(order, overrideDate: null);
                 if (order.PaidAmount > 0)
                 {
-                    await _accounting.PostOrderPaymentAsync(order, overrideDate);
+                    await _accounting.PostOrderPaymentAsync(order, overrideDate: null);
                 }
 
                 await tx.CommitAsync();

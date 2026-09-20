@@ -142,7 +142,7 @@ public class PaymentAccountingService
 
         if (!lines.Any()) return;
         
-        var paymentDate = payments.Any() ? payments.Max(p => p.CreatedAt) : TimeHelper.GetEgyptTime();
+        var paymentDate = payments.Any() ? payments.Max(p => p.CreatedAt) : order.CreatedAt;
         var entryDate = overrideDate ?? TimeHelper.GetEgyptBusinessDayDate(paymentDate);
         var createdDate = overrideDate ?? paymentDate;
 
