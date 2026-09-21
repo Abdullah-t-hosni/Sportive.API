@@ -207,6 +207,7 @@ public class POSReportController : ControllerBase
         decimal safeDrops     = 0;
         decimal cashReceipts  = 0; // debt collections
         decimal cashReturns   = 0;
+        decimal manualCashFlow = 0; // manual drawer adjustments (e.g. supplier payments or non-safe adjustments)
         
         decimal nonCashExpenses = 0;
         decimal nonCashDrops    = 0;
@@ -237,7 +238,7 @@ public class POSReportController : ControllerBase
                 // Expenses: credit from POS drawers
                 if (isExpense && credit > 0 && posAccountIds.Contains(aid))
                 {
-                    var debitedLine = j.Lines.FirstOrDefault(line => line.Debit > 0);
+                    var debitedLine = j.Lines.FirstOrDefault(line => line.Debit > 0 && line.AccountId != aid);
                     var isTransferToSafeOrBank = false;
                     if (debitedLine != null && debitedLine.Account != null)
                     {
@@ -250,10 +251,7 @@ public class POSReportController : ControllerBase
                                                  destAccountId == posInstaId ||
                                                  destCode.StartsWith("1101") || // Cashier/Safes
                                                  destCode.StartsWith("1102") || // Banks
-                                                 destCode.StartsWith("1103") || // POS drawers
-                                                 destCode.StartsWith("1105") || // Vodafone cash
-                                                 destCode.StartsWith("1107") || // Instapay
-                                                 destCode.StartsWith("111");
+                                                 destCode.StartsWith("1103");   // POS drawers / Wallets / Instapay
                     }
 
                     if (aid == effectiveDrawerId)
@@ -274,13 +272,43 @@ public class POSReportController : ControllerBase
                     }
                 }
 
-                // Safe drops (Manual transfers) from POS drawers
+                // Safe drops (transfers to safe/bank) & Manual movements from POS drawers
                 if (isManual && credit > 0 && posAccountIds.Contains(aid))
                 {
                     if (string.IsNullOrEmpty(j.Reference) || !j.Reference.StartsWith("SHIFT-CLOSE-", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (aid == effectiveDrawerId) safeDrops += credit;
-                        else nonCashDrops += credit;
+                        var debitedLine = j.Lines.FirstOrDefault(line => line.Debit > 0 && line.AccountId != aid);
+                        var isTransferToSafeOrBank = false;
+                        if (debitedLine != null && debitedLine.Account != null)
+                        {
+                            var destAccountId = debitedLine.AccountId;
+                            var destCode = debitedLine.Account.Code ?? "";
+                            isTransferToSafeOrBank = destAccountId == mainCashId ||
+                                                     destAccountId == posCashId ||
+                                                     destAccountId == posBankId ||
+                                                     destAccountId == posVodaId ||
+                                                     destAccountId == posInstaId ||
+                                                     destCode.StartsWith("1101") || // Cashier/Safes
+                                                     destCode.StartsWith("1102") || // Banks
+                                                     destCode.StartsWith("1103");   // POS drawers / Wallets / Instapay
+                        }
+
+                        if (aid == effectiveDrawerId)
+                        {
+                            if (isTransferToSafeOrBank) safeDrops += credit;
+                            else manualCashFlow -= credit;
+                        }
+                        else 
+                        {
+                            if (isTransferToSafeOrBank) nonCashDrops += credit;
+                            else 
+                            {
+                                nonCashExpenses += credit;
+                                if (aid == posVodaId) vodaExpenses += credit;
+                                else if (aid == posInstaId) instaExpenses += credit;
+                                else if (aid == posBankId) bankExpenses += credit;
+                            }
+                        }
                     }
                 }
 
@@ -288,15 +316,24 @@ public class POSReportController : ControllerBase
                 if (isReturn && aid == effectiveDrawerId && credit > 0)
                     cashReturns += credit;
 
-                // Debt collections: receipt voucher cash received or Manual transfers IN
-                if ((isReceipt || isManual) && aid == effectiveDrawerId && debit > 0)
+                // Debt collections: receipt voucher cash received
+                if (isReceipt && aid == effectiveDrawerId && debit > 0)
                     cashReceipts += debit;
+
+                // Manual transfers IN to drawer
+                if (isManual && aid == effectiveDrawerId && debit > 0)
+                {
+                    if (string.IsNullOrEmpty(j.Reference) || !j.Reference.StartsWith("SHIFT-CLOSE-", StringComparison.OrdinalIgnoreCase))
+                    {
+                        manualCashFlow += debit;
+                    }
+                }
             }
         }
 
         // ── 6. Net Sales & Expected Cash ──────────────────────────────────────
         var netSales     = grossSales - totalDiscounts - totalReturns;
-        var expectedCash = cashSales + cashReceipts - expenses - safeDrops - cashReturns;
+        var expectedCash = cashSales + cashReceipts - expenses - safeDrops - cashReturns + manualCashFlow;
 
         // ── 7. Build drawer movements list (for shift closure UI) ─────────────
         var drawerMovements = posEntries
@@ -346,6 +383,7 @@ public class POSReportController : ControllerBase
             expenses        = Math.Round(expenses, 2),
             safeDrops       = Math.Round(safeDrops, 2),
             cashReturns     = Math.Round(cashReturns, 2),
+            manualCashFlow  = Math.Round(manualCashFlow, 2),
             expectedCash    = Math.Round(expectedCash, 2),
             
             nonCashExpenses = Math.Round(nonCashExpenses, 2),
