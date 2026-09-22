@@ -692,6 +692,180 @@ public class SupplierPaymentsController : ControllerBase
 
         return Ok(new { message = "تم ربط السند بالفاتورة بنجاح." });
     }
+
+    [HttpPost("settlement")]
+    public async Task<IActionResult> CreateSettlement([FromBody] CreateSettlementDto dto)
+    {
+        if (dto.Amount <= 0)
+            return BadRequest(new { message = "يجب أن يكون مبلغ المقاصة أكبر من الصفر." });
+
+        var customer = await _db.Customers
+            .Include(c => c.MainAccount)
+            .FirstOrDefaultAsync(c => c.Id == dto.CustomerId);
+        if (customer == null)
+            return BadRequest(new { message = "العميل المحدد غير موجود." });
+
+        var supplier = await _db.Suppliers
+            .Include(s => s.MainAccount)
+            .FirstOrDefaultAsync(s => s.Id == dto.SupplierId);
+        if (supplier == null)
+            return BadRequest(new { message = "المورد المحدد غير موجود." });
+
+        // 1. Calculate customer balance
+        var custOpening = (customer.MainAccount != null && customer.MainAccount.Code != "1107") ? customer.MainAccount.OpeningBalance : 0;
+        var custJournalNet = await _db.JournalLines
+            .Where(l => l.CustomerId == customer.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.AccountId == customer.MainAccountId || (l.Account.Type != AccountType.Equity && !l.Account.Code.StartsWith("3"))))
+            .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
+        var custBal = Math.Max(customer.Balance, custOpening + custJournalNet);
+
+        // 2. Calculate supplier balance
+        var suppOpening = supplier.OpeningBalance;
+        var suppJournalNet = await _db.JournalLines
+            .Where(l => l.SupplierId == supplier.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0;
+        var suppBal = Math.Max(supplier.Balance, suppOpening + suppJournalNet);
+
+        var maxSettlement = Math.Min(Math.Max(0, custBal), Math.Max(0, suppBal));
+        if (dto.Amount > maxSettlement + 0.05m)
+        {
+            return BadRequest(new { message = $"مبلغ المقاصة ({dto.Amount:N2}) يتجاوز الحد الأقصى المتاح للتسوية ({maxSettlement:N2})." });
+        }
+
+        // 3. Resolve Supplier Account (Credit balance being debited)
+        int supplierAccountId;
+        if (supplier.MainAccountId.HasValue)
+        {
+            supplierAccountId = supplier.MainAccountId.Value;
+        }
+        else
+        {
+            var suppAcc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "2101" || a.Code.StartsWith("2101"));
+            if (suppAcc == null)
+                suppAcc = await _db.Accounts.FirstOrDefaultAsync(a => a.Type == AccountType.Liability);
+            if (suppAcc == null)
+                return BadRequest(new { message = "لم يتم العثور على حساب موردين في شجرة الحسابات." });
+            supplierAccountId = suppAcc.Id;
+        }
+
+        // 4. Resolve Customer Account (Debit balance being credited)
+        int customerAccountId;
+        if (customer.MainAccountId.HasValue)
+        {
+            customerAccountId = customer.MainAccountId.Value;
+        }
+        else
+        {
+            var custAcc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1107" || a.Code == "1104" || a.Code.StartsWith("1107") || a.Code.StartsWith("1104"));
+            if (custAcc == null)
+                custAcc = await _db.Accounts.FirstOrDefaultAsync(a => a.Type == AccountType.Asset && a.Code.StartsWith("11"));
+            if (custAcc == null)
+                return BadRequest(new { message = "لم يتم العثور على حساب عملاء في شجرة الحسابات." });
+            customerAccountId = custAcc.Id;
+        }
+
+        var jeNo = await _seq.NextAsync("JE-GEN");
+        var refNo = !string.IsNullOrWhiteSpace(dto.Reference) ? dto.Reference.Trim() : await _seq.NextAsync("SETT");
+        DateTime entryDate;
+        if (dto.SettlementDate.HasValue)
+        {
+            var now = TimeHelper.GetEgyptTime();
+            if (dto.SettlementDate.Value.Date == now.Date)
+                entryDate = now;
+            else
+                entryDate = dto.SettlementDate.Value.Date.Add(now.TimeOfDay);
+        }
+        else
+        {
+            entryDate = TimeHelper.GetEgyptTime();
+        }
+        var desc = !string.IsNullOrWhiteSpace(dto.Notes) 
+            ? dto.Notes.Trim() 
+            : $"سند تسوية مقاصة أرصدة بين العميل ({customer.FullName}) والمورد ({supplier.Name})";
+
+        var entry = new JournalEntry
+        {
+            EntryNumber = jeNo,
+            EntryDate = entryDate,
+            Type = JournalEntryType.Manual,
+            Status = JournalEntryStatus.Posted,
+            Reference = refNo,
+            Description = desc,
+            CostCenter = OrderSource.General,
+            CreatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier),
+            CreatedAt = TimeHelper.GetEgyptTime()
+        };
+
+        // Line 1: Debit Supplier Account (reduces supplier claim)
+        entry.Lines.Add(new JournalLine
+        {
+            AccountId = supplierAccountId,
+            Debit = dto.Amount,
+            Credit = 0,
+            SupplierId = supplier.Id,
+            CustomerId = null,
+            CostCenter = OrderSource.General,
+            Description = $"تسوية مقاصة - خصم من مستحقات المورد ({supplier.Name})",
+            CreatedAt = TimeHelper.GetEgyptTime()
+        });
+
+        // Line 2: Credit Customer Account (reduces customer debt)
+        entry.Lines.Add(new JournalLine
+        {
+            AccountId = customerAccountId,
+            Debit = 0,
+            Credit = dto.Amount,
+            CustomerId = customer.Id,
+            SupplierId = null,
+            CostCenter = OrderSource.General,
+            Description = $"تسوية مقاصة - سداد من مديونية العميل ({customer.FullName})",
+            CreatedAt = TimeHelper.GetEgyptTime()
+        });
+
+        _db.JournalEntries.Add(entry);
+
+        // Update entity balances
+        customer.TotalPaid += dto.Amount;
+        supplier.TotalPaid += dto.Amount;
+
+        await _db.SaveChangesAsync();
+
+        try
+        {
+            await _accounting.SyncEntityBalancesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to sync entity balances after settlement {RefNo}", refNo);
+        }
+
+        try
+        {
+            await _audit.LogAsync(
+                "CreateSettlement",
+                "JournalEntry",
+                entry.Id.ToString(),
+                $"Executed partner settlement of {dto.Amount:N2} between customer {customer.FullName} and supplier {supplier.Name} (Ref: {refNo})",
+                User.FindFirstValue(ClaimTypes.NameIdentifier),
+                User.FindFirstValue(ClaimTypes.Name)
+            );
+        }
+        catch { }
+
+        var customerRemaining = Math.Max(0, custBal - dto.Amount);
+        var supplierRemaining = Math.Max(0, suppBal - dto.Amount);
+        var netRemaining = customerRemaining - supplierRemaining;
+
+        return Ok(new SettlementResultDto(
+            entry.Id,
+            entry.EntryNumber,
+            dto.Amount,
+            customerRemaining,
+            supplierRemaining,
+            netRemaining,
+            $"تم تنفيذ سند المقاصة والتسوية بنجاح برقم قيد {entry.EntryNumber} ورقم مرجعي {refNo} بمبلغ {dto.Amount:N2} ج.م."
+        ));
+    }
 }
 
 public record LinkInvoiceDto(int PurchaseInvoiceId);

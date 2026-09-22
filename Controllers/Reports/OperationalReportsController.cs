@@ -8,6 +8,7 @@ using Sportive.API.Data;
 using Sportive.API.Models;
 using Sportive.API.Utils;
 using Microsoft.Extensions.Caching.Memory;
+using Sportive.API.DTOs;
 
 namespace Sportive.API.Controllers;
 
@@ -5259,6 +5260,370 @@ public class OperationalReportsController : ControllerBase
         return Ok(response);
     }
 
+    [HttpGet("unified-partner-statement")]
+    [RequirePermission(ModuleKeys.ReportsMain + "," + ModuleKeys.Customers + "," + ModuleKeys.PurchasesMain)]
+    public async Task<IActionResult> UnifiedPartnerStatement(
+        [FromQuery] int? customerId = null,
+        [FromQuery] int? supplierId = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] bool excel = false,
+        [FromQuery] int? branchId = null)
+    {
+        // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
+        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
+
+        Customer? customer = null;
+        Supplier? supplier = null;
+
+        if (customerId.HasValue)
+        {
+            customer = await _db.Customers.Include(c => c.MainAccount).FirstOrDefaultAsync(c => c.Id == customerId.Value);
+            if (customer != null && !supplierId.HasValue && customer.SupplierId.HasValue)
+            {
+                supplierId = customer.SupplierId.Value;
+            }
+        }
+
+        if (supplierId.HasValue)
+        {
+            supplier = await _db.Suppliers.Include(s => s.MainAccount).FirstOrDefaultAsync(s => s.Id == supplierId.Value);
+            if (supplier != null && customer == null && supplier.CustomerId.HasValue)
+            {
+                customer = await _db.Customers.Include(c => c.MainAccount).FirstOrDefaultAsync(c => c.Id == supplier.CustomerId.Value);
+                if (customer != null) customerId = customer.Id;
+            }
+        }
+
+        if (customer == null && supplier == null)
+        {
+            return BadRequest(new { message = "يجب تحديد العميل أو المورد على الأقل." });
+        }
+
+        // 1. Prior Balances
+        decimal priorCustBal = 0;
+        if (customer != null)
+        {
+            var custPriorQuery = _db.JournalLines
+                .Where(l => l.CustomerId == customer.Id && l.JournalEntry.EntryDate < from && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.AccountId == customer.MainAccountId || (l.Account.Type != AccountType.Equity && !l.Account.Code.StartsWith("3"))));
+            if (branchId.HasValue) custPriorQuery = custPriorQuery.Where(l => l.BranchId == branchId.Value);
+
+            var custOpening = (customer.MainAccount != null && customer.MainAccount.Code != "1107") ? customer.MainAccount.OpeningBalance : 0;
+            priorCustBal = custOpening + (await custPriorQuery.SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0);
+        }
+
+        decimal priorSuppBal = 0;
+        if (supplier != null)
+        {
+            var suppPriorQuery = _db.JournalLines
+                .Where(l => l.SupplierId == supplier.Id && l.JournalEntry.EntryDate < from && l.JournalEntry.Status != JournalEntryStatus.Draft);
+            if (branchId.HasValue) suppPriorQuery = suppPriorQuery.Where(l => l.BranchId == branchId.Value);
+
+            priorSuppBal = supplier.OpeningBalance + (await suppPriorQuery.SumAsync(l => (decimal?)(l.Credit - l.Debit)) ?? 0);
+        }
+
+        decimal priorNetBal = priorCustBal - priorSuppBal;
+
+        // 2. Fetch Journal Lines for both in the period
+        var custLinesQuery = _db.JournalLines
+            .Include(l => l.JournalEntry)
+            .Include(l => l.Account)
+            .Where(l => customer != null && l.CustomerId == customer.Id && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.AccountId == customer.MainAccountId || (l.Account.Type != AccountType.Equity && !l.Account.Code.StartsWith("3"))));
+
+        var suppLinesQuery = _db.JournalLines
+            .Include(l => l.JournalEntry)
+            .Include(l => l.Account)
+            .Where(l => supplier != null && l.SupplierId == supplier.Id && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status != JournalEntryStatus.Draft);
+
+        if (branchId.HasValue)
+        {
+            custLinesQuery = custLinesQuery.Where(l => l.BranchId == branchId.Value);
+            suppLinesQuery = suppLinesQuery.Where(l => l.BranchId == branchId.Value);
+        }
+
+        var custLines = customer != null ? await custLinesQuery.ToListAsync() : new List<JournalLine>();
+        var suppLines = supplier != null ? await suppLinesQuery.ToListAsync() : new List<JournalLine>();
+
+        DateTime GetEffectiveDateTime(JournalLine line)
+        {
+            var ed = line.JournalEntry.EntryDate;
+            if (ed.TimeOfDay == TimeSpan.Zero && line.JournalEntry.CreatedAt.TimeOfDay != TimeSpan.Zero)
+            {
+                return ed.Date.Add(line.JournalEntry.CreatedAt.TimeOfDay);
+            }
+            return ed;
+        }
+
+        // Merge & order chronologically
+        var allLines = custLines.Select(l => new { Line = l, IsCustomer = true })
+            .Concat(suppLines.Select(l => new { Line = l, IsCustomer = false }))
+            .OrderBy(x => GetEffectiveDateTime(x.Line))
+            .ThenBy(x => x.Line.JournalEntry.CreatedAt)
+            .ThenBy(x => x.Line.JournalEntryId)
+            .ThenBy(x => x.Line.Id)
+            .ToList();
+
+        decimal runningCust = priorCustBal;
+        decimal runningSupp = priorSuppBal;
+        decimal runningNet = priorNetBal;
+
+        decimal totalSales = 0;
+        decimal totalPurchases = 0;
+        decimal totalCustomerPaid = 0;
+        decimal totalSupplierPaid = 0;
+        decimal totalSettled = 0;
+
+        var resultLines = new List<UnifiedStatementLineDto>();
+
+        foreach (var item in allLines)
+        {
+            var l = item.Line;
+            var isCust = item.IsCustomer;
+            var type = l.JournalEntry.Type;
+            var refNo = l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber;
+            var desc = !string.IsNullOrWhiteSpace(l.Description) ? l.Description : (l.JournalEntry.Description ?? "");
+
+            bool isSettlement = refNo.StartsWith("SETT") || desc.Contains("مقاصة");
+
+            decimal cDr = 0, cCr = 0, sDr = 0, sCr = 0, netImpact = 0;
+            string role = isSettlement ? "Settlement" : (isCust ? "Customer" : "Supplier");
+            string txType = type switch
+            {
+                JournalEntryType.SalesInvoice => "SalesInvoice",
+                JournalEntryType.SalesReturn => "SalesReturn",
+                JournalEntryType.PurchaseInvoice => "PurchaseInvoice",
+                JournalEntryType.PurchaseReturn => "PurchaseReturn",
+                JournalEntryType.ReceiptVoucher => "ReceiptVoucher",
+                JournalEntryType.PaymentVoucher => "PaymentVoucher",
+                JournalEntryType.OpeningBalance => "OpeningBalance",
+                _ => isSettlement ? "Settlement" : "Manual"
+            };
+
+            if (isCust)
+            {
+                cDr = l.Debit;
+                cCr = l.Credit;
+                netImpact = cDr - cCr;
+                runningCust += (cDr - cCr);
+
+                if (type == JournalEntryType.SalesInvoice) totalSales += cDr;
+                else if (isSettlement) totalSettled += cCr;
+                else totalCustomerPaid += cCr;
+            }
+            else
+            {
+                sDr = l.Debit;
+                sCr = l.Credit;
+                netImpact = sDr - sCr;
+                runningSupp += (sCr - sDr);
+
+                if (type == JournalEntryType.PurchaseInvoice) totalPurchases += sCr;
+                else if (isSettlement) totalSettled += sDr;
+                else totalSupplierPaid += sDr;
+            }
+
+            runningNet = runningCust - runningSupp;
+
+            var lineDate = l.JournalEntry.EntryDate;
+            if (lineDate.TimeOfDay == TimeSpan.Zero && l.JournalEntry.CreatedAt.TimeOfDay != TimeSpan.Zero)
+            {
+                lineDate = lineDate.Date.Add(l.JournalEntry.CreatedAt.TimeOfDay);
+            }
+
+            resultLines.Add(new UnifiedStatementLineDto(
+                lineDate,
+                refNo,
+                desc,
+                role,
+                txType,
+                cDr,
+                cCr,
+                sDr,
+                sCr,
+                netImpact,
+                runningCust,
+                runningSupp,
+                runningNet
+            ));
+        }
+
+        if (customer != null)
+        {
+            var custCashOrdersQuery = _db.Orders
+                .AsNoTracking()
+                .Where(o => o.CustomerId == customer.Id && o.CreatedAt >= from && o.CreatedAt <= to && o.Status != OrderStatus.Cancelled && o.TotalAmount > 0);
+
+            if (branchId.HasValue)
+            {
+                custCashOrdersQuery = custCashOrdersQuery.Where(o => o.BranchId == branchId.Value);
+            }
+
+            var custCashOrders = await custCashOrdersQuery.ToListAsync();
+            var existingUnifiedRefs = resultLines.Select(r => r.Reference).Where(r => !string.IsNullOrEmpty(r)).ToHashSet();
+
+            foreach (var co in custCashOrders)
+            {
+                if (existingUnifiedRefs.Contains(co.OrderNumber)) continue;
+
+                var paid = co.PaidAmount >= co.TotalAmount ? co.TotalAmount : co.PaidAmount;
+                var descStr = co.PaidAmount >= co.TotalAmount 
+                    ? $"فاتورة مبيعات نقدية (مسددة بالكامل) - {co.OrderNumber}"
+                    : (co.PaidAmount > 0 ? $"فاتورة مبيعات (سداد جزئي فوري) - {co.OrderNumber}" : $"فاتورة مبيعات - {co.OrderNumber}");
+
+                resultLines.Add(new UnifiedStatementLineDto(
+                    co.CreatedAt,
+                    co.OrderNumber,
+                    descStr,
+                    "Customer",
+                    "CashSale",
+                    co.TotalAmount,
+                    paid,
+                    0,
+                    0,
+                    0,
+                    runningCust,
+                    runningSupp,
+                    runningNet
+                ));
+                totalSales += co.TotalAmount;
+                totalCustomerPaid += paid;
+            }
+
+            var recalculatedResultLines = new List<UnifiedStatementLineDto>();
+            decimal runningC = priorCustBal;
+            decimal runningS = priorSuppBal;
+
+            foreach (var r in resultLines.OrderBy(x => x.Date))
+            {
+                if (r.SourceRole == "Customer")
+                {
+                    runningC += (r.CustomerDebit - r.CustomerCredit);
+                }
+                else if (r.SourceRole == "Supplier")
+                {
+                    runningS += (r.SupplierCredit - r.SupplierDebit);
+                }
+
+                decimal net = runningC - runningS;
+
+                recalculatedResultLines.Add(new UnifiedStatementLineDto(
+                    r.Date,
+                    r.Reference,
+                    r.Description,
+                    r.SourceRole,
+                    r.TransactionType,
+                    r.CustomerDebit,
+                    r.CustomerCredit,
+                    r.SupplierDebit,
+                    r.SupplierCredit,
+                    r.NetImpact,
+                    runningC,
+                    runningS,
+                    net
+                ));
+            }
+            resultLines = recalculatedResultLines;
+            runningCust = runningC;
+            runningSupp = runningS;
+            runningNet = runningC - runningS;
+        }
+
+        var netStatus = runningNet > 0.001m ? "CustomerOwes" : (runningNet < -0.001m ? "SupplierOwes" : "Balanced");
+        var maxSettlement = Math.Min(Math.Max(0, runningCust), Math.Max(0, runningSupp));
+
+        var partnerPosition = new PartnerPositionDto(
+            customer?.Id,
+            customer?.FullName,
+            customer?.Phone,
+            runningCust,
+            supplier?.Id,
+            supplier?.Name,
+            supplier?.Phone,
+            runningSupp,
+            runningNet,
+            netStatus,
+            maxSettlement,
+            maxSettlement > 0
+        );
+
+        var finalResult = new UnifiedStatementResultDto(
+            partnerPosition,
+            from,
+            to,
+            priorCustBal,
+            priorSuppBal,
+            priorNetBal,
+            resultLines,
+            totalSales,
+            totalPurchases,
+            totalCustomerPaid,
+            totalSupplierPaid,
+            totalSettled
+        );
+
+        if (excel)
+        {
+            using var wb = new ClosedXML.Excel.XLWorkbook();
+            var ws = wb.Worksheets.Add("كشف الحساب الموحد");
+            ws.RightToLeft = true;
+
+            ws.Cell(1, 1).Value = "كشف الحساب الموحد (عميل ومورد)";
+            ws.Range(1, 1, 1, 11).Merge().Style.Font.SetBold().Font.SetFontSize(16).Alignment.SetHorizontal(ClosedXML.Excel.XLAlignmentHorizontalValues.Center);
+
+            ws.Cell(2, 1).Value = $"الطرف: {customer?.FullName ?? supplier?.Name}";
+            ws.Cell(2, 5).Value = $"الفترة: من {from:yyyy-MM-dd} إلى {to:yyyy-MM-dd}";
+
+            ws.Cell(3, 1).Value = $"رصيد العميل: {runningCust:N2} ج.م";
+            ws.Cell(3, 4).Value = $"رصيد المورد: {runningSupp:N2} ج.م";
+            ws.Cell(3, 7).Value = $"صافي الرصيد: {runningNet:N2} ج.م ({ (runningNet > 0 ? "مدين لنا" : (runningNet < 0 ? "دائن له" : "خالص")) })";
+            ws.Range(3, 1, 3, 11).Style.Font.SetBold();
+
+            int r = 5;
+            string[] headers = { "التاريخ", "المرجع", "البيان", "الصفة", "مبيعات (مدين)", "تحصيل عميل (دائن)", "مشتريات (دائن)", "سداد مورد (مدين)", "رصيد العميل", "رصيد المورد", "صافي الرصيد" };
+            for (int i = 0; i < headers.Length; i++)
+            {
+                ws.Cell(r, i + 1).Value = headers[i];
+            }
+            var hdrRange = ws.Range(r, 1, r, headers.Length);
+            hdrRange.Style.Font.SetBold().Fill.SetBackgroundColor(ClosedXML.Excel.XLColor.FromHtml("#1E293B")).Font.SetFontColor(ClosedXML.Excel.XLColor.White);
+
+            r++;
+            ws.Cell(r, 1).Value = from.ToString("yyyy-MM-dd");
+            ws.Cell(r, 2).Value = "—";
+            ws.Cell(r, 3).Value = "رصيد ما قبل الفترة";
+            ws.Cell(r, 9).Value = priorCustBal;
+            ws.Cell(r, 10).Value = priorSuppBal;
+            ws.Cell(r, 11).Value = priorNetBal;
+            ws.Range(r, 1, r, headers.Length).Style.Font.SetItalic();
+
+            foreach (var l in resultLines)
+            {
+                r++;
+                ws.Cell(r, 1).Value = l.Date.ToString("yyyy-MM-dd HH:mm");
+                ws.Cell(r, 2).Value = l.Reference;
+                ws.Cell(r, 3).Value = l.Description;
+                ws.Cell(r, 4).Value = l.SourceRole == "Customer" ? "عميل" : (l.SourceRole == "Supplier" ? "مورد" : "مقاصة");
+                ws.Cell(r, 5).Value = l.CustomerDebit > 0 ? l.CustomerDebit : "";
+                ws.Cell(r, 6).Value = l.CustomerCredit > 0 ? l.CustomerCredit : "";
+                ws.Cell(r, 7).Value = l.SupplierCredit > 0 ? l.SupplierCredit : "";
+                ws.Cell(r, 8).Value = l.SupplierDebit > 0 ? l.SupplierDebit : "";
+                ws.Cell(r, 9).Value = l.RunningCustomerBalance;
+                ws.Cell(r, 10).Value = l.RunningSupplierBalance;
+                ws.Cell(r, 11).Value = l.RunningNetBalance;
+            }
+
+            ws.Columns().AdjustToContents();
+            using var stream = new System.IO.MemoryStream();
+            wb.SaveAs(stream);
+            stream.Position = 0;
+            return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"unified_statement_{customer?.Id}_{supplier?.Id}.xlsx");
+        }
+
+        return Ok(finalResult);
+    }
 }
 
 //  Report DTOs 

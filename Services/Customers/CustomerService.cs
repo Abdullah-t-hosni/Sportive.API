@@ -52,6 +52,7 @@ public class CustomerService : ICustomerService
             .Include(c => c.MainAccount)
             .Include(c => c.Category)
             .Include(c => c.AppUser)
+            .Include(c => c.Supplier)
             .Where(c => c.AppUserId == null || !staffUserIds.Contains(c.AppUserId))
             .AsQueryable();
 
@@ -110,6 +111,8 @@ public class CustomerService : ICustomerService
             CategoryNameAr = c.Category != null ? c.Category.NameAr : null,
             CategoryNameEn = c.Category != null ? c.Category.NameEn : null,
             c.FixedDiscount, c.CreatedAt, c.Tags,
+            c.SupplierId,
+            SupplierName = c.Supplier != null ? c.Supplier.Name : null,
             c.LoyaltyPointsBalance, c.LifetimePointsEarned, c.CurrentTier,
             OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
             OrderCount = c.Orders.Count,
@@ -123,6 +126,7 @@ public class CustomerService : ICustomerService
             x.Id, x.FullName, x.Email, x.Phone, x.AppUserId,
             x.MainAccountId, x.CategoryId, x.CategoryNameAr, x.CategoryNameEn,
             x.FixedDiscount, x.CreatedAt, x.Tags, x.OrderCount, x.OrderTotal,
+            x.SupplierId, x.SupplierName,
             x.HasWebsiteOrders,
             x.LoyaltyPointsBalance, x.LifetimePointsEarned, x.CurrentTier,
             Balance = x.OpeningBalance + x.JournalNet
@@ -175,6 +179,9 @@ public class CustomerService : ICustomerService
             CategoryName: c.CategoryNameAr,
             FixedDiscount: c.FixedDiscount,
             Tags: string.IsNullOrEmpty(c.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(c.Tags)!,
+            SupplierId: c.SupplierId,
+            SupplierName: c.SupplierName,
+            IsAlsoSupplier: c.SupplierId.HasValue,
             LoyaltyPoints: c.LoyaltyPointsBalance,
             LifetimePoints: c.LifetimePointsEarned,
             LoyaltyTier: (int)c.CurrentTier,
@@ -232,6 +239,7 @@ public class CustomerService : ICustomerService
             .Include(c => c.Orders)
             .Include(c => c.MainAccount)
             .Include(c => c.AppUser)
+            .Include(c => c.Supplier)
             .Where(c => c.Id == id && (c.AppUserId == null || !staffUserIds.Contains(c.AppUserId)))
             .Select(c => new
             {
@@ -239,6 +247,8 @@ public class CustomerService : ICustomerService
                 c.MainAccountId, c.CategoryId,
                 CategoryNameAr = c.Category != null ? c.Category.NameAr : null,
                 c.FixedDiscount, c.Tags,
+                c.SupplierId,
+                SupplierName = c.Supplier != null ? c.Supplier.Name : null,
                 c.LoyaltyPointsBalance, c.LifetimePointsEarned, c.CurrentTier,
                 OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
                 OrderCount = c.Orders.Count,
@@ -272,6 +282,9 @@ public class CustomerService : ICustomerService
             CategoryName: rawResult.CategoryNameAr,
             FixedDiscount: rawResult.FixedDiscount,
             Tags: string.IsNullOrEmpty(rawResult.Tags) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(rawResult.Tags)!,
+            SupplierId: rawResult.SupplierId,
+            SupplierName: rawResult.SupplierName,
+            IsAlsoSupplier: rawResult.SupplierId.HasValue,
             LoyaltyPoints: rawResult.LoyaltyPointsBalance,
             LifetimePoints: rawResult.LifetimePointsEarned,
             LoyaltyTier: (int)rawResult.CurrentTier,

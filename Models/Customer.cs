@@ -93,6 +93,9 @@ public class Customer : BaseEntity
     public int? CategoryId { get; set; }
     public CustomerCategory? Category { get; set; }
 
+    // Dual Entity Linking
+    public int? SupplierId { get; set; }
+    public Supplier? Supplier { get; set; }
 
     // Financial Tracking
     public decimal TotalSales { get; set; } = 0;

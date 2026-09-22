@@ -68,6 +68,8 @@ public class SuppliersController : ControllerBase
                 s.OpeningBalance,
                 s.AttachmentUrl,
                 s.AttachmentPublicId,
+                s.CustomerId,
+                CustomerName = s.Customer != null ? s.Customer.FullName : null,
                 InvoiceCount = s.Invoices.Count,
                 InvoicesTotal = _db.PurchaseInvoices
                     .Where(i => i.SupplierId == s.Id && i.Status != PurchaseInvoiceStatus.Draft && i.Status != PurchaseInvoiceStatus.Cancelled)
@@ -122,7 +124,8 @@ public class SuppliersController : ControllerBase
                 s.Id, s.Name, s.Phone, s.CompanyName, s.TaxNumber, s.Email, s.Address,
                 s.IsActive, totalPurchases, totalPaid, balance,
                 s.InvoiceCount,
-                s.AttachmentUrl, s.AttachmentPublicId
+                s.AttachmentUrl, s.AttachmentPublicId,
+                s.CustomerId, s.CustomerName, s.CustomerId.HasValue
             );
         }).ToList();
 
@@ -143,7 +146,7 @@ public class SuppliersController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
-        var s = await _db.Suppliers.Include(s => s.Invoices).FirstOrDefaultAsync(x => x.Id == id);
+        var s = await _db.Suppliers.Include(s => s.Invoices).Include(s => s.Customer).FirstOrDefaultAsync(x => x.Id == id);
         if (s == null) return NotFound();
 
         var invoicesTotal = await _db.PurchaseInvoices
@@ -197,7 +200,8 @@ public class SuppliersController : ControllerBase
         return Ok(new SupplierDto(s.Id, s.Name, s.Phone, s.CompanyName, s.TaxNumber,
             s.Email, s.Address, s.IsActive, totalPurchases, totalPaid,
             balance, s.Invoices.Count,
-            s.AttachmentUrl, s.AttachmentPublicId));
+            s.AttachmentUrl, s.AttachmentPublicId,
+            s.CustomerId, s.Customer != null ? s.Customer.FullName : null, s.CustomerId.HasValue));
     }
 
     [HttpGet("{id}/advance-balance")]
@@ -430,5 +434,159 @@ public class SuppliersController : ControllerBase
         }
 
         return Ok(new { success = true, successCount, errors });
+    }
+
+    [HttpPost("{id}/convert-to-customer")]
+    [RequirePermission(ModuleKeys.PurchasesMain + "," + ModuleKeys.Customers)]
+    public async Task<IActionResult> ConvertToCustomer(int id)
+    {
+        var supplier = await _db.Suppliers
+            .Include(s => s.Customer)
+            .FirstOrDefaultAsync(s => s.Id == id);
+
+        if (supplier == null) return NotFound(new { message = "المورد غير موجود." });
+
+        if (supplier.CustomerId.HasValue && supplier.Customer != null)
+        {
+            return Ok(new { 
+                customerId = supplier.Customer.Id, 
+                customerName = supplier.Customer.FullName, 
+                message = "المورد مرتبط بالفعل بعميل مسبقاً." 
+            });
+        }
+
+        var custAcc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1107");
+
+        var customer = new Customer
+        {
+            FullName = supplier.Name,
+            Email = !string.IsNullOrWhiteSpace(supplier.Email) ? supplier.Email : $"{Guid.NewGuid().ToString().Substring(0, 8)}@pos.com",
+            Phone = !string.IsNullOrWhiteSpace(supplier.Phone) ? supplier.Phone : null,
+            IsActive = true,
+            MainAccountId = custAcc?.Id,
+            SupplierId = supplier.Id,
+            CreatedAt = TimeHelper.GetEgyptTime()
+        };
+
+        if (!string.IsNullOrWhiteSpace(supplier.Address))
+        {
+            customer.Addresses.Add(new Address
+            {
+                Street = supplier.Address,
+                City = "العنوان الرئيسي",
+                TitleAr = "العنوان المسجل",
+                TitleEn = "Registered Address",
+                IsDefault = true,
+                CreatedAt = TimeHelper.GetEgyptTime()
+            });
+        }
+
+        _db.Customers.Add(customer);
+        await _db.SaveChangesAsync();
+
+        supplier.CustomerId = customer.Id;
+        await _db.SaveChangesAsync();
+
+        try
+        {
+            await _audit.LogAsync("ConvertToCustomer", "Supplier", supplier.Id.ToString(),
+                $"Created linked customer {customer.Id} for supplier {supplier.Name}",
+                User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name));
+        }
+        catch { }
+
+        return Ok(new { 
+            customerId = customer.Id, 
+            customerName = customer.FullName, 
+            message = "تم إنشاء وربط العميل بنجاح." 
+        });
+    }
+
+    [HttpPost("{id}/link-customer")]
+    [RequirePermission(ModuleKeys.PurchasesMain + "," + ModuleKeys.Customers)]
+    public async Task<IActionResult> LinkCustomer(int id, [FromBody] LinkEntityRequest request)
+    {
+        var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == id);
+        if (supplier == null) return NotFound(new { message = "المورد غير موجود." });
+
+        var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == request.TargetId);
+        if (customer == null) return NotFound(new { message = "العميل المستهدف غير موجود." });
+
+        supplier.CustomerId = customer.Id;
+        customer.SupplierId = supplier.Id;
+        await _db.SaveChangesAsync();
+
+        return Ok(new { success = true, message = "تم ربط المورد بالعميل بنجاح." });
+    }
+
+    [HttpPost("{id}/unlink-customer")]
+    [RequirePermission(ModuleKeys.PurchasesMain + "," + ModuleKeys.Customers)]
+    public async Task<IActionResult> UnlinkCustomer(int id)
+    {
+        var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == id);
+        if (supplier == null) return NotFound(new { message = "المورد غير موجود." });
+
+        if (supplier.CustomerId.HasValue)
+        {
+            var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == supplier.CustomerId.Value);
+            if (customer != null && customer.SupplierId == supplier.Id)
+            {
+                customer.SupplierId = null;
+            }
+            supplier.CustomerId = null;
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new { success = true, message = "تم فك الارتباط بنجاح." });
+    }
+
+    [HttpGet("{id}/partner-position")]
+    [RequirePermission(ModuleKeys.PurchasesMain + "," + ModuleKeys.ReportsMain)]
+    public async Task<IActionResult> GetPartnerPosition(int id)
+    {
+        var supplier = await _db.Suppliers.Include(s => s.MainAccount).FirstOrDefaultAsync(s => s.Id == id);
+        if (supplier == null) return NotFound(new { message = "المورد غير موجود." });
+
+        var suppOpening = supplier.OpeningBalance;
+        var suppJournalNet = await _db.JournalLines
+            .Where(l => l.SupplierId == supplier.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0;
+        var suppBal = Math.Max(supplier.Balance, suppOpening + suppJournalNet);
+
+        Customer? customer = null;
+        decimal custBal = 0;
+
+        if (supplier.CustomerId.HasValue)
+        {
+            customer = await _db.Customers.Include(c => c.MainAccount).FirstOrDefaultAsync(c => c.Id == supplier.CustomerId.Value);
+            if (customer != null)
+            {
+                var custOpening = (customer.MainAccount != null && customer.MainAccount.Code != "1107") ? customer.MainAccount.OpeningBalance : 0;
+                var custJournalNet = await _db.JournalLines
+                    .Where(l => l.CustomerId == customer.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
+                    .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.AccountId == customer.MainAccountId || (l.Account.Type != AccountType.Equity && !l.Account.Code.StartsWith("3"))))
+                    .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
+                custBal = Math.Max(customer.Balance, custOpening + custJournalNet);
+            }
+        }
+
+        var netBal = custBal - suppBal;
+        var netStatus = netBal > 0.001m ? "CustomerOwes" : (netBal < -0.001m ? "SupplierOwes" : "Balanced");
+        var maxSettlement = Math.Min(Math.Max(0, custBal), Math.Max(0, suppBal));
+
+        return Ok(new PartnerPositionDto(
+            customer?.Id,
+            customer?.FullName,
+            customer?.Phone,
+            custBal,
+            supplier.Id,
+            supplier.Name,
+            supplier.Phone,
+            suppBal,
+            netBal,
+            netStatus,
+            maxSettlement,
+            maxSettlement > 0
+        ));
     }
 }

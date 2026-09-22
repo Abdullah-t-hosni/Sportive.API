@@ -44,7 +44,10 @@ public record SupplierDto(
     decimal Balance,
     int     InvoiceCount,
     string? AttachmentUrl = null,
-    string? AttachmentPublicId = null
+    string? AttachmentPublicId = null,
+    int?    CustomerId = null,
+    string? CustomerName = null,
+    bool    IsAlsoCustomer = false
 );
 
 public record SupplierBasicDto(int Id, string Name, string Phone, string? CompanyName);

@@ -27,6 +27,10 @@ public class Supplier : BaseEntity
     public int? MainAccountId { get; set; } // الربط المحاسبي الدائم
     public Account? MainAccount { get; set; }
 
+    // Dual Entity Linking
+    public int? CustomerId { get; set; }
+    public Customer? Customer { get; set; }
+
     public ICollection<PurchaseInvoice>  Invoices { get; set; } = new List<PurchaseInvoice>();
     public ICollection<SupplierPayment>  Payments { get; set; } = new List<SupplierPayment>();
 }
