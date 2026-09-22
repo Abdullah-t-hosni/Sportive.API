@@ -885,7 +885,8 @@ public class ShippingSettlementsController : ControllerBase
             .Include(o => o.Customer)
             .Where(o => o.Source != OrderSource.POS && 
                         o.FulfillmentType != FulfillmentType.Pickup && 
-                        o.ShippingType != "Pickup")
+                        o.ShippingType != "Pickup" &&
+                        o.Status != OrderStatus.Cancelled)
             .ToListAsync();
 
         var unmatchedList = new List<object>();
@@ -1011,7 +1012,8 @@ public class ShippingSettlementsController : ControllerBase
             .Include(o => o.Customer)
             .Where(o => o.Source != OrderSource.POS && 
                         o.FulfillmentType != FulfillmentType.Pickup && 
-                        o.ShippingType != "Pickup")
+                        o.ShippingType != "Pickup" &&
+                        o.Status != OrderStatus.Cancelled)
             .ToListAsync();
 
         var unmatchedList = new List<object>();
