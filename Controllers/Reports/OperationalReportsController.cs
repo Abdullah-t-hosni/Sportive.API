@@ -984,10 +984,12 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int          page       = 1,
         [FromQuery] int          pageSize   = 50,
         [FromQuery] bool         excel      = false,
-        [FromQuery] int?         branchId   = null)
+        [FromQuery] int?         branchId   = null,
+        [FromQuery] int?         productId  = null,
+        [FromQuery] string?      productSearch = null)
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
-        var cacheKey = $"Sales_{fromDate}_{toDate}_{source}_{categoryId}_{brandId}_{color}_{size}_{page}_{pageSize}";
+        var cacheKey = $"Sales_{fromDate}_{toDate}_{source}_{branchId}_{categoryId}_{brandId}_{productId}_{productSearch}_{color}_{size}_{page}_{pageSize}";
         if (!excel && _cache.TryGetValue(cacheKey, out var cachedData))
             return Ok(cachedData);
 
@@ -1022,6 +1024,20 @@ public class OperationalReportsController : ControllerBase
         if (brIds.Any())
             ordersQ = ordersQ.Where(o => o.Items.Any(i => i.Product != null && i.Product.BrandId.HasValue && brIds.Contains(i.Product.BrandId.Value)));
 
+        if (productId.HasValue && productId.Value > 0)
+        {
+            ordersQ = ordersQ.Where(o => o.Items.Any(i => i.ProductId == productId.Value));
+        }
+        else if (!string.IsNullOrWhiteSpace(productSearch))
+        {
+            var pSearch = productSearch.Trim().ToLower();
+            ordersQ = ordersQ.Where(o => o.Items.Any(i => 
+                (i.Product != null && (i.Product.NameAr.ToLower().Contains(pSearch) || (i.Product.SKU != null && i.Product.SKU.ToLower().Contains(pSearch))))
+                || (i.ProductNameAr != null && i.ProductNameAr.ToLower().Contains(pSearch))
+                || (i.SKU != null && i.SKU.ToLower().Contains(pSearch))
+            ));
+        }
+
         if (!string.IsNullOrEmpty(color))
             ordersQ = ordersQ.Where(o => o.Items.Any(i => i.Color == color || (i.Color == null && i.Product != null && i.Product.Variants.Any(v => (v.Color == color || v.ColorAr == color)))));
 
@@ -1048,11 +1064,13 @@ public class OperationalReportsController : ControllerBase
                     .Where(i => 
                         (!catIds.Any() || (i.Product != null && i.Product.CategoryId.HasValue && catIds.Contains(i.Product.CategoryId.Value))) &&
                         (!brIds.Any() || (i.Product != null && i.Product.BrandId.HasValue && brIds.Contains(i.Product.BrandId.Value))) &&
+                        (!productId.HasValue || productId.Value <= 0 || i.ProductId == productId.Value) &&
+                        (string.IsNullOrWhiteSpace(productSearch) || (i.Product != null && (i.Product.NameAr.ToLower().Contains(productSearch.Trim().ToLower()) || (i.Product.SKU != null && i.Product.SKU.ToLower().Contains(productSearch.Trim().ToLower())))) || (i.ProductNameAr != null && i.ProductNameAr.ToLower().Contains(productSearch.Trim().ToLower())) || (i.SKU != null && i.SKU.ToLower().Contains(productSearch.Trim().ToLower()))) &&
                         (string.IsNullOrEmpty(color) || i.Color == color || (i.Color == null && i.Product != null && i.Product.Variants.Any(v => (v.Color == color || v.ColorAr == color)))) &&
                         (string.IsNullOrEmpty(size) || i.Size == size || (i.Size == null && i.Product != null && i.Product.Variants.Any(v => v.Size == size)))
                     )
                     .Select(i => new {
-                        ProductSKU = i.Product != null ? i.Product.SKU : "",
+                        ProductSKU = i.Product != null ? i.Product.SKU : (i.SKU ?? ""),
                         ProductNameAr = i.Product != null ? i.Product.NameAr : i.ProductNameAr,
                         i.Size,
                         i.Color,
@@ -1088,6 +1106,9 @@ public class OperationalReportsController : ControllerBase
 
         decimal ledgerReturns = await returnsQ.SumAsync(l => (decimal?)l.Debit) ?? 0;
 
+        var hasProductFilter = (productId.HasValue && productId.Value > 0) || !string.IsNullOrWhiteSpace(productSearch);
+        var hasFilters = catIds.Any() || brIds.Any() || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size) || hasProductFilter;
+
         var rows = orders.Select(o => {
             var paySummary = string.Join(", ", o.Payments.Select(p => $"{p.Method}: {p.Amount:N0}"));
             var itemsTotal = o.Items.Sum(i => i.TotalPrice);
@@ -1100,7 +1121,7 @@ public class OperationalReportsController : ControllerBase
                 o.Status.ToString(),
                 o.PaymentMethod.ToString(),
                 o.SubTotal, o.DiscountAmount + o.TemporalDiscount, 
-                (catIds.Any() || brIds.Any() || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size)) ? itemsTotal : (o.PostedSales > 0 ? o.PostedSales : o.TotalAmount),
+                hasFilters ? itemsTotal : (o.PostedSales > 0 ? o.PostedSales : o.TotalAmount),
                 o.Items.Sum(i => i.Quantity),
                 o.Items.Select(i => new ReportItemDto(
                     i.ProductSKU,
@@ -1119,8 +1140,6 @@ public class OperationalReportsController : ControllerBase
             );
         }).ToList();
 
-        var hasFilters = catIds.Any() || brIds.Any() || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size);
-
         var summaryData = await ordersQ.Select(o => new {
             o.TotalAmount,
             DiscountAmount = o.DiscountAmount + o.TemporalDiscount,
@@ -1128,6 +1147,8 @@ public class OperationalReportsController : ControllerBase
                 .Where(i => 
                     (!catIds.Any() || (i.Product != null && i.Product.CategoryId.HasValue && catIds.Contains(i.Product.CategoryId.Value))) &&
                     (!brIds.Any() || (i.Product != null && i.Product.BrandId.HasValue && brIds.Contains(i.Product.BrandId.Value))) &&
+                    (!productId.HasValue || productId.Value <= 0 || i.ProductId == productId.Value) &&
+                    (string.IsNullOrWhiteSpace(productSearch) || (i.Product != null && (i.Product.NameAr.ToLower().Contains(productSearch.Trim().ToLower()) || (i.Product.SKU != null && i.Product.SKU.ToLower().Contains(productSearch.Trim().ToLower())))) || (i.ProductNameAr != null && i.ProductNameAr.ToLower().Contains(productSearch.Trim().ToLower())) || (i.SKU != null && i.SKU.ToLower().Contains(productSearch.Trim().ToLower()))) &&
                     (string.IsNullOrEmpty(color) || i.Color == color || (i.Color == null && i.Product != null && i.Product.Variants.Any(v => (v.Color == color || v.ColorAr == color)))) &&
                     (string.IsNullOrEmpty(size) || i.Size == size || (i.Size == null && i.Product != null && i.Product.Variants.Any(v => v.Size == size)))
                 )
@@ -1136,6 +1157,8 @@ public class OperationalReportsController : ControllerBase
                 .Where(i => 
                     (!catIds.Any() || (i.Product != null && i.Product.CategoryId.HasValue && catIds.Contains(i.Product.CategoryId.Value))) &&
                     (!brIds.Any() || (i.Product != null && i.Product.BrandId.HasValue && brIds.Contains(i.Product.BrandId.Value))) &&
+                    (!productId.HasValue || productId.Value <= 0 || i.ProductId == productId.Value) &&
+                    (string.IsNullOrWhiteSpace(productSearch) || (i.Product != null && (i.Product.NameAr.ToLower().Contains(productSearch.Trim().ToLower()) || (i.Product.SKU != null && i.Product.SKU.ToLower().Contains(productSearch.Trim().ToLower())))) || (i.ProductNameAr != null && i.ProductNameAr.ToLower().Contains(productSearch.Trim().ToLower())) || (i.SKU != null && i.SKU.ToLower().Contains(productSearch.Trim().ToLower()))) &&
                     (string.IsNullOrEmpty(color) || i.Color == color || (i.Color == null && i.Product != null && i.Product.Variants.Any(v => (v.Color == color || v.ColorAr == color)))) &&
                     (string.IsNullOrEmpty(size) || i.Size == size || (i.Size == null && i.Product != null && i.Product.Variants.Any(v => v.Size == size)))
                 )

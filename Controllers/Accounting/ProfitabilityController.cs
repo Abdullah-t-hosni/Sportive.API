@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using ClosedXML.Excel;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers;
 
@@ -31,7 +32,8 @@ public class ProfitabilityController : ControllerBase
         [FromQuery] int?      productId  = null,
         [FromQuery] string?   sortBy     = "revenue",
         [FromQuery] bool      hasCost    = false,
-        [FromQuery] bool      excel      = false)
+        [FromQuery] bool      excel      = false,
+        [FromQuery] int?      branchId   = null)
     {
         // Ensure dates are parsed correctly and treated as inclusive of the Egypt timezone offset if needed
         var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
@@ -41,6 +43,8 @@ public class ProfitabilityController : ControllerBase
         // by pushing the start back and end forward by a few hours if the DB is UTC
         var startRange = from.Date;
         var endRange   = to.Date.AddDays(1).AddTicks(-1);
+
+        int? isolatedBranchId = await User.HasViewAllBranchesAsync(HttpContext) ? branchId : User.GetBranchId();
 
         // --- جلب كل المبيعات في الفترة (باستثناء الملغي فقط) ------------------
         var itemsQ = _db.OrderItems
@@ -56,6 +60,11 @@ public class ProfitabilityController : ControllerBase
             .Where(i => i.Order.Status != OrderStatus.Cancelled
                      && i.Order.CreatedAt >= startRange
                      && i.Order.CreatedAt <= endRange);
+
+        if (isolatedBranchId.HasValue)
+        {
+            itemsQ = itemsQ.Where(i => i.Order.BranchId == isolatedBranchId.Value);
+        }
 
         // Recursive Category Filter
         if (categoryId.HasValue)
@@ -242,19 +251,27 @@ public class ProfitabilityController : ControllerBase
     // ملخص سريع للداشبورد
     // ======================================================================
     [HttpGet("summary")]
-    public async Task<IActionResult> GetSummary([FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
+    public async Task<IActionResult> GetSummary([FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null, [FromQuery] int? branchId = null)
     {
         var now = TimeHelper.GetEgyptTime();
         var from = fromDate?.Date ?? new DateTime(now.Year, now.Month, 1);
         var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? now;
 
-        var items = await _db.OrderItems
+        int? isolatedBranchId = await User.HasViewAllBranchesAsync(HttpContext) ? branchId : User.GetBranchId();
+
+        var itemsQ = _db.OrderItems
             .Include(i => i.Order)
             .Include(i => i.Product)
             .Where(i => i.Order.Status != OrderStatus.Cancelled
                      && i.Order.CreatedAt >= from && i.Order.CreatedAt <= to
-                     && i.ProductId.HasValue)
-            .ToListAsync();
+                     && i.ProductId.HasValue);
+
+        if (isolatedBranchId.HasValue)
+        {
+            itemsQ = itemsQ.Where(i => i.Order.BranchId == isolatedBranchId.Value);
+        }
+
+        var items = await itemsQ.ToListAsync();
 
         decimal totalNetRevenue = 0;
         decimal totalCost       = 0;
