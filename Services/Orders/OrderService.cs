@@ -2122,9 +2122,13 @@ public class OrderService : IOrderService
 
         if (dto.Status == OrderStatus.Returned)
         {
-            // Mark all items as returned (inventory handled below)
+            // Mark all items as returned ONLY if there are no partial return requests
             var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
-            foreach (var it in orderWithItems.Items) it.ReturnedQuantity = it.Quantity;
+            bool hasPartialReturnRequests = await _db.ReturnExchangeRequests.AnyAsync(r => r.OrderId == orderId && r.Type == ReturnExchangeType.Return && r.Status == ReturnExchangeStatus.ReceivedAtWarehouse);
+            if (!hasPartialReturnRequests)
+            {
+                foreach (var it in orderWithItems.Items) it.ReturnedQuantity = it.Quantity;
+            }
         }
         else if (dto.Status == OrderStatus.PartiallyReturned)
         {
