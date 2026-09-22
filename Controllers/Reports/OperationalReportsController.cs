@@ -5279,7 +5279,7 @@ public class OperationalReportsController : ControllerBase
             .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to
-                     && (l.BranchId == 5 || l.CostCenter == OrderSource.Website || l.JournalEntry.CostCenter == OrderSource.Website || (eComBranchId.HasValue && l.BranchId == eComBranchId.Value) || l.Account.Code == "5220706" || l.Account.Code == "420101")
+                     && (l.BranchId == 5 || l.CostCenter == OrderSource.Website || l.JournalEntry.CostCenter == OrderSource.Website || (eComBranchId.HasValue && l.BranchId == eComBranchId.Value))
                      && (l.Account.Code.StartsWith("4") || l.Account.Code.StartsWith("5")));
 
         var glLines = await glLinesQuery.ToListAsync();
