@@ -4824,9 +4824,9 @@ public class OperationalReportsController : ControllerBase
     {
         pageSize = Math.Clamp(pageSize, 1, 500);
 
-        // Date range
-        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, TimeHelper.GetEgyptTime().Month, 1)).Date;
-        var to = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddTicks(-1);
+        // Date range with Egypt Business Day End Hour (2 AM cutoff, standard across all financial reports)
+        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, TimeHelper.GetEgyptTime().Month, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         // 1. Orders Base Query for Online Store (Source == Website or 3)
         var ordersQuery = _db.Orders
