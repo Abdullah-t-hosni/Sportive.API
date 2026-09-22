@@ -5276,10 +5276,10 @@ public class OperationalReportsController : ControllerBase
             .AsNoTracking()
             .Include(l => l.Account)
             .Include(l => l.JournalEntry)
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to
-                     && (l.BranchId == 5 || l.CostCenter == OrderSource.Website || (eComBranchId.HasValue && l.BranchId == eComBranchId.Value))
+                     && (l.BranchId == 5 || l.CostCenter == OrderSource.Website || (eComBranchId.HasValue && l.BranchId == eComBranchId.Value) || l.Account.Code == "5220706" || l.Account.Code == "420101")
                      && (l.Account.Code.StartsWith("4") || l.Account.Code.StartsWith("5")));
 
         var glLines = await glLinesQuery.ToListAsync();
