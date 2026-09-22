@@ -51,14 +51,30 @@ public class FinancialReportsController : ControllerBase
 
         if (source.HasValue)
         {
-            query = query.Where(l => l.CostCenter == source.Value);
-            openingQuery = openingQuery.Where(l => l.CostCenter == source.Value);
+            if (source.Value == OrderSource.Website)
+            {
+                query = query.Where(l => l.CostCenter == OrderSource.Website || l.BranchId == 5);
+                openingQuery = openingQuery.Where(l => l.CostCenter == OrderSource.Website || l.BranchId == 5);
+            }
+            else
+            {
+                query = query.Where(l => l.CostCenter == source.Value);
+                openingQuery = openingQuery.Where(l => l.CostCenter == source.Value);
+            }
         }
 
         if (isolatedBranchId.HasValue)
         {
-            query = query.Where(l => l.BranchId == isolatedBranchId.Value);
-            openingQuery = openingQuery.Where(l => l.BranchId == isolatedBranchId.Value);
+            if (isolatedBranchId.Value == 5)
+            {
+                query = query.Where(l => l.BranchId == 5 || l.CostCenter == OrderSource.Website);
+                openingQuery = openingQuery.Where(l => l.BranchId == 5 || l.CostCenter == OrderSource.Website);
+            }
+            else
+            {
+                query = query.Where(l => l.BranchId == isolatedBranchId.Value);
+                openingQuery = openingQuery.Where(l => l.BranchId == isolatedBranchId.Value);
+            }
         }
 
         var periodBalances = await query

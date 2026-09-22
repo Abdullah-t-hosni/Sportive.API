@@ -1340,7 +1340,10 @@ public class PayrollController : ControllerBase
                 Lines           = new List<JournalLine>()
             };
 
-            var itemsByBranchAndCostCenter = run.Items.GroupBy(i => new { BranchId = i.Employee?.BranchId, CostCenter = i.Employee?.CostCenter ?? OrderSource.General });
+            var itemsByBranchAndCostCenter = run.Items.GroupBy(i => new { 
+                BranchId = i.Employee?.BranchId, 
+                CostCenter = i.Employee?.BranchId == 5 ? OrderSource.Website : (i.Employee?.CostCenter ?? OrderSource.General) 
+            });
 
             foreach (var group in itemsByBranchAndCostCenter)
             {
@@ -1397,7 +1400,7 @@ public class PayrollController : ControllerBase
 
             foreach (var item in run.Items)
             {
-                var employeeCC = item.Employee?.CostCenter ?? OrderSource.General;
+                var employeeCC = item.Employee?.BranchId == 5 ? OrderSource.Website : (item.Employee?.CostCenter ?? OrderSource.General);
                 var employeeBranchId = item.Employee?.BranchId;
 
                 // Accrued Salaries gets the net amount due (صافي المستحق)
