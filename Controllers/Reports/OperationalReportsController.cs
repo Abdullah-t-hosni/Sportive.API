@@ -4966,12 +4966,16 @@ public class OperationalReportsController : ControllerBase
                                  o.PaymentStatus == PaymentStatus.Paid;
 
             // Status counts & financial aggregations
+            if (o.Status != OrderStatus.Cancelled)
+            {
+                grossProductSales += orderItemsGross;
+                deliveryRevenue += orderDeliveryFee;
+            }
+
             if (o.Status == OrderStatus.Delivered)
             {
                 deliveredOrdersCount++;
-                grossProductSales += orderItemsGross;
                 totalDiscount += orderDisc;
-                deliveryRevenue += orderDeliveryFee;
                 totalCogs += orderCogs;
                 courierShippingCost += orderActualCost;
 
@@ -4984,20 +4988,34 @@ public class OperationalReportsController : ControllerBase
                     pendingCodAmount += o.TotalAmount;
                 }
             }
-            else if (o.Status == OrderStatus.Returned || o.Status == OrderStatus.PartiallyReturned)
+            else if (o.Status == OrderStatus.Returned || o.Status == OrderStatus.ReturnInShipping)
             {
                 returnedOrdersCount++;
-                salesReturnsAmount += o.TotalAmount;
+                salesReturnsAmount += orderItemsGross;
                 shippingLossOnReturns += orderActualCost;
             }
-            else if (o.Status == OrderStatus.OutForDelivery)
+            else if (o.Status == OrderStatus.PartiallyReturned)
             {
-                inShippingOrdersCount++;
+                totalDiscount += orderDisc;
+                totalCogs += orderCogs;
                 if (requiresCourierSettlement && !isOrderSettled)
                 {
                     pendingCodAmount += o.TotalAmount;
                 }
-                else
+                else if (isOrderSettled)
+                {
+                    settledCodAmount += o.TotalAmount;
+                }
+            }
+            else if (o.Status == OrderStatus.OutForDelivery || o.Status == OrderStatus.Confirmed || o.Status == OrderStatus.Pending)
+            {
+                if (o.Status == OrderStatus.OutForDelivery) inShippingOrdersCount++;
+                totalDiscount += orderDisc;
+                if (requiresCourierSettlement && !isOrderSettled)
+                {
+                    pendingCodAmount += o.TotalAmount;
+                }
+                else if (isOrderSettled)
                 {
                     settledCodAmount += o.TotalAmount;
                 }
@@ -5108,11 +5126,41 @@ public class OperationalReportsController : ControllerBase
             });
         }
 
-        // 3. Operating & Marketing Expenses for E-Commerce from Cost Center / Branch (الموقع الإلكتروني)
+        // 3. Shipping Costs from Account 5220706 (حساب مصروف خدمة التوصيل)
+        var delivAcc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "5220706" || a.NameAr.Contains("مصروف خدمة التوصيل"));
+        int? deliveryAccountId = delivAcc?.Id;
+
+        var delivExpenseQuery = _db.JournalLines
+            .AsNoTracking()
+            .Include(l => l.JournalEntry)
+            .Where(l => (l.AccountId == deliveryAccountId || (delivAcc == null && l.Account.Code == "5220706") || l.Account.NameAr.Contains("مصروف خدمة التوصيل")) &&
+                   l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to &&
+                   l.JournalEntry.Status == JournalEntryStatus.Posted);
+
+        if (shippingCompanyId.HasValue && shippingCompanyId.Value > 0)
+        {
+            var comp = shippingCompanies.FirstOrDefault(c => c.Id == shippingCompanyId.Value);
+            string compName = comp?.NameAr ?? "";
+            delivExpenseQuery = delivExpenseQuery.Where(l => 
+                (l.JournalEntry.Reference != null && l.JournalEntry.Reference.Contains($"SETTLE-EXP-{shippingCompanyId.Value}-")) ||
+                (!string.IsNullOrEmpty(compName) && ((l.JournalEntry.Description != null && l.JournalEntry.Description.Contains(compName)) || (l.Description != null && l.Description.Contains(compName))))
+            );
+        }
+
+        var deliveryLines = await delivExpenseQuery.ToListAsync();
+        decimal actualDeliveryExpense = deliveryLines.Sum(l => l.Debit - l.Credit);
+
+        // If there are posted entries in Account 5220706, use them; otherwise fallback to order courier costs
+        if (actualDeliveryExpense > 0)
+        {
+            courierShippingCost = actualDeliveryExpense;
+        }
+
+        // 4. General Expenses for E-Commerce (أي مصروف طالع على فرع المتجر ما عدا حساب مصروف خدمة التوصيل)
         var eComBranch = await _db.Branches.FirstOrDefaultAsync(b => b.Name.Contains("متجر") || b.Name.Contains("الموقع") || b.Name.Contains("أونلاين") || b.Name.Contains("Online") || b.Name.Contains("الويب") || b.Name.Contains("Website"));
         int? eComBranchId = eComBranch?.Id;
 
-        // A. Payment Vouchers tagged for Website cost center or Website branch (even if paid from cashier drawer)
+        // A. Payment Vouchers tagged for Website cost center or Website branch (excluding Account 5220706)
         var vouchersList = await _db.PaymentVouchers
             .AsNoTracking()
             .Include(v => v.ToAccount)
@@ -5124,12 +5172,13 @@ public class OperationalReportsController : ControllerBase
                        v.CostCenter == OrderSource.Website ||
                        (eComBranchId.HasValue && v.BranchId == eComBranchId.Value) ||
                        (v.Branch != null && (v.Branch.Name.Contains("موقع") || v.Branch.Name.Contains("متجر") || v.Branch.Name.Contains("أونلاين")))
-                   )
+                   ) &&
+                   v.ToAccountId != deliveryAccountId &&
+                   (v.ToAccount == null || (v.ToAccount.Code != "5220706" && !v.ToAccount.NameAr.Contains("مصروف خدمة التوصيل")))
             )
             .ToListAsync();
 
-        // B. Operating & Marketing Journal Entries with CostCenter == Website or Website branch
-        // Exclude Order auto-entries (COGS 51101 and Delivery 520101) and courier auto-settlements
+        // B. Operating Journal Entries for Website branch / cost center (excluding Account 5220706 and COGS)
         var journalExpenses = await _db.JournalLines
             .AsNoTracking()
             .Include(l => l.Account)
@@ -5149,6 +5198,9 @@ public class OperationalReportsController : ControllerBase
                    (l.Account.Type == AccountType.Expense || l.Account.Code.StartsWith("5")) &&
                    l.Account.Code != "51101" && 
                    l.Account.Code != "520101" &&
+                   l.AccountId != deliveryAccountId &&
+                   l.Account.Code != "5220706" &&
+                   !l.Account.NameAr.Contains("مصروف خدمة التوصيل") &&
                    !(l.JournalEntry.Reference != null && l.JournalEntry.Reference.StartsWith("SETTLE-EXP-")) &&
                    l.Debit > 0
             )
@@ -5211,21 +5263,21 @@ public class OperationalReportsController : ControllerBase
             })
             .ToList();
 
-        decimal totalOperatingExpenses = vouchersList.Sum(v => v.Amount) + 
+        decimal totalGeneralExpenses = vouchersList.Sum(v => v.Amount) + 
             journalExpenses
                 .Where(jl => !(jl.JournalEntry.Type == JournalEntryType.PaymentVoucher && vouchersList.Any(v => v.VoucherNumber == jl.JournalEntry.Reference)))
                 .Sum(jl => jl.Debit);
 
-        // 4. Net Profit Calculation (Mathematically & Accounting-wise 100% Accurate):
-        // Net Revenue = Gross Product Sales of Delivered Orders + Delivery Fee Collected - Discounts Given
-        // Total Costs = Cost of Delivered Goods (COGS) + Courier Costs (Delivered + Returned) + Operating & Marketing Expenses
-        decimal totalGrossRevenue = grossProductSales + deliveryRevenue;
-        decimal netSalesRevenue = totalGrossRevenue - totalDiscount;
-        decimal totalOutflowCosts = totalCogs + courierShippingCost + totalDiscount + totalOperatingExpenses;
-        decimal finalNetProfit = totalGrossRevenue - totalOutflowCosts;
-        decimal netMarginPct = netSalesRevenue > 0 ? Math.Round((finalNetProfit / netSalesRevenue) * 100m, 2) : 0;
+        // 5. Net Profit Calculation:
+        // Net Sales = Gross Product Sales (all except Cancelled) - Full Sales Returns - Discounts
+        // Net Profit = Net Sales - (COGS + Shipping Costs [Delivery Expense 5220706] + General Expenses)
+        decimal netSales = grossProductSales - salesReturnsAmount - totalDiscount;
+        decimal totalOutflowCosts = totalCogs + courierShippingCost + totalGeneralExpenses;
+        decimal finalNetProfit = netSales - totalOutflowCosts;
+        decimal finalNetProfitWithDelivery = (netSales + deliveryRevenue) - totalOutflowCosts;
+        decimal netMarginPct = netSales > 0 ? Math.Round((finalNetProfit / netSales) * 100m, 2) : 0;
 
-        // 5. Final Payload with Pagination
+        // 6. Final Payload with Pagination
         var paginatedRows = excel ? orderRows : orderRows.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
         var courierBreakdownList = courierMap.Select(kvp => new {
@@ -5254,19 +5306,23 @@ public class OperationalReportsController : ControllerBase
                 returnedOrdersCount,
                 inShippingOrdersCount,
                 grossProductSales,
+                salesReturnsAmount,
                 totalDiscount,
+                netSales,
                 deliveryRevenue,
                 cogs = totalCogs,
                 courierShippingCost,
-                salesReturnsAmount,
+                actualDeliveryExpense,
+                generalExpenses = totalGeneralExpenses,
+                operatingExpenses = totalGeneralExpenses, // kept for backward compatibility
+                netProfit = finalNetProfit,
+                netProfitWithDelivery = finalNetProfitWithDelivery,
+                netMarginPercentage = netMarginPct,
+                totalGrossRevenue = grossProductSales + deliveryRevenue,
+                totalOutflowCosts,
                 shippingLossOnReturns,
                 pendingCodAmount,
-                settledCodAmount,
-                operatingExpenses = totalOperatingExpenses,
-                netProfit = finalNetProfit,
-                netMarginPercentage = netMarginPct,
-                totalGrossRevenue,
-                totalOutflowCosts
+                settledCodAmount
             },
             couriers = courierBreakdownList,
             paymentMethods = paymentBreakdownList,
