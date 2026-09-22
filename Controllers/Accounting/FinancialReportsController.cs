@@ -67,8 +67,8 @@ public class FinancialReportsController : ControllerBase
         {
             if (isolatedBranchId.Value == 5)
             {
-                query = query.Where(l => l.BranchId == 5 || l.CostCenter == OrderSource.Website);
-                openingQuery = openingQuery.Where(l => l.BranchId == 5 || l.CostCenter == OrderSource.Website);
+                query = query.Where(l => l.BranchId == 5 || l.CostCenter == OrderSource.Website || l.JournalEntry.CostCenter == OrderSource.Website);
+                openingQuery = openingQuery.Where(l => l.BranchId == 5 || l.CostCenter == OrderSource.Website || l.JournalEntry.CostCenter == OrderSource.Website);
             }
             else
             {
@@ -383,7 +383,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? toDate     = null,
         [FromQuery] string?   search     = null,
         [FromQuery] OrderSource? source  = null,
-        [FromQuery] bool      excel      = false)
+        [FromQuery] bool      excel      = false,
+        [FromQuery] int?      branchId   = null)
     {
         var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
@@ -404,8 +405,18 @@ public class FinancialReportsController : ControllerBase
             int? isolatedBranchId = User.GetBranchId();
             if (isolatedBranchId.HasValue)
             {
-                q = q.Where(l => l.BranchId == isolatedBranchId.Value);
+                if (isolatedBranchId.Value == 5)
+                    q = q.Where(l => l.BranchId == 5 || l.CostCenter == OrderSource.Website || l.JournalEntry.CostCenter == OrderSource.Website);
+                else
+                    q = q.Where(l => l.BranchId == isolatedBranchId.Value);
             }
+        }
+        else if (branchId.HasValue)
+        {
+            if (branchId.Value == 5)
+                q = q.Where(l => l.BranchId == 5 || l.CostCenter == OrderSource.Website || l.JournalEntry.CostCenter == OrderSource.Website);
+            else
+                q = q.Where(l => l.BranchId == branchId.Value);
         }
  
         if (source.HasValue)
@@ -676,12 +687,18 @@ public class FinancialReportsController : ControllerBase
             int? isolatedBranchId = User.GetBranchId();
             if (isolatedBranchId.HasValue)
             {
-                openQ = openQ.Where(l => l.BranchId == isolatedBranchId.Value);
+                if (isolatedBranchId.Value == 5)
+                    openQ = openQ.Where(l => l.BranchId == 5 || l.CostCenter == OrderSource.Website || l.JournalEntry.CostCenter == OrderSource.Website);
+                else
+                    openQ = openQ.Where(l => l.BranchId == isolatedBranchId.Value);
             }
         }
         else if (branchId.HasValue) 
         {
-            openQ = openQ.Where(l => l.BranchId == branchId.Value);
+            if (branchId.Value == 5)
+                openQ = openQ.Where(l => l.BranchId == 5 || l.CostCenter == OrderSource.Website || l.JournalEntry.CostCenter == OrderSource.Website);
+            else
+                openQ = openQ.Where(l => l.BranchId == branchId.Value);
         }
         
         if (customerId.HasValue)
@@ -726,12 +743,18 @@ public class FinancialReportsController : ControllerBase
             int? isolatedBranchId = User.GetBranchId();
             if (isolatedBranchId.HasValue)
             {
-                q = q.Where(l => l.BranchId == isolatedBranchId.Value);
+                if (isolatedBranchId.Value == 5)
+                    q = q.Where(l => l.BranchId == 5 || l.CostCenter == OrderSource.Website || l.JournalEntry.CostCenter == OrderSource.Website);
+                else
+                    q = q.Where(l => l.BranchId == isolatedBranchId.Value);
             }
         }
         else if (branchId.HasValue) 
         {
-            q = q.Where(l => l.BranchId == branchId.Value);
+            if (branchId.Value == 5)
+                q = q.Where(l => l.BranchId == 5 || l.CostCenter == OrderSource.Website || l.JournalEntry.CostCenter == OrderSource.Website);
+            else
+                q = q.Where(l => l.BranchId == branchId.Value);
         }
 
         if (customerId.HasValue)
