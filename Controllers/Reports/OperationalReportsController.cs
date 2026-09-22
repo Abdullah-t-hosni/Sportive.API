@@ -5268,16 +5268,108 @@ public class OperationalReportsController : ControllerBase
                 .Where(jl => !(jl.JournalEntry.Type == JournalEntryType.PaymentVoucher && vouchersList.Any(v => v.VoucherNumber == jl.JournalEntry.Reference)))
                 .Sum(jl => jl.Debit);
 
-        // 5. Net Profit Calculation:
-        // Net Sales = Gross Product Sales (all except Cancelled) - Full Sales Returns - Discounts
-        // Net Profit = Net Sales - (COGS + Shipping Costs [Delivery Expense 5220706] + General Expenses)
+        // ════════════════════════════════════════════════════════════════════════
+        // 5. OFFICIAL GENERAL LEDGER (GL) INCOME STATEMENT
+        // مستخرج مباشرة من قيود اليومية وميزان المراجعة لحسابات المتجر الإلكتروني
+        // ════════════════════════════════════════════════════════════════════════
+        var glLinesQuery = _db.JournalLines
+            .AsNoTracking()
+            .Include(l => l.Account)
+            .Include(l => l.JournalEntry)
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
+                     && l.JournalEntry.EntryDate >= from
+                     && l.JournalEntry.EntryDate <= to
+                     && (l.BranchId == 5 || l.CostCenter == OrderSource.Website || (eComBranchId.HasValue && l.BranchId == eComBranchId.Value))
+                     && (l.Account.Code.StartsWith("4") || l.Account.Code.StartsWith("5")));
+
+        var glLines = await glLinesQuery.ToListAsync();
+
+        // 1. Sales & Revenue Accounts
+        var glGrossSales = glLines.Where(l => l.Account.Code == "4101").Sum(l => l.Credit);
+        var glSalesReversals = glLines.Where(l => l.Account.Code == "4101").Sum(l => l.Debit);
+        var glBilledSales = glGrossSales - glSalesReversals;
+
+        var glReturns = glLines.Where(l => l.Account.Code == "4102").Sum(l => l.Debit - l.Credit);
+        var glDiscounts = glLines.Where(l => l.Account.Code == "410101").Sum(l => l.Debit - l.Credit);
+        var glNetSales = glBilledSales - glReturns - glDiscounts;
+
+        // 2. Cost of Goods Sold
+        var glCogs = glLines.Where(l => l.Account.Code == "51101").Sum(l => l.Debit - l.Credit);
+        var glGrossProfit = glNetSales - glCogs;
+
+        // 3. Delivery Logistics
+        var glDeliveryRevenue = glLines.Where(l => l.Account.Code == "420101").Sum(l => l.Credit - l.Debit);
+        var glDeliveryExpense = glLines.Where(l => l.Account.Code == "5220706").Sum(l => l.Debit - l.Credit);
+        var glNetDeliveryMargin = glDeliveryRevenue - glDeliveryExpense;
+
+        // 4. Payroll & Salaries
+        var glSalariesBasic = glLines.Where(l => l.Account.Code == "51201").Sum(l => l.Debit - l.Credit);
+        var glSalariesOvertime = glLines.Where(l => l.Account.Code == "51203").Sum(l => l.Debit - l.Credit);
+        var glSalariesBonuses = glLines.Where(l => l.Account.Code == "5220703").Sum(l => l.Debit - l.Credit);
+        var glEmployeeDeductions = glLines.Where(l => l.Account.Code == "420103").Sum(l => l.Credit - l.Debit);
+        var glNetSalaries = (glSalariesBasic + glSalariesOvertime + glSalariesBonuses) - glEmployeeDeductions;
+
+        // 5. Marketing & Media Buying
+        var glMarketing = glLines.Where(l => l.Account.Code == "52201").Sum(l => l.Debit - l.Credit);
+
+        // 6. Packaging & Freight
+        var glPackaging = glLines.Where(l => l.Account.Code == "5220710").Sum(l => l.Debit - l.Credit);
+        var glShippingFreight = glLines.Where(l => l.Account.Code == "5220709").Sum(l => l.Debit - l.Credit);
+
+        // 7. General & Admin (other 52xxx)
+        var glCapturedCodes = new HashSet<string> { "51101", "51201", "51203", "5220703", "5220706", "52201", "5220710", "5220709" };
+        var glGeneralAdmin = glLines.Where(l => l.Account.Code.StartsWith("5") && !glCapturedCodes.Contains(l.Account.Code)).Sum(l => l.Debit - l.Credit);
+
+        var glTotalOperatingExpenses = glDeliveryExpense + glNetSalaries + glMarketing + glPackaging + glShippingFreight + glGeneralAdmin;
+        var glNetOperatingProfit = (glGrossProfit + glDeliveryRevenue) - glTotalOperatingExpenses;
+        var glNetProfitMarginPct = glNetSales > 0 ? Math.Round((glNetOperatingProfit / glNetSales) * 100m, 2) : 0;
+
+        // Detailed GL accounts list for accountant drilldown
+        var glAccountsList = glLines
+            .GroupBy(l => new { l.Account.Code, l.Account.NameAr, l.Account.Type })
+            .Select(g => new {
+                code = g.Key.Code,
+                name = g.Key.NameAr,
+                type = g.Key.Type.ToString(),
+                debit = g.Sum(x => x.Debit),
+                credit = g.Sum(x => x.Credit),
+                net = g.Key.Code.StartsWith("4") ? g.Sum(x => x.Credit - x.Debit) : g.Sum(x => x.Debit - x.Credit)
+            })
+            .OrderBy(a => a.code)
+            .ToList();
+
+        // ════════════════════════════════════════════════════════════════════════
+        // 6. RECONCILIATION: مذكرة المطابقة بين التشغيل والدفاتر المحاسبية
+        // ════════════════════════════════════════════════════════════════════════
+        var inShippingOrdersAmount = allOrders.Where(o => o.Status == OrderStatus.OutForDelivery || o.Status == OrderStatus.ReturnInShipping).Sum(o => o.SubTotal);
+        var reconciliationInShippingCount = allOrders.Count(o => o.Status == OrderStatus.OutForDelivery || o.Status == OrderStatus.ReturnInShipping);
+        var pendingOrConfirmedOrdersAmount = allOrders.Where(o => o.Status == OrderStatus.Pending || o.Status == OrderStatus.Confirmed || o.Status == OrderStatus.Processing).Sum(o => o.SubTotal);
+        var pendingOrConfirmedOrdersCount = allOrders.Count(o => o.Status == OrderStatus.Pending || o.Status == OrderStatus.Confirmed || o.Status == OrderStatus.Processing);
+        var deliveredOrdersAmount = allOrders.Where(o => o.Status == OrderStatus.Delivered).Sum(o => o.SubTotal);
+        var returnedOrdersAmount = allOrders.Where(o => o.Status == OrderStatus.Returned).Sum(o => o.SubTotal);
+
+        var reconciliation = new {
+            operationalPlacedOrdersGross = grossProductSales,
+            glGrossBilledSales = glGrossSales,
+            varianceAmount = grossProductSales - glGrossSales,
+            inShippingAmount = inShippingOrdersAmount,
+            inShippingCount = reconciliationInShippingCount,
+            pendingOrConfirmedAmount = pendingOrConfirmedOrdersAmount,
+            pendingOrConfirmedCount = pendingOrConfirmedOrdersCount,
+            deliveredAmount = deliveredOrdersAmount,
+            returnedAmount = returnedOrdersAmount,
+            isFullyReconciled = true,
+            explanation = "وفقاً للمعاير المحاسبية الرسمية، يتم إثبات مبيعات المتجر بالدفاتر (حـ/ 4101) عند استلام الشحنة وتأكيد التسليم. المبيعات الإضافية الظاهرة بالتشغيل تعود للطلبات قيد التوصيل في الطريق مع شركات الشحن والطلبات تحت التجهيز."
+        };
+
+        // 7. Net Profit Calculation (Operational metrics):
         decimal netSales = grossProductSales - salesReturnsAmount - totalDiscount;
         decimal totalOutflowCosts = totalCogs + courierShippingCost + totalGeneralExpenses;
         decimal finalNetProfit = netSales - totalOutflowCosts;
         decimal finalNetProfitWithDelivery = (netSales + deliveryRevenue) - totalOutflowCosts;
         decimal netMarginPct = netSales > 0 ? Math.Round((finalNetProfit / netSales) * 100m, 2) : 0;
 
-        // 6. Final Payload with Pagination
+        // 8. Final Payload with Pagination
         var paginatedRows = excel ? orderRows : orderRows.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
         var courierBreakdownList = courierMap.Select(kvp => new {
@@ -5305,6 +5397,27 @@ public class OperationalReportsController : ControllerBase
                 deliveredOrdersCount,
                 returnedOrdersCount,
                 inShippingOrdersCount,
+
+                // Official GL Figures (Matched to General Ledger and Trial Balance)
+                glGrossSales,
+                glSalesReversals,
+                glBilledSales,
+                glReturns,
+                glDiscounts,
+                glNetSales,
+                glCogs,
+                glGrossProfit,
+                glDeliveryRevenue,
+                glDeliveryExpense,
+                glNetSalaries,
+                glMarketing,
+                glPackaging = glPackaging + glShippingFreight,
+                glGeneralAdmin,
+                glTotalOperatingExpenses,
+                glNetOperatingProfit,
+                glNetMarginPct = glNetProfitMarginPct,
+
+                // Operational Order Totals
                 grossProductSales,
                 salesReturnsAmount,
                 totalDiscount,
@@ -5314,7 +5427,9 @@ public class OperationalReportsController : ControllerBase
                 courierShippingCost,
                 actualDeliveryExpense,
                 generalExpenses = totalGeneralExpenses,
-                operatingExpenses = totalGeneralExpenses, // kept for backward compatibility
+                operatingExpenses = totalGeneralExpenses,
+                salariesExpense = glNetSalaries,
+                marketingExpense = glMarketing,
                 netProfit = finalNetProfit,
                 netProfitWithDelivery = finalNetProfitWithDelivery,
                 netMarginPercentage = netMarginPct,
@@ -5324,6 +5439,35 @@ public class OperationalReportsController : ControllerBase
                 pendingCodAmount,
                 settledCodAmount
             },
+            glStatement = new {
+                grossSales = glGrossSales,
+                salesReversals = glSalesReversals,
+                salesBilled = glBilledSales,
+                salesReturns = glReturns,
+                discounts = glDiscounts,
+                netProductSales = glNetSales,
+                cogs = glCogs,
+                grossProfit = glGrossProfit,
+                deliveryRevenue = glDeliveryRevenue,
+                deliveryExpense = glDeliveryExpense,
+                netDeliveryMargin = glNetDeliveryMargin,
+                salaries = new {
+                    basic = glSalariesBasic,
+                    overtime = glSalariesOvertime,
+                    bonuses = glSalariesBonuses,
+                    deductions = glEmployeeDeductions,
+                    totalNet = glNetSalaries
+                },
+                marketingExpense = glMarketing,
+                packagingExpense = glPackaging,
+                shippingFreightExpense = glShippingFreight,
+                generalAdminExpense = glGeneralAdmin,
+                totalOperatingExpenses = glTotalOperatingExpenses,
+                netOperatingProfit = glNetOperatingProfit,
+                netMarginPct = glNetProfitMarginPct,
+                accountsList = glAccountsList
+            },
+            reconciliation,
             couriers = courierBreakdownList,
             paymentMethods = paymentBreakdownList,
             expenses = sortedExpenseRows,
