@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // Data/AppDbContext.cs — تم إضافة AuditLogs DbSet وتحديث التصنيفات والمقاسات
 // ============================================================
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -286,6 +286,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(x => x.TotalSales).HasPrecision(18, 2);
             e.Property(x => x.TotalPaid).HasPrecision(18, 2);
             e.HasOne(x => x.Category).WithMany(c => c.Customers).HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(c => c.Supplier)
+             .WithMany()
+             .HasForeignKey(c => c.SupplierId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<CustomerCategory>(e => {
@@ -400,6 +405,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Supplier>(e => {
             e.Property(s => s.TotalPurchases).HasPrecision(18, 2);
             e.Property(s => s.TotalPaid).HasPrecision(18, 2);
+            e.HasOne(s => s.Customer)
+             .WithMany()
+             .HasForeignKey(s => s.CustomerId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<PurchaseInvoice>(e => {
