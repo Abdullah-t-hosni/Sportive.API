@@ -446,6 +446,7 @@ public class SuppliersController : ControllerBase
 
         if (supplier == null) return NotFound(new { message = "المورد غير موجود." });
 
+        // Already linked — return existing customer
         if (supplier.CustomerId.HasValue && supplier.Customer != null)
         {
             return Ok(new { 
@@ -456,41 +457,61 @@ public class SuppliersController : ControllerBase
         }
 
         var custAcc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1107");
+        var supplierPhone = !string.IsNullOrWhiteSpace(supplier.Phone) ? supplier.Phone.Trim() : null;
 
-        var customer = new Customer
-        {
-            FullName = supplier.Name,
-            Email = !string.IsNullOrWhiteSpace(supplier.Email) ? supplier.Email : $"{Guid.NewGuid().ToString().Substring(0, 8)}@pos.com",
-            Phone = !string.IsNullOrWhiteSpace(supplier.Phone) ? supplier.Phone : null,
-            IsActive = true,
-            MainAccountId = custAcc?.Id,
-            SupplierId = supplier.Id,
-            CreatedAt = TimeHelper.GetEgyptTime()
-        };
+        // 🔍 Check if a customer with the same phone already exists (avoid duplicates on re-link)
+        Customer? customer = null;
+        if (supplierPhone != null && supplierPhone != "N/A")
+            customer = await _db.Customers.FirstOrDefaultAsync(c => c.Phone == supplierPhone);
 
-        if (!string.IsNullOrWhiteSpace(supplier.Address))
+        if (customer == null)
+            customer = await _db.Customers.FirstOrDefaultAsync(c => c.FullName.Trim() == supplier.Name.Trim() && c.SupplierId == null);
+
+        bool isNewCustomer = customer == null;
+
+        if (isNewCustomer)
         {
-            customer.Addresses.Add(new Address
+            customer = new Customer
             {
-                Street = supplier.Address,
-                City = "العنوان الرئيسي",
-                TitleAr = "العنوان المسجل",
-                TitleEn = "Registered Address",
-                IsDefault = true,
+                FullName = supplier.Name,
+                Email = !string.IsNullOrWhiteSpace(supplier.Email) ? supplier.Email : $"{Guid.NewGuid().ToString().Substring(0, 8)}@pos.com",
+                Phone = supplierPhone,
+                IsActive = true,
+                MainAccountId = custAcc?.Id,
+                SupplierId = supplier.Id,
                 CreatedAt = TimeHelper.GetEgyptTime()
-            });
-        }
+            };
 
-        _db.Customers.Add(customer);
-        await _db.SaveChangesAsync();
+            if (!string.IsNullOrWhiteSpace(supplier.Address))
+            {
+                customer.Addresses.Add(new Address
+                {
+                    Street = supplier.Address,
+                    City = "العنوان الرئيسي",
+                    TitleAr = "العنوان المسجل",
+                    TitleEn = "Registered Address",
+                    IsDefault = true,
+                    CreatedAt = TimeHelper.GetEgyptTime()
+                });
+            }
+
+            _db.Customers.Add(customer);
+            await _db.SaveChangesAsync();
+        }
+        else
+        {
+            // Re-link existing customer — ensure its SupplierId points to this supplier
+            customer.SupplierId = supplier.Id;
+        }
 
         supplier.CustomerId = customer.Id;
         await _db.SaveChangesAsync();
 
         try
         {
+            var action = isNewCustomer ? "Created" : "Re-linked existing";
             await _audit.LogAsync("ConvertToCustomer", "Supplier", supplier.Id.ToString(),
-                $"Created linked customer {customer.Id} for supplier {supplier.Name}",
+                $"{action} linked customer {customer.Id} for supplier {supplier.Name}",
                 User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name));
         }
         catch { }
@@ -498,7 +519,7 @@ public class SuppliersController : ControllerBase
         return Ok(new { 
             customerId = customer.Id, 
             customerName = customer.FullName, 
-            message = "تم إنشاء وربط العميل بنجاح." 
+            message = isNewCustomer ? "تم إنشاء وربط العميل بنجاح." : "تم ربط العميل الموجود بنجاح دون إنشاء سجل مكرر."
         });
     }
 

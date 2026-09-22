@@ -414,6 +414,7 @@ public class CustomersController : ControllerBase
 
         if (customer == null) return NotFound(new { message = "العميل غير موجود." });
 
+        // Already linked — return existing supplier
         if (customer.SupplierId.HasValue && customer.Supplier != null)
         {
             return Ok(new { 
@@ -429,29 +430,48 @@ public class CustomersController : ControllerBase
             : null;
 
         var suppAcc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "2101");
+        var customerPhone = !string.IsNullOrWhiteSpace(customer.Phone) ? customer.Phone.Trim() : null;
 
-        var supplier = new Supplier
+        // 🔍 Check if a supplier with the same phone or name already exists (avoid duplicates on re-link)
+        Supplier? supplier = null;
+        if (customerPhone != null)
+            supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Phone.Trim() == customerPhone);
+        
+        if (supplier == null)
+            supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Name.Trim() == customer.FullName.Trim() && s.CustomerId == null);
+
+        bool isNewSupplier = supplier == null;
+
+        if (isNewSupplier)
         {
-            Name = customer.FullName,
-            Phone = !string.IsNullOrWhiteSpace(customer.Phone) ? customer.Phone : "N/A",
-            Email = !string.IsNullOrWhiteSpace(customer.Email) && !customer.Email.EndsWith("@pos.com") ? customer.Email : null,
-            Address = addressText,
-            IsActive = true,
-            MainAccountId = suppAcc?.Id,
-            CustomerId = customer.Id,
-            CreatedAt = TimeHelper.GetEgyptTime()
-        };
-
-        _db.Suppliers.Add(supplier);
-        await _db.SaveChangesAsync();
+            supplier = new Supplier
+            {
+                Name = customer.FullName,
+                Phone = customerPhone ?? "N/A",
+                Email = !string.IsNullOrWhiteSpace(customer.Email) && !customer.Email.EndsWith("@pos.com") ? customer.Email : null,
+                Address = addressText,
+                IsActive = true,
+                MainAccountId = suppAcc?.Id,
+                CustomerId = customer.Id,
+                CreatedAt = TimeHelper.GetEgyptTime()
+            };
+            _db.Suppliers.Add(supplier);
+            await _db.SaveChangesAsync();
+        }
+        else
+        {
+            // Re-link existing supplier — ensure its CustomerId points to this customer
+            supplier.CustomerId = customer.Id;
+        }
 
         customer.SupplierId = supplier.Id;
         await _db.SaveChangesAsync();
 
         try
         {
+            var action = isNewSupplier ? "Created" : "Re-linked existing";
             await _audit.LogAsync("ConvertToSupplier", "Customer", customer.Id.ToString(),
-                $"Created linked supplier {supplier.Id} for customer {customer.FullName}",
+                $"{action} linked supplier {supplier.Id} for customer {customer.FullName}",
                 User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name));
         }
         catch { }
@@ -459,7 +479,7 @@ public class CustomersController : ControllerBase
         return Ok(new { 
             supplierId = supplier.Id, 
             supplierName = supplier.Name, 
-            message = "تم إنشاء وربط المورد بنجاح." 
+            message = isNewSupplier ? "تم إنشاء وربط المورد بنجاح." : "تم ربط المورد الموجود بنجاح دون إنشاء سجل مكرر."
         });
     }
 
