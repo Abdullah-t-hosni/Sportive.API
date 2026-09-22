@@ -5326,8 +5326,9 @@ public class OperationalReportsController : ControllerBase
 
         // Detailed GL accounts list for accountant drilldown
         var glAccountsList = glLines
-            .GroupBy(l => new { l.Account.Code, l.Account.NameAr, l.Account.Type })
+            .GroupBy(l => new { l.Account.Id, l.Account.Code, l.Account.NameAr, l.Account.Type })
             .Select(g => new {
+                accountId = g.Key.Id,
                 code = g.Key.Code,
                 name = g.Key.NameAr,
                 type = g.Key.Type.ToString(),
