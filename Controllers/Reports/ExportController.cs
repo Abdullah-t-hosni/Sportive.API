@@ -19,7 +19,7 @@ public class ExportController : ControllerBase
     public ExportController(AppDbContext db) => _db = db;
 
     // ORDERS
-    // GET /api/export/orders?source=0&fromDate=2025-01-01&toDate=2025-12-31
+    // GET /api/export/orders?source=0&fromDate=2025-01-01&toDate=2025-12-31&mode=invoice
     [HttpGet("orders")]
     public async Task<IActionResult> ExportOrders(
         [FromQuery] string? search     = null,
@@ -27,12 +27,15 @@ public class ExportController : ControllerBase
         [FromQuery] OrderSource? source    = null,
         [FromQuery] DateTime?   fromDate   = null,
         [FromQuery] DateTime?   toDate     = null,
-        [FromQuery] OrderStatus? status    = null)
+        [FromQuery] OrderStatus? status    = null,
+        [FromQuery] string?     mode       = "product")
     {
         var query = _db.Orders
             .Include(o => o.Customer)
             .Include(o => o.Items)
+                .ThenInclude(i => i.Product)
             .Include(o => o.DeliveryAddress)
+            .Include(o => o.ShippingCompany)
             .AsQueryable();
 
         if (source.HasValue)   query = query.Where(o => o.Source   == source.Value);
@@ -61,106 +64,270 @@ public class ExportController : ControllerBase
         var orders = await query.OrderByDescending(o => o.CreatedAt).ToListAsync();
 
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("الطلبات");
 
-        // Header
-        var headers = new[] {
-            "رقم الفاتورة","رقم المرجع","العميل","التليفون","المحافظة","المدينة/المنطقة","العنوان بالكامل","ملاحظات","المصدر",
-            "الحالة","طريقة الدفع","حالة الدفع","كود الصنف","الاسم","المقاس","اللون","الكمية", 
-            "المجموع","الخصم","التوصيل","الإجمالي","التاريخ"
+        string GetStatusArabic(OrderStatus s) => s switch
+        {
+            OrderStatus.Pending => "في الانتظار",
+            OrderStatus.Confirmed => "مؤكد",
+            OrderStatus.Processing => "قيد التحضير",
+            OrderStatus.ReadyForPickup => "جاهز للاستلام",
+            OrderStatus.OutForDelivery => "خرج للتوصيل",
+            OrderStatus.Delivered => "تم التوصيل",
+            OrderStatus.Cancelled => "ملغي",
+            OrderStatus.Returned => "مرتجع كامل",
+            OrderStatus.PartiallyReturned => "مرتجع جزئي",
+            OrderStatus.ReturnInShipping => "مرتجع لدى الشحن",
+            _ => s.ToString()
         };
-        for (int c = 0; c < headers.Length; c++)
+
+        string GetPaymentMethodArabic(PaymentMethod m) => m switch
         {
-            var cell = ws.Cell(1, c + 1);
-            cell.Value = headers[c];
-            cell.Style.Font.Bold = true;
-            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1a1a2e");
-            cell.Style.Font.FontColor       = XLColor.White;
-            cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            PaymentMethod.Cash => "عند الاستلام (كاش)",
+            PaymentMethod.CreditCard => "بطاقة ائتمان",
+            PaymentMethod.Vodafone => "فودافون كاش",
+            PaymentMethod.InstaPay => "انستاباي",
+            PaymentMethod.Credit => "آجل / مديونية",
+            PaymentMethod.Bank => "تحويل بنكي / فيزا",
+            PaymentMethod.Mixed => "دفع متعدد",
+            PaymentMethod.CostPrice => "سعر التكلفة",
+            PaymentMethod.CustomerBalance => "رصيد عميل",
+            _ => m.ToString()
+        };
+
+        string GetPaymentStatusArabic(PaymentStatus s) => s switch
+        {
+            PaymentStatus.Pending => "معلق",
+            PaymentStatus.Paid => "مدفوع",
+            PaymentStatus.Failed => "فشل الدفع",
+            PaymentStatus.Refunded => "مسترد",
+            PaymentStatus.PartiallyPaid => "مدفوع جزئياً",
+            _ => s.ToString()
+        };
+
+        string GetCustomerPhone(Customer? c)
+        {
+            if (c == null) return "";
+            if (!string.IsNullOrEmpty(c.Phone)) return c.Phone;
+            if (!string.IsNullOrEmpty(c.PhoneEncrypted) && Customer.EncryptionHelper != null)
+                return Customer.EncryptionHelper.Decrypt(c.PhoneEncrypted);
+            return "";
         }
 
-        // Data
-        int row = 2;
-        foreach (var o in orders)
+        if (string.Equals(mode, "invoice", StringComparison.OrdinalIgnoreCase))
         {
-            if (o.Items == null || !o.Items.Any())
-            {
-                ws.Cell(row, 1).Value  = o.OrderNumber;
-                ws.Cell(row, 2).Value  = ""; 
-                ws.Cell(row, 3).Value  = o.Customer?.FullName ?? "";
-                ws.Cell(row, 4).Value  = o.Customer?.Phone ?? "";
-                
-                ws.Cell(row, 5).Value  = o.DeliveryAddress?.City ?? "";
-                ws.Cell(row, 6).Value  = o.DeliveryAddress?.District ?? "";
-                ws.Cell(row, 7).Value  = $"{o.DeliveryAddress?.Street} {o.DeliveryAddress?.BuildingNo} {o.DeliveryAddress?.Floor} {o.DeliveryAddress?.ApartmentNo}".Trim();
-                ws.Cell(row, 8).Value  = o.CustomerNotes ?? "";
+            var ws = wb.Worksheets.Add("الطلبات بالفاتورة");
 
-                ws.Cell(row, 9).Value  = o.Source == OrderSource.POS ? "كاشير" : "موقع";
-                ws.Cell(row, 10).Value  = o.Status.ToString();
-                ws.Cell(row, 11).Value  = o.PaymentMethod.ToString();
-                ws.Cell(row, 12).Value  = o.PaymentStatus.ToString();
-                ws.Cell(row, 18).Value = o.SubTotal;
-                ws.Cell(row, 19).Value = o.DiscountAmount + o.TemporalDiscount;
-                ws.Cell(row, 20).Value = o.DeliveryFee;
-                ws.Cell(row, 21).Value = o.TotalAmount;
-                ws.Cell(row, 22).Value = o.CreatedAt.ToString("yyyy-MM-dd HH:mm");
-                row++;
-                continue;
+            var headers = new[] {
+                "رقم الطلب", "رقم التتبع / البوليصة", "التاريخ", "العميل", "رقم الهاتف",
+                "المحافظة", "المدينة/المنطقة", "العنوان بالكامل", "المصدر", "حالة الطلب",
+                "شركة الشحن", "طريقة الدفع", "حالة الدفع", "عدد الأصناف", "إجمالي القطع",
+                "المنتجات المطلوبة", "المجموع", "الخصم", "مصاريف الشحن", "إجمالي الفاتورة", "ملاحظات العميل"
+            };
+
+            for (int c = 0; c < headers.Length; c++)
+            {
+                var cell = ws.Cell(1, c + 1);
+                cell.Value = headers[c];
+                cell.Style.Font.Bold = true;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1a1a2e");
+                cell.Style.Font.FontColor       = XLColor.White;
+                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
             }
 
-            foreach (var it in o.Items)
+            int row = 2;
+            foreach (var o in orders)
             {
                 ws.Cell(row, 1).Value  = o.OrderNumber;
-                ws.Cell(row, 3).Value  = o.Customer?.FullName ?? "";
-                ws.Cell(row, 4).Value  = o.Customer?.Phone ?? "";
+                ws.Cell(row, 2).Value  = o.ShippingTrackingNumber ?? o.BostaTrackingNumber ?? "";
+                ws.Cell(row, 3).Value  = o.CreatedAt.ToString("yyyy-MM-dd HH:mm");
+                ws.Cell(row, 4).Value  = o.Customer?.FullName ?? "";
+                ws.Cell(row, 5).Value  = GetCustomerPhone(o.Customer);
 
-                ws.Cell(row, 5).Value  = o.DeliveryAddress?.City ?? "";
-                ws.Cell(row, 6).Value  = o.DeliveryAddress?.District ?? "";
-                ws.Cell(row, 7).Value  = $"{o.DeliveryAddress?.Street} {o.DeliveryAddress?.BuildingNo} {o.DeliveryAddress?.Floor} {o.DeliveryAddress?.ApartmentNo}".Trim();
-                ws.Cell(row, 8).Value  = o.CustomerNotes ?? "";
-
+                ws.Cell(row, 6).Value  = o.DeliveryAddress?.City ?? "";
+                ws.Cell(row, 7).Value  = o.DeliveryAddress?.District ?? "";
+                ws.Cell(row, 8).Value  = $"{o.DeliveryAddress?.Street} {o.DeliveryAddress?.BuildingNo} {o.DeliveryAddress?.Floor} {o.DeliveryAddress?.ApartmentNo}".Trim();
                 ws.Cell(row, 9).Value  = o.Source == OrderSource.POS ? "كاشير" : "موقع";
-                ws.Cell(row, 10).Value  = o.Status.ToString();
-                ws.Cell(row, 11).Value  = o.PaymentMethod.ToString();
-                ws.Cell(row, 12).Value  = o.PaymentStatus.ToString();
-                
-                ws.Cell(row, 13).Value  = it.Product?.SKU ?? "";
-                ws.Cell(row, 14).Value = it.Product?.NameAr ?? it.ProductNameAr;
-                ws.Cell(row, 15).Value = it.Size ?? "";
-                ws.Cell(row, 16).Value = it.Color ?? "";
-                ws.Cell(row, 17).Value = it.Quantity;
+                ws.Cell(row, 10).Value = GetStatusArabic(o.Status);
+                ws.Cell(row, 11).Value = o.ShippingCarrierName ?? o.ShippingCompany?.NameAr ?? "";
+                ws.Cell(row, 12).Value = GetPaymentMethodArabic(o.PaymentMethod);
+                ws.Cell(row, 13).Value = GetPaymentStatusArabic(o.PaymentStatus);
 
-                ws.Cell(row, 18).Value = o.SubTotal;
-                ws.Cell(row, 19).Value = o.DiscountAmount + o.TemporalDiscount;
-                ws.Cell(row, 20).Value = o.DeliveryFee;
-                ws.Cell(row, 21).Value = o.TotalAmount;
-                ws.Cell(row, 22).Value = o.CreatedAt.ToString("yyyy-MM-dd HH:mm");
+                var itemsCount = o.Items?.Count ?? 0;
+                var totalUnits = o.Items?.Sum(i => i.Quantity) ?? 0;
+                ws.Cell(row, 14).Value = itemsCount;
+                ws.Cell(row, 15).Value = totalUnits;
 
-                for (int c = 18; c <= 21; c++) ws.Cell(row, c).Style.NumberFormat.Format = "#,##0.00";
+                var itemsSummary = o.Items != null && o.Items.Any()
+                    ? string.Join(" | ", o.Items.Select(it => {
+                        var pName = it.Product?.NameAr ?? it.ProductNameAr ?? "";
+                        var details = new List<string>();
+                        if (!string.IsNullOrEmpty(it.Size)) details.Add(it.Size);
+                        if (!string.IsNullOrEmpty(it.Color)) details.Add(it.Color);
+                        var spec = details.Any() ? $" [{string.Join(" - ", details)}]" : "";
+                        return $"{pName}{spec} × {it.Quantity}";
+                    }))
+                    : "";
+                ws.Cell(row, 16).Value = itemsSummary;
+
+                ws.Cell(row, 17).Value = o.SubTotal;
+                ws.Cell(row, 18).Value = o.DiscountAmount + o.TemporalDiscount;
+                ws.Cell(row, 19).Value = o.DeliveryFee;
+                ws.Cell(row, 20).Value = o.TotalAmount;
+                ws.Cell(row, 21).Value = o.CustomerNotes ?? "";
+
+                for (int c = 17; c <= 20; c++) ws.Cell(row, c).Style.NumberFormat.Format = "#,##0.00";
+
+                if (o.Source == OrderSource.POS)
+                    ws.Row(row).Style.Fill.BackgroundColor = XLColor.FromHtml("#fff8e1");
+
                 row++;
             }
 
-            if (o.Source == OrderSource.POS)
-                ws.Rows(row - o.Items.Count, row - 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#fff8e1");
+            if (row > 2)
+            {
+                ws.Cell(row, 14).Value = "الإجمالي:";
+                ws.Cell(row, 14).Style.Font.Bold = true;
+                ws.Cell(row, 15).FormulaA1 = $"=SUM(O2:O{row - 1})";
+                ws.Cell(row, 15).Style.Font.Bold = true;
+
+                ws.Cell(row, 17).FormulaA1 = $"=SUM(Q2:Q{row - 1})";
+                ws.Cell(row, 17).Style.Font.Bold = true;
+                ws.Cell(row, 17).Style.NumberFormat.Format = "#,##0.00";
+
+                ws.Cell(row, 18).FormulaA1 = $"=SUM(R2:R{row - 1})";
+                ws.Cell(row, 18).Style.Font.Bold = true;
+                ws.Cell(row, 18).Style.NumberFormat.Format = "#,##0.00";
+
+                ws.Cell(row, 19).FormulaA1 = $"=SUM(S2:S{row - 1})";
+                ws.Cell(row, 19).Style.Font.Bold = true;
+                ws.Cell(row, 19).Style.NumberFormat.Format = "#,##0.00";
+
+                ws.Cell(row, 20).FormulaA1 = $"=SUM(T2:T{row - 1})";
+                ws.Cell(row, 20).Style.Font.Bold = true;
+                ws.Cell(row, 20).Style.NumberFormat.Format = "#,##0.00";
+            }
+
+            ws.Columns().AdjustToContents();
+            ws.RightToLeft = true;
+
+            var stream = new MemoryStream();
+            Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
+            wb.SaveAs(stream);
+            stream.Position = 0;
+
+            return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                $"orders_invoices_{TimeHelper.GetEgyptTime():yyyyMMdd_HHmm}.xlsx");
         }
+        else
+        {
+            var ws = wb.Worksheets.Add("الطلبات بالمنتجات");
 
-        // Summary row
-        ws.Cell(row + 1, 16).Value = "الإجمالي:";
-        ws.Cell(row + 1, 16).Style.Font.Bold = true;
-        ws.Cell(row + 1, 17).FormulaA1 = $"=SUM(Q2:Q{row})";
-        ws.Cell(row + 1, 17).Style.Font.Bold = true;
-        ws.Cell(row + 1, 17).Style.NumberFormat.Format = "#,##0.00";
+            // Header
+            var headers = new[] {
+                "رقم الفاتورة","رقم المرجع","العميل","التليفون","المحافظة","المدينة/المنطقة","العنوان بالكامل","ملاحظات","المصدر",
+                "الحالة","طريقة الدفع","حالة الدفع","كود الصنف","الاسم","المقاس","اللون","الكمية", 
+                "المجموع","الخصم","التوصيل","الإجمالي","التاريخ"
+            };
+            for (int c = 0; c < headers.Length; c++)
+            {
+                var cell = ws.Cell(1, c + 1);
+                cell.Value = headers[c];
+                cell.Style.Font.Bold = true;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1a1a2e");
+                cell.Style.Font.FontColor       = XLColor.White;
+                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            }
 
-        ws.Columns().AdjustToContents();
-        ws.RightToLeft = true;
+            // Data
+            int row = 2;
+            foreach (var o in orders)
+            {
+                var phone = GetCustomerPhone(o.Customer);
+                var fullAddr = $"{o.DeliveryAddress?.Street} {o.DeliveryAddress?.BuildingNo} {o.DeliveryAddress?.Floor} {o.DeliveryAddress?.ApartmentNo}".Trim();
 
-        var stream = new MemoryStream();
-        Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
-        wb.SaveAs(stream);
-        stream.Position = 0;
+                if (o.Items == null || !o.Items.Any())
+                {
+                    ws.Cell(row, 1).Value  = o.OrderNumber;
+                    ws.Cell(row, 2).Value  = o.ShippingTrackingNumber ?? o.BostaTrackingNumber ?? ""; 
+                    ws.Cell(row, 3).Value  = o.Customer?.FullName ?? "";
+                    ws.Cell(row, 4).Value  = phone;
+                    
+                    ws.Cell(row, 5).Value  = o.DeliveryAddress?.City ?? "";
+                    ws.Cell(row, 6).Value  = o.DeliveryAddress?.District ?? "";
+                    ws.Cell(row, 7).Value  = fullAddr;
+                    ws.Cell(row, 8).Value  = o.CustomerNotes ?? "";
 
-        return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            $"orders_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
+                    ws.Cell(row, 9).Value  = o.Source == OrderSource.POS ? "كاشير" : "موقع";
+                    ws.Cell(row, 10).Value = GetStatusArabic(o.Status);
+                    ws.Cell(row, 11).Value = GetPaymentMethodArabic(o.PaymentMethod);
+                    ws.Cell(row, 12).Value = GetPaymentStatusArabic(o.PaymentStatus);
+                    ws.Cell(row, 18).Value = o.SubTotal;
+                    ws.Cell(row, 19).Value = o.DiscountAmount + o.TemporalDiscount;
+                    ws.Cell(row, 20).Value = o.DeliveryFee;
+                    ws.Cell(row, 21).Value = o.TotalAmount;
+                    ws.Cell(row, 22).Value = o.CreatedAt.ToString("yyyy-MM-dd HH:mm");
+                    row++;
+                    continue;
+                }
+
+                foreach (var it in o.Items)
+                {
+                    ws.Cell(row, 1).Value  = o.OrderNumber;
+                    ws.Cell(row, 2).Value  = o.ShippingTrackingNumber ?? o.BostaTrackingNumber ?? "";
+                    ws.Cell(row, 3).Value  = o.Customer?.FullName ?? "";
+                    ws.Cell(row, 4).Value  = phone;
+
+                    ws.Cell(row, 5).Value  = o.DeliveryAddress?.City ?? "";
+                    ws.Cell(row, 6).Value  = o.DeliveryAddress?.District ?? "";
+                    ws.Cell(row, 7).Value  = fullAddr;
+                    ws.Cell(row, 8).Value  = o.CustomerNotes ?? "";
+
+                    ws.Cell(row, 9).Value  = o.Source == OrderSource.POS ? "كاشير" : "موقع";
+                    ws.Cell(row, 10).Value = GetStatusArabic(o.Status);
+                    ws.Cell(row, 11).Value = GetPaymentMethodArabic(o.PaymentMethod);
+                    ws.Cell(row, 12).Value = GetPaymentStatusArabic(o.PaymentStatus);
+                    
+                    ws.Cell(row, 13).Value = it.Product?.SKU ?? it.SKU ?? "";
+                    ws.Cell(row, 14).Value = it.Product?.NameAr ?? it.ProductNameAr;
+                    ws.Cell(row, 15).Value = it.Size ?? "";
+                    ws.Cell(row, 16).Value = it.Color ?? "";
+                    ws.Cell(row, 17).Value = it.Quantity;
+
+                    ws.Cell(row, 18).Value = o.SubTotal;
+                    ws.Cell(row, 19).Value = o.DiscountAmount + o.TemporalDiscount;
+                    ws.Cell(row, 20).Value = o.DeliveryFee;
+                    ws.Cell(row, 21).Value = o.TotalAmount;
+                    ws.Cell(row, 22).Value = o.CreatedAt.ToString("yyyy-MM-dd HH:mm");
+
+                    for (int c = 18; c <= 21; c++) ws.Cell(row, c).Style.NumberFormat.Format = "#,##0.00";
+                    row++;
+                }
+
+                if (o.Source == OrderSource.POS)
+                    ws.Rows(row - o.Items.Count, row - 1).Style.Fill.BackgroundColor = XLColor.FromHtml("#fff8e1");
+            }
+
+            // Summary row
+            if (row > 2)
+            {
+                ws.Cell(row, 16).Value = "الإجمالي:";
+                ws.Cell(row, 16).Style.Font.Bold = true;
+                ws.Cell(row, 17).FormulaA1 = $"=SUM(Q2:Q{row - 1})";
+                ws.Cell(row, 17).Style.Font.Bold = true;
+                ws.Cell(row, 17).Style.NumberFormat.Format = "#,##0";
+            }
+
+            ws.Columns().AdjustToContents();
+            ws.RightToLeft = true;
+
+            var stream = new MemoryStream();
+            Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
+            wb.SaveAs(stream);
+            stream.Position = 0;
+
+            return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                $"orders_products_{TimeHelper.GetEgyptTime():yyyyMMdd_HHmm}.xlsx");
+        }
     }
 
     [HttpGet("orders/shipping")]
