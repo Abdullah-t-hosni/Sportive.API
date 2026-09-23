@@ -306,7 +306,7 @@ public class ProductService : IProductService
             linkedSummary = linkedList.FirstOrDefault();
         }
 
-        return MapToDetail(p, d, linkedSummary, reviewDtos, source);
+        return MapToDetail(p, d, linkedSummary, reviewDtos, source, rawPricing);
     }
 
     public async Task<ProductDetailDto?> GetProductBySlugAsync(string slug, DiscountApplyTo? source = null, int? warehouseId = null, bool rawPricing = false)
@@ -391,7 +391,7 @@ public class ProductService : IProductService
             linkedSummary = linkedList.FirstOrDefault();
         }
 
-        return MapToDetail(p, d, linkedSummary, reviewDtos, source);
+        return MapToDetail(p, d, linkedSummary, reviewDtos, source, rawPricing);
     }
 
     public async Task<ProductDetailDto> CreateProductAsync(CreateProductDto dto)
@@ -1024,21 +1024,33 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync();
     }
 
-    private ProductDetailDto MapToDetail(Product p, ProductDiscount? d = null, ProductSummaryDto? linkedProduct = null, List<ReviewListItemDto>? reviewDtos = null, DiscountApplyTo? source = null)
+    private ProductDetailDto MapToDetail(Product p, ProductDiscount? d = null, ProductSummaryDto? linkedProduct = null, List<ReviewListItemDto>? reviewDtos = null, DiscountApplyTo? source = null, bool rawPricing = false)
     {
-        bool isStoreSource = source == DiscountApplyTo.Store;
-        decimal effectiveBasePrice = (isStoreSource && p.OnlinePrice.HasValue && p.OnlinePrice > 0)
+        bool isStoreSource = source != DiscountApplyTo.POS;
+        decimal effectiveBasePrice = (!rawPricing && isStoreSource && p.OnlinePrice.HasValue && p.OnlinePrice > 0)
             ? p.OnlinePrice.Value
             : p.Price;
 
-        decimal effectiveDiscountPrice = isStoreSource
-            ? ((p.OnlineDiscountPrice.HasValue && p.OnlineDiscountPrice > 0) ? p.OnlineDiscountPrice.Value : (p.OnlinePrice.HasValue && p.OnlinePrice > 0 ? p.OnlinePrice.Value : ((p.DiscountPrice > 0) ? p.DiscountPrice.Value : p.Price)))
-            : ((p.DiscountPrice > 0) ? p.DiscountPrice.Value : p.Price);
+        decimal effectiveDiscountPrice;
+        if (rawPricing)
+        {
+            effectiveDiscountPrice = (p.DiscountPrice > 0) ? p.DiscountPrice.Value : p.Price;
+        }
+        else if (isStoreSource)
+        {
+            effectiveDiscountPrice = (p.OnlineDiscountPrice.HasValue && p.OnlineDiscountPrice > 0)
+                ? p.OnlineDiscountPrice.Value
+                : (p.OnlinePrice.HasValue && p.OnlinePrice > 0 ? p.OnlinePrice.Value : ((p.DiscountPrice > 0) ? p.DiscountPrice.Value : p.Price));
+        }
+        else
+        {
+            effectiveDiscountPrice = (p.DiscountPrice > 0) ? p.DiscountPrice.Value : p.Price;
+        }
 
         decimal finalDiscountPrice = effectiveDiscountPrice;
         string? activeLabel = null;
 
-        if (d != null)
+        if (d != null && !rawPricing)
         {
             activeLabel = d.Label;
             finalDiscountPrice = d.DiscountType == DiscountType.Percentage 
@@ -1182,7 +1194,7 @@ public class ProductService : IProductService
                 .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
                 .FirstOrDefault();
 
-            bool isStoreSource = source == DiscountApplyTo.Store;
+            bool isStoreSource = source != DiscountApplyTo.POS;
             decimal effectiveBasePrice = (isStoreSource && p.OnlinePrice.HasValue && p.OnlinePrice > 0)
                 ? p.OnlinePrice.Value
                 : p.Price;
