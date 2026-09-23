@@ -1153,8 +1153,7 @@ public class ProductService : IProductService
         var now = TimeHelper.GetEgyptTime();
         var discounts = await _db.ProductDiscounts
             .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now)
-            .Where(d => d.ApplyTo == DiscountApplyTo.All || 
-                     (source.HasValue ? d.ApplyTo == source.Value : d.ApplyTo == DiscountApplyTo.Store))
+            .Where(d => source.HasValue ? (d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == source.Value) : true)
             .Where(d => 
                 (d.ProductId == null && d.CategoryId == null && d.BrandId == null) ||
                 (d.ProductId != null && productIds.Contains(d.ProductId.Value)) ||
@@ -1209,7 +1208,7 @@ public class ProductService : IProductService
                 }
             }
 
-            var pDiscount = discounts
+            var applicableDiscounts = discounts
                 .Where(d => !IsCategoryExcluded(d.ExcludedCategoryIds, p.CategoryId, pCategoryAncestors))
                 .Where(d => 
                     (d.ProductId == p.Id) ||
@@ -1218,27 +1217,65 @@ public class ProductService : IProductService
                     (d.ProductId == null && d.CategoryId == null && d.BrandId == null)
                 )
                 .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
-                .FirstOrDefault();
+                .ToList();
 
-            bool isStoreSource = source != DiscountApplyTo.POS;
-            decimal effectiveBasePrice = (isStoreSource && p.OnlinePrice.HasValue && p.OnlinePrice > 0)
-                ? p.OnlinePrice.Value
-                : p.Price;
+            var posDiscountObj = applicableDiscounts.FirstOrDefault(d => d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == DiscountApplyTo.POS);
+            var storeDiscountObj = applicableDiscounts.FirstOrDefault(d => d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == DiscountApplyTo.Store);
 
-            decimal finalPrice = effectiveBasePrice;
-            if (pDiscount != null)
+            // 1. Calculate POS Pricing
+            decimal posBasePrice = p.Price;
+            decimal posFinalPrice = posBasePrice;
+            if (posDiscountObj != null)
             {
-                finalPrice = pDiscount.DiscountType == DiscountType.Percentage 
-                    ? Math.Round(effectiveBasePrice - (effectiveBasePrice * pDiscount.DiscountValue / 100), 2)
-                    : Math.Round(effectiveBasePrice - pDiscount.DiscountValue, 2);
+                posFinalPrice = posDiscountObj.DiscountType == DiscountType.Percentage
+                    ? Math.Round(posBasePrice - (posBasePrice * posDiscountObj.DiscountValue / 100), 2)
+                    : Math.Round(posBasePrice - posDiscountObj.DiscountValue, 2);
             }
-            else if (isStoreSource && p.OnlineDiscountPrice.HasValue && p.OnlineDiscountPrice > 0)
+            else if (p.DiscountPrice.HasValue && p.DiscountPrice > 0)
             {
-                finalPrice = p.OnlineDiscountPrice.Value;
+                posFinalPrice = p.DiscountPrice.Value;
             }
-            else if (p.DiscountPrice > 0)
+
+            // 2. Calculate Online Store Pricing
+            decimal onlineBasePrice = (p.OnlinePrice.HasValue && p.OnlinePrice > 0) ? p.OnlinePrice.Value : p.Price;
+            decimal onlineFinalPrice = onlineBasePrice;
+            if (storeDiscountObj != null)
             {
-                finalPrice = p.DiscountPrice.Value;
+                onlineFinalPrice = storeDiscountObj.DiscountType == DiscountType.Percentage
+                    ? Math.Round(onlineBasePrice - (onlineBasePrice * storeDiscountObj.DiscountValue / 100), 2)
+                    : Math.Round(onlineBasePrice - storeDiscountObj.DiscountValue, 2);
+            }
+            else if (p.OnlineDiscountPrice.HasValue && p.OnlineDiscountPrice > 0)
+            {
+                onlineFinalPrice = p.OnlineDiscountPrice.Value;
+            }
+            else if (posDiscountObj != null && posDiscountObj.ApplyTo == DiscountApplyTo.All)
+            {
+                onlineFinalPrice = posDiscountObj.DiscountType == DiscountType.Percentage
+                    ? Math.Round(onlineBasePrice - (onlineBasePrice * posDiscountObj.DiscountValue / 100), 2)
+                    : Math.Round(onlineBasePrice - posDiscountObj.DiscountValue, 2);
+            }
+            else if (p.DiscountPrice.HasValue && p.DiscountPrice > 0 && (!p.OnlinePrice.HasValue || p.OnlinePrice == 0))
+            {
+                onlineFinalPrice = p.DiscountPrice.Value;
+            }
+
+            decimal effectiveBasePrice;
+            decimal finalPrice;
+            if (source == DiscountApplyTo.POS)
+            {
+                effectiveBasePrice = posBasePrice;
+                finalPrice = posFinalPrice;
+            }
+            else if (source == DiscountApplyTo.Store)
+            {
+                effectiveBasePrice = onlineBasePrice;
+                finalPrice = onlineFinalPrice;
+            }
+            else
+            {
+                effectiveBasePrice = posBasePrice;
+                finalPrice = posFinalPrice;
             }
 
             int totalStock = warehouseId.HasValue
@@ -1302,14 +1339,14 @@ public class ProductService : IProductService
                 p.Unit != null ? p.Unit.NameEn : null,
                 p.Unit != null ? p.Unit.Symbol : null,
                 p.CreatedAt,
-                pDiscount != null ? pDiscount.Label : null,
+                storeDiscountObj?.Label ?? posDiscountObj?.Label,
                 p.LinkedProductId,
                 p.EgyptianProductCode,
                 p.SaudiProductCode,
                 p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr, i.CategoryId)).ToList() ?? new List<ProductImageDto>(),
                 p.SecondaryCategories?.Select(sc => sc.CategoryId).ToList() ?? new List<int>(),
                 p.OnlinePrice,
-                p.OnlineDiscountPrice
+                onlineFinalPrice < onlineBasePrice ? onlineFinalPrice : p.OnlineDiscountPrice
             ));
         }
 
