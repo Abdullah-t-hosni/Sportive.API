@@ -444,51 +444,240 @@ public class ShippingSettlementsController : ControllerBase
         if (!orders.Any())
             return BadRequest("لا توجد طلبات مسواة لإلغائها.");
 
-        var references = orders
-            .Select(o => o.CourierSettlementReference)
-            .Where(r => !string.IsNullOrEmpty(r))
-            .Distinct()
+        // Group target orders by their settlement reference
+        var ordersWithRef = orders
+            .Where(o => !string.IsNullOrEmpty(o.CourierSettlementReference))
             .ToList();
 
-        // Also fetch any OTHER orders that share this same settlement reference
-        // because we are about to delete the entire batch Journal Entry!
-        var allOrdersSharingReferences = new List<Order>();
-        if (references.Any())
-        {
-            allOrdersSharingReferences = await _db.Orders
-                .Where(o => o.CourierSettlementReference != null && references.Contains(o.CourierSettlementReference))
-                .ToListAsync();
-        }
+        var ordersWithoutRef = orders
+            .Where(o => string.IsNullOrEmpty(o.CourierSettlementReference))
+            .ToList();
 
-        var journalEntriesToRemove = await _db.JournalEntries
-            .Include(j => j.Lines)
-            .Where(j => j.Reference != null && j.Reference.StartsWith("SETTLE-"))
-            .ToListAsync();
-
-        if (references.Any())
-        {
-            journalEntriesToRemove = journalEntriesToRemove
-                .Where(j => references.Any(r => j.Reference != null && (j.Reference == r || (r != null && r.Length > 14 && j.Reference.EndsWith(r.Substring(r.Length - 14))))))
-                .ToList();
-        }
-
-        if (journalEntriesToRemove.Any())
-        {
-            foreach (var entry in journalEntriesToRemove)
-            {
-                _db.JournalLines.RemoveRange(entry.Lines);
-            }
-            _db.JournalEntries.RemoveRange(journalEntriesToRemove);
-        }
-
-        // Unsettle ALL orders that share the deleted references to avoid data corruption (Settled without JE)
-        var ordersToUnsettle = allOrdersSharingReferences.Any() ? allOrdersSharingReferences : orders;
-        
-        foreach (var order in ordersToUnsettle)
+        // Handle orders without settlement reference simply by resetting their flags
+        foreach (var order in ordersWithoutRef)
         {
             order.IsSettledWithCourier = false;
             order.CourierSettlementDate = null;
             order.CourierSettlementReference = null;
+        }
+
+        var groups = ordersWithRef.GroupBy(o => o.CourierSettlementReference!).ToList();
+
+        foreach (var group in groups)
+        {
+            var refKey = group.Key;
+            var unsettledOrdersInGroup = group.ToList();
+            var unsettledIds = unsettledOrdersInGroup.Select(o => o.Id).ToHashSet();
+
+            // Fetch ALL orders sharing this reference in DB
+            var allOrdersInGroup = await _db.Orders
+                .Where(o => o.CourierSettlementReference == refKey)
+                .ToListAsync();
+
+            var remainingOrdersInGroup = allOrdersInGroup
+                .Where(o => !unsettledIds.Contains(o.Id))
+                .ToList();
+
+            string timestampSuffix = refKey.Length >= 14 ? refKey.Substring(refKey.Length - 14) : refKey;
+
+            var batchJournalEntries = await _db.JournalEntries
+                .Include(j => j.Lines)
+                .Where(j => j.Reference != null && j.Reference.StartsWith("SETTLE-") && (j.Reference == refKey || j.Reference.EndsWith(timestampSuffix)))
+                .ToListAsync();
+
+            if (!remainingOrdersInGroup.Any())
+            {
+                // CASE 1: All orders in this batch are being unsettled -> Safe to delete the entire batch journal entries
+                if (batchJournalEntries.Any())
+                {
+                    foreach (var entry in batchJournalEntries)
+                    {
+                        _db.JournalLines.RemoveRange(entry.Lines);
+                    }
+                    _db.JournalEntries.RemoveRange(batchJournalEntries);
+                }
+            }
+            else
+            {
+                // CASE 2: Partial unsettle -> Do NOT delete the entire batch!
+                // Adjust the journal entries and remove/update only lines belonging to the unsettled orders.
+
+                var settleCustEntry = batchJournalEntries.FirstOrDefault(j => j.Reference != null && j.Reference.StartsWith("SETTLE-CUST-"));
+                var settleUncollectedEntry = batchJournalEntries.FirstOrDefault(j => j.Reference != null && j.Reference.StartsWith("SETTLE-UNCOLLECTED-"));
+                var settleExpEntry = batchJournalEntries.FirstOrDefault(j => j.Reference != null && j.Reference.StartsWith("SETTLE-EXP-"));
+                var settleCollectionEntry = batchJournalEntries.FirstOrDefault(j => j.Reference != null && j.Reference.StartsWith("SETTLE-COLLECTION-"));
+
+                decimal totalUnsettledNet = 0;
+
+                foreach (var uo in unsettledOrdersInGroup)
+                {
+                    decimal collected = 0;
+
+                    // 1) Check if it had a line in SETTLE-CUST
+                    var custLine = settleCustEntry?.Lines.FirstOrDefault(l => (l.OrderId.HasValue && l.OrderId.Value == uo.Id) || (l.Description != null && l.Description.Contains(uo.OrderNumber)));
+                    if (custLine != null)
+                    {
+                        collected = custLine.Credit;
+                    }
+                    else
+                    {
+                        // 2) Check if it was in SETTLE-UNCOLLECTED
+                        var uncolLine = settleUncollectedEntry?.Lines.FirstOrDefault(l => (l.OrderId.HasValue && l.OrderId.Value == uo.Id) || (l.Description != null && l.Description.Contains(uo.OrderNumber)));
+                        if (uncolLine != null)
+                        {
+                            collected = 0;
+                        }
+                        else
+                        {
+                            // 3) Check if it had an individual DELV-CUST entry
+                            var delvCustEntry = await _db.JournalEntries
+                                .Include(e => e.Lines)
+                                .FirstOrDefaultAsync(e => e.OrderId == uo.Id && e.Reference != null && e.Reference.StartsWith("DELV-CUST-") && e.Status == JournalEntryStatus.Posted);
+
+                            if (delvCustEntry != null)
+                            {
+                                collected = delvCustEntry.Lines.Where(l => l.Debit > 0).Select(l => l.Debit).FirstOrDefault();
+                            }
+                            else if (uo.Status == OrderStatus.Returned || uo.Status == OrderStatus.Cancelled || uo.Status == OrderStatus.ReturnInShipping)
+                            {
+                                collected = 0;
+                            }
+                            else
+                            {
+                                collected = uo.TotalAmount;
+                            }
+                        }
+                    }
+
+                    decimal shippingCost = uo.ActualDeliveryCost;
+                    totalUnsettledNet += (collected - shippingCost);
+                }
+
+                // 1. Adjust SETTLE-UNCOLLECTED
+                if (settleUncollectedEntry != null)
+                {
+                    foreach (var uo in unsettledOrdersInGroup)
+                    {
+                        var matchingLines = settleUncollectedEntry.Lines
+                            .Where(l => (l.OrderId.HasValue && l.OrderId.Value == uo.Id) || (l.Description != null && l.Description.Contains(uo.OrderNumber)))
+                            .ToList();
+
+                        foreach (var ml in matchingLines)
+                        {
+                            settleUncollectedEntry.Lines.Remove(ml);
+                            _db.JournalLines.Remove(ml);
+                        }
+                    }
+
+                    var remainingCreditLines = settleUncollectedEntry.Lines.Where(l => l.Credit > 0).ToList();
+                    decimal newTotalUncollected = remainingCreditLines.Sum(l => l.Credit);
+
+                    if (newTotalUncollected <= 0 || !remainingCreditLines.Any())
+                    {
+                        _db.JournalLines.RemoveRange(settleUncollectedEntry.Lines);
+                        _db.JournalEntries.Remove(settleUncollectedEntry);
+                    }
+                    else
+                    {
+                        var debitLine = settleUncollectedEntry.Lines.FirstOrDefault(l => l.Debit > 0);
+                        if (debitLine != null)
+                        {
+                            debitLine.Debit = newTotalUncollected;
+                        }
+                    }
+                }
+
+                // 2. Adjust SETTLE-CUST
+                if (settleCustEntry != null)
+                {
+                    foreach (var uo in unsettledOrdersInGroup)
+                    {
+                        var matchingLines = settleCustEntry.Lines
+                            .Where(l => (l.OrderId.HasValue && l.OrderId.Value == uo.Id) || (l.Description != null && l.Description.Contains(uo.OrderNumber)))
+                            .ToList();
+
+                        foreach (var ml in matchingLines)
+                        {
+                            settleCustEntry.Lines.Remove(ml);
+                            _db.JournalLines.Remove(ml);
+                        }
+                    }
+
+                    var remainingCustCredits = settleCustEntry.Lines.Where(l => l.Credit > 0).ToList();
+                    decimal newTotalCustCollected = remainingCustCredits.Sum(l => l.Credit);
+
+                    if (newTotalCustCollected <= 0 || !remainingCustCredits.Any())
+                    {
+                        _db.JournalLines.RemoveRange(settleCustEntry.Lines);
+                        _db.JournalEntries.Remove(settleCustEntry);
+                    }
+                    else
+                    {
+                        var debitLine = settleCustEntry.Lines.FirstOrDefault(l => l.Debit > 0);
+                        if (debitLine != null)
+                        {
+                            debitLine.Debit = newTotalCustCollected;
+                        }
+                    }
+                }
+
+                // 3. Adjust SETTLE-EXP
+                if (settleExpEntry != null)
+                {
+                    decimal newTotalShipping = remainingOrdersInGroup.Sum(o => o.ActualDeliveryCost);
+                    if (newTotalShipping <= 0)
+                    {
+                        _db.JournalLines.RemoveRange(settleExpEntry.Lines);
+                        _db.JournalEntries.Remove(settleExpEntry);
+                    }
+                    else
+                    {
+                        var debitLine = settleExpEntry.Lines.FirstOrDefault(l => l.Debit > 0);
+                        var creditLine = settleExpEntry.Lines.FirstOrDefault(l => l.Credit > 0);
+                        if (debitLine != null) debitLine.Debit = newTotalShipping;
+                        if (creditLine != null) creditLine.Credit = newTotalShipping;
+                    }
+                }
+
+                // 4. Adjust SETTLE-COLLECTION
+                if (settleCollectionEntry != null)
+                {
+                    var debitLine = settleCollectionEntry.Lines.FirstOrDefault(l => l.Debit > 0);
+                    var creditLine = settleCollectionEntry.Lines.FirstOrDefault(l => l.Credit > 0);
+
+                    if (debitLine != null && creditLine != null)
+                    {
+                        decimal newNet = debitLine.Debit - totalUnsettledNet;
+                        if (newNet <= 0)
+                        {
+                            _db.JournalLines.RemoveRange(settleCollectionEntry.Lines);
+                            _db.JournalEntries.Remove(settleCollectionEntry);
+                        }
+                        else
+                        {
+                            debitLine.Debit = newNet;
+                            creditLine.Credit = newNet;
+
+                            if (!string.IsNullOrEmpty(debitLine.Description))
+                            {
+                                debitLine.Description = System.Text.RegularExpressions.Regex.Replace(
+                                    debitLine.Description,
+                                    @"\d+\s*طلبات",
+                                    $"{remainingOrdersInGroup.Count} طلبات"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Finally, ONLY reset the settlement status for the requested orders!
+            foreach (var order in unsettledOrdersInGroup)
+            {
+                order.IsSettledWithCourier = false;
+                order.CourierSettlementDate = null;
+                order.CourierSettlementReference = null;
+            }
         }
 
         await _db.SaveChangesAsync();
