@@ -533,9 +533,14 @@ public class ExportController : ControllerBase
     public async Task<IActionResult> ExportCustomers(
         [FromQuery] string? search = null,
         [FromQuery] decimal? minSpent = null,
+        [FromQuery] int? minOrders = null,
         [FromQuery] bool? hasDebt = null,
         [FromQuery] DateTime? joinStartDate = null,
-        [FromQuery] string? source = null)
+        [FromQuery] DateTime? joinEndDate = null,
+        [FromQuery] int? categoryId = null,
+        [FromQuery] string? source = null,
+        [FromQuery] string? orderBy = null,
+        [FromQuery] bool isDescending = true)
     {
         var staffRoleIds = await _db.Roles
             .Where(r => r.Name != null && AppRoles.StaffRoles.Contains(r.Name))
@@ -548,56 +553,156 @@ public class ExportController : ControllerBase
             .ToListAsync();
 
         var query = _db.Customers
-            .Include(c => c.Orders)
+            .AsNoTracking()
             .Where(c => c.AppUserId == null || !staffUserIds.Contains(c.AppUserId))
             .AsQueryable();
 
+        // 1. Source Filter (Exactly aligned with CustomerService)
         if (!string.IsNullOrEmpty(source))
         {
-            if (source.Equals("Website", StringComparison.OrdinalIgnoreCase))
+            if (source.Equals("Website", StringComparison.OrdinalIgnoreCase) || source.Equals("Store", StringComparison.OrdinalIgnoreCase))
             {
-                query = query.Where(c => c.AppUserId != null);
+                query = query.Where(c => c.AppUserId != null || c.Orders.Any(o => o.Source == OrderSource.Website));
             }
-            else if (source.Equals("POS", StringComparison.OrdinalIgnoreCase))
+            else if (source.Equals("POS", StringComparison.OrdinalIgnoreCase) || source.Equals("Shop", StringComparison.OrdinalIgnoreCase))
             {
-                query = query.Where(c => c.AppUserId == null);
+                query = query.Where(c => c.AppUserId == null && !c.Orders.Any(o => o.Source == OrderSource.Website));
             }
         }
 
+        // 2. Category Filter
+        if (categoryId.HasValue && categoryId.Value > 0)
+        {
+            query = query.Where(c => c.CategoryId == categoryId.Value);
+        }
+
+        // 3. Date Filters
+        if (joinStartDate.HasValue)
+        {
+            query = query.Where(c => c.CreatedAt >= joinStartDate.Value.Date);
+        }
+
+        if (joinEndDate.HasValue)
+        {
+            query = query.Where(c => c.CreatedAt <= joinEndDate.Value.Date.AddDays(1).AddTicks(-1));
+        }
+
+        // 4. Search Filter
         if (!string.IsNullOrWhiteSpace(search))
         {
-            var searchHash = Customer.EncryptionHelper?.ComputeSearchHash(search);
-            query = query.Where(c => c.FullName.Contains(search) || (searchHash != null && c.PhoneHash == searchHash));
+            var s = search.Trim().ToLower();
+            var searchHash = Customer.EncryptionHelper?.ComputeSearchHash(search.Trim());
+            query = query.Where(c =>
+                c.FullName.ToLower().Contains(s) ||
+                (searchHash != null && (c.EmailHash == searchHash || c.PhoneHash == searchHash)));
         }
 
-        if (minSpent.HasValue)
-            query = query.Where(c => c.Orders.Sum(o => o.TotalAmount) >= minSpent.Value);
+        // 5. Min Orders Filter
+        if (minOrders.HasValue && minOrders.Value > 0)
+        {
+            query = query.Where(c => c.Orders.Count >= minOrders.Value);
+        }
 
+        // 6. Min Spent Filter
+        if (minSpent.HasValue && minSpent.Value > 0)
+        {
+            query = query.Where(c => c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) >= minSpent.Value);
+        }
+
+        // 7. Lean SQL Projection
+        var projected = query.Select(c => new
+        {
+            c.Id,
+            c.FullName,
+            c.EmailEncrypted,
+            c.PhoneEncrypted,
+            c.AppUserId,
+            c.CreatedAt,
+            CategoryName = c.Category != null ? c.Category.NameAr : null,
+            HasWebsiteOrders = c.Orders.Any(o => o.Source == OrderSource.Website),
+            TotalOrders = c.Orders.Count,
+            TotalSpent = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
+            Balance = (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) +
+                      (_db.JournalLines
+                          .Where(l => l.CustomerId == c.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                          .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0)
+        });
+
+        // 8. Conditional Debt Filter
         if (hasDebt == true)
-            query = query.Where(c => c.Balance > 0);
+        {
+            projected = projected.Where(x => x.Balance > 0);
+        }
 
-        if (joinStartDate.HasValue)
-            query = query.Where(c => c.CreatedAt >= joinStartDate.Value.Date);
+        // 9. Dynamic Sorting
+        projected = orderBy?.ToLower() switch
+        {
+            "balance" => isDescending ? projected.OrderByDescending(x => x.Balance) : projected.OrderBy(x => x.Balance),
+            "spent"   => isDescending ? projected.OrderByDescending(x => x.TotalSpent) : projected.OrderBy(x => x.TotalSpent),
+            "orders"  => isDescending ? projected.OrderByDescending(x => x.TotalOrders) : projected.OrderBy(x => x.TotalOrders),
+            "name"    => isDescending ? projected.OrderByDescending(x => x.FullName) : projected.OrderBy(x => x.FullName),
+            _         => isDescending ? projected.OrderByDescending(x => x.CreatedAt) : projected.OrderBy(x => x.CreatedAt)
+        };
 
-        var customers = await query
-            .OrderByDescending(c => c.Orders.Sum(o => o.TotalAmount))
-            .ToListAsync();
+        var customers = await projected.ToListAsync();
 
         using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add("العملاء");
-        var headers = new[] { "الاسم","الإيميل","التليفون","عدد الطلبات","إجمالي الإنفاق","تاريخ التسجيل" };
+        string sheetTitle = string.Equals(source, "Website", StringComparison.OrdinalIgnoreCase)
+            ? "عملاء المتجر الإلكتروني"
+            : string.Equals(source, "POS", StringComparison.OrdinalIgnoreCase)
+                ? "عملاء المحل (POS)"
+                : "سجل العملاء الكامل";
+
+        var ws = wb.Worksheets.Add(sheetTitle);
+        var headers = new[] { 
+            "كود العميل", 
+            "اسم العميل", 
+            "المصدر", 
+            "رقم الهاتف", 
+            "البريد الإلكتروني", 
+            "الفئة", 
+            "عدد الطلبات", 
+            "إجمالي المشتريات", 
+            "الرصيد / المديونية", 
+            "تاريخ التسجيل" 
+        };
         StyleHeader(ws, headers);
 
         int row = 2;
         foreach (var c in customers)
         {
-            ws.Cell(row,1).Value = c.FullName;
-            ws.Cell(row,2).Value = c.Email;
-            ws.Cell(row,3).Value = c.Phone ?? "";
-            ws.Cell(row,4).Value = c.Orders.Count;
-            ws.Cell(row,5).Value = c.Orders.Sum(o => o.TotalAmount);
-            ws.Cell(row,6).Value = c.CreatedAt.ToString("yyyy-MM-dd");
-            ws.Cell(row,5).Style.NumberFormat.Format = "#,##0.00";
+            string phone = "";
+            if (!string.IsNullOrEmpty(c.PhoneEncrypted) && Customer.EncryptionHelper != null)
+            {
+                try { phone = Customer.EncryptionHelper.Decrypt(c.PhoneEncrypted); } catch { phone = c.PhoneEncrypted; }
+            }
+
+            string email = "";
+            if (!string.IsNullOrEmpty(c.EmailEncrypted) && Customer.EncryptionHelper != null)
+            {
+                try { email = Customer.EncryptionHelper.Decrypt(c.EmailEncrypted); } catch { email = c.EmailEncrypted; }
+            }
+
+            string customerSource = (c.AppUserId != null || c.HasWebsiteOrders) ? "متجر إلكتروني" : "محل (POS)";
+
+            ws.Cell(row, 1).Value = c.Id;
+            ws.Cell(row, 2).Value = c.FullName;
+            ws.Cell(row, 3).Value = customerSource;
+            ws.Cell(row, 4).Value = phone;
+            ws.Cell(row, 5).Value = email;
+            ws.Cell(row, 6).Value = c.CategoryName ?? "-";
+            ws.Cell(row, 7).Value = c.TotalOrders;
+            ws.Cell(row, 8).Value = c.TotalSpent;
+            ws.Cell(row, 9).Value = c.Balance;
+            ws.Cell(row, 10).Value = c.CreatedAt.ToString("yyyy-MM-dd");
+
+            ws.Cell(row, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            ws.Cell(row, 3).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            ws.Cell(row, 4).Style.NumberFormat.Format = "@";
+            ws.Cell(row, 7).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            ws.Cell(row, 8).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 9).Style.NumberFormat.Format = "#,##0.00";
+            ws.Cell(row, 10).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
             row++;
         }
         ws.Columns().AdjustToContents();
@@ -607,8 +712,14 @@ public class ExportController : ControllerBase
         Sportive.API.Utils.ExcelThemeHelper.ApplyElegantTheme(wb);
         wb.SaveAs(stream); stream.Position = 0;
 
+        string fileSuffix = string.Equals(source, "Website", StringComparison.OrdinalIgnoreCase)
+            ? "online_store"
+            : string.Equals(source, "POS", StringComparison.OrdinalIgnoreCase)
+                ? "pos"
+                : "all";
+
         return File(stream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            $"customers_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
+            $"customers_{fileSuffix}_{TimeHelper.GetEgyptTime():yyyyMMdd}.xlsx");
     }
 
     // POS DAY REPORT
