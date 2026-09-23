@@ -1274,8 +1274,8 @@ public class ProductService : IProductService
             }
             else
             {
-                effectiveBasePrice = posBasePrice;
-                finalPrice = posFinalPrice;
+                effectiveBasePrice = onlineBasePrice;
+                finalPrice = onlineFinalPrice;
             }
 
             int totalStock = warehouseId.HasValue
