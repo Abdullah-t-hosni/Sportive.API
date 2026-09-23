@@ -306,7 +306,7 @@ public class ProductService : IProductService
             linkedSummary = linkedList.FirstOrDefault();
         }
 
-        return MapToDetail(p, d, linkedSummary, reviewDtos);
+        return MapToDetail(p, d, linkedSummary, reviewDtos, source);
     }
 
     public async Task<ProductDetailDto?> GetProductBySlugAsync(string slug, DiscountApplyTo? source = null, int? warehouseId = null, bool rawPricing = false)
@@ -391,7 +391,7 @@ public class ProductService : IProductService
             linkedSummary = linkedList.FirstOrDefault();
         }
 
-        return MapToDetail(p, d, linkedSummary, reviewDtos);
+        return MapToDetail(p, d, linkedSummary, reviewDtos, source);
     }
 
     public async Task<ProductDetailDto> CreateProductAsync(CreateProductDto dto)
@@ -411,6 +411,8 @@ public class ProductService : IProductService
             DescriptionEn = dto.DescriptionEn,
             Price = dto.Price.Value,
             DiscountPrice = dto.DiscountPrice,
+            OnlinePrice = dto.OnlinePrice,
+            OnlineDiscountPrice = dto.OnlineDiscountPrice,
             CostPrice = dto.CostPrice,
             SKU = dto.SKU,
             BrandId = dto.BrandId,
@@ -527,6 +529,8 @@ public class ProductService : IProductService
         product.DescriptionEn = dto.DescriptionEn;
         product.Price = dto.Price.Value;
         product.DiscountPrice = dto.DiscountPrice;
+        product.OnlinePrice = dto.OnlinePrice;
+        product.OnlineDiscountPrice = dto.OnlineDiscountPrice;
         product.CostPrice = dto.CostPrice;
         product.BrandId = dto.BrandId;
         product.SKU = dto.SKU;
@@ -1020,24 +1024,33 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync();
     }
 
-    private ProductDetailDto MapToDetail(Product p, ProductDiscount? d = null, ProductSummaryDto? linkedProduct = null, List<ReviewListItemDto>? reviewDtos = null)
+    private ProductDetailDto MapToDetail(Product p, ProductDiscount? d = null, ProductSummaryDto? linkedProduct = null, List<ReviewListItemDto>? reviewDtos = null, DiscountApplyTo? source = null)
     {
-        decimal finalDiscountPrice = (p.DiscountPrice > 0) ? p.DiscountPrice.Value : p.Price;
+        bool isStoreSource = source == DiscountApplyTo.Store;
+        decimal effectiveBasePrice = (isStoreSource && p.OnlinePrice.HasValue && p.OnlinePrice > 0)
+            ? p.OnlinePrice.Value
+            : p.Price;
+
+        decimal effectiveDiscountPrice = isStoreSource
+            ? ((p.OnlineDiscountPrice.HasValue && p.OnlineDiscountPrice > 0) ? p.OnlineDiscountPrice.Value : (p.OnlinePrice.HasValue && p.OnlinePrice > 0 ? p.OnlinePrice.Value : ((p.DiscountPrice > 0) ? p.DiscountPrice.Value : p.Price)))
+            : ((p.DiscountPrice > 0) ? p.DiscountPrice.Value : p.Price);
+
+        decimal finalDiscountPrice = effectiveDiscountPrice;
         string? activeLabel = null;
 
         if (d != null)
         {
             activeLabel = d.Label;
             finalDiscountPrice = d.DiscountType == DiscountType.Percentage 
-                ? Math.Round(p.Price - (p.Price * d.DiscountValue / 100), 2)
-                : Math.Round(p.Price - d.DiscountValue, 2);
+                ? Math.Round(effectiveBasePrice - (effectiveBasePrice * d.DiscountValue / 100), 2)
+                : Math.Round(effectiveBasePrice - d.DiscountValue, 2);
         }
 
         var reviewsList = reviewDtos ?? p.Reviews?.Where(r => r.IsApproved).OrderByDescending(r => r.CreatedAt).Select(r => new ReviewListItemDto(r.Id, r.Customer?.FullName ?? _t.Get("Products.AnonymousReviewer"), r.Rating, r.Comment, r.CreatedAt)).ToList();
 
         return new ProductDetailDto(
             p.Id, p.NameAr, p.NameEn, p.Slug, p.DescriptionAr, p.DescriptionEn,
-            p.Price, finalDiscountPrice, p.CostPrice, p.SKU,
+            effectiveBasePrice, finalDiscountPrice, p.CostPrice, p.SKU,
             p.Brand != null ? p.Brand.NameAr : null,
             p.Brand != null ? p.Brand.NameEn : null,
             p.BrandId,
@@ -1066,7 +1079,9 @@ public class ProductService : IProductService
             linkedProduct,
             RawDiscountPrice: p.DiscountPrice,
             SecondaryCategoryIds: p.SecondaryCategories?.Select(sc => sc.CategoryId).ToList() ?? new List<int>(),
-            SecondaryCategories: p.SecondaryCategories?.Where(sc => sc.Category != null).Select(sc => new CategoryDto(sc.Category.Id, sc.Category.NameAr, sc.Category.NameEn, sc.Category.DescriptionAr, sc.Category.DescriptionEn, sc.Category.ImageUrl, sc.Category.IsActive, sc.Category.Type, 0, sc.Category.CreatedAt)).ToList() ?? new List<CategoryDto>()
+            SecondaryCategories: p.SecondaryCategories?.Where(sc => sc.Category != null).Select(sc => new CategoryDto(sc.Category.Id, sc.Category.NameAr, sc.Category.NameEn, sc.Category.DescriptionAr, sc.Category.DescriptionEn, sc.Category.ImageUrl, sc.Category.IsActive, sc.Category.Type, 0, sc.Category.CreatedAt)).ToList() ?? new List<CategoryDto>(),
+            OnlinePrice: p.OnlinePrice,
+            OnlineDiscountPrice: p.OnlineDiscountPrice
         );
     }
 
@@ -1167,12 +1182,21 @@ public class ProductService : IProductService
                 .OrderByDescending(d => d.ProductId != null ? 4 : (d.CategoryId != null ? 3 : (d.BrandId != null ? 2 : 1)))
                 .FirstOrDefault();
 
-            decimal finalPrice = p.Price;
+            bool isStoreSource = source == DiscountApplyTo.Store;
+            decimal effectiveBasePrice = (isStoreSource && p.OnlinePrice.HasValue && p.OnlinePrice > 0)
+                ? p.OnlinePrice.Value
+                : p.Price;
+
+            decimal finalPrice = effectiveBasePrice;
             if (pDiscount != null)
             {
                 finalPrice = pDiscount.DiscountType == DiscountType.Percentage 
-                    ? Math.Round(p.Price - (p.Price * pDiscount.DiscountValue / 100), 2)
-                    : Math.Round(p.Price - pDiscount.DiscountValue, 2);
+                    ? Math.Round(effectiveBasePrice - (effectiveBasePrice * pDiscount.DiscountValue / 100), 2)
+                    : Math.Round(effectiveBasePrice - pDiscount.DiscountValue, 2);
+            }
+            else if (isStoreSource && p.OnlineDiscountPrice.HasValue && p.OnlineDiscountPrice > 0)
+            {
+                finalPrice = p.OnlineDiscountPrice.Value;
             }
             else if (p.DiscountPrice > 0)
             {
@@ -1188,7 +1212,7 @@ public class ProductService : IProductService
                 p.NameAr,
                 p.NameEn,
                 p.Slug,
-                p.Price,
+                effectiveBasePrice,
                 finalPrice,
                 p.Images?.FirstOrDefault(i => i.IsMain)?.ImageUrl ?? p.Images?.FirstOrDefault()?.ImageUrl,
                 p.Category != null ? p.Category.NameAr : _t.Get("Products.CategoryMissing"),
@@ -1244,7 +1268,9 @@ public class ProductService : IProductService
                 p.EgyptianProductCode,
                 p.SaudiProductCode,
                 p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr, i.CategoryId)).ToList() ?? new List<ProductImageDto>(),
-                p.SecondaryCategories?.Select(sc => sc.CategoryId).ToList() ?? new List<int>()
+                p.SecondaryCategories?.Select(sc => sc.CategoryId).ToList() ?? new List<int>(),
+                p.OnlinePrice,
+                p.OnlineDiscountPrice
             ));
         }
 

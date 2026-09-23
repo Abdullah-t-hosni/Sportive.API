@@ -11,6 +11,8 @@ public class Product : BaseEntity
     public string? DescriptionEn { get; set; }
     public decimal Price { get; set; }
     public decimal? DiscountPrice { get; set; }
+    public decimal? OnlinePrice { get; set; }             // سعر البيع المخصص للمتجر الإلكتروني
+    public decimal? OnlineDiscountPrice { get; set; }     // سعر الخصم المخصص للمتجر الإلكتروني
     public decimal? CostPrice { get; set; }        // تكلفة المنتج (للحسابات الداخلية)
     public string SKU { get; set; } = string.Empty;
     public int? BrandId { get; set; }

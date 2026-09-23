@@ -162,7 +162,9 @@ public class CartService : ICartService
 
         var dtos = items.Select(c =>
         {
-            var basePrice = c.Product?.Price ?? 0;
+            var basePrice = (c.Product?.OnlinePrice.HasValue == true && c.Product.OnlinePrice.Value > 0)
+                ? c.Product.OnlinePrice.Value
+                : (c.Product?.Price ?? 0);
             
             var disc = discounts.FirstOrDefault(d => d.ProductId == c.ProductId);
             if (disc == null)
@@ -190,6 +192,10 @@ public class CartService : ICartService
                 price = disc.DiscountType == DiscountType.Percentage 
                     ? Math.Round(basePrice - (basePrice * disc.DiscountValue / 100), 2)
                     : Math.Round(basePrice - disc.DiscountValue, 2);
+            }
+            else if (c.Product?.OnlineDiscountPrice.HasValue == true && c.Product.OnlineDiscountPrice.Value > 0)
+            {
+                price = c.Product.OnlineDiscountPrice.Value;
             }
             else
             {

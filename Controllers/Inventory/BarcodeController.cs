@@ -99,6 +99,9 @@ public class BarcodeController : ControllerBase
 
         var stickers = new List<object>();
         var basePrice = (product.DiscountPrice > 0) ? product.DiscountPrice.Value : product.Price;
+        var onlineBasePrice = (product.OnlineDiscountPrice.HasValue && product.OnlineDiscountPrice.Value > 0)
+            ? product.OnlineDiscountPrice.Value
+            : ((product.OnlinePrice.HasValue && product.OnlinePrice.Value > 0) ? product.OnlinePrice.Value : basePrice);
 
         var activeVariants = product.Variants.ToList();
         
@@ -109,6 +112,7 @@ public class BarcodeController : ControllerBase
                 code = product.SKU,
                 productName = product.NameAr,
                 price = basePrice,
+                onlinePrice = onlineBasePrice,
                 sku = product.SKU
             });
         }
@@ -125,6 +129,7 @@ public class BarcodeController : ControllerBase
                     size = v.Size,
                     color = v.ColorAr ?? v.Color,
                     price = basePrice + (v.PriceAdjustment ?? 0),
+                    onlinePrice = onlineBasePrice + (v.PriceAdjustment ?? 0),
                     sku = product.SKU
                 });
             }
@@ -145,17 +150,25 @@ public class BarcodeController : ControllerBase
 
         if (invoice == null) return NotFound(new { message = "الفاتورة غير موجودة" });
 
-        var stickers = invoice.Items.Where(i => i.Product != null).OrderBy(i => i.Id).Select(item => new
-        {
-            code = item.Product!.SKU, 
-            productName = item.ProductVariantId != null
-                ? $"{item.Product.NameAr} - {item.ProductVariant!.Size ?? ""} {item.ProductVariant.ColorAr ?? item.ProductVariant.Color ?? ""}".Trim()
-                : item.Product.NameAr,
-            size = item.ProductVariant != null ? item.ProductVariant.Size : null,
-            color = item.ProductVariant != null ? (item.ProductVariant.ColorAr ?? item.ProductVariant.Color) : null,
-            price = ((item.Product.DiscountPrice > 0) ? item.Product.DiscountPrice.Value : item.Product.Price) + (item.ProductVariant?.PriceAdjustment ?? 0),
-            sku = item.Product.SKU,
-            qty = item.Quantity
+        var stickers = invoice.Items.Where(i => i.Product != null).OrderBy(i => i.Id).Select(item => {
+            var itemBase = (item.Product!.DiscountPrice > 0) ? item.Product.DiscountPrice.Value : item.Product.Price;
+            var itemOnline = (item.Product.OnlineDiscountPrice.HasValue && item.Product.OnlineDiscountPrice.Value > 0)
+                ? item.Product.OnlineDiscountPrice.Value
+                : ((item.Product.OnlinePrice.HasValue && item.Product.OnlinePrice.Value > 0) ? item.Product.OnlinePrice.Value : itemBase);
+
+            return new
+            {
+                code = item.Product.SKU, 
+                productName = item.ProductVariantId != null
+                    ? $"{item.Product.NameAr} - {item.ProductVariant!.Size ?? ""} {item.ProductVariant.ColorAr ?? item.ProductVariant.Color ?? ""}".Trim()
+                    : item.Product.NameAr,
+                size = item.ProductVariant != null ? item.ProductVariant.Size : null,
+                color = item.ProductVariant != null ? (item.ProductVariant.ColorAr ?? item.ProductVariant.Color) : null,
+                price = itemBase + (item.ProductVariant?.PriceAdjustment ?? 0),
+                onlinePrice = itemOnline + (item.ProductVariant?.PriceAdjustment ?? 0),
+                sku = item.Product.SKU,
+                qty = item.Quantity
+            };
         }).ToList();
 
         return Ok(new { stickers });

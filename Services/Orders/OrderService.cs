@@ -671,7 +671,12 @@ public class OrderService : IOrderService
                             throw new ArgumentException($"يجب تحديد المقاس واللون للمنتج '{product.NameAr}' لإتمام الطلب.");
                         }
 
-                        decimal originalUnitPrice = product.Price;
+                        bool isWebsite = actualSource == OrderSource.Website;
+                        decimal basePrice = (isWebsite && product.OnlinePrice.HasValue && product.OnlinePrice > 0)
+                            ? product.OnlinePrice.Value
+                            : product.Price;
+
+                        decimal originalUnitPrice = basePrice;
                         if (variant?.PriceAdjustment.HasValue == true)
                             originalUnitPrice += variant.PriceAdjustment.Value;
 
@@ -716,9 +721,13 @@ public class OrderService : IOrderService
                                     ? Math.Round(originalUnitPrice - (originalUnitPrice * disc.DiscountValue / 100), 2)
                                     : Math.Round(originalUnitPrice - disc.DiscountValue, 2);
                             }
+                            else if (product.OnlineDiscountPrice.HasValue && product.OnlineDiscountPrice > 0)
+                            {
+                                unitPrice = product.OnlineDiscountPrice.Value + (variant?.PriceAdjustment ?? 0);
+                            }
                             else
                             {
-                                unitPrice = (product.DiscountPrice > 0 ? product.DiscountPrice.Value : originalUnitPrice);
+                                unitPrice = (product.DiscountPrice > 0 ? (product.DiscountPrice.Value + (variant?.PriceAdjustment ?? 0)) : originalUnitPrice);
                             }
                         }
                         
@@ -800,7 +809,11 @@ public class OrderService : IOrderService
                         throw new ArgumentException(_t.Get("Orders.StockUnavailable", ci.Quantity, ci.Product.NameAr, availableStock));
                     }
 
-                        decimal originalUnitPrice = ci.Product.Price;
+                        decimal basePrice = (ci.Product.OnlinePrice.HasValue && ci.Product.OnlinePrice > 0)
+                            ? ci.Product.OnlinePrice.Value
+                            : ci.Product.Price;
+
+                        decimal originalUnitPrice = basePrice;
                         if (ci.ProductVariant?.PriceAdjustment.HasValue == true)
                             originalUnitPrice += ci.ProductVariant.PriceAdjustment.Value;
 
@@ -831,9 +844,13 @@ public class OrderService : IOrderService
                                 ? Math.Round(originalUnitPrice - (originalUnitPrice * disc.DiscountValue / 100), 2)
                                 : Math.Round(originalUnitPrice - disc.DiscountValue, 2);
                         }
+                        else if (ci.Product.OnlineDiscountPrice.HasValue && ci.Product.OnlineDiscountPrice > 0)
+                        {
+                            unitPrice = ci.Product.OnlineDiscountPrice.Value + (ci.ProductVariant?.PriceAdjustment ?? 0);
+                        }
                         else
                         {
-                            unitPrice = (ci.Product.DiscountPrice > 0 ? ci.Product.DiscountPrice.Value : originalUnitPrice);
+                            unitPrice = (ci.Product.DiscountPrice > 0 ? (ci.Product.DiscountPrice.Value + (ci.ProductVariant?.PriceAdjustment ?? 0)) : originalUnitPrice);
                         }
                         
                         var orderItem = new OrderItem

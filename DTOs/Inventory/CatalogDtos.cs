@@ -121,7 +121,9 @@ public record ProductSummaryDto(
     [property: JsonPropertyName("egyptianProductCode")] string? EgyptianProductCode = null,
     [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null,
     [property: JsonPropertyName("images")] List<ProductImageDto>? Images = null,
-    [property: JsonPropertyName("secondaryCategoryIds")] List<int>? SecondaryCategoryIds = null
+    [property: JsonPropertyName("secondaryCategoryIds")] List<int>? SecondaryCategoryIds = null,
+    [property: JsonPropertyName("onlinePrice")] decimal? OnlinePrice = null,
+    [property: JsonPropertyName("onlineDiscountPrice")] decimal? OnlineDiscountPrice = null
 );
 
 public record ProductDetailDto(
@@ -168,7 +170,9 @@ public record ProductDetailDto(
     [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null,
     [property: JsonPropertyName("rawDiscountPrice")] decimal? RawDiscountPrice = null,
     [property: JsonPropertyName("secondaryCategoryIds")] List<int>? SecondaryCategoryIds = null,
-    [property: JsonPropertyName("secondaryCategories")] List<CategoryDto>? SecondaryCategories = null
+    [property: JsonPropertyName("secondaryCategories")] List<CategoryDto>? SecondaryCategories = null,
+    [property: JsonPropertyName("onlinePrice")] decimal? OnlinePrice = null,
+    [property: JsonPropertyName("onlineDiscountPrice")] decimal? OnlineDiscountPrice = null
 );
 
 public record ProductVariantDto(
@@ -213,7 +217,9 @@ public record CreateProductDto(
     [property: JsonPropertyName("egyptianProductCode")] string? EgyptianProductCode = null,
     [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null,
     [property: JsonPropertyName("secondaryCategoryIds")] List<int>? SecondaryCategoryIds = null,
-    [property: JsonPropertyName("status")] ProductStatus? Status = null
+    [property: JsonPropertyName("status")] ProductStatus? Status = null,
+    [property: JsonPropertyName("onlinePrice")] decimal? OnlinePrice = null,
+    [property: JsonPropertyName("onlineDiscountPrice")] decimal? OnlineDiscountPrice = null
 );
 
 public record UpdateProductDto(
@@ -240,7 +246,9 @@ public record UpdateProductDto(
     [property: JsonPropertyName("linkedProductId")] int? LinkedProductId = null,
     [property: JsonPropertyName("egyptianProductCode")] string? EgyptianProductCode = null,
     [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null,
-    [property: JsonPropertyName("secondaryCategoryIds")] List<int>? SecondaryCategoryIds = null
+    [property: JsonPropertyName("secondaryCategoryIds")] List<int>? SecondaryCategoryIds = null,
+    [property: JsonPropertyName("onlinePrice")] decimal? OnlinePrice = null,
+    [property: JsonPropertyName("onlineDiscountPrice")] decimal? OnlineDiscountPrice = null
 );
 
 public record UpdateSizeChartDto(
