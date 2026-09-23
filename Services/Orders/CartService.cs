@@ -206,8 +206,8 @@ public class CartService : ICartService
                 price = (c.Product?.DiscountPrice > 0) ? c.Product.DiscountPrice.Value : basePrice;
             }
 
-            if (c.ProductVariant?.PriceAdjustment.HasValue == true)
-                price += c.ProductVariant.PriceAdjustment!.Value;
+            var variantAdj = c.ProductVariant?.OnlinePriceAdjustment ?? c.ProductVariant?.PriceAdjustment ?? 0;
+            price += variantAdj;
 
             return new CartItemDto(
                 c.Id, c.ProductId, c.ProductVariantId,

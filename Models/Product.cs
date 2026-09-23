@@ -73,7 +73,8 @@ public class ProductVariant : BaseEntity
     public string? ColorAr { get; set; }
     public int StockQuantity { get; set; } = 0;
     public int ReorderLevel { get; set; } = 0; // حد الطلب للموديل/المقاس الصغير
-    public decimal? PriceAdjustment { get; set; } = 0; // extra price for this variant
+    public decimal? PriceAdjustment { get; set; } = 0; // extra price for this variant (سعر المحل / الأساسي)
+    public decimal? OnlinePriceAdjustment { get; set; } // extra price for online store (سعر المتجر)
     public string? ImageUrl { get; set; }
     public string? ImagePublicId { get; set; }
     public bool IsActive { get; set; } = true;

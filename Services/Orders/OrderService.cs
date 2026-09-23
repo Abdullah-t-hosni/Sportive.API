@@ -676,9 +676,11 @@ public class OrderService : IOrderService
                             ? product.OnlinePrice.Value
                             : product.Price;
 
-                        decimal originalUnitPrice = basePrice;
-                        if (variant?.PriceAdjustment.HasValue == true)
-                            originalUnitPrice += variant.PriceAdjustment.Value;
+                        decimal variantAdjustment = (isWebsite && variant?.OnlinePriceAdjustment.HasValue == true)
+                            ? variant.OnlinePriceAdjustment.Value
+                            : (variant?.PriceAdjustment ?? 0);
+
+                        decimal originalUnitPrice = basePrice + variantAdjustment;
 
                         // ✅ FIX: If the product is tax-exclusive, scale up the original price
                         // so it matches the POS frontend which calculates totals inclusively.
@@ -728,11 +730,11 @@ public class OrderService : IOrderService
                             }
                             else if (product.OnlineDiscountPrice.HasValue && product.OnlineDiscountPrice > 0)
                             {
-                                unitPrice = product.OnlineDiscountPrice.Value + (variant?.PriceAdjustment ?? 0);
+                                unitPrice = product.OnlineDiscountPrice.Value + variantAdjustment;
                             }
                             else
                             {
-                                unitPrice = (product.DiscountPrice > 0 ? (product.DiscountPrice.Value + (variant?.PriceAdjustment ?? 0)) : originalUnitPrice);
+                                unitPrice = (product.DiscountPrice > 0 ? (product.DiscountPrice.Value + variantAdjustment) : originalUnitPrice);
                             }
                         }
                         
@@ -818,9 +820,11 @@ public class OrderService : IOrderService
                             ? ci.Product.OnlinePrice.Value
                             : ci.Product.Price;
 
-                        decimal originalUnitPrice = basePrice;
-                        if (ci.ProductVariant?.PriceAdjustment.HasValue == true)
-                            originalUnitPrice += ci.ProductVariant.PriceAdjustment.Value;
+                        decimal variantAdjustment = (ci.ProductVariant?.OnlinePriceAdjustment.HasValue == true)
+                            ? ci.ProductVariant.OnlinePriceAdjustment.Value
+                            : (ci.ProductVariant?.PriceAdjustment ?? 0);
+
+                        decimal originalUnitPrice = basePrice + variantAdjustment;
 
                             // 🔍 RECURSIVE DISCOUNT LOOKUP: Product -> Category Tree -> Brand
                             var disc = activeDiscounts.FirstOrDefault(d => d.ProductId == ci.ProductId);
@@ -851,11 +855,11 @@ public class OrderService : IOrderService
                         }
                         else if (ci.Product.OnlineDiscountPrice.HasValue && ci.Product.OnlineDiscountPrice > 0)
                         {
-                            unitPrice = ci.Product.OnlineDiscountPrice.Value + (ci.ProductVariant?.PriceAdjustment ?? 0);
+                            unitPrice = ci.Product.OnlineDiscountPrice.Value + variantAdjustment;
                         }
                         else
                         {
-                            unitPrice = (ci.Product.DiscountPrice > 0 ? (ci.Product.DiscountPrice.Value + (ci.ProductVariant?.PriceAdjustment ?? 0)) : originalUnitPrice);
+                            unitPrice = (ci.Product.DiscountPrice > 0 ? (ci.Product.DiscountPrice.Value + variantAdjustment) : originalUnitPrice);
                         }
                         
                         var orderItem = new OrderItem

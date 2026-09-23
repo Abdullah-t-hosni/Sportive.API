@@ -186,7 +186,8 @@ public record ProductVariantDto(
     [property: JsonPropertyName("imageUrl")] string? ImageUrl,
     [property: JsonPropertyName("imagePublicId")] string? ImagePublicId = null,
     [property: JsonPropertyName("isActive")] bool IsActive = true,
-    [property: JsonPropertyName("maxOnlineStock")] int? MaxOnlineStock = null
+    [property: JsonPropertyName("maxOnlineStock")] int? MaxOnlineStock = null,
+    [property: JsonPropertyName("onlinePriceAdjustment")] decimal? OnlinePriceAdjustment = null
 );
 
 public record ProductImageDto(int Id, string ImageUrl, string? ImagePublicId = null, bool IsMain = false, int SortOrder = 0, string? ColorAr = null, int? CategoryId = null);
@@ -265,7 +266,8 @@ public record CreateVariantDto(
     decimal? PriceAdjustment,
     int? ReorderLevel = 0,
     bool? IsActive = true,
-    int? MaxOnlineStock = null
+    int? MaxOnlineStock = null,
+    decimal? OnlinePriceAdjustment = null
 );
 
 // ========== REVIEWS & WISHLIST ==========
